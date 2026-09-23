@@ -102,6 +102,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # `scripts/budget-raises.ts` compares every route budget with origin/main's TIP, so one commit
+      # at depth 1 is all it needs — never `fetch-depth: 0`. Skipped on a push to main, where HEAD
+      # IS that tip: the rule then prints that it compared nothing, and there is nothing to raise.
+      - name: fetch origin/main's tip for budget-raises
+        if: github.ref != 'refs/heads/main'
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
       - uses: ./.github/actions/setup
       # `wal_level = logical` is a server argument, and a service container takes none —
       # so the replication server is started by hand. Without it the logical-replication
@@ -371,8 +377,16 @@ jobs:
           touch .env.production
           trap 'rm -f .env.production' EXIT
           docker compose -f docker/docker-compose.dev.yml config -q
-          docker compose -f docker/docker-compose.prod.yml config -q
-          echo "ok: both compose files parse"
+          # The prod file refuses an unset SYNC_URL (`${SYNC_URL:?…}`) — a page must dial the sync
+          # role's own port — so the syntax check supplies the value an operator would.
+          SYNC_URL=ws://localhost:3001/_x/sync docker compose -f docker/docker-compose.prod.yml config -q
+          # And the refusal itself: supplying the value above proves only that the file parses, so
+          # deleting the `:?` requirement would stay green without this negative case.
+          if env -u SYNC_URL docker compose -f docker/docker-compose.prod.yml config -q 2>/dev/null; then
+            echo "::error title=SYNC_URL not required::docker/docker-compose.prod.yml parsed with SYNC_URL unset, so a Compose deploy starts a web role whose pages dial nothing. fix: restore 'SYNC_URL: \${SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md}' under web.environment in docker/docker-compose.prod.yml"
+            exit 1
+          fi
+          echo "ok: both compose files parse, and the prod file refuses an unset SYNC_URL"
 
       - name: helm lint
         run: helm lint docker/helm --strict

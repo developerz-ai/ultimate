@@ -9,7 +9,7 @@ Today a channel topic "has no cursor and no re-snapshot", so a frame `SyncSocket
 - `packages/realtime/src/channel-cursor.ts` (new, client) — one cursor per subscribed channel: drop `seq <= last` (duplicate), accept `seq > last` (a numeric hole is NOT a gap — only `replay-gap` is), reset on new `epoch`. Cursor dropped when the channel is released.
 - Catch-up: `replay-gap` or an epoch change → re-run that channel's **catch-up read**: the channel declaration names a query (`channel(name, { catchUp: queryRef })`, slice 09) dispatched through `clientTransport`; records adopted; buffer frames arriving meanwhile, apply those with `seq` after the read.
 - Resubscribe after reconnect sends `since: seq` per channel; the server replays from a bounded per-channel ring or answers `replay-gap` when `since` is out of the ring.
-- Metrics: `channel_gaps_repaired_total`, beside `channel_frames_dropped_total`.
+- Metrics: `channel_replay_gaps_total (renamed from `channel_gaps_repaired_total` before release: it counts gaps announced)`, beside `channel_frames_dropped_total`.
 
 ## Steps
 1. Server seq/epoch + ring + `replay-gap`.

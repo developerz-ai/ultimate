@@ -12,10 +12,12 @@ import type { MountedIsland } from '@ultimat3/testing';
 import { mountIsland } from '@ultimat3/testing';
 import {
   buildIslands,
+  clearIslandChunkCache,
   describeBuildError,
   discoverIslands,
   ISLAND_BASE_PATH,
   islandBundle,
+  stableChunk,
 } from './island-bundle';
 import { transformIslandTsx } from './solid-loader';
 
@@ -470,5 +472,27 @@ describe('an island chunk is built to be shipped, not to match the box that buil
     // development branch in the file a browser downloads, because the chunk inherited the mode of
     // whatever process ran `x build`.
     expect(mounted.el.textContent).toBe('production');
+  });
+});
+
+describe('unit · one URL, one size', () => {
+  test('a rebuild that renamed differently is served AND weighed as the first build', () => {
+    // `Bun.build` under `minify` renames non-deterministically, so the same inputs can come back
+    // as two byte strings of different length. The served code is the first; the size has to be
+    // its size, or `x dev` and the budget report bytes no browser receives.
+    clearIslandChunkCache();
+    try {
+      const first = stableChunk('/app/like.island.tsx', 'graph-1', 'let a=1;export{a};');
+      const second = stableChunk('/app/like.island.tsx', 'graph-1', 'let abc=1;export{abc as a};');
+
+      expect(second.code).toBe(first.code);
+      expect(second.bytes).toBe(new TextEncoder().encode(second.code).byteLength);
+      expect(second.bytes).toBe(first.bytes);
+      // New inputs are a new chunk, weighed on their own bytes.
+      const changed = stableChunk('/app/like.island.tsx', 'graph-2', 'let b=22;export{b};');
+      expect(changed.bytes).toBe(new TextEncoder().encode('let b=22;export{b};').byteLength);
+    } finally {
+      clearIslandChunkCache();
+    }
   });
 });

@@ -5,8 +5,9 @@
  */
 
 import { expect, test } from 'bun:test';
-import { resolveConflict } from '@ultimat3/action';
-import type { MemberView } from '../orgs/entity';
+import { resolveConflict } from '@ultimat3/core';
+import { parse } from '@ultimat3/schema';
+import { MemberView } from '../orgs/entity';
 import { setTheme, toggleDigestOptIn } from './mutator';
 
 const member = (patch: Partial<MemberView> = {}): MemberView => ({
@@ -22,8 +23,9 @@ const member = (patch: Partial<MemberView> = {}): MemberView => ({
   ...patch,
 });
 
+// `resolveConflict` answers a `Row`: parse it back through the entity's schema rather than cast.
 const rebase = (local: MemberView, server: MemberView): MemberView =>
-  resolveConflict(toggleDigestOptIn.conflict, local, server);
+  parse(MemberView, resolveConflict(toggleDigestOptIn.conflict, local, server));
 
 test('an unsubscribe the server recorded survives a stale offline re-subscribe', () => {
   const merged = rebase(member({ digestOptIn: true }), member({ digestOptIn: false }));
@@ -52,8 +54,13 @@ test('every field this mutator is not about comes back from the server', () => {
   );
 });
 
-test('the theme mutator is last-write-wins, so the device that set it last keeps it', () => {
-  const merged = resolveConflict(setTheme.conflict, member({ theme: 'dark' }), member());
+test('the theme mutator is server-wins: a rebased offline theme yields to the server row', () => {
+  // Whatever either row carries — including a clock `last-write-wins` would have read — the
+  // server row stands, because `MemberView` has no `updatedAt` to decide on.
+  const local = { ...member({ theme: 'dark' }), updatedAt: 2 };
+  const server = { ...member(), updatedAt: 1 };
 
-  expect(merged.theme).toBe('dark');
+  expect(setTheme.conflict).toBe('server-wins');
+  expect(resolveConflict(setTheme.conflict, local, server)['theme']).toBe('system');
+  expect(resolveConflict(setTheme.conflict, member({ theme: 'dark' }), member())).toEqual(member());
 });

@@ -3,7 +3,7 @@
 // app can reuse to apply the same patches to its own store.
 //
 // Order and values are folded separately: a live window keeps its ORDER here and its VALUES in the
-// identity map, so `applyPatches` is the array form of the same fold rather than a second one.
+// record store, so `applyPatches` is the array form of the same fold rather than a second one.
 
 import type { JsonObject, Row, RowPatch } from './json';
 

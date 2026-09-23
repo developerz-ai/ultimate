@@ -4,28 +4,36 @@
  * fallback actually renders, and a stale build actually offers a reload instead of a white screen.
  */
 
+import { FRAMEWORK_SCRIPTS } from '@ultimat3/cli';
 import { expect, test } from '@ultimat3/testing';
 
-// TWO assertions here retry and SEVEN do not, and which is which is the load-bearing fact.
+/** A script the APP ships: the framework's own injected files are not the author's to remove. */
+const APP_SCRIPTS = `script[src]${[...FRAMEWORK_SCRIPTS].map((path) => `:not([src="${path}"])`).join('')}`;
+
+const TENANCY = 'Tenancy is a column, not a convention';
+
+// Some assertions here retry and some do not, and which is which is the load-bearing fact — each
+// retrying one says why on the line above it, so no count is written here to go stale.
 //
 // `await expect(locator).toBeVisible()` retries to a budget; `expect(await locator.isVisible())
-// .toBe(true)` takes one look. They are different assertions, not two spellings of one. The two
-// retrying ones are the only two that follow an event this test does not await: the queue draining
-// after `network.online()`, and the update banner appearing after `deploy.newBuild()`. Nothing in
-// the page's own API says either has finished, so a single look there is a race.
+// .toBe(true)` takes one look. They are different assertions, not two spellings of one. A retrying
+// one follows an event this test does not await: the queue draining after `network.online()`, the
+// update banner after `deploy.newBuild()`, and every read of the FEED's rows — the server streams
+// the shell and the rows arrive over the socket after the island hydrates (measured 2026-09-22: the
+// first flush holds "Acme Editorial" and no row). Nothing in the page's own API says any of those
+// has finished, so a single look there is a race.
 //
-// The other seven follow a `goto`, a `gotoStreamed` or a click whose handler paints synchronously
-// — the awaited call IS the wait. A retrying assertion on those would pass even if the element
-// arrived seconds late, which is the bug the test exists to catch: it would hide a race rather
-// than prove there is not one. So they stay point-in-time, deliberately, and this comment is the
-// reason rather than an oversight.
+// The rest follow a `goto`, a `gotoStreamed` or a click whose handler paints synchronously — the
+// awaited call IS the wait. A retrying assertion on those would pass even if the element arrived
+// seconds late, which is the bug the test exists to catch: it would hide a race rather than prove
+// there is not one. So they stay point-in-time, deliberately.
 
 test('the landing page ships zero JavaScript', async ({ page, budget }) => {
   await page.goto('/');
 
   expect(await page.getByRole('heading', { level: 1 }).isVisible()).toBe(true);
   expect(await budget.jsBytes('/')).toBe(0);
-  expect(await page.locator('script[src]').count()).toBe(0);
+  expect(await page.locator(APP_SCRIPTS).count()).toBe(0);
 });
 
 test('the feed streams its shell before the rows resolve', async ({ page, signIn, seed }) => {
@@ -37,7 +45,8 @@ test('the feed streams its shell before the rows resolve', async ({ page, signIn
   // The header is in the first chunk; the list arrives in a later one.
   expect(firstFlush.html).toContain('Acme Editorial');
   expect(firstFlush.html).not.toContain('Tenancy is a column');
-  expect(await page.getByText('Tenancy is a column, not a convention').isVisible()).toBe(true);
+  // Retries: the rows arrive over the socket after hydration, not in any flush.
+  await expect(page.getByText(TENANCY)).toBeVisible();
 });
 
 test('a like taken offline is queued, shown, and reconciled on reconnect', async ({
@@ -51,12 +60,26 @@ test('a like taken offline is queued, shown, and reconciled on reconnect', async
   await page.goto('/feed');
   await page.waitForServiceWorker();
 
+  // Retries: the rows — and their Like buttons — arrive over the socket after hydration.
+  await expect(page.getByText(TENANCY)).toBeVisible();
   await network.offline();
-  await page.getByRole('button', { name: 'Like' }).first().click();
+  // Tenancy's own button, not `.first()`: the first row is "Money is an integer" at 0 likes, and
+  // the reconciled count below is Tenancy's 2 seeded + 1 queued.
+  const clicked = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('li')].find((li) =>
+      (li.textContent ?? '').includes('Tenancy is a column, not a convention'),
+    );
+    const button = row?.querySelector('button');
+    button?.click();
+    return button !== undefined && button !== null;
+  });
+  expect(clicked).toBe(true);
 
-  expect(
-    await page.getByText('You are offline — this will be sent when you reconnect.').isVisible(),
-  ).toBe(true);
+  // Retries: the notice follows the write FAILING offline and being queued — an event the click
+  // does not await, since the click's handler returns before the request is refused.
+  await expect(
+    page.getByText('You are offline — this will be sent when you reconnect.'),
+  ).toBeVisible();
   expect(await page.evaluate(() => navigator.onLine)).toBe(false);
 
   await network.online();
@@ -109,11 +132,12 @@ test('dates render in the member’s zone, not the server’s', async ({ page, s
 
   await signIn(kenji);
   await page.goto('/feed');
-  // 2026-03-09T07:30Z is 16:30 on the 9th in Tokyo.
-  expect(await page.getByText('9 March 2026').isVisible()).toBe(true);
+  // 2026-03-09T07:30Z is 16:30 on the 9th in Tokyo, in kenji's `en` — which is US English order.
+  // Retries: the row carrying the date arrives over the socket after hydration.
+  await expect(page.getByText('March 9, 2026')).toBeVisible();
 
   await signIn(bruno);
   await page.goto('/feed');
   // Same row, same instant, Spanish locale and Madrid clock — 08:30 on the 9th.
-  expect(await page.getByText('9 de marzo de 2026').isVisible()).toBe(true);
+  await expect(page.getByText('9 de marzo de 2026')).toBeVisible();
 });

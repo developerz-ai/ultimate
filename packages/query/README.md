@@ -53,9 +53,44 @@ const [post] = await queries.publicPost({ slug }); // typed input, typed rows
 
 Both spellings run `queryClientMethodFor`, so a read has one URL however it is addressed.
 
+Every read goes through `@ultimat3/core`'s **`clientTransport`** — the one browser HTTP function,
+`As of 2026-09-22` (21.0.0). There is no `fetch` call in this package: the `fetch` option is handed
+on as the transport's `fetchImpl`. The transport owns `Accept`, the trace/budget headers, the
+principal fence, and the error decode — a non-`problem+json` failure (a gateway's HTML) is core's
+`X_CLIENT_TRANSPORT_FAILED`, a `problem+json` one is the server's own code, verbatim.
+
+### Records — `rows:` puts a read's answer in the page's store
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+import { allow } from '@ultimat3/policy';
+import { from, query, t } from '@ultimat3/query';
+
+const Post = entity('post', {
+  columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 120 }) },
+});
+type PostRow = { id: string; orgId: string; title: string };
+declare const list: (orgId: string) => Promise<readonly PostRow[]>;
+
+export const postList = query({
+  input: t.object({ orgId: t.uuid }),
+  policy: allow('public'),
+  rows: Post.$schema, // the entity's row schema — typed against what `sql:` answers
+  sql: ({ orgId }) => from<PostRow>('posts', () => list(orgId)).where({ orgId }).orderBy('id'),
+});
+```
+
+With `rows:` naming an **entity's** row schema, the route answers `x-ultimate-records: 1` and the
+record envelope `{ data, records }` on EVERY answer — `records` is `{}` when no row came back, so
+the operation has one body shape and one OpenAPI schema; the typed client adopts
+`records` into `pageClient().store` and returns `data` — the same rows, the same type. Without it,
+or with a schema no `entity()` branded (a `t.object` look-alike, a `.pick()`ed partial), the wire
+is the bare rows, byte-identical to before. `rows:` exists because a read's `sql:` names its table
+as a STRING, so nothing else carries a schema the envelope could be derived from.
+
 ### Flight control — `createClientFlight`, opt-in
 
-A typed read is one `fetch` and nothing else until a `flight` is installed. With one, N concurrent
+A typed read is one dispatch and nothing else until a `flight` is installed. With one, N concurrent
 identical reads become ONE dispatch, a fence can retire everything issued before now, and a failure
 worth sending again is sent again on `@ultimat3/core`'s one backoff curve.
 
@@ -95,11 +130,12 @@ flight.bump();
 It shipped as a byte-identical copy in each; the copies are gone and every name is importable from
 this package exactly as before.
 
-Bundle cost is why `ClientFlight` is a TYPE inside `client.ts` and never a value: importing
-`queryClient` alone from this package is **12,755 B** minified for the browser, and adding
-`createClientFlight` is **17,912 B**. A caller who wants a plain typed fetch pays for none of it.
-Expect ±376 B run to run — `Bun.build` 1.4.0 drops `@ultimat3/core`'s `schema-error-codes.ts` from
-some builds even though `sideEffects` names it (issue #273).
+Bundle cost is why `ClientFlight` is a TYPE inside `client.ts` and never a value. Importing
+`queryClient` alone through this package's barrel, `bun build --target=browser --minify`,
+`As of 2026-09-22`: **19,026 B** before the move to `clientTransport` (20.2.1), **24,114 B** after.
+The growth is core's transport and its graph (`client-transport.ts`, `client-problem.ts`,
+`record-envelope.ts`, `client-scope.ts`, `record-sink.ts`); `client.ts` itself got smaller. The
+12,755 B this page quoted before was no longer true at 20.2.1 — re-measure, never quote.
 
 The declaration is lifted too: `.input`, `.policy`, `.cache`, `.mcp`, `.isLive`. `sql` is not
 among them — it lives in a private store inside `read.ts`, so `sourceFor` is the only thing
@@ -479,12 +515,12 @@ router feature here.
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x queries describe <name> --json` |
 | `X_QUERY_UNREGISTERED` | used before `registerQueries()` ran | register at boot |
 | `X_QUERY_FOREIGN` | a look-alike was projected as a query | declare it with `query({ … })` |
-| `X_RPC_FAILED` | `.client()` got a non-`problem+json` failure | check the gateway in front of the app |
+| `X_CLIENT_TRANSPORT_FAILED` | `.client()` got no response, or a non-`problem+json` failure (core's code, since 21.0.0; was `X_RPC_FAILED`) | check the gateway in front of the app: `x doctor --json` |
 
 Denials re-throw the policy layer's own codes and keep the surface denial on
 `QueryDeniedError.denial`, so a live socket closes with 4403 instead of guessing.
 
 ## Boundaries
 
-Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `policy`. Never imports `action`,
+Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `entity`, `http`, `policy`. Never imports `action`,
 `jobs` or `realtime` (same tier) — `realtime` consumes `LiveQuery` from here.

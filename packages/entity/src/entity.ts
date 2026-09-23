@@ -3,9 +3,8 @@
 // (the typed db handle, migrations, cache tags, the admin UI, the manifest) is projected from
 // this one call.
 
-import { renderThrowable } from '@ultimat3/core';
 import type { IndexMethod } from '@ultimat3/db';
-import { describeValue, type StandardSchemaV1 } from '@ultimat3/schema';
+import { describeValue, type Schema } from '@ultimat3/schema';
 import { entityNow } from './clock';
 import { assertColumnName, bindColumn, columnName, moneyColumns } from './column';
 import { newId } from './columns';
@@ -16,8 +15,10 @@ import { invariantColumns } from './expr';
 import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant } from './invariants';
+import { recordProjection } from './record-projection';
 import type { EntityDescription, ReferenceDescription } from './registry';
 import { registerEntity } from './registry';
+import { rowSchema } from './row-schema';
 import type { SearchInit, SearchSource, SearchVector } from './search';
 import { searchVectorOf } from './search';
 import { resolveTenantColumn } from './tenancy';
@@ -84,6 +85,12 @@ export interface EntityInit<C extends ColumnMap> {
   readonly search?: SearchInit;
   /** Extra cache tags this entity participates in, beyond its own. */
   readonly tags?: readonly string[];
+  /**
+   * Whether a browser keeps this entity's records on disk (IndexedDB, keyed by principal) so they
+   * survive a reload and an offline start. Default `false`: a record is private data by default,
+   * and disk is a decision. Read off `recordProjection(entity).persist` by realtime's persister.
+   */
+  readonly persist?: boolean;
 }
 
 /**
@@ -111,8 +118,13 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   readonly $search: SearchVector | null;
   /** Phantom: `type Post = typeof posts.$row`. Reading it at runtime throws. */
   readonly $row: Row;
-  /** The Standard Schema the columns already describe — forms and actions hand input to it. */
-  readonly $schema: StandardSchemaV1<unknown, Row>;
+  /**
+   * The whole row as a `t` schema — forms and actions hand input to it, and an output naming it
+   * (bare or wrapped: `t.array(posts.$schema)`) is a row the client store adopts, because its node
+   * carries the `recordProjection` brand. A `$view` or a `.pick()` carries none: a partial row is
+   * never a record.
+   */
+  readonly $schema: Schema<unknown, Row>;
   /** `entity:<name>:<id>` — row-level invalidation for live queries. */
   $tagFor(id: string): string;
   /** Fills declared defaults, then validates every column. Throws on a bad value. */
@@ -388,25 +400,11 @@ export const entity = <const C extends ColumnMap>(
     $softDelete: softDelete,
     $tenantColumn: tenantColumn,
     $search: search,
-    $schema: {
-      '~standard': {
-        version: 1,
-        vendor: 'ultimate',
-        validate: (value) => {
-          try {
-            return { value: parse(value) };
-          } catch (error) {
-            // `renderThrowable`, never `error instanceof Error ? error.message : String(error)`:
-            // both halves of that read the caught value directly. `instanceof` consults
-            // `getPrototypeOf` and `String()` runs the value's own coercion, so a `Proxy` or a
-            // null-prototype throwable raised a SECOND, uncatchable `TypeError` out of the
-            // validator — where a rejection belongs. A column parser is app-reachable and an
-            // app's `$parse` may throw anything at all.
-            return { issues: [{ message: renderThrowable(error) }] };
-          }
-        },
-      },
-    },
+    $schema: rowSchema<Row>(
+      { name, table, primaryKey, persist: init.persist === true },
+      entries,
+      parse,
+    ),
     get $row(): Row {
       // Type-only. Reading it means someone expected a value where a type was meant.
       throw invariantViolated(name, '$row', '$row is a type, not a value — use typeof x.$row');
@@ -420,7 +418,14 @@ export const entity = <const C extends ColumnMap>(
     $references: references,
   };
 
-  registerEntity({ name, tableName: table, describe, references });
+  registerEntity({
+    name,
+    tableName: table,
+    persist: init.persist === true,
+    projection: recordProjection(core),
+    describe,
+    references,
+  });
   // The columns land on the entity itself so `orgs.id` is a column reference; every framework
   // member is `$`-prefixed, which is why a column may be called `name`.
   return Object.assign(core, init.columns);

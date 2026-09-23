@@ -50,13 +50,11 @@ beforeAll(async () => {
     await Bun.write(join(ROOT, path), contents);
   }
   resetRegistries();
-  // Port 0 asks the OS for a free one, so this suite never collides with a running `x dev`.
-  // `METRICS_PORT` is named, because `x dev` ignoring it is the thing under test.
-  const env = { METRICS_PORT: String(METRICS_PORT) };
+  // Port 0 never collides with a running `x dev`; `x dev` ignoring either env value is under test.
   server = await startDev({
     root: ROOT,
     port: 0,
-    env,
+    env: { METRICS_PORT: String(METRICS_PORT), BUILD_ID: 'stamped-7' },
     roles: ['web', 'sync', 'worker', 'scheduler'],
     onReload: (file) => onReload(file),
   });
@@ -419,6 +417,8 @@ describe('unit · x dev boots the app', () => {
     const page = await fetchDev('/pricing');
     expect(page.status).toBe(200);
     expect(page.headers.get('x-dev-runtime')).toBe('app');
+    const served = page.headers.get('x-ultimate-build'); // BUILD_ID: reported must be served
+    expect(`${server.buildId} ${String(served)}`).toBe('stamped-7 stamped-7');
   });
 
   // Under the embedded database a subscription took its snapshot and then heard nothing — PGlite

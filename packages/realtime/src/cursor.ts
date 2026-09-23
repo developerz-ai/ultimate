@@ -3,9 +3,9 @@
 // and the budget exists to make the expensive answer (a snapshot) the *chosen* one, not the
 // accidental one. See README "Reconnect is the hard part".
 
-import { type Clock, systemClock } from '@ultimat3/core';
-import { CursorStaleError } from './errors';
+import { type Clock, systemClock } from '@ultimat3/core/page';
 import type { Row, RowPatch } from './json';
+import { CursorStaleError } from './page-errors';
 
 /** Ids are bounded so a cursor stays small enough to ship on every `subscribe` frame. */
 export const CURSOR_ID_LIMIT = 512;

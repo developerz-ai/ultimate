@@ -18,7 +18,8 @@ import { driver as appDriver } from '@postly/db';
 import { type Actor, assert, userActor } from '@ultimat3/core';
 import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
 import { seedId } from '@ultimat3/entity';
-import { defineFixtures } from '@ultimat3/testing';
+import type { SignIn, TestBudget, TestNetwork } from '@ultimat3/testing';
+import { createTestNetwork, defineFixtures, unavailableFixture } from '@ultimat3/testing';
 
 /** Every seeded row carries an id; the rest of the columns are the entity's business. */
 export interface SeedRow {
@@ -187,12 +188,123 @@ declare module '@ultimat3/testing' {
 }
 
 /**
- * Two names, and deliberately no more. `clock`, `mail`, `network`, `runJobs` and the driver-backed
- * `page`, `budget`, `signIn`, `deploy` and `subscribe` all arrive with the framework's preload:
- * registering `page` here would be Postly deciding for itself what a page is, and two apps would
- * then disagree about it.
+ * The demo sign-in (`apps/web/app/auth/demo-actor.ts`): a cookie naming a seeded member by label.
+ * The labels are the app's, so it is the app that says which rows can be signed in as — `noa` is
+ * seeded and has no demo cookie, and asking for one is refused by name.
+ */
+const DEMO_MEMBER_COOKIE = 'postly_demo_member';
+const DEMO_MEMBERS = ['ada', 'bruno', 'kenji', 'mara'] as const;
+
+/**
+ * `signIn` and `budget` are the framework's NAMES and the app's MEANING: what signing in is, and
+ * which document a route renders, are Postly's facts. Both need the e2e step's browser, so outside
+ * one (`e2eBaseUrl()` unset) they refuse exactly as the framework declares them —
+ * X_TEST_FIXTURE_UNAVAILABLE, naming the driver. `@ultimat3/cli` is imported on demand: every other
+ * test in this app would otherwise load the whole CLI to register two fixtures it never asks for.
+ */
+const signIn = async (): Promise<SignIn> => {
+  const { e2eBaseUrl, e2eBrowser } = await import('@ultimat3/cli');
+  const base = e2eBaseUrl();
+  if (base === undefined) return unavailableFixture('signIn')();
+  return async (member) => {
+    const id = typeof member['id'] === 'string' ? member['id'] : '<a row with no id>';
+    const name = DEMO_MEMBERS.find((label) => seedId(`member:${label}`) === id);
+    assert(
+      name !== undefined,
+      `member ${id} has no demo sign-in — only ${DEMO_MEMBERS.join(', ')} do`,
+      `sign in as one of them: seed('dev').pick({ ada: 'member:ada' }), then signIn(ada)`,
+    );
+    await e2eBrowser().session.setCookie(base, DEMO_MEMBER_COOKIE, name);
+  };
+};
+
+/**
+ * The JS a route costs, counted the way the gate's `budgets` step counts it
+ * (`packages/cli/src/budgets.ts`, `measureDocumentJs`): every inline script the parser runs, every
+ * script file the document fetched — once per URL, uncompressed — and never the framework's own
+ * injected runtime (`FRAMEWORK_SCRIPTS`, `FRAMEWORK_INLINE_SCRIPTS`, imported, not copied): a budget
+ * an author cannot move is not the author's budget. Measured in a tab of its own, so the test's
+ * `page` stays where it was.
+ */
+const budget = async (): Promise<TestBudget> => {
+  const { e2eBaseUrl, e2eBrowser, FRAMEWORK_INLINE_SCRIPTS, FRAMEWORK_SCRIPTS } = await import(
+    '@ultimat3/cli'
+  );
+  const base = e2eBaseUrl();
+  if (base === undefined) return unavailableFixture('budget')();
+  const exempt = JSON.stringify({
+    files: [...FRAMEWORK_SCRIPTS],
+    inline: [...FRAMEWORK_INLINE_SCRIPTS],
+  });
+  return {
+    async jsBytes(route) {
+      const tab = await e2eBrowser().session.newTab();
+      try {
+        await tab.goto(`${base}${route}`);
+        const bytes = await tab.evaluate(`(() => {
+          const exempt = ${exempt};
+          const size = (text) => new TextEncoder().encode(text).length;
+          const inline = [...document.querySelectorAll('script:not([src])')]
+            .filter((el) => !/json/i.test(el.type) && !exempt.inline.includes(el.textContent ?? ''))
+            .reduce((sum, el) => sum + size(el.textContent ?? ''), 0);
+          const fetched = new Map();
+          for (const entry of performance.getEntriesByType('resource')) {
+            const url = new URL(entry.name);
+            if (url.origin !== location.origin || !url.pathname.endsWith('.js')) continue;
+            if (exempt.files.includes(url.pathname)) continue;
+            fetched.set(url.pathname, entry.decodedBodySize);
+          }
+          return inline + [...fetched.values()].reduce((sum, n) => sum + n, 0);
+        })()`);
+        assert(typeof bytes === 'number', `${route} answered no byte count`, 'rerun: x test e2e');
+        return bytes;
+      } finally {
+        await tab.close();
+      }
+    },
+  };
+};
+
+/**
+ * `network` in an e2e run is the BROWSER's cable, not this process's. The framework's `network`
+ * seals this process's `fetch` — and an e2e page is not in this process, so `network.offline()`
+ * put nothing offline and the app's ONLINE page passed the offline tests. In a run with a browser,
+ * `offline()` / `drop()` / `online()` switch every tab and worker (`session.offline`) as well; the
+ * returned promise is awaited by the test (`await network.offline()`), so the next line already
+ * sees the browser offline. Outside a browser run it is the framework's, untouched.
+ */
+const network = async (): Promise<TestNetwork> => {
+  const own = createTestNetwork();
+  const { e2eBaseUrl, e2eBrowser } = await import('@ultimat3/cli');
+  if (e2eBaseUrl() === undefined) return own;
+  const session = e2eBrowser().session;
+  let cut = false;
+  const cable = (offline: boolean): Promise<void> => {
+    cut = offline;
+    return session.offline(offline);
+  };
+  return {
+    offline: () => cable(true),
+    drop: () => cable(true),
+    online: () => cable(false),
+    state: () => (cut ? 'offline' : 'online'),
+    [Symbol.dispose]: (): void => {
+      own[Symbol.dispose]();
+      if (cut) void session.offline(false);
+    },
+  };
+};
+
+/**
+ * `clock`, `mail`, `runJobs`, `page`, `deploy` and `subscribe` arrive with the framework's preload:
+ * registering `page` here would be Postly deciding for itself what a page is. `signIn` and `budget`
+ * are here because their MEANING is the app's, and `network` because in a browser run the cable is
+ * the browser's (above).
  */
 defineFixtures({
   seed: createSeed,
   actorFor: () => actorFor,
+  signIn,
+  budget,
+  network,
 });

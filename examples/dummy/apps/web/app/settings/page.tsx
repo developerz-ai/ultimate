@@ -10,23 +10,13 @@
 import type { AppTheme } from '@postly/domain';
 import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
 import { useT } from '@postly/i18n';
-import { derivePath } from '@ultimat3/action';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute, island } from '@ultimat3/render';
 import { DateTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import type { Api } from '../../api';
 import { useActor } from '../../shared/actor';
-import { Layout } from '../layout';
+import { Layout, updateBannerIsland } from '../layout';
 import styles from './page.module.scss';
-
-/**
- * The action the editor posts to, named once and checked by the compiler, then derived into a
- * path. `savePreferences` → `POST /api/settings/save-preferences`, minted here and carried into
- * the browser as a prop: an island may not import `@ultimat3/action` (36 kB of `rpc()` in a
- * browser chunk), and it must not spell a URL of its own either.
- */
-const SAVE_ACTION = 'savePreferences' satisfies keyof Api['actions'];
 
 /**
  * The page's one island, declared ABOVE `defineRoute` so the route can drain it. `props` are the
@@ -37,7 +27,6 @@ const SAVE_ACTION = 'savePreferences' satisfies keyof Api['actions'];
 const Preferences = island({
   src: './settings.island.tsx',
   props: [
-    'endpoint',
     'nowIso',
     'locale',
     'timezone',
@@ -49,6 +38,9 @@ const Preferences = island({
     'labels',
   ],
 });
+
+/** The layout's update banner — an island of THIS route, so it is declared here. */
+const Banner = updateBannerIsland('../update-banner.island.tsx');
 
 export const config = defineRoute({
   render: 'ssr',
@@ -63,16 +55,19 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   /**
-   * Measured, not guessed: a 17,807-byte island chunk plus the 774-byte `idle` hydration runtime
-   * is 18,581 bytes on this document, against 20,480 — 1,899 bytes of headroom (re-measured
-   * 2026-08-25: the chunk was 19,368 and the runtime 615 when this was first written, and both
-   * moved with the tree rather than with this route). Most of it is the Solid runtime itself,
-   * which is issue #254's subject; the editor's own compiled markup is the rest.
-   *
-   * Re-measure rather than adjust: `buildIslands` in `settings.island.test.ts` reports the chunk,
-   * and `hydrateRuntimeBytes` reports the runtime.
+   * measured: 39,416 B (2026-09-22; `buildIslands`, `hydrateRuntimeBytes`) — the island chunk
+   * 36,960 + the update banner 712 + the `idle` runtime 1,744, against 39,936. No page boot: it
+   * renders only on a page with a realtime island, and this one holds none.
+   * Counted the way the `budgets` step sums a document (`packages/cli/src/budgets.ts`): every
+   * executable `<script src>` it carries — the page boot included, only `/x-sw-register.js` is
+   * exempt (`FRAMEWORK_SCRIPTS`) — plus every island chunk and the inline hydration runtime.
+   * why: the save goes through the typed client and core's one transport (plan 101) — a raw
+   * `fetch` was the 17.8 kB this budget used to hold, and it bypassed the page store, the
+   * idempotency header and the principal fence every other write takes. Most of the growth is the
+   * transport's error registry and trace headers, where shrinking belongs. +712 B for the layout's
+   * update banner, which could never appear while it was a server component.
    */
-  budget: { js: '20kb', lcp: 1800 },
+  budget: { js: '39kb', lcp: 1800 },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
@@ -98,7 +93,7 @@ export function Page(): JSX.Element {
   };
 
   return (
-    <Layout>
+    <Layout banner={Banner}>
       <Stack gap={6} class={styles.page}>
         <header>
           <h1>{t('app.settings.heading')}</h1>
@@ -107,7 +102,6 @@ export function Page(): JSX.Element {
 
         <div class={styles.editor}>
           <Preferences
-            endpoint={derivePath(SAVE_ACTION).path}
             nowIso={actor.now.toISOString()}
             locale={member.locale}
             timezone={member.tz}

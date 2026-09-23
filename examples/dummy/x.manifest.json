@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "7d512f4c1be945f2",
+  "buildId": "ce9c37ed7cde37f9",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -54,7 +54,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "60kb",
+        "js": "123kb",
         "lcp": 2000
       }
     },
@@ -62,23 +62,23 @@
       "url": "/offline",
       "render": "static",
       "offline": "precache",
-      "hydrate": "idle",
+      "hydrate": "never",
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "8kb",
+        "js": "0kb",
         "lcp": 1000
       }
     },
     {
       "url": "/posts/:id",
       "render": "ssr",
-      "offline": "network-only",
+      "offline": "runtime",
       "hydrate": "idle",
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "56kb",
+        "js": "134kb",
         "lcp": 2000
       }
     },
@@ -86,11 +86,11 @@
       "url": "/posts/new",
       "render": "ssr",
       "offline": "runtime",
-      "hydrate": "never",
+      "hydrate": "idle",
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "0kb",
+        "js": "3kb",
         "lcp": 1200
       }
     },
@@ -104,7 +104,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "20kb",
+        "js": "21kb",
         "lcp": 1500
       }
     },
@@ -116,7 +116,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "20kb",
+        "js": "39kb",
         "lcp": 1800
       }
     }
@@ -755,6 +755,40 @@
       }
     },
     {
+      "name": "endSession",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ok",
+          "next"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "end-session",
+      "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "grantAvatarUpload",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1325,13 +1359,17 @@
             "type": "string",
             "format": "uuid"
           },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "email": {
             "type": "string",
-            "format": "email"
+            "maxLength": 254
           },
           "name": {
             "type": "string",
-            "minLength": 1
+            "maxLength": 80
           },
           "role": {
             "type": "string",
@@ -1372,18 +1410,24 @@
           },
           "digestOptIn": {
             "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "id",
           "orgId",
+          "userId",
           "email",
           "name",
           "role",
           "tz",
           "locale",
           "theme",
-          "digestOptIn"
+          "digestOptIn",
+          "createdAt"
         ],
         "additionalProperties": false
       },
@@ -1436,13 +1480,17 @@
             "type": "string",
             "format": "uuid"
           },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "email": {
             "type": "string",
-            "format": "email"
+            "maxLength": 254
           },
           "name": {
             "type": "string",
-            "minLength": 1
+            "maxLength": 80
           },
           "role": {
             "type": "string",
@@ -1483,18 +1531,24 @@
           },
           "digestOptIn": {
             "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "id",
           "orgId",
+          "userId",
           "email",
           "name",
           "role",
           "tz",
           "locale",
           "theme",
-          "digestOptIn"
+          "digestOptIn",
+          "createdAt"
         ],
         "additionalProperties": false
       },
@@ -1596,13 +1650,17 @@
             "type": "string",
             "format": "uuid"
           },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "email": {
             "type": "string",
-            "format": "email"
+            "maxLength": 254
           },
           "name": {
             "type": "string",
-            "minLength": 1
+            "maxLength": 80
           },
           "role": {
             "type": "string",
@@ -1643,18 +1701,24 @@
           },
           "digestOptIn": {
             "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "id",
           "orgId",
+          "userId",
           "email",
           "name",
           "role",
           "tz",
           "locale",
           "theme",
-          "digestOptIn"
+          "digestOptIn",
+          "createdAt"
         ],
         "additionalProperties": false
       },
@@ -1881,6 +1945,15 @@
       "cacheTags": []
     },
     {
+      "name": "orgPosts",
+      "policy": "feed:read",
+      "permissions": [
+        "feed:read"
+      ],
+      "live": false,
+      "cacheTags": []
+    },
+    {
       "name": "postById",
       "policy": "post:read",
       "permissions": [
@@ -1902,6 +1975,15 @@
       "cacheTags": [
         "post"
       ]
+    },
+    {
+      "name": "postRecord",
+      "policy": "post:read",
+      "permissions": [
+        "post:read"
+      ],
+      "live": false,
+      "cacheTags": []
     },
     {
       "name": "publicPost",
@@ -1928,6 +2010,23 @@
       "live": false,
       "cacheTags": [
         "blog"
+      ]
+    }
+  ],
+  "channels": [
+    {
+      "name": "org-posts",
+      "params": [
+        "orgId"
+      ],
+      "catchUp": "orgPosts",
+      "records": [
+        "posts"
+      ],
+      "events": false,
+      "policy": "feed:read",
+      "permissions": [
+        "feed:read"
       ]
     }
   ],
@@ -2256,10 +2355,17 @@
       ]
     },
     {
+      "permission": "end-session",
+      "enforcedIn": [
+        "action:endSession"
+      ]
+    },
+    {
       "permission": "feed:read",
       "enforcedIn": [
         "query:feedActivity",
         "query:liveFeed",
+        "query:orgPosts",
         "query:postBySlug"
       ]
     },
@@ -2308,7 +2414,8 @@
       "enforcedIn": [
         "action:createComment",
         "action:summarize",
-        "query:postById"
+        "query:postById",
+        "query:postRecord"
       ]
     },
     {
@@ -2322,6 +2429,7 @@
   ],
   "permissions": [
     "contact:submit",
+    "end-session",
     "feed:read",
     "member:self",
     "org:administer",

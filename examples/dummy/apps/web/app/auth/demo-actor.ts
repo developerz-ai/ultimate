@@ -19,7 +19,13 @@ import type { MemberView, OrgView } from '../orgs/entity';
 /** Set it to any name in `DEMO_MEMBER_NAMES` to look as that member; unset means the default. */
 export const DEMO_MEMBER_COOKIE = 'postly_demo_member';
 
-export const DEMO_MEMBER_NAMES = ['ada', 'kenji', 'mara'] as const;
+export const DEMO_MEMBER_NAMES = ['ada', 'bruno', 'kenji', 'mara'] as const;
+
+/**
+ * The cookie's value after "Sign out": nobody. Anything else unknown still reads as the default
+ * member — this one value is the demo session ENDED, and the request is anonymous.
+ */
+export const DEMO_SIGNED_OUT = 'signed-out';
 
 export type DemoMemberName = (typeof DEMO_MEMBER_NAMES)[number];
 
@@ -84,6 +90,23 @@ export const DEMO_VIEWERS = Object.freeze<Record<DemoMemberName, DemoViewer>>({
       digestOptIn: true,
     },
   },
+  // Acme's author in Madrid, writing in Spanish — the seeded member whose zone AND locale differ from
+  // the server's, which is what `offline-feed.e2e.test.ts`'s "dates in the member's zone" signs in as.
+  bruno: {
+    org: ACME,
+    member: {
+      id: seedId('member:bruno'),
+      orgId: ACME.id,
+      email: 'bruno@acme.example',
+      name: 'Bruno Salas',
+      role: 'author',
+      tz: 'Europe/Madrid',
+      locale: 'es',
+      // The seed sets no theme, so this is the column's own default and not a preference.
+      theme: 'system',
+      digestOptIn: true,
+    },
+  },
   kenji: {
     org: ACME,
     member: {
@@ -135,8 +158,13 @@ export const demoMemberFrom = (cookieHeader: string | null): DemoMemberName => {
  */
 export const demoActorFor = (name: DemoMemberName): Actor => postlyActor(DEMO_VIEWERS[name]);
 
-const authenticate = (request: UltimateRequest, _ctx: RequestContext): Actor =>
-  demoActorFor(demoMemberFrom(request.header('cookie')));
+const authenticate = (request: UltimateRequest, _ctx: RequestContext): Actor | null => {
+  const cookies = request.header('cookie');
+  if (readCookie(cookies, DEMO_MEMBER_COOKIE) === DEMO_SIGNED_OUT) return null;
+  // `postlyActor` carries the member's saved `locale` and `tz`; the pipeline's auth stage does the
+  // rest, so no preference is resolved here.
+  return demoActorFor(demoMemberFrom(cookies));
+};
 
 /**
  * Installs it, and says so. Gated on `development` alone — not `isLocal()`, which is also true

@@ -2,11 +2,13 @@
 // the idle sweep have no callback behind them, so whatever they do instead is the whole release —
 // and dropping the socket from the table is three of `teardown`'s five steps, not five.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
-import { ChannelHub, type Topic, topic } from './channel';
+import { ChannelHub, type Topic } from './channel';
+import { channel } from './channel-decl';
+import { clearChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
 import type { Row } from './json';
 import { LiveQueryRegistry } from './live-query';
@@ -16,7 +18,18 @@ import { createSyncNode, type SyncNode, type SyncWs, type WsData } from './sync-
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 const BUILD_ID = 'build-1';
-const ROOM: Topic = topic('org', 'o1', 'cursors');
+/** A channel declared `events: true`: joining it is joining its presence set. */
+const room = channel('drain-room', {
+  params: ['orgId'],
+  catchUp: { name: 'roomRead' },
+  events: true,
+});
+const ROOM: Topic = room.topic({ orgId: 'o1' });
+const ROOM_TARGET = { kind: 'channel', channel: 'drain-room', params: { orgId: 'o1' } } as const;
+
+afterAll(() => {
+  clearChannels();
+});
 const INPUT = { orgId: 'o1' };
 const QID = queryHash('liveFeed', INPUT);
 const ROWS: readonly Row[] = [{ id: 'p1', orgId: 'o1' }];
@@ -68,7 +81,6 @@ function harness(options: { idleTimeoutMs?: number } = {}): Harness {
   });
   const transport = new InProcessTransport({ clock });
   const hub = new ChannelHub({ transport, sockets });
-  hub.guard('org.>', () => true);
   const presence = new PresenceRegistry({ transport, hub, clock, ttlMs: 30_000 });
   const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register({
     name: 'liveFeed',
@@ -109,7 +121,7 @@ function harness(options: { idleTimeoutMs?: number } = {}): Harness {
         v: PROTOCOL_VERSION,
         op: 'add',
         sid: id,
-        target: { kind: 'topic', topic: ROOM },
+        target: ROOM_TARGET,
       });
       await send(ws, {
         type: 'subscribe',

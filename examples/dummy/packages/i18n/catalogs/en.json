@@ -75,9 +75,7 @@
       "metaDescription": "You are offline. Postly keeps your feed readable and queues anything you write until the connection returns.",
       "heading": "You are offline",
       "body": "The feed you already loaded is still readable. Anything you write is queued and sent when the connection returns.",
-      "queued_one": "{count} change waiting to send",
-      "queued_other": "{count} changes waiting to send",
-      "queuedNone": "Nothing is waiting to send."
+      "queue": "Anything waiting to send stays on this device and goes as soon as you reconnect."
     }
   },
   "app": {
@@ -91,7 +89,6 @@
       "heading": "{org} feed",
       "empty": "No posts yet. The first one is the hardest.",
       "newPost": "New post",
-      "loading": "Loading the feed",
       "offlineNotice": "Offline — showing the copy on this device.",
       "activity_one": "{count} post published",
       "activity_other": "{count} posts published"

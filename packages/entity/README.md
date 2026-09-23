@@ -56,6 +56,51 @@ A view the columns cannot express — a joined `authorName`, a computed `excerpt
 `t.object({...})`. `t` is re-exported here, the same object `@ultimat3/schema` exports, so that file
 still imports one package: `import { entity, t } from '@ultimat3/entity'`.
 
+## A whole row is a record
+
+`posts.$schema` is the whole row as a `t` schema, and its node is branded
+(`Symbol.for('ultimate.entity')`, non-enumerable) with the entity's **record projection**. An
+action or query whose output names it — bare or wrapped — returns rows the client store adopts,
+with no `records:` option anywhere: the envelope is derived from the output schema.
+
+```ts
+import {
+  entity,
+  hasEntityRows,
+  recordProjection,
+  recordTypeForTable,
+  rowsOf,
+  t,
+  text,
+  uuid,
+} from '@ultimat3/entity';
+
+const posts = entity('posts', { columns: { id: uuid().primaryKey(), title: text() } });
+const Feed = t.object({ items: t.array(posts.$schema), featured: posts.$schema.nullable() });
+declare const answer: unknown; // what a handler returned
+
+hasEntityRows(Feed);         // true — static, memoised per node
+rowsOf(Feed, answer);        // { posts: { [recordKey]: row } } — null-prototype, same objects
+recordProjection(posts);     // { type: 'posts', table: 'posts', key, schema, persist: false }
+recordTypeForTable('posts'); // 'posts' — what a changefeed row belongs to
+```
+
+| Rule | Detail |
+|---|---|
+| Survives every wrapper | `t.array`, `t.object`, `t.record`, `t.union` keep the child node by reference; `.nullable()`, `.optional()`, `.default()`, `.describe()`, `.refine()` re-brand the copy they make |
+| A partial row is never a record | a `$view`, and any `t.object(...).pick/omit/extend`, carries no brand — it would overwrite a full record |
+| Wire shape | type → record key → row: the KEY travels, because a browser cannot compute one without importing the app's `entity()` declarations |
+| Union arms | a branded arm claims a value only when every column is an own key of it |
+| Record key | the primary key, in DECLARED order; a single key is the value itself (so it equals `$tagFor(id)`'s id), a composite one percent-encodes each part and joins on `:` |
+| Missing key | `X_RECORD_KEY_MISSING` — never keyed as `undefined`, because two keyless rows would be one record |
+| `persist` | `entity(name, { persist: true })` — default `false`; a browser keeps the records on disk (IndexedDB, per principal) only when declared. Realtime's persister reads `recordProjection(e).persist`, never the declaration |
+| `type` / `table` | the entity name (the store's key) and the physical relation (what a changefeed names); two entities over one table are `X_INVARIANT_VIOLATED` from `recordTypeForTable` |
+
+**In browser code import these from `@ultimat3/entity/record`**, never the barrel: the package
+declares no `sideEffects`, so the barrel retains ~1 MB of SQL rendering and `@ultimat3/db` a page
+never runs, while the subpath retains the projection, the key and the registry and nothing else —
+`record-bundle.test.ts` measures both.
+
 ## Blessed columns
 
 | Builder | Emits | Why it is the only way |
@@ -842,7 +887,8 @@ database from its boot code has decided to, and a library that overruled that wo
 `X_ENTITY_DUPLICATE` · `X_INVARIANT_VIOLATED` · `X_TENANCY_UNSCOPED` ·
 `X_TENANCY_ACTOR_MISMATCH` · `X_TENANCY_ACTOR_ORG_REQUIRED` · `X_TENANCY_CROSS_DENIED` ·
 `X_DB_DRIFT` · `X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` ·
-`X_PRELOAD_UNKNOWN_RELATION` · `X_N_PLUS_ONE_QUERY` · `X_N_PLUS_ONE_WRITE`
+`X_PRELOAD_UNKNOWN_RELATION` · `X_N_PLUS_ONE_QUERY` · `X_N_PLUS_ONE_WRITE` ·
+`X_RECORD_KEY_MISSING`
 
 ## Boundaries
 

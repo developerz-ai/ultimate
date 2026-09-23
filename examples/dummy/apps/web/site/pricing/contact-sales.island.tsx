@@ -10,7 +10,12 @@
 // and every label — so the enquiry sends with scripting off. What this module adds is the part a
 // full page load cannot do: keep the visitor on `/pricing` and answer them in place.
 
+import type { Api } from '../../api';
+import { browserClient } from '../../shared/browser-client';
 import { enquiryFrom } from './enquiry';
+
+/** `contactSales`'s input, read off the action's type — `Api` is a type-only import. */
+type ContactSalesInput = Parameters<Api['actions']['contactSales']>[0];
 
 /**
  * What the server sends. JSON only, and already translated: an island's props cross the seam as
@@ -44,19 +49,14 @@ export function mount(el: HTMLElement, props: ContactSalesProps): void {
     event.preventDefault();
     status.textContent = props.sendingLabel;
 
-    // A plain `fetch` to the form's own `action`, not the typed client: importing
-    // `@ultimat3/action` for `rpc()` costs 14.8 kB in a browser bundle (42.6 kB until 2026-08-23,
-    // two thirds of which was two header constants reaching the whole invoke runtime)
-    // island. The path is still the framework's — `derivePath` minted it on the server and it is
-    // in the markup — so there is no second naming rule here, only a second transport.
-    void fetch(form.action, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(enquiry),
-    })
-      .then((response) => {
-        status.textContent = response.ok ? props.sentLabel : props.failedLabel;
-        if (response.ok) form.reset();
+    // The typed client from `shared/`, never a raw `fetch`: one naming rule, one transport. The
+    // form's fields are strings and the action's plan, currency and locale are enumerations, so
+    // the cast is the wire's own shape — the server validates every field against the catalog.
+    browserClient
+      .contactSales(enquiry as ContactSalesInput)
+      .then(() => {
+        status.textContent = props.sentLabel;
+        form.reset();
       })
       .catch(() => {
         status.textContent = props.failedLabel;

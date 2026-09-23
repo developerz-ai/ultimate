@@ -58,6 +58,9 @@ const CORE_ERROR_RETRY: ReadonlyMap<string, ErrorRetry> = new Map(
     // re-run produces the same refusal by construction, so an UNCLASSIFIED reading would spend a
     // job's whole retry policy proving that the world has still moved on.
     X_SUPERSEDED: 'terminal',
+    // The principal fence's twin of `X_SUPERSEDED`, listed for the same reason: re-sending a read
+    // from the previous principal's scope is refused identically every time.
+    X_CLIENT_SCOPE_CHANGED: 'terminal',
   } as const),
 );
 

@@ -402,7 +402,7 @@ describe('a mutation settled while the pass is parked', () => {
     await queue.fail('like:p2', {
       code: 'X_TOPIC_FORBIDDEN',
       cause: 'actor u1 may not subscribe to "org.o1.feed": not a member',
-      fix: `declare a guard for this topic: hub.guard('org.o1.feed', ({ actor }) => ...)`,
+      fix: 'x policy list --json   # then widen the policy on the channel() declaration this topic belongs to, or subscribe as an actor it allows',
     });
     parked.resolve();
     const report = await pass;

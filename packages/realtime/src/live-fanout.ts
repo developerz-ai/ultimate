@@ -44,8 +44,10 @@ export async function fanoutChange(
   // that arrived behind the snapshot that already included it — rewound every subscriber's cursor
   // to it and asked them to fold state they had already folded over newer rows.
   if (entry.lsn !== '' && change.lsn <= entry.lsn) return { sent: 0, stale: 1 };
-  const result = bridgeChange(entry.shape, entry.matcher, change, entry.rows);
-  if (!result) return { sent: 0, stale: 0 };
+  const bridged = bridgeChange(entry.shape, entry.matcher, change, entry.rows);
+  if (!bridged) return { sent: 0, stale: 0 };
+  // Keyed ONCE, here, before the retained window stores them: a resume replays the same key.
+  const result = { ...bridged, patches: keyPatches(entry, change, bridged.patches) };
   entry.lsn = change.lsn;
   entry.rows = applyToWindow(entry.rows, result.patches);
   // The window lost its tail, so what it holds is a guess — the next delivery re-reads it rather
@@ -138,7 +140,11 @@ async function resnapshot(
   return true;
 }
 
-/** The one place a snapshot frame is built, so the identity scope cannot be told to one caller only. */
+/**
+ * The one place a snapshot frame is built, so the identity scope and the record keys cannot be
+ * told to one caller only. `keys` rides only when some key differs from its row's `id` — an entity
+ * keyed by `id` sends the frame it always sent.
+ */
 export function snapshotFrame(
   entry: QueryEntry,
   sid: string,
@@ -146,5 +152,25 @@ export function snapshotFrame(
   cursor: LiveCursor,
 ): Frame {
   const base = { type: 'snapshot', v: PROTOCOL_VERSION, sid, rows, cursor } as const;
-  return entry.rowEntity === null ? base : { ...base, entity: entry.rowEntity };
+  const scoped = entry.rowEntity === null ? base : { ...base, entity: entry.rowEntity };
+  const keyOf = entry.rowKey;
+  if (keyOf === null) return scoped;
+  const keys = rows.map((row) => keyOf(row));
+  return keys.every((key, index) => key === rows[index]?.id) ? scoped : { ...scoped, keys };
+}
+
+/**
+ * A patch's record key, from the change's WHOLE row — an update patch carries only the changed
+ * columns, and a key needs every primary-key column. Only stamped where it differs from `id`.
+ */
+function keyPatches(
+  entry: QueryEntry,
+  change: ChangeEvent,
+  patches: readonly RowPatch[],
+): readonly RowPatch[] {
+  const keyOf = entry.rowKey;
+  const whole = change.after ?? change.before;
+  if (keyOf === null || whole === null) return patches;
+  const key = keyOf(whole);
+  return patches.map((patch) => (key === patch.id ? patch : { ...patch, key }));
 }

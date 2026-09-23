@@ -6,13 +6,13 @@
 // table and a card list cannot disagree about what "loading with stale rows" looks like. Only the
 // PLACEHOLDER is local, because a table's is table-shaped: rows of cells, not lines of text.
 
-import { finiteCount } from '@ultimat3/core';
+import { type AsyncState, finiteCount } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
-import { type AsyncBranch, type AsyncState, asyncBranch, isBusyBranch } from './async-branch';
+import { type AsyncBranch, asyncBranch, isBusyBranch } from './async-branch';
 import styles from './DataTable.module.scss';
 import { EmptyState } from './EmptyState';
 import { ErrorState } from './ErrorState';

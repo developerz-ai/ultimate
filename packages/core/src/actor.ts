@@ -105,6 +105,14 @@ export interface Actor {
    * one the customer issued. Every surface that renders an actor renders this with it.
    */
   readonly onBehalfOf?: ActorOrigin | undefined;
+  /**
+   * The actor's SAVED language and IANA zone — the `user` rung of `@ultimat3/i18n`'s
+   * `resolveLocale` and `@ultimat3/time`'s `resolveTimeZone`. Whoever authenticates sets them from
+   * the user record; `@ultimat3/http` re-resolves `ctx.locale` / `ctx.tz` with them once the actor
+   * is known, so a cookie the reader chose still wins exactly where those owners say it does.
+   */
+  readonly locale?: string | undefined;
+  readonly tz?: string | undefined;
 }
 
 export interface ActorInit {
@@ -117,6 +125,9 @@ export interface ActorInit {
   readonly facts?: ActorFactMap | undefined;
   /** For a session that already recorded an impersonation; `impersonate()` sets it otherwise. */
   readonly onBehalfOf?: ActorOrigin | undefined;
+  /** Saved preferences — see `Actor.locale`. */
+  readonly locale?: string | undefined;
+  readonly tz?: string | undefined;
 }
 
 const NO_FACTS: ActorFactMap = Object.freeze({});
@@ -143,6 +154,9 @@ function build(kind: ActorKind, init: ActorInit): Actor {
     permissions: Object.freeze([...(init.permissions ?? [])]),
     facts: Object.freeze({ ...init.facts }),
     onBehalfOf: init.onBehalfOf === undefined ? undefined : Object.freeze({ ...init.onBehalfOf }),
+    // Absent keys, not `undefined` ones: an actor is compared and serialised in tests and logs.
+    ...(init.locale === undefined ? {} : { locale: init.locale }),
+    ...(init.tz === undefined ? {} : { tz: init.tz }),
   });
 }
 

@@ -25,6 +25,12 @@ import type { ChangeEvent, ChangeOp, LiveQueryRegistry } from '@ultimat3/realtim
 /** What a caller does with a change nobody could deliver. */
 export interface LiveReplicatorOptions {
   readonly registry: LiveQueryRegistry;
+  /**
+   * The node's declared channels, fed the same `ChangeEvent` — what a real node's change
+   * subscription does beside `registry.deliver` (`sync-node.ts`). Without it a channel's `records`
+   * frames never carried a write made under `x dev`, and every other tab stayed on the old row.
+   */
+  readonly channels?: { deliverChange(change: ChangeEvent): unknown };
   /** Tenant column, hoisted out of the row so fanout filters without parsing it. */
   readonly tenantColumn?: string;
   readonly onError?: (error: unknown) => void;
@@ -104,8 +110,14 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
         // Deliberately not a clock read: the preload freezes `Date.now()`, and a change's commit
         // time is not something any assertion in this repo reads. `at` keeps it monotonic anyway.
         at,
+        // The keyed write it belongs to, read off the request scope — what the WAL decoder reads
+        // off the transaction's opening message — so a channel frame names it here as it would there.
+        ...(change.write === undefined ? {} : { write: change.write }),
       };
       enqueue(async () => {
+        // Channels first, as the node does: a live query's fanout that throws must not also cost
+        // every declared channel the change.
+        options.channels?.deliverChange(event);
         delivered += await registry.deliver(event);
       });
     },

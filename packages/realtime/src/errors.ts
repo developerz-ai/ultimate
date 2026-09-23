@@ -18,12 +18,19 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REPLICATION_PROTOCOL',
   'X_REPLICATION_FAILED',
   'X_REPLICATOR_SLOT_HELD',
+  // Retired in 21.0.0 and never thrown since — kept registered, because a shipped code is
+  // forever: a log line from an older build still resolves through `x errors explain`.
   'X_LIVE_CLIENT_MISSING',
+  'X_QUERY_NOT_SUBSCRIBABLE',
+  'X_REALTIME_UNINSTALLED',
+  'X_SYNC_UNCONFIGURED',
+  'X_RECORD_REJECTED',
+  'X_CHANNEL_DECLARATION_INVALID',
+  'X_LOCAL_STORE_UNAVAILABLE',
   'X_LIVE_SERVER_RENDER',
   'X_LIVE_ROW_UNIDENTIFIED',
   'X_LIVE_QUERY_UNKNOWN',
   'X_LIVE_REPLICA_IDENTITY',
-  'X_QUERY_NOT_SUBSCRIBABLE',
   'X_SOCKET_UNAUTHENTICATED',
   'X_SOCKET_AUTH_UNAVAILABLE',
 ] as const;
@@ -118,12 +125,19 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REPLICATION_PROTOCOL: 'the WAL stream cannot be decoded',
   X_REPLICATION_FAILED: 'the replication connection was refused',
   X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
-  X_LIVE_CLIENT_MISSING: 'a realtime hook ran in a browser with no LiveClient registered',
+  X_LIVE_CLIENT_MISSING:
+    'retired in 21.0.0 (no LiveClient to register; see X_REALTIME_UNINSTALLED): a realtime hook ran in a browser with no LiveClient registered',
+  X_QUERY_NOT_SUBSCRIBABLE:
+    'retired in 21.0.0 (liveHookFor was deleted; useQuery reads any query): a hook was bound to a query that is not declared live',
+  X_REALTIME_UNINSTALLED: 'a realtime hook ran in an island bundle that never installed realtime',
+  X_SYNC_UNCONFIGURED: 'a live hook needed the page socket and no sync target was configured',
+  X_RECORD_REJECTED: 'a row reached the record store in a shape it cannot hold',
+  X_CHANNEL_DECLARATION_INVALID: 'a channel() declaration cannot route its rows',
+  X_LOCAL_STORE_UNAVAILABLE: "the page's durable store could not open",
   X_LIVE_SERVER_RENDER: 'a browser-only live operation ran during a server render',
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
   X_LIVE_QUERY_UNKNOWN: 'no live query is registered under the name a subscribe frame asked for',
   X_LIVE_REPLICA_IDENTITY: 'a replicated table sends a key-only row on delete',
-  X_QUERY_NOT_SUBSCRIBABLE: 'a hook was bound to a query that is not declared live',
   X_SOCKET_UNAUTHENTICATED: 'the sync upgrade carried no credential this app accepts',
   X_SOCKET_AUTH_UNAVAILABLE: 'the sync node could not decide who a connecting socket is',
 };
@@ -136,10 +150,21 @@ registerErrorCodes(
   ),
 );
 
-// Re-exported, never re-declared: `RealtimeError` lives in `realtime-error.ts` and the four
-// replication errors in `replication-errors.ts`, so this file stays the CODE TABLE plus the
-// client-reachable refusals. Every name is still importable from `./errors`, which is what the
-// seventeen `pg-*` modules and the barrel already do.
+export {
+  CursorStaleError,
+  LocalStoreUnavailableError,
+  ProtocolVersionError,
+  RealtimeUninstalledError,
+  RebaseConflictError,
+  RecordRejectedError,
+  ServerRenderLiveError,
+  SyncUnconfiguredError,
+} from './page-errors';
+// Re-exported, never re-declared: `RealtimeError` lives in `realtime-error.ts`, the four
+// replication errors in `replication-errors.ts` and the browser-reachable refusals in
+// `page-errors.ts`, so this file is the CODE TABLE plus the server's refusals. Every name is still
+// importable from `./errors`, which is what the `pg-*` modules and the barrel already do; a
+// browser module imports `./page-errors` so it does not load the table.
 export { RealtimeError } from './realtime-error';
 export {
   ReplicaIdentityError,
@@ -154,7 +179,8 @@ export class TopicForbiddenError extends RealtimeError {
     super({
       code: 'X_TOPIC_FORBIDDEN',
       cause: `actor ${args.actorId ?? '<anonymous>'} may not subscribe to "${args.topic}": ${args.reason}`,
-      fix: `declare a guard for this topic: hub.guard('${args.topic}', ({ actor }) => ...)`,
+      // The topic's first segment is its channel's name; the policy on that declaration decides.
+      fix: 'x policy list --json   # then widen the policy on the channel() declaration this topic belongs to, or subscribe as an actor it allows',
     });
   }
 }
@@ -217,44 +243,6 @@ export class SubscriptionIdTakenError extends RealtimeError {
   }
 }
 
-/**
- * Client and server disagree on the wire format — a version mismatch or a malformed frame.
- * Both are the same class of bug (a peer speaking a shape we do not have), so both get one code.
- */
-export class ProtocolVersionError extends RealtimeError {
-  constructor(args: { got: unknown; expected: number; detail?: string }) {
-    super({
-      code: 'X_PROTOCOL_VERSION',
-      cause:
-        args.detail ??
-        `frame protocol version ${String(args.got)} is not the server version ${args.expected}`,
-      fix: 'x build && redeploy the client; the sync node sends `update-available` before it drains',
-    });
-  }
-}
-
-/** A resume cursor cannot be honoured and no snapshot path was supplied. */
-export class CursorStaleError extends RealtimeError {
-  constructor(args: { qid: string; lsn: string; reason: string }) {
-    super({
-      code: 'X_CURSOR_STALE',
-      cause: `cursor for query ${args.qid} at lsn ${args.lsn} cannot be resumed: ${args.reason}`,
-      fix: 'pass `snapshot` to resumeFrom() so the fallback path can re-snapshot instead of failing',
-    });
-  }
-}
-
-/** A rebase could not be resolved: `custom(merge)` returned nothing, or the base row vanished. */
-export class RebaseConflictError extends RealtimeError {
-  constructor(args: { key: string; entity: string; reason: string }) {
-    super({
-      code: 'X_REBASE_CONFLICT',
-      cause: `mutation ${args.key} on ${args.entity} could not be rebased: ${args.reason}`,
-      fix: "set conflict: 'server-wins' on the mutator, or return a row from custom(merge)",
-    });
-  }
-}
-
 /** The fanout bus is down. `sync` nodes are stateless, so this is always recoverable. */
 export class TransportUnavailableError extends RealtimeError {
   constructor(args: { transport: string; reason: string; fix?: string }) {
@@ -281,44 +269,6 @@ export class TransportProtocolError extends RealtimeError {
       fix:
         args.fix ??
         'x doctor transport — the bus must be nats-server >= 2.11 with JetStream enabled (`nats-server -js`)',
-    });
-  }
-}
-
-/**
- * A hook was called IN A BROWSER before the app entry registered its client. Never a transient
- * fault: the registration is a single call in the entry, so the fix is the call itself rather than
- * a retry.
- *
- * A server render is deliberately not this error, and never was a missing registration: there is
- * no socket to register a client for. It gets `serverRenderLiveClient()` instead — the same rule
- * `@ultimat3/ui`'s `solid()` follows for a missing Solid runtime, one package over.
- */
-export class LiveClientMissingError extends RealtimeError {
-  constructor(args: { hook: string }) {
-    super({
-      code: 'X_LIVE_CLIENT_MISSING',
-      cause: `${args.hook}() ran in a browser before any LiveClient was registered`,
-      fix: 'setLiveClient(new LiveClient({ signal: createSignal, connect, buildId })) in the app entry, above the first render',
-    });
-  }
-}
-
-/**
- * Something that can only mean "talk to the socket" ran on the server client — a mutation, a
- * publish, a topic subscription, a dial. There is no socket during a server render and there never
- * will be one: the document is built and sent, and the browser opens the connection.
- *
- * A refusal rather than a silent no-op, because both alternatives are worse. Queueing it would
- * hold one process-wide queue on behalf of whichever request happened to render, and dropping it
- * would make a write that never happened look like one that did.
- */
-export class ServerRenderLiveError extends RealtimeError {
-  constructor(args: { operation: string }) {
-    super({
-      code: 'X_LIVE_SERVER_RENDER',
-      cause: `${args.operation} ran during a server render, where this app has no live socket`,
-      fix: 'call it from an island mount() instead of from the page — or guard it with hasLiveClient(), which answers false on the server',
     });
   }
 }
@@ -358,23 +308,6 @@ export class LiveQueryUnknownError extends RealtimeError {
       code: 'X_LIVE_QUERY_UNKNOWN',
       cause: `no live query is registered as "${args.name}" on this node — subscribe under a name the registry prints, or pass the query to defineApi({ queries }) if it is missing`,
       fix: 'x queries list --json',
-    });
-  }
-}
-
-/**
- * `liveHookFor` was handed a read that never patches. Refused where the binding is written rather
- * than at the first render, because a hook over a non-live query has nothing to subscribe to — it
- * would return an empty set forever and look like a policy denial or an empty table.
- */
-export class QueryNotSubscribableError extends RealtimeError {
-  constructor(args: { name: string }) {
-    super({
-      code: 'X_QUERY_NOT_SUBSCRIBABLE',
-      // Empty at module load, when the binding runs and `registerQueries()` has not stamped a
-      // name yet — say so rather than printing `query ""`.
-      cause: `query ${args.name === '' ? '<unregistered>' : `"${args.name}"`} is not declared live: true, so it has no subscription for a hook to read`,
-      fix: 'add live: true to the query declaration, or read it once through query.client({ baseUrl }) — wiki/Queries-And-Live-Queries.md',
     });
   }
 }

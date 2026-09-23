@@ -12,11 +12,9 @@
 // `input-shape.ts` refuses a declaration that reaches for it, so the two names can never collide.
 
 import { QueryInputInvalidError } from './errors';
+import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-keys';
 
-/** `?_first=20` — the page size. Present is what makes the route answer a `Page`. */
-export const PAGE_FIRST_KEY = '_first';
-/** `?_after=<cursor>` — the signed cursor the previous page's `endCursor` carried. */
-export const PAGE_AFTER_KEY = '_after';
+export { PAGE_AFTER_KEY, PAGE_FIRST_KEY };
 export const PAGE_CONTROL_KEYS: readonly string[] = [PAGE_FIRST_KEY, PAGE_AFTER_KEY];
 
 /**

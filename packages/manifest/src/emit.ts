@@ -32,6 +32,7 @@ export const KEY_ORDER = [
   'entities',
   'actions',
   'queries',
+  'channels',
   'jobs',
   'tasks',
   'policies',

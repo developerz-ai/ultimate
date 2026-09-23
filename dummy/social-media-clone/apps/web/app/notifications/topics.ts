@@ -1,25 +1,26 @@
-// The inbox channel: one topic per user, and the guard that decides who may join it.
+// The inbox channel: one per user, and who may join it.
 //
-// A notification is addressed to exactly one person, so the topic is scoped to a user id and the
-// guard is an identity comparison. No database read is needed — the fact is the topic name itself.
+// A notification is addressed to exactly one person, so the channel is keyed by the user id and the
+// rule is an identity comparison on the params — no row to load, the fact is the params themselves.
+// A committed `notifications` row reaches its owner as a record, routed by its own `userId`.
 
-import type { ChannelHub, Topic, TopicGuard } from '@ultimat3/realtime/server';
-import { topic } from '@ultimat3/realtime/server';
-
-/** `notifications.<userId>`. */
-export const INBOX_PATTERN = 'notifications.*';
-
-export const inboxTopic = (userId: string): Topic => topic('notifications', userId);
+import { schema } from '@social-media-clone/db';
+import { can } from '@ultimat3/policy';
+import { channel } from '@ultimat3/realtime';
+import { inbox } from './live';
 
 /**
  * Your own inbox and nobody else's. An admin is not exempted: `admin:read` is a moderation grant
  * over content, not a licence to watch a person's notifications arrive in real time.
  */
-export const inboxGuard: TopicGuard = ({ actor, segments }) => {
-  const userId = segments[1];
-  if (userId === undefined) return { allowed: false, reason: 'topic names no user' };
-  if (actor === null) return { allowed: false, reason: 'an inbox has no anonymous audience' };
-  return { allowed: actor.id === userId, reason: `${actor.id} is not ${userId}` };
-};
+export const ownInbox = can<{ readonly userId?: string }>(
+  'notification:read',
+  ({ actor, input }) => actor !== null && input.userId === actor.id,
+);
 
-export const guardInboxes = (hub: ChannelHub): ChannelHub => hub.guard(INBOX_PATTERN, inboxGuard);
+export const inboxChannel = channel('notifications', {
+  params: ['userId'],
+  policy: ownInbox,
+  catchUp: inbox,
+  records: [schema.notifications],
+});

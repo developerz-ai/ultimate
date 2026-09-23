@@ -2,10 +2,14 @@
 // bytes at it, hand back the storage key. Browser-safe by construction: no `Bun.*`, no `node:`,
 // no driver import, so this file bundles into the client the way `@ultimat3/action`'s does.
 //
-// The default transport is `XMLHttpRequest`, not `fetch`, for exactly one reason: `fetch` reports
-// no upload progress in any shipping browser, and a progress bar that jumps 0 -> 100 is a
-// progress bar that is lying. `fetch` is the fallback where XHR does not exist.
+// THE DECLARED XHR SEAM (plan 101, decision 13): every other browser request goes through
+// `@ultimat3/core`'s `clientTransport`, and `xhrSignedPut` below is the one `XMLHttpRequest` the
+// framework ships, for exactly one reason — `fetch` reports no upload progress in any shipping
+// browser, and a progress bar that jumps 0 -> 100 is a progress bar that is lying. This file is
+// the one path the `browser-transport` guard exempts for it. Where XHR does not exist the
+// fallback is `clientTransport` with a raw body — never a `fetch` call of this file's own.
 
+import { clientTransport } from '@ultimat3/core';
 import { tooLarge, uploadFailed } from './errors';
 import type { UploadGrant, UploadRequest } from './grant';
 
@@ -109,18 +113,23 @@ export const xhrSignedPut: SignedPut = (input) =>
     request.send(input.body);
   });
 
-/** No upload progress — `onProgress` fires once at 0 and once at 1, and says so by doing that. */
+/**
+ * No upload progress — `onProgress` fires once at 0 and once at 1, and says so by doing that.
+ * Through `clientTransport`, the one browser HTTP function: `rawBody` sends the bytes verbatim
+ * under the grant's content type and adds no header of its own (a signed request may cover them),
+ * and `decodeError` keeps a refusal this package's `X_STORAGE_UPLOAD_FAILED`, with the disk's
+ * status. A request that got no response at all is the transport's `X_CLIENT_TRANSPORT_FAILED`.
+ */
 export const fetchSignedPut: SignedPut = async (input) => {
   input.onProgress?.(progressOf(0, input.body.size));
-  const response = await fetch(input.url, {
+  await clientTransport({
     method: 'PUT',
+    url: input.url,
+    rawBody: input.body,
     headers: { 'content-type': input.contentType },
-    body: input.body,
+    decodeError: (status, text) => uploadFailed(pathOf(input.url), status, text),
     ...(input.signal === undefined ? {} : { signal: input.signal }),
   });
-  if (!response.ok) {
-    throw uploadFailed(pathOf(input.url), response.status, await response.text());
-  }
   input.onProgress?.(progressOf(input.body.size, input.body.size));
 };
 

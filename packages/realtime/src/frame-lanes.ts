@@ -1,6 +1,6 @@
 // The order this node applies one socket's inbound frames in. `sync-node.message` dispatches every
 // frame as `void (async () => routeFrame(…))()`, so nothing upstream orders them and a router that
-// awaits a policy, a snapshot read or `onMutate` finishes in whatever order those settle.
+// awaits a policy or a snapshot read finishes in whatever order those settle.
 //
 // **Not one lane per socket.** A global per-socket lane puts every frame behind the slowest one,
 // and the slowest one is a snapshot read — a database round trip that every reconnecting client
@@ -9,9 +9,8 @@
 //
 // | Frames | Lane | Why that is the unit |
 // |---|---|---|
-// | `mutate` | `mutate` (one per socket) | they write the database, and the client numbered them |
 // | `subscribe` on a query | `sub:<sid>` | `add` then `drop` for one sid, or the drop finds nothing and the add strands the subscription it was meant to end |
-// | `subscribe` on a topic | `topic:<name>` | the same add/drop pair, one membership |
+// | `subscribe` on a channel | `channel:<name>:<params>` | the same add/drop pair, one membership |
 // | `hello`, server-authored kinds | none | they read state and write none of it |
 //
 // The caps are NOT this file's job — a lane makes concurrent frames sequential, and N sequential
@@ -52,7 +51,12 @@ export class FrameLanes {
 
 /** The lane a frame belongs in, or `null` for the kinds nothing has to order. */
 export function laneKeyOf(frame: Frame): string | null {
-  if (frame.type === 'mutate') return 'mutate';
   if (frame.type !== 'subscribe') return null;
-  return frame.target.kind === 'topic' ? `topic:${frame.target.topic}` : `sub:${frame.sid}`;
+  const target = frame.target;
+  if (target.kind !== 'channel') return `sub:${frame.sid}`;
+  // The channel's TOPIC, spelled from what fixes it — the declaration name and its params — so an
+  // add and a drop of one topic queue behind each other whatever sids they carry. Sorted, so two
+  // spellings of one params object are one lane. Entry order is sorted, never trusted.
+  const params = Object.entries(target.params).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `channel:${target.channel}:${JSON.stringify(params)}`;
 }

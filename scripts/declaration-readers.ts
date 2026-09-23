@@ -39,7 +39,9 @@
 //   bun run scripts/declaration-readers.ts [--json]
 //   bun run scripts/declaration-readers.ts --unpin <leaf>[,<leaf>]   # drop a stale waiver
 
-import { maskLiterals } from '@ultimat3/cli';
+// The LEAF module, never the `@ultimat3/cli` barrel (nor core's): the barrel links every package in the tree, so
+// one half-written module anywhere crashed this guard with a bare SyntaxError (DX ledger #10).
+import { maskLiterals } from '../packages/core/src/source-mask';
 import { readPattern } from './config-readers';
 import { flagList, parseScriptArgs } from './lib/args';
 import {

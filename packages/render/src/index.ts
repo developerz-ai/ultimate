@@ -16,6 +16,23 @@ export type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/cor
 // never had); still named here because `@ultimat3/cli`'s budget reporter reads it beside the route
 // table it prints against.
 export { formatBytes, HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
+/** The `<meta name="ultimate-scope">` core's `pageClient()` reads, on private documents only. */
+export {
+  CLIENT_PERSIST_META,
+  CLIENT_SCOPE_META,
+  clientPersistTags,
+  clientScopeTag,
+  documentCarriesScope,
+} from './client-scope-tag';
+/** Where the page's one socket dials, and the worker that hosts it (plan 101, slice 11). */
+export type { ClientSyncHead } from './client-sync-tags';
+export {
+  CLIENT_BUILD_META,
+  CLIENT_SYNC_META,
+  CLIENT_SYNC_WORKER_META,
+  clientBootTags,
+  clientSyncTags,
+} from './client-sync-tags';
 export { parseTtlMs } from './duration';
 export type { RenderErrorCode } from './errors';
 export {

@@ -10,13 +10,16 @@
 //
 //   bun run scripts/doc-commands.ts [--json]
 
-import type { CommandCatalog } from '@ultimat3/cli';
-import { citationFault, loadCommandCatalog } from '@ultimat3/cli';
+// The LEAF module, never the `@ultimat3/cli` barrel: the barrel links every package in the tree, so
+// one half-written module anywhere crashed this guard with a bare SyntaxError (DX ledger #10).
+import type { CommandCatalog } from '../packages/cli/src/fix-command';
+import { citationFault, loadCommandCatalog } from '../packages/cli/src/fix-command';
 import type { DocCommandAllowance } from './doc-commands-allow';
 import { DOC_COMMAND_ALLOWANCES } from './doc-commands-allow';
 import { parseScriptArgs } from './lib/args';
 import type { DocCitation, MarkdownFile } from './lib/doc-citations';
 import { readMarkdown, scanDocCitations } from './lib/doc-citations';
+import { loadOrReport } from './lib/guard-load';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -262,7 +265,9 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
   const files = await readDocPages(root);
-  const gaps = await docCommandGaps(root);
+  // The catalog is a dynamic `import()` of the whole command registry — the one load a preload
+  // cannot see — so its failure is reported here, coded, rather than thrown.
+  const gaps = await loadOrReport('doc-commands', () => docCommandGaps(root));
   report(
     {
       ok: gaps.length === 0,

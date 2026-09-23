@@ -60,6 +60,7 @@ import type { FindManyArgs, Repo, Transactor, UpsertArgs } from './repo';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
 import type { RowWrite } from './types';
+import { taggedWrite } from './write-tag';
 
 export interface PostgresDriverOptions {
   /**
@@ -156,14 +157,14 @@ export const postgresRepo = <Row>(
       : deleteStatement(entity, plan);
 
   /**
-   * Every write goes out through here, which makes it the ONE place the request's preloaded rows
-   * are dropped: a row this statement changes must not be served afterwards from a page read
-   * before it. Before the statement, not after — a row read back afterwards is the row this write
-   * left, and one read concurrently with it was concurrent either way.
+   * Every write goes out through here: the ONE place the request's preloaded rows are dropped (a
+   * row this statement changes must not be served afterwards from a page read before it — so
+   * before the statement, not after), and where a keyed request's write names itself in the WAL
+   * (`write-tag.ts`).
    */
   const writing = <T>(send: () => Promise<T>): Promise<T> => {
     forgetPreloaded(entity.$name);
-    return send();
+    return taggedWrite(config.client !== undefined, send);
   };
 
   /**

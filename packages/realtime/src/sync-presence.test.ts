@@ -3,10 +3,13 @@
 // closed socket leave, and the members a joiner is told about are the ones on the shared set —
 // which is the KV bucket under NATS and the in-process map under `x dev`.
 
-import { describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import { frozenClock, logger } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
-import { ChannelHub, type Topic, topic } from './channel';
+import { ChannelHub, type Topic } from './channel';
+import { channel } from './channel-decl';
+import { type PresenceEvent, readPresence } from './channel-presence';
+import { clearChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { PresenceRegistry } from './presence';
@@ -15,7 +18,22 @@ import { createSyncNode, type SyncNode, type SyncWs, type WsData } from './sync-
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 const BUILD_ID = 'build-1';
-const ROOM: Topic = topic('org', 'o1', 'cursors');
+/** Presence rides a channel's `events`, so the room is a channel declared `events: true`. */
+const room = channel('presence-room', {
+  params: ['orgId'],
+  catchUp: { name: 'roomRead' },
+  events: true,
+});
+const ROOM: Topic = room.topic({ orgId: 'o1' });
+const ROOM_TARGET = { kind: 'channel', channel: 'presence-room', params: { orgId: 'o1' } } as const;
+
+afterAll(() => {
+  clearChannels();
+});
+
+/** The presence payload a frame carries, or `null` for any other frame. */
+const presenceOf = (frame: Frame | undefined): PresenceEvent | null =>
+  frame?.type === 'events' ? readPresence(frame.event) : null;
 
 /** A socket that records what the node sent it, with no server and no network in the way. */
 class RecordingWs implements SyncWs {
@@ -45,7 +63,7 @@ class RecordingWs implements SyncWs {
   }
 
   frames(op: string): Frame[] {
-    return this.sent.filter((frame) => frame.type === 'presence' && frame.op === op);
+    return this.sent.filter((frame) => presenceOf(frame)?.presence === op);
   }
 }
 
@@ -63,8 +81,6 @@ function harness(ttlMs = 30_000): Harness {
   const sockets = new SocketRegistry({ clock });
   const transport = new InProcessTransport({ clock });
   const hub = new ChannelHub({ transport, sockets });
-  // Deny by default is the hub's rule; this room is the one thing these tests are allowed into.
-  hub.guard('org.>', () => true);
   const presence = new PresenceRegistry({ transport, hub, clock, ttlMs });
   const node = createSyncNode({
     hub,
@@ -96,7 +112,7 @@ function harness(ttlMs = 30_000): Harness {
         v: PROTOCOL_VERSION,
         op: 'add',
         sid: ws.data.socketId,
-        target: { kind: 'topic', topic: ROOM },
+        target: ROOM_TARGET,
       }),
   };
 }
@@ -111,10 +127,7 @@ describe('the sync node speaks presence', () => {
 
     // The second joiner's own sync frame is the whole set, not a delta — presence has no delta.
     const sync = second.frames('sync').at(-1);
-    expect(sync?.type === 'presence' ? sync.members.map((m) => m.id).sort() : []).toEqual([
-      's1',
-      's2',
-    ]);
+    expect((presenceOf(sync)?.members ?? []).map((m) => m.id).sort()).toEqual(['s1', 's2']);
     // ...and the member is on the shared set, which is the only thing another node can read.
     expect((await app.presence.list(ROOM)).map((member) => member.id)).toEqual(['s1', 's2']);
   });
@@ -151,7 +164,7 @@ describe('the sync node speaks presence', () => {
 
     const joins = first.frames('join');
     const last = joins.at(-1);
-    expect(last?.type === 'presence' ? last.members.map((m) => m.id) : []).toEqual(['s2']);
+    expect((presenceOf(last)?.members ?? []).map((m) => m.id)).toEqual(['s2']);
   });
 
   test('dropping the subscription leaves: the room does not wait out the TTL', async () => {
@@ -166,12 +179,12 @@ describe('the sync node speaks presence', () => {
       v: PROTOCOL_VERSION,
       op: 'drop',
       sid: 's2',
-      target: { kind: 'topic', topic: ROOM },
+      target: ROOM_TARGET,
     });
 
     expect((await app.presence.list(ROOM)).map((member) => member.id)).toEqual(['s1']);
     const leaves = watcher.frames('leave');
-    expect(leaves.at(-1)?.type === 'presence' ? leaves.length : 0).toBe(1);
+    expect(presenceOf(leaves.at(-1)) === null ? 0 : leaves.length).toBe(1);
   });
 
   test('a closed socket leaves every topic it held', async () => {

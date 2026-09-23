@@ -1,4 +1,4 @@
-// One responsibility: compose the three halves — find a browser, connect to it, attach a page —
+// One responsibility: compose the halves — find a browser, launch it over its pipe, attach a page —
 // into the one object `installE2eDriver({ page })` takes, plus the way to shut it down.
 //
 // **Absent is a SKIP, never a failure, and that is a requirement rather than a state.** A CI box
@@ -8,19 +8,25 @@
 // already decided a browser is required.
 
 import { finiteCount } from '@ultimat3/core';
-import type { CdpConnection } from './cdp-connection';
-import { cdpConnect } from './cdp-connection';
-import { cdpE2ePage } from './cdp-e2e-page';
+import type { E2eTab } from './cdp-e2e-page';
+import type { E2eSession } from './cdp-e2e-session';
+import { cdpE2eSession } from './cdp-e2e-session';
 import { CdpBrowserMissingError } from './cdp-errors';
 import type { LaunchedBrowser } from './cdp-launch';
 import { CHROME_CANDIDATES, findChrome, launchChrome } from './cdp-launch';
-import type { E2eBrowserPage } from './e2e-page';
 
 /** How long a launch, a connect or a single CDP call may take. One number, three deadlines. */
 export const DEFAULT_CDP_TIMEOUT_MS = 30_000;
 
 export interface E2eBrowser {
-  readonly page: E2eBrowserPage;
+  /** The first tab — what `installE2eDriver({ page })` drives. */
+  readonly page: E2eTab;
+  /**
+   * The browser itself: more tabs in the same profile, init scripts, the offline switch for every
+   * page and worker, and the log of every socket and request. What a multi-tab acceptance suite
+   * drives, on the same launch as `page` — one harness, never a second one beside the driver.
+   */
+  readonly session: E2eSession;
   /** Idempotent, and it closes both halves: the CDP socket, then the process and its profile. */
   close(): void;
 }
@@ -40,18 +46,13 @@ export interface OpenE2eBrowserOptions {
 const budget = (options: OpenE2eBrowserOptions): number =>
   finiteCount('openE2eBrowser', 'timeoutMs', options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS);
 
-const compose = (
-  launched: LaunchedBrowser,
-  connection: CdpConnection,
-  page: E2eBrowserPage,
-): E2eBrowser => ({
+const compose = (launched: LaunchedBrowser, session: E2eSession, page: E2eTab): E2eBrowser => ({
   page,
-  close(): void {
-    // The socket first: closing the process out from under an open connection makes every
-    // in-flight call report "the browser closed the CDP connection", which is true and useless.
-    connection.close();
-    launched.close();
-  },
+  session,
+  // The connection first, then the process — `launched.close()` does both, in that order: closing
+  // the process out from under an open connection makes every in-flight call report "the browser
+  // closed the CDP connection", which is true and useless.
+  close: () => launched.close(),
 });
 
 /**
@@ -82,18 +83,11 @@ export async function openE2eBrowserIfAvailable(
  */
 async function openLaunched(executable: string, timeoutMs: number): Promise<E2eBrowser> {
   const launched = await launchChrome({ executable, timeoutMs });
-  let connection: CdpConnection;
+  const { connection } = launched;
   try {
-    connection = await cdpConnect({ endpoint: launched.endpoint, timeoutMs });
+    const session = await cdpE2eSession({ connection, loadTimeoutMs: timeoutMs });
+    return compose(launched, session, await session.newTab());
   } catch (error) {
-    launched.close();
-    throw error;
-  }
-  try {
-    const page = await cdpE2ePage({ connection, loadTimeoutMs: timeoutMs });
-    return compose(launched, connection, page);
-  } catch (error) {
-    connection.close();
     launched.close();
     throw error;
   }

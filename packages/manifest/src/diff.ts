@@ -13,6 +13,7 @@
 
 import type { ManifestChange } from './diff-change';
 import { diffNamedSet } from './diff-change';
+import { diffChannels } from './diff-channels';
 import { diffEntities } from './diff-entities';
 import { diffActions, diffQueries } from './diff-operations';
 import { diffErrorCodes, diffPolicies } from './diff-registries';
@@ -46,6 +47,8 @@ export function diffManifest(before: Manifest, after: Manifest): ManifestDiff {
 
   changes.push(...diffActions(before.actions, after.actions));
   changes.push(...diffQueries(before.queries, after.queries));
+  // `?? []`: a file written before channels were projected carries none, which is not a removal.
+  changes.push(...diffChannels(before.channels ?? [], after.channels ?? []));
   changes.push(...diffRoutes(before.routes, after.routes));
   changes.push(...diffJobs(before.jobs, after.jobs));
   changes.push(...diffTasks(before.tasks, after.tasks));

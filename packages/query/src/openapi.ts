@@ -16,6 +16,7 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
+import { RECORDS_OPENAPI_HEADER, recordEnvelopeSchema } from '@ultimat3/core';
 import type { SchemaNode } from '@ultimat3/schema';
 import { nodeToJsonSchema, tryIntrospect } from '@ultimat3/schema';
 import { isExposed } from './mcp-tool';
@@ -24,6 +25,7 @@ import { MAX_PAGE_SIZE, PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import { policyCapability } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName } from './read';
+import { answersRecords } from './record-answer';
 import { listQueries } from './registry';
 
 /**
@@ -36,6 +38,24 @@ const PROBLEM_SCHEMA_REF = '#/components/schemas/Problem';
 const QUERY_TAG = 'query';
 
 export type OpenApiPathItem = Record<string, unknown>;
+
+/**
+ * Two shapes, decided by the request: the bare rows every client read before the controls
+ * existed, and the page envelope when `_first` is sent. `oneOf` and not a second operation — it is
+ * one route, one policy evaluation, one URL prefix.
+ */
+const ANSWERS: readonly Record<string, unknown>[] = [
+  { type: 'array', items: {} },
+  {
+    type: 'object',
+    required: ['rows', 'endCursor', 'hasNextPage'],
+    properties: {
+      rows: { type: 'array', items: {} },
+      endCursor: { type: ['string', 'null'] },
+      hasNextPage: { type: 'boolean' },
+    },
+  },
+];
 
 /** `{ [path]: { get: operation } }` for every registered read, name-sorted like the actions. */
 export function queryOpenApiPaths(
@@ -70,22 +90,14 @@ export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknow
             // Two shapes, decided by the request: the bare rows every client read before the
             // controls existed, and the page envelope when `_first` is sent. `oneOf` and not a
             // second operation — it is one route, one policy evaluation, one URL prefix.
-            schema: {
-              oneOf: [
-                { type: 'array', items: {} },
-                {
-                  type: 'object',
-                  required: ['rows', 'endCursor', 'hasNextPage'],
-                  properties: {
-                    rows: { type: 'array', items: {} },
-                    endCursor: { type: ['string', 'null'] },
-                    hasNextPage: { type: 'boolean' },
-                  },
-                },
-              ],
-            },
+            // A read declaring an entity's `rows:` ALWAYS answers the envelope, with the same two
+            // shapes under `data` — core's one description, shared with the action projection.
+            schema: answersRecords(target.rows)
+              ? recordEnvelopeSchema({ oneOf: ANSWERS })
+              : { oneOf: ANSWERS },
           },
         },
+        ...(answersRecords(target.rows) ? { headers: RECORDS_OPENAPI_HEADER } : {}),
       },
       // `X_INPUT_INVALID` is the search string failing the read's own schema, or a page control
       // outside its bound; `X_CURSOR_INVALID` is an `_after` that is not one of this read's. Both

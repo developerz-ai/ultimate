@@ -24,7 +24,13 @@ export { findAppRoot, requireAppRoot, requireBunVersion, versionAtLeast } from '
 export type { BoundaryCut, BoundarySplit } from './boundary-cuts';
 export { planBoundaryCuts } from './boundary-cuts';
 export type { BuildStats, RouteStats } from './budgets';
-export { BUILD_STATS_FILE, checkBudgets, readBuildStats } from './budgets';
+export {
+  BUILD_STATS_FILE,
+  checkBudgets,
+  FRAMEWORK_INLINE_SCRIPTS,
+  FRAMEWORK_SCRIPTS,
+  readBuildStats,
+} from './budgets';
 // The raw-CDP browser the driver above runs on. `openE2eBrowserIfAvailable()` is what an app's
 // test preload calls: it answers `undefined` on a machine with no Chrome, so the browser-backed
 // suite SKIPS rather than turning a gate red for a reason unrelated to the change.
@@ -36,8 +42,10 @@ export {
 } from './cdp-browser';
 export type { CdpConnection, CdpConnectionOptions, CdpResult } from './cdp-connection';
 export { cdpConnect } from './cdp-connection';
-export type { CdpE2ePageOptions } from './cdp-e2e-page';
-export { cdpE2ePage } from './cdp-e2e-page';
+export type { CdpE2eTabOptions, E2eTab } from './cdp-e2e-page';
+export { cdpE2eTab } from './cdp-e2e-page';
+export type { CdpE2eSessionOptions, E2eSession } from './cdp-e2e-session';
+export { cdpE2eSession } from './cdp-e2e-session';
 export {
   CdpBrowserMissingError,
   CdpCallFailedError,
@@ -150,9 +158,13 @@ export {
 // The browser-backed e2e driver. `installE2eDriver` is the ONE entry point an app's test preload
 // calls; everything below it is exported because the adapter's own pieces are what a driver author
 // re-uses, and a deep import into `src/` would make each of them a compatibility promise anyway.
+export type { E2eApp, E2eAppMode, StartE2eAppOptions } from './e2e-app';
+export { startE2eApp } from './e2e-app';
+export { e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
 export type { E2eDriverOptions } from './e2e-driver';
 export { e2eFixtures, installE2eDriver } from './e2e-driver';
 export {
+  E2eAppFailedError,
   E2eEvaluateCapturedError,
   E2eEvaluateThrewError,
   E2eEvaluateUnsupportedError,
@@ -209,6 +221,8 @@ export {
   resetCodeFixes,
   scanScopeFixes,
 } from './error-fixes';
+export type { CodeUse } from './error-unthrown';
+export { checkErrorCodesThrown } from './error-unthrown';
 export {
   BadFlagError,
   BuildEntryMissingError,
@@ -281,7 +295,7 @@ export {
 // `islandBundle`, `writeIslands`, `ISLAND_BASE_PATH` and `ISLAND_GLOB` stay internal: they are
 // `x build`'s and `x dev`'s wiring, and every name here is a semver promise forever.
 export type { IslandBundle, IslandChunk } from './island-bundle';
-export { buildIslands } from './island-bundle';
+export { buildIslands, clearIslandChunkCache } from './island-bundle';
 export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
 export { drainJobs } from './jobs-drain';
 export type { JobsListFilter, JobsListResult } from './jobs-report';

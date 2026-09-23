@@ -116,6 +116,21 @@ export const client = rpc<Api['actions']>({ baseUrl: '/' });
 declaration with no codegen step. `Api` is imported as a **type only**, which is what keeps
 a page's module graph free of any edge to a feature's implementation.
 
+Every call dispatches through `@ultimat3/core`'s `clientTransport` — the one browser HTTP function.
+It owns credentials, the JSON body, the `Idempotency-Key` header, the principal fence and the
+record envelope. The method still resolves to the action's output and nothing else.
+
+### Records — derived from the output schema
+
+An action whose `output:` references an entity row (`posts.$schema`, at any depth — inside an
+object, an array, `.nullable()`) answers `{ data, records }` with `x-ultimate-records: 1`, and the
+transport adopts `records` into the page's one record store on the way past. There is no
+`records:` option: the envelope is derived from the schema, never declared. It is decided **per
+action**, from the schema — an output that only *may* carry a row is enveloped even when this call
+returned none, so one operation has one wire shape. Every other action's body is byte-identical to
+what it was before the envelope existed, and its OpenAPI operation is unchanged; an enveloped one
+documents `data`, `records` and `removed`, and the header, generated from the declaration.
+
 ### Flight control — `createClientFlight`, opt-in
 
 Same object as `@ultimat3/query`'s, installed the same way (`rpc({ baseUrl, flight })`), and the
@@ -142,11 +157,10 @@ await api.charge({ orderId }, { idempotencyKey: `charge:${orderId}`, retry: { at
 It shipped as a byte-identical copy in each; the copies are gone and every name is importable from
 this package exactly as before.
 
-Importing `rpc` alone from this package is **14,759 B** minified for the browser; adding
-`createClientFlight` is **20,292 B**. `ClientFlight` is a TYPE inside `client.ts` and never a
-value, which is what keeps the second number off the first caller's bill. Expect ±376 B run to
-run — `Bun.build` 1.4.0 drops `@ultimat3/core`'s `schema-error-codes.ts` from some builds even
-though `sideEffects` names it (issue #273), which is the size of the schema error titles.
+Importing `rpc` alone from this package is **23,007 B** minified for the browser; adding
+`createClientFlight` is **28,823 B** (`As of 2026-09-22`; `CLAUDE.md` carries the before/after and
+what the delta is). `ClientFlight` is a TYPE inside `client.ts` and never a value, which is what
+keeps the second number off the first caller's bill.
 
 ## Path derivation
 
@@ -217,9 +231,14 @@ export const likePost = mutator({
       p.likedByMe ? {} : { likedByMe: true, likeCount: p.likeCount + 1 });
   },
   async server(ctx, { postId }) { return ctx.posts.like(postId); },
-  conflict: 'server-wins', // | 'last-write-wins' | custom(merge)
+  conflict: 'server-wins', // | 'last-write-wins' | custom((localRow, serverRow) => row)
 });
 ```
+
+`conflict` is `@ultimat3/core`'s `ConflictPolicy` — the one vocabulary realtime's rebase reads.
+`custom(merge)` receives the local **row** and the server **row** (the store is row-shaped) and
+returns the row that survives; `resolveConflict(policy, local, server)` is core's, not this
+package's.
 
 The projected surface carries the same three names the declaration used, on top of
 every action member above:
@@ -236,9 +255,12 @@ denies is denied there exactly as over HTTP. `.local()` is the only half that sk
 the core, because it never leaves the client; keep it a pure function of `(tx, input)`
 — no I/O, no clock, no randomness — since every rebase replays it.
 
-`LocalTx` is the client write surface (`@ultimat3/realtime` implements it over OPFS
-SQLite). Type your tables once: `declare module '@ultimat3/action' { interface
-LocalTables { posts: PostRow } }`.
+`LocalTx` is the client write surface, implemented by `@ultimat3/realtime` over the page's
+record store — the SAME shape as that store's tx. Every table is addressed by **key**:
+`get(key)`, `all()`, `insert(key, row)`, `upsert(key, row)`, `update(key, patch | fn)`,
+`delete(key)`. The key is the caller's because the browser holds no entity schema and cannot
+derive a primary key — an optimistic insert names the key its server twin will answer under.
+Type your tables once: `declare module '@ultimat3/action' { interface LocalTables { posts: PostRow } }`.
 
 ## `transition()` — a mutator factory over a state machine
 
@@ -602,7 +624,7 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_IDEMPOTENCY_REPLAYED_FAILURE` | a retried key replays a first attempt that failed and carried no framework code of its own | read the first attempt, then send a fresh key |
 | `X_IDEMPOTENCY_STATUS_UNKNOWN` | `x_idempotency.status` holds a word this build has no branch for — written by a newer deploy | finish the rollout onto the build that writes it, then reconcile those requests — never DELETE the rows, which frees the key to run an already-committed action a second time |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |
-| `X_RPC_FAILED` | non-`problem+json` failure, or a body naming no `X_` code | check the gateway |
+| `X_RPC_FAILED` | registered, thrown by nothing since 21.0.0 — a non-`problem+json` failure is core's `X_CLIENT_TRANSPORT_FAILED` now, as for a query | match `X_CLIENT_TRANSPORT_FAILED` instead |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
 | `X_AUDIT_SINK_MISSING` | `audit: true` and no sink installed — raised before the input parse | `setAuditSink(yourSink)` at boot |
 | `X_AUDIT_SINK_FAILED` | the sink refused the record for an attempt that **succeeded** | fix the sink — then retry the same `Idempotency-Key` if this call carried one, else reconcile by hand |
@@ -625,5 +647,5 @@ the body itself.
 
 ## Boundaries
 
-Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `policy`, `http`. Never imports
+Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `entity`, `policy`, `http`. Never imports
 `query`, `jobs`, `realtime` (same tier) or anything above it — those import *this*.

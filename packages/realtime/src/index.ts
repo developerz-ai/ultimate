@@ -1,23 +1,45 @@
 // The CLIENT half of the public API — everything a browser island may bundle. Explicit, tier by
-// tier: the wire, the hooks, the identity map, the offline queue and the reconnect vocabulary.
+// tier: the wire, the hooks, the record store, the offline outbox and the reconnect vocabulary.
 // Nothing here reaches `nats`, a Postgres socket or the sync node; those are `./server`, and
 // `packages/cli/src/realtime-browser-barrel.test.ts` is the build error that keeps them apart.
 
 // ---- the client's one stateless piece, reusable against an app's own store ----------------------
 export { applyPatches, orderAfterPatches } from './apply-patches';
-// ---- server + client halves -------------------------------------------------------------------
+// ---- channels: the declaration is the only way to spell a topic, and the frames it rides --------
 export {
-  type ClientSocket,
-  LiveClient,
-  type LiveClientLike,
-  type LiveClientOptions,
-  type LiveHandle,
-  type LiveQueryRef,
-  type LiveState,
-  type MutatorRef,
-  type SignalFactory,
-  type Unsubscribe,
-} from './client';
+  type Channel,
+  type ChannelEntity,
+  type ChannelInit,
+  type ChannelParams,
+  type ChannelRowLoader,
+  type ChannelServerInit,
+  channel,
+} from './channel-decl';
+// Presence rides a channel's `events`: the payload shape, and the one reader a client needs.
+export { type PresenceEvent, type PresenceOp, readPresence } from './channel-presence';
+// The client half of a channel an island holds — no entity, no policy (`channel-ref.ts`).
+export { type ChannelHandle, channelRef, type Topic, topic } from './channel-ref';
+// The process's channel table: what a hub serves by default. `describeChannels` is `./server`'s.
+export { clearChannels, registeredChannels } from './channel-registry';
+export type {
+  ChannelAdopt,
+  ChannelEventsFrame,
+  ChannelRecordsFrame,
+  ChannelRemove,
+  ChannelSince,
+  ChannelSubscribeTarget,
+  ChannelWireFrame,
+  ReplayGapFrame,
+} from './channel-wire';
+// ---- the hooks: every read and write a component makes -----------------------------------------
+export type { ChannelHandlers, ChannelRef, ChannelState } from './client-channels';
+// ---- the shapes a hook hands back ----------------------------------------------------------------
+export type {
+  LiveHandle,
+  LiveQueryRef,
+  SignalFactory,
+  Unsubscribe,
+} from './client-contract';
 // ---- reconnect ----------------------------------------------------------------------------------
 export {
   advance,
@@ -38,54 +60,29 @@ export {
 export {
   CursorStaleError,
   FrameRateLimitError,
-  LiveClientMissingError,
   LiveQueryUnknownError,
   LiveRowUnidentifiedError,
   NotImplementedError,
   ProtocolVersionError,
-  QueryNotSubscribableError,
   REALTIME_ERROR_CODES,
   REALTIME_ERROR_TITLES,
   RealtimeError,
   type RealtimeErrorCode,
+  RealtimeUninstalledError,
   RebaseConflictError,
+  RecordRejectedError,
   ReplicaIdentityError,
   ReplicationFailedError,
   ReplicationProtocolError,
   ReplicatorSlotHeldError,
   ServerRenderLiveError,
   SubscriptionLimitError,
+  SyncUnconfiguredError,
   TopicForbiddenError,
   TransportProtocolError,
   TransportUnavailableError,
   WindowReadTimeoutError,
 } from './errors';
-// ---- the client hooks --------------------------------------------------------------------------
-export {
-  type ConflictLike,
-  type Connection,
-  clearLiveClient,
-  hasLiveClient,
-  type LiveInput,
-  type LiveRows,
-  type Mutate,
-  type MutationQueue,
-  type MutatorLike,
-  setLiveClient,
-  useConnection,
-  useLive,
-  useMutation,
-  useMutationQueue,
-} from './hooks';
-// ---- the client's single source of truth: one row per (entity, id) ------------------------------
-export {
-  type IdentityListener,
-  IdentityMap,
-  privateScope,
-  type RowKey,
-  type RowScope,
-  rowKey,
-} from './identity-map';
 // ---- shared value domain ---------------------------------------------------------------------
 export {
   changedColumns,
@@ -97,54 +94,48 @@ export {
   type RowOp,
   type RowPatch,
 } from './json';
-export { type Registration, RowWindows } from './live-rows';
-// ---- tier 3: local-first ------------------------------------------------------------------------
+export { type LiveState, type Registration, RowWindows, unnamedType } from './live-rows';
+// ---- offline: the durable store, the persisted records, the one outbox (plan 101 slice 12) ------
 export {
-  createOpfsLocalStore,
   type LocalStore,
-  type LocalTable,
-  type LocalTx,
   MemoryLocalStore,
-  type OpfsLocalStoreOptions,
-  type TableMap,
-} from './local-store';
+  openLocalStore,
+  pageLocalStore,
+  scopeKey,
+} from './local-store-idb';
+// ---- the offline outbox (wired over HTTP in plan 101 slice 12) ----------------------------------
 export {
   type DrainReport,
   MemoryQueueStore,
   type MutationSender,
   type MutationStatus,
-  mutateFrame,
   OfflineQueue,
   type QueuedMutation,
   type QueueState,
   type QueueStore,
 } from './offline-queue';
-/** The typed projection: one query bound to one named hook, `useLiveFeed({ orgId })`. */
 export {
-  type LiveQueryHook,
-  type LiveQuerySource,
-  liveHookFor,
-} from './query-hook';
+  createOutbox,
+  listenForDrain,
+  type OutboxEntry,
+  type PageOutbox,
+  pageOutbox,
+} from './page-outbox';
+// ---- the page: one record store, one socket, installed by the island bootstrap ------------------
+export { hasPageSocket, type SyncTarget } from './page-store';
+export { installRealtime, type RealtimeInstall } from './reactivity';
+export { persistedTypes, type RecordPersister, recordPersister } from './record-persister';
 export {
-  type ConflictStrategy,
-  type CustomMerge,
-  custom,
-  type MergeArgs,
-  type RebaseEntry,
-  RebaseLog,
-  type ReconcileOptions,
-  type ReconcileResult,
-  rebaseFrame,
-  reconcile,
-  type ServerAck,
-  strategyName,
-} from './rebase';
-// ---- what a LiveClient IS on the server: it serves the first render and opens no socket --------
-export { serverRenderLiveClient } from './server-render-client';
+  type RecordKey,
+  type RecordListener,
+  RecordStore,
+  type RecordStoreOptions,
+  recordKey,
+} from './record-store';
+export type { LocalTable, LocalTx, TableMap } from './record-tx';
 // ---- the wire -------------------------------------------------------------------------------------
 export {
   type AckFrame,
-  type ConflictStrategyName,
   decode,
   encode,
   FRAME_KINDS,
@@ -152,12 +143,9 @@ export {
   type Frame,
   type FrameKind,
   type HelloFrame,
-  type MutateFrame,
   type PatchFrame,
   PROTOCOL_VERSION,
-  type PresenceFrame,
   type PresenceMember,
-  type RebaseFrame,
   type ReconnectFrame,
   type SnapshotFrame,
   type SubscribeFrame,
@@ -169,7 +157,9 @@ export {
 // ---- the client's own reconnect: the backoff it computes and the timer it arms -----------------
 export {
   type BackoffPolicy,
+  BROWSER_RECONNECT_MAX_MS,
   backoffDelay,
+  browserBackoff,
   defaultBackoff,
   type JitterMode,
   type ReconnectReason,
@@ -177,3 +167,19 @@ export {
   type Scheduler,
   timeoutScheduler,
 } from './thundering-herd';
+export {
+  type ChannelAccessor,
+  type PresenceAccessor,
+  useChannel,
+  usePresence,
+} from './use-channel';
+export { type Connection, useConnection } from './use-connection';
+export {
+  type Mutate,
+  type MutationQueue,
+  type MutatorLike,
+  useMutation,
+  useMutationQueue,
+} from './use-mutation';
+export { type QueryAccessor, type QueryOptions, type QueryRef, useQuery } from './use-query';
+export { type RecordAccessor, type RecordsAccessor, useRecord, useRecords } from './use-record';

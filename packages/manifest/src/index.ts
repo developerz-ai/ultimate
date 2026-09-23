@@ -44,6 +44,7 @@ export {
 } from './errors';
 export type {
   ActionFact,
+  ChannelFact,
   ColumnFact,
   EntityFact,
   ErrorCodeFact,

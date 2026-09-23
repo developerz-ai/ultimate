@@ -7,14 +7,13 @@
 // placeholder is derived from `reserve` so it cannot mismatch the loaded box, and the failure
 // renders through `ErrorState`, which is the one thing allowed to phrase an error.
 
-import { finiteCount } from '@ultimat3/core';
+import { type AsyncState, finiteCount } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './AsyncRegion.module.scss';
 import {
   type AsyncBranch,
-  type AsyncState,
   asyncBranch,
   isBusyBranch,
   type ReserveBox,

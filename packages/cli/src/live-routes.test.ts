@@ -35,28 +35,31 @@ afterEach(async () => {
 
 describe('which imports count as reading live rows', () => {
   test('every hook that needs a client, and nothing else', () => {
-    expect(liveHooksIn("import { useLive } from '@ultimat3/realtime';")).toEqual(['useLive']);
-    expect(liveHooksIn("import { liveHookFor, useConnection } from '@ultimat3/realtime';")).toEqual(
-      ['liveHookFor', 'useConnection'],
-    );
-    // Not a hook: importing the client class is what an island's mount() legitimately does.
-    expect(liveHooksIn("import { LiveClient } from '@ultimat3/realtime';")).toEqual([]);
+    expect(liveHooksIn("import { useQuery } from '@ultimat3/realtime';")).toEqual(['useQuery']);
+    expect(liveHooksIn("import { useRecord, useConnection } from '@ultimat3/realtime';")).toEqual([
+      'useConnection',
+      'useRecord',
+    ]);
+    // Not a hook: the install the island bundle writes for the author boots nothing by itself.
+    expect(liveHooksIn("import { installRealtime } from '@ultimat3/realtime';")).toEqual([]);
     // A type is erased before a browser ever sees it, so it boots nothing and needs nothing.
     expect(liveHooksIn("import type { LiveHandle } from '@ultimat3/realtime';")).toEqual([]);
     expect(liveHooksIn("import { type LiveHandle } from '@ultimat3/realtime';")).toEqual([]);
-    // Another package's `useLive` is another package's problem.
-    expect(liveHooksIn("import { useLive } from '@postly/ui';")).toEqual([]);
+    // Another package's `useQuery` is another package's problem.
+    expect(liveHooksIn("import { useQuery } from '@postly/ui';")).toEqual([]);
   });
 
-  test('a module that asks whether there IS a client has handled its absence', () => {
+  test('asking whether there IS a socket is itself a browser-only read, never an exemption', () => {
+    // A guard on the SERVER always answers false: the module renders nothing, forever, and a
+    // banner guarded this way shipped in a layout no island imported (plan 101, ledger).
     const guarded =
-      "import { hasLiveClient, useConnection } from '@ultimat3/realtime';\n" +
-      'export const Banner = () => (hasLiveClient() ? useConnection() : null);';
-    expect(liveHooksIn(guarded)).toEqual([]);
+      "import { hasPageSocket, useConnection } from '@ultimat3/realtime';\n" +
+      'export const Banner = () => (hasPageSocket() ? useConnection() : null);';
+    expect(liveHooksIn(guarded)).toEqual(['hasPageSocket', 'useConnection']);
   });
 
   test('the hook list is the one the error names', () => {
-    expect([...LIVE_HOOKS]).toContain('useLive');
+    expect([...LIVE_HOOKS]).toContain('useQuery');
     expect([...LIVE_HOOKS]).toContain('useMutationQueue');
   });
 });
@@ -78,22 +81,22 @@ describe('a route that can never receive a row', () => {
 
   test('is refused when the hook is a module the page imports', async () => {
     // `examples/dummy`'s exact shape: the page imports its own hook module, which is where
-    // `liveHookFor` is called — one hop, and the reason this walks the graph at all.
+    // `useQuery` is called — one hop, and the reason this walks the graph at all.
     await write(PAGE, "import { useLiveFeed } from './hooks';\nexport const x = useLiveFeed;");
     await write(
       'apps/web/app/feed/hooks.ts',
-      "import { liveHookFor } from '@ultimat3/realtime';\nexport const useLiveFeed = liveHookFor;",
+      "import { useQuery } from '@ultimat3/realtime';\nexport const useLiveFeed = useQuery;",
     );
     registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
 
     const gaps = await liveRouteGaps(ROOT, routeEntries());
     expect(gaps).toHaveLength(1);
     expect(gaps[0]?.at).toBe('apps/web/app/feed/hooks.ts');
-    expect(gaps[0]?.hook).toBe('liveHookFor');
+    expect(gaps[0]?.hook).toBe('useQuery');
   });
 
   test('is refused when it declares an island and never boots it', async () => {
-    await write(PAGE, "import { useLive } from '@ultimat3/realtime';\nexport const x = useLive;");
+    await write(PAGE, "import { useQuery } from '@ultimat3/realtime';\nexport const x = useQuery;");
     island({ src: './feed.island.tsx' });
     registerRoute({
       file: PAGE,
@@ -112,20 +115,33 @@ describe('a route that can never receive a row', () => {
 });
 
 describe('a route that can', () => {
-  test('declares an island that boots', async () => {
-    await write(PAGE, "import { useLive } from '@ultimat3/realtime';\nexport const x = useLive;");
+  test('reads live rows inside the island it boots', async () => {
+    await write(PAGE, 'export const x = 1;\n');
+    await write(
+      'apps/web/app/feed/feed.island.tsx',
+      "import { useLiveFeed } from './hooks';\nexport const mount = useLiveFeed;\n",
+    );
+    await write(
+      'apps/web/app/feed/hooks.ts',
+      "import { useQuery } from '@ultimat3/realtime';\nexport const useLiveFeed = useQuery;\n",
+    );
     island({ src: './feed.island.tsx' });
-    registerRoute({
-      file: PAGE,
-      suspenseBoundaries: 1,
-      config: defineRoute({
-        render: 'stream',
-        hydrate: 'idle',
-        offline: 'runtime',
-        budget: { js: '60kb' },
-        meta: () => ({ title: 'Feed', description: 'the org feed' }),
-      }),
-    });
+    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
+  });
+
+  test('a module both the page and an island import is the island’s, so it is not reported', async () => {
+    await write(PAGE, "import { useLiveFeed } from './hooks';\nexport const x = useLiveFeed;\n");
+    await write(
+      'apps/web/app/feed/feed.island.tsx',
+      "import { useLiveFeed } from './hooks';\nexport const mount = useLiveFeed;\n",
+    );
+    await write(
+      'apps/web/app/feed/hooks.ts',
+      "import { useQuery } from '@ultimat3/realtime';\nexport const useLiveFeed = useQuery;\n",
+    );
+    island({ src: './feed.island.tsx' });
+    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
     expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
   });
 
@@ -136,22 +152,50 @@ describe('a route that can', () => {
     expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
   });
 
-  test('reaches a guarded reader — a banner every page imports is not every page reading live', async () => {
-    await write(PAGE, "import { Banner } from '../update-banner';\nexport const x = Banner;");
-    await write(
-      'apps/web/app/update-banner.tsx',
-      "import { hasLiveClient, useConnection } from '@ultimat3/realtime';\n" +
-        'export const Banner = () => (hasLiveClient() ? useConnection() : null);',
-    );
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
-    expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
-  });
-
   test('a cycle between two of its modules terminates', async () => {
     await write(PAGE, "import { a } from './a';\nexport const x = a;");
     await write('apps/web/app/feed/a.ts', "import { b } from './b';\nexport const a = b;");
     await write('apps/web/app/feed/b.ts', "import { a } from './a';\nexport const b = a;");
     registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
     expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
+  });
+});
+
+describe('a module that never runs in a browser', () => {
+  // `examples/dummy`'s UpdateBanner: a guarded `useConnection` in a layout every page imports and
+  // no island does. On the server `hasPageSocket()` is false, so it rendered nothing — and the
+  // island exemption this rule used to carry is how "A new version is ready." never appeared.
+  test('a guarded banner in a layout no island imports is reported, even beside an island', async () => {
+    await write(PAGE, "import { Banner } from '../update-banner';\nexport const x = Banner;");
+    await write(
+      'apps/web/app/update-banner.tsx',
+      "import { hasPageSocket, useConnection } from '@ultimat3/realtime';\n" +
+        'export const Banner = () => (hasPageSocket() ? useConnection() : null);',
+    );
+    await write('apps/web/app/feed/feed.island.tsx', 'export const mount = () => undefined;\n');
+    island({ src: './feed.island.tsx' });
+    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+
+    const gaps = await liveRouteGaps(ROOT, routeEntries());
+    expect(gaps.map((gap) => [gap.at, gap.hook])).toEqual([
+      ['apps/web/app/update-banner.tsx', 'hasPageSocket'],
+    ]);
+    const [finding] = await liveRouteFindings(ROOT);
+    expect(finding?.fix).toContain('move it into an island');
+  });
+
+  test('one module reached from many routes is reported once', async () => {
+    const other = 'apps/web/app/settings/page.tsx';
+    const banner =
+      "import { hasPageSocket } from '@ultimat3/realtime';\nexport const B = hasPageSocket;\n";
+    await write('apps/web/app/update-banner.tsx', banner);
+    await write(PAGE, "import { B } from '../update-banner';\nexport const x = B;");
+    await write(other, "import { B } from '../update-banner';\nexport const x = B;");
+    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: other, config: streamRoute(), suspenseBoundaries: 1 });
+
+    expect((await liveRouteGaps(ROOT, routeEntries())).map((gap) => gap.at)).toEqual([
+      'apps/web/app/update-banner.tsx',
+    ]);
   });
 });

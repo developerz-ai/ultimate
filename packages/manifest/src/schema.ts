@@ -110,6 +110,23 @@ export interface QueryFact {
   readonly cacheTags: readonly string[];
 }
 
+/**
+ * A declared realtime `channel()`: what a client subscribes by, and what its policy requires.
+ * Its NAME and PARAMS are the wire contract — a client spells neither, it derives both from the
+ * declaration — so a change to either is breaking for every page built against the old ones.
+ */
+export interface ChannelFact {
+  readonly name: string;
+  readonly params: readonly string[];
+  /** The query a client re-reads on `replay-gap`. */
+  readonly catchUp: string;
+  /** Record types (entity names) the channel carries. */
+  readonly records: readonly string[];
+  readonly events: boolean;
+  readonly policy: string | null;
+  readonly permissions: readonly string[];
+}
+
 export interface JobFact {
   readonly name: string;
   readonly input: JsonValue;
@@ -156,6 +173,11 @@ export interface Manifest {
   readonly entities: readonly EntityFact[];
   readonly actions: readonly ActionFact[];
   readonly queries: readonly QueryFact[];
+  /**
+   * Optional to a READER only: a file written before channels were projected has none, and that
+   * is "no channels", never an unreadable manifest. `buildManifest` always writes it.
+   */
+  readonly channels?: readonly ChannelFact[];
   readonly jobs: readonly JobFact[];
   readonly tasks: readonly TaskFact[];
   readonly policies: readonly PolicyFact[];
@@ -212,6 +234,8 @@ export function isManifest(value: unknown): value is Manifest {
   const m = value as Record<string, unknown>;
   if (typeof m['manifestVersion'] !== 'number' || typeof m['buildId'] !== 'string') return false;
   for (const section of ARRAY_SECTIONS) if (!Array.isArray(m[section])) return false;
+  // Absent is a pre-channel file and readable; present and not an array is a damaged one.
+  if (m['channels'] !== undefined && !Array.isArray(m['channels'])) return false;
   return isAppIdentity(m['app']);
 }
 

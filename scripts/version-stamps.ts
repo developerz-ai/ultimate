@@ -205,6 +205,25 @@ export function checkVersionStamps(input: VersionInput): readonly VersionGap[] {
       }
     }
   }
+  // The DECLARED direction (DX ledger #13): an edge a package.json declares and its lock block
+  // does not record — `action → entity` sat that way. Only when a lockfile was read at all: a
+  // root with no `bun.lock` has nothing to be stale against.
+  const locked = input.lockedDeps ?? {};
+  const anyLock = Object.keys(locked).length > 0;
+  for (const [dir, deps] of Object.entries(anyLock ? (input.internalDeps ?? {}) : {})) {
+    const block = Object.hasOwn(locked, dir) ? locked[dir] : undefined;
+    for (const [dep, want] of Object.entries(deps)) {
+      if (block !== undefined && Object.hasOwn(block, dep)) continue;
+      gaps.push({
+        kind: 'lockfile',
+        at: 'bun.lock',
+        detail:
+          block === undefined
+            ? `it has no block for ${dir}, whose package.json declares ${dep}@${want}`
+            : `it records ${dir} without ${dep}, which that package.json declares at ${want}`,
+      });
+    }
+  }
   for (const [dir, deps] of Object.entries(input.lockedDeps ?? {})) {
     const declared = input.internalDeps?.[dir] ?? {};
     for (const [dep, locked] of Object.entries(deps)) {
@@ -399,7 +418,9 @@ export async function readLockedDeps(
     for (const dep of (block[2] as string).matchAll(LOCK_DEP)) {
       deps[dep[1] as string] = dep[2] as string;
     }
-    if (Object.keys(deps).length > 0) out[dir] = deps;
+    // Every block, an empty one included: a block with no `@ultimat3/*` edge is still the block a
+    // newly declared edge is missing from, and omitting it read as "no block at all".
+    out[dir] = deps;
   }
   return out;
 }

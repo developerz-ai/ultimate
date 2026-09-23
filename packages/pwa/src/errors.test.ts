@@ -91,12 +91,12 @@ describe('the public entry point', () => {
     expect(thrown).toBeInstanceOf(api['PwaStrategyExhaustedError'] as new () => Error);
   });
 
-  test('does not export the classes only the generated sw.js realm can throw', async () => {
-    const api: Record<string, unknown> = await import('./index');
-    expect(api['PwaSyncFlushFailedError']).toBeUndefined();
-    expect(api['PwaSyncIncompleteError']).toBeUndefined();
-    // Their codes are public even so — that is what an app matches on.
+  test('the two outbox-flush codes stay registered though nothing throws them', () => {
+    // Shipped codes are stable forever: an old log line must still resolve to its title.
     expect(PWA_ERROR_CODES).toContain('X_PWA_SYNC_FLUSH_FAILED');
     expect(PWA_ERROR_CODES).toContain('X_PWA_SYNC_INCOMPLETE');
+    expect(describeErrorCode('X_PWA_SYNC_INCOMPLETE').title).toBe(
+      'the background-sync outbox flush left mutations queued',
+    );
   });
 });

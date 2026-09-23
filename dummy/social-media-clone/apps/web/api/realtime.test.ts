@@ -1,23 +1,25 @@
-// live — the channel guards, run against a REAL `ChannelHub` over a real transport and socket
-// registry. Asserting the predicates in isolation would prove they return false; this proves the
-// hub refuses the subscribe, which is the thing that matters.
+// live — the app's channel declarations, run against a REAL `ChannelHub` over a real transport and
+// socket registry. Asserting the predicates in isolation would prove they return false; this proves
+// the hub refuses the subscribe, which is the thing that matters.
 //
-// Deny by default is the property under test: a topic with no matching guard must throw, so a
-// pattern nobody declared can never become an accidental broadcast.
+// Deny by default is the property under test: a channel nobody declared must throw, so a name
+// nobody wrote can never become an accidental broadcast.
 
 import { db } from '@social-media-clone/db';
-import { userActor } from '@ultimat3/core';
+import { type Actor, userActor } from '@ultimat3/core';
 import type { WsLike } from '@ultimat3/realtime/server';
 import {
   ChannelHub,
   InProcessTransport,
   SocketRegistry,
   SyncSocket,
-  topic,
 } from '@ultimat3/realtime/server';
 import { expect, liveTest } from '@ultimat3/testing';
 import { addParticipant } from '../app/messages/repo';
-import { conversationTopic, inboxTopic, installRealtimeTopics } from './realtime';
+// Imported for the registration: `channel()` registers on import, exactly as the app loader's scan
+// imports these modules at boot — so the hub below is built with no list, the way a host builds it.
+import '../app/messages/topics';
+import '../app/notifications/topics';
 
 const ADA = '00000000-0000-4000-8000-0000000000a4';
 const MARA = '00000000-0000-4000-8000-0000000000c4';
@@ -33,7 +35,7 @@ interface Rig {
   socketFor(id: string | null): SyncSocket;
 }
 
-/** `WsLike` is structural precisely so a guard test needs no server. Nothing here is sent. */
+/** `WsLike` is structural precisely so a channel test needs no server. Nothing here is sent. */
 const nullWs = (): WsLike => ({
   send: () => 0,
   close: () => {},
@@ -42,11 +44,15 @@ const nullWs = (): WsLike => ({
   getBufferedAmount: () => 0,
 });
 
+/** Every signed-in socket holds both read grants: what is under test is membership and identity. */
+const member = (id: string): Actor => ({
+  ...userActor({ id }),
+  permissions: ['message:read', 'notification:read'],
+});
+
 const rig = (): Rig => {
   const sockets = new SocketRegistry();
-  const hub = installRealtimeTopics(
-    new ChannelHub({ transport: new InProcessTransport(), sockets }),
-  );
+  const hub = new ChannelHub({ transport: new InProcessTransport(), sockets });
   let seq = 0;
   return {
     hub,
@@ -57,7 +63,7 @@ const rig = (): Rig => {
         ws: nullWs(),
         clientBuildId: 'test',
         serverBuildId: 'test',
-        actor: id === null ? null : userActor({ id }),
+        actor: id === null ? null : member(id),
       });
       sockets.add(socket);
       return socket;
@@ -65,10 +71,15 @@ const rig = (): Rig => {
   };
 };
 
-liveTest('a non-participant is refused the conversation topic', async () => {
+const conversation = (conversationId: string) =>
+  ({ kind: 'channel', channel: 'messages', params: { conversationId } }) as const;
+const inbox = (userId: string) =>
+  ({ kind: 'channel', channel: 'notifications', params: { userId } }) as const;
+
+liveTest('a non-participant is refused the conversation channel', async () => {
   await seeded;
   const { hub, socketFor } = rig();
-  await expect(hub.subscribe(socketFor(MARA), conversationTopic(ROOM))).rejects.toThrow(
+  await expect(hub.subscribeChannel(socketFor(MARA), conversation(ROOM))).rejects.toThrow(
     /X_TOPIC_FORBIDDEN/,
   );
 });
@@ -77,14 +88,14 @@ liveTest('a participant is admitted, so the refusal above is about membership', 
   await seeded;
   const { hub, socketFor } = rig();
   const socket = socketFor(ADA);
-  await hub.subscribe(socket, conversationTopic(ROOM));
-  expect(socket.topics.has(conversationTopic(ROOM))).toBe(true);
+  const topic = await hub.subscribeChannel(socket, conversation(ROOM));
+  expect(socket.topics.has(topic)).toBe(true);
 });
 
 liveTest('an anonymous socket is refused a conversation it cannot be a member of', async () => {
   await seeded;
   const { hub, socketFor } = rig();
-  await expect(hub.subscribe(socketFor(null), conversationTopic(ROOM))).rejects.toThrow(
+  await expect(hub.subscribeChannel(socketFor(null), conversation(ROOM))).rejects.toThrow(
     /X_TOPIC_FORBIDDEN/,
   );
 });
@@ -95,7 +106,7 @@ liveTest(
     await seeded;
     const { hub, socketFor } = rig();
     const absent = '00000000-0000-4000-8000-0000000000f8';
-    await expect(hub.subscribe(socketFor(ADA), conversationTopic(absent))).rejects.toThrow(
+    await expect(hub.subscribeChannel(socketFor(ADA), conversation(absent))).rejects.toThrow(
       /X_TOPIC_FORBIDDEN/,
     );
   },
@@ -103,16 +114,20 @@ liveTest(
 
 liveTest('an inbox belongs to exactly one person', async () => {
   const { hub, socketFor } = rig();
-  await hub.subscribe(socketFor(ADA), inboxTopic(ADA));
-  await expect(hub.subscribe(socketFor(MARA), inboxTopic(ADA))).rejects.toThrow(
+  await hub.subscribeChannel(socketFor(ADA), inbox(ADA));
+  await expect(hub.subscribeChannel(socketFor(MARA), inbox(ADA))).rejects.toThrow(
     /X_TOPIC_FORBIDDEN/,
   );
 });
 
-liveTest('a topic nobody declared a guard for is DENIED, not broadcast', async () => {
+liveTest('a channel nobody declared is DENIED, not broadcast', async () => {
   const { hub, socketFor } = rig();
-  // The whole point of deny-by-default: an authz hole must not be a pattern somebody forgot.
-  await expect(hub.subscribe(socketFor(ADA), topic('presence', ROOM))).rejects.toThrow(
-    /X_TOPIC_FORBIDDEN/,
-  );
+  // The whole point of deny-by-default: an authz hole must not be a name somebody forgot.
+  await expect(
+    hub.subscribeChannel(socketFor(ADA), {
+      kind: 'channel',
+      channel: 'presence',
+      params: { conversationId: ROOM },
+    }),
+  ).rejects.toThrow(/X_TOPIC_FORBIDDEN/);
 });

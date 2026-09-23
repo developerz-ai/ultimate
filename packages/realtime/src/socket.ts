@@ -16,6 +16,8 @@ import {
   systemClock,
   uuid,
 } from '@ultimat3/core';
+import { GapRepairs } from './channel-gaps';
+import type { ChannelRecordsFrame } from './channel-wire';
 import { CLOSE } from './close-codes';
 import { encode, type Frame } from './sync-protocol';
 import { AcceptBudget } from './thundering-herd';
@@ -81,10 +83,10 @@ export const DEFAULT_FRAME_BURST = 256;
 export const DEFAULT_MAX_BUFFERED_BYTES = 1024 * 1024;
 
 /**
- * Channel frames this process dropped under backpressure. A DATA-LOSS counter, not a saturation
- * one: the live-query path repairs a dropped patch (the subscriber is marked desynced and the next
- * change re-snapshots it), and a channel has no cursor, no mark and no re-snapshot — so this is the
- * only trace a lost channel message leaves anywhere.
+ * Channel frames this process dropped under backpressure. A dropped `records` frame is now marked
+ * and REPAIRED — the socket is sent `replay-gap` once it drains and re-reads the channel's catch-up
+ * query (`channel_replay_gaps_total` counts those) — while a dropped `events` frame is ephemeral
+ * by definition and is only counted. The two series side by side are the whole delivery story.
  *
  * Declared here rather than in `@ultimat3/core`'s `runtime-metrics.ts` because that file is the
  * series EVERY Ultimate process emits and the deploy chart scales on; this one exists only where
@@ -94,7 +96,7 @@ export const DEFAULT_MAX_BUFFERED_BYTES = 1024 * 1024;
  */
 const channelFramesDropped: Counter = counter('channel_frames_dropped_total', {
   unit: '{frame}',
-  description: 'Channel frames dropped by socket backpressure — unrecoverable, nothing replays one',
+  description: 'Channel frames dropped by socket backpressure',
 });
 
 export function actorIdOf(actor: Actor | null): string | null {
@@ -123,6 +125,12 @@ export class SyncSocket {
    * flush re-snapshots instead of silently diverging.
    */
   readonly desynced = new Set<string>();
+  /**
+   * Channel topics whose `records` stream this socket lost a frame of, with the epoch it was lost
+   * in. The channel twin of `desynced`: written on a drop, read on the next delivery or drain, which
+   * sends `replay-gap` and clears it. Bounded by `topics`, so it adds nothing a socket did not hold.
+   */
+  readonly gaps = new Map<string, string>();
   /**
    * Inbound frames this socket may still have routed. The accept budget spends one token per
    * UPGRADE, so nothing bounded what happened after: one authenticated socket reached a DB read,
@@ -255,6 +263,7 @@ export class SyncSocket {
 
   unsubscribeTopic(topic: string): void {
     this.topics.delete(topic);
+    this.gaps.delete(topic);
   }
 
   touch(): void {
@@ -313,6 +322,8 @@ export class SocketRegistry {
   readonly #clock: Clock;
   readonly #idleTimeoutMs: number;
   #droppedChannelFrames = 0;
+  /** The repair side of `SyncSocket.gaps`: `repairAll(socket)` is what Bun's `drain` calls. */
+  readonly gapRepairs = new GapRepairs();
 
   constructor(options: SocketRegistryOptions = {}) {
     this.#clock = options.clock ?? systemClock;
@@ -425,15 +436,43 @@ export class SocketRegistry {
       else dropped += 1;
     }
     if (members.size === 0) this.#byTopic.delete(topic);
-    if (dropped > 0) {
-      this.#droppedChannelFrames += dropped;
-      // Two readers, one event, one spelling: the series an operator alerts on and the line that
-      // says which topic it was. `deliver` ignored `send`'s answer and so did the hub above it, so
-      // until both existed a lost channel message left no trace at all.
-      channelFramesDropped.add(dropped);
-      logger.warn('channel.frames_dropped', { topic, dropped, total: this.#droppedChannelFrames });
-    }
+    if (dropped > 0) this.#countDropped(topic, dropped);
     return sent;
+  }
+
+  /**
+   * A `records` delivery. An owed `replay-gap` goes out first; a socket that then drops the frame is
+   * marked for the next one. `deliver`'s twin, because only a records stream can be repaired.
+   */
+  deliverRecords(topic: string, epoch: string, frame: ChannelRecordsFrame): number {
+    const members = this.#byTopic.get(topic);
+    if (!members) return 0;
+    let sent = 0;
+    let dropped = 0;
+    for (const socket of members) {
+      if (socket.closed) {
+        members.delete(socket);
+        continue;
+      }
+      this.gapRepairs.repair(socket, topic);
+      if (socket.send(frame)) {
+        sent += 1;
+        continue;
+      }
+      dropped += 1;
+      socket.gaps.set(topic, epoch);
+    }
+    if (members.size === 0) this.#byTopic.delete(topic);
+    if (dropped > 0) this.#countDropped(topic, dropped);
+    return sent;
+  }
+
+  #countDropped(topic: string, dropped: number): void {
+    this.#droppedChannelFrames += dropped;
+    // Two readers, one event, one spelling: the series an operator alerts on and the line that
+    // says which topic it was.
+    channelFramesDropped.add(dropped);
+    logger.warn('channel.frames_dropped', { topic, dropped, total: this.#droppedChannelFrames });
   }
 
   /**

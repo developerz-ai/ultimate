@@ -5,12 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL, type UltimateError } from '@ultimat3/core';
-import {
-  QueryDuplicateError,
-  QueryPolicyMissingError,
-  QueryRequestFailedError,
-  QueryUnregisteredError,
-} from './errors';
+import { QueryDuplicateError, QueryPolicyMissingError, QueryUnregisteredError } from './errors';
 
 const CAN_ARGUMENT = /can\('(?<permission>[^']*)'\)/;
 
@@ -41,7 +36,6 @@ describe('unit · every query error documents at the one page core declares', ()
     new QueryPolicyMissingError('postList'),
     new QueryUnregisteredError(),
     new QueryDuplicateError('postList'),
-    new QueryRequestFailedError('postList', 502),
   ];
 
   test('the constructed error carries core’s constant, with no per-code fragment', () => {
@@ -50,17 +44,5 @@ describe('unit · every query error documents at the one page core declares', ()
       expect(error.docs).not.toContain(error.code);
       expect(error.docs).not.toContain('ultimate.dev');
     }
-  });
-
-  test("a served problem document's own docs still wins, because it is the server's answer", () => {
-    // `QueryRequestFailedError` re-throws a `problem+json` verbatim; an app that documents its
-    // own codes elsewhere said so, and overwriting that with this framework's page buries it.
-    const remote = new QueryRequestFailedError('postList', 422, {
-      code: 'X_APP_QUOTA',
-      cause: 'the org is over its read quota',
-      fix: 'raise the plan',
-      docs: 'https://acme.example/errors/quota',
-    });
-    expect(remote.docs).toBe('https://acme.example/errors/quota');
   });
 });

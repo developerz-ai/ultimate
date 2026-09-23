@@ -13,7 +13,9 @@ import { themeScriptBody } from '@ultimat3/render';
 import type { BuildStats } from './budgets';
 import {
   BUILD_STATS_FILE,
+  BUILD_STATS_RULES,
   checkBudgets,
+  FRAMEWORK_INLINE_SCRIPTS,
   FRAMEWORK_SCRIPTS,
   measureDocumentJs,
   readBuildStats,
@@ -23,6 +25,9 @@ import type { PwaArtifacts } from './pwa-artifacts';
 import type { StaticReport } from './static-report';
 import { staticReportData } from './static-report';
 import { SW_REGISTER_PATH, serviceWorkerHead } from './sw-artifacts';
+
+/** What the rules were when `BUILD_STATS_RULES` was last set. Re-pin only together with a bump. */
+const RULES_PIN = { rules: 2, fingerprint: 'ceadfed6ac545548' } as const;
 
 const manifestOf = (...routes: readonly RouteFact[]) =>
   buildManifest({ app: { name: 'fixture', version: '1.0.0' }, routes });
@@ -244,7 +249,31 @@ describe('unit · writeBuildStats is what makes X_BUDGET_UNMEASURED reachable', 
     const root = join(tmpdir(), `x-budget-stats-${Bun.hash(import.meta.path).toString(16)}`);
     const written = await writeBuildStats(root, { routes: [{ path: '/', jsBytes: 42 }] });
     expect(written).toEndWith(BUILD_STATS_FILE);
-    expect(await readBuildStats(root)).toEqual({ routes: [{ path: '/', jsBytes: 42 }] });
+    expect(await readBuildStats(root)).toEqual({
+      routes: [{ path: '/', jsBytes: 42 }],
+      measuredBy: BUILD_STATS_RULES,
+    });
+  });
+
+  // `examples/dummy` charged `/` 250 B for `/x-sw-register.js` — a script `FRAMEWORK_SCRIPTS`
+  // exempts — because its `.x/build-stats.json` was written on 2026-09-05, before the exemption,
+  // and the gate read yesterday's measurement as today's. A file the current rules did not write
+  // is no measurement at all.
+  test('a stats file an earlier measurement rule wrote is stale, never read as numbers', async () => {
+    const root = join(
+      tmpdir(),
+      `x-budget-stale-${Bun.hash(`${import.meta.path}stale`).toString(16)}`,
+    );
+    await Bun.write(
+      join(root, BUILD_STATS_FILE),
+      JSON.stringify({ routes: [{ path: '/', jsBytes: 250, heaviestChain: [SW_REGISTER_PATH] }] }),
+    );
+    const read = await readBuildStats(root);
+    const findings = checkBudgets(manifestOf(route('/', { js: '0kb' })), read);
+
+    expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_UNMEASURED']);
+    expect(findings[0]?.cause).toContain('earlier');
+    expect(findings[0]?.fix).toContain('x build --target static');
   });
 
   test('a route the build never wrote stays unmeasured, so the gate reports it', async () => {
@@ -394,5 +423,50 @@ describe('the theme boot is counted, never charged', () => {
     const own = await measureDocumentJs(`<script>${custom}</script>`, out);
     expect(own.jsBytes).toBe(Buffer.byteLength(custom, 'utf8'));
     expect(own.frameworkBytes).toBe(0);
+  });
+});
+
+/**
+ * What `measureDocumentJs` charges, as data: the two exemption sets, and which tag kinds it treats as
+ * code — probed through the measurer itself, so the JSON-type rule (`carriesJson`, unexported) is in
+ * the fingerprint by what it DOES. Every input a charging decision reads.
+ */
+async function measurementRules(): Promise<string> {
+  const probe = join(tmpdir(), `x-budget-rules-${Bun.hash(import.meta.path).toString(16)}`);
+  const kinds = [
+    '',
+    ' type="module"',
+    ' type="text/javascript"',
+    ' type="application/json"',
+    ' type="application/ld+json"',
+    ' type="application/ld+json; charset=utf-8"',
+    ' type="importmap"',
+  ];
+  const charged: string[] = [];
+  for (const kind of kinds) {
+    const measured = await measureDocumentJs(`<script${kind}>x</script>`, probe);
+    if (measured.jsBytes > 0) charged.push(kind.trim() || '(none)');
+  }
+  return JSON.stringify({
+    scripts: [...FRAMEWORK_SCRIPTS].sort(),
+    inline: [...FRAMEWORK_INLINE_SCRIPTS].map((body) => Bun.hash(body).toString(16)).sort(),
+    charged,
+  });
+}
+
+// DX ledger #29: a stats file is only read when the rules that wrote it are the gate's own
+// (`BUILD_STATS_RULES`). That number is worth nothing if the rules move and it does not — which is
+// exactly how `examples/dummy` was charged 250 B for an exempted script. So the number is pinned
+// to a fingerprint of the rules, and moving one without the other fails here.
+describe('unit · BUILD_STATS_RULES moves with what the measurer charges', () => {
+  test('the pinned version matches the fingerprint of the exemption sets and the charged kinds', async () => {
+    const fingerprint = Bun.hash(await measurementRules()).toString(16);
+    const pinned = { rules: BUILD_STATS_RULES, fingerprint };
+    if (pinned.fingerprint !== RULES_PIN.fingerprint || pinned.rules !== RULES_PIN.rules) {
+      expect.unreachable(
+        `the measurement rules changed (fingerprint ${fingerprint}, rules v${String(BUILD_STATS_RULES)}) — bump BUILD_STATS_RULES in packages/cli/src/budgets.ts and re-pin RULES_PIN in this file to { rules: <new>, fingerprint: '${fingerprint}' }`,
+      );
+    }
+    expect(pinned).toEqual(RULES_PIN);
   });
 });

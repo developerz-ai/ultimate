@@ -111,14 +111,14 @@ describe('unit · the framework manifest is generated, not written', () => {
 describe('unit · every code, not the ones in one filename per package', () => {
   const entryFor = (code: string) => fresh.errorCodes.find((entry) => entry.code === code);
 
-  // The bug: the scan globbed `packages/<pkg>/src/errors.ts` and nothing else, so core's
-  // `error-codes.ts` — twenty codes, the framework's own registry — was absent from a file whose
+  // The bug: the scan globbed `packages/<pkg>/src/errors.ts` and nothing else, so core's own
+  // registry (`core-error-codes.ts` since 21.0.0, `error-codes.ts` before) was absent from a file whose
   // whole claim is "every X_* code and its owner".
   test('a code in a registry the old glob could not name is in the manifest', () => {
     expect(entryFor('X_ROLE_INVALID')).toEqual({
       code: 'X_ROLE_INVALID',
       owner: 'core',
-      at: 'packages/core/src/error-codes.ts',
+      at: 'packages/core/src/core-error-codes.ts',
     });
     expect(entryFor('X_UNREACHABLE')?.owner).toBe('core');
     expect(entryFor('X_SERVICE_MISSING')?.owner).toBe('core');
@@ -130,7 +130,7 @@ describe('unit · every code, not the ones in one filename per package', () => {
     expect(entryFor('X_NOT_IMPLEMENTED')).toEqual({
       code: 'X_NOT_IMPLEMENTED',
       owner: 'core',
-      at: 'packages/core/src/error-codes.ts',
+      at: 'packages/core/src/core-error-codes.ts',
     });
     expect(entryFor('X_DB_DRIFT')?.owner).toBe('db');
     expect(entryFor('X_UNAUTHENTICATED')?.owner).toBe('auth');

@@ -1,8 +1,12 @@
 # The same image, once per role. This file IS the production topology: scale a role by scaling its
 # service, and nothing about the code changes.
 #
-#   IMAGE=ghcr.io/you/app:1.2.3 docker compose -f docker/docker-compose.prod.yml run --rm migrate
-#   IMAGE=ghcr.io/you/app:1.2.3 docker compose -f docker/docker-compose.prod.yml up -d web sync worker scheduler
+#   IMAGE=ghcr.io/you/app:1.2.3 docker compose --env-file .env.production -f docker/docker-compose.prod.yml run --rm migrate
+#   IMAGE=ghcr.io/you/app:1.2.3 docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d web sync worker scheduler
+#
+# Always with `--env-file .env.production`, before `-f`: Compose fills `${SYNC_URL:?…}` below from the
+# shell and `--env-file` only, NEVER from `env_file:`, so a value set only in that file reads as
+# missing and the parse fails. `x deploy` passes it on every step (packages/cli/src/cmd-deploy.ts).
 #
 # `IMAGE` must name an APP image and the commands above show it for that reason. The `Dockerfile`
 # beside this file builds the framework's CLI (`/app/x` and nothing else) and cannot serve any of
@@ -86,7 +90,9 @@ services:
   # second replica cannot also bind. See the header for the two ways to scale it.
   web:
     <<: *common
-    environment: { ROLE: web, PORT: 3000 }
+    # A page dials SYNC_URL. Unset, it dials /_x/sync on its own origin — :3000, which `web` does not
+    # serve on this rung (`sync` publishes 3001 and no proxy joins them), so it is required here.
+    environment: { ROLE: web, PORT: 3000, SYNC_URL: '${SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md}' }
     ports: ['3000:3000']
     depends_on: { migrate: { condition: service_completed_successfully } }
     # No `healthcheck:` here on purpose. The app image declares its own — `/readyz` on $PORT, which

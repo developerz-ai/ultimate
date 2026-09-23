@@ -24,6 +24,8 @@ import { planNewApp } from './cmd-new';
 import type { CommandContext } from './command';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
+import { names } from './templates/naming';
+import { containerFiles } from './templates/scaffold-container';
 
 const compose = (root = '/app') => planDeploy('repo/app:tag', 'compose', root);
 
@@ -431,5 +433,42 @@ describe('unit · the summary names the roles this plan really has', () => {
 
     expect(result.ok).toBe(true);
     expect(summaryRoles(result.summary)).toEqual(['all']);
+  });
+});
+
+/**
+ * Compose INTERPOLATES `${VAR:?…}` from the shell and `--env-file`, never from a service's
+ * `env_file:`. The scaffold's `web` refuses an unset `SYNC_URL` that way, so an operator who put it
+ * in `.env.production` — the file the same compose file's `env_file:` names — had every `up` die on
+ * a parse error, `x deploy` included. The plan now hands compose that same file as `--env-file`, so
+ * the file an operator fills is the file both interpolation and the containers read.
+ */
+describe('unit · x deploy --method compose interpolates from the env_file it deploys', () => {
+  const scaffolded = (path: string): string => {
+    const contents = containerFiles(names('shop')).find((file) => file.path === path)?.contents;
+    return typeof contents === 'string' ? contents : '';
+  };
+
+  test('every step passes --env-file, resolved to the file the compose `env_file:` names', () => {
+    const declared = /env_file: \[([^\]]+)\]/.exec(scaffolded('docker/docker-compose.prod.yml'));
+    expect(declared?.[1]).toBeDefined();
+    const expected = join('/srv/app', 'docker', declared?.[1] ?? '');
+    for (const step of compose('/srv/app').steps) {
+      const at = step.command.indexOf('--env-file');
+      expect(at).toBeGreaterThan(-1);
+      expect(step.command[at + 1]).toBe(expected);
+      // A global flag: compose rejects it after the subcommand.
+      expect(at).toBeLessThan(step.command.indexOf('-f'));
+    }
+  });
+
+  test('every hand-run compose line the scaffold documents carries the same --env-file', () => {
+    const lines = ['docker/docker-compose.prod.yml', 'docker/README.md']
+      .flatMap((path) => scaffolded(path).split('\n'))
+      .map((line) => line.replace(/^#\s*/, '').trim())
+      .filter((line) => line.startsWith('docker compose ') && line.includes('docker-compose.prod'));
+    // One in the compose header, one in the README: a vacuous loop would pass with neither.
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line).toContain('--env-file .env.production');
   });
 });

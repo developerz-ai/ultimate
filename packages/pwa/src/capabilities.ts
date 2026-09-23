@@ -55,12 +55,12 @@ export const CAPABILITY_MANIFEST_KEYS = Object.freeze<Record<Capability, readonl
 /**
  * The service-worker code each capability emits — its listener, and anything that listener alone
  * needs. Checked in BOTH directions (`service-worker.test.ts`): every marker is in the emitted
- * worker when its capability is on, and none of them is when they are all off. `PwaSyncError` is
- * the background-sync handler's own error class, so it ships with the handler and never without it.
+ * worker when its capability is on, and none of them is when they are all off. `drainOutbox` is
+ * the background-sync handler's broadcast, so it ships with the handler and never without it.
  *
  * `flush-outbox` is the same kind of pair the other way round: the branch lives in the shared
  * message handler, not in the capability's own block, so only its presence in this table keeps it
- * gated with the `flushOutbox` it calls.
+ * gated with the `drainOutbox` it calls.
  *
  * An EMPTY list is a claim too, and the true one for the three manifest-only capabilities: a share
  * target, a file handler and a protocol handler are all delivered by the OS to a URL the app
@@ -69,7 +69,11 @@ export const CAPABILITY_MANIFEST_KEYS = Object.freeze<Record<Capability, readonl
  */
 export const CAPABILITY_SW_MARKERS = Object.freeze<Record<Capability, readonly string[]>>({
   push: ["addEventListener('push'", "addEventListener('notificationclick'"],
-  backgroundSync: ["addEventListener('sync'", 'class PwaSyncError', "d.type==='flush-outbox'"],
+  backgroundSync: [
+    "addEventListener('sync'",
+    'async function drainOutbox',
+    "d.type==='flush-outbox'",
+  ],
   badging: ['navigator.setAppBadge'],
   shareTarget: [],
   fileHandlers: [],

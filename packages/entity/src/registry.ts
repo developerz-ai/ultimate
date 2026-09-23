@@ -4,8 +4,9 @@
 // than a silent last-one-wins.
 
 import type { IndexMethod } from '@ultimat3/db';
-import { entityDuplicate } from './errors';
+import { entityDuplicate } from './entity-error';
 import type { InvariantKind } from './invariants';
+import type { RecordProjection } from './record-projection';
 import type { ColumnDefault, OnDelete } from './types';
 
 export interface ColumnDescription {
@@ -128,6 +129,10 @@ export interface EntityDescription {
 export interface RegistryEntry {
   readonly name: string;
   readonly tableName: string;
+  /** `entity(name, { persist: true })` — the client keeps this type on disk. Absent = `false`. */
+  readonly persist?: boolean;
+  /** The entity's client projection — what a changefeed's table maps to on the client. */
+  readonly projection?: RecordProjection;
   describe(): EntityDescription;
   /**
    * The foreign keys this entity declares, resolved. This is how a relation reaches query time:

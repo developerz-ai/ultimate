@@ -508,7 +508,7 @@ because it was slow ([#342](https://github.com/developerz-ai/ultimate/issues/342
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
 | `job` | step replay, idempotency dedupe, retry/backoff, concurrency, outbox atomicity |
-| `e2e` | Playwright against the built output, including offline and SW update |
+| `e2e` | a real browser (raw CDP) against the app, spawned on a throwaway database when Chrome is present, including offline and SW update |
 | `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
 | `contract-diff` | published actions vs `openapi.json` |

@@ -37,14 +37,14 @@ const ISLAND = 'apps/web/app/graph.island.tsx';
 const ROUNDS = 40;
 
 const SOURCE = `
-import { LiveClient, setLiveClient, useConnection, useLive } from '@ultimat3/realtime';
+import { installRealtime, useConnection, useQuery } from '@ultimat3/realtime';
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch, untrack } from 'solid-js';
 import { Dynamic, Portal, render } from 'solid-js/web';
 import { createStore, produce, reconcile } from 'solid-js/store';
 import styles from './panel.module.scss';
 
 export function mount(el: HTMLElement, props: { items?: string[] }): void {
-  void LiveClient; void setLiveClient; void useConnection; void useLive;
+  void installRealtime; void useConnection; void useQuery;
   const [count, setCount] = createSignal(0);
   const [store, setStore] = createStore({ items: props.items ?? [] });
   const doubled = createMemo(() => count() * 2);

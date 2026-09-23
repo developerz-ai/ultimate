@@ -212,6 +212,10 @@ describe('the mount markers, executed', () => {
     __x?: Promise<unknown>;
     getAttribute(name: string): string | null;
     setAttribute(name: string, value: string): void;
+    // An idle island catches early presses for replay, so the runtime attaches capture listeners
+    // to it. No event is fired in this block; the markers are the whole subject.
+    addEventListener(name: string, fn: unknown): void;
+    removeEventListener(name: string, fn: unknown): void;
   }
 
   interface MountHarness {
@@ -267,6 +271,8 @@ describe('the mount markers, executed', () => {
       setAttribute: (name, value) => {
         attributes.set(name, value);
       },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
     };
     globals['document'] = {
       querySelectorAll: (selector: string): unknown[] =>

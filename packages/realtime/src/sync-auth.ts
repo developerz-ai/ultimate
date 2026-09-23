@@ -1,6 +1,6 @@
 // Who a socket is, and for how long. The `sync` node evaluates no credential of its own — an app
-// supplies `authenticate`, exactly as it supplies `onMutate` — so this file owns the shape of that
-// answer, the per-node book that holds it, and the pass that re-decides one whose window has closed.
+// supplies `authenticate` — so this file owns the shape of that answer, the per-node book that
+// holds it, and the pass that re-decides one whose window has closed.
 
 import type { Actor, Clock } from '@ultimat3/core';
 

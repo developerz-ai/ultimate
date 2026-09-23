@@ -4,7 +4,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
+import {
+  createContext,
+  currentWriteOrigin,
+  isUltimateError,
+  runWithContext,
+  userActor,
+  writeDigest,
+} from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
@@ -211,6 +218,46 @@ describe('an idempotent action over the pipeline', () => {
     expect((await call(target, null)).status).toBe(200);
     expect((await call(target, null)).status).toBe(200);
     expect(runs.count).toBe(2);
+  });
+});
+
+/**
+ * The header names the write for the frames its rows produce, idempotent or not: `useMutation`
+ * sends a key with every write, and an action that never opted into replay still made rows a page
+ * is waiting to recognise.
+ */
+describe('the write a request names', () => {
+  const seen: (string | undefined)[] = [];
+  const likes = action({
+    input: t.object({ postId: t.uuid }),
+    output: t.object({ ok: t.boolean }),
+    policy: allow(),
+    handle: async () => {
+      await Promise.resolve();
+      seen.push(currentWriteOrigin());
+      return { ok: true };
+    },
+  }).named('likePost');
+
+  const call = (key: string | null) =>
+    createServer({ routes: [toRoute(likes)], config: oneProcess() }).fetch(
+      new Request('http://dev.test/api/posts/like', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(key === null ? {} : { 'idempotency-key': key }),
+        },
+        body: JSON.stringify({ postId: POST_ID }),
+      }),
+    );
+
+  test('the digest of its idempotency key, and nothing without one', async () => {
+    seen.length = 0;
+    const key = 'likePost:0192f0c4-0000-7000-8000-000000000001';
+    expect((await call(key)).status).toBe(200);
+    expect((await call(null)).status).toBe(200);
+    expect((await call('')).status).toBe(200);
+    expect(seen).toEqual([await writeDigest(key), undefined, undefined]);
   });
 });
 

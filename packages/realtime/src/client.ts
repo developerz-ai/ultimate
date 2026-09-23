@@ -1,44 +1,31 @@
-// The client half. Framework-agnostic on purpose: the reactive primitive is injected, so this
-// package never imports solid-js and can be exercised by `bun test` with two closures. One client
-// serves all three tiers: `useLive` is tier 2, and a `store` + `queue` makes the same call tier 3
-// with nothing about the subscription changing — that is the ladder's whole promise.
+// The client half of the sync protocol: one socket's lifecycle — dial, beat, reconnect — and the
+// live windows and topics riding it. Framework-agnostic and reactive-runtime-free on purpose: ONE
+// client serves the whole page (every island bundle reaches it through the page handle), and a
+// signal belongs to one bundle's solid-js, so everything here is a plain read plus a listener.
+// Read-only: the socket carries no writes (`useMutation` is HTTP).
 
-import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
-import type { Topic } from './channel';
-import type {
-  ClientSocket,
-  LiveClientOptions,
-  LiveHandle,
-  LiveQueryRef,
-  MutatorRef,
-  SignalFactory,
-  Unsubscribe,
-} from './client-contract';
+import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core/page';
+import {
+  ChannelBook,
+  type ChannelHandlers,
+  type ChannelMembership,
+  type ChannelRef,
+} from './client-channels';
+import type { ClientSocket, LiveClientOptions, LiveHandle, LiveQueryRef } from './client-contract';
 import { applyFrame, type ClientFrameTarget } from './client-frames';
 import { DEFAULT_HEARTBEAT_MS, Heartbeat } from './client-heartbeat';
-import { type MutationDeps, mutationSender, recordMutation } from './client-mutations';
-import { TopicBook, topicSubscribeFrame } from './client-topics';
 import type { LiveCursor } from './cursor';
-import { IdentityMap, privateScope } from './identity-map';
-import type { JsonObject, JsonValue, Row } from './json';
-import { type LiveState, type Registration, RowWindows } from './live-rows';
-import type { TableMap } from './local-store';
-import type { OfflineQueue } from './offline-queue';
+import type { JsonObject, JsonValue } from './json';
+import { type LiveState, type Registration, RowWindows, unnamedType } from './live-rows';
+import { RecordStore } from './record-store';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
-import { backoffDelay, defaultBackoff, timeoutScheduler } from './thundering-herd';
+import { backoffDelay, browserBackoff, timeoutScheduler } from './thundering-herd';
 
-/**
- * The client's own shapes, re-exported from where they are declared: an app imports `ClientSocket`
- * and `LiveClientOptions` from the client it configures, not from a file it never names.
- */
 export type {
   ClientSocket,
-  LiveClientLike,
   LiveClientOptions,
   LiveHandle,
   LiveQueryRef,
-  MutatorRef,
-  SignalFactory,
   Unsubscribe,
 } from './client-contract';
 
@@ -57,32 +44,17 @@ const reportToConsole = (error: unknown): void => {
   console.error(error);
 };
 
-export class LiveClient<T extends TableMap = TableMap> {
-  readonly #options: LiveClientOptions<T>;
+export class LiveClient {
+  readonly #options: LiveClientOptions;
   readonly #clock: Clock;
   readonly #onError: (error: unknown) => void;
   readonly #registrations = new Map<string, Registration>();
   readonly #windows: RowWindows;
-  readonly #topics = new TopicBook();
+  readonly #channels: ChannelBook;
   readonly #heartbeat: Heartbeat;
-  readonly #setUpdate: (buildId: string | null) => void;
-  readonly #setReconnectAt: (at: number | null) => void;
-
-  readonly appUpdateAvailable: () => string | null;
-  readonly reconnectAt: () => number | null;
-  /**
-   * The reactive primitive the app injected, re-exposed so anything built on this client derives
-   * its signals from the same runtime. One reactive runtime per app, never two.
-   */
-  readonly signal: SignalFactory;
-  /** The durable queue when tier 3 is configured, so a queue count is read off the queue itself. */
-  readonly queue: OfflineQueue | undefined;
-  /**
-   * One row value per `(entity, id)` for this client. Taken from the local store when tier 3 is
-   * configured, so an optimistic write and the live query rendering that row are the same row —
-   * a second map here would be exactly the duplication an identity map exists to prevent.
-   */
-  readonly identity: IdentityMap;
+  readonly #statusListeners = new Set<() => void>();
+  /** The page's record store every window renders out of. */
+  readonly store: RecordStore;
 
   #socket: ClientSocket | null = null;
   #attempt = 0;
@@ -90,29 +62,23 @@ export class LiveClient<T extends TableMap = TableMap> {
   #reconnectTimer: (() => void) | null = null;
   /** Set by `close()`: an explicit teardown must not be undone by the close it just triggered. */
   #closed = false;
-  /** A signal, not a field: `connected` is rendered, so a plain boolean would never re-render. */
-  readonly #connected: () => boolean;
-  readonly #setConnected: (next: boolean) => void;
-  /** Notified after every offline-queue mutation; `onQueueChange` says who subscribes, and why. */
-  readonly #queueListeners = new Set<() => void>();
+  #connected = false;
+  #reconnectAt: number | null = null;
+  #update: string | null = null;
 
-  constructor(options: LiveClientOptions<T>) {
+  constructor(options: LiveClientOptions) {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
     this.#onError = options.onError ?? reportToConsole;
-    this.signal = options.signal;
-    this.queue = options.queue;
-    this.identity = options.store?.identity ?? new IdentityMap();
-    this.#windows = new RowWindows(this.identity);
-    const [update, setUpdate] = options.signal<string | null>(null);
-    const [reconnectAt, setReconnectAt] = options.signal<number | null>(null);
-    const [connected, setConnected] = options.signal<boolean>(false);
-    this.appUpdateAvailable = update;
-    this.#setUpdate = setUpdate;
-    this.reconnectAt = reconnectAt;
-    this.#setReconnectAt = setReconnectAt;
-    this.#connected = connected;
-    this.#setConnected = setConnected;
+    this.store = options.store ?? new RecordStore();
+    this.#windows = new RowWindows(this.store);
+    this.#channels = new ChannelBook({
+      store: this.store,
+      send: (frame) => this.#send(frame),
+      connected: () => this.#connected,
+      catchUp: options.catchUp,
+      report: (error) => this.#onError(error),
+    });
     this.#heartbeat = new Heartbeat({
       intervalMs: finiteOption(
         'the sync client',
@@ -127,7 +93,25 @@ export class LiveClient<T extends TableMap = TableMap> {
   }
 
   get connected(): boolean {
-    return this.#connected();
+    return this.#connected;
+  }
+
+  /** Epoch ms of the next reconnect attempt; `null` while the socket is up. */
+  reconnectAt(): number | null {
+    return this.#reconnectAt;
+  }
+
+  /** The buildId the server announced, or `null` while this build is current. */
+  appUpdateAvailable(): string | null {
+    return this.#update;
+  }
+
+  /** Called after `connected`, `reconnectAt()` or `appUpdateAvailable()` moves. */
+  onStatus(listener: () => void): () => void {
+    this.#statusListeners.add(listener);
+    return () => {
+      this.#statusListeners.delete(listener);
+    };
   }
 
   connect(): void {
@@ -142,7 +126,7 @@ export class LiveClient<T extends TableMap = TableMap> {
     previous?.close(1000, 'reconnect');
     // …and because that corpse's `onClose` returns, this is the only place the connection it was
     // carrying can be written off: offline until the NEW socket opens. Reporting the replaced
-    // socket's state through the redial sent a `useLive` opened in that window straight onto an
+    // socket's state through the redial sent a live subscription opened in that window straight onto an
     // unopened socket — a subscribe frame ahead of `hello`, then a second one for the same sid
     // when `onOpen` replayed it, which the node refuses with X_SUBSCRIPTION_ID_TAKEN.
     //
@@ -160,20 +144,17 @@ export class LiveClient<T extends TableMap = TableMap> {
       // and the one handler that had none. A replaced socket opening late would otherwise mark the
       // live connection up and replay every subscription onto whatever socket is current.
       if (this.#socket !== socket) return;
-      this.#setConnected(true);
       this.#attempt = 0;
-      this.#setReconnectAt(null);
+      this.#setStatus({ connected: true, reconnectAt: null });
       // `hello` announces the connection and nothing else. Each cursor rides its own `subscribe`
       // frame below, which is the only place resume is decided — sending it here too shipped every
       // cursor twice per reconnect, once into a field the node discards.
       this.#send(this.#hello());
       for (const registration of this.#registrations.values()) this.#sendSubscribe(registration);
-      // Topic membership lives on the node's socket and `hello` carries none of it, so a channel
-      // this client still holds a handler for is silent from the first reconnect onwards — and its
-      // presence membership is swept — unless every one of them is re-announced here.
-      for (const name of this.#topics.names()) this.#send(topicSubscribeFrame(name, 'add'));
+      // Channel membership lives on the node's socket and `hello` carries none of it, so every
+      // channel is re-announced here — each from its own cursor, so the node replays the rest.
+      this.#channels.resubscribe();
       this.#heartbeat.start(this.#clock.now().getTime());
-      this.#detach(this.drain());
     });
     socket.onMessage((data) => {
       // A frame speaks only for its own socket, the same rule `onClose` follows. A replaced socket
@@ -198,18 +179,19 @@ export class LiveClient<T extends TableMap = TableMap> {
 
   /**
    * Everything a lost connection costs, whoever noticed it — a close, a replacement, an explicit
-   * teardown, a heartbeat that timed out. The queue half is the one that is easy to forget: a
-   * mutation handed to a socket that is now gone was never acknowledged, so it goes back in the
-   * queue rather than waiting for an ack nobody will send.
+   * teardown, a heartbeat that timed out.
    */
   #offline(): void {
     this.#heartbeat.stop();
-    this.#setConnected(false);
-    // Told once, not two ways: a `useConnection().offline` that flips while a `useLive` handle
-    // still reads 'live' is one dead socket rendered as two states.
-    for (const registration of this.#registrations.values()) registration.setState('offline');
-    const queue = this.#options.queue;
-    if (queue) this.#detach(queue.requeueInflight());
+    this.#setStatus({ connected: false });
+    // Told once, not two ways: a `useConnection().offline` that flips while a live window still
+    // reads 'live' is one dead socket rendered as two states. A refused one stays refused.
+    for (const registration of this.#registrations.values()) {
+      if (registration.state === 'failed' || registration.state === 'offline') continue;
+      registration.state = 'offline';
+      registration.notify();
+    }
+    this.#channels.offline();
   }
 
   /**
@@ -220,7 +202,7 @@ export class LiveClient<T extends TableMap = TableMap> {
   close(code = 1000, reason = 'client closed'): void {
     this.#closed = true;
     this.#cancelReconnect();
-    this.#setReconnectAt(null);
+    this.#setStatus({ reconnectAt: null });
     this.#attempt = 0;
     const socket = this.#socket;
     this.#socket = null;
@@ -229,34 +211,40 @@ export class LiveClient<T extends TableMap = TableMap> {
     this.#offline();
   }
 
-  /** Tier 2 and tier 3 alike. The returned accessor is the reactive result set. */
-  useLive<R extends Row = Row>(query: LiveQueryRef, input: JsonValue): LiveHandle<R> {
+  /**
+   * Subscribe to a live query. The window holds ids; the rows are the page store's, so a record
+   * updated by an HTTP response or another window re-renders here too, with no second copy.
+   */
+  subscribeLive<R extends object = JsonObject>(
+    query: LiveQueryRef,
+    input: JsonValue,
+  ): LiveHandle<R> {
     const sid = uuid();
-    const [rows, setRows] = this.#options.signal<readonly Row[]>([]);
-    // 'loading' is a promise that rows are on their way; with no socket, nothing is on its way.
-    const [state, setState] = this.#options.signal<LiveState>(
-      this.#connected() ? 'loading' : 'offline',
-    );
-    const [cursor, setCursor] = this.#options.signal<LiveCursor | null>(null);
+    const listeners = new Set<() => void>();
     const registration: Registration = {
       sid,
       name: query.name,
       input,
-      setRows,
-      setState,
-      setCursor,
-      // Private until the first snapshot names the entity: sharing rows with another query on a
-      // scope nobody confirmed would merge two entities that spell one id the same way.
-      scope: privateScope(query.name),
+      type: unnamedType(query.name),
       ids: [],
       cursor: null,
+      // 'loading' is a promise that rows are on their way; with no socket, nothing is on its way.
+      state: this.#connected ? 'loading' : 'offline',
+      error: undefined,
+      notify: () => {
+        for (const listener of listeners) listener();
+      },
     };
     this.#registrations.set(sid, registration);
     const close = this.#windows.open(registration);
-    if (this.#connected()) this.#sendSubscribe(registration);
+    if (this.#connected) this.#sendSubscribe(registration);
+    let open = true;
     const unsubscribe = (): void => {
+      if (!open) return;
+      open = false;
       this.#registrations.delete(sid);
       close();
+      listeners.clear();
       this.#send({
         type: 'subscribe',
         v: PROTOCOL_VERSION,
@@ -266,81 +254,32 @@ export class LiveClient<T extends TableMap = TableMap> {
       });
     };
     return {
-      rows: rows as () => readonly R[],
-      state,
-      cursor,
+      // Rows are typed by the caller's query; on the wire every one is a JSON object.
+      rows: () => this.#windows.rows(registration) as readonly R[],
+      state: (): LiveState => registration.state,
+      cursor: (): LiveCursor | null => registration.cursor,
+      error: (): unknown => registration.error,
+      onChange: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
       unsubscribe,
       [Symbol.dispose]: unsubscribe,
     };
   }
 
-  subscribe(name: Topic, handler: (message: JsonObject) => void): Unsubscribe {
-    this.#topics.add(name, handler);
-    this.#send(topicSubscribeFrame(name, 'add'));
-    // A function is an object: attaching `[Symbol.dispose]` keeps the existing callable contract
-    // (`const unsub = channel.subscribe(...); unsub()`) intact while adding `using sub = ...`.
-    const unsubscribe: Unsubscribe = (): void => {
-      if (!this.#topics.remove(name, handler)) return;
-      this.#send(topicSubscribeFrame(name, 'drop'));
-    };
-    unsubscribe[Symbol.dispose] = unsubscribe;
-    return unsubscribe;
-  }
-
-  /** Tier 1 publish. The server re-checks the topic policy; this is a request, not an assertion. */
-  publish(name: Topic, message: JsonObject): void {
-    this.#send({
-      type: 'patch',
-      v: PROTOCOL_VERSION,
-      sid: name,
-      lsn: '',
-      patches: [{ op: 'insert', id: uuid(), row: message, lsn: '' }],
-    });
-  }
-
   /**
-   * The mutator entry point. Records the optimistic twin, the rebase entry and the durable queue
-   * entry, then drains. Offline, everything but the drain still happens — that is tier 3's one
-   * extra property over tier 2.
+   * Hold a declared channel. N holders on one topic share ONE membership; the last release drops
+   * it. Its `records` land in the store; `events` and presence reach `handlers` only.
    */
-  async mutate(mutator: MutatorRef<T>, input: JsonValue, key?: string): Promise<void> {
-    await recordMutation(this.#mutations, mutator, input, key);
-    if (this.#options.queue) await this.drain();
-  }
-
-  /** Sends every pending mutation in sequence order. Stops at the first one the socket refuses. */
-  async drain(): Promise<void> {
-    const queue = this.#options.queue;
-    if (!queue || !this.#connected()) return;
-    await queue.drain(mutationSender(this.#mutations));
-    this.#notifyQueueChange();
-  }
-
-  /** The mutation path's view of this client. Built per call, exactly like `#frameTarget`. */
-  get #mutations(): MutationDeps<T> {
-    return {
-      store: this.#options.store,
-      queue: this.#options.queue,
-      log: this.#options.log,
-      now: () => this.#clock.now().getTime(),
-      socket: () => this.#socket,
-      send: (frame) => this.#send(frame),
-    };
-  }
-
-  /**
-   * Fires whenever the offline queue changes for any reason: a direct `mutate`/`drain` call, the
-   * automatic drain `connect()` runs on every reconnect, or an async ack/fail frame arriving over
-   * the socket. `hooks.ts` is the only subscriber today — it bumps its invalidation signal here at
-   * `setLiveClient` time, so a component reading `useMutationQueue()` stays live across every
-   * transition, not just the ones a hook happens to await directly. Returns an unsubscribe
-   * function.
-   */
-  onQueueChange(listener: () => void): () => void {
-    this.#queueListeners.add(listener);
-    return () => {
-      this.#queueListeners.delete(listener);
-    };
+  holdChannel<K extends string>(
+    ref: ChannelRef<K>,
+    params: Readonly<Record<K, string>>,
+    handlers?: ChannelHandlers,
+  ): ChannelMembership {
+    return this.#channels.hold(ref, params, handlers);
   }
 
   #sendSubscribe(registration: Registration): void {
@@ -362,22 +301,18 @@ export class LiveClient<T extends TableMap = TableMap> {
    * The client's inbound surface, handed to the router. Built once: a frame reaches exactly these
    * members and nothing else on the client.
    */
-  get #frameTarget(): ClientFrameTarget<T> {
+  get #frameTarget(): ClientFrameTarget {
     return {
       registration: (sid) => this.#registrations.get(sid),
       windows: this.#windows,
-      topicHandlers: (topic) => this.#topics.handlers(topic),
-      queue: this.#options.queue,
-      store: this.#options.store,
-      log: this.#options.log,
+      channels: this.#channels,
       // The client's clock, never `Date.now()`: a cursor's `at` is what decides a delta resume
       // against a re-snapshot, so the frame path reads the same clock every other path does.
       now: () => this.#clock.now().getTime(),
-      setUpdate: (buildId) => this.#setUpdate(buildId),
+      setUpdate: (buildId) => this.#setStatus({ update: buildId }),
       scheduleReconnect: (afterMs) => this.#scheduleReconnect(afterMs),
       closeSocket: (code, reason) => this.#socket?.close(code, reason),
-      notifyQueueChange: () => this.#notifyQueueChange(),
-      detach: (work) => this.#detach(work),
+      report: (error) => this.#onError(error),
     };
   }
 
@@ -407,7 +342,7 @@ export class LiveClient<T extends TableMap = TableMap> {
    */
   #beat(): void {
     this.#send(this.#hello());
-    for (const name of this.#topics.names()) this.#send(topicSubscribeFrame(name, 'add'));
+    this.#channels.beat();
   }
 
   /**
@@ -434,9 +369,9 @@ export class LiveClient<T extends TableMap = TableMap> {
     this.#cancelReconnect();
     const rng = this.#options.rng ?? Math.random;
     const delay =
-      serverDelayMs ?? backoffDelay(this.#attempt, this.#options.backoff ?? defaultBackoff, rng);
+      serverDelayMs ?? backoffDelay(this.#attempt, this.#options.backoff ?? browserBackoff, rng);
     this.#attempt += 1;
-    this.#setReconnectAt(this.#clock.now().getTime() + delay);
+    this.#setStatus({ reconnectAt: this.#clock.now().getTime() + delay });
     const schedule = this.#options.scheduler ?? timeoutScheduler;
     this.#reconnectTimer = schedule(() => {
       // Cleared before dialling, not after: the attempt's own close must be free to arm the next
@@ -467,17 +402,25 @@ export class LiveClient<T extends TableMap = TableMap> {
     this.#socket?.send(encode(frame));
   }
 
-  /**
-   * Work nobody awaits: the drain `onOpen` runs, a queue write from a socket that just died. It
-   * bottoms out in `QueueStore.save()` — OPFS or IndexedDB, both allowed to reject — and an
-   * unhandled rejection in a tab is `window.onerror`, in Bun a dead process. `onError` is the seam
-   * the reconnect timer already reports through; it is never `logger`, which writes stderr.
-   */
-  #detach(work: Promise<unknown>): void {
-    void work.catch(this.#onError);
-  }
-
-  #notifyQueueChange(): void {
-    for (const listener of this.#queueListeners) listener();
+  /** One status write, one notification — and none for a write that changed nothing. */
+  #setStatus(next: {
+    connected?: boolean;
+    reconnectAt?: number | null;
+    update?: string | null;
+  }): void {
+    let moved = false;
+    if (next.connected !== undefined && next.connected !== this.#connected) {
+      this.#connected = next.connected;
+      moved = true;
+    }
+    if (next.reconnectAt !== undefined && next.reconnectAt !== this.#reconnectAt) {
+      this.#reconnectAt = next.reconnectAt;
+      moved = true;
+    }
+    if (next.update !== undefined && next.update !== this.#update) {
+      this.#update = next.update;
+      moved = true;
+    }
+    if (moved) for (const listener of this.#statusListeners) listener();
   }
 }

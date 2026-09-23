@@ -14,10 +14,9 @@
  * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
  */
 
-import { tag } from '@postly/db';
+import { members, tag } from '@postly/db';
 import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
-import { MemberView } from '../orgs/entity';
 import { memberSelf } from '../orgs/policy';
 
 export const savePreferences = action({
@@ -29,7 +28,10 @@ export const savePreferences = action({
     theme: t.enumerated(...THEMES),
     digestOptIn: t.boolean.default(true),
   }),
-  output: MemberView,
+  // The whole `members` row, because that is what `updatePreferences` returns: an entity row
+  // schema is what makes the answer a RECORD the page store adopts (plan 101), where the
+  // hand-written `MemberView` was a partial projection no store could safely merge.
+  output: members.$schema,
   policy: memberSelf,
   cache: { invalidates: [tag.member] },
   mcp: {

@@ -2,7 +2,7 @@
 // write does, or turn a working write into a failing one.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { createContext, runWithContext, userActor, withWriteOrigin } from '@ultimat3/core';
 import { createRecordingClient, setDbClient } from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { database, memoryDriver } from './database';
@@ -60,6 +60,19 @@ afterEach(() => {
 
 const idAt = (index: number): string =>
   `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+
+describe('the write a change belongs to', () => {
+  test('a write inside a keyed request names it; one outside names nothing', async () => {
+    const { db, seen } = build();
+    const write = 'e'.repeat(32);
+    await asMember(() =>
+      withWriteOrigin(write, () => db.notes.insert({ id: ONE, orgId: ORG, title: 'one' })),
+    );
+    await asMember(() => db.notes.insert({ id: TWO, orgId: ORG, title: 'two' }));
+    expect(seen.map((change) => change.write)).toEqual([write, undefined]);
+    expect(Object.hasOwn(seen[1] ?? {}, 'write')).toBe(false);
+  });
+});
 
 describe('every write verb reports what it committed', () => {
   test('insert reports the stored row, with no before', async () => {

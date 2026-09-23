@@ -1,136 +1,100 @@
-// One responsibility: `E2eBrowserPage` over a raw CDP connection — attach a tab, navigate,
-// evaluate, click, and set the browser's offline condition. Launching is `cdp-launch.ts` and the
+// One responsibility: one TAB over a raw CDP session — navigate, reload, evaluate, click, wait. The
+// session (`cdp-e2e-session.ts`) attaches it and owns everything browser-wide: the network
+// condition, the init scripts, the socket and request log. Launching is `cdp-launch.ts` and the
 // wire is `cdp-connection.ts`.
 //
 // FIVE methods, which is the whole reason this exists next to `@ultimat3/scraping` rather than
 // through it: `ScrapePage` is a full scraping surface whose intended implementation is
 // `puppeteer-core`, and an e2e driver needs none of it.
 
-import { assert } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
-import { CdpCallFailedError } from './cdp-errors';
+import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
 import type { E2eBrowserPage } from './e2e-page';
+
+/** What the page threw, when `Runtime.evaluate` answered with an exception rather than a value. */
+const thrownIn = (result: Record<string, unknown> | undefined): string | undefined => {
+  const thrown = result?.['exceptionDetails'];
+  if (typeof thrown !== 'object' || thrown === null) return undefined;
+  const text = (thrown as Record<string, unknown>)['text'];
+  return typeof text === 'string' ? text : 'the expression threw in the page';
+};
 
 /** `Runtime.evaluate`'s answer, unwrapped. Every field here is somebody else's JSON. */
 const evaluated = (result: Record<string, unknown> | undefined): unknown => {
-  const thrown = result?.['exceptionDetails'];
-  if (typeof thrown === 'object' && thrown !== null) {
-    const text = (thrown as Record<string, unknown>)['text'];
-    throw new CdpCallFailedError({
-      method: 'Runtime.evaluate',
-      detail: typeof text === 'string' ? text : 'the expression threw in the page',
-    });
+  const threw = thrownIn(result);
+  if (threw !== undefined) {
+    throw new CdpCallFailedError({ method: 'Runtime.evaluate', detail: threw });
   }
   const remote = result?.['result'];
   if (typeof remote !== 'object' || remote === null) return undefined;
   return (remote as Record<string, unknown>)['value'];
 };
 
-export interface CdpE2ePageOptions {
+/** One tab: the port the driver drives, plus what a multi-tab acceptance suite asks of one. */
+export interface E2eTab extends E2eBrowserPage {
+  readonly targetId: string;
+  /** Browser-wide, like the switch it models: every tab AND every worker goes with it. */
+  offline(enabled: boolean): Promise<void>;
+  /** Reload and wait for the load, at the url the tab already had. */
+  reload(): Promise<void>;
+  /** Poll `expression` in the page until it is truthy, or refuse naming `what`. */
+  waitFor(expression: string, what: string, timeoutMs?: number): Promise<void>;
+  /** The IndexedDB databases this tab's origin holds, by name, sorted. */
+  indexedDbNames(): Promise<readonly string[]>;
+  close(): Promise<void>;
+}
+
+export interface CdpE2eTabOptions {
   readonly connection: CdpConnection;
+  /** The attached tab's flattened session — every page call carries it. */
+  readonly sessionId: string;
+  readonly targetId: string;
   /**
    * How long a navigation's load event may take. Distinct from the connection's per-call deadline:
    * `Page.navigate` ANSWERS as soon as the navigation is committed, so the wait for the load event
    * is a second budget and is the one an app makes long.
    */
   readonly loadTimeoutMs: number;
+  /** The session's browser-wide switch, which `offline()` forwards to. */
+  readonly offline: (enabled: boolean) => Promise<void>;
 }
 
-/**
- * Attach a fresh tab and give back the page.
- *
- * `flatten: true` is not optional: without it every page call has to be wrapped in
- * `Target.sendMessageToTarget` and the answers arrive as nested strings. Flattened, a `sessionId`
- * on the frame is the whole of it, which is what keeps `cdp-connection.ts` a single map.
- */
-export async function cdpE2ePage(options: CdpE2ePageOptions): Promise<E2eBrowserPage> {
+const POLL_MS = 100;
+
+/** A tab over a session the caller has already attached and enabled (`cdp-e2e-session.ts`). */
+export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
   const send = options.connection.send.bind(options.connection);
-  const created = await send('Target.createTarget', { url: 'about:blank' });
-  const targetId = created.result?.['targetId'];
-  assert(
-    typeof targetId === 'string',
-    'the browser created a tab and answered no targetId',
-    'check the Chrome version supports Target.createTarget — every build since 60 does',
-  );
-  const attached = await send('Target.attachToTarget', { targetId, flatten: true });
-  const sessionId = attached.result?.['sessionId'];
-  assert(
-    typeof sessionId === 'string',
-    'the browser attached to the tab and answered no sessionId',
-    'check the Chrome version supports Target.attachToTarget with flatten: true — every build since 79 does',
-  );
-
-  await send('Page.enable', {}, sessionId);
-  await send('Runtime.enable', {}, sessionId);
-  // Enabled at attach rather than inside `offline()`, because `Network.emulateNetworkConditions`
-  // is silently ignored on a session whose Network domain was never enabled — the exact shape of
-  // an `offline()` that does nothing while the assertion after it reads as proof.
-  await send('Network.enable', {}, sessionId);
-
-  // **A SERVICE WORKER FETCHES ON ITS OWN TARGET, and that is what `offline()` used to miss.**
-  // Measured against the framework's own emitted `sw.js`: with the page session offline, a
-  // `networkFirst` route the cache had never seen still answered from the network, because the
-  // worker's fetches never crossed the session the condition was set on. The assertion after
-  // `offline()` then read as proof of an offline fallback that had not run.
-  //
-  // So worker targets are AUTO-ATTACHED and carry the same condition. `waitForDebuggerOnStart:
-  // false`, or every worker starts paused and the page that registered it never becomes
-  // controlled.
-  const workers = new Set<string>();
-  let offline = false;
-  const applyOffline = async (target: string | undefined): Promise<void> => {
-    // `-1` is CDP's "no throttling" for both throughputs. Passing 0 would be a browser that can
-    // never transfer a byte, which is a different failure wearing the same name.
-    await send(
-      'Network.emulateNetworkConditions',
-      { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
-      target,
-    );
-  };
-  options.connection.on('Target.attachedToTarget', (params) => {
-    const info = params['targetInfo'];
-    const kind =
-      typeof info === 'object' && info !== null
-        ? (info as Record<string, unknown>)['type']
-        : undefined;
-    const attachedTo = params['sessionId'];
-    if (typeof attachedTo !== 'string') return;
-    if (kind !== 'service_worker' && kind !== 'worker' && kind !== 'shared_worker') return;
-    workers.add(attachedTo);
-    // A worker that attaches while the page is offline inherits the condition — it did not exist
-    // when `offline(true)` ran, and a worker registered mid-test is the ordinary case for a PWA.
-    void (async () => {
-      try {
-        await send('Network.enable', {}, attachedTo);
-        if (offline) await applyOffline(attachedTo);
-      } catch {
-        // A worker that died between attaching and being configured is not this driver's problem;
-        // its session is gone and every later call on it would report the same thing.
-        workers.delete(attachedTo);
-      }
-    })();
-  });
-  await send(
-    'Target.setAutoAttach',
-    { autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
-    sessionId,
-  );
+  const { sessionId } = options;
 
   // `url()` is SYNCHRONOUS on the port, and CDP has no synchronous read — so the last committed
   // url is tracked here. Seeded with the tab's own starting url rather than '' so a `reload()`
   // before any `goto()` navigates somewhere real.
   let current = 'about:blank';
 
-  const evaluate = async (expression: string): Promise<unknown> => {
-    const answer = await send(
-      'Runtime.evaluate',
-      { expression, returnByValue: true, awaitPromise: true },
-      sessionId,
-    );
-    return evaluated(answer.result);
+  const evaluateRaw = (expression: string) =>
+    send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId);
+  const evaluate = async (expression: string): Promise<unknown> =>
+    evaluated((await evaluateRaw(expression)).result);
+
+  // A poll that THROWS is a poll that does not hold yet, not a refusal: a click that navigates
+  // leaves the next poll reading a document whose `<body>` is not parsed, and
+  // `document.body.textContent` throws there once and holds a poll later. The last throw is kept
+  // and named at the deadline, so an expression that can never evaluate still says why.
+  const waitFor = async (expression: string, what: string, timeoutMs = options.loadTimeoutMs) => {
+    // Only the PAGE's throw is swallowed: a connection that died still refuses at once.
+    let threw: string | undefined;
+    for (let waited = 0; waited < timeoutMs; waited += POLL_MS) {
+      const answer = (await evaluateRaw(`Boolean(${expression})`)).result;
+      threw = thrownIn(answer);
+      if (threw === undefined && evaluated(answer) === true) return;
+      await Bun.sleep(POLL_MS);
+    }
+    const last = threw === undefined ? '' : `, and its last poll threw: ${threw}`;
+    throw new CdpTimeoutError({ method: `waitFor(${what})${last}`, timeoutMs });
   };
 
-  return {
+  const tab: E2eTab = {
+    targetId: options.targetId,
     url: () => current,
     async goto(url: string): Promise<unknown> {
       // **The load EVENT is the signal, not the reply.** Chrome drops `Page.navigate`'s own reply
@@ -164,12 +128,14 @@ export async function cdpE2ePage(options: CdpE2ePageOptions): Promise<E2eBrowser
       // navigation, and `answered` can win the race on one too. So the document is asked directly:
       // a `readyState` that is already `complete` resolves at once, and the deadline resolves
       // rather than throwing — a slow page is the app's business, and the assertion after this is
-      // what should fail.
+      // what should fail. HALF the budget, because the budget is also the connection's per-call
+      // deadline: a page timer of the full budget raced that deadline and lost, reporting a page
+      // that never fired `load` as "Runtime.evaluate did not answer" instead.
       await evaluate(`(() => new Promise((resolve) => {
         if (document.readyState === 'complete') { resolve(true); return; }
         const done = () => resolve(true);
         addEventListener('load', done, { once: true });
-        setTimeout(done, ${String(options.loadTimeoutMs)});
+        setTimeout(done, ${String(Math.floor(options.loadTimeoutMs / 2))});
       }))()`);
       // The app may have redirected, so the committed url is re-read rather than assumed.
       const settled = await evaluate('location.href');
@@ -191,19 +157,24 @@ export async function cdpE2ePage(options: CdpE2ePageOptions): Promise<E2eBrowser
         });
       }
     },
-    async offline(enabled: boolean): Promise<void> {
-      offline = enabled;
-      // The page first, then every worker attached to it. Sequential rather than `Promise.all`:
-      // the set is small, and a worker session that has gone away must not take the page's own
-      // condition down with it.
-      await applyOffline(sessionId);
-      for (const worker of [...workers]) {
-        try {
-          await applyOffline(worker);
-        } catch {
-          workers.delete(worker);
-        }
-      }
+    offline: (enabled: boolean) => options.offline(enabled),
+    async reload(): Promise<void> {
+      const at = current;
+      // Reload is a navigation to the url the tab already has — the one wait the port proves.
+      await tab.goto(at);
+    },
+    waitFor,
+    async indexedDbNames(): Promise<readonly string[]> {
+      const names = await evaluate(
+        '(async () => (await indexedDB.databases()).map((db) => db.name ?? "").sort())()',
+      );
+      return Array.isArray(names)
+        ? names.filter((name): name is string => typeof name === 'string')
+        : [];
+    },
+    async close(): Promise<void> {
+      await send('Target.closeTarget', { targetId: options.targetId });
     },
   };
+  return tab;
 }

@@ -4,10 +4,12 @@
 // that can wait: released, the hub closed and the process gone with N·M writes still in flight,
 // every other node renders the drained members for a full TTL.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
-import { ChannelHub, type Topic, topic } from './channel';
+import { ChannelHub, type Topic } from './channel';
+import { channel } from './channel-decl';
+import { clearChannels } from './channel-registry';
 import { InProcessTransport, type Transport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { PresenceRegistry } from './presence';
@@ -16,7 +18,18 @@ import { createSyncNode, type SyncWs, type WsData } from './sync-node';
 import { encode, PROTOCOL_VERSION } from './sync-protocol';
 
 const BUILD_ID = 'build-1';
-const ROOM: Topic = topic('org', 'o1', 'cursors');
+/** A channel declared `events: true`: joining it is joining its presence set. */
+const room = channel('leaves-room', {
+  params: ['orgId'],
+  catchUp: { name: 'roomRead' },
+  events: true,
+});
+const ROOM: Topic = room.topic({ orgId: 'o1' });
+const ROOM_TARGET = { kind: 'channel', channel: 'leaves-room', params: { orgId: 'o1' } } as const;
+
+afterAll(() => {
+  clearChannels();
+});
 
 class SilentWs implements SyncWs {
   readonly data: WsData;
@@ -76,7 +89,6 @@ describe('drain() waits out the presence leaves it started', () => {
     const bus = new InProcessTransport({ clock });
     const gated = gatedTransport(bus);
     const hub = new ChannelHub({ transport: bus, sockets });
-    hub.guard('org.>', () => true);
     const presence = new PresenceRegistry({
       transport: gated.transport,
       hub,
@@ -103,7 +115,7 @@ describe('drain() waits out the presence leaves it started', () => {
           v: PROTOCOL_VERSION,
           op: 'add',
           sid: id,
-          target: { kind: 'topic', topic: ROOM },
+          target: ROOM_TARGET,
         }),
       );
     }

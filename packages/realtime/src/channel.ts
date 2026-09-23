@@ -1,51 +1,38 @@
-// Tier 1: channels. Typed topics over Bun's native WS pub/sub, fanned across nodes by `Transport`.
-//
-// A channel message rides the `patch` frame with `sid = topic` and `op: 'insert'` — a channel is an
-// append-only stream, so tier 1 needs no frame of its own. That is why climbing the ladder is a
-// config change: the client's frame handler is the same code at every rung.
+// Tier 1: channels. A declared `channel()` is subscribed by name + params — there is no other way
+// to spell a topic. Its `records` are derived from the change feed on the node that delivers them
+// (seq, epoch, ring, `replay-gap` — plan 101, slices 09-10), and its ephemeral `events` (presence
+// included) fan out across nodes over the `Transport` bridge.
 
-import { type Actor, finiteOption, logger, renderThrowable, uuid } from '@ultimat3/core';
-import { formatLsn } from './changefeed';
+import {
+  type Actor,
+  type Ctx,
+  createContext,
+  finiteOption,
+  invariant,
+  logger,
+  renderThrowable,
+} from '@ultimat3/core';
+import type { ChangeEvent } from './changefeed';
+import { authorizeChannel } from './channel-authz';
+import { type Bridge, unsubscribeWhenOpen } from './channel-bridge';
+import type { Channel, Topic } from './channel-decl';
+import { ChannelLogs } from './channel-logs';
+import { getChannel, registeredChannels } from './channel-registry';
+import type { ChannelEventsFrame, ChannelSubscribeTarget } from './channel-wire';
 import {
   isPolicyDenial,
   SubscriptionLimitError,
   TopicForbiddenError,
   TransportUnavailableError,
 } from './errors';
-import { subjectMatches, type Transport, type TransportSubscription } from './fanout';
+import type { Transport } from './fanout';
 import type { JsonObject } from './json';
 import type { SocketRegistry, SyncSocket } from './socket';
-import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import { decode, PROTOCOL_VERSION } from './sync-protocol';
 
-/** Branded so a raw string can never be published to; `topic()` is the only constructor. */
-export type Topic = string & { readonly __ultimateTopic: unique symbol };
+export { type Topic, topic } from './channel-decl';
 
-const SEGMENT = /^[A-Za-z0-9_-]+$/;
 const CHANNEL_SUBJECT_PREFIX = 'x.channel';
-
-/** `topic('org', orgId, 'cursors')` -> `org.<orgId>.cursors`. Segments are validated, never escaped. */
-export function topic(...parts: readonly (string | number)[]): Topic {
-  const segments = parts.map((part) => String(part));
-  for (const segment of segments) {
-    if (!SEGMENT.test(segment)) {
-      throw new TopicForbiddenError({
-        topic: segments.join('.'),
-        actorId: null,
-        reason: `segment "${segment}" must match ${SEGMENT.source} (dots and wildcards are reserved)`,
-      });
-    }
-  }
-  return segments.join('.') as Topic;
-}
-
-export interface TopicGuardArgs {
-  readonly actor: Actor | null;
-  readonly topic: Topic;
-  readonly segments: readonly string[];
-}
-
-export type TopicGuardResult = boolean | { readonly allowed: boolean; readonly reason?: string };
-export type TopicGuard = (args: TopicGuardArgs) => TopicGuardResult | Promise<TopicGuardResult>;
 
 export interface ChannelHubOptions {
   readonly transport: Transport;
@@ -57,45 +44,24 @@ export interface ChannelHubOptions {
    * admits unbounded distinct names inside one tenant, and a per-socket cap bounds nothing.
    */
   readonly maxTopicsPerNode?: number;
-  /**
-   * This node's mark on the patch ids it mints. Defaults to a per-hub random id, which is enough
-   * to keep two nodes apart; declare it (the pod name, the `sync` instance id) when an operator
-   * reading one frame should be able to say which node published it.
-   *
-   * A blank string is read as OMITTED, never as a mark: `??` only answers for `undefined`, so
-   * `nodeId: ''` — which is what an unset `POD_NAME` interpolates to — stored the empty mark and
-   * two hubs then minted the SAME first patch id, `:0000000000000001`. That is precisely the
-   * collision this field exists to prevent, arriving through the field itself.
-   */
-  readonly nodeId?: string;
+  /** Scope the hub to these declarations. Omitted = every `channel()` registered in the process. */
+  readonly channels?: readonly Channel[];
+  /** The node context a channel policy is evaluated under, as a live query's is. */
+  readonly ctx?: Ctx;
+  /** `records` frames kept per topic for a `since` resume. See `DEFAULT_CHANNEL_RING`. */
+  readonly ringSize?: number;
 }
 
 /** Distinct topics one node bridges before `X_SUBSCRIPTION_LIMIT`. */
 export const DEFAULT_MAX_TOPICS_PER_NODE = 10_000;
 
 /**
- * One topic's fanout into this node. `sub` is the transport subscription as a PROMISE, published
- * into the table before it is awaited: looked up before the await and written after it, two sockets
- * reaching one topic at once opened two transport subscriptions — the second replacing the first in
- * the table, and the first then unreachable by `#release`, by a socket dying, by `close()` or by
- * anything else, delivering every message on that topic a second time for the life of the process.
- *
- * `null` means the slot is taken and nothing is open yet: the node cap is decided before the guard
- * runs, so the reservation has to exist before there is anything to reserve it with.
- */
-interface Bridge {
-  sub: Promise<TransportSubscription> | null;
-  refs: number;
-}
-
-/**
- * Deny by default: a topic with no matching guard is forbidden. An authz hole must be a typed
- * error at subscribe time, not a config option someone forgot to set.
+ * Deny by default: a channel name no `channel()` declared is refused, so an authz hole is a typed
+ * error at subscribe time, never a topic somebody forgot to guard.
  */
 export class ChannelHub {
   readonly #transport: Transport;
   readonly #sockets: SocketRegistry;
-  readonly #guards: Array<{ pattern: string; guard: TopicGuard }> = [];
   readonly #bridges = new Map<string, Bridge>();
   /**
    * Topics this socket has asked for and not yet joined. Weakly keyed, so it needs no teardown
@@ -105,15 +71,21 @@ export class ChannelHub {
   readonly #maxTopicsPerSocket: number;
   readonly #maxTopicsPerNode: number;
   #guardFailures = 0;
-  #sequence = 0n;
-  /**
-   * `#sequence` counts within one PROCESS, so it cannot identify a message across nodes: two
-   * `sync` replicas publishing to one topic minted the same id for the same subscriber, and a
-   * channel has no cursor and no re-snapshot, so nothing downstream could repair the collision.
-   */
-  readonly #nodeId: string;
   /** Set by `close()`. Read by `#open`, which is the only thing that can reach a late subscription. */
   #closed = false;
+  /**
+   * `null` serves every registered channel — the default, so a host passes nothing. A list scopes
+   * this hub to exactly those declarations (a test, a node that serves a subset).
+   */
+  readonly #only: ReadonlyMap<string, Channel> | null;
+  readonly #logs: ChannelLogs;
+  readonly #ctx: Ctx;
+  /**
+   * Topics a socket's policy refused, latched until its actor changes: a denial is a decision, so
+   * a client re-asking in a loop is answered without re-running the policy each time — and only
+   * THAT channel is refused, every other one on the socket keeps flowing.
+   */
+  readonly #latched = new WeakMap<SyncSocket, Set<string>>();
 
   constructor(options: ChannelHubOptions) {
     this.#transport = options.transport;
@@ -128,9 +100,99 @@ export class ChannelHub {
       'maxTopicsPerNode',
       options.maxTopicsPerNode ?? DEFAULT_MAX_TOPICS_PER_NODE,
     );
-    // Trimmed before the emptiness test: `nodeId: ' '` marks a frame with a space, which reads in
-    // a log as no mark at all and collides with the next hub that does the same.
-    this.#nodeId = options.nodeId?.trim() || uuid();
+    this.#ctx = options.ctx ?? createContext();
+    this.#logs = new ChannelLogs(options.sockets, options.ringSize);
+    this.#only =
+      options.channels === undefined ? null : new Map(options.channels.map((c) => [c.name, c]));
+  }
+
+  /**
+   * Join a declared channel by name + params. The policy runs with the params as input; a denial
+   * is latched per (socket, topic). With `since`, the ring replays what was missed or a
+   * `replay-gap` says to re-read. Answers the topic, which presence keys its set by.
+   */
+  async subscribeChannel(socket: SyncSocket, target: ChannelSubscribeTarget): Promise<Topic> {
+    const declared =
+      this.#only === null ? getChannel(target.channel) : this.#only.get(target.channel);
+    if (declared === undefined) {
+      throw new TopicForbiddenError({
+        topic: target.channel,
+        actorId: socket.actorId,
+        reason: 'no channel() is declared with this name on this node',
+      });
+    }
+    const params: Record<string, string> = {};
+    for (const param of declared.params) {
+      params[param] = Object.hasOwn(target.params, param) ? (target.params[param] ?? '') : '';
+    }
+    const name = declared.topic(params);
+    if (this.#latched.get(socket)?.has(name) === true) {
+      throw new TopicForbiddenError({
+        topic: name,
+        actorId: socket.actorId,
+        reason: 'denied earlier on this connection; it is re-decided when the session changes',
+      });
+    }
+    // Asked before the join seats it: a repeated `add` (the presence beat) is not a fresh seat.
+    const fresh = !socket.topics.has(name);
+    await this.#join(socket, name, async () => {
+      try {
+        await authorizeChannel(declared, this.#ctx, socket.actor, name, params);
+      } catch (error) {
+        if (error instanceof TopicForbiddenError) this.#latch(socket, name);
+        throw error;
+      }
+    });
+    this.#logs.open(name, { channel: declared, params });
+    this.#logs.resume(socket, name, target.since, fresh);
+    return name;
+  }
+
+  /**
+   * One committed change from the feed, turned into `records` frames on every declared channel it
+   * touches and delivered on THIS node. Called for every change the node receives — the same
+   * stream `LiveQueryRegistry.deliver` is fed — so a write names no channel (axiom 2).
+   */
+  deliverChange(change: ChangeEvent): number {
+    return this.#logs.deliverChange(this.#only?.values() ?? registeredChannels(), change);
+  }
+
+  /** An ephemeral event (typing, a cursor) to every node's members of that topic. Never stored. */
+  async publishEvent<K extends string>(
+    declared: Channel<K>,
+    params: Readonly<Record<K, string>>,
+    event: JsonObject,
+  ): Promise<void> {
+    invariant(
+      declared.events,
+      'X_CHANNEL_DECLARATION_INVALID',
+      `channel("${declared.name}") declares no events, so nothing may publish one on it`,
+      `declare it with events: true: channel('${declared.name}', { …, events: true })`,
+    );
+    await this.emit(declared.topic(params), event);
+  }
+
+  /**
+   * An `events` frame on a topic this node already resolved — `publishEvent`'s second half, and
+   * presence's one way out: a roster change is an event on the channel the member joined. Never
+   * a topic a caller spelled; every `Topic` comes from a declaration.
+   */
+  async emit(name: Topic, event: JsonObject): Promise<void> {
+    const frame: ChannelEventsFrame = { type: 'events', v: PROTOCOL_VERSION, channel: name, event };
+    await this.#transport.publish(`${CHANNEL_SUBJECT_PREFIX}.${name}`, JSON.stringify(frame));
+  }
+
+  /** The declaration and params a topic joined on this node resolves to — `undefined` if none. */
+  channelOf(
+    name: Topic,
+  ): { readonly channel: Channel; readonly params: Readonly<Record<string, string>> } | undefined {
+    return this.#logs.target(name);
+  }
+
+  #latch(socket: SyncSocket, name: string): void {
+    const latched = this.#latched.get(socket) ?? new Set<string>();
+    latched.add(name);
+    this.#latched.set(socket, latched);
   }
 
   /** Sockets this node will deliver `name` to. The metric the fanout reads. */
@@ -152,18 +214,12 @@ export class ChannelHub {
     return this.#guardFailures;
   }
 
-  /** `pattern` uses NATS wildcards: `org.*.cursors`, `org.>`. First registered match wins. */
-  guard(pattern: string, guard: TopicGuard): this {
-    this.#guards.push({ pattern, guard });
-    return this;
-  }
-
   /**
    * Both caps and the node's bridge slot are taken SYNCHRONOUSLY, before the guard is awaited: read
    * at the top and acted on after two awaits, one WebSocket write carrying N subscribe frames
    * passed each of them N times, and `maxTopicsPerSocket`/`maxTopicsPerNode` bounded nothing.
    */
-  async subscribe(socket: SyncSocket, name: Topic): Promise<void> {
+  async #join(socket: SyncSocket, name: Topic, authorize: () => Promise<void>): Promise<void> {
     if (socket.topics.has(name)) return;
     const claimed = this.#claimed.get(socket) ?? 0;
     if (socket.topics.size + claimed >= this.#maxTopicsPerSocket) {
@@ -182,7 +238,7 @@ export class ChannelHub {
     const bridge = this.#reserve(name);
     this.#claimed.set(socket, claimed + 1);
     try {
-      await this.#authorize(socket.actor, name);
+      await authorize();
       await this.#open(name, bridge);
     } catch (error) {
       // The slot this subscribe took, given back on the one path that will never fill it — and
@@ -226,10 +282,15 @@ export class ChannelHub {
    */
   async onActorChange(socket: SyncSocket, actor: Actor | null): Promise<readonly Topic[]> {
     socket.actor = actor;
+    // A new session re-decides everything, the latched denials included.
+    this.#latched.delete(socket);
     const dropped: Topic[] = [];
     for (const name of [...socket.topics] as Topic[]) {
       try {
-        await this.#authorize(actor, name);
+        const target = this.#logs.target(name);
+        if (target !== undefined) {
+          await authorizeChannel(target.channel, this.#ctx, actor, name, target.params);
+        }
       } catch (error) {
         if (isPolicyDenial(error) || error instanceof TopicForbiddenError) {
           this.unsubscribe(socket, name);
@@ -247,21 +308,6 @@ export class ChannelHub {
     return dropped;
   }
 
-  /** Publishes to every node. Local delivery happens via the transport bridge, never directly. */
-  async publish(name: Topic, message: JsonObject): Promise<void> {
-    this.#sequence += 1n;
-    const lsn = formatLsn(this.#sequence);
-    // The lsn stays this node's own counter — nothing reads a channel frame's lsn as an order
-    // across nodes — but the patch ID is what a client keys by, so it carries the node too.
-    const frame = channelFrame(name, lsn, message, `${this.#nodeId}:${lsn}`);
-    await this.#transport.publish(`${CHANNEL_SUBJECT_PREFIX}.${name}`, encode(frame));
-  }
-
-  /** Frames already encoded elsewhere (presence, for one) reuse the same bridge. */
-  async publishFrame(name: Topic, frame: Frame): Promise<void> {
-    await this.#transport.publish(`${CHANNEL_SUBJECT_PREFIX}.${name}`, encode(frame));
-  }
-
   async close(): Promise<void> {
     // Set BEFORE the table is walked, because the table is not the whole story: a reservation an
     // in-flight `subscribe` has not opened yet is `sub === null`, so `unsubscribeWhenOpen` does
@@ -272,29 +318,6 @@ export class ChannelHub {
     this.#closed = true;
     for (const bridge of this.#bridges.values()) unsubscribeWhenOpen(bridge);
     this.#bridges.clear();
-  }
-
-  async #authorize(actor: Actor | null, name: Topic): Promise<void> {
-    const segments = name.split('.');
-    const entry = this.#guards.find(({ pattern }) => subjectMatches(pattern, name));
-    if (!entry) {
-      throw new TopicForbiddenError({
-        topic: name,
-        actorId: actor === null ? null : actor.id,
-        reason: 'no guard declared for this topic',
-      });
-    }
-    const result = await entry.guard({ actor, topic: name, segments });
-    const allowed = typeof result === 'boolean' ? result : result.allowed;
-    if (!allowed) {
-      const reason =
-        typeof result === 'boolean' ? 'guard denied' : (result.reason ?? 'guard denied');
-      throw new TopicForbiddenError({
-        topic: name,
-        actorId: actor === null ? null : actor.id,
-        reason,
-      });
-    }
   }
 
   /**
@@ -365,40 +388,7 @@ export class ChannelHub {
     if (bridge.refs > 0) return;
     unsubscribeWhenOpen(bridge);
     this.#bridges.delete(name);
+    // The ring goes with the last local member; a later subscriber starts a new epoch.
+    this.#logs.close(name);
   }
-}
-
-/**
- * A bridge released while its subscription is still opening still has to be closed — the transport
- * hands the handle back after the caller has gone, and dropping the promise would leave a live
- * subscription this node can no longer name. An open that failed has nothing to unsubscribe and its
- * rejection was already answered to the subscriber that caused it.
- */
-function unsubscribeWhenOpen(bridge: Bridge): void {
-  void bridge.sub?.then(
-    (sub) => {
-      sub.unsubscribe();
-    },
-    () => undefined,
-  );
-}
-
-/**
- * `id` identifies the MESSAGE and defaults to the lsn, which is what every caller outside this
- * file already passes as one. `ChannelHub.publish` gives it the publishing node's mark instead:
- * an lsn is a per-process counter, and two nodes on one topic mint the same one.
- */
-export function channelFrame(
-  name: Topic,
-  lsn: string,
-  message: JsonObject,
-  id: string = lsn,
-): Frame {
-  return {
-    type: 'patch',
-    v: PROTOCOL_VERSION,
-    sid: name,
-    lsn,
-    patches: [{ op: 'insert', id, row: message, lsn }],
-  };
 }

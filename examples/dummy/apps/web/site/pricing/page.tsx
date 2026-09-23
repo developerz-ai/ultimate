@@ -64,15 +64,20 @@ export const config = defineRoute({
   revalidate: { tags: [tag.plan] },
   offline: 'runtime',
   /**
-   * No `hydrate` and no `budget.js` here on purpose: the island below is the whole declaration.
-   * A route carrying one hydrates on `interaction` and gets `site/`'s 20kb ceiling derived for it,
-   * so the two facts the framework can work out are not two more lines to forget. The measured
-   * cost is 1894 bytes — an 875-byte chunk plus the interaction runtime. Well under, and it stays
-   * that way because this island imports no `solid-js`: any island that calls Solid's `render()`
-   * starts at 12,588 bytes, which is why the ceiling is 20kb and not the 4kb this comment used to
-   * name (#254). `lcp` stays because nothing derives it.
+   * No `hydrate` here on purpose: the island below is the declaration, and a route carrying one
+   * hydrates on `interaction`. `lcp` stays because nothing derives it.
+   *
+   * measured: 21,487 B (2026-09-22; `x build`'s `buildIslands`, `hydrateRuntimeBytes`) — the
+   * island chunk 19,858 + the `interaction` runtime 1,629, against 21,504. `site/`'s derived
+   * ceiling is 20kb, so this route declares its own.
+   * why: the island posts through the typed action client (`shared/browser-client.ts`,
+   * `@ultimat3/action`'s `rpc` over `@ultimat3/core`'s one browser transport) instead of a
+   * hand-rolled `fetch` — plan 101, slice 16: one naming rule, the build id every write carries
+   * (so a page open across a deploy answers `X_CONTRACT_DRIFT` instead of posting a stale shape),
+   * and one error decode. It was 1,894 B as an 875-byte raw-`fetch` chunk; trimming back means a
+   * second transport, which is the thing slice 16 removed. It still imports no `solid-js`.
    */
-  budget: { lcp: 1500 },
+  budget: { js: '21kb', lcp: 1500 },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

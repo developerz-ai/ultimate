@@ -138,6 +138,20 @@ export const byId = async (orgId: OrgId, id: PostId): Promise<PostView | null> =
   return row === null ? null : readView(row);
 };
 
+/**
+ * Whole `posts` rows — RECORDS, not views: what the page's store holds under `posts:<id>`, so the
+ * read answering them and the channel frame updating them write one object. `orgPosts` and
+ * `postRecord` in `live.ts` answer these, declared `rows: posts.$schema`.
+ */
+export const recentRows = async (orgId: OrgId, limit: number): Promise<Post[]> => [
+  ...(await db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()),
+];
+
+export const rowById = async (orgId: OrgId, id: PostId): Promise<Post[]> => {
+  const row = await db.posts.where({ orgId, id }).one();
+  return row === null ? [] : [row];
+};
+
 export const bySlug = async (orgId: OrgId, slug: string): Promise<PostView | null> => {
   const row = await db.posts.where({ orgId, slug }).preload('author').one();
   return row === null ? null : readView(row);

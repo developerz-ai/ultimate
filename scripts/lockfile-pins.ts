@@ -41,6 +41,8 @@ interface LockedFact {
  */
 export type PinEdit =
   | ({ readonly kind: 'range'; readonly dep: string } & LockedFact)
+  /** A declared edge the block does not record at all (`locked` is `''`) — DX ledger #13. */
+  | ({ readonly kind: 'missing'; readonly dep: string } & LockedFact)
   | ({ readonly kind: 'version' } & LockedFact);
 
 /** The workspace's own recorded version. Non-global: it is the first `version` in the block. */
@@ -51,6 +53,32 @@ export interface DeclaredFacts {
   readonly deps: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /** Each workspace directory's own declared version. */
   readonly versions: Readonly<Record<string, string>>;
+  /** Which manifest section declares each edge; absent means `dependencies`. */
+  readonly sections?: Readonly<Record<string, Readonly<Record<string, DepSection>>>>;
+}
+
+export type DepSection = 'dependencies' | 'devDependencies';
+
+/**
+ * One edge into the block's section for it, the section created when the block has none. Entries
+ * are re-sorted by name because that is the order `bun install` writes, so a corrected file is the
+ * file `bun install` would have produced and the next install changes nothing.
+ */
+function insertEdge(body: string, section: DepSection, dep: string, range: string): string {
+  const open = `\n      "${section}": {`;
+  const at = body.indexOf(open);
+  const entry = `\n        "${dep}": "${range}",`;
+  if (at < 0) return `${body}${open}${entry}\n      },`;
+  const close = body.indexOf('\n      },', at);
+  const entries = [
+    ...body
+      .slice(at + open.length, close)
+      .split('\n')
+      .filter(Boolean),
+    entry.slice(1),
+  ];
+  entries.sort((a, b) => (a.trim() < b.trim() ? -1 : 1));
+  return `${body.slice(0, at)}${open}\n${entries.join('\n')}${body.slice(close)}`;
 }
 
 /**
@@ -78,6 +106,12 @@ export function correctLockfile(
       edits.push({ kind: 'range', dir, dep, locked, declared: target });
       return `"${dep}": "${target}"`;
     });
+    const recorded = new Set([...body.matchAll(LOCK_DEP)].map((match) => match[1] as string));
+    for (const [dep, target] of Object.entries(wantDeps ?? {})) {
+      if (recorded.has(dep)) continue;
+      edits.push({ kind: 'missing', dir, dep, locked: '', declared: target });
+      fixed = insertEdge(fixed, declared.sections?.[dir]?.[dep] ?? 'dependencies', dep, target);
+    }
     fixed = fixed.replace(LOCK_VERSION, (line, locked: string) => {
       if (wantVersion === undefined || wantVersion === locked) return line;
       edits.push({ kind: 'version', dir, locked, declared: wantVersion });
@@ -88,10 +122,15 @@ export function correctLockfile(
   return { text, edits };
 }
 
-const causeOf = (edit: PinEdit): string =>
-  edit.kind === 'range'
-    ? `bun.lock records ${edit.dir} depending on ${edit.dep}@${edit.locked}, and that package.json says ${edit.declared}`
-    : `bun.lock records ${edit.dir} at version ${edit.locked}, and that package.json says ${edit.declared}`;
+const causeOf = (edit: PinEdit): string => {
+  if (edit.kind === 'range') {
+    return `bun.lock records ${edit.dir} depending on ${edit.dep}@${edit.locked}, and that package.json says ${edit.declared}`;
+  }
+  if (edit.kind === 'missing') {
+    return `bun.lock records ${edit.dir} without ${edit.dep}, which that package.json declares at ${edit.declared}`;
+  }
+  return `bun.lock records ${edit.dir} at version ${edit.locked}, and that package.json says ${edit.declared}`;
+};
 
 const findingFor = (edit: PinEdit): Finding => ({
   code: 'X_LOCKFILE_STALE',
@@ -115,9 +154,26 @@ export async function readDeclaredVersions(
   return out;
 }
 
+/** Which section of each manifest names each `@ultimat3/*` edge. */
+export async function readDeclaredSections(
+  root: string,
+): Promise<Readonly<Record<string, Readonly<Record<string, DepSection>>>>> {
+  const out: Record<string, Record<string, DepSection>> = {};
+  for (const path of await workspaceManifests(root)) {
+    const dir = relative(root, dirname(path));
+    const json = await requireWorkspaceManifest(path, `${dir}/package.json`);
+    const sections: Record<string, DepSection> = {};
+    for (const name of Object.keys(json.devDependencies ?? {})) sections[name] = 'devDependencies';
+    for (const name of Object.keys(json.dependencies ?? {})) sections[name] = 'dependencies';
+    out[dir] = sections;
+  }
+  return out;
+}
+
 export const declaredFacts = async (root: string): Promise<DeclaredFacts> => ({
   deps: await readInternalDeps(root),
   versions: await readDeclaredVersions(root),
+  sections: await readDeclaredSections(root),
 });
 
 if (import.meta.main) {

@@ -35,7 +35,7 @@
 import { cpus } from 'node:os';
 import type { ClientStats } from './restart-bench-client';
 import { type BenchReport, type PhaseSummary, summarizeDurations } from './restart-bench-report';
-import { summarizeSeq } from './restart-bench-seq';
+import { summarizeSeq, unrepairedFindings } from './restart-bench-seq';
 
 interface Args {
   readonly clients: number;
@@ -333,7 +333,9 @@ async function main(): Promise<void> {
   console.error(
     `[bench] delivery: ${seqSummary.received} probe messages received by ` +
       `${seqSummary.observers}/${args.clients} clients; ${seqSummary.missing} lost in ` +
-      `${seqSummary.gapEvents} gaps on ${seqSummary.clientsWithGaps} clients ` +
+      `${seqSummary.gapEvents} gaps on ${seqSummary.clientsWithGaps} clients, ` +
+      `${seqSummary.repaired} repaired by ${seqSummary.replayGaps} replay-gaps, ` +
+      `${seqSummary.unrepaired} UNREPAIRED on ${seqSummary.clientsUnrepaired} clients ` +
       `(${seqSummary.duplicates} duplicates, ${seqSummary.rewinds} publisher rewinds, ` +
       `${seqSummary.malformed} malformed)`,
   );
@@ -352,12 +354,13 @@ async function main(): Promise<void> {
       'ramp is throttled by the same AcceptBudget the restart recovery is measured under',
       'readiness (ramp done / restart consistent) is read from the server’s own socket count, ' +
         'not the load generator’s self-report',
-      'restart.consistent times the FIRST channel patch on the reconnected socket: reconnect + ' +
-        'resubscribe + one delivery. That is REACHABILITY, not consistency — a channel topic has ' +
-        'no cursor and no re-snapshot, so a patch dropped by backpressure is unrecoverable and a ' +
-        'first-delivery timer cannot see one',
-      'seq is the delivery half: each client counts holes in the probe sequence it received while ' +
-        'subscribed, per connection. seq.missing = 0 means no client observed a lost channel frame',
+      'restart.consistent times the FIRST records frame on the reconnected socket: reconnect + ' +
+        'resubscribe + one delivery. That is REACHABILITY, not consistency — seq is the half that ' +
+        'can see a lost frame',
+      'seq is the delivery half: each client counts holes in the records seq it received while ' +
+        'subscribed, per connection, and every replay-gap the node sent to repair one. ' +
+        'seq.unrepaired = 0 is the bar — a hole the node answered with replay-gap is the design ' +
+        'working, and the run exits 1 on any hole it did not',
       'seq.missing is a LOWER BOUND — a hole is only visible between two messages one connection ' +
         'received, so anything lost before the first or after the last is not counted',
       'seq.rewinds, not seq.missing, is where a publisher restart lands: the probe counter resets ' +
@@ -373,6 +376,9 @@ async function main(): Promise<void> {
 
   console.log(JSON.stringify(report, null, 2));
   if (args.out) await Bun.write(args.out, `${JSON.stringify(report, null, 2)}\n`);
+  const unrepaired = unrepairedFindings(seqSummary);
+  for (const finding of unrepaired) console.error(`[bench] FAIL: ${finding}`);
+  if (unrepaired.length > 0) process.exitCode = 1;
 }
 
 if (import.meta.main) {

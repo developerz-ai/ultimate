@@ -20,9 +20,11 @@ import { defineRoute, island } from '@ultimat3/render';
 import { Skeleton, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { useActor } from '../../shared/actor';
-import { queries } from '../../shared/client';
-import { syncUrlFrom } from '../../shared/sync-url';
-import { Layout } from '../layout';
+import { memberQueries } from '../../shared/client';
+import { pluralFormsOf } from '../../shared/plural-forms';
+import { uiStringsFor } from '../../shared/ui-strings-server';
+import { Layout, updateBannerIsland } from '../layout';
+import { useViewer } from '../viewer-context';
 import styles from './page.module.scss';
 
 /**
@@ -32,8 +34,11 @@ import styles from './page.module.scss';
  */
 const LiveFeed = island({
   src: './feed.island.tsx',
-  props: ['syncUrl', 'buildId', 'actorId', 'orgId', 'labels'],
+  props: ['orgId', 'locale', 'zone', 'labels', 'ui'],
 });
+
+/** The layout's update banner — an island of THIS route, so it is declared here. */
+const Banner = updateBannerIsland('../update-banner.island.tsx');
 
 export const config = defineRoute({
   render: 'stream',
@@ -52,29 +57,38 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   /**
-   * Measured, not guessed: the island chunk is 43,890 bytes (re-measured 2026-08-25 — it was
-   * 42,714 until the tree moved under it, and 4 of the difference are `socketFor` and `signal`
-   * moving to `shared/live-socket.ts`) plus the 774-byte `idle` hydration runtime, against
-   * 61,440. Most of
-   * it is the Solid runtime and `LiveClient`; the feed's own compiled markup is a few hundred
-   * bytes, which is why this island renders plain elements rather than `@postly/ui`'s `PostCard`
-   * — that component alone costs more than the headroom left here.
+   * measured: 125,056 B (2026-09-22; `x build`'s `buildIslands`, `buildPageBoot`,
+   * `hydrateRuntimeBytes`) — the island chunk 92,973 + the update banner 712 + the page boot
+   * 29,627 + the `idle` runtime 1,744, against 125,952.
+   * Counted the way the `budgets` step sums a document (`packages/cli/src/budgets.ts`): every
+   * executable `<script src>` it carries — the page boot included, only `/x-sw-register.js` is
+   * exempt (`FRAMEWORK_SCRIPTS`) — plus every island chunk and the inline hydration runtime.
+   * why: the feed is records of the page's one store over the page's one socket — the store and
+   * the socket host in the island, the IndexedDB restore and the outbox in the page boot (`posts`
+   * is `persist: true`, so a reload offline still shows the feed) — `@ultimat3/ui`'s
+   * `AsyncRegion` for its four states, each row's date in the member's zone and a like control
+   * (`useMutation(LIKE_POST)`), which the feed had before #271 and lost with it, and the socket's
+   * "a new build is live" notice. The layout's update banner is its own 712 B island
+   * (`@ultimat3/core/page`). Down from 133,009 when the outbox left the island for the boot
+   * (8,288 B). Each island still carries its own copy of the page's realtime (`splitting:
+   * false`); the shared runtime is #505, and this number comes DOWN again when it lands.
    */
-  budget: { js: '60kb', lcp: 2000 },
+  budget: { js: '123kb', lcp: 2000 },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
-  load: () => queries.feedActivity({ orgId: useActor().orgId }),
+  load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 
 /** The rows the read answered: one synthetic row per org, or none before the first post. */
-type FeedActivity = Awaited<ReturnType<typeof queries.feedActivity>>;
+type FeedActivity = Awaited<ReturnType<typeof memberQueries.feedActivity>>;
 
 export function Page(props: { readonly data: FeedActivity }): JSX.Element {
   const t = useT();
   const actor = useActor();
+  const viewer = useViewer();
 
   return (
-    <Layout>
+    <Layout banner={Banner}>
       <header class={styles.header}>
         <h1>{t('app.feed.heading', { org: actor.org.name })}</h1>
         <Text tone="muted" class={styles.activity}>
@@ -90,15 +104,19 @@ export function Page(props: { readonly data: FeedActivity }): JSX.Element {
         honest thing for a server to say about rows only a socket has. `mount` replaces it.
       */}
       <LiveFeed
-        syncUrl={syncUrlFrom(process.env)}
-        buildId={process.env['BUILD_ID'] ?? 'dev'}
-        actorId={actor.id}
         orgId={actor.orgId}
+        locale={t.locale}
+        zone={viewer.zone}
         labels={{
-          loading: t('app.feed.loading'),
           empty: t('app.feed.empty'),
           offline: t('app.feed.offlineNotice'),
+          likes: pluralFormsOf(t, 'app.post.likes'),
+          like: t('app.post.like'),
+          queued: t('errors.offlineQueued'),
+          update: t('errors.updateAvailable'),
+          reload: t('errors.updateAction'),
         }}
+        ui={uiStringsFor(t)}
       >
         <Skeleton lines={4} />
       </LiveFeed>

@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { createContext, resolveConflict, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
+import * as barrel from './index';
 import { invoke } from './invoke';
-import type { LocalRow, LocalTable, LocalTx } from './mutator';
-import { custom, isMutator, mutator, resolveConflict } from './mutator';
+import type { LocalTable, LocalTx } from './mutator';
+import { custom, isMutator, mutator } from './mutator';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, likes: t.number });
@@ -14,24 +15,29 @@ const strangerActor = userActor({ id: 'u2' });
 const ctx = createContext({ actor: likerActor });
 const stranger = createContext({ actor: strangerActor });
 
-interface PostRow extends LocalRow {
+interface PostRow {
+  readonly id: string;
   readonly likes: number;
 }
 
 /** The Map-backed LocalTx @ultimat3/realtime implements over OPFS SQLite. */
 function fakeTx(rows: Map<string, PostRow>) {
   const table: LocalTable<PostRow> = {
-    insert: (row) => {
-      rows.set(row.id, row);
+    get: (key) => rows.get(key),
+    all: () => [...rows.values()],
+    insert: (key, row) => {
+      rows.set(key, row);
     },
-    update: (id, patch) => {
-      const current = rows.get(id);
+    upsert: (key, row) => {
+      rows.set(key, { ...rows.get(key), ...row });
+    },
+    update: (key, patch) => {
+      const current = rows.get(key);
       if (current === undefined) return;
-      const next = typeof patch === 'function' ? patch(current) : patch;
-      rows.set(id, { ...current, ...next });
+      rows.set(key, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
     },
-    delete: (id) => {
-      rows.delete(id);
+    delete: (key) => {
+      rows.delete(key);
     },
   };
   return { table: () => table } as unknown as LocalTx;
@@ -154,12 +160,47 @@ describe('mutator', () => {
     expect(isMutator({ isMutator: true })).toBe(false);
   });
 
-  test('conflict strategies pick a winner', () => {
-    const local = { id: POST_ID, likes: 4 };
-    const server = { id: POST_ID, likes: 7 };
+  test("conflict strategies pick a winner, through core's one resolver", () => {
+    // `last-write-wins` is decided by the server's own clock field, never by which side is local.
+    const local = { id: POST_ID, likes: 4, updatedAt: 2 };
+    const server = { id: POST_ID, likes: 7, updatedAt: 1 };
     expect(resolveConflict('server-wins', local, server)).toBe(server);
     expect(resolveConflict('last-write-wins', local, server)).toBe(local);
-    const merge = custom<typeof local>((a, b) => ({ id: a.id, likes: Math.max(a.likes, b.likes) }));
-    expect(resolveConflict(merge, local, server)).toEqual(server);
+    expect(resolveConflict('last-write-wins', { ...local, updatedAt: 0 }, server)).toBe(server);
+  });
+
+  test("custom(merge) is core's row-shaped policy, and merge receives both ROWS", () => {
+    const seen: unknown[] = [];
+    const policy = custom<{ id: string; likes: number }>((a, b) => {
+      seen.push(a, b);
+      return { id: a.id, likes: Math.max(a.likes, b.likes) };
+    });
+    const local = { id: POST_ID, likes: 9 };
+    const server = { id: POST_ID, likes: 7 };
+
+    // The shape IS core's ConflictPolicy: `kind`, never the deleted output-shaped `strategy`.
+    expect(typeof policy === 'string' ? policy : policy.kind).toBe('custom');
+    expect(resolveConflict(policy, local, server)).toEqual({ id: POST_ID, likes: 9 });
+    expect(seen).toEqual([local, server]);
+  });
+
+  test('a custom policy declared on a mutator is the one its descriptor names', () => {
+    const merging = mutator({
+      input: Input,
+      output: Output,
+      policy: can('post:like'),
+      local() {},
+      server: (_ctx, input) => ({ id: input.postId, likes: 1 }),
+      conflict: custom((_local, server) => server),
+    }).named('mergePost');
+    expect(merging.describeMutator().conflict).toBe('custom');
+    const conflict = merging.conflict;
+    expect(typeof conflict === 'string' ? conflict : conflict.kind).toBe('custom');
+  });
+
+  test('the output-shaped resolver is gone from this package — core owns the one', () => {
+    // A second `resolveConflict` here is how two conflict vocabularies drifted apart.
+    expect(Object.hasOwn(barrel, 'resolveConflict')).toBe(false);
+    expect(Object.hasOwn(barrel, 'strategyOf')).toBe(false);
   });
 });

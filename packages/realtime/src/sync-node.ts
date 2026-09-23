@@ -4,40 +4,27 @@
 // client may reconnect to any node and resume from its cursor, which is why drain is allowed to
 // redistribute connections at all.
 
-import { type Clock, logger, markReady, reportError, systemClock, uuid } from '@ultimat3/core';
-import type { ChannelHub, Topic } from './channel';
+import { logger, markReady, reportError, systemClock, uuid } from '@ultimat3/core';
+import type { Topic } from './channel';
 import { detach } from './detach';
 import { evictInChunks } from './drain-evictions';
 import { isClientFault } from './errors';
-import type { Transport, TransportSubscription } from './fanout';
-import type { LiveQueryRegistry } from './live-query';
-import type { PresenceRegistry } from './presence';
-import { CHANGE_SUBJECT_PREFIX, parseEnvelope, SeqGapDetector } from './replicator';
+import type { TransportSubscription } from './fanout';
+import { CHANGE_SUBJECT_ALL, parseEnvelope, SeqGapDetector } from './replicator';
 import {
   CLOSE,
   DEFAULT_MAX_BUFFERED_BYTES,
   idleSweepPeriodMs,
   SocketRegistry,
   SyncSocket,
-  type WsLike,
 } from './socket';
-import { GrantBook, type SyncAuthenticator, sweepGrants } from './sync-auth';
-import { ackRefOf, createFrameRouter, type MutationHandler } from './sync-frames';
+import { GrantBook, sweepGrants } from './sync-auth';
+import { ackRefOf, createFrameRouter } from './sync-frames';
 import { drainGraceMs, socketCeilings, syncNodeBounds } from './sync-node-bounds';
+import type { SyncNode, SyncNodeOptions, SyncWs } from './sync-node-contract';
 import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
-import { handleUpgrade, type UpgradeTarget, type WsData } from './sync-upgrade';
-import {
-  AcceptBudget,
-  type DrainedSocket,
-  drainPlan,
-  type Rng,
-  reconnectFrame,
-} from './thundering-herd';
-
-/** Declared with the upgrade that builds it — this file only ever reads one. */
-export type { UpgradeTarget, WsData } from './sync-upgrade';
-
-export type SyncWs = WsLike & { readonly data: WsData };
+import { handleUpgrade, type UpgradeTarget } from './sync-upgrade';
+import { AcceptBudget, type DrainedSocket, drainPlan, reconnectFrame } from './thundering-herd';
 
 // Moved to `sync-node-bounds.ts` with the refusals that read them, and re-exported here because
 // `server.ts` publishes all three and a moved constant must not become a moved import path.
@@ -47,89 +34,10 @@ export {
   DEFAULT_REAUTH_INTERVAL_MS,
 } from './sync-node-bounds';
 
-export interface SyncNodeOptions {
-  readonly hub: ChannelHub;
-  readonly registry: LiveQueryRegistry;
-  readonly transport: Transport;
-  readonly buildId: string;
-  readonly presence?: PresenceRegistry;
-  readonly sockets?: SocketRegistry;
-  readonly accept?: AcceptBudget;
-  /** Concurrent sockets this node will hold. The count the accept budget does not bound. */
-  readonly maxConnections?: number;
-  /** Inbound bytes one frame may carry, handed to whatever server mounts `websocket`. */
-  readonly maxFrameBytes?: number;
-  /** Sustained inbound frames one socket may have routed per second. */
-  readonly maxFramesPerSecond?: number;
-  /** Burst allowance on that rate, per socket. */
-  readonly frameBurst?: number;
-  /**
-   * When a socket starts dropping frames, and how many drops close it. On `SyncSocket` too, but
-   * this node builds every socket it holds — so unforwarded they were reachable only by abandoning
-   * `createSyncNode`, and a dropped channel frame is the one loss nothing replays.
-   */
-  readonly maxBufferedBytes?: number;
-  readonly maxDroppedFrames?: number;
-  /**
-   * How long a socket may route no frame before this node evicts it. Every ceiling on a socket
-   * `sync` builds has to be reachable from here, and this one was not: `SocketRegistry`'s default
-   * was only settable by constructing the registry yourself, and nothing swept it either way.
-   */
-  readonly idleTimeoutMs?: number;
-  readonly onMutate?: MutationHandler;
-  /**
-   * Who is dialling. Injected for the same reason `onMutate` is: `sync` owns no business logic and
-   * imports no authenticator, so an app supplies the one function that turns an upgrade request
-   * into an actor — from `@ultimat3/auth` or from anywhere else.
-   *
-   * **Omitted, every socket on this node is anonymous** and every policy downstream — the topic
-   * guard, `authorize`, `visible`, the per-tenant subscription cap — decides against `null`. That
-   * is a single-tenant node, and `start()` says so in the log.
-   */
-  readonly authenticate?: SyncAuthenticator;
-  /** How often an expired grant is re-decided. The clock a socket's authority runs on. */
-  readonly reauthenticateIntervalMs?: number;
-  readonly clock?: Clock;
-  readonly rng?: Rng;
-  /** WS endpoint. One path, no negotiation — the protocol version lives in the frames. */
-  readonly path?: string;
-  readonly drainSpreadMs?: number;
-}
-
-export interface SyncNode {
-  readonly sockets: SocketRegistry;
-  readonly ready: boolean;
-  /** The one path it answers an upgrade on: a HOST has to route it, and must not restate it. */
-  readonly path: string;
-  start(): Promise<void>;
-  /**
-   * Refuse new connections, keep every one this node holds. The SIGTERM `accept` phase calls it —
-   * `/readyz` answers 503 so the load balancer stops routing here, and an upgrade arriving in the
-   * meantime is shed with a retry delay instead of landing on a process that is going away. It is
-   * NOT `stop()`: a draining node still owes its clients their patches, and `stop()` releases the
-   * change subscription that carries them.
-   */
-  stopAccepting(): void;
-  stop(): Promise<void>;
-  /**
-   * Async because `authenticate` is: the credential is decided *before* `server.upgrade`, so a
-   * refused one never costs a websocket. Bun's `fetch` may return a promise, and an upgrade that
-   * awaits first is still an upgrade.
-   */
-  fetch(request: Request, server: UpgradeTarget): Promise<Response | undefined>;
-  readonly websocket: {
-    idleTimeout: number;
-    backpressureLimit: number;
-    /** Inbound ceiling. Declared here so every host that mounts this handler inherits it. */
-    maxPayloadLength: number;
-    sendPings: boolean;
-    open(ws: SyncWs): void;
-    message(ws: SyncWs, message: string | Uint8Array): void;
-    close(ws: SyncWs): void;
-  };
-  /** Sends every client a distinct reconnect delay, then closes. Returns the plan for tests/logs. */
-  drain(options?: { graceMs?: number }): Promise<readonly DrainedSocket[]>;
-}
+/** The node's shapes — options, the node itself, its socket — live beside it, in their own file. */
+export type { SyncNode, SyncNodeOptions, SyncWs } from './sync-node-contract';
+/** Declared with the upgrade that builds it — this file only ever reads one. */
+export type { UpgradeTarget, WsData } from './sync-upgrade';
 
 export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const sockets =
@@ -277,7 +185,6 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     registry: options.registry,
     buildId: options.buildId,
     presence,
-    onMutate: options.onMutate,
   });
 
   return {
@@ -289,7 +196,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     },
 
     async start(): Promise<void> {
-      changes = await options.transport.subscribe(`${CHANGE_SUBJECT_PREFIX}.>`, (payload) => {
+      changes = await options.transport.subscribe(CHANGE_SUBJECT_ALL, (payload) => {
         const envelope = parseEnvelope(payload);
         if (!envelope) return;
         // Fanout is at-most-once over core NATS, so a reconnect is changes this node never saw.
@@ -304,6 +211,9 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         // registry's — one serial lane per query id. What this call site owes is the failure. An
         // unhandled rejection here is a fanout that reached nobody, reported as a dead process.
         detach(options.registry.deliver(envelope.change), 'live.deliver', envelope.change.entity);
+        // The same stream feeds the declared channels: a write names no channel (axiom 2), and the
+        // hub turns this change into `records` frames on every channel it touches.
+        options.hub.deliverChange(envelope.change);
       });
       // One pass per heartbeat window: a member is swept only once it has actually missed its
       // window, and the interval never holds the process open — shutdown is the drain's job.
@@ -432,6 +342,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
             });
           }
         })();
+      },
+
+      drain(ws: SyncWs): void {
+        // A `records` frame backpressure refused left this socket gapped on that channel; the
+        // repair is the node's verdict, sent the moment the socket can take a frame again.
+        const socket = sockets.get(ws.data.socketId);
+        if (socket) sockets.gapRepairs.repairAll(socket);
       },
 
       close(ws: SyncWs): void {

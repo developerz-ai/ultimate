@@ -11,7 +11,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`04-error-contract.md`](./04-error-contract.md) | `UltimateError`: one object, three renderings. Every error carries an executable `fix:`. |
 | [`05-type-chain.md`](./05-type-chain.md) | DB column → entity → action → OpenAPI → client → component. Rename a field, count the compile errors. |
 | [`06-data-layer.md`](./06-data-layer.md) | Entities, repos, tenancy. Cursor pagination only. Migrations that cannot lie. |
-| [`07-realtime-internals.md`](./07-realtime-internals.md) | WAL → change feed → matcher → fanout → patch. Per-subscriber policy, reconnect cost model. |
+| [`07-realtime-internals.md`](./07-realtime-internals.md) | WAL → change feed → matcher → fanout → patch, declared channels with seq/epoch repair, and the browser half: one page store, one socket per origin in a SharedWorker, writes over HTTP, the offline outbox. |
 | [`08-jobs-internals.md`](./08-jobs-internals.md) | Memoized step replay, the real `SKIP LOCKED` claim SQL, lease-row leader election. |
 | [`09-rendering-internals.md`](./09-rendering-internals.md) | Two bundle graphs, the streaming envelope, four hydration strategies, ISR single-flight. |
 | [`10-cross-cutting.md`](./10-cross-cutting.md) | i18n, theming, timezones, money — four concerns, enforced rather than documented. |
@@ -25,6 +25,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`18-observer-seam.md`](./18-observer-seam.md) | The two funnels every statement passes through, attribution, and why an uninstalled diagnostic costs production one branch. |
 | [`19-cutting-a-major.md`](./19-cutting-a-major.md) | One `wiki/Upgrading.md` section per major, written when the first breaking change lands. What `CHANGELOG.md` owns, what the wiki owns, and which of the three rules nothing enforces. |
 | [`20-flight-control.md`](./20-flight-control.md) | One backoff curve, one retry executor, one gate, one single-flight, one fence — tier 0. The four engines they replaced, what changed on purpose, and the four adoptions that were refused. |
+| [`21-client-data-layer.md`](./21-client-data-layer.md) | One record store per tab, one HTTP seam, one socket per origin — the client projection of `entity`. Decided for 21.0.0; a status column per row says what has landed. |
 
 ## Start here
 
@@ -46,7 +47,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | Adding a feature to an app | `15` → `12` → `10` |
 | Writing a framework package | `01` → `02` → `00` → `04` → `14` |
 | Debugging a request | `03` → `04` → `06` |
-| Debugging realtime | `07` → `13` → [`../idea/15-risks.md`](../idea/15-risks.md) |
+| Debugging realtime | `07` → `21` → `13` → [`../idea/15-risks.md`](../idea/15-risks.md) |
 | Debugging a deploy | `13` → `09` |
 | Building agent tooling | `11` → `05` → `04` |
 
@@ -63,6 +64,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | Render modes, islands, ISR, cache fanout | [`09`](./09-rendering-internals.md) | `render`, `cache`, `seo`, `pwa` |
 | i18n, theming, timezones, money | [`10`](./10-cross-cutting.md) | `i18n`, `ui`, `time`, `money` |
 | Retry, backoff, concurrency, dedup | [`20`](./20-flight-control.md) | `core` + `jobs`, `realtime`, `ai`, `db`, `cache`, `mail`, `auth` |
+| Browser HTTP, the record store, the page socket, offline | [`21`](./21-client-data-layer.md) | `core`, `entity`, `action`, `query`, `realtime`, `cli` |
 | MCP, prompts, manifest | [`11`](./11-ai-surface.md) | `mcp`, `ai`, `manifest` |
 | Roles, drain, skew | [`13`](./13-topology-runtime.md) | `cli`, `http`, `jobs`, `realtime` |
 | Runners, fixtures, the gate | [`14`](./14-testing-internals.md) | `testing`, `cli` |

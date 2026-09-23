@@ -12,6 +12,7 @@
  * would be a second schema to keep in step with the entity — the drift this file exists to avoid.
  */
 
+import type { Member as MemberRow } from '@postly/db';
 import type {
   AppLocale,
   AppTheme,
@@ -60,7 +61,8 @@ export interface OrgsService {
     tz?: AppZone;
     theme?: AppTheme;
     digestOptIn?: boolean;
-  }): Promise<MemberView>;
+    /** The WHOLE row: the preference actions answer it as a record the page store adopts. */
+  }): Promise<MemberRow>;
   memberById(memberId: MemberId): Promise<MemberView>;
   /**
    * The acting member's own row. No argument, for the reason `grantAvatarUpload` has none: the

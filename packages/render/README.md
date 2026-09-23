@@ -210,17 +210,17 @@ production Solid, `As of 2026-08`:
 | `render(() => <p>hello</p>, el)` — the floor, before an author writes a line | 12,588 |
 | a signal, a button and reactive text | 13,663 |
 | `settings.island.tsx`, the heaviest island this repo ships | 17,797 |
-| one directive's hydration runtime at `hydrate: 'idle'` | 774 |
-| the same at `'interaction'`, which is what an island route declaring no `hydrate` gets | 1,251 |
+| one directive's hydration runtime at `hydrate: 'idle'`, what an `app/` island gets from `defaultHydrate` | 1,744 |
+| the same at `'interaction'`, which is what an island route declaring no `hydrate` gets | 1,629 |
 
-17,797 + 1,251 = **19,048** — the heaviest island this repo ships, plus the runtime an app pays
-without writing a number down. `DEFAULT_ISLAND_HYDRATE` is `'interaction'`
-([`route.ts:33`](src/route.ts)), applied at `:253` to any island route that states no `hydrate`, so
-`idle`'s 774 is the cheaper case and not the one a budget has to clear.
+17,797 + 1,744 = **19,541** — the heaviest island this repo ships, plus the costlier of the two
+runtimes an app pays without writing a number down. `idle` became the costlier on 2026-09-22, when
+it learned to catch a press made before it mounted and replay it through the same `catchUp` as
+`interaction`, and both learned to aim a keyboard press by the pressed node's path (774 -> 1,744);
+`DEFAULT_ISLAND_HYDRATE` is `'interaction'` ([`route.ts:34`](src/route.ts)) at 1,629.
 
-The default is **20,480** (20kb), which is not that number rounded: the next whole kilobyte above
-it is 19,456, and clearing today's worst island by 408 bytes is a ceiling the next line anyone
-writes breaks. 20kb leaves 1,432 B, and stays under 2× 19,048 — so a route that bundles the same
+The default is **20,480** (20kb), the next whole kilobyte above that number: 939 B of headroom,
+and under 2× 19,541 — so a route that bundles the same
 island twice is still refused. All three clauses are assertions in
 [`island-budget.test.ts`](src/island-budget.test.ts)'s `DEFAULT_ISLAND_JS_BYTES` block, against the
 measured table above; a default that stopped clearing the floor, or stopped being a ceiling, is red.

@@ -14,15 +14,32 @@
 // navigation, with a re-parse on top. The static export writes the file (`writeStyles`), so the
 // "second file" cost is one `Bun.write`.
 
+// why: Bun ships no path API; an island's file is its route file's directory joined to its `src`.
+import { posix } from 'node:path';
+import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx } from '@ultimat3/core';
+import { CLIENT_SCOPE_HEADER } from '@ultimat3/core';
 import type { RouteMeta as HttpRouteMeta, Route, RouteParams } from '@ultimat3/http';
 import { asCtx, html, stream } from '@ultimat3/http';
 import { currentLocale } from '@ultimat3/i18n';
-import type { IslandCollector, RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
+import type {
+  ClientSyncHead,
+  IslandCollector,
+  RenderResult,
+  RouteData,
+  RouteEntry,
+} from '@ultimat3/render';
 import {
+  clientBootTags,
+  clientPersistTags,
+  clientScopeTag,
+  clientSyncTags,
   createIslandCollector,
+  documentCarriesScope,
   headFromMeta,
   hydrateRuntime,
+  islandModuleId,
+  islandModuleIds,
   metaContextFor,
   renderHead,
   routeDataFor,
@@ -39,9 +56,11 @@ import {
   ROOT_ELEMENT_ID,
   renderComponent,
   renderSsr,
+  ssrHeaders,
   staticHeaders,
   streamResult,
 } from '@ultimat3/render/server';
+import { realtimeIslandFiles } from './island-realtime';
 import { styleBundle } from './style-bundle';
 
 /**
@@ -71,6 +90,18 @@ export interface DocumentOptions {
    * decided by `app.config.ts`, which the boot read and the renderer cannot.
    */
   readonly themeHead?: string;
+  /**
+   * The page's sync target — `pageSync(…).head` — rendered as render's `clientSyncTags` on every
+   * document this process serves. Principal-free, so a shareable document carries it too; absent
+   * for a caller that serves no socket at all (the static export).
+   */
+  readonly sync?: ClientSyncHead;
+  /**
+   * The record types the app persists (`entity(…, { persist: true })`), read per render. Rendered
+   * as `ultimate-persist` beside the scope tag only — persistence is per principal, so a document
+   * with no scope carries none.
+   */
+  readonly persisted?: () => readonly string[];
 }
 
 export interface DevRenderOptions extends DocumentOptions {
@@ -94,16 +125,32 @@ export interface DevRouteData extends Record<string, unknown> {
  */
 const lang = (): string => currentLocale();
 
+/**
+ * `scope` is present only on a PRIVATE document (a gated `ssr` page, every `stream`): the page's
+ * client scope (`@ultimat3/auth`'s `clientScopeOf`), which core's `pageClient()` reads to fence its
+ * one store per principal. A shareable document (`static`, `isr`, ungated `ssr`) carries NO scope
+ * tag — absent means "not rendered for anyone", a different answer from `''`, the anonymous page.
+ */
 const headFor = async (
   entry: RouteEntry,
   ctx: DevRouteData,
   data: RouteData,
   options: DocumentOptions,
+  scope?: string,
 ): Promise<string> =>
   renderHead(
     headFromMeta(
       await entry.config.meta(metaContextFor(ctx, data)),
       seoRenderers({ path: new URL(ctx.url).pathname }),
+      [
+        ...(options.sync === undefined ? [] : clientSyncTags(options.sync)),
+        // The page boot rides the scope tag: its whole job — restoring a principal's persisted
+        // records and replaying its queued writes — is per principal, and a shareable document
+        // (no scope tag) has neither. Cheaper than walking the page's islands, and exact.
+        ...(scope === undefined
+          ? []
+          : [clientScopeTag(scope), ...clientPersistTags(options.persisted?.() ?? [])]),
+      ],
     ),
   ) +
   (options.themeHead ?? '') +
@@ -166,6 +213,33 @@ export async function routeBody(
  * an island never declares its own timing, and `resolve` is the build's — identity when nothing
  * built any, which fails at the first island by name rather than emitting an unusable entry.
  */
+/**
+ * Realtime's page boot, as one deferred script — or nothing. Two conditions, both exact: the
+ * document carries a principal scope (restoring persisted records and replaying queued writes are
+ * per principal; a shareable document has neither), AND one of the islands this render emitted
+ * reaches `@ultimat3/realtime` (a page whose islands never touch a record has nothing to restore
+ * into and no write to replay). After the body, because which islands rendered is a fact the walk
+ * just recorded; still before the hydration runtime, so it runs first among the deferred scripts.
+ */
+function bootScript(
+  entry: RouteEntry,
+  islands: IslandCollector,
+  options: DocumentOptions,
+  scope: string | undefined,
+): string {
+  if (scope === undefined || options.sync === undefined) return '';
+  const rendered = new Set(islandModuleIds(islands.directives));
+  if (rendered.size === 0) return '';
+  // An island's module id is derived from its `src`, written relative to the page that renders it:
+  // each realtime island file, spelled from THIS page, is the id its directive would carry.
+  const pageDir = posix.dirname(entry.file);
+  const reaches = [...realtimeIslandFiles()].some((file) => {
+    const src = posix.relative(pageDir, file);
+    return rendered.has(islandModuleId(src.startsWith('.') ? src : `./${src}`));
+  });
+  return reaches ? renderHead(clientBootTags(options.sync)) : '';
+}
+
 const collectorFor = (entry: RouteEntry, options: DocumentOptions): IslandCollector =>
   createIslandCollector({
     file: entry.file,
@@ -199,15 +273,16 @@ async function documentFrom(
   ctx: DevRouteData,
   data: RouteData,
   options: DocumentOptions,
+  scope?: string,
 ): Promise<string> {
   const islands = collectorFor(entry, options);
   const [head, body] = await Promise.all([
-    headFor(entry, ctx, data, options),
+    headFor(entry, ctx, data, options, scope),
     routeBody(entry, ctx, data, islands),
   ]);
   return (
     `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head>` +
-    `<body>${body}${hydrateRuntime(islands.directives)}</body></html>`
+    `<body>${body}${bootScript(entry, islands, options, scope)}${hydrateRuntime(islands.directives)}</body></html>`
   );
 }
 
@@ -256,30 +331,54 @@ async function resultFor(
       // correct output, no streaming benefit.
       const islands = collectorFor(entry, options);
       const [head, shell] = await Promise.all([
-        headFor(entry, request, data, options),
+        // A stream is always `private, no-store` (`streamResult`), so it always carries the scope.
+        headFor(entry, request, data, options, clientScopeOf(ctx.actor)),
         routeBody(entry, request, data, islands),
       ]);
-      return streamResult(
-        {
-          head: `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head><body>`,
-          // The runtime rides the first flush, with the shell it boots. A later chunk would leave
-          // the window between flush one and the close with inert islands and no listeners on
-          // them — which is exactly the first-click-lost failure `interaction` replay exists for.
-          shell: `${shell}${hydrateRuntime(islands.directives)}`,
-          holes: [],
-        },
-        { buildId: options.buildId },
-        status,
+      return withScope(
+        streamResult(
+          {
+            head: `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head><body>`,
+            // The runtime rides the first flush, with the shell it boots. A later chunk would leave
+            // the window between flush one and the close with inert islands and no listeners on
+            // them — which is exactly the first-click-lost failure `interaction` replay exists for.
+            shell: `${shell}${bootScript(entry, islands, options, clientScopeOf(ctx.actor))}${hydrateRuntime(islands.directives)}`,
+            holes: [],
+          },
+          { buildId: options.buildId },
+          status,
+        ),
+        clientScopeOf(ctx.actor),
       );
     }
-    default:
-      return renderSsr(
-        { entry, params: request.params, url, ctx },
-        () => documentFrom(entry, request, data, options),
-        { buildId: options.buildId, status },
+    default: {
+      // Asked of the headers `renderSsr` is about to send: a gated page is private and carries the
+      // scope; an ungated one is `public, s-maxage` and a CDN may hand it to anyone, so it carries
+      // none — absent, which core reads as "not rendered for anyone", never as anonymous.
+      const scope = documentCarriesScope(ssrHeaders(entry, { buildId: options.buildId }))
+        ? clientScopeOf(ctx.actor)
+        : undefined;
+      return withScope(
+        await renderSsr(
+          { entry, params: request.params, url, ctx },
+          () => documentFrom(entry, request, data, options, scope),
+          { buildId: options.buildId, status },
+        ),
+        scope,
       );
+    }
   }
 }
+
+/**
+ * A private document's scope, as a RESPONSE header too: the service worker partitions its offline
+ * pages by principal and never parses HTML, so the meta alone cannot reach it. Exactly the
+ * documents that carry the scope tag carry this — a shareable one carries neither.
+ */
+const withScope = (result: RenderResult, scope: string | undefined): RenderResult =>
+  scope === undefined
+    ? result
+    : { ...result, headers: { ...result.headers, [CLIENT_SCOPE_HEADER]: scope } };
 
 const responseOf = (result: RenderResult): Response =>
   typeof result.body === 'string'

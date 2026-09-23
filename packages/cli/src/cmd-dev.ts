@@ -9,58 +9,43 @@ import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
 import { configureTelemetry, METRICS_PATH, noopExporter } from '@ultimat3/core';
 import { setStatementObserver } from '@ultimat3/db';
-import type { OverlayNotice, RequestContext, Route } from '@ultimat3/http';
+import type { OverlayNotice, RequestContext } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
-import { describeRoutes } from '@ultimat3/render';
-import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { appManifest } from './app-manifest';
-import { mountAppMcp } from './app-mcp';
 import { requireAppRoot } from './app-root';
 import { loadAppRuntime } from './app-runtime';
 import type { CliCommand, CommandContext } from './command';
-import { assetRoutes } from './dev-assets';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
-import { devDashboardRoutes, devPanels } from './dev-dashboard';
+import { devPanels } from './dev-dashboard';
 import { declareDevEnvironment } from './dev-environment';
 import { liveFeedLabel } from './dev-live-feed';
 import { clearLock, preflight, writeLock } from './dev-lock';
 import { createStatementLedger } from './dev-n-plus-one';
 import { coalesceReloads } from './dev-reload';
-import { appRoutes } from './dev-render';
 import { replicaOverrides } from './dev-replica';
 import type { RunningRoles } from './dev-roles';
 import { DEV_BINDING, DEV_ROLES, selectRoles, startRoles } from './dev-roles';
+import { devRouteTable } from './dev-route-table';
 import type { RunningServices } from './dev-runtime';
 import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { describeServices, reportedUrls, resolveServices } from './dev-services';
-import { storageRoutes } from './dev-storage';
 import { createTraceRecorder } from './dev-traces';
 import { watchTree } from './dev-watch-tree';
-import { errorPageStyleSources } from './error-page-csp';
 import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
 import { FRAME_STYLE } from './island-harness';
-import { islandHarnessRoutes } from './island-harness-route';
-import { islandRoutes } from './island-routes';
-import { loadIslandStates } from './island-states-load';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagString } from './parse';
-import { loadPwaArtifacts } from './pwa-artifacts';
 import { metricsPortFor } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
-import { styleBundle } from './style-bundle';
-import { styleRoutes } from './style-routes';
-import { serviceWorkerArtifacts } from './sw-artifacts';
-import { serviceWorkerRoutes } from './sw-routes';
-import { loadThemeMode, themeBoot } from './theme-boot';
 
 const DEFAULT_PORT = 3000;
 
@@ -68,7 +53,10 @@ export interface DevServer {
   readonly url: string;
   readonly services: DevServices;
   readonly roles: readonly Role[];
-  /** The manifest as it stands now — a reload that registers a new route moves it. */
+  /**
+   * `BUILD_ID` when stamped — the id every response carries. Otherwise the manifest as it stands
+   * now, so a reload that registers a new route moves it.
+   */
   readonly buildId: string;
   /**
    * Modules that would not import, primitives that would not register, reloads that would not
@@ -164,7 +152,12 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // boot on purpose: the header is handed to the HTTP config and the render modes once, and a
   // reload cannot re-pin it — `state.manifest.buildId` is what `/_x` and `--json` report, so a
   // divergence between the two is visible rather than silent, and a restart closes it.
-  const buildId = state.manifest.buildId;
+  // `BUILD_ID` wins when set — `serve.ts`'s rule, so an e2e `deploy.newBuild()` can restart `x dev`
+  // as a new build with the same sources.
+  // Stamped, it is ALSO what `server.buildId` answers below: the process serves no other build.
+  const rawStamp = options.env['BUILD_ID'];
+  const stamped = rawStamp !== undefined && rawStamp !== '' ? rawStamp : undefined;
+  const buildId = stamped ?? state.manifest.buildId;
 
   let server: DevServer;
   // Read at request time, never captured at boot: `/_x/services` must report the reload counter
@@ -185,70 +178,14 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   };
   const panels = devPanels(dashboard).map((panel) => panel.key);
 
-  // Resolved once, before the first route: the manifest's bytes and the three head elements that
-  // name it. `undefined` for an app that is not installable, and then nothing is mounted and no
-  // document changes — the 0kb baseline is not spent on a `<link>` to a file that does not exist.
-  const pwa = await loadPwaArtifacts(options.root);
-  const theme = themeBoot(await loadThemeMode(options.root));
-  const errorStyles = await errorPageStyleSources(options.root);
-  // Built once at boot, from this process's own route table and island bundle. `x dev` rebuilds
-  // islands on the watcher tick and the worker is NOT rebuilt with them, deliberately: a service
-  // worker that changes under a page it already controls is the update path, and re-emitting one
-  // per keystroke would exercise it on every save.
-  const serviceWorker =
-    pwa === undefined
-      ? undefined
-      : serviceWorkerArtifacts({
-          pwa,
-          buildId,
-          routes: describeRoutes(),
-          islands: state.islands,
-          styles: styleBundle(),
-        });
-
-  // The app's own MCP endpoint, discovered from `apps/<app>/mcp.ts` and mounted through the SAME
-  // call `runRole` makes — `POST /mcp` answered 404 in every process the framework booted until
-  // one of them asked. Warned once here when `expose` is true and nothing can be mounted.
-  const mcpMount = await mountAppMcp(options.root);
-  const routes: readonly Route[] = [
-    ...devDashboardRoutes(dashboard),
-    // The same API table the container serves: a read that answers here and 404s in production
-    // is exactly the drift one composition exists to prevent.
-    ...apiRoutes(),
-    ...mcpMount.routes,
-    // The image pipeline's only HTTP surface: the icons the web manifest declares, and the
-    // variants every `srcset` promises. Mounted before the app's own routes so a page route can
-    // never shadow `/icons` or `/media`.
-    ...assetRoutes({
-      root: options.root,
-      storage: runtime.storage,
-      ...(pwa === undefined ? {} : { pwa }),
-    }),
-    ...storageRoutes({ storage: runtime.storage }),
-    // The chunks the documents below name. Mounted before the app's routes for the reason
-    // `/icons` and `/media` are: a page route must not be able to shadow an asset URL.
-    ...islandRoutes(() => state.islands),
-    // And the stylesheet every one of those documents links. Read through the getter for the
-    // reason the islands are: a rebuilt island registers CSS, which mints a new URL, and a table
-    // captured at boot would answer 404 for the href the document now carries.
-    ...styleRoutes(() => styleBundle()),
-    // `x shot --island`'s harness, in the `/_x` dev namespace so no app route can shadow it. It
-    // lives here rather than in a second server because everything it needs is in THIS process:
-    // the built chunks, the app's stylesheet registry, and the one embedded Postgres a checkout
-    // may have. The states are read per REQUEST — an author editing a state and re-running the
-    // command must not need a restart to see it.
-    ...islandHarnessRoutes({
-      islands: () => state.islands,
-      states: () => loadIslandStates(options.root),
-    }),
-    ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
-    ...appRoutes({
-      buildId,
-      resolveIsland: (file) => state.islands.resolverFor(file),
-      themeHead: theme.head,
-      ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
-    }),
-  ];
+  const { routes, theme, errorStyles, mcpPath } = await devRouteTable({
+    root: options.root,
+    env: options.env,
+    buildId,
+    storage: runtime.storage,
+    dashboard,
+    islands: () => state.islands,
+  });
 
   // The app's `apps/<app>/runtime.ts`, composed exactly as `runRole` composes a caller's
   // `runtime`: the replica scope in front, the app's own middleware behind it. Before this the
@@ -320,9 +257,9 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     url: running.url ?? `http://localhost:${options.port}`,
     services,
     roles: running.roles,
-    mcp: mcpMount.path,
+    mcp: mcpPath,
     get buildId(): string {
-      return state.manifest.buildId;
+      return stamped ?? state.manifest.buildId;
     },
     // A getter, not a snapshot: `/_x` and `--json` must show the reload that just failed and the
     // loop the last request tripped, not the findings as they were when the route table was built.

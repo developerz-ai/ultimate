@@ -105,3 +105,18 @@ describe('the replicator sequences what it publishes', () => {
     await replicator.stop();
   });
 });
+
+describe('the write a change belongs to crosses the bus', () => {
+  const payload = (write: unknown): string =>
+    JSON.stringify({ ...envelope('r1', 1).change, write, seq: 1, producer: 'r1' });
+
+  test('a digest survives the decode; anything else is dropped rather than refused', () => {
+    const digest = 'a'.repeat(32);
+    expect(parseChange(payload(digest))?.write).toBe(digest);
+    for (const malformed of ['likePost:raw-key', 7, null]) {
+      const change = parseChange(payload(malformed));
+      expect(change?.entity).toBe('posts');
+      expect(Object.hasOwn(change ?? {}, 'write')).toBe(false);
+    }
+  });
+});

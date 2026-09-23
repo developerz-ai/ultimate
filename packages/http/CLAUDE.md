@@ -126,6 +126,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `logger` loses to the request's own field and stays reachable as `ctx.services['actor']`; the
   context's meaning never depends on what an app named a service. `context.test.ts` pins the
   factory install, the spread and the collision order.
+- **A member's saved locale and zone apply, re-resolved after `auth`** (21.0.0). The `locale`
+  stage runs before `auth`, so it resolved from the cookie and `Accept-Language` alone and the
+  `user` rung of `resolveLocale` / `resolveTimeZone` was filled by nothing since 2.0.0. Core's
+  `Actor` now carries `locale?` / `tz?` (the saved preferences, set by whoever authenticates), and
+  the `auth` stage re-runs `resolvePreferences` when either is present — the owners' order, so a
+  locale cookie still beats a saved locale and a saved zone beats the cookie. `member-preferences.test.ts`.
 - **A request's registered services are LAZY and bound to the actor that authenticated**
   (`request-services.ts`, 21.0.0). The context is built before the `auth` stage names anyone, and
   core's constructor built every `defineService` factory right there — so every service acted as

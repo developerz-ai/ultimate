@@ -57,6 +57,12 @@ export interface ServiceWorkerInput {
    * this map does not name.
    */
   readonly documents?: ReadonlyMap<string, RenderedDocument>;
+  /**
+   * The page's framework scripts — realtime's page boot and sync worker (`pageSync(…).scripts`).
+   * Precached beside the island chunks for their reason: source-addressed and `immutable`, and an
+   * offline reload that cannot load the boot restores no record and shows the old count.
+   */
+  readonly scripts?: readonly { readonly url: string; readonly bytes: number }[];
 }
 
 /**
@@ -117,8 +123,12 @@ const pwaRoutes = (
  * Sorted by url, because `buildPrecacheManifest` sorts its own entries but the ASSET list is what
  * decides which of two equal urls wins, and `sw.js` must be byte-identical for identical input.
  */
-const staticAssets = (islands: IslandBundle, styles: StyleBundle): readonly PrecacheAsset[] =>
-  [...islands.chunks, ...styles.chunks]
+const staticAssets = (
+  islands: IslandBundle,
+  styles: StyleBundle,
+  scripts: readonly { readonly url: string; readonly bytes: number }[],
+): readonly PrecacheAsset[] =>
+  [...islands.chunks, ...styles.chunks, ...scripts]
     .map((chunk) => ({ url: chunk.url, revision: chunk.url, bytes: chunk.bytes }))
     .sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 
@@ -200,7 +210,7 @@ export function serviceWorkerArtifacts(
         neverCache: pwa.offline.neverCache,
       },
       capabilities: { backgroundSync: pwa.backgroundSync, push: pwa.push },
-      assets: staticAssets(input.islands, input.styles),
+      assets: staticAssets(input.islands, input.styles, input.scripts ?? []),
     },
     input.buildId,
   );

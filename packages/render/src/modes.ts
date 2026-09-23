@@ -225,14 +225,13 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * (`settings.island.tsx`) is 17,797 B. No `budget.js` under 4096 was reachable by any of them, on
  * any surface, because the allowance is measured above the baseline and not against it.
  *
- * The number: 17,797 (the heaviest island this repo actually ships) + 1,251 (`hydrateRuntimeBytes`
- * for one directive at `DEFAULT_ISLAND_HYDRATE`, which is `'interaction'` — `route.ts:33`, applied
- * at `:253` to any island route declaring no `hydrate`) = **19,048**. That is the worst case an
- * app reaches without writing a number down. 20,480 is NOT that rounded up — the next whole
- * kilobyte above it is 19,456 — it is one whole kB further, leaving 1,432 B of headroom and still
- * under 2x 19,048, so a route bundling the same island twice is refused. `island-budget.test.ts`
- * asserts all three. `idle` costs 774 and `visible` 846, so an island route that declares its
- * strategy pays less; the default is what the budget has to clear.
+ * The number: 17,797 (the heaviest island this repo actually ships) + 1,744 (`hydrateRuntimeBytes`
+ * for one `idle` directive — `defaultHydrate('app')`, and since 2026-09-22 the costlier of the two
+ * runtimes an island gets unasked; `DEFAULT_ISLAND_HYDRATE`'s `'interaction'` is 1,629) =
+ * **19,541**. That is the worst case an app reaches without writing a number down. 20,480 is the
+ * next whole kilobyte above it, leaving 939 B of headroom and still under 2x 19,541, so a route
+ * bundling the same island twice is refused. `island-budget.test.ts` asserts all three. `visible` costs 846, so an island route
+ * that declares it pays less; the default is what the budget has to clear.
  *
  * All three grew by 129 B on 2026-08-21 (from 881 / 615 / 687), when the prelude learned to mark a
  * mount's OUTCOME so `x shot` can tell an island that RAN from one that only started loading, and
@@ -240,8 +239,10 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * `interaction` — when each runtime learned to TERMINATE the promise chain `boot` starts rather
  * than emit one unhandled rejection per user event. `interaction` alone grew a third time on
  * 2026-08-25 (+184 B, `aim`), when the replay learned that the node it was dispatching at had been
- * detached by the mount it was waiting for. The headroom absorbed all three and the conclusion is
- * unchanged, which is the point of stating the
+ * detached by the mount it was waiting for. On 2026-09-22 `idle` learned the same replay through a
+ * shared `catchUp`, and both learned to aim a keyboard press by the pressed node's path (774 -> 1,744;
+ * `interaction` 1,251 -> 1,629), and `idle` became the worst case. The
+ * headroom absorbed all four and the conclusion is unchanged, which is the point of stating the
  * arithmetic here rather than the answer alone. It is not
  * derived from Solid's own size on purpose — this package may not import or name `solid-js`
  * (`CLAUDE.md`), so a constant tracking the runtime's version would be a dependency in a comment.

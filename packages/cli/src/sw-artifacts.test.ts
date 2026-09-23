@@ -146,6 +146,29 @@ describe('the precache manifest', () => {
       expect(built.source).toContain(chunk.url);
     }
   });
+
+  // An offline reload that cannot load the page boot restores no persisted record, so the like a
+  // visitor took offline reads the old count — the framework scripts ride the manifest too.
+  test('names the page boot and the sync worker, keyed by their source-addressed URL', () => {
+    const scripts = [
+      { url: '/_x/page-boot/1a2b3c4d.js', bytes: 35_000 },
+      { url: '/_x/sync-worker/5e6f7a8b.js', bytes: 24_000 },
+    ];
+    const built = serviceWorkerArtifacts({
+      pwa: pwa(),
+      buildId: BUILD_ID,
+      routes: ROUTES,
+      islands: islandBundle([]),
+      styles: styleBundleOf([]),
+      scripts,
+    });
+    if (built === undefined) expect.unreachable('an app with a fallback got no service worker');
+    for (const script of scripts) {
+      const entry = built.precache.entries.find((candidate) => candidate.url === script.url);
+      expect(entry?.revision).toBe(script.url);
+      expect(built.source).toContain(script.url);
+    }
+  });
 });
 
 // `precache.ts`' own header: "the revision is the content hash, never the build id, or every

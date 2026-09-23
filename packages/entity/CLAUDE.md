@@ -1130,6 +1130,22 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   conflict. **`whyNot` asks three questions in one order** — unknown state, then terminal, then the
   legal list — because an unknown state has no outgoing moves either, and a check that skipped it
   reported a typo as "the row is terminal in `pendign`".
+- **An entity row on the client is a RECORD, and the record is derived — plan 101, `As of
+  2026-09-22`.** `$schema` is a full `t` schema (`row-schema.ts`) whose node carries the entity's
+  `RecordProjection` under the non-enumerable `ENTITY_BRAND` (`Symbol.for('ultimate.entity')`, so a
+  brand minted in one island bundle is read in another). Rules, none optional. **The brand lives on
+  the NODE**, because `t.array`/`t.object`/`t.record`/`t.union` keep only the child's node, by
+  reference; the five methods that COPY a node (`nullable`, `optional`, `default`, `describe`,
+  `refine`) are re-branded in `row-schema.ts`, since a spread drops a non-enumerable symbol — do not
+  "fix" that in `@ultimat3/schema` by making the brand enumerable, which would put it in every
+  spread and `toEqual` of the IR. **A partial row is never a record**: `$view` and any
+  `.pick/.omit/.extend` build unbranded nodes, and `rows-of.test.ts` pins it. **`rowsOf` answers type → record key → row**, both levels null-prototype: the key is what
+  travels, since a browser cannot compute one without importing the app's `entity()` declarations. **`persist` is an `EntityInit` key, default `false`**, read ONLY off the projection
+  (`recordProjection(e).persist`) — realtime's persister is its reader, so disk is a per-entity
+  declaration and never a store-wide switch. **The browser path is `@ultimat3/entity/record`** (`record.ts`), and the modules behind
+  it import `entity-error.ts`, never `errors.ts`: `errors.ts` imports `@ultimat3/db` for
+  `dbDrift`, and one such import put 16 `db` modules (pglite included) in the chunk.
+  `record-bundle.test.ts` lists the retained entity modules by name, so a new import there fails.
 - Never throw a bare `Error` — use `errors.ts`.
 - **Tests restore the process-global registry in `afterAll` (`clearRegistry()`), and the hook is at
   FILE scope — a build error since 2026-08-25, because the prose form was violated by 19 of the 19
@@ -1163,6 +1179,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `column-values.ts` | `got()` and `oneOf()`, so `enum-column.ts` needs no import of the file that imports it |
 | `feature-errors.ts` | the refusals search and the state machine raise at call time; the codes and titles stay in `errors.ts` |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
+| `row-schema.ts` | `$schema` — the whole row as a `t` schema, branded, with the copying wrappers re-branded |
+| `record-projection.ts` / `record-key.ts` | `ENTITY_BRAND`, `RecordProjection`, `recordProjection()`; the record key and `X_RECORD_KEY_MISSING` |
+| `rows-of.ts` | `rowsOf`/`hasEntityRows` — the entity rows an output schema declares, read beside its value |
+| `record-table.ts` | `recordTypeForTable` — a changefeed's table back to the record type, memoised on the registry generation |
+| `record.ts` | the `@ultimat3/entity/record` subpath — the browser-safe entry for the four above |
+| `entity-error.ts` | the code registry, `EntityError`, `invariantViolated`, `entityDuplicate` — no `@ultimat3/db`, so the browser path can raise them; `errors.ts` re-exports all of it |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
 | `clock.ts` | `entityNow()` — the ONE clock read on the write path, `ctx.clock` else the system's |
 | `memory-match.ts` | what a `Predicate` means in the memory driver: compare/equal/LIKE, by the column's kind. The decimal comparison itself is `@ultimat3/core`'s `compareDecimalText` |
@@ -1178,7 +1200,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is three columns) |
-| `row-observer.ts` | `setRowObserver` — committed row changes, above the driver, for a change feed that has no log to read |
+| `row-observer.ts` | `setRowObserver` — committed row changes, above the driver, for a change feed that has no log to read. A change made inside a keyed request carries `write` (`currentWriteOrigin()`) |
+| `write-tag.ts` | a keyed request's write names itself in the WAL: `pg_logical_emit_message(true, WRITE_ORIGIN_WAL_PREFIX, digest)` opens its transaction, once per transaction; a write outside one gets a transaction of its own; a role that may not execute it is probed once and its writes go out untagged; a pinned repository is never wrapped |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |
 | `n-plus-one.ts` | a repeated statement → the error whose `fix` is the preload or bulk call that ends it |

@@ -64,7 +64,8 @@ services:
 
   web:
     <<: *image
-    environment: [ROLE=web]
+    # The page dials SYNC_URL; unset, it dials /_x/sync on :3000, which web does not serve here.
+    environment: [ROLE=web, 'SYNC_URL=${SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md}']
     depends_on:
       migrate: { condition: service_completed_successfully }
     deploy: { replicas: 1 } # scales on RPS, stateless, behind the CDN — pinned by the published port

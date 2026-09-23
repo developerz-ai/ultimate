@@ -96,6 +96,8 @@ export interface MigrationRow {
   /** The single section this row sends the reader to, or `undefined` on the aggregate row. */
   readonly target: string | undefined;
   readonly aggregate: boolean;
+  /** The in-flight major's row, whose count is `[Unreleased]`'s own — DX ledger #12. */
+  readonly unreleased: boolean;
   readonly quote: string;
 }
 
@@ -116,12 +118,14 @@ export function parseMigrationTable(text: string): readonly MigrationRow[] {
     const read = cells[3] ?? '';
     const target = /the `(\d+\.\d+\.\d+)` section/.exec(read)?.[1];
     const aggregate = /all\s+\w+\s+sections/.test(read);
-    if (target === undefined && !aggregate) continue;
+    const unreleased = target === undefined && !aggregate && /\[Unreleased\]/.test(read);
+    if (target === undefined && !aggregate && !unreleased) continue;
     rows.push({
       line: index + 1,
       claimed: Number.parseInt(claimed, 10),
       target,
       aggregate,
+      unreleased,
       quote: line.trim(),
     });
   }
@@ -288,6 +292,18 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
             detail: `claims ${row.claimed} breaking entries; the \`${row.target}\` section of ${CHANGELOG_PATH} holds ${actual}`,
           },
     );
+  }
+
+  // The in-flight major's row: skipped until 2026-09-22, so "**10** so far" was checked by nobody
+  // until the release. Its section IS [Unreleased], and it must say what that section holds now.
+  const pending = byVersion.get(UNRELEASED)?.breaking ?? 0;
+  for (const row of rows.filter((candidate) => candidate.unreleased)) {
+    if (row.claimed === pending) continue;
+    gaps.push({
+      kind: 'count',
+      at: `${UPGRADING_PATH}:${row.line}`,
+      detail: `claims ${row.claimed} breaking entries so far; [Unreleased] in ${CHANGELOG_PATH} holds ${pending}`,
+    });
   }
 
   // Retained sections only — the aggregate row states what a `grep` over THIS file answers, and a

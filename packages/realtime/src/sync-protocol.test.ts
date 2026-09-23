@@ -49,39 +49,31 @@ const fixtures: Record<FrameKind, Frame> = {
     patches: [{ op: 'update', id: 'p1', row: { likes: 3 }, lsn: '000000000000000a' }],
     lsn: '000000000000000a',
   },
-  mutate: {
-    type: 'mutate',
-    v: PROTOCOL_VERSION,
-    key: 'likePost:p1',
-    seq: 7,
-    name: 'likePost',
-    input: { postId: 'p1' },
-  },
   ack: {
     type: 'ack',
     v: PROTOCOL_VERSION,
-    ref: 'likePost:p1',
-    lsn: '000000000000000b',
-    error: null,
-  },
-  rebase: {
-    type: 'rebase',
-    v: PROTOCOL_VERSION,
-    key: 'likePost:p1',
-    entity: 'posts',
-    strategy: 'server-wins',
-    row: { id: 'p1', likes: 10 },
-  },
-  presence: {
-    type: 'presence',
-    v: PROTOCOL_VERSION,
-    topic: 'org.o1.cursors',
-    op: 'sync',
-    members: [{ id: 'm1', actorId: 'alice', meta: { x: 10, y: 4 }, updatedAt: 12 }],
-    total: 5_000,
+    ref: 'sid-1',
+    lsn: null,
+    error: { code: 'X_FORBIDDEN', cause: 'denied by policy', fix: 'x policy explain --json' },
   },
   reconnect: { type: 'reconnect', v: PROTOCOL_VERSION, afterMs: 4200, reason: 'drain' },
   'update-available': { type: 'update-available', v: PROTOCOL_VERSION, buildId: 'build-2' },
+  records: {
+    type: 'records',
+    v: PROTOCOL_VERSION,
+    channel: 'org-feed.o1',
+    seq: 4,
+    epoch: 'node-a:1',
+    adopt: { posts: { p1: { id: 'p1', title: 'hello' } } },
+    remove: { posts: ['p9'] },
+  },
+  events: {
+    type: 'events',
+    v: PROTOCOL_VERSION,
+    channel: 'org-feed.o1',
+    event: { typing: 'alice' },
+  },
+  'replay-gap': { type: 'replay-gap', v: PROTOCOL_VERSION, channel: 'org-feed.o1', epoch: 'e1' },
 };
 
 describe('sync-protocol', () => {
@@ -103,16 +95,74 @@ describe('sync-protocol', () => {
   });
 
   /**
-   * **2, not 1** — moved when `cursor.digest` and `cursor.count` were deleted (2026-08-24). The
-   * reason is the DECODER, not the deletion: `hello.resume` came out at the same version because
-   * `list()` answers `[]` for an absent field, while `cursor()` reads through `str`/`num`, which
-   * THROW. So a snapshot cursor this node writes is unreadable by a client one deploy behind, and
-   * a subscribe cursor a new client writes is unreadable by a node one deploy behind — a frame
-   * unreadable in both directions, which is the one thing the version guards. A change that is
+   * **3 since 21.0.0** — the socket stopped carrying writes, so `mutate` and `rebase` are gone and
+   * a client one major behind sends a frame this decoder cannot read: exactly what the number
+   * guards. (2, on 2026-08-24, was the cursor fields read through `str`/`num`.) A change that is
    * genuinely additive or drops a field read through `list()` still must not move this number.
    */
-  test('the wire is at version 2, and the number is not moved for novelty', () => {
-    expect(PROTOCOL_VERSION).toBe(2);
+  test('the wire is at version 3, and the number is not moved for novelty', () => {
+    expect(PROTOCOL_VERSION).toBe(3);
+  });
+
+  test('a channel subscribe carries a declaration NAME, string params and an optional resume', () => {
+    const frame = {
+      type: 'subscribe',
+      v: PROTOCOL_VERSION,
+      op: 'add',
+      sid: 'c1',
+      target: {
+        kind: 'channel',
+        channel: 'org-feed',
+        params: { orgId: 'o1' },
+        since: { epoch: 'e', seq: 3 },
+      },
+    };
+    expect(decode(JSON.stringify(frame))).toEqual(frame as unknown as Frame);
+    const numeric = { ...frame, target: { ...frame.target, params: { orgId: 7 } } };
+    expect(() => decode(JSON.stringify(numeric))).toThrow(ProtocolVersionError);
+    const many: Record<string, string> = {};
+    for (let i = 0; i <= FRAME_LIMITS.channelParams; i += 1) many[`p${i}`] = 'x';
+    const wide = { ...frame, target: { ...frame.target, params: many } };
+    expect(() => decode(JSON.stringify(wide))).toThrow(/over the limit/);
+    const rewound = { ...frame, target: { ...frame.target, since: { epoch: 'e', seq: -1 } } };
+    expect(() => decode(JSON.stringify(rewound))).toThrow(ProtocolVersionError);
+  });
+
+  test('a records frame is held to the row ceiling like every other kind', () => {
+    const keyed: Record<string, { id: string }> = {};
+    for (let i = 0; i <= FRAME_LIMITS.rows; i += 1) keyed[`k${i}`] = { id: `k${i}` };
+    const frame = { ...fixtures.records, adopt: { posts: keyed } };
+    expect(() => decode(JSON.stringify(frame))).toThrow(/rows/);
+  });
+
+  test('a records frame names the write that produced it, and nothing but a digest', () => {
+    const named = { ...fixtures.records, write: 'c'.repeat(32) };
+    expect(decode(JSON.stringify(named))).toEqual(named as unknown as Frame);
+    const raw = { ...fixtures.records, write: 'likePost:0192f0c4-0000-7000-8000-000000000001' };
+    expect(() => decode(JSON.stringify(raw))).toThrow(/records.write/);
+    expect(() => decode(JSON.stringify({ ...fixtures.records, write: 7 }))).toThrow(
+      /records.write/,
+    );
+  });
+
+  test('record keys ride a snapshot parallel to its rows, and a patch on its own', () => {
+    const snapshot = { ...fixtures.snapshot, keys: ['o1:p1'] };
+    expect(decode(JSON.stringify(snapshot))).toEqual(snapshot as unknown as Frame);
+    const unpaired = { ...fixtures.snapshot, keys: ['a', 'b'] };
+    expect(() => decode(JSON.stringify(unpaired))).toThrow(/pair with rows/);
+    const keyedPatch = {
+      ...fixtures.patch,
+      patches: [{ op: 'update', id: 'p1', key: 'o1:p1', row: { likes: 3 }, lsn: '0a' }],
+    };
+    expect(decode(JSON.stringify(keyedPatch))).toEqual(keyedPatch as unknown as Frame);
+  });
+
+  test('a `mutate` or `rebase` frame is no longer a frame: the write path is HTTP', () => {
+    for (const type of ['mutate', 'rebase']) {
+      expect(() => decode(JSON.stringify({ type, v: PROTOCOL_VERSION, key: 'k' }))).toThrow(
+        ProtocolVersionError,
+      );
+    }
   });
 
   test('a malformed frame is rejected with the same code', () => {
@@ -141,19 +191,6 @@ describe('sync-protocol', () => {
   test('a non-string entity is a malformed frame, never a scope the client would key rows by', () => {
     const bad = JSON.stringify({ ...fixtures.snapshot, entity: 7 });
     expect(() => decode(bad)).toThrow(ProtocolVersionError);
-  });
-
-  /**
-   * `total` is the same additive shape as `snapshot.entity`, one frame over: a full-set presence
-   * frame is capped, and the count is what lets a client render "and 4,744 others". A delta op
-   * carries no count at all, so its absence has to survive the round trip as an absence.
-   */
-  test('a presence frame without a total decodes, and does not invent one', () => {
-    const { total, ...withoutTotal } = fixtures.presence as Extract<Frame, { type: 'presence' }>;
-    expect(total).toBe(5_000);
-    const decoded = decode(JSON.stringify(withoutTotal));
-    expect(decoded).toEqual(withoutTotal);
-    expect('total' in decoded).toBe(false);
   });
 
   /**
@@ -200,12 +237,6 @@ describe('sync-protocol', () => {
       'lsn',
       'qid',
     ]);
-  });
-
-  test('a non-numeric presence total is a malformed frame, never a count a UI would render', () => {
-    expect(() => decode(JSON.stringify({ ...fixtures.presence, total: 'lots' }))).toThrow(
-      ProtocolVersionError,
-    );
   });
 
   test('decode accepts the binary form Bun hands a WS handler', () => {
@@ -270,7 +301,10 @@ describe('the decoder refuses what it cannot afford', () => {
   test('a deeply nested input is refused by code, not by a stack overflow', () => {
     let deep: unknown = 'bottom';
     for (let i = 0; i < FRAME_LIMITS.inputDepth + 5; i += 1) deep = { next: deep };
-    const frame = JSON.stringify({ ...fixtures.mutate, input: deep });
+    const frame = JSON.stringify({
+      ...fixtures.subscribe,
+      target: { kind: 'query', qid: 'feed', input: deep, cursor: null },
+    });
     expect(() => decode(frame)).toThrow(ProtocolVersionError);
     expect(() => decode(frame)).toThrow(/nested/);
   });

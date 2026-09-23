@@ -8,6 +8,7 @@ import { tryUseContext } from './context';
 import { renderThrowable } from './error-render';
 import { isUltimateError } from './errors';
 import { isSpanId, isTraceId, spanId as newSpanId, traceId as newTraceId } from './ids';
+import { installTraceHeaders } from './outbound-headers';
 import { defaultSampler, resetDefaultSampler, type Sampler } from './sampler';
 
 export type SpanKind = 'internal' | 'server' | 'client' | 'producer' | 'consumer';
@@ -194,6 +195,8 @@ function inboundParent(parent: SpanContext | undefined): SpanContext | undefined
 }
 
 export function startSpan(name: string, options?: StartSpanOptions): Span {
+  // A live span is what gives an outbound typed call a trace to continue; see the module.
+  installTraceHeaders();
   const parent = options?.parent ?? currentSpanContext();
   const inbound = inboundParent(parent);
   const attributes: Record<string, AttributeValue> = { ...(options?.attributes ?? {}) };

@@ -129,6 +129,13 @@ describe('installation is development-only', () => {
     );
     expect(actor?.id).toBe(DEMO_VIEWERS.mara.member.id);
   });
+
+  test("the actor carries the member's saved locale and zone — the pipeline's `user` rung", () => {
+    // bruno on an English browser: `@ultimat3/http` re-resolves `ctx.locale` / `ctx.tz` from these,
+    // so without them his feed rendered in English, dated on the browser's clock.
+    const bruno = demoActorFor('bruno');
+    expect({ locale: bruno.locale, tz: bruno.tz }).toEqual({ locale: 'es', tz: 'Europe/Madrid' });
+  });
 });
 
 /**
@@ -148,6 +155,7 @@ describe('every declared column is the seeded row', () => {
   test('every member column matches the row the seed writes', async ({ seed }) => {
     const rows = await seed('dev').pick({
       ada: 'member:ada',
+      bruno: 'member:bruno',
       kenji: 'member:kenji',
       mara: 'member:mara',
     });

@@ -66,7 +66,6 @@ export { queryClient, queryClientMethodFor } from './client';
 /** The compat window a retirement gets. Versioning is two deployments, not a router feature. */
 export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
 export { recordDeprecatedCall, renderDeprecation } from './deprecation';
-export type { QueryProblem } from './errors';
 export {
   CursorInvalidError,
   CursorValueUnsupportedError,
@@ -79,7 +78,6 @@ export {
   QueryInputUnencodableError,
   QueryNotPageableError,
   QueryPolicyMissingError,
-  QueryRequestFailedError,
   QuerySubscribesDriftError,
   QuerySubscribesInvalidError,
   QueryUnregisteredError,

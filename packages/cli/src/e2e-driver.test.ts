@@ -196,6 +196,14 @@ describe('e2e driver — the fixtures an e2eTest body receives', () => {
     expect(message).not.toContain('setOfflineMode');
   });
 
+  test('given a newBuild, update() forwards to it instead of refusing', async () => {
+    let builds = 0;
+    await e2eFixtures(page, browser, async () => {
+      builds += 1;
+    }).update();
+    expect(builds).toBe(1);
+  });
+
   test('update() refuses, and names the second build it would need', async () => {
     let message = '';
     try {
@@ -205,4 +213,39 @@ describe('e2e driver — the fixtures an e2eTest body receives', () => {
     }
     expect(message).toContain('build id');
   });
+});
+
+describe('e2e driver — deploy', () => {
+  test(
+    'installed with a newBuild, the declared deploy fixture drives it; uninstalled, it refuses again',
+    around(async () => {
+      let builds = 0;
+      const uninstall = installE2eDriver({
+        ...options,
+        newBuild: async () => {
+          builds += 1;
+        },
+      });
+      try {
+        const deploy = (await build('deploy')) as { newBuild: () => Promise<void> };
+        await deploy.newBuild();
+        expect(builds).toBe(1);
+      } finally {
+        uninstall();
+      }
+      expect(await refusalFor('deploy')).toContain('X_TEST_FIXTURE_UNAVAILABLE');
+    }),
+  );
+
+  test(
+    'installed WITHOUT one, deploy keeps refusing by name',
+    around(async () => {
+      const uninstall = installE2eDriver(options);
+      try {
+        expect(await refusalFor('deploy')).toContain('X_TEST_FIXTURE_UNAVAILABLE');
+      } finally {
+        uninstall();
+      }
+    }),
+  );
 });

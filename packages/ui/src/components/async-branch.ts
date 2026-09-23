@@ -4,18 +4,11 @@
 // unreachable until a result has arrived, and a refetch keeps the previous data on screen.
 
 /**
- * What a caller hands an async region. A STATE, never a query: `@ultimat3/ui` is tier 4 and may
- * not import `query`, `action` or `realtime`, so a live-query accessor, a `createResource` and a
- * plain signal all arrive here as the same four shapes.
- *
- * `refreshing` is the one that makes search feel fast — it CARRIES the previous data, so a refetch
- * re-renders what is already on screen instead of tearing it down to a skeleton.
+ * What a caller hands an async region is `AsyncState` from `@ultimat3/core` — declared at tier 0
+ * because realtime's read hooks (tier 3) return it and ui (tier 4) consumes it, and neither may
+ * import the other that way. Imported, never re-exported: one home, one import path.
  */
-export type AsyncState<T> =
-  | { readonly status: 'pending' }
-  | { readonly status: 'refreshing'; readonly data: T }
-  | { readonly status: 'ready'; readonly data: T }
-  | { readonly status: 'failed'; readonly error: unknown };
+import type { AsyncState } from '@ultimat3/core';
 
 /**
  * The branch a region renders. `empty` and `ready` carry `busy`; `pending` and `failed` do not,
@@ -23,8 +16,9 @@ export type AsyncState<T> =
  *
  * There is no `{ kind: 'empty' }` reachable from `{ status: 'pending' }` — that is the whole
  * point of this module. "No results" rendered for one frame before the first page arrives is the
- * most common agent-authored UX bug in a list screen, and the union above makes it unconstructible
- * rather than merely discouraged: `pending` holds no data, so nothing can be found empty in it.
+ * most common agent-authored UX bug in a list screen, and `AsyncState`'s union makes it
+ * unconstructible rather than merely discouraged: `pending` holds no data, so nothing can be found
+ * empty in it.
  */
 export type AsyncBranch<T> =
   | { readonly kind: 'pending' }

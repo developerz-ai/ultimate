@@ -5,10 +5,12 @@
 // header, cookie or query token was read anywhere, so `visible({ actor })` was structurally
 // incapable of seeing a caller.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
-import { ChannelHub, topic } from './channel';
+import { ChannelHub } from './channel';
+import { channel } from './channel-decl';
+import { clearChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
 import type { Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
@@ -24,6 +26,26 @@ import {
   type WsData,
 } from './sync-node';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
+
+/** The tenant's feed: the upgrade's actor decides it, through the channel's own policy. */
+channel('auth-feed', {
+  params: ['orgId'],
+  catchUp: { name: 'authFeed' },
+  policy: {
+    kind: 'allow',
+    label: 'own-org',
+    permissions: [],
+    children: [],
+    run: ({ actor, input }) =>
+      actor?.orgId === (input as { orgId?: string }).orgId
+        ? { allowed: true }
+        : { allowed: false, reason: 'another tenant', code: 'X_FORBIDDEN' },
+  },
+});
+
+afterAll(() => {
+  clearChannels();
+});
 
 const BUILD_ID = 'build-1';
 const alice: Actor = userActor({ id: 'alice', orgId: 'o1' });
@@ -206,9 +228,8 @@ describe('the sync node authenticates an upgrade', () => {
     await node.stop();
   });
 
-  test('a topic guard reading the actor can finally deny one caller and admit another', async () => {
+  test('a channel policy reading the actor can finally deny one caller and admit another', async () => {
     const { node, sockets, hub } = nodeWith(async () => ({ actor: alice }));
-    hub.guard('org.*.feed', ({ actor, segments }) => actor?.orgId === segments[1]);
     await node.start();
     const server = upgradeTarget(node);
     await node.fetch(upgradeRequest, server);
@@ -217,10 +238,12 @@ describe('the sync node authenticates an upgrade', () => {
     const socket = sockets.get(data.socketId);
     if (!socket) throw new Error('the socket was never registered');
 
-    await hub.subscribe(socket, topic('org', 'o1', 'feed'));
-    expect(socket.topics.has('org.o1.feed')).toBe(true);
-    // The same guard, the same socket, another tenant's room.
-    await expect(hub.subscribe(socket, topic('org', 'o2', 'feed'))).rejects.toBeUltimateError(
+    const feed = (orgId: string) =>
+      ({ kind: 'channel', channel: 'auth-feed', params: { orgId } }) as const;
+    await hub.subscribeChannel(socket, feed('o1'));
+    expect(socket.topics.has('auth-feed.o1')).toBe(true);
+    // The same policy, the same socket, another tenant's room.
+    await expect(hub.subscribeChannel(socket, feed('o2'))).rejects.toBeUltimateError(
       'X_TOPIC_FORBIDDEN',
     );
     await node.stop();

@@ -19,20 +19,25 @@ const MARA = '00000000-0000-4000-8000-0000000000c5';
 
 type LocalRow = { readonly id: string; readonly read: boolean };
 
-/** A `LocalTx` over a Map — the shape @ultimat3/realtime implements over OPFS on a real client. */
+/** A `LocalTx` over a Map — keyed, the shape the page's record store implements on a client. */
 const localStore = (seed: readonly LocalRow[]) => {
   const rows = new Map(seed.map((row) => [row.id, row]));
   const table: LocalTable<LocalRow> = {
-    insert: (row) => {
-      rows.set(row.id, row);
+    get: (key) => rows.get(key),
+    all: () => [...rows.values()],
+    insert: (key, row) => {
+      rows.set(key, row);
     },
-    update: (id, patch) => {
-      const current = rows.get(id);
+    upsert: (key, row) => {
+      rows.set(key, { ...rows.get(key), ...row });
+    },
+    update: (key, patch) => {
+      const current = rows.get(key);
       if (current === undefined) return;
-      rows.set(id, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
+      rows.set(key, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
     },
-    delete: (id) => {
-      rows.delete(id);
+    delete: (key) => {
+      rows.delete(key);
     },
   };
   const tx = { notifications: table, table: () => table } as unknown as LocalTx;

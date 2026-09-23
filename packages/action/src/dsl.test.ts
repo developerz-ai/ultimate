@@ -15,7 +15,7 @@ import { ActionDeniedError } from './errors';
 import { toOpenApiOperation } from './http';
 import { toJobHandle } from './job-handle';
 import { toMcpTool } from './mcp-tool';
-import type { LocalRow, LocalTable, LocalTx } from './mutator';
+import type { LocalTable, LocalTx } from './mutator';
 import { mutator } from './mutator';
 
 const Input = t.object({ postId: t.uuid });
@@ -130,22 +130,28 @@ describe('the action DSL surface', () => {
 // exactly the regression this file exists to catch.
 const MUTATOR_MEMBERS = ['isMutator', 'conflict', 'local', 'server', 'describeMutator'] as const;
 
-interface PostRow extends LocalRow {
+interface PostRow {
+  readonly id: string;
   readonly likes: number;
 }
 
 function fakeTx(rows: Map<string, PostRow>): LocalTx {
   const table: LocalTable<PostRow> = {
-    insert: (row) => {
-      rows.set(row.id, row);
+    get: (key) => rows.get(key),
+    all: () => [...rows.values()],
+    insert: (key, row) => {
+      rows.set(key, row);
     },
-    update: (id, patch) => {
-      const current = rows.get(id);
+    upsert: (key, row) => {
+      rows.set(key, { ...rows.get(key), ...row });
+    },
+    update: (key, patch) => {
+      const current = rows.get(key);
       if (current === undefined) return;
-      rows.set(id, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
+      rows.set(key, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
     },
-    delete: (id) => {
-      rows.delete(id);
+    delete: (key) => {
+      rows.delete(key);
     },
   };
   return { table: () => table } as unknown as LocalTx;

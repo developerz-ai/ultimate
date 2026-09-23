@@ -2,9 +2,9 @@
 // `app.config.ts`, the `.env.example` projected from it, and the drift between the two. One
 // declaration, both files (axiom 2) — nothing here holds a second list of variable names.
 
-// Bun ships no equivalent: `existsSync` answers whether this root is an app, `join` builds the
-// host-separator path to the two files this module reads.
+// why: Bun ships no synchronous exists; `existsSync` answers whether this root is an app.
 import { existsSync } from 'node:fs';
+// why: Bun exposes no path API — the two files this module reads are joined to the app root.
 import { join } from 'node:path';
 import type { EnvSchema, EnvVarDecl } from '@ultimat3/core';
 import {

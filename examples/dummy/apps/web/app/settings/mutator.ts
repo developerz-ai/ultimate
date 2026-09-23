@@ -7,10 +7,10 @@
  * `t` comes from @ultimat3/action, not @ultimat3/schema: a mutator file imports one package.
  */
 
-import { tag } from '@postly/db';
+import { members, tag } from '@postly/db';
 import { THEMES } from '@postly/domain';
 import { custom, mutator, t } from '@ultimat3/action';
-import { MemberView } from '../orgs/entity';
+import type { MemberView } from '../orgs/entity';
 import { memberSelf } from '../orgs/policy';
 
 /**
@@ -23,9 +23,13 @@ declare module '@ultimat3/action' {
   }
 }
 
+/**
+ * Both mutators answer the whole `members` row — what `orgs.savePreferences` returns — so the
+ * response is a record the page store adopts, the same as `savePreferences`'s.
+ */
 export const setTheme = mutator({
   input: t.object({ memberId: t.uuid, theme: t.enumerated(...THEMES) }),
-  output: MemberView,
+  output: members.$schema,
   policy: memberSelf,
   cache: { invalidates: [tag.member] },
   mcp: { expose: true, description: 'Set the acting member’s theme' },
@@ -35,14 +39,17 @@ export const setTheme = mutator({
   async server(ctx, { theme }) {
     return ctx.orgs.savePreferences({ theme });
   },
-  // Cosmetic and single-valued, unlike `likePost`'s counter: there is nothing to converge, so
-  // whichever device set it most recently should simply win.
-  conflict: 'last-write-wins',
+  // `server-wins`, stated rather than implied. This was `last-write-wins`, which compares a
+  // server-written clock — and `MemberView` carries no `updatedAt`, so it could never prove the
+  // local write newer and ALWAYS answered the server row anyway. A policy that reads one way and
+  // behaves another is worse than the plain one; the theme is cosmetic and the next click re-sets
+  // it. Add `updatedAt` to `MemberView` first if "the device that set it last wins" is ever wanted.
+  conflict: 'server-wins',
 });
 
 export const toggleDigestOptIn = mutator({
   input: t.object({ memberId: t.uuid, digestOptIn: t.boolean }),
-  output: MemberView,
+  output: members.$schema,
   policy: memberSelf,
   cache: { invalidates: [tag.member] },
   mcp: { expose: true, description: 'Toggle the acting member’s digest subscription' },

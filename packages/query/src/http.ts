@@ -8,7 +8,7 @@
 import { tagKeys } from '@ultimat3/cache';
 import { isUltimateError } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
-import { json, problem, toBucket } from '@ultimat3/http';
+import { problem, toBucket } from '@ultimat3/http';
 import { coerceQuery } from '@ultimat3/schema';
 import type { Deprecation } from './deprecation';
 import { applyHeaders, recordDeprecatedCall, renderDeprecation } from './deprecation';
@@ -18,6 +18,7 @@ import { pageControlsOf } from './page-controls';
 import { admitsAnonymous, policyCapability } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, runQuery } from './read';
+import { recordAnswerFor } from './record-answer';
 
 /**
  * `liveFeed` -> `GET /_x/query/live-feed`. Named for the primitive rather than spelled
@@ -30,6 +31,7 @@ export function toQueryRoute(target: AnyQuery): Route {
   // Rendered ONCE, at projection: a date that cannot become a header is a mount-time refusal,
   // not a surprise on the first read.
   const sunsetting = deprecationHeadersFor(name, target.deprecated);
+  const answer = recordAnswerFor(target.rows);
 
   const handler = async (request: UltimateRequest): Promise<Response> => {
     if (sunsetting !== undefined) recordDeprecatedCall('query', name);
@@ -52,7 +54,7 @@ export function toQueryRoute(target: AnyQuery): Route {
       // answer is the bare array it has always been: every client written before the controls
       // existed keeps reading rows, and `hasNextPage` never rides on a row where a page marker
       // has no business being.
-      const response = json(
+      const response = answer(
         page === undefined
           ? await runQuery(target, input, { surface: 'http' })
           : await target.page(input, { ...page, surface: 'http' }),

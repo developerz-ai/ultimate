@@ -66,7 +66,7 @@ before an un-shippable PWA exists.
 | Capability | Manifest member | SW code |
 |---|---|---|
 | `push` | — | `push` + `notificationclick` listeners |
-| `backgroundSync` | — | `sync` listener + outbox flush |
+| `backgroundSync` | — | `sync` listener that tells every open tab to drain realtime's outbox (`OUTBOX_DRAIN_MESSAGE`) |
 | `badging` | — | `navigator.setAppBadge` after a push |
 | `shareTarget` | `share_target` | — |
 | `fileHandlers` | `file_handlers` | — |
@@ -119,7 +119,7 @@ capability nothing implements.
 - **Precache revisions are content hashes, never the build id.** Keying on the build id
   re-downloads every asset on every deploy.
 - **The mutation queue lives in `@ultimat3/realtime`, not here** (SRP). This package owns
-  only the Background Sync trigger that asks realtime to flush.
+  only the Background Sync trigger that tells the open tabs to drain it.
 - **Push bodies are rendered server-side per subscriber locale**, from the locale stored on
   the subscription. A notification in the wrong language is a real bug, and the sending
   server has no request context to infer one from.

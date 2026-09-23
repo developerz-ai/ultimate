@@ -30,7 +30,7 @@ const SECRETS_ERROR_TITLES: Readonly<Record<SecretsErrorCode, string>> = {
   X_SECRETS_PLAINTEXT_INVALID: 'the decrypted secrets are not a flat map of env values',
 };
 
-// Registered here rather than in `error-codes.ts`'s `CORE_CODE_TITLES` because these codes and the
+// Registered here rather than in `core-error-codes.ts`'s `CORE_CODE_TITLES` because these codes and the
 // module that throws them ship together: `registerErrorCodes` is the documented way a set of codes
 // joins the registry, and it raises `X_ERROR_CODE_DUPLICATE` if anything else ever claims one.
 registerErrorCodes(

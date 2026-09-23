@@ -27,8 +27,16 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      */
     trivialCounter: 13_663,
     referenceAppIsland: 17_797,
-    /** `idle`. Not what an undeclared island route pays — see the row below. */
-    hydrateRuntimeIdle: 774,
+    /**
+     * `idle` — `defaultHydrate('app')`, so what an `app/` island reached WITHOUT a route-level
+     * `hydrate` pays. Moved 774 -> 1,744 on 2026-09-22, when `idle` learned to catch a press made
+     * before it mounted and replay it, through the same `catchUp` as `interaction` (+641 B): a click
+     * in the idle wait was otherwise lost, which is every app's first click. +329 B more, for both,
+     * when the replay learned to aim a keyboard or scripted press — `detail: 0` at (0, 0) — by the
+     * pressed node's PATH rather than a hit test of the page's corner. Since then `idle` is the
+     * HEAVIEST single-strategy runtime, so the ceiling below is taken over the worse of the two.
+     */
+    hydrateRuntimeIdle: 1_744,
     /**
      * `DEFAULT_ISLAND_HYDRATE` is `'interaction'` (`route.ts:33`), so THIS is the runtime an island
      * route declaring no `hydrate` actually ships. The budget derivation used `idle` and understated
@@ -47,23 +55,30 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      * containment after the mount and hit-tests a pointer event whose target the mount detached.
      * +184 B, and all of it in the `interaction` part — `idle` is still 774 and `visible` 846, so
      * a route that declares its strategy pays nothing for this.
+     *
+     * Moved 1,251 -> 1,629 on 2026-09-22: `aim` and the queue moved into `catchUp`, shared with
+     * `idle` (+49 B for the call), and the replay learned to aim by the pressed node's path (+329 B).
      */
-    hydrateRuntimeDefault: 1_251,
+    hydrateRuntimeDefault: 1_629,
   } as const;
+
+  /** What the allowance has to clear: the costlier of the two runtimes an island gets unasked. */
+  const HYDRATE_RUNTIME_WORST = Math.max(
+    MEASURED.hydrateRuntimeIdle,
+    MEASURED.hydrateRuntimeDefault,
+  );
 
   test('a Solid island can reach it — the property 4096 did not have', () => {
     // The floor is what `render()` costs before an author writes a line. A default below it is a
     // ceiling every JSX island fails on arrival, whatever it contains.
+    expect(DEFAULT_ISLAND_JS_BYTES).toBeGreaterThan(MEASURED.solidFloor + HYDRATE_RUNTIME_WORST);
     expect(DEFAULT_ISLAND_JS_BYTES).toBeGreaterThan(
-      MEASURED.solidFloor + MEASURED.hydrateRuntimeDefault,
-    );
-    expect(DEFAULT_ISLAND_JS_BYTES).toBeGreaterThan(
-      MEASURED.referenceAppIsland + MEASURED.hydrateRuntimeDefault,
+      MEASURED.referenceAppIsland + HYDRATE_RUNTIME_WORST,
     );
   });
 
   test('it is still a ceiling — headroom over the real island, not a blank cheque', () => {
-    const spent = MEASURED.referenceAppIsland + MEASURED.hydrateRuntimeDefault;
+    const spent = MEASURED.referenceAppIsland + HYDRATE_RUNTIME_WORST;
     // Under 2x, so a second copy of the same island is refused rather than waved through, which is
     // the shape of the defect this check exists for: `three` and `three/webgpu` bundled twice.
     expect(DEFAULT_ISLAND_JS_BYTES).toBeLessThan(spent * 2);
@@ -101,6 +116,10 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
     } as const;
 
     expect(hydrateRuntimeBytes([directive])).toBe(MEASURED.hydrateRuntimeDefault);
-    expect(MEASURED.hydrateRuntimeDefault).toBeGreaterThan(MEASURED.hydrateRuntimeIdle);
+    // And the other one an island gets without asking — `idle`, `defaultHydrate('app')`. Both are
+    // derived, so a runtime that grows reds here before it silently eats the headroom.
+    expect(hydrateRuntimeBytes([{ ...directive, strategy: 'idle' }])).toBe(
+      MEASURED.hydrateRuntimeIdle,
+    );
   });
 });

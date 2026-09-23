@@ -6,6 +6,7 @@
   "type": "module",
   "sideEffects": [
     "./src/context.ts",
+    "./src/core-error-codes.ts",
     "./src/lifecycle-errors.ts",
     "./src/schema-error-codes.ts",
     "./src/secrets-errors.ts"
@@ -20,11 +21,13 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./page": "./src/page.ts"
   },
   "files": [
     "src",
     "!src/**/*.test.ts",
+    "!src/**/*-fixture.ts",
     "CLAUDE.md",
     "README.md",
     "LICENSE"

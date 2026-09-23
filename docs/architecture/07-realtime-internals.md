@@ -1,6 +1,10 @@
 # Realtime internals
 
-Five stages, four processes, one protocol. Ladder rationale and tier choice: [`../idea/03-realtime.md`](../idea/03-realtime.md). Honest sizing of the effort: [`../idea/15-risks.md`](../idea/15-risks.md).
+How `@ultimat3/realtime` works, server and browser, `As of 2026-09-22` (21.0.0, unreleased; plan
+101). The client data layer's design and its decisions are
+[`21-client-data-layer.md`](./21-client-data-layer.md); this page is the mechanism under it. Ladder
+rationale: [`../idea/03-realtime.md`](../idea/03-realtime.md). Honest sizing:
+[`../idea/15-risks.md`](../idea/15-risks.md). Source anchors are file + symbol.
 
 ## Pipeline
 
@@ -13,7 +17,10 @@ graph TD
   N(["NATS subject<br/>hash(query,params,tenant)"])
   S["sync role<br/>stateless, N replicas"]
   P["policy.evaluate<br/>per subscriber, per row"]
-  C["client store<br/>Solid signals"]
+  H["ChannelHub<br/>declared channels, seq/epoch ring"]
+  W["socket engine<br/>SharedWorker, 1 per origin + principal"]
+  T["tab: RecordStore<br/>synced + overlay"]
+  X["dropped, counted, never sent"]
 
   PG -->|"WAL decode (pgoutput)"| R
   R --> F
@@ -21,10 +28,12 @@ graph TD
   M -->|"enter / leave / update / boundary-evict"| N
   N --> S
   S --> P
-  P -->|allow| C
-  P -->|deny| X["dropped, counted, never sent"]
-  C -->|"mutator local()"| C
-  C -->|"mutator server()"| PG
+  S --> H
+  P -->|allow| W
+  P -->|deny| X
+  H -->|"records / events / replay-gap"| W
+  W -->|"MessagePort, routed per wanted channel"| T
+  T -->|"useMutation: HTTP POST, idempotency key"| PG
 ```
 
 | Stage | Owner | Guarantee | Cost |
@@ -34,7 +43,13 @@ graph TD
 | matcher | `replicator` | a change touching no registered query costs one hash lookup | CPU ∝ registered query *shapes*, not subscribers |
 | fanout | NATS | subject carries no per-socket state | network ∝ subscriber groups |
 | socket + policy | `sync` (stateless) | a row failing policy is never written to the wire | CPU ∝ delivered rows × subscribers |
-| patch | client | fine-grained signal update, no list re-render | DOM ∝ changed cells |
+| channels | `sync` (`ChannelHub`) | each node derives a declared channel's records from the change stream it already subscribes to; no write names a channel | a ring of recent frames per open topic |
+| one socket per origin | the browser (`socket-engine.ts` in a `SharedWorker`) | one membership per topic across tabs; frames routed only to ports that want them | one socket per origin and principal |
+| store | each tab (`RecordStore`) | one record per `type:key`, updated once, shown everywhere | memory ∝ held records |
+
+Writes never ride the socket. The `mutate` and `rebase` frame kinds and `createSyncNode({ onMutate })`
+are deleted (sync protocol 3): no host ever wired `onMutate`, so every socket write answered
+`X_NOT_IMPLEMENTED`. A write is the mutator's action over HTTP ([below](#writes-go-over-http)).
 
 ## Change feed record
 
@@ -61,10 +76,11 @@ the gap:
 |---|---|
 | the code | `X_LIVE_REPLICA_IDENTITY` exists, is registered and is in the manifest (`packages/realtime/src/errors.ts`) |
 | the check | `warnPartialIdentity` is preflight's fourth question — it asks `pg_class` which replicated tables sit on `relreplident <> 'f'` and logs the code with the exact `ALTER TABLE` per table (`packages/realtime/src/pg-preflight.ts`). It runs **before** `pg_create_logical_replication_slot`, because a slot decodes with the identity the catalog held when the rows were written |
-| the counter | `ReplicationStreamStats.partialBefore` increments on every non-insert change whose relation is not on identity `f` (`pg-replication.ts:344`) — the running half of the same fact |
-| the refusal | **missing.** It warns rather than throws, deliberately: every app on the default identity would otherwise stop booting, and a replicator that will not start is worse than the partial rows it is complaining about. No generator emits the `ALTER TABLE` and no `x verify` step reads it, so a table added tomorrow gets a log line and no build error |
+| the counter | `ReplicationStreamStats.partialBefore` increments on every non-insert change whose relation is not on identity `f` (`pg-replication.ts:372`) — the running half of the same fact |
+| the generator | `x db gen` emits `ALTER TABLE … REPLICA IDENTITY FULL` for every table a live query declares in `subscribes:`, since 2026-08-26 (`GENERATABLE_FORMS` in `@ultimat3/db`) |
+| the refusal | **missing.** It warns rather than throws, deliberately: every app on the default identity would otherwise stop booting, and a replicator that will not start is worse than the partial rows it is complaining about. A table a live query reads but does not name in `subscribes:` gets a log line and no build error |
 
-Every occurrence in the repo is still hand-written: `examples/dummy/packages/db/migrations/0001_init.sql:106-107` for `posts` and `likes`, and `packages/realtime/src/pg-replication.live.test.ts` for its fixture. Per axiom 3 the *hard* rule does not exist yet — a warning is not a build error → [`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md).
+The reference app's `posts` and `likes` carry it at `examples/dummy/packages/db/migrations/0001_init.sql:129-130`. Per axiom 3 the *hard* rule still does not exist: a warning is not a build error → [`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md).
 
 ### The lsn is a pair, not a WAL position
 
@@ -103,7 +119,7 @@ Constraints that make step 2 cheap enough to be honest about:
 - `live: true` requires a **deterministic, bounded** `sql`: total `orderBy` + `limit`, no non-deterministic functions. What enforces it is `assertMatchable` (`packages/query/src/matcher.ts`), which refuses a shape the matcher cannot patch incrementally — an unsupported clause, or a filter operator outside `= != in > >= < <=` — with `X_MATCHER_UNSUPPORTED` and the fix "set `live: false` and poll, or reshape to equality filters + `orderBy` + `limit`". There is no separate `X_QUERY_UNBOUNDED`.
 - Predicates must be evaluable against a **single row of a single entity**. `match` returns no patch at all when `event.entity !== shape.entity` (`packages/query/src/matcher.ts:56`), so a join is not a slower live query — it is not one. `Builder#raw(feature)` is how a source declares a shape the matcher cannot patch, and `assertMatchable` refuses it at subscribe time.
 - **There is no re-execution fallback, and no aggregate deltas.** `As of 2026-08` the refusal is the whole behaviour: unmatchable is `X_MATCHER_UNSUPPORTED`, never a more expensive correct answer. An honest refusal beats a silently wrong result set, and a fallback nobody wrote is worse than both.
-- **Nothing reports which class a query is in before it is subscribed to.** `assertMatchable` runs inside `toLiveQuery` (`packages/query/src/live.ts:125`), which nothing outside `@ultimat3/query` calls, so the refusal arrives at subscribe time and not at build time. There is no explain command — shipped, planned or otherwise.
+- **Nothing reports which class a query is in before it is subscribed to.** `assertMatchable` runs inside `toLiveQuery` (`packages/query/src/live.ts:126`), which nothing outside `@ultimat3/query` calls, so the refusal arrives at subscribe time and not at build time. There is no explain command — shipped, planned or otherwise.
 
 ## Policy is per subscriber, never per query
 
@@ -162,37 +178,69 @@ The definition's read shares the same lane and the same rule. It happens **once 
 
 The one gate pass outside the lane is a resume, and it reads the live window deliberately: the window can only have moved forwards, and a row whose grant was revoked in the meantime is one the pass must refuse rather than replay from the state it had at the cursor's lsn. An entry nothing has read yet has no live window at all, so a resume onto a cold one fills it first — conditional on purpose, because re-reading per resuming subscriber is the cost a delta resume exists to skip in a restart storm.
 
-## Channel fanout is one filtered `send` per socket
+## Declared channels
 
-Bun's native WS pub/sub is **not used**, `As of 2026-08` — `SyncSocket.subscribeTopic` no longer calls `ws.subscribe`, and the websocket config declares no `publishToSelf`. Nothing in the package ever published to a native topic, so what those calls built was a second per-topic index nothing read.
+A channel is a declaration, never a string: `channelRef(name, { params, catchUp })` is the browser
+half, and `channel(ref, { records, policy, row?, events? })` the server half, which registers itself
+(`channel-ref.ts`, `channel-decl.ts`, `channel-registry.ts`). `new ChannelHub({ transport, sockets })`
+serves every registered one. The raw-topic hub API (`guard`, `subscribe(socket, topic)`,
+`publish(topic)`, `publishFrame`, `channelFrame`, `TopicGuard*`) is deleted.
 
-| A native publish | Why that disqualifies it here |
-|---|---|
-| cannot be refused per socket | backpressure on one connection has to be visible as *that connection's* dropped frame |
-| cannot report the frame it dropped | the drop counter and the log line are the only trace a lost channel message leaves |
-| cannot mark a subscriber desynced | the live-query path's repair runs off exactly that mark |
+| Kind | Source | Carries | Store |
+|---|---|---|---|
+| `records` | `ChannelHub.deliverChange(change)`, fed the same `ChangeEvent` stream as `LiveQueryRegistry.deliver`; a committed row of a listed entity, matched to the topic by its param columns | `{ channel, seq, epoch, adopt?, remove? }`, keyed record type → record key → row | adopted into the tab's `RecordStore`, never into a handler |
+| `events` | `hub.publishEvent(decl, params, event)` on a channel declared `events: true`, across nodes by the transport | an app payload; a presence roster is `{ presence: op, members, total? }` | never; handlers only (`onEvent`, `onPresence`) |
+| `replay-gap` | the hub, when it cannot prove a socket holds a topic's frames | `{ channel, epoch }` | the client re-runs the channel's `catchUp` query |
 
-`WsLike.subscribe` / `unsubscribe` remain **declared and unused**: the interface is structural and a tracked app implements it, so removing the members is a typecheck failure in that app rather than a cleanup. The declaration says so; a reader must not take them for a live mechanism.
+### Sequence, epoch, ring
 
-Local delivery is `SocketRegistry.deliver(topic, frame)`, reading a per-topic index rather than walking the socket table — that walk cost one iteration per connection on the node for every message with one legitimate subscriber, 50,000 of them at the scale this repo benchmarks.
+Each open topic on a node has a `ChannelRing` (`channel-ring.ts`): an **epoch** (a fresh mark minted
+by this hub, `uuid()`-based, so a restarted node can never reuse one), a monotonically increasing
+**seq**, and the last `DEFAULT_CHANNEL_RING = 256` records frames. The ring is dropped with the topic's
+last local member, and the next member gets a new epoch.
 
-### A topic guard that fails is not a topic guard that denied
+| Situation | The node | The client (`client-channels.ts`) |
+|---|---|---|
+| steady state | one `records` frame per change, `seq + 1` | applies frames with `seq` above its contiguous cursor; a duplicate (`seq <=` cursor) is dropped |
+| a numeric hole | nothing | **not a gap**: a seq this socket never received is skipped. Only `replay-gap` is a gap |
+| a dropped frame (backpressure) | `SocketRegistry.deliver` counts it (`channel_frames_dropped_total`), marks the (socket, topic) gapped, and sends one `replay-gap` once the socket drains, counted in `channel_replay_gaps_total` (announcements, by design) | re-runs `catchUp`, holding frames that arrive meanwhile, then applies them in order over the read |
+| a resubscribe with `since` | replays from the ring, or answers `replay-gap` when `since` is out of it, from another epoch, or in the future | same |
+| **the first join**, no cursor, on a channel with records | answers one `replay-gap` (`channel-logs.ts`, `resume`) | one catch-up read, which covers rows written between the page's render and its join |
+| a new epoch on a frame | — | treated as a reset: catch-up, then the frame |
 
-A guard is app code and may reach a database. On the re-auth pass (`ChannelHub.onActorChange`), only a **denial** — `X_TOPIC_FORBIDDEN` or a policy denial — unsubscribes the topic. Anything else keeps the subscription, increments `hub.guardFailures` and logs `channel.guard_failed` with the topic, the socket and the rendered error. `catch { unsubscribe }` reported a store that timed out as a revoked grant: every topic on every re-authenticated socket on the node, silently, with the client never told to resubscribe. The same split `LiveQueryRegistry.reauthorize` makes one layer up, and an alert fires on one of them.
+A dropped `events` frame is ephemeral and only counted. A channel with no records (typing, cursors)
+gets no first-join gap: there is nothing to re-read.
 
-The **initial** `subscribe` is deliberately not split this way: there is no subscription to keep, so a guard that raises rejects that subscribe and the client is told.
+### Subscribe-time policy
+
+`subscribeChannel(socket, { channel, params, since? })` resolves the declaration by name: an
+undeclared name is `X_TOPIC_FORBIDDEN`. The declaration's `policy` runs with the params as input and
+`row`'s answer as its subject (`channel-authz.ts`). Records are **not** gated per row: the topic's
+params are the scope, so a channel that must hide rows is declared narrower. A denial is latched per
+(socket, topic) until the session changes.
+
+**A policy that fails is not a policy that denied.** On re-authorization (`ChannelHub.onActorChange`)
+only a denial unsubscribes the topic. Anything else keeps the subscription, increments
+`hub.guardFailures` and logs `channel.guard_failed`: a store that timed out is an outage, not a
+revoked grant. The **initial** subscribe is deliberately not split this way: there is no
+subscription to keep, so a policy that raises rejects the subscribe and the client is told.
+
+### Local fanout
+
+Bun's native WebSocket pub/sub is not used: a native publish can neither be refused per socket, nor
+report the frame it dropped, nor mark a subscriber for repair. Local delivery is
+`SocketRegistry.deliver`, reading a per-topic index rather than walking the socket table.
 
 ## Inbound frames: lanes, and what lanes cannot do
 
-Outbound ordering is the lane per query id above. Inbound ordering is a separate mechanism with a separate unit, because `sync-node.message` dispatches every frame as `void (async () => routeFrame(…))()` — nothing upstream orders them, and a router that awaits a policy, a snapshot read or `onMutate` finishes in whatever order those settle.
+Outbound ordering is the lane per query id above. Inbound ordering is a separate mechanism with a separate unit, because `sync-node.message` dispatches every frame as `void (async () => routeFrame(…))()` — nothing upstream orders them, and a router that awaits a policy or a snapshot read finishes in whatever order those settle.
 
 **Not one lane per socket** (`frame-lanes.ts`, `As of 2026-08`). A global per-socket lane puts every frame behind the slowest one, and the slowest one is a snapshot read — a database round trip every reconnecting client pays once per live query, which is the restart storm the benchmark measures.
 
 | Frames | Lane key | Why that is the unit |
 |---|---|---|
-| `mutate` | `mutate`, one per socket | they write the database, and the client numbered them |
 | `subscribe` on a query | `sub:<sid>` | `add` then `drop` for one sid, or the drop finds nothing and the add strands the subscription it was meant to end |
-| `subscribe` on a topic | `topic:<name>` | one membership, the same add/drop pair |
+| `subscribe` on a channel | `channel:<name>:<params>` | one membership, the same add/drop pair |
 | `hello`, server-authored kinds | none | they read state and write none of it |
 
 A lane exists only while something is queued on it — the map is empty between frames, because a lane keyed by a client-chosen sid that outlived its work would be an unbounded map one socket can grow at will.
@@ -204,7 +252,7 @@ A lane exists only while something is queued on it — the map is empty between 
 | Reservation | Decides | Held until |
 |---|---|---|
 | `SubscriptionBook.reserve(socket, sid)` | the sid claim (`X_SUBSCRIPTION_ID_TAKEN`), `maxPerSocket`, `maxPerTenant` | the subscription is attached, or the attempt fails — a `finally`, so releasing twice is a no-op |
-| `ChannelHub.subscribe`'s claim + `#reserve(topic)` | `maxTopicsPerSocket`, `maxTopicsPerNode`, and the node's one bridge slot for that topic | the socket joins the topic, or the guard denies and the slot is given back |
+| `ChannelHub.subscribeChannel`'s claim + `#reserve(topic)` | `maxTopicsPerSocket`, `maxTopicsPerNode`, and the node's one bridge slot for that topic | the socket joins the topic, or the guard denies and the slot is given back |
 
 The bug both close is the ordinary case, not an attack: one WebSocket write carrying N subscribe frames is dispatched concurrently, N of them read a count nothing had grown yet, and every cap was bypassed by batching. The per-socket claim map is a `WeakMap` keyed by the socket, so a connection that dies mid-subscribe takes its claims with it.
 
@@ -227,13 +275,8 @@ Registered with no phase, both landed in `close`, and until that last phase ran 
 
 ## Cursor and reconnect
 
-Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a delta instead of a refetch.
-
-```
-{ qid: 'q_7f3a', op: 'insert', row: {...}, lsn: '0/1A2B3C4', trace: '4bf9…' }
-```
-
-Reconnect handshake — the real frames, `As of 2026-08`. There is no `resume` frame and no `reset` frame:
+Every live-query frame carries an LSN, and the client's last-seen LSN makes a reconnect a delta
+instead of a refetch. Handshake, as the frames are:
 
 ```text
 client → { type: 'hello', v, buildId, sessionId: null, actorId }
@@ -244,32 +287,23 @@ client → { type: 'subscribe', v, op: 'add', sid, target: { kind: 'query', qid:
 server:
   1. reserve the sid and the caps, synchronously
   2. authorize(actor, input), then resolve the shape
-  3. cursor === null            → snapshot frame
-     cursor inside the window   → patch frame, re-filtered per subscriber   (zero DB work)
+  3. cursor === null              → snapshot frame
+     cursor inside the window     → patch frame, re-filtered per subscriber   (zero DB work)
      cursor outside / over budget → snapshot frame at the current lsn       (one bounded query)
 ```
 
-**`target.qid` is the query *name* client → server**; the node derives the real qid from `(name, input)`, so a client can never choose its own fanout key or address someone else's window.
+`target.qid` is the query **name** client → server; the node derives the real qid from
+`(name, input)`, so a client can never choose its own fanout key. A snapshot carries `keys`, parallel
+to `rows`, and a patch carries `key`, each only when a record key differs from the row's `id`: the
+server renders keys with the entity's projection, so a composite-key entity can be live and the
+browser never derives a key. `ack` now carries only a refusal: the sid of a refused subscription, or
+the socket id for a frame the node could not read.
 
-Two ordering rules on the mutation reply, both of which are coordination and not style:
-
-| Rule | What breaks without it |
-|---|---|
-| The `rebase` frame is sent **before** its `ack` | the ack is the receipt, and the receipt retires the client's journal row and rebase-log entry. A rebase landing after it has no entry to read the mutator's `conflict` strategy from — every merge silently becomes `server-wins` — and no sequence to decide which later optimistic writes to replay |
-| A failure `ack` refers to the **mutation key**, or the `sid` for a subscribe | `queue.fail(frame.ref)` looks a mutation up by its idempotency key. Built with the socket id, `ref` names a key no queue can hold and the whole rollback path is inert: the optimistic write stays on screen and the mutation stays queued. The socket id is the honest answer only for a frame that could not be decoded, and for the kinds carrying no reference of their own |
-
-**The `subscribe` target's cursor is the only cursor on the wire.** `hello` carries none: `HelloFrame.resume` was written by the client, read by nobody, and is **deleted** `As of 2026-08`. It could not have been wired, either — a cursor's `qid` is `queryHash(name, input)`, a digest, so `input` is not recoverable from it, and `input` is what `definition.authorize({ actor, input })` decides against and what `matcher(input)` and `#entryFor` need to build an entry at all. A `hello`-time answer could therefore be at most "this node holds an entry under that qid" — a resumability claim made *before* the per-subscriber authorization pass, for a subscription that does not exist yet, over a window that stores **pre-policy** patches. And it could not even have saved the bytes: the client must still send one `subscribe` per sid carrying that sid's cursor, so the field was strictly a second copy.
-
-Removing it moved **no** `PROTOCOL_VERSION` — it was `1` at the time and the version stayed there — and both skews are readable because `decode` builds a whitelist object rather than passing the parsed one through:
-
-| Skew | What happens |
-|---|---|
-| new node ← old client sending `resume` | `decode`'s `hello` case constructs `{ type, v, buildId, sessionId, actorId }` and copies nothing else. The field is dropped, not rejected — pinned by `sync-protocol.test.ts`, which decodes a legacy hello and asserts `'resume' in decoded === false` |
-| old node ← new client omitting `resume` | the previous `decode` read it as `list(parsed, 'resume', …)`, and `list` answers `[]` for a key that is `undefined` — byte-identical to the empty list every heartbeat already sent. Verifiable only against the previous revision, since that code is gone |
-
-**`PROTOCOL_VERSION` is `2` `As of 2026-08-24`, and the reason is the contrast with the row above.** Deleting `LiveCursor.digest` and `LiveCursor.count` is *not* readable in either direction: `cursor()` reads its fields through `str`/`num`, which **throw** on an absent field, and a cursor rides both the client's `subscribe` and the node's `snapshot` — so a v1 node and a v2 client cannot resume from either side. The number turns that into one instruction (`X_PROTOCOL_VERSION`, "redeploy the client") instead of a per-frame `field "digest" must be a string`. The rule the two rows together state: **the version guards incompatibility, never novelty** — an additive optional field and a field read through `list()` both stay, because `decode` is a whitelist and `list()` answers `[]`; a field read through `str`/`num` and then removed is the shape that needs the bump.
-
-Both fields cost something to keep. `digest` was a `canonicalJson` render plus a hash over EVERY ROW of every snapshot, paid once per live query per reconnecting socket in the restart storm this package is benchmarked on, and it was read by nothing — the same shape `verifyDigest()` was deleted for one release earlier, one field down. `count` would have been **wrong** had it ever gained a reader: `advance` seeds its set from the already-truncated `ids`, so a delete of a row past `CURSOR_ID_LIMIT` never decremented it. `fnv1a` went with them — realtime held it for that one job, and `@ultimat3/flags` and `@ultimat3/ai` keep their own for theirs.
+**`PROTOCOL_VERSION` is 3** (`wire-version.ts`). The version guards incompatibility, never novelty:
+v2 → v3 deleted `mutate`, `rebase` and `presence` and added `records`, `events` and `replay-gap`, so
+a v2 client and a v3 node refuse each other with `X_PROTOCOL_VERSION`. v1 → v2 (2026-08-24) deleted
+`LiveCursor.digest` and `count`, read through a throwing `str`/`num`. An additive optional field and a
+field read through `list()` stay at the same number, because `decode` builds a whitelist object.
 
 ### Cost model
 
@@ -286,82 +320,135 @@ Both fields cost something to keep. `digest` was a `canonicalJson` render plus a
 
 ### Thundering herd
 
-Dropping N sockets at once means N simultaneous resubscribes during a deploy, when capacity is already reduced — and it is fractal: surviving nodes overload, drop connections, and the herd re-forms.
-
-Mitigations, all mandatory:
-
 | # | Mechanism | Effect |
 |---|---|---|
-| 1 | Server-directed reconnect frame on drain: `{ type: 'reconnect', afterMs: 1830, resumeFrom: '0/1A2B3C4', reason: 'drain' }` | reconnects arrive spread over a window, not as a spike |
+| 1 | Server-directed `reconnect` frame on drain, with a per-client `afterMs` | reconnects arrive spread over a window, not as a spike |
 | 2 | Window computed from live connection count | 500 clients drain in a second; 500k spread over minutes |
 | 3 | `resumeFrom` LSN | reconnect is a buffer delta, not a resubscribe-and-refetch |
-| 4 | Stateless `sync`, no sticky sessions | the LB redistributes clients across remaining nodes |
-| 5 | Client backoff is a floor, not the mechanism | a socket lost without a frame still backs off exponentially with **full** jitter (`defaultBackoff`: 500 ms base, 30 s cap, factor 2). `LiveClient` arms **one** timer per closed socket — the node's `afterMs` when a frame assigned one, otherwise `backoffDelay()` — and the timer calls `connect()`; `close()` cancels it. The arithmetic is `@ultimat3/core`'s since 2026-08-23 and this package's attempt is **0-based**, so its wrapper passes `attempt + 1`; dropping that shift would double every reconnect delay in the framework ([`20-flight-control.md`](./20-flight-control.md)) |
-| 6 | Per-tenant subscription caps | a registered-query explosion is a load-shedding decision with `X_SUBSCRIPTION_LIMIT`, not a fall-over. Taken as a reservation at the top of `subscribe` (above): the per-socket scope always, the per-tenant scope only when both `maxPerTenant` and `tenantOf` are supplied — and the boot supplies neither `As of 2026-08` ([`packages/cli/src/dev-sync.ts`](../../packages/cli/src/dev-sync.ts) says so and shows the two-line construction that arms it) |
-| 7 | `AcceptBudget` on the **upgrade** path | a token bucket per node — `perSecond: 500`, `burst: 2000` by default ([`packages/realtime/src/sync-node.ts`](../../packages/realtime/src/sync-node.ts)). A refused upgrade is a **`503` with a jittered `retry-after-ms` header**, decided before any query or snapshot runs. A second bucket per socket (`maxFramesPerSecond`) sheds inbound frames the same way |
-| — | ~~Snapshot admission control~~ | **This row claimed "snapshot regeneration is queued with a concurrency cap; excess clients get a jittered retry frame" and no such cap exists.** Corrected 2026-08-23. There is no concurrency limit on snapshot reads and no retry *frame* — a shed client never gets a websocket, so it can receive no frame at all. What bounds duplicate snapshot work is `entry.reading` in [`query-window.ts`](../../packages/realtime/src/query-window.ts): one read per window, shared, which is single-flight and not admission control |
+| 4 | Stateless `sync`, no sticky sessions | the load balancer redistributes clients across remaining nodes |
+| 5 | Browser backoff is a floor | a socket lost without a frame redials on `browserBackoff`: 500 ms base, factor 2, **`equal`** jitter, capped at `BROWSER_RECONNECT_MAX_MS = 4_000` (`thundering-herd.ts`). The server-side `defaultBackoff` (`full`, 30 s) is not a browser's curve: after a deploy it left the returning node unreached for 27 s. The arithmetic is `@ultimat3/core`'s `backoffDelay`, and this package's attempt is 0-based, so its wrapper passes `attempt + 1` ([`20-flight-control.md`](./20-flight-control.md)) |
+| 6 | Per-tenant subscription caps | `X_SUBSCRIPTION_LIMIT`, taken as a reservation; the per-tenant scope only when both `maxPerTenant` and `tenantOf` are supplied |
+| 7 | `AcceptBudget` on the upgrade path | a token bucket per node, `perSecond: 500`, `burst: 2000` by default (`sync-node.ts`). A refused upgrade is a `503` with a jittered `retry-after-ms`, decided before any query runs. A second bucket per socket (`maxFramesPerSecond`) sheds inbound frames |
 
-### The client's half
+There is no snapshot admission control: what bounds duplicate snapshot work is `entry.reading` in
+`query-window.ts`, one shared read per window.
 
-| Mechanism | Rule |
-|---|---|
-| One armed timer | a closed socket arms exactly one reconnect — the node's `afterMs` when a `reconnect` frame assigned one, otherwise `backoffDelay()`. `close()` cancels it; `connect()` starts over |
-| Identity guard on **every** handler | `onOpen`, `onMessage` and `onClose` all return early when `#socket !== socket`. A replaced socket opening late would otherwise mark the connection up and replay every subscription onto whatever socket is current |
-| A reconnect replays registrations **and** topics | topic membership is state on the node's socket and `hello` carries none of it. Missing that half, a channel is silent from the first reconnect on, and its presence membership is swept |
-| Heartbeat | `heartbeatMs`, default 15s, `0` disables. One beat = a `hello` + one subscribe frame per topic. A beat and an opening frame are **byte-identical** — `hello` carries no cursors — so the beat says "I am here" and asks for nothing. Two silent windows ⇒ close `4000` and arm the reconnect: a half-open socket fires no `close`, so only the client can end it |
-| A `send` that returned is not an ack | a browser `WebSocket.send` on a CLOSING socket discards the frame and returns normally. A drained mutation stays `inflight` until `ack`/`fail`, and a lost connection returns it to `pending` |
-| Drain is one pass at a time | passes chain rather than join: two overlapping passes put one key on the wire twice, and a later pass could overtake the one in front of it. Only `pending` entries are sendable |
-| Backpressure declines, never fails | over `MAX_BUFFERED_BYTES` (1 MiB, mirroring the node's `backpressureLimit`) the sender throws, the queue keeps that mutation pending and stops the pass rather than reordering the ones behind it. A socket that reports no `bufferedAmount` is treated as never backed up |
+## The browser: one page handle, one store, one socket
 
-Drain sequencing across roles: [`13-topology-runtime.md`](./13-topology-runtime.md).
+### The page handle
 
-## What tier 3 adds
+Every island is its own bundle, so a module singleton is one per island. Page state lives on
+`globalThis` under `Symbol.for` keys instead:
 
-A `LocalStore` passed to the live client. No new mutators, no new authz, no new server code — the client half changes. The designed spelling is `persist: true` on the query and **`query()` does not accept it**, `As of 2026-09` — `local-store.ts:230` records the same thing.
-
-| Added | Detail |
-|---|---|
-| Durable local store | IndexedDB-backed, same row shapes, same signal API |
-| Offline mutation queue | `mutator.local()` applies immediately and the intent is persisted, ordered, with its input |
-| Rebase log | on reconnect, queued mutations replay against the server-authoritative state per `conflict: 'server-wins' \| 'last-write-wins' \| custom(merge)` |
-| Client schema version | the local store is versioned; a mismatch after a deploy discards and re-snapshots rather than reading old shapes |
-
-State that **must** be persisted client-side:
-
-| Key | Why | On mismatch |
+| Key | Owner | Holds |
 |---|---|---|
-| store schema version | shapes change with deploys | drop store, re-snapshot |
-| last-seen LSN per subscription | delta resume | fall back to snapshot |
-| pending mutation queue (input + local patch + idempotency key) | offline writes | replay in order |
-| rebase checkpoint | which mutations the server has acknowledged | re-send unacknowledged |
-| build ID that wrote the store | detects skew ([`../idea/08-pwa-offline.md`](../idea/08-pwa-offline.md)) | discard on incompatible contract |
+| `ultimate.client` | `@ultimat3/core` (`record-sink.ts`, `pageClient()`) | the `RecordSink` slot, the socket slot, the principal scope cell, the pending-records buffer, the outbound-header slot |
+| `ultimate.realtime` | `@ultimat3/realtime` (`page-store.ts`, `pageRealtime()`) | the `RecordStore`, the sync target, the socket client, the page's write counts |
 
-Requirements this places on `mutator.local`: pure function of `(tx, input)` — no I/O, no `Date.now()`, no `Math.random()`. It is replayed, possibly many times, possibly on a later build.
+`installRealtime({ signal: createSignal })` gives the hooks this bundle's Solid signal factory; `x build`
+prepends it to every island whose own graph imports `@ultimat3/realtime`
+(`packages/cli/src/island-realtime.ts`). The sync target comes from the document's
+`<meta name="ultimate-sync">` (`sync-meta.ts`).
+
+### `RecordStore`
+
+`record-store.ts`. One per tab, installed as core's `RecordSink`, so `clientTransport` adopts HTTP
+records into it without importing this package.
+
+| Property | Rule |
+|---|---|
+| key | `type:key`, from the server on every path: an envelope's `records`, a snapshot's `keys`, a patch's `key`. A live window whose node named no type keeps its rows under `?query:<name>` (`unnamedType`) |
+| two layers | **synced** is server truth; the **overlay** is every pending optimistic write, replayed over synced truth on every change |
+| a patch omitting a field | never clears it |
+| a restored row | provisional: the first server row for that key wins outright |
+| a rejected row | not an object, or no key: dropped and reported, `X_RECORD_REJECTED` |
+| lifetime | reference-counted per record; the last release evicts it |
+| rescope | every record cleared |
+
+Lists hold **ids**. `useQuery` resolves rows from the store, for live and non-live reads alike. A
+non-live read's order is the envelope's `records[type]` key order, and an answer with no envelope
+holds its own rows (`use-query.ts`).
+
+### Writes go over HTTP
+
+`useMutation` (`use-mutation.ts`), in order:
+
+| # | Step |
+|---|---|
+| 1 | push the mutator's `local` twin into the overlay under `<name>:<uuid>`: visible in every island before the call returns |
+| 2 | `POST actionPath(name)` through `clientTransport`, with that key as the idempotency key |
+| 3 | adopt the answer's records, **then** settle the overlay, so nothing flickers |
+| 4 | a row the overlay wrote but the answer did not carry: if the server already reached it during the write (`#hear`; a restored row does not count), it settles; otherwise it waits for a server row, capped at 10 s (`DEFAULT_AWAIT_SERVER_MS`) |
+| 5 | `X_CLIENT_TRANSPORT_FAILED` with `meta.failure: 'network'`: queued in the outbox, overlay kept, resolves `undefined`. `'status'`: rejects and drops the overlay. `'body'`: rejects and keeps the overlay until a server row |
+| 6 | any other refusal drops the overlay; a supersession by `rescope` is not counted as a failure |
+
+Conflicts resolve through core's `resolveConflict` over rows (`'server-wins'`,
+`'last-write-wins'` on a numeric server-written `updatedAt`, or `custom(merge)`); a
+`last-write-wins` mutator whose entity has no numeric clock is refused at declaration,
+`X_MUTATOR_CLOCK_MISSING`.
+
+### One socket per origin
+
+| Module | Role |
+|---|---|
+| `socket-engine.ts` | the socket's lifecycle: dial, beat (15 s), redial on `browserBackoff`, reap. Host-agnostic |
+| `socket-routes.ts` | one membership per topic and live query across ports; every server frame routed only to the ports that want it, never broadcast |
+| `socket-port.ts` | the port messages: `open`, `frame` (a wire frame, encoded as a socket carries it), `close`, `bye` |
+| `socket-host.ts` | the tab side: a `SharedWorker` named `ultimate-sync:<scope>` from `<meta name="ultimate-sync-worker">`, or, when `SharedWorker` is absent or throws, the same engine in the page over a `MessageChannel` |
+| `sync-worker.ts` | the worker entry, served at `/_x/sync-worker/<hash>.js`, `immutable` |
+
+Each tab keeps its own page socket (`page-socket.ts`) and record store (`page-store.ts`); to the page
+socket, its port is a socket. A tab sends `bye` on
+`pagehide`, and a port silent for `REAP_AFTER_BEATS = 3` beats is reaped, because a `MessagePort` has
+no close event. Two principals get two workers and never share a socket. A new principal makes the
+tab `bye` the old worker and redial.
+
+### Offline: persister, outbox, boot
+
+| Piece | Rule |
+|---|---|
+| store | IndexedDB (`local-store-idb.ts`), every entry keyed `[scope, type, key]`; scope `p:<principal>` or `anon`; an unscoped page persists nothing. Blocked storage falls back to memory with one `X_LOCAL_STORE_UNAVAILABLE` warning |
+| persister | `record-persister.ts`: the types a private document lists in `<meta name="ultimate-persist">`, from `entity(name, { persist: true })`. Synced rows only, never an overlay. Debounced 250 ms, flushed on `pagehide` and when hidden |
+| outbox | `page-outbox.ts` over `offline-queue.ts`: one queue per principal, replayed **in order** over HTTP with each write's original idempotency key, on socket up, on `online`, and on the service worker's `OUTBOX_DRAIN_MESSAGE`. A retryable failure stops the pass; a refusal is final and rolls back its overlay |
+| boot | `@ultimat3/realtime/boot`, one deferred classic script per private document (`/_x/page-boot/<hash>.js`): wipes every stored scope except the current principal's, restores this principal's rows before the socket connects, and opens the outbox |
+| rescope | in-page: wipes the previous scope's rows and queue |
+| sign-out | the response's `Clear-Site-Data: "cache", "storage"` (`@ultimat3/auth`'s `signOutHeaders()`) first; the boot wipe is the second line |
+
+Trade-off: two principals in two tabs of one browser. The newer boot wipes the other's disk; that tab
+keeps its records and queue in memory and re-persists them on its next write.
 
 ## Limits — stated plainly
 
-`As of 2026-07`, tiers 1–2 are the v1 target; tier 3 is v2. The sync engine is roughly 70% of the framework's total effort ([`../idea/15-risks.md`](../idea/15-risks.md)).
-
 | Limit | Reality |
 |---|---|
-| Matcher generality | single-row, single-entity predicates only. Multi-table joins and non-trivial aggregates are **refused** at subscribe time (`X_MATCHER_UNSUPPORTED`), never re-executed, and no command tells you the class in advance |
+| Matcher generality | single-row, single-entity predicates only. Joins and non-trivial aggregates are **refused** at subscribe time (`X_MATCHER_UNSUPPORTED`), never re-executed |
 | Matcher throughput | CPU on one `replicator` per database. A high-write table with many distinct query shapes is the bottleneck, not socket count |
-| Memory per subscriber | grows with subscribed-result size. 100k sockets holding 50-row results is fine; 100k holding 5k-row results is not |
-| Ordering | per table, by LSN. There is no cross-table transactional snapshot on the wire; a UI that requires one must read via a query, not a subscription |
-| Delivery, tier 2 | at-least-once. Patches are idempotent by `(qid, lsn, rowKey)`; clients must tolerate a repeat. A patch backpressure drops marks the subscriber `desynced`, and the next change re-snapshots it out of the shared window |
-| Delivery, tier 1 | **at-most-once, and unrepaired.** A channel topic has no cursor, no mark and no re-snapshot, so a frame `SyncSocket.send` refuses is gone. It is counted — `channel_frames_dropped_total` (no labels; a topic is client-chosen), `channel.frames_dropped` at `warn` with `{ topic, dropped, total }`, and `SocketRegistry.droppedChannelFrames` in process. Repair would need a per-topic sequence on the wire: a channel's `lsn` is the publishing hub's own per-node counter, so a client cannot tell a gap from a message that came via another node |
-| Bun process maturity | long-running socket processes are less battle-proven than Node's; sustained-load memory profiling is explicit roadmap work |
-| Escape valve | if the reconnect benchmark says our matcher is the bottleneck, adopting an existing protocol (Zero-shaped) beats defending ours |
+| Memory per subscriber | grows with subscribed-result size |
+| Ordering | per table, by LSN. No cross-table transactional snapshot on the wire |
+| Delivery, live queries | at-least-once. A patch backpressure drops marks the subscriber `desynced`, and the next change re-snapshots it |
+| Delivery, channel `records` | repaired: a drop is announced with `replay-gap` and the client re-reads `catchUp`. **Not measured at scale**: the committed benchmark runs predate it, and ran the 30 s backoff curve |
+| Delivery, channel `events` | at-most-once, counted, never repaired |
+| Two-tab e2e | exercised: `examples/dummy/apps/web/e2e/two-tabs.e2e.test.ts` asserts one socket for two tabs, a like crossing between them, zero reconnects when one closes, and the in-page fallback with `SharedWorker` deleted. Run by the reference app's `e2e` step (`reference-app-verify`). One browser, one origin: not a multi-node result |
+| Escape valve | if the reconnect benchmark says the matcher is the bottleneck, adopting an existing open sync protocol beats defending ours |
 
 ## Codes
 
-Every code below is registered and in [`framework.manifest.json`](../../framework.manifest.json); the full row per code is [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md).
+Every code below is registered; the full row per code is [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md).
 
-| Code | Meaning | Fix |
-|---|---|---|
-| `X_SUBSCRIPTION_LIMIT` | a per-socket, per-tenant or per-node cap was reached; the error carries the scope, the id, the limit and the knob | raise `maxPerSocket` / `maxPerTenant` / `maxEntries` on the `LiveQueryRegistry`, or `maxTopicsPerSocket` / `maxTopicsPerNode` on the `ChannelHub`. None is an `app.config.ts` field |
-| `X_SUBSCRIPTION_ID_TAKEN` | one socket reused a `sid` it already holds, or claimed one twice in one batch | pick a fresh `sid`; a subscription is `(socket, sid)` and replacing one strands it |
-| `X_MATCHER_UNSUPPORTED` | a `live: true` shape the incremental matcher cannot patch — an unsupported clause or filter operator | `live: false` and poll, or reshape to equality filters + `orderBy` + `limit` |
-| `X_REPLICATOR_SLOT_HELD` | a second replicator found the advisory lock held | scale `replicator` to 1 per database |
-| `X_CURSOR_STALE` | the cursor is outside the retained window and no snapshot path was supplied | pass `snapshot` to `resumeFrom()`, or raise the ring's capacity |
-| `X_FRAME_RATE_LIMIT` | one socket sent frames faster than this node will route them | `createSyncNode({ maxFramesPerSecond, frameBurst })`; the budget is checked before `touch()`, so a refused frame does not renew the idle window |
+| Code | Meaning |
+|---|---|
+| `X_SUBSCRIPTION_LIMIT` | a per-socket, per-tenant or per-node cap was reached |
+| `X_SUBSCRIPTION_ID_TAKEN` | one socket reused a `sid` it already holds |
+| `X_MATCHER_UNSUPPORTED` | a `live: true` shape the incremental matcher cannot patch |
+| `X_REPLICATOR_SLOT_HELD` | a second replicator found the advisory lock held |
+| `X_CURSOR_STALE` | the cursor is outside the retained window and no snapshot path was supplied |
+| `X_FRAME_RATE_LIMIT` | one socket sent frames faster than this node routes them |
+| `X_TOPIC_FORBIDDEN` | an undeclared channel, or the declaration's policy denied the actor |
+| `X_CHANNEL_DECLARATION_INVALID` | a `channel()` declaration cannot route its rows |
+| `X_PROTOCOL_VERSION` | the client and the node speak different wire versions |
+| `X_REALTIME_UNINSTALLED` | a hook ran in a browser island that never installed realtime |
+| `X_SYNC_UNCONFIGURED` | a live hook needed the page socket and no sync target was configured |
+| `X_RECORD_REJECTED` | a row reached the store with no key, or not as an object |
+| `X_LOCAL_STORE_UNAVAILABLE` | IndexedDB could not open; a warning, never thrown |
+| `X_LIVE_SERVER_RENDER` | `useMutation()` ran during a server render |
+| `X_REBASE_CONFLICT` | a custom merge returned something other than a row with a string `id` |

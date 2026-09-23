@@ -17,6 +17,9 @@ interface FireInit {
   readonly target: FakeElement;
   readonly clientX?: number;
   readonly clientY?: number;
+  /** A UI event's click count: 0 on a keyboard-activated or scripted `click()`, whose (0, 0) is
+   *  no pointer position at all. */
+  readonly detail?: number;
 }
 
 class FakeEvent {
@@ -24,11 +27,13 @@ class FakeEvent {
   readonly target: unknown;
   readonly clientX: number | undefined;
   readonly clientY: number | undefined;
+  readonly detail: number | undefined;
   constructor(type: string, init: Partial<FireInit>) {
     this.type = type;
     this.target = init.target;
     this.clientX = init.clientX;
     this.clientY = init.clientY;
+    this.detail = init.detail;
   }
 }
 
@@ -47,6 +52,16 @@ class FakeElement {
 
   constructor(tag: string) {
     this.tag = tag;
+  }
+
+  /** Upper case, as the DOM answers it for an HTML element. */
+  get tagName(): string {
+    return this.tag.toUpperCase();
+  }
+
+  /** Element children only — every child here is an element. */
+  get children(): readonly FakeElement[] {
+    return this.childNodes;
   }
 
   getAttribute(name: string): string | null {
@@ -86,6 +101,11 @@ class FakeElement {
     );
   }
 
+  /** Event types a listener is still attached for — empty once the runtime has let go. */
+  listening(): string[] {
+    return [...this.listeners].filter(([, fns]) => fns.length > 0).map(([type]) => type);
+  }
+
   dispatchEvent(event: FakeEvent): boolean {
     this.delivered.push(event.type);
     return true;
@@ -110,6 +130,8 @@ interface Harness {
   readonly hits: Map<string, FakeElement>;
   readonly fire: (type: string, init?: Partial<FireInit>) => void;
   readonly finishMount: () => void;
+  /** Run the `requestIdleCallback` the idle runtime scheduled — the moment `idle` starts booting. */
+  readonly goIdle: () => void;
   readonly dispose: () => Promise<void>;
 }
 
@@ -132,14 +154,20 @@ const settle = async (): Promise<void> => {
 };
 
 /** `replaces` is the documented island idiom — `mount` opens with `el.textContent = ''`. */
-async function bootReplayRuntime(replaces: boolean): Promise<Harness> {
+async function bootReplayRuntime(
+  replaces: boolean,
+  strategy: 'interaction' | 'idle' = 'interaction',
+  mountedTag = 'button',
+): Promise<Harness> {
   const dir = await mkdtemp(join(tmpdir(), 'ultimate-replay-'));
   const globals = globalThis as unknown as Record<string, unknown>;
 
   const root = new FakeElement('div');
   const shell = new FakeElement('button');
   root.appendChild(shell);
-  const mounted = new FakeElement('button');
+  // The island's own render of the shell's control — the same element at the same place, unless a
+  // test says the mount rendered something else there.
+  const mounted = new FakeElement(mountedTag);
   const outsider = new FakeElement('header');
 
   let finishMount = (): void => undefined;
@@ -169,14 +197,23 @@ async function bootReplayRuntime(replaces: boolean): Promise<Harness> {
   const hits = new Map<string, FakeElement>();
   globals['document'] = {
     querySelectorAll: (selector: string): unknown[] =>
-      selector.includes('interaction') ? [root] : [],
+      selector.includes(`"${strategy}"`) ? [root] : [],
     // No props script: the island takes none, so `boot` must still reach the import.
     querySelector: (): unknown => null,
     elementFromPoint: (x: number, y: number): unknown => hits.get(`${x},${y}`) ?? null,
   };
+  // The idle callback is held rather than run, so a test decides whether the visitor pressed
+  // before the browser went idle or after — the two windows `idle` used to lose a click in.
+  let idle = (): void => undefined;
+  // The runtime feature-tests on `window` and then calls the bare global, as a browser allows.
+  const requestIdleCallback = (fn: () => void): void => {
+    idle = fn;
+  };
+  globals['requestIdleCallback'] = requestIdleCallback;
+  globals['window'] = { requestIdleCallback };
 
   const runtime = join(dir, 'runtime.mjs');
-  const source = hydrateRuntime([directive({ events: REPLAY_EVENTS })])
+  const source = hydrateRuntime([directive({ strategy, events: REPLAY_EVENTS })])
     .replace('<script type="module">', '')
     .replace('</script>', '');
   await writeFile(runtime, source, 'utf8');
@@ -192,8 +229,13 @@ async function bootReplayRuntime(replaces: boolean): Promise<Harness> {
       root.fire(type, { target: shell, ...init });
     },
     finishMount,
+    goIdle: () => {
+      idle();
+    },
     dispose: async () => {
       globals['document'] = undefined;
+      globals['window'] = undefined;
+      globals['requestIdleCallback'] = undefined;
       globals['__xTestMount'] = undefined;
       await rm(dir, { recursive: true, force: true });
     },
@@ -241,10 +283,11 @@ describe('the interaction replay aims at a node the mount left standing', () => 
     }
   });
 
-  test('an event with no coordinates falls back to the island root, never the detached node', async () => {
-    // A `keydown` has no `clientX`, so there is no point to hit-test. The root still reaches a
-    // listener the island registered on `document` — `@ultimat3/ui`'s Escape handlers are all
-    // there — which a node outside the tree reaches nothing from.
+  test('an event with no coordinates lands on the control the mount put where it was', async () => {
+    // A `keydown` has no `clientX`, so there is no point to hit-test. The path to the pressed node
+    // was taken when the event was caught, and the mount rendered the same element at the same
+    // place: that is the control the visitor was on. The island ROOT reaches no handler on it —
+    // Solid delegates from `document` and walks UP from the target.
     const harness = await bootReplayRuntime(true);
     try {
       harness.fire('keydown');
@@ -253,17 +296,76 @@ describe('the interaction replay aims at a node the mount left standing', () => 
       harness.finishMount();
       await settle();
 
-      expect(harness.root.delivered).toEqual(['keydown']);
+      expect(harness.mounted.delivered).toEqual(['keydown']);
+      expect(harness.root.delivered).toEqual([]);
       expect(harness.shell.delivered).toEqual([]);
     } finally {
       await harness.dispose();
     }
   });
 
-  test('a hit test landing OUTSIDE the island falls back to the root, not to a stranger', async () => {
-    // The island may have mounted something smaller, or a sticky header may now cover the point.
-    // Synthesizing a click on an element the visitor never pressed is worse than losing the replay.
+  test('a scripted or keyboard click at (0, 0) is not hit-tested — it names no point', async () => {
+    // `button.click()` and Enter on a focused button both fire `click` with `detail: 0` and
+    // `clientX: 0`. Hit-testing the page's top-left corner found nothing in the island, the replay
+    // went to the root, and the press was lost — the dummy's e2e suite presses exactly this way.
     const harness = await bootReplayRuntime(true);
+    // A full-bleed island covers the corner: a hit test there answers the island's own wrapper,
+    // which is inside it and reaches no handler of the control.
+    harness.hits.set('0,0', harness.root);
+    try {
+      harness.fire('click', { clientX: 0, clientY: 0, detail: 0 });
+      await settle();
+
+      harness.finishMount();
+      await settle();
+
+      expect(harness.mounted.delivered).toEqual(['click']);
+      expect(harness.root.delivered).toEqual([]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  test('a mount that rendered a DIFFERENT element there falls back to the root', async () => {
+    // The path found an `<a>` where a `<button>` was pressed: not the same control, and
+    // synthesizing an event on an element the visitor never touched is worse than losing it.
+    const harness = await bootReplayRuntime(true, 'interaction', 'a');
+    try {
+      harness.fire('keydown');
+      await settle();
+
+      harness.finishMount();
+      await settle();
+
+      expect(harness.mounted.delivered).toEqual([]);
+      expect(harness.root.delivered).toEqual(['keydown']);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  test('a hit test landing OUTSIDE the island never reaches the stranger', async () => {
+    // The island may have mounted something smaller, or a sticky header may now cover the point.
+    // Synthesizing a click on an element the visitor never pressed is worse than losing the replay;
+    // the structural answer — the same control at the same place — is still the island's own.
+    const harness = await bootReplayRuntime(true);
+    harness.hits.set('12,34', harness.outsider);
+    try {
+      harness.fire('click', { clientX: 12, clientY: 34 });
+      await settle();
+
+      harness.finishMount();
+      await settle();
+
+      expect(harness.outsider.delivered).toEqual([]);
+      expect(harness.mounted.delivered).toEqual(['click']);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  test('outside the island AND a different element there: the root, never the stranger', async () => {
+    const harness = await bootReplayRuntime(true, 'interaction', 'a');
     harness.hits.set('12,34', harness.outsider);
     try {
       harness.fire('click', { clientX: 12, clientY: 34 });
@@ -293,6 +395,87 @@ describe('the interaction replay aims at a node the mount left standing', () => 
 
       expect(harness.mounted.delivered).toEqual(['click']);
       expect(harness.root.delivered).toEqual([]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+});
+
+// `idle` hydrates on the browser's schedule, not the visitor's, so the server-rendered button is
+// pressable for as long as the idle callback and the chunk take — up to IDLE_HYDRATE_TIMEOUT_MS
+// plus a download. A click in that window reached a node with no handler and vanished: every app's
+// first press could do nothing. The same capture-and-replay `interaction` runs covers it.
+describe('an idle island replays what the visitor did before it mounted', () => {
+  test('a click BEFORE the idle callback runs is replayed once the island mounts', async () => {
+    const harness = await bootReplayRuntime(true, 'idle');
+    harness.hits.set('12,34', harness.mounted);
+    try {
+      harness.fire('click', { clientX: 12, clientY: 34 });
+      await settle();
+      // Nothing is replayed into a chunk still loading.
+      expect(harness.mounted.delivered).toEqual([]);
+
+      harness.goIdle();
+      harness.finishMount();
+      await settle();
+
+      expect(harness.mounted.delivered).toEqual(['click']);
+      expect(harness.shell.delivered).toEqual([]);
+      expect(harness.root.listening()).toEqual([]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  test('a press wakes an idle island without waiting for the browser to go idle', async () => {
+    // The visitor has already said they want it; waiting out IDLE_HYDRATE_TIMEOUT_MS on a busy
+    // main thread would turn a replayed click into a two-second one.
+    const harness = await bootReplayRuntime(false, 'idle');
+    try {
+      harness.fire('click', { clientX: 12, clientY: 34 });
+      harness.finishMount();
+      await settle();
+
+      expect(harness.shell.delivered).toEqual(['click']);
+      // The idle callback arriving afterwards finds nothing left to replay.
+      harness.goIdle();
+      await settle();
+      expect(harness.shell.delivered).toEqual(['click']);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  test('a click while the chunk is still loading is replayed after mount, not before', async () => {
+    const harness = await bootReplayRuntime(false, 'idle');
+    try {
+      harness.goIdle();
+      harness.fire('click', { clientX: 12, clientY: 34 });
+      await settle();
+      expect(harness.shell.delivered).toEqual([]);
+
+      harness.finishMount();
+      await settle();
+
+      expect(harness.shell.delivered).toEqual(['click']);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  test('an idle island nobody touched lets go of its listeners once mounted', async () => {
+    // A listener left attached would re-dispatch every later click a second time.
+    const harness = await bootReplayRuntime(false, 'idle');
+    try {
+      expect(harness.root.listening()).toEqual([...REPLAY_EVENTS]);
+      harness.goIdle();
+      harness.finishMount();
+      await settle();
+
+      expect(harness.root.listening()).toEqual([]);
+      harness.fire('click', { clientX: 1, clientY: 1 });
+      await settle();
+      expect(harness.shell.delivered).toEqual([]);
     } finally {
       await harness.dispose();
     }

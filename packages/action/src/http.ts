@@ -6,7 +6,14 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
-import { isMcpExposed, isUltimateError } from '@ultimat3/core';
+import {
+  isMcpExposed,
+  isUltimateError,
+  RECORDS_OPENAPI_HEADER,
+  recordEnvelopeSchema,
+  withWriteOrigin,
+  writeDigest,
+} from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 // `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
 // and `@ultimat3/query` needs the identical conversion while being the same tier as this one — so
@@ -26,6 +33,7 @@ import {
   toOperationId,
 } from './naming';
 import { admitsAnonymous, policyCapability } from './policy-gate';
+import { carriesRecords, recordResponse } from './record-wire';
 import { IDEMPOTENCY_HEADER } from './wire-headers';
 
 /**
@@ -36,6 +44,12 @@ import { IDEMPOTENCY_HEADER } from './wire-headers';
 export { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './wire-headers';
 
 export const REPLAYED_HEADER = 'x-ultimate-replayed';
+
+/** The digest a request's idempotency key names its write by; none for a missing or blank one. */
+async function writeOriginOf(req: UltimateRequest): Promise<string | undefined> {
+  const key = req.header(IDEMPOTENCY_HEADER);
+  return key === null || key === '' ? undefined : await writeDigest(key);
+}
 
 /**
  * `publishPost` -> `POST /api/posts/publish`. Derivation: the first camelCase word
@@ -49,6 +63,7 @@ export function toRoute(target: AnyAction): Route {
   // Rendered ONCE, at projection: a date that cannot become a header is a mount-time refusal,
   // not a surprise on the first request — the same rule `toBucket` follows for a rate limit.
   const sunsetting = deprecationHeadersFor(name, def.deprecated);
+  const enveloped = carriesRecords(target.output);
 
   const handler = async (req: UltimateRequest): Promise<Response> => {
     if (sunsetting !== undefined) recordDeprecatedCall('action', name);
@@ -58,20 +73,30 @@ export function toRoute(target: AnyAction): Route {
       const raw = await req.bodyRaw();
       const key = def.idempotent === true ? req.header(IDEMPOTENCY_HEADER) : null;
       let replayed = false;
-      const result = await invoke(target, raw, {
-        surface: 'http',
-        idempotencyKey: key,
-        onReplay: () => {
-          replayed = true;
-        },
-      });
+      // The header NAMES the write whatever the declaration, idempotent or not: a page sends one
+      // with every mutation, and the `records` frames its rows produce carry the digest so that
+      // page can tell its own echo from somebody else's change (`@ultimat3/core`'s write origin).
+      const result = await withWriteOrigin(await writeOriginOf(req), () =>
+        invoke(target, raw, {
+          surface: 'http',
+          idempotencyKey: key,
+          onReplay: () => {
+            replayed = true;
+          },
+        }),
+      );
       // The one thing an action's return value cannot say. `setRedirect()` inside the handler
       // is how a `<form method="post">` gets an answer a browser follows — a `Location` on the
       // 200 this used to always return is a header browsers ignore, so a JS-less form left the
       // reader staring at `{"ok":true}`. Only this projection honours it: a redirect is an HTTP
       // fact, and the MCP tool and the job handle share none of it.
       const to = takeRedirect(req.ctx);
-      const response = to === undefined ? json(result) : redirect(to.location, to.status);
+      const response =
+        to !== undefined
+          ? redirect(to.location, to.status)
+          : enveloped
+            ? recordResponse(target.output, result)
+            : json(result);
       if (key !== null) response.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
       // On the failure path too, below: a client polling a deprecated endpoint that is currently
       // 403ing still has to learn the endpoint is going away. Announcing it only on 200 hides the
@@ -148,6 +173,8 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
   const path = derivePath(name);
   const idempotent = def.idempotent === true;
   const deprecation = deprecationMetaFor(name, def.deprecated);
+  const outputRef = schemaRef(outputSchemaName(name));
+  const enveloped = carriesRecords(target.output);
   return {
     operationId: toOperationId(name),
     tags: [path.resource],
@@ -159,10 +186,15 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       content: { 'application/json': { schema: { $ref: schemaRef(inputSchemaName(name)) } } },
     },
     responses: {
-      '200': {
-        description: 'ok',
-        content: { 'application/json': { schema: { $ref: schemaRef(outputSchemaName(name)) } } },
-      },
+      // Only an output that references an entity row changes shape: every other operation's
+      // bytes are the ones `x verify`'s contract diff already holds.
+      '200': enveloped
+        ? {
+            description: 'ok',
+            headers: RECORDS_OPENAPI_HEADER,
+            content: { 'application/json': { schema: recordEnvelopeSchema({ $ref: outputRef }) } },
+          }
+        : { description: 'ok', content: { 'application/json': { schema: { $ref: outputRef } } } },
       // BOTH, because they are two different failures and this operation published only one of
       // them while the route answered only the other. `X_INPUT_INVALID` is the body that parsed
       // and failed THIS action's declared schema — the primitive's own code, identical over MCP,

@@ -15,7 +15,9 @@
 //
 //   bun run scripts/gate-codes.ts [--json]
 
-import { collectDeclaredCodes } from '@ultimat3/cli';
+// The LEAF module, never the `@ultimat3/cli` barrel: the barrel links every package in the tree, so
+// one half-written module anywhere crashed this guard with a bare SyntaxError (DX ledger #10).
+import { collectDeclaredCodes } from '../packages/cli/src/error-contract';
 import { GATE_CODE_NO_ROW, GATE_CODE_UNLISTED } from './gate-codes-backlog';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';

@@ -48,6 +48,7 @@ import { islandRoutes } from './island-routes';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import { readMigrations } from './migrations';
 import { startOtlpExport } from './otlp-export';
+import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { styleBundle } from './style-bundle';
@@ -363,6 +364,9 @@ async function bootRoles(boot: {
   // prevent, and it is the one an operator cannot see without installing the app.
   const pwa = await loadPwaArtifacts(options.root);
   const theme = themeBoot(await loadThemeMode(options.root));
+  // The page's sync target and its scripts — the same call `x dev` makes, so the two cannot differ.
+  // Before the service worker, which precaches those scripts.
+  const sync = await pageSync(options.root, options.env, buildId);
   // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
   // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
   // route added here cannot be missing from the precache manifest.
@@ -375,6 +379,7 @@ async function bootRoles(boot: {
           routes: describeRoutes(),
           islands,
           styles: styleBundle(),
+          scripts: sync.scripts,
         });
   // The app's own MCP endpoint, through the same call `x dev` makes — see `app-mcp.ts`.
   const mcpMount = await mountAppMcp(options.root);
@@ -393,9 +398,13 @@ async function bootRoles(boot: {
     // The surface stylesheets the documents link. Built from the registry the `loadApp` above
     // filled, so this process serves exactly the CSS it renders against.
     ...styleRoutes(() => styleBundle()),
+    // The page's one socket: its worker script, served beside the islands for their reason.
+    ...sync.routes,
     ...appRoutes({
       buildId,
       resolveIsland: (file) => islands.resolverFor(file),
+      sync: sync.head,
+      persisted: sync.persisted,
       themeHead: theme.head,
       ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
       // Only when a store was supplied. `createIsrController` defaults to a per-process memory

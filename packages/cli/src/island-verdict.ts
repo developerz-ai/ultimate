@@ -57,7 +57,7 @@ export interface IslandReadiness {
   /**
    * `"WS <url>"` / `"SSE <url>"` for every socket a component constructed — recorded, never
    * gating. The harness's stand-in is inert (constructs, never opens, `close()` is a no-op), so
-   * a component dialing `@ultimat3/realtime`'s `LiveClient.connect()` does not fail the state it
+   * a component whose page socket dials `/_x/sync` (`@ultimat3/realtime`) does not fail the state it
    * is mounted in; this is the fact a picture cannot carry about that.
    */
   readonly sockets: readonly string[];

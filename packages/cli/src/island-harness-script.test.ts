@@ -84,8 +84,8 @@ describe('unit · a live socket must not fail every state of a live island', () 
 
   // A component whose mount() awaits the socket's own `open` before rendering anything would
   // hang forever against a stand-in that never opens — trading one impossible fix (an unsatisfiable
-  // stub match) for another (an unreachable --settle deadline). The reference app's own LiveClient
-  // does not need this — connect() registers callbacks and returns — but this harness may not
+  // stub match) for another (an unreachable --settle deadline). The framework's own page socket
+  // does not need this — it registers callbacks and returns — but this harness may not
   // assume that of every app on `@ultimat3/realtime`, so `open` fires exactly once regardless.
   test('onopen fires exactly once, and no message or error ever follows', async () => {
     const { window } = runHarness();

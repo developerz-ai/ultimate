@@ -5,11 +5,11 @@
 // a timer nobody awaits, and that `close()` cancels it. The scheduler is injected, so nothing sleeps.
 
 import { describe, expect, test } from 'bun:test';
-import { topic } from './channel';
 import { RECONNECT_CODE } from './client-frames';
-import { feed, harness } from './client-harness-fixture';
+import { cursorsChannel, feed, harness } from './client-harness-fixture';
 import type { JsonObject, Row } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
+import { BROWSER_RECONNECT_MAX_MS } from './thundering-herd';
 
 describe('LiveClient reconnect', () => {
   test('a dropped socket arms a timer that actually dials again', () => {
@@ -45,6 +45,20 @@ describe('LiveClient reconnect', () => {
     expect(client.reconnectAt()).toBeNull();
   });
 
+  // The page's own retry re-opens its virtual socket on this curve, so a 30s cap here held a tab
+  // off a node that was already back — measured after a deploy, 27s with no dial at all.
+  test('with no policy given, the wait is capped at seconds, whatever the attempt', () => {
+    const { client, timers, sockets } = harness({ backoff: 'client-default', rng: () => 1 });
+    client.connect();
+    sockets[0]?.open();
+    sockets[0]?.disconnect();
+    for (let failure = 1; failure < 20; failure++) {
+      timers.fire();
+      sockets[failure]?.disconnect();
+    }
+    expect(Math.max(...timers.delays)).toBeLessThanOrEqual(BROWSER_RECONNECT_MAX_MS);
+  });
+
   test('successive failures back off, and a successful open resets the curve', () => {
     const { client, timers, sockets } = harness();
     client.connect();
@@ -67,7 +81,7 @@ describe('LiveClient reconnect', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    client.useLive<Row>(feed, { orgId: 'o1' });
+    client.subscribeLive<Row>(feed, { orgId: 'o1' });
 
     sockets[0]?.disconnect();
     timers.fire();
@@ -85,12 +99,9 @@ describe('LiveClient reconnect', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    client.useLive<Row>(feed, { orgId: 'o1' });
+    client.subscribeLive<Row>(feed, { orgId: 'o1' });
     const seen: JsonObject[] = [];
-    const cursors = topic('org', 'o1', 'cursors');
-    client.subscribe(cursors, (message) => {
-      seen.push(message);
-    });
+    client.holdChannel(cursorsChannel, { orgId: 'o1' }, { onEvent: (event) => seen.push(event) });
 
     sockets[0]?.disconnect();
     timers.fire();
@@ -98,28 +109,26 @@ describe('LiveClient reconnect', () => {
 
     const kinds = sockets[1]?.frames().map((frame) => frame.type) ?? [];
     expect(kinds).toEqual(['hello', 'subscribe', 'subscribe']);
-    const topics = (sockets[1]?.frames() ?? []).filter(
-      (frame) => frame.type === 'subscribe' && frame.target.kind === 'topic',
+    const channels = (sockets[1]?.frames() ?? []).filter(
+      (frame) => frame.type === 'subscribe' && frame.target.kind === 'channel',
     );
-    expect(topics).toHaveLength(1);
+    expect(channels).toHaveLength(1);
 
     // And the handler is actually reachable on the new socket, which is what the app sees.
     sockets[1]?.deliver({
-      type: 'patch',
+      type: 'events',
       v: PROTOCOL_VERSION,
-      sid: cursors,
-      lsn: '',
-      patches: [{ op: 'insert', id: 'm1', row: { at: 4 }, lsn: '' }],
+      channel: 'org-cursors.o1',
+      event: { at: 4 },
     });
     expect(seen).toEqual([{ at: 4 }]);
   });
 
-  test('an unsubscribed topic is not resurrected by the reconnect', () => {
+  test('a released channel is not resurrected by the reconnect', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    const unsubscribe = client.subscribe(topic('org', 'o1', 'cursors'), () => {});
-    unsubscribe();
+    client.holdChannel(cursorsChannel, { orgId: 'o1' }).release();
 
     sockets[0]?.disconnect();
     timers.fire();

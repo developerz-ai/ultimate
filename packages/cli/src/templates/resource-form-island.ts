@@ -37,6 +37,7 @@ const formIslandSource = (
 //   <${feature.pascal}Form endpoint={derivePath('create${feature.pascal}').path} locale={locale} labels={labels} />
 // A string has no import edge, so the page's bundle graph stays the page's (axiom 6).
 
+import { clientTransport } from '@ultimat3/core';
 import { Button, Form, Input, setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import {
@@ -71,25 +72,21 @@ type SaveState = 'idle' | 'saved' | 'failed';
  * Presentation only: the action this submits to owns validation server-side, so the form never
  * re-implements the invariant — a blank title fails at the boundary, not in the DOM.
  *
- * A plain \`fetch\` to the path the server minted, not the typed client: \`rpc()\` pulls
- * \`@ultimat3/action\` into the chunk, which is larger than everything else here put together. The
- * naming rule is still the framework's; only the transport is second.
+ * \`clientTransport\` — the framework's one browser HTTP function — to the path the server minted.
+ * Never a raw \`fetch\`: the transport is what decodes a refusal into its code, fences a sign-out,
+ * and hands any entity rows the answer carries to the page's store.
  */
 function ${feature.pascal}FormBody(props: ${feature.pascal}FormProps): JSX.Element {
   const [title, setTitle] = createSignal('');
   const [state, setState] = createSignal<SaveState>('idle');
 
-  // A rejected \`fetch\` — offline, DNS, an aborted request — is the same OUTCOME as a refused one,
-  // and it is the one \`retry\` exists for. Without the catch, \`setState\` is never reached: the
-  // status line stays empty, and the rejection escapes the \`void send()\` below as an unhandled one.
+  // A refusal and a request that never got a response both REJECT here — the transport turns a
+  // non-2xx into its code and an offline \`fetch\` into X_CLIENT_TRANSPORT_FAILED — and both are the
+  // outcome \`retry\` exists for. Without the catch the rejection escapes \`void send()\` unhandled.
   const send = async (): Promise<void> => {
     try {
-      const response = await fetch(props.endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: title() }),
-      });
-      setState(response.ok ? 'saved' : 'failed');
+      await clientTransport({ method: 'POST', url: props.endpoint, body: { title: title() } });
+      setState('saved');
     } catch {
       setState('failed');
     }
@@ -198,13 +195,14 @@ beforeAll(async () => {
     // What the server rendered inside the island's wrapper. \`mount\` replaces it.
     shell: '<p>Loading</p>',
     globals: {
-      fetch: (url: string, init: { body: string }): Promise<{ ok: boolean }> => {
+      // The form sends through \`clientTransport\`, which calls \`globalThis.fetch\` — this stub.
+      fetch: (url: string, init: { body: string }): Promise<Response> => {
         calls.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
-        // What a browser rejects with when there is no network. Not a response: \`response.ok\`
-        // is never read on this path, which is exactly why the form has to catch it.
+        // What a browser rejects with when there is no network. Not a response, which is exactly
+        // why the form has to catch it.
         return networkFails
           ? Promise.reject(new TypeError('Failed to fetch'))
-          : Promise.resolve({ ok: true });
+          : Promise.resolve(Response.json({ id: 'created' }));
       },
     },
   });
@@ -220,6 +218,18 @@ beforeAll(async () => {
 afterAll(() => {
   mounted?.[Symbol.dispose]();
 });
+
+/**
+ * Until the status line changes, a bounded number of macrotasks: the send is several awaits deep
+ * inside \`clientTransport\`, so counting microtasks would pin the transport, not the form.
+ */
+async function statusSettled(): Promise<void> {
+  const before = mounted.text('[data-role="status"]');
+  for (let tick = 0; tick < 50; tick += 1) {
+    if (mounted.text('[data-role="status"]') !== before) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+}
 
 /**
  * One mount, driven as a session: the cases below run in order against the same island, because
@@ -242,7 +252,7 @@ describe('the ${feature.kebab} form island', () => {
     // identical to a selector typo otherwise.
     expect(mounted.fire(field, 'input')).toBe(true);
     expect(mounted.fire('form', 'submit', { preventDefault: () => {} })).toBe(true);
-    await Promise.resolve();
+    await statusSettled();
 
     expect(calls).toEqual([{ url: ENDPOINT, body: { title: 'First ${feature.camel}' } }]);
   });
@@ -253,12 +263,11 @@ describe('the ${feature.kebab} form island', () => {
   });
 
   test('a request that never got a response still reaches retry', async () => {
-    // The outcome \`retry\` is FOR. A \`fetch\` that rejects reaches no \`response.ok\`, so without
-    // the catch in \`send\` the status line stays on its last value and the rejection escapes.
+    // The outcome \`retry\` is FOR. A \`fetch\` that rejects produces no answer, so without the
+    // catch in \`send\` the status line stays on its last value and the rejection escapes.
     networkFails = true;
     expect(mounted.fire('form', 'submit', { preventDefault: () => {} })).toBe(true);
-    await Promise.resolve();
-    await Promise.resolve();
+    await statusSettled();
 
     expect(mounted.text('[data-role="status"]')).toBe(LABELS.retry);
   });

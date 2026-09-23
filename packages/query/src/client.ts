@@ -4,30 +4,29 @@
  * in a Solid component rather than a 404 at runtime. Browser-safe on purpose: no
  * server imports, nothing here touches a context, a policy or a database.
  *
- * Rows arrive as JSON and are handed back as parsed, exactly as `rpc` does: a query declares no
- * output schema — row types come from the `SqlSource` its `sql:` returns — so there is nothing
- * here to rehydrate a `Date` with, and an instant reaches a caller as the ISO string
- * `JSON.stringify` wrote. A surface that formats one converts at its own edge.
+ * Every read goes through `@ultimat3/core`'s `clientTransport`, the one browser HTTP function —
+ * there is no `fetch` call here, only the injected `fetch` option handed on as `fetchImpl`. Rows
+ * are handed back as parsed: an instant reaches a caller as the ISO string `JSON.stringify` wrote,
+ * and a surface that formats one converts at its own edge. A record envelope is unwrapped by the
+ * transport, its rows adopted into the page's store, so the return type is the rows either way.
  *
  * `ClientFlight` is a TYPE here and never a value: dedup, retry, the deadline and the fence are
  * `@ultimat3/core`'s `client-flight.ts`, and a caller that never calls `createClientFlight` does
  * not pay a byte for any of them — an `import type` is erased and the value import would not be.
- * That erasure is the whole reason two islands in this repo write a bare `fetch` instead of
- * importing a typed client.
  */
 
-import type { ClientFlight, ClientRetry, WireAnswer } from '@ultimat3/core';
-import { problemOf, traceHeaders } from '@ultimat3/core';
+import type { ClientFlight, ClientRetry } from '@ultimat3/core';
+import type { FetchLike, RecordEnvelope } from '@ultimat3/core/page';
+import { clientTransport, isJsonObject } from '@ultimat3/core/page';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
-import { QueryRequestFailedError } from './errors';
 import { derivePath } from './naming';
 import type { PageControls } from './page-controls';
-import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
+import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-keys';
 import type { Page } from './pagination';
 import type { Query } from './query';
-import { isJsonObject } from './stable';
 
-export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
+/** Core's, re-exported under the name this package always exported it by — one declaration. */
+export type { FetchLike } from '@ultimat3/core/page';
 
 export interface QueryClientOptions {
   readonly baseUrl: string;
@@ -35,8 +34,8 @@ export interface QueryClientOptions {
   readonly headers?: Readonly<Record<string, string>>;
   /**
    * Opt-in flight control for every read this client makes — `createClientFlight({ principal })`.
-   * Absent, a read is one `fetch` and nothing else, which is what every caller written before this
-   * option existed already gets.
+   * Absent, a read is one dispatch and nothing else, which is what every caller written before
+   * this option existed already gets.
    */
   readonly flight?: ClientFlight;
 }
@@ -51,6 +50,11 @@ export interface QueryCallOptions {
   readonly fresh?: boolean;
   /** Overrides the flight's retry policy for this one read. Ignored with no `flight` installed. */
   readonly retry?: ClientRetry;
+  /**
+   * The decoded record envelope, after its rows were adopted — only for a read declaring an
+   * entity's `rows:`. The store is keyed and unordered; this is where a caller reads the ORDER.
+   */
+  readonly onEnvelope?: (envelope: RecordEnvelope) => void;
 }
 
 /**
@@ -126,21 +130,25 @@ export function queryClientMethodFor<TInput extends StandardSchemaV1, TRow exten
   name: string,
   options: QueryClientOptions,
 ): QueryClientMethod<TInput, TRow> {
-  const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
   const base = options.baseUrl.replace(/\/+$/, '');
   // Erased at the wire seam; the row type is this query's by construction.
   const rows = (input: InferInput<TInput>, callOptions: QueryCallOptions = {}) =>
-    read(doFetch, base, options, name, input, callOptions) as Promise<readonly TRow[]>;
+    read(base, options, name, input, callOptions) as Promise<readonly TRow[]>;
   const page = (
     input: InferInput<TInput>,
     args: PageControls,
     callOptions: QueryCallOptions = {},
-  ) => read(doFetch, base, options, name, input, callOptions, args) as Promise<Page<TRow>>;
+  ) => read(base, options, name, input, callOptions, args) as Promise<Page<TRow>>;
   return Object.assign(rows, { page });
 }
 
-async function read(
-  doFetch: FetchLike,
+/**
+ * One read, through `@ultimat3/core`'s `clientTransport` — the one browser HTTP function. It owns
+ * the wire: `Accept`, the error decode, the principal fence, and the record envelope — whose rows it adopts
+ * into the page's store before handing back `data`, so the return type here never changed. The
+ * `fetch` option is the transport's injected `fetchImpl`, never a call made here.
+ */
+function read(
   base: string,
   options: QueryClientOptions,
   name: string,
@@ -149,51 +157,19 @@ async function read(
   page?: PageControls,
 ): Promise<unknown> {
   const search = searchOf(input, page);
-  const url = `${base}${derivePath(name)}${search === '' ? '' : `?${search}`}`;
-  const dispatch = (signal: AbortSignal | undefined): Promise<WireAnswer> =>
-    fetchOnce(doFetch, url, options, name, signal ?? callOptions.signal);
-
-  const flight = options.flight;
-  const answer =
-    flight === undefined
-      ? await dispatch(undefined)
-      : await flight.run({
-          key: flight.keyFor(url, callOptions),
-          // A caller holding its own signal owns this read's lifecycle: it is neither shared nor
-          // aborted by a fence bump, and its signal is the only one that reaches the wire.
-          abortable: callOptions.signal === undefined,
-          ...(callOptions.retry === undefined ? {} : { retry: callOptions.retry }),
-          run: dispatch,
-        });
-  // Parsed per CALLER, never once per dispatch: N joiners of one deduped read may not be handed
-  // one mutable array between them, and the shared value is the immutable body TEXT for that
-  // reason alone.
-  return JSON.parse(answer.text) as unknown;
-}
-
-/** One dispatch. Everything above it decides how many times this happens; it decides none. */
-async function fetchOnce(
-  doFetch: FetchLike,
-  url: string,
-  options: QueryClientOptions,
-  name: string,
-  signal: AbortSignal | undefined,
-): Promise<WireAnswer> {
-  const init: RequestInit = {
-    // `traceHeaders()` before the caller's, so an explicit `traceparent` still wins. Without it a
-    // service-to-service read started a fresh root trace on the other side, and "which of my
-    // downstreams is slow" was unanswerable across every Ultimate-to-Ultimate hop.
-    headers: { accept: 'application/json', ...traceHeaders(), ...options.headers },
+  return clientTransport({
     method: 'GET',
-    ...(signal === undefined ? {} : { signal }),
-  };
-
-  const response = await doFetch(url, init);
-  // Read as TEXT once: a `Response` body is a single-use stream, so the failure path and the row
-  // path cannot both have it, and a shared answer has to be something a joiner can re-read.
-  const text = await response.text();
-  if (!response.ok) throw new QueryRequestFailedError(name, response.status, problemOf(text));
-  return { status: response.status, text };
+    url: `${base}${derivePath(name)}${search === '' ? '' : `?${search}`}`,
+    // The trace and budget are the transport's, from its server-side outbound slot, placed
+    // before these so an explicit `traceparent` still wins; a browser bundles none of it.
+    ...(options.headers === undefined ? {} : { headers: options.headers }),
+    ...(callOptions.signal === undefined ? {} : { signal: callOptions.signal }),
+    ...(options.flight === undefined ? {} : { flight: options.flight }),
+    ...(callOptions.fresh === undefined ? {} : { fresh: callOptions.fresh }),
+    ...(callOptions.retry === undefined ? {} : { retry: callOptions.retry }),
+    ...(callOptions.onEnvelope === undefined ? {} : { onEnvelope: callOptions.onEnvelope }),
+    ...(options.fetch === undefined ? {} : { fetchImpl: options.fetch }),
+  });
 }
 
 /**

@@ -42,6 +42,11 @@ export interface LiveQueryDefinition<R extends Row = Row> {
    */
   rowEntity?(input: JsonValue): string | null;
   /**
+   * The record key each row travels under, resolved with `rowEntity`: the entity's own projection.
+   * `null` (or absent) is a plain table, whose rows are keyed by `id`.
+   */
+  rowKey?(input: JsonValue): ((row: Row) => string) | null;
+  /**
    * Resolve whatever this input needs before an entry is built. `matcher` is synchronous by
    * design — a change event must not await anything — so a definition that has to compile a
    * source or a shape does it here, after `authorize` allowed this subscriber and before the

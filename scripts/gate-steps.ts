@@ -18,7 +18,9 @@
 //
 //   bun run scripts/gate-steps.ts [--json]
 
-import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
+// The LEAF module, never the `@ultimat3/cli` barrel: the barrel links every package in the tree, so
+// one half-written module anywhere crashed this guard with a bare SyntaxError (DX ledger #10).
+import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
 import { parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
 import { readMarkdown } from './lib/doc-citations';

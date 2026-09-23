@@ -4,180 +4,12 @@
 // TEXT — rules, markers, refusals — is `service-worker.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
+import { OUTBOX_DRAIN_MESSAGE } from '@ultimat3/core';
 import type { ServiceWorkerConfig } from './service-worker';
 import { generateServiceWorker } from './service-worker';
+import { config, swHarness } from './service-worker-harness-fixture';
 import type { PwaRoute } from './strategies';
 import { cacheNamespace } from './version-skew';
-
-const config: ServiceWorkerConfig = {
-  offline: { fallback: '/offline' },
-  capabilities: { push: false, backgroundSync: false, badging: false },
-  vapid: { publicKey: 'BKxDemo', subject: 'mailto:ops@example.test' },
-};
-
-type SwListener = (event: SwEvent) => void;
-
-interface SwEvent {
-  readonly request?: Request;
-  /** What a `postMessage` from a window delivers — the payload, not a wrapper. */
-  readonly data?: unknown;
-  waitUntil(work: Promise<unknown>): void;
-  respondWith(work: Promise<Response>): void;
-}
-
-const SW_ORIGIN = 'https://app.test';
-
-/** A service worker resolves a relative URL against its scope; Bun's global `Request` cannot. */
-class SwRequest extends Request {
-  constructor(input: Request | string, init?: RequestInit) {
-    super(typeof input === 'string' ? new URL(input, SW_ORIGIN).href : input, init);
-  }
-}
-
-/** Keyed by absolute URL, exactly as `Cache` is with `ignoreSearch` at its default `false`. */
-class StubCache {
-  readonly entries = new Map<string, Response>();
-  #fetch: (request: Request) => Promise<Response>;
-
-  constructor(fetcher: (request: Request) => Promise<Response>) {
-    this.#fetch = fetcher;
-  }
-
-  #key(request: Request | string): string {
-    return typeof request === 'string' ? new URL(request, SW_ORIGIN).href : request.url;
-  }
-
-  async match(request: Request | string): Promise<Response | undefined> {
-    return this.entries.get(this.#key(request));
-  }
-
-  async put(request: Request | string, response: Response): Promise<void> {
-    this.entries.set(this.#key(request), response);
-  }
-
-  async delete(request: Request | string): Promise<boolean> {
-    return this.entries.delete(this.#key(request));
-  }
-
-  /** All-or-nothing, like the real one: a non-ok response rejects the whole install. */
-  async addAll(requests: readonly Request[]): Promise<void> {
-    const responses = await Promise.all(requests.map((request) => this.#fetch(request)));
-    responses.forEach((response, i) => {
-      if (!response.ok) throw new TypeError('addAll: request failed');
-      const request = requests[i];
-      if (request !== undefined) this.entries.set(request.url, response);
-    });
-  }
-}
-
-function swHarness() {
-  const fetched: string[] = [];
-  /** The `x-ultimate-build` each proxied request carried, in order. `null` means unstamped. */
-  const stamps: (string | null)[] = [];
-  const messages: unknown[] = [];
-  let offline = false;
-  let respond: ((request: Request) => Response | undefined) | undefined;
-  const fetcher = async (request: Request | string): Promise<Response> => {
-    // A worker resolves a bare string against its own scope, so the stub must too — otherwise the
-    // one emitted call that passes a path rather than a `Request` (`flushOutbox`) fails here on
-    // `new URL`, which reads as a broken worker rather than a broken harness.
-    const url = typeof request === 'string' ? new URL(request, SW_ORIGIN).href : request.url;
-    fetched.push(url);
-    stamps.push(typeof request === 'string' ? null : request.headers.get('x-ultimate-build'));
-    if (offline) throw new TypeError('network down');
-    if (respond !== undefined && typeof request !== 'string') {
-      const scripted = respond(request);
-      if (scripted !== undefined) return scripted;
-    }
-    return new Response(`bytes for ${new URL(url).pathname}`, { status: 200 });
-  };
-
-  const caches = new Map<string, StubCache>();
-  const cacheStorage = {
-    async open(name: string): Promise<StubCache> {
-      const existing = caches.get(name);
-      if (existing !== undefined) return existing;
-      const created = new StubCache(fetcher);
-      caches.set(name, created);
-      return created;
-    },
-    async keys(): Promise<string[]> {
-      return [...caches.keys()];
-    },
-    async delete(name: string): Promise<boolean> {
-      return caches.delete(name);
-    },
-  };
-
-  const listeners = new Map<string, SwListener>();
-  const self = {
-    location: { origin: SW_ORIGIN },
-    addEventListener(type: string, listener: SwListener): void {
-      listeners.set(type, listener);
-    },
-    clients: {
-      claim: async (): Promise<void> => undefined,
-      matchAll: async () => [{ postMessage: (data: unknown): void => void messages.push(data) }],
-    },
-    skipWaiting: (): void => undefined,
-  };
-
-  return {
-    caches,
-    fetched,
-    stamps,
-    messages,
-    goOffline: (): void => {
-      offline = true;
-    },
-    answerWith: (fn: (request: Request) => Response | undefined): void => {
-      respond = fn;
-    },
-    load(source: string): void {
-      const factory = new Function('self', 'caches', 'fetch', 'Request', source) as (
-        scope: typeof self,
-        storage: typeof cacheStorage,
-        fetcher: (request: Request | string) => Promise<Response>,
-        request: typeof SwRequest,
-      ) => void;
-      factory(self, cacheStorage, fetcher, SwRequest);
-    },
-    async install(): Promise<void> {
-      let work: Promise<unknown> = Promise.resolve();
-      listeners.get('install')?.({
-        waitUntil: (p) => {
-          work = p;
-        },
-        respondWith: () => undefined,
-      });
-      await work;
-    },
-    async request(path: string): Promise<Response> {
-      let answer: Promise<Response> | undefined;
-      listeners.get('fetch')?.({
-        request: new SwRequest(path),
-        waitUntil: () => undefined,
-        respondWith: (p) => {
-          answer = p;
-        },
-      });
-      if (answer === undefined) expect.unreachable(`no handler answered ${path}`);
-      return await answer;
-    },
-    /** A `postMessage` from a window, awaited through the handler's own `waitUntil`. */
-    async message(data: unknown): Promise<void> {
-      let work: Promise<unknown> = Promise.resolve();
-      listeners.get('message')?.({
-        data,
-        waitUntil: (p) => {
-          work = p;
-        },
-        respondWith: () => undefined,
-      });
-      await work;
-    },
-  };
-}
 
 describe('the emitted install block, executed', () => {
   const precached: readonly PwaRoute[] = [
@@ -350,13 +182,14 @@ describe('the offline outbox drain, executed', () => {
     capabilities: { backgroundSync: true },
   };
 
-  test('the no-Background-Sync fallback message drains the outbox', async () => {
+  test('the no-Background-Sync fallback message tells the open tabs to drain', async () => {
     const sw = swHarness();
     sw.load(generateServiceWorker([], syncConfig, 'build-1').source);
 
     await sw.message({ type: 'flush-outbox' });
 
-    expect(sw.fetched).toEqual(['https://app.test/_x/outbox/flush']);
+    expect(sw.messages).toEqual([{ type: OUTBOX_DRAIN_MESSAGE }]);
+    expect(sw.fetched).toEqual([]);
   });
 
   test('and no other message type does, so a skip-waiting is not a flush', async () => {
@@ -366,11 +199,11 @@ describe('the offline outbox drain, executed', () => {
     await sw.message({ type: 'skip-waiting' });
     await sw.message({ type: 'build-id' });
 
-    expect(sw.fetched).toEqual([]);
+    expect(sw.messages).toEqual([]);
   });
 
   /**
-   * `flushOutbox` is only emitted with the capability, so an unconditional handler would answer a
+   * `drainOutbox` is only emitted with the capability, so an unconditional handler would answer a
    * `flush-outbox` with a `ReferenceError` inside `waitUntil` — uncatchable by the page that sent
    * it — in every app that leaves `backgroundSync` off.
    */
@@ -380,6 +213,6 @@ describe('the offline outbox drain, executed', () => {
 
     await sw.message({ type: 'flush-outbox' });
 
-    expect(sw.fetched).toEqual([]);
+    expect(sw.messages).toEqual([]);
   });
 });

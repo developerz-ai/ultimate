@@ -195,9 +195,6 @@ export { jsonSchemaOf, mcpSchemaOf } from './json-schema';
 export type { McpInvokeOptions, McpToolDescriptor } from './mcp-tool';
 export { isExposed, toMcpTool, toMcpTools } from './mcp-tool';
 export type {
-  Conflict,
-  CustomConflict,
-  LocalRow,
   LocalTable,
   LocalTableName,
   LocalTables,
@@ -206,7 +203,7 @@ export type {
   MutatorDef,
   MutatorDescriptor,
 } from './mutator';
-export { custom, isMutator, mutator, resolveConflict, strategyOf } from './mutator';
+export { custom, isMutator, mutator } from './mutator';
 export type { ActionPath } from './naming';
 export { derivePath, inputSchemaName, outputSchemaName, pluralize } from './naming';
 export type { BuildOpenApiOptions, OpenApiDocument, OpenApiInfo } from './openapi';

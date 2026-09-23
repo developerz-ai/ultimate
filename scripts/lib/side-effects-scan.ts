@@ -91,6 +91,8 @@ export function topLevelEffects(source: string): readonly TopLevelEffect[] {
  * (1.4.0) and 28 in 60 (1.3.14) to **0 in 60 on 1.4.0, 1.3.14 and 1.4.1-canary alike**.
  */
 export const SIDE_EFFECTS_ANCHORS: Readonly<Record<string, string>> = Object.freeze({
+  'packages/core/src/core-error-codes.ts':
+    "registers core's own error titles. `UltimateError`'s constructor reads them through the registry and never imports this module — that is the point: a browser island that throws one code no longer carries the whole table — so without the anchor every core code renders humanised through the barrel too.",
   'packages/core/src/schema-error-codes.ts':
     "registers @ultimat3/schema's error titles, because schema is tier 0 and cannot register its own. What READS them is UltimateError's constructor, which never imports this module — so a shaken build renders every X_VALIDATION_FAILED untitled, in the browser, with nothing to say why.",
   'packages/i18n/src/framework.ts':

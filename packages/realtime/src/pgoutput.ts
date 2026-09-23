@@ -5,6 +5,7 @@
 // What a tuple's TEXT means is `pg-values.ts`'s: this file frames messages, that one owns the type
 // catalogue that turns postgres' text into the value a repository row holds.
 
+import { isWriteDigest, WRITE_ORIGIN_WAL_PREFIX } from '@ultimat3/core';
 import { ReplicationProtocolError } from './errors';
 import { ByteReader, pgTimestampToEpochMs } from './pg-bytes';
 import { decodeValue, type PhysicalRow } from './pg-values';
@@ -50,7 +51,14 @@ export type PgOutputMessage =
     }
   | { readonly kind: 'delete'; readonly relation: PgRelation; readonly before: PhysicalRow }
   | { readonly kind: 'truncate'; readonly relations: readonly PgRelation[] }
-  /** origin / type / logical message — decoded far enough to be skipped safely. */
+  /** `pg_logical_emit_message` — sent only when START_REPLICATION asks with `messages 'true'`. */
+  | {
+      readonly kind: 'message';
+      readonly transactional: boolean;
+      readonly prefix: string;
+      readonly content: string;
+    }
+  /** origin / type — decoded far enough to be skipped safely. */
   | { readonly kind: 'other'; readonly tag: string };
 
 /**
@@ -104,6 +112,31 @@ function decodeTupleData(reader: ByteReader, relation: PgRelation): PhysicalRow 
 }
 
 /**
+ * Int8 flags (bit 1: transactional) · Int64 lsn · String prefix · Int32 length · Byte[length]. No
+ * xid: that field exists only inside a streamed transaction, which this stream never asks for.
+ */
+function decodeMessage(reader: ByteReader): PgOutputMessage {
+  const transactional = (reader.uint8() & 1) === 1;
+  reader.int64();
+  const prefix = reader.cstring();
+  const content = reader.utf8(reader.int32());
+  return { kind: 'message', transactional, prefix, content };
+}
+
+/**
+ * The write a transactional message names — `@ultimat3/entity`'s Postgres driver opens a keyed
+ * write's transaction with one — or `undefined` for any other message an app or extension emits.
+ */
+export function keyedWrite(message: {
+  readonly transactional: boolean;
+  readonly prefix: string;
+  readonly content: string;
+}): string | undefined {
+  const named = message.transactional && message.prefix === WRITE_ORIGIN_WAL_PREFIX;
+  return named && isWriteDigest(message.content) ? message.content : undefined;
+}
+
+/**
  * Holds the relation cache: postgres sends a `Relation` message once per table per connection and
  * every later tuple references it by oid, so a decoder instance is per-connection and is thrown
  * away with it.
@@ -129,7 +162,9 @@ export class PgOutputDecoder {
         return this.#decodeDelete(reader);
       case 'T':
         return this.#decodeTruncate(reader);
-      // 'O' (origin), 'Y' (type), 'M' (logical message), and any tag a newer server invents:
+      case 'M':
+        return decodeMessage(reader);
+      // 'O' (origin), 'Y' (type), and any tag a newer server invents:
       // nothing downstream needs them decoded, and guessing at an unknown tag's shape is how a
       // truncated read turns into a silent misread instead of a clean skip.
       default:

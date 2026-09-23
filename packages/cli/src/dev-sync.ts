@@ -131,6 +131,8 @@ export interface RunningSync {
   readonly url: string;
   /** The node's registry, so the boot can hand it a change feed the database cannot produce. */
   readonly registry: LiveQueryRegistry;
+  /** The node's channel hub — fed the same changes, so a declared channel's `records` flow in dev. */
+  readonly hub: ChannelHub;
   stop(): Promise<void>;
 }
 
@@ -212,7 +214,7 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
     // second copy of `/_x/sync` here is the copy that stays behind when it moves.
     mount: { path: node.path, fetch: node.fetch, websocket: node.websocket },
     stop: () => node.stop(),
-    listen: async (appUrl) => await listen(options, node, registry, appUrl),
+    listen: async (appUrl) => await listen(options, node, { registry, hub }, appUrl),
   };
 }
 
@@ -241,7 +243,7 @@ function syncPortFrom(requested: number, appUrl: string | null): number {
 async function listen(
   options: StartRolesOptions,
   node: SyncNode,
-  registry: LiveQueryRegistry,
+  feeds: Pick<RunningSync, 'registry' | 'hub'>,
   appUrl: string | null,
 ): Promise<RunningSync> {
   const port = syncPortFrom(options.port, appUrl);
@@ -266,7 +268,7 @@ async function listen(
     });
     return {
       url: listener.url,
-      registry,
+      ...feeds,
       stop: async () => {
         listener.stop();
         await node.stop();

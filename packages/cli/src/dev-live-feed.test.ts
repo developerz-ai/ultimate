@@ -10,7 +10,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
     const none = await startLiveFeed({ sync: null, dbMode: 'embedded' });
     expect(none.feed).toBe('none');
     const external = await startLiveFeed({
-      sync: { url: 'ws://x', registry: {} as never, stop: async () => undefined },
+      sync: { url: 'ws://x', registry: {} as never, hub: {} as never, stop: async () => undefined },
       dbMode: 'external',
     });
     expect(external.feed).toBe('replication');
@@ -29,6 +29,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
       sync: {
         url: 'ws://x',
         registry: { deliver: async () => 0, invalidate: () => 0 } as never,
+        hub: { deliverChange: () => undefined } as never,
         stop: async () => undefined,
       },
       dbMode: 'embedded',
@@ -49,9 +50,13 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
       },
       invalidate: () => 0,
     } as never;
+    // The node's channels ride the same bridge: without them no declared channel ever carried a
+    // write made under `x dev`, and a second tab stayed on the old row.
+    const channelled: unknown[] = [];
+    const hub = { deliverChange: (change: unknown) => channelled.push(change) } as never;
     const before = rowObserver();
     const live = await startLiveFeed({
-      sync: { url: 'ws://x', registry, stop: async () => undefined },
+      sync: { url: 'ws://x', registry, hub, stop: async () => undefined },
       dbMode: 'embedded',
     });
     try {
@@ -61,6 +66,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
       // Both were attempted: the first failure did not silence the change behind it.
       expect(attempts).toBe(2);
       expect(live.bridge?.delivered).toBe(0);
+      expect(channelled).toHaveLength(2);
     } finally {
       live.stop();
     }

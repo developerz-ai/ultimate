@@ -50,8 +50,9 @@ and its reset — and `apps/web/shared/global.ts` is the one-line side-effect im
 the module graph, which is what makes the framework's boot scan load it once for both surfaces. No
 other stylesheet in the app emits top-level CSS: every module is its own Sass compilation, so a
 second emitter would duplicate the `:root` block. A document that carries none is
-`X_STYLES_GLOBAL_MISSING` from the gate's `budgets` step. **There is no `/signin`, `/signup` or
-`/signout`** — this file claimed all three were mounted "by the wrapped Better Auth integration"
+`X_STYLES_GLOBAL_MISSING` from the gate's `budgets` step. **There is no `/signin` or `/signup`**
+(sign-OUT is the `endSession` action, `app/auth/actions.ts`: it sets the demo cookie to
+`signed-out` and redirects, and the layout's native form posts to it) — this file claimed all three were mounted "by the wrapped Better Auth integration"
 until 2026-08, which contradicted its own gotcha twelve lines down: `app/auth/login.ts`'s two route
 descriptors are declared, tested and **not served**, and there is no Better Auth wrapper in this
 repo. The route table is exactly `site/` + `app/` + `api/`, and `site/page.tsx`'s CTA points at
@@ -137,32 +138,32 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
 - Tests sit next to their source: `<file>.test.ts` (unit), `.contract.test.ts`, `.live.test.ts`,
   `.job.test.ts`, `.e2e.test.ts`, `.eval.test.ts`.
 - A route that reads or writes over the socket declares an `island()`, and the hook call lives in
-  that island's `mount()`. Three of them now: `/feed` (`useLive`), `/settings` (no hook, the same
-  shape) and `/posts/{id}` (`useMutation`). A component calling one of the live hooks on a route
-  with no island is `X_LIVE_ROUTE_NO_ISLAND` — nothing of that route ever runs in a browser, so the
-  control is inert at 200. Two rules the third one added: an island that WRITES builds its
-  `LiveClient` with an `OfflineQueue` (`useMutation().pending` answers 0 for every mutator when the
-  client has none, so the queued badge cannot render without one), and it names the mutator through
-  `app/posts/like-mutation.ts` rather than importing `mutator.ts`, exactly as `app/feed/live.ts`
-  names the query — the declaration drags `@ultimat3/action` and the Postgres client into the
-  chunk. `hydrate` is `idle`, never `interaction`: the interaction runtime replays the waking event
-  onto `ev.target`, and `mount` clears the wrapper first, so that node is no longer in the document.
-- **An island that WRITES carries a `LocalStore` and a `RebaseLog` as well as its `OfflineQueue`,
-  or its optimistic half does not run.** `recordMutation` applies the twin under
-  `if (store && local && !collapsed)` (`packages/realtime/src/client-mutations.ts`) and
-  `rollbackFailed` (`client-frames.ts`) returns early without BOTH the store and the log — so a
-  store with no log is an optimistic write that can never come off the screen when the server
-  refuses it. `MemoryLocalStore` + `RebaseLog` in `app/posts/[id]/like.island.tsx` are the two
-  objects, seeded with the one row the control is about: `LocalTable.update` is a no-op for a row
-  the table does not hold, so an unseeded store is the same as no store. `like.island.test.ts`
-  proves both halves through the real chunk — the count moves with no socket at all, and comes back
-  when both pending mutations are refused.
+  that island's component. An island builds NOTHING of the realtime runtime: `x build` prepends the
+  bootstrap that installs it, the document names the sync node in its `<head>`, and every island on
+  a page shares one record store and one socket (plan 101). The hooks are the whole API:
+  `useQuery` (reads — `/feed`'s live `liveFeed`), `useRecord` (one record), `useChannel` (keeps
+  records current — `org-posts`, `app/posts/channel-ref.ts`), `useMutation` (writes over HTTP).
+  A component calling a hook on a route with no island is `X_LIVE_ROUTE_NO_ISLAND`.
+- **A record lives in the page's store once, and islands READ it — they never hold a copy.**
+  `/posts/{id}` has two islands showing `posts:<id>`: the like control seeds it (`postRecord`),
+  joins its channel and writes it; the header's `likes-badge` only reads it — the chunk ships no
+  socket. A like in either tab moves both. A query whose rows are whole entity rows declares
+  `rows: <entity>.$schema`, which is what makes its answer a record envelope the store adopts.
+- **A channel is declared in two halves on one ref.** `app/posts/channel-ref.ts` is the browser
+  half (`channelRef` — name, params, catch-up read; no entity), `app/posts/channels.ts` the server
+  half (`channel(ORG_POSTS, { records: [posts], policy: feedRead })`, registered on import). An
+  island importing the server half would bundle `@postly/db` and `@ultimat3/entity`.
+- **A count an island shows is phrased by the catalog's forms, in the browser** — the server sends
+  every CLDR form of the key (`shared/plural-forms.ts`) and `shared/plural-text.ts` picks one with
+  `Intl.PluralRules`. A record another tab moved can hold a count no pre-rendered string covers.
+- The optimistic twin (`app/posts/like-mutation.ts`) writes `tx.posts.update(key, fn)` into the
+  store's OVERLAY, keyed explicitly; a refusal takes the overlay back. `type-pins.ts` beside it is
+  the build error that keeps `@ultimat3/action`'s `LocalTable` and realtime's store tx one shape.
 - **Every island in this app carries `<name>.island.states.ts`, enforced by
-  `guards/island-without-states.ts`**, and three of the four cannot be photographed today: the shot
-  harness refuses `WebSocket` outright (`packages/cli/src/island-harness-script.ts:70`) so `feed`
-  and `like` reject in `mount`, and `contact-sales` takes the SERVER's markup over, which the
-  harness renders none of. Each states file says which of the two it is. `settings` is the one
-  `x shot --island` can really take.
+  `guards/island-without-states.ts`.** The shot harness refuses `WebSocket` outright
+  (`packages/cli/src/island-harness-script.ts:70`), so `feed` and `like` render their server
+  state and hold it, and `contact-sales` takes the SERVER's markup over, which the harness renders
+  none of. Each states file says which it is. `settings` and `likes-badge` open no socket.
 - An island that has states worth reviewing carries a sibling `<name>.island.states.ts`, and
   `x shot --island <name> --json` photographs every one of them into `.x/shot/island/<name>/`.
   `apps/web/app/settings/settings.island.states.ts` is the worked example: `empty-options` is what

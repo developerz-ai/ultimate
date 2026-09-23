@@ -208,6 +208,7 @@
       "dependencies": {
         "@ultimat3/cache": "20.2.1",
         "@ultimat3/core": "20.2.1",
+        "@ultimat3/entity": "20.2.1",
         "@ultimat3/http": "20.2.1",
         "@ultimat3/policy": "20.2.1",
         "@ultimat3/schema": "20.2.1",
@@ -399,6 +400,7 @@
         "@ultimat3/entity": "20.2.1",
         "@ultimat3/jobs": "20.2.1",
         "@ultimat3/query": "20.2.1",
+        "@ultimat3/realtime": "20.2.1",
       },
     },
     "packages/mcp": {
@@ -454,6 +456,7 @@
       "dependencies": {
         "@ultimat3/cache": "20.2.1",
         "@ultimat3/core": "20.2.1",
+        "@ultimat3/entity": "20.2.1",
         "@ultimat3/http": "20.2.1",
         "@ultimat3/policy": "20.2.1",
         "@ultimat3/schema": "20.2.1",
@@ -464,6 +467,7 @@
       "version": "20.2.1",
       "dependencies": {
         "@ultimat3/core": "20.2.1",
+        "@ultimat3/entity": "20.2.1",
         "@ultimat3/query": "20.2.1",
         "nats": "2.29.3",
       },

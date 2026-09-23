@@ -30,6 +30,9 @@ export const CLI_OWNED_ERROR_CODES = [
   // `code: STALE` here is invisible to every reader of the code set, and silence there is
   // permissive — the DRYer the author, the less the gate sees (#277).
   'X_ERROR_CODE_UNRESOLVED',
+  // The fourth: registered, presented as live, and constructed by nothing — the state a code is left
+  // in when its last thrower moves on. The reference row has to say so in words.
+  'X_ERROR_CODE_UNTHROWN',
   // Reported as `Finding`s rather than thrown, and unregistered until now because of it — so
   // `x errors explain X_TYPECHECK_FAILED` refused a code `x verify` had just printed. A finding
   // carries an `X_*` code to the same reader a throw does; the registry is what makes that code
@@ -185,6 +188,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_E2E_LOCATOR_EMPTY',
   'X_E2E_LOCATOR_AMBIGUOUS',
   'X_E2E_SERVICE_WORKER_ABSENT',
+  'X_E2E_APP_FAILED',
   // The raw-CDP browser under that driver — `cdp-launch.ts`, `cdp-connection.ts`,
   // `cdp-e2e-page.ts`, `cdp-browser.ts`. Four codes and not one, because the four repairs differ:
   // install a browser, read the browser's own stderr, look at the page, raise a deadline.
@@ -262,6 +266,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ERROR_CODE_UNDOCUMENTED: 'a shipped error code has no row in the error reference',
   X_ERROR_CODE_UNREGISTERED: 'the error reference documents a code no package registers',
   X_ERROR_CODE_UNRESOLVED: 'an error code is written as a name this repository cannot resolve',
+  X_ERROR_CODE_UNTHROWN:
+    'a registered error code is constructed by nothing and its reference row does not say so',
   X_FRAMEWORK_SCHEMA_FAILED: 'a framework table could not be created at boot',
   X_STORAGE_UNWRITABLE: 'the storage disk this process needs cannot be written to',
   X_STORAGE_SECRET_DEV: 'upload grants would be signed with the shipped development key',
@@ -330,6 +336,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_E2E_LOCATOR_EMPTY: 'an e2e locator matched no element',
   X_E2E_LOCATOR_AMBIGUOUS: 'an e2e locator matched more than one element and was asked to click',
   X_E2E_SERVICE_WORKER_ABSENT: 'no service worker took control of the page within the budget',
+  X_E2E_APP_FAILED: 'the app an e2e run spawned did not come up',
   X_CDP_BROWSER_MISSING: 'no Chrome or Chromium is installed for the e2e driver to launch',
   X_CDP_LAUNCH_FAILED: 'the browser started and never announced a DevTools endpoint',
   X_CDP_CALL_FAILED: 'the browser refused a DevTools call',

@@ -1,11 +1,20 @@
 // One simulated client for the 50k-socket forced-restart benchmark. Deliberately mirrors what a
 // real client does on an unscheduled disconnect (thundering-herd.ts's own framing): there is no
 // server-sent `reconnect` frame to obey — the process just died — so recovery is `backoffDelay`
-// alone, exactly like a browser tab that lost its socket to a crash instead of a graceful drain.
+// alone, exactly like a browser tab that lost its socket to a crash instead of a graceful drain —
+// on the browser's own curve (`browserBackoff`, capped at seconds), not the server-side one.
 
-import { backoffDelay, decode, encode, PROTOCOL_VERSION } from '@ultimat3/realtime';
-import { beginSeqEpoch, newSeqCounters, recordSeq, type SeqCounters } from './restart-bench-seq';
-import { BENCH_SID, BENCH_TOPIC, type BenchProbeRow } from './restart-bench-shared';
+import { backoffDelay, browserBackoff, decode, encode, PROTOCOL_VERSION } from '@ultimat3/realtime';
+import { BENCH_CHANNEL, BENCH_ROOM } from './restart-bench-channel';
+import {
+  beginSeqEpoch,
+  newSeqCounters,
+  recordReplayGap,
+  recordSeq,
+  type SeqCounters,
+} from './restart-bench-seq';
+
+const BENCH_TOPIC = BENCH_CHANNEL.topic({ room: BENCH_ROOM });
 
 export interface ClientStats {
   readonly index: number;
@@ -22,10 +31,10 @@ export interface ClientStats {
   alive: boolean;
   lastSeenSeq: number;
   /**
-   * Holes in the probe sequence this client received, per connection. `patchAfterOpenAt` below
-   * times the FIRST delivery on a socket, which proves reachability and nothing else — a channel
-   * topic carries no cursor, so a patch dropped on the way out is unrecoverable and a
-   * first-delivery timer cannot see one. This is the half that can.
+   * Holes in the `records` seq this client received, per connection, and the `replay-gap` frames
+   * that repaired them. `patchAfterOpenAt` below times the FIRST delivery on a socket, which proves
+   * reachability and nothing else; this is the half that can see a lost frame — and, since
+   * 21.0.0, whether the node told the client to re-read after it.
    */
   seq: SeqCounters;
   /**
@@ -105,17 +114,19 @@ function handleMessage(stats: ClientStats, data: string | Uint8Array): void {
     if (stats.firstHelloAt === null) stats.firstHelloAt = now;
     return;
   }
-  if (frame.type === 'patch' && frame.sid === BENCH_TOPIC) {
-    // The seq is scoped to ONE connection, never compared across two: the probe counter resets to
-    // zero on every fresh server process, so a swarm-wide "greater than the last one seen" would
-    // read the restart itself as a lost frame. `beginSeqEpoch` on every open is what makes the
-    // remaining holes mean the only thing left they can mean — a frame this node sent nowhere.
-    const row = frame.patches[0]?.row as BenchProbeRow | undefined;
-    if (row) {
-      const seq = recordSeq(stats.seq, row.seq);
-      if (seq !== null) stats.lastSeenSeq = seq;
-      stats.patchAfterOpenAt ??= Date.now();
-    }
+  if (frame.type === 'replay-gap' && frame.channel === BENCH_TOPIC) {
+    // The node's verdict that this client lost a frame: a real client re-reads the channel's
+    // catch-up query here, so every hole it is holding counts as repaired from this point.
+    recordReplayGap(stats.seq);
+    return;
+  }
+  if (frame.type === 'records' && frame.channel === BENCH_TOPIC) {
+    // The frame's own seq, minted by the delivering node. Scoped to ONE connection: a restarted
+    // node starts a new epoch at seq 1, and `beginSeqEpoch` on every open is what keeps that from
+    // reading as a lost frame.
+    const seq = recordSeq(stats.seq, frame.seq);
+    if (seq !== null) stats.lastSeenSeq = seq;
+    stats.patchAfterOpenAt ??= Date.now();
   }
 }
 
@@ -138,7 +149,7 @@ export async function runClient(
     } catch {
       if (stats.firstHelloAt === null) stats.shedRamp += 1;
       else stats.shedRestart += 1;
-      await sleep(backoffDelay(Math.min(stats.attempts, 12)), signal);
+      await sleep(backoffDelay(Math.min(stats.attempts, 12), browserBackoff), signal);
       continue;
     }
     stats.alive = true;
@@ -156,20 +167,21 @@ export async function runClient(
         actorId: null,
       }),
     );
+    // A channel subscribe names the DECLARATION and its params, never a topic.
     ws.send(
       encode({
         type: 'subscribe',
         v: PROTOCOL_VERSION,
         op: 'add',
-        sid: BENCH_SID,
-        target: { kind: 'topic', topic: BENCH_TOPIC },
+        sid: BENCH_CHANNEL.name,
+        target: { kind: 'channel', channel: BENCH_CHANNEL.name, params: { room: BENCH_ROOM } },
       }),
     );
     await closed(ws);
     stats.alive = false;
     stats.lastCloseAt = Date.now();
     if (signal.aborted) return;
-    await sleep(backoffDelay(0), signal); // fresh disconnect: a real client restarts its own count
+    await sleep(backoffDelay(0, browserBackoff), signal); // fresh disconnect: a real client restarts its own count
     stats.attempts = 0;
   }
 }

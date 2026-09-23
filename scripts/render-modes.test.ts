@@ -17,6 +17,7 @@ import { render } from './lib/log';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { SourceFile } from './render-modes';
 import {
+  ASYNC_STATE_MODULE,
   COPY_THRESHOLD,
   checkVocabulary,
   readSources,
@@ -33,6 +34,16 @@ import {
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const ROOT = repoRoot();
+
+/** `AsyncState`'s shape as core writes it: a discriminated union, one `status` per arm. */
+function asyncState(name: string, statuses = ['pending', 'refreshing', 'ready', 'failed']): string {
+  const arms = statuses.map((status) =>
+    status === 'pending'
+      ? `  | { readonly status: '${status}' }`
+      : `  | { readonly status: '${status}'; readonly data: T }`,
+  );
+  return `export type ${name}<T> =\n${arms.join('\n')};\n`;
+}
 
 const asConst = (name: string, members: readonly string[]): string =>
   `export const ${name} = [${members.map((m) => `'${m}'`).join(', ')}] as const;`;
@@ -60,6 +71,7 @@ const OWNERS: readonly SourceFile[] = [
   { at: 'packages/testing/src/test-types.ts', text: asConst('TEST_TYPES', TEST_TYPES) },
   { at: 'packages/core/src/image/probe.ts', text: asConst('IMAGE_FORMATS', IMAGE_FORMATS) },
   { at: 'packages/core/src/cache-vocabulary.ts', text: asConst('CACHE_TIERS', CACHE_TIERS) },
+  { at: ASYNC_STATE_MODULE, text: asyncState('AsyncState') },
 ];
 
 const file = (at: string, text: string): SourceFile => ({ at, text });
@@ -303,6 +315,81 @@ describe('this repository', () => {
     const text = await Bun.file(`${ROOT}/${at}`).text();
     expect(text).toContain("export const ROLES = ['owner', 'member', 'viewer'] as const;");
     expect(scanLiteralSets(text).map((one) => one.name)).not.toContain('ROLES');
+  });
+});
+
+// Plan 101: `AsyncState` moved from `@ultimat3/ui` to core, and the old declaration is exactly
+// the copy this rule must refuse — a discriminated union no literal-set reader could see.
+describe('a second AsyncState status union', () => {
+  test('is reported under any name — the union ui declared before it moved to core', () => {
+    const findings = checkVocabulary([
+      ...OWNERS,
+      file('packages/ui/src/components/async-branch.ts', asyncState('RegionState')),
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe('X_VOCABULARY_REDECLARED');
+    expect(findings[0]?.cause).toContain('RegionState');
+    expect(findings[0]?.fix).toContain("import AsyncState from '@ultimat3/core'");
+  });
+
+  test('is reported as a plain literal union, and as a copy that dropped one status', () => {
+    const plain = "export type Status = 'pending' | 'refreshing' | 'ready' | 'failed';\n";
+    const partial = asyncState('Loaded', ['pending', 'ready', 'failed']);
+    const findings = checkVocabulary([
+      ...OWNERS,
+      file('packages/realtime/src/a.ts', plain),
+      file('packages/realtime/src/b.ts', partial),
+    ]);
+    expect(findings.map((one) => one.at)).toEqual([
+      'packages/realtime/src/a.ts:1',
+      'packages/realtime/src/b.ts:1',
+    ]);
+  });
+
+  test('an arm carrying a function type does not end the union early', () => {
+    // `=>` closes nothing: read as a `>` it ended the body at the first arm's `;` and the copy
+    // below read as a one-status record, not a vocabulary.
+    const withCallback = `export type Fetching<T> =
+  | { readonly status: 'pending'; readonly cancel: () => void }
+  | { readonly status: 'refreshing'; readonly data: T }
+  | { readonly status: 'ready'; readonly data: T }
+  | { readonly status: 'failed'; readonly error: unknown };
+`;
+    const findings = checkVocabulary([...OWNERS, file('packages/ui/src/y.ts', withCallback)]);
+    expect(findings.map((one) => one.at)).toEqual(['packages/ui/src/y.ts:1']);
+  });
+
+  test('two shared ordinary words are a coincidence — the MutationStatus and backfill shapes', () => {
+    const mutation = "export type MutationStatus = 'pending' | 'inflight' | 'acked' | 'failed';\n";
+    const backfill =
+      "export const BACKFILL_STATES = ['pending', 'running', 'failed', 'completed'] as const;\n";
+    const inline = "const settled: { readonly status: 'ready' | 'refreshing' } = state;\n";
+    expect(
+      checkVocabulary([
+        ...OWNERS,
+        file('packages/realtime/src/offline-queue.ts', mutation),
+        file('packages/jobs/src/backfill-pending.ts', backfill),
+        file('packages/ui/src/components/async-branch.ts', inline),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('an owner that stopped declaring it is a vacuity finding, never a clean tree', () => {
+    const findings = checkVocabulary([
+      ...OWNERS.filter((one) => one.at !== ASYNC_STATE_MODULE),
+      file(ASYNC_STATE_MODULE, 'export type AsyncState<T> = T;\n'),
+    ]);
+    expect(findings.map((one) => one.code)).toEqual(['X_VOCABULARY_UNSCANNED']);
+  });
+
+  test('the real owner is read, and its four statuses are what the rule compares', async () => {
+    const text = await Bun.file(`${ROOT}/${ASYNC_STATE_MODULE}`).text();
+    const findings = checkVocabulary([
+      ...OWNERS.filter((one) => one.at !== ASYNC_STATE_MODULE),
+      file(ASYNC_STATE_MODULE, text),
+      file('packages/ui/src/x.ts', asyncState('Copy')),
+    ]);
+    expect(findings).toHaveLength(1);
   });
 });
 

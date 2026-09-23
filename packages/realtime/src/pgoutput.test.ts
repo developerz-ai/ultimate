@@ -388,13 +388,32 @@ test('Begin and Commit carry lsn and an epoch-ms timestamp', () => {
 
 test('an unknown message tag yields "other" rather than throwing', () => {
   const decoder = new PgOutputDecoder();
-  for (const tag of ['O', 'Y', 'M', 'Z']) {
+  for (const tag of ['O', 'Y', 'Z']) {
     const payload = new ByteWriter()
       .uint8(tagByte(tag))
       .raw(new Uint8Array([1, 2, 3]))
       .finish();
     expect(decoder.decode(payload)).toEqual({ kind: 'other', tag });
   }
+});
+
+test('a logical message decodes its flag, prefix and content — the lsn is read past', () => {
+  const decoder = new PgOutputDecoder();
+  const content = new TextEncoder().encode('é'.repeat(3));
+  const payload = new ByteWriter()
+    .uint8(tagByte('M'))
+    .uint8(1)
+    .int64(0x16b3748n)
+    .cstring('ultimate.write')
+    .int32(content.length)
+    .raw(content)
+    .finish();
+  expect(decoder.decode(payload)).toEqual({
+    kind: 'message',
+    transactional: true,
+    prefix: 'ultimate.write',
+    content: 'ééé',
+  });
 });
 
 test('Truncate resolves cached oids and skips unknown ones', () => {

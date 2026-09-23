@@ -24,12 +24,12 @@ const APP_ROOT = join(import.meta.dir, '..', '..', '..', '..');
 const ISLAND = 'apps/web/app/settings/settings.island.tsx';
 
 const NOW = '2026-03-14T08:30:00.000Z';
-const ENDPOINT = '/api/settings/save-preferences';
+/** `savePreferences` through the one naming rule — the client derives it; nothing passes it in. */
+const ENDPOINT = '/api/preferences/save';
 
 const option = (value: string): { value: string; label: string } => ({ value, label: value });
 
 const PROPS = {
-  endpoint: ENDPOINT,
   nowIso: NOW,
   locale: 'en',
   timezone: 'UTC',
@@ -63,6 +63,8 @@ const expectedPreview = (locale: string, zone: string): string =>
 
 interface FetchCall {
   readonly url: string;
+  readonly method: string;
+  readonly headers: Readonly<Record<string, string>>;
   readonly body: Record<string, unknown>;
 }
 
@@ -73,6 +75,12 @@ let mounted: MountedIsland;
 
 /** `<select>`s in document order: language, timezone, theme. */
 const selectAt = (index: number): FakeElement => mounted.all('select')[index] as FakeElement;
+
+/**
+ * One macrotask: the typed client resolves through the transport's own chain of awaits, so a
+ * count of `Promise.resolve()` ticks would be a guess about its internals that breaks when they move.
+ */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 const choose = (select: FakeElement, value: string): void => {
   select.value = value;
@@ -89,9 +97,21 @@ beforeAll(async () => {
     // The shell the page server-renders. `mount` replaces it, which is the first assertion below.
     shell: '<dl><dt>Language</dt><dd>en</dd></dl>',
     globals: {
-      fetch: (url: string, init: { body: string }): Promise<{ ok: boolean }> => {
-        calls.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
-        return Promise.resolve({ ok });
+      // A real `Response`, because the typed client reads status, headers and body the way a
+      // browser's `fetch` hands them over — a `{ ok }` stub is not what production answers.
+      fetch: (url: string, init: RequestInit): Promise<Response> => {
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          headers: Object.fromEntries(new Headers(init.headers).entries()),
+          body:
+            typeof init.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {},
+        });
+        return Promise.resolve(
+          ok
+            ? Response.json({ id: 'm1' })
+            : new Response('<html>bad gateway</html>', { status: 502 }),
+        );
       },
     },
   });
@@ -156,12 +176,16 @@ describe('the settings island', () => {
     expect('theme' in mounted.documentElement.dataset).toBe(false);
   });
 
-  test('save posts the CURRENT selection to the path the server minted', async () => {
+  test('save posts the CURRENT selection to the path the action is named by', async () => {
     expect(mounted.fire('button', 'click')).toBe(true);
-    await Promise.resolve();
+    await settle();
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(ENDPOINT);
+    // A write, and one the server can parse: a GET or a body with no JSON type would never reach
+    // the action, and the stub above would answer it all the same.
+    expect(calls[0]?.method).toBe('POST');
+    expect(calls[0]?.headers['content-type']).toStartWith('application/json');
     // The values the three changes above left behind, not the props the island booted with.
     expect(calls[0]?.body).toEqual({
       locale: 'es',
@@ -176,8 +200,7 @@ describe('the settings island', () => {
 
     ok = false;
     mounted.fire('button', 'click');
-    await Promise.resolve();
-    await Promise.resolve();
+    await settle();
 
     expect(mounted.text('[data-role="status"]')).toBe(PROPS.labels.retry);
   });

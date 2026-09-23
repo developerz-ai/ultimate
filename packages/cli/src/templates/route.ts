@@ -219,6 +219,9 @@ import { e2eTest, expect } from '@ultimat3/testing';
 // \`e2eTest\` reports itself skipped, naming the command that builds what it would drive.
 e2eTest('/${path} renders offline', async ({ page, offline }) => {
   await page.goto('/${sampleUrl(path)}');
+  // \`offline()\` cuts the service worker's network too, so the reload is answered from its cache
+  // or not at all — which needs the worker in control of this page before the cut.
+  await page.waitForServiceWorker();
   await offline();
   await page.reload();
   expect(await page.title()).not.toBe('');

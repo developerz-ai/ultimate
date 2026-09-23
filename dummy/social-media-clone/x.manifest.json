@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "205ca4cde01ba88a",
+  "buildId": "d2d8e6bd6d198b94",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -1457,6 +1457,15 @@
   ],
   "queries": [
     {
+      "name": "inbox",
+      "policy": "notification:read",
+      "permissions": [
+        "notification:read"
+      ],
+      "live": false,
+      "cacheTags": []
+    },
+    {
       "name": "liveThread",
       "policy": "message:read",
       "permissions": [
@@ -1464,6 +1473,38 @@
       ],
       "live": true,
       "cacheTags": []
+    }
+  ],
+  "channels": [
+    {
+      "name": "messages",
+      "params": [
+        "conversationId"
+      ],
+      "catchUp": "liveThread",
+      "records": [
+        "messages"
+      ],
+      "events": false,
+      "policy": "message:read",
+      "permissions": [
+        "message:read"
+      ]
+    },
+    {
+      "name": "notifications",
+      "params": [
+        "userId"
+      ],
+      "catchUp": "inbox",
+      "records": [
+        "notifications"
+      ],
+      "events": false,
+      "policy": "notification:read",
+      "permissions": [
+        "notification:read"
+      ]
     }
   ],
   "jobs": [
@@ -1709,7 +1750,9 @@
     },
     {
       "permission": "notification:read",
-      "enforcedIn": []
+      "enforcedIn": [
+        "query:inbox"
+      ]
     },
     {
       "permission": "post:comment",

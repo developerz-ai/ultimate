@@ -6,7 +6,7 @@
 // that would be a cycle: `extends` runs at module evaluation, imports hoist above it, and the base
 // would be in its temporal dead zone by the time the subclass module was evaluated.
 
-import { UltimateError } from '@ultimat3/core';
+import { UltimateError } from '@ultimat3/core/page';
 import type { RealtimeErrorCode } from './errors';
 
 /**

@@ -51,7 +51,6 @@ export { shellIds, shellLandmarks } from './components/app-shell-view';
 export type {
   AsyncBranch,
   AsyncFlags,
-  AsyncState,
   ReserveBox,
 } from './components/async-branch';
 export {

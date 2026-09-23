@@ -41,6 +41,7 @@ function fakeNode(log: string[]): SyncNode {
       sendPings: false,
       open: () => undefined,
       message: () => undefined,
+      drain: () => undefined,
       close: () => undefined,
     },
     drain: async (options) => {

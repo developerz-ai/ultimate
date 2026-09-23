@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { topic } from './channel';
+import { readPresence } from './channel-presence';
 import { InProcessTransport, type Transport } from './fanout';
 import { PRESENCE_KEY_PREFIX, PRESENCE_SWEEP_PREFIX, PresenceRegistry } from './presence';
 
@@ -55,10 +56,12 @@ describe('presence', () => {
     const { presence } = harness();
     await presence.join(room, { id: 'm1', actorId: 'alice' });
     const frame = await presence.syncFrame(room);
-    if (frame.type !== 'presence') throw new Error('expected a presence frame');
-    expect(frame.op).toBe('sync');
-    expect(frame.members).toHaveLength(1);
-    expect(frame.total).toBe(1);
+    // An `events` frame on the room's own topic: presence has no frame kind of its own.
+    expect(frame).toMatchObject({ type: 'events', channel: room });
+    const roster = readPresence(frame.event);
+    expect(roster?.presence).toBe('sync');
+    expect(roster?.members).toHaveLength(1);
+    expect(roster?.total).toBe(1);
   });
 });
 
@@ -83,10 +86,9 @@ describe('presence at all-hands size', () => {
     // every member past the cap as gone.
     expect(await presence.list(room)).toHaveLength(12);
 
-    const frame = await presence.syncFrame(room);
-    if (frame.type !== 'presence') throw new Error('expected a presence frame');
-    expect(frame.members).toHaveLength(3);
-    expect(frame.total).toBe(12);
+    const frame = readPresence((await presence.syncFrame(room)).event);
+    expect(frame?.members).toHaveLength(3);
+    expect(frame?.total).toBe(12);
   });
 
   test('one node per topic sweeps, and the others read no member set at all', async () => {

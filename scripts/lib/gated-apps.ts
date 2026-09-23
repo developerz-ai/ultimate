@@ -31,31 +31,6 @@ export const GATED_APPS: readonly GatedApp[] = [
     dir: 'examples/dummy',
     reference: './examples/dummy',
     expectedRed: {
-      e2e:
-        'RE-MEASURED 2026-08-24 and UNCHANGED — `bun test apps/web/e2e/offline-feed.e2e.test.ts` ' +
-        'from the app root answers 0 pass, 6 fail. ' +
-        'X_TEST_FIXTURE_UNAVAILABLE on all 6 tests: the `page` fixture is declared and nothing in ' +
-        'this process drives it, so not one of them reaches a built page. NOT the data substrate ' +
-        'this line used to blame — no repo, no query and no migration is involved in the failure. ' +
-        'A SECOND defect underneath it was fixed on 2026-08-24 and did not change this count: all ' +
-        'nine assertions were `await expect(locator).toBeVisible()`, and there is no `toBeVisible` ' +
-        'matcher — `UltimateMatchers` (packages/testing/src/matcher-surface.ts) declares seven and ' +
-        'that is not one, so every one of them would have been a TypeError the moment a driver ' +
-        'made them reachable. They read `expect(await locator.isVisible()).toBe(true)` now, off ' +
-        '`LocatorLike`, which is the shipped surface. It is point-in-time where the Playwright ' +
-        'matcher retries, so a driver still owes a wait for the two assertions that follow a ' +
-        'reconnect and a new build. ' +
-        'A THIRD correction, 2026-08-25: `toBeVisible` now exists and retries — a budget counted ' +
-        'in OBSERVATIONS, not milliseconds, because this package freezes Date.now() and a clock ' +
-        'deadline never expires, turning a failing test into a hanging one. Two of the nine are ' +
-        'back on it; the other seven follow an awaited call and stay point-in-time. ' +
-        'Installing a browser driver in scripts/test-setup.ts is NECESSARY AND NOT SUFFICIENT: ' +
-        'measured 2026-08-25, it moves the count from 0 to 0. `signIn` blocks 5 of the 6 and ' +
-        'CANNOT be registered — Postly has no sign-in route, because an app has no seam by which ' +
-        'to contribute a raw `Route` (apps/web/auth/login.ts declares two descriptors that are ' +
-        'never served, and demo-actor.ts warns about it on every dev request). `budget` blocks ' +
-        'the 6th and needs `x build --target static` output. Closed by the raw-Route seam in ' +
-        'packages/cli/src/serve.ts, then the driver — in that order',
       budgets:
         'X_BUDGET_UNMEASURED on 6 of the 8 routes that declare a `budget:`, and `.x/` is gitignored ' +
         'so no stats file is ever committed. `x build --target static` now COMPLETES here — the ' +

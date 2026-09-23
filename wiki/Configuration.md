@@ -45,7 +45,7 @@ Everything derivable from code is **not** in this file — routes, actions, poli
 | `name` | `string` | required | `^[a-z][a-z0-9-]{1,63}$`. Names the dev DB, the image, the queue prefix |
 | `locales` | `string[]` | `['en']` | BCP-47. Every locale needs a complete catalog or `X_CATALOG_MISSING_KEYS` |
 | `defaultLocale` | `string` | `'en'` | must appear in `locales` |
-| `defaultTimeZone` | IANA zone | `'UTC'` | display default only; a user's own `tz` column always wins |
+| `defaultTimeZone` | IANA zone | `'UTC'` | display default only. A signed-in member's own zone wins: set `tz` on the actor your `authenticate` hook returns (`userActor({ id, locale, tz })`), and `resolveTimeZone`'s default order (`user → cookie → query → header`) puts it first. Until 21.0.0 nothing filled that rung, so this line was false |
 | `defaultCurrency` | ISO 4217 | `'USD'` | default for `Money` formatting. Never a conversion rate |
 | `theme.defaultMode` | `'light' \| 'dark' \| 'system'` | `'system'` | what a visitor with no stored choice gets. The boot inlines the no-flash theme script into every document with this as its fallback and admits it to the CSP — `As of 20.2.0`; before that the key was read by nothing. `theme.tokens` is the semantic token map; raw hex is a lint error in components |
 | `roles` | `Role[]` | every `ROLE` | which runtime roles this app runs. Empty is `X_CONFIG_INVALID` |
@@ -163,8 +163,8 @@ the `heartbeatMs` paragraph below gives. `bun run scripts/config-readers.ts` is 
 now refuses the next one.
 
 **`realtime.heartbeatMs` is gone**, `As of 2026-08-19`. It was declared here with a default of
-15 000 and read by nothing; the socket beat is the client's `new LiveClient({ heartbeatMs })` —
-browser code, which cannot read server config — and the presence beat is derived
+15 000 and read by nothing; the socket beat is the page socket's own 15 s,
+fixed in browser code, which cannot read server config, and the presence beat is derived
 (`PresenceRegistry.heartbeatMs` is `max(1000, floor(ttlMs / 3))`). **Removing the key from your
 config is a typecheck fix, not a runtime one**: `section()` copies every own key of the patch and
 `validate()` checks only the fields it names, so a leftover `heartbeatMs` is silently kept at
@@ -269,7 +269,7 @@ pwa: {
 | `pwa.offline.font` | `string \| null` | `null` | **read** — placeholder served for a font request the cache cannot answer |
 | `pwa.offline.neverCache` | `string[]` | `[]` | **read** — path prefixes the worker passes straight through. Auth and payments belong here: a stale 200 is worse than a failure |
 | ~~`pwa.offline` as a string~~ | — | — | **Changed in the release that closed [#390](https://github.com/developerz-ai/ultimate/issues/390).** It was `'precache' \| 'runtime' \| 'network-only'`, an app-wide default for a field `defineRoute` makes **required** on every route — so it defaulted nothing and was read by nobody. Migration: `offline: 'runtime'` → `offline: { fallback: '/offline' }`, plus a route at that path ([Upgrading](Upgrading)) |
-| `pwa.backgroundSync` | `boolean` | `false` | **read** — wires the emitted worker's `sync` event to the mutator queue |
+| `pwa.backgroundSync` | `boolean` | `false` | **read**. The emitted worker's `sync` event posts `OUTBOX_DRAIN_MESSAGE` to every open tab, which drains realtime's outbox (21.0.0, unreleased) |
 | `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `serviceWorkerWarnings` entry saying so, rather than leaving the switch quietly inert |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
@@ -473,6 +473,8 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `DATABASE_REPLICA_URL` | all | no — unset is one pool | `As of 2026-08-24`: a read-only standby. Set it and `baseClient()` builds a primary + replica client; unset and the client is byte-identical to the single-pool one. Routing is still opt-in per scope (`withReplicaReads`), so setting it alone changes nothing — see [Read replicas](#read-replicas) |
 | `APP_URL` | `web`, `sync` | yes | the canonical origin. An app-read key, not a config field — declare it in `defineEnv` |
 | `SESSION_SECRET` | `web`, `sync` | yes | >=32 chars |
+| `ULTIMATE_STATE_DIR` | all, under `x dev` | no — default `<app>/.x` | relocates the whole of `.x/` (the embedded database, the local disk, the dev lock) for one process tree. The e2e step uses it to boot the app on a throwaway database beside a running `x dev` (`packages/cli/src/dev-services.ts`). 21.0.0, unreleased |
+| `SYNC_URL` | `web` | no — unset dials `/_x/sync` on the page's own origin | where the page's one socket dials, rendered into every document as `<meta name="ultimate-sync">`. Must be `ws://` or `wss://`; anything else is `X_CONFIG_INVALID` at boot. **Required on the Compose rung**, where `sync` is published on its own port with no proxy in front: `SYNC_URL=ws://<host>:3001/_x/sync`. The shipped compose file refuses to start `web` without it. `x dev`, a combined-role container and the Helm chart's ingress all serve `/_x/sync` on the page origin, so they need nothing. `As of 2026-09-22`, unreleased (21.0.0) |
 | `WORKER_QUEUES` | `worker` | no — default `default` | comma-separated; one pool per name |
 | `NATS_URL` | `sync`, `replicator` | no — unset is in-process fanout | one node only; a second replica shares nothing. Unreachable → `X_TRANSPORT_UNAVAILABLE` at boot, not at readiness |
 | `NATS_KV_BUCKET` | `sync` | no — default `x_presence` | the JetStream KV bucket presence lives in. `[a-zA-Z0-9_-]+`; anything else is `X_TRANSPORT_PROTOCOL` at boot |

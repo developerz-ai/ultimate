@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "70336e5e52d5b341d6b393e2284bce759065980e741eeb1666b841a47f2101bd",
+  "buildId": "7041e6c0b5e92aad46278943461eabc4257c6625ee72fef52ad3430c02f357b5",
   "tiers": {
     "0": [
       "core",
@@ -237,7 +237,7 @@
     {
       "code": "X_ABORTED",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ACCOUNT_LOCKED",
@@ -352,12 +352,12 @@
     {
       "code": "X_AGGREGATE_MIXED_CURRENCY",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_AGGREGATE_UNSUPPORTED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_AI_BUDGET_EXCEEDED",
@@ -422,12 +422,12 @@
     {
       "code": "X_APPROXIMATE_COUNT_FILTERED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_ASYNC_CONTEXT_UNAVAILABLE",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_AUDIT_SINK_FAILED",
@@ -535,9 +535,29 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_BROWSER_SERVER_BARREL",
+      "owner": "scripts",
+      "at": "scripts/browser-transport.ts"
+    },
+    {
+      "code": "X_BROWSER_TRANSPORT_BYPASS",
+      "owner": "scripts",
+      "at": "scripts/browser-transport.ts"
+    },
+    {
+      "code": "X_BROWSER_TRANSPORT_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/browser-transport.ts"
+    },
+    {
       "code": "X_BUDGET_EXCEEDED",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_BUDGET_RAISE_UNSTATED",
+      "owner": "scripts",
+      "at": "scripts/budget-raises.ts"
     },
     {
       "code": "X_BUDGET_UNMEASURED",
@@ -660,6 +680,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_CHANNEL_DECLARATION_INVALID",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_CHANNEL_LITERAL",
+      "owner": "scripts",
+      "at": "scripts/channel-literals.ts"
+    },
+    {
+      "code": "X_CHANNEL_LITERAL_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/channel-literals.ts"
+    },
+    {
       "code": "X_CHART_VERSION_STALE",
       "owner": "scripts",
       "at": "scripts/chart-version.ts"
@@ -690,9 +725,24 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_CLIENT_RECORD_ENVELOPE_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_CLIENT_SCOPE_CHANGED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_CLIENT_TRANSPORT_FAILED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
       "code": "X_CONFIG_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_CONFIG_KEY_READER_AMBIGUOUS",
@@ -787,12 +837,12 @@
     {
       "code": "X_CURSOR_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_CURSOR_SECRET_DEV",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_CURSOR_STALE",
@@ -1067,7 +1117,7 @@
     {
       "code": "X_DRAINING",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_DRIVER_UNAVAILABLE",
@@ -1088,6 +1138,11 @@
       "code": "X_DURATION_INVALID",
       "owner": "time",
       "at": "packages/time/src/errors.ts"
+    },
+    {
+      "code": "X_E2E_APP_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_E2E_EVALUATE_CAPTURED",
@@ -1122,27 +1177,27 @@
     {
       "code": "X_ENTITY_DUPLICATE",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_ENV_EXAMPLE_DRIFT",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ENV_MISSING",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ENVIRONMENT_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ERROR_CODE_DUPLICATE",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ERROR_CODE_UNDOCUMENTED",
@@ -1165,6 +1220,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_ERROR_CODE_UNTHROWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ERROR_FIX_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1182,12 +1242,12 @@
     {
       "code": "X_ERROR_REPORTER_DSN_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ERROR_RETRY_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ERROR_STATUS_BACKLOG_STALE",
@@ -1322,7 +1382,7 @@
     {
       "code": "X_FLIGHT_GATE_OVERLOADED",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_FLIGHT_RANDOM_UNINJECTED",
@@ -1430,6 +1490,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_GUARD_LOAD_FAILED",
+      "owner": "scripts",
+      "at": "scripts/lib/guard-load.ts"
+    },
+    {
       "code": "X_HIVE_EMPTY",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
@@ -1437,7 +1502,7 @@
     {
       "code": "X_ID_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_IDEMPOTENCY_CONFLICT",
@@ -1472,7 +1537,7 @@
     {
       "code": "X_IMAGE_DECODE_FAILED",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_IMAGE_GUARD_MISSING",
@@ -1497,12 +1562,12 @@
     {
       "code": "X_IMAGE_TOO_LARGE",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_IMAGE_UNSUPPORTED",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_INDEX_ORDER_PIN_STALE",
@@ -1537,17 +1602,17 @@
     {
       "code": "X_INTERNAL",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_INVARIANT",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_INVARIANT_VIOLATED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_ISLAND_INVALID",
@@ -1685,9 +1750,14 @@
       "at": "packages/ai/src/errors.ts"
     },
     {
+      "code": "X_LOCAL_STORE_UNAVAILABLE",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
       "code": "X_LOCALE_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_LOCALE_UNSUPPORTED",
@@ -1852,17 +1922,17 @@
     {
       "code": "X_METRIC_CARDINALITY",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_METRIC_NAME_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_METRIC_VALUE_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_MFA_REQUIRED",
@@ -1920,19 +1990,39 @@
       "at": "packages/money/src/errors.ts"
     },
     {
+      "code": "X_MUTATOR_CLOCK_MISSING",
+      "owner": "action",
+      "at": "packages/action/src/errors.ts"
+    },
+    {
       "code": "X_N_PLUS_ONE_QUERY",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_N_PLUS_ONE_WRITE",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_NEW_ERROR_CODE_EXISTS",
+      "owner": "scripts",
+      "at": "scripts/lib/error-code-plan.ts"
+    },
+    {
+      "code": "X_NEW_ERROR_CODE_INVALID",
+      "owner": "scripts",
+      "at": "scripts/lib/error-code-plan.ts"
+    },
+    {
+      "code": "X_NEW_ERROR_CODE_PATTERN_UNKNOWN",
+      "owner": "scripts",
+      "at": "scripts/lib/error-code-plan.ts"
     },
     {
       "code": "X_NO_CONTEXT",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_NO_REQUEST",
@@ -1957,12 +2047,12 @@
     {
       "code": "X_NOT_FOUND",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_NOT_IMPLEMENTED",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_NOT_IN_APP",
@@ -2032,17 +2122,17 @@
     {
       "code": "X_OTLP_ENDPOINT_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_OTLP_HEADERS_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_OTLP_PROTOCOL_UNSUPPORTED",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_OUTBOX_NO_TX",
@@ -2082,7 +2172,7 @@
     {
       "code": "X_PATCH_EMPTY",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_PATH_INVALID",
@@ -2137,7 +2227,7 @@
     {
       "code": "X_PRELOAD_UNKNOWN_RELATION",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_PRERENDER_FAILED",
@@ -2322,7 +2412,7 @@
     {
       "code": "X_READINESS_CHECK_DUPLICATE",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_README_EXAMPLE_PIN_STALE",
@@ -2340,7 +2430,22 @@
       "at": "scripts/readme-fences.ts"
     },
     {
+      "code": "X_REALTIME_UNINSTALLED",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
       "code": "X_REBASE_CONFLICT",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_RECORD_KEY_MISSING",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_RECORD_REJECTED",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
     },
@@ -2367,12 +2472,12 @@
     {
       "code": "X_REGISTRAR_CONFLICT",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_REGISTRAR_MISSING",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_REGISTRY_BOOTSTRAP_OWED",
@@ -2432,7 +2537,7 @@
     {
       "code": "X_REPO_CLIENT_PINNED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_ROADMAP_FILE_MISSING",
@@ -2457,7 +2562,7 @@
     {
       "code": "X_ROLE_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ROLE_REDEFINED",
@@ -2737,12 +2842,12 @@
     {
       "code": "X_SEARCH_IN_MEMORY",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_SEARCH_UNDECLARED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_SECRET_COMPARE_PIN_STALE",
@@ -2842,12 +2947,12 @@
     {
       "code": "X_SERVICE_DUPLICATE",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_SERVICE_MISSING",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_SESSION_EXPIRED",
@@ -2887,7 +2992,7 @@
     {
       "code": "X_SHUTDOWN_TIMEOUT",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_SIDE_EFFECTS_ANCHOR_STALE",
@@ -2967,17 +3072,17 @@
     {
       "code": "X_STATE_CONFLICT",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_STATE_TRANSITION_ILLEGAL",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_STATE_UNDECLARED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_STEP_DUPLICATE",
@@ -3082,7 +3187,7 @@
     {
       "code": "X_SUPERSEDED",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_SURFACE_BOUNDARY",
@@ -3095,29 +3200,34 @@
       "at": "packages/pwa/src/errors.ts"
     },
     {
+      "code": "X_SYNC_UNCONFIGURED",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
       "code": "X_TELEMETRY_SAMPLER_ARG_INVALID",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_TENANCY_ACTOR_MISMATCH",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_TENANCY_ACTOR_ORG_REQUIRED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_TENANCY_CROSS_DENIED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_TENANCY_UNSCOPED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_TEST_BARE_ERROR",
@@ -3347,7 +3457,7 @@
     {
       "code": "X_TIMEOUT",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_TIMEZONE_INVALID",
@@ -3487,7 +3597,7 @@
     {
       "code": "X_UNREACHABLE",
       "owner": "core",
-      "at": "packages/core/src/error-codes.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_VALIDATION_FAILED",
@@ -3617,7 +3727,7 @@
     {
       "code": "X_WRITE_UNFILTERED",
       "owner": "entity",
-      "at": "packages/entity/src/errors.ts"
+      "at": "packages/entity/src/entity-error.ts"
     }
   ]
 }

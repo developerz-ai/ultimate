@@ -1,7 +1,8 @@
-// Sequence accounting for the forced-restart benchmark: holes in the probe stream, per connection.
-// Its own file so the arithmetic that decides "this frame was lost" is testable without a socket.
-// A channel topic has no cursor and no re-snapshot, so a frame dropped under backpressure is gone
-// for good — and a first-delivery timer, which is all this bench had, cannot see one.
+// Sequence accounting for the forced-restart benchmark: holes in the probe stream, per connection,
+// and whether each one was REPAIRED. Its own file so the arithmetic that decides "this frame was
+// lost" is testable without a socket. Since 21.0.0 a dropped channel `records` frame is marked by
+// the node and answered with `replay-gap` (the client re-reads), so a hole is loss only when no
+// `replay-gap` followed it — `unrepaired`, which a run must hold at zero.
 
 /**
  * One client's accounting, summed across every connection it holds. Plain JSON on purpose: it
@@ -20,6 +21,17 @@ export interface SeqCounters {
   missing: number;
   /** Discontinuities, however wide. `missing` is the frame count; this is the event count. */
   gapEvents: number;
+  /** `replay-gap` frames received: each one repairs every hole this client is still holding. */
+  replayGaps: number;
+  /** Missing frames a later `replay-gap` repaired. */
+  repaired: number;
+  /** Missing frames no `replay-gap` has answered YET. At the end of a run, these are the loss. */
+  pending: number;
+  /**
+   * A `replay-gap` arrived since the last frame. The node sends it BEFORE the next frame, so the
+   * hole that frame reveals is one the re-read already covered — it is repaired, never pending.
+   */
+  covering: boolean;
   duplicates: number;
   /**
    * Times the value went BACKWARDS inside one connection — a publisher whose counter restarted,
@@ -40,11 +52,27 @@ export function newSeqCounters(): SeqCounters {
     received: 0,
     missing: 0,
     gapEvents: 0,
+    replayGaps: 0,
+    repaired: 0,
+    pending: 0,
+    covering: false,
     duplicates: 0,
     rewinds: 0,
     malformed: 0,
     lastSeq: null,
   };
+}
+
+/**
+ * A `replay-gap` arrived: the client re-reads the channel's catch-up query, so every hole it holds
+ * is repaired — including one left on a connection that has since closed, because the re-read is
+ * of the channel, not of the connection.
+ */
+export function recordReplayGap(counters: SeqCounters): void {
+  counters.replayGaps += 1;
+  counters.repaired += counters.pending;
+  counters.pending = 0;
+  counters.covering = true;
 }
 
 /**
@@ -69,6 +97,8 @@ export function recordSeq(counters: SeqCounters, seq: unknown): number | null {
     return null;
   }
   const previous = counters.lastSeq;
+  const covered = counters.covering;
+  counters.covering = false;
   counters.received += 1;
   counters.lastSeq = seq;
   if (previous === null) {
@@ -86,6 +116,8 @@ export function recordSeq(counters: SeqCounters, seq: unknown): number | null {
   const skipped = seq - previous - 1;
   if (skipped > 0) {
     counters.missing += skipped;
+    if (covered) counters.repaired += skipped;
+    else counters.pending += skipped;
     counters.gapEvents += 1;
   }
   return seq;
@@ -101,6 +133,12 @@ export interface SeqSummary {
   readonly received: number;
   readonly missing: number;
   readonly gapEvents: number;
+  readonly replayGaps: number;
+  readonly repaired: number;
+  /** Missing frames no `replay-gap` ever answered. THE number: a run is clean only at zero. */
+  readonly unrepaired: number;
+  /** Observers still holding an unrepaired hole at the end of the run. */
+  readonly clientsUnrepaired: number;
   readonly duplicates: number;
   readonly rewinds: number;
   readonly malformed: number;
@@ -114,6 +152,10 @@ export function summarizeSeq(all: readonly SeqCounters[]): SeqSummary {
     received: 0,
     missing: 0,
     gapEvents: 0,
+    replayGaps: 0,
+    repaired: 0,
+    unrepaired: 0,
+    clientsUnrepaired: 0,
     duplicates: 0,
     rewinds: 0,
     malformed: 0,
@@ -125,9 +167,26 @@ export function summarizeSeq(all: readonly SeqCounters[]): SeqSummary {
     summary.received += counters.received;
     summary.missing += counters.missing;
     summary.gapEvents += counters.gapEvents;
+    summary.replayGaps += counters.replayGaps;
+    summary.repaired += counters.repaired;
+    summary.unrepaired += counters.pending;
+    if (counters.pending > 0) summary.clientsUnrepaired += 1;
     summary.duplicates += counters.duplicates;
     summary.rewinds += counters.rewinds;
     summary.malformed += counters.malformed;
   }
   return summary;
+}
+
+/**
+ * The run's verdict, as a list rather than a boolean so a failing run names what it lost. Empty is
+ * the bar: every hole a client saw was answered by a `replay-gap`. `missing` alone is no longer a
+ * failure — a hole the node repaired is the design working, not loss.
+ */
+export function unrepairedFindings(summary: SeqSummary): readonly string[] {
+  if (summary.unrepaired === 0) return [];
+  return [
+    `${summary.unrepaired} channel frame(s) lost on ${summary.clientsUnrepaired} client(s) with no ` +
+      `replay-gap after them — the node dropped a records frame and never told the client to re-read`,
+  ];
 }

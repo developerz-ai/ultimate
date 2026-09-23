@@ -1,29 +1,29 @@
 plan: 101-one-client-store-and-transport
 title: One client store, one transport, one socket
-status: not_started
+status: done
 created_by: sebi
-worked_by: ""
+worked_by: "claude (hive of 6, one checkout)"
 owner: sebi
-percent: 0
-current_focus: "01-core-transport.md"
+percent: 100
+current_focus: "COMPLETE. All 17 slices ship in one PR, #504 (21.0.0); every Done-when item proven by examples/dummy e2e (18/18). Byte follow-ups: #505."
 slices:
-  - {file: 01-core-transport.md, tier: 0, status: not_started, percent: 0}
-  - {file: 02-core-shared-types.md, tier: 0, status: not_started, percent: 0}
-  - {file: 03-core-scope-fence.md, tier: 0, status: not_started, percent: 0}
-  - {file: 04-entity-record-key.md, tier: 2, status: not_started, percent: 0}
-  - {file: 05-action-query-clients.md, tier: 3, status: not_started, percent: 0}
-  - {file: 06-realtime-store-socket.md, tier: 3, status: not_started, percent: 0}
-  - {file: 07-realtime-use-query.md, tier: 3, status: not_started, percent: 0}
-  - {file: 08-realtime-writes-over-http.md, tier: 3, status: not_started, percent: 0}
-  - {file: 09-realtime-channels.md, tier: 3, status: not_started, percent: 0}
-  - {file: 10-realtime-channel-seq.md, tier: 3, status: not_started, percent: 0}
-  - {file: 11-realtime-cross-tab.md, tier: 3, status: not_started, percent: 0}
-  - {file: 12-offline.md, tier: 3, status: not_started, percent: 0}
-  - {file: 13-ui-async-state.md, tier: 4, status: not_started, percent: 0}
-  - {file: 14-cli-default.md, tier: 5, status: not_started, percent: 0}
-  - {file: 15-guards.md, tier: 5, status: not_started, percent: 0}
-  - {file: 16-apps.md, tier: 5, status: not_started, percent: 0}
-  - {file: 17-docs.md, tier: 5, status: not_started, percent: 0}
-evidence: ["#499"]
+  - {file: 01-core-transport.md, tier: 0, status: done, percent: 100}
+  - {file: 02-core-shared-types.md, tier: 0, status: done, percent: 100}
+  - {file: 03-core-scope-fence.md, tier: 0, status: done, percent: 100}
+  - {file: 04-entity-record-key.md, tier: 2, status: done, percent: 100}
+  - {file: 05-action-query-clients.md, tier: 3, status: done, percent: 100}
+  - {file: 06-realtime-store-socket.md, tier: 3, status: done, percent: 100}
+  - {file: 07-realtime-use-query.md, tier: 3, status: done, percent: 100}
+  - {file: 08-realtime-writes-over-http.md, tier: 3, status: done, percent: 100}
+  - {file: 09-realtime-channels.md, tier: 3, status: done, percent: 100}
+  - {file: 10-realtime-channel-seq.md, tier: 3, status: done, percent: 100}
+  - {file: 11-realtime-cross-tab.md, tier: 3, status: done, percent: 100}
+  - {file: 12-offline.md, tier: 3, status: done, percent: 100}
+  - {file: 13-ui-async-state.md, tier: 4, status: done, percent: 100}
+  - {file: 14-cli-default.md, tier: 5, status: done, percent: 100}
+  - {file: 15-guards.md, tier: 5, status: done, percent: 100}
+  - {file: 16-apps.md, tier: 5, status: done, percent: 100}
+  - {file: 17-docs.md, tier: 5, status: done, percent: 100}
+evidence: ["#499", "#500", "#504"]
 notes: "Ships as major 21.0.0 (decided 2026-09-22). All design decisions recorded in overview.md -> Decisions; do not reopen. Each removing slice writes its BREAKING entry in the same PR."
-last_updated: 2026-09-22
+last_updated: 2026-09-23

@@ -55,6 +55,11 @@ export const postlyActor = (init: { readonly member: MemberView; readonly org: O
     id: init.member.id,
     orgId: init.member.orgId,
     roles: [init.member.role],
+    // The member's SAVED locale and zone. `@ultimat3/http`'s auth stage re-resolves the request's
+    // `ctx.locale` / `ctx.tz` with them as the `user` rung, so bruno (es, Europe/Madrid) on an
+    // English browser reads his own language and clock, and a language cookie still wins.
+    locale: init.member.locale,
+    tz: init.member.tz,
     facts: { member: init.member, org: init.org },
   });
 

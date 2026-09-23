@@ -22,6 +22,7 @@ import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { isCode, isTestPath, lineOf } from './lib/source-scan';
+import { scanStatusUnions } from './lib/status-unions';
 
 const SCRIPT = 'render-modes';
 
@@ -263,6 +264,47 @@ export function checkVocabulary(files: readonly SourceFile[]): readonly Finding[
         if (file.at === vocabulary.at && set.name === vocabulary.name) continue;
         if (isCopy(set, vocabulary)) findings.push(copyFinding(file, set, vocabulary));
       }
+    }
+  }
+  return [...findings, ...asyncStatusFindings(files)];
+}
+
+/**
+ * `AsyncState`'s four statuses, one declaration — `packages/core/src/async-state.ts`, moved there
+ * from `@ultimat3/ui` by plan 101 so realtime's hooks and ui's regions name one type. Its members
+ * are read OFF that module (a discriminated union exports no array to import), so this check
+ * types no member out; a module that stops declaring it is a vacuity finding, never silence.
+ */
+export const ASYNC_STATE_MODULE = 'packages/core/src/async-state.ts';
+
+/**
+ * THREE shared statuses, not `COPY_THRESHOLD`'s two: the members are ordinary words, and two is a
+ * coincidence the tree already has — `MutationStatus` and `BACKFILL_STATES` each share `pending`
+ * and `failed` and are not copies (measured 2026-09-22). Three is the whole set minus one, which is
+ * the drift shape: a copy that forgot `refreshing` still trips it.
+ */
+export const STATUS_COPY_THRESHOLD = 3;
+
+export function asyncStatusFindings(files: readonly SourceFile[]): readonly Finding[] {
+  const owner = files.find((file) => file.at === ASYNC_STATE_MODULE);
+  const declared = scanStatusUnions(owner?.text ?? '').find((u) => u.name === 'AsyncState');
+  if (declared === undefined) {
+    return [
+      vacuous(`${ASYNC_STATE_MODULE} does not declare AsyncState in a shape this scan can read`),
+    ];
+  }
+  const vocabulary: Vocabulary = {
+    name: 'AsyncState',
+    at: ASYNC_STATE_MODULE,
+    members: declared.members,
+    by: 'members',
+  };
+  const findings: Finding[] = [];
+  for (const file of files) {
+    if (file.at === ASYNC_STATE_MODULE) continue;
+    for (const set of [...scanLiteralSets(file.text), ...scanStatusUnions(file.text)]) {
+      if (overlap(set, vocabulary).length < STATUS_COPY_THRESHOLD) continue;
+      findings.push(copyFinding(file, set, vocabulary));
     }
   }
   return findings;

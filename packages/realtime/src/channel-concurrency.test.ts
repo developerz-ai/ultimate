@@ -3,9 +3,11 @@
 // transport subscription and written after it, so one topic opened two — the first orphaned, every
 // message on it delivered twice, and unreachable by `#release`, `close()` or a socket dying.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
-import { ChannelHub, type Topic, topic } from './channel';
+import { ChannelHub, type Topic } from './channel';
+import { channel } from './channel-decl';
+import { clearChannels } from './channel-registry';
 import {
   InProcessTransport,
   type Transport,
@@ -84,6 +86,42 @@ class SlowTransport implements Transport {
 
 const actor = (id: string): Actor => userActor({ id, orgId: 'o1' });
 
+/**
+ * What each test's subscribe policy answers — `org.<orgId>.<leaf>` is one declared channel whose
+ * policy asks this, so a test that used to install a guard now sets `decide`.
+ */
+let decide: (who: Actor | null) => boolean = () => true;
+beforeEach(() => {
+  decide = () => true;
+});
+afterAll(() => {
+  clearChannels();
+});
+
+const org = channel('conc', {
+  params: ['orgId', 'leaf'],
+  catchUp: { name: 'orgRead' },
+  events: true,
+  policy: {
+    kind: 'allow',
+    label: 'test-guard',
+    permissions: [],
+    children: [],
+    run: ({ actor: who }) =>
+      decide(who) ? { allowed: true } : { allowed: false, reason: 'denied', code: 'X_FORBIDDEN' },
+  },
+});
+
+const topic = (orgId: string, leaf: string): Topic => org.topic({ orgId, leaf });
+const paramsOf = (name: Topic) => {
+  const [, orgId = '', leaf = ''] = name.split('.');
+  return { orgId, leaf };
+};
+const subscribe = (hub: ChannelHub, socket: SyncSocket, name: Topic): Promise<Topic> =>
+  hub.subscribeChannel(socket, { kind: 'channel', channel: 'conc', params: paramsOf(name) });
+const publish = (hub: ChannelHub, name: Topic, event: { x: number; y: number }): Promise<void> =>
+  hub.publishEvent(org, paramsOf(name), event);
+
 function connect(sockets: SocketRegistry, who: Actor): { socket: SyncSocket; ws: FakeWs } {
   const ws = new FakeWs();
   const socket = new SyncSocket({ ws, clientBuildId: 'b', serverBuildId: 'b', actor: who });
@@ -96,12 +134,14 @@ describe('one topic is one transport subscription, however many sockets arrive a
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets });
-    hub.guard('org.>', () => true);
-    const name = topic('org', 'o1', 'cursors');
+    const name = topic('o1', 'cursors');
     const alice = connect(sockets, actor('alice'));
     const bob = connect(sockets, actor('bob'));
 
-    const both = Promise.all([hub.subscribe(alice.socket, name), hub.subscribe(bob.socket, name)]);
+    const both = Promise.all([
+      subscribe(hub, alice.socket, name),
+      subscribe(hub, bob.socket, name),
+    ]);
     transport.gate.resolve();
     await both;
 
@@ -110,7 +150,7 @@ describe('one topic is one transport subscription, however many sockets arrive a
 
     // The orphan's real cost: it is a second live handler on the same subject, so every message
     // is delivered twice to every socket on this node — for the life of the process.
-    await hub.publish(name, { x: 1, y: 1 });
+    await publish(hub, name, { x: 1, y: 1 });
     expect(alice.ws.frames).toHaveLength(1);
     expect(bob.ws.frames).toHaveLength(1);
   });
@@ -119,13 +159,12 @@ describe('one topic is one transport subscription, however many sockets arrive a
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets });
-    hub.guard('org.>', () => true);
-    const name = topic('org', 'o1', 'cursors');
+    const name = topic('o1', 'cursors');
     const alice = connect(sockets, actor('alice'));
 
     const twice = Promise.all([
-      hub.subscribe(alice.socket, name),
-      hub.subscribe(alice.socket, name),
+      subscribe(hub, alice.socket, name),
+      subscribe(hub, alice.socket, name),
     ]);
     transport.gate.resolve();
     await twice;
@@ -142,12 +181,14 @@ describe('one topic is one transport subscription, however many sockets arrive a
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets });
-    hub.guard('org.>', () => true);
-    const name = topic('org', 'o1', 'cursors');
+    const name = topic('o1', 'cursors');
     const alice = connect(sockets, actor('alice'));
     const bob = connect(sockets, actor('bob'));
 
-    const both = Promise.all([hub.subscribe(alice.socket, name), hub.subscribe(bob.socket, name)]);
+    const both = Promise.all([
+      subscribe(hub, alice.socket, name),
+      subscribe(hub, bob.socket, name),
+    ]);
     transport.gate.resolve();
     await both;
     hub.unsubscribe(alice.socket, name);
@@ -163,13 +204,12 @@ describe('one topic is one transport subscription, however many sockets arrive a
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets });
-    hub.guard('org.>', () => true);
-    const name = topic('org', 'o1', 'cursors');
+    const name = topic('o1', 'cursors');
     const alice = connect(sockets, actor('alice'));
 
     // Not awaited: `#reserve` has run, so the topic holds a slot, but `sub` is still `null` and the
     // guard has not answered. That is the one state `close()` cannot see into.
-    const subscribing = hub.subscribe(alice.socket, name);
+    const subscribing = subscribe(hub, alice.socket, name);
     expect(hub.topicCount).toBe(1);
     await hub.close();
     transport.gate.resolve();
@@ -180,7 +220,7 @@ describe('one topic is one transport subscription, however many sockets arrive a
     // `#release` looks the topic up, misses and returns, and the handler keeps delivering into a
     // hub that is gone for the life of the process.
     expect(transport.live).toBe(0);
-    await hub.publish(name, { x: 1, y: 1 });
+    await publish(hub, name, { x: 1, y: 1 });
     expect(alice.ws.frames).toHaveLength(0);
   });
 
@@ -188,11 +228,10 @@ describe('one topic is one transport subscription, however many sockets arrive a
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets });
-    hub.guard('org.>', () => true);
-    const name = topic('org', 'o1', 'cursors');
+    const name = topic('o1', 'cursors');
     const alice = connect(sockets, actor('alice'));
 
-    const subscribing = hub.subscribe(alice.socket, name);
+    const subscribing = subscribe(hub, alice.socket, name);
     await hub.close();
     transport.gate.resolve();
 
@@ -215,11 +254,10 @@ describe('one topic is one transport subscription, however many sockets arrive a
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets });
-    hub.guard('org.>', () => true);
-    const name = topic('org', 'o1', 'cursors');
+    const name = topic('o1', 'cursors');
     const alice = connect(sockets, actor('alice'));
 
-    const subscribing = hub.subscribe(alice.socket, name);
+    const subscribing = subscribe(hub, alice.socket, name);
     await hub.close();
     transport.gate.resolve();
     const thrown = await subscribing.then(
@@ -241,14 +279,14 @@ describe('one topic is one transport subscription, however many sockets arrive a
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets });
-    hub.guard('org.>', ({ actor: who }) => who?.id === 'alice');
-    const name = topic('org', 'o1', 'cursors');
+    decide = (who) => who?.id === 'alice';
+    const name = topic('o1', 'cursors');
     const alice = connect(sockets, actor('alice'));
     const mallory = connect(sockets, actor('mallory'));
 
     const both = Promise.allSettled([
-      hub.subscribe(alice.socket, name),
-      hub.subscribe(mallory.socket, name),
+      subscribe(hub, alice.socket, name),
+      subscribe(hub, mallory.socket, name),
     ]);
     transport.gate.resolve();
     const settled = await both;
@@ -256,7 +294,7 @@ describe('one topic is one transport subscription, however many sockets arrive a
     expect(settled[0]?.status).toBe('fulfilled');
     expect(settled[1]?.status).toBe('rejected');
     expect(hub.topicCount).toBe(1);
-    await hub.publish(name, { x: 1, y: 1 });
+    await publish(hub, name, { x: 1, y: 1 });
     expect(alice.ws.frames).toHaveLength(1);
     expect(mallory.ws.frames).toHaveLength(0);
 
@@ -275,11 +313,10 @@ describe('a batch of topic subscribes cannot outrun a cap', () => {
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets, maxTopicsPerSocket: 2 });
-    hub.guard('org.>', () => true);
     const alice = connect(sockets, actor('alice'));
 
     const batch = Promise.allSettled(
-      ['a', 'b', 'c', 'd'].map((leaf) => hub.subscribe(alice.socket, topic('org', 'o1', leaf))),
+      ['a', 'b', 'c', 'd'].map((leaf) => subscribe(hub, alice.socket, topic('o1', leaf))),
     );
     transport.gate.resolve();
     const settled = await batch;
@@ -295,15 +332,14 @@ describe('a batch of topic subscribes cannot outrun a cap', () => {
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets, maxTopicsPerNode: 2 });
-    hub.guard('org.>', () => true);
     const alice = connect(sockets, actor('alice'));
     const bob = connect(sockets, actor('bob'));
 
     const batch = Promise.allSettled([
-      hub.subscribe(alice.socket, topic('org', 'o1', 'a')),
-      hub.subscribe(bob.socket, topic('org', 'o1', 'b')),
-      hub.subscribe(alice.socket, topic('org', 'o1', 'c')),
-      hub.subscribe(bob.socket, topic('org', 'o1', 'd')),
+      subscribe(hub, alice.socket, topic('o1', 'a')),
+      subscribe(hub, bob.socket, topic('o1', 'b')),
+      subscribe(hub, alice.socket, topic('o1', 'c')),
+      subscribe(hub, bob.socket, topic('o1', 'd')),
     ]);
     transport.gate.resolve();
     const settled = await batch;
@@ -325,15 +361,15 @@ describe('a re-auth tells a denial from a guard that could not decide', () => {
   ): { hub: ChannelHub; sockets: SocketRegistry } => {
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport: new InProcessTransport(), sockets });
-    hub.guard('org.>', ({ actor: who }) => guard(who));
+    decide = guard;
     return { hub, sockets };
   };
 
   test('a denial drops the topic', async () => {
     const { hub, sockets } = rig((who) => who?.id === 'alice');
     const alice = connect(sockets, actor('alice'));
-    const name = topic('org', 'o1', 'cursors');
-    await hub.subscribe(alice.socket, name);
+    const name = topic('o1', 'cursors');
+    await subscribe(hub, alice.socket, name);
 
     const dropped = await hub.onActorChange(alice.socket, actor('mallory'));
 
@@ -349,8 +385,8 @@ describe('a re-auth tells a denial from a guard that could not decide', () => {
       return who !== null;
     });
     const alice = connect(sockets, actor('alice'));
-    const name = topic('org', 'o1', 'cursors');
-    await hub.subscribe(alice.socket, name);
+    const name = topic('o1', 'cursors');
+    await subscribe(hub, alice.socket, name);
 
     broken = true;
     const dropped = await hub.onActorChange(alice.socket, actor('alice-again'));
@@ -369,13 +405,13 @@ describe('a re-auth tells a denial from a guard that could not decide', () => {
       return true;
     });
     const alice = connect(sockets, actor('alice'));
-    const name: Topic = topic('org', 'o1', 'cursors');
-    await hub.subscribe(alice.socket, name);
+    const name: Topic = topic('o1', 'cursors');
+    await subscribe(hub, alice.socket, name);
     broken = true;
     await hub.onActorChange(alice.socket, actor('alice'));
     broken = false;
 
-    await hub.publish(name, { x: 1, y: 1 });
+    await publish(hub, name, { x: 1, y: 1 });
 
     expect(alice.ws.frames).toHaveLength(1);
   });

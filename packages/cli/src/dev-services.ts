@@ -40,7 +40,10 @@ const nonEmpty = (value: string | undefined): string | undefined =>
  * is a directory delete rather than a container dance.
  */
 export function resolveServices(root: string, env: Env): DevServices {
-  const stateDir = join(root, '.x');
+  // `ULTIMATE_STATE_DIR` relocates the whole of `.x/` — the embedded database, the local disk and
+  // the dev lock — for one process tree. It is how an e2e run boots the app on a THROWAWAY database
+  // (`e2e-app.ts`) instead of resetting the developer's own, beside a running `x dev`.
+  const stateDir = nonEmpty(env['ULTIMATE_STATE_DIR']) ?? join(root, '.x');
   const databaseUrl = nonEmpty(env['DATABASE_URL']);
   const natsUrl = nonEmpty(env['NATS_URL']);
   const s3Endpoint = nonEmpty(env['S3_ENDPOINT']);

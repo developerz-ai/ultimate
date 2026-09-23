@@ -14,6 +14,7 @@
 // are declared side-effecting too and are deliberately NOT anchored: each is reached by whatever
 // uses it, and anchoring `context.ts` alone measured +3,485 B on a browser chunk for a provider a
 // browser can never fire.
+import './core-error-codes';
 import './schema-error-codes';
 
 export type {
@@ -43,10 +44,14 @@ export {
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 export { assert, assertNever, type InvariantOptions, invariant } from './assert';
 export { type AsyncContext, asyncContext } from './async-context';
+/** The four shapes an async region can be in — produced by `realtime`, rendered by `ui`. */
+export type { AsyncState } from './async-state';
 export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
 export { backoffDelay } from './backoff';
 export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
+export type { FetchLike, TransportRequest } from './client-dispatch';
+export { IDEMPOTENCY_HEADER } from './client-dispatch';
 /**
  * Flight control for a typed client, and OPT-IN by construction: `@ultimat3/action`'s and
  * `@ultimat3/query`'s `client.ts` each name `ClientFlight` as a TYPE only, so a caller that never
@@ -61,6 +66,23 @@ export type {
   FlightPlan,
 } from './client-flight';
 export { createClientFlight, DEFAULT_CLIENT_RETRY, isTransientFailure } from './client-flight';
+export type { ActionRoute } from './client-paths';
+export {
+  actionPath,
+  actionRoute,
+  pluralize,
+  QUERY_PATH_PREFIX,
+  queryPath,
+  splitWords,
+} from './client-paths';
+export type { TransportFailure } from './client-problem';
+/**
+ * The browser seam (plan 101): ONE HTTP function, the records envelope it decodes, the per-tab
+ * page handle records land in, and the principal fence every client layer subscribes to.
+ */
+export type { ClientScope } from './client-scope';
+export { onRescope, rescope } from './client-scope';
+export { clientTransport } from './client-transport';
 /** What a typed client puts on the wire. `retryForStatus` is what fills a failure's `retry`. */
 export type { WireAnswer } from './client-wire';
 export { FRAMEWORK_CODE, problemOf, retryForStatus, traceHeaders } from './client-wire';
@@ -86,6 +108,8 @@ export type {
 export { defineConfig, INBOX_RETENTION_KEYS } from './config';
 export type { PwaColors, PwaConfig, PwaOfflineConfig, PwaSchemeColors } from './config-pwa';
 export { PWA_COLOR_KEYS, PWA_SCHEMES } from './config-pwa';
+export type { ConflictPolicy, ResolveConflictOptions, Row } from './conflict-policy';
+export { resolveConflict } from './conflict-policy';
 export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
 export {
   createContext,
@@ -521,7 +545,24 @@ export type { Direction } from './locale-direction';
 export { directionOf, isRtl } from './locale-direction';
 export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
 export { nearestName } from './nearest-name';
+/** The message pwa's `sw.js` posts and realtime's outbox listens for. */
+export { OUTBOX_DRAIN_MESSAGE, type OutboxDrainMessage } from './outbox-drain';
+/** The `<meta name>`s render writes and the page client, realtime and pwa read. */
+export {
+  APP_UPDATE_MESSAGE,
+  CLIENT_BUILD_META,
+  CLIENT_PERSIST_META,
+  CLIENT_SCOPE_HEADER,
+  CLIENT_SCOPE_META,
+  CLIENT_SYNC_META,
+  CLIENT_SYNC_WORKER_META,
+} from './page-meta';
 export { type CappedBody, readWithinLimit } from './read-capped';
+export type { RecordEnvelope, RecordRows } from './record-envelope';
+export { decodeRecordEnvelope, encodeRecordEnvelope, RECORDS_HEADER } from './record-envelope';
+export { RECORDS_OPENAPI_HEADER, recordEnvelopeSchema } from './record-envelope-openapi';
+export type { PageClient, RecordSink } from './record-sink';
+export { pageClient } from './record-sink';
 export type {
   ModuleRegistrar,
   PrimitiveFactory,
@@ -590,3 +631,9 @@ export {
   webhookSignature,
   webhookSigningString,
 } from './webhook-signature';
+/**
+ * A write's public name — the digest of its idempotency key — and the server scope that carries it
+ * from `@ultimat3/action`'s HTTP projection to the layers that stamp it on a `records` frame.
+ */
+export { isWriteDigest, WRITE_DIGEST_LENGTH, writeDigest } from './write-digest';
+export { currentWriteOrigin, WRITE_ORIGIN_WAL_PREFIX, withWriteOrigin } from './write-origin';

@@ -57,7 +57,7 @@ export const NODE_PINS_FILE = 'scripts/lib/node-import-pins.ts';
 export const NODE_IMPORT_PINS: Readonly<Record<string, number>> = {
   admin: 1,
   ai: 9,
-  cli: 94,
+  cli: 93,
   core: 17,
   db: 8,
   entity: 1,

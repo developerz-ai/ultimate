@@ -1,7 +1,12 @@
 /**
- * One post, for its own org. `ssr` rather than `stream`: the page is one query, and an author
- * arriving from the editor must never see a cached draft body. Caching a per-request render is a
- * correctness bug, so `offline` is `network-only` with the fallback route behind it.
+ * One post, for its own org. `ssr` rather than `stream`: the page is one query.
+ *
+ * `offline: 'runtime'` — network first, the device's copy only when the network fails — so a post
+ * read once opens again in a tunnel, which is what the offline like on this page is for. A render
+ * cached on the device is one principal's view, and it can only ever be shown to that principal:
+ * sign-out (`endSession`, `app/auth/actions.ts`) answers `Clear-Site-Data: "cache", "storage"`,
+ * which drops the service worker's caches, and the page boot wipes any other principal's stored
+ * record scopes before it reads one. It was `network-only` while neither was true.
  */
 
 import { useT } from '@postly/i18n';
@@ -13,11 +18,11 @@ import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 import type { Api } from '../../../api';
 import { useActor, useCan } from '../../../shared/actor';
-import { client, queries } from '../../../shared/client';
+import { memberQueries } from '../../../shared/client';
+import { pluralFormsOf } from '../../../shared/plural-forms';
 import { oneRow } from '../../../shared/rows';
-import { syncUrlFrom } from '../../../shared/sync-url';
 import { wireDate } from '../../../shared/wire';
-import { Layout } from '../../layout';
+import { Layout, updateBannerIsland } from '../../layout';
 import { useViewer } from '../../viewer-context';
 import { LikeButton } from '../ui/like-button';
 import styles from './page.module.scss';
@@ -31,10 +36,14 @@ import styles from './page.module.scss';
 const COMMENT_ACTION = 'createComment' satisfies keyof Api['actions'];
 const COMMENT_ENDPOINT = derivePath(COMMENT_ACTION).path;
 
+/** `publishPost` → `POST /api/posts/publish`, by the same rule and for the same reason. */
+const PUBLISH_ENDPOINT = derivePath('publishPost' satisfies keyof Api['actions']).path;
+
 /**
- * The page's one island, declared ABOVE `defineRoute` so the route can drain it — the same shape
- * `/feed` and `/settings` use. `props` are the exact keys the browser receives, as JSON and
- * already translated: a catalog cannot cross the wire and neither can a callback.
+ * The page's two islands, declared ABOVE `defineRoute` so the route can drain them. `props` are the
+ * exact keys the browser receives, as JSON and already translated: a catalog cannot cross the wire
+ * and neither can a callback. Both show `posts:<id>` — the header badge and the control read ONE
+ * record out of the page's store, so a like moves both (plan 101: one record, many places).
  *
  * Named `like.island.tsx` and not `[id].island.tsx`: the two precedents name an island after their
  * directory because there the directory IS the feature, and this one is a route parameter —
@@ -43,8 +52,16 @@ const COMMENT_ENDPOINT = derivePath(COMMENT_ACTION).path;
  */
 const Like = island({
   src: './like.island.tsx',
-  props: ['postId', 'orgId', 'likeCount', 'syncUrl', 'buildId', 'actorId', 'labels'],
+  props: ['postId', 'orgId', 'likeCount', 'labels'],
 });
+
+const LikesBadge = island({
+  src: './likes-badge.island.tsx',
+  props: ['postId', 'likeCount', 'likes'],
+});
+
+/** The layout's update banner — an island of THIS route, so it is declared here. */
+const Banner = updateBannerIsland('../../update-banner.island.tsx');
 
 export const config = defineRoute({
   render: 'ssr',
@@ -55,46 +72,39 @@ export const config = defineRoute({
    * `postById` evaluates against the org this page reads under.
    */
   policy: { permission: 'post:read' satisfies KnownPermission },
-  offline: 'network-only',
+  offline: 'runtime',
   /**
-   * `idle`, and the reason this line used to give is no longer true.
+   * `idle`, decided on BEHAVIOUR, and the bytes agree it is close to free: the `idle` runtime is
+   * 1,744 B against `interaction`'s 1,629 (measured 2026-09-22, `hydrateRuntimeBytes`) — 115 B.
    *
-   * It said the interaction runtime replays the waking event with `ev.target.dispatchEvent(...)`
-   * onto a node this island's `mount` had already detached — the "the button does nothing on the
-   * first press" failure. That WAS the defect, and it was fixed on 2026-08-25: the runtime now
-   * re-aims (`aim()` in `packages/render/src/hydrate.ts`) at the original target when it survived
-   * the mount, else at whatever the hit test finds under the pointer, else at the island root.
+   * Both now catch a click on the server's markup before the chunk arrives and replay it once the
+   * island mounts (`catchUp` in `packages/render/src/hydrate.ts`, re-aimed at whatever is under
+   * the pointer when the shell was replaced) — which is why `ui/like-button.tsx`'s button is no
+   * longer `disabled`. So the first press is safe either way, and that is no longer the argument.
    *
-   * It also claimed "every island's `mount` clears the wrapper first", which was never true —
-   * `site/pricing/contact-sales.island.tsx` deliberately takes the server's own `<form>` over
-   * instead, and it is the one island in this app that actually derives `interaction`.
-   *
-   * So `interaction` is available here now, and `idle` is a BUDGET choice rather than a
-   * correctness one: the interaction runtime is 1,251 bytes against `idle`'s 774, which would
-   * put this route at 47,909 of 51,200. Re-measure before switching — do not adjust the numbers
-   * in the comment below by arithmetic.
+   * The argument is that this page is LIVE before anyone touches it. The like control subscribes
+   * the org's `posts` channel, so a like from another tab or another member moves both counts with
+   * no click here ("one record, many places"); `interaction` would boot nothing until the reader
+   * pressed something, and every like elsewhere would be invisible until then. 115 B buys that.
    */
   hydrate: 'idle',
   /**
-   * Measured 2026-09-08, not guessed: the island chunk is 52,824 bytes (`buildIslands` in
-   * `like.island.test.ts` reports it) plus the 774-byte `idle` hydration runtime
-   * (`hydrateRuntimeBytes`), so 53,598 against 57,344. Re-measure rather than adjust, and expect
-   * the chunk to move by up to the 512-byte shaker flap `island-bytes.test.ts` records: this
-   * island reaches `@ultimat3/realtime`. Nearly all of it is the Solid runtime, `LiveClient` and
-   * `OfflineQueue`; the control's own compiled markup is a few hundred bytes, which is why this
-   * island renders plain elements rather than `@ultimat3/ui`'s `Button` — that component alone
-   * costs more than the headroom left here.
-   *
-   * **This line said `50kb` and `46,658` until 2026-09-08, and both numbers were wrong in
-   * different ways.** The chunk had drifted to 48,972 with nothing in this app touched — a stale
-   * measurement under a still-true assertion — and then tier 3 was turned on, which costs a
-   * measured 3,852 bytes: 1,934 for `MemoryLocalStore`, 212 for `RebaseLog`, and 1,706 for the
-   * signal that reads the optimistic row plus the second translated count. That is the price of
-   * "my own click feels instant", and it is paid in the one island that writes; `/feed` reads and
-   * carries none of it. Every one of those four numbers came out of `buildIslands`, one import at
-   * a time — never arithmetic on the number above it.
+   * measured: 137,060 B (2026-09-22; `x build`'s `buildIslands`, `buildPageBoot`,
+   * `hydrateRuntimeBytes`) — the like control 78,050 + the header's count 26,927 + the update
+   * banner 712 + the page boot 29,627 + the `idle` runtime 1,744, against 137,216.
+   * Counted the way the `budgets` step sums a document (`packages/cli/src/budgets.ts`): every
+   * executable `<script src>` it carries — the page boot included, only `/x-sw-register.js` is
+   * exempt (`FRAMEWORK_SCRIPTS`) — plus every island chunk and the inline hydration runtime.
+   * why: "one record, many places" — two islands read `posts:<id>` from the page's store, and a
+   * like is optimistic, survives a reload offline and replays once (`posts` is `persist: true`);
+   * the like control also carries the socket's "a new build is live" notice, and the layout's
+   * banner — the service worker's half — is its own 712 B island. Each island is its own bundle
+   * (`splitting: false`, plan 101 decision 12), so each carries its own copy of the page's
+   * realtime — 26,444 B of the header's count is the like control's too. Down from 145,000 when
+   * the outbox left the like control for the page boot (7,940 B); the shared runtime is #505, and
+   * this number comes DOWN again when it lands.
    */
-  budget: { js: '56kb', lcp: 2000 },
+  budget: { js: '134kb', lcp: 2000 },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.
@@ -106,7 +116,7 @@ export const config = defineRoute({
    */
   load: async ({ params }) => {
     const postId = params.id ?? '';
-    const post = oneRow(await queries.postById({ orgId: useActor().orgId, postId }), postId);
+    const post = oneRow(await memberQueries.postById({ orgId: useActor().orgId, postId }), postId);
     // Both instants are rehydrated here, where the wire ends: the read answered JSON, so what
     // `<DateTime>` would otherwise be handed is the ISO string, not the `Date` the row type says.
     return {
@@ -126,12 +136,11 @@ export const config = defineRoute({
 });
 
 /** The row the loader unwrapped, not the page of rows the read answered. */
-type PostPage = Awaited<ReturnType<typeof queries.postById>>[number];
+type PostPage = Awaited<ReturnType<typeof memberQueries.postById>>[number];
 
 export function Page(props: { readonly data: PostPage }): JSX.Element {
   const t = useT();
   const viewer = useViewer();
-  const actor = useActor();
 
   /**
    * The permission half of the same `post:publish` rule the action enforces, so the button is
@@ -140,9 +149,11 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
    * call, and that decision, not this one, is the authoritative answer.
    */
   const canPublish = useCan('post:publish');
+  /** Every plural form of the count, for both islands: the count they show can be any number. */
+  const likes = pluralFormsOf(t, 'app.post.likes');
 
   return (
-    <Layout>
+    <Layout banner={Banner}>
       <article class={styles.article}>
         <Stack gap={4}>
           <h1>{props.data.title}</h1>
@@ -153,6 +164,10 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
 
           <p class={styles.meta}>
             {t('site.blog.by', { name: props.data.authorName })}
+            {/* The header's count: the same record the like control below writes. */}
+            <LikesBadge postId={props.data.id} likeCount={props.data.likeCount} likes={likes}>
+              <span>{t('app.post.likes', { count: props.data.likeCount })}</span>
+            </LikesBadge>
             <Show when={props.data.publishedAt}>
               {(publishedAt) => (
                 <DateTime value={publishedAt()} timeZone={viewer.zone} dateStyle="long" />
@@ -171,32 +186,28 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
               postId={props.data.id}
               orgId={props.data.orgId}
               likeCount={props.data.likeCount}
-              syncUrl={syncUrlFrom(process.env)}
-              buildId={process.env['BUILD_ID'] ?? 'dev'}
-              actorId={actor.id}
               labels={{
                 like: t('app.post.like'),
-                count: t('app.post.likes', { count: props.data.likeCount }),
-                /*
-                  The count one like higher, translated HERE because the catalog is here: the
-                  island applies the optimistic twin the moment this member clicks, and a browser
-                  that built the string itself would be a second translator with no plural rules.
-                  One string per state the twin can reach, and it can reach exactly two.
-                */
-                countWithMine: t('app.post.likes', { count: props.data.likeCount + 1 }),
+                likes,
                 queued: t('errors.offlineQueued'),
+                update: t('errors.updateAvailable'),
+                reload: t('errors.updateAction'),
               }}
             >
               <LikeButton likeCount={props.data.likeCount} />
             </Like>
+            {/*
+              A native form, not an `onClick`: this page is server-rendered and ships no island for
+              it, so a handler here never reached a browser and the button did nothing (plan 101,
+              slice 16). The form posts to the action's derived route and works with scripting off,
+              the same shape as the comment form below — and costs the route zero bytes.
+            */}
             <Show when={props.data.status === 'draft' && canPublish}>
-              <Button
-                onClick={() =>
-                  client.publishPost({ postId: props.data.id, orgId: props.data.orgId })
-                }
-              >
-                {t('app.post.publish')}
-              </Button>
+              <form method="post" action={PUBLISH_ENDPOINT}>
+                <input type="hidden" name="postId" value={props.data.id} />
+                <input type="hidden" name="orgId" value={props.data.orgId} />
+                <Button type="submit">{t('app.post.publish')}</Button>
+              </form>
             </Show>
           </div>
         </Stack>

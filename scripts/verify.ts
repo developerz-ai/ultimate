@@ -26,6 +26,8 @@ import {
   VERIFY_STEPS,
 } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
+// The leaf, not the barrel (DX ledger #10): a guard must load while a package is mid-edit.
+import { checkErrorCodesThrown } from '../packages/cli/src/error-unthrown';
 import { benchClaimFindings } from './bench-claims';
 import {
   adminFlattenerFindingFor,
@@ -196,6 +198,7 @@ export const errorCodeDocs: HostCheck = async (root) => {
   return [
     ...(await checkErrorCodeDocs(root, ERROR_REFERENCE)),
     ...(await checkErrorCodeRegistry(root, ERROR_REFERENCE, known)),
+    ...(await checkErrorCodesThrown(root, ERROR_REFERENCE)),
   ];
 };
 

@@ -37,6 +37,7 @@ import { UltimateError } from './errors';
 import { finiteOption } from './finite-option';
 import { traceId as newTraceId, uuid } from './ids';
 import { type Logger, logger as rootLogger, setLoggerContextFields } from './logger';
+import { installTraceHeaders } from './outbound-headers';
 import { type Role, resolveRole } from './roles';
 import { installedServices, isManagedService } from './service';
 
@@ -216,6 +217,8 @@ export function createContext(init: CtxInit = {}): Ctx {
 }
 
 export function runWithContext<T>(ctx: Ctx, fn: () => T): T {
+  // A request scope is what gives an outbound typed call a budget to forward; see the module.
+  installTraceHeaders();
   return requestContext.run(ctx, fn);
 }
 

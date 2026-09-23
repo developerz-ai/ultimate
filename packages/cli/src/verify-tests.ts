@@ -19,6 +19,7 @@ import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
 import { discoverTests } from './test-select';
 import { defaultWorkers } from './test-workers';
+import { withE2eApp } from './verify-e2e';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
 import { runParallel } from './verify-test-run';
@@ -162,6 +163,12 @@ const ignoreFlags = (patterns: readonly string[]): readonly string[] =>
 export const typeFiltersOf = (type: Exclude<TestType, 'unit'>): readonly string[] =>
   OWNERSHIP.filter(([owner]) => owner === type).map(([, filter]) => filter);
 
+/**
+ * An e2e test's own budget: a first navigation waits on `x dev` compiling the route and its island,
+ * which bun's default 5 s does not cover — a timeout there reads as an app bug that is not one.
+ */
+export const E2E_TEST_TIMEOUT_MS = 60_000;
+
 /** Unit is everything the typed suites do not claim, so no test can fall between two steps. */
 export const testStepCommand = (type: TestType): readonly string[] =>
   type === 'unit'
@@ -173,6 +180,7 @@ export const testStepCommand = (type: TestType): readonly string[] =>
     : [
         'bun',
         'test',
+        ...(type === 'e2e' ? [`--timeout=${String(E2E_TEST_TIMEOUT_MS)}`] : []),
         ...ignoreFlags([...NEVER_A_TEST, ...disownedBy(type)]),
         ...typeFiltersOf(type),
       ];
@@ -203,10 +211,19 @@ export const resetTestDiscovery = (): void => discovered.clear();
 const runSerial = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome> => {
   const command = testStepCommand(type);
   const envOverrides = testEnvOverrides(ctx.root, ctx.env ?? Bun.env);
-  const result = await ctx.runner(command, {
-    cwd: ctx.root,
-    ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
-  });
+  const exec = (e2e: { command: readonly string[]; env: typeof envOverrides }) =>
+    ctx.runner(e2e.command, {
+      cwd: ctx.root,
+      ...(Object.keys(e2e.env).length === 0 ? {} : { env: e2e.env }),
+    });
+  // The e2e step drives a real browser against the app it spawns, when this machine has one.
+  const result =
+    type === 'e2e'
+      ? await withE2eApp(
+          { root: ctx.root, isApp: isApp(ctx.root), command, env: envOverrides },
+          exec,
+        )
+      : await exec({ command, env: envOverrides });
   return {
     ...fromExec(result, {
       code: 'X_TEST_FAILED',

@@ -18,7 +18,9 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./server": "./src/server.ts"
+    "./boot": "./src/boot.ts",
+    "./server": "./src/server.ts",
+    "./sync-worker": "./src/sync-worker.ts"
   },
   "files": [
     "src",
@@ -37,6 +39,7 @@
   },
   "dependencies": {
     "@ultimat3/core": "20.2.1",
+    "@ultimat3/entity": "20.2.1",
     "@ultimat3/query": "20.2.1",
     "nats": "2.29.3"
   }

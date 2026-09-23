@@ -102,6 +102,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_E2E_LOCATOR_AMBIGUOUS:
     'x test e2e --json   # the fix line carries the same call with .first() on it',
   X_E2E_SERVICE_WORKER_ABSENT: 'x build --target static --json',
+  X_E2E_APP_FAILED: 'x dev --json',
   // The four raw-CDP codes. `x doctor` for the missing browser, because that is the command whose
   // whole job is reporting what this machine does not have; the other three are raised inside a
   // running suite, so the runnable half is the command that re-runs it.
@@ -122,6 +123,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x errors list --json   # register the code in its package src/errors.ts, or move its row under "Reserved codes"',
   X_ERROR_CODE_UNRESOLVED:
     'x verify --json   # the finding names the file, the line and the name it could not resolve',
+  X_ERROR_CODE_UNTHROWN:
+    'x errors explain X_ERROR_CODE_UNTHROWN --json   # then mark the row "registered, thrown by nothing since <version>"',
   X_CLI_UNEXPECTED: 'x doctor --json',
   X_TYPECHECK_FAILED: 'bunx tsc -b --pretty false',
   X_LINT_FAILED: 'bunx biome check --write .',

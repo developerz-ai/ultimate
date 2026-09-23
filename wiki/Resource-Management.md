@@ -91,10 +91,10 @@ leaked connection discovered under load.
 
 ## The same pattern outside the database
 
-Realtime subscription handles are `Disposable` too, the same aliasing trick: `LiveHandle`
-(`packages/realtime/src/client.ts`) and the callable `Unsubscribe` type both set
-`[Symbol.dispose]` to the exact same function as `unsubscribe()`, so `using feed = useLive(...)`
-(`packages/realtime/src/hooks.ts`) tears a subscription down on scope exit the same way a `using
+Realtime read hooks are `Disposable` too, the same aliasing trick. In 21.0.0 (unreleased) the
+accessors `useQuery` and `useRecord` return set `[Symbol.dispose]` to the exact same function as
+`release()`, so `using feed = useQuery(...)` (`packages/realtime/src/use-query.ts`) tears a
+subscription down on scope exit the same way a `using
 connection` returns a pin — different subsystem, same idiom. See [Realtime](Realtime).
 
 ## Bounded, not disposable

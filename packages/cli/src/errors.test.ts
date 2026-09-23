@@ -5,7 +5,12 @@
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { requireBunVersion } from './app-root';
-import { BunVersionError, LocalDiskUnsafeError, VerifyFailedError } from './errors';
+import {
+  BunVersionError,
+  FrameworkScriptBuildFailedError,
+  LocalDiskUnsafeError,
+  VerifyFailedError,
+} from './errors';
 import { thrownBy } from './thrown-by';
 
 describe('VerifyFailedError', () => {
@@ -59,5 +64,15 @@ describe('LocalDiskUnsafeError', () => {
     // The fix has to run verbatim: the volume rung is behind a `#`, so a paste is one command.
     expect(error.fix).toStartWith('export S3_ENDPOINT=https://s3.example.com S3_BUCKET=');
     expect(error.fix.slice(0, error.fix.indexOf('#'))).not.toContain('\n');
+  });
+});
+
+describe('FrameworkScriptBuildFailedError', () => {
+  test('one code, and the cause names WHICH framework script would not build', () => {
+    for (const what of ['sync worker', 'page boot'] as const) {
+      const error = new FrameworkScriptBuildFailedError({ what, entry: 'src/x.ts', logs: 'boom' });
+      expect(error.code).toBe('X_BUILD_FAILED');
+      expect(error.cause).toContain(`the ${what} (src/x.ts)`);
+    }
   });
 });

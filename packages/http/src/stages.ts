@@ -188,16 +188,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
      * get one answer in the framework rather than one per package.
      */
     locale: (request, ctx) => {
-      const cookies = request.header('cookie');
-      ctx.locale = resolveLocale({
-        header: request.header('accept-language'),
-        cookie: readCookie(cookies, config.locale.cookie),
-      }).locale;
-      ctx.tz = resolveTimeZone({
-        cookie: readCookie(cookies, config.tz.cookie),
-        header: request.header(config.tz.header),
-      }).zone;
-      ctx.headers.set('content-language', ctx.locale);
+      resolvePreferences(request, ctx, config);
       return undefined;
     },
 
@@ -206,6 +197,11 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         // The hook says "anonymous" with null; the context says it with core's anonymous actor,
         // because `asCtx` publishes this object as a `Ctx` and `Ctx.actor` is never null.
         ctx.actor = (await hooks.authenticate(request, ctx)) ?? anonymousActor();
+        // The `user` rung the `locale` stage could not know: re-resolved through the same owners,
+        // so a cookie the reader chose still beats a saved locale where i18n's order says it does.
+        if (ctx.actor.locale !== undefined || ctx.actor.tz !== undefined) {
+          resolvePreferences(request, ctx, config);
+        }
       }
       if (ctx.route?.meta.auth === 'required' && isAnonymous(ctx.actor)) {
         throw unauthenticated(ctx.url.pathname);
@@ -465,3 +461,28 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
   };
   return table;
 };
+
+/**
+ * `ctx.locale`, `ctx.tz` and `content-language` from every source the request carries — the
+ * cookie, the header and, once `auth` has run, the actor's saved preference. One function for both
+ * stages, so the order is always the owners' (`resolveLocale`, `resolveTimeZone`) and never this
+ * file's.
+ */
+function resolvePreferences(
+  request: UltimateRequest,
+  ctx: RequestContext,
+  config: HttpConfig,
+): void {
+  const cookies = request.header('cookie');
+  ctx.locale = resolveLocale({
+    header: request.header('accept-language'),
+    cookie: readCookie(cookies, config.locale.cookie),
+    user: ctx.actor.locale,
+  }).locale;
+  ctx.tz = resolveTimeZone({
+    cookie: readCookie(cookies, config.tz.cookie),
+    header: request.header(config.tz.header),
+    user: ctx.actor.tz ?? null,
+  }).zone;
+  ctx.headers.set('content-language', ctx.locale);
+}
