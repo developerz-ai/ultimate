@@ -76,9 +76,9 @@ slices:
     status: not_started
     percent: 0
   - file: 18-major-22.md
-    tier: 0
+    tier: 6        # cross-tier release slice; 6 sorts it after every tier-0–5 slice, as overview.md requires
     status: not_started
     percent: 0
 evidence: []
-notes: "Two audit passes at 5262dc32 (21.0.0), 18 agents. Decisions pending in 18-major-22.md rows e, f, g, h, i."
+notes: "Two audit passes at 5262dc32 (21.0.0), 18 agents. Decisions pending in 18-major-22.md rows e, f, g, h."
 last_updated: 2026-09-23

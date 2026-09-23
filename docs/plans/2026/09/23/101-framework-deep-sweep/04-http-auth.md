@@ -17,7 +17,7 @@ once. A public error body never carries text the server did not write.
 | f | every 4xx is logged at `error` | `packages/http/src/stages.ts:367` | `status < 500` logs at `warn` (401/403/429) or `info` (404/400). Grep `docs/ops/03-observability.md` for alert rules keyed on level and update them | minor |
 | g | a failing userinfo or GitHub-emails fetch puts the thrown error's text (which can hold internal DSNs) into the public 502 body | `packages/auth/src/oauth-profile.ts:82-88` → `oauth-route.ts` `publicBody` | Do what `oauth-exchange.ts:208-221` does: log `auth.oauth.userinfo_fetch_failed` with `renderThrowable`, and use fixed prose in `detail` | patch |
 | h | `providerDetail(response,'coded-only')` still echoes `parsed.message`, which is not an OAuth field. A gateway echoing the request body leaks `client_secret` | `packages/auth/src/oauth-exchange.ts:136` | Under `coded-only`, read only `error` and `error_description` | patch |
-| i | `issueApiKey({ env: 'live_eu' })` issues a key `parseApiKey` refuses | `packages/auth/src/api-keys.ts:35` | Refuse an empty `env` or one containing `_` at issue time, with a coded config error | patch |
+| i | `issueApiKey({ env: 'live_eu' })` issues a key `parseApiKey` refuses | `packages/auth/src/api-keys.ts:35` | Refuse an empty `env` or one containing `_` at issue time: `X_CONFIG_INVALID` (exists in auth), cause `api key env "<env>" contains "_", which parseApiKey splits on`, fix `pass env matching ^[a-z0-9-]+$ to issueApiKey (e.g. 'live-eu')` | patch |
 | j | `linkAccount` on an existing (provider, account) pair: Postgres keeps the old `user_id` but returns the new object, while memory replaces the row. `listApiKeys` ordering also differs (suspected) | `packages/auth/src/builtin-adapter.ts:275` vs `memory-adapter.ts:213` | Add both cases to `adapter-parity.test.ts`, then align memory to Postgres | patch |
 | k | the deadline fires while the handler keeps running, and a late finish can overwrite `ctx.response` (suspected) | `packages/http/src/pipeline.ts` `execute` | Reproduce with a gated handler. If real, freeze `ctx.response` after the deadline answer | patch |
 
@@ -28,6 +28,7 @@ once. A public error body never carries text the server did not write.
 
 ## Tests
 - `bun test packages/http/src packages/auth/src`
+- h: in `oauth-route.test.ts`, drive a parsed token-endpoint answer `{"message":"…client_secret=SECRET…"}` through the route and assert the public body omits `SECRET`. A separate case asserts a normal `error_description` is still shown (it is an allowed OAuth field).
 - New cases: `pipeline-cache.test.ts` (a), `locale-stage.test.ts` (b), `error-page.test.ts` (c), `peer-identity.test.ts` (d, three headers), `oauth-route.test.ts` (g, h), `api-keys.test.ts` (i).
 
 ## Done when

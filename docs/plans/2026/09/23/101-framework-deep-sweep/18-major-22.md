@@ -19,13 +19,13 @@ manual edit. Plan 102's majors (`ai.mcp.path`, admin tool names, `AuditRecord.ac
 | f | prune unreferenced barrel exports. `cli` has 230 of 355 unreferenced. Others: `auth` 112/198, `scraping` 110/160, `ui` 131/246, `jobs` 87/195. Error classes stay (apps use `instanceof`). `reset*` test hooks and internals move to an `./internal` subpath. Delete `ts-scan.ts:37-39`'s re-export of core masks, and point `scripts/` at leaf modules | each `src/index.ts` | import from `./internal` or stop using | **yes**: how aggressive to be. Recommend `cli` fully, and the others' non-error internals only |
 | g | auth tables: fold `X_USERS_MIGRATION_1_3` (`auth/src/tables.ts:52`, applied by nothing) into the boot DDL (`cli/src/framework-schema.ts:40,94`). Delete the per-table `X_*_TABLE` exports and the README "paste into a migration" section (`auth/README.md:466-472`) | `packages/auth/src/tables.ts:1-3` | delete any hand-pasted auth migration; boot owns it | **yes**: confirm boot may `add column if not exists` on a live users table |
 | h | `cli/src/drift.ts:31`'s private canonical serializer emits `"key":null` where core's drops the key, contradicting its own comment. Switch to `canonicalJson`, which re-stamps every app's `.hash` sidecars | `packages/cli/src/drift.ts:31` | run `x db gen` once after upgrading, to re-stamp | **yes**: ship it with this major (recommended) or defer |
-| i | `t.date` refuses non-ISO strings (01 a), if not shipped as a patch | 01 a | pass ISO-8601 | **yes**: patch (a bug fix) or major. Recommend major, because apps may accept user-typed dates |
+| i | `t.date` refuses non-ISO strings (01 a) | 01 a | pass ISO-8601 | no: **major**. `t.date` accepts `Date \| string \| number` today and rejecting strings changes that input contract |
 | j | `invokeAdminAction` drops the `expectedConfirmation` input (09 a derives it) | `packages/admin/src/action-gate.ts` | stop passing it | no |
 | k | drop the `x-cache-tags` header (02 k), if anything external reads it | `packages/http/src/response.ts:211` | read `Surrogate-Key`/`Cache-Tag` | no |
 | l | plan 102's four majors | plan 102 rows 3, 6, 7, 13 | per 102 | per 102 |
 
 ## Steps
-1. Decide rows e, f, g, h and i first (record each in `status.yml` `notes`).
+1. Decide rows e, f, g and h first (record each in `status.yml` `notes`).
 2. One PR per row, each with its `BREAKING —` entry and `wiki/Upgrading.md` row. The in-flight major's count is checked by `changelog-check` (`[Unreleased]` `BREAKING —` count).
 3. Update both tracked apps in the same PR as each row (`bun run scripts/reference-app-gate.ts`).
 4. Release per `PUBLISHING.md` with `scripts/release.ts --bump major` (slice 15 hardened it).

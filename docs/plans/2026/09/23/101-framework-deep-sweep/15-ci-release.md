@@ -15,10 +15,10 @@ can be resumed. Every printed command is the safe form.
 | d | a failed publish cannot be resumed: the re-run hits E403 on the first package already published | `release.yml:175` | Skip a package where `npm view "$name@$version" version` already answers, and log it |
 | e | actions in the `id-token: write` job are pinned by tag | `release.yml:75,86` | Pin `actions/checkout` and `actions/setup-node` to SHAs, as `oven-sh/setup-bun` already is |
 | f | `registry-audit.yml` has no `timeout-minutes` (default 6 h), and the checkout keeps the `issues: write` token during `bun install` | `.github/workflows/registry-audit.yml:33-35` | `timeout-minutes: 10`, `persist-credentials: false` |
-| g | `deploy-social-demo.yml` polls up to 10 min, which is shorter than `reference-app-verify`'s 15-min timeout | `.github/workflows/deploy-social-demo.yml:90` | Trigger on `workflow_run` of `ci.yml` (conclusion `success`, branch `main`) |
+| g | `deploy-social-demo.yml` polls up to 10 min, which is shorter than `reference-app-verify`'s 15-min timeout | `.github/workflows/deploy-social-demo.yml:90` | Trigger on `workflow_run` of `ci.yml` (conclusion `success`, branch `main`), and check out `ref: ${{ github.event.workflow_run.head_sha }}`, so the image tag (`git rev-parse HEAD`, `:72`) is the commit CI passed |
 | h | `release.ts`'s "next" line prints `tag v${version}` with no `-a` | `scripts/release.ts:423` | Print the exact annotated-tag command from row c |
-| i | `release.ts` rewrites 47 files without checking the tree is clean | `scripts/release.ts:64-89` | Refuse a dirty tree (`git status --porcelain`) with `X_RELEASE_TREE_DIRTY` |
-| j | `--version` accepts a version at or below the current one, and `--bump` is silently ignored when both are given | `scripts/release.ts` `readReleaseVersion` | Refuse both cases with `X_RELEASE_VERSION_INVALID` |
+| i | `release.ts` rewrites 47 files without checking the tree is clean | `scripts/release.ts:64-89` | Refuse a dirty tree (`git status --porcelain`) with `X_RELEASE_TREE_DIRTY` (cause lists the dirty paths, fix `git stash -u && bun run scripts/release.ts <same args>`) |
+| j | `--version` accepts a version at or below the current one, and `--bump` is silently ignored when both are given | `scripts/release.ts` `readReleaseVersion` | Refuse both cases with `X_RELEASE_VERSION_INVALID` (cause names current vs requested, fix `bun run scripts/release.ts --bump <patch\|minor\|major>`) |
 
 ## Steps
 1. b and c first (cheap, and they prevent a wasted approval).

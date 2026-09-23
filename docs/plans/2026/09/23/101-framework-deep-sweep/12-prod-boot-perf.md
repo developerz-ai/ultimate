@@ -3,7 +3,7 @@
 > Part of [`overview.md`](overview.md). Depends on: 01 (dev-secret assertion), 06. Tiers: 3 (realtime), 5 (cli, testing).
 
 Rule: what a container runs is named for production and imports nothing from `@ultimat3/testing`,
-`templates/`, `e2e-*` or `cdp-*`. That becomes enforced by a bundle-graph test (row f).
+`templates/`, `e2e-*` or `cdp-*`. That becomes enforced by a bundle-graph test (row i).
 
 Evidence (measured 2026-09-23, `bun build --metafile`):
 - The scaffold's `apps/web/server.ts` imports `runRole` from the `@ultimat3/cli` barrel, which is **1,349 modules**, including 60 templates and 17 e2e/cdp modules.

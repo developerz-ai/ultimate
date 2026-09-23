@@ -80,7 +80,7 @@ Land the lowest tier first. Every new import goes down, except one: moving the l
 **Parallel sets:**
 - `{01}`, then `{02}`, then `{03, 04}`, then `{05, 06, 07}`, then `{08}`, then `{09, 10, 11}`.
 - `12` needs `06`. `13` needs `01`.
-- `{14, 15, 16, 17}` can start at any time, because they are path-disjoint from packages. Of these, `16` needs `11` and `12`, and `17` goes last for accuracy.
+- `{14, 15, 16, 17}` can start at any time, because they are path-disjoint from packages. Of these, `16` needs `11` and `12`. `17` row e (plan 102's semver note) runs **first**, before either plan starts; the rest of `17` goes last for accuracy.
 - `18` is last.
 
 **Path overlap with plan 102** (`docs/plans/2026/09/22/102-downstream-app-gaps/`, not started):
@@ -104,7 +104,6 @@ Whichever plan runs second rebases onto the first. Never run both slices at the 
   - Whether auth-table upgrades fold into boot.
   - When to re-stamp drift hashes.
   - How far to prune unreferenced exports.
-  - Whether `t.date` strictness ships as a patch or a major.
 - **One-time cache bust.** Switching `contentHash` to `Bun.hash` (slice 08, render) changes every content-addressed URL once. Ship it in a minor with a CHANGELOG note.
 - **Channel policy required** (slice 06) breaks any app with a policy-less channel. Both tracked apps already set one (`examples/dummy/apps/web/app/posts/channels.ts:15`, `dummy/social-media-clone/apps/web/app/messages/topics.ts:21`).
 - **Falsified during the audit, not planned:**
