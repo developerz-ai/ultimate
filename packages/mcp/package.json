@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/mcp",
-  "version": "20.2.1",
+  "version": "21.0.0",
   "description": "MCP server, dev tools, and the action-to-tool projection \u2014 one authz system, two surfaces",
   "license": "MIT",
   "type": "module",
@@ -31,13 +31,13 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/action": "20.2.1",
-    "@ultimat3/core": "20.2.1",
-    "@ultimat3/entity": "20.2.1",
-    "@ultimat3/http": "20.2.1",
-    "@ultimat3/jobs": "20.2.1",
-    "@ultimat3/policy": "20.2.1",
-    "@ultimat3/query": "20.2.1",
-    "@ultimat3/schema": "20.2.1"
+    "@ultimat3/action": "21.0.0",
+    "@ultimat3/core": "21.0.0",
+    "@ultimat3/entity": "21.0.0",
+    "@ultimat3/http": "21.0.0",
+    "@ultimat3/jobs": "21.0.0",
+    "@ultimat3/policy": "21.0.0",
+    "@ultimat3/query": "21.0.0",
+    "@ultimat3/schema": "21.0.0"
   }
 }

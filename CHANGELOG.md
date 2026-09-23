@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 21.0.0 - 2026-09-23
+
 **21.0.0 in progress: one client store, one transport, one socket.** The design is
 [`docs/architecture/21-client-data-layer.md`](docs/architecture/21-client-data-layer.md). Every
 removed surface gets a `BREAKING —` entry here and a manual edit in the
@@ -519,6 +523,15 @@ is no codemod and no compatibility shim.
   (`packages/cli/src/cdp-pipe.ts`), and the connection it returns is already answering. The edit:
   `cdpConnect(browser.endpoint)` → `browser.connection`. `cdpConnect(endpoint)` stays, for a remote
   browser reached by URL.
+
+### Commits
+
+- chore(deps): @types/bun 1.4.1, pglite 0.5.8, solid-js 1.9.15, sass 1.104.0, @babel/core 8.0.1 (#508)
+- feat!: one client store, one transport, one socket (plan 101, 21.0.0) (#504)
+- fix(http): request services bind to the authenticated actor, not anonymous (#503)
+- docs(plans): 101 — the cross-tab socket lives in a SharedWorker (#501)
+- docs(plans): 101 — every decision made, 17 tier-ordered slices (#500)
+- docs(plans): 101 — one client store, one transport, one socket (21.0.0) (#499)
 
 ## 20.2.1 - 2026-09-19
 
