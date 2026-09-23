@@ -60,12 +60,19 @@ export function cliVersion(): string {
  * A command whose body loads on first run. The spec is the module's own (`cmd-<name>.ts` reads
  * the same `cmd-<name>-spec.ts`), so the parser and the body can never describe two commands.
  */
-const lazy = (spec: CommandSpec, load: () => Promise<CliCommand>): CliCommand => ({
+export interface LazyCommand extends CliCommand {
+  /** The body module's own command — what `run` delegates to, exposed so a test can hold them equal. */
+  load(): Promise<CliCommand>;
+}
+
+const lazy = (spec: CommandSpec, load: () => Promise<CliCommand>): LazyCommand => ({
   spec,
+  load,
   run: async (ctx) => (await load()).run(ctx),
 });
 
-const CORE: readonly CliCommand[] = [
+/** The shipped commands, each a static declaration plus the body it loads on first run. */
+export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(newSpec, async () => (await import('./cmd-new')).newCommand),
   lazy(devSpec, async () => (await import('./cmd-dev')).devCommand),
   lazy(buildSpec, async () => (await import('./cmd-build')).buildCommand),
@@ -102,7 +109,7 @@ const CORE: readonly CliCommand[] = [
  * facts, and only one of them is true — see `cmd-planned.ts`.
  */
 export const COMMANDS: readonly CliCommand[] = [
-  ...CORE,
+  ...LAZY_COMMANDS,
   ...plannedCommands(),
   createHelpCommand(() => SPECS),
   createVersionCommand(cliVersion),

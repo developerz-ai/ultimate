@@ -116,6 +116,46 @@ describe('recordPersister', () => {
     expect((await local.rows('p:u1')).get('post')?.['p1']).toEqual({ id: 'p1' });
   });
 
+  // The DEFAULT leave hook — every other case injects its own. A tab being hidden is the last
+  // moment a page can write; `pagehide` alone misses a mobile tab that is backgrounded then killed.
+  test('the default hook flushes on a hidden visibilitychange and on pagehide, and stop() detaches both', async () => {
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    Reflect.set(globalThis, 'document', doc);
+    const store = fakeStore();
+    const local = new MemoryLocalStore();
+    const persister = recordPersister({
+      store,
+      local,
+      types: new Set(['post']),
+      principal: () => 'u1',
+      schedule: manualTimer().schedule,
+    });
+    const written = async (): Promise<unknown> => (await local.rows('p:u1')).get('post');
+
+    store.set('post', 'p1', { id: 'p1' });
+    doc.dispatchEvent(new Event('visibilitychange')); // still visible: not a leave
+    await settle();
+    expect(await written()).toBeUndefined();
+
+    doc.visibilityState = 'hidden';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    await settle();
+    expect({ ...((await written()) as object) }).toEqual({ p1: { id: 'p1' } });
+
+    store.set('post', 'p2', { id: 'p2' });
+    globalThis.dispatchEvent(new Event('pagehide'));
+    await settle();
+    expect(Object.keys((await written()) as object).sort()).toEqual(['p1', 'p2']);
+
+    // Dirty BEFORE the stop: a listener left attached would flush it on the next leave.
+    store.set('post', 'p3', { id: 'p3' });
+    persister.stop();
+    globalThis.dispatchEvent(new Event('pagehide'));
+    doc.dispatchEvent(new Event('visibilitychange'));
+    await settle();
+    expect(Object.keys((await written()) as object)).not.toContain('p3');
+  });
+
   test('restore hands back only persisted types of this principal', async () => {
     const { store, local, persister } = setup('u1');
     await local.write('p:u1', [{ type: 'post', key: 'p1', row: { id: 'p1' } }], []);

@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { cdpConnect } from './cdp-connection';
-import { openOrStop } from './e2e-preload';
+import { openOrStop } from './e2e-run';
 
 const RealWebSocket = globalThis.WebSocket;
 afterEach(() => {

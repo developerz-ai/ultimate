@@ -38,3 +38,13 @@ test('importing the registry evaluates no command body, and every spec is there'
   // registry does (every CLI code read as X_ERROR_CODE_UNREGISTERED in the gate when it did not).
   expect(answer.registered).toBe(true);
 });
+
+// The other half of laziness: every row's loader reaches a body, and the body declares the SAME
+// spec object the parser answered from — so a command cannot parse one shape and run another.
+test('every lazy row loads its body, and the body carries the spec the registry answered with', async () => {
+  const { LAZY_COMMANDS } = await import('./registry');
+  for (const row of LAZY_COMMANDS) {
+    const body = await row.load();
+    expect([row.spec.name, body.spec === row.spec]).toEqual([row.spec.name, true]);
+  }
+});

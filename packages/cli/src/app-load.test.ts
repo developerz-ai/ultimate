@@ -120,12 +120,22 @@ describe('unit · what loadApp deliberately does not import', () => {
     expect(app.findings).toEqual([]);
   });
 
+  // In a child process: the rule reads the process's registries, and in a shared test process
+  // another file has always registered something — the case passed in the parallel gate and failed
+  // run alone (`bun test packages/cli`, CI's `packages` job), or the other way round.
   test('an app with an app.config.ts that loads nothing is X_APP_EMPTY, never an empty green', async () => {
     const dir = tempRoot('x-app-load-empty-');
     await Bun.write(join(dir, 'app.config.ts'), 'export default {};\n');
-
-    const app = await loadApp(dir);
-
-    expect(app.findings.map((finding) => finding.code)).toEqual(['X_APP_EMPTY']);
+    const probe = `const { loadApp } = await import(${JSON.stringify(`${import.meta.dir}/app-load.ts`)});
+const app = await loadApp(${JSON.stringify(dir)});
+console.log(JSON.stringify(app.findings.map((finding) => finding.code)));`;
+    const child = Bun.spawn(['bun', '-e', probe], {
+      cwd: import.meta.dir,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const out = await new Response(child.stdout).text();
+    expect(await child.exited).toBe(0);
+    expect(JSON.parse(out.trim().split('\n').at(-1) ?? '[]')).toEqual(['X_APP_EMPTY']);
   });
 });
