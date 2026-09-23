@@ -123,6 +123,59 @@ describe('the page outbox', () => {
   });
 });
 
+describe('replay triggers that arrive together', () => {
+  // Open, `online`, the socket's reconnect and the service worker's drain can all land in one
+  // moment. Each used to chain a pass of its own, and a pass whose send failed left the entry
+  // pending for the next — four triggers, four POSTs of one write.
+  test('join the replay in flight: a failing write is attempted once, not once per trigger', async () => {
+    const { outbox, sent, answerWith } = setup('u1');
+    await outbox.enqueue(like(1));
+    answerWith(async () => {
+      throw offline();
+    });
+    await Promise.all([outbox.replay(), outbox.replay(), outbox.replay(), outbox.replay()]);
+    expect(sent.map((entry) => entry.key)).toEqual(['like:1']);
+    expect(outbox.size).toBe(1); // still queued for the next trigger
+  });
+
+  test('and a write that lands is sent exactly once per entry, in order', async () => {
+    const { outbox, sent } = setup('u1');
+    await outbox.enqueue(like(1));
+    await outbox.enqueue(like(2));
+    await Promise.all([outbox.replay(), outbox.replay(), outbox.replay(), outbox.replay()]);
+    expect(sent.map((entry) => entry.key)).toEqual(['like:1', 'like:2']);
+    expect(outbox.size).toBe(0);
+  });
+
+  test('a replay the browser knows cannot leave sends nothing, whoever asked', async () => {
+    const { outbox, sent } = setup('u1');
+    await outbox.enqueue(like(1));
+    Reflect.set(globalThis, 'navigator', { onLine: false });
+    try {
+      const report = await outbox.replay();
+      expect(sent).toEqual([]);
+      expect(report.remaining).toBe(1);
+    } finally {
+      Reflect.deleteProperty(globalThis, 'navigator');
+    }
+    await outbox.replay();
+    expect(sent.map((entry) => entry.key)).toEqual(['like:1']);
+  });
+
+  test('a replay after the joined one finished is a pass of its own', async () => {
+    const { outbox, sent, answerWith } = setup('u1');
+    await outbox.enqueue(like(1));
+    answerWith(async () => {
+      throw offline();
+    });
+    await outbox.replay();
+    answerWith(async () => ({ ok: true }));
+    await outbox.replay();
+    expect(sent.map((entry) => entry.key)).toEqual(['like:1', 'like:1']);
+    expect(outbox.size).toBe(0);
+  });
+});
+
 describe('listenForDrain', () => {
   test("the service worker's drain message and coming back online both replay", () => {
     const worker = new EventTarget();

@@ -79,6 +79,7 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
     queue = await OfflineQueue.open(queueStore(await options.local, scopeKey(principal())));
   };
   let ready = open();
+  let running: Promise<DrainReport> | undefined;
 
   const deliver = async (mutation: QueuedMutation): Promise<void> => {
     const current = queue;
@@ -122,9 +123,28 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
       await ready;
       await queue?.enqueue(entry);
     },
-    replay: async () => {
-      await ready;
-      return queue === undefined ? EMPTY : queue.drain(deliver);
+    replay: () => {
+      // Single flight: a trigger that lands while a replay is running JOINS it. Open, `online`,
+      // the socket's reconnect and the service worker's drain arrive together, and each chaining
+      // a pass of its own sent the head of the queue once per trigger whenever a send failed —
+      // one write, several POSTs. What a joined trigger would have sent is still queued for the
+      // next one; nothing is dropped.
+      if (running !== undefined) return running;
+      const pass = (async (): Promise<DrainReport> => {
+        await ready;
+        if (queue === undefined) return EMPTY;
+        // Checked when the pass STARTS, whoever asked (the socket's reconnect asks too): an
+        // attempt the browser already knows cannot leave is a failed request on the wire and
+        // nothing more. `online` asks again.
+        if (knownOffline()) return { ...EMPTY, remaining: queue.pending().length };
+        return queue.drain(deliver);
+      })();
+      const settled = (): void => {
+        if (running === pass) running = undefined;
+      };
+      running = pass;
+      pass.then(settled, settled);
+      return pass;
     },
     get size(): number {
       return queue?.pending().length ?? 0;
