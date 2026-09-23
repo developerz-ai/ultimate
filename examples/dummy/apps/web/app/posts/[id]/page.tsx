@@ -89,9 +89,9 @@ export const config = defineRoute({
    */
   hydrate: 'idle',
   /**
-   * measured: 145,000 B (2026-09-22; `x build`'s `buildIslands`, `buildPageBoot`,
-   * `hydrateRuntimeBytes`) — the like control 85,990 + the header's count 26,927 + the update
-   * banner 712 + the page boot 29,627 + the `idle` runtime 1,744, against 145,408.
+   * measured: 137,060 B (2026-09-22; `x build`'s `buildIslands`, `buildPageBoot`,
+   * `hydrateRuntimeBytes`) — the like control 78,050 + the header's count 26,927 + the update
+   * banner 712 + the page boot 29,627 + the `idle` runtime 1,744, against 137,216.
    * Counted the way the `budgets` step sums a document (`packages/cli/src/budgets.ts`): every
    * executable `<script src>` it carries — the page boot included, only `/x-sw-register.js` is
    * exempt (`FRAMEWORK_SCRIPTS`) — plus every island chunk and the inline hydration runtime.
@@ -100,10 +100,11 @@ export const config = defineRoute({
    * the like control also carries the socket's "a new build is live" notice, and the layout's
    * banner — the service worker's half — is its own 712 B island. Each island is its own bundle
    * (`splitting: false`, plan 101 decision 12), so each carries its own copy of the page's
-   * realtime; the shared runtime chunk that decision names is the lever, and this number comes
-   * DOWN when it lands.
+   * realtime — 26,444 B of the header's count is the like control's too. Down from 145,000 when
+   * the outbox left the like control for the page boot (7,940 B); the shared runtime is #505, and
+   * this number comes DOWN again when it lands.
    */
-  budget: { js: '142kb', lcp: 2000 },
+  budget: { js: '134kb', lcp: 2000 },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.

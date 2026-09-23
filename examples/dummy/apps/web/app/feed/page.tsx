@@ -57,23 +57,23 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   /**
-   * measured: 133,009 B (2026-09-22; `x build`'s `buildIslands`, `buildPageBoot`,
-   * `hydrateRuntimeBytes`) — the island chunk 100,926 + the update banner 712 + the page boot
-   * 29,627 + the `idle` runtime 1,744, against 133,120.
+   * measured: 125,056 B (2026-09-22; `x build`'s `buildIslands`, `buildPageBoot`,
+   * `hydrateRuntimeBytes`) — the island chunk 92,973 + the update banner 712 + the page boot
+   * 29,627 + the `idle` runtime 1,744, against 125,952.
    * Counted the way the `budgets` step sums a document (`packages/cli/src/budgets.ts`): every
    * executable `<script src>` it carries — the page boot included, only `/x-sw-register.js` is
    * exempt (`FRAMEWORK_SCRIPTS`) — plus every island chunk and the inline hydration runtime.
-   * why: the feed is records of the page's one store over the page's one socket — the store, its
-   * IndexedDB persister (`posts` is `persist: true`, so a reload offline still shows the feed), the
-   * outbox and the socket host — `@ultimat3/ui`'s `AsyncRegion` for its four states, each row's
-   * date in the member's zone and a like control (`useMutation(LIKE_POST)`), which the feed had
-   * before #271 and lost with it, and the socket's "a new build is live" notice. The layout's
-   * update banner is its own 712 B island (`@ultimat3/core/page` for the two names it shares
-   * with the worker and the render — the barrel was 8,344 B for them), which only ever showed on a server render before. It
-   * was 43,890 on a bare `LiveClient` that shared nothing with any other island. Plan 101's lever
-   * is a shared runtime chunk (decision 12); this number comes DOWN when that lands.
+   * why: the feed is records of the page's one store over the page's one socket — the store and
+   * the socket host in the island, the IndexedDB restore and the outbox in the page boot (`posts`
+   * is `persist: true`, so a reload offline still shows the feed) — `@ultimat3/ui`'s
+   * `AsyncRegion` for its four states, each row's date in the member's zone and a like control
+   * (`useMutation(LIKE_POST)`), which the feed had before #271 and lost with it, and the socket's
+   * "a new build is live" notice. The layout's update banner is its own 712 B island
+   * (`@ultimat3/core/page`). Down from 133,009 when the outbox left the island for the boot
+   * (8,288 B). Each island still carries its own copy of the page's realtime (`splitting:
+   * false`); the shared runtime is #505, and this number comes DOWN again when it lands.
    */
-  budget: { js: '130kb', lcp: 2000 },
+  budget: { js: '123kb', lcp: 2000 },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),

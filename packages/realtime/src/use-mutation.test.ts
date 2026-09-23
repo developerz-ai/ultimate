@@ -234,6 +234,7 @@ describe('releasing a write hook', () => {
 describe('a write the network refused', () => {
   test('goes to the outbox with its overlay kept, and is replayed ONCE, under its own key', async () => {
     const { page } = pageHarness();
+    pageOutbox(); // what the page boot does: the one module that opens the outbox
     page.store.adopt('posts', { p1: { id: 'p1', likedByMe: false, likes: 1 } });
     globalThis.fetch = (async () => {
       throw new TypeError('Failed to fetch');
@@ -261,6 +262,24 @@ describe('a write the network refused', () => {
     expect(outbox.size).toBe(0);
     expect(page.store.pending()).toEqual([]);
     expect(page.store.peek('posts', 'p1')).toEqual({ id: 'p1', likedByMe: true, likes: 2 });
+  });
+
+  // No boot ran (a page with no scope tag persists nothing), so there is no outbox to promise the
+  // write to: it is refused like any other, never parked in a queue a reload would silently lose.
+  test('on a page with no boot it is refused: rejected, overlay taken back, counted failed', async () => {
+    const { page } = pageHarness();
+    page.store.adopt('posts', { p1: { id: 'p1', likedByMe: false, likes: 1 } });
+    globalThis.fetch = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    const error = await useMutation(likePost())({ postId: 'p1' }).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error instanceof UltimateError && error.meta?.['failure']).toBe('network');
+    expect(page.store.peek('posts', 'p1')?.['likes']).toBe(1);
+    expect(useMutationQueue().failed).toBe(1);
+    expect(Reflect.has(globalThis, Symbol.for('ultimate.outbox'))).toBe(false);
   });
 });
 
@@ -331,6 +350,7 @@ describe('a write queued offline, after a reload', () => {
     // The first load: the network refuses, the write is queued, the overlay is shown.
     rescope('kenji');
     const first = pageHarness();
+    pageOutbox(); // the first load's boot
     first.page.store.adopt('posts', { p1: { id: 'p1', likedByMe: false, likes: 1 } });
     globalThis.fetch = (async () => {
       throw new TypeError('Failed to fetch');
@@ -341,9 +361,11 @@ describe('a write queued offline, after a reload', () => {
     // The reload: a NEW page (store, outbox), the same disk; the server's row is the old count.
     resetPage();
     const second = pageHarness();
+    pageOutbox(); // the reload's boot, which reopens the same disk
     second.page.store.adopt('posts', { p1: { id: 'p1', likedByMe: false, likes: 1 } });
     useMutation(likePost());
     await pageOutbox().ready;
+    await Promise.resolve();
     await Promise.resolve();
     expect(second.page.store.peek('posts', 'p1')?.['likes']).toBe(2);
     expect(second.page.store.pending()).toHaveLength(1);

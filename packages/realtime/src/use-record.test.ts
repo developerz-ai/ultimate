@@ -67,6 +67,14 @@ describe('useRecord', () => {
     expect(pageClient().store).toBeUndefined();
   });
 
+  test('useRecords on a server render is pending, holds nothing, and releases without a page', () => {
+    resetPage();
+    const posts = useRecords('posts', ['p1', 'p2']);
+    expect(posts()).toEqual({ status: 'pending' });
+    posts.release();
+    expect(peekPageRealtime()).toBeUndefined();
+  });
+
   test('in a browser bundle that never installed realtime it is X_REALTIME_UNINSTALLED', () => {
     resetPage();
     const host = globalThis as { document?: unknown; window?: unknown };

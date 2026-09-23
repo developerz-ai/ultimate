@@ -12,8 +12,8 @@ import {
   uuid,
 } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
+import { type OutboxHandle, peekOutbox } from './outbox-slot';
 import { ServerRenderLiveError } from './page-errors';
-import { pageOutbox } from './page-outbox';
 import { type PageWrites, pageRealtime } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
 import { carriedBy } from './record-store';
@@ -92,9 +92,13 @@ function watch(hook: string, writes: PageWrites | undefined): [() => number, () 
 function restoreOverlays(mutator: MutatorLike): void {
   const local = mutator.local;
   if (local === undefined) return;
-  const outbox = pageOutbox();
-  void outbox.ready.then(() => {
-    const store = pageRealtime().store;
+  const page = pageRealtime();
+  // The boot opens the outbox; after it, so a queue the previous load left is on disk to read.
+  void page.booted.then(async () => {
+    const outbox = peekOutbox();
+    if (outbox === undefined) return;
+    await outbox.ready;
+    const store = page.store;
     const shown = new Set(store.pending());
     for (const entry of outbox.pending()) {
       if (entry.name !== mutator.name || shown.has(entry.key)) continue;
@@ -105,6 +109,14 @@ function restoreOverlays(mutator: MutatorLike): void {
       );
     }
   });
+}
+
+/** The page's outbox once the boot has finished opening it; `undefined` on a page with no boot. */
+async function bootedOutbox(page: {
+  readonly booted: Promise<void>;
+}): Promise<OutboxHandle | undefined> {
+  await page.booted;
+  return peekOutbox();
 }
 
 export function useMutation(mutator: MutatorLike): Mutate {
@@ -135,10 +147,13 @@ export function useMutation(mutator: MutatorLike): Mutate {
       });
     } catch (error) {
       const failure = transportFailure(error);
-      if (failure === 'network') {
-        // No response at all: the write is the outbox's now, under the SAME idempotency key, and
-        // its overlay stays on screen until the replay settles or refuses it.
-        await pageOutbox().enqueue({ key, name: mutator.name, input });
+      // No response at all: the write is the outbox's now, under the SAME idempotency key, and its
+      // overlay stays on screen until the replay settles or refuses it. Only a page the boot opened
+      // an outbox on can promise that; with none (no boot, so nothing on this page persists) the
+      // write is refused like any other, never held in a memory queue a reload would silently lose.
+      const outbox = failure === 'network' ? await bootedOutbox(page) : undefined;
+      if (outbox !== undefined) {
+        await outbox.enqueue({ key, name: mutator.name, input });
         return undefined;
       }
       if (failure === 'body') {

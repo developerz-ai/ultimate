@@ -895,6 +895,12 @@ and are unchanged.
   fallback, `client-channels` rides the ONE page client every bundle shares, the decoders are one
   copy. Core's error-registry chain (~8.4 kB with the schema and query titles) WAS core's to cut,
   and is cut: see the last column above.
+- **An island never carries the outbox.** `boot.ts` is the one module that builds it (IndexedDB,
+  the queue, the drain listeners); `useMutation` and the page socket read it off the page through
+  `outbox-slot.ts`, after `page.booted`. No boot ⇒ no outbox ⇒ a write the network refused is
+  rejected, not queued in memory. Measured the same day, same method, before → after:
+  `useMutation` 30,071 → 21,725, `useQuery` 56,824 → 47,696, `useChannel` 54,798 → 45,585;
+  `examples/dummy` via `buildIslands`: `feed` 101,261 → 92,973, `like` 86,325 → 78,050.
 - **A browser path never loads realtime's code table.** The refusals a browser can reach live in
   `page-errors.ts`; `errors.ts` re-exports them and keeps the table and its one
   `registerErrorCodes()`. Measured the same day, same method: `useRecord` 21,629 → 18,600,
@@ -926,6 +932,7 @@ and are unchanged.
 | `record-key.ts` / `record-synced.ts` / `record-await.ts` | a record's `type:key` name and `carriedBy`; the synced layer (merge, holds, provisional disk rows); the overlays waiting on server truth and what a write heard while in flight |
 | `record-tx.ts` | the overlay replay and the `tx` a mutator's `local` half writes through |
 | `page-store.ts` | the page state on `globalThis` — the store, the sync target, the write counts — and `hasPageSocket` |
+| `outbox-slot.ts` | the outbox as an island reaches it: the page slot, its handle type and `OutboxEntry` — read, never built |
 | `boot.ts` | `./boot`: the page's ONE boot script — the disk restore and the outbox open, never in an island |
 | `page-socket.ts` / `browser-socket.ts` | the page's one socket, built by the first live hook, and the framework's one `new WebSocket` |
 | `reactivity.ts` | `installRealtime`: this bundle's signal factory, and the server-render test |

@@ -5,8 +5,8 @@
 import { onRescope, pageClient } from '@ultimat3/core/page';
 import { queryClientMethodFor } from '@ultimat3/query/client';
 import { LiveClient } from './client';
+import { peekOutbox } from './outbox-slot';
 import { SyncUnconfiguredError } from './page-errors';
-import { pageOutbox } from './page-outbox';
 import { pageRealtime } from './page-store';
 import { openHost, type SocketHost } from './socket-host';
 import { pageSyncTarget, syncWorkerFromMeta } from './sync-meta';
@@ -36,21 +36,44 @@ export function pageSocket(hook: string): LiveClient {
   let up = false;
   client.onStatus(() => {
     if (client.connected && !up)
-      void pageOutbox()
-        .replay()
+      void peekOutbox()
+        ?.replay()
         .catch(() => undefined);
     up = client.connected;
   });
   // After the disk restore, so a restored record is shown before the first frame can race it.
   void page.booted.then(() => client.connect());
   // A new principal gets its own worker — never the previous principal's socket — and redials.
-  onRescope((next) => {
+  const offRescope = onRescope((next) => {
     host.bye();
     host = hostFor(next.principal ?? null);
     client.connect();
   });
-  if (typeof addEventListener === 'function') addEventListener('pagehide', () => host.bye());
+  const bye = (): void => host.bye();
+  const listens = typeof addEventListener === 'function';
+  if (listens) addEventListener('pagehide', bye);
+  teardowns.add(() => {
+    offRescope();
+    if (listens) removeEventListener('pagehide', bye);
+    client.close();
+    host.bye();
+    if (page.socket === client) page.socket = undefined;
+    if (pageClient().socket === client) pageClient().socket = undefined;
+  });
   return client;
+}
+
+/**
+ * Every socket this module built, as the undo of building it. A page builds one and never tears it
+ * down — the tab's end is its teardown — so only a test process, which builds one per case, calls
+ * `resetPageSocket`. Not on the barrel: an app has no page to reset.
+ */
+const teardowns = new Set<() => void>();
+
+/** For tests: unsubscribe, close and unseat every page socket built so far, so a case starts clean. */
+export function resetPageSocket(): void {
+  for (const teardown of teardowns) teardown();
+  teardowns.clear();
 }
 
 /**

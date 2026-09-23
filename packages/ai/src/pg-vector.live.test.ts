@@ -285,7 +285,10 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
       // path for all of them, which is a correct answer and a slow one. `x db migrate` analyzes;
       // a bulk backfill that skips it is why a search that used the index yesterday scans today.
       await client.execute(raw(`analyze "${TABLE}"`));
-    });
+      // 30s, not Bun's 5s default: 5,000 inserts each maintain the hnsw graph, which is pure server
+      // work — measured 3.6s on a 12-core laptop against pgvector:pg16 with no other load, so a
+      // shared CI runner crosses 5s on a busy day (PR #504's `verify` job: 5,012ms, twice).
+    }, 30_000);
 
     test('the search this store emits is answered by the hnsw index', async () => {
       const plan = await planOf(searchSql(target, vec(1, 0, 0, 0), { scope: {}, k: 10 }));

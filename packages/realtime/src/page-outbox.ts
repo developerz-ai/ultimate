@@ -16,23 +16,17 @@ import {
   onRescope,
   pageClient,
 } from '@ultimat3/core/page';
-import type { JsonValue } from './json';
 import type { LocalStore } from './local-store-idb';
 import { pageLocalStore, scopeKey } from './local-store-idb';
 import type { DrainReport, QueuedMutation, QueueState, QueueStore } from './offline-queue';
 import { MemoryQueueStore, OfflineQueue, toQueueError } from './offline-queue';
+import { OUTBOX_KEY, type OutboxEntry, type OutboxHandle, type OutboxHost } from './outbox-slot';
 import { peekPageRealtime } from './page-store';
 import { carriedBy } from './record-store';
 
-export interface OutboxEntry {
-  /** The idempotency key the write was first attempted under — the SAME key on every replay. */
-  readonly key: string;
-  /** The mutator's action name; the replay POSTs to `actionPath(name)`. */
-  readonly name: string;
-  readonly input: JsonValue;
-}
+export type { OutboxEntry } from './outbox-slot';
 
-export interface PageOutbox {
+export interface PageOutbox extends OutboxHandle {
   enqueue(entry: OutboxEntry): Promise<void>;
   /** Sends everything queued, in order, stopping at the first write the network could not take. */
   replay(): Promise<DrainReport>;
@@ -153,19 +147,17 @@ function sendOverHttp(entry: OutboxEntry, carried: Set<string>): Promise<unknown
   });
 }
 
-const PAGE_KEY: unique symbol = Symbol.for('ultimate.outbox');
-type Host = { [PAGE_KEY]?: PageOutbox };
-
 /**
  * The page's outbox, created once per tab. In a browser it replays on open, on `online`, and on the
  * service worker's drain message; with no `document` it is a memory queue that listens for nothing.
  */
 export function pageOutbox(): PageOutbox {
-  const host = globalThis as Host;
-  const existing = host[PAGE_KEY];
-  if (existing !== undefined) return existing;
+  const host = globalThis as OutboxHost;
+  const existing = host[OUTBOX_KEY];
+  // Only this function writes the slot, so what it holds is always a `PageOutbox`.
+  if (existing !== undefined) return existing as PageOutbox;
   const outbox = createOutbox({ local: pageLocalStore() });
-  Object.defineProperty(host, PAGE_KEY, { value: outbox, configurable: true });
+  Object.defineProperty(host, OUTBOX_KEY, { value: outbox, configurable: true });
   if (Reflect.has(globalThis, 'document')) {
     listenForDrain(outbox);
     void outbox.replay().catch(() => undefined);

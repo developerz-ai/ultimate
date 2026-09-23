@@ -145,31 +145,3 @@ export function flush(): Promise<void> {
 }
 
 export const liveFeed = { name: 'liveFeed', live: true } as const;
-
-/** A `fetch` double: records every request and answers each with the next queued response. */
-export function fakeFetch(answers: (() => Response)[]): {
-  readonly fetchImpl: (input: string, init: RequestInit) => Promise<Response>;
-  readonly calls: { url: string; init: RequestInit }[];
-} {
-  const calls: { url: string; init: RequestInit }[] = [];
-  return {
-    calls,
-    fetchImpl: async (url, init) => {
-      calls.push({ url, init });
-      const next = answers.shift();
-      if (next === undefined) return new Response('{}', { status: 500 });
-      return next();
-    },
-  };
-}
-
-/** A JSON answer, optionally carrying the records envelope core's transport decodes. */
-export function jsonAnswer(body: unknown, enveloped = false): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: {
-      'content-type': 'application/json',
-      ...(enveloped ? { 'x-ultimate-records': '1' } : {}),
-    },
-  });
-}

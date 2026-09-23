@@ -3,7 +3,7 @@
 // one — because registration is a side effect of importing a module, and nothing imported it.
 // The loader is injected so a fixture can be exactly "the app loaded and registered nothing".
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Catalog, Extraction, ExtractReport, Locale } from '@ultimat3/i18n';
 import {
   auditCatalogs,
@@ -62,10 +62,17 @@ const twoCopies: DuplicateInstall = {
 };
 const duplicated = async () => [twoCopies];
 
-afterEach(() => {
+// Before AND after. Every case here states "the app loaded and registered nothing", so the registry
+// being empty at the first `checkRegistration` is the fixture, not an assumption. After alone left
+// the FIRST case reading whatever was there when the file started: the `packages` CI job, running
+// `bun test packages/cli` alone, failed exactly that case and no other. Not reproduced locally; a
+// `site.home.title` registered before the file's first test reproduces the same single failure.
+const emptyRegistry = (): void => {
   resetCatalogs();
   resetLocaleConfig();
-});
+};
+beforeEach(emptyRegistry);
+afterEach(emptyRegistry);
 
 describe('unit · checkRegistration', () => {
   test('a catalog on disk that no module registered is X_CATALOG_UNREGISTERED', async () => {

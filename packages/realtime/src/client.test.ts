@@ -4,7 +4,15 @@
 // down exactly once. The reconnect timer is `client-reconnect.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { cursorsChannel, decodeSid, feed, harness } from './client-harness-fixture';
+import { LiveClient } from './client';
+import {
+  cursorsChannel,
+  decodeSid,
+  FakeSocket,
+  feed,
+  harness,
+  ManualScheduler,
+} from './client-harness-fixture';
 import type { Row } from './json';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
@@ -282,5 +290,60 @@ describe('Disposable subscription handles', () => {
     const dropFrame = decode(sent[1] ?? '') as Frame & { op?: string };
     expect(dropFrame.type).toBe('subscribe');
     expect(dropFrame.op).toBe('drop');
+  });
+});
+
+describe('LiveClient listeners and its default reporter', () => {
+  test('an onChange or onStatus listener that was removed hears nothing more', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    let changes = 0;
+    let statuses = 0;
+    const offChange = handle.onChange(() => {
+      changes += 1;
+    });
+    const offStatus = client.onStatus(() => {
+      statuses += 1;
+    });
+    offChange();
+    offStatus();
+    sockets[0]?.disconnect();
+    expect(handle.state()).toBe('offline');
+    expect(changes).toBe(0);
+    expect(statuses).toBe(0);
+  });
+
+  test('with no onError, a failure nothing awaits goes to console.error — never thrown', () => {
+    const timers = new ManualScheduler();
+    let dials = 0;
+    const socket = new FakeSocket();
+    const client = new LiveClient({
+      connect: () => {
+        dials += 1;
+        if (dials > 1) throw new TypeError('socket refused');
+        return socket;
+      },
+      buildId: 'build-1',
+      catchUp: async () => undefined,
+      heartbeatMs: 0,
+      scheduler: timers.schedule,
+    });
+    const logged: unknown[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => {
+      logged.push(...args);
+    };
+    try {
+      client.connect();
+      socket.open();
+      socket.disconnect();
+      expect(() => timers.fire()).not.toThrow();
+    } finally {
+      console.error = original;
+      client.close();
+    }
+    expect(String(logged[0])).toBe('TypeError: socket refused');
   });
 });

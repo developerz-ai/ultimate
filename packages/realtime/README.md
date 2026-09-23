@@ -125,7 +125,10 @@ const room = usePresence(orgFeed, { orgId });                      // the channe
 **One socket per origin and principal**: the page's socket lives in a `SharedWorker`
 (`@ultimat3/realtime/sync-worker`, bundled by `x build`) shared by every tab; with no worker the
 same engine runs in-page. Writes that find no network go to the page's outbox — overlay kept — and
-replay over HTTP, under their original idempotency keys, when the socket comes back.
+replay over HTTP, under their original idempotency keys, when the socket comes back. The outbox is
+the page boot's (`@ultimat3/realtime/boot`): an island only reads it off the page. On a page the
+CLI renders no boot for (no scope tag, so nothing on it persists) such a write is refused like any
+other — rejected, overlay taken back — never held in memory a reload would silently lose.
 
 `<AsyncRegion state={feed()} …/>` takes the answer as-is: `AsyncState` is `@ultimat3/core`'s, the
 same type `@ultimat3/ui` renders.

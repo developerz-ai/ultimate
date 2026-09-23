@@ -86,6 +86,31 @@ describe('RecordStore — synced truth', () => {
 });
 
 describe('RecordStore — the optimistic overlay', () => {
+  // `tx.<type>.all()` is what a twin that inserts into a list reads: synced rows of that type, with
+  // the overlay's own writes (and deletes) laid over them, and no other type's rows.
+  test('a twin reading tx.<type>.all() sees synced rows under the overlay, one type only', () => {
+    const { store: s } = store();
+    s.adopt('posts', { p1: { id: 'p1', likes: 1 }, p2: { id: 'p2', likes: 2 } });
+    s.adopt('comments', { c1: { id: 'c1' } });
+    s.push('drop-p2', (tx) => tx['posts']?.delete('p2'), 'server-wins');
+    const seen: unknown[] = [];
+    s.push(
+      'count',
+      (tx) => {
+        seen.push(tx['posts']?.all().map((row) => row['id']));
+        tx['posts']?.insert('p3', { id: 'p3', likes: 0 });
+      },
+      'server-wins',
+    );
+    expect(seen.at(-1)).toEqual(['p1']);
+    expect(
+      s
+        .all('posts')
+        .map((row) => row['id'])
+        .sort(),
+    ).toEqual(['p1', 'p3']);
+  });
+
   test('a pushed write is visible at once and never touches synced truth', () => {
     const { store: s } = store();
     s.adopt('posts', { p1: { id: 'p1', likes: 1 } });

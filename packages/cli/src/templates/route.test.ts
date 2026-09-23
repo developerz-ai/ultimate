@@ -57,6 +57,18 @@ describe('unit · the offline assertion lands where the e2e step can find it', (
     expect(contentsOf('blog', 'page.e2e.test.ts')).toContain('e2eTest(');
   });
 
+  test('the offline reload waits for the service worker to take control first', () => {
+    // `offline()` cuts the network for EVERY realm, the worker's included, so the reload is served
+    // by the worker's cache or by nothing. Going offline before the worker controlled the page was
+    // `net::ERR_INTERNET_DISCONNECTED` on a freshly scaffolded app's first `bin/check`.
+    const body = contentsOf('blog', 'page.e2e.test.ts');
+    const waits = body.indexOf('await page.waitForServiceWorker();');
+    expect(waits).toBeGreaterThan(-1);
+    expect(body).toContain("await page.goto('/blog');");
+    expect(waits).toBeGreaterThan(body.indexOf("await page.goto('/blog');"));
+    expect(waits).toBeLessThan(body.indexOf('await offline();'));
+  });
+
   test('the e2e navigation uses the resolved URL, not the bracketed pattern', () => {
     expect(contentsOf('posts/[slug]', 'page.e2e.test.ts')).toContain(
       "await page.goto('/posts/slug-1');",

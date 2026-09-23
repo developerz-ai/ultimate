@@ -31,6 +31,16 @@ describe('useConnection', () => {
     expect(connection.updateAvailable).toBe('build-2');
   });
 
+  test('reconnectAt is the armed redial while the socket is down, and null while up', () => {
+    const { socket, client } = pageHarness();
+    socket.open();
+    const connection = useConnection();
+    expect(connection.reconnectAt).toBeNull();
+    socket.close(1006);
+    expect(connection.reconnectAt).toBe(client.reconnectAt());
+    expect(typeof connection.reconnectAt).toBe('number');
+  });
+
   test('a server render is online and opens no socket', () => {
     resetPage();
     expect(useConnection().online).toBe(true);

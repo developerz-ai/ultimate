@@ -103,6 +103,13 @@ describe('useChannel — membership', () => {
     resetPage();
     expect(useChannel(orgFeed, { orgId: 'o1' })()).toBe('joining');
   });
+
+  test('usePresence on a server render is an empty roster and opens nothing', () => {
+    resetPage();
+    const roster = usePresence(orgFeed, { orgId: 'o1' });
+    expect(roster()).toEqual([]);
+    roster.release();
+  });
 });
 
 describe('the channel cursor', () => {
@@ -185,6 +192,28 @@ describe('the channel cursor', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(page.store.peek('posts', 'p1')?.['likes']).toBe(2);
+  });
+});
+
+describe('a catch-up read that fails', () => {
+  test('is reported, and the frames held behind it still land — the channel goes live again', async () => {
+    const refused = new TypeError('network down');
+    const { socket, page, errors } = pageHarness({ catchUp: () => Promise.reject(refused) });
+    socket.open();
+    const state = useChannel(orgFeed, { orgId: 'o1' });
+    socket.deliver({
+      type: 'replay-gap',
+      v: PROTOCOL_VERSION,
+      channel: 'org-feed.o1',
+      epoch: 'e1',
+    });
+    socket.deliver(records(1, 9));
+    expect(page.store.peek('posts', 'p1')).toBeUndefined(); // held behind the read
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(errors).toEqual([refused]);
+    expect(page.store.peek('posts', 'p1')?.['likes']).toBe(9);
+    expect(state()).toBe('live');
   });
 });
 

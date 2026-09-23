@@ -9,12 +9,14 @@ import {
   isClientFault,
   isPolicyDenial,
   LiveQueryUnknownError,
+  NotImplementedError,
   POLICY_DENIAL_CODES,
   REALTIME_BORROWED_ERROR_CODES,
   REALTIME_CLIENT_FAULT_CODES,
   REALTIME_ERROR_CODES,
   REALTIME_ERROR_TITLES,
   REALTIME_OWNED_ERROR_CODES,
+  ReplicatorSlotHeldError,
   SubscriptionLimitError,
   TopicForbiddenError,
 } from './errors';
@@ -211,5 +213,31 @@ describe('isPolicyDenial', () => {
     for (const code of POLICY_DENIAL_CODES) {
       expect(REALTIME_CLIENT_FAULT_CODES.has(code), `${code} must be a client fault`).toBe(true);
     }
+  });
+});
+
+describe('the refusals with a fixed next step', () => {
+  test('X_NOT_IMPLEMENTED names what is missing and carries the caller-supplied fix verbatim', () => {
+    const error = new NotImplementedError({
+      what: 'the redis transport',
+      fix: 'x doctor transport',
+    });
+    expect(error.code).toBe('X_NOT_IMPLEMENTED');
+    expect(error.cause).toBe(
+      'the redis transport is interface-complete but not implemented in this build',
+    );
+    expect(error.fix).toBe('x doctor transport');
+  });
+
+  test('X_REPLICATOR_SLOT_HELD names the holder only when one is known, and always the scale fix', () => {
+    const known = new ReplicatorSlotHeldError({ key: '42', holder: 'pid 7' });
+    const unknown = new ReplicatorSlotHeldError({ key: '42' });
+    expect(known.cause).toBe(
+      'advisory lock 42 is held by pid 7 — one database has exactly one replicator',
+    );
+    expect(unknown.cause).toBe(
+      'advisory lock 42 is held — one database has exactly one replicator',
+    );
+    expect(unknown.fix).toContain('--replicas=1');
   });
 });
