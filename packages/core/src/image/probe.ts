@@ -5,6 +5,7 @@
 // than in header bytes, so that reading lives in `probe-svg.ts`.
 
 import { imageDecodeFailed, imageUnsupported } from './errors';
+import { exifOrientation, swapsAxes } from './exif-orientation';
 import { hasSvgRoot, probeSvg } from './probe-svg';
 import { assertPixelBudget, type ImageSize } from './raster';
 
@@ -137,9 +138,12 @@ const isStandaloneMarker = (marker: number): boolean =>
 /**
  * Walks segment lengths to the first SOF. Baseline, progressive and lossless all declare their
  * size the same way — probing is not decoding, so a format the decoder refuses still measures.
+ * An EXIF orientation met on the way (APP1, always ahead of the SOF) is applied to the answer,
+ * because the decoder applies it: the box reserved must be the box that renders.
  */
 function probeJpeg(bytes: Uint8Array): ImageSize {
   const view = viewOf(bytes);
+  let orientation = 1;
   let at = 2;
   while (at + 3 < bytes.length) {
     if (byteAt(bytes, at) !== 0xff) {
@@ -164,7 +168,15 @@ function probeJpeg(bytes: Uint8Array): ImageSize {
     const length = view.getUint16(at + 2);
     if (isSofMarker(marker)) {
       requireBytes(bytes, at + 9, 'JPEG', 'the SOF segment width and height');
-      return { width: view.getUint16(at + 7), height: view.getUint16(at + 5) };
+      const width = view.getUint16(at + 7);
+      const height = view.getUint16(at + 5);
+      return swapsAxes(orientation) ? { width: height, height: width } : { width, height };
+    }
+    // The first APP1 declaring a turn decides; XMP also rides APP1 and reads as none.
+    if (marker === 0xe1 && orientation === 1 && length >= 2) {
+      orientation = exifOrientation(
+        bytes.subarray(at + 4, Math.min(bytes.length, at + 2 + length)),
+      );
     }
     if (length < 2) {
       throw imageDecodeFailed(`JPEG segment 0xFF${marker.toString(16)} declares length ${length}`, {

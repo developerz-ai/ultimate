@@ -41,6 +41,8 @@ export {
   userActor,
   withFacts,
 } from './actor';
+export type { AddressClass } from './address-class';
+export { classifyAddress, isPublicAddress } from './address-class';
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 export { assert, assertNever, type InvariantOptions, invariant } from './assert';
 export { type AsyncContext, asyncContext } from './async-context';
@@ -96,6 +98,7 @@ export type {
   AuthConfig,
   CacheConfig,
   DatabaseConfig,
+  DrainConfig,
   JobsConfig,
   McpConfig,
   NotifyConfig,
@@ -133,6 +136,8 @@ export {
   usesDevCursorSecret,
 } from './cursor';
 export { compareDecimalText } from './decimal-order';
+export type { DevSecretsOptions } from './dev-secrets';
+export { assertNoDevSecretsOutsideLocal, CursorSecretDevError } from './dev-secrets';
 export type {
   Env,
   EnvBooleanVar,
@@ -320,22 +325,13 @@ export {
   noopErrorReporter,
   noopExporter,
   noopMetricExporter,
-  OTEL_SAMPLER_ARG_KEY,
-  OTEL_SAMPLER_KEY,
-  OTLP_ENDPOINT_KEY,
-  OTLP_HEADERS_KEY,
-  OTLP_PROTOCOL_KEY,
-  OTLP_SCOPE,
   OtlpEndpointInvalidError,
   OtlpHeadersInvalidError,
   OtlpProtocolUnsupportedError,
-  OVERFLOW_ATTRIBUTE,
-  otlpAttributes,
   otlpEndpoint,
   otlpHeaders,
   otlpMetricExporter,
   otlpMetricsRequest,
-  otlpResource,
   otlpSpanExporter,
   otlpTraceRequest,
   parentBasedRatioSampler,
@@ -353,7 +349,6 @@ export {
   reportError,
   requestDuration,
   requests,
-  resetDefaultSampler,
   resetErrorReporting,
   resetMetrics,
   resetTelemetry,
@@ -368,7 +363,6 @@ export {
   startSpan,
   traceparent,
   tryOtlpEndpoint,
-  unixNano,
   withSpan,
   withSpanContext,
 } from './exports/observability';
@@ -396,25 +390,15 @@ export {
   masterKeyPath,
   openSecrets,
   parseMasterKey,
-  parseSecretsEnvelope,
   readSecretsFile,
   requireMasterKey,
   revealOptionalSecret,
   revealSecret,
-  SECRET_BRAND,
-  SECRET_NAME,
-  SECRETS_ALG,
   SECRETS_ERROR_CODES,
   SECRETS_FILE,
-  SECRETS_IV_BYTES,
-  SECRETS_KEY_BYTES,
   SECRETS_KEY_ENV,
   SECRETS_KEY_FILE,
-  SECRETS_KEY_HEX_LENGTH,
-  SECRETS_KEY_ID_LENGTH,
   SECRETS_KEY_MODE,
-  SECRETS_TAG_BYTES,
-  SECRETS_VERSION,
   SecretsFileInvalidError,
   SecretsFileMissingError,
   SecretsKeyInvalidError,
@@ -427,6 +411,7 @@ export {
   secretsFileExists,
   secretsPath,
   serializeSecretValues,
+  stagedMasterKeyPath,
   writeMasterKeyFile,
   writeSecretsFile,
 } from './exports/secrets';
@@ -441,6 +426,8 @@ export { createFlightGate, gateOverloaded } from './flight-gate';
 export { formatBytes } from './format-bytes';
 export type { GenerationFence } from './generation-fence';
 export { createFence, isSuperseded } from './generation-fence';
+export type { HostDecision, HostRule } from './host-rules';
+export { ANY_HOST, hostDecision, hostMatches } from './host-rules';
 export type { Brand, Id } from './ids';
 export {
   isSpanId,
@@ -456,7 +443,7 @@ export {
   uuid,
   uuidTimestamp,
 } from './ids';
-export { fitBox, type ImageFit, type ResizeSpec, scaledToFit } from './image/canvas';
+export type { ImageFit, ResizeSpec } from './image/canvas';
 export { parseColor } from './image/color';
 export {
   ImageDecodeFailedError,
@@ -488,13 +475,12 @@ export type { ImageFormat, ImageInfo } from './image/probe';
 export { IMAGE_FORMATS, IMAGE_MIME_TYPES, probeImage, sniffImageFormat } from './image/probe';
 export type { ImageSize, Raster } from './image/raster';
 export {
-  assertPixelBudget,
   createRaster,
   hasAlpha,
   MAX_IMAGE_PIXELS,
-  rasterFrom,
 } from './image/raster';
 export { impersonate, impersonationReason, isImpersonating } from './impersonate';
+export { withInProcessFetch } from './in-process-fetch';
 export {
   assertLocale,
   cachedFormatter,
@@ -503,6 +489,7 @@ export {
   MAX_CACHED_FORMATTERS,
   MAX_LOCALE_EXCERPT,
 } from './intl-cache';
+export { isIsoDateTime } from './iso-date';
 export { isJsonObject } from './json-object';
 export type {
   HealthPayload,
@@ -516,7 +503,6 @@ export type {
   ShutdownHook,
   ShutdownPhase,
   ShutdownReason,
-  SignalHandlerOptions,
 } from './lifecycle';
 export {
   beginWork,
@@ -527,23 +513,37 @@ export {
   healthzPayload,
   idleWaiterCount,
   inflightCount,
-  installSignalHandlers,
   isDraining,
   lifecycleState,
   markReady,
   onShutdown,
   readinessCheckCount,
   readinessChecks,
+  readinessGraceMs,
   readyzPayload,
   registerReadinessCheck,
   resetLifecycle,
   SHUTDOWN_PHASES,
   shutdownHookCount,
 } from './lifecycle';
+export {
+  defaultReadinessGraceMs,
+  READINESS_GRACE_DEFAULT_MS,
+  READINESS_GRACE_MAX_MS,
+} from './lifecycle-grace';
+export type { SignalHandlerOptions } from './lifecycle-signals';
+export { installSignalHandlers } from './lifecycle-signals';
 export { isSelfOrigin, listeningOrigins, markListening, resetListeners } from './listeners';
 export type { Direction } from './locale-direction';
 export { directionOf, isRtl } from './locale-direction';
 export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
+export type { MeasurementActorFactory } from './measurement-actor';
+export {
+  defineMeasurementActor,
+  MEASUREMENT_ACTOR_ID,
+  measurementActor,
+  resetMeasurementActor,
+} from './measurement-actor';
 export { nearestName } from './nearest-name';
 /** The message pwa's `sw.js` posts and realtime's outbox listens for. */
 export { OUTBOX_DRAIN_MESSAGE, type OutboxDrainMessage } from './outbox-drain';
@@ -582,8 +582,6 @@ export {
   REQUEST_TIMEOUT_HEADER,
   remainingBudgetMs,
 } from './request-budget';
-export type { Err, Ok, Result } from './result';
-export { err, isErr, isOk, map, mapErr, ok, tryCatch, unwrap, unwrapOr } from './result';
 export type { RetryDecision, RetryDeps, RetryPolicy, RetryStopReason } from './retry';
 export { retry, retryDecision } from './retry';
 export { isRetryableStatus, RETRYABLE_STATUSES } from './retryable-status';
@@ -608,7 +606,6 @@ export {
   readPackageVersion,
   resolveVersion,
   VERSION_DEFINE,
-  VERSION_MANIFEST,
 } from './version';
 // The webhook wire format, at the tier both halves can reach — `@ultimat3/jobs` signs a delivery
 // and `@ultimat3/http` verifies one, and neither may import the other. Same argument

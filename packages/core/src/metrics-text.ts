@@ -9,7 +9,15 @@ export const METRICS_PATH = '/metrics';
 
 export const METRICS_CONTENT_TYPE = 'text/plain; version=0.0.4; charset=utf-8';
 
-/** The exposition format escapes exactly these three, and nothing else. */
+/**
+ * HELP's two escapes, and only those: the exposition format defines `\\` and `\n` for a docstring.
+ * `\"` is a label-value escape — in HELP a parser keeps it as a literal backslash before the quote.
+ */
+function escapeHelp(value: string): string {
+  return value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n');
+}
+
+/** A label VALUE escapes exactly these three, and nothing else. */
 function escapeLabel(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n');
 }
@@ -60,7 +68,7 @@ function histogramLines(name: string, point: HistogramPoint): readonly string[] 
 function metricLines(metric: ReadableMetric): readonly string[] {
   const { name, kind, description, unit } = metric.descriptor;
   const help = unit === '1' || unit === '' ? description : `${description} (${unit})`;
-  const lines = [`# HELP ${name} ${escapeLabel(help)}`, `# TYPE ${name} ${kind}`];
+  const lines = [`# HELP ${name} ${escapeHelp(help)}`, `# TYPE ${name} ${kind}`];
   for (const point of metric.points) {
     if (kind === 'histogram' && isHistogramPoint(point)) {
       lines.push(...histogramLines(name, point));

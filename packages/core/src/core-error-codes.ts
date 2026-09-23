@@ -16,6 +16,7 @@ const CORE_CODE_TITLES = {
   X_CLIENT_TRANSPORT_FAILED: 'a browser request got no answer from the app',
   X_CONFIG_INVALID: 'app.config.ts is invalid',
   X_CURSOR_INVALID: 'pagination cursor is malformed, tampered with or from another query',
+  // `x doctor` reports it; `assertNoDevSecretsOutsideLocal()` throws it at boot.
   X_CURSOR_SECRET_DEV: 'cursors are signed with the shipped development key',
   X_DRAINING: 'process is draining and refuses new work',
   X_ENV_EXAMPLE_DRIFT: '.env.example does not declare every variable the schema requires',

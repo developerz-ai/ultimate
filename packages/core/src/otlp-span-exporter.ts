@@ -136,14 +136,15 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
   );
   const send = options.fetch ?? globalThis.fetch;
   const queue: ReadableSpan[] = [];
-  let inflight: Promise<void> = Promise.resolve();
+  /** The ONE batch in flight, or `undefined`. Never a chain: see `pump`. */
+  let sending: Promise<void> | undefined;
 
   const post = (batch: readonly ReadableSpan[]): Promise<void> => {
     const first = batch[0];
     if (first === undefined) return Promise.resolve();
     let body: string;
     try {
-      // The one synchronous throw on this path, and the only way `inflight` can reject at all:
+      // The one synchronous throw on this path, and the only way a send could reject at all:
       // `AttributeValue` is a compile-time claim, so an attribute the app spelled as an object, a
       // bigint or a cycle reaches `anyValue`'s `value.map(...)` as a TypeError. Dropped with a
       // line, the same degradation `postOtlp` already applies to a collector that is down —
@@ -160,25 +161,47 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
     return postOtlp({ url, headers, body, timeoutMs, fetch: send });
   };
 
-  const drainQueue = (): Promise<void> => {
-    const batch = queue.splice(0, queue.length);
-    // Chained, not concurrent: a collector reordering batches from one process turns a parent's
-    // span arriving after its child into a broken trace on the read side. Chained on a SETTLED
-    // shadow, because a chain that carries a rejection forward is poisoned for the life of the
-    // process: `post` is never called again while the queue keeps emptying, so every later span is
-    // dropped in silence and every timer tick mints a fresh unhandled rejection — which Bun ends
-    // the process on. Same shape as `offline-queue.ts`'s drain chain.
-    const settled = inflight.then(
+  /**
+   * At most ONE batch in flight, and at most `maxBatchSize` spans in it. The queue used to be
+   * moved wholesale into a promise chain behind the previous POST, so a stalled collector held
+   * every span ever exported — 100k with `maxQueueSize: 2048` — and the bound was a bound on the
+   * queue, not on memory. Now spans WAIT IN the queue while a POST is unsettled, where drop-oldest
+   * applies, and what is held is `maxQueueSize` plus one batch. One at a time also keeps batches
+   * in order, so a parent span never arrives after its child. A POST cannot reject (`postOtlp`
+   * degrades to a log line) and `post` catches its own serialisation throw, so nothing here can
+   * poison the next send.
+   */
+  const pump = (): Promise<void> => {
+    if (sending !== undefined) return sending;
+    const batch = queue.splice(0, maxBatchSize);
+    if (batch.length === 0) return Promise.resolve();
+    const current = post(batch).then(
       () => undefined,
       () => undefined,
     );
-    inflight = settled.then(() => post(batch));
-    return inflight;
+    sending = current.then(() => {
+      sending = undefined;
+      // A full batch waiting behind a slow POST goes next without waiting for the timer.
+      if (queue.length >= maxBatchSize) void pump();
+    });
+    return sending;
+  };
+
+  /** Everything queued NOW, batch by batch. Bounded, so a busy exporter cannot keep it looping. */
+  const drainQueue = async (): Promise<void> => {
+    let rounds = Math.ceil(queue.length / maxBatchSize) + 1;
+    while (rounds > 0) {
+      rounds -= 1;
+      await pump();
+      if (queue.length === 0 && sending === undefined) return;
+    }
   };
 
   // Unref'd, so a pending flush never holds a draining process open — `shutdown()` is what
   // decides the last batch leaves, exactly as `startMetricExport` defers to the drain hook.
-  const timer = setInterval(() => void drainQueue(), flushIntervalMs);
+  // `pump`, never `drainQueue`: while a POST is stalled `pump` answers the send already in flight
+  // and allocates nothing, where a drain per tick would park one more waiter per interval.
+  const timer = setInterval(() => void pump(), flushIntervalMs);
   timer.unref();
 
   return {
@@ -187,7 +210,7 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
       // the spans an operator wants during an incident are the ones happening now.
       if (queue.length >= maxQueueSize) queue.shift();
       queue.push(span);
-      if (queue.length >= maxBatchSize) void drainQueue();
+      if (queue.length >= maxBatchSize) void pump();
     },
     flush(): Promise<void> {
       return drainQueue();

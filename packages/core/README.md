@@ -8,7 +8,6 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `UltimateError`, the 3-line rendering, `--json` shape | `errors.ts` |
 | rendering an app's value into a `cause` / `fix` without throwing | `error-render.ts` |
 | code → `{ title, docs }` registry, `registerErrorCodes()` | `error-codes.ts` |
-| `Result<T, E>` for boundaries where throwing is wrong | `result.ts` |
 | the one lazy `AsyncLocalStorage`, every ambient scope in the framework | `async-context.ts` |
 | request context on that seam | `context.ts` |
 | `Actor` (`user \| service \| agent \| anonymous`) | `actor.ts` |
@@ -33,10 +32,12 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
 | named environments + `ULTIMATE_ENV` resolution | `environment.ts` |
+| the boot refusal of a shipped dev signing secret outside development/test — `X_CURSOR_SECRET_DEV` | `dev-secrets.ts` |
 | a value that cannot be printed by accident | `secret.ts` |
 | the committed encrypted secrets envelope, AES-256-GCM | `secrets.ts` |
 | the two secrets files, and decrypted values → `defineEnv` | `secrets-store.ts` |
 | `defineConfig()` for `app.config.ts` | `config.ts` |
+| how overlays layer onto it — per section, key by key | `config-merge.ts` |
 | the `pwa` block — what an install needs, and the boot refusal when it is not there | `config-pwa.ts` |
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
@@ -54,6 +55,9 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the `/metrics` scrape body | `metrics-text.ts` |
 | the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
+| the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
+| SIGTERM/SIGINT → the one drain | `lifecycle-signals.ts` |
+| which network an IP literal belongs to — `classifyAddress`, for SSRF screens | `address-class.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
 | `defineService('orgs', …)` → `ctx.orgs`, rebuilt per actor | `service.ts` |
 | the registrar table one same-tier package reaches another through | `registrar.ts` |
@@ -163,6 +167,40 @@ same thing to the caller: this value did not supply the field, so use the defaul
 Enforced, not documented: `x verify`'s `errors` step fails with `X_ERROR_RENDER_UNSAFE` when a
 parameter typed `unknown` reaches a `cause:` or `fix:` through `JSON.stringify`, `String()` or a
 bare interpolation (`scripts/error-render.ts`).
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `ConfigInvalidError` | `X_CONFIG_INVALID` | `src/errors.ts` |
+| `CursorInvalidError` | `X_CURSOR_INVALID` | `src/cursor.ts` |
+| `CursorSecretDevError` | `X_CURSOR_SECRET_DEV` | `src/dev-secrets.ts` |
+| `EnvExampleDriftError` | `X_ENV_EXAMPLE_DRIFT` | `src/env-example.ts` |
+| `EnvironmentInvalidError` | `X_ENVIRONMENT_INVALID` | `src/environment.ts` |
+| `EnvMissingError` | `X_ENV_MISSING` | `src/errors.ts` |
+| `ErrorReporterDsnInvalidError` | `X_ERROR_REPORTER_DSN_INVALID` | `src/error-reporter-sentry.ts` |
+| `ImageDecodeFailedError` | `X_IMAGE_DECODE_FAILED` | `src/image/errors.ts` |
+| `ImageTooLargeError` | `X_IMAGE_TOO_LARGE` | `src/image/errors.ts` |
+| `ImageUnsupportedError` | `X_IMAGE_UNSUPPORTED` | `src/image/errors.ts` |
+| `InternalError` | `X_INTERNAL` | `src/errors.ts` |
+| `MetricCardinalityError` | `X_METRIC_CARDINALITY` | `src/metrics.ts` |
+| `MetricNameInvalidError` | `X_METRIC_NAME_INVALID` | `src/metric-names.ts` |
+| `MetricValueInvalidError` | `X_METRIC_VALUE_INVALID` | `src/metrics.ts` |
+| `NotImplementedError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
+| `OtlpEndpointInvalidError` | `X_OTLP_ENDPOINT_INVALID` | `src/otlp.ts` |
+| `OtlpHeadersInvalidError` | `X_OTLP_HEADERS_INVALID` | `src/otlp.ts` |
+| `OtlpProtocolUnsupportedError` | `X_OTLP_PROTOCOL_UNSUPPORTED` | `src/otlp.ts` |
+| `SecretsFileInvalidError` | `X_SECRETS_FILE_INVALID` | `src/secrets-errors.ts` |
+| `SecretsFileMissingError` | `X_SECRETS_FILE_MISSING` | `src/secrets-errors.ts` |
+| `SecretsKeyInvalidError` | `X_SECRETS_KEY_INVALID` | `src/secrets-errors.ts` |
+| `SecretsKeyMismatchError` | `X_SECRETS_KEY_MISMATCH` | `src/secrets-errors.ts` |
+| `SecretsKeyMissingError` | `X_SECRETS_KEY_MISSING` | `src/secrets-errors.ts` |
+| `SecretsPlaintextInvalidError` | `X_SECRETS_PLAINTEXT_INVALID` | `src/secrets-errors.ts` |
+| `SecretsTamperedError` | `X_SECRETS_TAMPERED` | `src/secrets-errors.ts` |
+| `UltimateError` | any registered code — every class in the framework extends it | `src/errors.ts` |
 
 ## Context
 

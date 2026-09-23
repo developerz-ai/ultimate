@@ -66,6 +66,7 @@ export {
   SECRETS_KEY_MODE,
   secretsFileExists,
   secretsPath,
+  stagedMasterKeyPath,
   writeMasterKeyFile,
   writeSecretsFile,
 } from '../secrets-store';

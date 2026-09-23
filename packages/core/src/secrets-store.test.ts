@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway app roots.
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineEnv, type EnvSchema } from './env';
@@ -17,9 +17,11 @@ import {
   requireMasterKey,
   SECRETS_FILE,
   SECRETS_KEY_ENV,
+  SECRETS_KEY_FILE,
   SECRETS_KEY_MODE,
   secretsFileExists,
   secretsPath,
+  stagedMasterKeyPath,
   writeMasterKeyFile,
   writeSecretsFile,
 } from './secrets-store';
@@ -102,6 +104,23 @@ describe('unit · reading and writing the file', () => {
     expect(await Bun.file(secretsPath(root)).text()).not.toContain('s3cr3t');
   });
 
+  test('rotating over an existing world-readable key leaves it at 0600', async () => {
+    // `writeFileSync`'s `mode` applies only when it CREATES the file, so a key that was 0644
+    // before rotation stayed 0644 after it — the new key, readable by the whole box.
+    const root = await appRoot({});
+    const path = masterKeyPath(root);
+    await Bun.write(path, `${OTHER_KEY}\n`);
+    await chmod(path, 0o644);
+    expect((await stat(path)).mode & 0o777).toBe(0o644);
+    writeMasterKeyFile(root, KEY);
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await Bun.file(path).text()).trim()).toBe(KEY);
+    // Written through a temp file renamed over the target: nothing is left beside it.
+    expect((await readdir(root)).filter((name) => name.includes(SECRETS_KEY_FILE))).toEqual([
+      SECRETS_KEY_FILE,
+    ]);
+  });
+
   test('no file at all is X_SECRETS_FILE_MISSING, never an empty map', async () => {
     const root = await appRoot({ keyFile: KEY });
     const key = requireMasterKey(root, {});
@@ -116,6 +135,32 @@ describe('unit · reading and writing the file', () => {
     );
     await expect(readSecretsFile(root, requireMasterKey(root, {}))).rejects.toThrow(
       new RegExp(SECRETS_FILE),
+    );
+  });
+});
+
+// `x secrets rotate` stages the new key at `<key>.next`, seals the committed file with it, THEN
+// renames the key into place. A crash between the seal and the rename leaves a file only the
+// staged key opens — and a process booting then could not read its own secrets.
+describe('unit · a rotation interrupted before its rename', () => {
+  test('installSecrets opens the file with the staged key, and moves nothing', async () => {
+    const root = await appRoot({ keyFile: OTHER_KEY });
+    const at = { file: secretsPath(root), key: SECRETS_KEY_ENV };
+    await Bun.write(secretsPath(root), await sealSecrets({ SESSION_SECRET: 'rotated' }, KEY, at));
+    await Bun.write(stagedMasterKeyPath(root), `${KEY}\n`);
+    const env: Record<string, string | undefined> = {};
+    const report = await installSecrets({ root, env });
+    expect(env['SESSION_SECRET']).toBe('rotated');
+    expect(report.keySource).toBe('file');
+    // Read-only at runtime: the rename is `x secrets`'s recovery, never a booting process's.
+    expect((await Bun.file(masterKeyPath(root)).text()).trim()).toBe(OTHER_KEY);
+    expect(await Bun.file(stagedMasterKeyPath(root)).exists()).toBe(true);
+  });
+
+  test('with no staged key a wrong key is still X_SECRETS_KEY_MISMATCH', async () => {
+    const root = await appRoot({ values: { SESSION_SECRET: 's' }, keyFile: OTHER_KEY });
+    await expect(installSecrets({ root, env: {} })).rejects.toBeUltimateError(
+      'X_SECRETS_KEY_MISMATCH',
     );
   });
 });

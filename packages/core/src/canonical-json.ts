@@ -50,6 +50,27 @@ function hashCollection(value: Map<unknown, unknown> | Set<unknown>): string {
   return `${value instanceof Map ? 'Map' : 'Set'}(${entries.sort().join(',')})`;
 }
 
+/** Lowercase hex, two digits a byte. Not `toBase64`: this module ships to browsers that lack it. */
+function hexOf(bytes: Uint8Array): string {
+  let out = '';
+  for (const byte of bytes) out += byte.toString(16).padStart(2, '0');
+  return out;
+}
+
+/**
+ * Tagged, because a typed array's indices ARE own enumerable keys: `Uint8Array([1])` rendered
+ * `{"0":1}`, one key with the plain object `{ 0: 1 }`. The view's OWN window is read, never the
+ * whole backing buffer, and any view but a `Uint8Array` carries its type name — a `Uint16Array([1])`
+ * and a `Uint8Array([1, 0])` hold the same bytes and are different payloads.
+ */
+function hashBytes(value: ArrayBuffer | ArrayBufferView): string {
+  if (value instanceof ArrayBuffer) return `ArrayBuffer(${hexOf(new Uint8Array(value))})`;
+  const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  const tag =
+    value instanceof Uint8Array ? 'Bytes' : Object.prototype.toString.call(value).slice(8, -1);
+  return `${tag}(${hexOf(bytes)})`;
+}
+
 /**
  * JSON with object keys sorted at every depth, and every value a JSON document would fold onto
  * `null` or `{}` given a token of its own. No timestamps, no insertion-order leaks.
@@ -64,7 +85,8 @@ export function canonicalJson(value: unknown): string {
     case 'boolean':
       return String(value);
     case 'bigint':
-      return JSON.stringify(`${value}n`);
+      // A bare token like `Date(…)`: quoted as `"5n"`, it was one key with the STRING `'5n'`.
+      return `BigInt(${value})`;
     case 'undefined':
     case 'function':
     case 'symbol':
@@ -77,6 +99,7 @@ export function canonicalJson(value: unknown): string {
   // every set alike.
   if (value instanceof Date) return hashDate(value);
   if (value instanceof Map || value instanceof Set) return hashCollection(value);
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return hashBytes(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record)

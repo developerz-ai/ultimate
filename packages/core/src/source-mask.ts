@@ -27,9 +27,39 @@ export function endOfLiteral(text: string, from: number): number {
   for (let i = from + 1; i < text.length; i += 1) {
     if (text[i] === '\\') i += 1;
     else if (text[i] === quote) return i + 1;
+    else if (spansLines && text[i] === '$' && text[i + 1] === '{')
+      i = endOfInterpolation(text, i + 2) - 1;
     else if (!spansLines && text[i] === '\n') return from + 1;
   }
   return spansLines ? text.length : from + 1;
+}
+
+/**
+ * Index just past the `}` closing a template's `${` whose body starts at `from`. The body is CODE:
+ * braces nest, and a string or a template inside it is skipped whole — a nested template's backtick
+ * read as the outer one's close desynced every literal after it, and `scripts/guards-doc.ts` lost
+ * every `code:` below the nesting to the gate. Comments in the body are skipped the same way.
+ */
+function endOfInterpolation(text: string, from: number): number {
+  let depth = 1;
+  let i = from;
+  while (i < text.length) {
+    const ch = text[i] as string;
+    if (ch === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
+      const line = text[i + 1] === '/';
+      const end = line ? text.indexOf('\n', i) : text.indexOf('*/', i + 2);
+      i = end === -1 ? text.length : line ? end : end + 2;
+    } else if (QUOTES.has(ch)) i = endOfLiteral(text, i);
+    else if (ch === '{') {
+      depth += 1;
+      i += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      i += 1;
+      if (depth === 0) return i;
+    } else i += 1;
+  }
+  return text.length;
 }
 
 /**

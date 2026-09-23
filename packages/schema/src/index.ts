@@ -40,6 +40,8 @@ export {
   ULTIMATE_ERROR_BRAND,
   ValidationFailedError,
 } from './errors';
+// Exported for `@ultimat3/time`'s `fromIso`: one ISO-shape rule, whichever door a date comes in by.
+export { isIsoDateTime } from './iso-date';
 export type {
   JsonSchema,
   JsonSchemaDialect,

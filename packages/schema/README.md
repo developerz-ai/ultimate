@@ -132,6 +132,18 @@ This package is tier 0 and cannot import `@ultimat3/core`, so `SchemaError` repr
 `isUltimateError()` from core matches it. Register the codes once from any package that imports
 both: `registerErrorCodes(SCHEMA_ERROR_CODES)`.
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `DiscriminantInvalidError` (extends `SchemaError`) | `X_SCHEMA_DISCRIMINANT_INVALID` | `src/errors.ts` |
+| `SchemaError` | any schema code; the base of the three that extend it. Extends `Error`, not core's `UltimateError` — schema imports nothing — and carries the same `Symbol.for('ultimate.error')` brand so `isUltimateError` answers `true` | `src/errors.ts` |
+| `SchemaUnsupportedError` (extends `SchemaError`) | `X_SCHEMA_UNSUPPORTED` | `src/errors.ts` |
+| `ValidationFailedError` (extends `SchemaError`) | `X_VALIDATION_FAILED` | `src/errors.ts` |
+
 ## Swapping the library
 
 The builtin validators (`validators.ts`) are the shipped default — small, dependency-free, no

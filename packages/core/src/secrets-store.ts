@@ -6,9 +6,11 @@
 // `node:fs` sync, by necessity twice over: Bun.write takes no mode, and a world-readable master key
 // is the whole failure this file exists to prevent — and `installSecrets()` runs once, at boot,
 // before the process is serving anything, so there is nothing for an async read to overlap with.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+// `renameSync` because Bun has no atomic-replace primitive, and `rmSync` to clear the temp file.
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 // Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { isUltimateError } from './errors';
 import type { SecretValues } from './secrets';
 import { masterKeyId, openSecrets, parseMasterKey, sealSecrets } from './secrets';
 import { SecretsFileMissingError, SecretsKeyMissingError } from './secrets-errors';
@@ -36,6 +38,38 @@ type EnvRecord = Record<string, string | undefined>;
 export const secretsPath = (root: string): string => join(root, SECRETS_FILE);
 export const masterKeyPath = (root: string): string => join(root, SECRETS_KEY_FILE);
 export const secretsFileExists = (root: string): boolean => existsSync(secretsPath(root));
+/**
+ * Where `x secrets rotate` STAGES a new key before sealing the committed file with it; the rename
+ * that makes it live comes last. One spelling, here, for the CLI and the runtime alike.
+ */
+export const stagedMasterKeyPath = (root: string): string => `${masterKeyPath(root)}.next`;
+
+/**
+ * The committed file, opened with `key` — or, when that key no longer opens it and a rotation left
+ * a staged key, with the staged one. A crash between the seal and the rename leaves exactly that
+ * state, and a process booting then could not read its own secrets. READ-ONLY: finishing the
+ * rotation (the rename) is `x secrets`'s recovery, never a booting process's — two replicas racing
+ * a rename is how a key gets lost. An env key is never second-guessed: the platform owns it.
+ */
+async function openWithStaged(
+  root: string,
+  key: MasterKeyRef,
+): Promise<{ readonly values: SecretValues; readonly key: MasterKeyRef }> {
+  try {
+    return { values: await readSecretsFile(root, key), key };
+  } catch (error) {
+    const staged = stagedMasterKeyPath(root);
+    const mismatch = isUltimateError(error) && error.code === 'X_SECRETS_KEY_MISMATCH';
+    if (!mismatch || key.source !== 'file' || !existsSync(staged)) throw error;
+    const candidate: MasterKeyRef = {
+      hex: readFileSync(staged, 'utf-8').trim(),
+      source: 'file',
+      at: staged,
+    };
+    // The staged key's own mismatch when neither opens it — the file's problem, not the key's.
+    return { values: await readSecretsFile(root, candidate), key: candidate };
+  }
+}
 
 /**
  * Env var first, key file second. That order is what makes one image run everywhere: a container
@@ -83,10 +117,23 @@ export async function writeSecretsFile(
   return path;
 }
 
-/** Write the master key at 0600. Callers must have made the ignore rule true first. */
+/**
+ * Write the master key at 0600. Callers must have made the ignore rule true first.
+ *
+ * Through a fresh temp file renamed over the target, never a write in place: `mode` applies only
+ * when a write CREATES the file, so rotating over a key that was 0644 left the new key 0644. The
+ * rename is also atomic — a reader sees the old key or the new one, never half of either.
+ */
 export function writeMasterKeyFile(root: string, keyHex: string): string {
   const path = masterKeyPath(root);
-  writeFileSync(path, `${keyHex}\n`, { encoding: 'utf-8', mode: SECRETS_KEY_MODE });
+  const temp = `${path}.${crypto.randomUUID()}.tmp`;
+  try {
+    writeFileSync(temp, `${keyHex}\n`, { encoding: 'utf-8', mode: SECRETS_KEY_MODE, flag: 'wx' });
+    renameSync(temp, path);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
   return path;
 }
 
@@ -149,8 +196,7 @@ export async function installSecrets(
       skipped: [],
     };
   }
-  const key = requireMasterKey(root, env);
-  const values = await readSecretsFile(root, key);
+  const { values, key } = await openWithStaged(root, requireMasterKey(root, env));
   const installed: string[] = [];
   const skipped: string[] = [];
   for (const [name, value] of Object.entries(values)) {

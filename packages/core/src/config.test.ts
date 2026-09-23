@@ -128,6 +128,24 @@ describe('defineConfig', () => {
     );
     expect(realtime).toContain('realtime.urlEnv');
   });
+
+  // `'redis'` was accepted and no Redis transport exists: it booted whichever bus NATS_URL chose.
+  // Now that `@ultimat3/realtime` builds what `transport` says, a value it cannot build is refused
+  // here, where an untyped config or a pre-22 app compiled against the old union reaches.
+  test('a transport the framework cannot build is refused, naming the ones it can', () => {
+    let thrown: unknown;
+    try {
+      defineConfig({
+        name: 'myapp',
+        realtime: JSON.parse('{"transport":"redis","urlEnv":"REDIS_URL"}'),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as UltimateError).code).toBe('X_CONFIG_INVALID');
+    expect((thrown as UltimateError).cause).toContain('realtime.transport "redis"');
+    expect((thrown as UltimateError).cause).toContain('memory, nats');
+  });
 });
 
 // The BUILD error half — `cache: { tiers: ['isr'] }` no longer compiling — lives in `type-pins.ts`

@@ -20,6 +20,14 @@ describe('metricsText', () => {
     expect(text).toContain('target_info{service_name="ultimate",service_version=');
   });
 
+  test('HELP escapes only backslash and newline — a quote is literal there', () => {
+    // The exposition format defines two escapes for HELP (`\\` and `\n`); `\"` is a LABEL VALUE
+    // escape, and a parser reading HELP leaves it as a literal backslash-quote in the docstring.
+    counter('text_help_total', { description: 'the "quoted" path C:\\tmp\nnext' }).add(1);
+    const lines = metricsText().split('\n');
+    expect(lines).toContain('# HELP text_help_total the "quoted" path C:\\\\tmp\\nnext');
+  });
+
   test('a histogram renders cumulative buckets plus _sum and _count', () => {
     const duration = histogram('text_duration_seconds', { bounds: [0.1, 1] });
     duration.record(0.05);

@@ -139,6 +139,10 @@ Gotchas:
 - `t.date` refuses a clock time with no offset and no `Z` (`iso-date.ts`): a zone-less string is a
   different instant per host `TZ`, and `coerceQuery` puts it one query parameter from the wire.
   A date-only string carries no clock time and is UTC by spec, so it still parses.
+- `t.date` refuses any string that is not ISO-8601 in shape (`isIsoDateTime`, `As of 2026-09-23`,
+  22.0.0): `'March 14, 2026'`, `'3/14/2026'` and `'12'` all parsed at the host's LOCAL midnight.
+  `iso-date.test.ts` runs the refusal set under two `TZ` values in subprocesses and requires one
+  answer. A number (epoch ms) still passes — it names an instant on every host.
 - Adding a `SchemaKind` means updating `json-schema.ts` and `coerce.ts` in the same commit.
 - **`ToJsonSchemaOptions.dialect` is a closed vocabulary read with `Object.hasOwn`** (`As of
   2026-09-06`). `DIALECTS[dialect]` on an object literal answered the `Object` FUNCTION for

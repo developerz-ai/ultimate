@@ -122,7 +122,33 @@ export function otlpMetricExporter(options: OtlpMetricExporterOptions = {}): Otl
   const timeoutMs = assertFiniteOtlpBound('timeoutMs', options.timeoutMs ?? 10_000);
   const send = options.fetch ?? globalThis.fetch;
   let startedAtMs = options.startedAtMs;
-  let inflight: Promise<void> = Promise.resolve();
+  /** The ONE POST in flight, and the one body waiting behind it — never a chain. */
+  let sending: Promise<void> | undefined;
+  let waiting: string | undefined;
+
+  /**
+   * One snapshot in flight and at most one waiting. Each export used to chain a POST behind the
+   * last, so a stalled collector held every snapshot taken while it stalled. Snapshots are
+   * CUMULATIVE, so the newest supersedes every older one still waiting — dropping those loses no
+   * count — and sending strictly one at a time keeps a counter from arriving out of order and
+   * reading as a reset. `postOtlp` never rejects; the `then` pair keeps that true for this loop.
+   */
+  const pump = (): Promise<void> => {
+    if (sending !== undefined) return sending;
+    const body = waiting;
+    waiting = undefined;
+    if (body === undefined) return Promise.resolve();
+    sending = postOtlp({ url, headers, body, timeoutMs, fetch: send })
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .then(() => {
+        sending = undefined;
+        if (waiting !== undefined) void pump();
+      });
+    return sending;
+  };
 
   return {
     export(collection: MetricCollection): void {
@@ -143,18 +169,19 @@ export function otlpMetricExporter(options: OtlpMetricExporterOptions = {}): Otl
         });
         return;
       }
-      // Chained, so a slow collector cannot make two snapshots arrive out of order and turn a
-      // cumulative counter into an apparent reset. Chained on a SETTLED shadow, for the reason
-      // `otlp-span-exporter.ts` spells out: a chain that carries a rejection forward stops calling
-      // `postOtlp` for the life of the process, in silence.
-      const settled = inflight.then(
-        () => undefined,
-        () => undefined,
-      );
-      inflight = settled.then(() => postOtlp({ url, headers, body, timeoutMs, fetch: send }));
+      waiting = body;
+      void pump();
     },
-    flush(): Promise<void> {
-      return inflight;
+    async flush(): Promise<void> {
+      // The one in flight, then the one that was waiting behind it — which that settle started.
+      // Bounded, so a timer exporting while this waits cannot keep a shutdown here forever.
+      for (
+        let round = 0;
+        round < 3 && (sending !== undefined || waiting !== undefined);
+        round += 1
+      ) {
+        await pump();
+      }
     },
   };
 }

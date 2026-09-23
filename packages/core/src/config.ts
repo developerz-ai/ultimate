@@ -7,15 +7,24 @@ import { CURRENCY_CODE_PATTERN } from '@ultimat3/schema';
 // them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
 // drift into two vocabularies with no map between them (issue #293).
 import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
+import { countIssue } from './config-count';
+import { BASE_FIX, CACHE_TIER_FIX, TIMEZONE_FIX } from './config-fixes';
+import { type Input, lastSaid, layered } from './config-merge';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, pwaIssues } from './config-pwa';
 import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
+import { defaultReadinessGraceMs, readinessGraceIssue } from './lifecycle-grace';
 import { ROLES, type Role } from './roles';
 import { isIanaZoneName } from './time-zone-name';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type RealtimeTransport = 'memory' | 'nats' | 'redis';
+/**
+ * The buses `@ultimat3/realtime`'s `selectTransport` builds, and nothing else. `'redis'` was in
+ * this union until 22.0.0 with no Redis transport anywhere: it booted whatever `NATS_URL` chose.
+ */
+export const REALTIME_TRANSPORTS = ['memory', 'nats'] as const;
+export type RealtimeTransport = (typeof REALTIME_TRANSPORTS)[number];
 
 export interface ThemeConfig {
   readonly defaultMode: ThemeMode;
@@ -172,6 +181,20 @@ export interface AiConfig {
   readonly mcp: McpConfig;
 }
 
+/**
+ * How a SIGTERM'd process leaves the load balancer. Read by `@ultimat3/http`'s `createServer`
+ * (`ServerOptions.drain`), which hands it to core's `configureLifecycle`.
+ */
+export interface DrainConfig {
+  /**
+   * `/readyz` answers 503 for this long before the listener closes, so endpoints stop routing here
+   * first. Default 0 in development/test and 5000 everywhere else — a process naming NO environment
+   * included. A whole number, 0–60000. The chart's `terminationGracePeriodSeconds` must exceed it
+   * plus the drain budget.
+   */
+  readonly readinessGraceMs: number;
+}
+
 export interface AppConfig {
   readonly name: string;
   readonly locales: readonly string[];
@@ -188,9 +211,8 @@ export interface AppConfig {
   readonly realtime: RealtimeConfig;
   readonly notify: NotifyConfig;
   readonly ai: AiConfig;
+  readonly drain: DrainConfig;
 }
-
-type Input<T> = { readonly [K in keyof T]?: T[K] | undefined };
 
 /** `mcp` is the only member, and it is NESTED — `Input<AiConfig>` would make it all-or-nothing. */
 export interface AiConfigInput {
@@ -224,23 +246,11 @@ export interface AppConfigInput {
   readonly realtime?: Input<RealtimeConfig> | undefined;
   readonly notify?: Input<NotifyConfig> | undefined;
   readonly ai?: AiConfigInput | undefined;
+  readonly drain?: Input<DrainConfig> | undefined;
 }
 
 /** An overlay from `config/<concern>.ts`. No `name` — the base owns it. */
 export type AppConfigOverlay = Omit<AppConfigInput, 'name'> & { readonly name?: string };
-
-/**
- * Apply a partial section over its defaults. Explicit `undefined` never wins — that is what
- * makes every config field deeply optional without `exactOptionalPropertyTypes` fighting back.
- */
-function section<T extends object>(base: T, patch: Input<T> | undefined): T {
-  if (patch === undefined) return base;
-  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
-  for (const [key, value] of Object.entries(patch)) {
-    if (value !== undefined) out[key] = value;
-  }
-  return out as T;
-}
 
 const NAME_RE = /^[a-z][a-z0-9-]{1,63}$/;
 
@@ -287,31 +297,15 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
       backoff: 'exponential',
       visibilityTimeoutMs: 30_000,
     },
-    realtime: { enabled: false, transport: 'memory', urlEnv: undefined },
+    // ON by default since 22.0.0, when the boot began obeying the key: an app with no section
+    // keeps the `sync` node it always got, and `enabled: false` is the explicit opt-out.
+    realtime: { enabled: true, transport: 'memory', urlEnv: undefined },
     notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
     ai: { mcp: { expose: true, path: '/mcp' } },
+    // Read from the process env when the config is DEFINED — the same env the drain will run in.
+    drain: { readinessGraceMs: defaultReadinessGraceMs() },
   };
 }
-
-const BASE_FIX = 'edit app.config.ts to fix the fields named in cause, then run: x verify';
-
-/**
- * Appended only when the zone is what failed. Axiom 4: an operator holding `'CET'` needs the
- * spelling to write, and the two refused classes have different remedies — a single-label legacy
- * name swaps mechanically, an abbreviation or an offset has no replacement at all because it names
- * no jurisdiction. Deliberately parallel to `@ultimat3/time`'s `X_TIMEZONE_INVALID` fix, since the
- * two refuse the same strings and an operator may meet either first.
- */
-const TIMEZONE_FIX =
-  "set defaultTimeZone to an Area/Location name, or UTC — list every accepted one with bun -e \"console.log(Intl.supportedValuesOf('timeZone').join('\\n'))\" — where a legacy single-label name swaps mechanically (Japan → Asia/Tokyo, GB → Europe/London, Universal → UTC), while an abbreviation or numeric offset (CET, EST5EDT, +01:00) carries no DST rule and has no replacement, so name the city whose clock you mean (Europe/Paris, America/New_York)";
-
-/**
- * Appended only when a tier name is what failed, and it names the rename rather than the rule: the
- * three refused spellings are the ones 8.0.0 accepted, and two of them have a mechanical
- * replacement while `isr` has none — it is a `RenderMode`, and no cache tier ever served it.
- */
-const CACHE_TIER_FIX =
-  "in app.config.ts, rewrite cache.tiers with the rung names the ladder serves — request-memo, lru, redis, cdn — where memo becomes request-memo and shared becomes redis, and isr is dropped: it is a render mode, so move it to render: 'isr' on the routes that want it";
 
 function validate(config: AppConfig): void {
   const issues: string[] = [];
@@ -346,10 +340,25 @@ function validate(config: AppConfig): void {
     issues.push(`defaultCurrency "${config.defaultCurrency}" is not a 3-letter ISO 4217 code`);
   }
   if (config.roles.length === 0) issues.push('roles must list at least one runtime role');
-  if (config.jobs.concurrency < 1) issues.push('jobs.concurrency must be >= 1');
+  // A domain per numeric key, never a bare `< 1`: every comparison with `NaN` is false, so the old
+  // `concurrency < 1` passed `NaN`, `2.5` and `Infinity`, and nothing screened the other three.
+  const counts: readonly (string | undefined)[] = [
+    countIssue('jobs.concurrency', config.jobs.concurrency, 1),
+    countIssue('jobs.maxAttempts', config.jobs.maxAttempts, 1),
+    countIssue('jobs.visibilityTimeoutMs', config.jobs.visibilityTimeoutMs, 1),
+    countIssue('cache.defaultTtlMs', config.cache.defaultTtlMs, 0),
+    readinessGraceIssue(config.drain.readinessGraceMs),
+  ];
+  for (const issue of counts) if (issue !== undefined) issues.push(issue);
   if (config.jobs.queues.length === 0) issues.push('jobs.queues must list at least one queue');
-  if (config.realtime.transport !== 'memory' && config.realtime.urlEnv === undefined) {
-    issues.push(`realtime.transport "${config.realtime.transport}" requires realtime.urlEnv`);
+  // An untyped config reaches here with whatever it wrote: a string is a name worth echoing, and
+  // anything else goes through `describeValue` rather than `${…}`.
+  const transport: unknown = config.realtime.transport;
+  if (!REALTIME_TRANSPORTS.some((known) => known === transport)) {
+    const said = typeof transport === 'string' ? `"${transport}"` : describeValue(transport);
+    issues.push(`realtime.transport ${said} is not one of ${REALTIME_TRANSPORTS.join(', ')}`);
+  } else if (transport === 'nats' && config.realtime.urlEnv === undefined) {
+    issues.push(`realtime.transport "nats" requires realtime.urlEnv`);
   }
   // BOTH RETENTION WINDOWS OR NEITHER — `undefined` is a real value here (never swept) and the
   // only other legal one is a positive, finite count of milliseconds. Zero is refused rather than
@@ -401,35 +410,83 @@ export function defineConfig(
   ...overlays: readonly AppConfigOverlay[]
 ): AppConfig {
   const base = defaults(input.name);
-  // One `Object.assign` over all overlays rather than a spread per overlay: `reduce` with a
-  // spread copies every key again on each step, and config is merged at boot on every start.
-  // `name` is applied last because it identifies the app — an overlay may not rename it.
-  const merged: AppConfigInput = Object.assign({}, input, ...overlays, {
-    name: input.name,
-  }) as AppConfigInput;
+  // Every layer, in order, merged per section and KEY BY KEY — see `layered`. `name` comes from
+  // the input alone because it identifies the app: an overlay may not rename it.
+  const layers: readonly AppConfigOverlay[] = [input, ...overlays];
 
   const config: AppConfig = {
-    name: merged.name,
-    locales: merged.locales ?? base.locales,
-    defaultLocale: merged.defaultLocale ?? base.defaultLocale,
-    defaultTimeZone: merged.defaultTimeZone ?? base.defaultTimeZone,
-    defaultCurrency: merged.defaultCurrency ?? base.defaultCurrency,
-    theme: section(base.theme, merged.theme),
-    auth: section(base.auth, merged.auth),
-    // Two `section` calls, one per level: the outer one may not see `offline` at all, or it would
-    // drop the nested defaults `PwaConfigInput` exists to keep. Hence the cast — the outer patch is
-    // this block minus the key the inner call owns.
+    name: input.name,
+    locales: lastSaid(
+      base.locales,
+      layers.map((layer) => layer.locales),
+    ),
+    defaultLocale: lastSaid(
+      base.defaultLocale,
+      layers.map((layer) => layer.defaultLocale),
+    ),
+    defaultTimeZone: lastSaid(
+      base.defaultTimeZone,
+      layers.map((layer) => layer.defaultTimeZone),
+    ),
+    defaultCurrency: lastSaid(
+      base.defaultCurrency,
+      layers.map((layer) => layer.defaultCurrency),
+    ),
+    theme: layered(
+      base.theme,
+      layers.map((layer) => layer.theme),
+    ),
+    auth: layered(
+      base.auth,
+      layers.map((layer) => layer.auth),
+    ),
+    // Two merges, one per level: the outer one may not see `offline` at all, or it would drop the
+    // nested defaults `PwaConfigInput` exists to keep. Hence the cast — the outer patch is this
+    // block minus the key the inner merge owns.
     pwa: {
-      ...section(base.pwa, { ...merged.pwa, offline: undefined } as Input<PwaConfig>),
-      offline: section(base.pwa.offline, merged.pwa?.offline),
+      ...layered(
+        base.pwa,
+        layers.map((layer) => ({ ...layer.pwa, offline: undefined }) as Input<PwaConfig>),
+      ),
+      offline: layered(
+        base.pwa.offline,
+        layers.map((layer) => layer.pwa?.offline),
+      ),
     },
-    roles: merged.roles ?? base.roles,
-    database: section(base.database, merged.database),
-    cache: section(base.cache, merged.cache),
-    jobs: section(base.jobs, merged.jobs),
-    realtime: section(base.realtime, merged.realtime),
-    notify: section(base.notify, merged.notify),
-    ai: { mcp: section(base.ai.mcp, merged.ai?.mcp) },
+    roles: lastSaid(
+      base.roles,
+      layers.map((layer) => layer.roles),
+    ),
+    database: layered(
+      base.database,
+      layers.map((layer) => layer.database),
+    ),
+    cache: layered(
+      base.cache,
+      layers.map((layer) => layer.cache),
+    ),
+    jobs: layered(
+      base.jobs,
+      layers.map((layer) => layer.jobs),
+    ),
+    realtime: layered(
+      base.realtime,
+      layers.map((layer) => layer.realtime),
+    ),
+    notify: layered(
+      base.notify,
+      layers.map((layer) => layer.notify),
+    ),
+    ai: {
+      mcp: layered(
+        base.ai.mcp,
+        layers.map((layer) => layer.ai?.mcp),
+      ),
+    },
+    drain: layered(
+      base.drain,
+      layers.map((layer) => layer.drain),
+    ),
   };
 
   validate(config);
