@@ -12,7 +12,7 @@ import {
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { useRequestCookie, useRequestHeader } from './context';
-import { registerErrorStatus, resetErrorStatus } from './error-map';
+import { registerErrorStatus, resetErrorStatus } from './error-status';
 import { createPipeline } from './pipeline';
 import { json, text } from './response';
 import { createRouter, type Route } from './router';

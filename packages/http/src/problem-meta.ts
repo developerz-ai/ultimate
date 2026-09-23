@@ -47,11 +47,31 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set(['issues', '__proto__']);
 /** Per app-owned code, the `meta` keys its documents carry. A `Map`, for `APP_ERROR_STATUS`'s reason. */
 const DECLARED = new Map<string, readonly string[]>();
 
+/**
+ * The 5xx codes whose `cause` a caller may read. Every other 5xx document carries the code and the
+ * request id and a fixed sentence: `X_DB_STATEMENT_FAILED` has a status row, so the old "blank only
+ * what nobody classified" rule served the Postgres message and the SQL statement in a production
+ * 500. The framework's four are refusals whose cause IS the instruction — back off, retry.
+ */
+const FRAMEWORK_PUBLIC_CAUSE: ReadonlySet<string> = new Set([
+  'X_DRAINING',
+  'X_OVERLOADED',
+  'X_FLIGHT_GATE_OVERLOADED',
+  'X_TIMEOUT',
+]);
+const APP_PUBLIC_CAUSE = new Set<string>();
+
+/** Per code: the `meta` keys, a public cause, or both. A bare list is the keys alone. */
+export type ProblemMetaDeclaration =
+  | readonly string[]
+  | { readonly keys?: readonly string[] | undefined; readonly publicCause?: boolean | undefined };
+
 const sameKeys = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((key, at) => key === right[at]);
 
 /**
- * Declare, per code, which `meta` keys the problem document carries. Call it once at boot, in
+ * Declare, per code, which `meta` keys the problem document carries — and, for a 5xx, whether its
+ * `cause` may be shown at all (`{ publicCause: true }`; hidden by default). Call it once at boot, in
  * the module that declares the codes — beside `registerErrorStatus`, and BOTH are needed: a code
  * with no declared status is an unclassified 5xx, and `toProblem` blanks everything but the code
  * and the request id on one of those, `meta` included.
@@ -66,11 +86,20 @@ const sameKeys = (left: readonly string[], right: readonly string[]): boolean =>
  * `X_RATE_LIMITED: ['key']` would publish the limiter's internal key on every 429.
  */
 export const registerProblemMeta = (
-  declarations: Readonly<Record<string, readonly string[]>>,
+  declarations: Readonly<Record<string, ProblemMetaDeclaration>>,
 ): void => {
-  for (const [code, keys] of Object.entries(declarations)) {
+  for (const [code, declaration] of Object.entries(declarations)) {
     if (frameworkOwns(code)) {
       throw problemMetaInvalid(code, 'the framework owns that code, and its meta is operator-only');
+    }
+    const listed = Array.isArray(declaration);
+    const keys: readonly string[] = listed
+      ? declaration
+      : ((declaration as { keys?: readonly string[] }).keys ?? []);
+    const publicCause = !listed && (declaration as { publicCause?: boolean }).publicCause === true;
+    if (!listed && keys.length === 0 && publicCause) {
+      APP_PUBLIC_CAUSE.add(code);
+      continue;
     }
     if (keys.length === 0) {
       throw problemMetaInvalid(code, 'the key list is empty — omit the code instead');
@@ -93,11 +122,19 @@ export const registerProblemMeta = (
       throw problemMetaInvalid(code, `already declared as [${existing.join(', ')}] by this app`);
     }
     DECLARED.set(code, [...keys]);
+    if (publicCause) APP_PUBLIC_CAUSE.add(code);
   }
 };
 
 /** Test seam. Production registers once at boot and never unregisters. */
-export const resetProblemMeta = (): void => DECLARED.clear();
+export const resetProblemMeta = (): void => {
+  DECLARED.clear();
+  APP_PUBLIC_CAUSE.clear();
+};
+
+/** Whether a 5xx document for `code` may carry its authored `cause`. */
+export const hasPublicCause = (code: string): boolean =>
+  FRAMEWORK_PUBLIC_CAUSE.has(code) || APP_PUBLIC_CAUSE.has(code);
 
 /** The keys declared for a code, or `undefined` when nothing was — which is every framework code. */
 export const problemMetaKeysFor = (code: string): readonly string[] | undefined =>

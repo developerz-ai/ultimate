@@ -12,7 +12,8 @@ import {
 import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { entity } from './entity';
-import { postgresRepo, postgresTransactor } from './pg-driver';
+import { postgresRepo } from './pg-driver';
+import { postgresTransactor } from './pg-transactor';
 import { clearRegistry } from './registry';
 import { resetWriteTag } from './write-tag';
 

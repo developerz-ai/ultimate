@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import {
   beginWork,
+  configureLifecycle,
   configureTelemetry,
   drain,
   markReady,
@@ -178,6 +179,24 @@ describe('the request deadline', () => {
     expect([499, 504]).toContain((await call(pipeline)).status);
   });
 
+  // A handler that answers the abort with a RESPONSE rather than a throw finishes a microtask or
+  // two after the deadline won, while the 504 is still being finalized. Suspected (plan 101, 04 k)
+  // to overwrite it; not reproduced — this pins that the late 200 never goes out.
+  test('a handler finishing after the deadline cannot replace the 504', async () => {
+    const pipeline = pipelineFor(
+      async (_request, ctx) => {
+        await new Promise<void>((resolve) => {
+          ctx.signal.addEventListener('abort', () => resolve());
+        });
+        return text('late');
+      },
+      { requestTimeoutMs: 15 },
+    );
+    const response = await call(pipeline);
+    expect(response.status).toBe(504);
+    expect(await response.text()).not.toBe('late');
+  });
+
   test('a fast handler is untouched', async () => {
     const pipeline = pipelineFor(() => text('quick'), { requestTimeoutMs: 1_000 });
     expect(await (await call(pipeline)).text()).toBe('quick');
@@ -199,7 +218,23 @@ describe('the request deadline', () => {
 describe('the admit stage', () => {
   afterEach(() => resetLifecycle());
 
-  test('answers 503 with Retry-After while the process is draining', async () => {
+  // DURING the drain a request is SERVED, with `connection: close` so the client's next request
+  // opens a socket on another pod. Refusing it was measured on kind (plan 101, slice 13): 598 of
+  // 7,690 requests failed a helm upgrade with X_DRAINING, every one arriving on a kept-alive
+  // connection inside the readiness grace — the window that exists so such requests are answered.
+  test('serves a request that arrives while draining, and closes its connection', async () => {
+    const pipeline = pipelineFor(() => text('ok'));
+    configureLifecycle({ readinessGraceMs: 200 });
+    markReady();
+    const drained = drain('SIGTERM');
+    const response = await call(pipeline);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('ok');
+    expect(response.headers.get('connection')).toBe('close');
+    await drained;
+  });
+
+  test('answers 503 with Retry-After once the process has stopped', async () => {
     const pipeline = pipelineFor(() => text('ok'));
     markReady();
     await drain('test');
@@ -315,6 +350,23 @@ describe('the csrf stage', () => {
 
   test('a bearer caller carries no ambient credential and needs no origin', async () => {
     expect(await (await post({ headers: { authorization: 'Bearer t' } })).text()).toBe('written');
+  });
+
+  // Slice 11 k: `curl -X POST` against `x dev` carries neither header, and the fix it got named a
+  // token dev does not have. From a loopback address the fix names the header that proves it.
+  test('a local caller with neither header is told the one header that proves same-origin', async () => {
+    const local = await pipelineFor(() => text('written'), {}, 'POST').handle(
+      new Request('http://localhost:3000/probe', { method: 'POST' }),
+      { role: 'web', ip: '127.0.0.1' },
+    );
+    const body = (await local.json()) as { code: string; fix: string };
+    expect(body.code).toBe('X_CSRF_BLOCKED');
+    expect(body.fix).toStartWith("curl -H 'sec-fetch-site: same-origin'");
+    const remote = await pipelineFor(() => text('written'), {}, 'POST').handle(
+      new Request('http://app.test/probe', { method: 'POST' }),
+      { role: 'web', ip: '203.0.113.9' },
+    );
+    expect(((await remote.json()) as { fix: string }).fix).not.toContain('sec-fetch-site');
   });
 
   test("mode: 'off' lets it through — declared, never discovered", async () => {

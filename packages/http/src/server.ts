@@ -2,7 +2,7 @@
 // context, tracing and authz must be impossible to skip — a route is a data
 // declaration, never a chance to hand-roll a request handler.
 
-import type { HealthPayload, HealthState, Role } from '@ultimat3/core';
+import type { DrainConfig, HealthPayload, HealthState, Role } from '@ultimat3/core';
 import {
   beginWork,
   configureLifecycle,
@@ -82,6 +82,12 @@ export interface ServerOptions {
    * client picks whichever origin it can actually reach.
    */
   readonly websocket?: WebSocketMount;
+  /**
+   * `app.config.ts`'s `drain` section — pass `appConfig.drain`. Its `readinessGraceMs` is how long
+   * `/readyz` answers 503 before the `accept` phase closes this listener. Omitted, core's own
+   * default holds (0 in development/test, 5000 elsewhere) and an app's `configureLifecycle` stands.
+   */
+  readonly drain?: Partial<DrainConfig>;
 }
 
 /**
@@ -172,6 +178,10 @@ export const createServer = (options: ServerOptions): ServerHandle => {
   // own `fix:` prints — back to 15s on every boot that serves web, silently. "Nobody said" and
   // "the app said 15 seconds" are different claims and `null` is what keeps them apart.
   if (config.drainTimeoutMs !== null) configureLifecycle({ deadlineMs: config.drainTimeoutMs });
+  // Same rule: only a declared grace is applied. Core waits it out between the readiness flip and
+  // the `accept` hook below, so endpoints stop routing here before the socket closes.
+  const readinessGraceMs = options.drain?.readinessGraceMs;
+  if (readinessGraceMs !== undefined) configureLifecycle({ readinessGraceMs });
 
   const mount = options.websocket;
   let server: BunServer | undefined;
@@ -304,8 +314,9 @@ export const createServer = (options: ServerOptions): ServerHandle => {
       // so the test seal can let it through without an allowlist entry per random port.
       stopListening = markListening(server.url.origin);
 
-      // 'accept' runs first on SIGTERM: readyz flips to 503 here, while the socket is
-      // still open, so the load balancer stops sending new work before we close it.
+      // 'accept' runs first on SIGTERM, but only after core's readiness grace: readyz flips to
+      // 503 the moment the drain starts, the socket stays open for `readinessGraceMs`, so the
+      // endpoints controller stops routing here before this closes it — not a 502 in between.
       unregister = onShutdown(
         `http:${role}`,
         async () => {

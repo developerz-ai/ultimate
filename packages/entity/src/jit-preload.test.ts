@@ -215,6 +215,37 @@ describe('a page batches the lookups it causes', () => {
   });
 });
 
+const userRowName = (id: string): string => `U-${id.slice(-2)}`;
+
+describe('a page wider than the bucket', () => {
+  // The bucket keeps `MAX_SIBLING_KEYS` rows. Preloading every id of a wider page read all of
+  // them and then evicted most — including, for the first lookup, the row it was widened FOR.
+  // The sibling index is bounded too, so the first `width - MAX_SIBLING_KEYS` keys of this page
+  // are already gone; the first lookup a page can batch is the one at that position.
+  test('reads only what the bucket keeps, starting at the row asked for, and serves it', async () => {
+    const width = MAX_SIBLING_KEYS + MAX_IDS_PER_STATEMENT;
+    const rows = Array.from({ length: width }, (_, index) =>
+      postRow(idAt(10_000 + index), idAt(20_000 + index)),
+    );
+    client.on('from "jit_test_posts"', { rows });
+    const first = width - MAX_SIBLING_KEYS;
+    client.on('from "jit_test_users"', { rows: [userRow(idAt(20_000 + first))] });
+    const name = await inRequest(async () => {
+      const page = await postRepo().findMany({ orgId: ORG, limit: rows.length });
+      return (await userRepo().findById(page.rows[first]?.authorId ?? '', { orgId: ORG }))?.name;
+    });
+    // The preload's later chunks are not awaited by the lookup; let them all go out first.
+    for (let turn = 0; turn < 20; turn += 1) await Bun.sleep(0);
+    const read = client.statements
+      .slice(1)
+      .reduce((total, statement) => total + (statement.values?.length ?? 0) - 2, 0);
+    expect(read).toBeLessThanOrEqual(MAX_SIBLING_KEYS);
+    // Served from the preload, not a statement of its own after the preload evicted it.
+    expect(name).toBe(userRowName(idAt(20_000 + first)));
+    expect(client.statements.length).toBe(1 + MAX_SIBLING_KEYS / MAX_IDS_PER_STATEMENT);
+  });
+});
+
 describe('the scope a preloaded row may be served to', () => {
   test('the preload statement carries the scope the single lookups carried', async () => {
     aPageOfThree();

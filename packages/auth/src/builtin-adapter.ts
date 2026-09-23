@@ -265,8 +265,13 @@ export class BuiltinAdapter implements AuthAdapter {
     return rows.map(toSession);
   }
 
+  /**
+   * On a pair that is already linked the row keeps its `id`, `user_id` and `created_at` and only
+   * the tokens move — so the answer is the row `returning *` reports, never the object handed in,
+   * which named a user the row does not belong to.
+   */
   async linkAccount(account: AuthAccount): Promise<AuthAccount> {
-    await this.#db.execute(sql`
+    const row = await this.#db.one<Row>(sql`
       insert into x_accounts (id, user_id, provider, provider_account_id, access_token,
                               refresh_token, expires_at, created_at)
       values (${account.id}, ${account.userId}, ${account.provider}, ${account.providerAccountId},
@@ -274,8 +279,9 @@ export class BuiltinAdapter implements AuthAdapter {
               ${account.createdAt})
       on conflict (provider, provider_account_id) do update
         set access_token = excluded.access_token, refresh_token = excluded.refresh_token,
-            expires_at = excluded.expires_at`);
-    return account;
+            expires_at = excluded.expires_at
+      returning *`);
+    return row === null ? account : toAccount(row);
   }
 
   async findAccount(provider: string, providerAccountId: string): Promise<AuthAccount | null> {
@@ -346,7 +352,7 @@ export class BuiltinAdapter implements AuthAdapter {
   async listApiKeys(ownerId: string): Promise<readonly AuthApiKeyRecord[]> {
     const rows = await this.#db.query<Row>(sql`
       select * from x_api_keys where user_id = ${ownerId} or org_id = ${ownerId}
-      order by created_at desc`);
+      order by created_at desc, id desc`);
     return rows.map(toApiKey);
   }
 

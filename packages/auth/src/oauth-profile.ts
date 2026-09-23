@@ -79,13 +79,21 @@ async function getJson(
     // so the rejection is whatever a driver or a proxy threw — and `instanceof` runs the value's
     // own `getPrototypeOf` trap, which would replace this coded refusal with a bare `TypeError`
     // raised from inside the catch that exists to raise it. Same rule as `@ultimat3/cache`.
-    const reason = renderThrowable(error);
+    //
+    // LOGGED, never published: `oauth-route.ts` serves this cause to whoever typed the callback
+    // URL, and a rejection from an injected fetch is a server's internals — a pool DSN, an
+    // internal address. The same split `oauth-exchange.ts` makes on the token leg.
+    logger.error('auth.oauth.userinfo_fetch_failed', {
+      provider,
+      url,
+      detail: renderThrowable(error),
+    });
     throw oauthExchangeFailed({
       provider,
       stage: 'userinfo',
       detail:
-        `${reason} — nothing left this host for ${url} (egress, DNS or TLS); restart the ` +
-        'flow once it does',
+        `nothing left this host for ${url} (egress, DNS or TLS); the reason is in this process ` +
+        'log under auth.oauth.userinfo_fetch_failed. Restart the flow once it does',
       // The endpoint reaches the registry from `discoverOAuthProvider` — the OP's own document —
       // so it is REMOTE text, and this line is a command a reader pastes: `$(…)` and a backtick
       // substitute before `curl` is reached. `renderFixShellArg` passes an ordinary endpoint

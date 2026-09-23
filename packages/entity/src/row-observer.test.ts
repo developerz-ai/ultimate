@@ -3,10 +3,11 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createContext, runWithContext, userActor, withWriteOrigin } from '@ultimat3/core';
-import { createRecordingClient, setDbClient } from '@ultimat3/db';
+import { createRecordingClient, setDbClient, withTransaction } from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
+import { memoryTransactor } from './memory-repo';
 import { N_PLUS_ONE_THRESHOLD } from './n-plus-one';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
@@ -305,5 +306,59 @@ describe('the before-read of a batch is one statement, never one per row', () =>
 
     expect(written).toHaveLength(batch.length);
     expect(new Set(seen.map((change) => change.op))).toEqual(new Set(['insert']));
+  });
+});
+
+/**
+ * A change is reported when it is DURABLE. The observer fired at the repository write, so a live
+ * query under `x dev` showed a row its transaction then rolled back (plan 101, 06 m).
+ */
+describe('changes inside a transaction are reported at COMMIT', () => {
+  const tagRow = (id: string) => ({ id, label: 'x' });
+
+  test('memory: nothing before commit, the change after it; nothing at all on rollback', async () => {
+    const seen: RowChange[] = [];
+    setRowObserver({ onChange: (change) => seen.push(change) });
+    const repo = observedRepo(tags, memoryDriver().repo(tags));
+    const tx = memoryTransactor();
+    await tx.run(async (open) => {
+      await repo.insert(tagRow(ONE), { tx: open });
+      expect(seen).toHaveLength(0);
+    });
+    expect(seen.map((change) => change.op)).toEqual(['insert']);
+    await tx
+      .run(async (open) => {
+        await repo.insert(tagRow(TWO), { tx: open });
+        throw new RangeError('rolled back');
+      })
+      .catch(() => undefined);
+    expect(seen).toHaveLength(1);
+  });
+
+  test('postgres: the ambient withTransaction holds the change until COMMIT', async () => {
+    const client = createRecordingClient();
+    client.on('observed_tags', { rows: [{ id: ONE, label: 'x' }] });
+    setDbClient(client);
+    const seen: RowChange[] = [];
+    setRowObserver({ onChange: (change) => seen.push(change) });
+    const repo = observedRepo(tags, postgresRepo(tags));
+    await withTransaction(async () => {
+      await repo.insert(tagRow(ONE));
+      expect(seen).toHaveLength(0);
+    });
+    expect(seen).toHaveLength(1);
+    await withTransaction(async () => {
+      await repo.insert(tagRow(ONE));
+      throw new RangeError('rolled back');
+    }).catch(() => undefined);
+    expect(seen).toHaveLength(1);
+  });
+
+  test('outside any transaction the change is reported at once, as before', async () => {
+    const seen: RowChange[] = [];
+    setRowObserver({ onChange: (change) => seen.push(change) });
+    const repo = observedRepo(tags, memoryDriver().repo(tags));
+    await repo.insert(tagRow(ONE));
+    expect(seen).toHaveLength(1);
   });
 });

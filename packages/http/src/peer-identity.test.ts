@@ -70,3 +70,24 @@ describe('peerIdentity', () => {
     expect(read(undefined, 1)).toBeNull();
   });
 });
+
+// XFCC was unescaped TWICE: the element split stripped the quotes, then `pairsOf` split the
+// stripped text again — so a `;` inside a quoted Subject cut it short, and two services whose
+// subjects differ only after that `;` became ONE identity.
+describe('a quoted value is unescaped once, after the pairs are split', () => {
+  test('three subjects that differ only inside their quotes are three identities', () => {
+    const one = read('Subject="O=Acme; Inc,CN=svc-one"', 1);
+    const two = read('Subject="O=Acme; Inc,CN=svc-two"', 1);
+    const quoted = read('Subject="CN=checkout\\""', 1);
+    expect(one?.id).toBe('O=Acme; Inc,CN=svc-one');
+    expect(two?.id).toBe('O=Acme; Inc,CN=svc-two');
+    expect(quoted?.id).toBe('CN=checkout"');
+    expect(new Set([one?.id, two?.id, quoted?.id]).size).toBe(3);
+  });
+
+  test('a quoted comma still does not split the hop list', () => {
+    const peer = read('URI=spiffe://forged/x,Subject="O=Acme, Inc;CN=svc";URI=spiffe://ok/y', 1);
+    expect(peer?.subject).toBe('O=Acme, Inc;CN=svc');
+    expect(peer?.spiffeId).toBe('spiffe://ok/y');
+  });
+});

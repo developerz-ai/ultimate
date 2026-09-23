@@ -423,6 +423,7 @@ export const entity = <const C extends ColumnMap>(
     tableName: table,
     persist: init.persist === true,
     projection: recordProjection(core),
+    core: core as EntityCore<unknown>,
     describe,
     references,
   });

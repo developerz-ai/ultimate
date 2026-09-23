@@ -72,7 +72,10 @@ export const allColumns = <Row>(entity: EntityCore<Row>): readonly string[] =>
 
 /**
  * Row (or patch) -> the columns to write. Absent properties are skipped rather than nulled,
- * which is what makes the same function serve `insert` and a partial `update`.
+ * which is what makes the same function serve `insert` and a partial `update` — and a property
+ * PRESENT with the value `undefined` is absent too, as `namedColumns` already reads it. The common
+ * patch is built from optional action input (`{ body: input.body }`), and binding that `undefined`
+ * as NULL wiped the column the caller never meant to touch. NULL is written only for `null`.
  */
 export const bindValues = <Row>(
   entity: EntityCore<Row>,
@@ -85,6 +88,7 @@ export const bindValues = <Row>(
   for (const [property, column] of Object.entries(entity.$columns)) {
     if (!Object.hasOwn(record, property)) continue;
     const value = record[property];
+    if (value === undefined) continue;
     if (column.$meta.kind !== 'money') {
       bound.set(columnName(property, column.$meta), bindable(column, value));
       continue;

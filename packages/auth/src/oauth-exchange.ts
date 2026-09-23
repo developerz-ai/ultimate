@@ -133,7 +133,13 @@ export async function providerDetail(
   try {
     const parsed: unknown = JSON.parse(text);
     if (isRecord(parsed)) {
-      const description = parsed['error_description'] ?? parsed['error'] ?? parsed['message'];
+      // `message` is not an OAuth error field (RFC 6749 §5.2 defines `error` and
+      // `error_description`), and a gateway that echoes the request body puts `client_secret` in
+      // it — so a `coded-only` leg never reads it.
+      const description =
+        parsed['error_description'] ??
+        parsed['error'] ??
+        (echo === 'coded-only' ? undefined : parsed['message']);
       if (typeof description === 'string' && description !== '') {
         return renderCauseValue(description);
       }

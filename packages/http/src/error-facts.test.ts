@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL, UltimateError } from '@ultimat3/core';
 import { factsOf, renderErrorLines, toProblem } from './error-facts';
-import { registerErrorStatus, resetErrorStatus } from './error-map';
+import { registerErrorStatus, resetErrorStatus } from './error-status';
 import { bodyInvalid, forbidden, routeNotFound } from './errors';
 import { MAX_PROBLEM_META_BYTES, registerProblemMeta, resetProblemMeta } from './problem-meta';
 import { rateLimited } from './rate-limit-errors';

@@ -81,7 +81,7 @@ describe('entity()', () => {
     // A generated uuid v7 primary key, because the column said so — not because a seed did.
     expect(parsed.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(parsed.price.minor).toBe(1900);
-    expect(() => posts.$parse({ ...sample, likeCount: 1.5 })).toThrow(/safe integer/);
+    expect(() => posts.$parse({ ...sample, likeCount: 1.5 })).toThrow(/int4 range/);
     expect(() => posts.$parse({ ...sample, price: { minor: 19.5, currency: 'USD' } })).toThrow(
       /float/,
     );

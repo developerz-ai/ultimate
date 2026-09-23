@@ -79,10 +79,21 @@ describe('cache headers', () => {
       sMaxAgeSeconds: 10,
       tags: ['post:1', 'feed'],
     });
-    expect(response.headers.get('x-cache-tags')).toBe('post:1,feed');
+    // The two headers a CDN reads — Fastly's `Surrogate-Key` (space-separated) and Cloudflare's
+    // `Cache-Tag` (comma-separated). `x-cache-tags` was read by neither, so every purge by tag
+    // "succeeded" and cleared nothing.
+    expect(response.headers.get('surrogate-key')).toBe('post:1 feed');
+    expect(response.headers.get('cache-tag')).toBe('post:1,feed');
+    expect(response.headers.get('x-cache-tags')).toBeNull();
     // Every ambient input a server render reads, in `SHARED_CACHE_VARY`'s own order: `ctx.tz`
     // comes off a header too, and a date formatted in it is as visitor-specific as the locale.
     expect(response.headers.get('vary')).toBe('accept-language, cookie, x-timezone');
+  });
+
+  test('a per-user response carries no surrogate keys, since no CDN holds it', () => {
+    const response = applyCacheHeaders(text('body'), { mode: 'private', tags: ['post:1'] });
+    expect(response.headers.get('surrogate-key')).toBeNull();
+    expect(response.headers.get('cache-tag')).toBeNull();
   });
 
   // Without `cookie` in the key, a shared cache stores one visitor's signed-in render of a public

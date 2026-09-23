@@ -156,8 +156,9 @@ describe('a finalize stage that throws', () => {
     expect(response.headers.get('content-type')).toContain('application/problem+json');
     const body = await bodyOf(response);
     expect(body['code']).toBe('X_PIPELINE_FINALIZE_FAILED');
-    expect(body['cause']).toContain('cache-headers');
-    expect(body['cause']).toContain('immutable headers');
+    // A 5xx cause is withheld outside dev (plan 101, 04 l); the code and the authored fix are what
+    // a caller is handed, and the cause is in the log under this request id.
+    expect(body['cause']).not.toContain('immutable headers');
     expect(body['fix']).toContain('redirect()');
   });
 

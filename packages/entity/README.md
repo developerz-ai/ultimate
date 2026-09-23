@@ -890,6 +890,15 @@ database from its boot code has decided to, and a library that overruled that wo
 `X_PRELOAD_UNKNOWN_RELATION` · `X_N_PLUS_ONE_QUERY` · `X_N_PLUS_ONE_WRITE` ·
 `X_RECORD_KEY_MISSING`
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `EntityError` | any `EntityErrorCode` — `ENTITY_ERROR_CODES` | `src/entity-error.ts` |
+
 ## Boundaries
 
 Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema` and `@ultimat3/db` only — `db` is tier 1

@@ -101,3 +101,36 @@ describe('api keys', () => {
     expect(summary.prefix.startsWith('ult_dev_')).toBe(true);
   });
 });
+
+// `issueApiKey({ env: 'live_eu' })` minted `ult_live_eu_<id>_<secret>`, which `parseApiKey` splits
+// as env `live`, id `eu` — a key its own verifier refused, handed out as if it worked.
+describe('an env the parser cannot read back is refused at issue', () => {
+  const codeOf = (env: string): string | undefined => {
+    try {
+      issueApiKey({ env, scopes: ['posts:read'] });
+      return undefined;
+    } catch (error) {
+      return error instanceof AuthError ? error.code : 'not-an-auth-error';
+    }
+  };
+
+  test.each(['live_eu', '', 'Prod', 'prod env'])('%p is X_CONFIG_INVALID', (env) => {
+    expect(codeOf(env)).toBe('X_CONFIG_INVALID');
+  });
+
+  test.each(['dev', 'prod', 'live-eu', 'stage2'])('%p round-trips through parseApiKey', (env) => {
+    const issued = issueApiKey({ env, scopes: ['posts:read'] });
+    expect(parseApiKey(issued.plaintext)?.env).toBe(env);
+    expect(parseApiKey(issued.plaintext)?.id).toBe(issued.record.id);
+  });
+
+  test('the refusal names the separator and the spelling that works', () => {
+    try {
+      issueApiKey({ env: 'live_eu', scopes: [] });
+      expect.unreachable('live_eu is refused');
+    } catch (error) {
+      expect(String((error as AuthError).cause)).toContain('"_"');
+      expect(String((error as AuthError).fix)).toContain('live-eu');
+    }
+  });
+});

@@ -16,7 +16,7 @@ export type { AppHttpConfig, BootOwnedHttpKey } from './app-config';
 export { configuredHttp, configureHttp, mergeHttpConfig, resetHttpConfig } from './app-config';
 export { NEXT_PARAM, nextAfterSignIn, signInRedirect } from './auth-redirect';
 export type { HttpConfig, HttpConfigInput } from './config';
-export { defineHttpConfig, MAX_PROXY_HOPS, stripBasePath } from './config';
+export { defineHttpConfig, MAX_PROXY_HOPS } from './config';
 export type { ActorView, RequestContext, RequestContextInit } from './context';
 export {
   actorView,
@@ -29,11 +29,10 @@ export {
   useRequestHeaders,
 } from './context';
 export type { InboundCorrelation } from './correlation';
-export { readCorrelation } from './correlation';
 export type { CorsConfig } from './cors';
 export { allowedOrigin, corsHeaders, DEFAULT_CORS, originListed, preflight } from './cors';
 export type { CsrfCheckInput, CsrfConfig, CsrfMode, CsrfVerdict } from './csrf';
-export { checkCsrf, DEFAULT_CSRF, selfOrigin } from './csrf';
+export { checkCsrf, csrfBlocked } from './csrf';
 export type { Deadline } from './deadline';
 export { REQUEST_TIMEOUT_HEADER, resolveTimeoutMs, startDeadline } from './deadline';
 export type { ErrorFacts, ProblemDocument } from './error-facts';
@@ -44,13 +43,7 @@ export {
   retryAfterOf,
   toProblem,
 } from './error-facts';
-export {
-  DEFAULT_STATUS,
-  ERROR_STATUS,
-  registerErrorStatus,
-  resetErrorStatus,
-  statusFor,
-} from './error-map';
+export { ERROR_STATUS } from './error-map';
 export type {
   ErrorPageAction,
   ErrorPageCopy,
@@ -64,11 +57,16 @@ export {
   renderErrorPage,
   resolveErrorPageCopy,
 } from './error-page';
+export {
+  DEFAULT_STATUS,
+  registerErrorStatus,
+  resetErrorStatus,
+  statusFor,
+} from './error-status';
 export type { HttpErrorCode } from './errors';
 export {
   bodyInvalid,
   buildSkew,
-  csrfBlocked,
   draining,
   errorStatusInvalid,
   finalizeFailed,
@@ -94,29 +92,24 @@ export {
 export type { ForwardedInput, ForwardedSplit } from './forwarded';
 export {
   clientAddress,
-  clientUsedHttps,
-  FORWARDED_CLIENT_CERT,
-  FORWARDED_FOR,
-  FORWARDED_PROTO,
   forwardedElement,
-  forwardedValue,
 } from './forwarded';
 export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
 export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
-export { acceptsHtml, escapeHtml } from './html-render';
+export { escapeHtml } from './html-render';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
-export { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG, readCookie } from './locale';
+export { DEFAULT_LOCALE_CONFIG, readCookie } from './locale';
 export type { Middleware } from './middleware';
 export { compose } from './middleware';
 export type { OverlayMeta, OverlayNotice } from './overlay';
-export { overlayResponse, renderOverlay, wantsOverlay } from './overlay';
+export { overlayResponse, wantsOverlay } from './overlay';
 export { OVERLAY_STYLE } from './overlay-style';
 export type { PeerIdentity } from './peer-identity';
 export { peerIdentity } from './peer-identity';
 export type { HandleInit, Pipeline, PipelineDeps } from './pipeline';
 export { createPipeline, PIPELINE_STAGES } from './pipeline';
-export type { ProblemMeta, ProblemMetaValue } from './problem-meta';
-export { MAX_PROBLEM_META_BYTES, registerProblemMeta, resetProblemMeta } from './problem-meta';
+export type { ProblemMeta, ProblemMetaDeclaration, ProblemMetaValue } from './problem-meta';
+export { MAX_PROBLEM_META_BYTES, registerProblemMeta } from './problem-meta';
 export type {
   Bucket,
   MemoryRateLimitStore,
@@ -138,7 +131,6 @@ export {
   rateLimitDecision,
   rateLimitSpends,
   resolveRateLimitConfig,
-  TENANT_SCOPE,
   toBucket,
 } from './rate-limit';
 export { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
@@ -159,10 +151,7 @@ export type {
 } from './rate-limit-postgres';
 export {
   postgresRateLimitStore,
-  SQL_RATE_LIMIT_PURGE,
-  SQL_RATE_LIMIT_RESET,
   SQL_RATE_LIMIT_TABLE,
-  SQL_RATE_LIMIT_TAKE,
 } from './rate-limit-postgres';
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
@@ -196,7 +185,6 @@ export {
   describeRoutes,
   HTTP_METHODS,
   matchRoute,
-  normalizePath,
 } from './router';
 export type { SecurityConfig } from './security-headers';
 export { buildCsp, cspHashSource, DEFAULT_SECURITY, securityHeaders } from './security-headers';

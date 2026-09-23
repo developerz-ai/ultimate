@@ -235,6 +235,24 @@ const preload = <Row>(read: PointRead<Row>, bucket: Bucket, ids: readonly unknow
   void fill(read, wanted, settlers);
 };
 
+/**
+ * The ids a bucket can KEEP, from the one asked for onward. The bucket holds `MAX_SIBLING_KEYS`
+ * rows, so preloading a wider page read every id and then evicted the oldest — measured, 2,500
+ * ids read to keep 2,000. A sequential loop walks forward, so the window starts at this lookup.
+ */
+const keptWindow = <Row>(
+  read: PointRead<Row>,
+  ids: readonly unknown[],
+  filedAt: string,
+): readonly unknown[] => {
+  if (ids.length <= MAX_SIBLING_KEYS) return ids;
+  const start = Math.max(
+    0,
+    ids.findIndex((id) => keyOf(read.key.kind, id) === filedAt),
+  );
+  return ids.slice(start, start + MAX_SIBLING_KEYS);
+};
+
 const answered = <Row>(answer: Promise<Answer>): Promise<Row | null> =>
   answer.then((settled) =>
     'error' in settled ? Promise.reject(settled.error) : (settled.row as Row | null),
@@ -266,7 +284,7 @@ export const preloadedFindById = <Row>(
     rows: new Map<string, Promise<Answer>>(),
   };
   store.preloaded.set(scope, target);
-  preload(read, target, ids);
+  preload(read, target, keptWindow(read, ids, filedAt));
   const answer = target.rows.get(filedAt);
   return answer === undefined ? undefined : answered<Row>(answer);
 };

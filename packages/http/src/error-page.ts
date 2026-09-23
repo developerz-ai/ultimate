@@ -124,8 +124,16 @@ const hrefFor = (copy: ErrorPageCopy, input: ErrorPageInput): string => {
     return input.signInPath;
   // A retry has to be the page the visitor was on; with no request behind the page there is no
   // such address, so it degrades to the one link that is always right.
-  return (copy.action === 'retry' ? input.path : undefined) ?? '/';
+  return copy.action === 'retry' && input.path !== undefined ? sameOriginPath(input.path) : '/';
 };
+
+/**
+ * The path as a link that cannot leave this origin. A request for `//evil.com/x` has that
+ * pathname, and `href="//evil.com/x"` is protocol-relative — the retry button on the 503 served
+ * while draining sent the visitor to another host. A browser reads `\` as `/` in an http href,
+ * so the leading run of either collapses to one `/`.
+ */
+const sameOriginPath = (path: string): string => path.replace(/^[/\\]*/, '/');
 
 const link = (href: string, label: string): string =>
   `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;

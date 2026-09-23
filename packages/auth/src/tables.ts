@@ -1,6 +1,7 @@
-// Single responsibility: the DDL `BuiltinAdapter` expects. Exported as plain strings so an app
-// can paste them into a migration and read EXACTLY what auth stores — verifiable by reading,
-// never by trusting.
+// Single responsibility: the DDL `BuiltinAdapter` expects, as `AUTH_TABLES` — applied at every boot
+// by `@ultimat3/cli`'s `FRAMEWORK_SCHEMA`, upgrades of an older table included. Plain strings, so
+// what auth stores is verifiable by reading, never by trusting. There is nothing to paste into a
+// migration any more: the per-table exports and `X_USERS_MIGRATION_1_3` are gone (22.0.0).
 //
 // What is at rest, stated column by column rather than as a claim:
 //
@@ -45,16 +46,18 @@ export const X_USERS_TABLE = `create table if not exists x_users (
 create index if not exists x_users_org_id_idx on x_users (org_id)`;
 
 /**
- * The two columns `x_users` gained in 1.3.0, as the statements an app already running 1.2 runs
- * once. Both are additive and both have a default, so the migration is not a rewrite and takes no
- * exclusive lock beyond the catalog update.
+ * What `x_users` gained in 1.3.0, applied at EVERY boot right after the create, so a table made
+ * before 1.3 is brought up to date with no hand-run migration — this was `X_USERS_MIGRATION_1_3`,
+ * exported for an app to run and applied by nothing. Idempotent (`if not exists`) and additive:
+ * both columns have a default or are nullable, so on a live table it is a catalog update, not a
+ * rewrite, and a second boot does nothing.
  */
-export const X_USERS_MIGRATION_1_3: readonly string[] = Object.freeze([
+const X_USERS_UPGRADE = [
   `alter table x_users add column if not exists scopes text[] not null default '{}'`,
   'alter table x_users add column if not exists external_id text',
   'create unique index if not exists x_users_external_id_key on x_users (external_id)',
   'create index if not exists x_users_org_id_idx on x_users (org_id)',
-]);
+].join(';\n');
 
 // `id` is the public half of the cookie; `token_hash` is sha256 of the secret half.
 export const X_SESSIONS_TABLE = `create table if not exists x_sessions (
@@ -114,6 +117,7 @@ export const X_API_KEYS_TABLE = `create table if not exists x_api_keys (
 /** Ordered by foreign-key dependency — run them top to bottom. */
 export const AUTH_TABLES: readonly string[] = Object.freeze([
   X_USERS_TABLE,
+  X_USERS_UPGRADE,
   X_SESSIONS_TABLE,
   X_ACCOUNTS_TABLE,
   X_VERIFICATIONS_TABLE,

@@ -91,6 +91,24 @@ describe('the page itself', () => {
     expect(page).toContain('req-secret-carrier');
   });
 
+  test.each(['//evil.com/x', '///evil.com/x', '/\\evil.com/x', '\\/evil.com'])(
+    'the retry link for %p stays on this origin',
+    (path) => {
+      // `href="//evil.com/x"` is protocol-relative: the retry button on the 503 served while
+      // draining sent the visitor to another host. A browser reads `\` as `/` in an http href.
+      const page = renderErrorPage(input({ status: 503, code: 'X_DRAINING', path }));
+      const href = /<a href="([^"]*)"/.exec(page)?.[1] ?? '';
+      expect(href.startsWith('/')).toBe(true);
+      expect(href.startsWith('//')).toBe(false);
+      expect(href.startsWith('/\\')).toBe(false);
+    },
+  );
+
+  test('an ordinary retry link is the page the visitor was on', () => {
+    const page = renderErrorPage(input({ status: 503, code: 'X_DRAINING', path: '/posts/1' }));
+    expect(page).toContain('href="/posts/1"');
+  });
+
   test('a value an app names in its own copy is escaped, never injected', () => {
     // `errors.forbidden.body` is the one shipped sentence carrying a value off the request.
     const page = renderErrorPage(

@@ -9,21 +9,22 @@ import {
   inflightCount,
   isAnonymous,
   isDraining,
+  lifecycleState,
   reportError,
 } from '@ultimat3/core';
 import { resolveLocale } from '@ultimat3/i18n';
 import { resolveTimeZone } from '@ultimat3/time';
 import { signInRedirect } from './auth-redirect';
-import { defaultCache, offersSharedCache, PRIVATE_CACHE } from './cache-policy';
+import { defaultCache, offersSharedCache, PRIVATE_CACHE, reviewedHint } from './cache-policy';
 import { type HttpConfig, stripBasePath } from './config';
 import { actorView, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
-import { checkCsrf, selfOrigin } from './csrf';
+import { checkCsrf, csrfBlocked, selfOrigin } from './csrf';
 import { factsOf, retryAfterOf } from './error-facts';
+import { errorLogLevel } from './error-log-level';
 import { errorPageResponse } from './error-page';
 import {
   bodyInvalid,
-  csrfBlocked,
   draining,
   forbidden,
   methodNotAllowed,
@@ -42,7 +43,7 @@ import { rateLimited } from './rate-limit-errors';
 import type { UltimateRequest } from './request';
 import { addVary, applyCacheHeaders, problem, redirect, SHARED_CACHE_VARY } from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
-import { securityHeaders } from './security-headers';
+import { responseSecurityHeaders } from './security-headers';
 import { validate } from './validate';
 
 export type StageName =
@@ -134,10 +135,15 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // Before the trace, the route match, auth, the body — everything. A refusal that costs as
       // much as a served request is not load shedding, and this is the stage that makes
       // "reject 40% fast, serve 60% at p99" expressible at all.
-      if (isDraining()) {
+      // DRAINING is served, never refused: a request reaching the pipeline mid-drain came in on
+      // a kept-alive connection or before the listener closed, and the readiness grace exists so
+      // it is answered. `connection: close` moves the client's NEXT request to another pod.
+      // Refusing it failed 598 of 7,690 requests in one helm upgrade (kind). Only STOPPED refuses.
+      if (lifecycleState() === 'stopped') {
         ctx.headers.set('retry-after', SHED_RETRY_AFTER_SECONDS);
         throw draining();
       }
+      if (isDraining()) ctx.headers.set('connection', 'close');
       const ceiling = config.maxInflight;
       // `beginWork()` in `server.ts` counted THIS request before the pipeline was entered, so the
       // ceiling is compared against a number that already includes it.
@@ -268,7 +274,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         cors: config.cors,
         config: config.csrf,
       });
-      if (!verdict.ok) throw csrfBlocked(ctx.url.pathname, verdict.reason);
+      if (!verdict.ok) throw csrfBlocked(ctx.url.pathname, verdict.reason, ctx.ip);
       return undefined;
     },
 
@@ -315,10 +321,8 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       if (response === undefined) return undefined;
       const declared = response.headers.get('cache-control');
       if (declared === null) {
-        applyCacheHeaders(
-          response,
-          ctx.cache ?? ctx.route?.meta.cache ?? defaultCache(ctx.route, ctx.actor),
-        );
+        const hint = ctx.cache ?? ctx.route?.meta.cache ?? defaultCache(ctx.route, ctx.actor);
+        applyCacheHeaders(response, reviewedHint(hint, ctx.actor));
         return undefined;
       }
       // A declaration is the MODE's intent, never the last word: `@ultimat3/render`'s `ssrHeaders`
@@ -364,7 +368,10 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // The other half of this is `@ultimat3/schema`'s, and it is the load-bearing one: an issue
       // message must stop echoing the rejected value at all. This change makes the value
       // redactable; it does not make it absent.
-      ctx.logger.error(facts.code, { cause: facts.cause, status: facts.status });
+      ctx.logger[errorLogLevel(facts.status)](facts.code, {
+        cause: facts.cause,
+        status: facts.status,
+      });
       // Before the overlay and before the problem document: a browser with no session has not
       // hit a defect to debug, it has hit a login wall, and the answer to that is the sign-in
       // page. `signInPath` is null until an app declares one, so this is off by default.
@@ -451,7 +458,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         else response.headers.set(name, value);
       }
       for (const [name, value] of Object.entries(
-        securityHeaders(config.security, { https: ctx.https }),
+        responseSecurityHeaders(config.security, ctx.https),
       )) {
         response.headers.set(name, value);
       }
@@ -475,6 +482,9 @@ function resolvePreferences(
 ): void {
   const cookies = request.header('cookie');
   ctx.locale = resolveLocale({
+    // Documented as a source and never read until 2026-09: an email preview link's `?locale=es`
+    // rendered in the visitor's cookie locale. The ORDER stays `resolveLocale`'s.
+    query: ctx.url.searchParams.get('locale'),
     header: request.header('accept-language'),
     cookie: readCookie(cookies, config.locale.cookie),
     user: ctx.actor.locale,

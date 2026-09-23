@@ -6,7 +6,7 @@
 
 import { type Clock, randomHex, systemClock } from '@ultimat3/core';
 import type { ApiKeyStore, AuthApiKeyRecord } from './adapter';
-import { apiKeyInvalid } from './errors';
+import { apiKeyEnvInvalid, apiKeyInvalid } from './errors';
 import type { PolicyActor } from './policy-bridge';
 import { actorFromApiKey } from './policy-bridge';
 import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
@@ -58,7 +58,11 @@ export interface IssuedApiKey {
   readonly record: AuthApiKeyRecord;
 }
 
+/** What `parseApiKey` can split back out: no `_`, and nothing a log would render two ways. */
+const API_KEY_ENV = /^[a-z0-9-]+$/;
+
 export function issueApiKey(input: IssueApiKeyInput): IssuedApiKey {
+  if (!API_KEY_ENV.test(input.env)) throw apiKeyEnvInvalid(input.env);
   const clock = input.clock ?? systemClock;
   // Hex, not base64url: the id sits between two `_` delimiters and must not contain one.
   const id = randomHex(8);
