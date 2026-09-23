@@ -3,6 +3,7 @@
 // and everything released after the last. The preload (`e2e-preload.ts`) is this with Bun's own
 // hooks and the real app and browser; a test is this with doubles, which is how it is measured.
 
+import { finiteCount } from '@ultimat3/core';
 import type { E2eBrowser } from './cdp-browser';
 import type { E2eApp } from './e2e-app';
 import { e2eBrowser, publishE2eRun, republishE2eBrowser } from './e2e-browser-handle';
@@ -39,6 +40,7 @@ export interface E2eRunDeps {
 }
 
 export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
+  const probeMs = finiteCount('startE2eRun', 'probeMs', deps.probeMs ?? PROBE_MS, 1);
   const { app } = deps;
   let builds = 0;
   // A deploy leaves the browser holding the OLD build's state: a SharedWorker whose socket went
@@ -69,7 +71,7 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
   // deploy ran under — is closed and relaunched: the app is untouched, and the test gets a fresh
   // profile, a fresh SharedWorker and a fresh tab on the same origin.
   deps.beforeEach(async () => {
-    const alive = !deployed && (await answersWithin(e2eBrowser().page, deps.probeMs ?? PROBE_MS));
+    const alive = !deployed && (await answersWithin(e2eBrowser().page, probeMs));
     if (alive) return;
     deployed = false;
     browser.close();
