@@ -28,7 +28,7 @@ const DOCUMENT = `<!doctype html><html><head><title>Session fixture</title></hea
   worker.port.onmessage = (event) => { document.getElementById('state').textContent = event.data; };
   worker.port.start();
   window.ping = () => worker.port.postMessage('ping');
-  indexedDB.open('fixture-db');
+  indexedDB.open('fixture-db').onsuccess = () => { window.dbReady = true; };
 </script></body></html>`;
 
 /**
@@ -111,6 +111,8 @@ describe.skipIf(chrome === undefined && !required)('the e2e session, in a real b
     await first.evaluate('window.ping()');
     await first.waitFor(`document.getElementById('state').textContent === 'online'`, 'online');
 
+    // The open is asynchronous: a database is listed only once its first open has succeeded.
+    await first.waitFor('window.dbReady === true', 'the fixture database');
     expect(await first.indexedDbNames()).toContain('fixture-db');
     expect(
       session.requests().some((line) => line.startsWith('GET ') && line.endsWith('/ping')),
