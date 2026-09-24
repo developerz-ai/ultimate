@@ -4,6 +4,7 @@ import { asyncRefusal } from './bounds-fixture';
 import { normalize } from './embeddings';
 import { PgVectorStore } from './pg-vector';
 import { conditionsSql, deleteSql, vectorLiteral } from './pg-vector-sql';
+import { MemoryVectorStore } from './vector';
 
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
 
@@ -302,5 +303,46 @@ describe('deleteSql with no ids', () => {
 
     expect(statement.text).toContain('"id" in (');
     expect(statement.values).toEqual(['a', 'b']);
+  });
+});
+
+// Row g: a re-index prunes the document's rows it no longer produced, within the scope.
+describe('PgVectorStore.prune', () => {
+  test('deletes what the filter matches except the kept ids, inside the scope', async () => {
+    const { client, store } = harness();
+    await store.scoped({ tenant: 'acme' }).prune?.({ source: 'doc' }, ['doc#0']);
+    const text = client.texts[0] ?? '';
+    expect(text).toContain('delete from');
+    expect(text).toContain('"id" not in ($1)');
+    expect(text).toContain('"tenant" = $2');
+    expect(text).toContain('"metadata" ->> $3 = $4');
+    expect(client.statements[0]?.values).toEqual(['doc#0', 'acme', 'source', 'doc']);
+  });
+});
+
+// Row h: two records with one id in ONE statement is `ON CONFLICT DO UPDATE command cannot affect
+// row a second time` in Postgres, while memory kept the last. The last one wins in both.
+describe('PgVectorStore.upsert with a repeated id', () => {
+  test('sends the id once, carrying the LAST record', async () => {
+    const { client, store } = harness();
+    await store.upsert([
+      { id: 'a', vector: vec(1, 0, 0, 0), text: 'first' },
+      { id: 'b', vector: vec(0, 1, 0, 0), text: 'other' },
+      { id: 'a', vector: vec(0, 0, 1, 0), text: 'last' },
+    ]);
+    const values = client.statements[0]?.values ?? [];
+    expect(values.filter((value) => value === 'a')).toHaveLength(1);
+    expect(values).toContain('last');
+    expect(values).not.toContain('first');
+  });
+
+  test('memory keeps the last one too — the parity this pins', async () => {
+    const memory = new MemoryVectorStore({ dimension: 4 });
+    await memory.upsert([
+      { id: 'a', vector: vec(1, 0, 0, 0), text: 'first' },
+      { id: 'a', vector: vec(0, 0, 1, 0), text: 'last' },
+    ]);
+    expect((await memory.searchText('last', 5)).map((hit) => hit.text)).toEqual(['last']);
+    expect(await memory.searchText('first', 5)).toEqual([]);
   });
 });

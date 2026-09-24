@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { DevHost, UiInspectInput, UiInspectResult } from '@ultimat3/mcp';
 import { devTools, UI_INSPECT_LIMITS } from '@ultimat3/mcp';
-import { fakeBrowser } from '@ultimat3/scraping';
+import { fakeShotDriver } from './browser-launcher-fake';
 import { uiCapabilities } from './mcp-ui';
 import { capInspect } from './mcp-ui-inspect';
 import { ISLAND_PROBE } from './shot-verdict';
@@ -66,7 +66,7 @@ const ui = (root: string, evaluate: Readonly<Record<string, string>>) =>
     root,
     env: {},
     boot: async () => ({ url: SERVER_URL, origin: 'booted', stop: async () => undefined }),
-    driver: async () => fakeBrowser([{ url: `${SERVER_URL}/dash`, html: PAGE, evaluate }]),
+    driver: async () => fakeShotDriver([{ url: `${SERVER_URL}/dash`, html: PAGE, evaluate }]),
     routes: () => [{ path: '/dash', file: 'apps/web/app/dash/page.tsx', budgetJs: '10kb' }],
   });
 

@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { topic } from './channel';
+import { InProcessTransport } from './fanout';
 import type { NatsClient } from './nats-client';
 import { FakeNatsBroker } from './nats-fake';
 import {
@@ -291,5 +292,45 @@ describe('presence over the bus', () => {
     expect(await observer.list(room)).toEqual([]);
 
     for (const node of nodes) await node.close();
+  });
+});
+
+// One batch direct read answers at most `batch` (1,000) messages, and `kvLast` read one batch —
+// so presence past 1,000 members was truncated, and `sweep()`, which differences the full set,
+// then announced a `leave` for every member past the cut.
+describe('a presence set past one batch', () => {
+  const MEMBERS = 1_500;
+
+  test('every member is read, exactly as the in-process set holds them', async () => {
+    const { set } = await harness();
+    const local = new InProcessTransport({ clock: frozenClock(1_700_000_000_000) }).shared;
+    for (let index = 0; index < MEMBERS; index += 1) {
+      await set.put('presence.big', `m${index}`, 'v', 30_000);
+      await local.put('presence.big', `m${index}`, 'v', 30_000);
+    }
+    const members = (entries: readonly { member: string }[]): string[] =>
+      entries.map((entry) => entry.member).sort();
+
+    const over = await set.entries('presence.big');
+    expect(over).toHaveLength(MEMBERS);
+    expect(members(over)).toEqual(members(await local.entries('presence.big')));
+  });
+
+  test('a batch that ends on any status but end-of-batch is an error, never a short read', async () => {
+    const { client } = await harness();
+    const stalled: NatsClient = {
+      ...client,
+      requestMany: async () => [
+        {
+          subject: 'x',
+          payload: new Uint8Array(0),
+          status: 408,
+          header: () => undefined,
+        } as never,
+      ],
+    };
+    expect(codeOf(await caught(kvLast(stalled, BUCKET, 'presence.*')))).toBe(
+      'X_TRANSPORT_UNAVAILABLE',
+    );
   });
 });

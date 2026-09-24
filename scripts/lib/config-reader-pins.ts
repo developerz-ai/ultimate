@@ -18,16 +18,14 @@ export const CONFIG_PINS_FILE = 'scripts/lib/config-reader-pins.ts';
  * documented app-facing shape and two of which looked exactly like `database.urlEnv` did before
  * 5.0.0 deleted it. `cache.urlEnv` was one of the two and is now FOUR: it was deleted with
  * `cache.driver` in the same release that made `cache.tiers` build the ladder, which is the
- * decision the row was waiting for. `realtime.urlEnv` is the same defect and stays pinned until
- * a release makes the same call about `realtime.transport`.
+ * decision the row was waiting for. `realtime.urlEnv` was the same defect and 22.0.0 spent it the
+ * other way — by WIRING it: `@ultimat3/realtime`'s `selectTransport` dials the variable it names.
  */
 export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
   defaultTimeZone:
     "read by APP code and by `config.ts`'s own validator (`isIanaZoneName`). The framework may not read it — CLAUDE.md forbids an ambient time zone, so every framework format takes an explicit `timeZone`; this key is the value an app passes.",
   defaultCurrency:
     "read by APP code and by `config.ts`'s validator (`CURRENCY_RE`). Same shape as `defaultTimeZone`: `Money` always carries its own currency, so the framework never defaults one for you.",
-  'realtime.urlEnv':
-    'SUSPECT, the same defect as `cache.urlEnv`: validated by `config.ts` (`realtime.transport "nats" requires realtime.urlEnv`), value read by nobody — `packages/cli/src/dev-services.ts:38` and `cmd-jobs.ts:73` read the literal `env[\'NATS_URL\']`.',
 };
 
 /**
@@ -47,8 +45,6 @@ export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
  * settle it, and settling one is deleting the row.
  */
 export const CONFIG_AMBIGUOUS_PINS: Readonly<Record<string, string>> = {
-  'realtime.enabled':
-    "SUSPECT, the same shape as `realtime.tier`: 10 files match the bare `enabled` and none is under `packages/realtime/`. `x dev` decides whether to start the sync role from the ROLE env and the CLI's own flags, never from this key — settled by a reader under `packages/realtime/src/` spelling `realtime.enabled`, or by deleting it.",
   'theme.tokens':
     "SUSPECT, the widest of the four: 24 files match the bare `tokens` — `@ultimat3/ui`'s own `tokens/` directory and every i18n token walker among them — and none is under `packages/ui/`. `@ultimat3/ui` takes tokens as props and reads no config, which is the sentence `theme.defaultMode` already carries one table up.",
 };

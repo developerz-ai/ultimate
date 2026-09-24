@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: 🩺 Broken environment
-    url: https://ultimate.dev/errors
+    url: https://github.com/developerz-ai/ultimate/wiki/Error-Codes
     about: Run `x doctor --json` — every finding carries the command that fixes it.
   - name: 💬 Questions and design discussion
     url: https://github.com/developerz-ai/ultimate/discussions

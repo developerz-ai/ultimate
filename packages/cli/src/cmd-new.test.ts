@@ -314,7 +314,7 @@ describe('unit · x new · writing into the parent directory', () => {
       const finding = result.findings?.[0];
       expect(finding?.code).toBe('X_GENERATE_CONFLICT');
       expect(finding?.cause).toBe(`${target} already exists`);
-      expect(finding?.fix).toBe('x new demo-app --force, or choose another name');
+      expect(finding?.fix).toBe('x new demo-app --force   # or choose another name');
       expect(finding?.at).toBe(target);
       // Refused BEFORE writing: nothing but the file the test put there.
       expect(readdirSync(target)).toEqual(['KEEP.txt']);

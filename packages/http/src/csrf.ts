@@ -5,8 +5,10 @@
 // went through. `setRedirect` exists so those form posts work without JS, which makes them a
 // first-class surface here rather than a legacy one.
 
+import { classifyAddress } from '@ultimat3/core';
 import type { CorsConfig } from './cors';
 import { originListed } from './cors';
+import { HttpError } from './errors';
 
 export type CsrfMode = 'origin' | 'off';
 
@@ -86,3 +88,29 @@ export const checkCsrf = (input: CsrfCheckInput): CsrfVerdict => {
 /** The origin a browser compares against — the PUBLIC one, so a TLS-terminating proxy agrees. */
 export const selfOrigin = (url: URL, https: boolean): string =>
   `${https ? 'https' : 'http'}://${url.host}`;
+
+/**
+ * A write that arrived with the browser's ambient credential and could not be shown to come from
+ * this app. Never a 401: the caller IS signed in, which is precisely the problem.
+ *
+ * From a LOOPBACK `ip` the caller is `curl` against `x dev`: it sends neither
+ * header, and the remedies below name a token or a config change dev does not need. The header a
+ * browser would send is the whole repair there, and it is safe to hand out: CSRF defends a BROWSER
+ * from a hostile page, and a client that can set headers is not one a page can drive.
+ */
+export const csrfBlocked = (
+  pathname: string,
+  reason: string,
+  ip: string | null = null,
+): HttpError =>
+  ip !== null && classifyAddress(ip) === 'loopback'
+    ? new HttpError({
+        code: 'X_CSRF_BLOCKED',
+        cause: `${pathname} refused a credentialed write: ${reason}`,
+        fix: "curl -H 'sec-fetch-site: same-origin' -X POST http://localhost:3000/the-path-above   # a local client proves same-origin the way a browser does; the session cookie still decides who is calling",
+      })
+    : new HttpError({
+        code: 'X_CSRF_BLOCKED',
+        cause: `${pathname} refused a credentialed write: ${reason}`,
+        fix: "call it with an Authorization header instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
+      });

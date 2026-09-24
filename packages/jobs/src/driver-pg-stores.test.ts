@@ -87,9 +87,12 @@ function textDecodingJobExecutor(): PgExecutor {
   return {
     query<R>(sql: string): Promise<readonly R[]> {
       const epoch = sql.includes('extract(epoch from run_at)');
+      // No live row holds the key, so a requeue reaches its update.
+      if (sql.includes('idempotency_key = $3')) return Promise.resolve([] as readonly R[]);
       return Promise.resolve([
         {
-          ...row(),
+          // Dead, so `requeue` — one of the reads under test — accepts it.
+          ...row({ state: 'dead' }),
           run_at: epoch ? '1767225600000' : '2026-01-01 00:00:00+00',
           visible_at: null,
           created_at: epoch ? '1767225600000' : '2026-01-01 00:00:00+00',
@@ -343,29 +346,42 @@ describe('the pg driver`s introspection', () => {
     expect(dead?.[0]?.state).toBe('dead');
   });
 
+  // Entry ORDER matters to this fake — the first fragment a statement contains answers it — and
+  // the update and the job read both say `where id = $1`, so the narrower fragments go first.
   test('requeue resets the attempt counter and returns the updated row', async () => {
-    const executor = executorFor({ 'update x_jobs': [row({ state: 'ready', attempt: 0 })] });
+    const executor = executorFor({
+      'idempotency_key = $3': [],
+      'update x_jobs': [row({ state: 'ready', attempt: 0 })],
+      'where id = $1': [row({ state: 'dead' })],
+    });
     const record = await driverWith(executor).introspect?.requeue('job-1');
-    expect(executor.calls).toHaveLength(1);
-    expect(executor.calls[0]?.sql).toContain("set state = 'ready', attempt = 0");
+    expect(executor.calls.map((call) => call.sql.trim().split(/\s/)[0])).toEqual([
+      'select',
+      'select',
+      'update',
+    ]);
+    expect(executor.calls[2]?.sql).toContain("set state = 'ready', attempt = 0");
     expect(record?.state).toBe('ready');
   });
 
-  test('requeue --from-step deletes THAT step first, keyed by the job`s run id', async () => {
+  test('requeue --from-step deletes from THAT step onward, keyed by the job`s run id', async () => {
     // The delete has to name the run, not the job: steps are keyed by run_id, and a requeue that
     // dropped nothing would replay straight past the step the operator asked to redo.
     const executor = executorFor({
-      'where id = $1': [row({ run_id: 'run-9' })],
+      'idempotency_key = $3': [],
       'delete from x_job_steps': [],
       'update x_jobs': [row({ state: 'ready' })],
+      'where id = $1': [row({ run_id: 'run-9', state: 'dead' })],
     });
     await driverWith(executor).introspect?.requeue('job-1', { fromStep: 'charge' });
-    expect(executor.calls.map((call) => call.sql.trim().split(' ')[0])).toEqual([
+    expect(executor.calls.map((call) => call.sql.trim().split(/\s/)[0])).toEqual([
+      'select',
       'select',
       'delete',
       'update',
     ]);
-    expect(executor.calls[1]?.params).toEqual(['run-9', 'charge']);
+    expect(executor.calls[2]?.sql).toContain('started_at >');
+    expect(executor.calls[2]?.params).toEqual(['run-9', 'charge']);
   });
 
   test('requeueing an id that does not exist is X_DRIVER_UNAVAILABLE, never a silent undefined', async () => {

@@ -78,8 +78,11 @@ export class FakeResizeObserver<TElement extends object = object> {
   ) {
     registry.add(this);
   }
+  /** Back INTO the registry: `disconnect()` removed it, and an island that re-observes on its next
+   *  effect must hear the next resize. `Set.add` is idempotent, so a first observe costs nothing. */
   observe(target: TElement): void {
     this.targets.add(target);
+    this.registry.add(this);
   }
   unobserve(target: TElement): void {
     this.targets.delete(target);

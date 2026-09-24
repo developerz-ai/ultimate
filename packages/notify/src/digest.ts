@@ -50,7 +50,13 @@ export interface DigestStore {
    * close it entirely by flipping a row's status here and deleting on `settle`. The memory store
    * below cannot.
    */
-  drain(slot: DigestSlot): Promise<readonly NotifyEvent<unknown>[]>;
+  /**
+   * `endsAt` names the window this flush owns (what `append` answered it). Every window of the
+   * slot closing at or before it is taken — its own, and an OLDER one a crashed flush left behind
+   * — while a newer window, opened after this one closed, stays for its own flush. Omitted, only
+   * the oldest window is taken.
+   */
+  drain(slot: DigestSlot, endsAt?: number): Promise<readonly NotifyEvent<unknown>[]>;
 }
 
 const slotKey = (slot: DigestSlot): string =>
@@ -66,35 +72,46 @@ export interface MemoryDigestStore extends DigestStore {
   clear(): void;
 }
 
+/**
+ * A QUEUE of windows per slot, oldest first. One bucket per slot replaced a closed window that its
+ * flush had not drained yet, so an append arriving between a window's end and its drain lost every
+ * event the earlier window held. A closed window is now sealed under its `endsAt`, and a later
+ * append opens the next one beside it.
+ */
 export function createMemoryDigestStore(): MemoryDigestStore {
-  const buckets = new Map<string, OpenBucket>();
+  const slots = new Map<string, OpenBucket[]>();
   return {
     get open(): number {
-      return buckets.size;
+      let count = 0;
+      for (const windows of slots.values()) count += windows.length;
+      return count;
     },
     append(input) {
       const id = slotKey(input.slot);
       const at = input.now.getTime();
-      const existing = buckets.get(id);
-      // A bucket whose window has already elapsed is not a bucket to append to: its owner is gone
-      // (a crashed flush) and the event would sit there until an unrelated third event arrived.
-      // Re-opening is the repair, and it costs one extra delivery rather than a lost one.
-      if (existing !== undefined && existing.endsAt > at) {
-        existing.events.push(input.event);
-        return Promise.resolve({ opened: false, endsAt: existing.endsAt });
+      const windows = slots.get(id) ?? [];
+      const newest = windows.at(-1);
+      // An elapsed window is SEALED — its flush drains it — and never appended to: the event
+      // opens the next window, which is one extra delivery rather than a lost one.
+      if (newest !== undefined && newest.endsAt > at) {
+        newest.events.push(input.event);
+        return Promise.resolve({ opened: false, endsAt: newest.endsAt });
       }
       const endsAt = at + input.windowMs;
-      buckets.set(id, { endsAt, events: [input.event] });
+      windows.push({ endsAt, events: [input.event] });
+      slots.set(id, windows);
       return Promise.resolve({ opened: true, endsAt });
     },
-    drain(slot) {
+    drain(slot, endsAt) {
       const id = slotKey(slot);
-      const bucket = buckets.get(id);
-      buckets.delete(id);
-      return Promise.resolve(bucket?.events ?? []);
+      const windows = slots.get(id) ?? [];
+      const cut = endsAt === undefined ? 1 : windows.filter((w) => w.endsAt <= endsAt).length;
+      const taken = windows.splice(0, Math.max(cut, 0));
+      if (windows.length === 0) slots.delete(id);
+      return Promise.resolve(taken.flatMap((window) => window.events));
     },
     clear() {
-      buckets.clear();
+      slots.clear();
     },
   };
 }

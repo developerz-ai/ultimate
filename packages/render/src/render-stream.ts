@@ -13,8 +13,9 @@
 
 import { finiteCount, logger, renderThrowable } from '@ultimat3/core';
 import { finiteStatus } from './finite-status';
-import { escapeAttribute, escapeRawTextContent } from './html';
+import { escapeAttribute } from './html';
 import type { RenderResult } from './route';
+import { REVEAL_BODY, REVEAL_CALL } from './stream-scripts';
 
 export interface StreamHole {
   /** Stable within a response; becomes the DOM id, so keep it short. */
@@ -60,20 +61,14 @@ export function holeMarker(id: string, fallback: string): string {
  * The entire client half of out-of-order streaming. Inline, uncompressed, ~200 bytes; it
  * moves a late `<template>`'s content into the placeholder that is already on screen.
  */
-export const REVEAL_SCRIPT =
-  "<script>window.$X=function(i){var t=document.querySelector('template[data-x-hole=\"'+i+'\"]')," +
-  's=document.getElementById(i);if(t&&s){s.replaceWith(t.content);t.remove()}}</script>';
+export const REVEAL_SCRIPT = `<script>${REVEAL_BODY}</script>`;
 
 export function revealChunk(id: string, html: string): string {
-  const key = holeId(id);
-  // Two contexts, two encoders — the attribute takes `escapeAttribute`, and the script argument is
-  // built by `JSON.stringify` so the id is a JS string LITERAL rather than text pasted between two
-  // quotes: `a");alert(1);//` closed the call and ran on the page's own origin. `</script` inside
-  // it would still end the element, so the raw-text rule applies over the top, as `html.ts` says.
-  const argument = escapeRawTextContent(JSON.stringify(key));
+  // The id reaches markup ONLY through `escapeAttribute` — never a script — so a quote in it
+  // cannot close anything, and no per-hole body exists for a CSP to fail to list.
   return (
-    `<template data-x-hole="${escapeAttribute(key)}">${html}</template>` +
-    `<script>$X(${argument})</script>`
+    `<template data-x-hole="${escapeAttribute(holeId(id))}">${html}</template>` +
+    `<script>${REVEAL_CALL}</script>`
   );
 }
 
@@ -186,7 +181,7 @@ export function renderStreamHtml(
           timeoutMs === null
             ? undefined
             : setTimeout(() => {
-                logger.warn(`stream hole ${hole.id} missed its ${timeoutMs}ms deadline`);
+                logger.warn('render.stream.hole_deadline', { hole: hole.id, timeoutMs });
                 reveal(errorFallback(hole.id));
               }, timeoutMs);
         // A response nobody is reading must not hold the process open until its deadline.
@@ -200,7 +195,12 @@ export function renderStreamHtml(
             // `renderThrowable`, never `.message`/`String()`: the value is whatever the hole threw,
             // and a read that raises here skips the `reveal` below — the hole never fills and the
             // response is held to its deadline for a failure that was already handled.
-            logger.warn(`stream hole ${hole.id} rejected: ${renderThrowable(error)}`);
+            // A FIELD, never the message: `logger` redacts fields and never `msg`, so a hole's
+            // failure text interpolated into the message reached the log past every redactor.
+            logger.warn('render.stream.hole_rejected', {
+              hole: hole.id,
+              error: renderThrowable(error),
+            });
             reveal(errorFallback(hole.id));
           },
         );

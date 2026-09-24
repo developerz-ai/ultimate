@@ -19,7 +19,6 @@ const examplePage = (
 ${sortedImports([
   `import { useT } from '@${app.kebab}/i18n';`,
   "import { isUltimateError } from '@ultimat3/core';",
-  "import { seedId } from '@ultimat3/entity';",
   "import { currentLocale } from '@ultimat3/i18n';",
   "import { defineRoute, island } from '@ultimat3/render';",
   [
@@ -35,6 +34,7 @@ ${sortedImports([
     "} from '@ultimat3/ui';",
   ].join('\n'),
 ])}
+import { DEMO_ORG_ID } from '../../shared/demo-org';
 import { Shell } from '../../shared/shell';
 import * as repo from '../post/repo';
 import {
@@ -53,7 +53,7 @@ import styles from './page.module.scss';
  * one \`packages/db/src/seed.ts\` writes. The day sessions exist, this becomes the actor's org and
  * the read becomes \`postList.as(actor, …)\` — the query already declares the tenancy rule.
  */
-const DEMO_ORG = seedId('org:demo');
+const DEMO_ORG = DEMO_ORG_ID;
 
 /** The stat row counts what it can see. Past this many posts, write an aggregate query. */
 const ROW_LIMIT = 500;

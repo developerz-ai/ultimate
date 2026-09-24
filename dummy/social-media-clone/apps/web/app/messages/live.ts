@@ -27,7 +27,7 @@ export const liveThread = query({
    *
    * That is a refusal, not a hole, and it is the honest state of the seam: `authorize` on a
    * `LiveQueryDefinition` is async and could load the fact, but `authorizeWithPolicy` never gives
-   * it the chance, and the node's context (`packages/cli/src/dev-roles.ts:151`) carries neither
+   * it the chance, and the node's context (`packages/cli/src/role-sync.ts`) carries neither
    * the subscriber's session nor an actor. Membership is checked for real on the channel in `topics.ts`,
    * whose `row` loader reads the participants row before this same policy runs.
    */

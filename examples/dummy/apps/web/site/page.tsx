@@ -76,7 +76,7 @@ export function Page(): JSX.Element {
           `feed-screenshot.png` is a 401 (it was a 404 before, because nothing ever wrote that
           object). A genuinely public image belongs under `apps/web/site/` as a committed asset, and
           this app has no static-asset route to serve one from yet, so the honest answer is no image
-          rather than a broken one. See `packages/cli/src/dev-assets.ts`.
+          rather than a broken one. See `packages/cli/src/runtime-assets.ts`.
         */}
       </section>
 

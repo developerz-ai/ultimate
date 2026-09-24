@@ -24,7 +24,7 @@
 //   bun run scripts/async-context-guard.ts [--json]
 
 import { join } from 'node:path';
-import { stripComments } from '@ultimat3/cli';
+import { stripComments } from '../packages/core/src/source-mask';
 import { APP_ROOTS, collectSourceFiles, type SourceFile } from './boundaries';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';

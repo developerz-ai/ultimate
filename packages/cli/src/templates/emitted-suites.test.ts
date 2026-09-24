@@ -5,10 +5,10 @@
 // as a unit test. `x g route` learned this lesson alone (`route.test.ts`); this is it, generalised.
 
 import { describe, expect, test } from 'bun:test';
+import { stripComments } from '@ultimat3/core';
 import type { GenerateOptions } from '../cmd-generate';
 import { generate } from '../cmd-generate';
 import { scaffoldVariants } from '../scaffold-fixture';
-import { stripComments } from '../ts-scan';
 import type { TestType } from '../verify-tests';
 import { ownerOf } from '../verify-tests';
 

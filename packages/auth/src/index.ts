@@ -20,9 +20,7 @@ export type {
 export type { ApiKeySummary, IssueApiKeyInput, IssuedApiKey, ParsedApiKey } from './api-keys';
 export {
   API_KEY_NAMESPACE,
-  API_KEY_PREFIX_SEGMENTS,
   apiKeyActor,
-  apiKeyPrefix,
   describeApiKey,
   issueApiKey,
   parseApiKey,
@@ -100,7 +98,6 @@ export type {
 } from './jwks';
 export {
   createJwksClient,
-  DEFAULT_JWKS_TTL_MS,
   decodeJwtHeader,
   providerJwks,
   verifyJwtSignature,
@@ -109,9 +106,7 @@ export type { KdfGate, KdfLimits } from './kdf-gate';
 export {
   configureKdfGate,
   createKdfGate,
-  DEFAULT_KDF_LIMITS,
   kdfGate,
-  resetKdfGate,
 } from './kdf-gate';
 export type { AuthLimiterFactory } from './limiter-install';
 // `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
@@ -151,7 +146,7 @@ export type {
   OAuthProviderId,
   PkcePair,
 } from './oauth';
-export { assertOAuthCallback, beginOAuth, createPkce, pkceChallenge } from './oauth';
+export { assertOAuthCallback, beginOAuth, createPkce } from './oauth';
 export {
   APPLE_PROVIDER,
   BUILTIN_OAUTH_PROVIDER_IDS,
@@ -166,7 +161,6 @@ export {
   handshakeCookie,
   handshakeCookieName,
   handshakeSecret,
-  OAUTH_HANDSHAKE_COOKIE_PREFIX,
   openHandshake,
   readHandshakeCookie,
   sealHandshake,
@@ -232,7 +226,6 @@ export {
   DEFAULT_PASSWORD_POLICY,
   hashPassword,
   needsRehash,
-  parseHashParams,
   verifyPassword,
 } from './password';
 export type {
@@ -263,7 +256,6 @@ export {
   DEFAULT_MAX_AUTH_LIMIT_KEYS,
   ipKey,
   loginFailed,
-  ORG_ATTEMPT_FACTOR,
   orgKey,
   orgRateLimit,
 } from './rate-limit';
@@ -274,14 +266,7 @@ export type {
 } from './rate-limit-postgres';
 export {
   postgresAuthLimiter,
-  SQL_AUTH_FORGET_KEY,
-  SQL_AUTH_KEY_LOCK,
   SQL_AUTH_LIMIT_TABLES,
-  SQL_AUTH_LOCK,
-  SQL_AUTH_LOCKED_UNTIL,
-  SQL_AUTH_PURGE,
-  SQL_AUTH_RECORD_FAILURE,
-  SQL_AUTH_RESET,
 } from './rate-limit-postgres';
 export type { DisabledUser } from './revocation';
 export {
@@ -306,10 +291,8 @@ export {
   clearSessionCookie,
   createSession,
   DEFAULT_SESSION_POLICY,
-  IDLE_SLIDE_DIVISOR,
   idleSlideMs,
   listDevices,
-  parseSessionToken,
   readCookie,
   readSessionCookie,
   revokeOtherSessions,
@@ -326,17 +309,8 @@ export { SIGN_OUT_CLEAR_SITE_DATA, signOutHeaders } from './sign-out';
 export {
   AUTH_TABLE_NAMES,
   AUTH_TABLES,
-  X_ACCOUNTS_TABLE,
-  X_API_KEYS_TABLE,
-  X_SESSIONS_TABLE,
-  X_USERS_MIGRATION_1_3,
-  X_USERS_TABLE,
-  X_VERIFICATIONS_TABLE,
 } from './tables';
 export {
-  base64Url,
-  base64UrlBytes,
-  matchesHash,
   randomToken,
   sha256Hex,
   timingSafeEqual,

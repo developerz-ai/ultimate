@@ -19,7 +19,13 @@ import { type Actor, assert, userActor } from '@ultimat3/core';
 import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
 import { seedId } from '@ultimat3/entity';
 import type { SignIn, TestBudget, TestNetwork } from '@ultimat3/testing';
-import { createTestNetwork, defineFixtures, unavailableFixture } from '@ultimat3/testing';
+import {
+  createTestNetwork,
+  defineFixtures,
+  e2eBaseUrl,
+  e2eBrowser,
+  unavailableFixture,
+} from '@ultimat3/testing';
 
 /** Every seeded row carries an id; the rest of the columns are the entity's business. */
 export interface SeedRow {
@@ -199,11 +205,11 @@ const DEMO_MEMBERS = ['ada', 'bruno', 'kenji', 'mara'] as const;
  * `signIn` and `budget` are the framework's NAMES and the app's MEANING: what signing in is, and
  * which document a route renders, are Postly's facts. Both need the e2e step's browser, so outside
  * one (`e2eBaseUrl()` unset) they refuse exactly as the framework declares them —
- * X_TEST_FIXTURE_UNAVAILABLE, naming the driver. `@ultimat3/cli` is imported on demand: every other
- * test in this app would otherwise load the whole CLI to register two fixtures it never asks for.
+ * X_TEST_FIXTURE_UNAVAILABLE, naming the driver. The driver is `@ultimat3/testing`'s, already in
+ * this file's graph; only the budget's exemption list is `@ultimat3/cli`'s, imported on demand so
+ * every other test in this app does not load the whole CLI for a fixture it never asks for.
  */
 const signIn = async (): Promise<SignIn> => {
-  const { e2eBaseUrl, e2eBrowser } = await import('@ultimat3/cli');
   const base = e2eBaseUrl();
   if (base === undefined) return unavailableFixture('signIn')();
   return async (member) => {
@@ -227,9 +233,7 @@ const signIn = async (): Promise<SignIn> => {
  * `page` stays where it was.
  */
 const budget = async (): Promise<TestBudget> => {
-  const { e2eBaseUrl, e2eBrowser, FRAMEWORK_INLINE_SCRIPTS, FRAMEWORK_SCRIPTS } = await import(
-    '@ultimat3/cli'
-  );
+  const { FRAMEWORK_INLINE_SCRIPTS, FRAMEWORK_SCRIPTS } = await import('@ultimat3/cli');
   const base = e2eBaseUrl();
   if (base === undefined) return unavailableFixture('budget')();
   const exempt = JSON.stringify({
@@ -275,7 +279,6 @@ const budget = async (): Promise<TestBudget> => {
  */
 const network = async (): Promise<TestNetwork> => {
   const own = createTestNetwork();
-  const { e2eBaseUrl, e2eBrowser } = await import('@ultimat3/cli');
   if (e2eBaseUrl() === undefined) return own;
   const session = e2eBrowser().session;
   let cut = false;

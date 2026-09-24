@@ -59,10 +59,16 @@ const STOP_REASONS: readonly StopReason[] = [
   'tool_use',
   'pause_turn',
   'refusal',
+  'model_context_window_exceeded',
 ];
 
+/**
+ * FAILS CLOSED: a reason this list does not know is read as `max_tokens`. It fell back to
+ * `end_turn`, so `model_context_window_exceeded` — a cut-off answer — was parsed as a complete
+ * one. A provider's new reason is far likelier to be a way of stopping early than of finishing.
+ */
 export function parseStopReason(raw: unknown): StopReason {
-  return STOP_REASONS.find((reason) => reason === raw) ?? 'end_turn';
+  return STOP_REASONS.find((reason) => reason === raw) ?? 'max_tokens';
 }
 
 /**

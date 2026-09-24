@@ -44,7 +44,7 @@ there is one environment, and it hides the object a reviewer needs to see.
 |---|---|---|---|
 | `web` | Deployment + Service + Ingress | HPA on request rate | `/readyz` readiness, `/healthz` liveness on `:3000` |
 | `sync` | Deployment + Service, routed at `/_x/sync` | HPA on connections per pod | same, on `:3001` |
-| `worker` | Deployment, no Service | HPA on queue depth | liveness on `/metrics`, `:9090` — **no readiness** |
+| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue depth, an `External` metric | liveness on `/metrics`, `:9090` — **no readiness** |
 | `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, `:9090` |
 | `migrate` | Job, run-once before any serving role | 1 | none |
 | `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, `:9090` |
@@ -67,12 +67,25 @@ the rollout never completes. Give the sync workload `PORT=3000` and a `container
 chart derives this (`_helpers.tpl`); a hand-written manifest set does not, so put it in the
 role's own env and never in the shared `configmap.yml` — one `PORT` for both roles is the bug.
 
-**Confirm the container's start command before first deploy.** `x` dispatches on argv — `ROLE`
-selects behaviour *within* a serving command, it does not by itself turn a container into a server.
-`As of 2026-08` the image's `ENTRYPOINT` is `/app/x` and neither
-[`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) nor the Helm chart sets a
-`command`, so whatever the Dockerfile's `CMD` is *is* what every role runs. Run the image once and
-watch it: a role that boots, prints and exits is not serving, however healthy the rollout looks.
+**The start command is the app image's own.** An app image — the one `x new` writes and
+`x build --target docker` builds — is `ENTRYPOINT ["bun", "apps/web/server.ts"]` with no `CMD`, and
+that file calls `runRole` from `@ultimat3/cli/serve`, which reads `ROLE`. Neither the chart nor
+[`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) sets a `command`, and neither
+needs one. (`docker/Dockerfile` in this repository is the framework's **CLI** image — `/app/x` and
+nothing else — and serves no role.)
+
+**`sync` ships OFF, in both charts and both Compose files**, `As of 2026-09-23`. A `sync` pod on a
+real database hears committed changes only from a replicator it can reach — in its own process, or
+over NATS — and a fresh deploy has neither, so booted anyway it is refused with
+`X_REALTIME_TOPOLOGY` (it used to start, report healthy, and deliver nothing to any live query or
+channel). To turn realtime on:
+
+| # | Step |
+|---|---|
+| 1 | Declare the bus in `app.config.ts` — `realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' }` — then run NATS (JetStream on) and set the **same** `NATS_URL` for `web`, `sync` and the replicator. Both halves or neither: since 22.0.0 `'nats'` with the variable unset, and a `NATS_URL` under `'memory'`, each refuse the boot with `X_CONFIG_INVALID`; `enabled: false` starts no `sync` node and no replicator |
+| 2 | Start Postgres with `wal_level=logical`, and create a publication for the entity tables (`CREATE PUBLICATION x_changes FOR TABLE …`, the replicator's preflight prints the exact statement); the replicator's role needs `REPLICATION` |
+| 3 | Enable exactly one replicator per database: `roles.replicator.enabled: true` (chart) or a `ROLE=replicator` service (Compose) |
+| 4 | Enable sync: `roles.sync.enabled: true`, or `replicas: 1` on the Compose `sync` service. The chart's Ingress routes `/_x/sync` only while sync is enabled |
 
 ## Migrations
 
@@ -172,11 +185,14 @@ The shipped chart already sets all of this. Keep it.
 | Setting | Value | Why |
 |---|---|---|
 | `runAsNonRoot` / `runAsUser` | `true` / `65532` | correct for **this repo's** distroless image. An app scaffolded by `x new` runs on `oven/bun:1.4-alpine` as user `bun` — read the uid out of your own image (`docker run --rm <image> id -u`) rather than copying 65532, or every pod fails to start |
-| `readOnlyRootFilesystem` | `true` | with an `emptyDir` at `/tmp` — the binary writes nothing else |
+| `readOnlyRootFilesystem` | `true` | with an `emptyDir` at `/tmp`, **and** `ULTIMATE_STATE_DIR=/tmp/x` in the release's Secret: as of 2026-09-23 a boot still creates `.x/` (the embedded-state directory) whenever any binding is embedded — `NATS_URL` unset is one — and `/app/.x` is on the read-only root (plan 101 slice 12 k narrows it to an embedded database or disk) |
 | `allowPrivilegeEscalation` | `false` | — |
 | `capabilities.drop` | `[ALL]` | but see below |
 | `seccompProfile` | `RuntimeDefault` | — |
-| `terminationGracePeriodSeconds` | `45` | must exceed the app's drain timeout, or SIGKILL truncates in-flight work |
+| `terminationGracePeriodSeconds` | `45` | must exceed preStop (5s) + the readiness grace (`drain.readinessGraceMs`, 5s outside local) + the drain deadline (25s) = 35s, or SIGKILL truncates in-flight work. The `container` CI job refuses a lower value |
+| `lifecycle.preStop.sleep` | `5`s, on Kubernetes 1.30+ only | holds SIGTERM while endpoints converge. The chart's floor is 1.27 and the field does not exist below 1.30, so it renders only where the API server knows it; below that the framework's readiness grace covers the same race |
+| `startupProbe` | 30 × 5s | a `web` pod builds the app's islands before its HTTP listener opens, so a liveness probe counting from container start restarts a pod that is merely booting. The metrics listener opens first on every role, and the background roles build no islands at all |
+| `ULTIMATE_CURSOR_SECRET` | in the release's Secret | a boot outside `development`/`test` on the development cursor key the framework ships is refused (`X_CURSOR_SECRET_DEV`) |
 
 `capabilities.drop: [ALL]` is right for Ultimate's own image. It is not universally right: an
 upstream image whose entrypoint drops its own privileges (via `setpriv` or similar) needs the

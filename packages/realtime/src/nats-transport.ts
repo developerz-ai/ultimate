@@ -18,7 +18,7 @@ import { parseNatsUrl } from './nats-client';
 import { ensureKvBucket } from './nats-jetstream';
 import { NatsKvSet } from './nats-kv';
 import { openNatsClient } from './nats-lib-client';
-import { type BackoffPolicy, backoffDelay, defaultBackoff, type Rng } from './thundering-herd';
+import { type BackoffPolicy, defaultBackoff, policyDelay, type Rng } from './thundering-herd';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -156,7 +156,7 @@ export class NatsTransport implements Transport {
       maxReconnectAttempts: this.#attempts,
       // The library retries; the spread is ours, so a cluster restart does not bring every node
       // back on the same millisecond.
-      reconnectDelay: () => backoffDelay(this.#retries++, this.#backoff, this.#rng),
+      reconnectDelay: () => policyDelay(this.#backoff, ++this.#retries, this.#rng),
       onError: (error) => this.#report(error, this.name),
       onReconnect: () => this.#recovered(),
     });

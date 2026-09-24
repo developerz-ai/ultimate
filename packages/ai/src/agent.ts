@@ -51,6 +51,7 @@ import type {
   StopReason,
   TokenUsage,
 } from './provider';
+import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import { aiGateway, aiRedactor } from './runtime';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
@@ -266,8 +267,15 @@ async function run<
       'llm.redacted': rendered !== rawPrompt || system !== prompt.system,
     });
 
-    const ledger = (currentBudget() ?? new BudgetLedger({ limits: {} })).derive(limitsOf(def));
+    // Screened first, as before: a bad declaration is refused whether or not a gateway exists.
+    const limits = limitsOf(def);
+    // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
     const gateway = aiGateway(name);
+    const ledger = (
+      currentBudget() ??
+      gateway.callLedger?.() ??
+      new BudgetLedger({ limits: {} })
+    ).derive(limits);
     const base: GenerateRequest = {
       model,
       ...(system === undefined ? {} : { system }),
@@ -340,7 +348,7 @@ async function run<
             // the loop continues, and the answer is REJECTED on the wire rather than dropped,
             // because a replayed `respond` block with no `tool_result` is a 400 and the whole run
             // becomes an `X_AI_PROVIDER_UNAVAILABLE`.
-            toolResultTurn(results, chars, answers),
+            toolResultTurn(results, chars, answers, redact),
           ];
           continue;
         }
@@ -350,7 +358,7 @@ async function run<
         // A wrong shape gets another turn like any other, because unlike `llm()` this loop has
         // turns left by construction — and unlike a tool result, the correction is the message.
         issues = formatIssues(parsed.issues).join('; ');
-        if (result.stopReason === 'max_tokens') {
+        if (isTruncated(result.stopReason)) {
           throw new LlmTruncatedError({ prompt: name, maxTokens: base.maxTokens });
         }
         messages = [...messages, assistantTurn(result), repairTurn(answers, issues)];

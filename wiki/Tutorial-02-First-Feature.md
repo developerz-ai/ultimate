@@ -2,7 +2,7 @@
 
 Scaffold the slice, register it, migrate it, name the tests. One `action` declaration becomes an HTTP route, an OpenAPI operation, a typed client method, a job handle, an MCP tool and three contract assertions — with no second file to keep in step.
 
-`As of 2026-08`. Every command and every output on this page was executed against a `create-ultimate@1.1.0 --no-example` app.
+`As of 2026-08`. Every command and every output on this page was executed against a `create-ultimate@1.1.0 --no-example` app, and has not been re-run on `main`. Step 2's migration workaround was removed on 2026-09-23: `x db gen` has worked since 2.0.0.
 
 Series: [1 — first app](Tutorial-01-First-App) · **2** · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 
@@ -106,22 +106,33 @@ export const canTodoWrite = can<TodoScope>(
 
 `can()` checks the grant first and the predicate second, so a denial distinguishes *you may never do this* from *you may, but not in that org*. The generated `policy.test.ts` pins the second gate with an actor who **holds** the grant and is still denied — delete the predicate and that test fails.
 
+`canTodoCreate` is the same grant with the one tenancy rule a create can have — the actor **has** an org — because the row is written under the actor's org, never one named in the body.
+
+The generator also **grants** what it declares, in `apps/web/shared/roles.ts`: `todo:read` to `member`, `todo:write` to `admin` (the dev actor's role). A permission an action requires and no role grants is `X_PERMISSION_UNGRANTED` on `x verify`'s `policy` step — every request to it would answer 403.
+
 Full model: [Policies and authz](Policies-And-Authz).
 
 ## The action, and what it projects
 
 ```ts
+export const CreateTodoInput = todo.$view(['title', 'price']);
+
 export const createTodo = action({
-  input: t.object({ id: t.uuid, orgId: t.uuid }),
-  output: t.object({ id: t.uuid, title: t.string }),
-  policy: canTodoWrite,
+  input: CreateTodoInput,
+  output: TodoView,
+  policy: canTodoCreate,
   cache: { invalidates: [todoTag] },
-  mcp: { expose: true, description: 'create-todo — generated, edit the description' },
-  async handle({ input }) { … },
+  // No `mcp` until you write a real description: an agent reads it to decide to call the tool.
+  async handle({ input, ctx }) { … return service.create({ ...input, orgId }); },
 });
 ```
 
-`orgId` is in the input because the policy decides on it — authz reads the declaration, never the database.
+A real insert. The input is the entity's own view of the columns a caller supplies, so a column added to `entity.ts` is one edit to that list; `orgId` comes from `ctx.actor`, never from the body.
+
+```bash
+curl -X POST localhost:3000/api/todos/create -H 'content-type: application/json' \
+  -H 'sec-fetch-site: same-origin' -d '{"title":"Ship it","price":{"minor":1250,"currency":"USD"}}'
+```
 
 Five artifacts, read off the real registry with `createTodo.describe()`, `.openapi()`, `.tool()`, `.job()` and `.contract()`:
 
@@ -129,7 +140,7 @@ Five artifacts, read off the real registry with `createTodo.describe()`, `.opena
 |---|---|
 | HTTP route | `POST /api/todos/create`, capability `todo:write` |
 | OpenAPI operation | `operationId: "createTodo"`, `summary` from `mcp.description` |
-| MCP tool | `createTodo` — the export name verbatim, which is what `tools/call` spells — and `tool().policy === createTodo.policy` is `true`, one authz object, not a copy |
+| MCP tool | none until `mcp: { expose: true, description }` is written; then `createTodo` — the export name verbatim — and `tool().policy === createTodo.policy`, one authz object, not a copy |
 | Job handle | `action:createTodo` — the same handler, run through the queue |
 | Contract tests | 3 generated assertions: garbage input rejected, anonymous denied, operation present in the spec |
 | Typed client | `.client({ baseUrl })` derives the path by string math, so the browser imports no server code |
@@ -140,36 +151,30 @@ bunx x actions list
 
 ```text
   name         verb     resource  path                 capability  mcp
-  archiveTodo  archive  todos     /api/todos/archive   todo:write  yes
-  createTodo   create   todos     /api/todos/create    todo:write  yes
+  archiveTodo  archive  todos     /api/todos/archive   todo:write  no
+  createTodo   create   todos     /api/todos/create    todo:write  no
   health       invoke   healths   /api/healths/invoke  public      yes
 ```
 
-Rename `orgId` in the declaration and every consumer fails typecheck. One rename, N errors, all real work. Every field: [Actions](Actions).
+Rename a column in the entity and every consumer fails typecheck. One rename, N errors, all real work. Every field: [Actions](Actions).
 
-## Register it — the scaffold does not
+## Registered for you
 
-`x new` writes no `apps/web/api/index.ts`. Without one, jobs and tasks register as `anonymous-job-2` and `anonymous-task-1`, because export names are what name a primitive.
+`x new` writes `apps/web/api/index.ts`, and `x g resource`, `x g job` and `x g task` add their jobs and tasks to it. A job no `defineApi` lists keeps the positional name `job()` gave it — `anonymous-job-2` — and `x verify`'s `manifest` step refuses that as `X_JOB_UNREGISTERED`. After `x g resource todo`:
 
 ```ts
-// apps/web/api/index.ts — importing this module IS the boot
+// apps/web/api/index.ts, in an app made with `x new --no-example` — importing it IS the boot
 import { defineApi } from '@ultimat3/action';
-import * as archiveTodo from '../app/todo/actions/archive-todo';
-import * as createTodo from '../app/todo/actions/create-todo';
 import * as reindexTodo from '../app/todo/jobs/reindex-todo';
-import * as todoList from '../app/todo/live/todo-list';
 import * as health from './health';
 
 export const api = defineApi({
-  actions: [health, createTodo, archiveTodo],
-  queries: [todoList],
+  actions: [health],
   jobs: [reindexTodo],
 });
-
-export type Api = typeof api;
 ```
 
-Import each primitive **file**, not the `actions/` directory — the generator writes no `index.ts` in it. Two features exporting one name collide here with `X_ACTION_DUPLICATE` rather than merging in silence.
+Only jobs and tasks are added: the module scan registers actions and queries by export name on its own, and registers no job. Listing an action here too is allowed — `x new`'s example slice does — and each primitive is imported as a **file**, never a directory. Two features exporting one name collide with `X_ACTION_DUPLICATE` rather than merging in silence.
 
 ## Migrations
 
@@ -200,55 +205,16 @@ either way:
 
 A migration id is `<stamp>_<slug>` — the stamp is `x db gen`'s own clock, so yours differs. The one it names here is the `initial` from [tutorial 1](Tutorial-01-First-App#the-database-first-run); `x new` writes no migration, so on `main` that generate has already happened by the time you read this.
 
-**2. `x db gen` does not work at 1.1.0.** It shells out to `drizzle-kit`, which a scaffolded app neither installs nor configures:
+**2. Generate the migration.** `x db gen` diffs the entity registry against the newest
+migration's snapshot and writes three files — `<id>.sql`, `<id>.snapshot.json` and `<id>.hash`:
 
-```text
-  X_DB_GEN_FAILED
-    cause: bunx drizzle-kit generate --name add_todos exited 1: No config path provided, using
-           default 'drizzle.config.json' … file does not exist
+```bash
+bunx x db gen "add todos"
 ```
 
-`x db migrate` fails identically.
-
-**Fixed in 2.0.0.** `x db gen "add todos"` now calls `@ultimat3/db`'s own
-`generateMigration()` and writes the three files itself — `<id>.sql`, `<id>.snapshot.json` and
-`<id>.hash` — while `x db migrate` runs the same migrator `ROLE=migrate` runs. Skip the script
-below on 2.0.0; on 1.1.0 it is the way through. `@ultimat3/db` exports the framework's own
-generator, so a twenty-line script does the job — this one passes `x verify`:
-
-```ts
-// scripts/db-gen.ts —  bun run scripts/db-gen.ts 0001 "add todos"
-import { join } from 'node:path';
-import { writeSchemaHash } from '@ultimat3/cli';
-import { generateMigration, slugify } from '@ultimat3/db';
-import * as schema from '../packages/db/src/schema';
-
-const root = join(import.meta.dir, '..');
-const ordinal = Bun.argv[2] ?? '0001';
-const name = Bun.argv[3] ?? 'change';
-
-const entities = Object.values(schema).map((entity) => entity.$describe());
-const migration = generateMigration({ entities, name });
-const id = `${ordinal}_${slugify(name)}`;
-
-await Bun.write(
-  join(root, 'packages/db/migrations', `${id}.sql`),
-  `${migration.up}\n\n-- down\n${migration.down}\n`,
-);
-const hash = await writeSchemaHash(root, id);
-await Bun.stdout.write(`${JSON.stringify({ ok: true, id, hash })}\n`);
-```
-
-```text
-{"ok":true,"id":"0001_add_todos","hash":"92b6e21a9f3acc81"}
-```
-
-Two edits to the emitted SQL, both mechanical:
-
-| Emitted | Why it fails | Fix |
-|---|---|---|
-| `create index "todos_org_id_created_at_idx" on "todos" ("org_id_created_at");` | the composite index column list round-trips as one mangled name. **Fixed in 2.0.0** — on 1.1.0 it is an edit | spell the columns: `("org_id", "created_at")` |
-| `create table …;` and `create index …;` in one file | the driver ran a migration's `up` as one prepared statement — *cannot insert multiple commands into a prepared statement*, on the embedded database always. **Fixed in 2.0.0** — the script is split and sent one statement at a time, in one transaction | on 1.2.0, **one statement per migration file**; split into `0001_…` and `0002_…`, each with its own `.hash` |
+The 1.1.0 workaround this step used to carry (a hand-written `scripts/db-gen.ts`, and two manual
+edits to the emitted SQL) is gone: all three defects it worked around were fixed in 2.0.0, and
+`scaffold-smoke` in CI runs `x db gen` then `x db migrate` on a fresh scaffold on every push.
 
 Apply them the way production does — same code path, no toolchain:
 
@@ -305,7 +271,7 @@ Three steps that were dashes in [tutorial 1](Tutorial-01-First-App) are now tick
 bunx x mcp serve --transport http --port 9229
 ```
 
-13 framework tools, one catalog, the same on `stdio` and `http` — `routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain`, `db.query`, `db.migrate`, `tests.run`, `verify.run`, `logs.tail`. `bunx x mcp tools` prints them with their scopes.
+18 tools, one catalog, the same on `stdio` and `http` — 13 framework tools (`routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain`, `db.query`, `db.migrate`, `tests.run`, `verify.run`, `logs.tail`) and five that look at the UI (`ui.shot`, `ui.island`, `ui.inspect`, `ui.interact`, `ui.diff`). `bunx x mcp tools` prints them with their scopes.
 
 `createTodo` reaches an agent's tool list through the app's own surface in `packages/mcp/src/index.ts` (`defineAppMcp({ include: 'exposed' })`), carrying `mcp: { expose: true }` and **the action's own policy** as its authorization. Full model: [MCP and AI](MCP-And-AI).
 

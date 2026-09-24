@@ -158,7 +158,6 @@ export {
 export {
   type BackoffPolicy,
   BROWSER_RECONNECT_MAX_MS,
-  backoffDelay,
   browserBackoff,
   defaultBackoff,
   type JitterMode,

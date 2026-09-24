@@ -176,3 +176,30 @@ describe('indexDocument against an embedder that under-answers', () => {
     expect(await store.search(new Float32Array([1, 0, 0, 0]), 5)).toEqual([]);
   });
 });
+
+// Chunk ids are `<doc>#<n>`, so re-indexing a document that got SHORTER overwrote the first chunks
+// and left the tail — text the document no longer contains, still retrieved and still cited.
+describe('re-indexing a shorter document', () => {
+  test('leaves none of the old tail retrievable', async () => {
+    const store = new MemoryVectorStore({ dimension: 64 });
+    const embedder = new HashEmbedder({ dimension: 64 });
+    const long = ['alpha one.', 'bravo two.', 'charlie three zebra.'].join('\n\n');
+    const first = await indexDocument({
+      store,
+      embedder,
+      document: { id: 'doc', text: long, size: 4 },
+    });
+    expect(first.length).toBeGreaterThan(1);
+    await indexDocument({ store, embedder, document: { id: 'doc', text: 'alpha one.', size: 4 } });
+    expect(await store.searchText('zebra', 5)).toEqual([]);
+    expect((await store.searchText('alpha', 5)).map((hit) => hit.id)).toEqual(['doc#0']);
+  });
+
+  test('another document with the same prefix is untouched', async () => {
+    const store = new MemoryVectorStore({ dimension: 64 });
+    const embedder = new HashEmbedder({ dimension: 64 });
+    await indexDocument({ store, embedder, document: { id: 'other', text: 'zebra stays.' } });
+    await indexDocument({ store, embedder, document: { id: 'doc', text: 'alpha one.' } });
+    expect((await store.searchText('zebra', 5)).map((hit) => hit.id)).toEqual(['other#0']);
+  });
+});

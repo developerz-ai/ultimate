@@ -143,6 +143,24 @@ describe('RemoteEmbedder', () => {
     expect(failure).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE', status: 429 });
   });
 
+  // `maxResponseBytes` bounded a SUCCESS body only: the error path read `response.text()` whole,
+  // so a provider streaming an endless 5xx body held the embed call — and its memory — forever.
+  test('a non-2xx body is read only as far as the detail needs, never whole', async () => {
+    const calls: Call[] = [];
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new TextEncoder().encode('x'.repeat(1024)));
+      },
+    });
+    const failure = await embedder(calls, () => new Response(endless, { status: 503 }))
+      .embed(['a'])
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE', status: 503 });
+    expect(pulled).toBeLessThan(10);
+  });
+
   test('no key names the env var instead of reaching the network', async () => {
     const calls: Call[] = [];
     const keyless = new RemoteEmbedder({

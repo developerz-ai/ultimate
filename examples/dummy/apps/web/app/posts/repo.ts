@@ -8,12 +8,12 @@
  * of 50 posts costs one extra `where id in (…)` and never one statement per row. The related row
  * arrives as `unknown` — the other side is parsed by `PostAuthor`, never asserted into shape here.
  *
- * KNOWN GAP, and the only one left on this file: the public blog resolves a post by slug alone —
- * `/blog/{slug}` carries no tenant, which is why `post_slug_unique` is global — so
- * `publishedBySlug`, `publishedSlugs` and `publishedPage` read `posts` with no org predicate, and
- * @ultimat3/entity refuses that with `X_TENANCY_UNSCOPED` (`packages/entity/src/tenancy.ts`). A
- * tenant-columned entity has no cross-tenant escape hatch, deliberately; every other function
- * here now runs.
+ * The public blog resolves a post by slug alone — `/blog/{slug}` carries no tenant, which is why
+ * `post_slug_unique` is global — so `publishedBySlug`, `publishedSlugs` and `publishedPage` read
+ * `posts` across every org. A tenant-columned entity refuses that for an anonymous reader
+ * (`X_TENANCY_ACTOR_ORG_REQUIRED`), so those three run as `publicBlogReader` inside `crossTenant()`
+ * with the reason written beside them. The query's own policy (`publicPostRead`) has already
+ * decided the caller may read; what spans tenants is only ever a `status: 'published'` read.
  */
 
 import { type Comment, db, type Post } from '@postly/db';
@@ -24,13 +24,37 @@ import {
   memberId as toMemberId,
   orgId as toOrgId,
 } from '@postly/domain';
+import { serviceActor, withChildContext } from '@ultimat3/core';
+import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
 import { type CommentView, PostAuthor, type PostSummary, type PostView } from './entity';
 
 /** The post page's aggregate: one row, its comments attached. Shared by the query and the route. */
 export type PostWithComments = PostView & { readonly comments: readonly CommentView[] };
 
 /** One prerenderable blog URL. `updatedAt` is what makes the sitemap's lastmod honest. */
-export type PublishedSlug = { readonly slug: string; readonly updatedAt: Date };
+export type PublishedSlug = {
+  readonly slug: string;
+  readonly updatedAt: Date;
+  // The two columns `publicPostSlugs` filters and sorts on. Selected only `slug` and `updatedAt`,
+  // every row failed `where({ status: 'published' })` and the blog prerendered no article at all.
+  readonly status: Post['status'];
+  readonly publishedAt: Post['publishedAt'];
+};
+
+/**
+ * Who the public blog's reads are: not the anonymous visitor, whose actor carries no org, but a
+ * reader that proves `tenancy:cross` for exactly the published-post reads below.
+ */
+const publicBlogReader = serviceActor({ id: 'public-blog', scopes: [CROSS_TENANT_SCOPE] });
+
+/** One public-blog read, across every org, with the reason on the read it defends. */
+const acrossOrgs = <T>(fn: () => Promise<T>): Promise<T> =>
+  withChildContext({ actor: publicBlogReader }, () =>
+    crossTenant(
+      'the public blog lists published posts from every org; its URL names no tenant',
+      fn,
+    ),
+  );
 
 /** The feed's activity badge: one synthetic row per org, `orgId` doubling as its tail key. */
 export type ActivitySummary = { readonly orgId: OrgId; readonly publishedCount: number };
@@ -287,20 +311,24 @@ export const withComments = async (orgId: OrgId, id: PostId): Promise<PostWithCo
  */
 export const publishedPage = async (limit: number): Promise<PostSummary[]> =>
   (
-    await db.posts
-      .where({ status: 'published' })
-      .orderBy('publishedAt', 'desc')
-      .limit(limit)
-      .select(SUMMARY_COLUMNS)
-      .preload('author')
-      .all()
+    await acrossOrgs(() =>
+      db.posts
+        .where({ status: 'published' })
+        .orderBy('publishedAt', 'desc')
+        .limit(limit)
+        .select(SUMMARY_COLUMNS)
+        .preload('author')
+        .all(),
+    )
   ).map(summaryView);
 
 /** One published post, by slug, anywhere — the public blog has no tenant in the URL. */
 export const publishedBySlug = async (slug: string): Promise<PostView[]> =>
-  (await db.posts.where({ slug, status: 'published' }).limit(1).preload('author').all()).map(
-    readView,
-  );
+  (
+    await acrossOrgs(() =>
+      db.posts.where({ slug, status: 'published' }).limit(1).preload('author').all(),
+    )
+  ).map(readView);
 
 /** The same row, tenant-scoped: the signed-in read of a post the member's org published. */
 export const publishedBySlugInOrg = async (orgId: OrgId, slug: string): Promise<PostView[]> =>
@@ -310,9 +338,11 @@ export const publishedBySlugInOrg = async (orgId: OrgId, slug: string): Promise<
 
 /** Feeds the `prerender()` enumeration of the public blog route. */
 export const publishedSlugs = (): Promise<readonly PublishedSlug[]> =>
-  db.posts
-    .where({ status: 'published' })
-    .orderBy('publishedAt', 'desc')
-    .limit(1000)
-    .select({ slug: true, updatedAt: true })
-    .all();
+  acrossOrgs(() =>
+    db.posts
+      .where({ status: 'published' })
+      .orderBy('publishedAt', 'desc')
+      .limit(1000)
+      .select({ slug: true, updatedAt: true, status: true, publishedAt: true })
+      .all(),
+  );

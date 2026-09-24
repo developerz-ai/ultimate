@@ -253,7 +253,10 @@ async function perform(
     if (outcome.replayed) options.onReplay?.();
     trace.replayed = outcome.replayed;
     wrote = !outcome.replayed;
-    value = outcome.value;
+    // A replay is parsed like a first call. The memory store hands back the live value and the
+    // postgres store `JSON.parse(JSON.stringify(v))` — a `Date` on the first call and a `string`
+    // on every retry served from Postgres — so the output schema is the one answer to its shape.
+    value = outcome.replayed ? validateOutput(def.output, outcome.value, name) : outcome.value;
   }
   // Only for a run that actually happened, and only through the gate. A replay ran no handler
   // and changed nothing the first call had not already busted — re-busting per retry re-purges

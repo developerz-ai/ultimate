@@ -30,7 +30,12 @@ export interface Planned {
 /** Both edits, planned against the files as they are — nothing is written here. */
 export async function planFiles(root: string, input: NewErrorCode): Promise<Planned> {
   validateNewCode(input);
-  const errorsPath = `packages/${input.pkg}/src/errors.ts`;
+  // `error-codes.ts` first where a package split its titles out of `errors.ts` — `@ultimat3/cli`
+  // did at the 500-line ceiling, and this planner then refused the package with the most codes.
+  const split = `packages/${input.pkg}/src/error-codes.ts`;
+  const errorsPath = (await Bun.file(`${root}/${split}`).exists())
+    ? split
+    : `packages/${input.pkg}/src/errors.ts`;
   const errorsFile = Bun.file(`${root}/${errorsPath}`);
   if (!(await errorsFile.exists())) {
     throw new ScriptError({

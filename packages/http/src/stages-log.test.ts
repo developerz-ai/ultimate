@@ -4,7 +4,7 @@
 // stop it. A rejected `{"password":"…"}` was written verbatim, at 4xx, which is logged and not
 // reported and therefore kept for the full retention.
 import { describe, expect, test } from 'bun:test';
-import { createLogger } from '@ultimat3/core';
+import { createLogger, UltimateError } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { createRequestContext } from './context';
 import { bodyInvalid } from './errors';
@@ -23,7 +23,7 @@ const runErrorMap = async (error: unknown): Promise<Record<string, unknown>[]> =
     role: 'web',
     config,
     logger: createLogger({
-      level: 'error',
+      level: 'trace',
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
     }),
   });
@@ -78,5 +78,24 @@ describe('the error-map log line', () => {
     const [line] = await runErrorMap(bodyInvalid('/login', ['nope']));
     expect(String(line?.['requestId']).length).toBeGreaterThan(0);
     expect(String(line?.['traceId'])).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
+// Every 4xx was logged at `error`, so an alert on error lines paged for a mistyped URL. The level
+// now says whose problem it was: 5xx is ours, a refused credential or a rate limit is worth a
+// look, and a 404 or a 400 is the caller's own mistake that the problem document already named.
+describe('the level follows the status', () => {
+  const coded = (code: string) => new UltimateError({ code, cause: 'c', fix: 'x routes list' });
+  test.each([
+    ['X_INTERNAL', 'error'],
+    ['X_UNAUTHENTICATED', 'warn'],
+    ['X_FORBIDDEN', 'warn'],
+    ['X_RATE_LIMITED', 'warn'],
+    ['X_ROUTE_NOT_FOUND', 'info'],
+    ['X_PATH_INVALID', 'info'],
+    ['X_BODY_INVALID', 'info'],
+  ])('%s logs at %s', async (code, level) => {
+    const [line] = await runErrorMap(coded(code));
+    expect(line?.['level']).toBe(level);
   });
 });

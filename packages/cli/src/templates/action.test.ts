@@ -15,7 +15,12 @@ import { sandboxPath, workspaceRoot } from '../scaffold-typecheck';
 import { actionFiles } from './action';
 import { sliceExports } from './slice-foundation';
 
-const target = { surfaceDir: 'apps/web/app', feature: 'fleet' } as const;
+/** A slice with data: the lookup-by-id shape is only for a feature that has an entity to read. */
+const target = {
+  surfaceDir: 'apps/web/app',
+  feature: 'fleet',
+  sliceEntity: "export const fleet = entity('fleets', { tenant: 'orgId', columns: {} });\n",
+} as const;
 
 /** ai-maxxing's `fleet/errors.ts`, reduced to the shape that matters: two classes, neither ours. */
 const FLEET_ERRORS = `import { UltimateError } from '@ultimat3/core';
@@ -60,6 +65,19 @@ describe('unit · sliceExports reads what a slice module exports', () => {
     expect(sliceExports(listed, 'FleetNotFoundError')).toBe(true);
     expect(sliceExports(listed, 'Missing')).toBe(false);
     expect(sliceExports(listed, 'other')).toBe(true);
+  });
+});
+
+describe('unit · x g action into a feature with no entity writes no entity', () => {
+  test('the neutral body: no lookup, no errors.ts, no entity.ts, only the policy it evaluates', () => {
+    const files = actionFiles('ping-fleet', { surfaceDir: 'apps/web/app', feature: 'fleet' });
+    const paths = files.map((file) => file.path);
+    expect(paths).toContain('apps/web/app/fleet/policy.ts');
+    expect(paths).not.toContain('apps/web/app/fleet/entity.ts');
+    expect(paths).not.toContain('apps/web/app/fleet/errors.ts');
+    const source = sourceOf(files, 'actions/ping-fleet.ts');
+    expect(source).not.toContain('../repo');
+    expect(source).not.toContain('../errors');
   });
 });
 

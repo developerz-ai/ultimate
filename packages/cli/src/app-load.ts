@@ -5,13 +5,15 @@
 
 // Bun ships no `Bun.*` path API: `relative`/`sep` turn an absolute scan hit into the app-root-
 // relative POSIX path every finding and every manifest fact is keyed by.
-import { relative, sep } from 'node:path';
-import { registerActions } from '@ultimat3/action';
+import { join, relative, sep } from 'node:path';
+import { listActions, registerActions } from '@ultimat3/action';
+import { describeEntities } from '@ultimat3/entity';
 import { localeConfig } from '@ultimat3/i18n';
+import { registeredJobs, registeredTasks } from '@ultimat3/jobs';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
-import { registerQueries } from '@ultimat3/query';
+import { listQueries, registerQueries } from '@ultimat3/query';
 import type { RouteConfig } from '@ultimat3/render';
-import { isRouteConfig, pageComponentOf, registerRoute } from '@ultimat3/render';
+import { isRouteConfig, pageComponentOf, registerRoute, routeEntries } from '@ultimat3/render';
 // For the SIDE EFFECT, and it is this module's to hold: importing `@ultimat3/render/server`
 // installs the `.tsx`/`.scss` Bun plugin, a plugin only transforms modules loaded AFTER it, and
 // every app module below is loaded by the dynamic `import()` in this file. Before the render
@@ -19,10 +21,12 @@ import { isRouteConfig, pageComponentOf, registerRoute } from '@ultimat3/render'
 // here is six hops through `error-contract` → `fix-command` → the command registry, which is an
 // accident one refactor away from compiling every app's `.tsx` to `React.createElement`.
 import '@ultimat3/render/server';
+import { APP_CONFIG_FILE } from './app-root';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
+import { isTest } from './source-files';
 
 /** Every place an app keeps code the framework has to see. */
 const APP_GLOBS = [
@@ -112,8 +116,10 @@ export async function loadApp(root: string): Promise<LoadedApp> {
       // A SEGMENT, never a substring: an app checked out under
       // `~/dev/node_modules-experiments/myapp` answered `includes('node_modules')` for every
       // file it holds, so this loop imported none of them and the app registered nothing.
-      if (hasPathSegment(absolute, 'node_modules') || absolute.includes('.test.')) continue;
+      // The ROOT-RELATIVE path is tested, never the absolute one: an app checked out under
+      // `~/work/my.test.app` matched `.test.` on every file and loaded none of them.
       const file = relative(root, absolute).split(sep).join('/');
+      if (hasPathSegment(absolute, 'node_modules') || isTest(file)) continue;
       if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
         continue;
       }
@@ -138,6 +144,16 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   }
 
   files.sort();
+  // An app that imported NOTHING and reported nothing is a registry every later step reads as
+  // empty-and-fine. With an `app.config.ts` beside it, that is never what the author meant.
+  if (
+    files.length === 0 &&
+    findings.length === 0 &&
+    registersNothing() &&
+    (await Bun.file(join(root, APP_CONFIG_FILE)).exists())
+  ) {
+    findings.push(emptyAppFinding(root));
+  }
   // Read after the loop, never before it: `configureLocales` runs on the app's own import.
   return {
     root,
@@ -147,6 +163,22 @@ export async function loadApp(root: string): Promise<LoadedApp> {
     findings,
   };
 }
+
+/** No primitive in any registry this scan fills — a process that registered some itself is not empty. */
+const registersNothing = (): boolean =>
+  listActions().length === 0 &&
+  listQueries().length === 0 &&
+  routeEntries().length === 0 &&
+  registeredJobs().length === 0 &&
+  registeredTasks().length === 0 &&
+  describeEntities().length === 0;
+
+const emptyAppFinding = (root: string): Finding => ({
+  code: 'X_APP_EMPTY',
+  cause: `${root} has an ${APP_CONFIG_FILE} and loadApp imported no module under ${APP_GLOBS.join(', ')}, so every step reading the registries would check nothing`,
+  fix: 'x doctor --json',
+  at: APP_CONFIG_FILE,
+});
 
 /**
  * Registers a module once; every later call replays whatever the first one reported — except for

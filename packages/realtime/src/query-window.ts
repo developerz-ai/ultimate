@@ -125,28 +125,42 @@ export function createEntry(
 export async function fillWindow(
   entry: QueryEntry,
 ): Promise<{ rows: readonly Row[]; lsn: string }> {
-  // Read before `startRead` clears it: a second caller arriving during the read joins it and is
-  // not the one that forced it, which is what keeps one forced read from becoming N.
-  const forced = entry.stale;
-  const pending = forced || entry.reading === null ? startRead(entry) : entry.reading;
-  const result = await pending.result;
-  return await entry.lock.run(async () => {
-    // Two rules, and neither can stand in for the other. Against another READ it is identity —
-    // the same check `startRead` makes on `entry.reading` one function down, and the one
-    // `packages/cache/src/single-flight.ts` makes for the same reason — because an lsn cannot
-    // order two reads at all: a definition with no lsn provider answers `''` for both, and
-    // `'' >= ''` let the older one overwrite the gap repair the newer one had just landed, with
-    // `stale` already cleared by its issue and therefore nothing left to re-read. Against a
-    // CHANGE it is still the lsn, because a fanout moved `entry.lsn` forwards while this read was
-    // in flight and rewinding to what the read saw hands that subscriber rows the fanout has
-    // moved past — except for a forced read, which was issued *because* what is under it is
-    // wrong.
-    if (isNewestRead(entry, pending) && (forced || result.lsn >= entry.lsn)) {
-      applyRead(entry, pending, result);
-    }
-    return { rows: entry.rows, lsn: entry.lsn };
-  });
+  for (let attempt = 0; ; attempt += 1) {
+    // Read before `startRead` clears it: a second caller arriving during the read joins it and is
+    // not the one that forced it, which is what keeps one forced read from becoming N.
+    const forced = entry.stale;
+    const pending = forced || entry.reading === null ? startRead(entry) : entry.reading;
+    const result = await pending.result;
+    const again = await entry.lock.run(async () => {
+      // Two rules, and neither can stand in for the other. Against another READ it is identity —
+      // the same check `startRead` makes on `entry.reading` one function down, and the one
+      // `packages/cache/src/single-flight.ts` makes for the same reason — because an lsn cannot
+      // order two reads at all: a definition with no lsn provider answers `''` for both, and
+      // `'' >= ''` let the older one overwrite the gap repair the newer one had just landed, with
+      // `stale` already cleared by its issue and therefore nothing left to re-read. Against a
+      // CHANGE it is still the lsn, because a fanout moved `entry.lsn` forwards while this read was
+      // in flight and rewinding to what the read saw hands that subscriber rows the fanout has
+      // moved past — except for a forced read, which was issued *because* what is under it is
+      // wrong, and for the FIRST read, which has no window under it to rewind: a fanout never
+      // patches a window no read has landed in (`live-fanout.ts`), it marks it stale instead.
+      const first = entry.applied === 0;
+      if (isNewestRead(entry, pending) && (forced || first || result.lsn >= entry.lsn)) {
+        applyRead(entry, pending, result);
+      }
+      // A change reached this window while its first read was in flight and could not be folded,
+      // so what just landed may predate it: read once more before serving anyone a partial window.
+      return first && entry.stale && attempt < COLD_REREADS;
+    });
+    if (!again) return { rows: entry.rows, lsn: entry.lsn };
+  }
 }
+
+/**
+ * How many times a cold window re-reads because writes kept landing during its read. Bounded: a
+ * table written faster than it can be read would otherwise never serve a subscriber, and after the
+ * bound the window stays `stale`, so the next change re-reads it anyway.
+ */
+const COLD_REREADS = 3;
 
 /**
  * The same replacement, for a caller that is already holding the lane. A fanout cannot call

@@ -249,3 +249,42 @@ describe('task', () => {
     ]);
   });
 });
+
+describe('a task is refused at declaration, never at the first tick', () => {
+  // `task()` never read `cron`, so one bad expression threw inside `runRound` — every round
+  // aborted there, and every task in the app stopped firing, with the error on a log line.
+  test('an unparseable cron is X_CRON_INVALID at task()', () => {
+    let caught: unknown;
+    try {
+      task({ name: 'badMinute', cron: '61 * * * *', tz: 'UTC', enqueue: () => [] });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { code?: string } | undefined)?.code).toBe('X_CRON_INVALID');
+    expect(registeredTasks().map((handle) => handle.name)).not.toContain('badMinute');
+  });
+
+  // Whatever one task's round throws — its `enqueue` callback, its state read — is that task's,
+  // and the rest of the round still fires.
+  test('a round with one failing task still fires the good one', async () => {
+    task({
+      name: 'aBrokenDigest',
+      cron: '0 3 * * *',
+      tz: 'UTC',
+      enqueue: () => {
+        throw new TypeError('the app callback failed');
+      },
+    });
+    task({ name: 'zGoodDigest', cron: '0 3 * * *', tz: 'UTC', enqueue: () => [[sendDigest, {}]] });
+    const clock = fakeClock(T0);
+    const scheduler = createScheduler({
+      driver: createMemoryDriver({ clock }),
+      clock,
+      cron: dailyAt3,
+    });
+    await scheduler.tick();
+    clock.advance(4 * 3_600_000);
+    const fired = await scheduler.tick();
+    expect(fired.map((occurrence) => occurrence.task)).toEqual(['zGoodDigest']);
+  });
+});

@@ -24,6 +24,11 @@ export interface SmtpStream {
   write(data: string): Promise<void>;
   /** STARTTLS: negotiate TLS in place. Everything read or written after this is encrypted. */
   startTls(): Promise<void>;
+  /**
+   * True when the server sent bytes the client has not read yet. Asked once, after the STARTTLS
+   * `220`: anything already waiting there is plaintext a man-in-the-middle can have appended.
+   */
+  buffered?(): boolean;
   close(): void;
 }
 
@@ -88,13 +93,33 @@ const refused = (stage: SendStage, reply: SmtpReply): MailError =>
 
 /** Reads whole replies off a chunked stream, with a deadline on every one of them. */
 class Conversation {
-  private readonly parser = createReplyParser();
+  private parser = createReplyParser();
   private readonly pending: SmtpReply[] = [];
 
   constructor(
     private readonly stream: SmtpStream,
     private readonly timeoutMs: number,
   ) {}
+
+  /**
+   * RFC 3207 §4.2, both halves: nothing may be buffered after the STARTTLS `220` — any byte there
+   * arrived in PLAINTEXT and would be read as the TLS side's EHLO reply, so an injected
+   * `250 AUTH …` chose how credentials were sent — and the reader starts over on the TLS side.
+   */
+  assertNothingAfterStarttls(): void {
+    if (this.pending.length > 0 || this.parser.hasPending() || this.stream.buffered?.() === true) {
+      throw sendFailed({
+        driver: 'smtp',
+        stage: 'starttls',
+        detail:
+          'the server sent bytes after its STARTTLS 220 and before the TLS handshake — plaintext a ' +
+          'man-in-the-middle can append (RFC 3207 §4.2), so the session is refused before any credential',
+        retryable: false,
+        fix: FIXES['starttls'] ?? 'set SMTP_URL in .env to smtps://host:465',
+      });
+    }
+    this.parser = createReplyParser();
+  }
 
   /** Sends one command line and reads the reply it expects. The line is never logged. */
   async say(stage: SendStage, line: string, wanted: (code: number) => boolean): Promise<SmtpReply> {
@@ -191,6 +216,7 @@ export async function smtpDeliver(
 
   if (!secure && capabilities.starttls) {
     await talk.say('starttls', 'STARTTLS', (code) => code === 220);
+    talk.assertNothingAfterStarttls();
     await stream.startTls();
     // Capabilities before TLS are not the capabilities after it: most servers only advertise AUTH
     // once the channel is encrypted, and a cleartext EHLO can be stripped in flight anyway.

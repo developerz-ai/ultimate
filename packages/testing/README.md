@@ -190,7 +190,9 @@ test does not care about; `defineFactory` is for the rows it does.
 ```ts
 const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {
   test('denies an anonymous actor', async () => {
-    await expect(subject().call(input, { actor: anonymous })).toDenyPolicy();
+    // The POLICY is the receiver and the context is the argument — `toDenyPolicy` evaluates it.
+    // Awaited: the decision is async, and an un-awaited assertion can never fail the test.
+    await expect(subject().policy).toDenyPolicy({ actor: null, input: {} });
   });
 });
 
@@ -489,6 +491,20 @@ fails on a page that simply has not painted yet.
 `X_TEST_ISLAND_STATES_AMBIGUOUS` `X_TEST_ISLAND_STATE_ID_INVALID` `X_TEST_ISLAND_STATE_DUPLICATE`
 `X_TEST_ISLAND_STATE_JSON_INVALID` `X_TEST_ISLAND_STATE_CLOCK_INVALID`
 `X_TEST_ISLAND_STATE_STUB_INVALID`
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `FixtureUnavailableError` | `X_TEST_FIXTURE_UNAVAILABLE` | `src/errors.ts` |
+| `NetworkOfflineError` | `X_TEST_NETWORK_OFFLINE` | `src/errors.ts` |
+| `NetworkSealedError` | `X_TEST_NETWORK_SEALED` | `src/errors.ts` |
+| `NondeterministicError` | `X_TEST_NONDETERMINISTIC` | `src/errors.ts` |
+| `RegistryLeakError` | `X_TEST_REGISTRY_LEAK` | `src/errors.ts` |
+| `TestDatabaseUnavailableError` | `X_TEST_DB_UNAVAILABLE` | `src/errors.ts` |
 
 ## One process, one registry
 

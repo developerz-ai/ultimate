@@ -18,20 +18,17 @@
 //   bun run scripts/test-fix-citations.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
 import { type CommandCatalog, citedCommandProblem, loadCommandCatalog } from '@ultimat3/cli';
-import { flagList, parseScriptArgs } from './lib/args';
+import { CORPUS_PATTERNS, corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import type { PinTable, RatchetGap } from './lib/ratchet';
+import { ratchetGaps, ratchetMain } from './lib/ratchet';
 import { sourceStrings } from './lib/source-strings';
-import { PINS_FILE, TEST_FIX_PINS, testFixPinnedFor } from './lib/test-fix-pins';
+import { PINS_FILE, TEST_FIX_PINS } from './lib/test-fix-pins';
 
 const SCRIPT = 'test-fix-citations';
 
-export const TEST_GLOBS: readonly string[] = [
-  'packages/*/src/**/*.test.ts',
-  'packages/*/src/**/*.test.tsx',
-  'scripts/**/*.test.ts',
-];
+/** What the `tests` corpus scope reads, re-exported under the name its callers already use. */
+export const TEST_GLOBS: readonly string[] = CORPUS_PATTERNS.tests;
 
 /** The literal is a `fix:` property value. */
 const PROPERTY = /(?:^|[^\w$.])fix\s*:\s*$/;
@@ -62,65 +59,35 @@ export function scanTestFixes(path: string, source: string): readonly TestFixCit
   return out;
 }
 
-/**
- * `over` is the hazard: a package citing more unrunnable commands than it is pinned at, which is
- * also how a package pinned at 0 reports its first. `stale` is the ratchet's own hygiene — a pin
- * nothing needs any more. `unscanned` is the false green: a glob matching no test file would
- * otherwise read as "every asserted fix runs".
- */
-export type TestFixGapKind = 'over' | 'stale' | 'unscanned';
-
-export interface TestFixGap {
-  readonly kind: TestFixGapKind;
-  readonly pkg: string;
-  readonly found: number;
-  readonly pinned: number;
-  readonly first?: { readonly at: string; readonly fix: string; readonly problem: string };
+/** One unrunnable citation: where, what it says, and why the registry refuses it. */
+export interface TestFixSite {
+  readonly path: string;
+  readonly at: string;
+  readonly fix: string;
+  readonly problem: string;
 }
+
+export type TestFixGap = RatchetGap<TestFixSite>;
 
 export interface TestFixInput {
   readonly files: readonly { readonly path: string; readonly text: string }[];
   readonly catalog: CommandCatalog;
-  readonly pins: Readonly<Record<string, number>>;
+  readonly pins: PinTable;
 }
 
-/** `packages/db/src/x.test.ts` -> `db`; anything else -> its first path segment. */
-export const packageOf = (path: string): string =>
-  path.startsWith('packages/') ? (path.split('/')[1] ?? path) : (path.split('/')[0] ?? path);
-
-export function checkTestFixes(input: TestFixInput): readonly TestFixGap[] {
-  if (input.files.length === 0) {
-    return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
-  }
-  const found = new Map<string, TestFixGap['first'][]>();
-  for (const file of input.files) {
-    for (const citation of scanTestFixes(file.path, file.text)) {
+const testFixSites = (input: Omit<TestFixInput, 'pins'>): readonly TestFixSite[] =>
+  input.files.flatMap((file) =>
+    scanTestFixes(file.path, file.text).flatMap((citation) => {
       const problem = citedCommandProblem(citation.fix, input.catalog);
-      if (problem === undefined) continue;
-      const pkg = packageOf(citation.path);
-      const list = found.get(pkg) ?? [];
-      list.push({ at: `${citation.path}:${String(citation.line)}`, fix: citation.fix, problem });
-      found.set(pkg, list);
-    }
-  }
-  const gaps: TestFixGap[] = [];
-  for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
-    const hits = found.get(pkg) ?? [];
-    const pinned = testFixPinnedFor(pkg, input.pins);
-    if (hits.length > pinned) {
-      gaps.push({
-        kind: 'over',
-        pkg,
-        found: hits.length,
-        pinned,
-        ...(hits[0] === undefined ? {} : { first: hits[0] }),
-      });
-      continue;
-    }
-    if (hits.length < pinned) gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
-  }
-  return gaps.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
-}
+      if (problem === undefined) return [];
+      const at = `${citation.path}:${String(citation.line)}`;
+      return [{ path: citation.path, at, fix: citation.fix, problem }];
+    }),
+  );
+
+/** `over` is the hazard; `stale` a pin nothing needs; `unscanned` a glob that matched nothing. */
+export const checkTestFixes = (input: TestFixInput): readonly TestFixGap[] =>
+  ratchetGaps(testFixSites(input), input.pins, input.files.length > 0);
 
 const overFinding = (gap: TestFixGap): Finding => ({
   code: 'X_TEST_FIX_UNRUNNABLE',
@@ -145,25 +112,18 @@ const unscannedFinding = (): Finding => ({
   at: `scripts/${SCRIPT}.ts`,
 });
 
-const FINDINGS: Readonly<Record<TestFixGapKind, (gap: TestFixGap) => Finding>> = {
-  over: overFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-};
+export const testFixFindingFor = (gap: TestFixGap): Finding =>
+  gap.kind === 'over'
+    ? overFinding(gap)
+    : gap.kind === 'stale'
+      ? staleFinding(gap)
+      : unscannedFinding();
 
-export const testFixFindingFor = (gap: TestFixGap): Finding => FINDINGS[gap.kind](gap);
-
+/** The `tests` corpus scope — `TEST_GLOBS`' files, read once per process for every rule on them. */
 export async function readTestSources(
   root: string,
 ): Promise<readonly { path: string; text: string }[]> {
-  const seen = new Map<string, { path: string; text: string }>();
-  for (const glob of TEST_GLOBS) {
-    for await (const path of new Bun.Glob(glob).scan({ cwd: root, absolute: false })) {
-      if (seen.has(path)) continue;
-      seen.set(path, { path, text: await Bun.file(`${root}/${path}`).text() });
-    }
-  }
-  return [...seen.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
+  return (await corpus(root, 'tests')).map((file) => ({ path: file.path, text: file.source }));
 }
 
 export const testFixGaps = async (root: string): Promise<readonly TestFixGap[]> =>
@@ -177,38 +137,16 @@ export const testFixGaps = async (root: string): Promise<readonly TestFixGap[]> 
 export const testFixFindings = async (root: string): Promise<readonly Finding[]> =>
   (await testFixGaps(root)).map(testFixFindingFor);
 
+const treeSites = async (root: string): Promise<readonly TestFixSite[]> =>
+  testFixSites({ files: await readTestSources(root), catalog: await loadCommandCatalog() });
+
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const gaps = await testFixGaps(root);
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
-    const { applyTestFixUnpin } = await import('./lib/test-fix-pins');
-    const written = await applyTestFixUnpin(root, unpin, gaps);
-    report(
-      {
-        ok: written.length > 0,
-        script: SCRIPT,
-        summary:
-          written.length > 0
-            ? `lowered ${written.join(', ')} in ${PINS_FILE}`
-            : `nothing to lower: ${unpin.join(', ')} is already at what is measured`,
-        findings: [],
-      },
-      args.json,
-    );
-    process.exit(written.length > 0 ? 0 : 1);
-  }
-  report(
-    {
-      ok: gaps.length === 0,
-      script: SCRIPT,
-      summary:
-        gaps.length === 0
-          ? `every fix: a test evaluates cites a command this build can run`
-          : `${gaps.length} package(s) off the unrunnable-test-fix ratchet`,
-      findings: gaps.map(testFixFindingFor),
-    },
-    args.json,
-  );
+  await ratchetMain({
+    script: SCRIPT,
+    pinsFile: PINS_FILE,
+    pins: TEST_FIX_PINS,
+    sites: treeSites,
+    findingFor: testFixFindingFor,
+    clean: 'every fix: a test evaluates cites a command this build can run',
+  });
 }

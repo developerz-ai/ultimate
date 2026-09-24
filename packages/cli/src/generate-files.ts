@@ -56,8 +56,8 @@ export interface GenerateOptions {
    */
   readonly sliceErrors?: string;
   /**
-   * `job` and `task`: the slice's `entity.ts` as it stands on disk, absent when the feature has no
-   * entity yet. Supplied by `run` for `sliceErrors`'s reason — whether the feature is
+   * `action`, `mutator`, `job` and `task`: the slice's `entity.ts` as it stands on disk, absent when
+   * the feature has no entity yet — and then none is written. Supplied by `run` for `sliceErrors`'s reason — whether the feature is
    * tenant-scoped is a fact about THIS app, and a template that assumed `tenant: 'orgId'` wrote
    * `repo.byId`/`repo.listByOrg` calls into a feature whose entity names no tenant column. Read at
    * `sliceDir(surface, feature)/entity.ts`.
@@ -84,7 +84,9 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
   const surface: Surface = options.surface ?? 'app';
   assertSurfaceSupported(options.kind, surface, options.name);
   const surfaceDir = DEFAULT_SURFACE_DIR[surface];
-  const feature = options.feature ?? options.name;
+  // Kebab, always: `x g entity BlogPost` wrote `app/BlogPost/` while `resource` wrote
+  // `app/blog-post/`, so one feature grew two slice directories depending on the generator.
+  const feature = kebab(options.feature ?? options.name);
   const target = { surfaceDir, feature };
   switch (options.kind) {
     case 'resource':
@@ -101,6 +103,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
         actionFiles(options.name, {
           ...target,
           ...(options.sliceErrors === undefined ? {} : { sliceErrors: options.sliceErrors }),
+          ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
         }),
       );
     case 'mutator':
@@ -109,6 +112,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           ...target,
           mutator: true,
           ...(options.sliceErrors === undefined ? {} : { sliceErrors: options.sliceErrors }),
+          ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
         }),
       );
     case 'backfill':

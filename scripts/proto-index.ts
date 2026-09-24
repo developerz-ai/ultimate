@@ -28,21 +28,14 @@
 //   bun run proto-index  ·  bun run scripts/proto-index.ts [--json]
 //   bun run scripts/proto-index.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-import { maskLiterals } from '@ultimat3/cli';
-import { collectSourceFiles, type SourceFile } from './boundaries';
-import { flagList, parseScriptArgs } from './lib/args';
+import { maskLiterals } from '../packages/core/src/source-mask';
+import type { SourceFile } from './boundaries';
+import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
-import {
-  applyProtoIndexUnpin,
-  PROTO_INDEX_PINS,
-  PROTO_PINS_FILE,
-  protoIndexPinIsBlank,
-  protoIndexPinnedFor,
-} from './lib/proto-index-pins';
-import { repoRoot } from './lib/run';
+import { PROTO_INDEX_PINS, PROTO_PINS_FILE } from './lib/proto-index-pins';
+import type { PinTable, RatchetGap } from './lib/ratchet';
+import { ratchetGaps, ratchetMain } from './lib/ratchet';
 import { isTestPath, lineOf } from './lib/source-scan';
-import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'proto-index';
 
@@ -175,8 +168,11 @@ const guarded = (context: string, table: string): boolean =>
  * scaffold template emitting `TABLE[kind]` inside a template literal is not read as this file's own
  * index, and a literal key is recognisable by the quote that survived the mask.
  */
-export function scanProtoIndex(path: string, source: string): readonly ProtoIndexSite[] {
-  const code = maskLiterals(source);
+export function scanProtoIndex(
+  path: string,
+  source: string,
+  code: string = maskLiterals(source),
+): readonly ProtoIndexSite[] {
   const tables = recordTables(code);
   const sites: ProtoIndexSite[] = [];
   for (const table of tables) {
@@ -198,59 +194,24 @@ export function scanProtoIndex(path: string, source: string): readonly ProtoInde
   return sites.sort((a, b) => a.line - b.line);
 }
 
-export type ProtoIndexGapKind = 'over' | 'stale' | 'unscanned' | 'unexplained';
-
-export interface ProtoIndexGap {
-  readonly kind: ProtoIndexGapKind;
-  readonly pkg: string;
-  readonly found: number;
-  readonly pinned: number;
-  readonly first?: ProtoIndexSite;
-}
+export type ProtoIndexGap = RatchetGap<ProtoIndexSite>;
 
 export interface ProtoIndexInput {
   readonly files: readonly SourceFile[];
-  readonly pins: Readonly<Record<string, { readonly count: number; readonly reason: string }>>;
+  readonly pins: PinTable;
 }
 
-/** The ratchet: a package may hold what it is pinned at, may fall, may never rise. */
-export function checkProtoIndex(input: ProtoIndexInput): readonly ProtoIndexGap[] {
-  if (input.files.length === 0) {
-    return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
-  }
-  const found = new Map<string, ProtoIndexSite[]>();
-  for (const file of input.files) {
-    if (isTestPath(file.path)) continue;
-    for (const site of scanProtoIndex(file.path, file.source)) {
-      const pkg = packageOf(site.path);
-      const list = found.get(pkg) ?? [];
-      list.push(site);
-      found.set(pkg, list);
-    }
-  }
-  const gaps: ProtoIndexGap[] = [];
-  for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
-    const hits = found.get(pkg) ?? [];
-    const pinned = protoIndexPinnedFor(pkg, input.pins);
-    // A blank reason waives nothing, so the row is reported in its own right AND its count is not
-    // honoured — reporting only the missing sentence would leave the sites silent behind it.
-    if (protoIndexPinIsBlank(pkg, input.pins)) {
-      gaps.push({ kind: 'unexplained', pkg, found: hits.length, pinned });
-    }
-    if (hits.length > pinned) {
-      gaps.push({
-        kind: 'over',
-        pkg,
-        found: hits.length,
-        pinned,
-        ...(hits[0] === undefined ? {} : { first: hits[0] }),
-      });
-      continue;
-    }
-    if (hits.length < pinned) gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
-  }
-  return gaps.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
-}
+/** The ratchet over fixture files: a package may hold what it is pinned at, may fall, never rise. */
+export const checkProtoIndex = (input: ProtoIndexInput): readonly ProtoIndexGap[] =>
+  ratchetGaps(
+    input.files.flatMap((file) =>
+      isTestPath(file.path)
+        ? []
+        : scanProtoIndex(file.path, file.source, maskLiterals(file.source)),
+    ),
+    input.pins,
+    input.files.length > 0,
+  );
 
 const at = (site: ProtoIndexSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
@@ -280,70 +241,39 @@ const unscannedFinding = (): Finding => ({
   code: 'X_PROTO_CHAIN_INDEX_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree with no unguarded index in it',
-  fix: 'edit SOURCE_PATTERNS in scripts/boundaries.ts so it matches this repo layout, then bun run scripts/proto-index.ts',
-  at: 'scripts/boundaries.ts',
+  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/proto-index.ts',
+  at: 'scripts/lib/corpus.ts',
 });
 
-const FINDINGS: Readonly<Record<ProtoIndexGapKind, (gap: ProtoIndexGap) => Finding>> = {
-  over: overFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-  unexplained: unexplainedFinding,
-};
+export const protoIndexFindingFor = (gap: ProtoIndexGap): Finding =>
+  gap.kind === 'over'
+    ? overFinding(gap)
+    : gap.kind === 'stale'
+      ? staleFinding(gap)
+      : gap.kind === 'unexplained'
+        ? unexplainedFinding(gap)
+        : unscannedFinding();
 
-export const protoIndexFindingFor = (gap: ProtoIndexGap): Finding => FINDINGS[gap.kind](gap);
+/** Every site in the tree, read off the shared corpus and its cached mask. */
+export const protoIndexSites = async (root: string): Promise<readonly ProtoIndexSite[]> =>
+  (await corpus(root, 'source')).flatMap((file) =>
+    isTestPath(file.path) ? [] : scanProtoIndex(file.path, file.source, file.masked),
+  );
 
 export const protoIndexGaps = async (root: string): Promise<readonly ProtoIndexGap[]> =>
-  checkProtoIndex({ files: await collectSourceFiles(root), pins: PROTO_INDEX_PINS });
+  ratchetGaps(await protoIndexSites(root), PROTO_INDEX_PINS, true);
 
-/** What this rule contributes to `x verify`'s `unit` step, through `proto-index.test.ts`. */
+/** What this rule contributes to `x verify`, through its own test file. */
 export const protoIndexFindings = async (root: string): Promise<readonly Finding[]> =>
   (await protoIndexGaps(root)).map(protoIndexFindingFor);
 
-/** Every site per package, for `--unpin` and for the number a maintainer wants when lowering one. */
-export async function protoIndexCounts(root: string): Promise<Readonly<Record<string, number>>> {
-  const counts: Record<string, number> = {};
-  for (const file of await collectSourceFiles(root)) {
-    if (isTestPath(file.path)) continue;
-    for (const site of scanProtoIndex(file.path, file.source)) {
-      counts[packageOf(site.path)] = (counts[packageOf(site.path)] ?? 0) + 1;
-    }
-  }
-  return counts;
-}
-
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
-    const lowered = await applyProtoIndexUnpin(root, unpin, await protoIndexCounts(root));
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package is already at what this tree measures'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
-  } else {
-    const gaps = await protoIndexGaps(root);
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? 'no package reads a Record object literal with an unguarded computed key above its pin'
-            : `${String(gaps.length)} package(s) off the prototype-index ratchet`,
-        findings: gaps.map(protoIndexFindingFor),
-        data: { counts: await protoIndexCounts(root) },
-      },
-      args.json,
-    );
-  }
+  await ratchetMain({
+    script: SCRIPT,
+    pinsFile: PROTO_PINS_FILE,
+    pins: PROTO_INDEX_PINS,
+    sites: protoIndexSites,
+    findingFor: protoIndexFindingFor,
+    clean: 'no package reads a Record object literal with an unguarded computed key above its pin',
+  });
 }

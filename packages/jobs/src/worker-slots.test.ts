@@ -269,3 +269,51 @@ describe('the concurrency table is read by OWN keys, so a queue name is only eve
     ]);
   });
 });
+
+/**
+ * A fleet-slot write that REJECTS mid-batch — a failover, a pool timeout, a `57P01` — rethrew out
+ * of `claimRound` and stranded the rest of the batch in `running`, each with an attempt burned
+ * for work that never started. The failed job and every job behind it go back, unburned.
+ */
+describe('a claim round that fails part-way hands the rest of the batch back', () => {
+  test('every claimed row is back in ready at attempt 0', async () => {
+    job({
+      tenant: 'none',
+      name: 'slotted',
+      concurrency: 5,
+      input: passthrough<Record<string, never>>(),
+      idempotencyKey: () => 'slotted',
+      retry: { attempts: 3, jitter: false },
+      run: () => Promise.resolve(),
+    });
+    const base = createMemoryDriver();
+    const store = createMemoryLeaseStore();
+    const driver: JobDriver = {
+      ...base,
+      leases: {
+        ...store,
+        acquire: () => Promise.reject(new TypeError('connection terminated')),
+      },
+    };
+    for (const key of ['a', 'b', 'c']) {
+      await driver.enqueue({
+        name: 'slotted',
+        queue: 'default',
+        input: {},
+        idempotencyKey: `slotted:${key}`,
+        maxAttempts: 3,
+      });
+    }
+    const worker = createWorker({ driver, context, pollIntervalMs: 1, concurrency: 3 });
+
+    await expect(worker.tick()).rejects.toThrow('connection terminated');
+
+    const rows = (await driver.introspect?.list()) ?? [];
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.state).toBe('ready');
+      expect(row.attempt).toBe(0);
+      expect(row.claimedBy).toBeUndefined();
+    }
+  });
+});

@@ -240,6 +240,20 @@ without bound and every replay would re-send the whole audience.
 | `X_NOTIFY_STORE_MISSING` | an inbox or digest channel with no store installed |
 | `X_NOTIFY_DELIVERY_FAILED` | a channel's `deliver` threw; the run retries on its policy |
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `NotifyChannelDuplicateError` | `X_NOTIFY_CHANNEL_DUPLICATE` | `src/errors.ts` |
+| `NotifyChannelsEmptyError` | `X_NOTIFY_CHANNELS_EMPTY` | `src/errors.ts` |
+| `NotifyDeliveryFailedError` | `X_NOTIFY_DELIVERY_FAILED` | `src/errors.ts` |
+| `NotifyDigestUnsupportedError` | `X_NOTIFY_DIGEST_UNSUPPORTED` | `src/errors.ts` |
+| `NotifyFanoutTooWideError` | `X_NOTIFY_FANOUT_TOO_WIDE` | `src/errors.ts` |
+| `NotifyStoreMissingError` | `X_NOTIFY_STORE_MISSING` | `src/errors.ts` |
+
 ## Boundary
 
 Tier 4. May import tiers 0-3 — enforced by `bun run boundaries`. Its real imports are `core`,

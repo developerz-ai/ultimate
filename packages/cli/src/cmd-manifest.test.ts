@@ -134,6 +134,22 @@ describe('unit · x manifest', () => {
     expect(result.findings ?? []).toEqual([]);
   });
 
+  // Row j: `--check` read `x.manifest.json` alone and answered fresh over a stale `openapi.json`.
+  test('--check reports a stale openapi.json, and the fresh manifest beside it does not hide it', async () => {
+    const spec = join(WHOLE, OPENAPI_FILE);
+    const original = await Bun.file(spec).text();
+    try {
+      await Bun.write(spec, '{"openapi":"3.1.0","paths":{}}\n');
+      const result = await manifestCommand.run(contextFor(WHOLE, { check: true }));
+      expect(result.ok).toBe(false);
+      expect(result.findings?.map((finding) => [finding.code, finding.at])).toEqual([
+        ['X_MANIFEST_STALE', OPENAPI_FILE],
+      ]);
+    } finally {
+      await Bun.write(spec, original);
+    }
+  });
+
   test('a partial load writes neither file: a subset of the app is not the contract', async () => {
     const result = await manifestCommand.run(contextFor(PARTIAL, {}));
     expect(result.ok).toBe(false);

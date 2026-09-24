@@ -2,15 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock, UltimateError } from '@ultimat3/core';
 import {
   AcceptBudget,
-  backoffDelay,
   defaultBackoff,
   drainPlan,
+  policyDelay,
   timeoutScheduler,
 } from './thundering-herd';
 
 describe('thundering herd', () => {
   test('jittered backoff produces a spread of delays, not one value', () => {
-    const samples = Array.from({ length: 200 }, () => backoffDelay(3, defaultBackoff));
+    const samples = Array.from({ length: 200 }, () => policyDelay(defaultBackoff, 4));
     const ceiling = Math.min(
       defaultBackoff.maxMs,
       defaultBackoff.baseMs * defaultBackoff.factor ** 3,
@@ -26,9 +26,25 @@ describe('thundering herd', () => {
 
   test('backoff is capped and monotonic in the attempt number', () => {
     const none = { ...defaultBackoff, jitter: 'none' as const };
-    expect(backoffDelay(0, none)).toBe(500);
-    expect(backoffDelay(1, none)).toBe(1_000);
-    expect(backoffDelay(99, none)).toBe(none.maxMs);
+    expect(policyDelay(none, 1)).toBe(500);
+    expect(policyDelay(none, 2)).toBe(1_000);
+    expect(policyDelay(none, 99)).toBe(none.maxMs);
+  });
+
+  // Core's counting, not a second one: the wait after the FIRST failure is attempt 1 and is the
+  // base. The 0-based copy this replaced answered 1_000 here, doubling every delay by one step.
+  test('attempt is 1-based, the same count as core backoffDelay', () => {
+    const none = { ...defaultBackoff, jitter: 'none' as const };
+    expect([1, 2, 3, 4].map((attempt) => policyDelay(none, attempt))).toEqual([
+      500, 1_000, 2_000, 4_000,
+    ]);
+    expect(policyDelay(none, 0)).toBe(500);
+    expect(policyDelay({ ...defaultBackoff, jitter: 'full' }, 3, () => 0.25)).toBe(500);
+  });
+
+  test('the package barrel no longer exports a second backoffDelay', async () => {
+    const barrel: Record<string, unknown> = await import('./index');
+    expect(Object.hasOwn(barrel, 'backoffDelay')).toBe(false);
   });
 
   test('a drain assigns every socket its own slot instead of one shared delay', () => {

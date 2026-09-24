@@ -8,16 +8,22 @@ import { channel } from './channel-decl';
 import { describeChannels } from './channel-describe';
 import { clearChannels, getChannel, registeredChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
+import { OPEN_POLICY } from './policy-fake';
 import { SocketRegistry, SyncSocket } from './socket';
 
 afterAll(() => {
   clearChannels();
 });
 
-const zeta = channel('registry-zeta', { params: ['room'], catchUp: { name: 'zetaRead' } });
+const zeta = channel('registry-zeta', {
+  params: ['room'],
+  catchUp: { name: 'zetaRead' },
+  policy: OPEN_POLICY,
+});
 const alpha = channel('registry-alpha', {
   params: [],
   catchUp: { name: 'alphaRead' },
+  policy: OPEN_POLICY,
   events: true,
 });
 
@@ -37,7 +43,7 @@ describe('the channel registry', () => {
       catchUp: 'alphaRead',
       records: [],
       events: true,
-      policy: null,
+      policy: 'public',
       permissions: [],
     });
     expect(alpha.events).toBe(true);

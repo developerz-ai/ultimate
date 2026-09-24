@@ -160,7 +160,7 @@ $ x verify
 
 Ordering principle: **cheapest and most informative first**, and never run a check whose result would be meaningless because an earlier one failed. Steps 1–4 complete in seconds, which is what makes the local loop usable.
 
-**Not all serial, `As of 2026-09-22`** (21.0.0, unreleased). The static steps (`lint`, `boundaries`,
+**Not all serial, `As of 2026-09-22`** (21.0.0). The static steps (`lint`, `boundaries`,
 `filesize`, `package-shape`, `errors`) read the tree and write nothing a later step reads, so they
 run **beside** the serial suites (`live`, `job`, `e2e`, `eval`). Those are one worker each, Postgres-
 and browser-bound, and mostly waiting. `typecheck` stays first and alone, because `tsc -b` writes

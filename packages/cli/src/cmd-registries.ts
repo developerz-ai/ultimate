@@ -13,12 +13,12 @@ import type { AnyQuery, QueryDescriptor } from '@ultimat3/query';
 import { describeQueries, getQuery } from '@ultimat3/query';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
+import { actionsSpec, entitiesSpec, queriesSpec } from './cmd-registries-spec';
 import type { CliCommand, CommandContext } from './command';
 import { DeclarationUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import type { CommandSpec } from './parse';
-
 import { renderTable } from './table';
 
 /**
@@ -53,14 +53,7 @@ interface RegistryKind<D extends { readonly name: string }, Raw extends { descri
 const ACTIONS: RegistryKind<ActionDescriptor, AnyAction> = {
   kind: 'actions',
   singular: 'action',
-  spec: {
-    name: 'actions',
-    summary: 'the action registry: input/output schema, policy, tags, MCP exposure',
-    usage: 'x actions [list|describe <name>] [--json]',
-    subcommands: ['list', 'describe'],
-    defaultSubcommand: 'list',
-    requiresApp: true,
-  },
+  spec: actionsSpec,
   header: ['name', 'verb', 'resource', 'path', 'capability', 'mcp'],
   list: describeActions,
   find: getAction,
@@ -71,14 +64,7 @@ const ACTIONS: RegistryKind<ActionDescriptor, AnyAction> = {
 const QUERIES: RegistryKind<QueryDescriptor, AnyQuery> = {
   kind: 'queries',
   singular: 'query',
-  spec: {
-    name: 'queries',
-    summary: 'the query registry: schema, policy, live, cache tags',
-    usage: 'x queries [list|describe <name>] [--json]',
-    subcommands: ['list', 'describe'],
-    defaultSubcommand: 'list',
-    requiresApp: true,
-  },
+  spec: queriesSpec,
   header: ['name', 'live', 'capability', 'tags', 'ttlMs'],
   list: describeQueries,
   find: getQuery,
@@ -97,14 +83,7 @@ const QUERIES: RegistryKind<QueryDescriptor, AnyQuery> = {
 const ENTITIES: RegistryKind<EntityDescription, RegistryEntry> = {
   kind: 'entities',
   singular: 'entity',
-  spec: {
-    name: 'entities',
-    summary: 'the entity registry: columns, invariants, indexes, tenancy',
-    usage: 'x entities [list|describe <name>] [--json]',
-    subcommands: ['list', 'describe'],
-    defaultSubcommand: 'list',
-    requiresApp: true,
-  },
+  spec: entitiesSpec,
   header: ['name', 'table', 'columns', 'invariants', 'indexes', 'orgScoped'],
   list: describeEntities,
   find: getEntity,

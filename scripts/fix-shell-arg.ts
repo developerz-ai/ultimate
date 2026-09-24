@@ -31,25 +31,18 @@
 //   bun run fix-shell-arg  ·  bun run scripts/fix-shell-arg.ts [--json] [--explain]
 //   bun run scripts/fix-shell-arg.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-import { collectSourceFiles, type SourceFile } from './boundaries';
+import type { SourceFile } from './boundaries';
 // One tokenizer, never two: `maskToCode` keeps a template's `${…}` bodies as code while blanking
 // every literal's text, and `valueEnd` answers where a `fix:` value ends. A second copy here would
 // be a second answer to the same question, and the two would disagree the day either was tuned.
 import { maskToCode, valueEnd } from './error-render';
-import { flagList, parseScriptArgs } from './lib/args';
-import {
-  applyFixShellArgUnpin,
-  FIX_SHELL_ARG_PINS,
-  FIX_SHELL_PINS_FILE,
-  fixShellArgPinIsBlank,
-  fixShellArgPinnedFor,
-} from './lib/fix-shell-arg-pins';
+import { corpus } from './lib/corpus';
+import { FIX_SHELL_ARG_PINS, FIX_SHELL_PINS_FILE } from './lib/fix-shell-arg-pins';
 import { commandPositionOf, isScreened } from './lib/fix-shell-arg-scan';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import type { PinTable, RatchetGap } from './lib/ratchet';
+import { ratchetGaps, ratchetMain } from './lib/ratchet';
 import { isTestPath, lineOf } from './lib/source-scan';
-import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'fix-shell-arg';
 
@@ -89,55 +82,18 @@ export function scanFixShellArgs(path: string, source: string): readonly FixShel
   return sites.sort((a, b) => a.line - b.line);
 }
 
-export type FixShellArgGapKind = 'over' | 'stale' | 'unscanned' | 'unexplained';
-
-export interface FixShellArgGap {
-  readonly kind: FixShellArgGapKind;
-  readonly pkg: string;
-  readonly found: number;
-  readonly pinned: number;
-  readonly first?: FixShellArgSite;
-}
+export type FixShellArgGap = RatchetGap<FixShellArgSite>;
 
 export interface FixShellArgInput {
   readonly sites: readonly FixShellArgSite[];
-  readonly pins: Readonly<Record<string, { readonly count: number; readonly reason: string }>>;
+  readonly pins: PinTable;
   /** False means the scan read nothing, which must never read as a clean tree. */
   readonly scanned: boolean;
 }
 
 /** The ratchet: a package may hold what it is pinned at, may fall, may never rise. */
-export function checkFixShellArgs(input: FixShellArgInput): readonly FixShellArgGap[] {
-  if (!input.scanned) return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
-  const found = new Map<string, FixShellArgSite[]>();
-  for (const site of input.sites) {
-    const list = found.get(packageOf(site.path)) ?? [];
-    list.push(site);
-    found.set(packageOf(site.path), list);
-  }
-  const gaps: FixShellArgGap[] = [];
-  for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
-    const hits = found.get(pkg) ?? [];
-    const pinned = fixShellArgPinnedFor(pkg, input.pins);
-    // A blank reason waives nothing, so the row is reported AND its count is not honoured —
-    // reporting only the missing sentence would leave the sites silent behind it.
-    if (fixShellArgPinIsBlank(pkg, input.pins)) {
-      gaps.push({ kind: 'unexplained', pkg, found: hits.length, pinned });
-    }
-    if (hits.length > pinned) {
-      gaps.push({
-        kind: 'over',
-        pkg,
-        found: hits.length,
-        pinned,
-        ...(hits[0] === undefined ? {} : { first: hits[0] }),
-      });
-      continue;
-    }
-    if (hits.length < pinned) gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
-  }
-  return gaps.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
-}
+export const checkFixShellArgs = (input: FixShellArgInput): readonly FixShellArgGap[] =>
+  ratchetGaps(input.sites, input.pins, input.scanned);
 
 const at = (site: FixShellArgSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
@@ -167,8 +123,8 @@ const unscannedFinding = (): Finding => ({
   code: 'X_FIX_SHELL_ARG_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree with no spliced fix: value in it',
-  fix: 'edit SOURCE_PATTERNS in scripts/boundaries.ts so it matches this repo layout, then bun run scripts/fix-shell-arg.ts',
-  at: 'scripts/boundaries.ts',
+  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/fix-shell-arg.ts',
+  at: 'scripts/lib/corpus.ts',
 });
 
 /**
@@ -195,74 +151,29 @@ export const fixShellArgFindingFor = (gap: FixShellArgGap): Finding => {
 const shipped = (file: SourceFile): boolean =>
   !isTestPath(file.path) && !file.path.startsWith(TEMPLATE_ROOT);
 
-export async function fixShellArgSites(root: string): Promise<{
-  readonly sites: readonly FixShellArgSite[];
-  readonly scanned: boolean;
-}> {
-  const files = (await collectSourceFiles(root)).filter(shipped);
-  return {
-    sites: files.flatMap((file) => scanFixShellArgs(file.path, file.source)),
-    scanned: files.length > 0,
-  };
-}
+export const fixShellArgSites = async (root: string): Promise<readonly FixShellArgSite[]> =>
+  (await corpus(root, 'source'))
+    .filter(shipped)
+    .flatMap((file) => scanFixShellArgs(file.path, file.source));
 
-export const fixShellArgGaps = async (root: string): Promise<readonly FixShellArgGap[]> => {
-  const { sites, scanned } = await fixShellArgSites(root);
-  return checkFixShellArgs({ sites, pins: FIX_SHELL_ARG_PINS, scanned });
-};
+export const fixShellArgGaps = async (root: string): Promise<readonly FixShellArgGap[]> =>
+  checkFixShellArgs({
+    sites: await fixShellArgSites(root),
+    pins: FIX_SHELL_ARG_PINS,
+    scanned: true,
+  });
 
 /** What this rule contributes to `x verify`'s `errors` step, through `errorRendering`'s caller. */
 export const fixShellArgFindings = async (root: string): Promise<readonly Finding[]> =>
   (await fixShellArgGaps(root)).map(fixShellArgFindingFor);
 
-/** Every site per package, for `--unpin` and for the number a maintainer wants when lowering one. */
-export async function fixShellArgCounts(root: string): Promise<Readonly<Record<string, number>>> {
-  // A `Map`, not a `Record` accumulator: a package name is DATA, and `counts['constructor']` on an
-  // object literal reads an `Object.prototype` member. Same reason as the `switch` above.
-  const counts = new Map<string, number>();
-  for (const site of (await fixShellArgSites(root)).sites) {
-    const pkg = packageOf(site.path);
-    counts.set(pkg, (counts.get(pkg) ?? 0) + 1);
-  }
-  return Object.fromEntries(counts);
-}
-
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
-    const lowered = await applyFixShellArgUnpin(root, unpin, await fixShellArgCounts(root));
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package is already at what this tree measures'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
-  } else {
-    const { sites, scanned } = await fixShellArgSites(root);
-    const gaps = checkFixShellArgs({ sites, pins: FIX_SHELL_ARG_PINS, scanned });
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? `${String(sites.length)} fix: substitution(s) in a shell command position, every package at or under its pin`
-            : `${String(gaps.length)} package(s) off the fix-shell-argument ratchet`,
-        findings: gaps.map(fixShellArgFindingFor),
-        data: {
-          counts: await fixShellArgCounts(root),
-          ...(args.flags.get('explain') === true ? { sites } : {}),
-        },
-      },
-      args.json,
-    );
-  }
+  await ratchetMain({
+    script: SCRIPT,
+    pinsFile: FIX_SHELL_PINS_FILE,
+    pins: FIX_SHELL_ARG_PINS,
+    sites: fixShellArgSites,
+    findingFor: fixShellArgFindingFor,
+    clean: 'every fix: substitution in a shell command position is at or under its package pin',
+  });
 }

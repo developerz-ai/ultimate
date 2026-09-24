@@ -5,7 +5,7 @@
 
 import { assertLocale, cachedFormatter } from '@ultimat3/core';
 import { exponentOf } from './currency';
-import { type Money, toDecimalNumber } from './money';
+import { type Money, toDecimalString } from './money';
 import { moneyScale } from './scale';
 
 export interface FormatMoneyOptions {
@@ -56,7 +56,7 @@ export function formatMoneyParts(
   options: FormatMoneyOptions = {},
 ): Intl.NumberFormatPart[] {
   return formatterFor(amount.currency, locale, options, moneyScale(amount)).formatToParts(
-    toDecimalNumber(amount),
+    exactDecimal(amount),
   );
 }
 
@@ -87,8 +87,16 @@ export function formatMoneyDecimal(amount: Money, locale: string): string {
         maximumFractionDigits: digits,
         useGrouping: false,
       }),
-  ).format(toDecimalNumber(amount));
+  ).format(exactDecimal(amount));
 }
+
+/**
+ * The amount as the decimal STRING `Intl` accepts (Intl.NumberFormat v3), never a float: dividing
+ * `9007199254740991` minor units by `10 ** 6` in floating point lands on `…740992` before any
+ * formatter sees it, so the largest amount a `Money` can hold rendered a digit it does not have.
+ * The cast is the one `toDecimalString` earns: it only ever writes `-?\d+(\.\d+)?`.
+ */
+const exactDecimal = (amount: Money): `${number}` => toDecimalString(amount) as `${number}`;
 
 const cache = new Map<string, Intl.NumberFormat>();
 const decimalCache = new Map<string, Intl.NumberFormat>();

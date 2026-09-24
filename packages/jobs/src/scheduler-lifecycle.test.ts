@@ -314,7 +314,7 @@ describe('the scheduler drains before the lock goes back', () => {
 });
 
 describe('a round that fails says what to do about it', () => {
-  test('an UltimateError keeps its code, cause and fix in jobs.scheduler.tick-failed', async () => {
+  test('an UltimateError keeps its code, cause and fix in jobs.task.round_failed', async () => {
     const spy = spyOn(logger, 'error');
     const clock = fakeClock(T0);
     const unavailable = new DriverUnavailableError({
@@ -338,16 +338,18 @@ describe('a round that fails says what to do about it', () => {
 
     scheduler.start();
     for (let waited = 0; waited < 2_000; waited += 2) {
-      if (spy.mock.calls.some((call) => call[0] === 'jobs.scheduler.tick-failed')) break;
+      if (spy.mock.calls.some((call) => call[0] === 'jobs.task.round_failed')) break;
       await Bun.sleep(2);
     }
     await scheduler.stop();
-    const failed = spy.mock.calls.find((call) => call[0] === 'jobs.scheduler.tick-failed');
+    const failed = spy.mock.calls.find((call) => call[0] === 'jobs.task.round_failed');
     spy.mockRestore();
 
     // `message` alone strands the operator: the code is what they search on and the fix is what
     // they run, and neither survives `error instanceof Error ? error.message : String(error)`.
+    // One TASK's failure now, named — the round goes on to the next task rather than aborting.
     expect(failed?.[1]).toMatchObject({
+      task: nightly.name,
       code: 'X_DRIVER_UNAVAILABLE',
       cause: 'jobs driver "pg" is unavailable: connection refused',
       fix: 'x doctor --json',
@@ -373,17 +375,17 @@ describe('a round that fails says what to do about it', () => {
 
     scheduler.start();
     for (let waited = 0; waited < 2_000; waited += 2) {
-      if (spy.mock.calls.some((call) => call[0] === 'jobs.scheduler.tick-failed')) break;
+      if (spy.mock.calls.some((call) => call[0] === 'jobs.task.round_failed')) break;
       await Bun.sleep(2);
     }
     await scheduler.stop();
-    const failed = spy.mock.calls.find((call) => call[0] === 'jobs.scheduler.tick-failed');
+    const failed = spy.mock.calls.find((call) => call[0] === 'jobs.task.round_failed');
     spy.mockRestore();
 
     // `renderThrowable`'s form: the throwable's own name beside its message, and nothing an
     // `UltimateError` would have carried. `String(error)` is what a null-prototype throwable
     // raises on, from a catch block with nothing left to answer with.
-    expect(failed?.[1]).toEqual({ error: 'Error: socket hang up' });
+    expect(failed?.[1]).toEqual({ task: nightly.name, error: 'Error: socket hang up' });
   });
 });
 

@@ -440,3 +440,12 @@ x db branch drop feature_x
 half is the `drift` step of `x verify`, which hashes entity source against what `x db gen` recorded
 and opens no database. Two questions, two owners, and no `drift` subcommand under `x db` — the
 `DB_SUBCOMMANDS` set is `gen`, `migrate`, `reset`, `studio`, `branch`, `backfill`.
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `DbError` | any `DbErrorCode` — `DB_ERROR_CODES`, including the SQLSTATE codes a driver error maps to (`DB_SQLSTATE_CODES`) | `src/errors.ts` |

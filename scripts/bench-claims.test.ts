@@ -1,6 +1,6 @@
-// The gate rule that keeps `CLAUDE.md`'s realtime capacity figures equal to the committed bench
+// The gate rule that keeps `scripts/bench/results/README.md`'s realtime capacity figures equal to the committed bench
 // results. Every negative case is a FIXTURE — a fake claim over fake prose — never an edit to the
-// real `CLAUDE.md` or to a result file, both of which the gate reads while this suite runs.
+// real claims page or to a result file, both of which the gate reads while this suite runs.
 
 import { describe, expect, test } from 'bun:test';
 // why: `node:` — Bun has no temporary-directory or path-join primitive of its own.
@@ -65,7 +65,7 @@ describe('unit · the rule cannot stop checking silently', () => {
     const found = findings('the delivery run received a great many patches', 1_666_882);
 
     expect(found).toHaveLength(1);
-    expect(found[0]?.cause).toContain('no sentence in CLAUDE.md states');
+    expect(found[0]?.cause).toContain(`no sentence in ${CLAIMS_FILE} states`);
     // The measured value rides in the fix, so restoring the sentence needs no second lookup.
     expect(found[0]?.fix).toContain('1,666,882');
   });
@@ -126,7 +126,7 @@ describe('unit · reading a result', () => {
 describe('unit · a file that is not there', () => {
   /**
    * The rule's own false green, in both directions. Each half used to suppress the WHOLE check:
-   * a deleted results file returned `[]` before a single claim was read, and a deleted `CLAUDE.md`
+   * a deleted results file returned `[]` before a single claim was read, and a deleted claims page
    * did the same. Deleting the bench results is a state a re-run passes through, which is exactly
    * when the committed figures are least trustworthy.
    */
@@ -138,7 +138,7 @@ describe('unit · a file that is not there', () => {
   };
 
   test('a deleted results file is unmeasured, never agreement with undefined', async () => {
-    const root = await dir({ 'CLAUDE.md': 'p50 54.0s / p90 105.5s / max 145.7s' });
+    const root = await dir({ [CLAIMS_FILE]: 'p50 54.0s / p90 105.5s / max 145.7s' });
     try {
       const gaps = await benchClaimGaps(root);
       expect(gaps.length).toBe(CLAIMS.length);
@@ -149,7 +149,7 @@ describe('unit · a file that is not there', () => {
     }
   });
 
-  test('a deleted CLAUDE.md is unstated — the results are still there to be described', async () => {
+  test('a deleted claims page is unstated — the results are still there to be described', async () => {
     const root = await dir({ [RESULTS_10K]: JSON.stringify({ seq: { received: 1_666_882 } }) });
     try {
       const gaps = await benchClaimGaps(root);
@@ -181,7 +181,7 @@ describe('unit · this repo', () => {
    * the suite fail in the same commit that moves a number in either file.
    */
   test(
-    'every figure CLAUDE.md states is the figure the committed bench results carry',
+    'every figure the claims page states is the figure the committed bench results carry',
     async () => {
       expect(await benchClaimGaps(repoRoot())).toEqual([]);
     },

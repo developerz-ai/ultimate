@@ -10,6 +10,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // renders ⟦key⟧ — which the last assertion is what checks for.
 import '@social-media-clone/i18n';
 import { createContext, runWithContext } from '@ultimat3/core';
+import { routeDataFor } from '@ultimat3/render';
 import { renderComponent } from '@ultimat3/render/server';
 
 const FILE = 'apps/web/app/messages/page.tsx';
@@ -21,9 +22,12 @@ beforeAll(async () => {
 });
 
 test('unit · an anonymous render produces the empty state, not a thrown renderer', async () => {
-  const html = await runWithContext(createContext({ tz: 'UTC', locale: 'en' }), () =>
-    renderComponent(page.Page, { url: 'http://localhost/messages' }, FILE),
-  );
+  const url = 'http://localhost/messages';
+  const html = await runWithContext(createContext({ tz: 'UTC', locale: 'en' }), async () => {
+    // The route's own `load`, through the one resolver every render mode uses.
+    const data = await routeDataFor(page.config, { params: {}, url });
+    return renderComponent(() => page.Page({ data, url }), {}, FILE);
+  });
 
   expect(html).toContain('No conversations yet.');
   expect(html).toContain('href="#main"');

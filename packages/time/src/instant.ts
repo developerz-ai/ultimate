@@ -5,6 +5,7 @@
  */
 
 import { type Clock, systemClock } from '@ultimat3/core';
+import { isIsoDateTime } from '@ultimat3/schema';
 import { instantInvalid } from './errors';
 
 declare const instantBrand: unique symbol;
@@ -25,19 +26,13 @@ export function instant(value: Date): Instant {
 }
 
 /**
- * A time of day, and the zone it is stated in. `2026-03-14T09:00` without one is resolved by
- * `new Date` through the PROCESS's zone, so the guard has to see both halves: a string carrying
- * a clock time is refused unless it also carries `Z` or an offset. A date-only form carries no
- * clock time and is UTC by specification, so it passes.
+ * ISO-8601 in, `Instant` out. An offset or `Z` is required — a bare local string is refused — and
+ * so is anything that is not the ISO shape at all: `new Date` also parses `'March 14, 2026'`,
+ * `'3/14/2026'` and `'12'`, each at the HOST's local midnight. The rule is `@ultimat3/schema`'s
+ * `isIsoDateTime`, the one `t.date` and HTTP coercion answer with, so the three cannot disagree.
  */
-const CLOCK_TIME = /[t ]\d{1,2}:\d{2}/i;
-const UTC_OFFSET = /(?:z|[+-]\d{2}:?\d{2})$/i;
-
-/** ISO-8601 in, `Instant` out. An offset or `Z` is required — a bare local string is refused. */
 export function fromIso(iso: string): Instant {
-  // Enforced, not documented: this header asked for an offset for three releases while the body
-  // accepted a bare local string and answered a different instant per deployment timezone.
-  if (CLOCK_TIME.test(iso) && !UTC_OFFSET.test(iso)) throw instantInvalid(iso);
+  if (!isIsoDateTime(iso)) throw instantInvalid(iso);
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) throw instantInvalid(iso);
   return parsed as Instant;

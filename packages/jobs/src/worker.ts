@@ -4,16 +4,7 @@
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
 import type { ShutdownReason } from '@ultimat3/core';
-import {
-  beginWork,
-  logger,
-  onShutdown,
-  recordJob,
-  recordQueueDepth,
-  renderThrowable,
-  uuid,
-} from '@ultimat3/core';
-import { nowMs } from './clock';
+import { beginWork, logger, onShutdown, recordJob, renderThrowable, uuid } from '@ultimat3/core';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob } from './driver';
 import { DEFAULT_QUEUE } from './driver';
@@ -21,19 +12,13 @@ import { ConcurrencyUnenforceableError, JobDrainedError } from './errors';
 import type { JobExecution } from './execute';
 import { getJob, registeredJobs } from './job';
 import { createLimiter } from './limits';
-import { JOB_OUTCOME_LABELS, recordQueueDeadJobs, recordQueueOldestReady } from './metrics';
+import { JOB_OUTCOME_LABELS } from './metrics';
 import { createFleetSlots } from './worker-fleet-slots';
+import { handBack } from './worker-hand-back';
 import { resolveWorkerTimings } from './worker-options';
+import { createQueueDepthPublisher } from './worker-queue-depth';
 import { runClaimedJob } from './worker-run';
 import type { Worker, WorkerOptions, WorkerStats } from './worker-types';
-
-/**
- * How often the claim loop republishes `queue_depth`. Its own interval, not `pollIntervalMs`:
- * `driver.stats()` is an aggregate over the whole jobs table and a scrape reads the gauge every
- * ~15s, so publishing at the poll rate would multiply the queue's read load by sixty to write the
- * same number sixty times.
- */
-const QUEUE_DEPTH_INTERVAL_MS = 15_000;
 
 export type { Worker, WorkerOptions, WorkerStats } from './worker-types';
 
@@ -93,37 +78,13 @@ export function createWorker(options: WorkerOptions): Worker {
   let suspended = 0;
   let deadLettered = 0;
   let interrupted = 0;
-  let depthPublishedAt = Number.NEGATIVE_INFINITY;
 
-  /**
-   * This package's ONE metrics call site: the `queue_depth` series `docker/helm`'s worker HPA
-   * scales on. `ready` and not `ready + delayed` — the gauge means "waiting to be picked up", and
-   * a job parked until Tuesday is not backlog no matter how many workers are added. Every queue
-   * the driver reports, not only the ones this process serves, because depth is the queue's fact
-   * and a queue no pod published is a queue no autoscaler can see.
-   */
-  const publishQueueDepth = async (): Promise<void> => {
-    const now = nowMs(options.clock);
-    if (now - depthPublishedAt < QUEUE_DEPTH_INTERVAL_MS) return;
-    depthPublishedAt = now;
-    try {
-      for (const stat of await options.driver.stats()) {
-        recordQueueDepth(stat.queue, stat.ready);
-        // Depth alone is not alertable: it cannot tell "10 jobs stuck for an hour" from "10 jobs
-        // enqueued a second ago", and `jobs_total{outcome="dead"}` is a rate, so a dead-letter
-        // queue that filled overnight and stopped growing pages nobody. Both numbers are already
-        // in `stats()` — this queries nothing new.
-        recordQueueOldestReady(stat.queue, stat.oldestReadyMs);
-        recordQueueDeadJobs(stat.queue, stat.dead);
-      }
-    } catch (error) {
-      // Instrumentation never costs a tick: a queue that cannot be measured must still be worked.
-      logger.warn('jobs.worker.depth-failed', {
-        workerId,
-        error: renderThrowable(error),
-      });
-    }
-  };
+  /** `queue_depth` and its two siblings, republished on their own interval (`worker-queue-depth.ts`). */
+  const publishQueueDepth = createQueueDepthPublisher({
+    driver: options.driver,
+    clock: options.clock,
+    workerId,
+  });
 
   /** One claimed job, run under its lease, its slot and its span. `worker-run.ts` owns the wiring. */
   const runClaimed = (claimed: ClaimedJob): Promise<JobExecution> =>
@@ -189,7 +150,7 @@ export function createWorker(options: WorkerOptions): Worker {
         workerId,
       });
 
-      for (const job of claimed) {
+      for (const [index, job] of claimed.entries()) {
         const lease = limiter.tryAcquire({
           queue,
           ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }),
@@ -199,14 +160,23 @@ export function createWorker(options: WorkerOptions): Worker {
           // and no `error` — the row stays in the ready bucket the depth gauge reads, and nothing
           // about this job failed, so `x jobs show` must not report a `lastError` for it. The
           // reason is a log FIELD instead, where it costs nothing when nobody is asking.
-          await shed(job, {
-            queue,
-            reason:
-              limiter.blockedBy({
-                queue,
-                ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }),
-              }) ?? 'unknown',
-          });
+          try {
+            await shed(job, {
+              queue,
+              reason:
+                limiter.blockedBy({
+                  queue,
+                  ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }),
+                }) ?? 'unknown',
+            });
+          } catch (error) {
+            // The nack itself failed: the jobs BEHIND it go back before the round reports.
+            await handBack(options.driver, claimed.slice(index + 1), {
+              delayMs: pollIntervalMs,
+              workerId,
+            });
+            throw error;
+          }
           continue;
         }
 
@@ -224,14 +194,29 @@ export function createWorker(options: WorkerOptions): Worker {
           granted = await fleetSlots.acquire(job);
         } catch (error) {
           lease.release();
+          // This job and every one behind it in the batch go BACK, unburned — rethrowing alone
+          // stranded them in `running` with an attempt spent on work that never started. Then the
+          // round's own catch reports it, once.
+          await handBack(options.driver, claimed.slice(index), {
+            delayMs: pollIntervalMs,
+            workerId,
+          });
           throw error;
         }
         if (!granted) {
           lease.release();
-          await shed(job, {
-            queue,
-            reason: `job concurrency (${getJob(job.name)?.concurrency ?? 0})`,
-          });
+          try {
+            await shed(job, {
+              queue,
+              reason: `job concurrency (${getJob(job.name)?.concurrency ?? 0})`,
+            });
+          } catch (error) {
+            await handBack(options.driver, claimed.slice(index + 1), {
+              delayMs: pollIntervalMs,
+              workerId,
+            });
+            throw error;
+          }
           continue;
         }
 

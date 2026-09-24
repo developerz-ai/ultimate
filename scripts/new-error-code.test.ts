@@ -125,6 +125,32 @@ describe('a new code, registered and documented in one edit', () => {
   });
 });
 
+describe('a codes array with a sentence per entry', () => {
+  // `@ultimat3/cli`'s owned-codes array carries a comment per code; read as "no array", the
+  // planner wrote the title alone and the package no longer typechecked.
+  test('the code joins the array as well as the titles', () => {
+    const source = [
+      'export const X_OWNED_ERROR_CODES = [',
+      "  'X_A',",
+      '  // why the next one exists',
+      "  'X_B',",
+      '] as const;',
+      'export const X_TITLES: Readonly<Record<string, string>> = {',
+      "  X_A: 'a',",
+      "  X_B: 'b',",
+      '};',
+    ].join('\n');
+    const out = registerIn(source, 'packages/x/src/error-codes.ts', {
+      code: 'X_C',
+      pkg: 'x',
+      title: 'c',
+      fix: 'x doctor --json',
+    });
+    expect(out).toContain("  'X_C',\n] as const;");
+    expect(out).toContain("  X_C: 'c',");
+  });
+});
+
 describe('every refusal is coded and writes nothing', () => {
   test('an errors.ts in no recognised shape is refused by name', async () => {
     const dir = await fixtureRoot();

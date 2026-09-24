@@ -342,6 +342,8 @@ describe('retryFromStep', () => {
   test('forwards { fromStep } only when a stepName is given, then re-reads the job', async () => {
     const driver = createMemoryDriver();
     const { id, runId } = await enqueueAndClaim(driver, { name: 'resumable-job' });
+    // Dead-lettered first: `x jobs retry` refuses a RUNNING job (`X_JOB_NOT_REQUEUEABLE`).
+    await driver.nack(id, { delayMs: 0, deadLetter: true });
     await driver.steps.put({
       runId,
       name: 'step-a',
@@ -372,6 +374,13 @@ describe('retryFromStep', () => {
     await retryFromStep(spied, id, 'step-a');
     expect(calls[0]).toEqual([id, { fromStep: 'step-a' }]);
 
+    await driver.claim({
+      queues: ['default'],
+      limit: 1,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'w',
+    });
+    await driver.nack(id, { delayMs: 0, deadLetter: true });
     await retryFromStep(spied, id);
     expect(calls[1]).toEqual([id, undefined]);
   });
@@ -379,6 +388,7 @@ describe('retryFromStep', () => {
   test('the returned trace reflects the requeue — state back to ready, attempt reset', async () => {
     const driver = createMemoryDriver();
     const { id } = await enqueueAndClaim(driver, { name: 'resumable-job-2' });
+    await driver.nack(id, { delayMs: 0, deadLetter: true });
 
     const trace = await retryFromStep(driver, id);
 

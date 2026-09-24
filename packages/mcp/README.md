@@ -98,7 +98,7 @@ export const mcp = defineAppMcp({
   name: 'acme-admin',
   include: 'exposed',                    // every action/query with mcp: { expose: true }
   resources: [orgExport],
-  prompts: ['apps/web/app/posts/prompts/summarize.v3.md'],
+  prompts: ['apps/web/app/posts/prompts/summarize.v3.md'],   // prompts/get reads the file
   tools: {
     seatReport: {                        // the key IS the tool name
       description: 'Seats used, remaining and the plan limit. Read-only.',
@@ -245,3 +245,26 @@ inside their own handler.
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a production or otherwise non-branch database |
 | `X_MCP_RESOURCE_DUPLICATE` | two resources claim one `ultimate://` URI — refused at registration, as a duplicate tool name is |
 | `X_MCP_RATE_LIMITED` | the caller spent its per-minute allowance for this request's class. Its own code rather than `@ultimat3/http`'s `X_RATE_LIMITED` because the KNOB differs — `rateLimits` on the route, never `rateLimit.buckets` in `app.config.ts` |
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `McpAppUnmountedError` | `X_MCP_APP_UNMOUNTED` | `src/errors.ts` |
+| `McpArgsInvalidError` | `X_MCP_ARGS_INVALID` | `src/errors.ts` |
+| `McpBodyTooLargeError` | `X_MCP_BODY_TOO_LARGE` | `src/errors.ts` |
+| `McpNotBranchDbError` | `X_MCP_NOT_BRANCH_DB` | `src/errors.ts` |
+| `McpProtocolError` | `X_MCP_PROTOCOL` | `src/errors.ts` |
+| `McpQueryRejectedError` | `X_MCP_QUERY_REJECTED` | `src/errors.ts` |
+| `McpRateLimitedError` | `X_MCP_RATE_LIMITED` | `src/errors.ts` |
+| `McpResourceDuplicateError` | `X_MCP_RESOURCE_DUPLICATE` | `src/errors.ts` |
+| `McpScopeConflictError` | `X_MCP_SCOPE_CONFLICT` | `src/errors.ts` |
+| `McpScopeDeniedError` | `X_MCP_SCOPE_DENIED` | `src/errors.ts` |
+| `McpScopeUnknownError` | `X_MCP_SCOPE_UNKNOWN` | `src/errors.ts` |
+| `McpToolDuplicateError` | `X_MCP_TOOL_DUPLICATE` | `src/errors.ts` |
+| `McpToolUndeclaredError` | `X_MCP_TOOL_UNDECLARED` | `src/errors.ts` |
+| `McpToolUnknownError` | `X_MCP_TOOL_UNKNOWN` | `src/errors.ts` |
+| `McpToolUnsafeError` | `X_MCP_TOOL_UNSAFE` | `src/errors.ts` |

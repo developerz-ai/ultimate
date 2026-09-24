@@ -328,7 +328,7 @@ describe('a lock file this process can neither read nor remove', () => {
 
 describe('services other than the embedded database', () => {
   test('the lock still holds with an external DATABASE_URL — it is a checkout lock', async () => {
-    // `x dev` runs every role in ONE process (dev-roles.ts), so a second one is unsupported
+    // `x dev` runs every role in ONE process (role-start.ts), so a second one is unsupported
     // whatever the services are. Gating the lock on the database would leave the shared state
     // directory — embedded storage and events still live there — with two writers.
     const dir = scratch();

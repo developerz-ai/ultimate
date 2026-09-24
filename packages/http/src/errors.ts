@@ -441,17 +441,6 @@ export const overloaded = (inflight: number, ceiling: number): HttpError =>
   });
 
 /**
- * A write that arrived with the browser's ambient credential and could not be shown to come from
- * this app. Never a 401: the caller IS signed in, which is precisely the problem.
- */
-export const csrfBlocked = (pathname: string, reason: string): HttpError =>
-  new HttpError({
-    code: 'X_CSRF_BLOCKED',
-    cause: `${pathname} refused a credentialed write: ${reason}`,
-    fix: "call it with an Authorization header instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
-  });
-
-/**
  * The request ran past its deadline. `X_TIMEOUT` is borrowed (see `HTTP_BORROWED_ERROR_CODES`)
  * and already maps to 504. The abort fires first for cooperative code; this is what the socket
  * gets when the handler never looked at `ctx.signal`.

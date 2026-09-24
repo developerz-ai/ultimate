@@ -163,9 +163,13 @@ describe('the dev signing secret', () => {
     expect(bootCode({ env: { ULTIMATE_ENV: 'production', [KEY]: DEV_SIGNING_SECRET } })).toBe(
       'X_ENV_MISSING',
     );
-    // An empty table is a boot that declared nothing, which resolves to `development` — the same
-    // reading `usesDevStorageSecret({ env: {} })` takes, never a fall-through to `process.env`.
-    expect(bootCode({ env: {} })).toBe('no-throw');
+    // An empty table is a boot that declared NOTHING, and that fails closed, `As of 2026-09-23`:
+    // it read as `development` and signed with the published key — the process that forgot to say
+    // which environment it is was exactly the one handed the dev secret. `x dev` declares
+    // `ULTIMATE_ENV=development` itself (`packages/cli/src/dev-environment.ts`), so it is not this.
+    // Still the table it was handed, never a fall-through to `process.env`.
+    expect(bootCode({ env: {} })).toBe('X_ENV_MISSING');
+    expect(bootCode({ env: { [KEY]: 'boot-secret' } })).toBe('no-throw');
 
     // The cause names the environment the BOOT resolved. Reading `process.env` here would report
     // `production` for a disk refused over a `staging` deploy, which is a fix aimed at the wrong

@@ -6,7 +6,7 @@ import { frozenClock } from '@ultimat3/core';
 import { FakeSocket } from './hooks-fixture';
 import type { SyncTarget } from './page-store';
 import { type PortLike, type PortMessage, SocketEngine } from './socket-engine';
-import { BROWSER_RECONNECT_MAX_MS } from './thundering-herd';
+import { BROWSER_RECONNECT_MAX_MS, browserBackoff } from './thundering-herd';
 
 /** Far above any reconnect delay, so the beat and the reaper are told apart from the redial. */
 const BEAT_MS = 1_000_000_000;
@@ -59,6 +59,21 @@ describe('SocketEngine — the reconnect schedule', () => {
     }
     expect(r.dialled).toHaveLength(21);
     expect(BROWSER_RECONNECT_MAX_MS).toBeLessThanOrEqual(5_000);
+  });
+
+  // Core counts the first wait as attempt 1. Passing the engine's 0-based count straight through
+  // would clamp the first two waits to the same base and shift the whole curve by one step.
+  test('the first redial waits the base, and each failure after it doubles the ceiling', () => {
+    const r = rig(() => 1); // equal jitter at the top roll answers the full ceiling
+    const tab = r.port();
+    tab.say({ t: 'open', target: b1 });
+    for (let failure = 0; failure < 3; failure++) {
+      r.servers.at(-1)?.close(1006);
+      r.redials.at(-1)?.fn();
+      tab.say({ t: 'open', target: b1 });
+    }
+    const base = browserBackoff.baseMs;
+    expect(r.redials.map((redial) => redial.ms)).toEqual([base, base * 2, base * 4]);
   });
 
   test('a new page arriving while the node is down dials at once and restarts the curve', () => {

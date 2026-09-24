@@ -136,7 +136,7 @@ test('Idempotency-Key is content-derived when the message names none', async () 
   const second = await driver.send(message);
 
   expect(seen.headers.get('idempotency-key')).toBe(mailIdempotencyKey(message));
-  expect(seen.headers.get('idempotency-key')).toStartWith('mail:mail_welcome:ada@example.test:');
+  expect(seen.headers.get('idempotency-key')).toMatch(/^mail:mail_welcome:[0-9a-f]{32}$/);
   // Both attempts read the provider's id out of a live body: a stub that handed the same Response
   // to the second call would leave it consumed, and the id would silently become a local one.
   expect(first.id).toBe('em_idem_2');

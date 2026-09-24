@@ -6,6 +6,11 @@ import type { ExpectExtendMatchers } from 'bun:test';
 import { expect } from 'bun:test';
 import { describeValue, isUltimateError, renderCauseValue, stringField } from '@ultimat3/core';
 import { TestJobExpectedError, TestSchemaExpectedError } from './errors';
+import {
+  TestNumberExpectedError,
+  TestOpenApiExpectedError,
+  TestPolicyExpectedError,
+} from './matcher-receiver-errors';
 import type { MatcherResult } from './matcher-result';
 import type { UltimateMatchers } from './matcher-surface';
 import type { VisibleOptions } from './matcher-visible';
@@ -234,18 +239,19 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     return result(actual === code, () => `expected error code ${code}, received ${actual}`);
   },
 
-  async toDenyPolicy(received: unknown, context: Readonly<Record<string, unknown>>) {
-    const allowed = await decide(received, context);
-    if (allowed === undefined) {
-      return result(
-        false,
-        () => 'expected a policy — an object with run() (@ultimat3/policy) or evaluate()',
-      );
+  // Not `async` — see `assertStandardSchema`. The receiver check throws synchronously, because a
+  // `pass: false` for a non-policy is a PASS under `.not`, and `.not.toDenyPolicy` held on
+  // `undefined`. The decision itself is the promise this returns.
+  toDenyPolicy(received: unknown, context: Readonly<Record<string, unknown>>) {
+    if (!isRunnablePolicy(received) && !isPolicy(received)) {
+      throw new TestPolicyExpectedError(received);
     }
     // `renderCauseValue`, never `JSON.stringify`: the context is a value a test authored, and this
     // matcher is asked about policies whose input holds a BigInt id or a back-reference. It quotes
     // what JSON can quote and names the shape of what it cannot, instead of throwing over either.
-    return result(!allowed, () => `expected the policy to deny ${renderCauseValue(context)}`);
+    return decide(received, context).then((allowed) =>
+      result(allowed === false, () => `expected the policy to deny ${renderCauseValue(context)}`),
+    );
   },
 
   // Not `async` — see `assertStandardSchema`. The guard is the synchronous prologue; the wait is
@@ -261,13 +267,8 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
   },
 
   toMatchOpenApi(received: unknown, committed: OpenApiLike) {
-    if (!isOpenApiLike(received)) {
-      return result(
-        false,
-        () =>
-          'expected an OpenAPI document — an object with operations: [{ operationId, required? }]',
-      );
-    }
+    // Thrown, never `pass: false` — which `.not` reads as a pass (`X_TEST_OPENAPI_EXPECTED`).
+    if (!isOpenApiLike(received)) throw new TestOpenApiExpectedError(received);
     const broke = breakingChanges(committed, received);
     return result(
       broke.length === 0,
@@ -277,11 +278,10 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
   },
 
   toBeWithinBudget(received: unknown, limit: number) {
-    if (typeof received !== 'number') {
-      return result(
-        false,
-        () => `expected a number to compare against the budget, got ${typeof received}`,
-      );
+    // Thrown, never `pass: false` — which `.not` reads as a pass. `NaN` is refused too: every
+    // comparison with it is false, so `.not.toBeWithinBudget` held for a measurement that failed.
+    if (typeof received !== 'number' || !Number.isFinite(received)) {
+      throw new TestNumberExpectedError(received);
     }
     return result(
       received <= limit,

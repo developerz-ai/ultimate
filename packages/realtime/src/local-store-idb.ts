@@ -8,7 +8,7 @@
 import type { ClientScope, RecordRows, Row } from '@ultimat3/core/page';
 import { isJsonObject, renderThrowable, type UltimateError } from '@ultimat3/core/page';
 import type { IdbDatabaseLike, IdbFactoryLike, IdbRequestLike } from './idb-types';
-import type { QueueState } from './offline-queue';
+import type { QueueChange, QueuedMutation, QueueState } from './offline-queue';
 import { LocalStoreUnavailableError } from './page-errors';
 
 /** One persisted row, by record type and record key. */
@@ -28,7 +28,12 @@ export interface LocalStore {
     deletes: readonly Omit<PersistedRow, 'row'>[],
   ): Promise<void>;
   queue(scope: string): Promise<QueueState | undefined>;
-  saveQueue(scope: string, state: QueueState): Promise<void>;
+  /**
+   * One change to one scope's outbox, BY KEY (`QueueChange`). It was `saveQueue(scope, state)`,
+   * a whole-queue save — and two tabs of one user each saved their own copy, so the last save won
+   * and the other tab's queued write was erased.
+   */
+  writeQueue(scope: string, change: QueueChange): Promise<void>;
   /** Everything of one scope — its rows AND its outbox. Sign-out, or any principal change. */
   wipe(scope: string): Promise<void>;
   /**
@@ -53,12 +58,26 @@ const OUTBOX = 'outbox';
 /** JSON, never a joined string: a principal is opaque and may hold any separator. */
 const rowKey = (scope: string, type: string, key: string): string =>
   JSON.stringify([scope, type, key]);
+/** One queued mutation, and one scope's sequence floor — the outbox's two record shapes. */
+const mutationKey = (scope: string, key: string): string => JSON.stringify([scope, 'm', key]);
+const seqSlot = (scope: string): string => JSON.stringify([scope, 'seq']);
+
+/** The scope an outbox key belongs to: `[scope, …]`, or a pre-22.0.0 whole-queue record `scope`. */
+function outboxScopeOf(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  if (!raw.startsWith('[')) return raw;
+  const parts: unknown = JSON.parse(raw);
+  return Array.isArray(parts) && typeof parts[0] === 'string' ? parts[0] : undefined;
+}
+
+const byQueueOrder = (a: QueuedMutation, b: QueuedMutation): number =>
+  a.seq - b.seq || a.enqueuedAt - b.enqueuedAt || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
 /** Memory: tests, SSR, and the fallback when IndexedDB is unavailable. */
 export class MemoryLocalStore implements LocalStore {
   readonly kind = 'memory';
   readonly #rows = new Map<string, PersistedRow & { readonly scope: string }>();
-  readonly #queues = new Map<string, QueueState>();
+  readonly #queues = new Map<string, { mutations: Map<string, QueuedMutation>; nextSeq: number }>();
 
   async rows(scope: string): Promise<ReadonlyMap<string, RecordRows>> {
     return group([...this.#rows.values()].filter((entry) => entry.scope === scope));
@@ -72,10 +91,19 @@ export class MemoryLocalStore implements LocalStore {
     for (const put of puts) this.#rows.set(rowKey(scope, put.type, put.key), { ...put, scope });
   }
   async queue(scope: string): Promise<QueueState | undefined> {
-    return this.#queues.get(scope);
+    const held = this.#queues.get(scope);
+    if (held === undefined) return undefined;
+    return {
+      mutations: structuredClone([...held.mutations.values()]).sort(byQueueOrder),
+      nextSeq: held.nextSeq,
+    };
   }
-  async saveQueue(scope: string, state: QueueState): Promise<void> {
-    this.#queues.set(scope, structuredClone(state));
+  async writeQueue(scope: string, change: QueueChange): Promise<void> {
+    const held = this.#queues.get(scope) ?? { mutations: new Map(), nextSeq: 1 };
+    for (const key of change.deletes) held.mutations.delete(key);
+    for (const put of change.puts) held.mutations.set(put.key, structuredClone(put));
+    held.nextSeq = Math.max(held.nextSeq, change.nextSeq);
+    this.#queues.set(scope, held);
   }
   async wipe(scope: string): Promise<void> {
     for (const [key, entry] of this.#rows) if (entry.scope === scope) this.#rows.delete(key);
@@ -116,15 +144,52 @@ class IdbLocalStore implements LocalStore {
     await done(tx);
   }
   async queue(scope: string): Promise<QueueState | undefined> {
-    const tx = this.db.transaction(OUTBOX, 'readonly');
-    const store = tx.objectStore(OUTBOX);
-    const [keys, values] = await Promise.all([answer(store.getAllKeys()), answer(store.getAll())]);
-    const at = keys.indexOf(scope);
-    return at === -1 ? undefined : (values[at] as QueueState);
-  }
-  async saveQueue(scope: string, state: QueueState): Promise<void> {
+    // Read-WRITE: a pre-22.0.0 whole-queue record for this scope is converted in the same
+    // transaction, so an upgrade keeps the writes a user queued on the previous version.
     const tx = this.db.transaction(OUTBOX, 'readwrite');
-    tx.objectStore(OUTBOX).put(state, scope);
+    const store = tx.objectStore(OUTBOX);
+    // Both issued before either is awaited, and awaited one by one: the conversion below writes in
+    // this transaction, and it must still be open when the reads land.
+    const asked = [answer(store.getAllKeys()), answer(store.getAll())] as const;
+    const keys = await asked[0];
+    const values = await asked[1];
+    const mutations = new Map<string, QueuedMutation>();
+    let nextSeq = 1;
+    let found = false;
+    let converted = false;
+    keys.forEach((raw, index) => {
+      if (outboxScopeOf(raw) !== scope) return;
+      found = true;
+      const value = values[index];
+      if (raw === scope) {
+        const legacy = value as QueueState;
+        for (const mutation of legacy.mutations) {
+          mutations.set(mutation.key, mutation);
+          store.put(mutation, mutationKey(scope, mutation.key));
+        }
+        nextSeq = Math.max(nextSeq, legacy.nextSeq);
+        store.put(nextSeq, seqSlot(scope));
+        store.delete(scope);
+        converted = true;
+      } else if (raw === seqSlot(scope)) {
+        nextSeq = Math.max(nextSeq, typeof value === 'number' ? value : 1);
+      } else {
+        const mutation = value as QueuedMutation;
+        mutations.set(mutation.key, mutation);
+      }
+    });
+    // Awaited only when something was written: a transaction that issued nothing after its reads
+    // has already completed, and a listener attached now would wait for an event that is gone.
+    if (converted) await done(tx);
+    return found ? { mutations: [...mutations.values()].sort(byQueueOrder), nextSeq } : undefined;
+  }
+  async writeQueue(scope: string, change: QueueChange): Promise<void> {
+    const tx = this.db.transaction(OUTBOX, 'readwrite');
+    const store = tx.objectStore(OUTBOX);
+    const floor = await answer(store.get(seqSlot(scope)));
+    for (const key of change.deletes) store.delete(mutationKey(scope, key));
+    for (const put of change.puts) store.put(put, mutationKey(scope, put.key));
+    store.put(Math.max(typeof floor === 'number' ? floor : 1, change.nextSeq), seqSlot(scope));
     await done(tx);
   }
   async wipe(scope: string): Promise<void> {
@@ -136,7 +201,10 @@ class IdbLocalStore implements LocalStore {
       const parts: unknown = JSON.parse(raw);
       if (Array.isArray(parts) && parts[0] === scope) records.delete(raw);
     }
-    tx.objectStore(OUTBOX).delete(scope);
+    const outbox = tx.objectStore(OUTBOX);
+    for (const raw of await answer(outbox.getAllKeys())) {
+      if (outboxScopeOf(raw) === scope && typeof raw === 'string') outbox.delete(raw);
+    }
     await done(tx);
   }
   async wipeOthers(keep: string): Promise<void> {
@@ -152,8 +220,9 @@ class IdbLocalStore implements LocalStore {
       const parts: unknown = JSON.parse(raw);
       if (Array.isArray(parts) && parts[0] !== keep) records.delete(raw);
     }
-    for (const scope of queueKeys) {
-      if (typeof scope === 'string' && scope !== keep) outbox.delete(scope);
+    for (const raw of queueKeys) {
+      const scope = outboxScopeOf(raw);
+      if (typeof raw === 'string' && scope !== undefined && scope !== keep) outbox.delete(raw);
     }
     await done(tx);
   }
@@ -214,11 +283,16 @@ function answer<T>(request: IdbRequestLike<T>): Promise<T> {
 function done(tx: {
   oncomplete: (() => void) | null;
   onerror: (() => void) | null;
+  onabort: (() => void) | null;
   error: unknown;
 }): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = (): void => resolve();
     tx.onerror = (): void => reject(tx.error);
+    // A quota refusal ABORTS the transaction and fires nothing else, so a store that listened only
+    // for `complete` and `error` left `write`, `writeQueue`, `flush` and `enqueue` pending forever.
+    tx.onabort = (): void =>
+      reject(tx.error ?? new DOMException('the transaction was aborted', 'AbortError'));
   });
 }
 

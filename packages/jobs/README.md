@@ -679,7 +679,7 @@ between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driv
 
 | Driver | Status | Backing | Use |
 |---|---|---|---|
-| `pg` | **default** | `SELECT ... FOR UPDATE SKIP LOCKED`, a partial unique index on `(name, idempotency_key)`, lease-based leader, `x_job_leases` | zero-infra start, most apps |
+| `pg` | **default** | `SELECT ... FOR UPDATE SKIP LOCKED`, a partial unique index on `(name, coalesce(tenant_id, ''), idempotency_key)` over live rows (`x_jobs_name_tenant_idempotency_live_idx`), lease-based leader, `x_job_leases` | zero-infra start, most apps |
 | `memory` | complete | in-process maps | `x dev`, tests |
 | `redis` | interface-complete, `X_NOT_IMPLEMENTED` | Streams + consumer groups | planned |
 | `nats` | interface-complete, `X_NOT_IMPLEMENTED` | JetStream work queue | planned |
@@ -764,10 +764,10 @@ non-empty string is not a timezone: `tz: 'Bogota'` would resolve every occurrenc
 run five hours off, silently, forever. `0 3 * * *` in a DST zone runs twice or zero times on
 the switch day. Catch-up after downtime is explicit: `skip` (default) fires the latest missed
 occurrence and drops the older ones, `run-once` fires the earliest missed one, `run-all` fires
-every one of them. `maxCatchUp` (default 10) bounds the WALK for every mode, not just `run-all`:
-one tick walks at most that many occurrences forward from the last fire, and the policy then
-picks from what that walk found — so after a long outage `skip` fires the latest occurrence
-*within the cap*, not the true latest missed.
+every one of them. `maxCatchUp` (default 10) bounds the WALK for `run-all` and `run-once`: one
+tick walks at most that many occurrences forward from the last fire. `skip` is not bounded by it —
+after a long outage it fires the TRUE latest missed occurrence, found by bisection over the gap
+(about 25 cron evaluations for three hours, 35 for a year), and moves the watermark there.
 
 `run-once` fires **once**, not once per tick. Dropping the rest means the watermark passes them
 too, so a scheduler back up after a day down enqueues one catch-up and then waits for the next
@@ -778,7 +778,10 @@ hourly task fire 24 catch-ups a second apart.
 
 `{ attempts, backoff: 'exponential' | 'linear' | 'fixed', delay, maxDelay, jitter }`.
 Equal jitter is on by default so a burst of failures does not retry in lockstep.
-Exhausted jobs are dead-lettered, never dropped: `x jobs retry <id>`.
+Exhausted jobs are dead-lettered, never dropped: `x jobs retry <id>`. Only a finished job — dead,
+cancelled, failed or done — can be requeued: a live one is `X_JOB_NOT_REQUEUEABLE` (requeueing a
+running job used to run it twice), and one whose idempotency key a live job now holds is
+`X_JOB_DUPLICATE`. `--from-step <name>` drops that step and every step that started after it.
 
 ```
 retrySchedule({ attempts: 5, backoff: 'exponential', delay: 1000 })
@@ -901,6 +904,53 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 | `X_JOB_NOT_CANCELLABLE` | `cancelJob` reached a job that already finished, or a driver with no `cancel` |
 | `X_JOB_CONCURRENCY_UNENFORCEABLE` | a registered job declares `concurrency` and the driver has no lease store |
 | `X_NOT_IMPLEMENTED` | redis / nats driver |
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `ActionJobUnbridgedError` | `X_ACTION_JOB_UNBRIDGED` | `src/errors.ts` |
+| `BackfillAppliedError` | `X_BACKFILL_APPLIED` | `src/backfill-errors.ts` |
+| `BackfillEnvironmentError` | `X_BACKFILL_ENVIRONMENT` | `src/backfill-errors.ts` |
+| `BackfillMigrationPendingError` | `X_BACKFILL_MIGRATION_PENDING` | `src/backfill-errors.ts` |
+| `BackfillPendingError` | `X_BACKFILL_PENDING` | `src/backfill-errors.ts` |
+| `BackfillRunningError` | `X_BACKFILL_RUNNING` | `src/backfill-errors.ts` |
+| `BackfillStalledError` | `X_BACKFILL_STALLED` | `src/backfill-errors.ts` |
+| `BackfillUnknownError` | `X_BACKFILL_UNKNOWN` | `src/backfill-errors.ts` |
+| `CancelUnsupportedError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
+| `ClaimQueuesEmptyError` | `X_JOB_CLAIM_QUEUES_EMPTY` | `src/errors.ts` |
+| `ConcurrencyUnenforceableError` | `X_JOB_CONCURRENCY_UNENFORCEABLE` | `src/errors.ts` |
+| `DriverUnavailableError` | `X_DRIVER_UNAVAILABLE` | `src/errors.ts` |
+| `ExportPartTooLargeError` | `X_EXPORT_PART_TOO_LARGE` | `src/export-errors.ts` |
+| `ExportRowInvalidError` | `X_EXPORT_ROW_INVALID` | `src/export-errors.ts` |
+| `IdempotencyRequiredError` | `X_IDEMPOTENCY_REQUIRED` | `src/errors.ts` |
+| `JobAbortedError` | `X_ABORTED` | `src/errors.ts` |
+| `JobDeclarationInvalidError` | `X_JOB_DECLARATION_INVALID` | `src/errors-declaration.ts` |
+| `JobDrainedError` | `X_DRAINING` | `src/errors.ts` |
+| `JobDuplicateError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
+| `JobMaxAttemptsError` | `X_JOB_MAX_ATTEMPTS` | `src/errors.ts` |
+| `JobNameTakenError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
+| `JobNotCancellableError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
+| `JobNotRequeueableError` | `X_JOB_NOT_REQUEUEABLE` | `src/errors-requeue.ts` |
+| `JobRowStatusUnknownError` | `X_JOB_ROW_STATUS_UNKNOWN` | `src/errors.ts` |
+| `JobSlotLostError` | `X_JOB_SLOT_LOST` | `src/errors.ts` |
+| `JobsNotImplementedError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
+| `JobTenantRequiredError` | `X_JOB_TENANT_REQUIRED` | `src/errors.ts` |
+| `JobTimeoutError` | `X_JOB_TIMEOUT` | `src/errors.ts` |
+| `LeaseLostError` | `X_JOB_LEASE_LOST` | `src/errors.ts` |
+| `OutboxNoTxError` | `X_OUTBOX_NO_TX` | `src/errors.ts` |
+| `StepDuplicateError` | `X_STEP_DUPLICATE` | `src/errors.ts` |
+| `WebhookDeliveryFailedError` | `X_WEBHOOK_DELIVERY_FAILED` | `src/webhook-errors.ts` |
+| `WebhookDeliveryRejectedError` | `X_WEBHOOK_DELIVERY_REJECTED` | `src/webhook-errors.ts` |
+| `WebhookDeliveryThrottledError` | `X_WEBHOOK_DELIVERY_THROTTLED` | `src/webhook-errors.ts` |
+| `WebhookEndpointDisabledError` | `X_WEBHOOK_ENDPOINT_DISABLED` | `src/webhook-errors.ts` |
+| `WebhookEndpointInvalidError` | `X_WEBHOOK_ENDPOINT_INVALID` | `src/webhook-errors.ts` |
+| `WebhookEndpointUnknownError` | `X_WEBHOOK_ENDPOINT_UNKNOWN` | `src/webhook-errors.ts` |
+| `WebhookEventInvalidError` | `X_WEBHOOK_EVENT_INVALID` | `src/webhook-errors.ts` |
+| `WebhookEventUnknownError` | `X_WEBHOOK_EVENT_UNKNOWN` | `src/webhook-errors.ts` |
 
 ## Boundary
 

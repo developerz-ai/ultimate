@@ -51,38 +51,3 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   time: 1,
   ui: 13,
 };
-
-/** What this package is allowed to have today. Absent means zero, deliberately. */
-export const bareErrorPinnedFor = (
-  pkg: string,
-  pins: Readonly<Record<string, number>> = BARE_ERROR_PINS,
-): number => pins[pkg] ?? 0;
-
-/**
- * The edit `X_TEST_BARE_ERROR_PIN_STALE` names, performed: lower each named package's pin to what
- * is measured, and refuse to raise one. Returns the entries it changed, so the caller can say
- * "nothing to lower" rather than reporting a write it did not make.
- */
-export async function applyBareErrorUnpin(
-  root: string,
-  packages: readonly string[],
-  counts: Readonly<Record<string, number>>,
-): Promise<readonly string[]> {
-  const path = `${root}/${PINS_FILE}`;
-  let text = await Bun.file(path).text();
-  const written: string[] = [];
-  for (const pkg of packages) {
-    const found = counts[pkg] ?? 0;
-    const pinned = bareErrorPinnedFor(pkg);
-    if (found >= pinned) continue;
-    const entry = new RegExp(`^(\\s*)${pkg}: \\d+,$`, 'm');
-    if (!entry.test(text)) continue;
-    text =
-      found === 0
-        ? text.replace(new RegExp(`^\\s*${pkg}: \\d+,\\n`, 'm'), '')
-        : text.replace(entry, `$1${pkg}: ${String(found)},`);
-    written.push(`${pkg} -> ${String(found)}`);
-  }
-  if (written.length > 0) await Bun.write(path, text);
-  return written;
-}

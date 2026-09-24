@@ -196,3 +196,20 @@ describe('dropBranch', () => {
     expect(client.texts.filter((text) => text.includes('drop database'))).toHaveLength(2);
   });
 });
+
+describe('reapBranches refuses a maxAgeMs that bounds nothing', () => {
+  // `now - NaN` is NaN, and `createdAtMs > NaN` is false — the "old enough" answer — so
+  // `maxAgeMs: NaN` (an unset env var through `Number(…)`) dropped EVERY branch of this database.
+  for (const maxAgeMs of [Number.NaN, -1, Number.POSITIVE_INFINITY, 1.5]) {
+    test(`maxAgeMs ${String(maxAgeMs)} throws, and no drop database is issued`, async () => {
+      const client = createRecordingClient();
+      client.on('pg_database', {
+        rows: [{ name: 'fresh', comment: marker('postgres', staleIso()), size_bytes: 0 }],
+      });
+      await expect(reapBranches({ client, maxAgeMs })).rejects.toMatchObject({
+        code: 'X_INVARIANT',
+      });
+      expect(client.statements.some((s) => /drop database/i.test(s.text))).toBe(false);
+    });
+  }
+});

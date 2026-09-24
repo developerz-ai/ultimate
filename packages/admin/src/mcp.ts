@@ -35,8 +35,8 @@ import {
 } from './crud';
 import type { AdminFieldType } from './fields';
 import { type AdminMcpTool, adminMcpTools, adminToolCatalog } from './mcp-tools';
-import { confirmationToken } from './permissions';
 import type { AdminAction, AdminRow } from './registry';
+import { repoOf } from './resource';
 import { adminSearch } from './search';
 
 export type McpInput = Readonly<Record<string, unknown>>;
@@ -111,6 +111,13 @@ async function dispatch(
       return { ok: false, error: 'X_ADMIN_TOOL_FORBIDDEN', reason: 'action is not registered' };
     }
     const id = str(input, 'id');
+    // The row a row-level rule decides about, loaded through the resource that OWNS the action —
+    // what the UI's action button does. Without it the subject carried an id and no row, so an
+    // ownership rule could never allow. `null` for a row that does not exist: no evidence of
+    // permission, same contract as an action's `row:` loader. A global action names no resource.
+    const owner = app.resources.find((resource) => resource.actions.includes(action));
+    const row =
+      owner === undefined || id === '' ? undefined : ((await repoOf(owner).find(id)) ?? null);
     const result = await invokeAdminAction({
       action,
       input: withoutKeys(input, ['confirmation']),
@@ -121,10 +128,11 @@ async function dispatch(
       subject: {
         ...(action.entity === undefined ? {} : { entity: action.entity }),
         ...(id === '' ? {} : { id }),
+        ...(row === undefined ? {} : { row }),
       },
+      // The agent must echo the token, exactly as the UI makes an operator type it — and the gate
+      // derives the token it expects from the entity and `subject.id` above.
       confirmation: str(input, 'confirmation'),
-      // The agent must echo the token, exactly as the UI makes an operator type it.
-      expectedConfirmation: confirmationToken(action.entity ?? 'admin', id),
     });
     return result.ok
       ? { ok: true, data: result.value }

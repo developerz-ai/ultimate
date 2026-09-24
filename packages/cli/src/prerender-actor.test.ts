@@ -7,12 +7,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { useContext } from '@ultimat3/core';
+import { clientTransport, MEASUREMENT_ACTOR_ID, useContext } from '@ultimat3/core';
+import { db, sql } from '@ultimat3/db';
+import { useRequestHeader } from '@ultimat3/http';
 import { can, definePermissions, knownPermissions, restorePermissions } from '@ultimat3/policy';
 import { from, query, registerQueries, resetRegistry, runQuery, t } from '@ultimat3/query';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { readBuildStats } from './budgets';
-import { MEASUREMENT_ACTOR_ID } from './measurement-actor';
 import { prerenderSite } from './prerender';
 
 const ROOT = join(import.meta.dir, '..', '.prerender-actor-fixture');
@@ -107,4 +108,89 @@ describe('the actor a measurement render runs as', () => {
     expect(report.pages.map((page) => page.file)).toEqual(['index.html']);
     expect(renderedAs).toBe('anonymous');
   });
+
+  // A real app's `load` reads over its TYPED CLIENT: a request to `APP_URL`, as the member who
+  // asked (forwarding the inbound cookie). During a build no server listens and there is no
+  // request, so every such route was unmeasured — `X_ENV_MISSING` for `APP_URL`, `X_NO_REQUEST` for
+  // the header, `X_CLIENT_TRANSPORT_FAILED` for the dial. The app's own API answers in process now.
+  test('a load that reads over HTTP is answered by the app API, in process, inside a request', async () => {
+    const before = knownPermissions();
+    definePermissions(['thing:read']);
+    try {
+      const things = query({
+        input: t.object({}),
+        policy: can('thing:read'),
+        sql: () => from<{ id: string }>('things', [{ id: 'a' }]),
+      });
+      registerQueries({ things });
+      let answered: unknown;
+      registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+      registerRoute({
+        file: 'apps/web/app/remote/page.tsx',
+        config: defineRoute({
+          render: 'ssr',
+          hydrate: 'visible',
+          offline: 'runtime',
+          budget: { js: '60kb', lcp: 2500 },
+          load: async () => {
+            const cookie = useRequestHeader('cookie');
+            const response = await clientTransport({
+              method: 'GET',
+              url: `${process.env['APP_URL']}/_x/query/things`,
+              ...(cookie === null ? {} : { headers: { cookie } }),
+            });
+            answered = response;
+            return {};
+          },
+          meta: () => ({ title: 'Remote', description: 'over http' }),
+        }),
+      });
+      const report = await prerenderSite({
+        root: ROOT,
+        out: join(ROOT, 'static'),
+        origin: 'https://example.test',
+      });
+      expect(report.unmeasured).toEqual([]);
+      expect(answered).toEqual([{ id: 'a' }]);
+      // Restored: the build borrowed `APP_URL` for the render and hands the process back as found.
+      expect(process.env['APP_URL']).toBeUndefined();
+    } finally {
+      resetRegistry();
+      restorePermissions(before);
+    }
+  });
+
+  // A build has no DATABASE_URL, so a load that read a row was `X_DB_UNAVAILABLE` and the route
+  // was never weighed. The measuring pass boots `x dev`'s embedded database, empty and migrated,
+  // on a throwaway directory, and releases it when the build ends.
+  test('a load that reads the database is weighed against an embedded one', async () => {
+    // One migration: an app with none has no table to read and boots no database at all.
+    await Bun.write(
+      join(ROOT, 'packages/db/migrations/20260923000000_things.sql'),
+      'create table things (id text primary key);\n-- down\ndrop table things;\n',
+    );
+    let rows: unknown;
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+    registerRoute({
+      file: 'apps/web/app/rows/page.tsx',
+      config: defineRoute({
+        render: 'ssr',
+        hydrate: 'visible',
+        offline: 'runtime',
+        budget: { js: '60kb', lcp: 2500 },
+        load: async () => {
+          rows = await db().query(sql`select count(*)::int as n from things`);
+          return {};
+        },
+        meta: () => ({ title: 'Rows', description: 'reads the database' }),
+      }),
+    });
+    const report = await prerenderSite({
+      root: ROOT,
+      out: join(ROOT, 'static'),
+      origin: 'https://example.test',
+    });
+    expect(report.unmeasured).toEqual([]);
+    expect(rows).toEqual([{ n: 0 }]);
+  }, 60_000);
 });

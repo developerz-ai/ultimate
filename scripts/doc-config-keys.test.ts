@@ -7,11 +7,12 @@ import { configDeclaration, configLeaves } from './config-readers';
 import {
   configCitations,
   configKeyFindingFor,
+  DOC_CONFIG_KEY_ALLOWANCES,
+  DOC_CONFIG_PINS_FILE,
   isKnownKey,
   staleAllowanceFindingFor,
   unknownConfigKeys,
 } from './doc-config-keys';
-import { DOC_CONFIG_KEY_ALLOWANCES, DOC_CONFIG_PINS_FILE } from './lib/doc-config-key-pins';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms

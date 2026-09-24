@@ -211,6 +211,8 @@ export function compilePattern(path: string): CompiledPattern {
 }
 
 const routes = new Map<string, RouteEntry>();
+/** The table `describeRoutes()` last built, dropped whenever a route registers or the registry clears. */
+let described: readonly RouteDescriptor[] | undefined;
 
 export interface RegisterRouteInput<TData = RouteData> {
   readonly file: string;
@@ -290,6 +292,7 @@ export function registerRoute<TData = RouteData>(
     ...(input.component === undefined ? {} : { component: input.component }),
   };
   routes.set(path, entry as RouteEntry);
+  described = undefined;
   return entry;
 }
 
@@ -316,6 +319,7 @@ function withIslandBudget<TData>(config: RouteConfig<TData>, surface: Surface): 
 
 export function clearRoutes(): void {
   routes.clear();
+  described = undefined;
 }
 
 export function routeCount(): number {
@@ -337,6 +341,14 @@ export function routeFor(path: string): RouteEntry | undefined {
  * Determinism matters because `sw.js` and the sitemap are diffed across deploys.
  */
 export function describeRoutes(): readonly RouteDescriptor[] {
+  // Built once per registry change and handed out as the SAME frozen array: an ISR regeneration
+  // looked its route up through this on every request, re-sorting the whole table each time, and
+  // a stable identity is what lets `render-isr.ts` compile its matchers once per table.
+  described ??= Object.freeze(buildDescriptors());
+  return described;
+}
+
+function buildDescriptors(): RouteDescriptor[] {
   return routeEntries().map((entry) => ({
     path: entry.path,
     file: entry.file,

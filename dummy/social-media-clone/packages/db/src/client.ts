@@ -38,7 +38,7 @@ const DATABASE_URL = 'DATABASE_URL';
  * at all, so there is no ambient client for `postgresDriver()` to send a statement to, and a demo
  * that refuses to start on a fresh clone is worse than one that forgets. Outside development and
  * test it is refused instead — the same shape, and the same reason, as `startStorage`'s
- * `LocalDiskUnsafeError` (packages/cli/src/dev-runtime.ts:161): a shipped embedded default that is
+ * `LocalDiskUnsafeError` (packages/cli/src/runtime-services.ts): a shipped embedded default that is
  * fine on a laptop is a silent data-loss bug in a deploy, and the deploy is where nobody is
  * watching. `docker/README.md:84` has said "never in production" since before this line was written.
  */

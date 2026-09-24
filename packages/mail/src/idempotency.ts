@@ -2,10 +2,13 @@
 // apart from `job.ts` because the transports need it too: a job retry after a timeout hands the
 // same envelope to the provider again, and without this key on the wire that is a second email.
 
+// Core's canonical form, never a private copy: it is the one injective serializer, and a second
+// one is where two spellings of one payload would start hashing differently.
+import { canonicalJson } from '@ultimat3/core';
 import type { MailMessage } from './driver';
 
 /**
- * `(mailId, recipients, hash(rendered payload))`, or `(mailId, the caller's key)` when one is
+ * `(mailId, hash(recipients + rendered payload))`, or `(mailId, the caller's key)` when one is
  * supplied. Content-derived on purpose: a retry of the same request produces the same key, while
  * an intentional resend with different content produces a different one.
  *
@@ -17,13 +20,19 @@ import type { MailMessage } from './driver';
  */
 export function mailIdempotencyKey(message: MailMessage): string {
   const explicit = message.idempotencyKey;
-  if (explicit !== undefined && explicit !== '') return `mail:${message.mailId}:${explicit}`;
+  if (explicit !== undefined && explicit !== '') {
+    // Sent as written when it is a header-safe ASCII token that fits; digested otherwise, because
+    // a raw non-ASCII or over-long key is a `TypeError` out of `Headers` or a 400 from Resend.
+    return `mail:${message.mailId}:${HEADER_SAFE.test(explicit) ? explicit : contentDigest(explicit)}`;
+  }
   const recipients = [...message.to].map((address) => address.toLowerCase()).sort();
-  // Every field that reaches the wire is hashed, `replyTo` included: it travels as `Reply-To` and
-  // as Resend's `reply_to`, so two mails that differ only there are two mails, and a shared key
-  // would have the provider drop the second one as a duplicate.
+  // The RECIPIENTS are hashed with the payload, never spelled out in the key: fifty addresses made
+  // a 2 kB `Idempotency-Key` Resend refuses (its limit is 256) — a dead letter — and one non-ASCII
+  // address made `Headers` throw, which the job retried as egress until it gave up. Every field
+  // that reaches the wire is hashed, `replyTo` included: two mails differing only there are two.
   const digest = contentDigest(
-    stableStringify({
+    canonicalJson({
+      recipients,
       subject: message.subject,
       html: message.html,
       text: message.text,
@@ -35,8 +44,11 @@ export function mailIdempotencyKey(message: MailMessage): string {
       unsubscribeUrl: message.unsubscribeUrl ?? '',
     }),
   );
-  return `mail:${message.mailId}:${recipients.join(',')}:${digest}`;
+  return `mail:${message.mailId}:${digest}`;
 }
+
+/** Visible ASCII, bounded well under Resend's 256 so the `mail:<id>:` prefix still fits. */
+const HEADER_SAFE = /^[\x21-\x7e]{1,200}$/;
 
 /**
  * The `Message-ID` token for a message, stable across every attempt of the same send.
@@ -51,20 +63,6 @@ export function mailIdempotencyKey(message: MailMessage): string {
  */
 export function mailMessageIdToken(message: MailMessage): string {
   return contentDigest(mailIdempotencyKey(message));
-}
-
-/** Key order is normalised so two structurally equal payloads hash identically. */
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`);
-    return `{${entries.join(',')}}`;
-  }
-  if (value === undefined) return 'null';
-  return JSON.stringify(value);
 }
 
 /** 128 bits of hex: no collision at any volume a mailer reaches, and short enough for a header. */

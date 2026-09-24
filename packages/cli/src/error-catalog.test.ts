@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 // why: `node:` by necessity: Bun exposes no path-join primitive. `import.meta.dir` gives the
 // directory this file is in, and joining the repo root onto it still needs `node:path`.
 import { join } from 'node:path';
-import { hasErrorCode, listErrorCodes } from '@ultimat3/core';
+import { hasErrorCode, listErrorCodes, stripComments } from '@ultimat3/core';
 import {
   buildErrorCatalog,
   CATALOG_OPTIONAL_HOSTS,
@@ -14,7 +14,6 @@ import {
   registeredErrorCodes,
 } from './error-catalog';
 import { CLI_ERROR_CODES } from './error-codes';
-import { stripComments } from './ts-scan';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 
@@ -53,7 +52,7 @@ describe('unit · the catalog list', () => {
    * explain X_FLAG_EXPIRED` then answers `X_ERROR_CODE_UNKNOWN` for a code `wiki/Error-Codes.md`
    * promises resolves. Derived from the manifest on disk, never a second hand-kept list.
    */
-  test('every package it imports is a declared dependency, bar the two optional hosts', async () => {
+  test('every package it imports is a declared dependency, bar the optional hosts', async () => {
     const manifest = (await Bun.file(
       join(import.meta.dir, '..', 'package.json'),
     ).json()) as CliManifest;

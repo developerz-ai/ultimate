@@ -276,6 +276,24 @@ describe('classification', () => {
     expect(diffManifest(before, breaking).hasBreaking).toBe(true);
   });
 
+  // `ColumnFact` carried no default, so a NOT NULL column added WITH one — every existing row gets
+  // the default, nothing a writer sends is refused — was classed breaking "with no default".
+  test('a NOT NULL column added WITH a default is additive', () => {
+    const before = buildManifest(base);
+    const columns = base.entities?.[0]?.columns ?? [];
+    const defaulted = withEntities([
+      {
+        name: 'post',
+        table: 'posts',
+        invariants: [],
+        columns: [...columns, { name: 'status', type: 'text', nullable: false, hasDefault: true }],
+      },
+    ]);
+    const diff = diffManifest(before, defaulted);
+    expect(diff.hasBreaking).toBe(false);
+    expect(diff.changes.map((change) => change.detail)).toContain('column added with a default');
+  });
+
   test('a job input change is breaking because in-flight payloads stop parsing', () => {
     const before = buildManifest(base);
     const after = withJobs([

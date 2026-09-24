@@ -7,8 +7,8 @@
 import { join } from 'node:path';
 import { startDev } from './cmd-dev';
 import { clearLock, isProcessAlive, lockPath, parseLock, preflight, writeLock } from './dev-lock';
-import { DEV_BINDING } from './dev-roles';
-import { resolveServices } from './dev-services';
+import { DEV_BINDING } from './role-start';
+import { resolveServices } from './runtime-bindings';
 
 export const SHOT_DIR = join('.x', 'shot');
 

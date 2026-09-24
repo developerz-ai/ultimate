@@ -5,6 +5,10 @@
  * denial or a missing org rather than as a fixture.
  */
 
+// The preload, imported by name as well: `bunfig.toml` applies it only to a run started in this
+// app, and a run from the repository root (`bun test scripts/` matches this path) otherwise found no
+// `seed` fixture and reported X_TEST_FIXTURE_UNKNOWN. One module, so the in-app run loads it once.
+import './test-setup';
 import { db } from '@postly/db';
 import { createContext, runWithContext } from '@ultimat3/core';
 import { expect, test } from '@ultimat3/testing';

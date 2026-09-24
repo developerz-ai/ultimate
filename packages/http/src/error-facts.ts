@@ -11,9 +11,9 @@ import {
   stringField,
 } from '@ultimat3/core';
 import type { ValidationIssue } from '@ultimat3/schema';
-import { declaredStatusFor, statusFor } from './error-map';
+import { declaredStatusFor, statusFor } from './error-status';
 import { HTTP_ERROR_TITLES } from './errors';
-import { type ProblemMeta, problemMetaKeysFor, wireMeta } from './problem-meta';
+import { hasPublicCause, type ProblemMeta, problemMetaKeysFor, wireMeta } from './problem-meta';
 
 /** Everything a renderer (problem+json, overlay, terminal) needs from a throwable. */
 export interface ErrorFacts {
@@ -300,11 +300,17 @@ export const toProblem = (
 ): ProblemDocument => {
   const facts = factsOf(error);
   const opaque = meta.dev !== true && isUnclassifiedFailure(facts.code, facts.status);
+  // Wider than `opaque`: EVERY 5xx cause is the server's own business unless its code declared it
+  // public (`hasPublicCause`). A status row made `X_DB_STATEMENT_FAILED` "classified", so its cause
+  // — the Postgres message and the statement — was served in production 500 bodies. The title
+  // stays: a registered title is framework prose, never the server's words.
+  const hidden =
+    opaque || (meta.dev !== true && facts.status >= 500 && !hasPublicCause(facts.code));
   // Dropped under EXACTLY the condition that blanks `title`, `detail` and `cause`. An issue list
   // on a failure nobody classified is precisely the internal detail `INTERNAL_CAUSE` exists to
   // withhold — it names the fields and the expectations of something the caller was never meant to
   // see the inside of. `X_INPUT_INVALID` is a declared 4xx, so it is never opaque.
-  const issues = opaque ? undefined : issuesOf(error);
+  const issues = hidden ? undefined : issuesOf(error);
   // The same condition, for the same reason: a code nobody classified cannot have declared any
   // key either, so this is the belt on `registerProblemMeta`'s "both registrations are needed".
   const carried = opaque ? undefined : metaOf(error, facts.code);
@@ -312,10 +318,10 @@ export const toProblem = (
     type: problemTypeFor(facts.code),
     title: opaque ? INTERNAL_TITLE : facts.title,
     status: facts.status,
-    detail: opaque ? INTERNAL_CAUSE : facts.cause,
+    detail: hidden ? INTERNAL_CAUSE : facts.cause,
     instance: meta.instance,
     code: facts.code,
-    cause: opaque ? INTERNAL_CAUSE : facts.cause,
+    cause: hidden ? INTERNAL_CAUSE : facts.cause,
     fix: facts.fix,
     docs: facts.docs,
     requestId: meta.requestId,

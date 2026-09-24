@@ -2,6 +2,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no temp-directory API and no path joiner — the rule `cmd-db.test.ts` records.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(); a fixture lives outside the checkout, where a parallel worker
+// globbing the tree cannot meet it half-deleted.
+import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
@@ -13,7 +16,7 @@ import {
   STATIC_ERROR_PAGE,
 } from './error-pages';
 
-const ROOT = join(import.meta.dir, '..', '.error-pages-fixture');
+const ROOT = join(tmpdir(), `x-error-pages-${process.pid}`);
 const OWN = '<!doctype html><title>ours</title><h1>Gone fishing</h1>';
 
 beforeEach(async () => {
@@ -53,13 +56,13 @@ describe('which page wins', () => {
 
   test('the hook is that read, bound to one root', async () => {
     await Bun.write(join(ROOT, errorPageSource(503)), OWN);
-    const hook = errorPageHook(ROOT);
+    const hook = errorPageHook(ROOT, { perRequest: true });
     expect(await hook(503)).toBe(OWN);
     expect(await hook(404)).toBeUndefined();
   });
 
   test('a file dropped in while the process runs is picked up — no restart', async () => {
-    const hook = errorPageHook(ROOT);
+    const hook = errorPageHook(ROOT, { perRequest: true });
     expect(await hook(404)).toBeUndefined();
     await Bun.write(join(ROOT, errorPageSource(404)), OWN);
     expect(await hook(404)).toBe(OWN);
@@ -80,5 +83,21 @@ describe('the document a static export carries', () => {
   test("is the app's own file when it has one", async () => {
     await Bun.write(join(ROOT, errorPageSource(404)), OWN);
     expect(await errorPageDocument(ROOT, 404)).toBe(OWN);
+  });
+});
+
+// Production read the app's page off disk on EVERY error response — an outage answering a burst of
+// 500s paid one file read per request, on the path that is already failing. `x dev` still reads per
+// request: an author drops a file into a running process.
+describe('how often the page is read', () => {
+  test('a production hook reads a status once; a dev hook reads it every time', async () => {
+    await Bun.write(join(ROOT, errorPageSource(500)), OWN);
+    const prod = errorPageHook(ROOT, { perRequest: false });
+    const dev = errorPageHook(ROOT, { perRequest: true });
+    expect(await prod(500)).toBe(OWN);
+    expect(await dev(500)).toBe(OWN);
+    await Bun.write(join(ROOT, errorPageSource(500)), '<p>edited</p>');
+    expect(await prod(500)).toBe(OWN);
+    expect(await dev(500)).toBe('<p>edited</p>');
   });
 });

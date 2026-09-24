@@ -13,9 +13,10 @@ name: release
 #        Environment:       npm-publish
 #
 # Two things must be TRUE outside this file for the gate below to be a gate, and both are named in
-# PUBLISHING.md as human steps: the `npm-publish` environment needs required reviewers configured in
-# Settings → Environments, and every package in the derived list needs a trusted publisher plus its
-# first manual publish. Trusted publishing cannot bootstrap a package that does not exist yet, so a
+# PUBLISHING.md as human steps: the `npm-publish` environment must exist with its `v*` deployment
+# tag rule (it carries NO required reviewers, by the owner's decision of 2026-09-05 — the `check`
+# job below and ci.yml's `verify` are the gate), and every package in the derived list needs a
+# trusted publisher plus its first manual publish. Trusted publishing cannot bootstrap a package that does not exist yet, so a
 # package added AFTER a release run is unpublished until a human bootstraps it — and this run will
 # reach it and abort with everything ahead of it already published irreversibly.
 # `bun run scripts/registry-audit.ts` answers whether that is owed, before a release finds out.
@@ -36,24 +37,28 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Workflow-wide: read only. `id-token: write` IS the repository's npm publishing identity, so it is
+# granted to the `publish` job alone — the `check` job runs `bun install`, and a dependency's code
+# has no business holding a token that can mint an npm credential.
 permissions:
   contents: read
-  id-token: write   # REQUIRED for OIDC — lets npm mint a token from this run
 
 jobs:
-  publish:
+  # Everything that can refuse a release for free, BEFORE the `npm-publish` deployment exists. It
+  # used to be the first steps of `publish`, so a Release cut before the bump (developerz-ai[bot]
+  # makes those, on a lightweight tag) requested the protected deployment first and failed
+  # `--check` after: runs 35827049144 (v21.0.0) and 35789073198 (v20.2.2). No environment here,
+  # and no `id-token`, so a refusal costs nothing and asks nobody.
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # The gate on the one irreversible job in the repo. This job holds `id-token: write`, which IS
-    # the repository's npm publishing identity — so before it, anyone who could dispatch a workflow
-    # could publish to @ultimat3 from an arbitrary branch, with provenance attesting that it came
-    # from here. A deployment environment is the only GitHub control that can hold a job with that
-    # permission until a human approves it; the two protections it carries (required reviewers, and
-    # a deployment tag rule of `v*`) are repository settings, not YAML, and are listed in
-    # PUBLISHING.md. The ref check below is the half that takes effect with no settings at all.
-    environment:
-      name: npm-publish
-      url: https://www.npmjs.com/org/ultimat3
+    # ≤20 of it is the wait for ci.yml's verdict below; the rest is install and `--check`.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Read ci.yml's runs and jobs for the tagged commit. Nothing else.
+      actions: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     steps:
       # First, before checkout: `workflow_dispatch` accepts any ref the Actions UI will list, and
       # `github.ref` is the only thing that says which one this is. A release published for a tag
@@ -67,42 +72,22 @@ jobs:
           case "$REF" in
             refs/tags/v*) echo "ok: publishing from $REF" ;;
             *)
-              echo "::error::refusing to publish from $REF — an npm publish cannot be undone, so it runs from a vX.Y.Z tag only. Tag the release commit (git tag v1.3.0 && git push --follow-tags), then dispatch this workflow with that tag selected, or publish a GitHub Release for it."
+              echo "::error::refusing to publish from $REF — an npm publish cannot be undone, so it runs from a vX.Y.Z tag only. Tag the release commit with an ANNOTATED tag (git tag -a v<version> -m v<version> && git push origin v<version> — --follow-tags skips a lightweight one), then publish a GitHub Release for it, or dispatch this workflow with that tag selected."
               exit 1
               ;;
           esac
 
-      - uses: actions/checkout@v7
+      # SHA-pinned in this file, `actions/` included, which is stricter than the repo rule in
+      # .github/actions/setup/action.yml: this workflow ends in an irreversible publish. A moved
+      # tag is not a risk it takes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # No `registry-url:` on purpose. It writes an .npmrc containing
-      #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
-      # and with no NODE_AUTH_TOKEN in the environment that resolves to an empty
-      # credential, which npm prefers over the OIDC exchange — publish then fails
-      # ENEEDAUTH on a workflow that is otherwise configured correctly. Trusted
-      # publishing needs no .npmrc at all.
-      # Node must be >= 22.14.0 for trusted publishing.
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.14.0
-
-      # Trusted publishing needs npm >= 11.5.1; Node 22 ships an older npm.
-      # Pinned (not @latest): npm 11.6.x regressed the provenance path — a global install lands
-      # without a resolvable `sigstore` module, so `npm publish` with provenance dies on
-      # "Cannot find module 'sigstore'". 11.5.2 is the last release before that regression and
-      # satisfies the trusted-publishing minimum. Revisit when a fixed latest ships.
-      - name: upgrade npm
-        run: npm install -g npm@11.5.2
-
-      # SHA-pinned and series-pinned for the reasons in .github/actions/setup/action.yml, and this
-      # is the job the rule exists for: it holds `id-token: write`.
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: '1.4.0'
-
-      - name: install
-        run: bun install --frozen-lockfile
+      # The repo's own composite — Bun, the install cache, a frozen install — as every other job
+      # starts. Acceptable HERE and only here: this job holds no `id-token`. The `publish` job below
+      # keeps its own SHA-pinned steps and no cache, because it does.
+      - uses: ./.github/actions/setup
 
       # ONE source for the version: the tag this run is checked out at. Both events supply it —
       # a published release runs at `refs/tags/<tag_name>`, and a dispatch runs at whichever ref was
@@ -124,19 +109,105 @@ jobs:
           echo "publishing $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      # Before the 10-minute gate, because it costs a second and catches the failure the gate
-      # cannot: `verify`'s lockstep rule compares the 29 packages to EACH OTHER, so 29 manifests all
-      # reading 1.2.0 pass it while the tag says v1.10.1 — and every publish then dies
-      # EPUBLISHCONFLICT on a version already on the registry. `As of 2026-08` this tree was in that
-      # state: `git describe` answered v1.10.1-37-g837adfa with every package.json at 1.2.0, so a
-      # release published for that tag would have done exactly that. `scripts/release.ts` claimed
-      # this workflow already ran it; it did not.
+      # `verify`'s lockstep rule compares the packages to EACH OTHER, so manifests all reading 1.2.0
+      # pass it while the tag says v1.10.1 — and every publish then dies EPUBLISHCONFLICT on a
+      # version already on the registry. `As of 2026-08` this tree was in that state. It is also
+      # what refuses a Release cut before the bump, which is why it lives in this job.
       - name: the repo is stamped at the version this tag claims
         run: bun run scripts/release.ts --check "${{ steps.release.outputs.version }}" --json
 
-      # The gate runs before anything reaches the registry: an npm publish cannot be undone.
-      - name: verify
-        run: bun run scripts/verify.ts --json
+      # The gate's verdict on THIS commit, read — never re-run. This job used to run
+      # `scripts/verify.ts` itself, on a runner with no Postgres, NATS or Redis and no
+      # `E2E_BROWSER_REQUIRED`: the 21.0.0 run executed 10 of 342 live tests where ci.yml's
+      # `verify` job ran 278, and still called the tag verified. ci.yml runs on every push to main,
+      # so the release commit already has the real answer. Polled because a Release published the
+      # minute its commit lands races that run (`verify` times out at 12 min; the window is 20).
+      # Fails closed: no run, no verdict, or any conclusion but `success` does not publish.
+      - name: require ci.yml's verify job to have passed on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          for attempt in $(seq 1 40); do
+            # `|| true`: a transient API failure is "no verdict yet", not a publish and not a red.
+            run_id="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=1" \
+              --jq '.workflow_runs[0].id // ""' || true)"
+            conclusion=""
+            if [ -n "$run_id" ]; then
+              conclusion="$(gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?filter=latest&per_page=100" \
+                --jq '[.jobs[] | select(.name == "verify" and .status == "completed")]
+                        | first | .conclusion // ""' || true)"
+            fi
+            case "$conclusion" in
+              success)
+                echo "ok: ci.yml verify passed for ${sha} (run ${run_id})"
+                exit 0
+                ;;
+              '')
+                echo "attempt ${attempt}/40: ci.yml verify has no verdict yet for ${sha}"
+                sleep 30
+                ;;
+              *)
+                echo "::error::ci.yml verify concluded '${conclusion}' for ${sha} (run ${run_id}) — not publishing. Re-run it (gh run rerun ${run_id} --failed), then re-run this workflow."
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::ci.yml verify reported no verdict for ${sha} within 20 minutes — not publishing. A tag on a commit that was never pushed to main has no ci.yml run at all."
+          exit 1
+
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write   # REQUIRED for OIDC — lets npm mint a token from this run
+    # The gate on the one irreversible job in the repo. This job holds `id-token: write`, which IS
+    # the repository's npm publishing identity — so before it, anyone who could dispatch a workflow
+    # could publish to @ultimat3 from an arbitrary branch, with provenance attesting that it came
+    # from here. A deployment environment is the only GitHub control that can hold a job with that
+    # permission; its protections (a deployment tag rule of `v*`, and reviewers if ever configured)
+    # are repository settings, not YAML, and are listed in PUBLISHING.md. The `check` job is the
+    # half that takes effect with no settings at all, and this job cannot start without it.
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/org/ultimat3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No `registry-url:` on purpose. It writes an .npmrc containing
+      #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+      # and with no NODE_AUTH_TOKEN in the environment that resolves to an empty
+      # credential, which npm prefers over the OIDC exchange — publish then fails
+      # ENEEDAUTH on a workflow that is otherwise configured correctly. Trusted
+      # publishing needs no .npmrc at all.
+      # Node must be >= 22.14.0 for trusted publishing.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships an older npm.
+      # Pinned (not @latest): npm 11.6.x regressed the provenance path — a global install lands
+      # without a resolvable `sigstore` module, so `npm publish` with provenance dies on
+      # "Cannot find module 'sigstore'". 11.5.2 is the last release before that regression and
+      # satisfies the trusted-publishing minimum. Revisit when a fixed latest ships.
+      - name: upgrade npm
+        run: npm install -g npm@11.5.2
+
+      # SHA-pinned and series-pinned for the reasons in .github/actions/setup/action.yml, and this
+      # is the job the rule exists for: it holds `id-token: write`.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.0'
+
+      - name: install
+        run: bun install --frozen-lockfile
 
       # Published in dependency-tier order — a package must be on the registry before anything that
       # imports it — and the list is DERIVED, never kept by hand.
@@ -152,9 +223,21 @@ jobs:
       # `scripts/list-workspaces.ts` reads the real package.json files rather than the tier table,
       # so a package that exists on disk cannot be invisible here — and `create-ultimate` lands last
       # because it is tier 6, not because a step says so.
+      #
+      # RESUMABLE: a package npm already holds at this version is skipped and logged. Without it a
+      # run that died half way — a registry 5xx, a runner lost mid-tier — could never be re-run: the
+      # first package the failed attempt had published answered E403 and stopped everything after
+      # it. A failed `npm view` is read as "not published", so the worst it can cost is that E403,
+      # never a skipped package.
       - name: publish, tier by tier
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
           set -euo pipefail
+          if [ -z "${VERSION:-}" ]; then
+            echo "::error::the check job produced no version — it must succeed before this job can run"
+            exit 1
+          fi
           plan="$(bun run scripts/list-workspaces.ts --json | jq -r '
             .data
             | map(select(.publish == "public"))
@@ -167,8 +250,19 @@ jobs:
           while IFS="$(printf '\t')" read -r tier names; do
             [ -n "$tier" ] || continue
             args=""
-            for name in $names; do args="$args -w $name"; done
-            echo "::group::npm publish — tier $tier: $names"
+            for name in $names; do
+              held="$(npm view "${name}@${VERSION}" version 2>/dev/null || true)"
+              if [ "$held" = "$VERSION" ]; then
+                echo "::notice::skipping ${name}@${VERSION} — npm already holds it, published by an earlier attempt of this release"
+              else
+                args="$args -w $name"
+              fi
+            done
+            if [ -z "$args" ]; then
+              echo "tier $tier: every package is already on npm at ${VERSION}"
+              continue
+            fi
+            echo "::group::npm publish — tier $tier:$args"
             # Unquoted on purpose: `$args` is a list of flags this step just built, and quoting it
             # would hand npm one argument containing spaces.
             # shellcheck disable=SC2086

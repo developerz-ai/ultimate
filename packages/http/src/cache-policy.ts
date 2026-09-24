@@ -40,3 +40,12 @@ export const defaultCache = (route: Route | undefined, actor: Actor): CacheHint 
   if (!isAnonymous(actor)) return PRIVATE_CACHE;
   return { mode: 'public', maxAgeSeconds: 0, sMaxAgeSeconds: 60, staleWhileRevalidateSeconds: 600 };
 };
+
+/**
+ * A DECLARED hint — `meta.cache` or `ctx.cache` — reviewed against the actor, as a handler's own
+ * header is. `mode: 'public'` on a route answered `public, s-maxage=3600` over a body carrying the
+ * signed-in actor's id, so a CDN served one user's document to every later visitor. `immutable`
+ * is exempt for the reason `offersSharedCache` gives: its body is a function of the URL alone.
+ */
+export const reviewedHint = (hint: CacheHint, actor: Actor): CacheHint =>
+  hint.mode === 'public' && !isAnonymous(actor) ? PRIVATE_CACHE : hint;

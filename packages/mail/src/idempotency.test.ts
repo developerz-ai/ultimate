@@ -6,6 +6,8 @@ import { expect, test } from 'bun:test';
 import type { MailMessage } from './driver';
 import { mailIdempotencyKey } from './idempotency';
 
+const PINNED = 'mail:welcome:3fc95ae4fcefe4ec3932c75f78be3e20';
+
 function messageFixture(overrides: Partial<MailMessage> = {}): MailMessage {
   return {
     mailId: 'welcome',
@@ -23,13 +25,47 @@ test('the key for a fixed message is pinned, so a change of digest cannot pass u
   // Not a tautology: this value was written down once. Changing the hash, the field list or the
   // key layout breaks it, which is the point — a deployed key that stops matching the previous
   // release's key for the same email is a duplicate send on every retry across the rollout.
-  expect(mailIdempotencyKey(messageFixture())).toBe(
-    'mail:welcome:ada@example.test:58f51a4f9562b916c9a91a4452d2162a',
+  // Re-pinned 2026-09-23: the recipients moved INTO the digest (see below), a one-time key change.
+  expect(mailIdempotencyKey(messageFixture())).toMatch(/^mail:welcome:[0-9a-f]{32}$/);
+  expect(mailIdempotencyKey(messageFixture())).toBe(PINNED);
+});
+
+// The recipients were spelled out in the key: 50 recipients was a 2 kB header Resend refuses with
+// a 400 (its limit is 256) — a dead letter — and one non-ASCII address made `Headers` throw a
+// TypeError, which the job retried as egress until it gave up.
+test('a 50-recipient send has a key of 256 characters or fewer, all ASCII', () => {
+  const to = Array.from(
+    { length: 50 },
+    (_, index) => `recipient-${index}@a-long-domain.example.test`,
+  );
+  const key = mailIdempotencyKey(messageFixture({ to }));
+  expect(key.length).toBeLessThanOrEqual(256);
+  expect(key).toMatch(/^[\x21-\x7e]+$/);
+  expect(() => new Headers({ 'Idempotency-Key': key })).not.toThrow();
+});
+
+test('a non-ASCII recipient still yields a header-safe key', () => {
+  const key = mailIdempotencyKey(messageFixture({ to: ['zoë@例え.test'] }));
+  expect(() => new Headers({ 'Idempotency-Key': key })).not.toThrow();
+});
+
+test('recipients still change the key, in any order and any case', () => {
+  const one = mailIdempotencyKey(messageFixture({ to: ['a@x.test', 'B@x.test'] }));
+  expect(mailIdempotencyKey(messageFixture({ to: ['b@x.test', 'a@x.test'] }))).toBe(one);
+  expect(mailIdempotencyKey(messageFixture({ to: ['a@x.test'] }))).not.toBe(one);
+});
+
+test("a caller's key that is not header-safe is digested, never sent raw", () => {
+  const key = mailIdempotencyKey(messageFixture({ idempotencyKey: `signup-ü-${'x'.repeat(400)}` }));
+  expect(key.length).toBeLessThanOrEqual(256);
+  expect(() => new Headers({ 'Idempotency-Key': key })).not.toThrow();
+  expect(mailIdempotencyKey(messageFixture({ idempotencyKey: 'signup:42' }))).toBe(
+    'mail:welcome:signup:42',
   );
 });
 
 test('the digest is 128 bits of lowercase hex, so the header stays short and collision-free', () => {
-  const digest = mailIdempotencyKey(messageFixture()).split(':')[3] ?? '';
+  const digest = mailIdempotencyKey(messageFixture()).split(':')[2] ?? '';
 
   expect(digest).toHaveLength(32);
   expect(digest).toMatch(/^[0-9a-f]{32}$/);

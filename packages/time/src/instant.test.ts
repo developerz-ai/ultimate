@@ -39,6 +39,14 @@ describe('instant', () => {
     expect(codeOf(() => fromIso('March 14, 2026 09:00:00'))).toBe('X_INSTANT_INVALID');
   });
 
+  // `new Date` also reads these — each at the HOST's local midnight, so the instant was whatever
+  // `TZ` the pod ran under. Only the ISO shape names one instant everywhere.
+  test('refuses non-ISO text that carries no clock time at all', () => {
+    for (const text of ['March 14, 2026', '3/14/2026', '12', '2026', 'Sat Mar 14 2026']) {
+      expect(codeOf(() => fromIso(text))).toBe('X_INSTANT_INVALID');
+    }
+  });
+
   test('keeps every spelling that names one point on the timeline', () => {
     // A date-only ISO form is UTC by specification, so it carries no ambient zone and stays in.
     expect(toIso(fromIso('2026-03-14'))).toBe('2026-03-14T00:00:00.000Z');

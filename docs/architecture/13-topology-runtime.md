@@ -63,7 +63,7 @@ role with a genuine absence of dependencies does not have to invent a check to b
 | `n > 0` | every entry `ok` | every dependency this process owns answered |
 | `n > 0` | any `failing` | not a 200: 503, and the body names the failing check |
 
-`startServices` (`packages/cli/src/dev-runtime.ts`) registers **at most two, and the count is
+`startServices` (`packages/cli/src/runtime-services.ts`) registers **at most two, and the count is
 conditional**: `database` always, `transport` only when the transport can lose a connection. `x dev`
 over the in-process bus reports `registered: 1`; a NATS-backed container reports `2`, which is the
 body above. Read the name, never the number:

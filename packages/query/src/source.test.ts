@@ -280,3 +280,34 @@ describe('a row provider may be a list, a sync function or an async one', () => 
     expect(ids(await source.execute())).toEqual(['z']);
   });
 });
+
+// A filter or an ordering on a column the rows do not CARRY — a loader that selected `slug` and
+// `updatedAt` filtered on `status` — answered `[]` in silence, and a blog built no article at all.
+// Absent is not "not equal": it is a read the provider never made, and it is refused by name.
+describe('unit · a column the rows do not carry', () => {
+  const slugs = [{ slug: 'a', updatedAt: '2026-09-01' }] as const;
+
+  test('where() on it is X_QUERY_COLUMN_UNSELECTED, naming the column and the entity', async () => {
+    const error = await from('posts', slugs)
+      .where({ status: 'published' })
+      .execute()
+      .catch((e: unknown) => e);
+    expect(error).toBeUltimateError('X_QUERY_COLUMN_UNSELECTED');
+    expect((error as { cause: string }).cause).toContain('"status"');
+    expect((error as { cause: string }).cause).toContain('"posts"');
+  });
+
+  test('orderBy() on it is refused the same way', async () => {
+    const error = await from('posts', slugs)
+      .orderBy('publishedAt')
+      .execute()
+      .catch((e: unknown) => e);
+    expect(error).toBeUltimateError('X_QUERY_COLUMN_UNSELECTED');
+  });
+
+  test('a column that is present and NULL is a value, and an empty provider judges nothing', async () => {
+    const rows = [{ slug: 'a', deletedAt: null }];
+    expect(await from('posts', rows).where({ deletedAt: null }).execute()).toEqual(rows);
+    expect(await from<{ slug: string }>('posts', []).where({ status: 'x' }).execute()).toEqual([]);
+  });
+});

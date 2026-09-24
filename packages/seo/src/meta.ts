@@ -125,7 +125,9 @@ export function applyTitleTemplate(title: string, template?: string): string {
   if (!template.includes(TITLE_SLOT)) return title;
   const brand = template.replace(TITLE_SLOT, '').replace(TEMPLATE_SEPARATORS, '');
   if (brand !== '' && title.includes(brand)) return title;
-  return template.replace(TITLE_SLOT, title);
+  // A FUNCTION as the replacement, never the string: `replace` expands `$$`, `$&` and `$'` in a
+  // replacement literal, and a title is app data — "Save $$ on shoes" rendered one dollar.
+  return template.replace(TITLE_SLOT, () => title);
 }
 
 export function robotsContent(directives: RobotsDirectives): string {

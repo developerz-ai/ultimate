@@ -46,22 +46,29 @@ export const CATALOG_PACKAGES = [
 ] as const;
 
 /**
- * The two packages the catalog may import WITHOUT `@ultimat3/cli` declaring them: they reach for a
- * JSX runtime an app has and a bare CLI process does not, so a hard dependency would make the CLI
- * uninstallable where the codes are merely absent today. Every other entry above is a real runtime
- * import and must be a declared dependency — `error-catalog.test.ts` holds the list to exactly that,
- * because an undeclared one resolves through workspace symlinks here and through nothing in an
- * installed app, where `x errors explain X_FLAG_EXPIRED` then refuses a code the wiki promises.
+ * The packages the catalog may import WITHOUT `@ultimat3/cli` declaring them. `admin` and `ui`
+ * reach for a JSX runtime an app has and a bare CLI process does not, so a hard dependency would
+ * make the CLI uninstallable where the codes are merely absent today. `scraping` is an app's own
+ * choice since 22.0.0: `x shot` drives Chrome over raw CDP and imports nothing from it, so its codes
+ * answer where the app installed it and are reported `unavailable` where it did not. Every other
+ * entry above is a real runtime import and must be a declared dependency — `error-catalog.test.ts`
+ * holds the list to exactly that, because an undeclared one resolves through workspace symlinks
+ * here and through nothing in an installed app, where `x errors explain X_FLAG_EXPIRED` then
+ * refuses a code the wiki promises.
  */
-export const CATALOG_OPTIONAL_HOSTS: readonly string[] = ['@ultimat3/admin', '@ultimat3/ui'];
+export const CATALOG_OPTIONAL_HOSTS: readonly string[] = [
+  '@ultimat3/admin',
+  '@ultimat3/scraping',
+  '@ultimat3/ui',
+];
 
 export interface ErrorCatalog {
   /** Packages whose codes are now registered. */
   readonly loaded: readonly string[];
   /**
    * Packages this process could not *resolve*, so their codes are absent from the answer. The one
-   * tolerated case is the optional host: `CATALOG_OPTIONAL_HOSTS` reach for a JSX
-   * runtime an app has and a bare CLI process does not, and a list silently missing their codes is
+   * tolerated case is the optional host (`CATALOG_OPTIONAL_HOSTS`), which a bare CLI process may
+   * not have, and a list silently missing their codes is
    * worse than one that says which packages are missing. A package that resolved and then threw is
    * a defect, not a host gap, and goes to `failed`.
    */

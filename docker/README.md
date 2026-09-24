@@ -22,12 +22,19 @@ binary); it contains no app, so it serves no role. See its header.
 | `replicator` | 1 per database | — | `:9090` | liveness on `/metrics` |
 | `migrate` | run-once, pre-deploy | — | — | none — it exits |
 
+**`sync` ships off** in `helm/values.yaml` and at zero replicas in `docker-compose.prod.yml`: it needs
+a shared `NATS_URL` and one replicator on a `wal_level=logical` Postgres, and without them it is
+refused at boot (`X_REALTIME_TOPOLOGY`). The comment beside each says how to turn it on.
+
 **Only `web` and `sync` serve `/healthz` and `/readyz`**; the other three open no HTTP socket at all
 (`packages/cli/src/metrics-endpoint.ts`), and the scrape listener is the only port they have. This
 file claimed "every role" until 2026-08, which is the same wrong assumption that made `sync`'s
-readiness probe poll a port the process never opened. Every role drains on `SIGTERM`, and the drain
-is bounded at `DEFAULT_DEADLINE_MS` — 25s — so a `stop_grace_period` or a
-`terminationGracePeriodSeconds` below that is a SIGKILL on a process that was about to exit cleanly.
+readiness probe poll a port the process never opened. Every role drains on `SIGTERM`: first the
+readiness grace (`drain.readinessGraceMs`, 5s outside local environments — `/readyz` answers 503
+with the listener still open), then the drain itself, bounded at `DEFAULT_DEADLINE_MS` — 25s. So
+`stop_grace_period` is 40s (5 + 25 + headroom) and `terminationGracePeriodSeconds` is 45s (the chart
+adds a 5s `preStop` sleep on Kubernetes 1.30+); anything below the sum is a SIGKILL on a process
+that was about to exit cleanly.
 
 ## Files
 
@@ -37,6 +44,7 @@ is bounded at `DEFAULT_DEADLINE_MS` — 25s — so a `stop_grace_period` or a
 | `docker-compose.dev.yml` | optional local Postgres + NATS + MinIO |
 | `docker-compose.prod.yml` | the production topology: one service per role, one box. Point `IMAGE` at an app image |
 | `helm/` | Kubernetes chart with **per-role HPAs** — where `web` and `sync` actually scale out |
+| `deploy-proof/` | milestone 11's proof: `bash docker/deploy-proof/run.sh` scaffolds an app on this tree, installs it into kind with `x deploy --method helm`, and upgrades it under load, failing on one non-2xx. CI's `deploy-proof` job runs it on `main`. Test harness only — nothing here ships |
 
 ## Local
 

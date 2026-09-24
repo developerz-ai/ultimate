@@ -32,7 +32,7 @@ import { YAML } from 'bun';
 // number the sync role binds has to come from the function that computes it, exactly as
 // DEPLOY_ROLES comes from `planDeploy`. Same relative reach `scripts/test-setup.ts` already takes
 // into a package's `src/`.
-import { syncPortFor } from '../packages/cli/src/dev-sync';
+import { syncPortFor } from '../packages/cli/src/role-sync';
 import { APP_ROOTS } from './boundaries';
 
 const ROOT = join(import.meta.dir, '..');
@@ -114,7 +114,7 @@ const waitsForMigrate = (service: Service): boolean => {
 };
 
 /**
- * The two roles that construct an HTTP server (`startRoles`, packages/cli/src/dev-roles.ts). Every
+ * The two roles that construct an HTTP server (`startRoles`, packages/cli/src/role-start.ts). Every
  * other role gets the metrics listener and nothing else, so the image's `/readyz` HEALTHCHECK is a
  * fetch to a port it never binds. `backfill` carries no ROLE and is one of them — it overrides the
  * entrypoint and exits.
@@ -322,7 +322,7 @@ describe('the compose files agree with the deploy plan', () => {
         const port = boundPortOf(sync, SYNC_ROLE);
         expect(
           healthcheckArgv(sync).some((word) => word.includes(String(port))),
-          `${at}: sync binds ${port} (syncPortFor, packages/cli/src/dev-sync.ts) and its healthcheck names no such port, so it inherits the image's /readyz on $PORT — a socket this role never opens. The container is unhealthy from start_period onward and never recovers, and anything gated on sync: { condition: service_healthy } never starts. Declare healthcheck.test fetching http://127.0.0.1:${port}/readyz`,
+          `${at}: sync binds ${port} (syncPortFor, packages/cli/src/role-sync.ts) and its healthcheck names no such port, so it inherits the image's /readyz on $PORT — a socket this role never opens. The container is unhealthy from start_period onward and never recovers, and anything gated on sync: { condition: service_healthy } never starts. Declare healthcheck.test fetching http://127.0.0.1:${port}/readyz`,
         ).toBe(true);
         const ports = sync['ports'];
         const misrouted = (Array.isArray(ports) ? ports : [])

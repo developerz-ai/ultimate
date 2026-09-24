@@ -9,19 +9,13 @@
 //   bun run scripts/test-bare-error.ts [--json]
 //   bun run scripts/test-bare-error.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-import { stripComments } from '@ultimat3/cli';
-import { flagList, parseScriptArgs } from './lib/args';
+import { stripComments } from '../packages/core/src/source-mask';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import type { PinTable, RatchetGap } from './lib/ratchet';
+import { ratchetGaps, ratchetMain } from './lib/ratchet';
 import { insideString, sourceStrings } from './lib/source-strings';
-import {
-  applyBareErrorUnpin,
-  BARE_ERROR_PINS,
-  bareErrorPinnedFor,
-  PINS_FILE,
-} from './lib/test-bare-error-pins';
-import { packageOf, readTestSources } from './test-fix-citations';
+import { BARE_ERROR_PINS, PINS_FILE } from './lib/test-bare-error-pins';
+import { readTestSources } from './test-fix-citations';
 
 const SCRIPT = 'test-bare-error';
 
@@ -72,52 +66,19 @@ export function scanBareErrorThrows(path: string, source: string): readonly Bare
   return out;
 }
 
-export type BareErrorGapKind = 'over' | 'stale' | 'unscanned';
-
-export interface BareErrorGap {
-  readonly kind: BareErrorGapKind;
-  readonly pkg: string;
-  readonly found: number;
-  readonly pinned: number;
-  readonly first?: BareErrorSite;
-}
+export type BareErrorGap = RatchetGap<BareErrorSite>;
 
 export interface BareErrorInput {
   readonly files: readonly { readonly path: string; readonly text: string }[];
-  readonly pins: Readonly<Record<string, number>>;
+  readonly pins: PinTable;
 }
 
-export function checkBareErrors(input: BareErrorInput): readonly BareErrorGap[] {
-  if (input.files.length === 0) {
-    return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
-  }
-  const found = new Map<string, BareErrorSite[]>();
-  for (const file of input.files) {
-    for (const site of scanBareErrorThrows(file.path, file.text)) {
-      const pkg = packageOf(site.path);
-      const list = found.get(pkg) ?? [];
-      list.push(site);
-      found.set(pkg, list);
-    }
-  }
-  const gaps: BareErrorGap[] = [];
-  for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
-    const hits = found.get(pkg) ?? [];
-    const pinned = bareErrorPinnedFor(pkg, input.pins);
-    if (hits.length > pinned) {
-      gaps.push({
-        kind: 'over',
-        pkg,
-        found: hits.length,
-        pinned,
-        ...(hits[0] === undefined ? {} : { first: hits[0] }),
-      });
-      continue;
-    }
-    if (hits.length < pinned) gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
-  }
-  return gaps.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
-}
+export const checkBareErrors = (input: BareErrorInput): readonly BareErrorGap[] =>
+  ratchetGaps(
+    input.files.flatMap((file) => scanBareErrorThrows(file.path, file.text)),
+    input.pins,
+    input.files.length > 0,
+  );
 
 const at = (site: BareErrorSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
@@ -144,64 +105,30 @@ const unscannedFinding = (): Finding => ({
   at: 'scripts/test-bare-error.ts',
 });
 
-const FINDINGS: Readonly<Record<BareErrorGapKind, (gap: BareErrorGap) => Finding>> = {
-  over: overFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-};
+export const bareErrorFindingFor = (gap: BareErrorGap): Finding =>
+  gap.kind === 'over'
+    ? overFinding(gap)
+    : gap.kind === 'stale'
+      ? staleFinding(gap)
+      : unscannedFinding();
 
-export const bareErrorFindingFor = (gap: BareErrorGap): Finding => FINDINGS[gap.kind](gap);
+const treeSites = async (root: string): Promise<readonly BareErrorSite[]> =>
+  (await readTestSources(root)).flatMap((file) => scanBareErrorThrows(file.path, file.text));
 
 export const bareErrorGaps = async (root: string): Promise<readonly BareErrorGap[]> =>
-  checkBareErrors({ files: await readTestSources(root), pins: BARE_ERROR_PINS });
+  ratchetGaps(await treeSites(root), BARE_ERROR_PINS, true);
 
 /** What this repo contributes to `x verify`'s `errors` step. */
 export const bareErrorFindings = async (root: string): Promise<readonly Finding[]> =>
   (await bareErrorGaps(root)).map(bareErrorFindingFor);
 
-/** Every site, for `--unpin` and for the count a maintainer wants when lowering a pin. */
-export async function bareErrorCounts(root: string): Promise<Readonly<Record<string, number>>> {
-  const counts: Record<string, number> = {};
-  for (const file of await readTestSources(root)) {
-    for (const site of scanBareErrorThrows(file.path, file.text)) {
-      const pkg = packageOf(site.path);
-      counts[pkg] = (counts[pkg] ?? 0) + 1;
-    }
-  }
-  return counts;
-}
-
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
-    const lowered = await applyBareErrorUnpin(root, unpin, await bareErrorCounts(root));
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package is already at what this tree measures'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
-  } else {
-    const gaps = await bareErrorGaps(root);
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? 'no package reports a test verdict with a bare Error above its pin'
-            : `${String(gaps.length)} package(s) off the bare-Error ratchet`,
-        findings: gaps.map(bareErrorFindingFor),
-      },
-      args.json,
-    );
-  }
+  await ratchetMain({
+    script: SCRIPT,
+    pinsFile: PINS_FILE,
+    pins: BARE_ERROR_PINS,
+    sites: treeSites,
+    findingFor: bareErrorFindingFor,
+    clean: 'no package reports a test verdict with a bare Error above its pin',
+  });
 }

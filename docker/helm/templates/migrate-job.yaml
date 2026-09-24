@@ -3,6 +3,37 @@ Pre-install / pre-upgrade hook: ROLE=migrate runs to completion before any servi
 and refuses to run concurrently with a different version.
 */}}
 {{- if .Values.migrate.enabled }}
+{{/*
+The Job's own ServiceAccount, and it has to be a hook. A `pre-install` hook runs BEFORE Helm
+creates any of the chart's ordinary resources, so a Job naming the chart's ServiceAccount
+(service.yaml) was refused by admission — `serviceaccount "…" not found` — and a first
+`helm install` waited on a Job that could never make a pod until its timeout. Upgrades worked,
+because the account already existed from the install that never finished, which is how it hid.
+
+A SEPARATE account rather than turning service.yaml's into a hook: Helm deletes on upgrade every
+resource that was in the previous release's manifest and is not in the new one, and hooks are not
+in the manifest — so moving the serving roles' account into a hook would delete it at the end of
+the first upgrade, and the next pod any Deployment scheduled would be refused for want of it.
+Deleted again once the hooks succeed, so it outlives nothing it was made for.
+
+With `serviceAccount.create: false` the operator's account already exists before the chart runs,
+so the Job uses it (IRSA / Workload Identity reaches the migration too) and nothing is created.
+*/}}
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "ultimate.fullname" . }}-migrate
+  labels:
+    {{- include "ultimate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+automountServiceAccountToken: false
+---
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -23,7 +54,7 @@ spec:
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
-      serviceAccountName: {{ include "ultimate.serviceAccountName" . }}
+      serviceAccountName: {{ if .Values.serviceAccount.create }}{{ include "ultimate.fullname" . }}-migrate{{ else }}{{ include "ultimate.serviceAccountName" . }}{{ end }}
       # Same reason as the Deployments: ROLE=migrate applies SQL and exits, and calls no API server.
       automountServiceAccountToken: false
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}

@@ -337,8 +337,15 @@ export class PgReplicationStream {
       case 'delete':
         await this.#deliver('delete', message.relation, message.before, null, handlers);
         return;
+      case 'truncate':
+        // One change per truncated relation, rowless. It was decoded and DROPPED here, and with the
+        // recommended `FOR ALL TABLES` publication every window and every client kept the rows.
+        for (const relation of message.relations) {
+          await this.#deliver('truncate', relation, null, null, handlers);
+        }
+        return;
       default:
-        // Relation, truncate, origin, type, logical message: nothing the matcher can act on.
+        // Relation, origin, type, logical message: nothing the matcher can act on.
         return;
     }
   }
@@ -375,9 +382,11 @@ export class PgReplicationStream {
     // Read off the Relation message rather than off the tuple: a DEFAULT-identity table whose
     // non-key columns happen to be NULL sends the same bytes a FULL one does, so counting missing
     // keys would undercount exactly the rows a policy is most likely to misjudge.
-    if (op !== 'insert' && relation.replicaIdentity !== 'f') this.#partialBefore += 1;
-    const before = toRow(relation, oldTuple);
-    const after = toRow(relation, newTuple);
+    if ((op === 'update' || op === 'delete') && relation.replicaIdentity !== 'f') {
+      this.#partialBefore += 1;
+    }
+    const before = toRow(relation, oldTuple, 'before');
+    const after = toRow(relation, newTuple, 'after');
     const event: ChangeEvent = {
       entity: relation.name,
       op,
@@ -462,9 +471,13 @@ export class PgReplicationStream {
 }
 
 /** A physical tuple becomes the row the matcher's predicates are written against, or nothing. */
-function toRow(relation: PgRelation, physical: PhysicalRow | null): Row | null {
+function toRow(
+  relation: PgRelation,
+  physical: PhysicalRow | null,
+  image: 'before' | 'after',
+): Row | null {
   if (physical === null) return null;
-  const row = entityRow(physical);
+  const row = entityRow(relation, physical, image);
   // A bigserial id decodes as a number inside `Number.isSafeInteger` range and as text outside it,
   // so the same table would otherwise identify small rows by number and large ones by string.
   // `Row.id`, `RowPatch.id` and every cursor are text: the identity is normalised once, here.

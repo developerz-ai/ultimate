@@ -63,7 +63,6 @@ export type { EvalBaseline, Regression } from './eval-baseline';
 export {
   baselinePath,
   describeRegression,
-  OVERALL,
   RECORD_ENV,
   readBaseline,
   recordingBaselines,
@@ -113,7 +112,6 @@ export {
   modelIds,
   modelSpec,
   moreCapableThan,
-  reasoningBody,
   registeredModels,
   registerModel,
   resetModels,
@@ -133,11 +131,7 @@ export {
   conditionsSql,
   ddlSql,
   deleteSql,
-  hybridSql,
   searchSql,
-  textSql,
-  upsertSql,
-  vectorLiteral,
 } from './pg-vector-sql';
 export type { DefinePromptInput, Prompt, PromptVars } from './prompt';
 export {
@@ -169,6 +163,7 @@ export {
   estimateInputTokens,
   estimateTextTokens,
   estimateTokens,
+  isTruncated,
   messageText,
   parseMessage,
   requiresStreaming,
@@ -193,7 +188,6 @@ export {
   aiRedactor,
   configureAi,
   MAX_SEMANTIC_CACHE_SCOPES,
-  resetAiRuntime,
   semanticCacheFor,
 } from './runtime';
 export type { Scorer } from './scorers';
@@ -225,6 +219,5 @@ export type {
 } from './vector';
 export { fuse, MemoryVectorStore } from './vector';
 export type { VectorScope } from './vector-scope';
-export { NO_TENANT, narrowScope, scopeAdmits, tenantOf, UNSCOPED } from './vector-scope';
+export { NO_TENANT, tenantOf, UNSCOPED } from './vector-scope';
 export type { StreamState } from './wire';
-export { parseStopDetails, ZERO_USAGE } from './wire';

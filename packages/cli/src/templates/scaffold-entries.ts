@@ -15,7 +15,7 @@ const server =
 // shares the host's network namespace (\`--network host\`), or through a sidecar and \`ssh -L\`.
 
 import { join } from 'node:path';
-import { runRole } from '@ultimat3/cli';
+import { runRole } from '@ultimat3/cli/serve';
 
 // MORE THAN ONE REPLICA? Add these two lines, above \`runRole\`:
 //

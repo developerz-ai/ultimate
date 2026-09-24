@@ -16,24 +16,43 @@
 #
 # syntax=docker/dockerfile:1
 
-# ---------- deps ----------
-# The whole tree, not a subset. `bun.lock` describes EVERY workspace member, so a partial copy
-# makes `--frozen-lockfile` refuse: bun sees members it cannot resolve and wants to rewrite the
-# lockfile it was told not to touch. Copying only what this app imports looked tidier and failed
-# with "lockfile had changes, but lockfile is frozen" — the lockfile is a property of the repo,
-# not of one app inside it. `.dockerignore` is what keeps this cheap.
-FROM oven/bun:1.4-alpine AS deps
+# ---------- manifests: every workspace package.json in the repo, and nothing else ----------
+# `bun.lock` describes EVERY workspace member, so the install must see every manifest — a partial
+# copy makes `--frozen-lockfile` refuse with "lockfile had changes, but lockfile is frozen". It
+# must NOT see the source: this stage was `COPY . .` straight into the install, so a one-line edit
+# anywhere in the monorepo re-ran a full install of every workspace. The set is derived from the
+# context, never listed, so a workspace glob added later cannot be the member it forgot.
+# `bunfig.toml` survives because its `[install]` section is input to the install.
+FROM oven/bun:1.4-alpine AS manifests
 WORKDIR /repo
 COPY . .
-RUN bun install --frozen-lockfile
+RUN find . ! -type d ! -name package.json ! -name bunfig.toml -delete \
+ && find . -type d -empty -delete
+
+# ---------- deps: runtime dependencies only, cached on the lockfile and the manifests ----------
+# `--production`: the image runs `bun apps/web/server.ts` and nothing else, so typescript, biome,
+# the test harness and every other devDependency of the whole monorepo were dead weight in the
+# layer every node pulls. `x verify` is the gate and it ran in CI before this image was built.
+# Measured on this tree, `docker images`, linux/amd64, 2026-09-23: 842 MB before, 594 MB after, and
+# the image still applies all 6 migrations and answers `/readyz` 200 and `GET /` 200 as ROLE=web.
+FROM oven/bun:1.4-alpine AS deps
+WORKDIR /repo
+COPY --from=manifests /repo ./
+COPY bun.lock ./
+RUN bun install --frozen-lockfile --production
 
 # ---------- runtime ----------
 # No build stage: `x verify` is the gate and it runs in CI, before this image is ever built. A
 # second gate here would be a slower copy of one that already passed.
+#
+# The whole installed tree — Bun's isolated linker puts each workspace's links under its own
+# `node_modules` — then the source on top; `.dockerignore` drops every host `node_modules`, so the
+# two merge rather than one shadowing the other.
 FROM oven/bun:1.4-alpine AS runtime
 WORKDIR /repo
 
-COPY --from=deps /repo /repo
+COPY --from=deps /repo ./
+COPY . .
 
 WORKDIR /repo/dummy/social-media-clone
 

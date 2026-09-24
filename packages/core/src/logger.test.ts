@@ -37,6 +37,26 @@ describe('logger', () => {
     });
   });
 
+  test("a caller field cannot overwrite the line's own ts, level or msg", () => {
+    // Spread after them, `{ level: 'debug' }` turned an `error` line into a `debug` one — which a
+    // level-filtered alert then never saw. The caller's value survives under `field.<key>`.
+    const { logger, lines } = capture();
+    logger.error('charge failed', { level: 'debug', msg: 'spoofed', ts: 'then', orderId: 'o1' });
+    expect(lines[0]).toEqual({
+      ts: '2026-07-26T10:00:00.000Z',
+      level: 'error',
+      msg: 'charge failed',
+      'field.level': 'debug',
+      'field.msg': 'spoofed',
+      'field.ts': 'then',
+      orderId: 'o1',
+    });
+    const child = logger.child({ level: 'trace' });
+    child.warn('bound too');
+    expect(lines[1]?.['level']).toBe('warn');
+    expect(lines[1]?.['field.level']).toBe('trace');
+  });
+
   test('emits the line even when the clock cannot say when', () => {
     // `clock.now().toISOString()` sat outside every guard the rest of this file was made total
     // for: an invalid `Date` raises `RangeError`, and a log line must never replace the event it

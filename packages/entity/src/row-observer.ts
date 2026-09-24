@@ -14,7 +14,7 @@
 // that decision.
 
 import { currentWriteOrigin } from '@ultimat3/core';
-import { expectedQueryLoop } from '@ultimat3/db';
+import { currentTx, expectedQueryLoop } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { MAX_PAGE_SIZE } from './plan';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
@@ -184,20 +184,43 @@ const beforeAllOf = async <Row>(
 export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Repo<Row> {
   const name = entity.$name;
 
-  const emit = (op: RowChangeOp, before: unknown, after: unknown): void => {
-    if (installed === null) return;
+  /**
+   * Reported at COMMIT. The write may sit in a transaction — the caller's `options.tx`, or the
+   * ambient `withTransaction` a Postgres repository joins — and a change reported before COMMIT
+   * put a row in a live query that a rollback then erased (plan 101, 06 m). Outside a transaction
+   * the write is already durable, so it is reported at once. The write origin is read NOW: it is
+   * the request's, and the commit callback may run outside that request's scope.
+   */
+  const afterCommit = (options: RepoOptions | undefined, report: () => void): void => {
+    const tx: { onCommit?(effect: () => void): void } | undefined = options?.tx ?? currentTx();
+    if (tx?.onCommit === undefined) report();
+    else tx.onCommit(report);
+  };
+
+  const emit = (
+    op: RowChangeOp,
+    before: unknown,
+    after: unknown,
+    options: RepoOptions | undefined,
+  ): void => {
+    const observer = installed;
+    if (observer === null) return;
     const write = currentWriteOrigin();
-    installed.onChange({
+    const change: RowChange = {
       entity: name,
       op,
       before: asRecord(before),
       after: asRecord(after),
       ...(write === undefined ? {} : { write }),
-    });
+    };
+    afterCommit(options, () => observer.onChange(change));
   };
 
-  const bulk = (op: 'delete' | 'update', rows: number): void => {
-    if (rows > 0) installed?.onBulk?.({ entity: name, op, rows });
+  const bulk = (op: 'delete' | 'update', rows: number, options: RepoOptions | undefined): void => {
+    const observer = installed;
+    if (rows > 0 && observer?.onBulk !== undefined) {
+      afterCommit(options, () => observer.onBulk?.({ entity: name, op, rows }));
+    }
   };
 
   // Spread first, exactly as `examples/dummy`'s own capturing driver does: a repository may carry
@@ -208,13 +231,13 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
 
     insert: async (values: Row, options?: RepoOptions): Promise<Row> => {
       const stored = await repo.insert(values, options);
-      emit('insert', null, stored);
+      emit('insert', null, stored, options);
       return stored;
     },
 
     insertAll: async (rows: readonly Row[], options?: RepoOptions): Promise<readonly Row[]> => {
       const stored = await repo.insertAll(rows, options);
-      for (const row of stored) emit('insert', null, row);
+      for (const row of stored) emit('insert', null, row, options);
       return stored;
     },
 
@@ -233,7 +256,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
       for (const row of stored) {
         const id = idOf(row);
         const previous = id === undefined ? null : (before.get(id) ?? null);
-        emit(previous === null ? 'insert' : 'update', previous, row);
+        emit(previous === null ? 'insert' : 'update', previous, row, args);
       }
       return stored;
     },
@@ -242,7 +265,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
       if (installed === null) return await repo.update(id, patch, options);
       const before = await beforeOf(entity, repo, id);
       const after = await repo.update(id, patch, options);
-      emit('update', before, after);
+      emit('update', before, after, options);
       return after;
     },
 
@@ -250,12 +273,12 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
       if (installed === null) return await repo.delete(id, options);
       const before = await beforeOf(entity, repo, id);
       await repo.delete(id, options);
-      emit('delete', before, null);
+      emit('delete', before, null, options);
     },
 
     deleteWhere: async (filter: RowPatch<Row>, options?: RepoOptions): Promise<number> => {
       const rows = await repo.deleteWhere(filter, options);
-      bulk('delete', rows);
+      bulk('delete', rows, options);
       return rows;
     },
 
@@ -265,7 +288,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
       options?: RepoOptions,
     ): Promise<number> => {
       const rows = await repo.updateWhere(filter, patch, options);
-      bulk('update', rows);
+      bulk('update', rows, options);
       return rows;
     },
   };

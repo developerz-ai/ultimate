@@ -19,12 +19,14 @@ import { buildManifest, DEFAULT_OUT, frameworkManifestDrift, ownerOf } from './m
 
 let dir = '';
 let fresh: FrameworkManifest;
+let again: FrameworkManifest;
 
-// `buildManifest(repoRoot())` is a full manifest regeneration over 29 packages, run once here for
-// the whole file — `REPO_SCAN_TIMEOUT_MS`.
+// `buildManifest(repoRoot())` is a full manifest regeneration over 29 packages. It runs here and
+// nowhere else in the file: twice, concurrently, because determinism is a comparison of two builds,
+// and every other test reads one of them — it was five builds, one per assertion.
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ultimate-framework-manifest-'));
-  fresh = await buildManifest(repoRoot());
+  [fresh, again] = await Promise.all([buildManifest(repoRoot()), buildManifest(repoRoot())]);
 }, REPO_SCAN_TIMEOUT_MS);
 
 afterAll(async () => {
@@ -45,17 +47,10 @@ const withEditedVersion = (manifest: FrameworkManifest): FrameworkManifest => ({
 });
 
 describe('unit · the framework manifest is generated, not written', () => {
-  // A SECOND full `buildManifest(repoRoot())` on top of the one `beforeAll` already ran — the
-  // comparison is the point, so the body pays the scan twice.
-  test(
-    'two builds of one tree are byte-identical: no clock, no counter, no glob order',
-    async () => {
-      const again = await buildManifest(repoRoot());
-      expect(frameworkManifestJson(again)).toBe(frameworkManifestJson(fresh));
-      expect(again.buildId).toBe(fresh.buildId);
-    },
-    REPO_SCAN_TIMEOUT_MS,
-  );
+  test('two builds of one tree are byte-identical: no clock, no counter, no glob order', () => {
+    expect(frameworkManifestJson(again)).toBe(frameworkManifestJson(fresh));
+    expect(again.buildId).toBe(fresh.buildId);
+  });
 
   test('the generator actually finds the real packages and codes — not an empty list', () => {
     expect(fresh.packages.length).toBeGreaterThan(20);
@@ -280,23 +275,19 @@ describe('unit · drift names the section that moved', () => {
 });
 
 describe('unit · the gate reads the file, not just the generator', () => {
-  // THREE manifest regenerations over 29 packages, one per assertion. See the note in
-  // `verify.test.ts`: the 5s default cannot cover this once shards share the machine.
-  test(
-    'freshly written: no drift; hand-edited: the section; deleted: missing',
-    async () => {
-      const path = join(dir, 'gate.json');
-      await Bun.write(path, frameworkManifestJson(fresh));
-      expect(await frameworkManifestDrift(repoRoot(), path)).toEqual([]);
+  // Against the build `beforeAll` already paid for: what is under test is the file read and the
+  // comparison, and a regeneration per assertion measured nothing the determinism test does not.
+  test('freshly written: no drift; hand-edited: the section; deleted: missing', async () => {
+    const path = join(dir, 'gate.json');
+    await Bun.write(path, frameworkManifestJson(fresh));
+    expect(await frameworkManifestDrift(repoRoot(), path, fresh)).toEqual([]);
 
-      await Bun.write(path, frameworkManifestJson(withEditedVersion(fresh)));
-      expect(await frameworkManifestDrift(repoRoot(), path)).toEqual(['packages differs']);
+    await Bun.write(path, frameworkManifestJson(withEditedVersion(fresh)));
+    expect(await frameworkManifestDrift(repoRoot(), path, fresh)).toEqual(['packages differs']);
 
-      await rm(path);
-      expect(await frameworkManifestDrift(repoRoot(), path)).toEqual([
-        'file is missing or unreadable',
-      ]);
-    },
-    REPO_SCAN_TIMEOUT_MS,
-  );
+    await rm(path);
+    expect(await frameworkManifestDrift(repoRoot(), path, fresh)).toEqual([
+      'file is missing or unreadable',
+    ]);
+  });
 });

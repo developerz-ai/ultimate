@@ -5,11 +5,11 @@
 import { nearestName } from '@ultimat3/core';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
+import { policySpec } from './cmd-policy-spec';
 import type { CliCommand, CommandContext } from './command';
 import { DeclarationUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
-
 import type { DeclarationExplanation } from './policy-facts';
 import { explainPolicy, knownPolicySubjects, listPolicy } from './policy-facts';
 import { renderTable } from './table';
@@ -123,14 +123,7 @@ function runExplain(ctx: CommandContext, findings: readonly Finding[]): CommandR
 }
 
 export const policyCommand: CliCommand = {
-  spec: {
-    name: 'policy',
-    summary: 'which clause decided a permission, and why',
-    usage: 'x policy [list|explain <subject>] [--json]',
-    requiresApp: true,
-    subcommands: ['list', 'explain'],
-    defaultSubcommand: 'list',
-  },
+  spec: policySpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('policy', ctx.cwd).dir;
     const { findings } = await loadApp(root);

@@ -3,10 +3,10 @@
 SEO is **enforced, not documented**: every rule below is an `assert*` that throws a coded
 `SeoError` with the route file and the exact edit, never a lint warning.
 
-`As of 2026-08` the half that *calls* those asserts is missing — nothing outside this package
-imports `assertMeta`, `buildSitemap` or `buildRobots`, so no step of `x verify` runs them yet.
-Wiring them is a `HostCheck` on an existing step in `packages/cli/src/cmd-verify.ts`. The shapes
-below are what will fail the build; today they fail an app that calls them itself.
+`x verify`'s **`seo`** step (`packages/cli/src/verify-checks.ts`) runs `validateMeta` over every
+`site/` route, so missing, duplicate and over-long meta fail the gate `As of 2026-09-23`. Canonical
+checks are skipped there — an app declares no base URL — and JSON-LD, sitemaps and robots are
+enforced where they are built: each builder throws.
 
 ## What fails the build
 
@@ -30,6 +30,15 @@ X_SEO_META_MISSING: a site/ route is missing required metadata
   cause: apps/web/site/about/page.tsx (route "/about") has no meta.description
   fix:   add description to defineRoute({ meta }) in apps/web/site/about/page.tsx
 ```
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `SeoError` | any `SeoErrorCode` — `SEO_ERROR_CODES` | `src/errors.ts` |
 
 ## Modules
 

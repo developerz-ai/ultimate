@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { actionButtons, invokeAdminAction } from './action-gate';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
+import { confirmationToken } from './permissions';
 import type { AdminAction } from './registry';
 
 const publish: AdminAction = {
@@ -88,8 +89,8 @@ describe('one policy decides both the button and the call', () => {
       authz: destroyer,
       audit,
       requestId: 'req_3',
+      subject: { entity: 'post', id: 'p_1' },
       confirmation: 'nope',
-      expectedConfirmation: 'post:p_1',
     });
     expect(refused.ok).toBe(false);
     if (!refused.ok) expect(refused.confirmationRequired).toBe(true);
@@ -101,14 +102,68 @@ describe('one policy decides both the button and the call', () => {
       authz: destroyer,
       audit,
       requestId: 'req_4',
+      subject: { entity: 'post', id: 'p_1' },
       confirmation: 'post:p_1',
-      expectedConfirmation: 'post:p_1',
     });
     expect(confirmed.ok).toBe(true);
     expect(audit.entries({ limit: 2 }).map((entry) => entry.outcome)).toEqual([
       'allowed',
       'denied',
     ]);
+  });
+});
+
+/**
+ * The gate DERIVES the token it expects. It compared the caller's `confirmation` against the
+ * caller's `expectedConfirmation`, and with both omitted `undefined !== undefined` is false — so a
+ * destructive action ran unconfirmed through the public `invokeAdminAction`.
+ */
+describe('a destructive action with no confirmation', () => {
+  const purgeIt: AdminAction = {
+    name: 'post.purge',
+    permission: 'post:purge',
+    entity: 'post',
+    destructive: true,
+    async handle() {
+      ran += 1;
+      return 'purged';
+    },
+  };
+  let ran = 0;
+  const destroyer = staticAuthz(['admin:write', 'admin:destroy', 'post:purge']);
+
+  test('is refused, the handler never runs, and the refusal is audited', async () => {
+    ran = 0;
+    const audit = memoryAuditLog();
+    const result = await invokeAdminAction({
+      action: purgeIt,
+      input: {},
+      actor: editor,
+      authz: destroyer,
+      audit,
+      requestId: 'req_u',
+      subject: { entity: 'post', id: 'p_1' },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.confirmationRequired).toBe(true);
+    expect(ran).toBe(0);
+    expect(audit.entries()[0]?.outcome).toBe('denied');
+  });
+
+  test('the echo of the token the gate derives — entity and subject id — is what runs it', async () => {
+    ran = 0;
+    const result = await invokeAdminAction({
+      action: purgeIt,
+      input: {},
+      actor: editor,
+      authz: destroyer,
+      audit: memoryAuditLog(),
+      requestId: 'req_c',
+      subject: { entity: 'post', id: 'p_1' },
+      confirmation: confirmationToken('post', 'p_1'),
+    });
+    expect(result.ok).toBe(true);
+    expect(ran).toBe(1);
   });
 });
 

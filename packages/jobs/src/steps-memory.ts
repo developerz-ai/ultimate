@@ -20,7 +20,11 @@ export function createMemoryStepStore(): StepStore {
       return Promise.resolve(byRun.get(runId)?.get(name));
     },
     put(record) {
-      runOf(record.runId).set(record.name, record);
+      // Through JSON, exactly as the pg store persists it (`JSON.stringify(output ?? null)`): a
+      // live reference replayed a `Date` here and a string in production, so a step that worked
+      // in every test broke on the first retry against Postgres.
+      const output: unknown = JSON.parse(JSON.stringify(record.output ?? null));
+      runOf(record.runId).set(record.name, { ...record, output });
       return Promise.resolve();
     },
     list(runId) {

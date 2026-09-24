@@ -59,7 +59,7 @@ Every row is behaviour-preserving unless the next section names it.
 | Package | Site | Delegates | Keeps |
 |---|---|---|---|
 | `jobs` | `backoffDelayMs` (`retry.ts`) | the curve | `DurationInput` (`'30s'`), `DEFAULT_RETRY`, and the public `jitter: boolean` — `true` maps to `equal`, never `full` |
-| `realtime` | `backoffDelay` (`thundering-herd.ts`) | the curve | its 0-based attempt, mapped `attempt + 1`; `JitterMode` is re-exported, never re-declared |
+| `realtime` | `policyDelay` (`thundering-herd.ts`, internal) | the curve | maps a realtime `BackoffPolicy` onto core's 1-based `backoffDelay`; realtime exports no `backoffDelay` of its own since 2026-09-23; `JitterMode` is re-exported, never re-declared |
 | `db` | `serializationRetryDelayMs` (`transaction-backoff.ts`) | the curve | the two constants and the case for them — `base: 10`, `max: 500`, `full` |
 | `ai` | `backoffMs` (`gateway.ts`) | the curve **and** the status table | `RetryPolicy`'s own field names (`baseDelayMs`/`maxDelayMs`), because they are what an app writes in `createGateway({ retry })` |
 | `cache` | `purge-http.ts`, `purge-fastly.ts`, `purge-cloudflare.ts` | the status table | the shared HTTP half — one POST with a deadline, and the per-provider key batching. `purge-http.ts` re-exports `isRetryableStatus` rather than importing it twice, so both drivers still read "what a failure means" off one door |

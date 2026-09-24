@@ -4,15 +4,16 @@
 // that only ever talks to a managed Postgres must not carry 26 MB of WASM it will never load.
 
 import { statementAttribution } from './attribution';
-import type { DbConnection, ReservableClient } from './client';
+import type { DbClient, DbConnection, ReservableClient } from './client';
 import { DbError, driverError } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
 import { statementObserver } from './observe';
+import { PGLITE_INSTANT_PARSERS } from './pg-instant';
 import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
 import { statementExcerpt } from './statement-excerpt';
 import { withStatementSpan } from './statement-span';
-import { inLiveTx } from './transaction';
+import { liveTxConnection } from './transaction';
 
 /** What PGlite answers with. `rows` is empty for a write, which is why the count is separate. */
 export interface PgliteResult {
@@ -30,7 +31,10 @@ export interface PgliteDriver {
 
 /** The one export taken off `@electric-sql/pglite`. */
 export interface PgliteModule {
-  readonly PGlite: new (dataDir?: string) => PgliteDriver;
+  readonly PGlite: new (
+    dataDir?: string,
+    options?: { readonly parsers?: Readonly<Record<number, (text: string) => unknown>> },
+  ) => PgliteDriver;
 }
 
 /** Returns the module namespace. Unknown, not typed, because it is validated before use. */
@@ -107,7 +111,9 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
   }
   const PGlite = pgliteConstructor(loaded);
   try {
-    return new PGlite(dataDir);
+    // `pg-instant.ts` reads every timestamp: PGlite's own parser took year 0099 for 1999 and an
+    // offset with seconds for Invalid Date under any session zone that is not UTC.
+    return new PGlite(dataDir, { parsers: PGLITE_INSTANT_PARSERS });
   } catch (error) {
     throw missing(`PGlite could not open its data directory (dataDir=${dataDir})`, error);
   }
@@ -141,6 +147,9 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
   // would otherwise build two instances over the same data directory and orphan one of them.
   let booting: Promise<PgliteDriver> | undefined;
   const turns = createTurnQueue();
+  // Every reservation this client handed out — the connections a live transaction on THIS
+  // session runs on. Weak, so a released reservation is collected with its scope.
+  const issued = new WeakSet<DbClient>();
 
   function connect(): Promise<PgliteDriver> {
     booting ??= loadPgliteDriver(options).catch((error: unknown) => {
@@ -229,7 +238,11 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     // work held the session next — a stray statement in someone else's transaction, committed or
     // rolled back with it, with no error anywhere. A closed scope falls through and takes its own
     // turn, exactly as `client.ts`'s released pin sends a late statement back to the pool.
-    if (inLiveTx()) return statement(driver, fragment);
+    // And only a transaction on THIS client's session: one open on another client says nothing
+    // about who holds this queue, and skipping it put the statement inside whatever transaction
+    // this session was running — rolled back with it (`pglite-two-clients.test.ts`).
+    const live = liveTxConnection();
+    if (live !== undefined && issued.has(live)) return statement(driver, fragment);
     return turns.run(() => statement(driver, fragment));
   }
 
@@ -263,7 +276,7 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
         held = false;
         turn.release();
       };
-      return {
+      const connection: DbConnection = {
         query: async <T>(fragment: SqlFragment) => (await on(fragment)).rows as readonly T[],
         one: async <T>(fragment: SqlFragment) =>
           ((await on(fragment)).rows[0] as T | undefined) ?? null,
@@ -271,6 +284,8 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
         release,
         [Symbol.dispose]: release,
       };
+      issued.add(connection);
+      return connection;
     },
     async ping(): Promise<void> {
       await connect();

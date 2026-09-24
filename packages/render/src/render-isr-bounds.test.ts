@@ -3,7 +3,8 @@
 // cap or a TTL arrives non-finite, and nothing here touches tag invalidation or key derivation.
 
 import { describe, expect, test } from 'bun:test';
-import { createIsrController, memoryIsrStore } from './render-isr';
+import { createIsrController } from './render-isr';
+import { memoryIsrStore } from './render-isr-store';
 
 /**
  * A bound whose own value is `NaN` makes its guard read false: `map.size > NaN` is false for

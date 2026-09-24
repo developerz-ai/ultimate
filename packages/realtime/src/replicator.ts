@@ -14,7 +14,7 @@
 import { isWriteDigest, logger, uuid, withSpan } from '@ultimat3/core';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import type { Transport } from './fanout';
-import { type BackoffPolicy, backoffDelay, defaultBackoff, type Rng } from './thundering-herd';
+import { type BackoffPolicy, defaultBackoff, policyDelay, type Rng } from './thundering-herd';
 
 export const CHANGE_SUBJECT_PREFIX = 'x.change';
 
@@ -225,13 +225,16 @@ export function createReplicator(options: ReplicatorOptions): Replicator {
     },
 
     retryDelayMs(attempt: number): number {
-      return backoffDelay(attempt, backoff, options.rng ?? Math.random);
+      // This method's contract is 0-based (`retryDelayMs(0)` is the base); core counts from 1.
+      return policyDelay(backoff, attempt + 1, options.rng ?? Math.random);
     },
   };
 }
 
 /** Drops events the pipeline cannot use and hoists the tenant id out of the row. */
 export function normalize(change: ChangeEvent): ChangeEvent | null {
+  // The one change that carries no row by design; nothing to hoist a tenant out of.
+  if (change.op === 'truncate') return change;
   const row = change.after ?? change.before;
   if (!row) return null;
   if (change.op === 'insert' && change.after === null) return null;
@@ -253,7 +256,14 @@ export function parseEnvelope(payload: string): ChangeEnvelope | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
     const shape = parsed as Partial<ChangeEvent> & { seq?: unknown; producer?: unknown };
     if (typeof shape.entity !== 'string' || typeof shape.lsn !== 'string') return null;
-    if (shape.op !== 'insert' && shape.op !== 'update' && shape.op !== 'delete') return null;
+    if (
+      shape.op !== 'insert' &&
+      shape.op !== 'update' &&
+      shape.op !== 'delete' &&
+      shape.op !== 'truncate'
+    ) {
+      return null;
+    }
     return {
       change: {
         entity: shape.entity,

@@ -34,9 +34,8 @@ const isStatus = (status: number): boolean =>
 /**
  * The app's page for one status, or `undefined`.
  *
- * Read per REQUEST, never cached at boot, for `favicon.ts`'s reason: `x dev` is a running process
- * an author drops a file into, and a reader that captured "there was none" at startup would keep
- * answering the framework's page until the server was restarted.
+ * One read. How often it is asked is `errorPageHook`'s decision: per request under `x dev`, for
+ * `favicon.ts`'s reason, and once per status in a container.
  */
 export async function errorPageOverride(root: string, status: number): Promise<string | undefined> {
   if (!isStatus(status)) return undefined;
@@ -48,11 +47,24 @@ export async function errorPageOverride(root: string, status: number): Promise<s
  * `ServerHooks.errorPage`, bound to one app root. Installed by `startWeb` so `x dev` and the
  * container cannot answer a browser differently — the rule `assetRoutes` already holds for
  * `/favicon.ico`.
+ *
+ * `perRequest` is `x dev`'s: an author drops a file into a running process. A container's image
+ * cannot change under it, so there each status is read ONCE and kept — per request, a burst of 500s
+ * during an outage paid a file read each, on the path that was already failing (plan 101, 12 g).
  */
-export const errorPageHook =
-  (root: string) =>
-  (status: number): Promise<string | undefined> =>
-    errorPageOverride(root, status);
+export const errorPageHook = (root: string, options: { readonly perRequest: boolean }) => {
+  if (options.perRequest) {
+    return (status: number): Promise<string | undefined> => errorPageOverride(root, status);
+  }
+  const read = new Map<number, Promise<string | undefined>>();
+  return (status: number): Promise<string | undefined> => {
+    const known = read.get(status);
+    if (known !== undefined) return known;
+    const once = errorPageOverride(root, status);
+    read.set(status, once);
+    return once;
+  };
+};
 
 /**
  * The document that goes into a static export: the app's file if it has one, the framework's page

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isRetryable } from './gateway';
 import type { StreamChunk } from './provider';
+import { isTruncated } from './provider';
 import type { SseFrame } from './sse';
 import { MessageStream, parsePartialUsage, parseStopReason, parseUsage } from './wire';
 
@@ -41,9 +42,16 @@ describe('usage and stop reason', () => {
     expect(parsePartialUsage({ input_tokens: 'lots' })).toEqual({});
   });
 
-  test('an unknown stop reason falls back to end_turn rather than widening the union', () => {
+  // Fail CLOSED: an unknown reason read as `end_turn` parsed a truncated answer as complete. The
+  // one reason a context-window overflow reports is a member now, and every other unknown value is
+  // read as the truncation it may well be.
+  test('an unknown stop reason is read as a truncation, never as a finished answer', () => {
     expect(parseStopReason('refusal')).toBe('refusal');
-    expect(parseStopReason('something_new')).toBe('end_turn');
+    expect(parseStopReason('model_context_window_exceeded')).toBe('model_context_window_exceeded');
+    expect(parseStopReason('something_new')).toBe('max_tokens');
+    expect(isTruncated(parseStopReason('something_new'))).toBe(true);
+    expect(isTruncated('model_context_window_exceeded')).toBe(true);
+    expect(isTruncated('end_turn')).toBe(false);
   });
 
   test('a negative or non-finite token count is floored, never credited to the ledger', () => {

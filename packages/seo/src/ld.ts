@@ -9,8 +9,13 @@ export type JsonLd = Readonly<Record<string, unknown>>;
 
 export const LD_CONTEXT = 'https://schema.org';
 
-function required(type: string, field: string, value: string, hint: string): string {
-  if (value.trim() === '') throw ldInvalid(type, field, hint);
+/**
+ * `typeof` first: the value is read from a CMS, whose missing field is `null`, and `.trim()` on it
+ * was a bare `TypeError` in place of the coded refusal. The input TYPE says `string`; a CMS row
+ * does not read the type.
+ */
+function required(type: string, field: string, value: unknown, hint: string): string {
+  if (typeof value !== 'string' || value.trim() === '') throw ldInvalid(type, field, hint);
   return value;
 }
 

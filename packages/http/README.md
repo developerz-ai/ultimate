@@ -67,7 +67,7 @@ asserts the order; `/_x` renders it. Ordering rules worth restating:
 
 | Rule | Reason |
 |---|---|
-| admit second | a draining or saturated process refuses before any work — no route match, no auth, no body |
+| admit second | a stopped or saturated process refuses before any work — no route match, no auth, no body; a DRAINING one serves and closes the connection |
 | auth before rate-limit | limiter keys per actor/tenant, not per NAT address |
 | csrf after auth | only a caller holding an AMBIENT credential can be forged into; bearer and anonymous are exempt |
 | csrf before body | a forged write never makes the server allocate its payload |
@@ -80,7 +80,8 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | Guard | Answer |
 |---|---|
 | a body past `bodyLimitBytes` | read through the stream and abandoned the instant the running total crosses the limit — `content-length` or not, multipart included — as `X_BODY_INVALID` |
-| a request carrying an identity on an `auth: 'public'` route | `cache-control: private`, never `s-maxage`; an anonymous one is shared-cacheable and keyed `vary: accept-language, cookie, x-timezone`. **Whatever the handler wrote**, `As of 2026-08-23`: the `cache-headers` stage REVIEWS a declared `cache-control` instead of standing down, because `@ultimat3/render`'s `ssrHeaders` offers every page without a `policy` to a CDN for 30s. An `immutable` answer is left alone — a content-addressed body is a function of its URL |
+| a request carrying an identity on an `auth: 'public'` route | `cache-control: private`, never `s-maxage`; an anonymous one is shared-cacheable and keyed `vary: accept-language, cookie, x-timezone`. **Whatever the handler wrote**, `As of 2026-08-23`: the `cache-headers` stage REVIEWS a declared `cache-control` instead of standing down, because `@ultimat3/render`'s `ssrHeaders` offers every page without a `policy` to a CDN for 30s. An `immutable` answer is left alone — a content-addressed body is a function of its URL. **A declared hint too**, `As of 2026-09-23`: `meta.cache` / `ctx.cache` with `mode: 'public'` becomes `private` for a signed-in actor (`reviewedHint`) |
+| any 5xx whose code did not opt in with `registerProblemMeta({ CODE: { publicCause: true } })` | `As of 2026-09-23`, not only an undeclared one — `X_DB_STATEMENT_FAILED` has a status row and served the Postgres message and the SQL. The framework opts in `X_DRAINING`, `X_OVERLOADED`, `X_FLIGHT_GATE_OVERLOADED` and `X_TIMEOUT`, whose cause is the instruction. The rest: |
 | a 5xx nobody declared a status for | the code, the request id and a `fix:`; never the exception's own text. `error-page.ts` locked the browser out of it, and the problem document handed the same string to an agent — a driver's DSN, the row Postgres rejected. The real text goes to the log and the error report. `dev: true` renders it in full |
 | a `security.csp.extend` key that is not a CSP token, or a source carrying `;`, `,` or a space | `X_CSP_DIRECTIVE_INVALID` at `defineHttpConfig` — `{ 'x; script-src *': [] }` is a second directive nobody declared |
 | a repeated form field | a LIST, exactly as a repeated query parameter is. One collector for query, urlencoded and multipart; `Object.fromEntries` kept the last value, so a checkbox group reached the schema as one string |
@@ -97,7 +98,11 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | a credentialed unsafe method that cannot be shown to be same-origin | `X_CSRF_BLOCKED` (403). `sec-fetch-site: same-origin`, `Origin` equal to this app, or an EXACT listing in `cors.origins` — anything else is refused before the body is read. `origins: ['*']` lists nobody here: `'*'` is a value for the response header, not a per-origin allowance |
 | a request past `requestTimeoutMs` (30s) | `ctx.signal` aborts and the socket is answered `X_TIMEOUT` (504); a caller may shorten the deadline with `x-request-timeout-ms`, never lengthen it |
 | the caller going away mid-request | `ctx.signal` aborts on the inbound `Request.signal` too, so a closed tab unwinds cooperative work instead of holding its pool slot for the rest of the budget. Both halves are one signal (`AbortSignal.any`), and `requestTimeoutMs: 0` still delivers the caller's |
-| a request while the process is draining | `X_DRAINING` (503) + `retry-after`, which is what `isDraining()` was always documented to do here and had no reader for |
+| a request while the process is draining | SERVED, with `connection: close` so the client's next request lands on another pod, `As of 2026-09-23` — refusing it failed 598 of 7,690 requests across one helm upgrade on kind, every one on a kept-alive connection inside the readiness grace. Only a STOPPED process (resources closed) answers `X_DRAINING` (503) + `retry-after` |
+| SIGTERM | `/readyz` answers 503 at once, the listener stays open for `drain.readinessGraceMs` (core; 5000 ms outside development/test, 0 inside), then closes and the drain runs. Pass `createServer({ …, drain: appConfig.drain })` so `app.config.ts`'s value is the one applied; omitted, core's default holds and a `configureLifecycle({ readinessGraceMs })` stands |
+| `?locale=es` | the locale source that outranks the cookie and the header (`resolveLocale`'s order), `As of 2026-09-23` — documented in `wiki/I18n.md` and never read before |
+| a 4xx | logged at `warn` (401, 403, 429) or `info` (every other 4xx); only a 5xx is an `error` line |
+| an `x-forwarded-client-cert` value in quotes | unescaped ONCE, after the pairs are split — `Subject="O=Acme; Inc,CN=svc-one"` is that whole subject, not `O=Acme` |
 | a request past `maxInflight` (1000) | `X_OVERLOADED` (503) + `retry-after`, shed in the `admit` stage before any work |
 
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
@@ -354,6 +359,9 @@ import { registerErrorStatus, registerProblemMeta } from '@ultimat3/http';
 
 registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
 registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId', 'title', 'state'] });
+// A 5xx whose cause is written for the caller, and may be shown in production:
+registerProblemMeta({ X_BILLING_DOWN: { publicCause: true } });
+// Both at once: { keys: ['sessionId'], publicCause: true }
 ```
 
 The document then carries `meta: { sessionId, title, state }` — the declared keys that are set,
@@ -365,6 +373,15 @@ declared key is set — never `{}`. A framework-owned code is refused (`X_PROBLE
 as is `issues`, which has its own top-level home. `@ultimat3/action`'s typed client puts the
 member back on the rebuilt error's `meta`, so an island reads `error.meta.sessionId` where it
 used to run a regex over `cause`.
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `HttpError` | any `HttpErrorCode` — `HTTP_ERROR_CODES` | `src/errors.ts` |
 
 ## Boundaries
 

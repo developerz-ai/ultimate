@@ -18,6 +18,7 @@ import { describeJob } from './describe';
 import type { EnqueueResult } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import { IdempotencyRequiredError, JobNameTakenError } from './errors';
+import { JobDeclarationInvalidError } from './errors-declaration';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
@@ -178,13 +179,31 @@ interface JobOrigin {
 
 const origin = new WeakMap<object, JobOrigin>();
 
+/** The required fields a definition lacks, in declaration order. Read off the value, not the type. */
+function missingJobFields(definition: object): string[] {
+  const loose = definition as unknown as Readonly<Record<string, unknown>>;
+  const missing: string[] = [];
+  if (typeof loose['input'] !== 'object' || loose['input'] === null) missing.push('input');
+  if (typeof loose['idempotencyKey'] !== 'function') missing.push('idempotencyKey');
+  if (loose['tenant'] === undefined) missing.push('tenant');
+  if (typeof loose['retry'] !== 'object' || loose['retry'] === null) missing.push('retry');
+  if (typeof loose['run'] !== 'function') missing.push('run');
+  return missing;
+}
+
 export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
   anonymous += 1;
   const name = definition.name ?? `anonymous-job-${anonymous}`;
 
-  // Runtime backstops for generated code and JS callers; TS already forbids omitting either.
-  if (typeof definition.idempotencyKey !== 'function') {
-    throw new IdempotencyRequiredError({ job: name });
+  // Runtime backstops for generated code and JS callers; TS already forbids omitting any of them.
+  // Collected, never one at a time — see `JobDeclarationInvalidError`. The two fields with a code
+  // of their own keep it when they are the only thing missing: shipped codes keep their meaning.
+  const missing = missingJobFields(definition);
+  if (missing.length === 1 && missing[0] === 'idempotencyKey') {
+    throw new IdempotencyRequiredError({ job: name, positional: definition.name === undefined });
+  }
+  if (missing.length > 0 && !(missing.length === 1 && missing[0] === 'tenant')) {
+    throw new JobDeclarationInvalidError({ job: name, missing });
   }
   assertJobTenant(name, definition.tenant);
   assert(

@@ -47,7 +47,10 @@ export const SURFACE_SPECS = Object.freeze<Record<Surface, SurfaceSpec>>({
     defaultMode: null,
     allowedModes: [],
     jsBaselineBytes: 0,
-    mayImport: ['shared'],
+    // `app` too, measured the day this table became the rule: both tracked apps' `api/index.ts`
+    // and `api/tasks.ts` import the app slices' actions and jobs to register them. Both surfaces
+    // are server-only, so no browser bundle pays for the edge; `site` stays out.
+    mayImport: ['shared', 'app'],
     mayImportTypes: ['shared'],
   },
   shared: {
@@ -118,7 +121,11 @@ export function importGraph(
   return graph;
 }
 
-export type BoundaryRule = 'site-imports-app' | 'shared-is-a-leaf' | 'app-imports-api-at-runtime';
+export type BoundaryRule =
+  | 'site-imports-app'
+  | 'shared-is-a-leaf'
+  | 'app-imports-api-at-runtime'
+  | 'surface-imports-surface';
 
 export interface BoundaryViolation {
   readonly rule: BoundaryRule;
@@ -210,50 +217,57 @@ interface ClassifyInput {
   readonly chain: readonly string[];
 }
 
+/**
+ * One edge against `SURFACE_SPECS` — the table IS the rule. `mayImport` and `mayImportTypes` were
+ * read by nothing, so an `api → site`, `site → api` or `app → site` value import classified as no
+ * violation at all. The three pairs that had rules of their own keep them (and their codes); every
+ * other crossing the table does not allow is `surface-imports-surface`.
+ */
 function classify(i: ClassifyInput): BoundaryViolation | null {
   const chainText = i.chain.join(' → ');
+  const base = { entry: i.entry, importer: i.importer, imported: i.imported, chain: i.chain };
 
+  // Transitive, from the ENTRY: a site page reaching app/ through any number of hops.
   if (i.entrySurface === 'site' && i.importedSurface === 'app' && !i.typeOnly) {
     return {
+      ...base,
       rule: 'site-imports-app',
-      entry: i.entry,
-      importer: i.importer,
-      imported: i.imported,
-      chain: i.chain,
       cause: chainText,
       fix: `x fix boundary ${i.entry}   (or move ${i.imported} out of the shared graph)`,
     };
   }
+  const from = i.importerSurface;
+  const to = i.importedSurface;
+  if (from === null || to === null || from === to) return null;
+  const spec = SURFACE_SPECS[from];
+  if (spec.mayImport.includes(to)) return null;
+  if (i.typeOnly && spec.mayImportTypes.includes(to)) return null;
+  // Reported above, from the site entry that reaches it — one crossing, one finding.
+  if (from === 'site' && to === 'app' && !i.typeOnly) return null;
 
-  if (
-    i.importerSurface === 'shared' &&
-    (i.importedSurface === 'app' || i.importedSurface === 'site') &&
-    !i.typeOnly
-  ) {
+  if (from === 'shared' && !i.typeOnly) {
     return {
+      ...base,
       rule: 'shared-is-a-leaf',
-      entry: i.entry,
-      importer: i.importer,
-      imported: i.imported,
-      chain: i.chain,
       cause: `${chainText}  (shared/ is a leaf — it may not import a surface)`,
       fix: `move the shared part of ${i.imported} into shared/ and import it from ${i.importer}`,
     };
   }
-
-  if (i.importerSurface === 'app' && i.importedSurface === 'api' && !i.typeOnly) {
+  if (from === 'app' && to === 'api' && !i.typeOnly) {
     return {
+      ...base,
       rule: 'app-imports-api-at-runtime',
-      entry: i.entry,
-      importer: i.importer,
-      imported: i.imported,
-      chain: i.chain,
       cause: `${chainText}  (app/ → api/ is types-only)`,
       fix: `change to \`import type\` in ${i.importer} and call the typed client instead`,
     };
   }
-
-  return null;
+  const field = i.typeOnly ? 'mayImportTypes' : 'mayImport';
+  return {
+    ...base,
+    rule: 'surface-imports-surface',
+    cause: `${chainText}  (${from}/ may not import ${to}/${i.typeOnly ? ', even as a type' : ''}: SURFACE_SPECS.${from}.${field} is [${spec[field].join(', ')}])`,
+    fix: `move what ${i.importer} needs from ${i.imported} into shared/ and import it from there`,
+  };
 }
 
 /** Build-time gate. `x verify` and the dev server both call this. */

@@ -161,7 +161,7 @@ describe('a scrape port that is not a number', () => {
   });
 
   // `PORT_RANGE.min` is 0 across this package because 0 asks the kernel for a free port, which is
-  // what `dev-roles.ts` passes for an ephemeral boot and what this suite's own `beforeEach` uses.
+  // what `role-start.ts` passes for an ephemeral boot and what this suite's own `beforeEach` uses.
   test('port 0 still asks the kernel for one, and gets a real one', () => {
     const ephemeral = startMetricsEndpoint({ port: PORT_RANGE.min });
     try {

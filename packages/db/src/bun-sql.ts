@@ -5,6 +5,7 @@
 
 import { logger, renderThrowable } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
+import type { PoolProfile } from './pool-profile';
 
 /** One connection pinned out of `Bun.SQL`'s pool, released back by hand. */
 export interface BunSqlReserved {
@@ -72,3 +73,23 @@ export function bunSqlFactory(): BunSqlFactory {
   }
   return factory as BunSqlFactory;
 }
+
+/**
+ * What the pool is opened with. `prepare: false` is the load-bearing key: `Bun.SQL` prepares NAMED
+ * statements by default and caches them per connection, so after a migration that adds or drops a
+ * column every warm `select *` / `returning *` — every entity read and write — answered `0A000
+ * cached plan must not change result type` on every running pod until each connection closed.
+ * Reproduced on Postgres 17 (`client-prepared.live.test.ts`); PGlite uses unnamed statements, so
+ * `x dev` never showed it. Unnamed statements are also what PgBouncer's transaction mode needs.
+ *
+ * The cost, measured 2026-09-23 against Postgres 17 on loopback, 20,000 sends a side, `max: 4`:
+ * a primary-key `select *` went from p50 283-330µs to 370-432µs, an `update … returning *` from
+ * 733-744µs to 806-864µs — one extra parse per statement. Paid for correctness across a deploy.
+ */
+export const bunSqlPoolOptions = (
+  profile: Pick<PoolProfile, 'max' | 'idleTimeoutMs'>,
+): Readonly<Record<string, unknown>> => ({
+  max: profile.max,
+  idleTimeout: profile.idleTimeoutMs / 1000,
+  prepare: false,
+});

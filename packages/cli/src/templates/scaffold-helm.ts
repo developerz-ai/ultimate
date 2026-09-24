@@ -34,7 +34,7 @@ image:
 env:
   NODE_ENV: production
 
-existingSecret: ${app.kebab}-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET
+existingSecret: ${app.kebab}-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, ULTIMATE_CURSOR_SECRET
 
 # The scrape listener every serving role opens, on its own port and never the app's: the ingress
 # routes / to web, so /metrics beside /healthz on 3000 is /metrics on the internet. This is
@@ -51,6 +51,12 @@ securityContext:
   readOnlyRootFilesystem: true
   capabilities: { drop: [ALL] }
 
+# The stop sequence: out of the Service, then this preStop sleep (Kubernetes 1.30+ only), then
+# SIGTERM, then the framework's readiness grace and drain. terminationGracePeriodSeconds in
+# templates/deployments.yaml is sized to all three, so move them together.
+drain:
+  preStopSleepSeconds: 5
+
 # The release phase. Runs to completion before any serving role starts.
 migrate:
   enabled: true
@@ -63,8 +69,10 @@ migrate:
 # PORT: they differ for sync, which binds PORT + 1, and the chart derives the env from this number
 # so there is only ever one to move.
 #
-# Autoscaling is off until you wire a metrics adapter — each \`metric\` below is a Pods metric the
-# role exports, and an HPA with no adapter behind it reads <unknown> and holds at minReplicas.
+# Autoscaling is off until you wire a metrics adapter — each \`metric\` below is a series the role
+# exports, and an HPA with no adapter behind it reads <unknown> and holds at minReplicas.
+# \`type\` is Pods (the default: a per-pod series averaged across pods) or External (one series for
+# the whole role, divided by the replica count).
 roles:
   web:
     enabled: true
@@ -81,7 +89,14 @@ roles:
       targetAverageValue: "50"
 
   sync:
-    enabled: true
+    # OFF by default. A sync pod on a real database hears committed changes only from a replicator
+    # it can reach, and a fresh deploy has none: booted anyway it is refused (X_REALTIME_TOPOLOGY).
+    # To turn live queries and channels on: declare realtime: { enabled: true, transport: 'nats',
+    # urlEnv: 'NATS_URL' } in app.config.ts (a NATS_URL under transport 'memory' is refused, and
+    # 'nats' without it is too); run NATS and set the SAME NATS_URL for web, sync and the
+    # replicator; enable exactly one replicator (below) against a Postgres started with
+    # wal_level=logical and a publication for the entity tables; then set this to true.
+    enabled: false
     replicas: 2
     port: 3001
     resources:
@@ -104,6 +119,10 @@ roles:
       enabled: false
       minReplicas: 1
       maxReplicas: 50
+      # External: every worker publishes the SAME global backlog, so averaged as a Pods metric it
+      # asked for N times the workers the queue needed. Expose it from your adapter deduplicated —
+      # max(queue_depth), never sum, which would multiply it by the pod count again.
+      type: External
       metric: queue_depth       # jobs waiting, exported by the worker role
       targetAverageValue: "100"
 
@@ -112,9 +131,12 @@ roles:
     # Fixed 1, and a second replica is safe but pointless: leadership is an expiring row in
     # x_scheduler_leader, so the extra pod stands by.
     replicas: 1
+    # 512Mi, not 256Mi: a scaffolded app measured ~325 MiB at boot as ROLE=scheduler (2026-09-23),
+    # when every role still built the app's islands first; at 256Mi the pod was OOMKilled on every
+    # boot. Only web builds islands now, so the peak is lower but unmeasured, and the limit stays.
     resources:
       requests: { cpu: 50m, memory: 128Mi }
-      limits: { memory: 256Mi }
+      limits: { memory: 512Mi }
 
   replicator:
     enabled: false              # exactly one per database; enable when the change feed is in use

@@ -25,17 +25,17 @@ describe('unit · the generated app catalog index', () => {
     expect(source).toContain("locales: { en, 'zh-hant': zhHant }");
   });
 
-  test('en is always registered and always first, even if the caller omits or reorders it', () => {
-    // `default: 'en'` a few lines below requires `en` to be a registered locale — dropping it (a
-    // caller passing only the locales a scan happened to find, say) would emit a file that fails
-    // its own typecheck, so the template guarantees it rather than trusting every call site to.
-    expect(i18nIndex(['es'])).toContain('locales: { en, es }');
+  // Row p: `en` was FORCED into every index, so an app whose catalogs hold no `en.json` got an
+  // import of a file it does not have. `en` leads when it is there; otherwise the first tag does.
+  test('en is first when the app has it, and never imported when it does not', () => {
     expect(i18nIndex(['es', 'en'])).toContain('locales: { en, es }');
+    expect(i18nIndex(['es'])).toContain("defineCatalogs({ default: 'es', locales: { es } })");
+    expect(i18nIndex(['es'])).not.toContain('en.json');
   });
 
   test('locales are ordered deterministically so a diff shows only the locale a run actually added', () => {
     expect(i18nIndex(['es', 'fr', 'en'])).toContain('locales: { en, es, fr }');
-    expect(i18nIndex(['fr', 'es'])).toContain('locales: { en, es, fr }');
+    expect(i18nIndex(['fr', 'es', 'en'])).toContain('locales: { en, es, fr }');
   });
 
   test('the emitted module is parseable TypeScript for one locale or several', () => {

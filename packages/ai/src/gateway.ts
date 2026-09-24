@@ -76,6 +76,12 @@ export interface Gateway {
   scope<T>(input: { actorKey?: string; orgKey?: string }, fn: () => Promise<T>): Promise<T>;
   /** Accumulated cost of the ambient scope, or zero outside one. */
   spent(): Promise<Money>;
+  /**
+   * A ledger over this gateway's own `budget`, for a call made with no `scope()` open — which is
+   * every call `llm()` and `agent()` make. Optional so a hand-written gateway still satisfies the
+   * interface; absent, such a call runs under the ceilings its own declaration sets and no others.
+   */
+  callLedger?(): BudgetLedger;
 }
 
 export function createGateway(input: CreateGatewayInput): Gateway {
@@ -103,6 +109,18 @@ class GatewayImpl implements Gateway {
     finiteCount('createGateway', 'retry.attempts', this.retry.attempts, 1);
     this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.random = config.random;
+  }
+
+  /**
+   * `budget` held with no scope open. It was enforced ONLY inside `scope()`, which nothing in the
+   * framework calls — so `createGateway({ budget: { request: 100 } })` capped no call any app made.
+   * No actor or org key here: those scopes need `scope()` to name whose window they are.
+   */
+  callLedger(): BudgetLedger {
+    return new BudgetLedger({
+      limits: this.config.budget ?? {},
+      ...(this.config.budgetStore !== undefined ? { store: this.config.budgetStore } : {}),
+    });
   }
 
   scope<T>(input: { actorKey?: string; orgKey?: string }, fn: () => Promise<T>): Promise<T> {
@@ -135,7 +153,7 @@ class GatewayImpl implements Gateway {
     // Reserve against the ESTIMATE before spending anything — tokens AND money, since a
     // cheap-in-tokens call on an expensive model is still a cost cap the app declared.
     // `record` below replaces the estimate with the provider's real counts.
-    const ledger = currentBudget();
+    const ledger = currentBudget() ?? this.callLedger();
     // The estimate is DEBITED here, not merely checked: three concurrent calls under one ledger
     // all read the same `spent()` otherwise, all pass, and all three record against a ceiling
     // only one of them fitted.
@@ -178,7 +196,7 @@ class GatewayImpl implements Gateway {
     // `generate`, or reconnects itself and knows what it has already shown.
     const provider = this.providerFor(model);
 
-    const ledger = currentBudget();
+    const ledger = currentBudget() ?? this.callLedger();
     const reservation = await ledger?.reserve(estimateSpend(resolved));
     let settled = false;
     try {
@@ -319,6 +337,20 @@ export function backoffMs(policy: RetryPolicy, attempt: number, random?: Random)
  * package was how it stayed invisible. The `code` branch has no equivalent in core and stays here:
  * that table is HTTP status only, and a socket that timed out never produced one.
  */
+/**
+ * A transport that never produced a response. Node spells these `ETIMEDOUT`/`ECONNRESET`; Bun's
+ * `fetch` spells a refused, dropped or unopenable connection `ConnectionRefused`,
+ * `ConnectionClosed` and `FailedToOpenSocket` — which this list did not know, so on the one runtime
+ * the framework runs on a provider mid-restart was never retried.
+ */
+const RETRYABLE_TRANSPORT_CODES: ReadonlySet<string> = new Set([
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'ConnectionRefused',
+  'ConnectionClosed',
+  'FailedToOpenSocket',
+]);
+
 export function isRetryable(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   // A `Provider` is the APP's object, so the value it rejected with is one the framework did not
@@ -328,7 +360,7 @@ export function isRetryable(error: unknown): boolean {
   try {
     const e = error as { status?: unknown; code?: unknown };
     if (typeof e.status === 'number') return isRetryableStatus(e.status);
-    return e.code === 'ETIMEDOUT' || e.code === 'ECONNRESET';
+    return typeof e.code === 'string' && RETRYABLE_TRANSPORT_CODES.has(e.code);
   } catch {
     return false;
   }

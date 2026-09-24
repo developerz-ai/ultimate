@@ -12,9 +12,7 @@ import {
   type DbClient,
   db,
   type SqlFragment,
-  type TransactionOptions,
   withStatementAttribution,
-  withTransaction,
 } from '@ultimat3/db';
 import { aggregateColumnOf, aggregateMinor, assertOneUnit } from './aggregate';
 import { decodeAggregate } from './aggregate-decode';
@@ -37,18 +35,16 @@ import { notFound, repoClientPinned } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { bindValues, decodeRow, type PhysicalRow, physicalName, sortPrecision } from './pg-row';
+import { countStatement, type ReadShape, selectStatement } from './pg-sql';
 import {
   type AggregateRow,
   aggregateStatement,
   countByStatement,
-  countStatement,
   currenciesStatement,
   estimateStatement,
   type GroupRow,
   type MoneyUnitRow,
-  type ReadShape,
-  selectStatement,
-} from './pg-sql';
+} from './pg-sql-aggregate';
 import {
   type ConflictTarget,
   deleteStatement,
@@ -56,7 +52,7 @@ import {
   updateStatement,
 } from './pg-write-sql';
 import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
-import type { FindManyArgs, Repo, Transactor, UpsertArgs } from './repo';
+import type { FindManyArgs, Repo, UpsertArgs } from './repo';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
 import type { RowWrite } from './types';
@@ -483,17 +479,4 @@ export const postgresRepo = <Row>(
  */
 export const postgresDriver = (config: PostgresDriverOptions = {}): Driver => ({
   repo: <Row>(entity: EntityCore<Row>) => postgresRepo(entity, config),
-});
-
-/**
- * A real Postgres transaction behind the same `Transactor` the in-memory one implements. The
- * `Tx` handed to the callback is a token: repositories find the transaction through `db()`, so
- * nothing has to thread a connection through the call stack.
- */
-export const postgresTransactor = (options: TransactionOptions = {}): Transactor => ({
-  run: (work) =>
-    withTransaction(
-      (tx) => work({ id: tx.id, onRollback: (undo: () => void) => tx.onRollback(undo) }),
-      options,
-    ),
 });

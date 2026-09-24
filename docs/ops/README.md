@@ -26,7 +26,7 @@ Rung numbers are [`../idea/17-scale-ladder.md`](../idea/17-scale-ladder.md)'s �
 | Rung | You run | You deploy by | Costs you |
 |---|---|---|---|
 | **0–1 — PaaS** | one container per role on a managed platform, managed Postgres | pushing an image; the platform restarts | per-process pricing, and whatever datastore the platform does not sell |
-| **2 — one box + Compose** | [`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml), Postgres and NATS beside it or managed | `ssh` + `docker compose up -d` | the box is the availability story; a deploy is visible |
+| **2 — one box + Compose** | [`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml), Postgres and NATS beside it or managed | `ssh` + `docker compose up -d` | the box is the availability story; a deploy is visible — one published port has one binder, so there is no second replica to take traffic while the first drains. Invisible restarts are rung 3's claim, not this one's |
 | **3 — Kubernetes** | the Helm chart or the manifest set in [`01-kubernetes.md`](./01-kubernetes.md) | `git push` (GitOps) | a control plane, a secrets story, an on-call story |
 
 **You are on a PaaS or one box until something on this list is true.** Not before. A first app and a product with paying users are the same deployment — rung 0 is a free plan with no card — and the range that spans, small end to very large, is [`../idea/21-the-range.md`](../idea/21-the-range.md).
@@ -50,7 +50,7 @@ Two ways past it, in order of cost:
 | more `web`/`sync` on the same box | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica |
 | more `web`/`sync`, full stop | climb to rung 3; `docker/helm` already carries a per-role HPA and an ingress |
 
-**Set `SYNC_URL` on this rung**, `As of 2026-09-22` (21.0.0, unreleased). A page's one socket dials
+**Set `SYNC_URL` on this rung**, shipped in 21.0.0. A page's one socket dials
 `/_x/sync` on the page's own origin unless `SYNC_URL` says otherwise
 (`packages/cli/src/sync-url.ts`). Here `web` answers on 3000 and `sync` on 3001, with nothing in
 front to route between them, so write `SYNC_URL=ws://<host>:3001/_x/sync` (or `wss://`) into
@@ -84,15 +84,15 @@ pays for the control plane.
 
 | Artifact | State `As of 2026-08` |
 |---|---|
-| [`docker/Dockerfile`](../../docker/Dockerfile) | **this repo's own** image: multi-stage → `distroless/cc-debian12:nonroot`, one compiled binary, no shell, ~80MB |
+| [`docker/Dockerfile`](../../docker/Dockerfile) | **this repo's own** CLI image: multi-stage → `distroless/cc-debian13:nonroot`, one compiled binary, no shell, 184 MB (`docker images`, linux/amd64 — `/app/x` alone is 92 MB, because `--compile` bakes the Bun runtime in) |
 | the Dockerfile `x new` writes you | **not the same image.** `oven/bun:1.4-alpine`, `ENTRYPOINT ["bun", "apps/web/server.ts"]`, user `bun`, measured 194MB. Harden against *this* one — the uid and the shell differ, so the `runAsUser: 65532` baseline below does not transfer unchanged |
 | [`docker/docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) | one service per role, `migrate` gates `web` via `service_completed_successfully`; `web` and `sync` at `replicas: 1`, `worker` free |
-| [`docker/helm/`](../../docker/helm/) | per-role Deployments, per-role HPAs, a `pre-install,pre-upgrade` migrate Job, an optional Ingress |
-| `/healthz` and `/readyz` on every role | shipped — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts) |
+| [`docker/helm/`](../../docker/helm/) | per-role Deployments with a `startupProbe`, per-role HPAs, a `pre-install,pre-upgrade` migrate Job running as its own hook-created ServiceAccount (so a first `helm install` cannot wait on an account Helm has not made yet), an optional Ingress |
+| `/healthz` and `/readyz` on `web` and `sync` | shipped — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts). `worker`, `scheduler` and `replicator` open no HTTP socket; their only port is `/metrics` ([`01-kubernetes.md`](./01-kubernetes.md)) |
 | SIGTERM drain on every role | shipped — see [`../architecture/13-topology-runtime.md`](../architecture/13-topology-runtime.md) |
 | OTel-shaped tracing | **shipped, and exportable** — `otlpSpanExporter()` speaks OTLP/HTTP JSON to `OTEL_EXPORTER_OTLP_ENDPOINT`, head-based sampling included. The default stays a no-op, so nothing leaves the process until you wire it. gRPC `:4317` is refused; use the collector's `:4318`. No logs signal |
 | `/metrics` on any role | **shipped** — `METRICS_PATH` on `METRICS_PORT` (default 9090), never the app port. The chart declares the `metrics` containerPort on every role but `migrate`, publishes it on the Service, and ships a ServiceMonitor behind `serviceMonitor.enabled` (off by default: a cluster with no Prometheus operator has no such CRD) |
-| a custom-metrics adapter | **never shipped** — the chart's per-role HPAs target pod metrics (`rps`, `connections`, `queue_depth`), and turning scraped series into those is the cluster's job, not the framework's |
+| a custom-metrics adapter | **never shipped** — the chart's per-role HPAs target `rps` and `connections` as `Pods` metrics and `queue_depth` as an `External` one (every worker publishes the same global backlog, so it is one series for the fleet — expose it as `max`, never `sum`), and turning scraped series into those is the cluster's job, not the framework's |
 | `x logs` | listed as **planned** in `x --help` |
 
 That adapter row is load-bearing for [`03-observability.md`](./03-observability.md): the app emits

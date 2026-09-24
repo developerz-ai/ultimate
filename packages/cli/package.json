@@ -14,7 +14,8 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./serve": "./src/serve-entry.ts"
   },
   "bin": {
     "x": "./src/bin.ts"
@@ -60,7 +61,6 @@
     "@ultimat3/realtime": "21.0.0",
     "@ultimat3/render": "21.0.0",
     "@ultimat3/schema": "21.0.0",
-    "@ultimat3/scraping": "21.0.0",
     "@ultimat3/seo": "21.0.0",
     "@ultimat3/storage": "21.0.0",
     "@ultimat3/testing": "21.0.0",

@@ -5,7 +5,13 @@
 // importing this module never opens a socket.
 
 import { type Role, resolveRole } from '@ultimat3/core';
-import { type BunSqlDriver, type BunSqlReserved, bunSqlFactory, releaseReserved } from './bun-sql';
+import {
+  type BunSqlDriver,
+  type BunSqlReserved,
+  bunSqlFactory,
+  bunSqlPoolOptions,
+  releaseReserved,
+} from './bun-sql';
 import { connectionUrl } from './connection-url';
 // Deliberate cycle, the same shape as `client.ts ⇄ transaction.ts`: nothing here is referenced at
 // module evaluation, and both sides are `function` declarations, so hoisting covers the TDZ.
@@ -68,7 +74,7 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     if (driver !== undefined) return driver;
     const url = connectionUrl(options, profile);
     const Factory = bunSqlFactory();
-    driver = new Factory(url, { max: profile.max, idleTimeout: profile.idleTimeoutMs / 1000 });
+    driver = new Factory(url, bunSqlPoolOptions(profile));
     return driver;
   }
 

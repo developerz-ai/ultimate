@@ -31,8 +31,9 @@ export const stampPinKey = (path: string, version: string): string => `${path}@$
  * `AGENTS.md@3.0.0` is deliberately NOT here — that one is the defect the widening found.
  */
 export const VERSION_STAMP_PINS: Readonly<Record<string, string>> = {
-  'CLAUDE.md@2.0.0':
-    'a claim about a PAST release — "of the four known gaps named in CHANGELOG.md, all four are closed in 2.0.0" — dated because the closure was, not because the tree ships 2.0.0.',
+  // why: the same sentence, moved out of root CLAUDE.md (its pin, `CLAUDE.md@2.0.0`, left with it).
+  'docs/history/milestone-11.md@2.0.0':
+    'moved from root CLAUDE.md on 2026-09-23 (plan 101 slice 17 f), unchanged: a claim about a PAST release — "of the four known gaps named in CHANGELOG.md, all four are closed in 2.0.0" — dated because the closure was, not because the tree ships 2.0.0.',
   'docs/idea/16-app-targets.md@2.10.1':
     "TAURI's version, not this framework's. The sentence dates when Tauri was surveyed, and no `@ultimat3/*` package has ever declared 2.10.1.",
   'wiki/Building-Your-Own-Base.md@4.0.0':

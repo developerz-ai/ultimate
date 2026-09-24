@@ -17,6 +17,7 @@ import { dirname, join, normalize, relative } from 'node:path/posix';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
 import { checkSurfaceBoundary, importGraph, SURFACES } from '@ultimat3/render';
+import { scanRuntimeImports, stripShebang } from './import-scan';
 import type { Finding } from './output';
 import { hasPathSegment } from './path-segments';
 import { quoteArg } from './shell-quote';
@@ -27,6 +28,7 @@ export const BOUNDARY_CODES = [
   'X_BOUNDARY_APP_TO_API',
   'X_BOUNDARY_ROUTE_TO_DB',
   'X_BOUNDARY_SERVICE_TO_HTTP',
+  'X_BOUNDARY_SURFACE_IMPORT',
 ] as const;
 
 export type BoundaryCode = (typeof BOUNDARY_CODES)[number];
@@ -41,6 +43,8 @@ const CODE_OF: Readonly<Record<BoundaryRule, BoundaryCode>> = {
   'site-imports-app': 'X_BOUNDARY_SITE_TO_APP',
   'shared-is-a-leaf': 'X_BOUNDARY_SHARED_LEAF',
   'app-imports-api-at-runtime': 'X_BOUNDARY_APP_TO_API',
+  // Every other crossing `SURFACE_SPECS` does not allow: the table is the rule (`@ultimat3/render`).
+  'surface-imports-surface': 'X_BOUNDARY_SURFACE_IMPORT',
 };
 
 /**
@@ -68,16 +72,7 @@ const isDbSpecifier = (specifier: string): boolean =>
 const isHttpSpecifier = (specifier: string): boolean =>
   specifier === '@ultimat3/http' || /(^|[/:])https?($|\/)/.test(specifier);
 
-/** The transpiler rejects a shebang, and an app's `bin/` entry points legitimately have one. */
-export const stripShebang = (source: string): string =>
-  source.startsWith('#!') ? source.slice(source.indexOf('\n') + 1) : source;
-
-/** Bun's transpiler is the parser; a regex fallback would miss re-exports and dynamic imports. */
-export function scanRuntimeImports(file: SourceFile): readonly string[] {
-  const loader = file.path.endsWith('x') ? 'tsx' : 'ts';
-  const transpiler = new Bun.Transpiler({ loader });
-  return transpiler.scanImports(stripShebang(file.source)).map((entry) => entry.path);
-}
+export { scanRuntimeImports, stripShebang };
 
 const CANDIDATE_SUFFIXES = ['', '.ts', '.tsx', '/index.ts', '/index.tsx'] as const;
 

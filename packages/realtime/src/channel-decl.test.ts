@@ -8,6 +8,7 @@ import { recordProjection } from '@ultimat3/entity/record';
 import { type ChannelEntity, channel } from './channel-decl';
 import { channelRef } from './channel-ref';
 import { clearChannels } from './channel-registry';
+import { OPEN_POLICY } from './policy-fake';
 
 const posts = entity('channel_decl_posts', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 80 }) },
@@ -23,6 +24,7 @@ const ORG = '00000000-0000-7000-8000-0000000000a1';
 const feed = channel('org-feed', {
   params: ['orgId'],
   catchUp: { name: 'orgFeed' },
+  policy: OPEN_POLICY,
   records: [posts],
 });
 
@@ -37,7 +39,11 @@ const codeOf = (run: () => unknown): string => {
 
 describe('channel()', () => {
   test('the topic is the name then each param, in declared order', () => {
-    const pair = channel('dm', { params: ['a', 'b'], catchUp: { name: 'dm' } });
+    const pair = channel('dm', {
+      params: ['a', 'b'],
+      catchUp: { name: 'dm' },
+      policy: OPEN_POLICY,
+    });
     expect(String(pair.topic({ a: 'x', b: 'y' }))).toBe('dm.x.y');
     expect(String(pair.topic({ b: 'y', a: 'x' }))).toBe('dm.x.y');
     expect(feed.catchUp).toBe('orgFeed');
@@ -60,7 +66,12 @@ describe('channel()', () => {
 
   test('a param no listed entity has as a column is a declaration error', () => {
     const run = () =>
-      channel('tag-feed', { params: ['orgId'], catchUp: { name: 'tags' }, records: [tags] });
+      channel('tag-feed', {
+        params: ['orgId'],
+        catchUp: { name: 'tags' },
+        policy: OPEN_POLICY,
+        records: [tags],
+      });
     expect(codeOf(run)).toBe('X_CHANNEL_DECLARATION_INVALID');
   });
 
@@ -71,14 +82,30 @@ describe('channel()', () => {
       $schema: { node: { kind: 'object' } },
     } as unknown as ChannelEntity;
     expect(
-      codeOf(() => channel('x', { params: [], catchUp: { name: 'q' }, records: [fake] })),
+      codeOf(() =>
+        channel('x', { params: [], catchUp: { name: 'q' }, policy: OPEN_POLICY, records: [fake] }),
+      ),
     ).toBe('X_CHANNEL_DECLARATION_INVALID');
-    expect(codeOf(() => channel('a.b', { params: [], catchUp: { name: 'q' } }))).toBe(
-      'X_CHANNEL_DECLARATION_INVALID',
-    );
-    expect(codeOf(() => channel('x', { params: ['a', 'a'], catchUp: { name: 'q' } }))).toBe(
-      'X_CHANNEL_DECLARATION_INVALID',
-    );
+    expect(
+      codeOf(() => channel('a.b', { params: [], catchUp: { name: 'q' }, policy: OPEN_POLICY })),
+    ).toBe('X_CHANNEL_DECLARATION_INVALID');
+    expect(
+      codeOf(() =>
+        channel('x', { params: ['a', 'a'], catchUp: { name: 'q' }, policy: OPEN_POLICY }),
+      ),
+    ).toBe('X_CHANNEL_DECLARATION_INVALID');
+  });
+
+  // A channel with no policy let any socket — anonymous included — join with any param and receive
+  // every committed row. An action and a query already require one; a public channel says so.
+  test('a channel with no policy is refused, by type and at runtime', () => {
+    const run = () =>
+      // @ts-expect-error — `policy` is required; `allow('public')` is how a public channel says so
+      channel('no-policy', { params: [], catchUp: { name: 'q' } });
+    expect(codeOf(run)).toBe('X_CHANNEL_DECLARATION_INVALID');
+    const ref = channelRef('no-policy-ref', { params: [], catchUp: { name: 'q' } });
+    // @ts-expect-error — the server half of a ref declares its policy too
+    expect(codeOf(() => channel(ref, { records: [posts] }))).toBe('X_CHANNEL_DECLARATION_INVALID');
   });
 
   test('paramsOf reads each param off the row property of the same name', () => {
@@ -92,7 +119,7 @@ describe('channel()', () => {
 describe('catchUp', () => {
   test('the query name is read per access, so a name stamped at boot is the one used', () => {
     const late = { name: '' };
-    const decl = channel('late', { params: [], catchUp: late });
+    const decl = channel('late', { params: [], catchUp: late, policy: OPEN_POLICY });
     late.name = 'stampedAtBoot';
     expect(decl.catchUp).toBe('stampedAtBoot');
   });
@@ -101,7 +128,7 @@ describe('catchUp', () => {
 describe('channelRef + channel(ref, …)', () => {
   test('the ref an island holds and the declaration the server registers spell one topic', () => {
     const ref = channelRef('ref-feed', { params: ['orgId'], catchUp: { name: 'refFeedRead' } });
-    const declared = channel(ref, { records: [posts] });
+    const declared = channel(ref, { policy: OPEN_POLICY, records: [posts] });
     expect(declared.topic({ orgId: ORG })).toBe(ref.topic({ orgId: ORG }));
     expect(declared.params).toBe(ref.params);
     expect(declared.catchUp).toBe('refFeedRead');
@@ -110,8 +137,10 @@ describe('channelRef + channel(ref, …)', () => {
 
   test('a ref registers nothing: only the server half is a declaration', () => {
     channelRef('ref-only', { params: [], catchUp: { name: 'x' } });
-    expect(codeOf(() => channel('ref-only', { params: [], catchUp: { name: 'x' } }))).toBe(
-      'did not throw',
-    );
+    expect(
+      codeOf(() =>
+        channel('ref-only', { params: [], catchUp: { name: 'x' }, policy: OPEN_POLICY }),
+      ),
+    ).toBe('did not throw');
   });
 });

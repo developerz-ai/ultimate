@@ -91,7 +91,7 @@ leaked connection discovered under load.
 
 ## The same pattern outside the database
 
-Realtime read hooks are `Disposable` too, the same aliasing trick. In 21.0.0 (unreleased) the
+Realtime read hooks are `Disposable` too, the same aliasing trick. In 21.0.0 the
 accessors `useQuery` and `useRecord` return set `[Symbol.dispose]` to the exact same function as
 `release()`, so `using feed = useQuery(...)` (`packages/realtime/src/use-query.ts`) tears a
 subscription down on scope exit the same way a `using

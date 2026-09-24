@@ -77,7 +77,9 @@ describe('unit · digest window', () => {
       (await store.append({ slot, event, windowMs: 1_000, now: new Date(2_000) })).opened,
     ).toBe(true);
 
-    // Draining closes the bucket, and a drained slot answers empty rather than undefined.
+    // The re-opened window sits BESIDE the sealed one; it used to replace it, and the two events
+    // the first window held were never delivered. Oldest first, then the newer window, then empty.
+    expect(await store.drain(slot)).toHaveLength(2);
     expect(await store.drain(slot)).toHaveLength(1);
     expect(await store.drain(slot)).toEqual([]);
     store.clear();

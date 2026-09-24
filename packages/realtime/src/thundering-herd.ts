@@ -3,12 +3,12 @@
 //
 // Three mechanisms, in the order they fire:
 //   1. drainPlan()    — the draining node assigns each client a distinct delay slot before closing
-//   2. backoffDelay() — the client's own jittered retry, for failures nobody scheduled
+//   2. policyDelay()  — the client's own jittered retry, for failures nobody scheduled
 //   3. AcceptBudget   — the receiving node's token bucket, so recovery sheds instead of collapsing
 
 import {
+  backoffDelay,
   type Clock,
-  backoffDelay as coreBackoffDelay,
   finiteOption,
   type JitterMode,
   type Random,
@@ -59,20 +59,21 @@ export const browserBackoff: BackoffPolicy = {
 };
 
 /**
- * Attempt is 0-BASED. Result is always in `[0, maxMs]`.
+ * A {@link BackoffPolicy} mapped onto `@ultimat3/core`'s `backoffDelay` — the one curve. Attempt is
+ * 1-BASED, core's count: the wait after the first failure is `attempt: 1` and is `baseMs`.
  *
- * The arithmetic is core's, and `attempt + 1` is the WHOLE of the seam: a client counts its first
- * reconnect as attempt 0 and core counts the first wait as attempt 1, so dropping the shift would
- * double every reconnect delay in the framework — silently, and only under the load this file
- * exists to survive. `thundering-herd-core-parity.test.ts` pins the numbers.
+ * Internal to this package and never re-exported from the barrel. Until 22.0.0 `.` exported a
+ * 0-based `backoffDelay` of its own that shifted by one before delegating, which made two counting
+ * conventions under one name — and a caller that passed a 1-based count to it (the channel
+ * catch-up retry did) waited twice as long as it meant to, with no error anywhere.
  */
-export function backoffDelay(
+export function policyDelay(
+  policy: BackoffPolicy,
   attempt: number,
-  policy: BackoffPolicy = defaultBackoff,
   rng: Rng = Math.random,
 ): number {
-  return coreBackoffDelay({
-    attempt: attempt + 1,
+  return backoffDelay({
+    attempt,
     base: policy.baseMs,
     max: policy.maxMs,
     factor: policy.factor,

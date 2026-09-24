@@ -1,6 +1,7 @@
 // `/admin` — the dashboard. `ssr`, not `spa`: the shell has data to render (the nav this actor may
 // open, and the decision behind every operation), and a `spa` shell would ship that decision to the
-// browser to be asked again. The component is `async` because a route has no `load` seam.
+// browser to be asked again. Every resource's screen is the route's `load`, resolved once per
+// render.
 //
 // The route's `policy` is the coarse gate; it is NOT what makes the dashboard view-only. That is
 // `admin:read` without `admin:write`, decided per operation by `policy.ts` — one decision that both
@@ -11,7 +12,7 @@ import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { currentAdminActor } from './actor';
 import { admin } from './admin';
-import { resourceScreen, visibleNavFor } from './screen';
+import { type ResourceScreen, resourceScreen, visibleNavFor } from './screen';
 import { AdminShell, ResourceView } from './views';
 import styles from './views.module.scss';
 
@@ -26,14 +27,15 @@ export const config = defineRoute({
   // read from the admin route table rather than typed here: one URL, one declaration.
   policy: route.policy,
   budget: { js: '0kb', lcp: 3000 },
+  load: async (): Promise<{ readonly screens: readonly ResourceScreen[] }> => ({
+    screens: await Promise.all(admin.resources.map((resource) => resourceScreen(resource.name, 5))),
+  }),
   meta: () => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
 });
 
-export async function Page() {
+export function Page(props: { readonly data: { readonly screens: readonly ResourceScreen[] } }) {
   const { actor } = currentAdminActor();
-  const screens = await Promise.all(
-    admin.resources.map((resource) => resourceScreen(resource.name, 5)),
-  );
+  const { screens } = props.data;
 
   return (
     <AdminShell

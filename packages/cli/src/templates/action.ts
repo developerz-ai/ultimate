@@ -15,15 +15,19 @@ import { wrapImport } from './wrap';
  * (ai-maxxing's `fleet`, with `HostNotFoundError` and `SessionNotFoundError`) declares the errors
  * it has and not this one. Importing it anyway is a file that fails at import.
  */
-const missingLookup = (feature: NameSet): string =>
-  `    // No lookup by id: ../errors declares no ${feature.pascal}NotFoundError, and a row that is not
+const missingLookup = (feature: NameSet, entity: boolean): string =>
+  entity
+    ? `    // No lookup by id: ../errors declares no ${feature.pascal}NotFoundError, and a row that is not
     // there needs one to be thrown for it. Declare it there — the shape \`x g resource\` writes —
-    // then read the row through ../repo and throw it when the read answers nothing.`;
+    // then read the row through ../repo and throw it when the read answers nothing.`
+    : `    // No lookup by id: this feature has no entity, and a generator writing into a slice never
+    // invents one. \`x g entity ${feature.kebab}\` declares the table; this body is yours until then.`;
 
 const actionSource = (
   name: NameSet,
   feature: NameSet,
   lookup: boolean,
+  entity: boolean,
 ): string => `// ${name.camel}: one mutation, server-authoritative. Input is validated before the handler runs
 // and the policy is the same object the MCP tool and the HTTP route evaluate.
 // \`t\` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
@@ -40,14 +44,15 @@ export const ${name.camel} = action({
   output: t.object({ id: t.uuid${lookup ? ', title: t.string' : ''} }),
   policy: can${feature.pascal}Write,
   cache: { invalidates: [${feature.camel}Tag] },
-  mcp: { expose: true, description: '${name.raw} — edit this description' },
+  // No \`mcp\`: a tool's description is what an agent reads to decide to call it, and a placeholder
+  // there is worse than no tool. Write one, then \`mcp: { expose: true, description: '…' }\`.
   async handle({ input }) {
 ${
   lookup
     ? `    const row = await repo.byId(input.id);
     if (row === undefined) throw new ${feature.pascal}NotFoundError({ id: input.id });
     return { id: row.id, title: row.title };`
-    : `${missingLookup(feature)}
+    : `${missingLookup(feature, entity)}
     return { id: input.id };`
 }
   },
@@ -58,6 +63,7 @@ const mutatorSource = (
   name: NameSet,
   feature: NameSet,
   lookup: boolean,
+  entity: boolean,
 ): string => `// ${name.camel}: an action with an optimistic local twin. The local half runs against the client
 // store immediately; the server half is authoritative and reconciles on conflict.
 
@@ -74,7 +80,7 @@ export const ${name.camel} = mutator({
   input: t.object({ id: t.uuid, orgId: t.uuid, title: t.string }),
   output: t.object({ id: t.uuid, title: t.string }),
   policy: can${feature.pascal}Write,
-  mcp: { expose: true, description: '${name.raw} — edit this description' },
+  // No \`mcp\` until a real description is written: see \`x g action\`.
   // tx.table(name) rather than tx.${feature.plural}: the typed accessor exists only once the app
   // augments LocalTables, and generated code cannot assume that has happened yet. The name is the
   // entity's snake_case table, so the local twin and the server row live under one key.
@@ -90,7 +96,7 @@ ${
     ? `    const row = await repo.byId(input.id);
     if (row === undefined) throw new ${feature.pascal}NotFoundError({ id: input.id });
     return { id: row.id, title: input.title };`
-    : `${missingLookup(feature)}
+    : `${missingLookup(feature, entity)}
     return { id: input.id, title: input.title };`
 }
   },
@@ -190,11 +196,10 @@ contractTest('${name.camel} denies a foreign org', async () => {
   expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 
-contractTest('${name.camel} projects one tool and one operation', () => {
-  // Same policy object on both surfaces — an MCP call cannot reach a different authz path.
-  expect(target.tool().policy).toBe(target.policy);
-  expect(target.tool().description).not.toBe('');
+// No MCP tool until it is described: a placeholder description misleads the agent reading it.
+contractTest('${name.camel} projects one operation and no tool', () => {
   expect(target.openapi().operationId).toBe('${name.camel}');
+  expect(target.mcp?.expose ?? false).toBe(false);
 });
 `;
 
@@ -207,6 +212,12 @@ export interface ActionOptions extends FeatureTarget {
    * `sliceExports` finds it there.
    */
   readonly sliceErrors?: string;
+  /**
+   * The slice's `entity.ts`, or absent when the feature has none. Absent, the action reads no row
+   * and the generator writes no entity — only `x g entity` and `x g resource` create a feature's
+   * data. `x g resource` passes the entity it is writing in the same run.
+   */
+  readonly sliceEntity?: string;
 }
 
 export function actionFiles(rawName: string, target: ActionOptions): readonly GeneratedFile[] {
@@ -214,19 +225,22 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
   const feature = names(target.feature);
   const dir = `${target.surfaceDir}/${target.feature}/actions`;
   const isMutator = target.mutator === true;
+  const entity = target.sliceEntity !== undefined;
   const lookup =
-    target.sliceErrors === undefined ||
-    sliceExports(target.sliceErrors, `${feature.pascal}NotFoundError`);
+    entity &&
+    (target.sliceErrors === undefined ||
+      sliceExports(target.sliceErrors, `${feature.pascal}NotFoundError`));
   return [
     // The three slice modules this action's source imports — `../errors`, `../policy`, `../repo`
     // (which comes with `../entity`, its row type). Composed rather than assumed: `x g action`
     // into a slice no `x g resource` had created emitted all three imports and wrote none of them.
-    ...sliceFoundation(target, ['entity', 'policy', 'errors']),
+    // With no entity, only the policy: a lookup-free body imports neither ../errors nor ../repo.
+    ...sliceFoundation(target, entity ? ['entity', 'policy', 'errors'] : ['policy']),
     {
       path: `${dir}/${name.kebab}.ts`,
       contents: isMutator
-        ? mutatorSource(name, feature, lookup)
-        : actionSource(name, feature, lookup),
+        ? mutatorSource(name, feature, lookup, entity)
+        : actionSource(name, feature, lookup, entity),
     },
     // TWO test files, because the gate types a test by its FILENAME and this declaration owes two
     // suites: the input parse is a `unit` assertion and the three projections are `contract` ones.

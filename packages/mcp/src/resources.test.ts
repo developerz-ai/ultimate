@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
+import { promptListEntry } from './prompts-get';
 import type { FrameworkResourceProviders, McpResource } from './resources';
 import {
   frameworkResources,
@@ -15,10 +16,13 @@ import {
 
 describe('promptFromPath', () => {
   test('the name is the filename, version suffix included, extension stripped', () => {
-    expect(promptFromPath('apps/web/app/posts/prompts/summarize.v3.md')).toEqual({
+    const prompt = promptFromPath('apps/web/app/posts/prompts/summarize.v3.md');
+    expect(prompt).toMatchObject({
       name: 'summarize.v3',
       description: 'Versioned prompt artifact: apps/web/app/posts/prompts/summarize.v3.md',
     });
+    // The body is read from the file when `prompts/get` asks, never at declaration.
+    expect(typeof prompt.read).toBe('function');
   });
 
   test('summarize.v2 and summarize.v3 are two different prompts', () => {
@@ -44,7 +48,9 @@ describe('promptFromPath', () => {
 
 describe('toPrompts', () => {
   test('a string is authored into a prompt via promptFromPath', () => {
-    expect(toPrompts(['prompts/greet.md'])).toEqual([promptFromPath('prompts/greet.md')]);
+    expect(toPrompts(['prompts/greet.md']).map(promptListEntry)).toEqual([
+      promptListEntry(promptFromPath('prompts/greet.md')),
+    ]);
   });
 
   test('an object is already the wire shape and passes through unchanged', () => {
@@ -55,7 +61,10 @@ describe('toPrompts', () => {
   test('mixed input preserves order', () => {
     const authored = { name: 'custom', description: 'hand-written' };
     const result = toPrompts(['prompts/greet.md', authored]);
-    expect(result).toEqual([promptFromPath('prompts/greet.md'), authored]);
+    expect(result.map(promptListEntry)).toEqual([
+      promptListEntry(promptFromPath('prompts/greet.md')),
+      authored,
+    ]);
   });
 });
 

@@ -34,12 +34,8 @@ import { loadApp } from './app-load';
 import { appManifest, policyFacts } from './app-manifest';
 import { runVerify, VERIFY_STEPS } from './cmd-verify';
 import { declareDevEnvironment } from './dev-environment';
-import type { RunningServices } from './dev-runtime';
-import { startServices } from './dev-runtime';
-import type { DevServices, Env } from './dev-services';
-import { resolveServices } from './dev-services';
 import { loadCodeFixes } from './error-fixes';
-import { CliNotImplementedError } from './errors';
+import { BadFlagError, CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import { databaseTarget } from './mcp-db-target';
@@ -48,6 +44,10 @@ import { parseBunTest } from './mcp-test-output';
 import { type UiCapabilities, uiCapabilities } from './mcp-ui';
 import { readMigrations } from './migrations';
 import { retryMemo } from './retry-memo';
+import type { DevServices, Env } from './runtime-bindings';
+import { resolveServices } from './runtime-bindings';
+import type { RunningServices } from './runtime-services';
+import { startServices } from './runtime-services';
 import { testEnvOverrides } from './test-dotenv';
 
 export interface DevHostInput {
@@ -180,6 +180,24 @@ export async function readOnlyRows(
   return { columns, rows: kept.map((row) => columns.map((column) => row[column])), guards };
 }
 
+/**
+ * `bun test`'s argv for a `test.run` filter. A filter is a PATH, and one starting with `-` is a
+ * `bun test` flag — `--preload ./x.ts` loads a module into the child — so it is refused rather
+ * than forwarded: a filter is a path, and no path this suite has starts with `-`.
+ */
+export function testRunArgv(filter: string | undefined): readonly string[] {
+  if (filter === undefined) return ['bun', 'test'];
+  if (filter.trimStart().startsWith('-')) {
+    throw new BadFlagError({
+      flag: 'filter',
+      command: 'mcp serve',
+      reason: `test.run's filter "${filter}" starts with "-", which bun test would read as its own flag`,
+      fix: 'call test.run with a path filter such as packages/cli/src, or with no filter',
+    });
+  }
+  return ['bun', 'test', filter];
+}
+
 function capabilities(
   input: DevHostInput,
   lazy: LazyServices,
@@ -249,13 +267,10 @@ function capabilities(
       // Same leak the CLI's own `x test`/`x verify` had: `.env.development` auto-loaded into
       // THIS process must not ride along into the `bun test` child the dev MCP server spawns.
       const envOverrides = testEnvOverrides(root, env);
-      const result = await runner(
-        filter === undefined ? ['bun', 'test'] : ['bun', 'test', filter],
-        {
-          cwd: root,
-          ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
-        },
-      );
+      const result = await runner(testRunArgv(filter), {
+        cwd: root,
+        ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
+      });
       return parseBunTest(execOutput(result), result.durationMs);
     },
 

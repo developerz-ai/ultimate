@@ -16,6 +16,10 @@ import {
 
 const URL = 'nats://bus.test:4222';
 
+/** What `app.config.ts` says, which is what a boot hands the selector. */
+const MEMORY = { transport: 'memory', urlEnv: undefined } as const;
+const NATS = { transport: 'nats', urlEnv: 'NATS_URL' } as const;
+
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
 
@@ -36,13 +40,16 @@ function onBus(env: Record<string, string | undefined>): {
   const broker = new FakeNatsBroker();
   return {
     broker,
-    selection: selectTransport(env, { clock: frozenClock(0), connect: fakeNatsConnect(broker) }),
+    selection: selectTransport(env, NATS, {
+      clock: frozenClock(0),
+      connect: fakeNatsConnect(broker),
+    }),
   };
 }
 
 describe('selectTransport', () => {
-  test('an unset NATS_URL is the in-process transport, and says what would change it', () => {
-    const selection = selectTransport({});
+  test('memory with no bus url is the in-process transport, and says what would change it', () => {
+    const selection = selectTransport({}, MEMORY);
 
     expect(selection.transport).toBeInstanceOf(InProcessTransport);
     expect(selection.mode).toBe('embedded');
@@ -52,11 +59,11 @@ describe('selectTransport', () => {
   });
 
   test('a blank NATS_URL is unset, not a url', () => {
-    expect(selectTransport({ NATS_URL: '   ' }).mode).toBe('embedded');
+    expect(selectTransport({ NATS_URL: '   ' }, MEMORY).mode).toBe('embedded');
   });
 
-  test('NATS_URL selects the bus, and reports the key rather than the credential', () => {
-    const selection = selectTransport({ NATS_URL: 'nats://user:secret@bus.test:4222' });
+  test('nats reads the url, and reports the key rather than the credential', () => {
+    const selection = selectTransport({ NATS_URL: 'nats://user:secret@bus.test:4222' }, NATS);
 
     expect(selection.transport).toBeInstanceOf(NatsTransport);
     expect(selection.mode).toBe('external');
@@ -65,20 +72,26 @@ describe('selectTransport', () => {
   });
 
   test('the bucket defaults, and NATS_KV_BUCKET names another one', () => {
-    expect(selectTransport({ NATS_URL: URL }).bucket).toBe(DEFAULT_PRESENCE_BUCKET);
-    expect(selectTransport({ NATS_URL: URL, NATS_KV_BUCKET: 'postly' }).bucket).toBe('postly');
+    expect(selectTransport({ NATS_URL: URL }, NATS).bucket).toBe(DEFAULT_PRESENCE_BUCKET);
+    expect(selectTransport({ NATS_URL: URL, NATS_KV_BUCKET: 'postly' }, NATS).bucket).toBe(
+      'postly',
+    );
   });
 
   test('a bucket name that cannot be a subject is refused at selection, not at first write', () => {
-    const error = caught(() => selectTransport({ NATS_URL: URL, NATS_KV_BUCKET: 'x.presence' }));
+    const error = caught(() =>
+      selectTransport({ NATS_URL: URL, NATS_KV_BUCKET: 'x.presence' }, NATS),
+    );
 
     expect(codeOf(error)).toBe('X_TRANSPORT_PROTOCOL');
     expect(isUltimateError(error) ? error.fix : '').toContain('NATS_KV_BUCKET');
   });
 
   test('the presence TTL travels with the transport that derived the bucket age from it', () => {
-    expect(selectTransport({}).presenceTtlMs).toBe(DEFAULT_PRESENCE_TTL_MS);
-    expect(selectTransport({ NATS_URL: URL }, { presenceTtlMs: 5_000 }).presenceTtlMs).toBe(5_000);
+    expect(selectTransport({}, MEMORY).presenceTtlMs).toBe(DEFAULT_PRESENCE_TTL_MS);
+    expect(selectTransport({ NATS_URL: URL }, NATS, { presenceTtlMs: 5_000 }).presenceTtlMs).toBe(
+      5_000,
+    );
   });
 
   test('selection is pure: constructing the bus touches no socket until connect()', async () => {
@@ -105,10 +118,11 @@ describe('selectTransport', () => {
     // Above the bucket's own one-minute floor on purpose: at the default the floor alone would
     // satisfy this, and a TTL that never reached the transport would still read as correct.
     const broker = new FakeNatsBroker();
-    const selection = selectTransport(
-      { NATS_URL: URL },
-      { presenceTtlMs: 120_000, clock: frozenClock(0), connect: fakeNatsConnect(broker) },
-    );
+    const selection = selectTransport({ NATS_URL: URL }, NATS, {
+      presenceTtlMs: 120_000,
+      clock: frozenClock(0),
+      connect: fakeNatsConnect(broker),
+    });
     await selection.connect();
 
     // Nanoseconds, and never below the presence TTL: a bucket that aged out first would drop a
@@ -119,7 +133,49 @@ describe('selectTransport', () => {
   });
 
   test('an embedded connect() resolves: there is nothing to reach', async () => {
-    await selectTransport({}).connect();
+    await selectTransport({}, MEMORY).connect();
+  });
+
+  test('the url is read from the variable urlEnv NAMES, never from a literal NATS_URL', () => {
+    const topology = { transport: 'nats', urlEnv: 'BUS_URL' } as const;
+    const selection = selectTransport({ BUS_URL: URL }, topology);
+
+    expect(selection.mode).toBe('external');
+    expect(selection.detail).toBe('BUS_URL');
+    // NATS_URL alone is not the variable this app named, so it selects nothing.
+    const error = caught(() => selectTransport({ NATS_URL: URL }, topology));
+    expect(codeOf(error)).toBe('X_CONFIG_INVALID');
+  });
+
+  // The dangerous direction: the config promises a bus, the env has none, and the in-process
+  // transport it used to fall back to reaches no other node with no error on either side.
+  test('nats with its variable unset refuses the boot, naming the key and the variable', () => {
+    for (const env of [{}, { NATS_URL: '  ' }]) {
+      const error = caught(() => selectTransport(env, NATS));
+      expect(codeOf(error)).toBe('X_CONFIG_INVALID');
+      const said = isUltimateError(error) ? `${error.cause} ${error.fix}` : '';
+      expect(said).toContain('realtime.urlEnv');
+      expect(said).toContain('NATS_URL');
+    }
+  });
+
+  // An operator who set NATS_URL expected fanout across nodes. A config that says `memory` would
+  // quietly keep every change inside this process — so the two are refused, never reconciled.
+  test('memory with a bus url set is a conflict, refused rather than silently ignored', () => {
+    const error = caught(() => selectTransport({ NATS_URL: URL }, MEMORY));
+
+    expect(codeOf(error)).toBe('X_CONFIG_INVALID');
+    const said = isUltimateError(error) ? `${error.cause} ${error.fix}` : '';
+    expect(said).toContain('realtime.transport');
+    expect(said).toContain('NATS_URL');
+    expect(said).not.toContain('bus.test'); // the key, never the credential-bearing value
+  });
+
+  test('memory refuses a set variable its own urlEnv names, too', () => {
+    const error = caught(() =>
+      selectTransport({ BUS_URL: URL }, { transport: 'memory', urlEnv: 'BUS_URL' }),
+    );
+    expect(codeOf(error)).toBe('X_CONFIG_INVALID');
   });
 
   test('the keys it reads are exactly these', () => {

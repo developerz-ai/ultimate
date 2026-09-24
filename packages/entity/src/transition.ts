@@ -8,6 +8,7 @@ import type { EntityCore } from './entity';
 import { notFound } from './errors';
 import type { IllegalTransition } from './feature-errors';
 import { stateConflict, stateTransitionIllegal, stateUndeclared } from './feature-errors';
+import { singleKeyOf } from './plan';
 import type { Repo, RepoOptions } from './repo';
 import { canMove, isState, isTerminal, movesFrom, type StateMachine } from './state-machine';
 import type { ColumnMap, IdOf, RowPatch } from './types';
@@ -109,7 +110,11 @@ export const transitionRow = async <Row, C extends ColumnMap>(
   // an UNRESOLVED `Row`, so it never reduces and no object literal is ever assignable to it — the
   // same reason `expr.ts` and `@ultimat3/query`'s `paginate` spell theirs the same way. The column
   // name came from `machineFor`, which resolved it against the entity, so the shape is a real one.
-  const filter = { id, [property]: move.from } as unknown as RowPatch<Row>;
+  // Keyed on the entity's OWN primary key, never the literal `id`: a `code`-keyed entity has no
+  // `id` column, so the filter matched nothing in memory (a false `X_STATE_CONFLICT`) and named a
+  // column Postgres does not have (`X_INVARIANT_VIOLATED`).
+  const key = singleKeyOf(entity, 'transition');
+  const filter = { [key]: id, [property]: move.from } as unknown as RowPatch<Row>;
   const values = { [property]: move.to } as unknown as RowPatch<Row>;
   const written = await repo.updateWhere(filter, patch(values), options);
   if (written === 0) throw await diagnose(entity, repo, property, id, move, options);

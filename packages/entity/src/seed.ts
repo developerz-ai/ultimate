@@ -291,8 +291,14 @@ export const defineSeed = (
           const found = await repo.findMany({ where: equalityPredicates(where), limit: 1 });
           const stored = found.rows[0];
           const preserve: readonly string[] = key.preserve ?? [CREATED_AT_COLUMN];
+          // Only what the CALLER named, and never a key the table generates: `$parse` fills a
+          // fresh uuid and a `defaultNow()` into `row`, which no stored row can equal — so a
+          // re-run reported every row `'updated'` and never once `'skipped'`.
           const compared = Object.keys(row as Record<string, unknown>).filter(
-            (property) => !preserve.includes(property),
+            (property) =>
+              !preserve.includes(property) &&
+              Object.hasOwn(values, property) &&
+              (!entity.$primaryKey.includes(property) || key.by.includes(property as never)),
           );
           if (
             stored !== undefined &&

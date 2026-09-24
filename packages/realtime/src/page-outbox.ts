@@ -74,12 +74,17 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
   const overlays =
     options.overlays ?? ((): OutboxOverlays | undefined => peekPageRealtime()?.store);
   let queue: OfflineQueue | undefined;
+  /** The scope the open queue belongs to — what the drain lock is named after. */
+  let scope: string | undefined;
 
   const open = async (): Promise<void> => {
-    queue = await OfflineQueue.open(queueStore(await options.local, scopeKey(principal())));
+    scope = scopeKey(principal());
+    queue = await OfflineQueue.open(queueStore(await options.local, scope));
   };
   let ready = open();
   let running: Promise<DrainReport> | undefined;
+  /** A trigger landed while a pass ran: one more pass follows it, never one per trigger. */
+  let again = false;
 
   const deliver = async (mutation: QueuedMutation): Promise<void> => {
     const current = queue;
@@ -116,7 +121,7 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
     });
   });
 
-  return {
+  const self: PageOutbox = {
     enqueue: async (entry) => {
       // A disk that refused the rows must not also cost the write: the intent still goes on disk.
       await options.beforeEnqueue?.().catch(() => undefined);
@@ -127,9 +132,13 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
       // Single flight: a trigger that lands while a replay is running JOINS it. Open, `online`,
       // the socket's reconnect and the service worker's drain arrive together, and each chaining
       // a pass of its own sent the head of the queue once per trigger whenever a send failed —
-      // one write, several POSTs. What a joined trigger would have sent is still queued for the
-      // next one; nothing is dropped.
-      if (running !== undefined) return running;
+      // one write, several POSTs. What the running pass could not have seen — a write queued
+      // after it re-read the store — gets exactly ONE follow-up pass, however many triggers
+      // joined: `again` is a flag, never a count.
+      if (running !== undefined) {
+        again = true;
+        return running;
+      }
       const pass = (async (): Promise<DrainReport> => {
         await ready;
         if (queue === undefined) return EMPTY;
@@ -137,13 +146,29 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
         // attempt the browser already knows cannot leave is a failed request on the wire and
         // nothing more. `online` asks again.
         if (knownOffline()) return { ...EMPTY, remaining: queue.pending().length };
-        return queue.drain(deliver);
+        const draining = queue;
+        // One tab drains a principal's outbox at a time, and it drains what EVERY tab queued: the
+        // queue is re-read under the lock, so a write another tab made since this one opened is
+        // sent too, and an `inflight` entry — which only a pass holding this lock could have put
+        // on the wire, and it is over — goes back to `pending`.
+        return await exclusive(`ultimate-outbox:${scope ?? 'memory'}`, async () => {
+          await draining.reload();
+          return await draining.drain(deliver);
+        });
       })();
-      const settled = (): void => {
-        if (running === pass) running = undefined;
+      const settled = (report?: DrainReport): void => {
+        if (running !== pass) return;
+        running = undefined;
+        // Only after a pass that reached the end: one stopped by a failure leaves the rest for
+        // the next trigger, as it always did.
+        if (again && report !== undefined && report.stoppedAt === null) {
+          again = false;
+          void self.replay().catch(() => undefined);
+        }
+        again = false;
       };
       running = pass;
-      pass.then(settled, settled);
+      pass.then(settled, () => settled());
       return pass;
     },
     get size(): number {
@@ -154,6 +179,7 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
       return ready;
     },
   };
+  return self;
 }
 
 /** Persisted under the principal; an UNSCOPED page queues in memory only, and loses it on reload. */
@@ -162,10 +188,54 @@ function queueStore(local: LocalStore, scope: string | undefined): QueueStore {
   return {
     load: async (): Promise<QueueState> =>
       (await local.queue(scope)) ?? { mutations: [], nextSeq: 1 },
-    save: (state) => local.saveQueue(scope, state),
+    write: (change) => local.writeQueue(scope, change),
   };
 }
 
+/** The slice of the Web Locks API a drain needs. */
+interface LockManagerLike {
+  request<T>(name: string, callback: () => Promise<T>): Promise<T>;
+}
+
+/**
+ * `work` under the browser's Web Lock named `name`, so two tabs of one user never drain one outbox
+ * at once — they would each send the head of the queue. With no `navigator.locks` the same
+ * exclusion is kept inside this realm, on a chain held on `globalThis` (every island bundle carries
+ * its own copy of this module): tabs cannot be excluded there, but two outboxes in one page can.
+ */
+function exclusive<T>(name: string, work: () => Promise<T>): Promise<T> {
+  const navigator: unknown = Reflect.get(globalThis, 'navigator');
+  const locks: unknown =
+    typeof navigator === 'object' && navigator !== null
+      ? Reflect.get(navigator, 'locks')
+      : undefined;
+  if (
+    typeof locks === 'object' &&
+    locks !== null &&
+    typeof Reflect.get(locks, 'request') === 'function'
+  ) {
+    return (locks as LockManagerLike).request(name, work);
+  }
+  const host = globalThis as LockHost;
+  const chains = host[LOCAL_LOCKS] ?? new Map<string, Promise<unknown>>();
+  if (host[LOCAL_LOCKS] === undefined) {
+    Object.defineProperty(host, LOCAL_LOCKS, { value: chains, configurable: true });
+  }
+  const ahead = chains.get(name) ?? Promise.resolve();
+  const turn = ahead.then(work, work);
+  const tail = turn.then(
+    () => undefined,
+    () => undefined,
+  );
+  chains.set(name, tail);
+  void tail.then(() => {
+    if (chains.get(name) === tail) chains.delete(name);
+  });
+  return turn;
+}
+
+const LOCAL_LOCKS: unique symbol = Symbol.for('ultimate.outbox-locks');
+type LockHost = { [LOCAL_LOCKS]?: Map<string, Promise<unknown>> };
 function sendOverHttp(entry: OutboxEntry, carried: Set<string>): Promise<unknown> {
   return clientTransport({
     method: 'POST',

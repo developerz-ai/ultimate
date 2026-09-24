@@ -141,7 +141,7 @@ Independent holes each resolve their own [queries](Queries-And-Live-Queries); th
 
 | Value | Wakes when | Use |
 |---|---|---|
-| `idle` | after first paint, on `requestIdleCallback`. A click made before the island mounts is captured and replayed on the same element, found by its path, as `interaction` does (21.0.0, unreleased; the click was lost before). A keyboard or scripted click (`detail: 0`) is not hit-tested at `(0, 0)` | default in `app/` — above-the-fold interactivity |
+| `idle` | after first paint, on `requestIdleCallback`. A click made before the island mounts is captured and replayed on the same element, found by its path, as `interaction` does (21.0.0; the click was lost before). A keyboard or scripted click (`detail: 0`) is not hit-tested at `(0, 0)` | default in `app/` — above-the-fold interactivity |
 | `visible` | the island intersects the viewport | below-the-fold lists, comment threads, charts |
 | `interaction` | first pointer/focus/key event on the island | menus, modals, popovers, dropdowns |
 | `never` | not at all — server HTML is final | static islands, rendered markdown, badges |

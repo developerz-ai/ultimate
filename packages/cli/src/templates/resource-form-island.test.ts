@@ -18,8 +18,14 @@ const DIR = 'apps/web/app/invoice';
 const PAGE = 'apps/web/app/invoices/page.tsx';
 const ENTRY = `${DIR}/invoice-form.island.tsx`;
 const ENDPOINT = '/api/invoice/create-invoice';
-const LABELS = { title: 'Title', submit: 'Save', saved: 'Saved', retry: 'Try again' };
-const PROPS = { endpoint: ENDPOINT, locale: 'en', labels: LABELS };
+const LABELS = {
+  title: 'Title',
+  price: 'Price',
+  submit: 'Save',
+  saved: 'Saved',
+  retry: 'Try again',
+};
+const PROPS = { endpoint: ENDPOINT, locale: 'en', currency: 'USD', labels: LABELS };
 /** The one line that registers the runtime — six named imports, and the order the contract lists them. */
 const REGISTRATION =
   'setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup })';
@@ -144,7 +150,7 @@ describe('unit · the form x g resource emits ships a shaken solid-js', () => {
 });
 
 describe('unit · the form x g resource emits actually mounts', () => {
-  test('it replaces the shell, tracks the field and posts what was typed', async () => {
+  test('it replaces the shell, tracks the fields and posts the create input', async () => {
     const calls: { url: string; body: unknown }[] = [];
     using root = await fixtureAppRoot('resource-form', withStylesheet(emitted()));
     using mounted = await mountIsland({
@@ -159,16 +165,23 @@ describe('unit · the form x g resource emits actually mounts', () => {
     expect(mounted.find('article')).toBeNull();
     expect(mounted.code).not.toMatch(/\bReact\b/);
 
-    const field = mounted.find('input');
-    expect(field).not.toBeNull();
-    if (field !== null) field.value = 'First invoice';
+    const title = mounted.find('input[aria-label="Title"]');
+    const price = mounted.find('input[aria-label="Price"]');
+    expect(title).not.toBeNull();
+    expect(price).not.toBeNull();
+    if (title !== null) title.value = 'First invoice';
+    if (price !== null) price.value = '12.50';
     // `false` means no handler ran — an island whose onInput never reached the DOM is
     // indistinguishable from a selector typo otherwise.
-    expect(mounted.fire(field, 'input')).toBe(true);
+    expect(mounted.fire(title, 'input')).toBe(true);
+    expect(mounted.fire(price, 'input')).toBe(true);
     expect(mounted.fire('form', 'submit', { preventDefault: (): void => {} })).toBe(true);
     await statusSettled(mounted);
 
-    expect(calls).toEqual([{ url: ENDPOINT, body: { title: 'First invoice' } }]);
+    // The create action's input: `$view(['title', 'price'])`, the price as integer minor units.
+    // It posted `{ title }` to an action taking `{ id, orgId }` — a 400 on the first submit.
+    const body = { title: 'First invoice', price: { minor: 1250, currency: 'USD' } };
+    expect(calls).toEqual([{ url: ENDPOINT, body }]);
     // The signal reached the DOM: an eager JSX factory renders '' here and never runs again.
     expect(mounted.text('[data-role="status"]')).toBe(LABELS.saved);
   }, 60_000);

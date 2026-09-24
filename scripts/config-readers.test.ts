@@ -231,33 +231,26 @@ describe('unit · nineteen readers is the alarm, not the all-clear', () => {
 
 describe('unit · the ratchet', () => {
   /**
-   * The three this tree reds on with the pins removed, spelled out. It was five: `cache.urlEnv` was
+   * The two this tree reds on with the pins removed, spelled out. It was five: `cache.urlEnv` was
    * `database.urlEnv`'s defect verbatim — `config.ts` validated that the key was PRESENT while the
    * URL came from a hardcoded `env['REDIS_URL']` — and it was DELETED with `cache.driver` rather
-   * than re-pinned. `realtime.urlEnv` is the same defect against `env['NATS_URL']` and is still
+   * than re-pinned. `realtime.urlEnv` was the same defect against `env['NATS_URL']` and stayed
    * pinned, which is what a ratchet that may only shrink looks like from one release to the next.
    * Then four became three: `theme.defaultMode` gained its first reader (`cli/src/theme-boot.ts`,
-   * which inlines the no-flash script with it as the fallback) and was unpinned.
+   * which inlines the no-flash script with it as the fallback) and was unpinned. Then three became
+   * two: 22.0.0 WIRED `realtime.urlEnv` (`@ultimat3/realtime`'s `selectTransport`).
    */
-  test('unpinned, this tree reports exactly the three keys nothing in packages/*/src reads', () => {
+  test('unpinned, this tree reports exactly the two keys nothing in packages/*/src reads', () => {
     const gaps = checkConfigReaders({ ...input, pins: {}, ambiguousPins: {} }).filter(
       (gap) => gap.kind === 'unread',
     );
-    expect(gaps.map((gap) => gap.leaf).sort()).toEqual([
-      'defaultCurrency',
-      'defaultTimeZone',
-      'realtime.urlEnv',
-    ]);
+    expect(gaps.map((gap) => gap.leaf).sort()).toEqual(['defaultCurrency', 'defaultTimeZone']);
     expect(gaps.every((gap) => gap.kind === 'unread')).toBe(true);
   });
 
   test('and pinned, the tree is green — so the pins are exactly the reds, with nothing spare', async () => {
     expect(await configReaderGaps(repoRoot())).toEqual([]);
-    expect(Object.keys(CONFIG_READER_PINS).sort()).toEqual([
-      'defaultCurrency',
-      'defaultTimeZone',
-      'realtime.urlEnv',
-    ]);
+    expect(Object.keys(CONFIG_READER_PINS).sort()).toEqual(['defaultCurrency', 'defaultTimeZone']);
   });
 
   test('the ambiguity pins are exactly this tree reds, with nothing spare', () => {
@@ -317,24 +310,23 @@ describe('unit · the ratchet', () => {
     expect(
       await applyConfigReaderUnpin(
         dir,
-        ['realtime.urlEnv'],
-        [{ kind: 'unread', leaf: 'realtime.urlEnv' }],
+        ['defaultCurrency'],
+        [{ kind: 'unread', leaf: 'defaultCurrency' }],
       ),
     ).toEqual([]);
-    expect(await Bun.file(path).text()).toContain("'realtime.urlEnv'");
+    expect(await Bun.file(path).text()).toContain('defaultCurrency:');
 
     expect(
       await applyConfigReaderUnpin(
         dir,
-        ['realtime.urlEnv'],
-        [{ kind: 'stale', leaf: 'realtime.urlEnv' }],
+        ['defaultCurrency'],
+        [{ kind: 'stale', leaf: 'defaultCurrency' }],
       ),
-    ).toEqual(['realtime.urlEnv']);
+    ).toEqual(['defaultCurrency']);
     const after = await Bun.file(path).text();
-    expect(after).not.toContain("'realtime.urlEnv'");
-    // The neighbours are untouched: a wrapped reason must not take the next entry with it.
-    expect(after).toContain('defaultCurrency');
-    expect(after).toContain('defaultTimeZone');
+    expect(after).not.toContain('defaultCurrency:');
+    // The neighbour is untouched: a wrapped reason must not take the next entry with it.
+    expect(after).toContain('defaultTimeZone:');
   });
 
   test('a new dead key is a finding whose fix names the file and the two ways out', () => {

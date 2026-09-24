@@ -1,8 +1,8 @@
 // The one place a framework error code becomes an HTTP status. A table, not a
 // switch chain: adding a code elsewhere in the framework means adding a row here,
 // and a missing row is a loud 500 rather than a silently wrong 200.
-// Rendering a throwable for a reader is `error-facts.ts`; this file answers only the status.
-import { errorStatusInvalid } from './errors';
+// Rendering a throwable for a reader is `error-facts.ts`; reading this table, and the app's own
+// half of it, is `error-status.ts`. This file is the table.
 
 /**
  * code -> status. Codes owned by other packages are listed here on purpose: HTTP
@@ -215,6 +215,12 @@ export const ERROR_STATUS = {
   // 500, and it should page: a queue holding rows this build cannot read is an operator's
   // problem, and nothing the caller sent is wrong.
   X_JOB_ROW_STATUS_UNKNOWN: 500,
+  // A requeue of a job that is still live — the admin panel's retry, `x jobs retry` over HTTP. The
+  // job's STATE is wrong, not the server: 409, like `X_STORAGE_QUARANTINED`.
+  X_JOB_NOT_REQUEUEABLE: 409,
+  // Thrown by `job()` at declaration, while modules load; no request is answered with it. The row
+  // exists for `X_ACTION_JOB_UNBRIDGED`'s reason: the table is closed, and it is a 500 anyway.
+  X_JOB_DECLARATION_INVALID: 500,
   // Thrown by `registerJobs()` while the app's modules load, so no request is ever answered with
   // it either — the row exists for the reason `X_CORS_CONFIG_INVALID`'s does: this table is the
   // closed one, and a code with no row is a 500 anyway.
@@ -277,6 +283,9 @@ export const ERROR_STATUS = {
   // paging failure that is NOT the caller's: the fix is an edit to the read's own select, nothing
   // the client sends changes the answer, and the report to the on-call monitor is the point.
   X_QUERY_NOT_PAGEABLE: 500,
+  // A read filtering or sorting on a column its loader never selected: the fix is the loader's
+  // `select`, nothing the caller sends changes it — the same server-side decision as the row above.
+  X_QUERY_COLUMN_UNSELECTED: 500,
   // @ultimat3/i18n — a well-formed tag outside the set this app ships, asserted on a value the
   // caller supplied (`assertSupportedLocale`). 400 rather than 406: the http `locale` stage
   // negotiates `Accept-Language` and never throws, so the tag that reaches here came from a path,
@@ -320,6 +329,9 @@ export const ERROR_STATUS = {
   // refuses it until the app's own scanner calls `releaseQuarantine`, which is a thing the caller
   // can do. A 500 would have read as "the server broke" for a workflow working exactly as built.
   X_STORAGE_QUARANTINED: 409,
+  // 409 for the same reason: `promoteAttachment` on a key that is not a pending upload — promoted
+  // twice, or never uploaded — is a state the caller can see and fix, not a server fault.
+  X_STORAGE_NOT_PENDING: 409,
   // 404, deliberately NOT 403: the org check fires before anything is read, so answering
   // "forbidden" would confirm that a key exists to the one caller who must not learn it.
   X_STORAGE_ORG_MISMATCH: 404,
@@ -411,6 +423,8 @@ export const ERROR_STATUS = {
   X_LOCAL_STORE_UNAVAILABLE: 500,
   X_MUTATOR_CLOCK_MISSING: 500,
   X_REALTIME_UNINSTALLED: 500,
+  // Boot-time: a realtime config and its environment that disagree refuse before any request.
+  X_REALTIME_TOPOLOGY: 500,
   X_RECORD_KEY_MISSING: 500,
   X_RECORD_REJECTED: 500,
   X_SYNC_UNCONFIGURED: 500,
@@ -420,80 +434,3 @@ export const ERROR_STATUS = {
   // has to be a compile error rather than an `undefined` a test then asserts `toBeNumber()` on.
   // Read it by a code the framework did not mint through `statusFor`, never by index.
 } satisfies Readonly<Record<string, number>>;
-
-export const DEFAULT_STATUS = 500;
-
-/**
- * The framework's row for a code, or `undefined` — through `Object.hasOwn`, never `[code]`.
- *
- * `code` is a STRING read off a throwable this package did not build, and `ERROR_STATUS` is an
- * object literal, so it holds every name on `Object.prototype`: an app throwing
- * `{ code: 'toString' }` read a FUNCTION out of this table. `statusFor` handed it to
- * `new Response(body, { status })` — a `RangeError` raised inside `recoverWith`'s fallback, the
- * one frame with nothing above it, so `Pipeline.handle` REJECTED against its own contract.
- * `scripts/error-map.ts` reads the same table this way already.
- */
-const BY_CODE: Readonly<Record<string, number>> = ERROR_STATUS;
-
-const frameworkStatus = (code: string): number | undefined =>
-  Object.hasOwn(BY_CODE, code) ? BY_CODE[code] : undefined;
-
-/**
- * Statuses for codes the APP owns. The table above is closed — it has to be, it is the
- * framework's own contract — and every code outside it fell to 500, so a wrong password was an
- * incident: `pipeline.ts` reports `status >= 500` to the error monitor, and a user's typo paged
- * whoever was on call. This is the app's half of the same table, kept separate so a registration
- * can never move `X_FORBIDDEN` off 403.
- */
-const APP_ERROR_STATUS = new Map<string, number>();
-
-/**
- * Declare the status for the codes this app throws. Call it once at boot, beside the module
- * that declares the codes — importing that module IS the registration, the convention
- * `registerActions` and `registerErrorCodes` already use.
- *
- * ```ts
- * registerErrorStatus({ X_CREDENTIALS_INVALID: 401, X_SIGNUP_CLOSED: 403 });
- * ```
- */
-export const registerErrorStatus = (statuses: Readonly<Record<string, number>>): void => {
-  for (const [code, status] of Object.entries(statuses)) {
-    if (!Number.isInteger(status) || status < 100 || status > 599) {
-      throw errorStatusInvalid(code, `${String(status)} is not an HTTP status (100-599)`);
-    }
-    // The framework's own codes are not negotiable: an app that could map `X_UNAUTHENTICATED`
-    // to 200 would be an app whose 401 contract every client already depends on, changed.
-    // Through `frameworkStatus`, so this refusal cannot answer for a code the framework does not
-    // own: `registerErrorStatus({ toString: 401 })` was rejected with a cause reading `the
-    // framework already maps it to function toString() { [native code] }`.
-    const framework = frameworkStatus(code);
-    if (framework !== undefined) {
-      throw errorStatusInvalid(code, `the framework already maps it to ${framework}`);
-    }
-    const existing = APP_ERROR_STATUS.get(code);
-    if (existing !== undefined && existing !== status) {
-      throw errorStatusInvalid(code, `already registered as ${existing} by this app`);
-    }
-    APP_ERROR_STATUS.set(code, status);
-  }
-};
-
-/** Test seam. Production registers once at boot and never unregisters. */
-export const resetErrorStatus = (): void => APP_ERROR_STATUS.clear();
-
-/**
- * The status SOMEBODY declared for a code — the framework or the app — or `undefined` when
- * nobody did. The two questions `statusFor` used to answer at once are separate on purpose:
- * "what do we answer" is always a number, and "did anyone classify this" is what `error-facts.ts`
- * reads to decide whether a 5xx may carry the throwable's own words back to the caller.
- *
- * Framework table first: `registerErrorStatus` already refuses those codes, so the order is
- * belt-and-braces — but it is the belt that makes "the framework's statuses are fixed" true
- * even if a future caller reaches the map some other way.
- * `APP_ERROR_STATUS` is a `Map`, which is why its half never had `frameworkStatus`'s defect —
- * prefer one for anything keyed by a value a caller chose.
- */
-export const declaredStatusFor = (code: string): number | undefined =>
-  frameworkStatus(code) ?? APP_ERROR_STATUS.get(code);
-
-export const statusFor = (code: string): number => declaredStatusFor(code) ?? DEFAULT_STATUS;

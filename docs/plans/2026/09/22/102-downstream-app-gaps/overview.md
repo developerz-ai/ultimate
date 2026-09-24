@@ -7,9 +7,11 @@ checked against this branch. Two were false as asked and six were only partly tr
 them with the `file:line` that disproves each.
 
 ## Context
-- The tree is at 20.2.1. 21.0.0 is in progress on this branch: plan 101 landed as `71f7c6b0`, and
-  `CHANGELOG.md:9-15` holds `[Unreleased]`. Every row marked **21.0.0** below writes a `BREAKING —`
-  entry and edits `wiki/Upgrading.md` in the same PR (101's rule).
+- Written at 20.2.1. **21.0.0 shipped on 2026-09-23**, so every row marked **21.0.0** below now
+  ships in **22.0.0**, beside plan 101's slice 18
+  ([`../../23/101-framework-deep-sweep/18-major-22.md`](../../23/101-framework-deep-sweep/18-major-22.md)).
+  Each such row still writes a `BREAKING —` entry under `[Unreleased]` and edits
+  `wiki/Upgrading.md` in the same PR.
 - Bun only, Postgres with no ORM. Tiers come from `scripts/lib/tiers.ts:15-22`:
 
 | Tier | Packages |

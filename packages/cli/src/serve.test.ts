@@ -77,7 +77,7 @@ test('a METRICS_PORT that is not a port names ITSELF, or the fix line edits the 
 
 // The bug this guards: `serve.ts` computed this inline and `cmd-dev.ts` passed nothing, so
 // `METRICS_PORT` was honoured in the container and ignored by `x dev` — the dev/prod parity break
-// `dev-roles.ts`'s own header forbids. One expression, both callers.
+// `role-start.ts`'s own header forbids. One expression, both callers.
 test('metricsPortFor is the one answer both the container and x dev read', () => {
   expect(metricsPortFor({}, 3000)).toBe(DEFAULT_METRICS_PORT);
   expect(metricsPortFor({ METRICS_PORT: '9464' }, 3000)).toBe(9464);

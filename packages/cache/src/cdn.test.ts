@@ -43,6 +43,14 @@ describe('cacheHeaders', () => {
     expect(headers['Surrogate-Key']).toBe('post post:1');
   });
 
+  // Cloudflare reads `Cache-Tag`, comma-separated, and never `Surrogate-Key`; the two headers are
+  // what `@ultimat3/http`'s `applyCacheHeaders` emits too, so a purge reaches either CDN.
+  test('the same tags become a comma-joined Cache-Tag', () => {
+    expect(cacheHeaders({ tags: [tag('post'), tag('post', '1')] })['Cache-Tag']).toBe(
+      'post,post:1',
+    );
+  });
+
   test('an empty tags array omits Surrogate-Key entirely', () => {
     const headers = cacheHeaders({ tags: [] });
     expect(headers['Surrogate-Key']).toBeUndefined();

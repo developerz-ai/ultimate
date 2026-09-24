@@ -132,6 +132,15 @@ type _RealtimeConfigCarriesNoDeadField = Assert<
   Extract<keyof RealtimeConfig, DeadRealtimeField> extends never ? true : false
 >;
 
+/**
+ * `'redis'` accepted, built by nothing, and booted whichever bus `NATS_URL` chose — removed in
+ * 22.0.0 when `selectTransport` began building what `transport` says. Re-adding it to the union is
+ * a type that promises a bus the framework does not have.
+ */
+type _RealtimeTransportHasNoRedis = Assert<
+  'redis' extends RealtimeConfig['transport'] ? false : true
+>;
+
 /** And the input side with it — `Input<RealtimeConfig>` is what an `app.config.ts` writes. */
 type _RealtimeInputCarriesNoDeadField = Assert<
   Extract<keyof NonNullable<AppConfigInput['realtime']>, DeadRealtimeField> extends never

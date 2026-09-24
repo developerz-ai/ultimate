@@ -34,7 +34,14 @@ describe('stableStringify keeps the DOCUMENT duty: what it emits is valid JSON',
  */
 describe('the two forms agree on everything they are not about', () => {
   test('an ordinary payload is byte-identical to core canonical form', () => {
-    const input = { amount: 100, currency: 'EUR', items: [1, 2.5, null], ok: true, id: 7n };
+    const input = { amount: 100, currency: 'EUR', items: [1, 2.5, null], ok: true };
     expect(canonicalJson(input)).toBe(stableStringify(input));
+  });
+
+  // A bigint is one of the values they disagree about: the document form must stay JSON (`"7n"`),
+  // and the hash form must not collide with the STRING `'7n'`, so it is the bare token `BigInt(7)`.
+  test('a bigint is where the two forms part', () => {
+    expect(stableStringify({ id: 7n })).toBe('{"id":"7n"}');
+    expect(canonicalJson({ id: 7n })).toBe('{"id":BigInt(7)}');
   });
 });

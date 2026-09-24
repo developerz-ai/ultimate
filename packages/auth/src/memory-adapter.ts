@@ -209,9 +209,21 @@ export class MemoryAdapter implements AuthAdapter {
       .sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime());
   }
 
+  /** Postgres's `on conflict … do update`: the owner, id and created_at stay; the tokens move. */
   async linkAccount(account: AuthAccount): Promise<AuthAccount> {
-    this.#accounts.set(`${account.provider}:${account.providerAccountId}`, account);
-    return account;
+    const key = `${account.provider}:${account.providerAccountId}`;
+    const existing = this.#accounts.get(key);
+    const stored =
+      existing === undefined
+        ? account
+        : {
+            ...existing,
+            accessToken: account.accessToken,
+            refreshToken: account.refreshToken,
+            expiresAt: account.expiresAt,
+          };
+    this.#accounts.set(key, stored);
+    return stored;
   }
 
   async findAccount(provider: string, providerAccountId: string): Promise<AuthAccount | null> {
@@ -255,9 +267,13 @@ export class MemoryAdapter implements AuthAdapter {
   }
 
   async listApiKeys(ownerId: string): Promise<readonly AuthApiKeyRecord[]> {
-    return [...this.#apiKeys.values()].filter(
-      (key) => key.userId === ownerId || key.orgId === ownerId,
-    );
+    // `order by created_at desc, id desc`, the builtin adapter's statement.
+    return [...this.#apiKeys.values()]
+      .filter((key) => key.userId === ownerId || key.orgId === ownerId)
+      .sort(
+        (a, b) =>
+          b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+      );
   }
 
   async touchApiKey(id: string, at: Date): Promise<void> {

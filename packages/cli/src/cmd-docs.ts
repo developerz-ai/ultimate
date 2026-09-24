@@ -7,6 +7,7 @@
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { DocEntry, DocHit } from '@ultimat3/manifest';
 import { nearestTopics, scanInstalledDocs, searchDocs } from '@ultimat3/manifest';
+import { DEFAULT_LIMIT, docsSpec } from './cmd-docs-spec';
 import type { CliCommand, CommandContext } from './command';
 import { MissingPositionalError } from './errors';
 import { frameworkScopeDir } from './framework-scope';
@@ -14,9 +15,6 @@ import { parseLimitFlag } from './jobs-report';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { flagString } from './parse';
-
-/** Matches printed by default. Enough to choose between, few enough to read all of. */
-const DEFAULT_LIMIT = 5;
 
 /** An install where the CLI cannot see its own dependency is broken, not merely undocumented. */
 const unresolvedFinding = (): Finding => ({
@@ -115,14 +113,7 @@ function missResult(query: string, entries: readonly DocEntry[]): CommandResult 
 }
 
 export const docsCommand: CliCommand = {
-  spec: {
-    name: 'docs',
-    summary: 'the framework docs, answered offline from the installed packages',
-    usage: 'x docs "<question|topic|symbol>" [--limit <n>] [--json]',
-    flags: [
-      { name: 'limit', type: 'string', summary: `matches to return (default: ${DEFAULT_LIMIT})` },
-    ],
-  },
+  spec: docsSpec,
   // `async` is load-bearing: a synchronous throw would escape every caller that awaits the
   // promise this signature promises, including the dispatcher's own error path.
   async run(ctx: CommandContext): Promise<CommandResult> {

@@ -7,14 +7,13 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { createRecordingClient, READONLY_ROLE } from '@ultimat3/db';
 import type { DatabaseTarget, DevHost, JsonRpcResponse, McpServer, ToolArgs } from '@ultimat3/mcp';
 import { createMcpServer, devTools, resolveQueryLimits } from '@ultimat3/mcp';
-import type { DevServices } from './dev-services';
 import { loadCodeFixes } from './error-fixes';
 import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
-import { DEV_TOOL_SCOPES, lazyServices, localCaller, readOnlyRows } from './mcp-host';
-import { parseBunTest } from './mcp-test-output';
+import { DEV_TOOL_SCOPES, lazyServices, localCaller, readOnlyRows, testRunArgv } from './mcp-host';
+import type { DevServices } from './runtime-bindings';
 
 /** Every tool `@ultimat3/mcp` ships for dev, in `tools/list` order. */
 const TOOL_NAMES = [
@@ -292,72 +291,6 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
   });
 });
 
-// Captured from `bun test` 1.3.x verbatim — a hand-written summary would test the fixture.
-const PASSING = `bun test v1.3.14 (0d9b296a)
-
- 12 pass
- 0 fail
- 28 expect() calls
-Ran 12 tests across 1 file. [64.00ms]`;
-
-const FAILING = `bun test v1.3.14 (0d9b296a)
-
-sample.test.ts:
-3 | describe('outer group', () => {
-7 |   test('fails loudly', () => {
-8 |     expect(1).toBe(2);
-                  ^
-error: expect(received).toBe(expected)
-
-Expected: 2
-Received: 1
-
-      at <anonymous> (/tmp/bunfixture/sample.test.ts:8:15)
-(fail) outer group > fails loudly [0.24ms]
-
- 1 pass
- 1 skip
- 1 todo
- 1 fail
- 2 expect() calls
-Ran 4 tests across 1 file. [17.00ms]`;
-
-describe('unit · parseBunTest reads the runner, it does not guess', () => {
-  test('a passing run', () => {
-    expect(parseBunTest(PASSING, 640)).toEqual({
-      passed: 12,
-      failed: 0,
-      skipped: 0,
-      durationMs: 640,
-      failures: [],
-    });
-  });
-
-  test('a failing run names the test and its message', () => {
-    const run = parseBunTest(FAILING, 170);
-    expect(run.passed).toBe(1);
-    expect(run.failed).toBe(1);
-    // `skip` and `todo` are both "not run".
-    expect(run.skipped).toBe(2);
-    expect(run.failures).toEqual([
-      { test: 'outer group > fails loudly', message: 'expect(received).toBe(expected)' },
-    ]);
-  });
-
-  test('output it cannot parse is a FAILED run carrying the tail, never a green zero', () => {
-    const run = parseBunTest('bun: command not found\nsegmentation fault', 12);
-    expect(run.failed).toBe(1);
-    expect(run.passed).toBe(0);
-    expect(run.failures[0]?.message).toContain('command not found');
-  });
-
-  test('no output at all still fails', () => {
-    const run = parseBunTest('', 0);
-    expect(run.failed).toBe(1);
-    expect(run.failures[0]?.message).toBe('bun test produced no output');
-  });
-});
-
 describe('unit · errors.explain', () => {
   test('a code nobody registered has no explanation to invent', () => {
     expect(explainErrorCode('X_NOT_A_REAL_CODE')).toBeUndefined();
@@ -489,5 +422,22 @@ describe('unit · the lazily booted services', () => {
     await lazy.close();
     await lazy.close();
     expect(lazy.services.db.url).toContain('pglite://');
+  });
+});
+
+// Row v: `bun test <filter>` reads a leading `-` as ITS OWN flag, so `test.run` with
+// `--preload ./evil.ts` loaded an arbitrary module into the test process.
+describe('unit · test.run never hands bun test a flag', () => {
+  test('a path filter is the argv, and no filter is the whole suite', () => {
+    expect(testRunArgv(undefined)).toEqual(['bun', 'test']);
+    expect(testRunArgv('packages/cli')).toEqual(['bun', 'test', 'packages/cli']);
+  });
+
+  test('a filter starting with - is refused, never forwarded', () => {
+    for (const filter of ['--preload', '-t', ' --coverage']) {
+      expect(() => testRunArgv(filter)).toThrow(
+        expect.objectContaining({ code: 'X_CLI_BAD_FLAG' }),
+      );
+    }
   });
 });

@@ -27,6 +27,9 @@ import { SPECS } from './registry';
 import { names } from './templates/naming';
 import { containerFiles } from './templates/scaffold-container';
 
+/** A helm target as `x deploy` resolves one with no flags: the app's name, no namespace, 15m. */
+const HELM = { release: 'demo-app', namespace: undefined, timeout: '15m' } as const;
+
 const compose = (root = '/app') => planDeploy('repo/app:tag', 'compose', root);
 
 describe('unit · the deploy plan', () => {
@@ -59,7 +62,7 @@ describe('unit · the deploy plan', () => {
   });
 
   test('helm is one upgrade, so the ordering above is the chart to declare, not a step list', () => {
-    const plan = planDeploy('repo/app:tag', 'helm', '/app');
+    const plan = planDeploy('repo/app:tag', 'helm', '/app', HELM);
     expect(plan.steps.map((step) => step.role)).toEqual(['all']);
   });
 
@@ -74,9 +77,9 @@ describe('unit · the deploy plan', () => {
         '--set',
         'image.tag=1.2.3',
       ]);
-      expect(planDeploy('ghcr.io/org/app:1.2.3', 'helm', '/app').steps[0]?.command).not.toContain(
-        'image=ghcr.io/org/app:1.2.3',
-      );
+      expect(
+        planDeploy('ghcr.io/org/app:1.2.3', 'helm', '/app', HELM).steps[0]?.command,
+      ).not.toContain('image=ghcr.io/org/app:1.2.3');
     });
 
     // The chart's own `default .Chart.AppVersion` is the answer when no tag was asked for, and
@@ -104,7 +107,7 @@ describe('unit · the deploy plan', () => {
     });
 
     test('a digest is refused with the tagged invocation to run instead', () => {
-      expect(() => planDeploy('ghcr.io/org/app@sha256:abc123', 'helm', '/app')).toThrow(
+      expect(() => planDeploy('ghcr.io/org/app@sha256:abc123', 'helm', '/app', HELM)).toThrow(
         /pins a digest/,
       );
     });
@@ -122,7 +125,7 @@ describe('unit · the deploy plan', () => {
 /** An app root, because `x deploy` resolves one before it reads a single flag. */
 function appRoot(): string {
   const dir = mkdtempSync(join(tmpdir(), 'x-deploy-'));
-  writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'demo-app' };\n");
   return dir;
 }
 
@@ -285,7 +288,8 @@ describe('unit · x deploy --method helm runs the chart the scaffold writes', ()
     const written = planNewApp({ name: 'demo-app', example: true }).map((file) => file.path);
     expect(written).toContain('docker/helm/Chart.yaml');
     // The exact path `planDeploy` hands to helm — one string, two files, no drift.
-    const [, , , , chart] = planDeploy('repo/app:tag', 'helm', '/srv/app').steps[0]?.command ?? [];
+    const [, , , , chart] =
+      planDeploy('repo/app:tag', 'helm', '/srv/app', HELM).steps[0]?.command ?? [];
     expect(chart).toBe(join('/srv/app', 'docker', 'helm'));
   });
 
@@ -302,8 +306,13 @@ describe('unit · x deploy --method helm runs the chart the scaffold writes', ()
         'helm',
         'upgrade',
         '--install',
-        'app',
+        'demo-app',
         join(root, 'docker', 'helm'),
+        '--wait',
+        '--timeout',
+        '15m',
+        '--output',
+        'json',
         '--set',
         'image.repository=ghcr.io/org/app',
         '--set',
@@ -381,10 +390,12 @@ describe('unit · x deploy --method compose passes the image it reports', () => 
   });
 
   test('the dry run says so too, so the plan an operator reads is the plan that runs', () => {
-    expect(planDeploy('repo/app:tag', 'compose', '/app').env).toEqual({ IMAGE: 'repo/app:tag' });
+    expect(planDeploy('repo/app:tag', 'compose', '/app').env).toEqual({
+      IMAGE: 'repo/app:tag',
+    });
     // Helm carries no IMAGE: the chart reads `--set image.repository/tag`, and an env var the
     // chart never looks at would be a second answer to "which image is this".
-    expect(planDeploy('repo/app:tag', 'helm', '/app').env).toEqual({});
+    expect(planDeploy('repo/app:tag', 'helm', '/app', HELM).env).toEqual({});
   });
 });
 

@@ -204,3 +204,40 @@ describe('mutator', () => {
     expect(Object.hasOwn(barrel, 'strategyOf')).toBe(false);
   });
 });
+
+/**
+ * A mutator IS an action, so it declares what an action declares. `row`, `rateLimit` and
+ * `deprecated` were dropped on the way into `actionDef`: a row-level policy on a mutator received
+ * `row === null` and denied every call, including the row's own author.
+ */
+describe('a mutator carries the action fields it was missing', () => {
+  const owned = (ownerId: string) =>
+    mutator({
+      input: Input,
+      output: Output,
+      policy: can<{ postId: string }, { ownerId: string }>(
+        'post:like',
+        ({ actor, row }) => row !== null && row.ownerId === actor?.id,
+      ),
+      row: () => ({ ownerId }),
+      rateLimit: { limit: 5, windowMs: 60_000 },
+      deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2026-12-31T23:59:59Z' },
+      local() {},
+      server: (_ctx, { postId }) => ({ id: postId, likes: 1 }),
+      conflict: 'server-wins',
+    }).named('likeOwnPost');
+
+  test('the row reaches the policy, so the owner is allowed', async () => {
+    const owner = createContext({
+      actor: { ...userActor({ id: 'u1' }), permissions: ['post:like'] },
+    });
+    const liked = await invoke(owned('u1'), { postId: POST_ID }, { ctx: owner });
+    expect((liked as { readonly likes: number }).likes).toBe(1);
+  });
+
+  test('rateLimit and deprecated reach the action definition', () => {
+    const described = owned('u1').describe();
+    expect(described.deprecated).not.toBeNull();
+    expect(described.rateLimit).not.toBeNull();
+  });
+});

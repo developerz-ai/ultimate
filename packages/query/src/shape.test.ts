@@ -139,3 +139,22 @@ describe('isNull', () => {
     expect(isNull(false)).toBe(false);
   });
 });
+
+// An `int8` arrives as a `bigint` from one driver and a filter value is usually a `number`
+// literal: the live matcher's equality required matching `typeof`, so `5n` never equalled `5`
+// and a row the database matched was dropped from the live window.
+describe('equality across bigint and number', () => {
+  test.each([
+    ['=', 5n, 5, true],
+    ['=', 5, 5n, true],
+    ['=', 5n, 6, false],
+    ['!=', 5n, 5, false],
+    ['in', 5n, [4, 5], true],
+  ] as const)('%s: %p against %p is %p', (op, actual, value, expected) => {
+    expect(matchesFilter({ count: actual }, { column: 'count', op, value })).toBe(expected);
+  });
+
+  test('a string is still not a number', () => {
+    expect(matchesFilter({ count: '5' }, { column: 'count', op: '=', value: 5 })).toBe(false);
+  });
+});

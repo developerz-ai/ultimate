@@ -4,12 +4,13 @@
 // `const X: Readonly<Record<K, V>> = Object.freeze({…})`, which infers `T` from the literal.
 //   bun run scripts/frozen-records.ts [--json]
 
-import { maskLiterals, stripComments } from '@ultimat3/cli';
+import { maskLiterals, stripComments } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
+import { shippedSources } from './lib/corpus';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { isCode, isTestPath, lineOf } from './lib/source-scan';
+import { isCode, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'frozen-records';
 
@@ -270,16 +271,8 @@ export function checkFrozenRecords(files: readonly SourceFile[]): FrozenReport {
   return { findings, counts };
 }
 
-export const SOURCE_GLOB = 'packages/*/src/**/*.{ts,tsx}';
-
-export async function readSources(root: string): Promise<readonly SourceFile[]> {
-  const files: SourceFile[] = [];
-  for await (const path of new Bun.Glob(SOURCE_GLOB).scan({ cwd: root })) {
-    if (isTestPath(path) || path.includes('/dist/')) continue;
-    files.push({ at: path, text: await Bun.file(`${root}/${path}`).text() });
-  }
-  return files.sort((a, b) => a.at.localeCompare(b.at));
-}
+/** Shipped source, read once per process: the corpus `shipped` scope. */
+export const readSources = shippedSources;
 
 export const frozenRecordReport = async (root: string): Promise<FrozenReport> =>
   checkFrozenRecords(await readSources(root));

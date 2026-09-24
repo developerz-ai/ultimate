@@ -460,16 +460,15 @@ still satisfies the interface. Calling one an adapter has not implemented is `X_
 with the method named, not a silent no-op.
 
 `x_users` gained two columns in 1.3.0 — `scopes text[]` and `external_id text unique` — plus an
-`org_id` index. `X_USERS_MIGRATION_1_3` is those statements for an app already on 1.2; both
-columns are additive with a default, so the migration takes no table rewrite.
+`org_id` index.
 
-**Nothing wires those statements into a migration for you, `As of 2026-08`.** `AUTH_TABLES` is the
-DDL as plain strings (`AUTH_TABLE_NAMES` is what they create, and `X_USERS_TABLE`,
-`X_SESSIONS_TABLE`, `X_ACCOUNTS_TABLE`, `X_API_KEYS_TABLE`, `X_VERIFICATIONS_TABLE` are the
-individual ones). `x db gen <name>` diffs `describeEntities()` against the newest migration's
-snapshot — these tables are not `entity()` declarations, so nothing outside `tables.ts` reads the
-constant and the command cannot see them. Paste each statement into its own file under
-`packages/db/migrations/`, one statement per migration, then `x db migrate`.
+**The framework applies the whole schema at boot, upgrades included — `As of 2026-09-23`
+(22.0.0).** `AUTH_TABLES` (with `AUTH_TABLE_NAMES`) is a row of `@ultimat3/cli`'s
+`FRAMEWORK_SCHEMA`, which every boot applies in foreign-key order: `create table if not exists`,
+then `add column if not exists` for what an older table lacks, so a database created on 1.2 is
+brought up to date with no hand-run migration. There is nothing to paste: the per-table `X_*_TABLE`
+constants and `X_USERS_MIGRATION_1_3` are gone, and a hand-written migration that pasted them
+should be deleted. They are still not `entity()` declarations, so `x db gen` does not see them.
 
 ## Sessions are not a write path
 
@@ -500,6 +499,36 @@ row would not be, and nothing does.
 | `SameSite=Lax` | CSRF — the cookie is not attached to cross-site POSTs |
 | `__Host-` + `Path=/` + no `Domain` | a sibling subdomain overwriting it (session fixation) |
 | `Max-Age` | a client keeping it past the server's absolute ceiling |
+
+## Signing out
+
+`logout(auth, token)` ends the session row. The **response** does the rest: append
+`signOutHeaders()` to it.
+
+```ts
+import type { Auth } from '@ultimat3/auth';
+import { logout, signOutHeaders } from '@ultimat3/auth';
+
+declare const auth: Auth;                          // your defineAuth(...)
+declare const token: string;                        // the session token the request carried
+declare const ctx: { readonly headers: Headers };   // the request context
+
+await logout(auth, token);
+for (const [name, value] of signOutHeaders({ session: auth.sessions.policy })) {
+  ctx.headers.append(name, value);
+}
+```
+
+| Header | Why |
+|---|---|
+| `set-cookie` expiring the session cookie | only when `session` is passed — an app with its own cookie expires that itself |
+| `clear-site-data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`) | drops everything the previous principal left on the origin: the page store's IndexedDB, local storage, the service worker and its cached private pages. **Never `"cookies"`** — the same response sets the cookie that marks the browser signed out |
+
+The browser acts on `Clear-Site-Data` only in a secure context (HTTPS, or `localhost`), which is
+every deployed app and every `x dev`. The cost is one worker reinstall and re-precache per
+sign-out: a PWA's offline cache does not outlive the person it was cached for. The realtime side of
+the same fence is in [`packages/realtime/README.md`](../realtime/README.md) (a principal change wipes
+the previous scope's persisted rows and queued writes).
 
 ## OAuth — log in with GitHub
 
@@ -657,3 +686,12 @@ An api key's scopes become **exactly** the agent actor's scopes — never the ow
 bun test packages/auth
 bun run --filter @ultimat3/auth typecheck
 ```
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `AuthError` | any `AuthErrorCode` — `AUTH_ERROR_CODES` | `src/errors.ts` |

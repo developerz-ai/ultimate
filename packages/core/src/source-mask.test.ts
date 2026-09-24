@@ -43,3 +43,35 @@ describe('endOfLiteral', () => {
     expect(QUOTES.has("'")).toBe(true);
   });
 });
+
+// A template nested inside another template's `${}` closed the OUTER one at its first backtick,
+// and every literal after it desynced: `scripts/guards-doc.ts` lost every `code:` below the
+// nesting, so the gate never saw them.
+describe('a template literal nested inside another template', () => {
+  const source = [
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture IS template source text.
+    "const a = `outer ${items.map((x) => `inner ${x} {`).join('')} tail`;",
+    "const b = { code: 'X_AFTER_THE_NESTING' };",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture IS template source text.
+    'const c = `${`${`deep`}`}`;',
+    "const d = { code: 'X_AFTER_THE_DEEP_ONE' };",
+    "// code: 'X_ONLY_IN_A_COMMENT'",
+  ].join('\n');
+
+  test('stripComments keeps every literal after the nesting intact', () => {
+    const stripped = stripComments(source);
+    expect(stripped).toContain("code: 'X_AFTER_THE_NESTING'");
+    expect(stripped).toContain("code: 'X_AFTER_THE_DEEP_ONE'");
+    expect(stripped).not.toContain('X_ONLY_IN_A_COMMENT');
+  });
+
+  test('maskLiterals blanks the templates whole and nothing after them', () => {
+    const masked = maskLiterals(source);
+    const lines = masked.split('\n');
+    const first = lines[0] ?? '';
+    expect(first).toBe(`const a = \`${' '.repeat(first.length - 13)}\`;`);
+    expect(lines[1]).toBe("const b = { code: '                   ' };");
+    expect(lines[3]).toBe("const d = { code: '                    ' };");
+    expect(masked.length).toBe(source.length);
+  });
+});

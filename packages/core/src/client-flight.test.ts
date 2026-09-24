@@ -178,6 +178,22 @@ describe('the generation fence', () => {
     expect(isSuperseded(await pending)).toBe(true);
   });
 
+  test('a same-key read issued right after the bump does not join the aborted flight', async () => {
+    // The aborted read's dedup key stayed in the single-flight map until its rejection SETTLED, so
+    // a read issued at the new generation in the same tick joined it and rejected with AbortError.
+    const flight = createClientFlight({ principal: () => 'alice' });
+    const wire = held('k');
+
+    const old = flight.run(wire.plan).catch((caught: unknown) => caught);
+    flight.bump();
+    const fresh = flight.run(wire.plan);
+    wire.release();
+
+    expect(await fresh).toBe('rows');
+    expect(wire.calls()).toBe(2);
+    expect(isSuperseded(await old)).toBe(true);
+  });
+
   test('work issued AFTER the bump is answered normally', async () => {
     const flight = createClientFlight({ principal: () => 'alice' });
     flight.bump();

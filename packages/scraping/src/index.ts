@@ -3,12 +3,10 @@
 // the seam is not a seam.
 
 export type { ActionabilityState, ActionabilityWait } from './actionability';
-export { actionabilityProblem, awaitActionable, DEFAULT_POLL_MS, isStable } from './actionability';
+export { awaitActionable } from './actionability';
 export type { ArtifactRef, ArtifactWriter, ArtifactWriterInit } from './artifacts';
 export {
-  contentTypeFor,
   createArtifactWriter,
-  DEFAULT_ARTIFACT_PREFIX,
   DEFAULT_CONTENT_TYPE,
 } from './artifacts';
 export type {
@@ -21,7 +19,6 @@ export { burnSession, createPrompt, ensureAuthenticated, restorableSession } fro
 export { browserRecord } from './browser-record';
 export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
-export { axNodesFor } from './cdp-a11y';
 export type {
   CdpBrowserLike,
   CdpFrameLike,
@@ -32,24 +29,14 @@ export type {
   CdpScreenshotOptions,
   CdpSessionLike,
 } from './cdp-port';
-export {
-  clearExpression,
-  focusExpression,
-  parseSnapshots,
-  snapshotExpression,
-} from './cdp-snapshot';
+export { snapshotExpression } from './cdp-snapshot';
 export type { CdpTargetInit } from './cdp-target';
 export { CDP_DRIVER, cdpTarget } from './cdp-target';
 export type { Deadline, ScrapeClock, TestScrapeClock } from './clock';
 export { deadline, systemScrapeClock, testClock, throwIfAborted } from './clock';
 export type { ColorScheme } from './color-scheme';
-export { COLOR_SCHEME_FEATURE, COLOR_SCHEMES, isColorScheme } from './color-scheme';
-export {
-  cookieDomainMatches,
-  cookieHeaderFor,
-  cookiePathMatches,
-  cookiesForUrl,
-} from './cookie-scope';
+export { COLOR_SCHEMES, isColorScheme } from './color-scheme';
+export { cookieHeaderFor } from './cookie-scope';
 export type { ScrapeDriver, ScrapeSession, SessionInit } from './driver';
 export { resetScrapeDriver, scrapeDriver, setScrapeDriver } from './driver';
 export type { BrowserOptions, LocalBrowserOptions, RemoteBrowserOptions } from './driver-cdp';
@@ -57,7 +44,7 @@ export { localBrowser, remoteBrowser } from './driver-cdp';
 export type { FakeBrowserOptions, FakePageOptions, FakePages } from './driver-fake';
 export { FAKE_DRIVER, FAKE_PAGE_URL, fakeBrowser, fakePage, recordingsOf } from './driver-fake';
 export type { FixtureBrowserOptions } from './driver-fixture';
-export { FIXTURE_DRIVER, fixtureBrowser, recordingFilename } from './driver-fixture';
+export { FIXTURE_DRIVER, fixtureBrowser } from './driver-fixture';
 export {
   authFailed,
   blocked,
@@ -100,32 +87,28 @@ export {
   ScrapeError,
 } from './errors';
 export type { ScrapeEventFields, StepEvent } from './events';
-export { scrapeLogger, withStepEvent } from './events';
 export type { YieldCheck, YieldExpectation, YieldGuardInput, YieldHistory } from './expect';
 export {
-  DEFAULT_YIELD_WINDOW,
   guardYield,
   MIN_BASELINE_RUNS,
   median,
   memoryYieldHistory,
-  yieldProblem,
 } from './expect';
-export { BURNS_SESSION, burnsSession, errorCode, NEVER_RETRIED, neverRetried } from './failures';
+export { BURNS_SESSION, errorCode, NEVER_RETRIED } from './failures';
 export type { HostDecision, HostRule } from './hosts';
 export { ANY_HOST, hostDecision, hostMatches } from './hosts';
-export { markupEnabled, markupVisible, queryHtml } from './html-query';
+export { queryHtml } from './html-query';
 export type { MarkupRequest } from './html-requests';
-export { markupRequests } from './html-requests';
 export type { HtmlTargetInit, RecordingLookup } from './html-target';
 export { htmlTarget } from './html-target';
 export type { HttpRequestInit, HttpTransportInit, ScrapeHttp, ScrapeResponse } from './http';
 export { DEFAULT_HTTP_MAX_BYTES, httpOverFetch, responseOver } from './http';
 export type { HttpRecordingLookup, RecordedHttpInit } from './http-recorded';
-export { httpRecordingFilename, httpRecordingsOf, recordedHttp } from './http-recorded';
+export { httpRecordingsOf, recordedHttp } from './http-recorded';
 export type { RedirectHop } from './http-redirect';
-export { MAX_REDIRECT_HOPS, redirectHop } from './http-redirect';
+export { MAX_REDIRECT_HOPS } from './http-redirect';
 export type { InterceptRules, InterceptVerdict } from './intercept';
-export { interceptVerdict, refusalEntry } from './intercept';
+export { interceptVerdict } from './intercept';
 export type { KeyChord, KeyModifier } from './key-chord';
 export { KEY_MODIFIERS, parseKeyChord } from './key-chord';
 export type { OfflineSessionInit } from './offline-session';
@@ -139,18 +122,16 @@ export type {
   ScrapePage,
   WaitOptions,
 } from './page';
-export { DEFAULT_ACCESSIBILITY_MAX } from './page';
 export type { PageContext } from './page-over-target';
 export { pageOverTarget } from './page-over-target';
 export type { Pacer } from './rate';
-export { createPacer, DEFAULT_NAVIGATION_RATE } from './rate';
+export { createPacer } from './rate';
 export type { HttpRecording, PageRecording } from './recording';
 export {
   httpRecordingSchema,
   pageRecordingSchema,
   parseHttpRecording,
   parseRecording,
-  splitDownload,
 } from './recording';
 export type { AgentRecovery, Recovery, RecoveryAttempt, RecoveryHook } from './recover';
 export { runRecovery } from './recover';
@@ -166,13 +147,12 @@ export type {
 } from './rings';
 export {
   createRing,
-  DEFAULT_RING_CAPACITY,
   MAX_PAGE_ERROR_CHARS,
   pageErrorEntry,
   RESOURCE_TYPES,
 } from './rings';
 export type { RobotsFetch, RobotsGate, RobotsGateInit, RobotsPolicy, RobotsRules } from './robots';
-export { createRobotsGate, DEFAULT_ROBOTS_AGENT, parseRobots, robotsAllows } from './robots';
+export { createRobotsGate, parseRobots, robotsAllows } from './robots';
 export type { RobotsFetchInit } from './robots-fetch';
 export {
   DEFAULT_ROBOTS_MAX_BYTES,
@@ -189,11 +169,9 @@ export { scrape } from './scrape';
 export { DEFAULT_PAGE_TIMEOUT_MS, runScrape } from './scrape-run';
 export type { ScrapeSecrets, SecretResolver } from './secrets';
 export {
-  blankPasswordFields,
   createSecretBag,
   MIN_REDACTABLE_LENGTH,
   redactSecrets,
-  SECRET_PLACEHOLDER,
   safeConsole,
   safeHtml,
   safeNetwork,
@@ -201,8 +179,6 @@ export {
 } from './secrets';
 export type { ScrapeSessionStore, SessionSnapshot, SessionState } from './session-state';
 export {
-  DEFAULT_SESSION_PREFIX,
-  EMPTY_SESSION,
   memorySessionStore,
   parseSessionState,
   sessionDigest,
@@ -220,6 +196,5 @@ export type {
   ScrapeDownloadFile,
   ScrapeTarget,
 } from './target';
-export { ROOT_SELECTOR } from './target';
 export type { WedgeGuard, WedgeGuardInit } from './watchdog';
-export { createWedgeGuard, DEFAULT_GRACE_MS, DEFAULT_IDLE_MS } from './watchdog';
+export { DEFAULT_GRACE_MS } from './watchdog';

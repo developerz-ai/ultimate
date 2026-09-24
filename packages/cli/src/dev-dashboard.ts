@@ -22,14 +22,14 @@ import { json as jsonResponse } from '@ultimat3/http';
 import type { MemoryMailDriver } from '@ultimat3/mail';
 import { isMemoryDriver } from '@ultimat3/mail';
 import type { Manifest } from '@ultimat3/manifest';
-import { checkAppBoundaries } from './app-boundaries';
 import { appManifest, readAppManifest } from './app-manifest';
+import { appBoundaryFindings } from './boundary-findings';
 import type { StatementLedger } from './dev-n-plus-one';
 import { devPolicyMatrix } from './dev-policy';
-import type { RunningServices } from './dev-runtime';
-import type { DevServices } from './dev-services';
 import type { TraceRecorder } from './dev-traces';
 import type { Finding } from './output';
+import type { DevServices } from './runtime-bindings';
+import type { RunningServices } from './runtime-services';
 import { loopFacts } from './statement-loop';
 
 export interface DevStatus {
@@ -195,7 +195,7 @@ const boundariesPanel = (input: DevDashboardInput): DevPanel<BoundariesPanelData
   titleKey: 'dev.panel.boundaries.title',
   questionKey: 'dev.panel.boundaries.question',
   async data(): Promise<BoundariesPanelData> {
-    return { findings: await checkAppBoundaries(input.root) };
+    return { findings: await appBoundaryFindings(input.root) };
   },
 });
 

@@ -76,21 +76,16 @@
 //   bun run finite-bounds  ·  bun run scripts/finite-bounds.ts [--json] [--explain]
 //   bun run scripts/finite-bounds.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-import { maskLiterals } from '@ultimat3/cli';
-import { collectSourceFiles, type SourceFile } from './boundaries';
-import { flagList, parseScriptArgs } from './lib/args';
-import {
-  applyFiniteBoundsUnpin,
-  FINITE_BOUNDS_PINS,
-  FINITE_BOUNDS_PINS_FILE,
-  finiteBoundsPinnedFor,
-} from './lib/finite-bounds-pins';
+import { maskLiterals } from '../packages/core/src/source-mask';
+import type { SourceFile } from './boundaries';
+import { balancedClose } from './lib/balanced-paren';
+import { corpus } from './lib/corpus';
+import { FINITE_BOUNDS_PINS, FINITE_BOUNDS_PINS_FILE } from './lib/finite-bounds-pins';
 import { FINITE_SCREENS_FILE, SCREENING_CALL } from './lib/finite-screens';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import type { PinTable, RatchetGap } from './lib/ratchet';
+import { packageOf, ratchetGaps, ratchetMain } from './lib/ratchet';
 import { isTestPath, lineOf } from './lib/source-scan';
-import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'finite-bounds';
 
@@ -205,20 +200,6 @@ const closingBrace = (code: string, open: number): number => {
   return code.length;
 };
 
-/** The `)` closing the `(` at `open`, or the end of the file. */
-const closingParen = (code: string, open: number): number => {
-  let depth = 0;
-  for (let index = open; index < code.length; index += 1) {
-    const char = code[index] as string;
-    if (char === '(') depth += 1;
-    else if (char === ')') {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
-  }
-  return code.length;
-};
-
 export interface FiniteBoundSite {
   readonly path: string;
   readonly line: number;
@@ -246,7 +227,8 @@ const repairSpans = (source: string, screens: RegExp): readonly string[] => {
   const spans: string[] = [];
   for (const match of source.matchAll(screens)) {
     const open = match.index + match[0].length - 1;
-    spans.push(source.slice(open, closingParen(source, open) + 1));
+    const close = balancedClose(source, open);
+    spans.push(source.slice(open, close === -1 ? source.length : close + 1));
   }
   return spans;
 };
@@ -313,24 +295,11 @@ export function scanFiniteBounds(
 const scannable = (file: SourceFile): boolean =>
   !isTestPath(file.path) && !isFixture(file.path) && !file.path.startsWith(TEMPLATE_ROOT);
 
-export type FiniteBoundGapKind = 'over' | 'stale' | 'unscanned';
-
-export interface FiniteBoundGap {
-  readonly kind: FiniteBoundGapKind;
-  readonly pkg: string;
-  readonly found: number;
-  readonly pinned: number;
-  readonly first?: FiniteBoundSite;
-}
+export type FiniteBoundGap = RatchetGap<FiniteBoundSite>;
 
 export interface FiniteBoundsInput {
   readonly files: readonly SourceFile[];
-  readonly pins: Readonly<Record<string, FiniteBoundPinShape>>;
-}
-
-interface FiniteBoundPinShape {
-  readonly count: number;
-  readonly reason: string;
+  readonly pins: PinTable;
 }
 
 /** Every site per package, in source order — the one scan `--explain`, the ratchet and `--unpin` share. */
@@ -351,30 +320,13 @@ export function finiteBoundSites(
   return found;
 }
 
+const flat = (files: readonly SourceFile[]): readonly FiniteBoundSite[] => [
+  ...[...finiteBoundSites(files).values()].flat(),
+];
+
 /** The ratchet: a package may hold what it is pinned at, may fall, may never rise. */
-export function checkFiniteBounds(input: FiniteBoundsInput): readonly FiniteBoundGap[] {
-  if (input.files.length === 0) {
-    return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
-  }
-  const found = finiteBoundSites(input.files);
-  const gaps: FiniteBoundGap[] = [];
-  for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
-    const hits = found.get(pkg) ?? [];
-    const pinned = finiteBoundsPinnedFor(pkg, input.pins);
-    if (hits.length > pinned) {
-      gaps.push({
-        kind: 'over',
-        pkg,
-        found: hits.length,
-        pinned,
-        ...(hits[0] === undefined ? {} : { first: hits[0] }),
-      });
-      continue;
-    }
-    if (hits.length < pinned) gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
-  }
-  return gaps.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
-}
+export const checkFiniteBounds = (input: FiniteBoundsInput): readonly FiniteBoundGap[] =>
+  ratchetGaps(flat(input.files), input.pins, input.files.length > 0);
 
 const at = (site: FiniteBoundSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
@@ -397,77 +349,44 @@ const unscannedFinding = (): Finding => ({
   code: 'X_FINITE_BOUND_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree where every bound is checked',
-  fix: 'edit SOURCE_PATTERNS in scripts/boundaries.ts so it matches this repo layout, then bun run scripts/finite-bounds.ts',
-  at: 'scripts/boundaries.ts',
+  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/finite-bounds.ts',
+  at: 'scripts/lib/corpus.ts',
 });
 
-/**
- * A `Map` and not the `Record` object literal every sibling ratchet uses, because that shape is
- * `bun run proto-index`'s own finding — `FINDINGS[gap.kind]` answers an `Object.prototype` member
- * for the kind `constructor`. A new rule must not arrive owing a debt to an older one.
- */
-const FINDINGS = new Map<FiniteBoundGapKind, (gap: FiniteBoundGap) => Finding>([
-  ['over', overFinding],
-  ['stale', staleFinding],
-  ['unscanned', unscannedFinding],
-]);
+/** A blank reason is not a pin: its sites are unchecked AND unexcused, so they report as such. */
+const unexplainedFinding = (gap: FiniteBoundGap): Finding => ({
+  code: 'X_FINITE_BOUND_UNCHECKED',
+  cause: `${gap.pkg} is pinned with a blank reason, so its ${String(gap.found)} unchecked numeric option(s) are held by nothing — a count with no sentence is the waiver axiom 3 refuses`,
+  fix: `write what each remaining option in ${gap.pkg} is and why it is not screened, in ${FINITE_BOUNDS_PINS_FILE}`,
+  at: FINITE_BOUNDS_PINS_FILE,
+});
 
 export const finiteBoundFindingFor = (gap: FiniteBoundGap): Finding =>
-  (FINDINGS.get(gap.kind) ?? unscannedFinding)(gap);
+  gap.kind === 'over'
+    ? overFinding(gap)
+    : gap.kind === 'stale'
+      ? staleFinding(gap)
+      : gap.kind === 'unexplained'
+        ? unexplainedFinding(gap)
+        : unscannedFinding();
+
+const treeSites = async (root: string): Promise<readonly FiniteBoundSite[]> =>
+  flat(await corpus(root, 'source'));
 
 export const finiteBoundGaps = async (root: string): Promise<readonly FiniteBoundGap[]> =>
-  checkFiniteBounds({ files: await collectSourceFiles(root), pins: FINITE_BOUNDS_PINS });
+  ratchetGaps(await treeSites(root), FINITE_BOUNDS_PINS, true);
 
 /** What this rule contributes to `x verify`'s `unit` step, through `finite-bounds.test.ts`. */
 export const finiteBoundFindings = async (root: string): Promise<readonly Finding[]> =>
   (await finiteBoundGaps(root)).map(finiteBoundFindingFor);
 
-export async function finiteBoundCounts(root: string): Promise<Readonly<Record<string, number>>> {
-  const counts: Record<string, number> = {};
-  for (const [pkg, sites] of finiteBoundSites(await collectSourceFiles(root))) {
-    counts[pkg] = sites.length;
-  }
-  return counts;
-}
-
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
-    const lowered = await applyFiniteBoundsUnpin(root, unpin, await finiteBoundCounts(root));
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package is already at what this tree measures'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
-  } else {
-    const files = await collectSourceFiles(root);
-    const sites = finiteBoundSites(files);
-    const gaps = checkFiniteBounds({ files, pins: FINITE_BOUNDS_PINS });
-    const total = [...sites.values()].reduce((sum, list) => sum + list.length, 0);
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? `${String(total)} numeric option(s) defaulted with ?? across packages/*/src, none above its pin`
-            : `${String(gaps.length)} package(s) off the finite-bounds ratchet`,
-        findings: gaps.map(finiteBoundFindingFor),
-        data:
-          args.flags.get('explain') === true
-            ? { sites: Object.fromEntries(sites) }
-            : { counts: await finiteBoundCounts(root) },
-      },
-      args.json,
-    );
-  }
+  await ratchetMain({
+    script: SCRIPT,
+    pinsFile: FINITE_BOUNDS_PINS_FILE,
+    pins: FINITE_BOUNDS_PINS,
+    sites: treeSites,
+    findingFor: finiteBoundFindingFor,
+    clean: 'every numeric option defaulted with ?? across packages/*/src is at or under its pin',
+  });
 }

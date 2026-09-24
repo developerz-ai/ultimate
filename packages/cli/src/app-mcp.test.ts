@@ -3,12 +3,15 @@
 // CASE, because `import()` caches by path and a rewritten `mcp.ts` would answer with its first body.
 import { afterAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no tmpdir(); a fixture lives outside the checkout, where a parallel worker
+// globbing the tree cannot meet it half-deleted.
+import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; fixtures are joined to this file's directory.
 import { join } from 'node:path';
 import type { UltimateRequest } from '@ultimat3/http';
 import { APP_MCP_ROUTE_NAME, appMcpMount, mountAppMcp } from './app-mcp';
 
-const FIXTURES = join(import.meta.dir, '..', '.app-mcp-fixture');
+const FIXTURES = join(tmpdir(), `x-app-mcp-${process.pid}`);
 
 const fixture = async (name: string, files: Readonly<Record<string, string>>): Promise<string> => {
   const root = join(FIXTURES, name);

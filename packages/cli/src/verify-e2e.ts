@@ -4,14 +4,17 @@
 // app: the suite runs as before and its browser-backed cases skip — or refuse under
 // `E2E_BROWSER_REQUIRED=1`.
 
-// why: Bun exposes no path API — the preload is addressed by an absolute path the child resolves.
-import { join } from 'node:path';
-import { findChrome } from './cdp-launch';
-import { E2E_ROOT_ENV } from './e2e-browser-handle';
+import { E2E_ROOT_ENV, findChrome } from '@ultimat3/testing';
 import type { ExecResult } from './exec';
 
-/** The preload `bun test` is handed, beside the app's own from `bunfig.toml`. */
-export const E2E_PRELOAD = join(import.meta.dir, 'e2e-preload.ts');
+/**
+ * The preload `bun test` is handed, beside the app's own from `bunfig.toml` — `@ultimat3/testing`'s,
+ * resolved from here to the absolute path the child process loads. A FUNCTION, resolved when a run
+ * needs it: at module scope it ran on every import of the registry, and a compiled `x` binary —
+ * whose `/$bunfs` holds no `node_modules` — died at boot resolving a file it never uses.
+ */
+export const e2ePreload = (): string =>
+  Bun.resolveSync('@ultimat3/testing/e2e-preload', import.meta.dir);
 
 export interface E2eRun {
   readonly command: readonly string[];
@@ -32,7 +35,7 @@ export async function withE2eApp(
   if (chrome === undefined) return run({ command: input.command, env: input.env });
   const [bun = 'bun', test = 'test', ...rest] = input.command;
   return run({
-    command: [bun, test, '--preload', E2E_PRELOAD, ...rest],
+    command: [bun, test, '--preload', e2ePreload(), ...rest],
     env: { ...input.env, [E2E_ROOT_ENV]: input.root },
   });
 }

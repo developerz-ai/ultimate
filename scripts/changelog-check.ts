@@ -24,6 +24,7 @@ import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
+import { claimGaps, treeClaims } from './lib/unreleased-claims';
 
 const SCRIPT = 'changelog-check';
 export const CHANGELOG_PATH = 'CHANGELOG.md';
@@ -451,8 +452,10 @@ export async function changelogGaps(root: string): Promise<readonly ChangelogGap
 }
 
 /** Every finding this rule contributes, for a caller that folds it into a gate step. */
-export const changelogFindings = async (root: string): Promise<readonly Finding[]> =>
-  (await changelogGaps(root)).map(changelogFinding);
+export const changelogFindings = async (root: string): Promise<readonly Finding[]> => [
+  ...(await changelogGaps(root)).map(changelogFinding),
+  ...claimGaps(await treeClaims(root, await Bun.file(`${root}/${CHANGELOG_PATH}`).text())),
+];
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));

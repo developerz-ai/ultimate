@@ -11,7 +11,7 @@ import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { admin } from '../admin';
 import { actorLabel } from '../label';
-import { resourceScreen, visibleNavFor } from '../screen';
+import { type ResourceScreen, resourceScreen, visibleNavFor } from '../screen';
 import { AdminShell, ResourceView } from '../views';
 
 const route = adminRouteFor(admin, `${admin.basePath}/users`);
@@ -22,11 +22,14 @@ export const config = defineRoute({
   offline: 'network-only',
   policy: route.policy,
   budget: { js: '0kb', lcp: 3000 },
+  load: async (): Promise<{ readonly screen: ResourceScreen }> => ({
+    screen: await resourceScreen('users'),
+  }),
   meta: () => ({ title: t('admin.users.title'), description: t('admin.users.description') }),
 });
 
-export async function Page() {
-  const screen = await resourceScreen('users');
+export function Page(props: { readonly data: { readonly screen: ResourceScreen } }) {
+  const { screen } = props.data;
   return (
     <AdminShell titleKey={screen.titleKey} nav={visibleNavFor()} actorLabel={actorLabel()}>
       <ResourceView screen={screen} />

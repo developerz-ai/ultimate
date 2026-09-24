@@ -4,14 +4,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { checkChangelog } from './changelog-check';
+import { commitBlock, promoteUnreleased, releaseDate } from './lib/release-changelog';
 import {
   BUMPS,
-  commitBlock,
   nextVersion,
-  promoteUnreleased,
   RELEASE_FLAGS,
   readReleaseVersion,
-  releaseDate,
+  releaseInvocation,
+  releaseNextLine,
   repinFrameworkDeps,
   setOwnVersion,
   unknownReleaseFlags,
@@ -298,5 +298,74 @@ describe('unit · the version to publish is decided, never guessed', () => {
     const fix = 'findings' in result ? (result.findings[0]?.fix ?? '') : '';
     expect(fix).toStartWith('bun run scripts/release.ts');
     expect(fix).not.toContain('<');
+  });
+});
+
+describe('unit · a release only moves forward, and is asked for one way', () => {
+  const refusal = (result: ReturnType<typeof readReleaseVersion>) =>
+    'findings' in result ? result.findings : [];
+
+  test('--version at the current version is refused, naming both', () => {
+    const [finding] = refusal(
+      readReleaseVersion({ explicit: '1.2.0', bump: undefined, current: '1.2.0' }),
+    );
+    expect(finding?.code).toBe('X_RELEASE_VERSION_INVALID');
+    expect(finding?.cause).toContain('1.2.0');
+    expect(finding?.fix).toStartWith('bun run scripts/release.ts --bump ');
+  });
+
+  test('--version below the current one is refused in semver order, not string order', () => {
+    const [finding] = refusal(
+      readReleaseVersion({ explicit: '9.9.9', bump: undefined, current: '10.0.0' }),
+    );
+    expect(finding?.code).toBe('X_RELEASE_VERSION_INVALID');
+    expect(finding?.cause).toContain('9.9.9');
+    expect(finding?.cause).toContain('10.0.0');
+    expect(readReleaseVersion({ explicit: '10.0.0', bump: undefined, current: '9.9.9' })).toEqual({
+      version: '10.0.0',
+    });
+  });
+
+  test('a prerelease promoted to its release moves forward', () => {
+    expect(
+      readReleaseVersion({ explicit: '2.0.0', bump: undefined, current: '2.0.0-rc.1' }),
+    ).toEqual({ version: '2.0.0' });
+  });
+
+  // `--bump` was read only when `--version` was absent, so `--version 1.3.0 --bump major` released
+  // 1.3.0 and said nothing about the major somebody asked for.
+  test('--version and --bump together is refused rather than one silently winning', () => {
+    const [finding, ...rest] = refusal(
+      readReleaseVersion({ explicit: '1.3.0', bump: 'major', current: '1.2.0' }),
+    );
+    expect(rest).toEqual([]);
+    expect(finding?.code).toBe('X_RELEASE_VERSION_INVALID');
+    expect(finding?.cause).toContain('--version 1.3.0');
+    expect(finding?.cause).toContain('--bump major');
+  });
+
+  // It said `or --version <current>`, which is now the refusal above.
+  test('the unstated fix no longer suggests re-releasing the current version', () => {
+    const [finding] = refusal(
+      readReleaseVersion({ explicit: undefined, bump: undefined, current: '1.2.0' }),
+    );
+    expect(finding?.fix).not.toContain('--version 1.2.0');
+  });
+});
+
+describe('unit · the commands a release prints are the safe form', () => {
+  test('the next line tags with -a, never a lightweight tag --follow-tags would skip', () => {
+    const line = releaseNextLine('1.3.0');
+    expect(line).toContain('git tag -a v1.3.0 -m v1.3.0 && git push origin v1.3.0');
+    expect(line).not.toMatch(/tag v1\.3\.0/);
+  });
+
+  test('the rerun names only validated flags, in the form the script parses', () => {
+    expect(
+      releaseInvocation({ explicit: undefined, bump: 'minor', dryRun: false, json: true }),
+    ).toBe('bun run scripts/release.ts --bump minor --json');
+    expect(
+      releaseInvocation({ explicit: '1.3.0', bump: undefined, dryRun: true, json: false }),
+    ).toBe('bun run scripts/release.ts --version 1.3.0 --dry-run');
   });
 });

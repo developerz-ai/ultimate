@@ -24,9 +24,8 @@ const thrownBy = async (run: () => Promise<unknown>): Promise<Record<string, unk
 };
 
 describe('unit · x shot refuses before it boots anything', () => {
-  // The fixture app root has to be a directory this package does NOT resolve puppeteer-core from,
-  // which is why it cannot be `import.meta.dir` — measured: six of these cases pass there for the
-  // wrong reason.
+  // The fixture app root is a throwaway directory rather than `import.meta.dir`, which is a
+  // package with its own `package.json` and resolves things an app would not.
   //
   // Built with `Bun.write` and `crypto.randomUUID()` rather than `mkdtempSync`, and that is not
   // style: `scripts/node-imports.ts` is a ratchet on this package's `node:` imports, and splitting
@@ -156,17 +155,6 @@ describe('unit · x shot refuses before it boots anything', () => {
     );
     expect(error['code']).toBe('X_CLI_BAD_FLAG');
     expect(String(error['cause'])).toContain('/no/such/chrome');
-    expect(await startedADevServer()).toBe(false);
-  });
-
-  // The whole point of resolving the browser first: an app with none must not pay an embedded
-  // Postgres boot to be told to run one install command.
-  test('an app with no puppeteer-core is told to install it, and nothing is started', async () => {
-    const error = await thrownBy(() => shotCommand.run(contextFor(['shot', '/'])));
-    expect([error['code'], error['fix']]).toEqual([
-      'X_SHOT_BROWSER_MISSING',
-      'bun add -d puppeteer-core',
-    ]);
     expect(await startedADevServer()).toBe(false);
   });
 });

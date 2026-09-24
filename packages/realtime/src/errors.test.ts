@@ -56,6 +56,8 @@ const ADDED_SINCE = [
   'X_RECORD_REJECTED',
   'X_CHANNEL_DECLARATION_INVALID',
   'X_LOCAL_STORE_UNAVAILABLE',
+  // 22.0.0 (plan 101, slice 06 n): a sync node no change can reach, refused at boot.
+  'X_REALTIME_TOPOLOGY',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

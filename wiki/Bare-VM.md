@@ -26,7 +26,7 @@ bin/check
 The scaffold's `.env.development` ships committed non-secret defaults, and it leaves `DATABASE_URL`
 empty. An empty `DATABASE_URL` is not a hole to fill — it is the switch that selects the embedded
 database, in `resolveServices`
-([`packages/cli/src/dev-services.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/dev-services.ts)),
+([`packages/cli/src/runtime-bindings.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/runtime-bindings.ts)),
 which is the one place the three service bindings are decided:
 
 | Binding | Unset env | Resolves to | Set it to |
@@ -64,7 +64,7 @@ through the table above.
 slot to take. A `--live` query still works: `x dev` installs the in-process bridge instead — the
 same row observer the framework's own live tests run on — and the boot line says which feed you
 got, `live=in-process` under the embedded database and `live=replication` under a real one
-(`packages/cli/src/dev-live-feed.ts`). Its honest bound is that a write made by **another process**
+(`packages/cli/src/runtime-live-feed.ts`). Its honest bound is that a write made by **another process**
 is invisible to it, which holds by construction under `x dev`, where every role is this one process
 ([Realtime](Realtime)).
 

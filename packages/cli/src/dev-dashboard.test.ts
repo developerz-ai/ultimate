@@ -23,10 +23,10 @@ import { appManifest, writeAppManifest } from './app-manifest';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
 import { createStatementLedger } from './dev-n-plus-one';
-import type { RunningServices } from './dev-runtime';
-import type { DevServices, ServiceBinding } from './dev-services';
 import { createTraceRecorder } from './dev-traces';
 import { CliNotImplementedError } from './errors';
+import type { DevServices, ServiceBinding } from './runtime-bindings';
+import type { RunningServices } from './runtime-services';
 
 /**
  * The timeline panel's own data, off a payload that has lost its type.

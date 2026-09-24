@@ -32,6 +32,17 @@ export const JOB_STATES = [
 
 export type JobState = (typeof JOB_STATES)[number];
 
+/**
+ * The states `requeue` — `x jobs retry` — accepts. Everything else is live: requeueing a running
+ * row ran it twice, and a queued one has nothing to retry. `SQL_JOB_REQUEUE` fences on the same set.
+ */
+export const REQUEUEABLE_STATES: ReadonlySet<JobState> = new Set<JobState>([
+  'dead',
+  'cancelled',
+  'done',
+  'failed',
+]);
+
 /** Narrows a state read back off a queue row. Never a cast — the list decides. */
 export const isJobState = (value: string): value is JobState =>
   (JOB_STATES as readonly string[]).includes(value);
@@ -175,7 +186,11 @@ export interface JobIntrospection {
   job(jobId: string): Promise<JobRecord | undefined>;
   list(filter?: JobFilter): Promise<readonly JobRecord[]>;
   deadLetters(limit?: number): Promise<readonly JobRecord[]>;
-  /** Re-queue a dead/failed job. `fromStep` drops step records from that step onward. */
+  /**
+   * Re-queue a finished job (`REQUEUEABLE_STATES`); a live one is `X_JOB_NOT_REQUEUEABLE`, and a
+   * key a live job holds is `X_JOB_DUPLICATE`. `fromStep` drops that step and every step that
+   * started after it.
+   */
   requeue(jobId: string, options?: { readonly fromStep?: string }): Promise<JobRecord>;
   /**
    * Stop a job from outside. The only answer to a runaway pass that was otherwise "scale the

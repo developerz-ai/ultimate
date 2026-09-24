@@ -9,11 +9,11 @@
 
 import type { Actor } from '@ultimat3/core';
 import { UltimateError } from '@ultimat3/core';
+import type { LiveReplicator } from '@ultimat3/realtime/server';
+import { startLiveReplicator } from '@ultimat3/realtime/server';
 import type { LiveFeed, LiveFeedPatch, LiveTarget } from './fixture-drivers';
 import type { LiveConnection, LiveNodeHandle } from './live-node';
 import { createLiveNode } from './live-node';
-import type { LiveReplicator } from './live-replicator';
-import { startLiveReplicator } from './live-replicator';
 
 interface Row {
   readonly id: string;

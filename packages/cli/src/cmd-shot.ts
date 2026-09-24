@@ -8,10 +8,10 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
-import type { ColorScheme, ScrapeDriver, ScrapePage, ScrapeSession } from '@ultimat3/scraping';
-import { DEFAULT_PAGE_TIMEOUT_MS, systemScrapeClock } from '@ultimat3/scraping';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
+import type { ShotColorScheme, ShotDriver, ShotPage, ShotSession } from './browser-launcher-port';
+import { DEFAULT_PAGE_TIMEOUT_MS, systemShotClock } from './cdp-shot-clock';
 import {
   islandShot,
   islandShotResult,
@@ -22,6 +22,7 @@ import {
   refuseSweepWithRoute,
   refuseSweepWithState,
 } from './cmd-shot-island';
+import { shotSpec } from './cmd-shot-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
 import { intFlagOr, PORT_RANGE } from './flag-number';
@@ -181,7 +182,7 @@ const intFlag = (
 export interface ShotRun {
   readonly route: string;
   readonly outDir: string;
-  readonly driver: ScrapeDriver;
+  readonly driver: ShotDriver;
   readonly boot: () => Promise<ShotServer>;
   readonly settleMs: number;
   readonly timeoutMs: number;
@@ -200,7 +201,7 @@ export interface ShotRun {
    * neither: the box's own preference and the app's own default — what `x shot` has always done,
    * and the point of `defaultMode` — and `ui.shot` names one explicitly for exactly that reason.
    */
-  readonly colorScheme?: ColorScheme | undefined;
+  readonly colorScheme?: ShotColorScheme | undefined;
   readonly now?: (() => Date) | undefined;
   /**
    * Something to do with the page AFTER the islands settled and BEFORE the picture — `ui.inspect`
@@ -209,7 +210,7 @@ export interface ShotRun {
    * caller who never calls it gets the count from the first settle.
    */
   readonly act?:
-    | ((page: ScrapePage, settle: () => Promise<IslandCount | null>) => Promise<void>)
+    | ((page: ShotPage, settle: () => Promise<IslandCount | null>) => Promise<void>)
     | undefined;
 }
 
@@ -226,7 +227,7 @@ const quietly = async (stop: () => Promise<void>): Promise<void> => {
  */
 export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
   const server = await options.boot();
-  let session: ScrapeSession | undefined;
+  let session: ShotSession | undefined;
   try {
     const requestedUrl = new URL(options.route, server.url).toString();
     session = await options.driver.open({
@@ -235,7 +236,7 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       // inside your network is the widest SSRF surface an app can own, and a screenshot command is
       // not the place to open it by default. Every refusal lands in the verdict's `refused` count.
       rules: { allowHosts: allowHostsFrom(server.url, options.extraHosts) },
-      clock: systemScrapeClock,
+      clock: systemShotClock,
       timeoutMs: options.timeoutMs,
     });
     const page = session.page;
@@ -312,54 +313,7 @@ export const shotResult = (artifacts: ShotArtifacts): CommandResult => ({
 });
 
 export const shotCommand: CliCommand = {
-  spec: {
-    name: 'shot',
-    summary: 'photograph one route, one island in a state it declares, or every island in the app',
-    usage:
-      'x shot <route> | --island <name> [--state <id>] | --all-islands [--port 0] [--out <dir>] [--settle 2000] [--json]',
-    requiresApp: true,
-    flags: [
-      { name: 'port', type: 'string', summary: 'dev port (0 lets the kernel pick a free one)' },
-      { name: 'out', type: 'string', summary: 'where shot.png and verdict.json are written' },
-      { name: 'full', type: 'boolean', summary: 'whole page, not the fold', default: true },
-      { name: 'settle', type: 'string', summary: 'ms to wait after load before capturing' },
-      { name: 'timeout', type: 'string', summary: 'ms one navigation may take' },
-      { name: 'browser', type: 'string', summary: 'browser executable puppeteer-core launches' },
-      {
-        name: 'cdp-url',
-        type: 'string',
-        summary: 'attach to a browser somebody else is running (a provider session, a sidecar)',
-      },
-      { name: 'allow-hosts', type: 'string', summary: 'extra hosts the page may request' },
-      {
-        name: 'theme',
-        type: 'string',
-        summary: "light or dark, stored as the visitor's choice; absent is the app's own default",
-      },
-      // A FLAG on `x shot` and never a second command: photographing a route and photographing a
-      // component are one job with two subjects, and a parallel command would be the second path
-      // axiom 1 refuses.
-      {
-        name: 'island',
-        type: 'string',
-        summary: 'photograph one island in every state it declares',
-      },
-      {
-        name: 'state',
-        type: 'string',
-        summary: 'one declared state of that island, not all of them',
-      },
-      // Its own SPELLING and never `--island` with no value: the parser refuses a bare `--island`
-      // ("expects a value") and `--island=` is an empty name, so "every island" had no form a
-      // reader could type that could not be read as a mistyped one. A boolean cannot be confused
-      // with a name, and `x shot --all-islands` says what it does beside `x shot --island <name>`.
-      {
-        name: 'all-islands',
-        type: 'boolean',
-        summary: 'every island in the app, in every state it declares, plus an index.md',
-      },
-    ],
-  },
+  spec: shotSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('shot', ctx.cwd).dir;
     // Every value read before anything boots: a typo must not cost a browser and a dev server to
@@ -396,8 +350,7 @@ export const shotCommand: CliCommand = {
     // Which browser this run gets — start one here, or attach to one somebody else is running.
     // Decided by `shot-browser.ts` over plain inputs, and decided HERE, before a dev server or a
     // provider session exists to pay for a typo. It also PROBES for an installed Chrome and refuses
-    // when there is none: `puppeteer-core` bundles no browser, so a missing one used to surface as
-    // a library throw one embedded Postgres later.
+    // when there is none, so a missing browser costs no embedded Postgres boot.
     const { cdpUrl, executablePath } = shotBrowserChoice({
       cdpFlag: flagString(ctx.args, 'cdp-url'),
       browserFlag: flagString(ctx.args, 'browser'),
@@ -423,10 +376,8 @@ export const shotCommand: CliCommand = {
         await islandShot({ ...shared, island, ...(state === undefined ? {} : { state }) }),
       );
     }
-    // Resolved before the boot for the same reason: an app with no browser installed must not pay
-    // an embedded Postgres to be told to run `bun add -d puppeteer-core`.
+    // Built before the boot, for the same reason.
     const driver = await appBrowser({
-      root,
       ...(executablePath === undefined ? {} : { executablePath }),
       ...(cdpUrl === undefined ? {} : { cdpUrl }),
     });

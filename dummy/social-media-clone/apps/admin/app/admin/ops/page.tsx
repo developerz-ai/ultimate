@@ -2,9 +2,10 @@
 // `pages:` entry on `defineAdmin`; everything this file exports comes out of the route table that
 // declaration built.
 //
-// That is the whole point. `config` is the `defineRoute` `routes.ts` composed — with `policy`
-// already set from `pagePermissions()` — and `render` is the `guardedPage()` wrapper, which asks
-// the same `decideAll` every CRUD call asks and audits the refusal. Until 1.2.0 this file wrote
+// That is the whole point. `config` is the route `routes.ts` composed — its `policy` set from
+// `pagePermissions()` — re-declared only to add the `load` that resolves the body, and `render` is
+// the `guardedPage()` wrapper, which asks the same `decideAll` every CRUD call asks and audits the
+// refusal. Until 1.2.0 this file wrote
 // both by hand: its own `defineRoute`, its own `policy:` line and its own `pageDecision('job')`
 // branch. All three were correct and none was enforced, which is the privilege hole `pages:`
 // closes — a custom admin page that forgets one of them now cannot exist.
@@ -15,6 +16,7 @@ import {
   type AdminRouteConfig,
   adminRouteFor,
 } from '@ultimat3/admin';
+import { defineRoute } from '@ultimat3/render';
 import type { JSX } from 'solid-js';
 import { admin, adminCtxForRequest } from '../admin';
 import { actorLabel } from '../label';
@@ -34,6 +36,7 @@ const OPS_PATH = `${admin.basePath}${opsPage.path}`;
  */
 function mountedOps(): {
   readonly config: AdminRouteConfig['config'];
+  readonly policy: AdminRouteConfig['policy'];
   readonly render: AdminPageComponent;
 } {
   const route = adminRouteFor(admin, OPS_PATH);
@@ -44,31 +47,39 @@ function mountedOps(): {
       fix: 'add opsPage to `pages:` in apps/admin/app/admin/admin.ts',
     });
   }
-  return { config: route.config, render: route.component };
+  return { config: route.config, policy: route.policy, render: route.component };
 }
 
 const ops = mountedOps();
 
-export const config = ops.config;
+/**
+ * The table's route, with the guarded page's body as its `load`: the same render, mode, budget,
+ * offline strategy, meta and — the half `route-policy.test.ts` pins — the same gate, read off the
+ * route `defineAdmin` built rather than typed here. The body is resolved once per render, inside
+ * the request's context, and the component below only frames it.
+ */
+export const config = defineRoute({
+  render: ops.config.render,
+  offline: ops.config.offline,
+  hydrate: ops.config.hydrate,
+  budget: ops.config.budget,
+  // Never optional here: `AdminRouteConfig.policy` is the composed gate, not `RouteConfig`'s maybe.
+  policy: ops.policy,
+  load: async ({ params, url }): Promise<{ readonly body: JSX.Element }> => ({
+    body: await ops.render({ ctx: adminCtxForRequest(), params, url }),
+  }),
+  meta: ops.config.meta,
+});
 
 /**
  * The frame around the guarded page. The shell is this app's — nav, actor label, title — and the
  * body is whatever `guardedPage()` returned: the board for an operator who holds `job:read`, and
  * `AdminPageDenied` naming the permission for one who does not.
  */
-export async function Page(props: {
-  readonly params: Readonly<Record<string, string>>;
-  readonly url: string;
-}): Promise<JSX.Element> {
-  const body = await ops.render({
-    ctx: adminCtxForRequest(),
-    params: props.params,
-    url: props.url,
-  });
-
+export function Page(props: { readonly data: { readonly body: JSX.Element } }): JSX.Element {
   return (
     <AdminShell titleKey={opsPage.titleKey} nav={visibleNavFor()} actorLabel={actorLabel()}>
-      {body}
+      {props.data.body}
     </AdminShell>
   );
 }

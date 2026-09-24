@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no tmpdir(); a fixture lives outside the checkout, where a parallel worker
+// globbing the tree cannot meet it half-deleted.
+import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { SURFACES } from '@ultimat3/render';
@@ -206,7 +209,7 @@ describe('unit · app boundaries', () => {
 });
 
 describe('unit · readAppSources / appImportGraph', () => {
-  const root = join(import.meta.dir, '..', '.app-boundaries-fixture');
+  const root = join(tmpdir(), `x-app-boundaries-${process.pid}`);
 
   beforeAll(async () => {
     await rm(root, { recursive: true, force: true });

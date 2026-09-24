@@ -5,9 +5,11 @@
 import { join } from 'node:path';
 import type { Manifest } from '@ultimat3/manifest';
 import { assertNoDrift, MANIFEST_FILENAME } from '@ultimat3/manifest';
-import { appManifest, writeAppManifest } from './app-manifest';
-import { OPENAPI_FILE, openApiJson } from './app-openapi';
+import { writeAppArtifacts } from './app-artifacts';
+import { appManifest } from './app-manifest';
+import { openApiStaleness } from './app-openapi';
 import { requireAppRoot } from './app-root';
+import { manifestSpec } from './cmd-manifest-spec';
 import type { CliCommand, CommandContext } from './command';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
@@ -41,28 +43,24 @@ async function staleness(root: string, manifest: Manifest): Promise<Finding | un
 }
 
 export const manifestCommand: CliCommand = {
-  spec: {
-    name: 'manifest',
-    summary: 'regenerate x.manifest.json and openapi.json from the code',
-    usage: 'x manifest [--check] [--json]',
-    requiresApp: true,
-    flags: [
-      { name: 'check', type: 'boolean', summary: 'fail if the committed files are stale' },
-      { name: 'openapi', type: 'boolean', summary: 'also write openapi.json', default: true },
-    ],
-  },
+  spec: manifestSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('manifest', ctx.cwd).dir;
     const { manifest, findings } = await appManifest(root);
     const counts = countsOf(manifest);
 
     if (flagBool(ctx.args, 'check')) {
-      const stale = await staleness(root, manifest);
+      // BOTH files the command writes: `--check` compared only `x.manifest.json`, so a stale
+      // `openapi.json` — the one the typed client is generated from — read as fresh.
+      const stale = [
+        ...[await staleness(root, manifest)].filter((one) => one !== undefined),
+        ...(await openApiStaleness(root, manifest)),
+      ];
       return {
-        ok: stale === undefined && findings.length === 0,
+        ok: stale.length === 0 && findings.length === 0,
         command: 'manifest',
-        summary: stale === undefined ? msg('cli.manifest.fresh') : msg('cli.manifest.stale'),
-        findings: stale === undefined ? findings : [...findings, stale],
+        summary: stale.length === 0 ? msg('cli.manifest.fresh') : msg('cli.manifest.stale'),
+        findings: [...findings, ...stale],
         data: { buildId: manifest.buildId, counts },
       };
     }
@@ -79,10 +77,11 @@ export const manifestCommand: CliCommand = {
       };
     }
 
-    const path = await writeAppManifest(root, manifest);
-    if (ctx.args.flags.get('openapi') !== false) {
-      await Bun.write(join(root, OPENAPI_FILE), openApiJson(manifest));
-    }
+    await writeAppArtifacts(root, manifest, {
+      openapi: ctx.args.flags.get('openapi') !== false,
+      onlyExisting: false,
+    });
+    const path = join(root, MANIFEST_FILENAME);
     return {
       ok: true,
       command: 'manifest',

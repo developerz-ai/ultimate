@@ -191,3 +191,12 @@ Tier 1. May import tiers 0-0 only — enforced by `bun run scripts/boundaries.ts
 
 `X_FLAG_DUPLICATE` · `X_FLAG_EXPIRED` · `X_FLAG_EXPIRY_INVALID` · `X_FLAG_SUBJECT_REQUIRED` ·
 `X_FLAG_TARGETING_INVALID` · `X_FLAG_UNKNOWN`
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `FlagsError` | any `FlagsErrorCode` — `FLAGS_ERROR_CODES` | `src/errors.ts` |

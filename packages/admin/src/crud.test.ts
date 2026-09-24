@@ -296,3 +296,59 @@ describe('a repo that throws leaves a failed entry and the error intact', () => 
     ]);
   });
 });
+
+/**
+ * `operations` is what a resource OFFERS, and it bounded the nav, the buttons and the MCP tools —
+ * but not the three direct write functions. A resource declared `['list', 'detail']` deleted a
+ * row through a direct `adminDestroy` call, confirmation and all. One rule, `operationOffered`.
+ */
+describe('a direct write on an operation the resource does not offer', () => {
+  const readOnly = (store: Map<string, AdminRow>): AdminResource<AdminRow> =>
+    adminResource(post, {
+      operations: ['list', 'detail'],
+      repo: {
+        list: async (): Promise<readonly AdminRow[]> => [...store.values()],
+        find: async (id: string): Promise<AdminRow | null> => store.get(id) ?? null,
+        create: async (input): Promise<AdminRow> => {
+          store.set(String(input['id']), input);
+          return input;
+        },
+        update: async (id, patch): Promise<AdminRow> => ({ ...(store.get(id) ?? {}), ...patch }),
+        destroy: async (id): Promise<void> => void store.delete(id),
+      },
+    });
+  const everything = ctxWith([
+    'admin:read',
+    'admin:write',
+    'admin:destroy',
+    'admin_crud_post:read',
+    'admin_crud_post:write',
+    'admin_crud_post:delete',
+    'admin_crud_post:create',
+  ]);
+  const seeded = (): Map<string, AdminRow> =>
+    new Map([[POST_ID, { id: POST_ID, title: 'Kept', secret: null, price: PRICE }]]);
+
+  test('adminDestroy is refused and the row still exists', async () => {
+    const store = seeded();
+    const result = await adminDestroy(
+      readOnly(store),
+      everything,
+      POST_ID,
+      confirmationToken('admin_crud_post', POST_ID),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.kind).toBe('denied');
+    expect(store.has(POST_ID)).toBe(true);
+  });
+
+  test('adminUpdate and adminCreate are refused, and nothing is written', async () => {
+    const store = seeded();
+    const updated = await adminUpdate(readOnly(store), everything, POST_ID, { title: 'Moved' });
+    expect(updated.ok).toBe(false);
+    const created = await adminCreate(readOnly(store), everything, { title: 'New', price: PRICE });
+    expect(created.ok).toBe(false);
+    expect(store.size).toBe(1);
+    expect(store.get(POST_ID)?.['title']).toBe('Kept');
+  });
+});

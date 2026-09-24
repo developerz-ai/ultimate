@@ -6,13 +6,14 @@
  * the process while the CDN was told `s-maxage=60`.
  */
 
-const DURATION_UNITS: Readonly<Record<string, number>> = {
-  ms: 1,
-  s: 1_000,
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-};
+/** A `Map`, never an object literal: a unit is read by a string key, and a `Map` has no prototype chain to answer for it. */
+const DURATION_UNITS: ReadonlyMap<string, number> = new Map([
+  ['ms', 1],
+  ['s', 1_000],
+  ['m', 60_000],
+  ['h', 3_600_000],
+  ['d', 86_400_000],
+]);
 
 /** `'5m'` → 300000. Numbers pass through as milliseconds. */
 export function parseTtlMs(ttl: string | number | null | undefined): number | null {
@@ -22,6 +23,6 @@ export function parseTtlMs(ttl: string | number | null | undefined): number | nu
   const amount = match?.[1];
   const unit = match?.[2];
   if (amount === undefined || unit === undefined) return null;
-  const factor = DURATION_UNITS[unit];
+  const factor = DURATION_UNITS.get(unit);
   return factor === undefined ? null : Number(amount) * factor;
 }

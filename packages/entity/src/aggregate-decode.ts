@@ -24,7 +24,8 @@ export const decodeAggregate = (fn: AggregateFn, kind: ColumnKind, text: string)
   // whatever they fit in, while `sum('likeCount')` over a million of them does not.
   if (fn === 'sum' || fn === 'avg') return text;
   if (kind === 'timestamptz') {
-    const at = new Date(text);
+    // Epoch milliseconds (`pg-sql.ts`), so no zone and no calendar is parsed here at all.
+    const at = new Date(Number(text));
     return Number.isNaN(at.getTime()) ? null : at;
   }
   if (kind === 'integer') {

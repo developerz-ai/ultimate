@@ -128,9 +128,11 @@ Then fix the class, not the instance. Each row above corresponds to a countermea
 |---|---|
 | The migrate Job failed, no serving pod started | the old version is still serving. Fix the migration and re-deploy. **Do not** roll the image back past the migration — the schema may already be partly applied |
 | The migration succeeded, the new code is broken | roll the image back. This is safe **only** if the migration was additive. If it dropped or renamed anything, the old code cannot run against the new schema, and the rollback is a second outage |
-| The migration is stuck holding a lock | find the blocking session; the `migrate` role runs with no statement timeout by design, so it will wait forever rather than fail |
+| The migration waits on a table lock | it does not wait forever: the `migrate` pool sets `lock_timeout` 3 s (`packages/db/src/pool-profile.ts`), so a DDL statement blocked by a long transaction fails with SQLSTATE `55P03`. Find the blocking session (`pg_stat_activity` / `pg_locks`), end it or wait for it, and re-run the release. The statement itself still has no timeout, by design — a long backfill-free migration is allowed to run |
+| `X_MIGRATE_CONCURRENT` | another migrator held the migration's advisory lock for the whole 60 s bounded wait (`MIGRATION_LOCK_WAIT_MS`). Two overlapping deploys serialise while the first is merely slow; this code means the first did not finish. Check for a stuck migrate Job (`kubectl get jobs`), let it finish or delete it, then re-run |
+| The migrate Job exits non-zero after applying, with `X_DB_DRIFT` | every migration applied, and the live schema does not match what the ledger says it should — a hand-made change, or a migration written outside `x db gen`. `ROLE=migrate` refuses (`assertNoDrift`) so the deploy does not roll on. Run `x db migrate --json` against the same database for every difference, reconcile, re-deploy |
 
-The rule that prevents the middle row is in [`01-kubernetes.md`](./01-kubernetes.md): **expand in one
+The rule that prevents the second row is in [`01-kubernetes.md`](./01-kubernetes.md): **expand in one
 release, contract in the next.** It is a review blocker, not a runbook step, because by the time you
 are reading a runbook it is already too late.
 
@@ -159,3 +161,42 @@ via the API server, then the kubelet, then the network path, in that order.
 If it is genuinely down: workloads with `nodeAffinity` pinned to that node **will not reschedule**.
 That is the cost of pinning, and it is the right trade for a database on a node-local volume — and
 the wrong one for a stateless role.
+
+## Jobs are dead-lettered
+
+A job that exhausted its retries is **kept**, never dropped: `queue_dead_jobs` counts them per queue.
+
+| # | Step |
+|---|---|
+| 1 | `x jobs ls --json` — the dead letters are listed per queue |
+| 2 | `x jobs show <id> --json` — the attempts, each error's code, cause and `fix:` |
+| 3 | fix the cause (the handler, a downstream, a bad input), deploy |
+| 4 | `x jobs retry <id>` — the job runs again under its SAME idempotency key, so a partial side effect is not repeated |
+
+Alert on `queue_dead_jobs > 0` rather than on the dead rate: a table that filled overnight and stopped
+growing is a rate of zero ([`03-observability.md`](./03-observability.md)).
+
+## The replication slot is accumulating WAL
+
+A logical slot holds WAL until its consumer confirms it. The `replicator` confirms continuously; a
+slot whose replicator is gone, crash-looping or on a different database keeps every WAL segment
+since, until the disk fills and the **database** stops.
+
+| Situation | Do |
+|---|---|
+| The replicator is down | bring it back — it resumes from the slot and the backlog drains. The slot is `REPLICATION_SLOT`, default `x_replicator` |
+| The slot is orphaned (the app moved database, or `REPLICATION_SLOT` was renamed) | `SELECT pg_drop_replication_slot('<slot>');` — only after confirming no replicator will ever read it again; live clients re-snapshot |
+| The disk is nearly full now | dropping the slot frees the WAL at the next checkpoint. That is the emergency brake; the replicator creates a fresh slot on its next start |
+
+Watch `pg_replication_slots` (`active`, `confirmed_flush_lsn` against the current WAL position) from
+postgres itself — the app emits no series for it.
+
+## `X_SHUTDOWN_TIMEOUT` in the logs on every deploy
+
+A drain hook — a handler, a job step, a socket teardown — was still running at the drain deadline
+(`drainDeadlineMs()`, 25 s by default) and was **abandoned**: the process exited without it.
+
+| Situation | Do |
+|---|---|
+| A long request or job step is expected | raise the budget and the grace period **together**: `configureLifecycle({ deadlineMs })`, and `terminationGracePeriodSeconds` / `stop_grace_period` at least preStop + readiness grace + that deadline |
+| It is not expected | the log line names the hook (`the "<name>" shutdown hook`): make it return once it stops accepting work, not once all work is done |

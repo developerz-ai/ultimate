@@ -41,6 +41,7 @@ export {
   DEFAULT_MAX_TOPICS_PER_NODE,
 } from './channel';
 export { type ChannelDescription, describeChannels } from './channel-describe';
+export { RealtimeTopologyError } from './errors';
 export {
   InProcessTransport,
   type InProcessTransportOptions,
@@ -62,6 +63,11 @@ export {
   LiveQueryRegistry,
   type LiveQueryRegistryOptions,
 } from './live-query';
+export {
+  type LiveReplicator,
+  type LiveReplicatorOptions,
+  startLiveReplicator,
+} from './live-replicator';
 export {
   applyToWindow,
   type BridgeResult,
@@ -109,7 +115,7 @@ export { openNatsClient } from './nats-lib-client';
 export { NatsTransport, type NatsTransportOptions } from './nats-transport';
 export { PgAdvisoryLock, type PgAdvisoryLockOptions } from './pg-advisory-lock';
 // ---- the postgres replication path ------------------------------------------------------------
-export { camel, entityRow } from './pg-entity-row';
+export { entityRow } from './pg-entity-row';
 export {
   changeLsn,
   commitPositionOf,
@@ -166,16 +172,15 @@ export {
   actorIdOf,
   CLOSE,
   DEFAULT_FRAME_BURST,
-  DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_BUFFERED_BYTES,
   DEFAULT_MAX_FRAMES_PER_SECOND,
-  idleSweepPeriodMs,
   SocketRegistry,
   type SocketRegistryOptions,
   SyncSocket,
   type SyncSocketOptions,
   type WsLike,
 } from './socket';
+export { DEFAULT_IDLE_TIMEOUT_MS, idleSweepPeriodMs } from './socket-idle';
 export type {
   GateFailed,
   GateStage,

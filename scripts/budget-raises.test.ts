@@ -91,12 +91,32 @@ describe('a raise must state its number and its reason', () => {
 });
 
 describe('the base the rule compares against', () => {
-  test('is origin/main`s tip, and a checkout without it says so and prints the fetch', () => {
+  test('is origin/main`s tip, and a checkout that cannot get it is REFUSED, never green', () => {
     const result = budgetResult([], undefined);
+    expect(result.ok).toBe(false);
     expect(result.summary).toContain('NO budget was compared');
-    expect(result.summary).toContain(FETCH_MAIN);
+    expect(result.findings?.map((one) => one.code)).toEqual(['X_BUDGET_BASE_MISSING']);
+    expect(result.findings?.[0]?.fix).toBe(FETCH_MAIN);
     expect(FETCH_MAIN).toContain('--depth=1');
     expect(BASE_REF).toBe('origin/main');
+  });
+
+  const fakeGit = (fetched: boolean, calls: string[]) => async (command: readonly string[]) => {
+    calls.push(command.slice(0, 2).join(' '));
+    const ok = command[1] === 'fetch' ? fetched : calls.includes('git fetch') && fetched;
+    return { command, code: ok ? 0 : 1, ok, output: '', durationMs: 0 };
+  };
+
+  test('a checkout without origin/main fetches it, then compares against it', async () => {
+    const calls: string[] = [];
+    expect(await baseRef('/nowhere', fakeGit(true, calls))).toBe(BASE_REF);
+    expect(calls).toEqual(['git rev-parse', 'git fetch', 'git rev-parse']);
+  });
+
+  test('a fetch that fails leaves no base, which budgetResult refuses', async () => {
+    const calls: string[] = [];
+    expect(await baseRef('/nowhere', fakeGit(false, calls))).toBeUndefined();
+    expect(calls).toEqual(['git rev-parse', 'git fetch', 'git rev-parse']);
   });
 
   test('a raise is reported against the ref it was compared with', () => {
@@ -121,8 +141,8 @@ describe('the real tree, against origin/main', () => {
     const base = await baseRef(root);
     const routes = base === undefined ? [] : await readRouteVersions(root, base);
     // Non-vacuity where a base exists: the tracked apps' budgeted routes were read at both ends.
-    if (base !== undefined)
-      expect(routes.filter((one) => one.base !== undefined).length).toBeGreaterThan(10);
+    expect(base).toBe(BASE_REF);
+    expect(routes.filter((one) => one.base !== undefined).length).toBeGreaterThan(10);
     expect(budgetResult(routes, base).findings ?? []).toEqual([]);
   }, 60_000);
 });

@@ -4,6 +4,7 @@
 // answered with `replay-gap` — which is what the swarm now counts as repaired or lost.
 
 import { entity, integer, newId, text, uuid } from '@ultimat3/entity';
+import { allow } from '@ultimat3/policy';
 import { channel } from '@ultimat3/realtime';
 import type { ChangeEvent } from '@ultimat3/realtime/server';
 
@@ -18,6 +19,8 @@ export const BENCH_CHANNEL = channel('bench', {
   params: ['room'],
   catchUp: { name: 'benchProbes' },
   records: [benchProbes],
+  // Public on purpose: a bench swarm subscribes as nobody, and a channel with no policy is refused.
+  policy: allow('public'),
 });
 
 /** The committed change one probe is — what the change feed would hand every `sync` node. */

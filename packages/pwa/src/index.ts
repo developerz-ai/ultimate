@@ -17,7 +17,6 @@ export {
 export type { Capability, CapabilityFlags, ResolvedCapabilities } from './capabilities';
 export {
   CAPABILITIES,
-  CAPABILITY_MANIFEST_KEYS,
   CAPABILITY_SW_MARKERS,
   enabledCapabilities,
   isEnabled,
@@ -57,7 +56,6 @@ export {
   maskableSafeZone,
   planIcons,
   requireSourceIcon,
-  SPLASH_MATRIX,
 } from './icons';
 export type {
   BeforeInstallPromptEventLike,
@@ -68,7 +66,7 @@ export type {
   IosGuidance,
   ReadSignal,
 } from './install';
-export { createInstallController, iosInstallGuidance, MIN_ENGAGEMENT_MS } from './install';
+export { createInstallController, iosInstallGuidance } from './install';
 export type {
   DisplayMode,
   FileHandler,
@@ -90,7 +88,6 @@ export type { PrecacheAsset, PrecacheEntry, PrecacheInput, PrecacheManifest } fr
 export {
   buildPrecacheManifest,
   DEFAULT_PRECACHE_WARN_BYTES,
-  serializePrecacheManifest,
 } from './precache';
 export type {
   PushPayload,
@@ -105,7 +102,6 @@ export type {
 export {
   pushSource,
   renderPushPayload,
-  serializePushMessage,
   subscribeSource,
   subscriptionState,
 } from './push';
@@ -123,10 +119,7 @@ export {
   MODE_STRATEGY,
   networkFirst,
   networkOnly,
-  STRATEGY_FN_NAMES,
-  STRATEGY_FNS,
   STRATEGY_NAMES,
-  STRATEGY_SOURCE,
   staleWhileRevalidate,
   strategyFor,
 } from './strategies';

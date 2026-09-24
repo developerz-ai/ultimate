@@ -7,9 +7,8 @@
 // root that has no `tsconfig.json` at all, so an `existsSync` ahead of it was a second question
 // with one answer.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, maskLiterals, stripComments } from '@ultimat3/core';
 import type { Finding } from './output';
-import { maskLiterals, stripComments } from './ts-scan';
 
 const ROOT_TSCONFIG = 'tsconfig.json';
 

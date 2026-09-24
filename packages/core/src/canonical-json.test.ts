@@ -149,7 +149,22 @@ describe('an ordinary payload is byte-for-byte what all three copies already emi
     expect(fingerprint({ a: undefined, b: 1 })).toBe(fingerprint({ b: 1 }));
   });
 
-  test('a bigint is tagged text, because JSON has none', () => {
-    expect(canonicalJson({ id: 7n })).toBe('{"id":"7n"}');
+  test('a bigint is a tagged bare token, never the string a caller could send', () => {
+    // Quoted as `"5n"`, the bigint collided with the STRING `'5n'`: one key for two payloads.
+    expect(canonicalJson({ id: 7n })).toBe('{"id":BigInt(7)}');
+    expect(fingerprint({ id: 5n })).not.toBe(fingerprint({ id: '5n' }));
+    expect(fingerprint(-5n)).not.toBe(fingerprint(5n));
+  });
+
+  test('bytes are tagged, so a Uint8Array is not the object of its indices', () => {
+    expect(fingerprint(new Uint8Array([1]))).not.toBe(fingerprint({ 0: 1 }));
+    expect(fingerprint(new Uint8Array([1]))).not.toBe(fingerprint(new Uint8Array([2])));
+    expect(fingerprint(new Uint8Array([1]))).toBe(fingerprint(new Uint8Array([1])));
+    // Another view over the same bytes is another type, so it is another key.
+    expect(fingerprint(new Uint16Array([1]))).not.toBe(fingerprint(new Uint8Array([1, 0])));
+    expect(fingerprint(new Uint8Array([1]).buffer)).not.toBe(fingerprint({}));
+    // A view reads ITS window, never the whole backing buffer.
+    const backing = new Uint8Array([9, 1, 9]);
+    expect(canonicalJson(backing.subarray(1, 2))).toBe(canonicalJson(new Uint8Array([1])));
   });
 });

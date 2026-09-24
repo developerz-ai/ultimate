@@ -80,6 +80,8 @@ export interface StrategyEnv {
   /** The named cache this strategy reads and writes. */
   open(cacheName: string): Promise<StrategyCache>;
   fetch(request: Request): Promise<Response>;
+  /** The fetch event's `waitUntil`, when there is one — background work must be handed to it. */
+  wait?(work: Promise<unknown>): void;
 }
 
 export interface StrategyCache {
@@ -139,7 +141,10 @@ export async function staleWhileRevalidate(
     .catch(async () => (hit !== undefined ? hit : fallbackOrThrow(options)));
 
   if (hit !== undefined) {
-    void refresh.catch(() => undefined);
+    // The refresh is handed to the event's `waitUntil` NOW, before the cached answer returns:
+    // taken after `respondWith` settled, a browser refuses the extension (`InvalidStateError`) and
+    // may kill the worker mid-refresh. `later` also swallows its rejection, as `.catch` did.
+    env.wait?.(refresh.catch(() => undefined));
     return hit;
   }
   return refresh;
@@ -215,7 +220,7 @@ export const STRATEGY_SOURCE = Object.freeze<Record<StrategyName, string>>({
   const c=await openCache(cn);const hit=await c.match(req);
   const refresh=fetch(req).then((r)=>{if(r.ok)later(wait,c.put(req,r.clone()));return r})
     .catch(()=>hit||(fb?fb():Response.error()));
-  if(hit){refresh.catch(()=>{});return hit}
+  if(hit){later(wait,refresh);return hit}
   return refresh
 }`,
   'network-only': `async function networkOnly(req,cn,fb,wait){

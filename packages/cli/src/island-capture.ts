@@ -5,10 +5,10 @@
 // why: no Bun native joins a path; `Bun.write` takes one already joined.
 import { join } from 'node:path';
 import { finiteCount } from '@ultimat3/core';
-import type { CaptureClip, ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
-import { systemScrapeClock } from '@ultimat3/scraping';
 import type { IslandShotTarget, IslandViewport } from '@ultimat3/testing';
 import { islandStatesFile } from '@ultimat3/testing';
+import type { CaptureClip, ShotDriver, ShotSession } from './browser-launcher-port';
+import { systemShotClock } from './cdp-shot-clock';
 import { ISLAND_HARNESS_PATH } from './island-harness';
 import { readinessProbe } from './island-harness-script';
 import { IslandRequestUnstubbedError, IslandUnphotographableError } from './island-shot-errors';
@@ -43,7 +43,7 @@ export const ISLAND_CROP_MARGIN_PX = 8;
  * takes the viewport as a LAUNCH option (`LocalBrowserOptions.options`) and a state declares its
  * own — so "photograph this state at 480x320" is a different browser, not a different call.
  */
-export type IslandBrowser = (viewport: IslandViewport) => Promise<ScrapeDriver>;
+export type IslandBrowser = (viewport: IslandViewport) => Promise<ShotDriver>;
 
 interface Refusal {
   readonly reason: string;
@@ -181,13 +181,13 @@ export async function captureIslandState(
   floor: number,
 ): Promise<IslandStateShot> {
   const url = new URL(`${ISLAND_HARNESS_PATH}${target.query}`, server.url).toString();
-  let session: ScrapeSession | undefined;
+  let session: ShotSession | undefined;
   try {
     const driver = await options.driver(target.viewport);
     session = await driver.open({
       name: 'x shot --island',
       rules: { allowHosts: allowHostsFrom(server.url, options.extraHosts) },
-      clock: systemScrapeClock,
+      clock: systemShotClock,
       timeoutMs: options.timeoutMs,
     });
     const page = session.page;
@@ -237,7 +237,7 @@ export async function captureIslandState(
     // around, and which nothing passed until 2026-08-26 (issue #338).
     //
     // The clip ALONE. `fullPage: false` beside it is accepted — `assertCaptureFraming` refuses only
-    // `=== true`, and `cdp-target.ts` sends `{ clip }` and nothing else either way — but it is a
+    // `=== true`, and `cdp-shot-page.ts` sends `{ clip }` and nothing else either way — but it is a
     // field that says nothing: the two are exclusive, and spelling out the default of the one you
     // did not ask for reads as a choice.
     // `??` screens null and undefined and NOTHING else, so `cropMarginPx: NaN` reached `clipFor`,

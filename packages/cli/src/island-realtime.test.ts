@@ -8,7 +8,7 @@ import { rm } from 'node:fs/promises';
 // why: Bun exposes no path API — nothing native joins a path.
 import { join } from 'node:path';
 import { buildIslands } from './island-bundle';
-import { reachesRealtime } from './island-realtime';
+import { islandRealtimePlugin, reachesRealtime } from './island-realtime';
 
 const ROOT = join(import.meta.dir, '..', '.island-fixture', 'realtime');
 
@@ -75,5 +75,22 @@ describe('the realtime install the island bundle writes', () => {
     await write('apps/web/app/plain.island.tsx', PLAIN);
     const [chunk] = (await buildIslands(ROOT)).chunks;
     expect(chunk?.code).not.toContain('ultimate.realtime');
+  });
+
+  // The wrapper's source is part of `sourcesContent`, which names the chunk's URL. It spliced in
+  // the ABSOLUTE path realtime resolved to, so one island had a different URL in every checkout
+  // — and a chunk built on the box that built the image never matched the one it served.
+  test('the install source names realtime bare, never a path on this machine', async () => {
+    const loads: ((args: { path: string }) => { contents: string })[] = [];
+    const build = {
+      onResolve: () => undefined,
+      onLoad: (_options: unknown, load: (args: { path: string }) => { contents: string }) => {
+        loads.push(load);
+      },
+    };
+    islandRealtimePlugin(ROOT, 'apps/web/app/live.island.tsx').setup(build as never);
+    const install = loads[0]?.({ path: 'install' }).contents ?? '';
+    expect(install).toContain("from '@ultimat3/realtime'");
+    expect(install).not.toContain(import.meta.dir.split('/packages/')[0] ?? '/');
   });
 });

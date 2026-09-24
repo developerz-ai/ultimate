@@ -87,7 +87,9 @@ describe('unit · decimal()', () => {
   test('the exact digits round-trip as a string — no float ever touches the value', () => {
     expect(rate.$parse('1.23456789')).toBe('1.23456789');
     expect(rate.$parse('-0.00000001')).toBe('-0.00000001');
-    expect(rate.$parse(1.5)).toBe('1.5');
+    // Padded to the column's scale — the spelling Postgres answers `numeric(18, 8)` with, so the
+    // memory driver and the Postgres driver hold one value (`write-parity.test.ts`, row d).
+    expect(rate.$parse(1.5)).toBe('1.50000000');
   });
 
   test('a value the column would ROUND is refused where the caller still knows what it meant', () => {
@@ -233,7 +235,7 @@ describe('unit · the wide columns inside an entity', () => {
       payload: { ok: true },
       labels: ['a'],
     });
-    expect(row.rate).toBe('1.5');
+    expect(row.rate).toBe('1.5000');
     expect(row.takenOn).toBe('2026-03-14' as PlainDate);
     expect(caught(() => readings.$parse({ ...row, takenOn: '2026-02-30' }))).toContain(
       'calendar date',

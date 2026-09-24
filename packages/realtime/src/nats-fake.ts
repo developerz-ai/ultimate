@@ -337,11 +337,20 @@ export class FakeNatsBroker {
   ): readonly NatsMessage[] {
     this.#maybeFail(subject);
     const body = bodyOf(payload);
-    const filters = subject.startsWith(DIRECT_GET) ? stringList(body['multi_last']) : [];
+    // `multi_last` (last per subject) or `next_by_subj` (every message under a filter). Over a
+    // history-one KV stream the two answer the same messages, which is what `kvLast` relies on.
+    const nextBy = typeof body['next_by_subj'] === 'string' ? [body['next_by_subj']] : [];
+    const filters = subject.startsWith(DIRECT_GET)
+      ? [...stringList(body['multi_last']), ...nextBy]
+      : [];
     if (filters.length === 0) throw unavailable(`no responders for ${subject}`);
     const batch = numberOr(body['batch'], DEFAULT_BATCH);
+    // `seq` is where a paged read resumes: the server answers in sequence order from there.
+    const from = numberOr(body['seq'], 0);
     const matched = this.#current()
       .filter((stored) => filters.some((filter) => subjectMatches(filter, stored.subject)))
+      .filter((stored) => stored.seq >= from)
+      .sort((a, b) => a.seq - b.seq)
       .slice(0, batch);
     const replies = matched.map((stored) => this.#replyFor(stored));
     // A batch always terminates: `204 EOB` behind results, `404` when the filter matched nothing.

@@ -3,8 +3,9 @@
 // this file decides how many, and `test-shards.ts` spends them.
 
 import type { TestFile } from './test-select';
+import { SERIAL_TYPES } from './test-workers';
 import type { TestType } from './verify-tests';
-import { ownerOf, SERIAL_TYPES } from './verify-tests';
+import { ownerOf } from './verify-tests';
 
 /** One `bun test` invocation: which files, how wide, and the type its reproduce line names. */
 export interface TestPass {

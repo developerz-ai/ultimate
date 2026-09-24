@@ -14,8 +14,8 @@ import { join } from 'node:path';
 import { isUltimateError, toUltimateError, UltimateError } from '@ultimat3/core';
 import type { UiInteractInput, UiInteractResult, UiInteractStepResult } from '@ultimat3/mcp';
 import { UI_INTERACT_LIMITS } from '@ultimat3/mcp';
-import type { ScrapePage } from '@ultimat3/scraping';
-import { DEFAULT_PAGE_TIMEOUT_MS } from '@ultimat3/scraping';
+import type { ShotPage } from './browser-launcher-port';
+import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
 import { DEFAULT_SETTLE_MS, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import type { InspectDeps, Seen } from './mcp-ui-inspect';
 import { readInspect, selectorsOf } from './mcp-ui-inspect';
@@ -130,7 +130,7 @@ const describe = (step: InteractStep): string => {
 };
 
 async function perform(
-  page: ScrapePage,
+  page: ShotPage,
   step: InteractStep,
   sleep: (ms: number) => Promise<void>,
 ): Promise<void> {
@@ -153,19 +153,25 @@ async function perform(
  * Before any keystroke: a password field's value would land in the PNG, the verdict's console and
  * an agent's transcript. The read is the driver's own `query`, so the fake answers it offline.
  */
-async function refuseSecretField(
-  page: ScrapePage,
-  step: InteractStep,
-  index: number,
-): Promise<void> {
-  if (step.kind !== 'type') return;
-  const [first] = await page.query(step.selector);
-  if (first?.attrs['type'] !== 'password') return;
+/** The `type` of the focused element — what a `press` step's key lands in. */
+export const ACTIVE_FIELD_TYPE =
+  '(function(){var a=document.activeElement;return a&&a.getAttribute?a.getAttribute("type"):null})()';
+
+async function refuseSecretField(page: ShotPage, step: InteractStep, index: number): Promise<void> {
+  if (step.kind !== 'type' && step.kind !== 'press') return;
+  // A `press` goes to whatever has focus: `focus` a password field, then eleven presses, typed
+  // the password the `type` guard refused — so the focused element is asked before each key.
+  const secret =
+    step.kind === 'type'
+      ? (await page.query(step.selector))[0]?.attrs['type'] === 'password'
+      : (await page.evaluate(ACTIVE_FIELD_TYPE)) === 'password';
+  if (!secret) return;
+  const target = step.kind === 'type' ? JSON.stringify(step.selector) : 'the focused element';
   throw new UltimateError({
     code: 'X_UI_INTERACT_SECRET_FIELD',
-    cause: `step ${index} would type into ${JSON.stringify(step.selector)}, an <input type="password">`,
+    cause: `step ${index} would type into ${target}, an <input type="password">`,
     fix: FIX.secret,
-    meta: { step: index, selector: step.selector },
+    meta: { step: index, ...(step.kind === 'type' ? { selector: step.selector } : {}) },
   });
 }
 
@@ -177,11 +183,11 @@ export interface StepsRun {
 
 /**
  * The steps in order, each followed by a settle and one poll interval, each checked against the
- * origin. A scraping error is wrapped, never passed through: the agent needs to know WHICH step,
+ * origin. A driver error is wrapped, never passed through: the agent needs to know WHICH step,
  * and the fix is a selector `ui.inspect` reports rather than whatever the driver's fix names.
  */
 export async function runSteps(
-  page: ScrapePage,
+  page: ShotPage,
   steps: readonly InteractStep[],
   settle: () => Promise<IslandCount | null>,
   origin: string,

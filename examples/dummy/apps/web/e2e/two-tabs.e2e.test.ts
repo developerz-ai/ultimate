@@ -10,7 +10,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { E2eApp, E2eTab } from '@ultimat3/cli';
+import type { E2eApp, E2eTab } from '@ultimat3/testing';
 import {
   everyCount,
   like,

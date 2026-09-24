@@ -1,5 +1,5 @@
-// Two routes reach the same stored bytes — `GET /media/*key` (`dev-assets.ts`) and
-// `GET /_storage/:disk/*key` (`dev-storage.ts`) — and every test in this repo drove one surface at
+// Two routes reach the same stored bytes — `GET /media/*key` (`runtime-assets.ts`) and
+// `GET /_storage/:disk/*key` (`runtime-storage.ts`) — and every test in this repo drove one surface at
 // a time, which is exactly why `/media` shipped `auth: 'public'` with no policy and no tenant check
 // while its twin required both. These cases compare the two AGAINST EACH OTHER: one object, one
 // actor, both routes, one verdict.
@@ -37,8 +37,8 @@ import {
   scopedKey,
   variantKey,
 } from '@ultimat3/storage';
-import { assetRoutes, MEDIA_BASE_PATH } from './dev-assets';
-import { AUTHORIZED_OBJECT_CACHE, STORAGE_READ_PERMISSION, storageRoutes } from './dev-storage';
+import { assetRoutes, MEDIA_BASE_PATH } from './runtime-assets';
+import { AUTHORIZED_OBJECT_CACHE, STORAGE_READ_PERMISSION, storageRoutes } from './runtime-storage';
 
 /** A real PNG, because the `?w=` cases below decode it rather than refusing it as a bad image. */
 const BYTES = encodeImage(createRaster(64, 64, 'tenant-a-private'), 'png');

@@ -3,11 +3,12 @@
 // both; the generated test pins them through a real driver, because a key that is not stable is a
 // job that runs twice and a tenant that is not declared is a job that reads the wrong org's rows.
 
-import { stripComments } from '../ts-scan';
+import { stripComments } from '@ultimat3/core';
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
 import { sliceExports, sliceFoundation } from './slice-foundation';
+import { wrapList } from './wrap';
 
 const jobSource = (
   name: NameSet,
@@ -69,7 +70,8 @@ export const ${name.camel} = job({
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ step }) {
     await step.run('process', async () => {
-      // TODO: this job's own work.
+      // This job's own work. No table is read here: this feature has no entity, and a generator
+      // writing into a slice never invents one — \`x g entity\` declares it.
     });
     return { processed: true };
   },
@@ -117,7 +119,7 @@ export const ${name.camel} = task({
   tz: 'UTC',
   // No org in the payload: the job this enqueues declares \`tenant: 'none'\`, because this
   // feature's entity names no tenant column (or has none yet).
-  enqueue: () => [[${jobName.camel}, { id: '00000000-0000-4000-8000-000000000001' }]],
+${wrapList('  ', 'enqueue: () => [', [`[${jobName.camel}, { id: '00000000-0000-4000-8000-000000000001' }]`], '],')}
 });
 `;
 
@@ -291,9 +293,10 @@ export interface JobOptions extends FeatureTarget {
 }
 
 /**
- * Whether `x g job`/`x g task` may assume the tenant-scoped shape: an `entity.ts` this feature
- * does not have yet is about to be scaffolded fresh by `sliceFoundation` below, tenant-scoped by
- * default — so absent counts as scoped. One that exists is trusted over that default: it declares
+ * Whether `x g job`/`x g task` may assume the tenant-scoped shape. A feature with no `entity.ts` is
+ * NOT: only `x g entity` and `x g resource` create a feature's data, and counting absent as scoped
+ * made `x g task nightly` lay down an `entity('nightlies', { title, price })` that the `drift` step
+ * then demanded a migration for. One that exists is trusted: it declares
  * a real, non-`'none'` `tenant`, AND its `repo.ts` actually exports the `byId`/`listByOrg` pair the
  * tenant-scoped body calls. Both have to hold — an entity that still names `tenant: 'orgId'` after
  * an author trimmed `listByOrg` out of `repo.ts` (or never generated one) is not a slice this job
@@ -303,7 +306,7 @@ export function isTenantScopedSlice(
   sliceEntity: string | undefined,
   sliceRepo: string | undefined,
 ): boolean {
-  if (sliceEntity === undefined) return true;
+  if (sliceEntity === undefined) return false;
   const declaresTenant = /\btenant\s*:\s*'(?!none')[^']+'/.test(stripComments(sliceEntity));
   if (!declaresTenant) return false;
   if (sliceRepo === undefined) return true;

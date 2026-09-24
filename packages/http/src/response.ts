@@ -110,7 +110,7 @@ export interface CacheHint {
   /** Shared/CDN age. `isr` routes set this and rely on tag purges to revalidate. */
   readonly sMaxAgeSeconds?: number;
   readonly staleWhileRevalidateSeconds?: number;
-  /** Cache tags a purge can target; mirrored into `x-cache-tags`. */
+  /** Cache tags a purge can target, in wire form; emitted as `Surrogate-Key` and `Cache-Tag`. */
   readonly tags?: readonly string[];
   readonly vary?: readonly string[];
 }
@@ -207,8 +207,14 @@ export const SHARED_CACHE_VARY: readonly string[] = ['accept-language', 'cookie'
 /** Mutates the response headers in place — responses are per-request, never shared. */
 export const applyCacheHeaders = (response: Response, hint: CacheHint): Response => {
   response.headers.set('cache-control', cacheControl(hint));
-  if (hint.tags !== undefined && hint.tags.length > 0) {
-    response.headers.set('x-cache-tags', hint.tags.join(','));
+  // The two headers a CDN reads, and only on a response a CDN may hold: Fastly's `Surrogate-Key`
+  // (space-separated) and Cloudflare's `Cache-Tag` (comma-separated), the same wire forms
+  // `@ultimat3/cache`'s purge sends. This wrote `x-cache-tags`, which neither reads — so every
+  // purge by tag "succeeded" and cleared nothing.
+  const shared = hint.mode === 'public' || hint.mode === 'immutable';
+  if (shared && hint.tags !== undefined && hint.tags.length > 0) {
+    response.headers.set('surrogate-key', hint.tags.join(' '));
+    response.headers.set('cache-tag', hint.tags.join(','));
   }
   // `cookie` is not optional on the shared path. A `public` response is stored by a CDN under the
   // URL, and every session in this framework travels in a cookie — so without it the first

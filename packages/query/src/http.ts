@@ -6,12 +6,11 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
-import { isUltimateError } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
-import { problem, toBucket } from '@ultimat3/http';
+import { toBucket } from '@ultimat3/http';
 import { coerceQuery } from '@ultimat3/schema';
 import type { Deprecation } from './deprecation';
-import { applyHeaders, recordDeprecatedCall, renderDeprecation } from './deprecation';
+import { recordDeprecatedCall, renderDeprecation } from './deprecation';
 import { QueryDeprecationInvalidError } from './errors';
 import { derivePath } from './naming';
 import { pageControlsOf } from './page-controls';
@@ -34,43 +33,43 @@ export function toQueryRoute(target: AnyQuery): Route {
   const answer = recordAnswerFor(target.rows);
 
   const handler = async (request: UltimateRequest): Promise<Response> => {
-    if (sunsetting !== undefined) recordDeprecatedCall('query', name);
-    try {
-      // Coerced, then validated — two different jobs, and only the first one belongs to a
-      // wire. A search string is characters, so `t.number` and `t.boolean` need the HTTP
-      // boundary's decode (`coerceQuery` never invents data: what it cannot convert it
-      // hands on untouched). VALIDATING here — `request.query(schema)` — would be the
-      // second parser: the same read would answer `X_BODY_INVALID` where every other
-      // surface answers `X_INPUT_INVALID` with the line that prints its schema. `runQuery`
-      // is the one that decides, exactly as it does for a direct server call.
-      //
-      // The two page controls come OUT first (`page-controls.ts`): they are the route's, not the
-      // read's, and a schema that refused unknown keys would otherwise refuse every paged call.
-      const { input: values, page } = pageControlsOf(name, request.queryRaw());
-      const input = coerceQuery(target.input, values);
-      // With a page control the answer is the `Page` envelope `query.page()` answers a server
-      // caller with — `{ rows, endCursor, hasNextPage }`, the same names, so a cursor read off the
-      // wire and one read off a direct call are the same string in the same field. Without one the
-      // answer is the bare array it has always been: every client written before the controls
-      // existed keeps reading rows, and `hasNextPage` never rides on a row where a page marker
-      // has no business being.
-      const response = answer(
-        page === undefined
-          ? await runQuery(target, input, { surface: 'http' })
-          : await target.page(input, { ...page, surface: 'http' }),
-      );
-      // On the failure path too, below: a client polling a deprecated read that is currently
-      // 403ing still has to learn the read is going away.
-      if (sunsetting !== undefined) applyHeaders(response, sunsetting);
-      return response;
-    } catch (error) {
-      // Framework errors carry their own code, status and fix line; anything else is
-      // a bug and belongs to the server's error boundary, not to this route.
-      if (!isUltimateError(error)) throw error;
-      const response = problem(error);
-      if (sunsetting !== undefined) applyHeaders(response, sunsetting);
-      return response;
+    if (sunsetting !== undefined) {
+      recordDeprecatedCall('query', name);
+      // On the CONTEXT, before anything can fail: the pipeline's `response` stage merges
+      // `ctx.headers` into whatever answers — this handler's rows and the `error-map` stage's
+      // problem or error page alike. A client polling a deprecated read that is currently 403ing
+      // still has to learn the read is going away.
+      for (const [header, value] of Object.entries(sunsetting))
+        request.ctx.headers.set(header, value);
     }
+    // No `catch`: an error — framework or not — takes the path every route's error takes, the
+    // repair `@ultimat3/action`'s `toRoute` got. This answered `problem(error)` itself, so the
+    // `error-map` stage never saw it: no `onError`/`reportError` on a 5xx, no HTML error page or
+    // sign-in redirect for a browser, no `requestId`, no `Retry-After`.
+    //
+    // Coerced, then validated — two different jobs, and only the first one belongs to a
+    // wire. A search string is characters, so `t.number` and `t.boolean` need the HTTP
+    // boundary's decode (`coerceQuery` never invents data: what it cannot convert it
+    // hands on untouched). VALIDATING here — `request.query(schema)` — would be the
+    // second parser: the same read would answer `X_BODY_INVALID` where every other
+    // surface answers `X_INPUT_INVALID` with the line that prints its schema. `runQuery`
+    // is the one that decides, exactly as it does for a direct server call.
+    //
+    // The two page controls come OUT first (`page-controls.ts`): they are the route's, not the
+    // read's, and a schema that refused unknown keys would otherwise refuse every paged call.
+    const { input: values, page } = pageControlsOf(name, request.queryRaw());
+    const input = coerceQuery(target.input, values);
+    // With a page control the answer is the `Page` envelope `query.page()` answers a server
+    // caller with — `{ rows, endCursor, hasNextPage }`, the same names, so a cursor read off the
+    // wire and one read off a direct call are the same string in the same field. Without one the
+    // answer is the bare array it has always been: every client written before the controls
+    // existed keeps reading rows, and `hasNextPage` never rides on a row where a page marker
+    // has no business being.
+    return answer(
+      page === undefined
+        ? await runQuery(target, input, { surface: 'http' })
+        : await target.page(input, { ...page, surface: 'http' }),
+    );
   };
 
   const meta: RouteMeta = {

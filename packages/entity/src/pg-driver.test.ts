@@ -5,7 +5,8 @@ import { boolean, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
-import { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
+import { postgresDriver, postgresRepo } from './pg-driver';
+import { postgresTransactor } from './pg-transactor';
 import { clearRegistry } from './registry';
 
 const orgs = entity('pg_test_orgs', {

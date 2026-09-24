@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { describe, expect, spyOn, test } from 'bun:test';
+import { isUltimateError, logger } from '@ultimat3/core';
 import type { IdTokenClaims } from './id-token';
 import type { OAuthFetch, OAuthTokens } from './oauth-exchange';
 import { oauthProfile } from './oauth-profile';
@@ -177,21 +177,37 @@ describe('oauthProfile', () => {
 describe('the userinfo call, when it does not come back', () => {
   // Distinct from a 4xx: `fetch` REJECTS on DNS failure, a refused connection or the abort — no
   // status exists, and the naked rejection would escape every coded path in this package.
-  test('a rejected fetch names the host that never answered and the curl that checks it', async () => {
-    const error = await rejection(
-      oauthProfile('google', tokensWith(claimsWithoutEmail()), {
-        fetch: async () => {
-          throw new TypeError('Unable to connect. Is the computer able to access the url?');
-        },
-      }),
-    );
-    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
-    expect(isUltimateError(error) && error.meta).toEqual({ provider: 'google', stage: 'userinfo' });
-    expect(isUltimateError(error) && error.cause).toContain('Unable to connect');
-    expect(isUltimateError(error) && error.cause).toContain('egress, DNS or TLS');
-    expect(isUltimateError(error) && error.fix).toContain(
-      `curl -sS -m 5 -o /dev/null ${GOOGLE_USERINFO}`,
-    );
+  // The rejection's text is a server's internals — a pool DSN, an internal address — and this
+  // cause is published by `oauth-route.ts` to whoever typed the callback URL. So the reason goes to
+  // the LOG under a fixed key and the cause names that key, the host and the curl that checks it.
+  test('a rejected fetch names the host and the curl, and logs the reason instead of publishing it', async () => {
+    const logged = spyOn(logger, 'error');
+    try {
+      const error = await rejection(
+        oauthProfile('google', tokensWith(claimsWithoutEmail()), {
+          fetch: async () => {
+            throw new TypeError('Unable to connect. Is the computer able to access the url?');
+          },
+        }),
+      );
+      expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+      expect(isUltimateError(error) && error.meta).toEqual({
+        provider: 'google',
+        stage: 'userinfo',
+      });
+      expect(isUltimateError(error) && error.cause).not.toContain('Unable to connect');
+      expect(isUltimateError(error) && error.cause).toContain('auth.oauth.userinfo_fetch_failed');
+      expect(isUltimateError(error) && error.cause).toContain('egress, DNS or TLS');
+      expect(isUltimateError(error) && error.fix).toContain(
+        `curl -sS -m 5 -o /dev/null ${GOOGLE_USERINFO}`,
+      );
+      const call = logged.mock.calls.find(
+        ([message]) => message === 'auth.oauth.userinfo_fetch_failed',
+      );
+      expect(String(call?.[1]?.['detail'])).toContain('Unable to connect');
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   test('a rejection that is not an Error still gets a sentence, never [object Object]', async () => {
@@ -202,7 +218,7 @@ describe('the userinfo call, when it does not come back', () => {
         },
       }),
     );
-    expect(isUltimateError(error) && error.cause).toContain('AbortError');
+    expect(isUltimateError(error) && error.cause).toContain('auth.oauth.userinfo_fetch_failed');
     expect(isUltimateError(error) && error.cause).not.toContain('[object Object]');
   });
 

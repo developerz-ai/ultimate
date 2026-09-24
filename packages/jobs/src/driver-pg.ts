@@ -20,7 +20,7 @@ import type {
   NackOptions,
   QueueStats,
 } from './driver';
-import { assertClaimBounds, assertClaimQueues, DEFAULT_QUEUE } from './driver';
+import { assertClaimBounds, assertClaimQueues, DEFAULT_QUEUE, REQUEUEABLE_STATES } from './driver';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
 import {
@@ -38,6 +38,7 @@ import {
   SQL_JOB_DEAD_LETTERS,
   SQL_JOB_GET,
   SQL_JOB_LIST,
+  SQL_JOB_LIVE_HOLDER,
   SQL_JOB_REQUEUE,
   SQL_LEASE_ACQUIRE,
   SQL_LEASE_RELEASE,
@@ -47,9 +48,11 @@ import {
   SQL_STEP_GET,
   SQL_STEP_LIST,
   SQL_STEP_PUT,
+  SQL_STEPS_FROM,
   SQL_TRY_ADVISORY_LOCK,
 } from './driver-pg-sql';
 import { DriverUnavailableError, JobDuplicateError } from './errors';
+import { JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { HeldLease, LeaseStore } from './leases';
 import type { StepStore } from './steps';
 
@@ -213,24 +216,33 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
       return rows.map(toJobRecord);
     },
     async requeue(jobId, requeueOptions) {
-      if (requeueOptions?.fromStep !== undefined) {
-        const current = await this.job(jobId);
-        if (current !== undefined) {
-          await exec().query(`delete from x_job_steps where run_id = $1 and name = $2`, [
-            current.runId,
-            requeueOptions.fromStep,
-          ]);
-        }
-      }
-      const rows = await exec().query<JobRow>(SQL_JOB_REQUEUE, [jobId]);
-      const row = rows[0];
-      if (row === undefined) {
+      const current = await this.job(jobId);
+      if (current === undefined) {
         throw new DriverUnavailableError({
           driver: 'pg',
           cause: `job ${jobId} does not exist`,
           fix: 'x jobs ls --state dead --json',
         });
       }
+      // Both refusals BEFORE anything is deleted or updated — a refused requeue changes nothing.
+      if (!REQUEUEABLE_STATES.has(current.state)) {
+        throw new JobNotRequeueableError({ jobId, state: current.state });
+      }
+      const holders = await exec().query<{ id: string }>(SQL_JOB_LIVE_HOLDER, [
+        current.name,
+        current.tenantId ?? null,
+        current.idempotencyKey,
+        jobId,
+      ]);
+      const holder = holders[0];
+      if (holder !== undefined) throw requeueKeyTaken({ ...current, holderId: holder.id });
+      if (requeueOptions?.fromStep !== undefined) {
+        await exec().query(SQL_STEPS_FROM, [current.runId, requeueOptions.fromStep]);
+      }
+      const rows = await exec().query<JobRow>(SQL_JOB_REQUEUE, [jobId]);
+      const row = rows[0];
+      // Read as finished a moment ago and live now: another requeue won the race.
+      if (row === undefined) throw new JobNotRequeueableError({ jobId, state: 'live' });
       return toJobRecord(row);
     },
     async cancel(jobId, reason) {

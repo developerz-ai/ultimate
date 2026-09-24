@@ -389,6 +389,76 @@ describe('an internal exception is logged, never published', () => {
     expect(String(body['cause'])).toContain('https://github.com/login/oauth/access_token');
     expect(String(body['fix'])).toContain('curl');
   });
+
+  /** githubFetch, with one URL answered by `answer` instead. */
+  const failingAt =
+    (url: string, answer: () => Promise<Response>): OAuthFetch =>
+    (input, init) =>
+      input === url ? answer() : githubFetch()(input, init);
+
+  test.each(['https://api.github.com/user', 'https://api.github.com/user/emails'])(
+    'a rejected profile fetch (%s) publishes a fixed sentence, not the throw',
+    async (url) => {
+      const body = await callbackBody(
+        oauthLogin(auth, {
+          credentials,
+          secret: SECRET,
+          baseUrl: 'https://app.test',
+          fetch: failingAt(url, () => Promise.reject(new Error(SECRETISH))),
+        }),
+      );
+      expect(body['code']).toBe('X_OAUTH_EXCHANGE_FAILED');
+      const rendered = JSON.stringify(body);
+      expect(rendered).not.toContain('hunter2');
+      expect(rendered).not.toContain('ECONNREFUSED');
+      expect(rendered).not.toContain('10.4.2.17');
+      expect(String(body['cause'])).toContain('auth.oauth.userinfo_fetch_failed');
+    },
+  );
+});
+
+// The token leg carries `client_secret`. `message` is not an OAuth error field, and a gateway that
+// echoes the request body puts the secret in it — so a `coded-only` leg reads only `error` and
+// `error_description`, the two fields RFC 6749 §5.2 defines.
+describe('the token leg quotes only the OAuth error fields', () => {
+  const tokenAnswer =
+    (body: unknown): OAuthFetch =>
+    (input, init) =>
+      input === 'https://github.com/login/oauth/access_token'
+        ? Promise.resolve(Response.json(body, { status: 400 }))
+        : githubFetch()(input, init);
+
+  const callbackFor = async (fetch: OAuthFetch): Promise<Record<string, unknown>> => {
+    const login = oauthLogin(auth, {
+      credentials,
+      fetch,
+      secret: SECRET,
+      baseUrl: 'https://app.test',
+    });
+    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const state = new URL(start.headers.get('location') ?? '').searchParams.get('state') ?? '';
+    return bodyOf(
+      await login.callback.handle(
+        new Request(`https://app.test/auth/oauth/github/callback?code=c&state=${state}`, {
+          headers: { cookie: cookiePair(start.headers.getSetCookie()[0] ?? '') },
+        }),
+      ),
+    );
+  };
+
+  test('an echoed request in `message` never reaches the public body', async () => {
+    const body = await callbackFor(
+      tokenAnswer({ message: 'bad request: client_id=client-id&client_secret=SECRET-VALUE-42' }),
+    );
+    expect(JSON.stringify(body)).not.toContain('SECRET-VALUE-42');
+  });
+
+  test('an ordinary error_description is still shown — it is an OAuth field', async () => {
+    const body = await callbackFor(
+      tokenAnswer({ error: 'invalid_grant', error_description: 'The code has expired' }),
+    );
+    expect(String(body['cause'])).toContain('The code has expired');
+  });
 });
 
 /**

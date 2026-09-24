@@ -291,3 +291,60 @@ describe('SubscriberGate — a patch whose row the window does not hold', () => 
     await expect(gate.patch(target3, who, insert, false)).resolves.toBe(insert);
   });
 });
+
+// The `index` on an insert is a position in the SHARED, pre-policy window. Forwarded unchanged to a
+// subscriber who sees only some of those rows, it lands the row out of order — and its size says
+// how many rows the subscriber may not see sit ahead of it.
+describe('SubscriberGate — an insert index is re-based on what this subscriber holds', () => {
+  const window: readonly Row[] = [
+    { id: 'b1', ownerId: 'bob' },
+    { id: 'a1', ownerId: 'alice' },
+    { id: 'b2', ownerId: 'bob' },
+    { id: 'a2', ownerId: 'alice' },
+    { id: 'b3', ownerId: 'bob' },
+    { id: 'new', ownerId: 'alice' },
+    { id: 'a3', ownerId: 'alice' },
+  ];
+  const insert: RowPatch = {
+    op: 'insert',
+    id: 'new',
+    row: { id: 'new', ownerId: 'alice' },
+    lsn: '3',
+    index: 5,
+  };
+
+  test('the index counts only the rows ahead of it that the subscriber holds', async () => {
+    const gate = new SubscriberGate({});
+    const target = targetFor(({ row }) => row['ownerId'] === 'alice', window);
+    const [kept] = await gate.filterPatches(target, who, [insert], new Set(['a1', 'a2', 'a3']));
+    // Alice holds a1, a2 ahead of it: position 2 in her window, never 5 in the shared one.
+    expect(kept?.index).toBe(2);
+  });
+
+  test('a delete carries no index at all — the client removes by id', async () => {
+    const gate = new SubscriberGate({});
+    const target = targetFor(() => true, window);
+    const del: RowPatch = { op: 'delete', id: 'a1', row: null, lsn: '4', index: 1 };
+    const [kept] = await gate.filterPatches(target, who, [del], new Set(['a1']));
+    expect(kept).toEqual({ op: 'delete', id: 'a1', row: null, lsn: '4' });
+  });
+
+  test('two inserts in one list: the second counts the first', async () => {
+    const gate = new SubscriberGate({});
+    const both: readonly Row[] = [
+      { id: 'x', ownerId: 'alice' },
+      { id: 'y', ownerId: 'alice' },
+    ];
+    const target = targetFor(() => true, both);
+    const kept = await gate.filterPatches(
+      target,
+      who,
+      [
+        { op: 'insert', id: 'x', row: { id: 'x' }, lsn: '5', index: 0 },
+        { op: 'insert', id: 'y', row: { id: 'y' }, lsn: '5', index: 1 },
+      ],
+      new Set(),
+    );
+    expect(kept.map((patch) => patch.index)).toEqual([0, 1]);
+  });
+});

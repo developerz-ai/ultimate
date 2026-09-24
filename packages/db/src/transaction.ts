@@ -35,6 +35,14 @@ export interface DbTx extends DbClient {
   readonly origin: DbClient;
   /** Fired in reverse registration order when this scope rolls back. Never on commit. */
   onRollback(undo: () => void): void;
+  /**
+   * Fired in registration order once the ROOT transaction has COMMITTED — never on rollback. A
+   * nested scope's effects are handed to its parent on `RELEASE` and dropped on `ROLLBACK TO`, so
+   * nothing fires for a write that is not durable. What a change feed, a cache purge or a dev row
+   * observer needs: reporting a write before COMMIT reports rows a rollback then erases. An effect
+   * that throws is swallowed — the transaction already committed, and nothing can un-commit it.
+   */
+  onCommit(effect: () => void): void;
 }
 
 export type IsolationLevel = 'read committed' | 'repeatable read' | 'serializable';
@@ -76,6 +84,10 @@ interface TxState {
   readonly tx: DbTx;
   readonly connection: DbClient;
   readonly undos: (() => void)[];
+  /** This scope's `onCommit` effects; a nested scope hands its own to the parent on RELEASE. */
+  readonly commits: (() => void)[];
+  /** How the root ended — shared by reference, like `live`. */
+  readonly outcome: TxOutcome;
   /** Shared by reference across nesting levels so savepoint names never collide. */
   readonly savepoints: { value: number };
   /**
@@ -102,16 +114,21 @@ export function currentTx(): DbTx | undefined {
 }
 
 /**
- * Is a transaction still OPEN on this async context? A different question from `currentTx() !==
- * undefined`, which only says a store is present — and the store survives the scope. The one
- * reader is `pglite.ts`'s `run()`, where the answer decides whether a statement may skip the
- * single session's turn queue; skipping it on a *closed* transaction is how a straggler landed
- * inside whichever unit of work held the connection next, committed with it, with nothing to read.
+ * The connection the transaction still OPEN on this async context runs on, or `undefined`. A
+ * different question from `currentTx() !== undefined`, which only says a store is present — and the
+ * store survives the scope. The one reader is `pglite.ts`'s `run()`, where the answer decides
+ * whether a statement may skip the single session's turn queue; skipping it on a *closed*
+ * transaction is how a straggler landed inside whichever unit of work held the connection next.
  * `currentTx()` deliberately still answers with the dead handle: its statements go through the
  * reservation, whose own `held` fence already re-queues them.
+ *
+ * The CONNECTION, never a boolean: "is any transaction open" let an autocommit statement on
+ * client A, issued inside a transaction on client B, skip A's queue and run inside A's own open
+ * transaction — rolled back with it. The reader asks whether the connection is one of its own.
  */
-export function inLiveTx(): boolean {
-  return storage.get()?.live.value === true;
+export function liveTxConnection(): DbClient | undefined {
+  const state = storage.get();
+  return state?.live.value === true ? state.connection : undefined;
 }
 
 /**
@@ -149,7 +166,21 @@ export function beginStatement(options: TransactionOptions): string {
   return modes.length === 0 ? 'BEGIN' : `BEGIN ${modes.join(' ')}`;
 }
 
-function makeTx(id: string, connection: DbClient, undos: (() => void)[], origin: DbClient): DbTx {
+/**
+ * How the ROOT transaction ended, shared by every nested scope. An effect registered by a straggler
+ * — a promise chain `fn` forgot to await, still inside the store after the scope closed — runs at
+ * once after a COMMIT and is dropped after a ROLLBACK, rather than waiting on a list nobody reads.
+ */
+type TxOutcome = { value: 'open' | 'committed' | 'rolled-back' };
+
+function makeTx(
+  id: string,
+  connection: DbClient,
+  undos: (() => void)[],
+  commits: (() => void)[],
+  origin: DbClient,
+  outcome: TxOutcome,
+): DbTx {
   return {
     id,
     origin,
@@ -159,7 +190,22 @@ function makeTx(id: string, connection: DbClient, undos: (() => void)[], origin:
     onRollback: (undo: () => void) => {
       undos.push(undo);
     },
+    onCommit: (effect: () => void) => {
+      if (outcome.value === 'committed') runCommits([effect]);
+      else if (outcome.value === 'open') commits.push(effect);
+    },
   };
+}
+
+/** Commit effects are best-effort too: the transaction is durable, and one throwing must not undo that. */
+function runCommits(commits: readonly (() => void)[]): void {
+  for (const effect of commits) {
+    try {
+      effect();
+    } catch {
+      // swallowed deliberately — see above
+    }
+  }
 }
 
 /** Undo hooks are best-effort: one throwing must not mask the error that caused the rollback. */
@@ -177,18 +223,28 @@ async function runNested<T>(outer: TxState, fn: (tx: DbTx) => Promise<T>): Promi
   outer.savepoints.value += 1;
   const name = `x_sp_${outer.savepoints.value}`;
   const undos: (() => void)[] = [];
-  const tx = makeTx(`${outer.tx.id}/${name}`, outer.connection, undos, outer.tx.origin);
+  const commits: (() => void)[] = [];
+  const tx = makeTx(
+    `${outer.tx.id}/${name}`,
+    outer.connection,
+    undos,
+    commits,
+    outer.tx.origin,
+    outer.outcome,
+  );
   // `SAVEPOINT` and `RELEASE` are deliberately uncaught: a savepoint that was never taken means
   // this scope never opened, and a release that failed means its work is not durable in the outer
   // one. Both are the caller's failure to see — swallowing either would run the rest of the unit
   // of work against a transaction that is not the one it thinks it is in.
   await outer.connection.execute(raw(`SAVEPOINT ${name}`));
   try {
-    const result = await storage.run({ ...outer, tx, undos }, () => fn(tx));
+    const result = await storage.run({ ...outer, tx, undos, commits }, () => fn(tx));
     await outer.connection.execute(raw(`RELEASE SAVEPOINT ${name}`));
     // The nested scope committed into an outer one that can still roll back, so its undos
-    // must survive: hand them to the parent rather than dropping them.
+    // must survive: hand them to the parent rather than dropping them. Its commit effects wait
+    // for the ROOT's COMMIT the same way — a released savepoint is not yet durable.
     outer.undos.push(...undos);
+    outer.commits.push(...commits);
     return result;
   } catch (error) {
     // Best-effort, exactly like the root's ROLLBACK: the savepoint is already gone when the
@@ -223,25 +279,43 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
     : undefined;
   const connection: DbClient = reserved ?? client;
   const undos: (() => void)[] = [];
-  const tx = makeTx(`tx_${nanoid(12)}`, connection, undos, client);
+  const commits: (() => void)[] = [];
+  const outcome: TxOutcome = { value: 'open' };
+  const tx = makeTx(`tx_${nanoid(12)}`, connection, undos, commits, client, outcome);
   // Each attempt gets its own state, and therefore its own `live` — a retry re-runs `fn` against a
   // transaction that is genuinely new, so the abandoned attempt's stragglers must read as closed.
-  const state: TxState = { tx, connection, undos, savepoints: { value: 0 }, live: { value: true } };
+  const state: TxState = {
+    tx,
+    connection,
+    undos,
+    commits,
+    outcome,
+    savepoints: { value: 0 },
+    live: { value: true },
+  };
 
+  let committed = false;
   try {
     await connection.execute(raw(beginStatement(options)));
     const result = await storage.run(state, () => fn(tx));
     await connection.execute(raw('COMMIT'));
+    // After COMMIT answered, and outside the `catch` below: a failing effect must never be read as
+    // a failed transaction and trigger a ROLLBACK of work the server already made durable.
+    committed = true;
+    outcome.value = 'committed';
+    runCommits(commits);
     return result;
   } catch (error) {
+    if (committed) throw error;
     // Best-effort: the caller needs the original failure, never the rollback's. A BEGIN that
     // itself failed opened nothing, so this ROLLBACK is a no-op the server answers with a notice.
     await connection.execute(raw('ROLLBACK')).catch(() => undefined);
+    outcome.value = 'rolled-back';
     runUndos(undos);
     throw error;
   } finally {
     // The scope says when it CLOSED, on every exit, because nothing else can: the store it left
-    // behind is indistinguishable from a live one, and `inLiveTx()` is what tells them apart.
+    // behind is indistinguishable from a live one, and `liveTxConnection()` tells them apart.
     // Cleared before the `using` pin is given back, so no window exists where a straggler could
     // still be sent direct at a connection this scope no longer owns.
     state.live.value = false;

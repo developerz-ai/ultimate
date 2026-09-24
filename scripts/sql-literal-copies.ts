@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Enforce that ONE module in this tree turns a value into a SQL string literal.
 // `literal()` in `packages/db/src/sql.ts` is that module; every other package imports it.
 //
@@ -46,15 +47,15 @@
 //
 //   bun run sql-literal-copies  ·  bun run scripts/sql-literal-copies.ts [--json] [--explain]
 
+// Reused, never re-spelled: this file exists BECAUSE a rule written down three times was wrong
+// twice. Blanking whole-line comments keeps the line count, so a reported position stays true.
+import { stripComments } from '../packages/core/src/source-mask';
 import { collectSourceFiles, type SourceFile } from './boundaries';
 import { parseScriptArgs } from './lib/args';
 // The paren walker is `scripts/lib/`'s and not this file's, for this file's OWN reason: the copy
 // that lived here counted every `(` including the ones inside a string literal, so
 // `.replace(new RegExp("(", 'g'), "''")` miscounted the depth and the site was dropped unread.
 import { balancedClose, topLevelArguments } from './lib/balanced-paren';
-// Reused, never re-spelled: this file exists BECAUSE a rule written down three times was wrong
-// twice. Blanking whole-line comments keeps the line count, so a reported position stays true.
-import { stripComments } from './lib/i18n-scan';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -118,9 +119,8 @@ export function literalCopies(files: readonly SourceFile[]): readonly LiteralCop
     }
     // A comment DESCRIBING the escape is not an escape — this file's own header spells the call
     // it refuses, and so does the entity module that records why its copies were deleted.
-    // `stripComments` preserves the LINE COUNT and not the character offsets — it blanks a comment
-    // line rather than deleting it — so the position must be read from the masked source. Reading
-    // it from the original reported line 2 for a call on line 27.
+    // `stripComments` blanks a comment and keeps every offset, so a position read from the masked
+    // source is a position in the file.
     const masked = stripComments(file.source);
     for (const match of masked.matchAll(ESCAPING_CALL)) {
       const open = match.index + match[0].length - 1;

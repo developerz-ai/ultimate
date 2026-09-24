@@ -1,5 +1,5 @@
-// What one dashboard screen needs, resolved before a single element is built. A route has no
-// `load` seam, so the page component is `async` and awaits this — keeping the awaiting here means
+// What one dashboard screen needs, resolved before a single element is built. Each admin page's
+// `load` awaits this and hands the result to a synchronous page — keeping the awaiting here means
 // the components below stay pure functions of props and are testable without a request.
 
 import {

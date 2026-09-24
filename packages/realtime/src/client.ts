@@ -19,7 +19,7 @@ import type { JsonObject, JsonValue } from './json';
 import { type LiveState, type Registration, RowWindows, unnamedType } from './live-rows';
 import { RecordStore } from './record-store';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
-import { backoffDelay, browserBackoff, timeoutScheduler } from './thundering-herd';
+import { browserBackoff, policyDelay, timeoutScheduler } from './thundering-herd';
 
 export type {
   ClientSocket,
@@ -78,6 +78,17 @@ export class LiveClient {
       connected: () => this.#connected,
       catchUp: options.catchUp,
       report: (error) => this.#onError(error),
+      // A failed catch-up retries on the reconnect curve this client already dials on.
+      retry: (attempt, run) =>
+        (this.#options.scheduler ?? timeoutScheduler)(
+          run,
+          // `attempt` is the book's failure count, 1 on the first failure: core's count as is.
+          policyDelay(
+            this.#options.backoff ?? browserBackoff,
+            attempt,
+            this.#options.rng ?? Math.random,
+          ),
+        ),
     });
     this.#heartbeat = new Heartbeat({
       intervalMs: finiteOption(
@@ -369,7 +380,8 @@ export class LiveClient {
     this.#cancelReconnect();
     const rng = this.#options.rng ?? Math.random;
     const delay =
-      serverDelayMs ?? backoffDelay(this.#attempt, this.#options.backoff ?? browserBackoff, rng);
+      // `#attempt` counts reconnects already scheduled, from 0; the wait being armed is the next one.
+      serverDelayMs ?? policyDelay(this.#options.backoff ?? browserBackoff, this.#attempt + 1, rng);
     this.#attempt += 1;
     this.#setStatus({ reconnectAt: this.#clock.now().getTime() + delay });
     const schedule = this.#options.scheduler ?? timeoutScheduler;

@@ -128,6 +128,8 @@ function verifySummary(input: {
  * files; the rest are in-process scans), so they run BESIDE the serial suites — `live` and `e2e`
  * are one worker each, Postgres- and browser-bound, and mostly waiting. `typecheck` stays first
  * and alone: `tsc -b` writes `.tsbuildinfo` and `dist/`, and `unit` saturates every core.
+ * `manifest` joined them 2026-09-23: it compares committed files against the code and writes
+ * nothing, and at the repo root its host checks are ~20 whole-tree reads that sat alone at the end.
  */
 export const BESIDE_SERIAL_SUITES: ReadonlySet<string> = new Set([
   'lint',
@@ -135,6 +137,7 @@ export const BESIDE_SERIAL_SUITES: ReadonlySet<string> = new Set([
   'filesize',
   'package-shape',
   'errors',
+  'manifest',
 ]);
 
 /** The consecutive run of steps the static group overlaps, in the order `VERIFY_STEP_NAMES` holds. */
@@ -145,7 +148,14 @@ async function runStep(
   ctx: VerifyContext,
   floor: Awaited<ReturnType<typeof readVerifyFloor>>,
 ): Promise<StepResult> {
-  const applies = step.applies === undefined ? true : await step.applies(ctx);
+  // Inside the step's own failure, like a throwing `run`: an `applies` that threw escaped every
+  // catch and aborted the whole gate, which is the one outcome `runVerify` exists to prevent.
+  let applies: boolean;
+  try {
+    applies = step.applies === undefined ? true : await step.applies(ctx);
+  } catch (error) {
+    return { name: step.name, ok: false, durationMs: 0, findings: [findingOf(error, step.name)] };
+  }
   if (!applies) {
     // A skip this repo already ruled out is not a skip. The step ran here before — the floor is
     // that claim, committed — so "nothing to check" now means the suite was deleted, and the

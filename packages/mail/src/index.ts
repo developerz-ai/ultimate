@@ -7,7 +7,7 @@ export { t } from '@ultimat3/schema';
 export type { CalloutTone, MailBlock, MailTemplate, TemplateArgs } from './blocks';
 export { blocks } from './blocks';
 
-export { MAIL_CATALOG, MAIL_CATALOG_LOCALE, MAIL_CATALOG_SOURCE } from './catalog';
+export { MAIL_CATALOG, MAIL_CATALOG_LOCALE } from './catalog';
 export type {
   MailDriver,
   MailMessage,
@@ -20,7 +20,6 @@ export {
   createLogDriver,
   createMemoryDriver,
   createUnconfiguredDriver,
-  envelopeRecipients,
   isMemoryDriver,
   isUnconfiguredDriver,
   mailDriver,
@@ -28,12 +27,11 @@ export {
   resetMailDriver,
   setMailDriver,
   tryMailDriver,
-  UNCONFIGURED_DRIVER_NAME,
 } from './driver';
 export type { MailEnvironment, MailSelection } from './driver-env';
-export { MAIL_ENV_KEYS, selectMailDriver } from './driver-env';
+export { selectMailDriver } from './driver-env';
 export type { MailFetch, ResendDriverOptions } from './driver-resend';
-export { createResendDriver, RESEND_BASE_URL } from './driver-resend';
+export { createResendDriver } from './driver-resend';
 export type { SmtpDriverOptions } from './driver-smtp';
 export { createSmtpDriver } from './driver-smtp';
 export { assertEnvelopeAddress } from './envelope-address';
@@ -78,12 +76,8 @@ export type {
 export {
   BASE_LAYOUT,
   baseLayout,
-  DARK_RULES,
-  darkModeCss,
   layoutFor,
-  MAIL_FONT_STACK,
   MAIL_TOKENS,
-  MAIL_WIDTH_PX,
   registeredLayouts,
   registerLayout,
   token,
@@ -100,7 +94,7 @@ export {
   sendById,
 } from './mail';
 export type { RenderableMail, RenderedMail, RenderOptions } from './render';
-export { FOOTER_KEYS, renderMail, textOf, UNSUBSCRIBE_KEY } from './render';
+export { renderMail, textOf } from './render';
 export type { SmtpConnector, SmtpStream } from './smtp-client';
 
 export {

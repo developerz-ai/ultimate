@@ -23,12 +23,12 @@ import {
   previewUrl,
 } from './db-branch';
 import { stepFinding } from './db-finding';
-import type { DevServices } from './dev-services';
-import { resolveServices } from './dev-services';
 import { MissingPositionalError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagString } from './parse';
+import type { DevServices } from './runtime-bindings';
+import { resolveServices } from './runtime-bindings';
 import { portFromEnv } from './serve';
 import { renderTable } from './table';
 

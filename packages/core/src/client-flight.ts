@@ -275,8 +275,11 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
       const work = (): Promise<T> =>
         gate === undefined ? dispatch(plan) : gate.run(() => dispatch(plan));
       // The single flight sits OUTSIDE the gate: a joiner takes no slot, so dedup relieves the
-      // ceiling instead of queueing behind it.
-      return settle(plan.key === undefined ? work() : flights.run(plan.key, work), issued);
+      // ceiling instead of queueing behind it. Keyed by GENERATION too: `bump()` aborts the old
+      // flights, but each holds its key until its rejection settles, and a same-key read issued
+      // in that window joined the aborted one and was answered with its AbortError.
+      const key = plan.key === undefined ? undefined : JSON.stringify([issued, plan.key]);
+      return settle(key === undefined ? work() : flights.run(key, work), issued);
     },
 
     get inflight(): number {

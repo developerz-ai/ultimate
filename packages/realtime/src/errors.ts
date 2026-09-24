@@ -33,6 +33,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_LIVE_REPLICA_IDENTITY',
   'X_SOCKET_UNAUTHENTICATED',
   'X_SOCKET_AUTH_UNAVAILABLE',
+  'X_REALTIME_TOPOLOGY',
 ] as const;
 
 /**
@@ -140,6 +141,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_LIVE_REPLICA_IDENTITY: 'a replicated table sends a key-only row on delete',
   X_SOCKET_UNAUTHENTICATED: 'the sync upgrade carried no credential this app accepts',
   X_SOCKET_AUTH_UNAVAILABLE: 'the sync node could not decide who a connecting socket is',
+  X_REALTIME_TOPOLOGY: 'a sync node boots on a real database with no reachable change feed',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -251,6 +253,25 @@ export class TransportUnavailableError extends RealtimeError {
       cause: `transport "${args.transport}" is unavailable: ${args.reason}`,
       // Names the key `selectTransport` actually reads, and a command that actually exists.
       fix: args.fix ?? 'x doctor — then check NATS_URL points at a reachable nats-server',
+    });
+  }
+}
+
+/**
+ * A `sync` node that can hear no change: a real database, the in-process bus, and no replicator in
+ * this process. A replicator in another process publishes into ITS in-process bus, so every live
+ * query and channel here is silent, with no error on either side. Refused at boot, where the
+ * topology is known, rather than discovered as a live feature that never updates.
+ */
+export class RealtimeTopologyError extends RealtimeError {
+  constructor() {
+    super({
+      code: 'X_REALTIME_TOPOLOGY',
+      cause:
+        'role sync runs on an external database over the in-process transport with no replicator in this process, so no committed change can reach it',
+      // Since 22.0.0 NATS_URL alone selects nothing: `realtime.transport` does, and a set NATS_URL
+      // under `'memory'` is refused, so the fix has to name both halves.
+      fix: "set realtime: { transport: 'nats', urlEnv: 'NATS_URL' } in app.config.ts and NATS_URL for every realtime role (web, sync, replicator), or run ROLE=sync with the replicator in one process: x dev --role sync,replicator",
     });
   }
 }

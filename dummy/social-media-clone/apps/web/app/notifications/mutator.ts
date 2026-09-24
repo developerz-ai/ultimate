@@ -24,10 +24,9 @@ export const markNotificationsRead = mutator({
   input: t.object({ ids: t.array(t.uuid) }),
   output: t.object({ marked: t.number }),
   /**
-   * Decides on input alone — and that is forced, not chosen. `MutatorDef`
-   * (packages/action/src/mutator.ts:66) declares no `row` loader, so no mutator's policy can ever
-   * be handed a row; ownership is enforced by the SCOPE of the write instead, which `server`
-   * below passes as the actor's own id. See `policy.ts` for the full reasoning.
+   * Decides on the actor alone. The input is a batch, and a `row` loader answers for one row, so
+   * ownership is enforced by the SCOPE of the write instead, which `server` below passes as the
+   * actor's own id. See `policy.ts` for the full reasoning.
    */
   policy: notificationMarkRead,
   mcp: { expose: true, description: "Mark the acting user's notifications as read" },

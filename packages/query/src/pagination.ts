@@ -50,13 +50,13 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   // The scope is this read plus these arguments: a cursor from anywhere else is
   // already `X_CURSOR_INVALID` by the time it gets here.
   const decoded = args.after === undefined ? null : decodeCursor(args.after, hash);
+  const base = await sourceFor(target, input, args);
+  const shape = base.shape();
   // Revived to the types the columns hold, never left as the strings JSON handed back: a `Date`
   // key decoded as an ISO string reaches `compareValues` as text and is compared against the
   // row's own millisecond number, so page two matched nothing at all. See `cursor-value.ts`.
   const after: SeekKey | null =
-    decoded === null ? null : { key: reviveSortKey(decoded.key), id: decoded.id };
-  const base = await sourceFor(target, input, args);
-  const shape = base.shape();
+    decoded === null ? null : seekFromCursor(decoded, shape.orderBy.length);
 
   // `MAX_PAGE_SIZE` lives in `page-controls.ts`: the route checks the same bound at the wire, as
   // a 400, before this `assert` — which is a 500 — can see the number.
@@ -75,7 +75,13 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
     endCursor:
       seek === null
         ? null
-        : encodeCursor({ scope: hash, key: seek.key.map(serializeSortValue), id: seek.id }),
+        : encodeCursor({
+            scope: hash,
+            // The id rides TYPED at the tail of the key — core's `id` slot is a string — so a
+            // numeric or bigint tiebreak compares as a number on the next page, not lexically.
+            key: [...seek.key, seek.id].map(serializeSortValue),
+            id: String(seek.id),
+          }),
     hasNextPage: scoped.length > args.first,
   };
 }
@@ -108,4 +114,17 @@ function inTotalOrder(
   const ordered = [...rows].sort((left, right) => compareRows(left, right, keys));
   if (after === null) return ordered;
   return ordered.filter((row) => isAfterKey(row, after, shape.orderBy));
+}
+
+/**
+ * The seek a decoded cursor names. A cursor carrying one more key than the ordering has its typed
+ * id at the tail; an older cursor, minted before the id rode there, falls back to the string slot.
+ */
+function seekFromCursor(
+  decoded: { readonly key: readonly unknown[]; readonly id: string },
+  width: number,
+): SeekKey {
+  const key = reviveSortKey(decoded.key);
+  if (key.length !== width + 1) return { key, id: decoded.id };
+  return { key: key.slice(0, width), id: key[width] };
 }

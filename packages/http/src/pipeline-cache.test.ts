@@ -32,6 +32,28 @@ const routes: readonly Route[] = [
   },
   {
     method: 'GET',
+    path: '/declared',
+    // A route that DECLARED a shared hint, and a handler that wrote no header of its own.
+    meta: { name: 'declared', auth: 'public', cache: { mode: 'public', sMaxAgeSeconds: 3600 } },
+    handler: (_request, ctx) => html(JSON.stringify({ me: ctx.actor.id })),
+  },
+  {
+    method: 'GET',
+    path: '/ctx-hint',
+    meta: { name: 'ctx-hint', auth: 'public' },
+    handler: (_request, ctx) => {
+      ctx.cache = { mode: 'public', sMaxAgeSeconds: 3600 };
+      return html(JSON.stringify({ me: ctx.actor.id }));
+    },
+  },
+  {
+    method: 'GET',
+    path: '/declared-immutable',
+    meta: { name: 'declared-immutable', auth: 'public', cache: { mode: 'immutable' } },
+    handler: () => html('export const mount = () => {};'),
+  },
+  {
+    method: 'GET',
     path: '/chunk.js',
     // A content-addressed island chunk: the bytes are a function of the URL, so sharing one
     // between two actors is exactly what the URL promises.
@@ -87,5 +109,29 @@ describe('a handler-declared cache-control is reviewed, never obeyed', () => {
     // Demoting this one would re-download every island chunk on every navigation, for every
     // signed-in user, to protect a body that is a function of its own URL.
     expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+  });
+});
+
+describe('a declared hint is reviewed too — meta.cache and ctx.cache', () => {
+  test.each(['/declared', '/ctx-hint'])(
+    '%s: a public hint on a signed-in request becomes private',
+    async (path) => {
+      const response = await pipelineWith('u1').handle(get(path), { role: 'web' });
+      expect(await response.text()).toContain('u1');
+      const control = response.headers.get('cache-control') ?? '';
+      expect(control).toContain('private');
+      expect(control).not.toContain('s-maxage');
+      expect(control).not.toContain('public');
+    },
+  );
+
+  test('the same hint still reaches an anonymous request', async () => {
+    const response = await pipelineWith().handle(get('/declared'), { role: 'web' });
+    expect(response.headers.get('cache-control')).toContain('s-maxage=3600');
+  });
+
+  test('a declared immutable hint stays shared for a signed-in actor', async () => {
+    const response = await pipelineWith('u1').handle(get('/declared-immutable'), { role: 'web' });
+    expect(response.headers.get('cache-control')).toContain('immutable');
   });
 });

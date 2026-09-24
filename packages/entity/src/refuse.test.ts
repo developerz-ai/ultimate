@@ -62,6 +62,8 @@ const UNREACHABLE_SITES = 2;
 const SITES: readonly (readonly [string, () => unknown])[] = [
   ['uuid value', () => uuid().$parse('nope')],
   ['text value', () => text().$parse(1)],
+  ['text max declaration', () => text({ max: 2.5 })],
+  ['text past max', () => text({ max: 3 }).$parse('abcdef')],
   ['integer value', () => integer().$parse(1.5)],
   ['boolean value', () => boolean().$parse('yes')],
   ['timestamp value', () => timestamp().$parse('nope')],

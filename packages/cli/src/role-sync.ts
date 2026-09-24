@@ -1,0 +1,299 @@
+// The `sync` role: which live queries this node serves, who is dialling it, and the socket it owns.
+// Split from `role-start.ts` because it is the one role with an authenticator, a presence registry
+// and a listener of its own — and because that file is the boot's index, not its detail.
+
+import { createContext, logger, UltimateError } from '@ultimat3/core';
+import type { WebSocketMount } from '@ultimat3/http';
+import { listQueries } from '@ultimat3/query';
+import type { SyncNode, SyncWs } from '@ultimat3/realtime/server';
+import {
+  ChannelHub,
+  createSyncNode,
+  LiveQueryRegistry,
+  listenSyncNode,
+  liveQueryDefinition,
+  PresenceRegistry,
+  RingChangeBuffer,
+  SocketRegistry,
+} from '@ultimat3/realtime/server';
+import { neighbouringPort, PORT_RANGE, portPairAfter } from './flag-number';
+import { portFree } from './port-probe';
+import type { StartRolesOptions } from './role-start';
+import { syncAuthenticator } from './sync-authenticator';
+import { DEV_BINDING } from './web-binding';
+
+/**
+ * Beside its one thrower rather than in `errors.ts`, which is at 461 of the 500-line ceiling —
+ * the arrangement `db-seed.ts` and `metrics-endpoint.ts` already take. The code is
+ * `X_PORT_INVALID`, this package's own: "the port asked for is not one" is what it already means,
+ * and a second code for the same fact is the synonym the registry exists to prevent.
+ */
+class SyncPortUnavailableError extends UltimateError {
+  constructor(input: { port: number }) {
+    super({
+      code: 'X_PORT_INVALID',
+      cause: `the sync role binds PORT + 1, and PORT=${input.port} is the top of the range — it would ask for ${input.port + 1}, which is not a TCP port`,
+      fix: `x dev --port ${neighbouringPort(input.port)}   # leaves ${PORT_RANGE.max} free for the sync node`,
+      meta: { port: input.port },
+    });
+  }
+}
+
+/**
+ * The neighbour was already listening. `X_PORT_IN_USE` is this package's own and is exactly what
+ * `x doctor` reports for the same condition, so one taken port has one name wherever it is found.
+ *
+ * What shipped instead: `listenSyncNode`'s `Bun.serve` threw, `startSync` re-threw, and the
+ * dispatcher rendered the caught value into `X_CLI_UNEXPECTED`'s cause —
+ * `cause: Error: Failed to start server. Is port 4000 in use?`, `fix: x doctor --json`, from a
+ * command that had just printed `web listening on 3999`. Three defects in one output: an
+ * unstable code, a caught value rendered into a refusal, and a `fix:` that answered
+ * "no findings — environment is shippable" when run (#F5).
+ */
+class SyncPortInUseError extends UltimateError {
+  constructor(input: { port: number; webPort: number }) {
+    super({
+      code: 'X_PORT_IN_USE',
+      cause: `the sync role binds PORT + 1, so \`x dev --port ${input.webPort}\` needs port ${input.port} and something is already listening on it`,
+      // `portPairAfter`, never `neighbouringPort`: `x dev` binds a PAIR, so the neighbour of the
+      // web port IS the sync port this refusal is about — the fix said `x dev --port 4000` for a
+      // run that had just died on 4000, and a test named "its fix is a command that ends the
+      // failure" pinned it.
+      fix: `x dev --port ${portPairAfter(input.webPort)}   # or free port ${input.port}: lsof -nP -iTCP:${input.port} -sTCP:LISTEN`,
+      meta: { port: input.port, webPort: input.webPort },
+    });
+  }
+}
+
+/**
+ * What a failed `listenSyncNode` really was, ASKED rather than read off the caught value: the
+ * thrown thing is `Bun.serve`'s own English and interpolating it into a `cause:` is what
+ * `scripts/catch-render.ts` refuses. `undefined` means "not a taken port" and the original value
+ * is re-thrown untouched — a catch-all that renamed every listener failure would be worse than
+ * the bare one it replaced.
+ *
+ * `probe` is injected so a test can be exactly "the port was taken" without racing a real socket.
+ */
+export async function syncBindRefusal(
+  webPort: number,
+  port: number,
+  probe: (value: number) => Promise<boolean> = portFree,
+): Promise<UltimateError | undefined> {
+  if (await probe(port)) return undefined;
+  return new SyncPortInUseError({ port, webPort });
+}
+
+/**
+ * The port the sync node listens on. `PORT + 1`, and `0` stays `0` — the kernel picks, and adding
+ * one to it would pick a specific port instead.
+ *
+ * REFUSED at the top of the range, never clamped. `PORT_RANGE.max` is 65535 and `portValue`
+ * accepts it, so `x dev --port 65535` handed `Bun.serve` 65536 and the bare `RangeError` reached
+ * the terminal as `X_CLI_UNEXPECTED` with `fix: x doctor --json`. Clamping to 65534 would be worse
+ * than refusing: `PORT + 1` is the rule `docker/docker-compose.prod.yml` publishes `3001:3001`
+ * from and `docker/helm` derives `PORT = .port - 1` from, so a node quietly on `PORT - 1` is a
+ * socket nothing else in the deployment computes.
+ */
+export function syncPortFor(port: number): number {
+  if (port === 0) return 0;
+  if (port >= PORT_RANGE.max) throw new SyncPortUnavailableError({ port });
+  return port + 1;
+}
+
+/**
+ * A node that is built and subscribed but bound to nothing yet — the one moment the `web` role can
+ * still mount its socket, since `web` binds its port first and a mount handed over after that is a
+ * server already listening without it.
+ */
+export interface PreparedSync {
+  readonly node: SyncNode;
+  readonly registry: LiveQueryRegistry;
+  /**
+   * The socket as the WEB role can serve it, on the port that role already publishes.
+   *
+   * `x dev` does BOTH: this mount on `PORT`, and the node's own listener on `PORT + 1` below. They
+   * are one node behind two doors, not two nodes — the sockets share the registry, the grants and
+   * the change subscription — and which door a browser uses is whichever one it can reach.
+   * `docker/` publishes the second; a laptop reached through one forwarded port uses the first.
+   */
+  readonly mount: WebSocketMount<SyncWs>;
+  /**
+   * Bind `PORT + 1`, and answer with the same object `startSync` always did. `appUrl` is the web
+   * role's own origin when one runs here, for the line below that names both doors.
+   */
+  listen(appUrl: string | null): Promise<RunningSync>;
+  /** Release the node when nothing ever bound it — a `web` role that threw after it was built. */
+  stop(): Promise<void>;
+}
+
+/** What `startRoles` holds on to: where the node listens, and how to take it down. */
+export interface RunningSync {
+  readonly url: string;
+  /** The node's registry, so the boot can hand it a change feed the database cannot produce. */
+  readonly registry: LiveQueryRegistry;
+  /** The node's channel hub — fed the same changes, so a declared channel's `records` flow in dev. */
+  readonly hub: ChannelHub;
+  stop(): Promise<void>;
+}
+
+/**
+ * Every read the app declared `live: true` becomes a subscribable query on this node, through
+ * `@ultimat3/realtime`'s own bridge. A registry with nothing in it answers every live `subscribe`
+ * with "no live query registered", which is a working socket serving no reads — and it is what
+ * kept the row gate that decides per subscriber from ever running outside a unit test.
+ *
+ * The context is the node's, and it carries no actor: it supplies the services and the clock the
+ * shared read needs, never an authority. Who may subscribe, and which rows they see, is decided
+ * per socket at subscribe time and again for every row of every delivery.
+ *
+ * **The per-TENANT subscription cap is deliberately unset, and both halves of it are.**
+ * `assertCapacity` returns early unless `maxPerTenant` AND `tenantOf` are both given, so passing
+ * one arms nothing — a knob that quietly does nothing is the defect this whole seam exists to
+ * close. And no default is defensible: one tenant is a single person and the next is five
+ * thousand seats, so any number here is either unreachable or an outage on a Monday morning. The
+ * per-socket 128 stands because a socket is one browser tab, which is a bound the framework can
+ * actually know. A deployment that wants the tenant cap passes both:
+ *
+ *   new LiveQueryRegistry({ …, maxPerTenant: 5_000, tenantOf: (actor) => actor?.orgId ?? null })
+ */
+export function registerLiveQueries(options: StartRolesOptions): LiveQueryRegistry {
+  const registry = new LiveQueryRegistry({
+    source: new RingChangeBuffer(),
+    // A withheld row is a metric, never a frame and never an error: telling a client "there is a
+    // row you may not see" is the leak the gate exists to prevent.
+    onRowDenied: (event) => logger.debug('live.rows_denied', { ...event }),
+  });
+  const ctx = createContext({ role: 'sync', buildId: options.buildId });
+  // The position a snapshot claims: the newest change this node had received when the read began.
+  // The read then holds at least that change, so claiming it is true, and every later change is
+  // above it. Unwired, every snapshot claimed `''` and a read that landed after any fan-out was
+  // discarded as older than its own window (plan 101, slice 06 c).
+  const lsn = (): string => registry.lastLsn;
+  for (const target of listQueries()) {
+    if (target.isLive) registry.register(liveQueryDefinition(target, { ctx, lsn }));
+  }
+  return registry;
+}
+
+/**
+ * The node itself: its hub, its registry, its authenticator and its change subscription. Nothing
+ * bound — `listen()` and the `web` role's mount are the two doors, and this is what is behind both.
+ */
+export async function prepareSync(options: StartRolesOptions): Promise<PreparedSync> {
+  const sockets = new SocketRegistry();
+  const hub = new ChannelHub({ transport: options.runtime.transport, sockets });
+  // The node evaluated no credential of its own and no host ever handed it one, so every socket
+  // the framework opened was anonymous and every guard, gate, presence entry and tenant cap
+  // decided against `null`. An explicit override first, then the app's own HTTP resolver, then
+  // nothing at all, which is what `x dev` with no authenticator should stay.
+  //
+  // BOTH of the first two re-authorize: `syncAuthenticator` carries an `expiresAt` and a `refresh`
+  // of its own (`SYNC_GRANT_TTL_MS`), re-asking the app's resolver with the upgrade's own
+  // `cookie`/`authorization`, so `logout` closes the socket and not only the HTTP session. The
+  // override is how a deployment states a window its credential already declares (a token's
+  // `exp`), or resolves identity from a header the adapter deliberately does not retain.
+  const authenticate = options.overrides?.syncAuthenticate ?? syncAuthenticator(options.buildId);
+  const registry = registerLiveQueries(options);
+  const node = createSyncNode({
+    hub,
+    registry,
+    transport: options.runtime.transport,
+    buildId: options.buildId,
+    sockets,
+    ...(authenticate === undefined ? {} : { authenticate }),
+    // Tier 1 is presence, and without a registry the node answers a topic subscribe with no member
+    // list at all — the KV bucket the transport just created would hold nothing and every `sync`
+    // container would run a presence-less protocol. It reads and writes `transport.shared`, so it
+    // is exactly as multi-node as the transport behind it: in-process here, the bucket under NATS.
+    presence: new PresenceRegistry({
+      transport: options.runtime.transport,
+      hub,
+      ttlMs: options.runtime.presenceTtlMs,
+    }),
+  });
+  await node.start();
+  return {
+    node,
+    registry,
+    // The node's OWN path, asked rather than restated: `SyncNodeOptions.path` is settable and a
+    // second copy of `/_x/sync` here is the copy that stays behind when it moves.
+    mount: { path: node.path, fetch: node.fetch, websocket: node.websocket },
+    stop: () => node.stop(),
+    listen: async (appUrl) => await listen(options, node, { registry, hub }, appUrl),
+  };
+}
+
+/**
+ * The node's own socket, on `PORT + 1`. The sync role owns it because websockets and the request
+ * pipeline drain differently, and `docker/` publishes it as a service of its own.
+ *
+ * Kept a step of its own so `web` binds BEFORE it: the two refusals below are about a taken
+ * neighbouring port, and reversing the order would answer a second `x dev` on this checkout with
+ * "port 3001 is in use" when the fact worth printing is that 3000 is.
+ *
+ * Port 0 is NOT passed through to the kernel. It cannot be incremented (`+ 1` would ask for port
+ * 1), but the web role has bound by the time this runs and `appUrl` carries the port it got — and
+ * `PORT + 1` is the contract every scaffolded `sync-url.ts` computes from and the wiki states. A
+ * scratch server (`x shot`, `ui.shot`) always asks for 0, so before this every one of its
+ * pictures carried `WebSocket … ERR_CONNECTION_REFUSED` for every live island, on the framework's
+ * own account. With no web role to follow, 0 still goes to the kernel. The reported url is the
+ * listener's own bound address either way, never a string built from the port that was requested.
+ */
+function syncPortFrom(requested: number, appUrl: string | null): number {
+  if (requested !== 0 || appUrl === null) return syncPortFor(requested);
+  const bound = Number(new URL(appUrl).port);
+  return Number.isInteger(bound) && bound > 0 ? syncPortFor(bound) : 0;
+}
+
+async function listen(
+  options: StartRolesOptions,
+  node: SyncNode,
+  feeds: Pick<RunningSync, 'registry' | 'hub'>,
+  appUrl: string | null,
+): Promise<RunningSync> {
+  const port = syncPortFrom(options.port, appUrl);
+  try {
+    // The SAME interface the web role binds, resolved from the same option and the same default.
+    // Without this the sync node took Bun's `0.0.0.0` while `x dev`'s web role took `localhost`,
+    // so the one socket that streams live database patches was the one socket on every
+    // interface — and `WebBinding`'s own docstring is about not serving a laptop's app to a café.
+    const binding = options.http ?? DEV_BINDING;
+    // No drain grace UNDER `x dev`: there is one node and it is the one going away, and a grace
+    // there was five seconds of every Ctrl-C (measured 2026-09-06, 5.0s of 5.1s) spent on a
+    // reconnect frame whose target does not exist yet. A container is the opposite case — other
+    // sync pods are up — and a grace of 0 there dropped every socket at once on SIGTERM, so it
+    // takes the node's own default and spreads the reconnects.
+    const listener = listenSyncNode(node, {
+      port,
+      hostname: binding.hostname,
+      ...(binding.dev ? { drainGraceMs: 0 } : {}),
+    });
+    // BOTH doors, named, once. `sync node ready` said only that a node existed: the first question
+    // a failing browser socket raises — "is the ws server up, and where?" — had no answer anywhere
+    // in the boot output, and the port was never printed at all. It is also what an editor's port
+    // forwarding reads: a url in the terminal is how VS Code and a Codespace learn a port exists.
+    logger.info('sync reachable', {
+      node: `${listener.url}${node.path}`,
+      app: appUrl === null ? null : `${appUrl}${node.path}`,
+    });
+    return {
+      url: listener.url,
+      ...feeds,
+      stop: async () => {
+        listener.stop();
+        await node.stop();
+      },
+    };
+  } catch (error) {
+    await node.stop();
+    const refusal = await syncBindRefusal(options.port, port);
+    if (refusal !== undefined) throw refusal;
+    throw error;
+  }
+}
+
+/** Both steps, for a caller with no web role to mount anything on. */
+export async function startSync(options: StartRolesOptions): Promise<RunningSync> {
+  const prepared = await prepareSync(options);
+  return await prepared.listen(null);
+}

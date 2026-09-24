@@ -4,12 +4,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive delete; `rm(…, { force: true })` removes a root that may not exist.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(); a fixture lives outside the checkout, where a parallel worker
+// globbing the tree cannot meet it half-deleted.
+import { tmpdir } from 'node:os';
 // why: Bun exposes no path API — nothing native joins a path.
 import { join } from 'node:path';
 import { checkErrorCodesThrown, declaredUnthrown } from './error-unthrown';
 
 // Under the git-ignored fixture parent, so a crashed run leaves nothing a status would show.
-const ROOT = join(import.meta.dir, '..', '.island-fixture', 'unthrown');
+const ROOT = join(tmpdir(), `x-error-unthrown-${process.pid}`);
 const PAGE = 'wiki/Error-Codes.md';
 
 const REGISTRY = `export const DEMO_ERROR_CODES = [

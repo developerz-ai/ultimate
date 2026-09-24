@@ -2,7 +2,7 @@
 // HTTP layer has strings that "mean" numbers. Actions, jobs and MCP calls receive real JSON and
 // must never get this leniency.
 
-import { isZonelessDateTime } from './iso-date';
+import { isIsoDateTime } from './iso-date';
 import type { SchemaNode } from './node';
 import { tryIntrospect } from './provider';
 
@@ -60,7 +60,9 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
       // Returned untouched rather than converted, this function's standing contract: converting
       // it resolves a zone-less clock time through the CONTAINER's `TZ`, so `?at=2026-08-19T10:00`
       // meant a different instant per pod. Validation states the refusal.
-      if (isZonelessDateTime(raw)) return raw;
+      // Non-ISO text (`3/14/2026`) is left untouched for the same reason: `new Date` reads it at
+      // the host's local midnight.
+      if (!isIsoDateTime(raw)) return raw;
       const parsed = new Date(raw);
       return Number.isNaN(parsed.getTime()) ? raw : parsed;
     }

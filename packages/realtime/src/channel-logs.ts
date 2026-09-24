@@ -5,7 +5,7 @@
 import { logger, renderThrowable, uuid } from '@ultimat3/core';
 import type { ChangeEvent } from './changefeed';
 import type { Channel } from './channel-decl';
-import { updatesFor } from './channel-records';
+import { carriesTable, updatesFor } from './channel-records';
 import { renderRecords } from './channel-render';
 import { ChannelRing } from './channel-ring';
 import type { ChannelSince, ReplayGapFrame } from './channel-wire';
@@ -59,6 +59,7 @@ export class ChannelLogs {
    * the change is somebody else's too, and one malformed image must not stop the rest.
    */
   deliverChange(channels: Iterable<Channel>, change: ChangeEvent): number {
+    if (change.op === 'truncate') return this.#truncated(change.entity);
     let frames = 0;
     let updates: ReturnType<typeof updatesFor>;
     try {
@@ -78,6 +79,23 @@ export class ChannelLogs {
       frames += this.#sockets.deliverRecords(update.topic, open.ring.epoch, frame);
     }
     return frames;
+  }
+
+  /**
+   * Every row of `table` is gone, and no frame can say which ones a member holds. Each open topic
+   * of a channel carrying it starts a NEW epoch — nothing in the old ring may be replayed onto a
+   * table that no longer has those rows — and every member is told `replay-gap` at it, which the
+   * client answers by re-running the channel's catch-up read.
+   */
+  #truncated(table: string): number {
+    let announced = 0;
+    for (const [topic, open] of [...this.#byTopic]) {
+      if (!carriesTable(open.target.channel, table)) continue;
+      this.#byTopic.delete(topic);
+      const ring = this.open(topic, open.target);
+      announced += this.#sockets.announceGap(topic, ring.epoch);
+    }
+    return announced;
   }
 
   /**

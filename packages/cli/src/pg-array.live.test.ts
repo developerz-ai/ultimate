@@ -6,7 +6,7 @@
 // THIS FILE IS IN `@ultimat3/cli` BECAUSE NOTHING ELSE CAN SEE ALL THREE. `@ultimat3/db` is tier 1
 // and may not import `jobs` (3) or `notify` (4); `jobs` and `notify` speak only the duck-typed
 // `PgExecutor` and cannot build a db-backed one. `pgExecutorFor` over a real `PostgresClient` is
-// the executor every booted role actually gets (`dev-queue.ts`), so this is the composition under
+// the executor every booted role actually gets (`runtime-queue.ts`), so this is the composition under
 // test rather than a stand-in for it.
 //
 // WHY THE GAP LASTED: `grep -rln '\.claim(' --include=*.live.test.ts packages/` answered ONE file
@@ -28,7 +28,7 @@ import { createPostgresClient, statementsOf } from '@ultimat3/db';
 import type { PgExecutor } from '@ultimat3/jobs';
 import { SQL_CLAIM, SQL_JOBS_TABLE, SQL_OUTBOX_RELEASE } from '@ultimat3/jobs';
 import { SQL_NOTIFY_INBOX_MARK_READ, SQL_NOTIFY_INBOX_TABLE } from '@ultimat3/notify';
-import { pgExecutorFor } from './dev-queue';
+import { pgExecutorFor } from './runtime-queue';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;

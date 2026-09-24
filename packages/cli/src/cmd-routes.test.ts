@@ -5,7 +5,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove, and Bun.write is async in these synchronous
 // fixture helpers.
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -23,6 +23,10 @@ let root = '';
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'x-routes-'));
   writeFileSync(join(root, 'app.config.ts'), 'export const config = {};\n');
+  // One module, so this is an app with no API routes rather than an app that loaded NOTHING —
+  // which `loadApp` now refuses as X_APP_EMPTY.
+  mkdirSync(join(root, 'apps/web/shared'), { recursive: true });
+  writeFileSync(join(root, 'apps/web/shared/tokens.ts'), 'export const tokens = {};\n');
 });
 
 afterAll(() => {

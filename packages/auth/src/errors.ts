@@ -254,6 +254,21 @@ export const clientScopeSecretShort = (length: number, minLength: number): AuthE
     meta: { option: 'secret', minLength },
   });
 
+/**
+ * An api key `env` the parser cannot read back. `parseApiKey` splits `ult_<env>_<id>_<secret>` on
+ * `_`, so `issueApiKey({ env: 'live_eu' })` minted a key its own verifier refused. Refused at
+ * issue — `X_CONFIG_INVALID`, borrowed like the three above — never at first use.
+ */
+export const apiKeyEnvInvalid = (env: string): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause: env.includes('_')
+      ? `api key env ${renderCauseValue(env)} contains "_", which parseApiKey splits on`
+      : `api key env ${renderCauseValue(env)} is not lowercase letters, digits and "-", the only spelling that survives parseApiKey and reads the same in every log`,
+    fix: "pass env matching ^[a-z0-9-]+$ to issueApiKey (e.g. 'live-eu')",
+    meta: { option: 'env' },
+  });
+
 export const passwordWeak = (reasons: readonly string[]): AuthError =>
   new AuthError({
     code: 'X_PASSWORD_WEAK',

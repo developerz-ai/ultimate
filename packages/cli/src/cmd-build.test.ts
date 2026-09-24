@@ -48,6 +48,15 @@ test('the spawned command names the same file the entry check required', () => {
   }
 });
 
+// The image is stamped with the manifest's own build id: an empty BUILD_ID made every role
+// compute one at boot, and two replicas of one image could disagree about it.
+test('the docker build passes the build id as the BUILD_ID build arg', () => {
+  const command = argsFor('docker', { root: '/app', tag: 't', out: '/out', buildId: 'abc123' });
+  const at = command.indexOf('--build-arg');
+  expect(at).toBeGreaterThan(-1);
+  expect(command[at + 1]).toBe('BUILD_ID=abc123');
+});
+
 test('a missing entry is refused by name, before anything is spawned', () => {
   const dir = mkdtempSync(join(tmpdir(), 'x-build-'));
   try {
@@ -150,6 +159,11 @@ test('an unknown target names the known ones and a working invocation', () => {
 async function buildRoot(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-build-run-'));
   await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  // The docker target reads the manifest's build id, which names the app from its package.json.
+  await Bun.write(
+    join(dir, 'package.json'),
+    JSON.stringify({ name: 'build-run', version: '1.0.0' }),
+  );
   await Bun.write(join(dir, 'docker', 'Dockerfile'), 'FROM oven/bun:1.3-alpine\n');
   return dir;
 }
@@ -187,9 +201,11 @@ test('x build runs the static gate FIRST and only then the builder', async () =>
     expect(result.ok).toBe(true);
     expect(result.command).toBe('build');
     // The gate's own two subprocesses come first; the docker build is last.
-    expect(ran[0]).toEqual(['bunx', 'tsc', '-b', '--pretty', 'false']);
+    // `-p .`: the fixture root declares no `references`, so the typecheck is content-hashed (#450).
+    expect(ran[0]).toEqual(['bunx', 'tsc', '-p', '.', '--pretty', 'false']);
     expect(ran.at(-1)?.slice(0, 2)).toEqual(['docker', 'build']);
     expect(ran.at(-1)).toContain('app:ci');
+    expect(ran.at(-1)?.some((arg) => /^BUILD_ID=\S+$/.test(arg))).toBe(true);
     expect(result.data).toMatchObject({ target: 'docker', artifact: 'app:ci' });
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -384,6 +400,22 @@ test('x build --target static reads the inventory the prerenderer just wrote', a
       'surface-forbids-static',
       'mode-revalidates',
     ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60_000);
+
+// Row l: a relative `--out` is the caller's path, typed from where they stand — not the app root.
+test('a relative --out resolves against the cwd, never the app root', async () => {
+  const dir = await buildRoot();
+  try {
+    await Bun.write(join(dir, 'apps/web/server.ts'), 'export {};\n');
+    const { runner, ran } = scriptedRunner();
+    const cwd = join(dir, 'apps', 'web');
+    await buildCommand.run(
+      buildContext(['build', '--target', 'binary', '--out', 'bin/app'], cwd, runner),
+    );
+    expect(ran.at(-1)).toContain(join(cwd, 'bin', 'app'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

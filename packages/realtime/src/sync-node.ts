@@ -11,13 +11,8 @@ import { evictInChunks } from './drain-evictions';
 import { isClientFault } from './errors';
 import type { TransportSubscription } from './fanout';
 import { CHANGE_SUBJECT_ALL, parseEnvelope, SeqGapDetector } from './replicator';
-import {
-  CLOSE,
-  DEFAULT_MAX_BUFFERED_BYTES,
-  idleSweepPeriodMs,
-  SocketRegistry,
-  SyncSocket,
-} from './socket';
+import { CLOSE, DEFAULT_MAX_BUFFERED_BYTES, SocketRegistry, SyncSocket } from './socket';
+import { idleSweepPeriodMs } from './socket-idle';
 import { GrantBook, sweepGrants } from './sync-auth';
 import { ackRefOf, createFrameRouter } from './sync-frames';
 import { drainGraceMs, socketCeilings, syncNodeBounds } from './sync-node-bounds';

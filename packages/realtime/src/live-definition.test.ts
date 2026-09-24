@@ -415,3 +415,35 @@ describe('a declared live query is subscribable, per subscriber', () => {
     expect(result.frame.entity).toBeUndefined();
   });
 });
+
+// The lsn a snapshot claims is the position its rows are AT LEAST as new as. Read after the rows, a
+// commit landing between the two was claimed and missing: every change up to that lsn is then
+// dropped as already folded, and the row never arrives.
+describe('a snapshot claims the lsn from before its read', () => {
+  test('a commit during the read is not claimed by the rows that missed it', async () => {
+    let position = 1;
+    const target = registerQuery(
+      'lsnFeed',
+      query({
+        input: t.object({ orgId: t.string }),
+        policy: ownRowsOnly,
+        live: true,
+        sql: ({ orgId }) =>
+          from<FeedRow>('posts', async () => {
+            // A commit lands while the rows are being read.
+            position += 1;
+            return ROWS;
+          })
+            .where({ orgId })
+            .orderBy('id')
+            .limit(50),
+      }),
+    );
+    const definition = liveQueryDefinition(target, {
+      ctx: nodeCtx(),
+      lsn: () => formatLsn(position),
+    });
+    const result = await definition.snapshot({ input: INPUT });
+    expect(result.lsn).toBe(formatLsn(1));
+  });
+});

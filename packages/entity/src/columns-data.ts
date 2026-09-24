@@ -48,6 +48,32 @@ export const json = <T>(schema: StandardSchemaV1<unknown, T>): Column<T> =>
 const DIGITS = /^-?\d+$/;
 
 /**
+ * The one spelling Postgres answers with: no leading zeros, and no `-0`. Memory stored `'007'`
+ * where Postgres returned `7`, so the same row was two values by driver. String work only — the
+ * digits never pass through a `Number`.
+ */
+const canonicalDigits = (digits: string): string => {
+  const negative = digits.startsWith('-');
+  const whole = digits.replace('-', '').replace(/^0+(?=\d)/, '');
+  return negative && whole !== '0' ? `-${whole}` : whole;
+};
+
+/**
+ * An ACCEPTED decimal in Postgres's spelling: leading zeros stripped, `-0` and `-0.00` unsigned,
+ * and a short fraction padded to the column's scale (`numeric(8, 2)` answers `7.50` for `7.5`).
+ * Never rounds — excess scale was refused above, and rounding here would widen what the column
+ * accepts. An unbounded `numeric` keeps the fraction it was given, as Postgres does.
+ */
+const canonicalDecimal = (text: string, scale: number | undefined): string => {
+  const negative = text.startsWith('-');
+  const [rawWhole = '', rawFraction = ''] = text.replace('-', '').split('.');
+  const whole = rawWhole.replace(/^0+(?=\d)/, '');
+  const fraction = scale === undefined ? rawFraction : rawFraction.padEnd(scale, '0');
+  const zero = /^0*$/.test(whole + fraction);
+  return `${negative && !zero ? '-' : ''}${whole}${fraction === '' ? '' : `.${fraction}`}`;
+};
+
+/**
  * `bigint`, whose row type is a decimal STRING. Neither alternative survives contact:
  * a JS `bigint` is what `JSON.stringify` throws on — the reason `money.minor` is a `number` — and
  * a `number` silently loses digits past 2^53, which is precisely the range a legacy `int8` key or
@@ -71,7 +97,7 @@ export const bigint = (): Column<string> =>
           );
     }
     return typeof value === 'string' && DIGITS.test(value)
-      ? value
+      ? canonicalDigits(value)
       : refuseColumn(
           'bigint',
           `expected whole digits, ${got(value)}`,
@@ -149,7 +175,7 @@ export const decimal = (options: DecimalOptions = {}): Column<string> => {
           `widen the column — decimal({ precision: ${whole + (scale ?? 0)}, scale: ${scale ?? 0} }) — and run x db gen "widen the numeric": what overflows is the digits BEFORE the point`,
         );
       }
-      return text;
+      return canonicalDecimal(text, scale);
     },
     precision === undefined || scale === undefined ? {} : { precision, numericScale: scale },
   );

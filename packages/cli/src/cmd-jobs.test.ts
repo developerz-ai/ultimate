@@ -229,6 +229,14 @@ describe('unit · x jobs show and retry rendering', () => {
   test('retry re-queues and reports the new state', async () => {
     const driver = createMemoryDriver();
     const id = await enqueue(driver, 'send-email');
+    // Retry accepts a FINISHED job only (`X_JOB_NOT_REQUEUEABLE` otherwise), so dead-letter it first.
+    await driver.claim({
+      queues: ['default'],
+      limit: 1,
+      workerId: 'w1',
+      visibilityTimeoutMs: 1000,
+    });
+    await driver.nack(id, { delayMs: 0, deadLetter: true });
 
     const result = await runJobs(driver, { subcommand: 'retry', positionals: [id] });
 

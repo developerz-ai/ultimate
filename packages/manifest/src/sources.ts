@@ -54,6 +54,7 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
         type: column.kind,
         nullable: !column.notNull,
         primaryKey: column.primaryKey,
+        ...(column.hasDefault ? { hasDefault: true } : {}),
         ...(column.references === null ? {} : { references: column.references }),
       })),
       invariants: entity.invariants.map((invariant) => invariant.name),

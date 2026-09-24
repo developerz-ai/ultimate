@@ -58,7 +58,7 @@ The app's own gate: `x build --target static`, then `x verify`. The build first,
 `budgets` step weighs `.x/build-stats.json` and that build is its only writer.
 
 `--no-example`, verbatim, from `ci.yml`'s `scaffold-smoke` job on an `ubuntu-latest` runner,
-`As of 2026-09-12` — the whole gate, in the order it runs:
+`As of 2026-09-23` (CI run 35892087181, `main` at `9b8feafc`) — the whole gate, in the order it runs:
 
 ```text
   ✓ typecheck
@@ -82,13 +82,15 @@ The app's own gate: `x build --target static`, then `x verify`. The build first,
   ✓ manifest
   - roadmap
   wall time
-    ✓ bin/setup  5994ms
-    ✓ bin/check  4886ms
-✓ bin/setup in 5994ms, bin/check green in 4886ms — 20 of 20 steps pass
+    ✓ bin/setup  6911ms
+    ✓ bin/check  6474ms
+✓ bin/setup in 6911ms, bin/check green in 6474ms — 20 of 20 steps pass
 ```
 
-`-` is skipped, not passed: no live query, job or e2e test exists yet, so those steps have nothing
-to weigh, and `roadmap` is a framework-repo step. `contract` is **not** among them — the scaffold
+`-` is skipped, not passed: a `--no-example` app has no live query, job or e2e test yet, so those
+steps have nothing to weigh, and `roadmap` is a framework-repo step. **Without `--no-example`**, the
+default scaffold ships its example slice with a live test, a job test and an e2e test, so `live`,
+`job` and `e2e` are ticks on run one — the same CI job shows all three passing on that app. `contract` is **not** among them — the scaffold
 ships `apps/web/api/health.contract.test.ts`, which is what makes it a tick on run one. The summary
 names every skip, so a gate that is green because a suite does not exist says so on the one line you
 read. [Tutorial 2](Tutorial-02-First-Feature) turns more of those dashes into ticks.

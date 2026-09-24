@@ -402,10 +402,12 @@ describe('unit · x verify', () => {
   // A module that will not import registers no route, so its budgets are missing from the manifest
   // and every one of them came back `X_BUDGET_UNMEASURED` — "run x build" for a file that does not
   // compile. The cause has to travel with the symptom or the reader is sent to the wrong place.
-  describe('budgets reports what loading the app said', () => {
+  // One broken module was four red steps and four copies of one line; `manifest` owns it now.
+  describe('a module that will not import is reported once, by manifest', () => {
     const step = VERIFY_STEPS.find((candidate) => candidate.name === 'budgets');
+    const owner = VERIFY_STEPS.find((candidate) => candidate.name === 'manifest');
 
-    test('a module that will not import is a finding on this step', async () => {
+    test('budgets points at manifest, and manifest carries the finding once', async () => {
       const root = await mkdtemp(join(tmpdir(), 'x-budgets-'));
       try {
         await Bun.write(
@@ -419,11 +421,13 @@ describe('unit · x verify', () => {
         );
         expect(await step?.applies?.({ ...ctx, root })).toBe(true);
         const outcome = await step?.run({ ...ctx, root });
-        const broken = outcome?.findings.filter(
-          (finding) => finding.at === 'apps/web/app/broken/module.ts',
-        );
-        expect(broken?.[0]?.cause).toContain('this module never imports');
-        expect(outcome?.ok).toBe(false);
+        const at = (finding: { readonly at?: string }): boolean =>
+          finding.at === 'apps/web/app/broken/module.ts';
+        expect(outcome?.findings.filter(at)).toEqual([]);
+        expect(outcome?.output).toContain('see manifest');
+        const owned = (await owner?.run({ ...ctx, root }))?.findings.filter(at);
+        expect(owned?.length).toBe(1);
+        expect(owned?.[0]?.cause).toContain('this module never imports');
       } finally {
         await rm(root, { recursive: true, force: true });
       }

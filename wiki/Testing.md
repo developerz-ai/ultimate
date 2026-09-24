@@ -65,7 +65,7 @@ Locale and zone are declared per test when the behavior under test depends on th
 | **e2e** | `x test e2e` | a real browser (Chrome over raw CDP, no Playwright) against the app: render mode behavior, streaming holes filling, hydration timing, SW install + offline fallback, version-skew reload, two tabs, offline writes | the app spawned on a throwaway database (`ULTIMATE_STATE_DIR`) + a real browser, when Chrome is present |
 | **eval** | `x test eval` | prompt quality vs. a baseline: exact, schema, rubric (judge), or regression tolerance | pinned models, recorded fixtures |
 
-**The e2e step drives a real browser, `As of 2026-09-22`** (21.0.0, unreleased). When Chrome is on the
+**The e2e step drives a real browser, `As of 2026-09-22`** (21.0.0). When Chrome is on the
 machine, `x verify`'s `e2e` step spawns the app with `startE2eApp` (reset, seed, boot, on its own
 throwaway `ULTIMATE_STATE_DIR`) and runs the suite with a real `page`
 (`packages/cli/src/verify-e2e.ts`). **Before this, the reference app's e2e suite ran with no
@@ -153,10 +153,13 @@ x shot --all-islands --json           # every island in the app, plus an index
 ```
 
 **`x shot` is deliberately not a step of `x verify`.** It needs a real browser, and a gate that
-goes red because a machine has no Chrome fails for reasons unrelated to the change. The app
-supplies the browser: `bun add -d puppeteer-core`, or `--cdp-url` to attach to one already running.
+goes red because a machine has no Chrome fails for reasons unrelated to the change. `x shot`
+launches Chrome itself over raw CDP — no browser library in the app. It takes the first of
+`--browser`, `PUPPETEER_EXECUTABLE_PATH`, `CHROME_PATH`, then a probe of the usual install paths; or
+it attaches to a running browser with `--cdp-url` (or `SCRAPE_CDP_URL`). No browser at all is
+`X_SHOT_BROWSER_MISSING`, raised before the dev server boots: `export CHROME_PATH=<binary>`.
 
-`As of 2026-09`.
+`As of 2026-09-23`.
 
 ### States are declared, not clicked
 

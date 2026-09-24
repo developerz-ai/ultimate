@@ -190,8 +190,11 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
       ? undefined
       : supplied;
-  if (configured === undefined && !isLocal({ env }))
-    throw signingSecretMissing(resolveEnvironment({ env }));
+  // FAILS CLOSED: a process that names no environment resolves as `production` here, the answer
+  // core's `assertNoDevSecretsOutsideLocal` gives. `isLocal`'s own fallback is `development`, so the
+  // process that forgot to say signed with the published key — exactly the one that must not.
+  if (configured === undefined && !isLocal({ env, fallback: 'production' }))
+    throw signingSecretMissing(resolveEnvironment({ env, fallback: 'production' }));
   const secret = configured ?? DEV_SIGNING_SECRET;
 
   const filePath = (key: string): string => `${root}/${key}`;

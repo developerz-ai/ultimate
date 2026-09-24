@@ -15,6 +15,11 @@ export interface Tx {
   readonly id: string;
   /** Registered by drivers so a failed transaction can undo in-memory effects. */
   onRollback(undo: () => void): void;
+  /**
+   * Run once the transaction COMMITS, never on rollback. Optional so a hand-written `Tx` still
+   * satisfies the type; without it, work registered here runs immediately (the pre-22 behaviour).
+   */
+  onCommit?(effect: () => void): void;
 }
 
 export interface RepoOptions {

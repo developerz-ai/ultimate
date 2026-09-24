@@ -154,7 +154,12 @@ function cutToBudget(run: string, size: number): readonly string[] {
   return pieces;
 }
 
-/** Index a document: chunk, embed, upsert. One call so no step is skipped by accident. */
+/**
+ * Index a document: chunk, embed, upsert, prune. One call so no step is skipped by accident. The
+ * prune is what re-indexing a SHORTER document needs: chunk ids are `<doc>#<n>`, so the upsert
+ * overwrote the first chunks and left the old tail retrievable. Upsert first, prune after, so the
+ * document is never absent from a search in between. A store without `prune` cannot clean up.
+ */
 export async function indexDocument(input: {
   readonly store: VectorStore;
   readonly embedder: Embedder;
@@ -175,6 +180,11 @@ export async function indexDocument(input: {
       text: c.text,
       metadata: c.metadata,
     })),
+  );
+  // `source` is the chunker's own stamp (`chunk()`), so only THIS document's rows are touched.
+  await input.store.prune?.(
+    { source: input.document.id },
+    chunks.map((c) => c.id),
   );
   return chunks;
 }

@@ -47,6 +47,12 @@ export interface ColumnFact {
   readonly nullable: boolean;
   readonly primaryKey?: boolean;
   readonly references?: string;
+  /**
+   * The column has a declared default (a value, `defaultNow()`, a generated key). Written only when
+   * true, so a column without one reads as it always did. Adding a NOT NULL column WITH a default
+   * is additive — every existing row takes the default — and was classed breaking without this.
+   */
+  readonly hasDefault?: boolean;
 }
 
 export interface EntityFact {
@@ -123,7 +129,8 @@ export interface ChannelFact {
   /** Record types (entity names) the channel carries. */
   readonly records: readonly string[];
   readonly events: boolean;
-  readonly policy: string | null;
+  /** The policy's label. Never null since 22.0.0 — `channel()` requires a policy. */
+  readonly policy: string;
   readonly permissions: readonly string[];
 }
 

@@ -16,7 +16,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./preload": "./src/preload.ts",
-    "./registry-isolation": "./src/registry-isolation.ts"
+    "./e2e-preload": "./src/e2e-preload.ts",
+    "./registry-isolation": "./src/registry-isolation.ts",
+    "./test-types": "./src/test-types.ts"
   },
   "files": [
     "src",

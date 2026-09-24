@@ -7,6 +7,7 @@ import { FRAMEWORK_CODE, singleLine, stringField } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
 import { auditResourceRead, auditToolCall, outcomeForCode, outcomeForResult } from './audit';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
+import { promptListEntry, promptsGet } from './prompts-get';
 import type { AnyMcpTool, McpCaller, McpToolResult, McpVerbClass, ToolListEntry } from './registry';
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource } from './resources';
@@ -53,11 +54,13 @@ export interface CreateMcpServerInput {
 /** The set of JSON-RPC methods this server answers. Kept in sync with `classify`. */
 const METHODS = [
   'initialize',
+  'ping',
   'tools/list',
   'tools/call',
   'resources/list',
   'resources/read',
   'prompts/list',
+  'prompts/get',
 ] as const;
 
 export function createMcpServer(input: CreateMcpServerInput = {}): McpServer {
@@ -141,8 +144,13 @@ export class McpServer {
         return resultResponse(id, { resources: this.resources.list(caller) });
       case 'resources/read':
         return this.resourcesRead(body, caller);
+      // MCP's keep-alive: an empty result, which clients treat as "still here".
+      case 'ping':
+        return resultResponse(id, {});
       case 'prompts/list':
-        return resultResponse(id, { prompts: this.prompts });
+        return resultResponse(id, { prompts: this.prompts.map(promptListEntry) });
+      case 'prompts/get':
+        return promptsGet(this.prompts, id, paramsOf(body));
       default:
         return errorResponse(id, METHOD_NOT_FOUND, `method not found: ${body.method}`, {
           supported: METHODS,

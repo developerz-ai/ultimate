@@ -67,15 +67,13 @@ export {
   headFromMeta,
   mergeHead,
   renderHead,
-  THEME_SCRIPT_MAX_BYTES,
   THEME_STORAGE_KEY,
   themeScript,
   themeScriptBody,
 } from './head';
-export { headTagKey, seoRenderers, toHeadTag } from './head-seo';
+export { seoRenderers } from './head-seo';
 export type { IslandDirective } from './hydrate';
 export {
-  DEFAULT_REPLAY_EVENTS,
   emitIslandAttributes,
   emitIslandProps,
   HYDRATE_RUNTIME_BODIES,
@@ -84,13 +82,10 @@ export {
   IDLE_HYDRATE_TIMEOUT_MS,
   ISLAND_FAILED_ATTRIBUTE,
   ISLAND_MOUNTED_ATTRIBUTE,
-  requiredStrategies,
 } from './hydrate';
 export type { IslandComponent, IslandDeclaration, IslandNode, IslandSpec } from './island';
 export {
   ISLAND_EXTENSION,
-  ISLAND_NODE,
-  isEmittableSpecifier,
   isIslandNode,
   island,
   islandModuleId,
@@ -98,7 +93,7 @@ export {
 export type { IslandCollector, IslandCollectorInput } from './island-collector';
 export { createIslandCollector, islandModuleIds } from './island-collector';
 export type { IslandProps, JsonValue } from './island-props';
-export { checkIslandProps, ISLAND_PROPS_MAX_BYTES } from './island-props';
+export { ISLAND_PROPS_MAX_BYTES } from './island-props';
 export { parseByteBudget } from './islands';
 export type { JsxComponent, JsxNode, JsxProps } from './jsx';
 export { Fragment, h, isJsxNode, JSX_NODE } from './jsx';
@@ -123,7 +118,6 @@ export {
   describeRoutes,
   ROUTE_FILENAME,
   registerRoute,
-  routeCount,
   routeEntries,
   routeFor,
   routePathFromFile,
@@ -150,7 +144,8 @@ export { DEFAULT_ISLAND_HYDRATE, defineRoute, isRouteConfig, tagKeys } from './r
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';
-export { DEFAULT_ROUTE_STATUS, isErrorStatus, routeStatusOf, withStatus } from './route-status';
+export { routeStatusOf, withStatus } from './route-status';
+export { STREAM_REVEAL_BODIES } from './stream-scripts';
 export type {
   BoundaryRule,
   BoundaryViolation,

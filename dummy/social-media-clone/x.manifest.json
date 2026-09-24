@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "d2d8e6bd6d198b94",
+  "buildId": "b058f701ca243298",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -230,7 +230,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         }
       ],
       "invariants": []
@@ -256,7 +257,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "deleted_at",
@@ -268,7 +270,8 @@
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "post_id",
@@ -290,19 +293,22 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "kind",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "title",
@@ -327,13 +333,15 @@
           "name": "updated_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "user_id",
           "type": "uuid",
           "nullable": false,
           "primaryKey": true,
+          "hasDefault": true,
           "references": "users.id"
         }
       ],
@@ -354,7 +362,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "requester_id",
@@ -373,7 +382,8 @@
           "name": "status",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         }
       ],
       "invariants": [
@@ -388,7 +398,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "post_id",
@@ -427,7 +438,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "height",
@@ -439,7 +451,8 @@
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "key",
@@ -471,7 +484,8 @@
           "name": "state",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "width",
@@ -513,13 +527,15 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         }
       ],
       "invariants": [
@@ -541,13 +557,15 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "kind",
@@ -592,7 +610,8 @@
           "name": "joined_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "last_read_at",
@@ -618,7 +637,8 @@
           "name": "audience",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "author_id",
@@ -637,13 +657,15 @@
           "name": "comment_count",
           "type": "integer",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "deleted_at",
@@ -655,31 +677,36 @@
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "like_count",
           "type": "integer",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "media_count",
           "type": "integer",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "published_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "updated_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         }
       ],
       "invariants": [
@@ -697,7 +724,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "expires_at",
@@ -709,7 +737,8 @@
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "token_hash",
@@ -747,7 +776,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "deleted_at",
@@ -777,37 +807,43 @@
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "locale",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "role",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "suspended",
           "type": "boolean",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "tz",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "updated_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         }
       ],
       "invariants": [
@@ -1508,88 +1544,6 @@
     }
   ],
   "jobs": [
-    {
-      "name": "mail.send",
-      "input": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "mailId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "to": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "email"
-            }
-          },
-          "subject": {
-            "type": "string",
-            "minLength": 1
-          },
-          "html": {
-            "type": "string",
-            "minLength": 1
-          },
-          "text": {
-            "type": "string",
-            "minLength": 1
-          },
-          "locale": {
-            "type": "string",
-            "format": "bcp47-locale"
-          },
-          "tz": {
-            "type": "string",
-            "format": "iana-time-zone"
-          },
-          "replyTo": {
-            "type": "string",
-            "format": "email"
-          },
-          "cc": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "email"
-            }
-          },
-          "bcc": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "email"
-            }
-          },
-          "unsubscribeUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "idempotencyKey": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "mailId",
-          "to",
-          "subject",
-          "html",
-          "text",
-          "locale",
-          "tz"
-        ],
-        "additionalProperties": false
-      },
-      "queue": "default",
-      "retry": {
-        "attempts": 5,
-        "backoff": "exponential"
-      },
-      "steps": []
-    },
     {
       "name": "resetDemo",
       "input": {

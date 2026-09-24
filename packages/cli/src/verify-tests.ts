@@ -18,7 +18,7 @@ import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
 import { discoverTests } from './test-select';
-import { defaultWorkers } from './test-workers';
+import { defaultWorkers, SERIAL_TYPES } from './test-workers';
 import { withE2eApp } from './verify-e2e';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
@@ -110,31 +110,6 @@ export const ownerOf = (path: string): TestType =>
  */
 const disownedBy = (type: TypedTest): readonly string[] =>
   type === 'e2e' ? [`**/e2e/**/*.{${OUTRANKING_E2E.join(',')}}.test.*`] : [];
-
-/**
- * Which types run across worker processes, and why the other two cannot.
- *
- * Parallel is safe when the only thing a test file shares with another file is the database, and
- * the database is per worker by construction (`ULTIMATE_TEST_WORKER` → one clone of the migrated
- * template, `@ultimat3/testing`'s `acquireWorkerDatabase`). Every other process-global in this
- * framework — the permission set, the roles, the entity/action/query registries, the error-code
- * titles, the fixture bag — is handled by `--isolate` giving each FILE its own module registry.
- *
- * | Type | Why |
- * |---|---|
- * | `live` | **serial.** A logical replication slot and a publication are named at the Postgres
- * CLUSTER level, not inside a database, and this repo's own feed tests hard-code
- * `x_live_slot` / `x_live_pub` against `TEST_REPLICATION_URL` — the one server, never a per-worker
- * clone. Two workers would race `pg_create_logical_replication_slot` and the loser's failure would
- * read as a flake. A per-worker database does not isolate a cluster-wide object |
- * | `e2e` | **serial.** It runs against the *built output*: one `dist/`, one service-worker
- * registration, one browser profile. There is nothing per-worker to hand it, and the type is
- * seconds at most, so a split would buy a race and no time |
- *
- * The two are named here rather than tested for, because "can this type be sharded?" is a design
- * fact about the type, not something a run can discover about itself.
- */
-export const SERIAL_TYPES: readonly TestType[] = ['live', 'e2e'];
 
 const isSerial = (type: TestType): boolean => SERIAL_TYPES.includes(type);
 

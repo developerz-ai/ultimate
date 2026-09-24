@@ -13,8 +13,11 @@ export interface ChannelDescription {
   /** Record types (entity names) the channel carries, sorted. */
   readonly records: readonly string[];
   readonly events: boolean;
-  /** The policy's display label, `null` for a channel any socket may join. */
-  readonly policy: string | null;
+  /**
+   * The policy's display label. Never absent since 22.0.0 — `channel()` requires a policy, and a
+   * channel any socket may join reads `allow('public')`'s label, said out loud.
+   */
+  readonly policy: string;
   /** Every permission the policy asserts, flattened — what a report matches a grant against. */
   readonly permissions: readonly string[];
 }
@@ -26,8 +29,7 @@ export function describeChannels(): readonly ChannelDescription[] {
     catchUp: declared.catchUp,
     records: declared.records.map((projection) => projection.type).sort(),
     events: declared.events,
-    policy: declared.policy === undefined ? null : policyCapability(declared.policy),
-    permissions:
-      declared.policy === undefined ? [] : [...policyPermissions(declared.policy)].sort(),
+    policy: policyCapability(declared.policy),
+    permissions: [...policyPermissions(declared.policy)].sort(),
   }));
 }

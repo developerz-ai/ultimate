@@ -29,20 +29,14 @@
 //   bun run node-imports  ·  bun run scripts/node-imports.ts [--json]
 //   bun run scripts/node-imports.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-import { maskLiterals } from '@ultimat3/cli';
-import { collectSourceFiles, type SourceFile } from './boundaries';
-import { flagList, parseScriptArgs } from './lib/args';
+import { maskLiterals } from '../packages/core/src/source-mask';
+import type { SourceFile } from './boundaries';
+import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
-import {
-  applyNodeImportUnpin,
-  NODE_IMPORT_PINS,
-  NODE_PINS_FILE,
-  nodeImportPinnedFor,
-} from './lib/node-import-pins';
-import { repoRoot } from './lib/run';
+import { NODE_IMPORT_PINS, NODE_PINS_FILE } from './lib/node-import-pins';
+import type { PinTable, RatchetGap } from './lib/ratchet';
+import { ratchetGaps, ratchetMain } from './lib/ratchet';
 import { isCode, lineOf } from './lib/source-scan';
-import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'node-imports';
 
@@ -94,9 +88,12 @@ export function hasWhy(lines: readonly string[], index: number): boolean {
  * One mask closes both, and it is the one `render-modes`, `frozen-records`, `secret-compare` and
  * `proto-index` already read, so there is no second tokenizer here.
  */
-export function scanNodeImports(path: string, source: string): readonly NodeImportSite[] {
+export function scanNodeImports(
+  path: string,
+  source: string,
+  masked: string = maskLiterals(source),
+): readonly NodeImportSite[] {
   const lines = source.split('\n');
-  const masked = maskLiterals(source);
   const out: NodeImportSite[] = [];
   for (const match of source.matchAll(NODE_IMPORT)) {
     if (!isCode(masked, match.index, match[0] as string)) continue;
@@ -107,53 +104,20 @@ export function scanNodeImports(path: string, source: string): readonly NodeImpo
   return out;
 }
 
-export type NodeImportGapKind = 'over' | 'stale' | 'unscanned';
-
-export interface NodeImportGap {
-  readonly kind: NodeImportGapKind;
-  readonly pkg: string;
-  readonly found: number;
-  readonly pinned: number;
-  readonly first?: NodeImportSite;
-}
+export type NodeImportGap = RatchetGap<NodeImportSite>;
 
 export interface NodeImportInput {
   readonly files: readonly SourceFile[];
-  readonly pins: Readonly<Record<string, number>>;
+  readonly pins: PinTable;
 }
 
-/** The ratchet: a package may hold what it is pinned at, may fall, may never rise. */
-export function checkNodeImports(input: NodeImportInput): readonly NodeImportGap[] {
-  if (input.files.length === 0) {
-    return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
-  }
-  const found = new Map<string, NodeImportSite[]>();
-  for (const file of input.files) {
-    for (const site of scanNodeImports(file.path, file.source)) {
-      const pkg = packageOf(site.path);
-      const list = found.get(pkg) ?? [];
-      list.push(site);
-      found.set(pkg, list);
-    }
-  }
-  const gaps: NodeImportGap[] = [];
-  for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
-    const hits = found.get(pkg) ?? [];
-    const pinned = nodeImportPinnedFor(pkg, input.pins);
-    if (hits.length > pinned) {
-      gaps.push({
-        kind: 'over',
-        pkg,
-        found: hits.length,
-        pinned,
-        ...(hits[0] === undefined ? {} : { first: hits[0] }),
-      });
-      continue;
-    }
-    if (hits.length < pinned) gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
-  }
-  return gaps.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
-}
+/** The ratchet over fixture files: a package may hold what it is pinned at, may fall, never rise. */
+export const checkNodeImports = (input: NodeImportInput): readonly NodeImportGap[] =>
+  ratchetGaps(
+    input.files.flatMap((file) => scanNodeImports(file.path, file.source)),
+    input.pins,
+    input.files.length > 0,
+  );
 
 const at = (site: NodeImportSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
@@ -176,68 +140,37 @@ const unscannedFinding = (): Finding => ({
   code: 'X_NODE_IMPORT_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree of pure Bun',
-  fix: 'edit SOURCE_PATTERNS in scripts/boundaries.ts so it matches this repo layout, then bun run scripts/node-imports.ts',
-  at: 'scripts/boundaries.ts',
+  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/node-imports.ts',
+  at: 'scripts/lib/corpus.ts',
 });
 
-const FINDINGS: Readonly<Record<NodeImportGapKind, (gap: NodeImportGap) => Finding>> = {
-  over: overFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-};
+/** Every unexplained import in the tree, read off the shared corpus and its cached mask. */
+export const nodeImportSites = async (root: string): Promise<readonly NodeImportSite[]> =>
+  (await corpus(root, 'source')).flatMap((file) =>
+    scanNodeImports(file.path, file.source, file.masked),
+  );
 
-export const nodeImportFindingFor = (gap: NodeImportGap): Finding => FINDINGS[gap.kind](gap);
+export const nodeImportFindingFor = (gap: NodeImportGap): Finding =>
+  gap.kind === 'over'
+    ? overFinding(gap)
+    : gap.kind === 'stale'
+      ? staleFinding(gap)
+      : unscannedFinding();
 
 export const nodeImportGaps = async (root: string): Promise<readonly NodeImportGap[]> =>
-  checkNodeImports({ files: await collectSourceFiles(root), pins: NODE_IMPORT_PINS });
+  ratchetGaps(await nodeImportSites(root), NODE_IMPORT_PINS, true);
 
 /** What this rule contributes to `x verify`'s `unit` step, through `node-imports.test.ts`. */
 export const nodeImportFindings = async (root: string): Promise<readonly Finding[]> =>
   (await nodeImportGaps(root)).map(nodeImportFindingFor);
 
-/** Every site per package, for `--unpin` and for the number a maintainer wants when lowering one. */
-export async function nodeImportCounts(root: string): Promise<Readonly<Record<string, number>>> {
-  const counts: Record<string, number> = {};
-  for (const file of await collectSourceFiles(root)) {
-    for (const site of scanNodeImports(file.path, file.source)) {
-      counts[packageOf(site.path)] = (counts[packageOf(site.path)] ?? 0) + 1;
-    }
-  }
-  return counts;
-}
-
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
-    const lowered = await applyNodeImportUnpin(root, unpin, await nodeImportCounts(root));
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package is already at what this tree measures'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
-  } else {
-    const gaps = await nodeImportGaps(root);
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? 'every node: import above its pin says why it is unavoidable'
-            : `${String(gaps.length)} package(s) off the node-import ratchet`,
-        findings: gaps.map(nodeImportFindingFor),
-        data: { counts: await nodeImportCounts(root) },
-      },
-      args.json,
-    );
-  }
+  await ratchetMain({
+    script: SCRIPT,
+    pinsFile: NODE_PINS_FILE,
+    pins: NODE_IMPORT_PINS,
+    sites: nodeImportSites,
+    findingFor: nodeImportFindingFor,
+    clean: 'every node: import above its pin says why it is unavoidable',
+  });
 }

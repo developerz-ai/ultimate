@@ -14,7 +14,7 @@ import { AppShell } from '../../shared/ui/app-shell';
 import { EmptyState } from '../../shared/ui/empty-state';
 import { PageHeading } from '../../shared/ui/page-heading';
 import styles from './page.module.scss';
-import { inboxFor } from './service';
+import { type Inbox, inboxFor } from './service';
 
 export const config = defineRoute({
   render: 'ssr',
@@ -22,6 +22,10 @@ export const config = defineRoute({
   offline: 'runtime',
   policy: { permission: 'notification:read' },
   budget: { js: '0kb', lcp: 2000 },
+  load: async (): Promise<{ readonly inbox: Inbox }> => {
+    const viewer = actorOf(useContext());
+    return { inbox: viewer === null ? { items: [], unread: 0 } : await inboxFor(viewer.id) };
+  },
   // An authed screen is never indexable — see app/messages/page.tsx.
   meta: () => ({
     title: t('app.notifications.title'),
@@ -30,10 +34,12 @@ export const config = defineRoute({
   }),
 });
 
-export async function Page(props: { readonly url?: string | undefined }) {
+export function Page(props: {
+  readonly data: { readonly inbox: Inbox };
+  readonly url?: string | undefined;
+}) {
   const ctx = useContext();
-  const viewer = actorOf(ctx);
-  const inbox = viewer === null ? { items: [], unread: 0 } : await inboxFor(viewer.id);
+  const { inbox } = props.data;
 
   return (
     <AppShell url={props.url}>

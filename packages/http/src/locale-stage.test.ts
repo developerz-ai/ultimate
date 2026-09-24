@@ -46,8 +46,12 @@ const config = defineHttpConfig({
 
 const pipeline = createPipeline({ table: createRouter(routes), config, hooks: {} });
 
-const ask = async (headers: Record<string, string>): Promise<Record<string, unknown>> => {
-  const response = await pipeline.handle(new Request('http://localhost/ambient', { headers }), {
+const ask = async (
+  headers: Record<string, string>,
+  search = '',
+): Promise<Record<string, unknown>> => {
+  const url = `http://localhost/ambient${search}`;
+  const response = await pipeline.handle(new Request(url, { headers }), {
     role: 'web',
   });
   return (await response.json()) as Record<string, unknown>;
@@ -94,5 +98,18 @@ describe('the locale stage feeds the ambient readers', () => {
 
     expect(body['ctxTz']).toBe('UTC');
     expect(body['zone']).toBe('UTC');
+  });
+});
+
+describe('?locale= is a source, as wiki/I18n.md documents', () => {
+  test('the query pins the locale over the cookie and the header', async () => {
+    const body = await ask({ 'accept-language': 'de', cookie: 'x_locale=en' }, '?locale=de');
+    expect(body['ctxLocale']).toBe('de');
+    expect(body['locale']).toBe('de');
+  });
+
+  test('a query the app does not support is skipped, never thrown', async () => {
+    const body = await ask({ 'accept-language': 'de' }, '?locale=xx-invalid');
+    expect(body['ctxLocale']).toBe('de');
   });
 });

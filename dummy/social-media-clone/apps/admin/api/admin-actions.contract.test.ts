@@ -110,8 +110,11 @@ contractTest(
 
     // 403 and not 401: the operator IS signed in — that is what makes the refusal meaningful.
     expect(response.status).toBe(403);
-    const body: unknown = await response.json();
-    expect(JSON.stringify(body)).toContain('X_ADMIN_ACTION_REFUSED');
+    // A browser's form POST (`accept: text/html`) is answered with the framework's error PAGE,
+    // not `problem+json`: an action's failure goes through the pipeline's `error-map` stage like
+    // every other route's, and a person pressing a button lands on a page. The code rides in it.
+    expect(response.headers.get('content-type')).toContain('text/html');
+    expect(await response.text()).toContain('X_ADMIN_ACTION_REFUSED');
 
     // The denial is on the audit log: proof the request reached `invokeAdminAction` rather than a
     // route that answered without asking anything. The permission recorded is the FIRST of the

@@ -6,6 +6,7 @@
 // String(right)` and every edit to any column re-sorted the whole feed.
 
 import { expect, test } from 'bun:test';
+import { arrayOf, entity, entityForTable, text, timestamp } from '@ultimat3/entity';
 import { match, type QueryShape } from '@ultimat3/query';
 import type { Row } from './json';
 import { entityRow } from './pg-entity-row';
@@ -54,10 +55,24 @@ function windowRow(id: string, title: string, tags: string[], at: string): Row {
   return row as unknown as Row;
 }
 
+/** The entity the replicated rows decode through, as a repository read's rows are. */
+function ensureFeedPosts(): void {
+  if (entityForTable('feed_posts') !== undefined) return;
+  entity('feed_posts', {
+    columns: {
+      id: text().primaryKey(),
+      title: text(),
+      tags: arrayOf(text()),
+      createdAt: timestamp(),
+    },
+  });
+}
+
 /** A decoder that has already seen the Relation message, the way a live connection has. */
 function seeded(): PgOutputDecoder {
+  ensureFeedPosts();
   const decoder = new PgOutputDecoder();
-  decoder.decode(relation(POSTS_OID, 'posts', COLUMNS));
+  decoder.decode(relation(POSTS_OID, 'feed_posts', COLUMNS));
   return decoder;
 }
 
@@ -76,8 +91,10 @@ test('an edit to one column patches that row in place, never re-sorting the feed
   const patches = match<Row>('feed', FEED, WINDOW, {
     entity: 'posts',
     op: 'update',
-    row: entityRow(message.after) as Row,
-    ...(message.before === null ? {} : { before: entityRow(message.before) as Row }),
+    row: entityRow(message.relation, message.after, 'after') as Row,
+    ...(message.before === null
+      ? {}
+      : { before: entityRow(message.relation, message.before, 'before') as Row }),
   });
 
   // The row did not move: only `title` changed and `createdAt` is untouched. A `remove` + `add`
@@ -95,7 +112,7 @@ test('a new row lands at the position its instant actually orders it to', () => 
   const patches = match<Row>('feed', FEED, WINDOW, {
     entity: 'posts',
     op: 'insert',
-    row: entityRow(message.after) as Row,
+    row: entityRow(message.relation, message.after, 'after') as Row,
   });
 
   // 11:30 sits between 12:00 and 11:00 under `createdAt desc`. Compared as text against a `Date`'s
@@ -109,7 +126,7 @@ test('the row the matcher is handed carries an array, not the postgres array lit
   const message = decoder.decode(insert(POSTS_OID, ['c', 'C', '{z,w}', '2026-08-09 11:30:00+00']));
   if (message.kind !== 'insert') return expect.unreachable();
 
-  const row = entityRow(message.after);
+  const row = entityRow(message.relation, message.after, 'after');
   // `post.tags.map(...)` in a component is the caller. A string here throws there.
   expect(row['tags']).toEqual(['z', 'w']);
   expect(row['createdAt']).toBeInstanceOf(Date);

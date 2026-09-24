@@ -37,13 +37,13 @@ cannot quietly undo, since a namespace import or an `export *` defeats tree-shak
 |---|---|---|---|---|---|
 | 1 | **Channels** | `channel('org-feed', { params, policy, catchUp, records?, events? })`, then `useChannel(decl, params)` | truth + fanout | subscription | ~0 — pubsub over WS |
 | 2 | **Live queries** | `query({ live: true, sql })` | truth + change detection | a reactive result set | one replication slot + a matcher |
-| 3 | **Local-first** | the same `mutator`, plus `entity(name, { persist: true })`, see [below](#tier-3-is-pending-in-2100) | truth + rebase | a durable local store, offline writes | IndexedDB + the one outbox |
+| 3 | **Local-first** | the same `mutator`, plus `entity(name, { persist: true })`, see [below](#tier-3-shipped-in-2100) | truth + rebase | a durable local store, offline writes | IndexedDB + the one outbox |
 
 Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps.
 
-**Row 3 is on the entity, not the query.** `persist: true` is an `entity()` option in 21.0.0 (unreleased), read by realtime's IndexedDB persister and one outbox. Read the row's own section before writing anything against it.
+**Row 3 is on the entity, not the query.** `persist: true` is an `entity()` option in 21.0.0, read by realtime's IndexedDB persister and one outbox. Read the row's own section before writing anything against it.
 
-**Tier 1's `events` are at-most-once, by construction; its `records` frames are repaired.** A dropped `events` frame is counted and logged, never resent. A dropped `records` frame is marked on the server, which sends the socket a `replay-gap` frame once it drains, and the client re-runs the channel's `catchUp` read (21.0.0, unreleased; [below](#why-delivery-needs-its-own-counter)). State that must arrive belongs on a live query or a `records` channel; ephemera belong on `events`.
+**Tier 1's `events` are at-most-once, by construction; its `records` frames are repaired.** A dropped `events` frame is counted and logged, never resent. A dropped `records` frame is marked on the server, which sends the socket a `replay-gap` frame once it drains, and the client re-runs the channel's `catchUp` read (21.0.0; [below](#why-delivery-needs-its-own-counter)). State that must arrive belongs on a live query or a `records` channel; ephemera belong on `events`.
 
 Tier 2 covers what people almost always mean by "make it realtime": the list updates without a refresh, and my own click feels instant. It delivers both with **no client database, no client schema versioning, no conflict-resolution UX, and no offline-write semantics to design**. Tier 3 buys exactly one additional property — writes that survive being offline — and costs a durable local store, a rebase log, client migrations, and a conflict story per mutator. Charging every app for that is how realtime frameworks become slow frameworks.
 
@@ -94,10 +94,9 @@ The parsed-vs-raw asymmetry between `.local()` and `.server()` is deliberate, no
 
 `.named()` rewraps rather than dropping the twin — a renamed mutator keeps both halves, its `conflict`, and every inherited action member.
 
-## Tier 3 is pending in 21.0.0
+## Tier 3 shipped in 21.0.0
 
-The heading keeps its name because other pages link to it; the pieces it describes are in the
-tree. `As of 2026-09-22`, 21.0.0, **unreleased**: the 20.x shape (`store`, `queue` and `log` on
+Opt-in per entity, and shipped in 21.0.0 (`CHANGELOG.md`). The 20.x shape (`store`, `queue` and `log` on
 `LiveClientOptions`, `MemoryLocalStore`, a `createOpfsLocalStore()` that threw
 `X_NOT_IMPLEMENTED`) is deleted with `LiveClient`. What replaces it:
 
@@ -125,7 +124,7 @@ the previous load queued.
 ## Live query in the browser, end to end
 
 Written `As of 2026-09-05` because four agents building one app each **polled** a query from an
-island instead of subscribing. Rewritten for 21.0.0 (unreleased), which deletes the app's socket
+island instead of subscribing. Rewritten for 21.0.0, which deletes the app's socket
 adapter, its sync URL and its `LiveClient`: the page's one socket is the framework's.
 
 | Step | Where | What |
@@ -184,9 +183,10 @@ are in the plan-101 DX ledger.
 `DATABASE_URL` and the `replicator` role (`x dev --role replicator`). The embedded database has no
 walsender, so under a plain `x dev` a subscription took its snapshot and then heard nothing: every
 `--live` query in every scaffolded app was dead in development, which is where an author first
-tries one. `x dev` now installs the in-process bridge (`@ultimat3/testing`'s `startLiveReplicator`
-— the row observer the framework's own live tests run on) whenever the database is embedded, and
-the ready line says so:
+tries one. `x dev` now installs the in-process bridge — `startLiveReplicator`, on
+`@ultimat3/realtime/server` since 2026-09-23 (`@ultimat3/testing` no longer exports it), the
+row observer the framework's own live tests run on — whenever the database is embedded, and the
+ready line says so:
 
 | `db=` | `live=` | What reaches a subscriber |
 |---|---|---|
@@ -232,7 +232,7 @@ The matcher is why this is affordable: membership is decided from the changed ro
 
 The page holds **one** `RecordStore` per tab, shared by every island through a `globalThis` handle.
 It is an identity-mapped store: a record is one value per record type (the entity name) and record key,
-however many lists, islands and paths hold it. It is 21.0.0, unreleased
+however many lists, islands and paths hold it. It shipped in 21.0.0
 (`packages/realtime/src/record-store.ts`).
 
 | Consequence | Why it matters |
@@ -261,7 +261,7 @@ entities' rows.
 
 ## Channels are declared
 
-`As of 2026-09-22`, 21.0.0, unreleased. A channel is a declaration, never a string. The hub API that
+`As of 2026-09-22`, 21.0.0. A channel is a declaration, never a string. The hub API that
 took raw topics (`hub.guard`, `subscribe(socket, topic)`, `publish(topic)`, `publishFrame`,
 `channelFrame`, `TopicGuard*`, the `nodeId` option, and a `{ kind: 'topic' }` subscribe target) is
 deleted.
@@ -302,7 +302,9 @@ declare const orgId: string;
 const feed = useChannel(ORG_FEED, { orgId }, { onEvent: (event) => console.debug(event) });
 ```
 
-`channel(name, { params, catchUp, … })` in one call still exists for a channel no browser holds.
+`channel(name, { params, catchUp, policy, … })` in one call still exists for a channel no browser
+holds. **`policy` is required** on either form: a declaration without one is refused
+(`X_CHANNEL_DECLARATION_INVALID`), and a public channel says so with `policy: allow('public')`.
 The reference app's idiom is `examples/dummy/apps/web/app/posts/channel-ref.ts` beside `channels.ts`. The catch-up
 query's name is written by hand on the ref, like a `QueryRef`'s; `x build` emitting refs is
 plan-101 DX ledger #21.
@@ -358,7 +360,7 @@ A dead TCP connection that was never closed fires no `close` event. Only the cli
 
 **A reconnect re-announces everything, one frame at a time.** `hello`, then one `subscribe` per registration carrying that registration's cursor, then one per topic. `hello` itself carries **neither** cursors nor topic membership — resume is decided per subscription, by the frame that also names the query and its input, and topic membership is state on the node's socket. Without the topic half a channel stayed silent from the first reconnect onwards while its handler was still installed, and its presence membership was swept.
 
-**Writes never ride the socket**, `As of 21.0.0` (unreleased). The socket `mutate` path is deleted: `useMutation` posts the mutator's action over HTTP through `clientTransport`, with an idempotency key, so a resend after a lost answer is served from the action's idempotency store. Its answer's records are adopted before the overlay goes, so nothing flickers.
+**Writes never ride the socket**, `As of 21.0.0`. The socket `mutate` path is deleted: `useMutation` posts the mutator's action over HTTP through `clientTransport`, with an idempotency key, so a resend after a lost answer is served from the action's idempotency store. Its answer's records are adopted before the overlay goes, so nothing flickers.
 
 ## The reconnect risk
 
@@ -442,8 +444,7 @@ So the honest claim is **"no client observed a lost channel frame"**, not "no ch
 
 ### Why delivery needs its own counter
 
-A dropped **`records`** channel frame is now **repaired**, `As of 2026-09-22` (21.0.0,
-unreleased). `SocketRegistry.deliver` still counts every refusal (the series
+A dropped **`records`** channel frame is now **repaired**, `As of 2026-09-22` (21.0.0). `SocketRegistry.deliver` still counts every refusal (the series
 `channel_frames_dropped_total`, the warn line `channel.frames_dropped` carrying
 `{ topic, dropped, total }`, and `node.sockets.droppedChannelFrames` for a test that cannot scrape).
 It also marks the (socket, topic) as gapped, and once the socket drains it sends one `replay-gap`
@@ -479,7 +480,7 @@ Full drain sequence per role: [Deployment](Deployment).
 
 ## Wire protocol version
 
-`PROTOCOL_VERSION` is **3** `As of 2026-09-22` (21.0.0, unreleased; it was 2 from 2026-08-24) ([`packages/realtime/src/sync-protocol.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/sync-protocol.ts)). A mismatch is `X_PROTOCOL_VERSION` on the frame, with one instruction, rather than a per-field decode error nobody can act on.
+`PROTOCOL_VERSION` is **3** `As of 2026-09-22` (21.0.0; it was 2 from 2026-08-24) ([`packages/realtime/src/sync-protocol.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/sync-protocol.ts)). A mismatch is `X_PROTOCOL_VERSION` on the frame, with one instruction, rather than a per-field decode error nobody can act on.
 
 **Clients and `sync` nodes must be redeployed together across this bump.** A cursor rides in BOTH directions — the client's `subscribe` and the node's `snapshot` — so a skew breaks resume from either side.
 

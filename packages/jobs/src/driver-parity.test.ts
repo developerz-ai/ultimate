@@ -208,7 +208,8 @@ describe('stats puts a job in exactly one bucket', () => {
   // The statement is aligned for a human reading it out of a log, so the fragment is matched
   // against a whitespace-collapsed copy rather than against the padding.
   const DELAYED_FILTER =
-    "filter (where state = 'delayed' or (state = 'ready' and run_at > now())) as delayed";
+    "filter (where state in ('ready', 'delayed') and run_at > now()) as delayed";
+  const READY_FILTER = "filter (where state in ('ready', 'delayed') and run_at <= now()) as ready";
   const compactStats = () => SQL_STATS.replace(/\s+/g, ' ');
 
   /** Enqueue one job, claim it, and settle it the way `step.sleep` or a retry settles one. */
@@ -226,6 +227,34 @@ describe('stats puts a job in exactly one bucket', () => {
     await driver.nack(id, options);
     return (await driver.stats())[0];
   };
+
+  // A job enqueued with a future `runAt` is written `delayed` and stays `delayed` once it is due —
+  // nothing rewrites the state, the claim scan reads `run_at`. Counted by STATE it was `delayed`
+  // forever and missing from `oldestReadyMs`, so the autoscaler (`queue_depth`) never saw that
+  // backlog. Due is due: `ready`, aged by `run_at`, in both.
+  test('a delayed job that has come due is ready, aged by run_at, in both', async () => {
+    const clock = frozenClock(1_700_000_000_000);
+    const driver = createMemoryDriver({ clock });
+    await driver.enqueue({
+      name: 'later',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'later:1',
+      maxAttempts: 3,
+      runAt: 1_700_000_060_000,
+    });
+    expect((await driver.introspect?.list())?.[0]?.state).toBe('delayed');
+    clock.advance(90_000);
+    expect((await driver.stats())[0]).toMatchObject({
+      ready: 1,
+      delayed: 0,
+      oldestReadyMs: 30_000,
+    });
+    expect(compactStats()).toContain(READY_FILTER);
+    expect(compactStats()).toContain(
+      "filter (where state in ('ready', 'delayed') and run_at <= now()), 0) * 1000 as oldest_ready_ms",
+    );
+  });
 
   test('a suspended job is suspended and NOT also delayed', async () => {
     // What `step.sleep` leaves behind: `suspended`, with `run_at` in the future. That future

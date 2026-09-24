@@ -88,9 +88,11 @@ export const postById = query({
   cache: { tags: [tag.post, tag.comment], ttlMs: 60_000 },
   mcp: { expose: true, description: 'Read one post with its comments' },
   sql: ({ orgId, postId }) =>
+    // Ordered by `id` alone: the row is ONE post, found by its key, and a `PostView` carries no
+    // `createdAt`. The `orderBy('createdAt')` that stood here sorted on a column the rows lack, and
+    // `from()` refuses that now (X_QUERY_COLUMN_UNSELECTED) — which took `/posts/{id}` down.
     from<PostWithComments>('posts', () => repo.withComments(toOrgId(orgId), toPostId(postId)))
       .where({ orgId, id: postId })
-      .orderBy('createdAt')
       .orderBy('id')
       .limit(1),
 });

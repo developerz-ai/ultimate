@@ -80,9 +80,11 @@ export async function buildManifest(root: string): Promise<FrameworkManifest> {
 export async function frameworkManifestDrift(
   root: string,
   out: string = DEFAULT_OUT,
+  built?: FrameworkManifest,
 ): Promise<readonly string[]> {
+  // `built` lets a caller that already paid for the whole-tree build compare against it.
   const [fresh, onDisk] = await Promise.all([
-    buildManifest(root),
+    built ?? buildManifest(root),
     readFrameworkManifest(resolve(root, out)),
   ]);
   return manifestDrift(onDisk, fresh);

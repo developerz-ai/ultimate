@@ -90,7 +90,13 @@ describe('isRetryable', () => {
 
   // Core's table is HTTP status only, so this branch stays in ai: a socket that timed out or was
   // reset has no status to classify.
-  test.each(['ETIMEDOUT', 'ECONNRESET'])('a transport %s is retried on its code', (code) => {
+  test.each([
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'ConnectionRefused',
+    'ConnectionClosed',
+    'FailedToOpenSocket',
+  ])('a transport %s is retried on its code', (code) => {
     expect(isRetryable({ code })).toBe(true);
   });
 

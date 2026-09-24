@@ -33,9 +33,9 @@ import { collectSourceFiles, type SourceFile } from './boundaries';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { packageOf } from './lib/ratchet';
 import { repoRoot } from './lib/run';
 import { isTestPath, lineOf } from './lib/source-scan';
-import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'framework-tables';
 

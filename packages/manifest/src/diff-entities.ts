@@ -115,10 +115,17 @@ function diffColumns(
   const beforeColumns = index(before.columns, (c) => c.name);
   for (const column of after.columns) {
     if (!beforeColumns.has(column.name)) {
+      // A default is what makes a NOT NULL column safe to add: every existing row takes it and no
+      // writer that omits the column is refused.
+      const additive = column.nullable || column.hasDefault === true;
       changes.push({
-        kind: column.nullable ? 'additive' : 'breaking',
+        kind: additive ? 'additive' : 'breaking',
         path: `${path}.columns.${column.name}`,
-        detail: column.nullable ? 'column added' : 'NOT NULL column added with no default',
+        detail: column.nullable
+          ? 'column added'
+          : additive
+            ? 'column added with a default'
+            : 'NOT NULL column added with no default',
       });
     }
   }

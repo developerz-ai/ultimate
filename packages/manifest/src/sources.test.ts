@@ -171,7 +171,9 @@ describe('the entity projection', () => {
     expect(fact?.invariants).toEqual(['title_present']);
     // `column` -> `name`, `kind` -> `type`, and `notNull` INVERTED into `nullable`.
     expect(fact?.columns).toEqual([
-      { name: 'id', type: 'uuid', nullable: false, primaryKey: true },
+      // `hasDefault` only where the column HAS one (the generated uuid key), so a column without
+      // stays byte-identical in a file reviewed by hand.
+      { name: 'id', type: 'uuid', nullable: false, primaryKey: true, hasDefault: true },
       { name: 'title', type: 'text', nullable: false, primaryKey: false },
       { name: 'author_name', type: 'text', nullable: true, primaryKey: false },
     ]);

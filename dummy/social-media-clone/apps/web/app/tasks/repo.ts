@@ -121,7 +121,7 @@ export const restoreSeededGraph = async (): Promise<readonly PurgeCount[]> => {
   // in-memory driver: `posts` and `comments` are soft-deletable, deleting one stamps it, and no
   // upsert can clear that stamp again (packages/entity/src/bulk-write.ts:219 spares the column, and
   // the memory driver refuses to address a stamped row at all). The first hourly reset would have
-  // left the demo's feed empty for good — `apps/web/app/posts/service.test.ts` caught it.
+  // left the demo's feed empty for good — `apps/web/site/feed/service.test.ts` caught it.
   const seeded = await seededRowIds();
   const counts: PurgeCount[] = [];
   for (const entry of CONTENT_TABLES) {

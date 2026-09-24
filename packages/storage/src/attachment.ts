@@ -5,9 +5,9 @@
 // so the tenant prefix is a construction, not a check somebody remembered to write.
 
 import type { Clock } from '@ultimat3/core';
-import { renderThrowable, systemClock } from '@ultimat3/core';
+import { finiteCount, renderThrowable, systemClock } from '@ultimat3/core';
 import type { ListPage, StorageDriver, StorageListEntry, StorageObject } from './driver';
-import { orgMismatch, quarantined } from './errors';
+import { notPending, orgMismatch, quarantined } from './errors';
 import { isWithinOrg, orgPrefix, scopedKey } from './path';
 
 /** The one segment an unattached upload lives under. `sweepOrphans` reads only this prefix. */
@@ -137,6 +137,9 @@ export interface PromoteAttachmentInput {
  */
 export async function promoteAttachment(input: PromoteAttachmentInput): Promise<StorageObject> {
   if (!isWithinOrg(input.key, input.orgId)) throw orgMismatch(input.key, input.orgId);
+  // Pending, not merely in-org: an attached key a client sent back belongs to another row, and the
+  // copy-then-delete below would move that row's file here and delete theirs.
+  if (!isPendingKey(input.key, input.orgId)) throw notPending(input.key, input.orgId);
   if (isQuarantinedKey(input.key, input.orgId)) throw quarantined(input.key, input.orgId);
   const name = input.key.slice(input.key.lastIndexOf('/') + 1);
   const attached = attachmentKey(input.orgId, input.target, name);
@@ -187,7 +190,10 @@ export interface SweepResult {
  */
 export async function sweepOrphans(input: SweepOrphansInput): Promise<SweepResult> {
   const clock = input.clock ?? systemClock;
-  const cutoff = clock.now().getTime() - input.olderThanMs;
+  // Screened first: `now - NaN` is NaN and `lastModified > NaN` is false — the "old enough"
+  // answer — so `olderThanMs: NaN` deleted an upload created a moment ago.
+  const olderThanMs = finiteCount('sweepOrphans', 'olderThanMs', input.olderThanMs, 0);
+  const cutoff = clock.now().getTime() - olderThanMs;
   const prefix = pendingPrefix(input.orgId);
   const deleted: string[] = [];
   const failed: SweepFailure[] = [];

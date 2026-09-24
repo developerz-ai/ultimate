@@ -8,7 +8,341 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+**22.0.0 in progress: plan 101, the framework deep sweep**
+([`docs/plans/2026/09/23/101-framework-deep-sweep/`](docs/plans/2026/09/23/101-framework-deep-sweep/overview.md)).
+Every breaking entry below has a manual edit in the
+[Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `21.x → 22.0.0` section.
+
+### Changed
+
+- **BREAKING — `t.date` refuses any string that is not ISO-8601 in shape** (`'March 14, 2026'`,
+  `'3/14/2026'`, `'12'`). `new Date` read these at the host's local midnight, so the answer depended
+  on `TZ`. `coerceQuery` leaves them untouched and validation refuses them. Numbers (epoch ms) and
+  `Date` objects are unchanged.
+- **BREAKING — `timestamp()` refuses a string that is not ISO-8601 with `Z` or an offset**
+  (`'2026-03-14T09:00'`, `'March 14, 2026'`); such a string used to be parsed in the host's zone.
+- **BREAKING — `x deploy --method helm` names the release after `app.config.ts`'s `name`** (it was
+  the literal `app`), waits for the rollout (`--wait`, `--timeout`, default 15m) and reports
+  `data.rollout`. New `--release`, `--namespace` and `--timeout`, refused on `--method compose`.
+  `planDeploy(image, 'helm', root)` needs a fourth `HelmTarget` argument.
+- **BREAKING — `invokeAdminAction` no longer takes `expectedConfirmation`.** The gate derives the
+  token from the action's entity and `subject.id`. Before, with both fields omitted, a destructive
+  action ran unconfirmed.
+- **Admin:** direct `adminCreate`, `adminUpdate` and `adminDestroy` calls refuse an operation the
+  resource does not offer. An admin action called over MCP with an `id` loads the row, so row-level
+  policies apply.
+- **Testing:** `toDenyPolicy`, `toMatchOpenApi` and `toBeWithinBudget` throw on a receiver of the
+  wrong type (`X_TEST_POLICY_EXPECTED`, `X_TEST_OPENAPI_EXPECTED`, `X_TEST_NUMBER_EXPECTED`) instead
+  of passing under `.not`. The island test DOM treats all 14 void elements as leaves, and an observer
+  that re-observes after `disconnect()` gets resizes again.
+- **BREAKING — `@ultimat3/ui` `DateTime` / `toDate` refuses non-ISO strings** (`'August 14, 2026
+  09:00'`, `'8/14/2026'`). Pass an ISO-8601 date, a date-time with `Z` or an offset, or a `Date`.
+- **A draining process serves in-flight and kept-alive requests with `connection: close`** instead of
+  answering `X_DRAINING` 503; it still answers 503 once stopped. A `helm upgrade` on kind failed 598
+  of 7,690 requests before this, and none after.
+- **`render`'s `contentHash` is xxHash32** (`Bun.hash`): 134 µs → 21 µs on a 96 kB document. Every
+  static ETag and every scoped CSS class name changes once — a one-time cache bust.
+- **Mail idempotency keys are `mail:<id>:<digest>`**, a digest over the canonical recipients and
+  payload, so a 50-recipient send stays header-safe. Keys change once, so a retry spanning the deploy
+  can send twice.
+- **A gateway `budget` applies with no scope open.** `StopReason` gains
+  `model_context_window_exceeded`, and an unknown stop reason counts as a truncation (`isTruncated()`).
+- **Query routes send errors through the pipeline**, as action routes now do.
+- **BREAKING — `channel()` requires `policy`.** A declaration without one is a type error and throws
+  `X_CHANNEL_DECLARATION_INVALID`; a public channel says so with an explicit policy.
+  `ChannelDescription.policy` is `string`, no longer `string | null`.
+- **BREAKING — the offline outbox is stored one record per mutation.** `QueueStore.save(state)` →
+  `write(change: QueueChange)`, and `LocalStore.saveQueue(scope, state)` → `writeQueue(scope, change)`.
+  Two tabs saving whole queues erased each other's writes. Whole-queue records written by 21.x are
+  converted on first read, so queued writes survive the upgrade.
+- **BREAKING — `workerName(scope)` → `workerName(scope, buildId)`**: one SharedWorker per build.
+- **BREAKING — `ChangeOp` gains `'truncate'`** (rowless). A `TRUNCATE` empties affected live windows and
+  starts a new epoch on every open channel topic. A `switch` over `ChangeOp` needs the new case.
+- **`startLiveReplicator` lives in `@ultimat3/realtime/server`.** `@ultimat3/testing` re-exports it for
+  now.
+- **`x g` refuses a path, a reserved word or a leading digit in a name** (`X_CLI_BAD_FLAG`) and always
+  writes kebab-case slice directories: `x g entity BlogPost` writes `app/blog-post/`.
+- **Surface boundaries are derived from `SURFACE_SPECS`**: an `api/`→`site/`, `site/`→`app/` or
+  `app/`→`api/` runtime import is `X_BOUNDARY_SURFACE_IMPORT`. `api/` may import `app/`.
+- **`x ci` findings are fenced as `source: 'ci-log'`**, never read as the framework's own.
+- **BREAKING — `@ultimat3/core` drops `Result`**: `Result`, `Ok`, `Err`, `ok`, `err`, `map`, `mapErr`,
+  `isOk`, `isErr`, `tryCatch`, `unwrap`, `unwrapOr` (`result.ts`, no consumer anywhere, and a second
+  error path beside `throw UltimateError`). Use `throw`/`try`.
+- **BREAKING — boot owns the auth tables.** `X_USERS_TABLE`, `X_SESSIONS_TABLE`, `X_ACCOUNTS_TABLE`,
+  `X_VERIFICATIONS_TABLE`, `X_API_KEYS_TABLE` and `X_USERS_MIGRATION_1_3` are gone from
+  `@ultimat3/auth`; `AUTH_TABLES` carries the 1.3 upgrade (`add column if not exists`) and boot applies
+  it. Delete any hand-pasted auth migration.
+- **BREAKING — unreferenced internals leave the package barrels.** Runtime values no code outside
+  their own package used, none of them an error class, code table or documented API:
+  - **auth:** `API_KEY_PREFIX_SEGMENTS`, `DEFAULT_JWKS_TTL_MS`, `DEFAULT_KDF_LIMITS`,
+    `IDLE_SLIDE_DIVISOR`, `OAUTH_HANDSHAKE_COOKIE_PREFIX`, `ORG_ATTEMPT_FACTOR`, `SQL_AUTH_*` (7),
+    `apiKeyPrefix`, `base64Url`, `base64UrlBytes`, `matchesHash`, `parseHashParams`,
+    `parseSessionToken`, `pkceChallenge`, `resetKdfGate`.
+  - **ui:** `BAR_CHART`, `CHANNELS_PATTERN`, `COMBOBOX_LIMIT`, `DELTA_ARROW_PATH`, `EMPTY_TOAST_QUEUE`,
+    `GRID_STEPS`, `SPARKLINE`, `VISIBLE_EDGE`, `acceptMatches`, `accordionOpenIds`, `adoptDroppedFiles`,
+    `ariaSortFor`, `clearSolidRuntime`, `collapsedToasts`, `distributeIssues`, `gridY`, `isIconTag`,
+    `linkTarget`, `loadMoreState`, `loadingHints`, `maxOf`, `messagesOf`, `meterShare`, `meterWidth`,
+    `nextRovingIndex`, `nextSortState`, `parseChannels`, `progressPercent`, `ratioFor`,
+    `relativeTimeText`, `sameFieldValue`, `shellLandmarks`, `sparkPoints`, `visibleToasts`.
+  - **core:** `OTEL_SAMPLER_ARG_KEY`, `OTEL_SAMPLER_KEY`, `OTLP_ENDPOINT_KEY`, `OTLP_HEADERS_KEY`,
+    `OTLP_PROTOCOL_KEY`, `OTLP_SCOPE`, `OVERFLOW_ATTRIBUTE`, `SECRETS_ALG`, `SECRETS_IV_BYTES`,
+    `SECRETS_KEY_BYTES`, `SECRETS_KEY_HEX_LENGTH`, `SECRETS_KEY_ID_LENGTH`, `SECRETS_TAG_BYTES`,
+    `SECRETS_VERSION`, `SECRET_BRAND`, `SECRET_NAME`, `VERSION_MANIFEST`, `assertPixelBudget`, `fitBox`,
+    `otlpAttributes`, `otlpResource`, `parseSecretsEnvelope`, `rasterFrom`, `resetDefaultSampler`,
+    `scaledToFit`, `unixNano`.
+  - **http:** `DEFAULT_CSRF`, `DEFAULT_TZ_CONFIG`, `FORWARDED_CLIENT_CERT`, `FORWARDED_FOR`,
+    `FORWARDED_PROTO`, `SQL_RATE_LIMIT_*` (3), `TENANT_SCOPE`, `acceptsHtml`, `clientUsedHttps`,
+    `forwardedValue`, `normalizePath`, `readCorrelation`, `renderOverlay`, `resetProblemMeta`,
+    `selfOrigin`, `stripBasePath`.
+  - **entity:** `SEARCH_PROPERTY`, `describePlan`, `emptyPlan`, `hasOrgPredicate`, `isOrgScoped`,
+    `searchExpression`, `sqlTypeOf`, `tenantColumnOf`.
+  - **query:** `PAGE_AFTER_KEY`, `PAGE_FIRST_KEY`, `advanceCursor`, `liveEpoch`, `matchesFilters`,
+    `nameQuery`, `toKebabCase`.
+  - **mcp:** `DEFAULT_QUERY_ROWS`, `MCP_RATE_LIMIT_WINDOW_MS`, `NO_ARGS`, `PARSE_GUARD`, `QUERY_LIMITS`,
+    `STYLE_NAME`, `UI_DIFF_DEFAULT_THRESHOLD`, `UI_INTERACT_STEP_SCHEMA`, `UI_VIEWPORTS`,
+    `URI_ARG_SCHEMA`, `appToolPrimitive`, `appToolPrimitives`, `bearerToken`, `isAgentActor`,
+    `viewportOf`.
+  - **ai:** `OVERALL`, `ZERO_USAGE`, `hybridSql`, `narrowScope`, `parseStopDetails`, `reasoningBody`,
+    `resetAiRuntime`, `scopeAdmits`, `textSql`, `upsertSql`, `vectorLiteral`.
+  - **mail:** `DARK_RULES`, `FOOTER_KEYS`, `MAIL_CATALOG_SOURCE`, `MAIL_ENV_KEYS`, `MAIL_FONT_STACK`,
+    `MAIL_WIDTH_PX`, `RESEND_BASE_URL`, `UNCONFIGURED_DRIVER_NAME`, `UNSUBSCRIBE_KEY`, `darkModeCss`,
+    `envelopeRecipients`.
+  - **notify:** `DEFAULT_DELIVERY_WINDOW_MS`, `DEFAULT_MAX_DELIVERY_RECORDS`, `SQL_NOTIFY_*` (7),
+    `requireDigest`.
+  - **pwa:** `CAPABILITY_MANIFEST_KEYS`, `MIN_ENGAGEMENT_MS`, `SPLASH_MATRIX`, `STRATEGY_FNS`,
+    `STRATEGY_FN_NAMES`, `STRATEGY_SOURCE`, `serializePrecacheManifest`, `serializePushMessage`.
+  - **render:** `DEFAULT_REPLAY_EVENTS`, `DEFAULT_ROUTE_STATUS`, `ISLAND_NODE`, `THEME_SCRIPT_MAX_BYTES`,
+    `checkIslandProps`, `headTagKey`, `isEmittableSpecifier`, `isErrorStatus`, `requiredStrategies`,
+    `routeCount`, `toHeadTag`.
+  - **scraping:** 38 internals (`DEFAULT_*` tunables, cookie matchers, snapshot/recording helpers).
+  - **manifest:** `parseGuideSections`, `parseReExports`.
+- **BREAKING — the e2e driver lives in `@ultimat3/testing`.** `@ultimat3/cli` no longer exports
+  `installE2eDriver`, `e2eFixtures`, `startE2eApp`, `e2eApp`, `e2eBaseUrl`, `e2eBrowser`,
+  `openE2eBrowser`, `openE2eBrowserIfAvailable`, `cdpConnect`, `cdpE2eTab`, `cdpE2eSession`,
+  `findChrome`, `launchChrome`, `launchFoundChrome`, `CHROME_CANDIDATES`, `CHROME_PATH_ENV`, `e2ePage`,
+  `e2eLocator` and the selection/evaluate helpers, the `Cdp*Error`/`E2e*Error` classes or their types.
+  Import them from `@ultimat3/testing`; the preload is `@ultimat3/testing/e2e-preload`. The
+  `X_E2E_*`/`X_CDP_*` codes are unchanged and now registered by testing (`E2E_ERROR_CODES`). The driver
+  spawns the app's own `x`, resolved from the app root.
+- **BREAKING — `entityRow(relation, physical, image)`** decodes a WAL image through the registered
+  entity (`decodeRow`, money included) instead of guessing from column names; a relation with no
+  registered entity is refused, and `camel` is no longer exported from `@ultimat3/realtime/server`.
+- **BREAKING — a `sync` role with no reachable change feed refuses to boot** (`X_REALTIME_TOPOLOGY`):
+  on a real database it needs `NATS_URL` (shared with `web` and one replicator) or an in-process
+  replicator. It used to come up healthy and deliver nothing. Both charts (`roles.sync.enabled: false`,
+  the `/_x/sync` Ingress rule gated on it) and both Compose files (`replicas: 0`) ship `sync` off, with
+  the enable recipe beside the switch.
+- **A production boot refuses the development cursor secret** (`X_CURSOR_SECRET_DEV`): set
+  `ULTIMATE_CURSOR_SECRET`.
+- **`@ultimat3/cli/serve`** exports `runRole` alone; the scaffold's `server.ts` imports it, and a bundle
+  of it carries no testing, template, e2e or CDP module (`serve-graph.test.ts`). Only `web` builds
+  islands at boot, and the metrics listener opens before boot work.
+- **BREAKING — `x shot`, `x shot --island` and the `ui.*` MCP tools drive Chrome over raw CDP**, on the
+  e2e step's launcher. An app no longer installs `puppeteer-core`, and `X_SHOT_BROWSER_MISSING` now
+  means "no Chrome to launch": set `CHROME_PATH` where Chrome is not on the probed paths, or pass
+  `--cdp-url`. Requests to hosts off the allow list are refused inside the browser and recorded as
+  `refused: "host"`, and each response's status is recorded.
+- **BREAKING — `ui.interact` step failures carry `X_SHOT_ELEMENT_MISSING`, `X_SHOT_ELEMENT_UNREADY` or
+  `X_SHOT_KEY_INVALID` in `meta.code`**, not `X_SCRAPE_*`.
+- **BREAKING — `@ultimat3/realtime` no longer exports `backoffDelay`.** Its 0-based copy counted one
+  step differently from `@ultimat3/core`'s under the same name. Use core's with `attempt: n + 1`. A
+  failed channel catch-up now retries after the base wait, not twice it.
+- **BREAKING — `realtime.transport` decides the fanout bus**, not the presence of `NATS_URL`.
+  `'nats'` dials the variable `realtime.urlEnv` names and refuses the boot (`X_CONFIG_INVALID`) when it
+  is unset — it used to fall back to in-process in silence. `'memory'` with `NATS_URL` set refuses too.
+  `realtime.enabled` (default `true`) is obeyed: `false` starts no `sync` node and no replicator, and
+  `ROLE=sync` alone on such an app refuses. `'redis'`, never built, is removed
+  from `RealtimeTransport`. `selectTransport(env)` → `selectTransport(env, { transport, urlEnv })`.
+- **`x g resource` writes a real create action**: its input is the entity's `$view`, its org comes
+  from the actor, and the form posts that shape. `x g` grants the permissions it declares (`<f>:read`
+  to `member`, `<f>:write` to `admin`), registers the jobs and tasks it writes in `api/index.ts`, and
+  refreshes `openapi.json` beside the manifest. The dev actor, the seed and the dashboard share one
+  demo org. A fresh `x new` + `x g resource customer` answers `POST /api/customers/create` with 2xx
+  under `x dev`.
+- **New gate findings:** `X_PERMISSION_UNGRANTED` (a single-permission rule no role grants),
+  `X_JOB_UNREGISTERED` (an anonymous job or task), `X_ROUTE_ASYNC_PAGE` (an async `Page` with no
+  `load`). `x g --feature` refuses a slice that does not exist (`X_FEATURE_UNKNOWN`), and job, task and
+  action generators no longer invent an entity. A module that will not load is reported once, under
+  `manifest`. A boundary finding's `fix:` names the exact edit.
+- **`x build --target docker` stamps `BUILD_ID` and writes a verified island store** (`.x/islands/`)
+  the container loads instead of rebuilding; an island that will not parse is `X_BUILD_FAILED`.
+- **BREAKING — `@ultimat3/testing` no longer exports `startLiveReplicator`, `LiveReplicator` or
+  `LiveReplicatorOptions`.** Import them from `@ultimat3/realtime/server`.
+- **`x shot`'s verdict records each response's status** and counts responses ≥ 400 as
+  `network.failed` — recorded, never gating. The "HTTP response status is not observed" blind spot is
+  retired.
+- **`X_CSRF_BLOCKED` from a loopback caller names the header that proves same-origin**
+  (`-H 'sec-fetch-site: same-origin'`).
+- **The `AGENTS.md` tabulation warning reads only table headers**, so a conventions table no longer
+  trips it.
+- **BREAKING — `@ultimat3/cli` no longer exports 236 internals** nothing outside the package used:
+  command objects other than `newCommand`, `dbCommand` and `verifyCommand`, scan internals, report
+  helpers and option types. `maskLiterals` / `stripComments` come from `@ultimat3/core`. The CLI no
+  longer depends on `@ultimat3/scraping`.
+- **BREAKING — `x db gen`'s schema hash uses core's `canonicalJson`.** If `x verify --only drift`
+  reports drift after upgrading, run `x db gen` once. Neither tracked app needed it.
+- **`x` loads a command's code only when that command runs**: `x --help` 1.2 s → 0.24 s. Sass and
+  Babel load on first use.
+- **The CLI's modules say where they run**: `role-*` / `runtime-*` run in production, `dev-*` only under
+  `x dev` (`module-naming.test.ts` derives it from the import graph).
+- **`x build --target static` weighs authed routes inside a request**, as the app's measurement actor,
+  with the app's own API answered in-process, and runs `load`s against a throwaway embedded database
+  carrying the app's migrations and `dev` seeds. A dynamic route is weighed at its own `prerender()`
+  paths; one with a budget and no `prerender()` is `X_BUDGET_PARAMS_UNDECLARED`, and a `render: 'ssr'`
+  route with params is printed as not weighed.
+- **BREAKING — a `from()` read that filters or sorts on a column its rows do not carry is
+  `X_QUERY_COLUMN_UNSELECTED`** (`QueryColumnUnselectedError`); it used to answer `[]`. Add the column
+  to the loader's `select({ … })`, or drop the filter if the loader already applies it.
+- **The database pool runs unnamed statements (`prepare: false`).** A warm `select *` or
+  `returning *` no longer fails with `0A000 cached plan must not change result type` on every running
+  pod after a column is added or dropped, and the pool is safe behind PgBouncer's transaction mode.
+  Measured cost: about 90 µs p50 per statement. `Date` parameters are encoded as ISO strings.
+  Known limitation: on the Postgres pool a `timestamptz` with a year before 1000 reads back wrong,
+  because `Bun.SQL` exposes no parser hook for unnamed statements; embedded PGlite reads it right.
+- **`canonicalJson` / `fingerprint` tag bigints and bytes** (`BigInt(5)`, `Bytes(<hex>)`), so `5n`
+  and `'5n'`, and `Uint8Array([1])` and `{0:1}`, no longer share a key. Idempotency and cache keys for
+  payloads carrying a bigint change once.
+- **Logger:** a caller field named `level`, `msg` or `ts` no longer overwrites the line's own; it is
+  emitted as `field.<key>`.
+- **4xx failures log at `warn` (401/403/429) or `info`**; only 5xx logs at `error`.
+- **Production 5xx problem bodies no longer carry the server's cause** (for example the Postgres
+  message and SQL of `X_DB_STATEMENT_FAILED`). `registerProblemMeta({ CODE: { publicCause: true } })`
+  opts a code in.
+- **An action's error takes the pipeline's error path** — `onError`/`reportError` on a 5xx, the HTML
+  error page, `requestId`, `Retry-After` — and deprecation headers ride every response.
+- **A patch property set to `undefined` writes nothing in either driver**; pass `null` to clear a column.
+- **Tagged shared responses carry `Surrogate-Key` and `Cache-Tag`**, so CDN purges reach Fastly and
+  Cloudflare. `x-cache-tags`, which no CDN reads, is no longer written.
+- **Compose is hardened and rotates logs** (`read_only`, tmpfs, `cap_drop: [ALL]`,
+  `no-new-privileges`, `mem_limit`), `stop_grace_period` 40 s. The scaffold Dockerfile installs from
+  manifests only; the demo image is `--production` (842 → 594 MB).
+- **Release path:** `release.yml` is split into a `check` job (no environment, no `id-token`: the ref
+  check, `release.ts --check`, and `ci.yml`'s `verify` on the tagged commit) and a `publish` job
+  (`needs: check`, `environment: npm-publish`). The in-workflow `verify` re-run, which had no
+  Postgres, NATS or Redis, is gone. `publish` skips a package npm already holds, so
+  `gh run rerun <id> --failed` resumes a partial release. Every printed tag command is annotated.
+  `deploy-social-demo.yml` runs on `workflow_run` of `ci` and builds the exact commit CI passed.
+- **The gate:** `bun run verify --only <step>` runs one step, and an unknown flag or step is refused
+  (`X_CLI_BAD_FLAG`). The `typecheck` step runs `tsc -p .` in a root without `references`, so an
+  upgrade to a version Bun already had cached no longer passes locally while CI fails (#450). The
+  `manifest` step runs beside `live`; `noFloatingPromises` is scoped to shipped package source.
+  Whole-tree guards read one shared corpus and refuse an unreadable tree (`X_CORPUS_UNSCANNED`).
+
+### Added
+
+- **`drain.readinessGraceMs`**, `configureLifecycle({ readinessGraceMs })` and `ServerOptions.drain`:
+  `/readyz` answers 503 for 5 s (0 locally) before the listener closes, added to the drain deadline.
+- **`assertNoDevSecretsOutsideLocal()`** throws `X_CURSOR_SECRET_DEV` at boot outside
+  development/test; a process that names no environment counts as production.
+- **`classifyAddress()` and `isPublicAddress()`** in `@ultimat3/core`.
+- **`hostDecision`, `hostMatches`, `ANY_HOST`** in `@ultimat3/core`, moved from `@ultimat3/scraping`
+  (which re-exports them). `@ultimat3/testing` exports `cdpConnectOver`, `CdpTransport`,
+  `E2E_ERROR_CODES`, and a CDP event listener receives the event's `sessionId`. `@ultimat3/cli` no
+  longer depends on `@ultimat3/scraping`.
+- **`withInProcessFetch(fetchImpl, fn)`** in `@ultimat3/core`: every typed-client call inside `fn` is
+  answered in-process, for a build's measurement render; it wraps `fetch` server-side, inside the
+  scope only, and costs a browser bundle nothing. **`defineMeasurementActor(factory)`** /
+  `measurementActor()` declare, from `app.config.ts`, the actor authed pages are weighed as.
+- **`DbTx.onCommit`** and entity `Tx.onCommit`; **`entityForTable`** and **`decodeRow`** in
+  `@ultimat3/entity`; **`stagedMasterKeyPath`** in `@ultimat3/core`; **`ColumnFact.hasDefault`** in the
+  manifest.
+- **`?locale=`** is read as a locale source, as `wiki/I18n.md` documents.
+- **`x db gen` emits in-place column changes**: `set`/`drop default`, `drop not null` (or the
+  backfill note for NOT NULL), and a generated column's retype when it becomes plain.
+- **Webhook delivery refuses non-public targets**: the host is resolved and loopback, private,
+  link-local, ULA, CGNAT and unspecified addresses are refused (`allowPrivate: true` opts out); the
+  connection goes to the approved address; `http:` is refused outside a local environment.
+- **Helm charts:** a hook ServiceAccount for the migrate Job, `startupProbe` on every role, a 5 s
+  `preStop` sleep on Kubernetes 1.30+, the worker HPA on an `External` `queue_depth` metric,
+  scheduler memory 512Mi. A `deploy-proof` CI job installs and upgrades the chart on kind under load.
+- **Gate rules:** `pin-raises` (`X_PIN_RAISE_UNSTATED`), stale "unreleased" claims in
+  `changelog-check` (`X_DOC_UNRELEASED_STALE`), a generated `llms.txt` (`X_LLMS_TXT_DRIFT`,
+  `bun run llms-txt --write`); `budget-raises` fetches `origin/main` or refuses
+  `X_BUDGET_BASE_MISSING`. `scripts/release.ts` refuses a dirty tree (`X_RELEASE_TREE_DIRTY`) and a
+  `--version` at or below the current one or combined with `--bump` (`X_RELEASE_VERSION_INVALID`).
+- **`X_STORAGE_NOT_PENDING`** (409), **`X_JOB_NOT_REQUEUEABLE`** (409), **`X_JOB_DECLARATION_INVALID`**.
+
+### Fixed
+
+- **core:** `writeMasterKeyFile` replaces the key atomically at 0600. Prometheus HELP lines no longer
+  escape `"`. A same-key read issued right after `bump()` no longer joins the aborted flight. OTLP
+  exporters hold at most one batch in flight while a collector stalls. `probeImage` applies JPEG EXIF
+  orientation. Config overlays merge key by key, and an overlay's `undefined` changes nothing.
+  `jobs.concurrency`, `jobs.maxAttempts`, `jobs.visibilityTimeoutMs` and `cache.defaultTtlMs` are
+  refused at boot unless whole numbers in range.
+- **http:** a `public` cache hint on a signed-in request is `private`. The error page's retry link can
+  no longer point to another host. `x-forwarded-client-cert` values are unescaped once. Security
+  headers are built once per config (30 µs → 0.03 µs per response).
+- **auth:** OAuth userinfo/emails fetch failures and the token leg no longer put provider text (which
+  could carry `client_secret`) in the public body. `issueApiKey` refuses an `env` `parseApiKey`
+  cannot read back. `MemoryAdapter.linkAccount` keeps the owner on re-link; `linkAccount` returns the
+  stored row; `listApiKeys` has one order in both adapters.
+- **db:** a `BEGIN ATOMIC` body is one statement. The replica breaker ignores errors in the caller's
+  own statement. Two PGlite clients no longer write into each other's transactions. `reapBranches`
+  refuses a non-integer `maxAgeMs`. The ledger id in `rollback()`'s fix line is encoded. Generated
+  expressions are screened on every path. Embedded Postgres reads every timestamp in any session zone.
+- **entity / query:** the memory driver refuses duplicate keys (`X_DB_UNIQUE_VIOLATION`).
+  `.transition()` works on entities not keyed by `id`. `decimal()`/`bigint()` store Postgres's
+  canonical spelling in both drivers. A seed `upsert` reports `skipped` on re-run. `min`/`max` over
+  `timestamptz` is right in any session zone. Keyset pagination keeps numeric id tiebreaks. The live
+  matcher treats equal `bigint` and `number` as equal. `text({ max })` counts code points and
+  `integer()` enforces int4.
+- **storage:** `promoteAttachment` accepts only a pending key. `sweepOrphans` refuses a non-integer
+  `olderThanMs`. The local disk treats a process that names no environment as production.
+- **money** renders every digit up to `MAX_SAFE_INTEGER`. **time:** `fromIso` refuses non-ISO text.
+  **i18n:** a registered `pt-BR` resolves regardless of case. **seo:** offsetless feed dates are
+  treated as absent; a title may contain `$$`; a `null` required JSON-LD field raises `X_LD_INVALID`.
+- **action:** an idempotent replay is re-validated against the output schema. A mutator carries
+  `row`, `rateLimit` and `deprecated`.
+- **jobs:** a bad cron is refused at `task()`, and one failing task no longer stops the round. Step
+  replays have one shape on every driver. A claim round that fails partway returns the rest of its
+  batch without using attempts. A due delayed job counts as ready. A SIGTERM during a manual
+  scheduler stop respects the budget. `x jobs retry` refuses a live job (`X_JOB_NOT_REQUEUEABLE`) and
+  `--from-step` drops the steps after the target too.
+- **mcp:** `readonly-sql` refuses dollar tags with digits or non-ASCII characters, and a `$tag$`
+  glued to an identifier can no longer hide a call. `ping` and `prompts/get` are answered.
+- **ai:** Bun's connection errors are retried; the redactor runs over `agent()` tool results;
+  re-indexing a shorter document prunes its old chunks; the Postgres vector upsert dedupes repeated
+  ids; a non-2xx embedder body is bounded.
+- **mail:** bytes pipelined after the STARTTLS `220` refuse the session (RFC 3207 §4.2).
+- **notify:** a digest window closed but not yet drained is no longer lost.
+- **pwa:** stale-while-revalidate keeps its fetch event alive while it refreshes.
+- **render:** ISR route lookup is compiled once per registry change; stream reveals are one constant,
+  CSP-hashable script (`STREAM_REVEAL_BODIES`); prerender params that escape the output directory are
+  refused and URLs are percent-encoded; an emptied stylesheet stops serving under `x dev`.
+- **ui:** `Dialog`/`Drawer` no longer close on a drag that ends on the backdrop; `InfiniteScroll` no
+  longer stalls; `CopyButton` says "Copied" only after the write succeeds.
+- **realtime, server:** a live patch's `index` is counted against the subscriber's own rows; a cold
+  window no longer loses rows written during its first read, and its lsn is read before the rows;
+  Bun's `-1` send result is a delivered frame and the drop ceiling is per 10 s window; a frame is
+  encoded once per delivery (16.9 ms → 0.6 ms to 10,000 sockets); fan-out is indexed (80.7 ms →
+  6.1 ms at 1,000 × 500); channel loaders run as the subscribing actor; NATS KV presence pages (it
+  answered an empty set past 1,024 members); the replication reader copies a message once (32 MB:
+  5.6 s → 69 ms); publication and `wal_level` preflight fixes work on managed Postgres.
+- **realtime, client:** a write left `inflight` by a reload is resent; a write made while the outbox is
+  non-empty queues behind it; replay holds `navigator.locks`; a tab's realtime recovers from a worker
+  reap and a bfcache restore; a gap during catch-up earns another read and a failed catch-up shows
+  `failed` while it retries; an IndexedDB quota abort rejects writes instead of hanging them; a
+  superseded `more()` no longer overwrites the page cursor.
+- **cli:** `x g` and `x new` conflict fixes reproduce every flag. `x new` refuses a name with no
+  letters or digits (`X_APP_NAME_EMPTY`) and never commits into a directory that already existed. An
+  app that loads no module is `X_APP_EMPTY`, not a vacuous green. Commands run from a subdirectory
+  load the root's `.env*`. `x dev` reads `PORT` and releases what it acquired when boot fails.
+  `x build --target static` empties its export directory; a relative `--out` resolves against the cwd.
+  `x db reset` refuses while `x dev` runs. `x manifest --check` checks `openapi.json`. `x secrets
+  rotate` survives a crash between its writes, and Ctrl-C in `x secrets edit` terminates. The i18n
+  index is rewritten only if it still matches the template. A throwing `applies()` fails one gate step,
+  not the gate. `ui.*` tools refuse origin-escaping routes. The island settle waits for the mount
+  (#474), and an old capture can no longer hide a failed one. `package-shape` scans imports with the
+  transpiler (#493).
+- **The dev row observer reports changes at `COMMIT`**; a rollback reports nothing.
+  `installSecrets` recovers from a key rotation interrupted before its rename. Adding a NOT NULL
+  column with a default is additive in the manifest diff. Scraping's request interception leaves no
+  unhandled rejections.
+- **core:** `maskLiterals` / `stripComments` handle a template literal nested inside another
+  template's `${}`; they used to close the outer template early and hide every literal after it from
+  the gate's scanners.
+- **deploy:** a first `helm install` no longer hangs on the pre-install migrate Job.
 
 ## 21.0.0 - 2026-09-23
 

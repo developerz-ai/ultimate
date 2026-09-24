@@ -81,13 +81,31 @@ export async function assertAgentsMd(input: CheckAgentsMdInput = {}): Promise<Ag
   return check;
 }
 
+/** A header naming a column of generated facts. A conventions table (`| Rule | Detail |`) names none. */
+const FACT_COLUMN = /\b(column|entity|entities|route|routes|endpoint|endpoints|table|type)\b/i;
+
+/** A table separator row: `| --- | :-: |`, pipes, dashes, colons and spaces only. */
+const SEPARATOR = /^\s*\|[\s|:-]+\|\s*$/;
+
+/**
+ * The HEADER row of every markdown table — the line directly above a separator. The columns are
+ * what a table tabulates; a word in a cell is prose about a convention, which is what the file is
+ * for, and warning on it flagged the scaffold's own conventions table on every app (slice 11 i).
+ */
+const tableHeaders = (text: string): readonly string[] => {
+  const lines = text.split('\n');
+  return lines.filter(
+    (line, index) => line.trim().startsWith('|') && SEPARATOR.test(lines[index + 1] ?? ''),
+  );
+};
+
 /**
  * Warn when the file has started duplicating generated facts. Duplication is how a context
  * file goes stale: the copy and the source drift, and the agent believes the copy.
  */
 function warningsFor(text: string): readonly string[] {
   const warnings: string[] = [];
-  if (/^\s*\|.*\|\s*$/m.test(text) && /\b(column|entity|route|endpoint)\b/i.test(text)) {
+  if (tableHeaders(text).some((header) => FACT_COLUMN.test(header))) {
     warnings.push('looks like it tabulates schema or route facts; those live in x.manifest.json');
   }
   if (text.split('\n').length > 200) {

@@ -19,7 +19,7 @@
 //   late, and `catchUp` cannot recover an occurrence that was never an occurrence.
 
 import { assert } from '@ultimat3/core';
-import { isValidTimeZone } from '@ultimat3/time';
+import { isValidTimeZone, parseCron } from '@ultimat3/time';
 import { nowMs } from './clock';
 import type { EnqueueResult } from './driver';
 import { JobNameTakenError } from './errors';
@@ -130,6 +130,11 @@ export function task(definition: TaskDefinition): TaskHandle {
     `task "${name}" has tz "${definition.tz}", which is not a zone in the IANA tz database`,
     `use the full zone id on task("${name}"), e.g. tz: 'America/Bogota' — list the valid ones with: bun -e "console.log(Intl.supportedValuesOf('timeZone').join('\\n'))"`,
   );
+
+  // The cron is parsed HERE, at declaration, beside the tz check. Nothing read it until the first
+  // round, where one bad expression threw inside `runRound` and every task in the app stopped.
+  // `parseCron` throws `X_CRON_INVALID` naming the field that is wrong.
+  parseCron(definition.cron);
 
   // `maxCatchUp: 0` is not "no ceiling" — `occurrencesSince` walks
   // `for (let i = 0; i < handle.maxCatchUp; i += 1)`, so zero (and any negative, and any fraction

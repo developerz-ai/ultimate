@@ -85,7 +85,12 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
   // the real path here and the `success` test below is the belt for a future default.
   // Only an island whose own graph reaches `@ultimat3/realtime` is wrapped (`island-realtime.ts`);
   // every other one is built from its own file, byte for byte what it was.
-  const realtime = await reachesRealtime(root, file);
+  // Inside the refusal too: the realtime probe PARSES the island's graph, and a file that will not
+  // parse rejected with a raw `AggregateError: Failed to scan imports` — out of the web boot, with
+  // no code, no file and no fix — before `Bun.build` ever ran to raise the one below.
+  const realtime = await reachesRealtime(root, file).catch((error: unknown) => {
+    throw new IslandBuildFailedError({ file, logs: describeBuildError(error) });
+  });
   let built: Awaited<ReturnType<typeof Bun.build>>;
   try {
     built = await Bun.build({

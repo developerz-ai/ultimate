@@ -9,7 +9,7 @@ env:
   NODE_ENV: production
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
 
-existingSecret: ultimate-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, SENTRY_DSN
+existingSecret: ultimate-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, SENTRY_DSN, ULTIMATE_CURSOR_SECRET
 
 # The scrape listener every serving role opens, on its own port and never the app's: the ingress
 # below routes `/` to web, so `/metrics` beside `/healthz` on 3000 is `/metrics` on the internet.
@@ -66,6 +66,15 @@ securityContext:
   readOnlyRootFilesystem: true
   capabilities: { drop: [ALL] }
 
+# The stop sequence. The kubelet removes the pod from its Service, then runs the `preStop` sleep,
+# then sends SIGTERM; the framework then answers 503 on /readyz for its own readiness grace before
+# closing the listener and draining. The sleep renders only on Kubernetes 1.30+, where
+# `lifecycle.preStop.sleep` exists (_helpers.tpl). terminationGracePeriodSeconds in
+# deployments.yaml is sized to this number plus the framework's grace and drain deadline, so move
+# them together.
+drain:
+  preStopSleepSeconds: 5
+
 # Pre-deploy hook. Runs to completion before any serving role starts.
 migrate:
   enabled: true
@@ -75,6 +84,10 @@ migrate:
     limits: { memory: 512Mi }
 
 # Each role scales on the signal that actually predicts its saturation.
+#
+# `autoscaling.type` is `Pods` (the default, a per-pod series averaged across pods) or `External`
+# (one series for the whole Deployment, divided by the replica count). hpa.yaml refuses anything
+# else at render time.
 #
 # `port` is the port the role LISTENS on, not the value of `PORT`. They differ for `sync`, which
 # binds `PORT + 1`; the chart derives the env from this number so there is only ever one to move.
@@ -94,7 +107,14 @@ roles:
       targetAverageValue: "50"
 
   sync:
-    enabled: true
+    # OFF by default. A sync pod on a real database hears committed changes only from a replicator
+    # it can reach, and a fresh deploy has none: booted anyway it is refused (X_REALTIME_TOPOLOGY).
+    # To turn live queries and channels on: declare realtime: { enabled: true, transport: 'nats',
+    # urlEnv: 'NATS_URL' } in app.config.ts (a NATS_URL under transport 'memory' is refused, and
+    # 'nats' without it is too); run NATS and set the SAME NATS_URL for web, sync and the
+    # replicator; enable exactly one replicator (below) against a Postgres started with
+    # wal_level=logical and a publication for the entity tables; then set this to true.
+    enabled: false
     replicas: 2
     port: 3001
     resources:
@@ -117,6 +137,14 @@ roles:
       enabled: true
       minReplicas: 1
       maxReplicas: 50
+      # External, never Pods. `queue_depth` is the QUEUE's fact: every worker pod publishes the
+      # same global number (packages/jobs/src/worker.ts), so a Pods metric averaged it as if each
+      # pod held that backlog alone and asked for N× the workers the queue needed, every sync.
+      # An External metric with an AverageValue target divides the one global value by the
+      # replica count, which is the question an autoscaler is asking. Your metrics adapter must
+      # expose it DEDUPLICATED — `max(queue_depth)` (or `max by (queue)` with a selector), never
+      # `sum`, which would re-multiply it by the pod count.
+      type: External
       metric: queue_depth       # jobs waiting, exported by the worker role
       targetAverageValue: "100"
 
@@ -126,9 +154,13 @@ roles:
     # grant is session-scoped and the executor is a pool, so it dies when the connection returns and
     # every replica reads itself as leader. A second replica here is safe but pointless — it stands by.
     replicas: 1
+    # 512Mi, not 256Mi: a scaffolded app measured ~325 MiB at boot as ROLE=scheduler on the kind
+    # deploy proof (docker/deploy-proof/run.sh, 2026-09-23), when every role still built the app's
+    # islands first; at 256Mi the pod was OOMKilled on every boot. Only web builds islands now
+    # (packages/cli/src/serve-boot.ts), so the peak is lower — unmeasured, so the limit stays.
     resources:
       requests: { cpu: 50m, memory: 128Mi }
-      limits: { memory: 256Mi }
+      limits: { memory: 512Mi }
 
   replicator:
     enabled: false              # one per database, enable when the change feed is in use

@@ -47,7 +47,7 @@ describe('floorFor', () => {
     // `realtime -> query` is same-tier by construction. Counting it would put realtime's floor at 4
     // — a tier it may never sit at — and turn every declared edge into a demand to move a package.
     expect(floorFor('realtime', ['query'])).toBe(0);
-    expect(floorFor('cli', ['admin', 'scraping', 'testing'])).toBe(0);
+    expect(floorFor('cli', ['admin', 'testing'])).toBe(0);
   });
 
   test('a specifier naming no package in the table is ignored', () => {

@@ -13,6 +13,7 @@ import type { Catalog } from '@ultimat3/i18n';
 import { auditCatalogs, catalogKeys } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
+import { i18nSpec } from './cmd-i18n-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, CatalogExistsError, MissingPositionalError } from './errors';
 import {
@@ -36,7 +37,7 @@ import type { CommandResult, Finding, JsonValue } from './output';
 import { renderTable } from './table';
 import { catalogPath, resolveLocales } from './templates/locales';
 
-export const I18N_SUBCOMMANDS = ['check', 'add', 'sync'] as const;
+export { I18N_SUBCOMMANDS } from './cmd-i18n-spec';
 
 /** `ExtractReport` is plain JSON by construction — same idiom as `cmd-registries.ts`'s `asJson`. */
 const asJson = (value: object): Record<string, JsonValue> => value as Record<string, JsonValue>;
@@ -192,7 +193,7 @@ async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult>
   // answered `X_CATALOG_UNREGISTERED` with a fix naming an edit that had already been made. Same
   // writer `x g --locales` already uses, so a catalog on disk and a selectable locale can never be
   // two different sets (#F4).
-  const registered = await syncI18nIndex(root);
+  const { registered, findings: indexFindings } = await syncI18nIndex(root);
 
   const keys = catalogKeys(seeded).length;
   return {
@@ -202,7 +203,7 @@ async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult>
     ok: true,
     command: 'i18n',
     summary: msg('cli.i18n.added', { locale, keys, from: from ?? locale }),
-    findings: app.findings,
+    findings: [...indexFindings, ...app.findings],
     // `registered` is false only for an app with no `packages/i18n` at all — a fact a caller has
     // to be able to read, because it is the one case where the locale is on disk and unselectable.
     data: { locale, from: from ?? locale, keys, path, registered },
@@ -270,7 +271,7 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
   // hand-created file, a `git merge` — is exactly the unregistered locale the gate refuses, and
   // this is the command its `fix:` names. Re-deriving an index that is already correct writes the
   // same bytes.
-  const registered = await syncI18nIndex(root);
+  const { registered, findings: indexFindings } = await syncI18nIndex(root);
 
   const total = catalogKeys(merged).length;
   return {
@@ -282,7 +283,7 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
     // The keys themselves, raw — `runCheck` lists gaps the same way, because a key is a value an
     // author copies and never prose the catalog owns.
     lines: seeded ? added.map((key) => `  ${key}`) : [],
-    findings: app.findings,
+    findings: [...indexFindings, ...app.findings],
     data: {
       locale,
       from: from ?? locale,
@@ -298,15 +299,7 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
 }
 
 export const i18nCommand: CliCommand = {
-  spec: {
-    name: 'i18n',
-    summary: 'catalogs: add a locale, sync keys, check for gaps',
-    usage: 'x i18n [check|add <locale>|sync <locale>] [--json]',
-    requiresApp: true,
-    subcommands: I18N_SUBCOMMANDS,
-    // The bare `x i18n` audits; `add` and `sync` write catalogs and must be asked for.
-    defaultSubcommand: 'check',
-  },
+  spec: i18nSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('i18n', ctx.cwd).dir;
     const sub = ctx.args.subcommand ?? 'check';

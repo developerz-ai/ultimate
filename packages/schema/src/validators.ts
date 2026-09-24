@@ -20,7 +20,7 @@ import {
 import { charCount } from './char-count';
 import { expected } from './describe-value';
 import { discriminatedUnionSchema } from './discriminated-union';
-import { isZonelessDateTime } from './iso-date';
+import { isIsoDateTime, isZonelessDateTime } from './iso-date';
 import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
 import { isPrototypeKey, PROTOTYPE_KEYS } from './prototype-keys';
@@ -369,6 +369,11 @@ const dateSchema: Schema<Date | string | number, Date> = makeSchema<Date | strin
       // here and a container's `TZ` then decided which instant a query parameter meant.
       if (typeof value === 'string' && isZonelessDateTime(value)) {
         return fail(path, expected('an ISO-8601 date-time with an offset or Z', value));
+      }
+      // `new Date` also parses `'March 14, 2026'` and `'12'` at the host's local midnight, so the
+      // shape is checked first: a string that is not ISO-8601 is refused, not guessed at.
+      if (typeof value === 'string' && !isIsoDateTime(value)) {
+        return fail(path, expected('an ISO-8601 date-time', value));
       }
       const parsed = new Date(value);
       return Number.isNaN(parsed.getTime())

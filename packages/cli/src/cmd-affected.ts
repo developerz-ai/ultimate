@@ -6,7 +6,8 @@
 // CLI wiring only. What a diff touches is `affected.ts`, what the workspaces are is
 // `workspace-graph.ts` — the `cmd-jobs.ts` / `jobs-report.ts` split, repeated.
 
-import { affectedScope, DEFAULT_BASE } from './affected';
+import { affectedScope } from './affected';
+import { affectedSpec } from './cmd-affected-spec';
 import type { CliCommand, CommandContext } from './command';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
@@ -33,24 +34,7 @@ export const AFFECTED_MESSAGE_KEYS = [
 ] as const;
 
 export const affectedCommand: CliCommand = {
-  spec: {
-    name: 'affected',
-    summary: 'the workspaces a diff touches, and every workspace that depends on one of them',
-    usage: 'x affected [--base <ref>] [--dirty] [--paths] [--json]',
-    flags: [
-      {
-        name: 'base',
-        type: 'string',
-        summary: `git ref to diff against, merge-base style (default: ${DEFAULT_BASE})`,
-      },
-      {
-        name: 'dirty',
-        type: 'boolean',
-        summary: 'also count uncommitted work — every agent sharing this checkout, not only yours',
-      },
-      { name: 'paths', type: 'boolean', summary: 'print bare directories instead of a table' },
-    ],
-  },
+  spec: affectedSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     // The one resolver `x test --affected` narrows with, so this command reports exactly what that
     // one runs. It reads `--base` before git is spawned (a malformed ref must not cost a

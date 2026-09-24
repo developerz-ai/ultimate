@@ -61,8 +61,7 @@ describe('unit · the biome.json x new writes', () => {
 });
 
 describe('unit · the tsconfig.json x new writes', () => {
-  // `x verify`'s first step is `tsc -b`, which decides "up to date?" by comparing emitted OUTPUTS
-  // against inputs. With `noEmit` and no `composite`, the output it looks for is an
+  // `tsc -b` decided "up to date?" by comparing emitted OUTPUTS against inputs. With `noEmit` and no `composite`, the output it looks for is an
   // `app.config.js` that will never exist, so a scaffolded app re-typechecked from scratch on
   // every single run — 92s wall / 43s user CPU on 166 files with no change between runs, against
   // 4.9s / 8.8s warm with this one line. Asserted on the PARSED config, not on the text, so a
@@ -74,6 +73,26 @@ describe('unit · the tsconfig.json x new writes', () => {
     // Bracketed: `compilerOptions` is an index signature, and `noPropertyAccessFromIndexSignature`
     // makes the dotted read TS4111.
     expect(config.compilerOptions?.['incremental']).toBe(true);
+  });
+
+  // #450: `tsc -b` trusts mtimes, and a Bun hardlinked install hands a changed dependency an old
+  // one. The scaffold's own script runs the content-hashed form the gate's step runs.
+  test('its typecheck script is tsc -p ., never the mtime-trusting tsc -b', () => {
+    const manifest = JSON.parse(emitted('package.json')) as {
+      readonly scripts?: Readonly<Record<string, string>>;
+    };
+    expect(manifest.scripts?.['typecheck']).toBe('tsc -p . --pretty');
+  });
+
+  // A bare `bun test` runs every file in ONE process, where a module-scope registration from one
+  // file (the admin app's routes) is visible to another's contract test, and the demo app went
+  // red six tests at a time under a script the gate never runs. `--isolate` gives each file its own
+  // globals, which is what the gate's per-type runs already amount to.
+  test('its test script isolates each file, as the gate does', () => {
+    const manifest = JSON.parse(emitted('package.json')) as {
+      readonly scripts?: Readonly<Record<string, string>>;
+    };
+    expect(manifest.scripts?.['test']).toBe('bun test --isolate');
   });
 
   // The buildinfo `incremental` writes has to be ignored, or the first `git status` after a

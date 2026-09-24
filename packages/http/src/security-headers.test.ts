@@ -10,6 +10,7 @@ import {
   buildCsp,
   cspHashSource,
   DEFAULT_SECURITY,
+  responseSecurityHeaders,
   securityHeaders,
 } from './security-headers';
 
@@ -252,5 +253,33 @@ describe("worker-src admits the framework's own workers", () => {
     });
     const csp = headers['content-security-policy-report-only'] ?? '';
     expect(sources(csp)).toContain("'self'");
+  });
+});
+
+// The CSP, including a SHA-256 of the overlay stylesheet, was rebuilt for every response: 18.8%
+// of a trivial GET. A config is fixed for the life of a server, so the headers are too.
+describe('responseSecurityHeaders() is built once per (config, https)', () => {
+  test('the same config and scheme answer the same object', () => {
+    const config: SecurityConfig = { ...DEFAULT_SECURITY };
+    expect(responseSecurityHeaders(config, true)).toBe(responseSecurityHeaders(config, true));
+    expect(responseSecurityHeaders(config, false)).toBe(responseSecurityHeaders(config, false));
+  });
+
+  test('https and plaintext stay two answers — HSTS is only on one of them', () => {
+    const config: SecurityConfig = { ...DEFAULT_SECURITY };
+    expect(responseSecurityHeaders(config, true)['strict-transport-security']).toBeDefined();
+    expect(responseSecurityHeaders(config, false)['strict-transport-security']).toBeUndefined();
+  });
+
+  test('another config is another answer, and the memo cannot be written through', () => {
+    const report: SecurityConfig = {
+      ...DEFAULT_SECURITY,
+      csp: { ...DEFAULT_SECURITY.csp, reportOnly: true },
+    };
+    const memo = responseSecurityHeaders(report, false);
+    expect(memo['content-security-policy-report-only']).toBeDefined();
+    expect(Object.isFrozen(memo)).toBe(true);
+    // The public builder still hands each caller its own record to edit.
+    expect(securityHeaders(report)).not.toBe(securityHeaders(report));
   });
 });

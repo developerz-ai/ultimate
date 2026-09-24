@@ -17,6 +17,7 @@ import { beforeAll, expect, test } from 'bun:test';
 import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { routeDataFor } from '@ultimat3/render';
 import { renderComponent } from '@ultimat3/render/server';
 import { ADMIN_ACTION_ROUTE } from '../../shared/action-route';
 
@@ -31,7 +32,11 @@ const render = (roles: readonly string[] | null): Promise<string> =>
       tz: 'UTC',
       locale: 'en',
     }),
-    () => renderComponent(page.Page, { params: {}, url: 'http://localhost/admin' }, FILE),
+    async () => {
+      // The route's own `load`, through the one resolver every render mode uses.
+      const data = await routeDataFor(page.config, { params: {}, url: 'http://localhost/admin' });
+      return renderComponent(() => page.Page({ data }), {}, FILE);
+    },
   );
 
 beforeAll(async () => {

@@ -3,7 +3,8 @@
 // none: its length is a function of the package's API size, so the ceiling measures the wrong
 // thing there. One added statement of logic disqualifies it and re-arms the ceiling on the spot.
 
-import { CLOSERS, maskLiterals, OPENERS } from './ts-scan';
+import { maskLiterals } from '@ultimat3/core';
+import { CLOSERS, OPENERS } from './ts-scan';
 
 /** Every statement a manifest may hold begins with one of these two words. */
 const IMPORT_OR_EXPORT = /^(?:import|export)\b/;

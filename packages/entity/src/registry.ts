@@ -4,6 +4,7 @@
 // than a silent last-one-wins.
 
 import type { IndexMethod } from '@ultimat3/db';
+import type { EntityCore } from './entity';
 import { entityDuplicate } from './entity-error';
 import type { InvariantKind } from './invariants';
 import type { RecordProjection } from './record-projection';
@@ -133,6 +134,8 @@ export interface RegistryEntry {
   readonly persist?: boolean;
   /** The entity's client projection — what a changefeed's table maps to on the client. */
   readonly projection?: RecordProjection;
+  /** The entity itself, for `entityForTable` — what decodes a raw row of this table. */
+  readonly core?: EntityCore<unknown>;
   describe(): EntityDescription;
   /**
    * The foreign keys this entity declares, resolved. This is how a relation reaches query time:
@@ -156,6 +159,16 @@ export const registerEntity = <E extends RegistryEntry>(entry: E): E => {
 };
 
 export const getEntity = (name: string): RegistryEntry | undefined => entities.get(name);
+
+/**
+ * The entity declared on a PHYSICAL table, or `undefined`. What a change feed has in hand is a
+ * table name and raw columns; with this and `decodeRow` it gets the row the app declared, money
+ * and all — where `@ultimat3/realtime` had to guess money columns from their names.
+ */
+export const entityForTable = (table: string): EntityCore<unknown> | undefined => {
+  for (const entry of entities.values()) if (entry.tableName === table) return entry.core;
+  return undefined;
+};
 
 export const entityNames = (): readonly string[] => [...entities.keys()].sort();
 

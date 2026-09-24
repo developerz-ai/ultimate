@@ -243,3 +243,91 @@ describe('a redeemed verification is stamped when it is redeemed', () => {
     expect(client.texts.at(-1)).toContain('set consumed_at = now()');
   });
 });
+
+/**
+ * Re-linking an existing (provider, account) pair. Postgres's `on conflict … do update` refreshes
+ * the tokens and KEEPS the row's `id`, `user_id` and `created_at` — while `MemoryAdapter` replaced
+ * the whole row, so under `x dev` a second user could take over a provider account that production
+ * leaves with its first owner. Both now answer the STORED row, not the object they were handed.
+ */
+describe('linkAccount on a pair that is already linked', () => {
+  const first = {
+    id: 'acc-1',
+    userId: 'user-1',
+    provider: 'github',
+    providerAccountId: '583231',
+    accessToken: 'gho_first',
+    refreshToken: null,
+    expiresAt: null,
+    createdAt: new Date('2026-08-09T12:00:00.000Z'),
+  };
+  const second = {
+    ...first,
+    id: 'acc-2',
+    userId: 'user-2',
+    accessToken: 'gho_second',
+    createdAt: new Date('2026-09-01T12:00:00.000Z'),
+  };
+
+  test('memory keeps the owner and refreshes the tokens, as Postgres does', async () => {
+    const memory = new MemoryAdapter();
+    await memory.linkAccount(first);
+    const answered = await memory.linkAccount(second);
+    const stored = await memory.findAccount('github', '583231');
+    for (const account of [answered, stored]) {
+      expect(account?.id).toBe('acc-1');
+      expect(account?.userId).toBe('user-1');
+      expect(account?.createdAt).toEqual(first.createdAt);
+      expect(account?.accessToken).toBe('gho_second');
+    }
+  });
+
+  test('Postgres answers the row it stored, not the object it was handed', async () => {
+    const client = createRecordingClient();
+    client.on('insert into x_accounts', {
+      rows: [
+        {
+          id: 'acc-1',
+          user_id: 'user-1',
+          provider: 'github',
+          provider_account_id: '583231',
+          access_token: 'gho_second',
+          refresh_token: null,
+          expires_at: null,
+          created_at: first.createdAt,
+        },
+      ],
+    });
+    const answered = await new BuiltinAdapter(client).linkAccount(second);
+    expect(client.texts.at(-1)).toContain('returning *');
+    expect(answered.userId).toBe('user-1');
+    expect(answered.id).toBe('acc-1');
+  });
+});
+
+describe('listApiKeys answers newest first, in both', () => {
+  const key = (id: string, createdAt: string) => ({
+    id,
+    prefix: `ult_dev_${id}`,
+    keyHash: 'hash',
+    userId: 'user-1',
+    orgId: null,
+    scopes: [],
+    lastUsedAt: null,
+    expiresAt: null,
+    revokedAt: null,
+    createdAt: new Date(createdAt),
+  });
+
+  test('memory sorts by created_at desc, then id desc — the Postgres order', async () => {
+    const memory = new MemoryAdapter();
+    await memory.putApiKey(key('a1', '2026-08-01T00:00:00.000Z'));
+    await memory.putApiKey(key('c3', '2026-09-01T00:00:00.000Z'));
+    await memory.putApiKey(key('b2', '2026-09-01T00:00:00.000Z'));
+    expect((await memory.listApiKeys('user-1')).map((one) => one.id)).toEqual(['c3', 'b2', 'a1']);
+
+    const client = createRecordingClient();
+    await new BuiltinAdapter(client).listApiKeys('user-1');
+    expect(client.texts.at(-1)).toContain('order by created_at desc, id desc');
+  });
+});

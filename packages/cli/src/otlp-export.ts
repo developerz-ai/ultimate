@@ -15,7 +15,7 @@ import {
   startMetricExport,
   tryOtlpEndpoint,
 } from '@ultimat3/core';
-import type { Env } from './dev-services';
+import type { Env } from './runtime-bindings';
 
 /** How often counters are pushed. Core's own default; named here because the boot chose it. */
 export const METRIC_EXPORT_INTERVAL_MS = 60_000;

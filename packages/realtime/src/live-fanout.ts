@@ -10,7 +10,7 @@ import type { Row, RowPatch } from './json';
 import type { LiveSubscription } from './live-contract';
 import { applyToWindow, bridgeChange } from './matcher-bridge';
 import { type QueryEntry, refillWindowInLane } from './query-window';
-import type { Subscriber, SubscriberGate } from './subscriber-gate';
+import { type Subscriber, type SubscriberGate, windowIndex } from './subscriber-gate';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 export interface FanoutDeps {
@@ -38,6 +38,15 @@ export async function fanoutChange(
 ): Promise<FanoutResult> {
   // A window that missed a change must be replaced before it is patched again, and it can only be
   // replaced here — a fanout holds this entry's lane, and `fillWindow` takes the same one.
+  // No read has landed in this window yet: there is nothing to patch, and a patch folded into the
+  // empty rows would move `entry.lsn` past the read in flight and get that read discarded as older
+  // than the window — every row but the patched one lost, permanently. Marked stale instead, so the
+  // read that lands is applied and followed by one that includes this change.
+  if (entry.applied === 0) {
+    entry.stale = true;
+    return { sent: 0, stale: 0 };
+  }
+  if (change.op === 'truncate') return await truncated(deps, entry, change);
   if (entry.stale) await refillWindowInLane(entry);
   // The consume-side twin of the replicator's own duplicate guard, which had none. `entry.lsn =
   // change.lsn` was unconditional, so a change the window already holds — a redelivery, or one
@@ -57,6 +66,8 @@ export async function fanoutChange(
   for (const patch of result.patches) deps.source.append(entry.qid, patch);
 
   let sent = 0;
+  // Indexed once for every subscriber below, never searched per subscriber per patch.
+  const index = windowIndex(entry.rows);
   for (const subscription of entry.subscribers.values()) {
     if (result.refill) {
       // The window lost its tail: guessing is how a sync engine silently diverges. Checked BEFORE
@@ -84,7 +95,8 @@ export async function fanoutChange(
         entry,
         who,
         result.patches,
-        new Set(subscription.cursor.ids),
+        heldBy(subscription.cursor),
+        index,
       );
     } catch {
       // Already counted and reported as a gate failure. Degrade this one subscriber the way a
@@ -110,6 +122,43 @@ export async function fanoutChange(
     }
   }
   return { sent, stale: 0 };
+}
+
+/**
+ * Every row of a relation this window reads is gone. There is nothing to patch from — a truncate
+ * names no row — so the window is re-read now, in the lane, and every subscriber is re-snapshotted
+ * out of what came back: a window that kept the truncated rows until its next change would serve
+ * them to every new subscriber in the meantime.
+ */
+async function truncated(
+  deps: FanoutDeps,
+  entry: QueryEntry,
+  change: ChangeEvent,
+): Promise<FanoutResult> {
+  if (!entry.shape.entities.includes(change.entity)) return { sent: 0, stale: 0 };
+  await refillWindowInLane(entry);
+  if (change.lsn > entry.lsn) entry.lsn = change.lsn;
+  let sent = 0;
+  for (const subscription of entry.subscribers.values()) {
+    subscription.socket.markDesynced(subscription.sid);
+    if (await resnapshot(deps, entry, subscription)) sent += 1;
+  }
+  return { sent, stale: 0 };
+}
+
+/**
+ * A cursor's ids as a set, built once per ids ARRAY rather than once per subscriber per change.
+ * `advance` hands an update's cursor the same array it had (an update moves no id), so the cache
+ * holds across the common change and dies with the array; an insert or delete makes a new one.
+ */
+const heldSets = new WeakMap<readonly string[], ReadonlySet<string>>();
+
+function heldBy(cursor: LiveCursor): ReadonlySet<string> {
+  const cached = heldSets.get(cursor.ids);
+  if (cached !== undefined) return cached;
+  const held = new Set(cursor.ids);
+  heldSets.set(cursor.ids, held);
+  return held;
 }
 
 /**

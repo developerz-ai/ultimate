@@ -54,6 +54,55 @@ export interface GateTarget {
   readonly rows: readonly Row[];
 }
 
+/**
+ * The shared window, indexed ONCE per fan-out rather than searched per subscriber per patch: a
+ * `rows.find` inside the subscriber loop was O(subscribers × window) — 54.6 ms against 0.7 ms at
+ * 1000 subscribers over a 500-row window. `windowIndex` builds it; `filterPatches` builds its own
+ * when a caller passes none.
+ */
+export interface WindowIndex {
+  readonly byId: ReadonlyMap<string, Row>;
+  readonly position: ReadonlyMap<string, number>;
+}
+
+export function windowIndex(rows: readonly Row[]): WindowIndex {
+  const byId = new Map<string, Row>();
+  const position = new Map<string, number>();
+  rows.forEach((row, at) => {
+    byId.set(row.id, row);
+    position.set(row.id, at);
+  });
+  return { byId, position };
+}
+
+/**
+ * What a subscriber holds as a patch list is folded: the cursor's set, plus what this list has
+ * inserted, minus what it has deleted — never a copy of the set per subscriber.
+ */
+class Holding {
+  readonly #base: ReadonlySet<string>;
+  readonly #added = new Set<string>();
+  readonly #removed = new Set<string>();
+
+  constructor(base: ReadonlySet<string>) {
+    this.#base = base;
+  }
+
+  has(id: string): boolean {
+    return this.#added.has(id) || (this.#base.has(id) && !this.#removed.has(id));
+  }
+
+  fold(patch: RowPatch): void {
+    if (patch.op === 'delete') {
+      this.#added.delete(patch.id);
+      this.#removed.add(patch.id);
+    } else if (patch.op === 'insert') {
+      this.#removed.delete(patch.id);
+      this.#added.add(patch.id);
+    }
+  }
+}
+
 export interface SubscriberGateOptions {
   /**
    * `live.rows_denied`. A row an actor's policy refuses is dropped, never sent and never turned
@@ -113,11 +162,16 @@ export class SubscriberGate {
     who: Subscriber,
     patches: readonly RowPatch[],
     held: ReadonlySet<string>,
+    index: WindowIndex = windowIndex(target.rows),
   ): Promise<RowPatch[]> {
     const out: RowPatch[] = [];
+    const holding = new Holding(held);
     for (const patch of patches) {
-      const allowed = await this.patch(target, who, patch, held.has(patch.id));
-      if (allowed !== null) out.push(allowed);
+      const allowed = await this.#decide(target, who, patch, holding.has(patch.id), index);
+      if (allowed === null) continue;
+      const placed = rebase(allowed, holding, target.rows, index);
+      holding.fold(placed);
+      out.push(placed);
     }
     return out;
   }
@@ -128,6 +182,16 @@ export class SubscriberGate {
     who: Subscriber,
     patch: RowPatch,
     holds: boolean,
+  ): Promise<RowPatch | null> {
+    return await this.#decide(target, who, patch, holds, windowIndex(target.rows));
+  }
+
+  async #decide(
+    target: GateTarget,
+    who: Subscriber,
+    patch: RowPatch,
+    holds: boolean,
+    index: WindowIndex,
   ): Promise<RowPatch | null> {
     // A delete carries no row, so there is nothing to put in front of the rule — `holds` IS the
     // decision, the same one the two branches below take for a row a rule has just refused.
@@ -147,7 +211,7 @@ export class SubscriberGate {
       this.#denied(target.qid, who, patch.id);
       return null;
     }
-    const full = target.rows.find((row) => row.id === patch.id);
+    const full = index.byId.get(patch.id);
     // No whole row means no decision to take. An update patch carries the changed columns only, so
     // a rule reading `row.ownerId` on one reads `undefined` and answers as if the row had said so —
     // fail-closed for `=== actor.id`, and a leak for every `!row.private`. It is not a gate that
@@ -218,6 +282,31 @@ const actorIdOf = (who: Subscriber): string | null => (who.actor === null ? null
  * window stopped holding it. Written once so the two paths cannot answer differently: a client left
  * holding the row instead renders a revoked grant until something else reconnects it.
  */
+/**
+ * The patch as this subscriber must read it. `index` was a position in the SHARED, pre-policy
+ * window, and forwarded unchanged it placed the row out of order for anyone who sees fewer rows —
+ * and its size told them how many rows they may not see sit ahead of it. Re-based on the rows ahead
+ * of it that this subscriber holds; dropped from a delete, which the client applies by id. Bounded
+ * by `CURSOR_ID_LIMIT` like `holds` is: a held row past it is not counted.
+ */
+function rebase(
+  patch: RowPatch,
+  holding: Holding,
+  rows: readonly Row[],
+  index: WindowIndex,
+): RowPatch {
+  if (patch.index === undefined) return patch;
+  const { index: _shared, ...rest } = patch;
+  if (patch.op === 'delete' || patch.row === null) return rest;
+  const at = index.position.get(patch.id) ?? patch.index;
+  let local = 0;
+  for (let i = 0; i < at && i < rows.length; i += 1) {
+    const id = rows[i]?.id;
+    if (id !== undefined && id !== patch.id && holding.has(id)) local += 1;
+  }
+  return { ...rest, index: local };
+}
+
 const withdrawn = (patch: RowPatch): RowPatch => ({
   op: 'delete',
   id: patch.id,

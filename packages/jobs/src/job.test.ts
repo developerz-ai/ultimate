@@ -320,3 +320,56 @@ describe('an unregistered job', () => {
     expect(rows[0]?.name).toBe(orphan.name);
   });
 });
+
+/**
+ * A declaration missing a required field is refused at `job()`, with EVERY missing field named.
+ * The type forbids omitting them; generated code and JS callers are what reach here. A missing
+ * `retry` crashed the app loader with a bare `TypeError … definition.retry.attempts`, which the CLI
+ * reported as `X_CLI_UNEXPECTED` with a `fix` naming an unrelated command.
+ */
+describe('a job declaration missing required fields', () => {
+  const declare = (definition: Record<string, unknown>): unknown => {
+    try {
+      job(definition as unknown as Parameters<typeof job>[0]);
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  };
+
+  test('no retry is X_JOB_DECLARATION_INVALID, never a TypeError', () => {
+    const caught = declare({
+      name: 'syncInvoices',
+      tenant: 'none',
+      input: t.object({}),
+      idempotencyKey: () => 'k',
+      run: () => Promise.resolve(),
+    }) as UltimateError;
+    expect(caught).toBeInstanceOf(UltimateError);
+    expect(caught.code).toBe('X_JOB_DECLARATION_INVALID');
+    expect(caught.fix).toContain("retry: { attempts: 5, backoff: 'exponential' }");
+    expect(caught.fix).toContain("job('syncInvoices')");
+  });
+
+  test('every missing field is named in one refusal', () => {
+    const caught = declare({ name: 'syncInvoices', input: t.object({}) }) as UltimateError;
+    expect(caught.code).toBe('X_JOB_DECLARATION_INVALID');
+    for (const field of ['idempotencyKey', 'tenant', 'retry', 'run']) {
+      expect(caught.cause).toContain(field);
+    }
+  });
+
+  // A positional name is a counter — `anonymous-job-3` — and the fix that spliced it into a key
+  // template put a value into persisted idempotency keys that moves when an import is added.
+  test('a job with no name gets a fix that never carries the positional counter', () => {
+    const caught = declare({
+      tenant: 'none',
+      input: t.object({}),
+      retry: { attempts: 1 },
+      run: () => Promise.resolve(),
+    }) as UltimateError;
+    expect(caught.code).toBe('X_IDEMPOTENCY_REQUIRED');
+    expect(caught.fix).not.toContain('anonymous-job');
+    expect(caught.fix).toContain('apps/web/api/index.ts');
+  });
+});

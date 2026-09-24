@@ -5,8 +5,8 @@
 
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { t, validate } from '@ultimat3/schema';
-import type { ConsoleLine, PageError } from '@ultimat3/scraping';
 import type { IslandShotTarget } from '@ultimat3/testing';
+import type { ConsoleLine, PageError } from './browser-launcher-port';
 import { msg } from './messages';
 import type { JsonValue } from './output';
 

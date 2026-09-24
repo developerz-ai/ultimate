@@ -9,7 +9,7 @@ import { TransportUnavailableError } from './errors';
 import type { NatsClientOptions, NatsConnect } from './nats-client';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
-import { backoffDelay, defaultBackoff } from './thundering-herd';
+import { defaultBackoff, policyDelay } from './thundering-herd';
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -240,9 +240,9 @@ describe('NatsTransport', () => {
     // Attempt by attempt, and the spread comes from the injected rng — a cluster restart must not
     // bring every node back on the same millisecond.
     expect([delay?.(), delay?.(), delay?.()]).toEqual([
-      backoffDelay(0, defaultBackoff, () => 0.5),
-      backoffDelay(1, defaultBackoff, () => 0.5),
-      backoffDelay(2, defaultBackoff, () => 0.5),
+      policyDelay(defaultBackoff, 1, () => 0.5),
+      policyDelay(defaultBackoff, 2, () => 0.5),
+      policyDelay(defaultBackoff, 3, () => 0.5),
     ]);
     await transport.close();
   });

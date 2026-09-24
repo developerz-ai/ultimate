@@ -304,6 +304,22 @@ function resolveLevel(declared: LogLevel): LogLevel {
   return declared;
 }
 
+/** The keys a line owns. A caller field spelled like one is renamed, never allowed to replace it. */
+const RESERVED_KEYS: ReadonlySet<string> = new Set(['ts', 'level', 'msg']);
+
+/**
+ * The caller's fields with any reserved key moved to `field.<key>`. Spread after `level`, a field
+ * `{ level: 'debug' }` turned an `error` line into a `debug` one, so a level-filtered alert never
+ * saw it. Renamed rather than dropped: the value is still evidence.
+ */
+function unreserved(fields: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    out[RESERVED_KEYS.has(key) ? `field.${key}` : key] = value;
+  }
+  return out;
+}
+
 export function createLogger(options?: LoggerOptions): Logger {
   const level = options?.level === undefined ? envLevel() : resolveLevel(options.level);
   const bound = options?.fields ?? {};
@@ -313,13 +329,16 @@ export function createLogger(options?: LoggerOptions): Logger {
 
   function emit(lineLevel: LogLevel, message: string, fields?: LogFields): void {
     if (LEVEL_WEIGHT[lineLevel] < threshold) return;
+    const caller = {
+      ...redactFields(bound),
+      ...redactFields(contextFields() ?? {}),
+      ...redactFields(fields ?? {}),
+    };
     const line = {
       ts: timestamp(clock),
       level: lineLevel,
       msg: message,
-      ...redactFields(bound),
-      ...redactFields(contextFields() ?? {}),
-      ...redactFields(fields ?? {}),
+      ...unreserved(caller),
     };
     writer(renderLine(line, lineLevel, message, line.ts), lineLevel);
   }

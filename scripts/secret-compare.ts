@@ -36,22 +36,16 @@
 //   bun run secret-compare  ·  bun run scripts/secret-compare.ts [--json]
 //   bun run scripts/secret-compare.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-import { maskLiterals } from '@ultimat3/cli';
-import { collectSourceFiles, type SourceFile } from './boundaries';
-import { flagList, parseScriptArgs } from './lib/args';
+import { maskLiterals } from '../packages/core/src/source-mask';
+import type { SourceFile } from './boundaries';
+import { balancedClose } from './lib/balanced-paren';
+import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import type { PinTable, RatchetGap } from './lib/ratchet';
+import { ratchetGaps, ratchetMain } from './lib/ratchet';
 import { isInert, namesASecret, operandAfter, operandBefore } from './lib/secret-compare-operands';
-import {
-  applySecretCompareUnpin,
-  SECRET_COMPARE_PINS,
-  SECRET_PINS_FILE,
-  secretComparePinIsBlank,
-  secretComparePinnedFor,
-} from './lib/secret-compare-pins';
+import { SECRET_COMPARE_PINS, SECRET_PINS_FILE } from './lib/secret-compare-pins';
 import { isTestPath, lineOf } from './lib/source-scan';
-import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'secret-compare';
 
@@ -113,19 +107,6 @@ const CASE = /\bcase\s+([^:\n]+):/g;
  */
 const DEEP_EQUAL = /(?<![\w$.])(?:Bun\s*\.\s*)?deepEquals\s*\(/g;
 
-/** The `)` matching the `(` at `open`, or `-1`. */
-const closingParen = (code: string, open: number): number => {
-  let depth = 0;
-  for (let index = open; index < code.length; index += 1) {
-    if (code[index] === '(') depth += 1;
-    else if (code[index] === ')') {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
-  }
-  return -1;
-};
-
 /** One call's arguments, split on TOP-LEVEL commas. */
 const argumentsOf = (inner: string): readonly string[] => {
   const args: string[] = [];
@@ -166,8 +147,11 @@ const closingBrace = (code: string, from: number): number => {
  * scaffold template that EMITS `token === expected` inside a template literal is not read as this
  * file's own comparison. `@ultimat3/cli`'s templates emit app source that way.
  */
-export function scanSecretCompares(path: string, source: string): readonly SecretCompareSite[] {
-  const code = maskLiterals(source);
+export function scanSecretCompares(
+  path: string,
+  source: string,
+  code: string = maskLiterals(source),
+): readonly SecretCompareSite[] {
   const sites: SecretCompareSite[] = [];
   for (const match of code.matchAll(EQUALITY)) {
     const at = match.index;
@@ -210,7 +194,7 @@ export function scanSecretCompares(path: string, source: string): readonly Secre
   }
   for (const match of code.matchAll(SWITCH)) {
     const open = match.index + match[0].length - 1;
-    const close = closingParen(code, open);
+    const close = balancedClose(code, open);
     if (close === -1) continue;
     const discriminant = code.slice(open + 1, close).trim();
     if (isInert(discriminant)) continue;
@@ -232,7 +216,7 @@ export function scanSecretCompares(path: string, source: string): readonly Secre
   }
   for (const match of code.matchAll(DEEP_EQUAL)) {
     const open = match.index + match[0].length - 1;
-    const close = closingParen(code, open);
+    const close = balancedClose(code, open);
     if (close === -1) continue;
     const args = argumentsOf(code.slice(open + 1, close)).filter((one) => !isInert(one));
     const name = args.map((one) => namesASecret(one)).find((one) => one !== undefined);
@@ -248,59 +232,24 @@ export function scanSecretCompares(path: string, source: string): readonly Secre
   return sites.sort((a, b) => a.line - b.line);
 }
 
-export type SecretCompareGapKind = 'over' | 'stale' | 'unscanned' | 'unexplained';
-
-export interface SecretCompareGap {
-  readonly kind: SecretCompareGapKind;
-  readonly pkg: string;
-  readonly found: number;
-  readonly pinned: number;
-  readonly first?: SecretCompareSite;
-}
+export type SecretCompareGap = RatchetGap<SecretCompareSite>;
 
 export interface SecretCompareInput {
   readonly files: readonly SourceFile[];
-  readonly pins: Readonly<Record<string, { readonly count: number; readonly reason: string }>>;
+  readonly pins: PinTable;
 }
 
-/** The ratchet: a package may hold what it is pinned at, may fall, may never rise. */
-export function checkSecretCompares(input: SecretCompareInput): readonly SecretCompareGap[] {
-  if (input.files.length === 0) {
-    return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
-  }
-  const found = new Map<string, SecretCompareSite[]>();
-  for (const file of input.files) {
-    if (isTestPath(file.path)) continue;
-    for (const site of scanSecretCompares(file.path, file.source)) {
-      const pkg = packageOf(site.path);
-      const list = found.get(pkg) ?? [];
-      list.push(site);
-      found.set(pkg, list);
-    }
-  }
-  const gaps: SecretCompareGap[] = [];
-  for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
-    const hits = found.get(pkg) ?? [];
-    const pinned = secretComparePinnedFor(pkg, input.pins);
-    // A blank reason waives nothing, so the row is reported in its own right AND its count is not
-    // honoured — reporting only the missing sentence would leave the comparisons silent behind it.
-    if (secretComparePinIsBlank(pkg, input.pins)) {
-      gaps.push({ kind: 'unexplained', pkg, found: hits.length, pinned });
-    }
-    if (hits.length > pinned) {
-      gaps.push({
-        kind: 'over',
-        pkg,
-        found: hits.length,
-        pinned,
-        ...(hits[0] === undefined ? {} : { first: hits[0] }),
-      });
-      continue;
-    }
-    if (hits.length < pinned) gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
-  }
-  return gaps.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
-}
+/** The ratchet over fixture files: a package may hold what it is pinned at, may fall, never rise. */
+export const checkSecretCompares = (input: SecretCompareInput): readonly SecretCompareGap[] =>
+  ratchetGaps(
+    input.files.flatMap((file) =>
+      isTestPath(file.path)
+        ? []
+        : scanSecretCompares(file.path, file.source, maskLiterals(file.source)),
+    ),
+    input.pins,
+    input.files.length > 0,
+  );
 
 const at = (site: SecretCompareSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
@@ -330,70 +279,40 @@ const unscannedFinding = (): Finding => ({
   code: 'X_SECRET_COMPARE_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree with no unsafe comparison in it',
-  fix: 'edit SOURCE_PATTERNS in scripts/boundaries.ts so it matches this repo layout, then bun run scripts/secret-compare.ts',
-  at: 'scripts/boundaries.ts',
+  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/secret-compare.ts',
+  at: 'scripts/lib/corpus.ts',
 });
 
-const FINDINGS: Readonly<Record<SecretCompareGapKind, (gap: SecretCompareGap) => Finding>> = {
-  over: overFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-  unexplained: unexplainedFinding,
-};
+export const secretCompareFindingFor = (gap: SecretCompareGap): Finding =>
+  gap.kind === 'over'
+    ? overFinding(gap)
+    : gap.kind === 'stale'
+      ? staleFinding(gap)
+      : gap.kind === 'unexplained'
+        ? unexplainedFinding(gap)
+        : unscannedFinding();
 
-export const secretCompareFindingFor = (gap: SecretCompareGap): Finding => FINDINGS[gap.kind](gap);
+/** Every site in the tree, read off the shared corpus and its cached mask. */
+export const secretCompareSites = async (root: string): Promise<readonly SecretCompareSite[]> =>
+  (await corpus(root, 'source')).flatMap((file) =>
+    isTestPath(file.path) ? [] : scanSecretCompares(file.path, file.source, file.masked),
+  );
 
 export const secretCompareGaps = async (root: string): Promise<readonly SecretCompareGap[]> =>
-  checkSecretCompares({ files: await collectSourceFiles(root), pins: SECRET_COMPARE_PINS });
+  ratchetGaps(await secretCompareSites(root), SECRET_COMPARE_PINS, true);
 
-/** What this rule contributes to `x verify`'s `unit` step, through `secret-compare.test.ts`. */
+/** What this rule contributes to `x verify`, through its own test file. */
 export const secretCompareFindings = async (root: string): Promise<readonly Finding[]> =>
   (await secretCompareGaps(root)).map(secretCompareFindingFor);
 
-/** Every site per package, for `--unpin` and for the number a maintainer wants when lowering one. */
-export async function secretCompareCounts(root: string): Promise<Readonly<Record<string, number>>> {
-  const counts: Record<string, number> = {};
-  for (const file of await collectSourceFiles(root)) {
-    if (isTestPath(file.path)) continue;
-    for (const site of scanSecretCompares(file.path, file.source)) {
-      counts[packageOf(site.path)] = (counts[packageOf(site.path)] ?? 0) + 1;
-    }
-  }
-  return counts;
-}
-
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
-    const lowered = await applySecretCompareUnpin(root, unpin, await secretCompareCounts(root));
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package is already at what this tree measures'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
-  } else {
-    const gaps = await secretCompareGaps(root);
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? 'no package compares a secret-named value with ===, !==, .includes(), .indexOf(), a prefix test, a switch or deepEquals above its pin'
-            : `${String(gaps.length)} package(s) off the secret-comparison ratchet`,
-        findings: gaps.map(secretCompareFindingFor),
-        data: { counts: await secretCompareCounts(root) },
-      },
-      args.json,
-    );
-  }
+  await ratchetMain({
+    script: SCRIPT,
+    pinsFile: SECRET_PINS_FILE,
+    pins: SECRET_COMPARE_PINS,
+    sites: secretCompareSites,
+    findingFor: secretCompareFindingFor,
+    clean:
+      'no package compares a secret-named value with ===, !==, .includes(), .indexOf(), a prefix test, a switch or deepEquals above its pin',
+  });
 }

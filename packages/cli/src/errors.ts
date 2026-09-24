@@ -73,6 +73,20 @@ export class AppNameIsPathError extends UltimateError {
 }
 
 /**
+ * `x new '!!!'`: a name that slugifies to nothing names no directory, and the scaffold landed in
+ * the cwd itself — where `--force` then committed every file the user already had there.
+ */
+export class AppNameEmptyError extends UltimateError {
+  constructor(input: { name: string; invocation: string; flags: readonly string[] }) {
+    super({
+      code: 'X_APP_NAME_EMPTY',
+      cause: `"${input.name}" has no letters or digits, so it names no directory`,
+      fix: [input.invocation, '<name-with-letters>', ...input.flags].join(' '),
+    });
+  }
+}
+
+/**
  * A command that declares subcommands, invoked with none and declaring no `defaultSubcommand`.
  *
  * `X_CLI_BAD_FLAG` is the code a missing positional already takes (`MissingPositionalError`), and a

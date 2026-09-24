@@ -5,7 +5,7 @@
 // invisible in `x dev`, where the policy is report-only.
 
 import { cspHashSource } from '@ultimat3/http';
-import { HYDRATE_RUNTIME_BODIES } from '@ultimat3/render';
+import { HYDRATE_RUNTIME_BODIES, STREAM_REVEAL_BODIES } from '@ultimat3/render';
 
 /**
  * Hashes, never a nonce: a `render: 'static'` page is a file on disk, so no per-response value can
@@ -16,5 +16,8 @@ import { HYDRATE_RUNTIME_BODIES } from '@ultimat3/render';
  * which `theme-boot.ts` derives from the same string it inlines.
  */
 export function inlineScriptSources(extra: readonly string[] = []): readonly string[] {
-  return [...new Set([...HYDRATE_RUNTIME_BODIES.map(cspHashSource), ...extra])].sort();
+  // The stream reveal too: a `render: 'stream'` page swaps each Suspense boundary in with a
+  // constant inline `$X()` call, and unhashed it is blocked under the enforced policy.
+  const bodies = [...HYDRATE_RUNTIME_BODIES, ...STREAM_REVEAL_BODIES];
+  return [...new Set([...bodies.map(cspHashSource), ...extra])].sort();
 }

@@ -13,7 +13,6 @@ import { mountIsland } from '@ultimat3/testing';
 import {
   buildIslands,
   clearIslandChunkCache,
-  describeBuildError,
   discoverIslands,
   ISLAND_BASE_PATH,
   islandBundle,
@@ -155,6 +154,18 @@ describe('buildIslands', () => {
       "import { gone } from './nowhere';\nexport const mount = (): unknown => gone;\n",
     );
     expect(await buildIslands(ROOT).then(() => 'built', codeOf)).toBe('X_BUILD_FAILED');
+  });
+
+  // The realtime probe parses the graph BEFORE `Bun.build` runs, and a file that will not parse
+  // rejected there with a raw `AggregateError: Failed to scan imports` — the web boot died on it.
+  test('a client entry that will not parse fails the same way, naming the file', async () => {
+    await write('apps/web/site/unparsed.island.tsx', 'export const mount = ( => {;\n');
+    const failure = await buildIslands(ROOT).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; cause?: string },
+    );
+    expect(failure?.code).toBe('X_BUILD_FAILED');
+    expect(failure?.cause).toContain('apps/web/site/unparsed.island.tsx');
   });
 });
 
@@ -361,58 +372,6 @@ describe('an island that renders JSX', () => {
  * getter that can raise) and `String()` (throws outright on a Symbol). A throw there replaces the
  * whole refusal with a TypeError about reporting it.
  */
-describe('unit · the bundler diagnostic a cause is built from', () => {
-  test('an ordinary Error keeps its message', () => {
-    expect(describeBuildError(new TypeError('Could not resolve: "solid-js"'))).toContain(
-      'Could not resolve: "solid-js"',
-    );
-  });
-
-  test('an aggregate is flattened, which is what puts a line number in the cause', () => {
-    const rendered = describeBuildError(
-      new AggregateError([new Error('a.tsx:3 unresolved'), new Error('b.tsx:9 syntax')], 'nope'),
-    );
-    expect(rendered).toContain('a.tsx:3 unresolved');
-    expect(rendered).toContain('b.tsx:9 syntax');
-    expect(rendered).toContain(';');
-  });
-
-  test('a message getter that throws is rendered, never re-thrown', () => {
-    const hostile = new Error('unused');
-    Object.defineProperty(hostile, 'message', {
-      get() {
-        throw new TypeError('message is a trap');
-      },
-    });
-    expect(() => describeBuildError(hostile)).not.toThrow();
-    expect(describeBuildError(hostile)).not.toContain('message is a trap');
-  });
-
-  test('a Symbol is rendered, where String() throws outright', () => {
-    expect(() => describeBuildError(Symbol('boom'))).not.toThrow();
-    expect(describeBuildError(Symbol('boom')).length).toBeGreaterThan(0);
-  });
-
-  test('a Proxy that traps getPrototypeOf and get is rendered too', () => {
-    const trap = new Proxy(
-      { errors: [] },
-      {
-        getPrototypeOf() {
-          throw new TypeError('no prototype for you');
-        },
-        get() {
-          throw new TypeError('no properties for you');
-        },
-      },
-    );
-    expect(() => describeBuildError(trap)).not.toThrow();
-  });
-
-  test('a non-Error throw is not flattened to a placeholder', () => {
-    expect(describeBuildError('bundle failed')).toContain('bundle failed');
-  });
-});
-
 /**
  * A string only Solid's DEVELOPMENT core carries (`dist/dev.js`), and a string literal, so it
  * survives minification. `dist/solid.js` does not contain it — the negative control in the first

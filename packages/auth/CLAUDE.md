@@ -16,468 +16,149 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 
 ## Non-negotiables
 
-- **A policy NUMBER is screened at `defineAuth`, `As of 2026-08-26`** (`policy-numbers.ts`,
-  `X_CONFIG_INVALID`). `session.absoluteTtlMs`, `session.idleTtlMs`, `session.idleSlideMs`,
-  `password.minLength`, the two argon2 costs and every `rateLimit` number. Measured with `NaN` —
-  what `Number(process.env.SESSION_TTL_MS)` answers when the variable is unset, and not nullish, so
-  the spread over the defaults keeps it: `now >= NaN` is false, so a session idle since 2000
-  reported `absoluteExpired: false` AND `idleExpired: false`; `password.length < NaN` is false and
-  the two-distinct-characters rule is guarded by `length > 0`, so the EMPTY password was accepted.
-  A rule whose comparison is false for every input is not a loose rule, it is no rule.
-
-- **Every RUNTIME number this package bounds anything with is screened too, `As of 2026-08-26`** —
-  `assertFiniteAuthCount` in `policy-numbers.ts`, one file for both halves. `jwks.ttlMs`
-  (`now >= fetchedAt + NaN` is false, so a provider's key rotation is never refetched and every
-  login against the new `kid` fails until the process restarts), the three OAuth legs' `timeoutMs`
-  (`AbortSignal.timeout(NaN)` THROWS, and it is screened OUTSIDE each leg's `try` — inside it, the
-  catch rendered an app config typo as the identity provider being unreachable), the limiter's
-  `maxKeys` (`Math.max(1, Math.floor(NaN))` is `NaN`, so the sweep bounding a table half of whose
-  keys are attacker-chosen never ran) and `mfa.drift`. **`drift` is the one that hangs**: it is a
-  LOOP BOUND, not a comparison — `for (offset = -Infinity; offset <= Infinity; offset += 1)` never
-  terminates, measured, synchronously, on the login path — and `NaN` makes the loop never run at
-  all, so every correct code is rejected as if it were wrong. Editing `verifyTotp` with the screen
-  removed WEDGES `mfa.test.ts` rather than failing it; mutate with the `NaN` case.
-
-  **That sentence was false when it was written and four more sites closed it, `As of 2026-08-26`.**
-  It named the options `defineAuth` resolves and the ones a *service* call takes, and missed every
-  number a **cookie** or a **mailed link** is bounded by. `oauth.handshake.ttlMs` is the one that
-  matters: `openHandshake`'s `now - issuedAt > NaN` is false, so a year-old sealed handshake — the
-  state, nonce and PKCE verifier that ARE the callback leg's CSRF defence — opened and returned its
-  verifier, while `handshakeCookie` wrote `Max-Age=NaN`, which is not `delta-seconds`, so the
-  browser dropped the attribute and kept the cookie for the whole session. One number, both ends of
-  the deadline, off together and silently. `session.cookie.maxAgeSeconds` is the same shape beside
-  a `policy.absoluteTtlMs` that WAS screened; `kdf.maxConcurrent`/`kdf.maxQueued` are the second
-  thing that WEDGES after `mfa.drift` — core asks `active < maxConcurrent` then
-  `waiters.length >= maxQueued`, both false for `NaN`, so every `hashPassword` on the box parks in
-  an unbounded queue nothing releases and login stops answering rather than shedding.
-
-- **A number is screened ABOVE the write it feeds, not beside the arithmetic** (`As of
-  2026-08-26`). `issueVerification` read `input.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS[purpose]`
-  straight into `new Date(now + ttl)` and threw a bare `RangeError` — `toISOString()` refuses an
-  Invalid Date — on the line AFTER `putVerification` had already resolved. Two faults from one
-  number: an uncoded throw out of the package, and a durable row whose expiry `consumeVerification`
-  compares as `now >= NaN`, false for ever, i.e. a password-reset link that never expires. The
-  write also upserts on `(purpose, identifier)`, so the failing call had destroyed whatever live
-  token that address held on its way out. `verify.test.ts` asserts the ordering directly (no row
-  written, no mail sent, the earlier token still redeemable) — moving the screen below the store
-  call fails those three and leaves the coded-refusal case green.
-
-- **The minimum is per option, and zero is usually legitimate.** `assertFiniteAuthCount`'s `min` is
-  `0 | 1` because only the call site knows what zero MEANS, and picking `1` for tidiness is how a
-  screen breaks a working deployment while every test still passes. `maxAgeSeconds: 0` is how a
-  cookie is expired — it is what sign-out emits — and `{ maxConcurrent: 0, maxQueued: 0 }` is a
-  gate that refuses every hash, which is how `password.test.ts` proves the unreadable-hash path
-  burns the same KDF a wrong password does. Both take `min: 0`. A TTL takes `min: 1`, because a
-  handshake or a mailed link that is already expired when it is issued is not a configuration.
-
+- **Every number this package bounds anything with is screened** (`policy-numbers.ts`): policy
+  numbers at `defineAuth` (`X_CONFIG_INVALID` — `session.absoluteTtlMs`, `idleTtlMs`,
+  `idleSlideMs`, `password.minLength`, the two argon2 costs, every `rateLimit` number), and every
+  runtime one through `assertFiniteAuthCount` — `jwks.ttlMs`, the three OAuth legs' `timeoutMs`
+  (screened OUTSIDE each leg's `try`), the limiter's `maxKeys`, `mfa.drift`,
+  `oauth.handshake.ttlMs`, `session.cookie.maxAgeSeconds`, `kdf.maxConcurrent`/`maxQueued`. A `NaN`
+  makes every comparison false: no expiry, the empty password accepted, a year-old handshake
+  opened. **`mfa.drift` and the KDF gate are the two that HANG** — mutate `verifyTotp` with the
+  `NaN` case, never by deleting the screen (that wedges `mfa.test.ts`).
+- **A number is screened ABOVE the write it feeds.** `issueVerification` screens its TTL before
+  `putVerification` (which upserts on `(purpose, identifier)`); `verify.test.ts` asserts no row
+  written, no mail sent, the earlier token still redeemable.
+- **The minimum is per option; zero is often legitimate.** `assertFiniteAuthCount`'s `min` is
+  `0 | 1`: `maxAgeSeconds: 0` is sign-out, `{ maxConcurrent: 0, maxQueued: 0 }` is how
+  `password.test.ts` proves an unreadable hash burns the KDF. A TTL takes `min: 1`.
 - Every credential failure throws `loginFailed()` — one code, one cause, one fix. Adding a
   parameter to it re-opens account enumeration.
-- **A stored hash Bun cannot read is the generic failure, and it burns the same KDF** (`As of
-  2026-08`). `Bun.password.verify` THROWS rather than answering `false` on an unsupported algorithm
-  (a Django `pbkdf2_sha256$…` row: `UnsupportedAlgorithm`) or a malformed PHC string
-  (`InvalidEncoding`), so `verifyPassword` catching nothing was two faults at once: a bare `Error`
-  out of `login()` — a 500 where `loginFailed()`'s `X_UNAUTHENTICATED` belongs — and an enumeration
-  oracle on exactly the rows that have not migrated off the legacy scheme, which is the normal
-  state of a table mid-migration. `verifyAgainst` (`password.ts`) answers `null` there, and `null`
-  joins the no-user branch, `''` with it. Nothing is logged: the algorithm of an unreadable hash is
-  the same oracle one layer down. An `AuthError` out of the gate (`X_OVERLOADED`) is **re-thrown**,
-  never folded into the failure — a shed is load, not a verdict. Supported-but-old stays a verdict:
-  bcrypt verifies natively and `needsRehash` flags it, which is the rehash-on-login lever a legacy
-  migration rewrites rows with, and `password.test.ts` pins both halves.
-- The limiter's table is **bounded**, and the eviction order is part of the guarantee. `ipKey`
-  mints one entry per source address, so half the keys are attacker-chosen and a spray from an
-  IPv6 /64 is a fresh key per attempt. Every bucket carries `forgetAtMs` — window emptied *and*
-  lockout expired, the instant it answers exactly as a missing one — and the sweep drops those
-  for free. `policy.maxKeys` (`DEFAULT_MAX_AUTH_LIMIT_KEYS`) is the backstop, and a **live
-  lockout outranks its own deadline** in the comparator: without that rank a spray recorded a
-  second later sorts ahead of the account it just locked, and filling the table becomes a way to
-  buy attempts back. Never reduce that sort to recency.
-- **`AuthLimiter` is async on every member, and it declares the policy it enforces.** A
-  synchronous signature is one no shared implementation can satisfy — a lockout that holds across
-  replicas is a network round trip — so the interface the comment always promised was unreachable
-  by construction. `defineAuth` resolves the app's declaration and compares it against
-  `limiter.policy`, once, in `assertAuthLimiterPolicy`: a per-process limiter under
-  `scope: 'shared'` is `X_AUTH_LIMITER_NOT_SHARED`, and different `maxAttempts`/`windowMs`/
-  `lockoutMs` is `X_AUTH_LIMITER_POLICY_MISMATCH` — both at boot, never at the first spray.
-  `maxKeys` is **not** compared: it bounds one process' table, so a shared limiter has no opinion
-  on it. The point is that `Auth.rateLimit` is what an operator reads as "what this deployment
-  enforces", so an injected limiter may not quietly enforce something else. Nothing here reads the
+- **A stored hash Bun cannot read is the generic failure, and it burns the same KDF.**
+  `verifyAgainst` (`password.ts`) answers `null` for `Bun.password.verify`'s throw (unsupported
+  algorithm, malformed PHC) and `''`, joining the no-user branch; nothing is logged. An
+  `X_OVERLOADED` from the gate is RE-THROWN (a shed is load, not a verdict). Supported-but-old
+  (bcrypt) stays a verdict and `needsRehash` flags it. `password.test.ts` pins both halves.
+- **The limiter's table is bounded, and the eviction order is the guarantee.** Every bucket carries
+  `forgetAtMs`; `policy.maxKeys` (`DEFAULT_MAX_AUTH_LIMIT_KEYS`) is the backstop, and a **live
+  lockout outranks its own deadline** in the comparator. Never reduce that sort to recency.
+- **`AuthLimiter` is async on every member and declares the policy it enforces.**
+  `assertAuthLimiterPolicy` (once, in `defineAuth`) refuses a per-process limiter under
+  `scope: 'shared'` (`X_AUTH_LIMITER_NOT_SHARED`) and different `maxAttempts`/`windowMs`/
+  `lockoutMs` (`X_AUTH_LIMITER_POLICY_MISMATCH`). `maxKeys` is not compared. Nothing here reads the
   environment to guess a replica count.
-- **`postgresAuthLimiter` is the shared limiter, and a row per FAILURE is what makes it correct**
-  (`As of 2026-08`). `assertAuthLimiterPolicy` refused a per-process limiter under
-  `scope: 'shared'` and there was nothing else to pass, so the declaration was unsatisfiable while
-  `x new` scaffolds `replicas: 2`. A counter column plus a window end would have been a FIXED
-  window — `maxAttempts` at the end of one window and `maxAttempts` again at the start of the next,
-  twice the declared allowance under the same declared numbers, on the credential path — so
-  failures are rows and the count is `at_ms > now - windowMs`. The insert and the count are two
-  statements, never one CTE: every CTE in a statement reads that statement's snapshot and cannot
-  see the row being written beside it, so the lockout would fire one attempt late. **Two statements
-  is also why the insert takes `pg_advisory_xact_lock` on the key** — `PgExecutor` accepts a
-  transaction handle, so two OUTER transactions each counted committed rows plus their own, both
-  read one short of `maxAttempts`, and both committed: three failures and an open account. The lock
-  parks the second transaction's insert until the first commits, so its count runs against a
-  snapshot that holds the first's row. Autocommit pays one no-op and no extra round trip; the
-  guarantee is READ COMMITTED, because a snapshot-isolated outer transaction pins its count at
-  transaction start and no lock can undo that. `auth.ts` records account → ip → org in that fixed
-  order, which is what keeps two concurrent sign-ins from taking two of these locks in opposite
-  ones. `greatest` on the lockout upsert EXTENDS and never shortens — two replicas do not share a
-  clock, and the one that lags must not be able to bring a live lockout forward. `PgExecutor` is
-  declared structurally
-  even though this package already depends on `@ultimat3/db`: the connection is the HOST's, so the
-  limiter takes the pool the boot opened rather than opening a second one.
-- **`configureAuthLimiters` is the HOST's install point and it takes a FACTORY, not a limiter**
-  (`As of 2026-08`). `defineAuth({ limiter })` is still the app's, and it still wins; what was
-  missing is that `postgresAuthLimiter` shipped with **nowhere a host could install it from**.
-  `defineAuth` is the APP's call and the app does not know which pool this process opened —
-  `@ultimat3/cli`'s `startServices` resolves that long before `loadApp` imports a single app
-  module — so a scaffolded app got a per-POD lockout while `x new` scaffolds `replicas: 2` and
-  `docker/helm` runs three: `maxAttempts × N` guesses per account, and a lockout one replica
-  established invisible to the rest.
-
-  A **factory** because the boot cannot know the app's numbers. `assertAuthLimiterPolicy` compares
-  what a limiter enforces against what the app declared, so a limiter built at boot on
-  `DEFAULT_AUTH_RATE_LIMIT` is `X_AUTH_LIMITER_POLICY_MISMATCH` for every app that tuned one. The
-  factory is called with the RESOLVED policy, once per bucket, so the two halves cannot disagree —
-  and the comparison still runs on what comes back, so a factory that ignores its argument is
-  refused exactly as an injected limiter is. Precedence: `config.limiter` → the installed factory →
-  `createAuthLimiter`. `installedAuthLimiter` is deliberately NOT in `src/index.ts`, for the reason
-  `registerJob` is not in `@ultimat3/jobs`': a second caller building limiters out of band is a
-  second answer to where failures are counted.
-
-  `purgeAuthLimits()` is the other half, and it exists because `PostgresAuthLimiter.purgeExpired()`
-  had **no caller anywhere** — every failure row and every dead lockout was kept forever. It sweeps
-  only the **widest** window among the limiters the factory built: they all write the same two
-  tables, so a sweep measured on a narrower window deletes failures a wider limiter is still
-  counting, which is a sprayer buying attempts back from the cleanup job. No `nowMs` argument —
-  a limiter built through the seam holds the clock its host handed it, and that is the clock every
-  `at_ms` in those tables was written from. `AuthLimiter.purgeExpired` is OPTIONAL so
-  `createAuthLimiter` can keep bounding itself; a limiter with no table declares nothing.
-  **What the seam RETAINS is one limiter per window, `As of 2026-08-23`** — a `Map` keyed by
-  `windowMs`, because the widest window is the only thing a purge reads. It was a list appended to
-  on every `installedAuthLimiter` call, two per `defineAuth`, trimmed by nothing: a process that
-  redefines auth (`x dev`'s reload, a test file, a host building one `Auth` per app) held every
-  limiter it ever built and the store behind each. `installedLimiterCount()` is the only
-  observation of that growth — a purge sweeps exactly one limiter however many are held — and it
-  is not exported from `src/index.ts`.
-
-- **`normaliseEmail` is the ONE normalisation, it lives ABOVE the `AuthAdapter` seam, and no
-  adapter may fold case** (`As of 2026-08`). `MemoryAdapter` lowercased and trimmed on both
-  `findUserByEmail` and `createUser`; `BuiltinAdapter` issues `where email = $1` against a plain
-  case-sensitive `text ... unique`. Two adapters, two answers to "does this account exist" — and
-  `oauth-login.ts`'s `resolveUser` normalised nothing at all, carrying the provider's display
-  casing straight through. So a provider sending `Ada@Example.com` linked the existing account
-  under `x dev` and minted a SECOND one in production, at an address `login()` (which lowercases)
-  could then never reach; a later `register()` at the lowercase spelling made a third. Every door
-  now normalises before the adapter sees the address — `register`, `login`, `profileEmail` in
-  `oauth-login.ts`, and `accountKey`, which must key the same way or one address buys a fresh
-  lockout budget per spelling. `adapter-parity.test.ts` pins both adapters in one test, the shape
-  `jobs/driver-parity.test.ts` established; `MemoryAdapter` normalising again is a failing test.
-  Trim and lowercase only: stripping a `+tag` or a gmail dot MERGES two addresses a person kept
-  apart, which is takeover between colleagues at one domain.
-- **`json.ts` owns `isRecord` and `decodeJwtSegment`, and this package holds no second copy.**
-  `isRecord` was declared six times here and the base64url-JSON-payload decode three
-  (`jwks.decodeJwtHeader`, `id-token.decodeSegment`, `workload.verifyWorkloadToken`). All six
-  agreed that an array is not a record, which is the fact that matters: on a decoded JWT payload
-  the check is what gates every claim read after it, and `JSON.parse('[]')` narrows to
-  `Record<string, unknown>` without it. One declaration means one place for that to be true.
-  `decodeJwtSegment` answers `null` for all three failures — not base64url, not JSON, not an
-  object — because each caller has its own coded refusal to raise.
+- **`postgresAuthLimiter` is the shared limiter, a row per FAILURE** (sliding window: the count is
+  `at_ms > now - windowMs`). The insert and the count are two statements, never one CTE, and the
+  insert takes `pg_advisory_xact_lock` on the key so two outer transactions cannot both read one
+  short (guarantee is READ COMMITTED). `auth.ts` records account → ip → org in that fixed order.
+  `greatest` on the lockout upsert only extends. `PgExecutor` is structural: the pool is the host's.
+- **`configureAuthLimiters` is the HOST's install point and takes a FACTORY**, called with the
+  RESOLVED policy once per bucket; the comparison still runs on what comes back. Precedence:
+  `config.limiter` → the installed factory → `createAuthLimiter`. `installedAuthLimiter` and
+  `installedLimiterCount()` are NOT in `src/index.ts`. `purgeAuthLimits()` sweeps only the
+  **widest** window among the built limiters (retained one per `windowMs` in a `Map`), on the
+  limiter's own clock. `AuthLimiter.purgeExpired` is optional.
+- **`normaliseEmail` is the ONE normalisation, it lives ABOVE the `AuthAdapter` seam, and no adapter
+  may fold case.** Every door now normalises before the adapter sees the address — `register`,
+  `login`, `profileEmail` in `oauth-login.ts`, `accountKey`, and `issueVerification`/
+  `consumeVerification`. Trim and lowercase only; never strip a `+tag` or a gmail dot.
+  `adapter-parity.test.ts` pins both adapters in one test.
+- **`json.ts` owns `isRecord` and `decodeJwtSegment`; no second copy.** An array is not a record.
+  `decodeJwtSegment` answers `null` for all three failures; each caller raises its own refusal.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
-- PKCE is not provider-dependent. `OAuthProvider.usesPkce` is the literal `true`, not `boolean`,
-  so `usesPkce: false` is a type error rather than a comment — and there is no
-  `if (provider.usesPkce)` branch left anywhere for it to have been false in. It stays the literal
-  now that `registerOAuthProvider` is open to any app: the mechanism has to survive the opening.
-- **Providers are a registry, `OAuthProviderId` is `string`.** A closed union of three consumer
-  IdPs made an enterprise OP *unrepresentable* — a type constraint has no runtime escape, so the
-  only ways out were forking the package or bypassing OAuth entirely and losing PKCE, the sealed
-  handshake, issuer pinning and account linking with it. The three built-ins seed the registry
-  through the same `registerOAuthProvider()` an app calls, so there is still one way to do it.
-  `providerFor(id)` throws `X_OAUTH_PROVIDER_UNKNOWN` and never answers `undefined`; a second claim
-  on one id is `X_OAUTH_PROVIDER_DUPLICATE` at boot, never a silent replacement.
-- **`oauthProviderUnknown(provider, supported)` scopes its list to its reader.** The route passes
-  `BUILTIN_OAUTH_PROVIDER_IDS` — an anonymous stranger typed that URL, and the registry now holds
-  whatever internal OP this deployment registered. `providerFor()` passes `oauthProviderIds()` —
-  its reader is a developer with a stack trace, and the full list is what makes the fix runnable.
-  Neither ever passes `defineAuth({ providers })`. One code, two audiences, one sentence that stays
-  executable either way because it names `registerOAuthProvider` before it names the list.
+- PKCE is not provider-dependent: `OAuthProvider.usesPkce` is the literal `true`.
+- **Providers are a registry, `OAuthProviderId` is `string`.** The three built-ins seed it through
+  `registerOAuthProvider()`, the call an app makes. `providerFor(id)` throws
+  `X_OAUTH_PROVIDER_UNKNOWN`, never `undefined`; a second claim is `X_OAUTH_PROVIDER_DUPLICATE`.
+- **`oauthProviderUnknown(provider, supported)` scopes its list to its reader**: the route passes
+  `BUILTIN_OAUTH_PROVIDER_IDS` (an anonymous caller), `providerFor()` passes `oauthProviderIds()`.
 - **`verifyIdToken({ keys })` is required, with no default.** `'token-endpoint-tls'` is the OIDC
-  Core 3.1.3.7 exemption stated out loud, and `exchangeOAuthCode` is the only shipped caller
-  entitled to it. Anything else — IdP-initiated login, `form_post`, back-channel logout, token
-  exchange — passes a `JwksKeySource` and gets the signature checked. A default is exactly what
-  would let a second door inherit "unverified" from the first. `HS256` and `alg: none` are refused
-  in `decodeJwtHeader` before a key is ever looked up.
-- **`resolveGrants` is a seam, never a group-to-role table.** It is called on EVERY login, not only
-  at creation, or "remove them from the group in the IdP" is a no-op forever. Absent means the app
-  has no opinion and the stored row is left alone; a seam returning the stored answer writes
-  nothing. Creating a user with no roles and no org logs a warning — that account can do nothing.
-- **`verifySession` writes at most once per `idleSlideMs`** (default `idleTtlMs / 20`). Throttling
-  the SESSION write is safe; caching the USER row is not — `authenticate` re-reads it on every
-  request, and that is what makes a revoked role take effect on the next one with no token-expiry
-  lag. Do not cache it.
-
-  **In `verifySession`'s `observed`, `null` is an ANSWER and `undefined` is silence**
-  (`As of 2026-09-06`). `observed?.ip ?? session.ip` collapsed the two, so an explicit
-  `{ ip: null }` — this request had no client address — could not clear a stale stored one: the
-  address from an earlier request was written forward on every verify, and the device list a user
-  checks for a session they do not recognise showed it as current. An observation that names
-  neither field still costs no write, because a change nobody reported would turn every
-  authenticated request back into a write on the hottest table there is.
-- A user's `scopes` column reaches `Actor.scopes`. Hardcoding `[]` there made a scope something no
-  human could hold, so `hasScope(actor, 'tenancy:cross')` was satisfiable only by minting a
-  `serviceActor` inside the handler — which discards the operator's identity and makes the sweep
-  unattributable, the exact property the required reason string exists to preserve.
+  Core 3.1.3.7 exemption and `exchangeOAuthCode` is its only entitled caller. `HS256` and
+  `alg: none` are refused in `decodeJwtHeader`. It checks `nbf` and `azp` too.
+- **`resolveGrants` is a seam, never a group-to-role table**, called on EVERY login. Absent leaves
+  the row alone. A user created with no roles and no org logs a warning.
+- **`verifySession` writes at most once per `idleSlideMs`** (default `idleTtlMs / 20`). Never cache
+  the USER row — `authenticate` re-reads it every request so a revoked role bites on the next one.
+  In `observed`, `null` is an ANSWER (clears the stored value) and `undefined` is silence.
+- A user's `scopes` column reaches `Actor.scopes`.
 - Every revocation takes a `reason` and logs `auth.revocation` before it runs.
-  `deleteSessionsForOrg` joins through `x_users`; `x_sessions` does **not** gain an `org_id`,
-  because a denormalised membership goes stale the moment somebody moves org and the 03:00 sweep
-  then leaves live exactly the sessions it was run to kill.
-- The code flow carries `nonce` inside the id token, not on the redirect. `assertOAuthCallback`
-  checks an echoed one when present and never requires it; `verifyIdToken` is the real gate.
-- The handshake crosses two requests, so it is sealed (`sealHandshake`), never handed over in a
-  variable. `openHandshake` takes the provider as an argument for the reason `decodeCursor` takes
-  a scope: an optional check is one a call site forgets. Expiry is the server's clock, not `Max-Age`.
-- One handshake cookie **per provider** (`handshakeCookieName`), never one shared slot. Two tabs
-  are two handshakes in one jar, and a shared name makes the second redirect overwrite the first.
-  `clearHandshakeCookie(provider)` for the same reason: clearing all of them cancels the other tab.
-- `takeVerification(purpose, identifier, tokenHash)` consumes the row **only on a hash match**,
-  in one conditional statement. The hash is an argument to the consume, not a comparison after it:
-  a store that consumes first lets `{identifier:'victim@…', token:'x'}` kill the victim's live
-  link, one request per address, unauthenticated. `consumeVerification` still compares in constant
-  time on the row it gets back — the seam is an app's to implement, and one that ignores the
-  argument would otherwise redeem any token. The Postgres statement carries `consumed_at is null`
-  on the UPDATE **and** in its subselect (single-use under two racing redemptions), and
-  `order by created_at desc limit 1` so it can only ever consume one row.
-- **Foreign text reaching a `cause:` goes through `renderCauseValue`, and a `fix:` through
-  `renderFixLiteral`.** Not for throw-safety — these values are `string` by type, so
-  `bun run error-render` (which only sees `unknown`/`any`) will never catch one — but because a
-  newline writes a second log line an operator reads as genuine. Three values in this package are
-  foreign and all three are rendered at their source: `providerDetail()`'s return (a REMOTE
-  server's bytes, rendered there rather than at `oauthExchangeFailed` so the prose details this
-  package authors stay unquoted), `claims.iss` in `id-token.ts` (a field of the JWT the caller
-  presented), and `accountLocked`'s `key` (built by `ipKey` from a caller-supplied address).
-  `${provider}` is NOT in that set — it is registry-validated on every shipped path, so it is boot
-  config like `clientIdEnv`, not request data. Swept whole `As of 2026-08`.
-  **`UltimateError`'s constructor now escapes every line-bearing field as well** (`As of
-  2026-08-20`), so a line break cannot leave this package whether or not a call site remembers.
-  These three renders stay and are not a second path: `renderCauseValue` also QUOTES, which is what
-  makes a forged `iss` legible as a value rather than as prose — the constructor is a floor under
-  every field, not a replacement for saying which value is foreign.
-
-  **A `fix:` a SHELL reads takes `renderFixShellArg` instead, `As of 2026-09`.**
-  `oauth-discovery.ts` composed `curl -sS -m 5 ${url}` from `discoveryUrl(input.issuer)` at four
-  sites, and `new URL()` keeps `$`, `(`, `)` and backticks in a path — so an issuer one boot
-  mistake away from hostile wrote the command substitution into the line a reader pastes.
-  `renderFixLiteral` cannot stand in for it: it answers DOUBLE quotes, in which `$(…)` is still
-  live. The two are used side by side in that file — the shell renderer for the four `curl`/prose
-  lines, `renderFixLiteral` for the one that is a `registerOAuthProvider({ id: … })` call, where
-  quoting IS the escape and a bare `'${id}'` broke on an apostrophe.
-
-  **Every OAuth endpoint in a command position is screened, not just the discovery URL** (`As of
-  2026-09-06`). `jwks.ts` (three lines, one `probe` const), `oauth-profile.ts`'s userinfo probe and
-  `oauth-exchange.ts`'s token probe each composed `curl … ${url}` from `providerFor(id)`, and that
-  registry is filled by `discoverOAuthProvider` — the ISSUER's own document — as well as by the
-  app. `oauth-exchange.ts`'s own comment claimed `url` was "a framework constant"; it has not been
-  one since `registerOAuthProvider` opened, and the comment says so now. The value still rides in
-  the `cause` on the two legs whose detail names the host; `X_OAUTH_EXCHANGE_FAILED` carries no
-  `meta` passthrough.
-
-  **A screened value is half the contract; the LINE has to run** (`As of 2026-09-06`). A
-  placeholder is honest text and is not a command — `curl -sS -m 5 <the provider jwks_uri>` is read
-  by a shell as a redirection from a file called `the`, so the one instruction the reader was
-  handed fails, which is axiom 4 inverted. `jwks.ts`'s three lines share one `readTheKeySet(tail)`:
-  `isFixShellSafe` (core, the predicate `renderFixShellArg` is itself built on) decides, and the
-  whole fix degrades to PROSE naming the discovery document when the URI does not travel.
-  `oauth-discovery.ts` still owes the same repair and is what keeps `auth` on
-  `FIX_SHELL_ARG_PINS`.
-- `readCookie` never throws on a malformed value. The `Cookie:` header is attacker-controlled and
-  `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
-  package — the raw value goes to the signature or hash check, which is the readable refusal.
-- A token endpoint's HTTP 200 is not success — GitHub reports a dead code that way. Read `error`.
-- Link by address only when the provider **and** the local account both verified it. That is
-  `link: 'verified-email'`, the default; `'never'` is the only other value and there is
-  deliberately no "link on any provider address" — it is account takeover at a sloppy
-  provider, so it is unrepresentable rather than discouraged. An app that wants it wraps
-  `signInWithOAuth`.
-- **The OAuth route paths are not configurable.** `oauth-paths.ts` imports nothing and is
-  read by both `oauth-errors.ts` and `oauth-route.ts`, so a `fix:` line naming
-  `GET /auth/oauth/<provider>` cannot outlive the route again — which is exactly what it did
-  through 1.2.0, when the library functions shipped with no route to mount them in. Every
-  "start over" fix is built from `restartAt(provider)`.
-- The routes are **descriptors** (`mcpHttpRoute()`'s category), never mounted handlers:
-  `@ultimat3/http` is tier 2 like this package and `defineRoute` is tier 4 and renders a
-  page, so neither is importable here. A bare `Request` in, a `Response` out.
-- The callback answers failure as **coded JSON**, and the success hop redirects to a fixed
-  `successPath` — never `?next=`. `nextAfterSignIn` in `@ultimat3/http` is the one
-  implementation of the open-redirect check and a second copy is one that drifts.
-- The handshake cookie is cleared on **every** callback outcome, success and failure alike:
-  the code it authorised is spent either way.
-- Refresh is **not implemented**, and the framework therefore **stores no provider token** (`As of
-  2026-08-23`). `accountFor` (`oauth-login.ts`) writes `accessToken: null, refreshToken: null`:
-  nothing in this package ever read either column back — `oauth-profile.ts` uses the token from the
-  exchange, in flight — while `tables.ts`'s header promised "no column holds a plaintext secret".
-  Declared and never wired, the deletion this repo already ran for `jobs.driver`, except this one
-  turned a database dump into a set of usable third-party credentials. The COLUMNS and the
-  `AuthAccount` fields both stay: the type is the documented adapter seam, and an app that
-  deliberately stores tokens implements `linkAccount` itself. `expiresAt` is still written.
-- **`defineAuth({ providers })` defaults to `[]`**, never the live registry (`As of 2026-08-23`,
-  BREAKING). It was `oauthProviderIds()`, so nothing was ever "left out" and the uniform-404 the
-  option exists for could not fire — while a registry any dependency writes into decided which
-  login endpoints the app served. Name what you enabled.
-- **A provider with no credentials answers the SAME 404 an unknown one does.** Past `assertEnabled`,
-  `oauthCredentials` threw `X_ENV_MISSING` and the route published a 500 carrying the app's own env
-  var names, so `500 = registered here, 404 = not` re-opened the oracle one request later.
-  `credentialsFor` (`oauth-route.ts`) catches it on BOTH legs, logs the real cause under
-  `auth.oauth.credentials_missing`, and re-throws `oauthProviderUnknown`.
-- **Nothing this package does not own reaches a published `cause:`.** Both legs of the OAuth flow
-  are anonymous by definition and `publicBody` serialises `cause`. Two paths carried an internal
-  message into it and both now log instead: an uncoded throw from an adapter (`uncoded()` in
-  `oauth-route.ts` → `auth.oauth.uncoded_failure`) and a rejecting `OAuthFetch`
-  (`postForm` → `auth.oauth.token_fetch_failed`). The `POST /token` leg also reads its response
-  body as `providerDetail(response, 'coded-only')` — that request carries `client_secret`, and an
-  echoing endpoint put 38 of 42 characters of it into a 502 body. `error`/`error_description` still
-  come through; userinfo, discovery and jwks keep the raw fallback, because their requests carry
-  no secret.
-- **`x_users.mfa_secret` is a PLAINTEXT secret and `tables.ts` now says so, column by column.** A
-  TOTP seed is symmetric, so a digest cannot verify a code; encrypting it needs a key-management
-  seam this package does not have. **Deferred deliberately** — `mfa.ts`'s "a database dump is not a
-  permanent MFA bypass" is true of the recovery CODES and not of the seed.
-- **`issueVerification`/`consumeVerification` normalise too** — the fourth identity door.
-  `putVerification` upserts on `(purpose, identifier)` and `adapter.ts` promises a new token
-  invalidates the previous one; that promise was per SPELLING, so N live reset tokens for one
-  address could be held at once by varying the case, and each is a password.
-- **`providerJwks` memoises only the DEFAULT client.** The memo was keyed on the provider id alone
-  and silently discarded a later caller's options, so an app pinning a corporate egress proxy got
-  it only if it called first — the `jobs.driver` shape, with a network path as the substituted
-  value. A caller that supplies options gets its own client.
-- **A wedged JWKS refresh no longer holds the shared slot for ever** (`As of 2026-08-23`).
-  `createJwksClient` single-flights its refresh through `@ultimat3/core`'s `createSingleFlight`,
-  with `deadlineMs = timeoutMs * 2` — derived, never a second invented number: `timeoutMs` bounds
-  the network leg (`AbortSignal.timeout`) and everything after it is local work on the same budget,
-  so doubling never evicts a slow-but-healthy refresh. It matters because `AbortSignal.timeout`
-  bounds only the DEFAULT transport and `options.fetch` is the app's — a `fetch` that ignores its
-  signal used to pin the slot for the life of the process, and every later `keyFor` joined a
-  promise nothing would resolve. **Eviction frees the KEY, never the work**: the wedged refresh
-  runs on and its own callers keep their promise, so the worst case is one duplicate JWKS fetch and
-  never a failed verification. `schedule` is injectable so no test waits a deadline out.
-  Its consequence is the second half and is not optional: two refreshes can now overlap and both
-  end by installing what they read, so a `createFence` generation check is what stops the one the
-  client gave up on from dropping a pre-rotation key set on top of the live one. Read
-  (`fence.generation() === issued`), never `guard` — a superseded refresh is still the honest
-  answer for the callers holding it, and only the shared cache is fenced.
-- **`verifyIdToken` checks `nbf` and `azp`.** `workload.ts` imports `ID_TOKEN_CLOCK_SKEW_MS` from
-  `id-token.ts` and then enforced a bound `id-token.ts` did not: an `nbf` ten years out verified.
-  `azp` is OIDC Core 3.1.3.7 step 5 — with more than one audience, `aud` naming this client says
-  only that the token MENTIONS it. Both only narrow what is accepted.
-- **A success clears the ACCOUNT bucket and nothing else.** `recordSuccess(ipKey(ip))` used to run
-  on every login and deleted the whole address bucket, which made it inert against the attack it
-  exists for: a stuffing run never spends `maxAttempts` guesses on one account, so
-  `4 wrong + 1 login to an account the attacker owns, repeat` never locked. Measured: 5 guesses to
-  `X_ACCOUNT_LOCKED` without the reset, 160 and unlocked with it. The cost is a shared NAT
-  accumulating failures, which is what `windowMs` bounds and what `X_ACCOUNT_LOCKED`'s `fix:`
-  already names the manual escape for.
-- **`MemoryAdapter.createUser` enforces the two UNIQUE constraints `BuiltinAdapter` leans on** —
-  `x_users.email` and `x_users.external_id`, `authUniqueViolation` (`X_AUTH_WRITE_FAILED`). It is
-  what `x new` scaffolds and what every test runs against, so the duplicate path was only ever
-  exercised against the permissive half of the seam: two `register()` calls at one address made two
-  rows, and the second was unreachable forever. `adapter-parity.test.ts` pins both halves.
-  **A NULL is not a value to either index, `As of 2026-08-23`**: a Postgres unique index is NULLS
-  DISTINCT, so `external_id` constrains only the rows that carry one — the check was
-  `!== undefined`, and `oauth-login.ts` binds `grants.externalId ?? null` for every first-time
-  OAuth user, so the SECOND such signup on a `MemoryAdapter` app failed with `X_AUTH_WRITE_FAILED`
-  against a constraint production does not have.
-- **`MemoryAdapter` takes a `Clock`, and every instant it stamps comes from it** —
-  `new MemoryAdapter(clock)`, defaulting to `systemClock`, so the no-argument construction every
-  test already writes is unchanged. `takeVerification` stamped `consumedAt` with the record's
-  own `createdAt` — the moment the link was ISSUED — where `BuiltinAdapter` writes
-  `consumed_at = now()`, the moment it was REDEEMED: a redemption an hour later and one a second
-  later recorded the identical instant, and a frozen test clock could not move either.
-- The new `AuthAdapter` members are OPTIONAL (`findUserByExternalId`, `listUsersByOrg`,
-  `deleteSessionsForUser`, `deleteSessionsForOrg`, `deleteSessionsCreatedBefore`). A required
-  member is a breaking change to every third-party adapter; the callers throw
-  `X_NOT_IMPLEMENTED` naming the method instead.
+  `deleteSessionsForOrg` joins through `x_users`; `x_sessions` does **not** gain an `org_id`.
+- The code flow carries `nonce` inside the id token. `assertOAuthCallback` checks an echoed one when
+  present and never requires it; `verifyIdToken` is the real gate.
+- The handshake is sealed (`sealHandshake`); `openHandshake` takes the provider as an argument.
+  Expiry is the server's clock, not `Max-Age`. One handshake cookie **per provider**
+  (`handshakeCookieName`), and `clearHandshakeCookie(provider)`.
+- `takeVerification(purpose, identifier, tokenHash)` consumes **only on a hash match**, in one
+  conditional statement (`consumed_at is null` on the UPDATE and its subselect,
+  `order by created_at desc limit 1`); `consumeVerification` still compares in constant time.
+- **Foreign text in a `cause:` goes through `renderCauseValue`, in a `fix:` through
+  `renderFixLiteral`, and in a shell `fix:` through `renderFixShellArg`.** Foreign here:
+  `providerDetail()`'s return, `claims.iss`, `accountLocked`'s `key`, and every OAuth endpoint URL
+  in a command position (`jwks.ts`, `oauth-profile.ts`, `oauth-exchange.ts`,
+  `oauth-discovery.ts`) — the registry is filled by an issuer's own discovery document. A LINE
+  that would not run degrades to prose: `jwks.ts`'s `readTheKeySet(tail)` decides with core's
+  `isFixShellSafe`. `oauth-discovery.ts` still owes that repair (it keeps `auth` on
+  `FIX_SHELL_ARG_PINS`). `${provider}` is registry-validated boot config, not foreign.
+- `readCookie` never throws on a malformed value (`decodeURIComponent('%')`).
+- A token endpoint's HTTP 200 is not success — read `error`.
+- Link by address only when the provider **and** the local account both verified it
+  (`link: 'verified-email'`, default; `'never'` is the only other value).
+- **The OAuth route paths are not configurable.** `oauth-paths.ts` imports nothing and is read by
+  both `oauth-errors.ts` and `oauth-route.ts`; every "start over" fix is `restartAt(provider)`.
+- The routes are **descriptors** (`AuthRouteDescriptor`), never mounted handlers.
+- The callback answers failure as **coded JSON**, and success redirects to a fixed `successPath` —
+  never `?next=` (`nextAfterSignIn` in `@ultimat3/http` is the one open-redirect check).
+- The handshake cookie is cleared on **every** callback outcome.
+- Refresh is **not implemented**, so the framework **stores no provider token**: `accountFor`
+  (`oauth-login.ts`) writes `accessToken: null, refreshToken: null`. The columns and `AuthAccount`
+  fields stay; an app that stores tokens implements `linkAccount` itself.
+- **`defineAuth({ providers })` defaults to `[]`** — name what you enabled.
+- **A provider with no credentials answers the SAME 404 an unknown one does**: `credentialsFor`
+  (`oauth-route.ts`) logs `auth.oauth.credentials_missing` and re-throws `oauthProviderUnknown`.
+- **Nothing this package does not own reaches a published `cause:`** on the anonymous OAuth legs:
+  an uncoded adapter throw logs `auth.oauth.uncoded_failure`, a rejecting `OAuthFetch` logs
+  `auth.oauth.token_fetch_failed`, and the `POST /token` body is read as
+  `providerDetail(response, 'coded-only')` (that request carries `client_secret`).
+- **`x_users.mfa_secret` is a PLAINTEXT secret** and `tables.ts` says so; encrypting it needs a
+  key-management seam this package does not have. Deferred deliberately.
+- **`providerJwks` memoises only the DEFAULT client**; a caller supplying options gets its own.
+- **A JWKS refresh is single-flighted through core's `createSingleFlight` with
+  `deadlineMs = timeoutMs * 2`**; eviction frees the key, never the work, and a `createFence`
+  generation check (read, never `guard`) stops a superseded refresh overwriting the cache.
+  `schedule` is injectable.
+- **A success clears the ACCOUNT bucket and nothing else** — clearing the address bucket made the
+  limiter inert against stuffing.
+- **`MemoryAdapter.createUser` enforces `x_users.email` and `x_users.external_id` uniqueness**
+  (`authUniqueViolation`, `X_AUTH_WRITE_FAILED`), NULLS DISTINCT like Postgres.
+  **`MemoryAdapter` takes a `Clock`** (default `systemClock`) and stamps every instant from it.
+  `adapter-parity.test.ts` pins both.
+- The newer `AuthAdapter` members are OPTIONAL (`findUserByExternalId`, `listUsersByOrg`,
+  `deleteSessionsForUser`, `deleteSessionsForOrg`, `deleteSessionsCreatedBefore`); callers throw
+  `X_NOT_IMPLEMENTED` naming the method.
 - An api key's scopes are the agent actor's scopes. Never union them with the owner's roles.
-- Rotate the session id on any privilege change (`rotateSession`), never patch the row.
-  `updatePrivileges` in `privileges.ts` is the caller that makes that rule exist — it had none
-  until 1.3.0, and `SessionPolicy.rotateOnPrivilegeChange` was a flag nothing read.
-- **Every argon2 call goes through `kdfGate()`, and that is the only thing bounding its memory.**
-  19 MiB of arena per hash at the OWASP floor, and both existing gates are per-SOURCE (`ipKey(ip)`,
-  5 attempts; `@ultimat3/http`'s `auth` bucket, 10 per `route|ip:`) so a spray rotating an IPv6 /64
-  mints a fresh key every attempt — and both cap ATTEMPTS, not concurrent WORK. The only backstop
-  left was `http.maxInflight` (1000), about 19 GB of arenas queued. `kdf-gate.ts` bounds the width
-  (8) and the waiting queue (64) and refuses past it with `X_OVERLOADED`, borrowed from http and
-  listed in `AUTH_BORROWED_ERROR_CODES` — this package cannot import http, and a shed is a shed
-  whichever layer performs it. **The pool itself is `@ultimat3/core`'s `createFlightGate` since
-  2026-08-23** — the same hand-over-on-release rule, the same numbers — and the refusal stays this
-  package's through core's `overflow:` seam, so `kdfOverloaded` is still what a caller catches and
-  core's `X_FLIGHT_GATE_OVERLOADED` never leaves auth. No `subject:` is passed: it feeds only
-  `gateOverloaded`'s prose, which this gate never reaches. `configureKdfGate()` is the ONE install
-  point and is deliberately not a `defineAuth` key: the ceiling is a property of the machine, not
-  of the app's auth policy.
-- **MFA has a first leg and no second one, and the second one is not a route you can just add.**
-  `login()` and `completeOAuthLogin()` throw `X_MFA_REQUIRED` before any session exists; nothing is
-  written, so the only value handed over is a user id in `meta`. A `POST /auth/mfa/verify
-  { userId, code }` built on that is **unauthenticated by construction** — nothing binds it to a
-  completed first factor, so it converts MFA from a second factor into the only factor. That is why
-  the `fix:` now tells an app author to finish the flow itself (`verifyTotp` → `createSession({
-  mfaSatisfied: true })`) rather than naming a route, and why no route was added under a bug fix.
-  The framework's own second leg needs three things landing together, and fewer is worse than none:
-  a **sealed pending-MFA credential** built like `sealHandshake` (`oauth-cookie.ts`) — server-clock
-  expiry, one cookie, bound to the user id the first factor proved and to nothing the client says;
-  the completion shipped as an `AuthRouteDescriptor` the way `oauthLogin()` was (`oauth-route.ts`),
-  with its path declared in `oauth-paths.ts`'s style so the `fix:` and the mount cannot drift; and
-  `auth.limiter` around `verifyTotp` — today it is wired only into `login`, so a six-digit code
-  would be the one credential in this package with no lockout. `TotpReplayGuard` is already built
-  and must be the completion's, not a second one.
-- **`mfa.required` is the literal `false`, and `defineAuth` refuses a `true` that reaches it
-  anyway** (`X_CONFIG_INVALID`, borrowed from core), `As of 2026-08`. It resolved onto the frozen
-  `Auth` and **nothing read it** — `login()` and `signInWithOAuth()` branch on `user.mfaSecret`
-  alone and mint `mfaSatisfied: true` otherwise, so `required: true` handed a user who had never
-  enrolled a fully-privileged session while reading as "this deployment requires a second factor".
-  Enforcing it was the tempting fix and is a **lockout**: `actorFromUser` degrades a session only
-  when `mfaSecret !== null`, so an un-enrolled user has no half-authenticated actor to enrol
-  through, this package ships no enrolment route to send them to, and `mfaRequired()`'s own `fix:`
-  (`verifyTotp({ secret: user.mfaSecret, … })`) cannot be followed with a null secret — a dead
-  `fix:`, the defect `oauth-paths.ts` exists to stop. So the unenforceable declaration is refused
-  where it is written, exactly as `assertAuthLimiterPolicy` refuses a per-process limiter under a
-  fleet-wide lockout. The literal type is the build error and the runtime check is for the JS
-  caller and the JSON config the type cannot reach, the split `invariantColumns()`'s Proxy keeps.
-  `mfa.issuer` is the half that stayed, and it now has a reader: `enrolTotp(auth, { account })`
-  takes the `Auth` every other entry point takes, so the product name an authenticator app shows
-  is declared once at `defineAuth` instead of restated at every enrolment.
-- **A TOTP secret that decodes to zero bytes is not a weak key, it is NO key** (`As of 2026-08`).
-  `base32Decode` answers `new Uint8Array(0)` for any character outside the alphabet and for `''`,
-  and `new Bun.CryptoHasher('sha1', new Uint8Array(0))` is a perfectly valid HMAC — so `totpCode`
-  returned a six-digit code derived from nothing, every malformed secret in the table shared that
-  one stream, and `verifyTotp` accepted a code an attacker computes without knowing any secret.
-  Reachable: `enrolTotp(auth, { account, secret })` takes an imported secret, `builtin-adapter.ts`
-  maps the column straight through, and a `mfa_secret text not null default ''` column is not
-  `null`, so `login()` still demanded a second factor and then accepted the empty-key code. The
-  file's own header comment asserted the opposite ("fails the decode closed") for as long as it was
-  wrong. Three answers now, one per caller: `verifyTotp` returns `{ ok: false, step: null }` — the
-  **generic failure**, the same rule `verifyAgainst` follows for a stored hash Bun cannot read, so
-  a broken row is neither a 500 nor an oracle; `totpCode` throws `X_MFA_SECRET_INVALID`, because
-  there is no code an unreadable secret is entitled to; `enrolTotp` throws it too, so the value
-  never reaches the table. The secret never reaches `cause:` or `fix:` — it is a credential and
-  both are logged. No minimum LENGTH is enforced beyond one byte: 10-byte secrets are what several
-  authenticator apps issue, so a 16-byte floor would refuse real enrolments to close nothing the
-  zero-byte rule leaves open.
-- **`createTotpReplayGuard`'s table is bounded, and the eviction ORDER is the guarantee.** It
-  pruned steps inside one subject's `Set` and never revisited a subject who stopped signing in, so
-  the map carried one permanent entry per user for the life of the process. Evicting a subject
-  makes a step they have already spent replayable again, so the order cannot be recency of
-  insertion: a subject whose every step has fallen below the drift floor is **forgotten** (nothing
-  outside ±drift is ever offered to `verifyTotp`, so that entry answers exactly as a missing one),
-  and only if that is not enough does `DEFAULT_MAX_TOTP_SUBJECTS` evict live state, sorted by
-  newest spent step ascending with a least-recently-seen tie-break — the subject who just proved a
-  code is always the last one out. Same shape as the limiter's "a live lockout outranks its own
-  deadline". `remember` re-files its subject so the map's iteration order IS that tie-break.
-  `maxSubjects` is **normalised before any of that arithmetic runs** (`boundedSubjects`): the cap
-  ran on the caller's number unchecked, so `Infinity` left the table exactly as unbounded as it was
-  before it was capped, and `NaN` — every comparison against which is false — made the eviction
-  loop's `used.size <= evictTo` never true, emptying the table on the first sweep and handing back
-  a replay of the code the subject had just spent. Anything that is not a positive finite integer
-  takes `DEFAULT_MAX_TOTP_SUBJECTS`; a fraction still floors.
-- SAML is out of scope permanently: XML-DSig canonicalisation has no Bun native and would need a
-  real dependency. Put an OIDC-speaking bridge in front and register that.
+- Rotate the session id on any privilege change (`rotateSession`, called by `updatePrivileges` in
+  `privileges.ts`), never patch the row.
+- **Every argon2 call goes through `kdfGate()`** — width 8, queue 64, `X_OVERLOADED` past it
+  (borrowed from http, in `AUTH_BORROWED_ERROR_CODES`). The pool is core's `createFlightGate`, the
+  refusal auth's own through core's `overflow:` seam. `configureKdfGate()` is the ONE install point
+  and deliberately not a `defineAuth` key.
+- **MFA has a first leg and no second one, and the second is not a route you can just add.**
+  `login()` / `completeOAuthLogin()` throw `X_MFA_REQUIRED` before any session exists. A
+  `POST /auth/mfa/verify { userId, code }` would be unauthenticated by construction. The follow-up
+  needs three things together: a **sealed pending-MFA credential** built like `sealHandshake`, the
+  completion as an `AuthRouteDescriptor` with its path in `oauth-paths.ts`'s style, and
+  `auth.limiter` around `verifyTotp`. `TotpReplayGuard` is the completion's.
+- **`mfa.required` is the literal `false`, and `defineAuth` refuses a `true`** (`X_CONFIG_INVALID`):
+  enforcing it would lock out every un-enrolled user. `mfa.issuer` is read by
+  `enrolTotp(auth, { account })`.
+- **A TOTP secret that decodes to zero bytes is NO key**: `verifyTotp` returns the generic failure
+  (`{ ok: false, step: null }`), `totpCode` and `enrolTotp` throw `X_MFA_SECRET_INVALID`. The secret
+  never reaches `cause:`/`fix:`. No length floor beyond one byte.
+- **`createTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
+  whose steps are all below the drift floor are forgotten first; past `DEFAULT_MAX_TOTP_SUBJECTS`,
+  evict by newest spent step ascending, least-recently-seen tie-break. `maxSubjects` is normalised
+  first (`boundedSubjects`): anything not a positive finite integer takes the default.
+- SAML is out of scope permanently (XML-DSig canonicalisation has no Bun native). Put an
+  OIDC-speaking bridge in front and register that.
 
 ## Files
 
@@ -514,8 +195,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it — core's `createFlightGate` with auth's own refusal injected |
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
-| `sign-out.ts` | `signOutHeaders({ session? })` — what a sign-out RESPONSE appends: the framework session cookie expired (when `session` is given) and `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), so the browser drops the previous principal's IndexedDB (the page store's `ultimate-client`), local storage, service worker and Cache Storage. Never `"cookies"`: the response sets the signed-out cookie itself. THE TRADE-OFF, decided 2026-09-22: a PWA's offline cache does not survive a sign-out — the worker is unregistered and the next load reinstalls and re-precaches it — because a cached private page IS the previous principal's data. The page boot's rescope wipe stays as the second line, for a sign-out with no navigation. Browsers honour the header only in a secure context (HTTPS, or localhost) |
-| `client-scope.ts` | `clientScopeOf(actor)` — the OPAQUE per-principal id a private document hands the page's client store (`<meta name="ultimate-scope">`, plan 101). Keyed SHA-256 (`SESSION_SECRET`) over kind, id and the impersonator, 32 hex; `''` for anonymous. Never the raw id: the HTML is readable by every script on the page. `SESSION_SECRET` is optional in the env schema, so its absence falls back to a random PER-PROCESS key with one `auth.client_scope.process_key` warning — the id then changes across replicas and restarts, which rescopes (clears) a page's store and never leaks one |
+| `sign-out.ts` | `signOutHeaders({ session? })` — the expired session cookie plus `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), never `"cookies"`. A PWA's offline cache does not survive a sign-out, by decision (a cached private page IS the previous principal's data); the page boot's rescope wipe is the second line. Secure contexts only |
+| `client-scope.ts` | `clientScopeOf(actor)` — the OPAQUE per-principal id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`) over kind, id and impersonator, 32 hex; `''` for anonymous. Without `SESSION_SECRET`, a random per-process key and one `auth.client_scope.process_key` warning (rescopes, never leaks) |
 
 ```bash
 bun test packages/auth
@@ -535,3 +216,5 @@ Gotchas:
   and `rate-limit-postgres.live.test.ts` is `describe.skip` without `TEST_DATABASE_URL` — the
   same pairing `@ultimat3/http`'s rate-limit store and `@ultimat3/realtime`'s Postgres files
   use. A limiter whose statements were never executed is a credential control nobody has run.
+
+Why each rule above is shaped the way it is: [`docs/history/auth.md`](../../docs/history/auth.md).

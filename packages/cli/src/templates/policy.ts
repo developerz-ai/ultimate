@@ -4,7 +4,7 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
-import { wrapList } from './wrap';
+import { wrapImport, wrapList } from './wrap';
 
 /** Biome would rewrap this itself, so the generator emits the already-formatted form. */
 const permissionSet = (feature: NameSet): string =>
@@ -65,6 +65,15 @@ export const can${feature.pascal}Write = can<${feature.pascal}Scope>(
   '${feature.kebab}:write',
   ({ actor, input }) => actor !== null && actor.orgId === input.orgId,
 );
+
+/**
+ * Create takes no org from its input — the row is written under the actor's own — so the tenancy
+ * rule is that the actor HAS one. Same grant as write.
+ */
+export const can${feature.pascal}Create = can(
+  '${feature.kebab}:write',
+  ({ actor }) => actor !== null && typeof actor.orgId === 'string' && actor.orgId !== '',
+);
 `;
 
 const policyTest = (
@@ -73,7 +82,7 @@ const policyTest = (
 // only read. A policy whose tests all pass is a policy nobody has tried to get past.
 import { testActor } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
-import { can${feature.pascal}Read, can${feature.pascal}Write } from './policy';
+${wrapImport([`can${feature.pascal}Create`, `can${feature.pascal}Read`, `can${feature.pascal}Write`], './policy')}
 
 const org = '00000000-0000-4000-8000-000000000002';
 const otherOrg = '00000000-0000-4000-8000-000000000009';
@@ -108,9 +117,18 @@ unitTest('${feature.camel} write denies the read-only actor', async () => {
   await expect(can${feature.pascal}Write).not.toDenyPolicy({ actor: writer, input });
 });
 
+unitTest('${feature.camel} create denies the read-only and the orgless actor', async () => {
+  const orgless = testActor('orgless', { permissions: [read, write] }).actor;
+  await expect(can${feature.pascal}Create).toDenyPolicy({ actor: null, input: {} });
+  await expect(can${feature.pascal}Create).toDenyPolicy({ actor: reader, input: {} });
+  await expect(can${feature.pascal}Create).toDenyPolicy({ actor: orgless, input: {} });
+  await expect(can${feature.pascal}Create).not.toDenyPolicy({ actor: writer, input: {} });
+});
+
 unitTest('${feature.camel} rules name the permission they require', () => {
   expect(can${feature.pascal}Read.permissions).toEqual(['${feature.kebab}:read']);
   expect(can${feature.pascal}Write.permissions).toEqual(['${feature.kebab}:write']);
+  expect(can${feature.pascal}Create.permissions).toEqual(['${feature.kebab}:write']);
 });
 `;
 

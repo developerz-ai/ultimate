@@ -110,6 +110,25 @@ export class StepSuspension extends Error {
   }
 }
 
+/**
+ * What a timed-out `waitForEvent` persists, and maps back to `undefined` on replay. `undefined`
+ * itself cannot survive a store — the pg driver writes `JSON.stringify(output ?? null)` — so the
+ * timeout replayed as `null` and `evt === undefined` read as "an event arrived". A namespaced key
+ * rather than a bare `{ timedOut: true }`, so no event payload can be mistaken for the marker.
+ */
+const WAIT_TIMED_OUT = Object.freeze<Record<string, true>>({
+  '~ultimate.waitTimedOut': true,
+});
+
+function isWaitTimedOut(output: unknown): boolean {
+  return (
+    typeof output === 'object' &&
+    output !== null &&
+    Object.keys(output).length === 1 &&
+    (output as Record<string, unknown>)['~ultimate.waitTimedOut'] === true
+  );
+}
+
 export function isStepSuspension(error: unknown): error is StepSuspension {
   return error instanceof Error && (error as { brand?: unknown }).brand === StepSuspension.brand;
 }
@@ -366,7 +385,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     const existing = await load(name);
     if (existing?.status === 'completed') {
       trace(replayed, name);
-      return existing.output as T | undefined;
+      return isWaitTimedOut(existing.output) ? undefined : (existing.output as T | undefined);
     }
 
     const at = now();
@@ -409,7 +428,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
         runId,
         name,
         status: 'completed',
-        output: undefined,
+        output: WAIT_TIMED_OUT,
         startedAt,
         completedAt: at,
         event,

@@ -89,8 +89,14 @@ function repairFix(
  * never get what the app declares; `undeclared` means the database holds what nothing declares.
  * One "drift" verdict over both teaches a reader neither.
  */
+/** A table difference names the table once: `table "customers" on table "customers"` did not. */
+export const schemaDifferenceCause = (difference: SchemaDifference): string =>
+  difference.part === 'table'
+    ? `table "${difference.table}" ${difference.detail}`
+    : `${difference.part} "${difference.name}" on table "${difference.table}" ${difference.detail}`;
+
 function findingFor(difference: SchemaDifference, fix: string): Finding {
-  const cause = `${difference.part} "${difference.name}" on table "${difference.table}" ${difference.detail}`;
+  const cause = schemaDifferenceCause(difference);
   return difference.direction === 'unmigrated'
     ? { code: 'X_DB_SCHEMA_UNMIGRATED', cause, fix, docs: ERROR_DOCS_URL, at: MIGRATIONS_DIR }
     : { code: 'X_DB_SCHEMA_UNDECLARED', cause, fix, docs: ERROR_DOCS_URL, at: MIGRATIONS_DIR };

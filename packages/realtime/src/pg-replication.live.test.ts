@@ -11,6 +11,17 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { WRITE_ORIGIN_WAL_PREFIX } from '@ultimat3/core';
+import {
+  boolean,
+  clearRegistry,
+  entity,
+  entityForTable,
+  integer,
+  json,
+  money,
+  t,
+  text,
+} from '@ultimat3/entity';
 import type { ChangeEvent } from './changefeed';
 import { PgLogicalReplicationFeed } from './changefeed';
 import { selectChangeFeed } from './changefeed-env';
@@ -32,6 +43,26 @@ const RESUME_SLOT = 'x_live_resume_slot';
 const WIRED_SLOT = 'x_live_wired_slot';
 const WRITE_SLOT = 'x_live_write_slot';
 const PUBLICATION = 'x_live_pub';
+
+/**
+ * The entity the replicated table belongs to. A live row is decoded by `@ultimat3/entity`'s own
+ * `decodeRow` (`pg-entity-row.ts`), so a table no entity declares is refused rather than guessed —
+ * exactly what a production replicator, which only publishes entity tables, can never meet. The
+ * tenant column is inferred from `orgId` and must be NOT NULL, hence the table's default below.
+ */
+if (entityForTable(TABLE) === undefined) {
+  entity(TABLE, {
+    columns: {
+      id: text().primaryKey(),
+      title: text().nullable(),
+      orgId: text(),
+      viewCount: integer().nullable(),
+      published: boolean().nullable(),
+      price: money({ columns: { scale: null } }).nullable(),
+      meta: json(t.object({ tags: t.array(t.string) })).nullable(),
+    },
+  });
+}
 
 /** The preload freezes the clock, so waiting is counted in polls rather than in elapsed time. */
 const waitFor = async (done: () => boolean, polls = 400): Promise<void> => {
@@ -101,7 +132,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
       `CREATE TABLE ${TABLE} (
          id text PRIMARY KEY,
          title text,
-         org_id text,
+         org_id text NOT NULL DEFAULT 'org-0',
          view_count integer,
          published boolean,
          price_minor bigint,
@@ -322,4 +353,10 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     expect(change.after?.['id']).toBe('w1');
     expect(change.orgId).toBe('org-1');
   }, 60_000);
+});
+
+// File scope, never inside the skippable suite: Bun evaluates this module (and registers the
+// entity above) even when the suite is skipped (`bun run skip-if-cleanup`).
+afterAll(() => {
+  clearRegistry();
 });

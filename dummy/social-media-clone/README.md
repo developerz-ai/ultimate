@@ -1,6 +1,6 @@
 # SocialMediaClone
 
-Built with [Ultimate](https://ultimate.dev). Bun-only, Postgres, SolidJS.
+Built with [Ultimate](https://github.com/developerz-ai/ultimate). Bun-only, Postgres, SolidJS.
 
 ## 🚀 Start
 

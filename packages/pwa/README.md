@@ -81,6 +81,21 @@ gate. `CAPABILITY_SW_MARKERS` is checked against the emitted `sw.js` in both dir
 here that the generator does not honour is a failing test rather than an installed app announcing a
 capability nothing implements.
 
+## Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `BuildIdMissingError` | `X_BUILD_ID_MISSING` | `src/errors.ts` |
+| `NotImplementedError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
+| `PwaIconMissingError` | `X_PWA_ICON_MISSING` | `src/errors.ts` |
+| `PwaManifestInvalidError` | `X_PWA_MANIFEST_INVALID` | `src/errors.ts` |
+| `PwaNoOfflineFallbackError` | `X_PWA_NO_OFFLINE_FALLBACK` | `src/errors.ts` |
+| `PwaStrategyExhaustedError` | `X_PWA_STRATEGY_EXHAUSTED` | `src/errors.ts` |
+| `SwScopeInvalidError` | `X_SW_SCOPE_INVALID` | `src/errors.ts` |
+
 ## Public API
 
 | Export | Owns |

@@ -1,0 +1,482 @@
+// The mail and CDN seams of the dev/production boot: which transport and which edge a process
+// installs, and how it says so. The other services are covered by `cmd-dev.test.ts`, which boots
+// them for real.
+
+import { afterAll, describe, expect, test } from 'bun:test';
+// why: `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
+import { join } from 'node:path';
+import { defineAuth, MemoryAdapter, resetAuthLimiters } from '@ultimat3/auth';
+import type { PurgeDriver } from '@ultimat3/cache';
+import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
+import { registerReadinessCheck } from '@ultimat3/core';
+import { jobDriver } from '@ultimat3/jobs';
+import type { MailDriver } from '@ultimat3/mail';
+import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
+import { TransportUnavailableError } from '@ultimat3/realtime';
+import { DEFAULT_PRESENCE_TTL_MS, selectTransport } from '@ultimat3/realtime/server';
+import { CliNotImplementedError } from './errors';
+import type { DevServices } from './runtime-bindings';
+import { eventsBinding, resolveServices } from './runtime-bindings';
+import {
+  cdnLabel,
+  describeCdn,
+  describeMail,
+  mailLabel,
+  type RunningServices,
+  startServices,
+} from './runtime-services';
+
+const runtimeWith = (mail: MailDriver, mailDetail: string): RunningServices =>
+  ({ mail, mailDetail }) as unknown as RunningServices;
+
+const cdnRuntimeWith = (purge: PurgeDriver, purgeDetail: string): RunningServices =>
+  ({ purge, purgeDetail }) as unknown as RunningServices;
+
+/**
+ * `describeMail` reads `name` and `mailDetail`, never `send` — so this one exists only to satisfy
+ * `MailDriver`, and it refuses with a code carrying a runnable fix. Never a bare Error, tests
+ * included: a throw without a code and a fix is not an instruction to whoever reaches it.
+ */
+const fakeSmtp = (): MailDriver => ({
+  name: 'smtp',
+  send: (): Promise<never> =>
+    Promise.reject(
+      new CliNotImplementedError({
+        feature: 'sending through the describeMail fixture transport',
+        fix: 'x dev   # boots the transport SMTP_URL selects, which does send',
+      }),
+    ),
+});
+
+/**
+ * One embedded-Postgres directory for the whole file, not one per boot. Every case below stops its
+ * runtime before the next starts — on the failure path too, since `startServices` unwinds what it
+ * started — so the data dir is never held twice. Reusing it is the difference between paying
+ * `initdb` once and paying it per test: a cold boot measures ~2.6s and a warm one ~0.3s, which was
+ * seven eighths of this file's runtime.
+ */
+/**
+ * The environment `x dev` boots under: `declareDevEnvironment` sets `ULTIMATE_ENV=development`
+ * before `startServices` runs. A table naming NO environment is a production boot as far as the
+ * embedded disk is concerned (`@ultimat3/storage`'s `localDriver` fails closed on it), so every
+ * boot here says which one it is.
+ */
+const DEV_ENV = { ULTIMATE_ENV: 'development' } as const;
+
+const root = mkdtempSync(join(tmpdir(), 'x-dev-boot-'));
+
+/**
+ * A root whose `app.config.ts` NAMES the rungs a case is about. The ladder is the app's
+ * declaration now, never the environment's: before 9.0.0 a `FASTLY_*` credential added a `cdn`
+ * tier the config never asked for, so these two cases passed by asserting the defect. A boot with
+ * no config gets `defaults()`, which is `request-memo` + `lru` — correct, and not what they mean.
+ */
+function rootDeclaring(tiers: readonly string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), 'x-dev-tiers-'));
+  // A plain object, not `defineConfig(...)`: this directory is outside the workspace, so it cannot
+  // resolve `@ultimat3/core`, and `loadCacheTiers` reads the shape structurally rather than
+  // requiring the builder. What is under test is that the boot reads the DECLARATION at all.
+  writeFileSync(
+    join(dir, 'app.config.ts'),
+    `export const config = { name: 'tiers', cache: { tiers: ${JSON.stringify(tiers)} } };\n`,
+  );
+  return dir;
+}
+
+/** A root whose `app.config.ts` names the `realtime` section a case is about — same shape. */
+function rootWithRealtime(realtime: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'x-dev-realtime-'));
+  writeFileSync(
+    join(dir, 'app.config.ts'),
+    `export const config = { name: 'realtime', realtime: ${realtime} };\n`,
+  );
+  return dir;
+}
+
+afterAll(() => {
+  rmSync(root, { recursive: true, force: true });
+});
+
+describe('describeMail', () => {
+  test('a caught outbox reports as embedded, like the other bindings', () => {
+    expect(describeMail(runtimeWith(createMemoryDriver(), 'caught in memory'))).toBe(
+      'mail=embedded',
+    );
+  });
+
+  test('a real transport names itself and the env key that selected it', () => {
+    expect(describeMail(runtimeWith(fakeSmtp(), 'SMTP_URL'))).toBe(
+      'mail=external(smtp via SMTP_URL)',
+    );
+  });
+
+  // The boot line is printed, logged and scraped. `SMTP_URL` holds a password, so the detail is
+  // the key's name and never its value — this is the assertion that keeps it that way.
+  test('the report carries the env key, never the credential behind it', () => {
+    expect(describeMail(runtimeWith(fakeSmtp(), 'SMTP_URL'))).not.toContain('@');
+  });
+});
+
+/**
+ * The status value `--json` carries and the label the boot line prints are two surfaces of one
+ * fact, and `wiki/Configuration.md` quotes both — so a catalog edit that moves the printed line
+ * without moving the documented status has to fail here rather than in a script that parses it.
+ */
+describe('the rendered label and the machine status', () => {
+  test('agree for every mail case', () => {
+    const memory = runtimeWith(createMemoryDriver(), 'caught in memory');
+    expect(mailLabel(memory)).toBe(describeMail(memory));
+    const smtp = runtimeWith(fakeSmtp(), 'SMTP_URL');
+    expect(mailLabel(smtp)).toBe(describeMail(smtp));
+  });
+
+  test('agree for every cdn case', () => {
+    const none = cdnRuntimeWith(noopPurgeDriver(), 'no edge');
+    expect(cdnLabel(none)).toBe(describeCdn(none));
+    const fastly = cdnRuntimeWith(
+      { name: 'fastly', purge: () => Promise.resolve([]), purgeAll: () => Promise.resolve() },
+      'FASTLY_API_TOKEN',
+    );
+    expect(cdnLabel(fastly)).toBe(describeCdn(fastly));
+  });
+});
+
+/**
+ * Two readers of one `realtime` section: `eventsBinding` for the boot line an operator reads, and
+ * `selectTransport` for the object the process actually fans out on. A boot that printed
+ * `events=external` while running the in-process transport would be the worst of both, so the two
+ * answers are pinned against each other rather than trusted to stay in step.
+ */
+describe('the reported binding and the selected transport', () => {
+  // One config handed to both readers, as `startServices` hands its loaded section to both.
+  const memory = { enabled: true, transport: 'memory', urlEnv: undefined } as const;
+  const nats = { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } as const;
+
+  test('agree that no url is embedded', () => {
+    expect(eventsBinding({}, memory).mode).toBe(selectTransport({}, memory).mode);
+  });
+
+  test('agree that a url — even a padded one — is external', () => {
+    const env = { NATS_URL: '  nats://bus.test:4222  ' };
+    expect(eventsBinding(env, nats).mode).toBe(selectTransport(env, nats).mode);
+    expect(selectTransport(env, nats).mode).toBe('external');
+  });
+});
+
+describe('describeCdn', () => {
+  // There is no embedded CDN. Reporting one would read as a fifth service this boot started.
+  test('no credential reports no edge, not an embedded one', () => {
+    expect(describeCdn(cdnRuntimeWith(noopPurgeDriver(), 'no edge'))).toBe('cdn=none');
+  });
+
+  test('a real driver names itself and the env key that selected it', () => {
+    const fastly: PurgeDriver = {
+      name: 'fastly',
+      purge: () => Promise.resolve([]),
+      purgeAll: () => Promise.resolve(),
+    };
+    expect(describeCdn(cdnRuntimeWith(fastly, 'FASTLY_API_TOKEN'))).toBe(
+      'cdn=external(fastly via FASTLY_API_TOKEN)',
+    );
+  });
+});
+
+describe('startServices', () => {
+  /**
+   * Selection runs before the queue, so a bad credential rejects without booting PGlite. That
+   * ordering is the assertion: this test hands `startServices` a `DevServices` with no usable
+   * state directory, and it must still reject on the environment alone. If the env stopped being
+   * threaded through, or selection moved after `startQueue`, this would boot instead of throwing.
+   */
+  test('refuses two credentials before any service starts', async () => {
+    // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
+    // read. The state dir is never created — the refusal is ahead of every service.
+    const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
+    const unusable = { stateDir: join(natsRoot, '.x-never-read') } as DevServices;
+    const failure = await startServices(unusable, {
+      SMTP_URL: 'smtps://user:pass@mail.test:465',
+      RESEND_API_KEY: 're_test_key',
+      MAIL_FROM: 'Postly <no-reply@postly.test>',
+    }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; cause?: string },
+    );
+
+    expect(failure?.code).toBe('X_CONFIG_INVALID');
+    expect(failure?.cause).toContain('both set');
+  });
+
+  /**
+   * The whole point of the task: a credential in the environment makes `mailDriver()` a real
+   * transport, so `send()` reaches a server instead of an outbox nobody drains. Booted for real
+   * because the ambient install is the thing under test — a fake `DevServices` would prove that
+   * `selectMailDriver` returns an object, which is already covered in `@ultimat3/mail`.
+   */
+  test(
+    'a credential in the environment installs the transport as the ambient driver',
+    async () => {
+      const runtime = await startServices(resolveServices(root, {}), {
+        ...DEV_ENV,
+        SMTP_URL: 'smtps://user:pass@mail.postly.test:465',
+        MAIL_FROM: 'Postly <no-reply@postly.test>',
+      });
+      try {
+        // The ambient accessor, not the return value: `send()` resolves the driver through this.
+        expect(tryMailDriver()?.name).toBe('smtp');
+        expect(runtime.mail.name).toBe('smtp');
+        expect(describeMail(runtime)).toBe('mail=external(smtp via SMTP_URL)');
+      } finally {
+        await runtime.stop();
+      }
+      // Released on stop, so the next process does not inherit a transport it never configured.
+      expect(tryMailDriver()).toBeUndefined();
+    },
+    { timeout: 60_000 },
+  );
+
+  test(
+    'no credential leaves the caught outbox in place',
+    async () => {
+      const runtime = await startServices(resolveServices(root, {}), DEV_ENV);
+      try {
+        expect(tryMailDriver()?.name).toBe('memory');
+        expect(describeMail(runtime)).toBe('mail=embedded');
+      } finally {
+        await runtime.stop();
+      }
+    },
+    { timeout: 60_000 },
+  );
+
+  /**
+   * The CDN leg of `invalidates: [tag.post]`: without this registration the purge drivers are
+   * code nothing can reach, and a bust that should have cleared the edge reports four tiers and
+   * no fifth. Booted for real, because the registry is process-global and the install is the
+   * thing under test.
+   */
+  test(
+    'a CDN credential registers the cdn tier, and stopping releases it',
+    async () => {
+      resetTiers();
+      const cdnRoot = rootDeclaring(['request-memo', 'lru', 'cdn']);
+      const runtime = await startServices(resolveServices(cdnRoot, {}), {
+        ...DEV_ENV,
+        FASTLY_API_TOKEN: 'fastly-token',
+        FASTLY_SERVICE_ID: 'svc_1',
+      });
+      try {
+        // The two that need no external state are always registered — `createMemoTier` and
+        // `createLruTier` had zero callers before this boot did, so every cached read was
+        // recomputed on every replica. `cdn` joins them only for a real edge.
+        expect(registeredTiers().map((tier) => tier.name)).toEqual(['request-memo', 'lru', 'cdn']);
+        expect(runtime.purge.name).toBe('fastly');
+        expect(describeCdn(runtime)).toBe('cdn=external(fastly via FASTLY_API_TOKEN)');
+      } finally {
+        await runtime.stop();
+      }
+      expect(registeredTiers()).toHaveLength(0);
+    },
+    { timeout: 60_000 },
+  );
+
+  /**
+   * A noop tier would put a `cdn` line in every invalidation report — keys accepted by an edge
+   * that does not exist — and the `/_x` cache panel renders those reports verbatim.
+   */
+  test(
+    'no CDN credential registers no cdn tier at all',
+    async () => {
+      resetTiers();
+      const runtime = await startServices(resolveServices(root, {}), DEV_ENV);
+      try {
+        // No `cdn`, and the two process-local tiers still there: "no edge" is not "no cache".
+        expect(registeredTiers().map((tier) => tier.name)).toEqual(['request-memo', 'lru']);
+        expect(describeCdn(runtime)).toBe('cdn=none');
+      } finally {
+        await runtime.stop();
+      }
+    },
+    { timeout: 60_000 },
+  );
+
+  /**
+   * The leak this pins: `stop()` awaited `transport.close()` and returned on its rejection, so
+   * `resetTiers()`, `resetMailDriver()` and `queue.stop()` never ran — and the next boot in this
+   * process inherited a CDN tier purging for a stopped server, an ambient mail driver over a dead
+   * transport, and a queue nobody owns. Every release must run; the FIRST failure is what surfaces,
+   * because a shutdown that reports the cleanup it did after the real fault buries the fault.
+   */
+  test(
+    'a transport that will not close still releases the tier, the mail driver and the queue',
+    async () => {
+      resetTiers();
+      const cdnRoot = rootDeclaring(['request-memo', 'lru', 'cdn']);
+      const runtime = await startServices(resolveServices(cdnRoot, {}), {
+        ...DEV_ENV,
+        SMTP_URL: 'smtps://user:pass@mail.postly.test:465',
+        MAIL_FROM: 'Postly <no-reply@postly.test>',
+        FASTLY_API_TOKEN: 'fastly-token',
+        FASTLY_SERVICE_ID: 'svc_1',
+      });
+      expect(registeredTiers()).toHaveLength(3);
+      expect(tryMailDriver()?.name).toBe('smtp');
+      expect(jobDriver()).toBeDefined();
+      // The only thing this case changes: a bus that is already gone by the time shutdown asks.
+      runtime.transport.close = (): Promise<never> =>
+        Promise.reject(
+          new TransportUnavailableError({ transport: 'inproc', reason: 'closed by the fixture' }),
+        );
+
+      await expect(runtime.stop()).rejects.toBeUltimateError('X_TRANSPORT_UNAVAILABLE');
+
+      // The three releases the rejection used to skip, each read back through the accessor a later
+      // boot would inherit — asserting `stop()` rejected proves nothing about what it released.
+      expect(registeredTiers()).toHaveLength(0);
+      expect(tryMailDriver()).toBeUndefined();
+      expect(jobDriver()).toBeUndefined();
+    },
+    { timeout: 60_000 },
+  );
+
+  /**
+   * The `try` used to open eight steps below `started`, so the auth limiter factory, the retention
+   * sweep and this readiness check all ran outside the unwind — a throw from any of them skipped
+   * `release(started)` entirely and `x dev` exited holding the PGlite lock, the pool and the
+   * ambient accessors it had just installed. `registerReadinessCheck` is the concrete trigger: it
+   * refuses a duplicate name, which is what a second boot in one process presents it with.
+   */
+  test(
+    'a boot that fails before the transport dial still releases the queue and the limiter',
+    async () => {
+      resetTiers();
+      // A process that already owns the name this boot registers.
+      const releaseName = registerReadinessCheck('database', () => true);
+      try {
+        await expect(startServices(resolveServices(root, {}), DEV_ENV)).rejects.toBeUltimateError(
+          'X_READINESS_CHECK_DUPLICATE',
+        );
+        // Both read back through the accessor a later boot inherits — asserting the rejection
+        // proves nothing about what was released. `'process'` is the answer when no factory is
+        // installed; a leaked one answers `'shared'` over a pool this boot has already closed.
+        expect(jobDriver()).toBeUndefined();
+        expect(defineAuth({ adapter: new MemoryAdapter() }).limiter.policy.scope).toBe('process');
+      } finally {
+        releaseName();
+        resetAuthLimiters();
+      }
+    },
+    { timeout: 60_000 },
+  );
+
+  /**
+   * The bus is the third selection that must land before `startQueue`: a bucket name that cannot
+   * be a NATS subject is a boot that reports a healthy transport and then fails every presence
+   * write, and finding that out after PGlite has started and been unwound again helps nobody.
+   */
+  test('an unusable KV bucket refuses before any service starts', async () => {
+    // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
+    // read. The state dir is never created — the refusal is ahead of every service.
+    const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
+    const unusable = { stateDir: join(natsRoot, '.x-never-read') } as DevServices;
+    const failure = await startServices(unusable, {
+      NATS_URL: 'nats://bus.test:4222',
+      NATS_KV_BUCKET: 'x.presence',
+    }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; fix?: string },
+    );
+
+    expect(failure?.code).toBe('X_TRANSPORT_PROTOCOL');
+    expect(failure?.fix).toContain('NATS_KV_BUCKET');
+  });
+
+  // The boot reads `realtime.transport` off the app's own file: `nats` with the variable unset
+  // refuses before any service starts, where it used to boot the in-process bus and reach nobody.
+  test('a config saying nats with no bus url refuses before any service starts', async () => {
+    const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'BUS_URL' }");
+    const unbooted = { stateDir: join(natsRoot, '.x-never-read') } as DevServices;
+    const failure = await startServices(unbooted, DEV_ENV).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; cause?: string },
+    );
+
+    expect(failure?.code).toBe('X_CONFIG_INVALID');
+    expect(failure?.cause).toContain('BUS_URL');
+  });
+
+  test('a config saying memory with NATS_URL set refuses before any service starts', async () => {
+    const memoryRoot = rootWithRealtime("{ enabled: true, transport: 'memory' }");
+    const unbooted = { stateDir: join(memoryRoot, '.x-never-read') } as DevServices;
+    const failure = await startServices(unbooted, {
+      ...DEV_ENV,
+      NATS_URL: 'nats://bus.test:4222',
+    }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; cause?: string },
+    );
+
+    expect(failure?.code).toBe('X_CONFIG_INVALID');
+    expect(failure?.cause).toContain('realtime.transport');
+  });
+
+  test(
+    'the embedded bus reports the key that would change it, and the TTL presence gets',
+    async () => {
+      const runtime = await startServices(resolveServices(root, {}), DEV_ENV);
+      try {
+        expect(runtime.transportDetail).toContain('NATS_URL');
+        // Handed to `PresenceRegistry` by the sync role. It is the transport's number, not the
+        // role's, because the KV bucket's age limit was derived from the same one.
+        expect(runtime.presenceTtlMs).toBe(DEFAULT_PRESENCE_TTL_MS);
+      } finally {
+        await runtime.stop();
+      }
+    },
+    { timeout: 60_000 },
+  );
+
+  test(
+    'the boot resolves the SHARED rate-limit store, over the pool it already opened',
+    async () => {
+      const runtime = await startServices(resolveServices(root, {}), DEV_ENV);
+      try {
+        // Observed before this landed: `undefined` — no boot in the tree installed a store, so
+        // `startWeb` derived `rateLimit.scope: 'process'` while the shipped chart runs three `web`
+        // replicas, each enforcing the whole of every declared limit.
+        expect(runtime.rateLimitStore?.scope).toBe('shared');
+        // The store has to be able to RUN its statement, on the executor this boot handed it:
+        // `Bun.sql` does not satisfy `PgExecutor` at all, so a wrong one rejects here instead of
+        // limiting. `readinessCheckCount()` proved none of that — it is process-global, so any
+        // check another suite in this run registered satisfied it.
+        const decision = await runtime.rateLimitStore?.take(
+          'x-dev-runtime-boot',
+          { capacity: 2, refillPerSecond: 1 },
+          1,
+          1_760_000_000_000,
+        );
+        expect(decision).toMatchObject({ allowed: true, limit: 2, remaining: 1 });
+      } finally {
+        await runtime.stop();
+      }
+    },
+    { timeout: 60_000 },
+  );
+
+  test('a half-set CDN pair refuses before any service starts', async () => {
+    // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
+    // read. The state dir is never created — the refusal is ahead of every service.
+    const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
+    const unusable = { stateDir: join(natsRoot, '.x-never-read') } as DevServices;
+    const failure = await startServices(unusable, { FASTLY_API_TOKEN: 'fastly-token' }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; cause?: string },
+    );
+
+    expect(failure?.code).toBe('X_CONFIG_INVALID');
+    expect(failure?.cause).toContain('FASTLY_SERVICE_ID');
+  });
+});

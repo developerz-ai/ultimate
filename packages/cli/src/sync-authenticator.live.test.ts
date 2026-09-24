@@ -84,7 +84,7 @@ function node(): SyncNode {
     transport,
     buildId: BUILD_ID,
     sockets,
-    // The object under test, wired exactly as `dev-sync.ts` wires it.
+    // The object under test, wired exactly as `role-sync.ts` wires it.
     authenticate: syncAuthenticator(BUILD_ID, { ttlMs: TTL_MS }) ?? expect.unreachable('no auth'),
     reauthenticateIntervalMs: SWEEP_MS,
   });

@@ -30,6 +30,7 @@ import {
 } from '@ultimat3/core';
 import { ENV_SCHEMA_EXPORT, loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
+import { secretsSpec } from './cmd-secrets-spec';
 import type { CliCommand, CommandContext } from './command';
 import {
   MissingPositionalError,
@@ -39,9 +40,11 @@ import {
 } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
+import { recoverRotation, rotateMasterKey } from './secrets-rotation';
+import { shredOnSignal } from './signal-shred';
 import { renderTable } from './table';
 
-export const SECRETS_SUBCOMMANDS = ['show', 'init', 'edit', 'set', 'rotate'] as const;
+export { SECRETS_SUBCOMMANDS } from './cmd-secrets-spec';
 
 /** In order of precedence. `VISUAL` outranks `EDITOR` by POSIX convention on an interactive tty. */
 export const EDITOR_VARS = ['VISUAL', 'EDITOR'] as const;
@@ -74,9 +77,10 @@ interface Session {
   readonly key: MasterKeyRef;
 }
 
-const open = (ctx: CommandContext, subcommand: string): Session => {
+/** The root and its key — after finishing or abandoning a rotation a crash interrupted. */
+const open = async (ctx: CommandContext, subcommand: string): Promise<Session> => {
   const root = requireAppRoot(`secrets ${subcommand}`, ctx.cwd).dir;
-  return { root, key: requireMasterKey(root, ctx.env) };
+  return { root, key: await recoverRotation(root, requireMasterKey(root, ctx.env)) };
 };
 
 const names = (values: SecretValues): readonly string[] => Object.keys(values).sort();
@@ -148,7 +152,7 @@ async function init(ctx: CommandContext): Promise<CommandResult> {
  * of the two harms. Leaving decrypted values on disk so they can be recovered is the larger one.
  */
 async function edit(ctx: CommandContext, io: SecretsIo): Promise<CommandResult> {
-  const { root, key } = open(ctx, 'edit');
+  const { root, key } = await open(ctx, 'edit');
   const editor = EDITOR_VARS.map((name) => ctx.env[name]).find(
     (value): value is string => value !== undefined && value.trim().length > 0,
   );
@@ -157,9 +161,9 @@ async function edit(ctx: CommandContext, io: SecretsIo): Promise<CommandResult> 
   const dir = await mkdtemp(join(tmpdir(), 'ultimate-secrets-'));
   const buffer = join(dir, 'secrets.json');
   const shred = (): void => rmSync(dir, { recursive: true, force: true });
-  // A `finally` does not run for a signal, and Ctrl-C inside an editor kills this process too.
-  process.once('SIGINT', shred);
-  process.once('SIGTERM', shred);
+  // A `finally` does not run for a signal, and Ctrl-C inside an editor kills this process too —
+  // after the shred, which `shredOnSignal` runs and then re-raises the signal for.
+  const unlisten = shredOnSignal(shred);
   try {
     await Bun.write(buffer, serializeSecretValues(before));
     // `$EDITOR` may carry flags (`code --wait`), and there is no shell here to split them.
@@ -195,8 +199,7 @@ async function edit(ctx: CommandContext, io: SecretsIo): Promise<CommandResult> 
     };
   } finally {
     shred();
-    process.off('SIGINT', shred);
-    process.off('SIGTERM', shred);
+    unlisten();
   }
 }
 
@@ -217,7 +220,7 @@ async function set(ctx: CommandContext, io: SecretsIo): Promise<CommandResult> {
       example: 'printf %s "$TOKEN" | x secrets set STRIPE_KEY --json',
     });
   }
-  const { root, key } = open(ctx, 'set');
+  const { root, key } = await open(ctx, 'set');
   const before = await readSecretsFile(root, key);
   // Exactly one trailing newline, because `echo` adds one and a secret with a stray `\n` fails
   // against the service it authenticates to with an error that names nothing.
@@ -242,23 +245,18 @@ async function set(ctx: CommandContext, io: SecretsIo): Promise<CommandResult> {
 }
 
 /**
- * A new master key over the same values. The committed file is written FIRST and the key file last,
- * because only one of the two can be recovered: `secrets.enc.json` is in git, and a master key that
- * is half-overwritten is gone. Interrupted between the two writes, the old key still on disk meets
- * a file it cannot open — `X_SECRETS_KEY_MISMATCH`, whose fix restores the file from git.
+ * A new master key over the same values: staged beside the old one, the file sealed with it, then
+ * made live (`rotateMasterKey`). Sealed first with the key file written last, a crash between the
+ * two left a committed file no key on disk could open.
  */
 async function rotate(ctx: CommandContext): Promise<CommandResult> {
-  const { root, key } = open(ctx, 'rotate');
+  const { root, key } = await open(ctx, 'rotate');
   const values = await readSecretsFile(root, key);
   const previous = await masterKeyIdOf(key);
-  const next: MasterKeyRef = {
-    hex: generateMasterKey(),
-    source: 'file',
-    at: masterKeyPath(root),
-  };
-  await writeSecretsFile(root, values, next);
+  // Ignored BEFORE any key file is written, staged one included; the order inside is
+  // `secrets-rotation.ts`'s: stage the key, seal, then rename it live.
   await ensureIgnored(root);
-  writeMasterKeyFile(root, next.hex);
+  const next = await rotateMasterKey(root, values);
   const keyId = await masterKeyIdOf(next);
   return {
     ok: true,
@@ -286,7 +284,7 @@ async function rotate(ctx: CommandContext): Promise<CommandResult> {
  * `x secrets edit`. A `--reveal` flag would be a second path that `--json` could not honour.
  */
 async function show(ctx: CommandContext): Promise<CommandResult> {
-  const { root, key } = open(ctx, 'show');
+  const { root, key } = await open(ctx, 'show');
   const values = await readSecretsFile(root, key);
   const schema = await loadEnvSchema(root);
   const summaries = describeSecrets(values);
@@ -337,17 +335,7 @@ async function show(ctx: CommandContext): Promise<CommandResult> {
 
 export function createSecretsCommand(io: SecretsIo): CliCommand {
   return {
-    spec: {
-      name: 'secrets',
-      summary: `the committed encrypted secrets, decrypted into the ${ENV_SCHEMA_EXPORT} variables of the same names`,
-      usage: 'x secrets [show|init|edit|set <NAME>|rotate] [--json]',
-      requiresApp: true,
-      subcommands: [...SECRETS_SUBCOMMANDS],
-      // The bare `x secrets` answers without a key ever leaving the file. Declared, not inherited
-      // from the array's order — `init`, `edit`, `set` and `rotate` all write.
-      defaultSubcommand: 'show',
-      flags: [],
-    },
+    spec: secretsSpec,
     async run(ctx: CommandContext): Promise<CommandResult> {
       switch (ctx.args.subcommand ?? 'show') {
         case 'init':

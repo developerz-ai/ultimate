@@ -3,7 +3,7 @@
 // file asserts what the string looks like, and only Postgres can say whether it PARSES.
 
 import { describe, expect, test } from 'bun:test';
-import { encodeArrayParameters, pgArrayLiteral } from './array-parameter';
+import { pgArrayLiteral } from './array-parameter';
 
 describe('unit · pgArrayLiteral', () => {
   test('renders braces, not the comma join Bun sends', () => {
@@ -65,25 +65,5 @@ describe('unit · pgArrayLiteral', () => {
     expect(pgArrayLiteral([new Date('2026-08-27T02:00:00.000Z')])).toBe(
       '{"2026-08-27T02:00:00.000Z"}',
     );
-  });
-});
-
-describe('unit · encodeArrayParameters', () => {
-  // Every statement the framework runs goes through this, and almost none binds an array — so the
-  // common path must be the caller's own array object, unchanged, and not a copy per statement.
-  test('a statement with no array parameter is handed through by identity', () => {
-    const values = ['ada', 3, null, new Date(0)];
-    expect(encodeArrayParameters(values)).toBe(values);
-  });
-
-  test('only the array positions are rewritten', () => {
-    expect(encodeArrayParameters(['ada', ['a', 'b'], 7])).toEqual(['ada', '{a,b}', 7]);
-  });
-
-  // BYTEA, not an array. `Array.isArray` answers false for a typed array, and a `Uint8Array`
-  // rendered as `{1,2,3}` would be a column of numbers where the caller meant bytes.
-  test('a Uint8Array is bytes and is left alone', () => {
-    const bytes = new Uint8Array([1, 2, 3]);
-    expect(encodeArrayParameters([bytes])[0]).toBe(bytes);
   });
 });

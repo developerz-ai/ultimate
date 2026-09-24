@@ -30,7 +30,7 @@ const handleInput = t.string
 
 const sessionOutput = t.object({
   ok: t.boolean,
-  /** Where a browser should go next. A form POST cannot be answered with a 303 — see README note. */
+  /** Where the caller goes next — as DATA for an agent; a browser gets it as a 303 (`landAfter`). */
   next: t.string,
   handle: t.string,
 });

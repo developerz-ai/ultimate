@@ -40,11 +40,14 @@ export class WebhookEndpointUnknownError extends UltimateError {
 
 /** The endpoint exists and cannot be delivered to as declared. */
 export class WebhookEndpointInvalidError extends UltimateError {
-  constructor(input: { webhook: string; endpointId: string; reason: string }) {
+  /** `fix` for a refusal the url-and-secret instruction does not answer — an address screen's. */
+  constructor(input: { webhook: string; endpointId: string; reason: string; fix?: string }) {
     super({
       code: 'X_WEBHOOK_ENDPOINT_INVALID',
       cause: `webhook "${input.webhook}" endpoint ${input.endpointId} ${input.reason}`,
-      fix: `give the endpoint an https:// url and a non-empty secret before webhook("${input.webhook}").endpoint returns it — a delivery with neither is an unsigned POST to wherever the row points`,
+      fix:
+        input.fix ??
+        `give the endpoint an https:// url and a non-empty secret before webhook("${input.webhook}").endpoint returns it — a delivery with neither is an unsigned POST to wherever the row points`,
       meta: { endpointId: input.endpointId },
     });
   }

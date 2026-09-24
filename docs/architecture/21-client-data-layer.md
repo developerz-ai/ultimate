@@ -5,8 +5,8 @@ realtime frame and offline replay in a browser passes through those three and la
 record, keyed `entity:id`. The store is the client **projection of `entity`** (axiom 2) — not a
 ninth primitive: writes stay `action` / `mutator`, reads stay `query`, channels stay realtime's.
 
-**Status, `As of 2026-09-23`:** the design is decided and ships as **21.0.0**; it is not in any
-release. All seventeen slices are in the tree: the tier-0 seam, the entity projection, the
+**Status, `As of 2026-09-23`:** shipped in **21.0.0** (`CHANGELOG.md`). All seventeen slices
+landed: the tier-0 seam, the entity projection, the
 action/query envelope, realtime's record store and hooks, channels, the shared socket, offline
 (persister, outbox, page boot), `ui` rendering core's `AsyncState`, the two guards as gate steps,
 and both tracked apps migrated. Every table below carries a status column, and that
@@ -15,9 +15,12 @@ names, never from the prose. The plan is
 `docs/plans/2026/09/22/101-one-client-store-and-transport/`. The app-author recipe (exact imports, one
 idiom per task, the codes you will hit) is [`wiki/Client-Data.md`](../../wiki/Client-Data.md).
 
-## The measured before
+## The measured before (20.x, historical)
 
-What 20.x ships, and what this layer replaces. Re-verified against the tree `As of 2026-09-22`.
+What 20.x shipped, and what this layer replaced — measured against the 20.x tree on 2026-09-22.
+**Historical:** every path and line number in the right-hand column is the 20.x tree's — read it
+with `git show v20.2.2:<path>`. Four of the files no longer exist at all (`identity-map.ts`,
+`hooks.ts`, `local-store.ts`, `live-socket.ts`), and the rest have moved on.
 
 | Concern | 20.x | Where |
 |---|---|---|
@@ -26,7 +29,7 @@ What 20.x ships, and what this layer replaces. Re-verified against the tree `As 
 | record store | `IdentityMap`, **one per `LiveClient`** (`client.ts:105`), keyed `privateScope(query)` until a snapshot names the entity; HTTP responses never reach it | `packages/realtime/src/identity-map.ts:24`, `packages/realtime/src/client.ts:250` |
 | state per page | a module singleton — `let registered` — and every island is its own `Bun.build` with `splitting: false`, so there is one singleton **per island** | `packages/realtime/src/hooks.ts:23`, `packages/cli/src/island-bundle.ts:84` |
 | sockets | the framework never constructs one; the app does, once per island that mounts a client | `examples/dummy/apps/web/shared/live-socket.ts:19` |
-| optimistic writes | the socket `mutate` frame answers `X_NOT_IMPLEMENTED` unless `createSyncNode({ onMutate })` is passed, and no host passes it | `packages/realtime/src/sync-frames.ts:144-155`, `packages/cli/src/dev-sync.ts` |
+| optimistic writes | the socket `mutate` frame answers `X_NOT_IMPLEMENTED` unless `createSyncNode({ onMutate })` is passed, and no host passes it | `packages/realtime/src/sync-frames.ts:144-155`, `packages/cli/src/dev-sync.ts` (renamed `role-sync.ts` in 22.0.0) |
 | offline | `createOpfsLocalStore()` throws; the service worker posts to `/_x/outbox/flush`, which nothing mounts | `packages/realtime/src/local-store.ts:237`, `packages/pwa/src/background-sync.ts:38` |
 
 ## The one path
@@ -45,10 +48,10 @@ island ─ useQuery / useRecord / useChannel            useMutation / action.cli
 
 | Seam | Home | Tier | Status |
 |---|---|---|---|
-| HTTP — `clientTransport`, record envelope, page handle, scope fence | `@ultimat3/core` | 0 | in tree, unreleased; `action`'s and `query`'s `client.ts` both call `clientTransport` |
-| record identity — brand, `recordProjection`, `rowsOf` | `@ultimat3/entity` | 2 | in tree, unreleased |
-| store, hooks, socket, persister, outbox | `@ultimat3/realtime` | 3 | in tree, unreleased: `record-store.ts`, `page-store.ts`, `page-socket.ts`, `use-record.ts`, `use-query.ts`, `use-mutation.ts`, `use-channel.ts`, `record-persister.ts`, `page-outbox.ts`, `socket-host.ts`, `sync-worker.ts` |
-| realtime install | `@ultimat3/cli` (`island-bundle.ts`, `island-realtime.ts`) | 5 | in tree, unreleased. No general bootstrap: it cost ~7.9 kB of core's error registry on a core-free island. Only an island whose **own** graph reaches `@ultimat3/realtime` is built from an entry that calls `installRealtime({ signal: createSignal })` first, +103 B on a fixture island (the measurement is in `island-bundle.ts`'s header). A package importing realtime on an island's behalf is not seen |
+| HTTP — `clientTransport`, record envelope, page handle, scope fence | `@ultimat3/core` | 0 | shipped in 21.0.0; `action`'s and `query`'s `client.ts` both call `clientTransport` |
+| record identity — brand, `recordProjection`, `rowsOf` | `@ultimat3/entity` | 2 | shipped in 21.0.0 |
+| store, hooks, socket, persister, outbox | `@ultimat3/realtime` | 3 | shipped in 21.0.0: `record-store.ts`, `page-store.ts`, `page-socket.ts`, `use-record.ts`, `use-query.ts`, `use-mutation.ts`, `use-channel.ts`, `record-persister.ts`, `page-outbox.ts`, `socket-host.ts`, `sync-worker.ts` |
+| realtime install | `@ultimat3/cli` (`island-bundle.ts`, `island-realtime.ts`) | 5 | shipped in 21.0.0. No general bootstrap: it cost ~7.9 kB of core's error registry on a core-free island. Only an island whose **own** graph reaches `@ultimat3/realtime` is built from an entry that calls `installRealtime({ signal: createSignal })` first, +103 B on a fixture island (the measurement is in `island-bundle.ts`'s header). A package importing realtime on an island's behalf is not seen |
 
 **Why the seam is tier 0.** `action` and `query` (tier 3) must hand decoded records to a store
 that lives in `realtime` (tier 3), and a sideways import is a build error. `RecordSink` is an
@@ -62,16 +65,16 @@ All exported by name from `@ultimat3/core`.
 
 | Module | Exports | Owns | Status |
 |---|---|---|---|
-| `async-state.ts` | `AsyncState<T>` | `pending \| refreshing \| ready \| failed` — moved verbatim from `@ultimat3/ui`, no re-export left behind | in tree, unreleased |
-| `conflict-policy.ts` | `Row`, `ConflictPolicy`, `resolveConflict(policy, local, server, options?)` | the one conflict vocabulary, row-shaped | in tree, unreleased |
-| `record-envelope.ts` | `RECORDS_HEADER`, `RecordEnvelope`, `encodeRecordEnvelope`, `decodeRecordEnvelope` | the wire shape a response carries rows in | in tree, unreleased |
-| `record-sink.ts` | `RecordSink`, `PageClient`, `pageClient()` | the one per-tab handle, `globalThis[Symbol.for('ultimate.client')]`, non-enumerable | in tree, unreleased |
-| `client-scope.ts` | `ClientScope`, `rescope`, `onRescope` | the principal fence | in tree, unreleased |
-| `client-transport.ts` | `clientTransport` | the ONE browser HTTP function: the flight, the fence check, the envelope, the adopt | in tree, unreleased |
-| `client-dispatch.ts` | `TransportRequest`, `FetchLike`, `IDEMPOTENCY_HEADER` | one dispatch: the `RequestInit`, the read's abort, the network fault's code, the ok/error split | in tree, unreleased |
-| `page.ts` (`@ultimat3/core/page`) | the browser-light entry: the page handle, the scope fence, the page-meta constants, `UltimateError`, `clientTransport`, `actionPath` / `queryPath` | the one core import for browser code, with **no titles table** (`page-bundle.test.ts`) | in tree, unreleased |
-| `client-paths.ts` | `actionRoute`, `actionPath`, `ActionRoute`, `queryPath`, `QUERY_PATH_PREFIX`, `pluralize`, `splitWords` | the one URL rule: an action's export name derives `POST /api/<resource>/<verb>`, and a query's derives `GET /_x/query/<kebab>`. Moved verbatim from `action`'s and `query`'s `naming.ts`, so `action`, `query` and `realtime` (all tier 3) derive one URL with no sideways import | in tree, unreleased |
-| `client-problem.ts` | — (internal) | a non-2xx body back into the server's `UltimateError`; anything else into `X_CLIENT_TRANSPORT_FAILED` | in tree, unreleased |
+| `async-state.ts` | `AsyncState<T>` | `pending \| refreshing \| ready \| failed` — moved verbatim from `@ultimat3/ui`, no re-export left behind | shipped in 21.0.0 |
+| `conflict-policy.ts` | `Row`, `ConflictPolicy`, `resolveConflict(policy, local, server, options?)` | the one conflict vocabulary, row-shaped | shipped in 21.0.0 |
+| `record-envelope.ts` | `RECORDS_HEADER`, `RecordEnvelope`, `encodeRecordEnvelope`, `decodeRecordEnvelope` | the wire shape a response carries rows in | shipped in 21.0.0 |
+| `record-sink.ts` | `RecordSink`, `PageClient`, `pageClient()` | the one per-tab handle, `globalThis[Symbol.for('ultimate.client')]`, non-enumerable | shipped in 21.0.0 |
+| `client-scope.ts` | `ClientScope`, `rescope`, `onRescope` | the principal fence | shipped in 21.0.0 |
+| `client-transport.ts` | `clientTransport` | the ONE browser HTTP function: the flight, the fence check, the envelope, the adopt | shipped in 21.0.0 |
+| `client-dispatch.ts` | `TransportRequest`, `FetchLike`, `IDEMPOTENCY_HEADER` | one dispatch: the `RequestInit`, the read's abort, the network fault's code, the ok/error split | shipped in 21.0.0 |
+| `page.ts` (`@ultimat3/core/page`) | the browser-light entry: the page handle, the scope fence, the page-meta constants, `UltimateError`, `clientTransport`, `actionPath` / `queryPath` | the one core import for browser code, with **no titles table** (`page-bundle.test.ts`) | shipped in 21.0.0 |
+| `client-paths.ts` | `actionRoute`, `actionPath`, `ActionRoute`, `queryPath`, `QUERY_PATH_PREFIX`, `pluralize`, `splitWords` | the one URL rule: an action's export name derives `POST /api/<resource>/<verb>`, and a query's derives `GET /_x/query/<kebab>`. Moved verbatim from `action`'s and `query`'s `naming.ts`, so `action`, `query` and `realtime` (all tier 3) derive one URL with no sideways import | shipped in 21.0.0 |
+| `client-problem.ts` | — (internal) | a non-2xx body back into the server's `UltimateError`; anything else into `X_CLIENT_TRANSPORT_FAILED` | shipped in 21.0.0 |
 
 ### `clientTransport` — the one browser HTTP function
 
@@ -109,11 +112,11 @@ subscribers synchronously.
 
 | Layer | On rescope | Status |
 |---|---|---|
-| transport — read in flight | aborted; rejects `X_CLIENT_SCOPE_CHANGED`; adopts nothing | in tree, unreleased |
-| transport — write in flight | finishes and resolves; its records are **not** adopted | in tree, unreleased |
-| store | clears every record (`page-store.ts`, `onRescope`) | in tree, unreleased |
-| socket | redials, so the node decides the socket's principal again at the upgrade (`page-socket.ts`) | in tree, unreleased; the worker host (`socket-host.ts`) names the worker by principal, so a new principal is a new worker |
-| persister and outbox | wipe the previous scope's rows **and queue** on an in-page `rescope()`; queued writes are lost, deliberately. A sign-out response first sends `Clear-Site-Data: "cache", "storage"` (`@ultimat3/auth`'s `signOutHeaders()`), which empties IndexedDB, local storage and the service worker in a secure context. The page boot's wipe of every other scope (`boot.ts`, `wipeOthers`) is the second line, for a sign-out that navigates without that response. Trade-off: a second tab signed in as another principal loses its disk copy and keeps its memory | in tree, unreleased (`record-persister.ts`, `page-outbox.ts`) |
+| transport — read in flight | aborted; rejects `X_CLIENT_SCOPE_CHANGED`; adopts nothing | shipped in 21.0.0 |
+| transport — write in flight | finishes and resolves; its records are **not** adopted | shipped in 21.0.0 |
+| store | clears every record (`page-store.ts`, `onRescope`) | shipped in 21.0.0 |
+| socket | redials, so the node decides the socket's principal again at the upgrade (`page-socket.ts`) | shipped in 21.0.0; the worker host (`socket-host.ts`) names the worker by principal, so a new principal is a new worker |
+| persister and outbox | wipe the previous scope's rows **and queue** on an in-page `rescope()`; queued writes are lost, deliberately. A sign-out response first sends `Clear-Site-Data: "cache", "storage"` (`@ultimat3/auth`'s `signOutHeaders()`), which empties IndexedDB, local storage and the service worker in a secure context. The page boot's wipe of every other scope (`boot.ts`, `wipeOthers`) is the second line, for a sign-out that navigates without that response. Trade-off: a second tab signed in as another principal loses its disk copy and keeps its memory | shipped in 21.0.0 (`record-persister.ts`, `page-outbox.ts`) |
 
 Subscribers run synchronously, once per real change, in registration order, before `rescope()`
 returns; a throwing subscriber does not stop the others, and the first throw is re-raised after all
@@ -126,7 +129,7 @@ A superseded read is never surfaced as a UI error. `isSuperseded(error)` in
 
 ## Record identity from the entity
 
-In tree, unreleased (slice 04). Exported from the `@ultimat3/entity` barrel for server code, and from
+Shipped in 21.0.0 (slice 04). Exported from the `@ultimat3/entity` barrel for server code, and from
 **`@ultimat3/entity/record`** (`packages/entity/src/record.ts`) for browser code: the package
 declares no `sideEffects`, so the barrel retains ~1 MB of SQL rendering and `@ultimat3/db`, which
 `packages/entity/src/record-bundle.test.ts` measures. The record **key travels on the wire**,
@@ -153,7 +156,7 @@ realtime's persister reads.
 
 A private document is one principal's (`packages/pwa/src/service-worker.ts`, `pagesCache`). The
 server stamps `x-ultimate-scope` (`CLIENT_SCOPE_HEADER`) on every scope-tagged document
-(`packages/cli/src/dev-render.ts`). The worker never answers a private document from cache while
+(`packages/cli/src/runtime-render.ts`). The worker never answers a private document from cache while
 online, keeps it in a per-principal partition that only the offline path reads, wipes the other
 partitions when it stores one, and keeps nothing for a private document with no scope. Before this,
 the cache was keyed by URL alone, and one member's `/feed` answered the next on a shared browser.
@@ -161,7 +164,7 @@ That was affected since 19.0.0, and is fixed in 21.0.0.
 
 ## The record store
 
-`packages/realtime/src/record-store.ts`, in tree and unreleased. One per tab, on
+`packages/realtime/src/record-store.ts`, shipped in 21.0.0. One per tab, on
 `globalThis[Symbol.for('ultimate.realtime')]` (`page-store.ts`), installed as core's `RecordSink` on
 the first realtime hook. Records answered earlier wait in core's pending buffer.
 
@@ -209,17 +212,17 @@ Decided 2026-09-22 and not reopened. Status per row.
 
 | Decision | Status |
 |---|---|
-| ships as major 21.0.0, with no compatibility shim for any removed surface — a deprecated second path is what axiom 1 forbids | in tree, unreleased: each removal is a `BREAKING —` entry under `CHANGELOG.md`'s `[Unreleased]` |
-| writes over HTTP only; the socket `mutate` / `rebase` path is deleted, not wired, and `ack` only answers a refusal | in tree, unreleased (sync protocol 3) |
-| the envelope is derived from the entity brand; no `records:` option | in tree, unreleased (a query names its row schema with `rows:`) |
-| `useQuery` is the one read hook; live-ness belongs to the query declaration; `useLive` and `liveHookFor` are deleted | in tree, unreleased. **But live-ness is restated on the browser-side ref** (`{ name, live, entity }`), not derived from the declaration (see Open items) |
-| channels carry `seq` + `epoch`; the **server** owns the gap verdict (`replay-gap`); a numeric hole is not a gap; the catch-up read is named on the channel declaration | in tree, unreleased: server `channel-gaps.ts`, client `client-channels.ts` (a cursor per channel, a `catchUp` re-read on `replay-gap` or a new epoch). `channel_replay_gaps_total` counts announcements. Not measured at scale |
-| one socket per origin, in a `SharedWorker` named by principal; an in-page `MessageChannel` host is the transparent fallback, running the same engine; the store stays per tab | in tree, unreleased: `socket-engine.ts` (per-port reference counts, frames routed only to ports that want the channel, a port reaped after `REAP_AFTER_BEATS = 3` silent beats), `socket-host.ts` (worker named by principal, in-page fallback, `bye` on `pagehide`), `sync-worker.ts`. Exercised by `examples/dummy/apps/web/e2e/two-tabs.e2e.test.ts` (two tabs, one socket; closing one costs the other zero reconnects; the in-page fallback with `SharedWorker` deleted), run by the reference app's `e2e` step |
-| the scope fence is in core: reads abort, writes finish but never adopt into the new scope | in tree, unreleased |
-| one conflict vocabulary, row-shaped, in core; `@ultimat3/action`'s output-shaped `custom()` is gone | in tree, unreleased — realtime's `ConflictLike`, `custom`, `CustomMerge`, `MergeArgs` and `ConflictStrategy` are gone; its rebase calls core's `resolveConflict`, and never calls a merge for a server delete or a row the client never held |
-| `AsyncState` lives in core; `@ultimat3/ui` takes hook accessors directly, with no adapter | in tree, unreleased: `@ultimat3/ui` imports it from core (`AsyncRegion.tsx`, `DataTable.tsx`, `async-branch.ts`), and a hook's answer is passed as `state={feed()}` with no adapter |
-| offline is IndexedDB, `persist` per entity (default `false`), one outbox replayed over HTTP with idempotency keys; OPFS and `/_x/outbox/flush` are deleted | in tree, unreleased: `local-store-idb.ts`, `record-persister.ts` (restored before the socket connects, provisional until the first server row), `page-outbox.ts` (a write with no response at all, `meta.failure: 'network'`, is queued and `useMutation` resolves `undefined`; replay on socket up, `online` and the SW drain message). The outbox opens with the page's realtime state, right after the restore |
-| XHR stays only in `storage/upload-client.ts`, for progress events, as a declared seam; service-worker `fetch` is exempt by path | in tree, unreleased: the seams and the exemption are `scripts/browser-transport.ts`'s |
+| ships as major 21.0.0, with no compatibility shim for any removed surface — a deprecated second path is what axiom 1 forbids | shipped in 21.0.0: each removal is a `BREAKING —` entry under `CHANGELOG.md`'s `[Unreleased]` |
+| writes over HTTP only; the socket `mutate` / `rebase` path is deleted, not wired, and `ack` only answers a refusal | shipped in 21.0.0 (sync protocol 3) |
+| the envelope is derived from the entity brand; no `records:` option | shipped in 21.0.0 (a query names its row schema with `rows:`) |
+| `useQuery` is the one read hook; live-ness belongs to the query declaration; `useLive` and `liveHookFor` are deleted | shipped in 21.0.0. **But live-ness is restated on the browser-side ref** (`{ name, live, entity }`), not derived from the declaration (see Open items) |
+| channels carry `seq` + `epoch`; the **server** owns the gap verdict (`replay-gap`); a numeric hole is not a gap; the catch-up read is named on the channel declaration | shipped in 21.0.0: server `channel-gaps.ts`, client `client-channels.ts` (a cursor per channel, a `catchUp` re-read on `replay-gap` or a new epoch). `channel_replay_gaps_total` counts announcements. Not measured at scale |
+| one socket per origin, in a `SharedWorker` named by principal; an in-page `MessageChannel` host is the transparent fallback, running the same engine; the store stays per tab | shipped in 21.0.0: `socket-engine.ts` (per-port reference counts, frames routed only to ports that want the channel, a port reaped after `REAP_AFTER_BEATS = 3` silent beats), `socket-host.ts` (worker named by principal, in-page fallback, `bye` on `pagehide`), `sync-worker.ts`. Exercised by `examples/dummy/apps/web/e2e/two-tabs.e2e.test.ts` (two tabs, one socket; closing one costs the other zero reconnects; the in-page fallback with `SharedWorker` deleted), run by the reference app's `e2e` step |
+| the scope fence is in core: reads abort, writes finish but never adopt into the new scope | shipped in 21.0.0 |
+| one conflict vocabulary, row-shaped, in core; `@ultimat3/action`'s output-shaped `custom()` is gone | shipped in 21.0.0 — realtime's `ConflictLike`, `custom`, `CustomMerge`, `MergeArgs` and `ConflictStrategy` are gone; its rebase calls core's `resolveConflict`, and never calls a merge for a server delete or a row the client never held |
+| `AsyncState` lives in core; `@ultimat3/ui` takes hook accessors directly, with no adapter | shipped in 21.0.0: `@ultimat3/ui` imports it from core (`AsyncRegion.tsx`, `DataTable.tsx`, `async-branch.ts`), and a hook's answer is passed as `state={feed()}` with no adapter |
+| offline is IndexedDB, `persist` per entity (default `false`), one outbox replayed over HTTP with idempotency keys; OPFS and `/_x/outbox/flush` are deleted | shipped in 21.0.0: `local-store-idb.ts`, `record-persister.ts` (restored before the socket connects, provisional until the first server row), `page-outbox.ts` (a write with no response at all, `meta.failure: 'network'`, is queued and `useMutation` resolves `undefined`; replay on socket up, `online` and the SW drain message). The outbox opens with the page's realtime state, right after the restore |
+| XHR stays only in `storage/upload-client.ts`, for progress events, as a declared seam; service-worker `fetch` is exempt by path | shipped in 21.0.0: the seams and the exemption are `scripts/browser-transport.ts`'s |
 
 **Why a `SharedWorker` and not a leader tab.** A Web Locks leader was considered and dropped: when
 the leader tab closes, every other tab reconnects. A worker lives as long as any tab of the origin
@@ -227,7 +230,7 @@ does, so closing a tab costs zero reconnects — the property the e2e asserts.
 
 ## Where the page's socket dials
 
-The framework decides this; no app owns a `sync-url.ts`. It is in tree and unreleased, `As of 2026-09-22`.
+The framework decides this; no app owns a `sync-url.ts`, `As of 2026-09-22`.
 
 | Fact | Where |
 |---|---|
@@ -253,7 +256,7 @@ imports the barrel (every server). That is the trade for about 6 kB per island.
 
 **The page boot** (`/_x/page-boot/<hash>.js`) is one deferred classic script, rendered only on a
 document that carries a scope tag **and** emitted an island reaching `@ultimat3/realtime`
-(`packages/cli/src/dev-render.ts`). The worker and the boot are resolved from the app root, then
+(`packages/cli/src/runtime-render.ts`). The worker and the boot are resolved from the app root, then
 from each `apps/*` workspace (`worker-bundle.ts`). Until 2026-09-22 only the root was read, so a
 workspace app, the reference app included, got neither a worker nor a boot. It restores the principal's
 persisted records and opens the outbox once per page, so that work is not repeated in every island

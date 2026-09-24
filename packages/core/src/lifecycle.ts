@@ -7,6 +7,7 @@ import { UltimateError } from './errors';
 import { finiteCount } from './finite-option';
 import { settleWithin } from './lifecycle-deadline';
 import { lifecycleDrained } from './lifecycle-errors';
+import { defaultReadinessGraceMs, readinessGraceIssue } from './lifecycle-grace';
 import { type LogFields, type Logger, logger as rootLogger } from './logger';
 
 export type HealthState = 'starting' | 'ready' | 'draining' | 'stopped';
@@ -54,6 +55,15 @@ export interface LifecycleOptions {
    * Screened where it is assigned: a whole number of milliseconds, 0 or more. `0` is "drain now".
    */
   readonly deadlineMs?: number | undefined;
+  /**
+   * How long `/readyz` answers 503 BEFORE the `accept` phase closes the listener — the time the
+   * endpoints controller and the ingress need to stop routing here. Closing on the flip itself left
+   * endpoints pointing at a closed socket, and a POST in that window got a 502. Added to
+   * `deadlineMs`, never taken from it. Unset: `defaultReadinessGraceMs()` of the process env at
+   * drain time — 0 in development/test, 5000 everywhere else, including a process naming no env.
+   * A whole number from 0 to 60000; 0 is no grace.
+   */
+  readonly readinessGraceMs?: number | undefined;
   readonly clock?: Clock | undefined;
   readonly logger?: Logger | undefined;
 }
@@ -111,6 +121,8 @@ interface Registration {
 const DEFAULT_DEADLINE_MS = 25_000;
 
 let deadlineMs = DEFAULT_DEADLINE_MS;
+/** `undefined` means "the environment's default", read when a drain starts, not at import. */
+let graceMs: number | undefined;
 let clock: Clock = systemClock;
 let log: Logger = rootLogger;
 let state: HealthState = 'starting';
@@ -130,6 +142,18 @@ export function configureLifecycle(options: LifecycleOptions): void {
   // hands it straight here, so a floor of 1 would refuse at boot what that package declares.
   if (options.deadlineMs !== undefined) {
     deadlineMs = finiteCount('configureLifecycle', 'deadlineMs', options.deadlineMs, 0);
+  }
+  if (options.readinessGraceMs !== undefined) {
+    const issue = readinessGraceIssue(options.readinessGraceMs);
+    if (issue !== undefined) {
+      throw new UltimateError({
+        code: 'X_CONFIG_INVALID',
+        cause: issue,
+        fix: 'pass configureLifecycle({ readinessGraceMs: 5_000 }) — or set drain: { readinessGraceMs: 5_000 } in app.config.ts',
+        meta: { key: 'drain.readinessGraceMs' },
+      });
+    }
+    graceMs = options.readinessGraceMs;
   }
   if (options.clock !== undefined) {
     clock = options.clock;
@@ -316,6 +340,11 @@ export function drainDeadlineMs(): number {
   return deadlineMs;
 }
 
+/** The grace the next drain will wait out — configured, else the environment's default. */
+export function readinessGraceMs(): number {
+  return graceMs ?? defaultReadinessGraceMs();
+}
+
 /**
  * What is left of that budget. Read per hook, not per phase: the deadline bounds the WHOLE drain,
  * so a hook that spent it leaves nothing for the ones behind it — which is what
@@ -354,10 +383,20 @@ async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<v
   }
 }
 
-/** The three phases, in order, under one budget. Never rejects — `drain()` depends on that. */
-async function runDrain(signal: string, reason: ShutdownReason): Promise<void> {
+/**
+ * The three phases, in order, under one budget. Never rejects — `drain()` depends on that.
+ *
+ * The readiness grace runs FIRST and OUTSIDE the budget: `state` is already `draining`, so
+ * `/readyz` answers 503 while the listener still accepts what was routed here before the flip.
+ * The deadline starts after it, so a chart's `terminationGracePeriodSeconds` must exceed
+ * `readinessGraceMs + deadlineMs`.
+ */
+async function runDrain(signal: string): Promise<void> {
   try {
-    report('info', 'draining', { signal, deadlineMs, inflight });
+    const grace = readinessGraceMs();
+    report('info', 'draining', { signal, deadlineMs, readinessGraceMs: grace, inflight });
+    if (grace > 0) await Bun.sleep(grace);
+    const reason: ShutdownReason = { signal, deadlineAt: systemClock.monotonic() + deadlineMs };
     await runPhase('accept', reason);
 
     // Real monotonic, like `deadlineAt` itself: `waitForIdle` sleeps on a real `setTimeout`, and
@@ -401,7 +440,6 @@ async function runDrain(signal: string, reason: ShutdownReason): Promise<void> {
 export function drain(signal = 'manual'): Promise<void> {
   if (drainPromise !== undefined) return drainPromise;
   state = 'draining';
-  const reason: ShutdownReason = { signal, deadlineAt: systemClock.monotonic() + deadlineMs };
   let published!: () => void;
   drainPromise = new Promise<void>((resolve) => {
     published = resolve;
@@ -409,39 +447,8 @@ export function drain(signal = 'manual'): Promise<void> {
   // Both settle paths, for the reason `installSignalHandlers` gives below: `runDrain` cannot
   // reject today — that is its `try/finally`, not luck — and a rejected memo would re-reject for
   // every later caller and end the process the drain was trying to end cleanly.
-  void runDrain(signal, reason).then(published, published);
+  void runDrain(signal).then(published, published);
   return drainPromise;
-}
-
-export interface SignalHandlerOptions {
-  readonly signals?: readonly ProcessSignal[] | undefined;
-  /** Call `process.exit()` once drained. Off in tests. */
-  readonly exit?: boolean | undefined;
-}
-
-/** Install SIGTERM/SIGINT handling. Returns an uninstall function. */
-export function installSignalHandlers(options?: SignalHandlerOptions): () => void {
-  const signals: readonly ProcessSignal[] = options?.signals ?? ['SIGTERM', 'SIGINT'];
-  const handlers = new Map<ProcessSignal, () => void>();
-
-  for (const signal of signals) {
-    const handler = (): void => {
-      // Attached on BOTH settle paths, for the reason `settleWithin` gives: an unhandled rejection
-      // ends the process before the drain does, and the exit is what the kubelet is waiting for.
-      // `drain()` cannot reject today — that is the `try/finally` above, not luck — and this is
-      // the one line that keeps it true when someone changes the body.
-      const done = (): void => {
-        if (options?.exit === true) process.exit(0);
-      };
-      void drain(signal).then(done, done);
-    };
-    handlers.set(signal, handler);
-    process.on(signal, handler);
-  }
-
-  return () => {
-    for (const [signal, handler] of handlers) process.off(signal, handler);
-  };
 }
 
 export function healthReport(): HealthReport {
@@ -479,6 +486,7 @@ export function readyzPayload(): HealthPayload {
 /** Test-only: forget all hooks and return to `starting`. */
 export function resetLifecycle(): void {
   deadlineMs = DEFAULT_DEADLINE_MS;
+  graceMs = undefined;
   clock = systemClock;
   log = rootLogger;
   state = 'starting';

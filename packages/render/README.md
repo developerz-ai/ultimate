@@ -433,6 +433,28 @@ does.
 side effect. Anything that loads an app's source — `x dev`, `x build`, `server.ts`, a test that
 `await import()`s a `page.tsx` — reaches it before the module it loads.
 
+## Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `BudgetExceededError` | `X_BUDGET_EXCEEDED` | `src/errors.ts` |
+| `IslandInvalidError` | `X_ISLAND_INVALID` | `src/errors.ts` |
+| `IslandNotHydratedError` | `X_ISLAND_NOT_HYDRATED` | `src/errors.ts` |
+| `IslandPropsInvalidError` | `X_ISLAND_PROPS_INVALID` | `src/errors.ts` |
+| `PrerenderFailedError` | `X_PRERENDER_FAILED` | `src/errors.ts` |
+| `RouteDuplicateError` | `X_ROUTE_DUPLICATE` | `src/errors.ts` |
+| `RouteFileInvalidError` | `X_ROUTE_FILE_INVALID` | `src/errors.ts` |
+| `RouteLoadFailedError` | `X_ROUTE_LOAD_FAILED` | `src/errors.ts` |
+| `RouteLoadInvalidError` | `X_ROUTE_LOAD_INVALID` | `src/errors.ts` |
+| `RouteMetaMissingError` | `X_ROUTE_META_MISSING` | `src/errors.ts` |
+| `RouteModeInvalidError` | `X_ROUTE_MODE_INVALID` | `src/errors.ts` |
+| `RouteOfflineMissingError` | `X_ROUTE_OFFLINE_MISSING` | `src/errors.ts` |
+| `RouteStatusInvalidError` | `X_ROUTE_STATUS_INVALID` | `src/errors.ts` |
+| `SurfaceBoundaryError` | `X_SURFACE_BOUNDARY` | `src/errors.ts` |
+
 ## Public API
 
 `†` marks a name on `@ultimat3/render/server`.

@@ -545,6 +545,15 @@ of truth for the one thing the server decides.
 | `X_UI_QR_CAPACITY` | a `<QrCode>` value over version 3's 42-byte ceiling (byte mode, error-correction level M). The encoder draws versions 1–3 only; the cause names the byte count and the ceiling |
 | `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `UiError` | any `UiErrorCode` — `UI_ERROR_CODES` | `src/errors.ts` |
+
 ## Commands
 
 ```

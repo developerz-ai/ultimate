@@ -30,27 +30,25 @@ export interface PeerIdentity {
   readonly by: string | null;
 }
 
-/** Splits on a separator that is not inside a double-quoted value. `Subject="CN=a,OU=b"`. */
-const splitUnquoted = (value: string, separator: string): readonly string[] => {
+/**
+ * Splits on a separator outside double quotes, keeping the quotes and escapes EXACTLY as written.
+ * Raw on purpose: the element split and the pair split both run over this text, and an element
+ * split that also stripped quotes left `pairsOf` splitting `O=Acme; Inc` a second time, unquoted.
+ * Unescaping happens once, per value, in `unquote`.
+ */
+const splitRaw = (value: string, separator: string): readonly string[] => {
   const out: string[] = [];
   let current = '';
   let quoted = false;
   let escaped = false;
   for (const char of value) {
     if (escaped) {
-      current += char;
       escaped = false;
-      continue;
-    }
-    if (char === '\\') {
+    } else if (char === '\\') {
       escaped = true;
-      continue;
-    }
-    if (char === '"') {
+    } else if (char === '"') {
       quoted = !quoted;
-      continue;
-    }
-    if (char === separator && !quoted) {
+    } else if (char === separator && !quoted) {
       out.push(current.trim());
       current = '';
       continue;
@@ -61,14 +59,20 @@ const splitUnquoted = (value: string, separator: string): readonly string[] => {
   return out.filter((entry) => entry.length > 0);
 };
 
+/** `"CN=checkout\""` → `CN=checkout"`. An unquoted value is taken as written. */
+const unquote = (value: string): string => {
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return value;
+  return value.slice(1, -1).replace(/\\(.)/g, '$1');
+};
+
 /** `Key=Value` pairs, keys lowercased. `URI` and `DNS` may repeat, so values collect. */
 const pairsOf = (element: string): ReadonlyMap<string, readonly string[]> => {
   const out = new Map<string, string[]>();
-  for (const pair of splitUnquoted(element, ';')) {
+  for (const pair of splitRaw(element, ';')) {
     const eq = pair.indexOf('=');
     if (eq <= 0) continue;
     const key = pair.slice(0, eq).trim().toLowerCase();
-    const value = pair.slice(eq + 1).trim();
+    const value = unquote(pair.slice(eq + 1).trim());
     if (value.length === 0) continue;
     const existing = out.get(key);
     if (existing === undefined) out.set(key, [value]);
@@ -86,7 +90,7 @@ export const peerIdentity = (input: ForwardedInput): PeerIdentity | null => {
   const element = forwardedElement(
     input.headers.get(FORWARDED_CLIENT_CERT),
     input.config.trustedProxyHops,
-    splitUnquoted,
+    splitRaw,
   );
   if (element === undefined) return null;
   const pairs = pairsOf(element);

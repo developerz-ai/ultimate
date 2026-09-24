@@ -12,8 +12,9 @@
 // whole history a merge-base walks. A branch behind main compares against main's CURRENT budget,
 // which is the number the merge will actually change.
 //
-// WHAT IT CANNOT SEE: a checkout with no `origin/main` compares nothing, and the summary says so and
-// prints the fetch — never a silent ok. A budget built from a constant, or written in a file that is
+// A checkout with no `origin/main` (a tag checkout in `release.yml`, a fresh clone of a fork) FETCHES
+// it — one commit — and, if the fetch fails, refuses `X_BUDGET_BASE_MISSING`. It used to pass with
+// "NO budget was compared" in the summary, which is a green step that checked nothing. A budget built from a constant, or written in a file that is
 // not `page.tsx` / `route.ts`, is not a literal this rule reads.
 //
 //   bun run scripts/budget-raises.ts [--json]
@@ -23,6 +24,7 @@ import { parseByteBudget } from '../packages/render/src/islands';
 import { APP_ROOTS } from './boundaries';
 import { parseScriptArgs } from './lib/args';
 import { balancedClose } from './lib/balanced-paren';
+import { BASE_REF, baseRef, FETCH_MAIN } from './lib/base-ref';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
@@ -139,20 +141,7 @@ export function raiseFinding(raise: BudgetRaise, base: string): Finding {
 const ROUTES = `${APP_ROOTS}/*/**/{page.tsx,route.ts}`;
 const NOT_SOURCE = /(?:^|\/)(?:node_modules|dist|\.x)\//;
 
-/** The ref compared against: `origin/main`'s tip, one commit. */
-export const BASE_REF = 'origin/main';
-
-/** The one command that makes `BASE_REF` exist in a shallow checkout — what CI runs. */
-export const FETCH_MAIN =
-  'git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main';
-
-/** `BASE_REF` when this checkout has it, or `undefined`. */
-export async function baseRef(root: string): Promise<string | undefined> {
-  const found = await run(['git', 'rev-parse', '--verify', '--quiet', `${BASE_REF}^{commit}`], {
-    cwd: root,
-  });
-  return found.ok ? BASE_REF : undefined;
-}
+export { BASE_REF, baseRef, FETCH_MAIN };
 
 export async function readRouteVersions(
   root: string,
@@ -176,9 +165,16 @@ export function budgetResult(
 ): ScriptResult {
   if (base === undefined) {
     return {
-      ok: true,
+      ok: false,
       script: SCRIPT,
-      summary: `${BASE_REF} is not in this checkout, so NO budget was compared — fetch it, then rerun: ${FETCH_MAIN}`,
+      summary: `${BASE_REF} is not in this checkout and could not be fetched, so NO budget was compared`,
+      findings: [
+        {
+          code: 'X_BUDGET_BASE_MISSING',
+          cause: `${BASE_REF} is not in this checkout and \`${FETCH_MAIN}\` failed, so no route budget was compared against it`,
+          fix: FETCH_MAIN,
+        },
+      ],
       data: { base: null },
     };
   }

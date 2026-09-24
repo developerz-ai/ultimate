@@ -82,6 +82,32 @@ async function readCapture(root: string, relative: string, field: string): Promi
 }
 
 /**
+ * The symlink half for the one path this tool WRITES: `realpath` of the nearest directory that
+ * exists above `out`, held under the shot directory's real location — `readCapture`'s rule. The
+ * lexical check alone let `.x/shot/<link-to-elsewhere>/diff.png` write wherever the link pointed.
+ */
+async function assertWritable(root: string, path: string): Promise<void> {
+  let dir = dirname(path);
+  while (!(await exists(dir)) && dirname(dir) !== dir) dir = dirname(dir);
+  const real = await realpath(dir);
+  const shotDir = await realpath(resolve(root, SHOT_DIR));
+  if (!under(real, shotDir)) {
+    throw new UltimateError({
+      code: 'X_UI_DIFF_PATH_OUTSIDE',
+      cause: `out is under a link to ${real}, which is not inside ${shotDir}`,
+      fix: SHOT_FIX,
+      meta: { field: 'out', path, real, shotDir },
+    });
+  }
+}
+
+const exists = (dir: string): Promise<boolean> =>
+  realpath(dir).then(
+    () => true,
+    () => false,
+  );
+
+/**
  * The seam reads 8-bit RGBA and nothing else. A PNG in any other shape — Chrome's RGB when the page
  * is opaque, a palette from an optimiser — goes once through Bun's codecs, which always write the
  * shape the seam reads. Only `imageUnsupported` is retried that way: a truncated file is a
@@ -126,6 +152,7 @@ export async function diffShots(deps: DiffDeps, input: UiDiffInput): Promise<UiD
   }
   const { width, height } = after;
   const result = diffPixels(before.pixels, after.pixels, width, height, input.threshold);
+  await assertWritable(root, diff);
   await Bun.write(diff, encodeImage({ width, height, pixels: result.diffRgba }));
   return {
     ok: true,

@@ -224,3 +224,23 @@ function codeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('the largest amount a Money can hold renders every digit', () => {
+  // A float went to `Intl`, so `9007199254740991` minor units at scale 6 became `…740992`: the
+  // division lost the last digit before any formatter saw it. `Intl` takes a decimal STRING.
+  const max = Number.MAX_SAFE_INTEGER;
+
+  test('scale 6', () => {
+    expect(formatMoney(money(max, 'USD', 6), 'en-US')).toBe('$9,007,199,254.740991');
+    expect(formatMoneyDecimal(money(max, 'USD', 6), 'en-US')).toBe('9007199254.740991');
+  });
+
+  test('scale 2, and negative', () => {
+    expect(formatMoney(money(max, 'USD'), 'en-US')).toBe('$90,071,992,547,409.91');
+    expect(
+      formatMoneyParts(money(-max, 'USD'), 'en-US')
+        .map((part) => part.value)
+        .join(''),
+    ).toBe('-$90,071,992,547,409.91');
+  });
+});

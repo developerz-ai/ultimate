@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 // why: `node:` by necessity: Bun exposes no path-join primitive, and the Biome binary is found by
 // walking out of this file's directory to the repo root.
 import { join } from 'node:path';
+import { stripComments } from '@ultimat3/core';
 import type { GenerateOptions } from '../cmd-generate';
 import { generate } from '../cmd-generate';
 import { planNewApp } from '../cmd-new';
@@ -14,7 +15,6 @@ import { fixProblem, staticFix } from '../error-contract';
 import { citedCommandProblem, loadCommandCatalog } from '../fix-command';
 import { scanFixes } from '../fix-scan';
 import { scaffoldVariants } from '../scaffold-fixture';
-import { stripComments } from '../ts-scan';
 
 /** Four levels: `templates` → `src` → `cli` → `packages` → the repo root. */
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');

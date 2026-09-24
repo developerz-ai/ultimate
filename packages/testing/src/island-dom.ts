@@ -332,7 +332,24 @@ export class FakeTemplate extends FakeElement {
   }
 }
 
-const VOID_TAGS = new Set(['br', 'hr', 'img', 'input', 'meta', 'link']);
+// The whole HTML void-element set. It held six, so `<picture><source><img></picture>` parsed the
+// img INSIDE the source — a tree no browser builds, and one an island's querySelector disagrees with.
+const VOID_TAGS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
+]);
 const TOKEN =
   /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s=/>]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)\s*(\/?)>|([^<]+)/g;
 const ATTRIBUTE = /([^\s=/>]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;

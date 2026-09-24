@@ -10,7 +10,6 @@ export type {
   AppToolDefinition,
   AppTools,
 } from './app-tool';
-export { appToolPrimitive, appToolPrimitives } from './app-tool';
 export type { AppMcp, AppToolSchemas, DefineAppMcpInput } from './app-tools';
 export { defineAppMcp } from './app-tools';
 export type { McpAuditEntry, McpOutcome, McpResourceAuditEntry } from './audit';
@@ -54,13 +53,8 @@ export type {
 export {
   DEV_SCOPES,
   devTools,
-  STYLE_NAME,
-  UI_DIFF_DEFAULT_THRESHOLD,
   UI_INSPECT_LIMITS,
   UI_INTERACT_LIMITS,
-  UI_INTERACT_STEP_SCHEMA,
-  UI_VIEWPORTS,
-  viewportOf,
 } from './dev-server';
 export type { McpErrorCode } from './errors';
 export {
@@ -97,12 +91,10 @@ export { asProjectable } from './projectable';
 export type { QueryLimits, QueryResult, QueryRows } from './query-limits';
 export {
   capQueryRows,
-  DEFAULT_QUERY_ROWS,
-  QUERY_LIMITS,
   resolveQueryLimits,
 } from './query-limits';
 export type { DatabaseTarget } from './readonly-sql';
-export { assertBranchDatabase, assertReadOnlyQuery, PARSE_GUARD } from './readonly-sql';
+export { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
 export type {
   AnyMcpTool,
   ContentBlock,
@@ -132,7 +124,6 @@ export {
   RESOURCE_URIS,
   ResourceRegistry,
   toPrompts,
-  URI_ARG_SCHEMA,
 } from './resources';
 export type { McpScopes } from './scopes';
 export { withScopes } from './scopes';
@@ -144,10 +135,7 @@ export type {
   ResolvedToken,
 } from './transport-http';
 export {
-  bearerToken,
   DEFAULT_MCP_BODY_LIMIT_BYTES,
-  isAgentActor,
-  MCP_RATE_LIMIT_WINDOW_MS,
   MCP_RATE_LIMITS,
   mcpHttpRoute,
 } from './transport-http';
@@ -172,7 +160,6 @@ export {
   isJsonRpcRequest,
   MCP_PROTOCOL_VERSION,
   METHOD_NOT_FOUND,
-  NO_ARGS,
   PARSE_ERROR,
   resultResponse,
 } from './wire';

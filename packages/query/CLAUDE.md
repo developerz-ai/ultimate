@@ -12,21 +12,21 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 
 | File | Job |
 |---|---|
-| `query.ts` | the primitive: `query()`, `describeQuery`, `queryHash`; the package's front door for the read path |
+| `query.ts` | the primitive: `query()`, `describeQuery`, `queryHash`; the front door for the read path |
 | `read.ts` | **the one read path** (`runQuery`, `sourceFor`) + the private declaration store `sql` lives in |
 | `facade.ts` | the fluent surface — binds each projection to the query, re-implements none |
 | `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
 | `mcp-tool.ts` | MCP read descriptor, same `sourceFor` |
-| `client.ts` | typed read client (browser-safe: no server imports); dispatches through `@ultimat3/core`'s `clientTransport`, never `fetch` |
+| `client.ts` | typed read client (browser-safe); dispatches through `@ultimat3/core`'s `clientTransport`, never `fetch` |
 | `record-answer.ts` | a read's HTTP answer: bare rows, or the record envelope when `rows:` is an entity's branded row schema |
-| — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported from `src/index.ts`. There is no local copy and must not be one |
-| `naming.ts` | export name → `/_x/query/<kebab>` — `derivePath` IS `@ultimat3/core`'s `queryPath`, re-exported. **Paths only** — no tool name |
-| `registry.ts` | export-name registration, `describeQueries()`, and the `registerPrimitiveRegistrar('query', …)` announcement |
+| — | flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported. No local copy |
+| `naming.ts` | export name → `/_x/query/<kebab>` — `derivePath` IS core's `queryPath`. **Paths only** |
+| `registry.ts` | export-name registration, `describeQueries()`, the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
 | `subscribes.ts` | the relations a live read declares, and the two assertions that keep them true |
 | `matcher.ts` | change event → minimal patch, `refill` when the window cannot place the row, or `X_MATCHER_UNSUPPORTED` |
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
-| `cursor-value.ts` | what a sort value becomes inside a cursor, and what it becomes again |
+| `cursor-value.ts` | what a sort value becomes inside a cursor, and back |
 | `input-shape.ts` | what a read's `input:` may be, given that its route is a query STRING |
 | `sql.ts` | `explain()` / `describeSql()` |
 | `cache.ts` | the read path: the request memo, and the fill through `@ultimat3/cache`'s registered tiers |
@@ -34,561 +34,159 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
 | `shape.ts` | shared read vocabulary (filters, ordering, seek keys) |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
-| `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter — TWINNED with `@ultimat3/action`'s |
+| `deprecation.ts` | `Deprecation` + RFC 9745/8594 render + `deprecated_calls_total` — TWINNED with `@ultimat3/action`'s |
 
-## Invariants
+## Invariants — the read path
 
-- Every surface goes through `sourceFor`: parse input, evaluate policy, build the source.
-  Adding a second read path is the one unforgivable change here.
-- **An explicit `ctx` is INSTALLED, never merely passed** (`As of 2026-08`). `asActor` used to hand
-  `options.ctx` to `run(ctx)` and enter no `runWithContext` unless an `actor` was also given, so
-  `guard()` decided about that actor while everything reading the AMBIENT context — above all
-  `@ultimat3/entity`'s tenant guard, which derives from `tryUseContext()` and not from the ctx it is
-  handed — saw a different identity, or none. A read was authorised as one caller and scoped to
-  nobody. Absent a `ctx` it reinstalls the ambient one, which is a no-op on every path that already
-  worked. The twin fix is `@ultimat3/action`'s `invoke`, and `read-context.test.ts` is written as an
-  equality between the three spellings of one caller — ambient, `options.actor`, `options.ctx` —
-  because three independent expectations are exactly what let this ship.
-- **Skipping a read's policy costs a WRITTEN REASON, never a boolean** (`As of 2026-08`).
-  `SourceOptions.enforce?: boolean` is gone; it is `unenforced?: string`, and a blank one is
-  refused before the source is built. The bar is `@ultimat3/entity`'s `cross-tenant.ts`: a boolean
-  argument "reads exactly like forgetting the tenant", and a forgotten policy reads the same way —
-  so the reason IS the mechanism and every skipped policy is one `grep` away with its justification
-  attached. It is deliberately NOT capability-gated the way `crossTenant` is: `explain` runs from
-  the CLI with no actor to check a scope against, and gating it would close the one surface it
-  exists for. **`ToLiveOptions.enforce` stays a boolean**, because it is that one use with exactly
-  one reason — `toLiveQuery` translates it into the reason string spelled once as
-  `SHARED_WINDOW_REASON`, so a sync node and this file cannot disagree about why the shared window
-  has no subject. Two shipped callers, both reading no rows for a subscriber: `sql.ts` and that
-  window.
-- The declaration never leaves `read.ts`. `defOf`/`stashDef`/`hasDef` are internal and must
-  never be re-exported from `src/index.ts` — that omission is the enforcement.
-- A query has no `.def`. Inside the package read it with `defOf(target)`; outside, read the
-  lifted `.input`/`.policy`/`.cache`/`.mcp`/`.isLive` or `describe()`.
-- App code reaches a projection through the query (`liveFeed.tool()`), never through `.def`
-  and never by importing the projection function. `facade.ts` is where a new method is bound;
-  the projection itself keeps living in its own file.
-- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a query file imports
-  one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
-  access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
-- **`LiveQuery` describes the read *and* runs it.** `execute()` is the source the shape, the reads
-  and `sqlText` were taken from — one build of one `(query, input)`. A caller that wanted rows and
-  called `sourceFor` itself was a second build: twice the parse, twice the `sql()`, and a matcher
-  describing a source the rows never came from. `@ultimat3/realtime`'s shared window is the one
-  consumer, and it reads through `execute()`. It never memoises — a subscriber joining an existing
-  subscription must see the rows as they are now, not the window someone else opened.
-- `isLive` is the declared boolean, `live()` is the subscription. Never name one after the other.
-  `QueryDescriptor.live` keeps its name — `@ultimat3/manifest` and `@ultimat3/admin` read it.
-- `mcp` is opt-in (`expose: true`), exactly as it is for an action: rows reach an agent only when
-  the author said so. `isExposed` here delegates to `isMcpExposed` in `@ultimat3/core` — the one
-  predicate every reader in the framework asks — rather than spelling `=== true` a second time.
-- **A read has ONE tool name, and it is the export name verbatim** (`As of 2026-08`). `toQueryTool`
-  snake_cased it (`liveFeed` → `live_feed`) while `@ultimat3/mcp` serves the read under
-  `queryName(target)` and answers `tools/call` for nothing else — so anything that read the name off
-  the descriptor rather than off `tools/list` called a tool the server had never heard of, and the
-  scope map in `defineAppMcp` is keyed on the verbatim name too. `toToolName` is **deleted**, not
-  merely unused: an exported derivation is a second way to spell one tool. Two pins, both in this
-  package because this is where the rule can be broken — `mcp-tool.test.ts` asserts
-  `toQueryTool(q).name === queryName(q)` (the presence), and `index.test.ts` asserts the barrel
-  exports no key matching `/tool_?name/i` (the absence, which nothing else catches: the only other
-  guard is `packages/mcp/src/cross-surface.test.ts`, tier 4 and unimportable from here).
-  `naming.ts` derives PATHS only.
-- `client.ts` stays free of server imports — it is bundled into the browser. `@ultimat3/action`
-  is the same tier, so its naming is ported here, never imported.
-- **`queryClient` is the map-wide read client and the mirror of `rpc`; both spellings run
-  `queryClientMethodFor`.** `queryClient<Api['queries']>({ baseUrl })` is how a surface that must
-  not import a feature reaches every registered read — `site/` in an app, whose one edge into
-  `app/` is a boundary violation, so `.client()` (which needs the query object) is unreachable
-  there. The map-wide client re-deriving a path from the property name would be the second URL
-  derivation this package spent a release removing; it proxies to the per-query method instead.
-- **`toQueryRoute` is the other half of `client()`, and the two derive the same URL from the same
-  `naming.ts`.** The client shipped fetching `/_x/query/<kebab>` while nothing built a route for
-  it, so every typed read compiled and 404'd; a projection whose only consumer is a URL string is
-  the failure this pairing exists to prevent. Named for the primitive rather than `toRoute`,
-  because a host mounts it beside `@ultimat3/action`'s — the same reason the tool projection here
-  is `toQueryTool`.
-- **The route coerces, `runQuery` validates, and only the first belongs to the wire.** A search
-  string is characters, so the boundary decodes it with `@ultimat3/schema`'s `coerceQuery` — the
-  one HTTP-boundary decoder, which never invents data and hands on what it cannot convert.
-  Validating there as well (`request.query(schema)`) would be the second parser: the same read
-  would answer `X_BODY_INVALID` where every other surface answers `X_INPUT_INVALID` and prints
-  its schema. For the same reason `meta.input` stays **absent** — the pipeline's body stage
-  validates it against a body, and a GET has none, so declaring it fails every read on nothing.
-- **`rateLimit:` is declarable on a read, and `toQueryRoute` sets the NAME and the NUMBERS.**
-  `QueryDef` had neither until 2026-08, so every `GET /_x/query/*` fell through `bucketFor` to
-  `default` — 120 burst, 2/s per actor — and one authenticated caller could hold 120 cross-tenant
-  aggregates in flight and then 2/s indefinitely, from a single account, with no declaration able
-  to say otherwise. The conversion is `toBucket` from **`@ultimat3/http`**, never a copy here:
-  http owns `Bucket` and the maths, `@ultimat3/action` is the same tier as this package, and a
-  copy in either is a second answer for the other. The field is lifted onto the facade so
-  `toQueryRoute` reads it without `defOf`, exactly as `cache` and `mcp` are.
-- **`deprecated:` is a compat WINDOW; versioning is two deployments behind one ingress.** Headers
-  are rendered ONCE at projection, so an unparseable date is `X_QUERY_DEPRECATION_INVALID` at
-  mount and not on the first read. `deprecation.ts` is a TWIN of `@ultimat3/action`'s — both are
-  tier 3, so neither may import the other, and the shared home is `@ultimat3/http` if it grows
-  one. The same compromise `naming.ts` is ported under; keep the two files identical in behaviour.
-- **The span wraps the whole read, not `source.execute()`.** Parse, policy and `sql()`'s own
-  construction were outside every span, so a read whose cost was in building the source reported
-  milliseconds under a parent that reported seconds — a gap with no name. `readRows` holds the
-  span and `readRowsIn` is the body; attributes are bounded (surface, actor KIND, `live`,
-  `cached`, `fresh`) plus the row count, and never the input or an actor id — a read is keyed per
-  tenant and per cursor, so either would be unbounded. `telemetry.test.ts` asserts the extent
-  structurally through `currentSpan()`, because the test clock is frozen. `sourceFor` still has no
-  span of its own: adding one would double-span every read that goes through `readRows`.
-- **`policyCapability` is a display label and `policyPermissions` is what a report matches on.**
-  A composite renders as `or(feed:read, org:administer)`, which equals no permission string, so
-  `x policy list` matching on `capability` reported every non-trivially-guarded read's permissions
-  as unenforced. `QueryDescriptor.permissions` is the flattened list, published beside
-  `capability` and never instead of it.
-- **`client.ts` injects `traceparent`**, before the caller's own headers so an explicit one wins,
-  and sends nothing when the span context is incomplete — `00-<trace>--01` is a header every
-  collector drops. The twin of `@ultimat3/action`'s, ported for the same tier reason.
-- **A read is `no-store`, and its policy is `enforcedBy: 'handler'`.** The URL names no actor
-  while the answer is scoped to one, so `public` would hand one reader's rows to the next caller
-  of that URL; and `runQuery` is the read's one evaluation, deciding from the parsed input, so an
-  authz stage deciding first would be a second authz system holding raw strings — and would
-  demand an `authorize` hook to decide at all. `http.test.ts` drives both over the real pipeline
-  with no hook wired and counts the evaluations: exactly one.
-- **`meta.auth` is derived from a WALK of the policy tree**, never from the root combinator.
-  `target.policy.kind === 'allow'` answered `'required'` for `or(allow(), can('x:y'))`, so the
-  pipeline's `auth` stage 401'd an anonymous caller the policy itself ALLOWS — while the MCP tool
-  and a direct server read let that caller through the same object. One policy, a different answer
-  per surface. `'public'` here is `meta.auth` only: the read is still `cache: no-store` and
-  `runQuery` still evaluates the policy per caller.
-  **`admitsAnonymous` is `@ultimat3/policy`'s** (`policy.ts`, beside `policyPermissions`) and
-  reaches this package through `policy-gate.ts` like every other authz question — never a copy
-  here. It cannot be one: `@ultimat3/action` needs the identical answer and is the same tier, so a
-  copy in either is a second answer for the other. It is EXACT rather than heuristic — with
-  `actor === null`, `can()` short-circuits before its predicate and `allow()`/`deny()` ignore their
-  arguments, so the tree alone decides. `packages/policy/src/policy.test.ts` asserts it against
-  `policy.run({ actor: null })` itself, case for case; `http.test.ts` proves this projection reads
-  the answer, over the real pipeline.
-- `registry.ts` announces `registerQueries` in core's registrar table at import. That is how
-  `defineApi({ queries })` in `@ultimat3/action` registers a read without importing this package
-  sideways. Never remove the announcement: `defineApi` would then throw `X_REGISTRAR_MISSING`.
-- **Flight control is `@ultimat3/core`'s, and this package RE-EXPORTS it.** `client-flight.ts` and
-  `client-wire.ts` shipped here and in the other tier-3 client package as byte-identical copies —
-  288 and 85 lines — kept in step by a `client-twin.test.ts` in each. A test that makes drift LOUD
-  is not the same as a file that cannot drift, and this package's own thesis is that duplication is
-  the defect. Both files import nothing but tier 0, which was always the argument for where they
-  belong; the one blocker was `isJsonObject`, now `@ultimat3/core`'s `json-object.ts`, re-exported
-  from `./stable` here. `createClientFlight`, `DEFAULT_CLIENT_RETRY`, `isTransientFailure`,
-  `isSuperseded`, `ClientFlight`, `ClientFlightOptions`, `ClientRetry`, `FlightKeyOptions`,
-  `FlightPlan` and `WireAnswer` are all still importable from `@ultimat3/query` — the same names,
-  and now literally the same objects the other package exports. Never re-declare one here; the
-  fix for anything wrong with the pipeline is an edit in `packages/core/src/client-flight.ts`.
-- **Every mechanism underneath the flight is `@ultimat3/core`'s, the pipeline included.**
-  `createSingleFlight` for dedup, `createFence`/`isSuperseded` for supersession, `createFlightGate`
-  for the ceiling, `retry` + `backoffDelay` for the schedule, `isRetryableStatus` for the status
-  table, `X_TIMEOUT` for the deadline — and `createClientFlight`, which composes them. This package
-  declares NO new error code for any of it; never add a second curve, a second fence or a private
-  retry loop here, and `bun run flight-copies` is what says so.
-- **`isTransientFailure` INVERTS `retryDecision`'s unclassified default, and the inversion must
-  survive** (`As of 2026-08-23`). `retryDecision` sends a throw nobody classified again until the
-  attempts run out; `@ultimat3/ai` and `@ultimat3/db` each refused the executor outright over it.
-  The client keeps the executor and supplies a predicate instead: a declared
-  `retryable`/`retry-after`, plus a dispatch that produced no response at all (`fetch` rejecting
-  with a plain `TypeError`), and nothing else — a caller's own `AbortError` and a foreign value are
-  terminal. The loop is stopped by RESOLVING to a private sentinel rather than by throwing, so the
-  original value still reaches the caller unwrapped, which is the property `retry`'s own header
-  promises. It lives in `packages/core/src/client-flight.ts` now; the tests that pin it from this
-  side still drive it through this package's own client.
-- **`ClientFlight` is a TYPE inside `client.ts` and never a value.** That erasure is the entire
-  tree-shaking story: a caller who wants a plain typed read must not pay for the fence, the dedup
-  map or the retry loop. Never import `createClientFlight` for a VALUE from `client.ts` —
-  `ClientFlight` and `ClientRetry` are `import type` from `@ultimat3/core` and must stay that way.
-- **Every read dispatches through `@ultimat3/core`'s `clientTransport`, and `client.ts` calls no
-  `fetch`** (`As of 2026-09-22`, 21.0.0, plan 101 slice 05). The `fetch` option is handed on as the
-  transport's injected `fetchImpl`. The transport owns `Accept`, the trace/budget headers, the
-  principal fence, the error decode and the record envelope — so a gateway's HTML is core's
-  `X_CLIENT_TRANSPORT_FAILED` now, and `QueryRequestFailedError` / `X_RPC_FAILED` are gone from this
-  package. The flight is handed to the transport, which is what dedups concurrent identical reads
-  (`client.test.ts`, one `fetchImpl` call); `fresh` and a per-call `retry` ride on the request
-  to it. The path is core's `queryPath` — `naming.ts` re-exports it as `derivePath`. `slice 15`'s `browser-transport` guard is what will make
-  a `fetch(` call here a build error; until then the check is
-  `rg -n 'fetch\(' packages/query/src --glob '!*.test.ts'` finding nothing.
-- **Bundle, `bun build --target=browser --minify`, `import { queryClient } from '@ultimat3/query'`**
-  (`As of 2026-09-22`): **19,026 B** at 20.2.1 (raw `fetch`), **24,114 B** on `clientTransport`;
-  the deep `src/client.ts` import 15,690 → 20,774 B. The +5.1 kB is entirely core's transport graph
-  (`client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `record-envelope.ts`,
-  `client-scope.ts`, `record-sink.ts`, `client-paths.ts`); `client.ts` itself shrank. The 12,755 B this file
-  quoted was already false at 20.2.1. Shrinking it is a `packages/core` edit, never a raw `fetch`
-  here.
-- **`@ultimat3/query/client` is the read client without the barrel** (`As of 2026-09-22`). The
-  barrel anchors `errors.ts` and `registry.ts` (`sideEffects`) and exports the server projections;
-  an island that only reads needs neither. `import { queryClient } from '@ultimat3/query/client'`,
-  measured `bun build --target=browser --minify`: **16,458 B** against **23,611 B** through the
-  barrel. `@ultimat3/realtime`'s `useQuery` is the caller it exists for. `client-subpath.test.ts`
-  pins that the specifier resolves and carries no server export.
-- **…and reaches no titles table** (`As of 2026-09-22`, same method): **10,210 B**, from 16,640 B
-  that morning. `client.ts` and `naming.ts` import core from `@ultimat3/core/page`, and the two
-  page keys live in `page-keys.ts` — a leaf, because `page-controls.ts` refuses a bad value and so
-  imports `errors.ts`, which registers this package's whole code table at import. `client.ts` may
-  never import `page-controls.ts` or `stable.ts` again; `client-bundle.test.ts` fails on
-  `core-error-codes.ts`, `schema-error-codes.ts` or `errors.ts` in the graph, and past 11 kB.
-- **The record envelope is derived from `rows:`, never switched on** (`record-answer.ts`). A read's
-  `sql:` names its table as a STRING, so the query declaration carries no schema the envelope could
-  be derived from; `rows?: StandardSchemaV1<unknown, TRow>` is that carrier, typed against the row
-  `sql:` answers so a projection cannot claim a full entity's schema. `answersRecords(rows)`
-  (`hasEntityRows`, `@ultimat3/entity`) is decided ONCE at projection and read by both `http.ts`
-  and `openapi.ts`; the envelope is sent on EVERY answer (`records: {}` when none came back) — one body
-  shape per operation, action's rule, described once by core's `recordEnvelopeSchema`. No `rows:`,
-  or an unbranded one, is byte-identical on the wire and in `openapi.json`.
-- **The `sideEffects` array is what makes the barrel shakable, and it is load-bearing** (`As of
-  2026-08-23`). Declaring nothing meant a bundler had to assume every module ran at import, so
-  `import { rpc } from '@ultimat3/action'` was 43,104 B and `import { queryClient } from
-  '@ultimat3/query'` was 40,859 B — three times the deep-import cost, through the ONLY specifier
-  the `exports` map offers. The arrays are the ones `bun run scripts/side-effects.ts --explain
-  --json` measures, and they must stay that: `errors.ts` runs `registerErrorCodes` at import in both
-  packages, and query's `registry.ts` runs `registerPrimitiveRegistrar('query', …)` — drop either
-  and a bundled app loses its error titles or throws `X_REGISTRAR_MISSING`. Never `false`.
-- **Every numeric option is refused when it is not a FINITE number, `As of 2026-08-26`.**
-  `@ultimat3/core`'s `finiteOption()` guards the read cache's `ttlMs` and `search()`'s `page.max`,
-  `page.default` and `termMax`; `bun run finite-bounds` is the ratchet and this package is pinned
-  at **zero**. `??` guards nullish and `NaN` is not, so an unchecked bound is a comparison that
-  reads false forever — and `Math.max`/`Math.floor` propagate `NaN` rather than validating it.
-- **`search()` is a FACTORY over `query()`, never a ninth primitive.** It owns the input schema
-  (`q` + a `limit` bounded in the schema, beside the read's own keys), trims and refuses a blank
-  term, and calls `.search(term)` on the chain the app hands it — which is what makes the term
-  unable to arrive any other way. The chain crosses **structurally** (`SearchChain`): this package
-  may import `@ultimat3/entity` and nothing here does, so four methods are not worth a new
-  `package.json` edge and a new `bun.lock` block — the trade `@ultimat3/db`'s `entity-shape.ts`
-  makes one tier down. It needs no row in `PRIMITIVE_FACTORIES`: that table is for a factory
-  returning an `action` or a `job` from OUTSIDE the primitive's own package, and this returns a
-  query from the query package. **It serves ONE page and refuses a second**, because a `SqlSource`
-  is handed a `SeekKey` and the entity chain wants its own signed, plan-scoped cursor — there is no
-  minting one from the other here, and falling through to `paginate`'s in-memory slice would cut
-  inside the one page the provider fetched and report `hasNextPage: false` at its edge. Rows served
-  on no page at all is the defect 12.0.0 spent a release removing from the timestamp seek; the
-  `fix:` names the entity chain, which pages this read correctly. **The refusal is on the rows that
-  would be CUT, never on the window**, `As of 2026-08-26`: a screen demanding `first >= limit`
-  refuses the framework's own default pair — `limit` defaults to 20 and `first` arrives from a
-  client — so every `pageSize` under 20 was a 500 at page ONE, including a search matching three
-  rows that fit the window twice over. `windowOf.execute` asserts on `rows.length` instead, so a
-  page that is whole is served with `hasNextPage: false` and no cursor is ever handed back that a
-  second call is guaranteed to refuse. **The one page it serves is the
-  chain's own ORDER**, `As of 2026-08-26`: `onePage.seek` narrows the window with `Builder.limit()`
-  and never with `Builder.seek()`, which sets `totalized` — `servedOrder()` is then `totalOrder([])`
-  = `id asc`, because the ranking lives inside the chain behind the row thunk and no `OrderKey` here
-  can name it, and `execute()` re-sorts the page the provider already ranked. Measured with a chain
-  serving `z, m, a`: `runQuery` answered `z, m, a` and `.page(input, { first: 2 })` answered `a, m`,
-  dropping the top-ranked row off page one. It exposes no `total()` for the same reason — an absent
-  `total` is how `SqlSource` says the source already serves one order it can be resumed in. The
-  fixture in `search.test.ts` must stay NOT id-ascending: `ROWS` is `a, b, c`, which is why the
-  shipped page test could not see this.
-- **`subscribes:` is DECLARED because nothing can derive it, and CROSS-CHECKED because a
-  declaration drifts** (`subscribes.ts`, `As of 2026-08-26`). `@ultimat3/realtime` refuses a
-  subscription to a table that is not `REPLICA IDENTITY FULL` — logical replication carries no old
-  row on an `UPDATE`, so no patch is computable — and nothing emitted the `alter`, so a scaffolded
-  app with a live query generated a schema its own preflight rejected (#357). It cannot be derived:
-  the relation name is a string inside `sql:`, a callback no generator can invoke without valid
-  input, so `QueryDescriptor` carried no table and `x db gen` had no live-query set to read. The
-  field is optional and a read that declares nothing is unchanged — the emitter sees no table.
-  The cross-check is what makes it worth shipping: `toLiveQuery` asserts `shape.entity` is among the
-  declared names at the first subscribe (`X_QUERY_SUBSCRIBES_DRIFT`), one line under
-  `assertMatchable` and for its reason — a live read whose old row never arrives cannot be patched,
-  so a WARNING would preserve only a subscription that silently stops updating, and the stale
-  declaration has already granted the identity to the wrong table. `pg-preflight.ts`'s
-  `warnPartialIdentity` warns instead, and that precedent does NOT transfer: it fires for every app
-  on the postgres default, which nobody wrote, while this fires only on a declaration an author
-  wrote wrong. **Membership, never equality** — a `QueryShape` names one relation and a read may
-  join several, and `@ultimat3/db` keeps only the declared names an entity's table matches, so an
-  extra name costs nothing and the resolved one going missing is the whole failure. An empty list,
-  or one on a read that is not `live: true`, is refused at `query()`
-  (`X_QUERY_SUBSCRIBES_INVALID`) beside `assertCacheTtl`: a declaration nothing can act on is wrong
-  for every subscriber, and one on a non-live read would never reach the cross-check at all —
-  declared and never wired, which is the defect this field exists to close.
-- Policy runs per subscriber for live queries. Never cache a decision across actors.
+- Every surface goes through `sourceFor`: parse input, evaluate policy, build the source. A second
+  read path is the one unforgivable change here.
+- **An explicit `ctx` is INSTALLED, never merely passed** — the ambient context (which
+  `@ultimat3/entity`'s tenant guard reads) must be the identity `guard()` decided about.
+  `read-context.test.ts` asserts ambient, `options.actor` and `options.ctx` are one caller.
+- **Skipping a read's policy costs a WRITTEN REASON** (`unenforced?: string`; blank refused).
+  `ToLiveOptions.enforce` stays a boolean, translated into `SHARED_WINDOW_REASON`.
+- The declaration never leaves `read.ts`. `defOf`/`stashDef`/`hasDef` are never re-exported from
+  `src/index.ts` — that omission is the enforcement. A query has no `.def`; outside the package read
+  `.input`/`.policy`/`.cache`/`.mcp`/`.isLive` or `describe()`. A projection is reached through the
+  query (`liveFeed.tool()`); new methods are bound in `facade.ts`.
+- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts` asserts identity).
+- **`LiveQuery` describes the read *and* runs it** (`execute()`, never memoised).
+  `@ultimat3/realtime`'s shared window reads through it.
+- `isLive` is the declared boolean, `live()` the subscription. `QueryDescriptor.live` keeps its name
+  (`manifest` and `admin` read it).
+- `mcp` is opt-in; `isExposed` delegates to core's `isMcpExposed`.
+- **A read has ONE tool name, the export name verbatim.** `toToolName` is deleted.
+  `mcp-tool.test.ts` asserts `toQueryTool(q).name === queryName(q)`; `index.test.ts` asserts the
+  barrel exports nothing matching `/tool_?name/i`.
+- **`queryClient` is the map-wide read client (mirror of `rpc`)**; both spellings run
+  `queryClientMethodFor`. **`toQueryRoute` and `client()` derive the same URL from `naming.ts`.**
+- **The route coerces (`coerceQuery`), `runQuery` validates.** No `request.query(schema)` and no
+  `meta.input` on the route.
+- **`rateLimit:` is declarable; `toQueryRoute` sets both `meta.rateLimit` and
+  `meta.rateLimitBucket`**, via `@ultimat3/http`'s `toBucket` — never a local copy.
+- **`deprecated:` is a compat WINDOW**: `Deprecation` / `Sunset` / `rel="successor-version"` on every
+  answer, rendered ONCE at projection (`X_QUERY_DEPRECATION_INVALID` at mount). Versioning is two
+  deployments behind one ingress.
+- **The span wraps the whole read** (`readRows` holds it, `readRowsIn` is the body); bounded
+  attributes only — never the input or an actor id. `telemetry.test.ts` asserts the extent through
+  `currentSpan()`.
+- **`policyCapability` is a display label; `policyPermissions` (`QueryDescriptor.permissions`) is what
+  a report matches on.**
+- **`client.ts` injects `traceparent`** before the caller's headers; an incomplete span context sends
+  nothing.
+- **A read is `no-store`, and its policy is `enforcedBy: 'handler'`** — `runQuery` is the one
+  evaluation (`http.test.ts` counts exactly one).
+- **`meta.auth` comes from `@ultimat3/policy`'s `admitsAnonymous`** (a walk of the tree, via
+  `policy-gate.ts`), never the root combinator.
+- `registry.ts` announces `registerQueries` in core's registrar table at import; `defineApi` in
+  `@ultimat3/action` depends on it (`X_REGISTRAR_MISSING` otherwise).
+- Authz goes through `enforce(surface, policy, { input, actor, ctx })`; a live denial keeps its 4403
+  close code on `QueryDeniedError.denial`. Policy runs per subscriber for live queries — never cache a
+  decision across actors.
+
+## Invariants — the client
+
+- **Flight control is `@ultimat3/core`'s, re-exported** (`createClientFlight`,
+  `DEFAULT_CLIENT_RETRY`, `isTransientFailure`, `isSuperseded`, the types) — the same objects
+  `@ultimat3/action` exports. Fix the pipeline in `packages/core/src/client-flight.ts`. No new error
+  code, curve, fence or retry loop here; `bun run flight-copies` says so.
+- **`isTransientFailure` INVERTS `retryDecision`'s unclassified default** — a caller's own
+  `AbortError` is terminal. Must survive.
+- **`ClientFlight` is a TYPE inside `client.ts`, never a value.**
+- **Every read dispatches through core's `clientTransport`; `client.ts` calls no `fetch`.** The
+  transport owns `Accept`, trace/budget headers, the principal fence, the error decode and the record
+  envelope; the flight handed to it dedups concurrent identical reads. `bun run browser-transport`
+  is the guard.
+- **`@ultimat3/query/client` is the read client without the barrel** — `client.ts` and `naming.ts`
+  import core from `@ultimat3/core/page`, the page keys live in the leaf `page-keys.ts`, and
+  `client.ts` never imports `page-controls.ts` or `stable.ts`. `client-bundle.test.ts` fails on any
+  titles table in the graph or past 11 kB; `client-subpath.test.ts` pins the specifier. Byte figures
+  (`As of 2026-09-22`, browser, minified): barrel `queryClient` 24,114 B; `./client` 10,210 B.
+- **The record envelope is derived from `rows:`** — `answersRecords(rows)` (`hasEntityRows`,
+  `@ultimat3/entity`), decided once at projection for `http.ts` and `openapi.ts`, sent on every
+  answer. No `rows:` is byte-identical on the wire.
+- **The `sideEffects` array is load-bearing**: `errors.ts` and `registry.ts` run at import. Never `false`.
+
+## Invariants — numbers, search, live declarations
+
+- **Every numeric option is refused when not FINITE** (`finiteOption()`: the read cache's `ttlMs`,
+  `search()`'s `page.max`, `page.default`, `termMax`). `finite-bounds` pins this package at zero.
+- **`search()` is a FACTORY over `query()`**: it owns the input schema (`q` + a bounded `limit`),
+  refuses a blank term and calls `.search(term)` on the chain the app hands it (structural
+  `SearchChain`). No `PRIMITIVE_FACTORIES` row (it returns a query from the query package). **It serves
+  ONE page**: `windowOf.execute` refuses only when rows would be CUT; `onePage.seek` narrows with
+  `Builder.limit()`, never `Builder.seek()`, so the chain's own ranking survives; no `total()`.
+  `search.test.ts`'s fixture must stay NOT id-ascending.
+- **`subscribes:` is DECLARED (nothing can derive it) and CROSS-CHECKED**: `toLiveQuery` asserts
+  `shape.entity` is among the declared names at first subscribe (`X_QUERY_SUBSCRIBES_DRIFT`) —
+  membership, never equality. An empty list, or one on a non-live read, is refused at `query()`
+  (`X_QUERY_SUBSCRIBES_INVALID`).
+- **A read's `input:` must survive a query STRING** (`input-shape.ts`, `X_QUERY_INPUT_UNENCODABLE`):
+  refused are structural members (`object`, `record`, `money`, or an array/union of one), a REQUIRED
+  nullable member, and a non-object top level. An un-introspectable schema is left alone.
+
+## Invariants — ordering, cursors, the matcher
+
 - The matcher patches from `QueryShape`, never from SQL text.
-- `paginate` has no `offset` parameter and must never grow one, and it is reachable **only** as
-  `query.page(input, { first, after })` — a page is the read's own answer, not an imported helper.
-  `src/index.ts` exports `Page` and `PaginateArgs` and not the function: re-exporting it would be
-  a second way to ask for the thing `.page()` already does.
-- **A `RowProvider` may be a list, a sync function or an async one** (`As of 2026-08-19`).
-  `execute()` awaits whatever the function returns, so all three were always accepted at runtime —
-  the type declared only `() => Promise<readonly TRow[]>`, which refused a repo method already
-  holding its page and every in-memory fixture. `source.test.ts` pins all three.
-- **A cursor is a position, not a row.** `isAfterKey` in `source.ts` is the one definition of
-  "after this position": `Builder.seek()` compiles it to SQL and `paginate()` applies it when a
-  source cannot push the seek down. The fallback used to find the cursor's row by id and slice
-  after it — which restarts the listing from the top the moment that row is deleted, the exact
-  failure keyset pagination exists to prevent. Never reintroduce a row lookup here.
-- The seek predicate is spelled out per key (`(a < $1) or (a = $2 and id > $3)`), the way
-  `@ultimat3/entity`'s `seekSql` spells it. A row-value comparison cannot express a mixed
-  `createdAt desc, id asc` ordering, and the id-tiebreak-only fallback it replaced returned rows
-  the ordering was already past — with `execute()` disagreeing with the SQL it printed.
-- **NULL has one meaning, and `isNull` is it.** `null` and a column the row omits are the same
-  absence, in the SQL and in memory alike. `=`/`!=`/`in` read NULL as a **value** — `is null`,
-  `is not null`, `is distinct from`, `in (…) or is null`, the pair `@ultimat3/entity`'s
-  `predicateSql` emits; `>`/`>=`/`<`/`<=` read it as **unknown**, matching nothing on either side,
-  which is why they need no special emission; `order by` reads it as the **largest value**, spelled
-  `asc nulls last` / `desc nulls first` rather than inherited from the driver. `= $n` with a NULL
-  argument is never true in Postgres, so `where({ deletedAt: null })` matched every row in memory
-  and none in the database, and `"col" > $n` blanked page two at the first NULL. Never emit a bound
-  parameter where NULL is the value being tested, and never let `compareValues` sort a NULL as the
-  string `"null"` again — `compareRows`, `isAfterKey` and the matcher's insertion position all
-  read it, so one string compare moves rows on three surfaces. `in` takes a list or nothing: an
-  empty one is `1 = 0`, and so is an operand that is not an array at all — `matchesFilter` answers
-  no rows for it, and `"col" in $n` is a syntax error the driver reports instead of that answer.
-- **The id is the tiebreak that makes the order total.** A row without one is
-  `X_QUERY_NOT_PAGEABLE` at `seekKeyOf` **and** at the matcher's `idOf`, never `String(undefined)`:
-  `"undefined"` is a position every row matches, signed and opaque, so page two would be page one
-  forever and one row's patch would land on another's index.
-- **`totalOrder` is the order a read is served in, and all three readers use it.** The declared
-  keys then `id asc`, unless the ordering already names `id` — `Builder.servedOrder()` compiles it,
-  the in-memory sort applies it, and `positionFor` places a row by it. The matcher comparing
-  `shape.orderBy` alone appended a tied row after its whole tie group, which is a position no
-  re-read returns and a cursor that skips every tie it was pushed past. `SeekKey` is the same list
-  decomposed — `key` for the declared part, `id` for the tiebreak — so never add `id` to
-  `QueryShape.orderBy` to get it: `seekKeyOf` would then sign the id twice. An unordered query
-  appends, because SQL promises no position there to get wrong.
-- **A live read asks for that order explicitly, and `sourceFor` is where it asks.** `total()` is
-  the `SqlSource` method for "the same read, served in `totalOrder`" — no cursor, no window — and
-  `buildSource` calls it when `surface === 'live'`, for nothing else, and only when the source
-  implements it. A live window served by the declared keys alone puts a tied row wherever the
-  database returned it, while `positionFor` places the patch by id and the resume re-read seeks by
-  id: the client then renders an order no re-read answers. Never reach for `seek(null, limit)`
-  instead — a live query need not carry a limit, and inventing one is a window nobody asked for.
-- **A sort value carries its own TYPE through the cursor** (`cursor-value.ts`, `As of 2026-08`).
-  The codec is JSON, so `paginate()` putting raw column values in meant a `Date` went out and an
-  ISO STRING came back: `isAfterKey` compared `"1769904000000"` against `"2026-02-01T…"` through
-  `compareValues`' string branch and **page two came back empty** — and a `bigint` sort key was a
-  bare `TypeError` out of `JSON.stringify`, with no code and no fix. `@ultimat3/entity`'s
-  `cursor.ts` solves the same problem by reading the column's declared kind; a `query` has no
-  column kinds — `QueryShape.orderBy` is a name and a direction — so the value is TAGGED instead
-  (`{ $x: 'date' | 'bigint', v }`) and `reviveSortKey` is total without knowing which read minted
-  it. `undefined` encodes as `null`, because SQL has one absence and dropping the key would shift
-  every later one a position left. Anything JSON cannot carry and this cannot tag — an object, an
-  array, `NaN`, `±Infinity` — is `X_CURSOR_VALUE_UNSUPPORTED` where the cursor is MINTED, never
-  `X_CURSOR_INVALID`: the mistake is the read's own `orderBy` and no retry repairs it.
-- **`compareValues` orders numbers and bigints in ONE order, because Postgres does.** The numeric
-  fast path was `typeof === 'number'` on both sides, so an `int8` fell to
-  `String(left) < String(right)`: `compareValues(9n, 10n)` answered `1` and a sort came out
-  `["10", "100", "9"]`. `bigint` is the physical type of every `<p>_minor` column and
-  `@ultimat3/entity`'s `count-by.ts` lists it as groupable, so the in-memory source, the live
-  matcher and the seek fallback ALL disagreed with the database on any bigint-ordered read.
-  `shape-order.test.ts` is the pin, and `As of 2026-08` it reads a REAL kind list: `COLUMN_KINDS`
-  is the runtime array `@ultimat3/entity`'s `ColumnKind` derives from, and entity is tier 2 so a
-  test here may import it as a VALUE — which is what a `satisfies Record<ColumnKind, …>` could not
-  be, since `tsconfig.json` excludes `*.test.ts` and `tsc` never reads one. It had a spelled-out
-  list and `const COUNT = 9` beside a union of THIRTEEN members: `9 === 9`, a test that could not
-  fail, with `numeric`, `date`, `bytea` and `array` carrying no case at all.
-- **`numeric` and the TEXT form of `bigint` are a DECLARED gap here, and closing it is a
-  declaration change** (`shape-order.test.ts`, `As of 2026-08`). `@ultimat3/entity`'s `bigint()`
-  and `decimal()` hand digits back as strings, so `["9","10","100","2"]` sorts to
-  `["10","100","2","9"]` here and `["2","9","10","100"]` in the database — and a cursor's revived
-  `bigint` against a stored decimal string (`compareValues(9n, "10")` → `1`) cuts page two where
-  the database does not. It is **not** fixed by calling `@ultimat3/core`'s `compareDecimalText`
-  from `compareValues`: that function answers only for a caller holding the column's declared kind
-  (`@ultimat3/entity`'s `compareByKind`), and `QueryShape.orderBy` is a name and a direction —
-  nothing here can tell a `numeric` holding `"10"` from a `text` holding `"10"`, which Postgres
-  orders lexically, so a comparator guessing would trade one disagreement with the SQL it prints
-  for another. The fix is an `OrderKey` that carries a kind, from `sourceFor` down. Until then the
-  `DECLARED_GAP` block asserts both halves, so the gap cannot be silently re-discovered or
-  silently widened.
-- **A read's `input:` must survive a query STRING, and `query()` refuses one that cannot**
-  (`input-shape.ts`, `X_QUERY_INPUT_UNENCODABLE`, `As of 2026-08`). `client.ts` encoded a nested
-  member as `JSON.stringify(item)` and skipped a `null`, while `coerceQuery` has no inverse for
-  either — `case 'object'` hands the raw value back untouched — so the typed client type-checked
-  calls the server's own route then rejected, which is the exact failure `client.ts`'s header
-  claims to prevent. **The declaration is the fix, not the encoder**: teaching `coerceQuery` to
-  `JSON.parse` a string would make the ONE HTTP-boundary decoder invent structure for every
-  surface that shares it — forms and route params included — against that file's own rule that it
-  never invents data, and a `null` sentinel would be a reserved string colliding with the value
-  `"null"`. Refused: a structural member (`object`, `record`, `money`, or an array/union of one),
-  a REQUIRED nullable member, and a top-level input that is not an object. A schema
-  `tryIntrospect` cannot read is left alone, or `configureSchemaProvider` would be unusable.
-- **A refill is owed by a FULL window and by nothing else** (`matcher.ts`, `As of 2026-08`).
-  `removeAt` pushed one whenever `shape.limit !== null`, with no reference to how many rows the
-  window holds: three rows under `limit: 50`, delete one, and the patch list was
-  `[{remove, position:1}, {refill, from:49}]` — a position no two-row result set has. It is not a
-  harmless extra: `@ultimat3/realtime`'s `matcher-bridge` folds any refill into
-  `BridgeResult.refill`, and `live-fanout` then sends **no patch frame at all** that round, marking
-  every subscriber desynced instead — so on a quiet feed the deleted row stays rendered until some
-  other change to the same query id arrives, and on a busy one it is a full DB re-read plus one
-  snapshot per subscriber per delete. A window under `limit` has no unknown tail: the source served
-  fewer rows than it was allowed to, so what the client holds IS the result set. `held >=
-  shape.limit` is the gate, and it is `wasFull` one branch away, already written.
-- **A move OUT of a full window is a `refill`, never an `add`** (`matcher.ts`). `insert()` places a
-  moved row among the `limit - 1` rows the client still holds, so its position can never reach
-  `shape.limit` and the `position >= shape.limit` bail is unreachable on that path — the row was
-  re-inserted INSIDE the window. Proven with `limit: 3`, window `[a:1, b:2, c:3]` and a server also
-  holding `d:4, e:5`: moving `a` to `99` rendered `[b, c, a:99]` where the true window is
-  `[b, c, d]`. Only the server can answer the tail, and whether the moved row is still in the
-  window is its answer too.
-- **A page is bounded whether or not the caller bounded it.** `paginate` asserts `first` is a whole
-  number of rows in `1…MAX_PAGE_SIZE` (10,000) before anything else — `args.first + 1` bound
-  whatever an action's input or a route parameter carried, so one request could ask for five
-  million rows. The constant is a TWIN of `@ultimat3/entity`'s, under the same tier compromise
-  `naming.ts` and `deprecation.ts` are ported under.
-- **`tagKeys` is `@ultimat3/cache`'s, not this package's — moved 2026-08.** `src/tags.ts` here and
-  `@ultimat3/action`'s were byte-identical, and both packages are tier 3, so neither can import the
-  other and a copy in either is a second answer for the other — the same move `toBucket` made into
-  `@ultimat3/http`. `tagKey` went with it: `serializeTag` under a second name, zero call sites.
-  `@ultimat3/render` exports a *different* function under the same name (declaration order kept);
-  never import that one here.
-- **A fingerprint is an identity, so two different inputs may not share one — and it is
-  `@ultimat3/core`'s, not this package's, `As of 2026-08`.** `canonicalJson` + `fingerprint` moved
-  down to tier 0 because `@ultimat3/action` and `@ultimat3/realtime` needed the identical function
-  and all three are tier 3, so a copy in any of them was a second answer for the other two — and
-  the copies had already diverged. This one had **no `Date` branch**: `Object.keys(date)` is `[]`,
-  so the object branch rendered every date as `{}` and `queryHash({from: 2020…, to: 2020…})`
-  equalled `queryHash({from: 2026…, to: 2026…})`. Reachable on the ordinary HTTP path — `http.ts`
-  decodes a query string through `coerceQuery`, which turns a `t.date` member into a real `Date`,
-  and `input-shape.ts` permits `date` members — so ONE read-cache entry answered every date window
-  of that read for the TTL, page two of range A was served from range B's cursor scope, and every
-  date window shared one live query id. The hash form tags a `Date`, a `Map` and a `Set`
-  (`Date(<epoch>)`, `Map(…)`, `Set(…)`) beside the bare `NaN` / `±Infinity` / `-0` tokens it
-  already emitted, all for the reason a bare token exists: `'null'` collided with JSON `null` and
-  `String(-0)` is `"0"`. `stable.ts` keeps `columnOf` and a re-export of core's `isJsonObject` —
-  that predicate went down to tier 0 the same way, when `client-wire.ts` did. Ordinary
-  inputs are byte-identical, so the durable-key cost is confined to reads whose input carries a
-  `Date`, a `Map` or a `Set`: those cursors answer `X_CURSOR_INVALID` once, and their cache entries
-  are cold once. `query-hash.test.ts` is the pin, at `queryHash` and at `cacheKeyFor`.
-- The cursor codec is `@ultimat3/core`'s (`encodeCursor` / `decodeCursor` / `configureCursorSigning`).
-  This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
-  signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown
-  by core's `CursorInvalidError`, which `errors.ts` re-exports so the name stays on this surface.
-- **The request memo holds the read, not the rows.** `readOnce` publishes the in-flight promise
-  before its first await, so two reads of one key in one request are one execution and one tier
-  round trip whether the second follows the first or races it. A value-keyed map could not express
-  that, and could not tell a memoized `undefined` from a miss either. A rejection is evicted — a
-  failed read is not the request's answer, and the next read retries. `requestMemo(ctx)` is
-  therefore `Map<string, Promise<unknown>>`; never put a settled value in it.
-- **Every read is memoized; only a `cache:` read goes through the tier.** `readThrough` is
-  `readOnce` plus the fill through the ladder, and `readRows` picks between them on `def.cache`
-  alone. The memo is not what `cache:` buys — a list that renders one uncached lookup per row pays for
-  every row otherwise, which is the N+1 this collapses. Never gate `readOnce` on `def.cache`
-  again, and never let a second key function grow beside `cacheKeyFor`.
-- **A cache key carries the read's AUTHORITY, and `cache.scope` is what widens it** (`As of
-  2026-08`). `cacheKeyFor` held the name, the input and the tags — nothing about who asked — while
-  `sql(input, ctx)` is handed the context and `@ultimat3/entity` derives every tenant predicate
-  from `ctx.actor.orgId`. The tier is process-wide, so the first actor to ask filled the entry and
-  the next was served it: a query filtering on `ctx.actor.orgId` returned `org-a`'s row to an
-  `org-b` actor. `readAuthority(actor, scope)` is the ONE producer of the component and
-  `cacheKeyFor`'s fourth argument is **required and positional**, because an optional one is one a
-  call site forgets and a forgotten one is that read. `scope` defaults to `'actor'` and the default
-  is the mechanism: declaring nothing gets the narrowest key. `'tenant'` and `'global'` are written
-  statements about the rows — the `unenforced:` shape one field over — and `'tenant'` with no
-  `orgId` narrows to the actor rather than widening to everyone, because nothing here can prove two
-  org-less callers share a tenant. **All THREE spellings of "no org" take that branch**, `As of
-  2026-08`: `undefined`, `''` and `null`. The last one missed it, so every org-less caller shared
-  the single key `["org",null]` and was served the rows of whoever asked first. `orgless()` widens
-  its parameter past core's `orgId?: string` because **`orgId` is a value off the wire** — an app's
-  adapter, a decoded session row, a JSON payload — not because a declared type permits a `null`.
-  `@ultimat3/policy`'s `PolicyActorFields` reads like the reason and is not it (corrected
-  2026-08-19): `Actor = CoreActor & PolicyActorFields`, and that intersection collapses its
-  `string | null | undefined` back to `string | undefined`, so the widening is **inert** at the type
-  level and `{ orgId: null }` is a type error. Its `testActor` mints `orgId: null` through the one
-  cast left in `packages/policy/src/test-kit.ts`, which is why `cache-authority.test.ts` can reach
-  this branch at all — the repo's only producer of that `null`, and a test seam rather than a proof.
-  The authority is JSON, never a joined string, for the reason
-  `@ultimat3/entity`'s `scopeKey` gives: an actor id is app data and may carry the separator.
-- **`cache.ttlMs` is judged at `query()`, not on the first read.** Every `CacheTier` refuses a
-  lease that is not positive and finite (`assertTtl`), and the read tier's one catch absorbs
-  `X_CACHE_TOO_LARGE` only — so `ttlMs: Infinity` turned a typo into a permanently failing business
-  read whose cause named a cache key. `X_QUERY_CACHE_TTL_INVALID`, on the line that wrote it. It
-  restates `assertTtl`'s bar as a refusal and never as a second resolution.
-- **`fingerprint` is SHA-256/16, never a 32-bit hash** (`@ultimat3/core`, `As of 2026-08`). It is a
-  SHARING key over client-chosen input — which read-cache entry two callers are served from, which
-  scope a cursor is bound to — so FNV-1a/32's 4×10⁹ values are a collision found offline in
-  seconds. `@ultimat3/realtime`'s `stableDigest` was the same primitive at the same width and is
-  gone with the rest of that copy: a `qid` is `queryHash(name, input)` now, imported across the
-  declared `realtime -> query` edge, so the two hashes cannot drift apart while `planResume`
-  compares one against a cursor's.
-- **A fill is FENCED, and the fence is `@ultimat3/cache`'s** (`As of 2026-08`). `run()` answers with
-  rows it read in the past: a mutator committing in between busts a key not yet in the tier, so the
-  drop is a no-op reporting `errors: []`, and the fill then publishes the pre-write rows for the
-  full TTL — invisible to every reader until it expires. The sample happens inside
-  `createCacheStack.read`, immediately before `load()`, and is re-asked per rung before each write.
-  This package no longer samples one of its own — that copy went with the private store. The caller
-  is answered either way: those rows ARE its answer, and only publishing is refused.
-  `cache-fence.test.ts` is the proof the property survived the move.
-- **This package owns NO cache store, and that is the enforcement** (`As of 2026-08`). A `cache:`
-  read fills `createCacheStack(registeredTiers(), { clock })` — the tiers `@ultimat3/cache` has
-  registered — and there is nothing here to install, swap or wire. There used to be: a private
-  `ReadCache` seam (`setReadCache`/`getReadCache`/`MemoryReadCache`) that `invalidateTags` could not
-  reach, because that fan-out walks the registered `CacheTier`s and nothing else. The gap was closed
-  by `packages/cli/src/dev-cache.ts` installing the read cache **over** an object it also
-  registered — a correctness property held by a wiring line in a CLI file, one edit from being
-  wrong, and carrying a second `ReadCache` implementation (`tierReadCache`) that dated entries with
-  `Date.now()`. And `invalidateQueryTags` was a second fan-out path, which
-  `packages/cache/CLAUDE.md` forbids in as many words. One registry, one fan-out, no seam. **Never
-  reintroduce a store here**, and never call `tier.invalidateTags()` from this package.
-- **A tier refusal degrades the cache, never the read** — and so does every other tier concern.
-  `bestEffort`, the fence, the single flight, the promotion and the TTL are all `createCacheStack`'s,
-  which is what "no store here" buys: a refused `get` reads as a miss, a refused `set` as "that tier
-  is unchanged", and the failure lands in `recentTierFailures()` under the name of the tier that
-  actually refused rather than under a `'query-read'` label for a rung in no registry. Never wrap a
-  tier call here in a private try/catch, and never sample a second fence.
-- **The read path reads NO clock, and that is what makes it drivable.** It hands the stack a
-  RELATIVE `ttlMs`; the tier's own clock turns it into an absolute expiry. `fill` used to compute
-  `nowMs(clock) + ttlMs` and `tierReadCache` used to compute `expiresAt - Date.now()`, so the two
-  `ReadCache` implementations disagreed about "now" and no frozen clock could drive the
-  Redis-backed one. `read-tier.test.ts` pins it: a `createLruTier({ clock, jitterFraction: 0 })` and
-  a `ctx.clock` frozen at the same instant produce an expiry a test can assert exactly.
-- **A `cache:` read always expires, and the bound is the tier's.**
-  `def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS` (60s) is what `readRows` passes — a query keyed on
-  `{ orgId, cursor }` has as many distinct keys as the deployment has tenants, and unbounded that is
-  one permanent entry per page per org. `null` is "the caller named none", never "never": it reaches
-  the stack as an OMITTED `ttlMs`, which is how a tier is asked for its own default. Every tier
-  refuses a non-positive lease outright, so there is no immortal entry to spell.
-- **A process that registered no tier reads uncached.** `createCacheStack([])` loads, answers and
-  writes nowhere — correct, and slower. That is the trade for deleting the module-default store: a
-  script, a worker boot or a test that wants caching calls `registerTier`, the same call every
-  other cached surface in the framework already uses.
-- **The memo holds an execution, never a decision.** `readRows` runs `buildSource` — parse, guard,
-  `sql()` — *before* it reaches the memo, on every call, and `.as()` reads in a child context whose
-  identity is its own memo. So a memoized answer is still one this actor was allowed to ask for,
-  and no impersonated read can join a read made as someone else. Moving the memo above
-  `buildSource` would turn it into an authz bypass.
-- **`fresh: true` skips the memo on the way in and publishes to it on the way out.** A memo is a
-  cache whose lifetime is the request, so `fresh` refuses to *join* an entry — `readFresh` is
-  `readOnce` minus the join, both sharing one `publish` — but it must still *become* one. Returning
-  the rows early instead left the pre-write entry standing, so "the one way to read past a write
-  made earlier in the same request" ended at the single call that asked for it and the next plain
-  read of that key got the stale answer back. Invalidation still drops tier entries only.
-- **A read can declare a `rateLimit:`, and `toQueryRoute` enforces it — added 2026-08.** `QueryDef`
-  had no such field and the route set no bucket, so **every** `GET /_x/query/*` fell through
-  `bucketFor` to `default` — 120 burst, 2/s per actor. One authenticated caller could hold 120
-  cross-tenant aggregates in flight and then 2/s indefinitely, from a single account, and the
-  declaration that would have throttled it did not exist in the type. `meta.rateLimit` (the name)
-  **and** `meta.rateLimitBucket` (the numbers) are both set, because a name nothing registers is
-  the same silent fall-through. The conversion is `toBucket` from **`@ultimat3/http`** — http owns
-  `Bucket` and the maths, and `@ultimat3/action` is this tier, so a copy here would be a second
-  answer for the write half. Never derive a bucket locally.
-- **`deprecated:` is a compat WINDOW; versioning is not here and will not be.** `Deprecation`
-  (RFC 9745, `@<unix seconds>`) and `Sunset` (RFC 8594, IMF-fixdate) on every answer including the
-  failures, a `rel="successor-version"` link built through `derivePath` — the same derivation
-  `client()` uses, never a second one — the dates on the descriptor, and
-  `deprecated_calls_total{primitive,name}`, which is the only way to answer "is anyone still
-  reading it?" before deleting the read. Rendered ONCE at projection, so a date that cannot become
-  a header is `X_QUERY_DEPRECATION_INVALID` at mount rather than on the first read. Running two
-  versions side by side is two deployments behind one ingress (axiom 7). `deprecation.ts` is a
-  twin of `@ultimat3/action`'s: both are tier 3, the shared home is `@ultimat3/http` if it ever
-  grows one, and this is the same compromise `naming.ts` is ported under.
-- **The span wraps the whole read, not `source.execute()`.** Wrapping the execution alone left the
-  input parse, the policy evaluation and `sql()`'s own construction outside every span, so a read
-  whose cost was in building the source reported milliseconds under a parent reporting seconds —
-  a gap with no name, which reads as framework overhead. Attributes are bounded: surface, actor
-  KIND, `live`, `cached`, `fresh`, and the row count. Never the input and never an actor id — a
-  read is keyed per tenant and per cursor, so either would be unbounded. `telemetry.test.ts`
-  asserts the EXTENT structurally, reading `currentSpan()` from inside the policy predicate and
-  `sql:`, because the test clock is frozen and a timing assertion would hang on it.
-- **`policyCapability` is a display label; `policyPermissions` is what a report matches on.** A
-  composite renders as `or(feed:read, org:administer)`, which equals no permission string, so
-  `x policy list` matching on `capability` reported every non-trivially-guarded read's permissions
-  as *unenforced*. `QueryDescriptor.permissions` is the flattened list from `@ultimat3/policy`,
-  published beside `capability` and never instead of it.
-- **`queryClient`/`client()` inject `traceparent`.** Core's `traceparent()` had no caller in the
-  repo, so a service-to-service read began a fresh root trace on the far side. Set BEFORE the
-  caller's own headers so an explicit one wins; an incomplete span context (`spanId: ''`) sends
-  nothing rather than a header every collector drops. In a browser there is no ambient context, so
-  a cross-origin read gains no CORS preflight it did not already have. The helper is twinned in
-  `@ultimat3/action`'s client for the same tier reason `naming.ts` is.
-- Authz goes through `enforce(surface, policy, { input, actor, ctx })` from
-  `@ultimat3/policy`; a live denial keeps its 4403 close code on `QueryDeniedError.denial`.
-  `policy-gate.ts` is the only file that imports the policy package.
+- `paginate` has no `offset` and never grows one; it is reachable only as
+  `query.page(input, { first, after })`. **A page is bounded**: `first` is 1…`MAX_PAGE_SIZE`
+  (10,000, a twin of `@ultimat3/entity`'s).
+- **A `RowProvider` may be a list, a sync function or an async one** (`source.test.ts`).
+- **A cursor is a position, not a row**: `isAfterKey` (`source.ts`) is the one definition of "after";
+  never reintroduce a row lookup. The seek predicate is spelled out per key
+  (`(a < $1) or (a = $2 and id > $3)`), never a row-value comparison.
+- **NULL has one meaning, `isNull`**: `=`/`!=`/`in` treat NULL as a value (`is null`,
+  `is distinct from`, `in (…) or is null`); range operators treat it as unknown; `order by` treats it
+  as the largest value (`asc nulls last` / `desc nulls first`). Never bind a parameter where NULL is
+  the tested value. `in` with an empty or non-array operand is `1 = 0`.
+- **The id is the tiebreak that makes the order total.** No id is `X_QUERY_NOT_PAGEABLE`, never
+  `String(undefined)`. **`totalOrder`** (declared keys, then `id asc`) is the served order for SQL,
+  memory and `positionFor`; never add `id` to `QueryShape.orderBy`. A live read asks for it via
+  `SqlSource.total()` (called by `buildSource` for `surface === 'live'`), never `seek(null, limit)`.
+- **The keyset tiebreak keeps the id's TYPE** (`SeekKey.id: unknown`), carried at the tail of `key`
+  through `serializeSortValue` (`pagination-id-type.test.ts`).
+- **A sort value carries its TYPE through the cursor** (`cursor-value.ts`: `{ $x: 'date' | 'bigint',
+  v }`; `undefined` → `null`). Untaggable values are `X_CURSOR_VALUE_UNSUPPORTED` where the cursor is
+  minted.
+- **`compareValues` orders numbers and bigints in one order**; equality treats `number` and `bigint`
+  as one family (`shape.ts` `same`). `shape-order.test.ts` reads `@ultimat3/entity`'s `COLUMN_KINDS`.
+- **`numeric` and the TEXT form of `bigint` are a DECLARED gap** (`DECLARED_GAP` in
+  `shape-order.test.ts`): closing it needs an `OrderKey` carrying a kind, never a guessing comparator.
+- **A refill is owed by a FULL window only** (`held >= shape.limit`). **A move OUT of a full window is
+  a `refill`, never an `add`.**
+- **A position is decided against the rows the WINDOW holds**: `unprojectedOrderKey` — a held row
+  missing an ordering column (`Object.hasOwn`, never a value check) gets a `refill` rather than a
+  guess. A delete is addressed by index and still patches.
+- **`tagKeys` is `@ultimat3/cache`'s.** `@ultimat3/render` exports a different `tagKeys`; never import
+  that one here.
+- **A fingerprint is `@ultimat3/core`'s** (`canonicalJson` + SHA-256/16 `fingerprint`), tagging `Date`,
+  `Map`, `Set`. `query-hash.test.ts` pins it at `queryHash` and `cacheKeyFor`. `stable.ts` keeps
+  `columnOf` and re-exports core's `isJsonObject`.
+- The cursor codec is `@ultimat3/core`'s; this package supplies only the scope (`queryHash(name,
+  input)`). An unverified cursor is `X_CURSOR_INVALID` (`CursorInvalidError`, re-exported).
+
+## Invariants — caching
+
+- **The request memo holds the read, not the rows**: `readOnce` publishes the in-flight promise
+  before its first await; a rejection is evicted. `requestMemo(ctx)` is `Map<string, Promise<unknown>>`.
+- **Every read is memoized; only a `cache:` read goes through the tier** (`readThrough`). One key
+  function, `cacheKeyFor`.
+- **A cache key carries the read's AUTHORITY**: `readAuthority(actor, scope)` is its one producer and
+  `cacheKeyFor`'s fourth argument is required. `scope` defaults to `'actor'`; `'tenant'` with no
+  `orgId` (`undefined`, `''` or `null` — `orgless()`) narrows to the actor. The authority is JSON.
+- **`cache.ttlMs` is judged at `query()`** (`X_QUERY_CACHE_TTL_INVALID`). A `cache:` read always
+  expires: `def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS` (60 s); an unset TTL is OMITTED so the tier
+  defaults.
+- **A fill is FENCED, by `@ultimat3/cache`'s fence inside `createCacheStack.read`** — never a second
+  one here (`cache-fence.test.ts`).
+- **This package owns NO cache store**: a `cache:` read fills
+  `createCacheStack(registeredTiers(), { clock })`. Never reintroduce a store, never call
+  `tier.invalidateTags()` here. A tier refusal degrades the cache, never the read.
+- **The read path reads NO clock** — it hands the stack a relative `ttlMs` (`read-tier.test.ts`).
+- **A process that registered no tier reads uncached** — correct, and slower.
+- **The memo holds an execution, never a decision**: `buildSource` (parse, guard, `sql()`) runs on
+  every call before the memo. Moving the memo above it would be an authz bypass.
+- **`fresh: true` skips the memo on the way in and publishes to it on the way out.**
 
 ## Commands
 
@@ -597,21 +195,4 @@ bun test packages/query
 bun run typecheck
 ```
 
-**A position is decided against the rows the WINDOW holds, so a window that cannot answer gets a
-`refill` rather than a guess** — `unprojectedOrderKey`, `As of 2026-08-20`. A result set is whatever
-the query's `sql` returned, and a PROJECTION that drops an ordering column left `compareRows`
-measuring the change row's real value against nothing: never equal on the update path, so every
-change read as a move, and arbitrary on the insert path, so a row created last landed wherever
-`undefined` sorted. `examples/dummy`'s feed ordered by `createdAt` and projected without it, and one
-publish became a `remove` + `insert` whose re-inserted row was the raw table row (#230).
-
-The discriminator is **`Object.hasOwn`, never a value check**: a nullable column that IS null still
-carries its key, and everywhere else in this package an absent key and a SQL NULL are one absence
-(`isNull` says so). Here they are different facts — "this row's value is nothing" versus "this shape
-cannot answer" — and only the key tells them apart. Asked of the row the window holds and never of
-the change row, which comes off the table and can always answer. A **delete** never reaches the rule:
-it is addressed by the index its id was found at, so a projected query still removes incrementally.
-
-The rule generalises what `assertSeekable` already applies to a cursor: **a sort key has to be
-readable on the row.** A live query whose rows omit one still works — it re-reads instead of
-patching — which is correct and slower, and the fix is to project the key.
+Why each rule above is shaped the way it is: [`docs/history/query.md`](../../docs/history/query.md).

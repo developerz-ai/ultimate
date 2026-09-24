@@ -73,19 +73,3 @@ export function pgArrayLiteral(values: readonly unknown[]): string {
   );
   return `{${values.map((value) => (Array.isArray(value) ? pgArrayLiteral(value) : element(value))).join(',')}}`;
 }
-
-/**
- * Every parameter of one statement, arrays rendered and everything else passed through untouched.
- *
- * A NEW ARRAY ONLY WHEN SOMETHING CHANGED. Every statement the framework runs goes through this
- * function, and almost none of them binds an array — so the common path is one `some` over a short
- * list and the caller's own array object, byte for byte, which is what `sendOn` had before this
- * existed (axiom 6).
- *
- * A `Uint8Array` is BYTEA and is deliberately not an array here: `Array.isArray` answers `false`
- * for a typed array, which is the behaviour this relies on rather than a special case it writes.
- */
-export function encodeArrayParameters(values: readonly unknown[]): readonly unknown[] {
-  if (!values.some(Array.isArray)) return values;
-  return values.map((value) => (Array.isArray(value) ? pgArrayLiteral(value) : value));
-}

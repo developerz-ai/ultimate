@@ -64,7 +64,7 @@ describe('the boot after a sign-out by full navigation', () => {
   test('wipes every other principal off disk — rows and queued writes — before restoring', async () => {
     const disk = await pageLocalStore();
     await disk.write('p:bob', [{ type: 'posts', key: 'p1', row: { id: 'p1' } }], []);
-    await disk.saveQueue('p:bob', { mutations: [], nextSeq: 3 });
+    await disk.writeQueue('p:bob', { puts: [], deletes: [], nextSeq: 3 });
     await disk.write('p:alice', [{ type: 'posts', key: 'p2', row: { id: 'p2' } }], []);
     rescope('alice'); // the next page load, rendered for alice; bob never called rescope
 

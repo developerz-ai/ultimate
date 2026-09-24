@@ -6,6 +6,7 @@ import { uuid as uuidV7 } from '@ultimat3/core';
 import {
   CURRENCY_CODE_PATTERN,
   isCurrencyCode,
+  isIsoDateTime,
   isMoneyScale,
   MAX_MONEY_SCALE,
 } from '@ultimat3/schema';
@@ -85,59 +86,22 @@ const uuidWith = <T extends string>(meta: ColumnMeta): UuidColumn<T> => ({
   column: (name) => uuidWith<T>({ ...meta, name: assertColumnName(name) }),
 });
 
-export interface TextOptions {
-  /** Emits `char_length(<column>) <= max`, so Postgres refuses an over-long string too. */
-  readonly max?: number;
-}
-
-export const text = (options: TextOptions = {}): Column<string> =>
-  column<string>(
-    'text',
-    (value) =>
-      typeof value === 'string'
-        ? value
-        : refuseColumn(
-            'type',
-            `expected a string, ${got(value)}`,
-            'String(value) at the call site when this really is text — a number column is integer(), an exact decimal is decimal(), a structured payload is json(schema)',
-          ),
-    options.max === undefined
-      ? {}
-      : { length: options.max, check: (name) => `char_length(${name}) <= ${options.max}` },
-  );
-
-export const integer = (): Column<number> =>
-  column<number>('integer', (value) =>
-    typeof value === 'number' && Number.isSafeInteger(value)
-      ? value
-      : refuseColumn(
-          'type',
-          `expected a safe integer, ${got(value)}`,
-          'Math.trunc(value) for a float and Number(value) for a numeric string — a count past ±2^53 is bigint(), a fractional value is decimal()',
-        ),
-  );
-
-export const boolean = (): Column<boolean> =>
-  column<boolean>('boolean', (value) =>
-    typeof value === 'boolean'
-      ? value
-      : refuseColumn(
-          'type',
-          `expected a boolean, ${got(value)}`,
-          "value === 'true' at the call site for a text flag, and boolean().nullable() when the column has a third state",
-        ),
-  );
+export type { TextOptions } from './columns-scalar';
+export { boolean, integer, text } from './columns-scalar';
 
 const parseInstant = (value: unknown): Date => {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-  if (typeof value === 'string' || typeof value === 'number') {
+  // A string must be ISO-8601 naming its own instant (`@ultimat3/schema`'s `isIsoDateTime`):
+  // `new Date('2026-03-14T09:00')` and `new Date('March 14, 2026')` resolved through the HOST's
+  // zone on insert and seed, so one row was a different instant per container `TZ`.
+  if ((typeof value === 'string' && isIsoDateTime(value)) || typeof value === 'number') {
     const parsed = new Date(value);
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   return refuseColumn(
     'format',
-    `expected a UTC instant, ${got(value)}`,
-    'new Date(value) at the call site — timestamp() stores an instant; a calendar date with no clock is date(), and an elapsed span is integer()',
+    `expected a UTC instant — a Date, epoch milliseconds, or an ISO-8601 string with Z or an offset — ${got(value)}`,
+    "'2026-03-14T09:00:00Z' or a Date — timestamp() stores an instant, so a string must name its zone; a calendar date with no clock is date(), and an elapsed span is integer()",
   );
 };
 
@@ -156,7 +120,12 @@ export const url = (): Column<string> =>
       if (typeof value === 'string') {
         try {
           const parsed = new URL(value);
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return value;
+          // The scheme is stored in its canonical LOWER case: the CHECK is `~ '^https?://'`, so
+          // `HTTPS://a.b` was stored by memory and refused by Postgres. Only the scheme is
+          // rewritten — the rest of the URL is the caller's, byte for byte.
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return value.replace(/^https?(?=:)/i, (scheme) => scheme.toLowerCase());
+          }
         } catch {
           // fall through to the shared rejection so the error names the rule
         }

@@ -1,6 +1,6 @@
 # Realtime internals
 
-How `@ultimat3/realtime` works, server and browser, `As of 2026-09-22` (21.0.0, unreleased; plan
+How `@ultimat3/realtime` works, server and browser, `As of 2026-09-22` (21.0.0; plan
 101). The client data layer's design and its decisions are
 [`21-client-data-layer.md`](./21-client-data-layer.md); this page is the mechanism under it. Ladder
 rationale: [`../idea/03-realtime.md`](../idea/03-realtime.md). Honest sizing:
@@ -326,7 +326,7 @@ field read through `list()` stay at the same number, because `decode` builds a w
 | 2 | Window computed from live connection count | 500 clients drain in a second; 500k spread over minutes |
 | 3 | `resumeFrom` LSN | reconnect is a buffer delta, not a resubscribe-and-refetch |
 | 4 | Stateless `sync`, no sticky sessions | the load balancer redistributes clients across remaining nodes |
-| 5 | Browser backoff is a floor | a socket lost without a frame redials on `browserBackoff`: 500 ms base, factor 2, **`equal`** jitter, capped at `BROWSER_RECONNECT_MAX_MS = 4_000` (`thundering-herd.ts`). The server-side `defaultBackoff` (`full`, 30 s) is not a browser's curve: after a deploy it left the returning node unreached for 27 s. The arithmetic is `@ultimat3/core`'s `backoffDelay`, and this package's attempt is 0-based, so its wrapper passes `attempt + 1` ([`20-flight-control.md`](./20-flight-control.md)) |
+| 5 | Browser backoff is a floor | a socket lost without a frame redials on `browserBackoff`: 500 ms base, factor 2, **`equal`** jitter, capped at `BROWSER_RECONNECT_MAX_MS = 4_000` (`thundering-herd.ts`). The server-side `defaultBackoff` (`full`, 30 s) is not a browser's curve: after a deploy it left the returning node unreached for 27 s. The arithmetic is `@ultimat3/core`'s 1-based `backoffDelay`; the internal `policyDelay` maps a realtime policy onto it, and realtime exports no `backoffDelay` of its own, `As of 2026-09-23` ([`20-flight-control.md`](./20-flight-control.md)) |
 | 6 | Per-tenant subscription caps | `X_SUBSCRIPTION_LIMIT`, taken as a reservation; the per-tenant scope only when both `maxPerTenant` and `tenantOf` are supplied |
 | 7 | `AcceptBudget` on the upgrade path | a token bucket per node, `perSecond: 500`, `burst: 2000` by default (`sync-node.ts`). A refused upgrade is a `503` with a jittered `retry-after-ms`, decided before any query runs. A second bucket per socket (`maxFramesPerSecond`) sheds inbound frames |
 

@@ -132,7 +132,7 @@ export class RemoteEmbedder implements Embedder {
       throw new AiTransportError({
         provider: this.name,
         status: response.status,
-        detail: (await response.text().catch(() => '')).slice(0, DETAIL_LIMIT),
+        detail: await detailOf(response.body),
         envVar: API_KEY_ENV,
       });
     }
@@ -217,4 +217,37 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function countOf(data: unknown): string {
   return Array.isArray(data) ? String(data.length) : 'no data array';
+}
+
+/**
+ * The start of an error body, and never more. `response.text()` read it WHOLE — outside
+ * `maxResponseBytes`, which bounds a success only — so a provider streaming an endless 5xx body
+ * held the call and its memory forever. Capped through the same counting reader, and decoded from
+ * the bytes it kept: `over` still has a detail worth showing.
+ */
+async function detailOf(body: ReadableStream<Uint8Array> | null): Promise<string> {
+  if (body === null) return '';
+  const reader = body.getReader();
+  const kept: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < DETAIL_LIMIT) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      kept.push(value);
+      total += value.byteLength;
+    }
+  } catch {
+    // A body that fails mid-read still has whatever arrived; the status is the error's substance.
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of kept) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes).slice(0, DETAIL_LIMIT);
 }

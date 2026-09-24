@@ -7,7 +7,7 @@
 // The predicate decides on `actor.id` and the loaded row ALONE, and reads both off the arguments
 // it is handed. `app/posts/policy.ts` needs one thing more — the request-resolved friend and block
 // sets — and it reads those off the SAME actor, as facts, for the same reason: a sync node's
-// context carries no ambient viewer (`packages/cli/src/dev-roles.ts:151`), and a rule that reached
+// context carries no ambient viewer (`packages/cli/src/role-sync.ts`), and a rule that reached
 // for one would allow in a page render and deny for a subscriber.
 
 import { can, definePermissions } from '@ultimat3/policy';

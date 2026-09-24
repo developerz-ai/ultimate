@@ -10,7 +10,7 @@ import { tryResolveEnvironment } from '@ultimat3/core';
 import { pgliteDataDir } from '@ultimat3/db';
 import type { DatabaseTarget } from '@ultimat3/mcp';
 import { branchNameOf, pgliteBranchName } from './db-branch';
-import type { DevServices, Env } from './dev-services';
+import type { DevServices, Env } from './runtime-bindings';
 import { safeUrlLabel } from './safe-url-label';
 
 /**

@@ -30,7 +30,6 @@ export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
 export type { DescribeInput } from './describe';
-export { sqlTypeOf } from './describe';
 export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';
 export { entity, SOFT_DELETE_COLUMN } from './entity';
 // The vocabulary an EXISTING schema needs. Separate from the blessed builders on purpose: those
@@ -82,7 +81,11 @@ export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
 export { persistedRecordTypes } from './persisted-types';
 export type { PostgresDriverOptions } from './pg-driver';
-export { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
+export { postgresDriver, postgresRepo } from './pg-driver';
+// For a change feed holding a table name and raw columns: `entityForTable` + `decodeRow` is the row
+// the app declared, money and all. Exported for `@ultimat3/realtime` (plan 101, 06 i).
+export { decodeRow } from './pg-row';
+export { postgresTransactor } from './pg-transactor';
 // The two page bounds, beside `N_PLUS_ONE_THRESHOLD` and for the same reason: an app validating
 // its own `pageSize` input against a hardcoded 10_000 is a second declaration of one number.
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './plan';
@@ -106,6 +109,7 @@ export type {
 export {
   clearRegistry,
   describeEntities,
+  entityForTable,
   entityNames,
   getEntity,
   registerEntity,
@@ -138,9 +142,7 @@ export {
   isSearchLanguage,
   isSearchWeight,
   SEARCH_LANGUAGES,
-  SEARCH_PROPERTY,
   SEARCH_WEIGHTS,
-  searchExpression,
 } from './search';
 export type {
   Seed,
@@ -168,14 +170,9 @@ export type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './t
 export {
   assertRowTenant,
   assertScoped,
-  describePlan,
-  emptyPlan,
-  hasOrgPredicate,
-  isOrgScoped,
   ORG_COLUMN,
   orgScoped,
   scopedPlan,
-  tenantColumnOf,
 } from './tenancy';
 export type { Move } from './transition';
 export type {

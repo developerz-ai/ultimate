@@ -129,7 +129,9 @@ describe('the manifest step runs it', () => {
       expect(agents).toBeDefined();
       await withRoot(async (root) => {
         await Bun.write(join(root, AGENTS_MD_FILENAME), agents?.contents ?? '');
-        expect(await checkAgentsMd(root)).toMatchObject({ findings: [] });
+        // And no warning either: the conventions table `x new` writes names routes and entities,
+        // and `@ultimat3/manifest`'s heuristic now tells a conventions table from a facts one.
+        expect(await checkAgentsMd(root)).toEqual({ findings: [], warnings: [] });
       });
     },
   );

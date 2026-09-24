@@ -5,8 +5,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { Extraction } from '@ultimat3/i18n';
 import { loadCatalog } from '@ultimat3/i18n';
+import { stripComments } from '../packages/core/src/source-mask';
 import { CATALOG_FILE, type CatalogGap, catalogGapFindingFor, checkCatalog } from './i18n-catalog';
-import { keyLiteralsIn, stripComments } from './lib/i18n-scan';
+import { keyLiteralsIn } from './lib/i18n-scan';
 
 const usage = (key: string, file = 'packages/admin/src/list.tsx', line = 44): Extraction =>
   ({ usages: [{ key, file, line, column: 1 }], dynamic: [] }) satisfies Extraction;
@@ -158,11 +159,17 @@ describe('the findings', () => {
 });
 
 describe('the scan', () => {
-  test('a whole-line comment contributes no key, and the line count survives', () => {
-    const source = ["const a = t('admin.list.empty');", " * `t('items', { count })` is a doc", ''];
+  test('a comment contributes no key, and the line count survives', () => {
+    const source = [
+      "const a = t('admin.list.empty');",
+      '/**',
+      " * `t('items', { count })` is a doc",
+      ' */',
+      "const b = 1; // t('trailing.note')",
+    ];
     const stripped = stripComments(source.join('\n'));
 
-    expect(stripped.split('\n').length).toBe(3);
+    expect(stripped.split('\n').length).toBe(5);
     expect(keyLiteralsIn(stripped)).toEqual(['admin.list.empty']);
   });
 

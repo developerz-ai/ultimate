@@ -14,11 +14,10 @@
 // sets. `cdp-browser.e2e.test.ts` carries the reason.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { PageLike } from '@ultimat3/testing';
-import type { E2eBrowser } from '../src/cdp-browser';
-import { openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
-import { findChrome } from '../src/cdp-launch';
-import { e2ePage } from '../src/e2e-page';
+// The browser is `@ultimat3/testing`'s since 22.0.0; this file stays in cli because what it drives
+// is cli's own emitted service worker, and `testing` may not import cli.
+import type { E2eBrowser, PageLike } from '@ultimat3/testing';
+import { e2ePage, findChrome, openE2eBrowser, openE2eBrowserIfAvailable } from '@ultimat3/testing';
 import { islandBundle } from '../src/island-bundle';
 import type { PwaArtifacts } from '../src/pwa-artifacts';
 import { styleBundleOf } from '../src/style-bundle';

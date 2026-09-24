@@ -222,7 +222,7 @@ describe('x build --target static, with islands', () => {
 /**
  * The build measures a budget by RENDERING the route, through the same `routeDocument` a request
  * takes — and a request arrives inside `runWithContext`, installed by the HTTP pipeline
- * (`dev-render.ts`). `prerenderSite` called it bare, so every route whose component, `load` or
+ * (`runtime-render.ts`). `prerenderSite` called it bare, so every route whose component, `load` or
  * `meta` reads `useContext()` threw `X_NO_CONTEXT` and was filed as unmeasured. Measured against
  * `examples/dummy`: `/posts/new` and `/settings` both, for that reason alone.
  */

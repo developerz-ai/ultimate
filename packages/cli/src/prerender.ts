@@ -12,13 +12,16 @@ import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import type { RouteStats } from './budgets';
 import { measureDocumentJs, writeBuildStats } from './budgets';
-import { routeDocument } from './dev-render';
 import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { FAVICON_PATH, faviconBytes } from './favicon';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
-import { measurementActor } from './measurement-actor';
+import { measureDatabase } from './measure-database';
+import { measurePaths } from './measure-paths';
+import { measureScope, withAppUrl } from './measure-scope';
+import { clearPrerenderOut } from './prerender-out';
 import { loadPwaArtifacts, WEB_MANIFEST_PATH, writePwaIcons } from './pwa-artifacts';
+import { routeDocument } from './runtime-render';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 import { styleBundle, writeStyles } from './style-bundle';
@@ -142,6 +145,8 @@ const declaresBudget = (entry: RouteEntry): boolean => {
 export async function prerenderSite(options: PrerenderOptions): Promise<PrerenderReport> {
   // The same load `x dev` and `x manifest` perform: importing the app's modules IS what fills the
   // route registry, so there is no route table to prerender before this runs.
+  // Emptied FIRST: the export only ever gained files, so a deleted route's HTML kept shipping.
+  await clearPrerenderOut(options.out, options.root);
   await loadApp(options.root);
   const buildId = (await appManifest(options.root)).manifest.buildId;
   const origin = options.origin ?? DEFAULT_ORIGIN;
@@ -218,7 +223,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   }
 
   // Every render below goes through `routeDocument`, which is the function a REQUEST reaches — and
-  // a request arrives inside `runWithContext`, installed by the HTTP pipeline (`dev-render.ts`).
+  // a request arrives inside `runWithContext`, installed by the HTTP pipeline (`runtime-render.ts`).
   // Called bare, any route whose component, `load` or `meta` reads `useContext()` threw
   // `X_NO_CONTEXT`: measured against `examples/dummy`, `/posts/new` and `/settings` were filed
   // unmeasured for that reason alone, and a `render: 'static'` route reading it failed the whole
@@ -226,115 +231,129 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // documents, and this build's own id so a component reading `ctx.buildId` stamps the artifact
   // with the id the report and the stats carry.
   const ctx = createContext({ role: 'web', buildId });
-  // A SECOND context, for the branch below that renders only to weigh. Its actor holds every
-  // permission (`measurement-actor.ts`), because an `app/` page's `load` calls policy-guarded
-  // queries and denied the anonymous one with `X_UNAUTHENTICATED` — every authed page unmeasured.
-  // `renderStatic` keeps `ctx`: its output is a published file, and a `site/` load that a policy
-  // refuses must fail the build, never render another actor's rows into it.
-  const measureCtx = createContext({ role: 'web', buildId, actor: measurementActor() });
-  const documentAs = (
-    as: typeof ctx,
-    entry: RouteEntry,
-    data: { url: string; params: Record<string, string> },
-  ) =>
-    runWithContext(as, () =>
-      routeDocument(entry, data, {
-        resolveIsland: (file: string) => islands.resolverFor(file),
-        themeHead: theme.head,
-        ...(pwa === undefined ? {} : { pwaHead: pwa.head + (swHead ?? '') }),
-      }),
-    );
+  // A SECOND scope, for the branch below that renders only to weigh (`measure-scope.ts`): a
+  // request context holding the app's measurement actor, with the app's own API answered in
+  // process, because an `app/` page's `load` calls policy-guarded queries over its typed client
+  // and no server is listening during a build. `renderStatic` keeps `ctx`: its output is a
+  // published file, and a `site/` load a policy refuses must fail the build, never render another
+  // actor's rows into it.
+  const measure = await measureScope({ origin, buildId });
+  // Started on the first route that needs weighing, and released however the loop ends.
+  const database = measureDatabase(options.root);
+  const render = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
+    routeDocument(entry, data, {
+      resolveIsland: (file: string) => islands.resolverFor(file),
+      themeHead: theme.head,
+      ...(pwa === undefined ? {} : { pwaHead: pwa.head + (swHead ?? '') }),
+    });
   const document = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
-    documentAs(ctx, entry, data);
+    runWithContext(ctx, () => render(entry, data));
 
-  for (const entry of routeEntries()) {
-    const facts = { surface: entry.surface, render: entry.config.render, route: entry.path };
-    const reason = skipReasonFor(facts);
-    if (reason !== null) {
-      skipped.push(skippedRoute(facts, reason));
-      if (!declaresBudget(entry)) continue;
-      // Non-fatal, and that is deliberate: an ssr page's `load` may want a request, a session or a
-      // database this build does not have, and a `x build --target static` that started failing on
-      // routes it never used to touch would be a worse regression than the gap it closes. A route
-      // that will not render here is reported, gets no stats entry, and stays `X_BUDGET_UNMEASURED`.
-      try {
-        const html = await documentAs(measureCtx, entry, {
-          url: new URL(entry.path, origin).href,
-          params: {},
+  try {
+    for (const entry of routeEntries()) {
+      const facts = { surface: entry.surface, render: entry.config.render, route: entry.path };
+      const reason = skipReasonFor(facts);
+      if (reason !== null) {
+        skipped.push(skippedRoute(facts, reason));
+        if (!declaresBudget(entry)) continue;
+        // Non-fatal, and that is deliberate: an ssr page's `load` may want a request, a session or a
+        // database this build does not have, and a `x build --target static` that started failing on
+        // routes it never used to touch would be a worse regression than the gap it closes. A route
+        // that will not render here is reported, gets no stats entry, and stays `X_BUDGET_UNMEASURED`.
+        try {
+          // A dynamic route is rendered at the paths its own `prerender()` lists, and the row holds
+          // the heaviest — a static route's rule. One that lists none is its own finding.
+          // Inside the measuring scope: a route's `prerender()` lists its paths by reading the app's
+          // own data, the same way its `load` does.
+          await database.ready();
+          const plan = await withAppUrl(origin, () => measure.run(() => measurePaths(entry)));
+          if ('unmeasured' in plan) {
+            unmeasured.push(plan.unmeasured);
+            continue;
+          }
+          let row: RouteStats | undefined;
+          for (const { path, params } of plan.paths) {
+            const data = { url: new URL(path, origin).href, params };
+            const html = await withAppUrl(origin, () => measure.run(() => render(entry, data)));
+            const measured = await measureDocumentJs(html, options.out);
+            if (row !== undefined && measured.jsBytes <= row.jsBytes) continue;
+            const chain = heaviestSource(islands, measured.entries);
+            row = {
+              path: entry.path,
+              jsBytes: measured.jsBytes,
+              frameworkJsBytes: measured.frameworkBytes,
+              ...(chain === undefined ? {} : { heaviestChain: chain }),
+            };
+          }
+          if (row !== undefined) routes.push(row);
+        } catch (error) {
+          // `renderThrowable`, never `String(error)`: this is a caught unknown, and a hostile
+          // `toString` here would take the whole build down instead of one route's measurement.
+          // A framework error rides along with its code, cause and fix: `checkBudgets` reports
+          // `X_ISLAND_PROPS_INVALID` under its own name, because that sentence — the island, the
+          // prop, its bytes — is the finding, and `X_BUDGET_UNMEASURED` pointing at this list was
+          // a second command between the author and it.
+          unmeasured.push({
+            path: entry.path,
+            reason: renderThrowable(error),
+            ...(isUltimateError(error)
+              ? { code: error.code, cause: error.cause, fix: error.fix }
+              : {}),
+          });
+        }
+        continue;
+      }
+      const artifacts = await renderStatic(
+        entry,
+        ({ path, params }) => document(entry, { url: new URL(path, origin).href, params }),
+        { buildId },
+      );
+      // `enumeratePrerender` answers `[]` for a dynamic route with no `prerender()`, so a
+      // `render: 'static'` route with a param writes nothing and used to be reported NOWHERE — past
+      // the skip branch by its mode, absent from `pages` by its zero artifacts. A route in neither
+      // list is the defect this report exists to close, wearing its other shape.
+      if (artifacts.length === 0) {
+        skipped.push(skippedRoute(facts, 'no-prerender-paths'));
+        continue;
+      }
+      // One stats row per ROUTE, holding its heaviest page. `checkBudgets` looks a route up by
+      // `route.url`, which is the manifest's DECLARED pattern (`/blog/:slug`), and this pushed the
+      // FILLED path (`/blog/hello`) — so no dynamic static route has ever been weighed: every one
+      // was `X_BUDGET_UNMEASURED` and `X_BUDGET_EXCEEDED` could not fire for the whole class. The
+      // heaviest page and not the first, because a budget is a ceiling: the page that breaks it is
+      // the one the route has to answer for. `pages` below still names every filled path.
+      let heaviest: RouteStats | undefined;
+      for (const artifact of artifacts) {
+        const file = join(options.out, artifact.outputPath);
+        const bytes = await Bun.write(file, artifact.html);
+        pages.push({
+          route: entry.path,
+          path: artifact.path,
+          file: artifact.outputPath,
+          hash: artifact.hash,
+          bytes,
         });
-        const measured = await measureDocumentJs(html, options.out);
+        // `artifact.hash` is `contentHash(html)` — the same identity that becomes this page's ETag,
+        // so the precache revision and the HTTP validator can never disagree about one document.
+        // Keyed by the FILLED path, which for a non-dynamic route is the declared one; a dynamic
+        // route is not precached as a single URL anyway (`buildPrecacheManifest` skips it).
+        documents.set(artifact.path, { revision: artifact.hash, bytes });
+        // Measured from the document that was just written, so the `budgets` step compares a
+        // declared budget against bytes that exist on disk rather than against a graph's estimate.
+        const measured = await measureDocumentJs(artifact.html, options.out);
         const chain = heaviestSource(islands, measured.entries);
-        routes.push({
+        if (heaviest !== undefined && heaviest.jsBytes >= measured.jsBytes) continue;
+        heaviest = {
           path: entry.path,
           jsBytes: measured.jsBytes,
           frameworkJsBytes: measured.frameworkBytes,
           ...(chain === undefined ? {} : { heaviestChain: chain }),
-        });
-      } catch (error) {
-        // `renderThrowable`, never `String(error)`: this is a caught unknown, and a hostile
-        // `toString` here would take the whole build down instead of one route's measurement.
-        // A framework error rides along with its code, cause and fix: `checkBudgets` reports
-        // `X_ISLAND_PROPS_INVALID` under its own name, because that sentence — the island, the
-        // prop, its bytes — is the finding, and `X_BUDGET_UNMEASURED` pointing at this list was
-        // a second command between the author and it.
-        unmeasured.push({
-          path: entry.path,
-          reason: renderThrowable(error),
-          ...(isUltimateError(error)
-            ? { code: error.code, cause: error.cause, fix: error.fix }
-            : {}),
-        });
+        };
       }
-      continue;
+      if (heaviest !== undefined) routes.push(heaviest);
     }
-    const artifacts = await renderStatic(
-      entry,
-      ({ path, params }) => document(entry, { url: new URL(path, origin).href, params }),
-      { buildId },
-    );
-    // `enumeratePrerender` answers `[]` for a dynamic route with no `prerender()`, so a
-    // `render: 'static'` route with a param writes nothing and used to be reported NOWHERE — past
-    // the skip branch by its mode, absent from `pages` by its zero artifacts. A route in neither
-    // list is the defect this report exists to close, wearing its other shape.
-    if (artifacts.length === 0) {
-      skipped.push(skippedRoute(facts, 'no-prerender-paths'));
-      continue;
-    }
-    // One stats row per ROUTE, holding its heaviest page. `checkBudgets` looks a route up by
-    // `route.url`, which is the manifest's DECLARED pattern (`/blog/:slug`), and this pushed the
-    // FILLED path (`/blog/hello`) — so no dynamic static route has ever been weighed: every one
-    // was `X_BUDGET_UNMEASURED` and `X_BUDGET_EXCEEDED` could not fire for the whole class. The
-    // heaviest page and not the first, because a budget is a ceiling: the page that breaks it is
-    // the one the route has to answer for. `pages` below still names every filled path.
-    let heaviest: RouteStats | undefined;
-    for (const artifact of artifacts) {
-      const file = join(options.out, artifact.outputPath);
-      const bytes = await Bun.write(file, artifact.html);
-      pages.push({
-        route: entry.path,
-        path: artifact.path,
-        file: artifact.outputPath,
-        hash: artifact.hash,
-        bytes,
-      });
-      // `artifact.hash` is `contentHash(html)` — the same identity that becomes this page's ETag,
-      // so the precache revision and the HTTP validator can never disagree about one document.
-      // Keyed by the FILLED path, which for a non-dynamic route is the declared one; a dynamic
-      // route is not precached as a single URL anyway (`buildPrecacheManifest` skips it).
-      documents.set(artifact.path, { revision: artifact.hash, bytes });
-      // Measured from the document that was just written, so the `budgets` step compares a
-      // declared budget against bytes that exist on disk rather than against a graph's estimate.
-      const measured = await measureDocumentJs(artifact.html, options.out);
-      const chain = heaviestSource(islands, measured.entries);
-      if (heaviest !== undefined && heaviest.jsBytes >= measured.jsBytes) continue;
-      heaviest = {
-        path: entry.path,
-        jsBytes: measured.jsBytes,
-        frameworkJsBytes: measured.frameworkBytes,
-        ...(chain === undefined ? {} : { heaviestChain: chain }),
-      };
-    }
-    if (heaviest !== undefined) routes.push(heaviest);
+  } finally {
+    await database.close();
   }
   // The worker, LAST: every document it precaches has now been rendered, hashed and weighed. A
   // static host runs no route table, so both files go into the artifact — a

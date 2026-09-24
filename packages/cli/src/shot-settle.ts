@@ -58,6 +58,15 @@ export async function settleIslands(
 }
 
 /**
+ * Quiet AND answered: the island mounted or failed. `ready` alone was not enough (#474) — an island
+ * on the `idle` strategy mounts up to `IDLE_HYDRATE_TIMEOUT_MS` after the page went quiet, in idle
+ * time the activity counter never sees, so a busy machine read `mounted: false` and reported "did
+ * not finish mounting" with most of the window unused.
+ */
+const readinessSettled = (answer: IslandReadiness | null): boolean =>
+  answer?.ready === true && (answer.mounted || answer.failed !== null);
+
+/**
  * Read the harness's readiness until the page goes QUIET or the window runs out.
  *
  * Quiet and not idle, which is the whole rule: the page's own watcher sets `ready` after N
@@ -76,7 +85,7 @@ export async function settleReadiness(
   const sleep = options.sleep ?? ((ms: number): Promise<void> => Bun.sleep(ms));
   let answer = await probe();
   let waited = 0;
-  while (answer?.ready !== true && waited < options.windowMs) {
+  while (!readinessSettled(answer) && waited < options.windowMs) {
     // At least 1ms, or a `pollMs` of zero is a loop with no exit while the window stands.
     const step = Math.max(1, Math.min(options.pollMs, options.windowMs - waited));
     await sleep(step);

@@ -3,7 +3,8 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type Clock, collectMetrics, resetMetrics } from '@ultimat3/core';
-import { CLOSE, idleSweepPeriodMs, SocketRegistry, SyncSocket, type WsLike } from './socket';
+import { CLOSE, SocketRegistry, SyncSocket, type WsLike } from './socket';
+import { idleSweepPeriodMs } from './socket-idle';
 
 class FakeWs implements WsLike {
   closedWith: number | undefined;

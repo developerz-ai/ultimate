@@ -83,10 +83,17 @@ describe('unit · matchers', () => {
   // Assert the message instead. Bun settles an async matcher inside `expect()` and throws the
   // failure synchronously, so `expect(fn).toThrow()` sees it; `.rejects` wants a promise, and the
   // call has already thrown by the time it gets one.
-  test('toDenyPolicy fails loudly on something that is not a policy at all', () => {
-    expect(() => expect({ nope: true }).toDenyPolicy({ actor: null })).toThrow(
-      'expected a policy — an object with run() (@ultimat3/policy) or evaluate()',
-    );
+  // The hole this used to document: `.not.toDenyPolicy` passed on anything that is not a policy,
+  // `undefined` included, because the refusal was a `pass: false`. It throws now, both ways.
+  test('toDenyPolicy fails loudly on something that is not a policy at all, under .not too', () => {
+    for (const receiver of [{ nope: true }, undefined]) {
+      expect(() => expect(receiver).toDenyPolicy({ actor: null })).toThrow(
+        'X_TEST_POLICY_EXPECTED',
+      );
+      expect(() => expect(receiver).not.toDenyPolicy({ actor: null })).toThrow(
+        'X_TEST_POLICY_EXPECTED',
+      );
+    }
     // ...and that diagnostic is a different one from a policy that simply allowed.
     expect(() => expect(policy(true)).toDenyPolicy({ actor: null })).toThrow(
       'expected the policy to deny {"actor":null}',
@@ -125,9 +132,24 @@ describe('unit · matchers', () => {
 
   // The received value is `unknown`: a matcher that casts and dereferences turns "you passed the
   // wrong thing" into a TypeError with no code, from inside the assertion library.
-  test('toMatchOpenApi refuses a received value that is not an OpenAPI document', () => {
-    expect({ paths: {} }).not.toMatchOpenApi({ operations: [] });
-    expect(null).not.toMatchOpenApi({ operations: [] });
+  // THROWN, never `pass: false`: under `.not` a `pass: false` is a pass, so `.not.toMatchOpenApi`
+  // held for `null`. The receiver is unanswerable, not a mismatch — `X_TEST_OPENAPI_EXPECTED`.
+  test('toMatchOpenApi refuses a received value that is not an OpenAPI document, under .not too', () => {
+    for (const receiver of [{ paths: {} }, null]) {
+      expect(() => expect(receiver).toMatchOpenApi({ operations: [] })).toThrow(
+        'X_TEST_OPENAPI_EXPECTED',
+      );
+      expect(() => expect(receiver).not.toMatchOpenApi({ operations: [] })).toThrow(
+        'X_TEST_OPENAPI_EXPECTED',
+      );
+    }
+  });
+
+  test('toBeWithinBudget refuses a receiver that is not a finite number, under .not too', () => {
+    for (const receiver of ['40kb', undefined, Number.NaN, Promise.resolve(1)]) {
+      expect(() => expect(receiver).toBeWithinBudget(40_960)).toThrow('X_TEST_NUMBER_EXPECTED');
+      expect(() => expect(receiver).not.toBeWithinBudget(40_960)).toThrow('X_TEST_NUMBER_EXPECTED');
+    }
   });
 
   test('toBeWithinBudget compares against the declared limit', () => {
@@ -260,9 +282,7 @@ describe('unit · matchers say what went wrong, on the side that fails', () => {
   test('toMatchOpenApi names the shape it wanted from a receiver that is not one', async () => {
     expect(
       await messageOf(() => expect({ paths: {} }).toMatchOpenApi({ operations: [] })),
-    ).toContain(
-      'expected an OpenAPI document — an object with operations: [{ operationId, required? }]',
-    );
+    ).toContain('operations: [{ operationId, required? }]');
   });
 
   test('toMatchOpenApi lists what broke, and what to do about it', async () => {
@@ -281,9 +301,7 @@ describe('unit · matchers say what went wrong, on the side that fails', () => {
   });
 
   test('toBeWithinBudget names the type it got where a number belongs', async () => {
-    expect(await messageOf(() => expect('40kb').toBeWithinBudget(40_960))).toContain(
-      'expected a number to compare against the budget, got string',
-    );
+    expect(await messageOf(() => expect('40kb').toBeWithinBudget(40_960))).toContain('string');
   });
 
   test('toBeWithinBudget prints the measurement beside the limit', async () => {

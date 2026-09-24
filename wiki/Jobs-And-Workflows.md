@@ -237,7 +237,8 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 |---|---|---|
 | `X_IDEMPOTENCY_REQUIRED` | a `job` declaration omits `idempotencyKey` | add `idempotencyKey: (input) => …` derived from `input` only |
 | `X_STEP_DUPLICATE` | two `step.run` calls share a name in one `run` | rename one step; step names are the persistence key |
-| `X_JOB_STEP_FAILED` | a step exhausted its retries | `x jobs show <id> --json`, then `x jobs retry <id>` |
+| `X_JOB_MAX_ATTEMPTS` | the job exhausted its retries and was dead-lettered | `x jobs show <id> --json`, then `x jobs retry <id>` — only a dead, cancelled, failed or done job can be requeued (`X_JOB_NOT_REQUEUEABLE` otherwise) |
+| `X_JOB_DECLARATION_INVALID` | a `job()` declaration lacks fields every job declares — the cause names each | add the fields the fix lists |
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
 | `X_DRAINING` | the worker holding the job received SIGTERM — it is the reason on `ctx.signal`, and a body that unwinds on it is `interrupted` with the attempt uncounted | none — the job goes straight back to the queue and another worker claims it. Pass `ctx.signal` to outbound calls and `throwIfAborted(ctx)` between steps, so the body unwinds inside the drain budget instead of being killed at it |
 | `X_FORBIDDEN` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |

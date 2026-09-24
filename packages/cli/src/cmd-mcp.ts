@@ -6,6 +6,7 @@
 import { markListening, nanoid, timingSafeEqual } from '@ultimat3/core';
 import { mcpHttpRoute, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
+import { DEFAULT_PORT, mcpSpec } from './cmd-mcp-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
 import { intFlagOr, PORT_RANGE } from './flag-number';
@@ -16,7 +17,6 @@ import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
 
-const DEFAULT_PORT = 9229;
 const TRANSPORTS = ['stdio', 'http'] as const;
 type Transport = (typeof TRANSPORTS)[number];
 
@@ -156,20 +156,7 @@ const readPort = (ctx: CommandContext): number =>
   );
 
 export const mcpCommand: CliCommand = {
-  spec: {
-    name: 'mcp',
-    summary: 'serve the dev tools: routes, schema, policies, db, queues, logs, tests, verify',
-    usage: 'x mcp tools | x mcp serve [--transport stdio|http] [--port 9229] [--json]',
-    requiresApp: true,
-    subcommands: ['serve', 'tools'],
-    // No default, deliberately: `wiki/CLI-Reference.md` already says to write `x mcp serve` rather
-    // than a bare `x mcp`, and the parser's old first-element guess made the bare form START A
-    // SERVER — the one thing a word typed by mistake must not do. Refusing enforces the guidance.
-    flags: [
-      { name: 'transport', type: 'string', summary: 'stdio | http', default: 'stdio' },
-      { name: 'port', type: 'string', summary: 'HTTP port', default: String(DEFAULT_PORT) },
-    ],
-  },
+  spec: mcpSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('mcp', ctx.cwd).dir;
     const transport = flagString(ctx.args, 'transport') ?? 'stdio';

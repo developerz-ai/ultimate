@@ -9,6 +9,7 @@ import {
   currentWriteOrigin,
   isUltimateError,
   runWithContext,
+  UltimateError,
   userActor,
   writeDigest,
 } from '@ultimat3/core';
@@ -396,5 +397,51 @@ describe('the published operation and the live response are one contract', () =>
     }
     expect(direct).toBe((overHttp as { readonly code: string }).code);
     expect(direct).toBe('X_INPUT_INVALID');
+  });
+});
+
+/**
+ * An action's error takes the path every other route's error takes. `toRoute` used to catch an
+ * `UltimateError` and answer `problem(error)` itself, so the pipeline's `error-map` stage never saw
+ * it: no `onError`/`reportError` on a 5xx, no HTML error page for a browser, no `requestId`.
+ */
+describe('an action error reaches the error-map stage', () => {
+  const failing = action({
+    input: t.object({ postId: t.uuid }),
+    output: t.object({ ok: t.boolean }),
+    policy: allow(),
+    handle: () => {
+      throw new UltimateError({
+        code: 'X_PIPELINE_NO_RESPONSE',
+        cause: 'the handler failed on purpose',
+        fix: 'nothing to fix: this test throws a 5xx',
+      });
+    },
+  }).named('breakPost');
+
+  const post = (onError: (error: unknown) => void, accept: string) =>
+    createServer({
+      routes: [toRoute(failing)],
+      config: oneProcess(),
+      hooks: { onError },
+    }).fetch(
+      new Request('http://dev.test/api/posts/break', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept },
+        body: JSON.stringify({ postId: POST_ID }),
+      }),
+    );
+
+  test('a 5xx is reported to onError exactly once', async () => {
+    const reported: unknown[] = [];
+    const response = await post((error) => reported.push(error), 'application/json');
+    expect(response.status).toBe(500);
+    expect(reported).toHaveLength(1);
+    expect((await response.json()).requestId).toBeString();
+  });
+
+  test('a browser asking for html gets the html error page', async () => {
+    const response = await post(() => undefined, 'text/html');
+    expect(response.headers.get('content-type')).toStartWith('text/html');
   });
 });

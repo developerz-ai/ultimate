@@ -282,3 +282,37 @@ describe('quarantine', () => {
     expect(await disk.exists(key)).toBe(true);
   });
 });
+
+describe('promoteAttachment takes a PENDING key and nothing else', () => {
+  // `isWithinOrg` was the whole check, so a client that sent back ANOTHER row's attached key had
+  // it copied onto this row and the victim's copy deleted — inside one org, with no error.
+  test('an already-attached key is refused, and nothing moves', async () => {
+    const victim = attachmentKey(ORG, { entity: 'post', id: 'p-9', field: 'cover' }, 'v.png');
+    await disk.put(victim, bytesOf('victim'), { contentType: 'image/png' });
+
+    let caught: unknown;
+    try {
+      await promoteAttachment({ disk, key: victim, orgId: ORG, target: TARGET });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isStorageError(caught) ? caught.code : '').toBe('X_STORAGE_NOT_PENDING');
+    expect(await disk.exists(victim)).toBe(true);
+    expect(await disk.exists(attachmentKey(ORG, TARGET, 'v.png'))).toBe(false);
+  });
+});
+
+describe('sweepOrphans refuses a window that bounds nothing', () => {
+  // `now - NaN` is NaN and `lastModified > NaN` is false — the "old enough" answer — so
+  // `olderThanMs: NaN` deleted an upload created a moment ago, mid-form.
+  for (const olderThanMs of [Number.NaN, -1, 1.5]) {
+    test(`olderThanMs ${String(olderThanMs)} throws, and nothing is deleted`, async () => {
+      const fresh = pendingKey(ORG, 'fresh.png');
+      const { driver, deleted } = agedDisk({ [fresh]: START });
+      await expect(sweepOrphans({ disk: driver, orgId: ORG, olderThanMs, clock })).rejects.toThrow(
+        'olderThanMs',
+      );
+      expect(deleted).toEqual([]);
+    });
+  }
+});

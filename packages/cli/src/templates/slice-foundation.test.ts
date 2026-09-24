@@ -4,8 +4,9 @@
 // `x new` produced TS2307 and `x build` failed. The closure test below is the build error.
 
 import { describe, expect, test } from 'bun:test';
+import { stripComments } from '@ultimat3/core';
 import { GENERATORS, generate, writeFiles } from '../cmd-generate';
-import { stripComments } from '../ts-scan';
+import { INVOICE_ENTITY } from '../scaffold-fixture';
 import type { GeneratedFile } from './naming';
 import { sliceFoundation } from './slice-foundation';
 
@@ -92,7 +93,9 @@ describe('unit · the foundation is the slice, not the generator', () => {
   test('each generator asks for exactly what its source imports, and nothing else', () => {
     // A job that imports only `../repo` must not also plant a policy the job never evaluates:
     // a generated file nobody asked for is one an author has to read before deleting.
-    const jobPaths = pathsOf(generate({ kind: 'job', name: 'sweep', feature: 'invoice' }));
+    const jobPaths = pathsOf(
+      generate({ kind: 'job', name: 'sweep', feature: 'invoice', sliceEntity: INVOICE_ENTITY }),
+    );
     expect(jobPaths).toContain('apps/web/app/invoice/repo.ts');
     expect(jobPaths).not.toContain('apps/web/app/invoice/policy.ts');
     const queryPaths = pathsOf(generate({ kind: 'query', name: 'recent', feature: 'invoice' }));
@@ -102,7 +105,9 @@ describe('unit · the foundation is the slice, not the generator', () => {
   });
 
   test('a task closes over the slice through the job it composes', () => {
-    const paths = pathsOf(generate({ kind: 'task', name: 'nightly', feature: 'invoice' }));
+    const paths = pathsOf(
+      generate({ kind: 'task', name: 'nightly', feature: 'invoice', sliceEntity: INVOICE_ENTITY }),
+    );
     expect(paths).toContain('apps/web/app/invoice/repo.ts');
     expect(paths).toContain('apps/web/app/invoice/jobs/nightly-job.ts');
   });

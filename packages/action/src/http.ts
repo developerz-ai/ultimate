@@ -8,7 +8,6 @@
 import { tagKeys } from '@ultimat3/cache';
 import {
   isMcpExposed,
-  isUltimateError,
   RECORDS_OPENAPI_HEADER,
   recordEnvelopeSchema,
   withWriteOrigin,
@@ -18,10 +17,10 @@ import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 // `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
 // and `@ultimat3/query` needs the identical conversion while being the same tier as this one — so
 // a copy here would be a second answer to "what does this limit mean" for the read half.
-import { json, problem, redirect, takeRedirect, toBucket } from '@ultimat3/http';
+import { json, redirect, takeRedirect, toBucket } from '@ultimat3/http';
 import type { ActionRateLimit, AnyAction } from './action';
 import type { Deprecation } from './deprecation';
-import { applyHeaders, recordDeprecatedCall, renderDeprecation } from './deprecation';
+import { recordDeprecatedCall, renderDeprecation } from './deprecation';
 import { ActionDeprecationInvalidError } from './errors';
 import { actionName, defOf, invoke } from './invoke';
 import {
@@ -66,51 +65,50 @@ export function toRoute(target: AnyAction): Route {
   const enveloped = carriesRecords(target.output);
 
   const handler = async (req: UltimateRequest): Promise<Response> => {
-    if (sunsetting !== undefined) recordDeprecatedCall('action', name);
-    try {
-      // The pipeline already parsed and size-capped the body; parsing it again here
-      // would be a second, differently-behaved parser for the same bytes.
-      const raw = await req.bodyRaw();
-      const key = def.idempotent === true ? req.header(IDEMPOTENCY_HEADER) : null;
-      let replayed = false;
-      // The header NAMES the write whatever the declaration, idempotent or not: a page sends one
-      // with every mutation, and the `records` frames its rows produce carry the digest so that
-      // page can tell its own echo from somebody else's change (`@ultimat3/core`'s write origin).
-      const result = await withWriteOrigin(await writeOriginOf(req), () =>
-        invoke(target, raw, {
-          surface: 'http',
-          idempotencyKey: key,
-          onReplay: () => {
-            replayed = true;
-          },
-        }),
-      );
-      // The one thing an action's return value cannot say. `setRedirect()` inside the handler
-      // is how a `<form method="post">` gets an answer a browser follows — a `Location` on the
-      // 200 this used to always return is a header browsers ignore, so a JS-less form left the
-      // reader staring at `{"ok":true}`. Only this projection honours it: a redirect is an HTTP
-      // fact, and the MCP tool and the job handle share none of it.
-      const to = takeRedirect(req.ctx);
-      const response =
-        to !== undefined
-          ? redirect(to.location, to.status)
-          : enveloped
-            ? recordResponse(target.output, result)
-            : json(result);
-      if (key !== null) response.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
-      // On the failure path too, below: a client polling a deprecated endpoint that is currently
-      // 403ing still has to learn the endpoint is going away. Announcing it only on 200 hides the
-      // sunset from exactly the callers most likely to be stale.
-      if (sunsetting !== undefined) applyHeaders(response, sunsetting);
-      return response;
-    } catch (error) {
-      // Framework errors carry their own code, status and fix line; anything else is
-      // a bug and belongs to the server's error boundary, not to this route.
-      if (!isUltimateError(error)) throw error;
-      const response = problem(error);
-      if (sunsetting !== undefined) applyHeaders(response, sunsetting);
-      return response;
+    if (sunsetting !== undefined) {
+      recordDeprecatedCall('action', name);
+      // On the CONTEXT, before anything can fail: the pipeline's `response` stage merges
+      // `ctx.headers` into whatever answers — this handler's 200 and the `error-map` stage's
+      // problem or error page alike. A client polling a deprecated endpoint that is currently
+      // 403ing still has to learn the endpoint is going away.
+      for (const [header, value] of Object.entries(sunsetting)) req.ctx.headers.set(header, value);
     }
+    // No `catch`: an error — framework or not — takes the path every route's error takes. This
+    // used to answer `problem(error)` itself, so the `error-map` stage never saw it: no
+    // `onError`/`reportError` on a 5xx, no HTML error page or sign-in redirect for a browser, no
+    // `requestId`, no `Retry-After`.
+    //
+    // The pipeline already parsed and size-capped the body; parsing it again here
+    // would be a second, differently-behaved parser for the same bytes.
+    const raw = await req.bodyRaw();
+    const key = def.idempotent === true ? req.header(IDEMPOTENCY_HEADER) : null;
+    let replayed = false;
+    // The header NAMES the write whatever the declaration, idempotent or not: a page sends one
+    // with every mutation, and the `records` frames its rows produce carry the digest so that
+    // page can tell its own echo from somebody else's change (`@ultimat3/core`'s write origin).
+    const result = await withWriteOrigin(await writeOriginOf(req), () =>
+      invoke(target, raw, {
+        surface: 'http',
+        idempotencyKey: key,
+        onReplay: () => {
+          replayed = true;
+        },
+      }),
+    );
+    // The one thing an action's return value cannot say. `setRedirect()` inside the handler
+    // is how a `<form method="post">` gets an answer a browser follows — a `Location` on the
+    // 200 this used to always return is a header browsers ignore, so a JS-less form left the
+    // reader staring at `{"ok":true}`. Only this projection honours it: a redirect is an HTTP
+    // fact, and the MCP tool and the job handle share none of it.
+    const to = takeRedirect(req.ctx);
+    const response =
+      to !== undefined
+        ? redirect(to.location, to.status)
+        : enveloped
+          ? recordResponse(target.output, result)
+          : json(result);
+    if (key !== null) response.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
+    return response;
   };
 
   const meta: RouteMeta = {

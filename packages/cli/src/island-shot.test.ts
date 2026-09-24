@@ -1,5 +1,5 @@
 // `x shot --island` drives a real browser, so every rule it holds is proved here through an
-// INJECTED one: `fakeBrowser()` plus a stub server, exactly as `cmd-shot.test.ts` does. The rule
+// INJECTED one: `fakeShotDriver()` plus a stub server, exactly as `cmd-shot.test.ts` does. The rule
 // that matters most is the last describe — a run that produces no picture must not exit 0, and
 // that is asserted against the expansion computed before any browser existed.
 
@@ -10,10 +10,10 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
-import { fakeBrowser } from '@ultimat3/scraping';
 import type { IslandStatesManifest } from '@ultimat3/testing';
 import { defineIslandStates, islandShotTargets } from '@ultimat3/testing';
+import { fakeShotDriver } from './browser-launcher-fake';
+import type { ShotDriver, ShotSession } from './browser-launcher-port';
 import { readStateFlag, refuseRouteWithIsland } from './cmd-shot-island';
 import { clipFor, ISLAND_CROP_MARGIN_PX } from './island-capture';
 import { ISLAND_HARNESS_PATH } from './island-harness';
@@ -57,8 +57,8 @@ const READY: IslandReadiness = {
 const PROBE = readinessProbe('[data-x-island]');
 
 /** Every address this manifest expands to, answered with the same clean readiness. */
-const cleanDriver = (answer: IslandReadiness = READY): ScrapeDriver =>
-  fakeBrowser(
+const cleanDriver = (answer: IslandReadiness = READY): ShotDriver =>
+  fakeShotDriver(
     islandShotTargets(manifest).map((target) => ({
       url: `${SERVER_URL}${ISLAND_HARNESS_PATH}${target.query}`,
       html: '<!doctype html><html><body><div data-x-island="settings"></div></body></html>',
@@ -67,7 +67,7 @@ const cleanDriver = (answer: IslandReadiness = READY): ScrapeDriver =>
   );
 
 const browserOf =
-  (driver: ScrapeDriver): IslandBrowser =>
+  (driver: ShotDriver): IslandBrowser =>
   () =>
     Promise.resolve(driver);
 
@@ -87,7 +87,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const run = (driver: ScrapeDriver, out: string, state?: string) =>
+const run = (driver: ShotDriver, out: string, state?: string) =>
   runIslandShot({
     manifest,
     ...(state === undefined ? {} : { state }),
@@ -179,13 +179,27 @@ describe('unit · every declared state becomes a file', () => {
  */
 describe('unit · a run that produced nothing cannot exit 0', () => {
   test('a driver that refuses every address leaves the run red and names every absent file', async () => {
-    // No answers at all: `fakeBrowser` has no page for any address, so every capture throws.
-    const artifacts = await run(fakeBrowser([]), 'none').catch((error: unknown) => error);
+    // No answers at all: `fakeShotDriver` has no page for any address, so every capture throws.
+    const artifacts = await run(fakeShotDriver([]), 'none').catch((error: unknown) => error);
 
     expect(artifacts).toBeInstanceOf(Error);
     // The verdict is written before the refusal is thrown, so the artifact survives the failure.
     const verdict: unknown = await Bun.file(join(dir, 'none', 'settings', ISLAND_VERDICT)).json();
     expect(verdict).toMatchObject({ ok: false, missing: expect.any(Array) });
+  });
+
+  // Row y: a failed capture passed because an OLD picture from an earlier run was still on disk,
+  // and the missing-shot gate only asked whether the file existed.
+  test('a picture a failed run could not take is missing even when an old one sits there', async () => {
+    const stale = join(dir, 'stale', 'settings/empty-options-light.png');
+    await Bun.write(stale, 'a picture from yesterday');
+    const failed = await run(fakeShotDriver([]), 'stale').catch((error: unknown) => error);
+    expect(failed).toBeInstanceOf(Error);
+    const verdict = (await Bun.file(join(dir, 'stale', 'settings', ISLAND_VERDICT)).json()) as {
+      missing: readonly string[];
+    };
+    expect(verdict.missing).toContain('settings/empty-options-light.png');
+    expect(await Bun.file(stale).exists()).toBe(false);
   });
 
   test('missingShots reads the expansion, never the loop', async () => {
@@ -298,9 +312,9 @@ describe('unit · one session per picture, so a console error lands on the right
   test('the driver is opened once per address', async () => {
     const base = cleanDriver();
     let opened = 0;
-    const counting: ScrapeDriver = {
+    const counting: ShotDriver = {
       name: base.name,
-      open: (init): Promise<ScrapeSession> => {
+      open: (init): Promise<ShotSession> => {
         opened += 1;
         return base.open(init);
       },

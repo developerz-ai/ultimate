@@ -87,7 +87,6 @@ export const runAdminAction = action({
       requestId: request.requestId,
       subject: { entity, id: input.id },
       ...(input.confirmation === undefined ? {} : { confirmation: input.confirmation }),
-      expectedConfirmation: confirmationToken(entity, input.id),
       locale: ctx.locale,
       timeZone: ctx.tz,
     });

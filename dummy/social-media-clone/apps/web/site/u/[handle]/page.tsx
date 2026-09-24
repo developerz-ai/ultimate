@@ -6,9 +6,8 @@
 // and a friends-only post never reaches this page. 0kb of JS, `hydrate: 'never'`, SSR because the
 // content is per-request.
 //
-// `meta` loads the profile a second time. There is no `load` seam on a route, so the head and the
-// body have no shared data — the two reads run concurrently (`Promise.all` in the renderer) and
-// this is the cost of that gap, recorded rather than hidden.
+// The profile is the route's `load`: read ONCE per render and handed to both `meta` and the page,
+// so the `<title>` always describes the body it heads.
 
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
@@ -20,12 +19,12 @@ import { AppShell } from '../../../shared/ui/app-shell';
 import { EmptyState } from '../../../shared/ui/empty-state';
 import { PageHeading } from '../../../shared/ui/page-heading';
 import { PostCard } from '../../../shared/ui/post-card';
-import { publicProfile } from '../service';
+import { type ProfileView, publicProfile } from '../service';
 import styles from './page.module.scss';
 
-interface ProfileData extends Record<string, unknown> {
-  readonly url: string;
-  readonly params: Readonly<Record<string, string>>;
+/** The loaded profile, or `null` for a handle nobody holds (or nobody may see). */
+interface ProfileData {
+  readonly profile: ProfileView | null;
 }
 
 /** `noUncheckedIndexedAccess` is on: a param is `string | undefined` until something says otherwise. */
@@ -36,8 +35,9 @@ export const config = defineRoute<ProfileData>({
   hydrate: 'never',
   offline: 'runtime',
   budget: { js: '0kb', lcp: 2000 },
-  meta: async (data) => {
-    const profile = await publicProfile(null, handleOf(data.params));
+  // A null viewer: anonymous. Every hiding decision on this page follows from that one argument.
+  load: async ({ params }) => ({ profile: await publicProfile(null, handleOf(params)) }),
+  meta: ({ data: { profile } }) => {
     if (profile === null) {
       return {
         title: t('site.profile.notFound.title'),
@@ -61,13 +61,8 @@ const day = (value: Date): string =>
 /** First character of the display name. Decorative — the name is rendered right beside it. */
 const initialOf = (name: string): string => (name.at(0) ?? '').toUpperCase();
 
-export async function Page(props: {
-  readonly params?: Readonly<Record<string, string>>;
-  readonly url?: string | undefined;
-}) {
-  const handle = handleOf(props.params ?? {});
-  // A null viewer: anonymous. Every hiding decision below follows from that one argument.
-  const profile = await publicProfile(null, handle);
+export function Page(props: { readonly data: ProfileData; readonly url?: string | undefined }) {
+  const { profile } = props.data;
 
   if (profile === null) {
     return (

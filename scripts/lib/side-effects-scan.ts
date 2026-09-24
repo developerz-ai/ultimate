@@ -4,7 +4,7 @@
 // judges them.
 
 import { dirname, join } from 'node:path';
-import { maskLiterals, stripComments } from '@ultimat3/cli';
+import { maskLiterals, stripComments } from '../../packages/core/src/source-mask';
 import { isTestPath } from './source-scan';
 
 const KEYWORDS = new Set(

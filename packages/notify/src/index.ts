@@ -47,13 +47,9 @@ export { createMemoryInboxStore, DEFAULT_INBOX_PAGE } from './inbox';
 export type { InboxPurgeBefore, PgInboxStore, PgInboxStoreOptions } from './inbox-pg';
 export {
   createPgInboxStore,
-  SQL_NOTIFY_INBOX_ADD,
   SQL_NOTIFY_INBOX_MARK_READ,
-  SQL_NOTIFY_INBOX_MARK_SEEN,
   SQL_NOTIFY_INBOX_PAGE,
-  SQL_NOTIFY_INBOX_PURGE,
   SQL_NOTIFY_INBOX_TABLE,
-  SQL_NOTIFY_INBOX_UNREAD,
 } from './inbox-pg';
 export type {
   DeliveryClaim,
@@ -65,19 +61,14 @@ export type {
 } from './ledger';
 export {
   createMemoryDeliveryLedger,
-  DEFAULT_MAX_DELIVERY_RECORDS,
   DELIVERY_STATUSES,
   isDeliveryStatus,
 } from './ledger';
 export type { PgDeliveryLedger, PgDeliveryLedgerOptions } from './ledger-pg';
 export {
   createPgDeliveryLedger,
-  DEFAULT_DELIVERY_WINDOW_MS,
   SQL_NOTIFY_CLAIM,
-  SQL_NOTIFY_DELIVERIES_PURGE,
   SQL_NOTIFY_DELIVERIES_TABLE,
-  SQL_NOTIFY_FIND,
-  SQL_NOTIFY_SETTLE,
 } from './ledger-pg';
 export type { NotifyEvent, Recipient } from './notification';
 export { recipientSchema } from './notification';
@@ -101,7 +92,6 @@ export { purgeNotifyDeliveries, purgeNotifyInbox } from './retention';
 export type { InstalledNotifyStores, NotifyStores } from './stores';
 export {
   notifyStores,
-  requireDigest,
   requireInbox,
   resetNotifyStores,
   setNotifyStores,

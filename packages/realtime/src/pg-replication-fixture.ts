@@ -4,6 +4,7 @@
 // Not part of the public API — `index.ts` deliberately does not re-export it.
 
 import { frozenClock } from '@ultimat3/core';
+import { entity, entityForTable, money, text } from '@ultimat3/entity';
 import type { ChangeEvent } from './changefeed';
 import { PgLogicalReplicationFeed } from './changefeed';
 import { ByteReader, ByteWriter, pgTimestampToEpochMs } from './pg-bytes';
@@ -82,6 +83,13 @@ export const update = (
 
 export const remove = (oid: number, before: readonly (string | null)[]): Uint8Array =>
   tuple(new ByteWriter().uint8(0x44).int32(oid).uint8(0x4f), before).finish();
+
+/** `T` — a TRUNCATE of every listed relation, flags 0 (no CASCADE, no RESTART IDENTITY). */
+export const truncate = (oids: readonly number[]): Uint8Array => {
+  const writer = new ByteWriter().uint8(0x54).int32(oids.length).uint8(0);
+  for (const oid of oids) writer.int32(oid);
+  return writer.finish();
+};
 
 /** `M` — a `pg_logical_emit_message`, as pgoutput frames it outside a streamed transaction. */
 export const logicalMessage = (
@@ -223,6 +231,10 @@ export class FakeWalsender implements PgStream {
       this.push(joined(...rows, complete(), ready()));
       return;
     }
+    if (sql === 'SELECT current_user') {
+      this.push(joined(dataRow(['replicator']), complete(), ready()));
+      return;
+    }
     if (sql.includes('relreplident')) {
       const rows = (this.#script.partialIdentity ?? []).map((name) => dataRow([name]));
       this.push(joined(...rows, complete(), ready()));
@@ -332,9 +344,27 @@ export interface Started {
   settled(count: number): Promise<void>;
 }
 
+/**
+ * The entity the replicated `posts` table decodes through — the stream decodes by the entity's
+ * columns, as a repository read does (`pg-entity-row.ts`). Registered on first use rather than at
+ * import, and again after another suite cleared the registry.
+ */
+export function ensurePostsEntity(): void {
+  if (entityForTable('posts') !== undefined) return;
+  entity('posts', {
+    columns: {
+      id: text().primaryKey(),
+      title: text().nullable(),
+      orgId: text(),
+      price: money().nullable(),
+    },
+  });
+}
+
 export const start = async (
   options: FeedOptions & { script?: ServerScript; from?: string } = {},
 ): Promise<Started> => {
+  ensurePostsEntity();
   const server = new FakeWalsender(options.script);
   const events: ChangeEvent[] = [];
   const feed = feedOver(() => Promise.resolve(server), options);

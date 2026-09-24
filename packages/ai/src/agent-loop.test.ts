@@ -286,3 +286,33 @@ describe('a run reports its turns while it is still running', () => {
     expect(seen.length).toBe(1);
   });
 });
+
+// `configureAi({ redact })` ran over the prompt and never over a tool's RESULT — and a tool result
+// is where an agent loads a row, which is exactly the data the redactor exists to keep in-process.
+describe('the app redactor runs over tool results too', () => {
+  test('a tool result reaches the provider redacted', async () => {
+    resetAiRuntime();
+    const { provider, seen } = scripted([
+      { calls: [{ name: 'lookup', input: {} }] },
+      { calls: [{ name: 'respond', input: { answer: 'done' } }] },
+    ]);
+    configureAi({
+      gateway: createGateway({ providers: [provider] }),
+      redact: (text) => text.replaceAll('patient-4411', '[removed]'),
+    });
+    const support = agent({
+      input: Input,
+      output: Output,
+      prompt: promptFor(),
+      vars: ({ input }) => ({ orderId: input.orderId }),
+      tools: [tool('lookup', () => Promise.resolve('record of patient-4411'))],
+      maxTurns: 4,
+      policy: allow(),
+    }).named('redactingAgent');
+
+    await support({ orderId: 'o-1' }, { ctx: createContext({ actor: userActor({ id: 'u-1' }) }) });
+    const sent = pairs(seen[1]).map(([, content]) => content);
+    expect(sent).toEqual([JSON.stringify('record of [removed]')]);
+    expect(JSON.stringify(seen)).not.toContain('patient-4411');
+  });
+});

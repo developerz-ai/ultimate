@@ -37,21 +37,15 @@
 // this tree needed (`_EveryHttpConfigKeyIsSettable`), and it is a BUILD error rather than a scan.
 //
 //   bun run scripts/declaration-readers.ts [--json]
-//   bun run scripts/declaration-readers.ts --unpin <leaf>[,<leaf>]   # drop a stale waiver
+//
+// ZERO-PINNED, so it holds no waiver table: 176 leaf keys across 20 roots and the only two the scan
+// reported, `RouteBudget.cls` and `.tbt`, were DELETED rather than pinned. A waiver, if one is ever
+// needed, is a `{ reason }` row passed in as `pins` — never a bare entry: a blank reason waives
+// nothing, the rule `FLOOR_ABOVE` in `scripts/lib/tiers.ts` also keeps.
 
-// The LEAF module, never the `@ultimat3/cli` barrel (nor core's): the barrel links every package in the tree, so
-// one half-written module anywhere crashed this guard with a bare SyntaxError (DX ledger #10).
-import { maskLiterals } from '../packages/core/src/source-mask';
 import { readPattern } from './config-readers';
-import { flagList, parseScriptArgs } from './lib/args';
-import {
-  applyDeclarationReaderUnpin,
-  DECLARATION_PINS_FILE,
-  DECLARATION_READER_PINS,
-  type DeclarationReaderPin,
-  declarationReaderPinIsBlank,
-  declarationReaderPinnedFor,
-} from './lib/declaration-reader-pins';
+import { parseScriptArgs } from './lib/args';
+import { CORPUS_PATTERNS, corpus } from './lib/corpus';
 import type { DeclarationSource, DeclaredLeaf } from './lib/declaration-scan';
 import { declarationLeaves } from './lib/declaration-scan';
 import type { Finding } from './lib/log';
@@ -60,8 +54,25 @@ import { repoRoot } from './lib/run';
 
 const SCRIPT = 'declaration-readers';
 
-/** Shipped source of every package — the same corpus `config-readers.ts` reads, for one answer. */
-const SOURCE_GLOB = 'packages/*/src/**/*.{ts,tsx}';
+/** Where a waiver would be written: this file, which holds none. */
+export const DECLARATION_PINS_FILE = 'scripts/declaration-readers.ts';
+
+/** Shipped source of every package — the corpus `shipped` scope, the one `config-readers` reads. */
+const SOURCE_GLOB = CORPUS_PATTERNS.shipped.join(', ');
+
+export interface DeclarationReaderPin {
+  /** Who reads it, named. Never "false positive", never blank. */
+  readonly reason: string;
+}
+
+const pinIsBlank = (leaf: string, pins: Readonly<Record<string, DeclarationReaderPin>>): boolean =>
+  Object.hasOwn(pins, leaf) && (pins[leaf]?.reason ?? '').trim().length === 0;
+
+/** Whether this key is waived — a pin whose reason is blank waives nothing. */
+export const declarationReaderPinnedFor = (
+  leaf: string,
+  pins: Readonly<Record<string, DeclarationReaderPin>>,
+): boolean => Object.hasOwn(pins, leaf) && !pinIsBlank(leaf, pins);
 
 export type DeclarationReaderGapKind = 'unread' | 'stale' | 'unscanned';
 
@@ -109,7 +120,7 @@ export function checkDeclarationReaders(
       kind: 'unread',
       leaf: leaf.leaf,
       at: leaf.path,
-      ...(declarationReaderPinIsBlank(leaf.leaf, input.pins) ? { blank: true } : {}),
+      ...(pinIsBlank(leaf.leaf, input.pins) ? { blank: true } : {}),
     });
   }
   const declared = new Set(input.leaves.map((leaf) => leaf.leaf));
@@ -152,7 +163,7 @@ const staleCauseOf = (gap: DeclarationReaderGap): string => {
 const staleFinding = (gap: DeclarationReaderGap): Finding => ({
   code: 'X_DECLARATION_READER_PIN_STALE',
   cause: staleCauseOf(gap),
-  fix: `bun run scripts/declaration-readers.ts --unpin ${gap.leaf}`,
+  fix: `edit ${DECLARATION_PINS_FILE} — delete the waiver for ${gap.leaf}`,
   at: DECLARATION_PINS_FILE,
 });
 
@@ -182,14 +193,12 @@ export const declarationReaderFindingFor = (gap: DeclarationReaderGap): Finding 
  * reader of it.
  */
 export async function declarationReaderInput(root: string): Promise<DeclarationReaderInput> {
-  const files: DeclarationSource[] = [];
-  for (const found of new Bun.Glob(SOURCE_GLOB).scanSync({ cwd: root })) {
-    const path = found.split('\\').join('/');
-    // A test reading a key is not the key being wired — the rule `config-readers.ts` states.
-    if (path.includes('.test.')) continue;
-    files.push({ path, text: maskLiterals(await Bun.file(`${root}/${path}`).text()) });
-  }
-  return { leaves: declarationLeaves(files), files, pins: DECLARATION_READER_PINS };
+  // A test reading a key is not the key being wired — the rule `config-readers.ts` states.
+  const files = (await corpus(root, 'shipped')).map((file) => ({
+    path: file.path,
+    text: file.masked,
+  }));
+  return { leaves: declarationLeaves(files), files, pins: {} };
 }
 
 export const declarationReaderGaps = async (
@@ -203,39 +212,20 @@ export const declarationReaderFindings = async (root: string): Promise<readonly 
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const unpin = flagList(args, 'unpin');
-  const input = await declarationReaderInput(root);
+  const input = await declarationReaderInput(repoRoot());
   const gaps = checkDeclarationReaders(input);
-  if (unpin.length > 0) {
-    const stale = gaps.filter((gap) => gap.kind === 'stale').map((gap) => gap.leaf);
-    const dropped = await applyDeclarationReaderUnpin(root, unpin, stale);
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          dropped.length === 0
-            ? 'nothing to drop — every named key is still read by nobody, so its pin still holds'
-            : `dropped ${String(dropped.length)} pin(s): ${dropped.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
-  } else {
-    const roots = new Set(input.leaves.map((leaf) => leaf.root));
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? `${String(input.leaves.length)} declaration leaf keys across ${String(roots.size)} declaration roots, every one read by shipped code or pinned with a reason`
-            : `${String(gaps.length)} of ${String(input.leaves.length)} declaration leaf keys are off the ratchet`,
-        findings: gaps.map(declarationReaderFindingFor),
-        data: { roots: [...roots].sort(), leaves: input.leaves.length, files: input.files.length },
-      },
-      args.json,
-    );
-  }
+  const roots = new Set(input.leaves.map((leaf) => leaf.root));
+  report(
+    {
+      ok: gaps.length === 0,
+      script: SCRIPT,
+      summary:
+        gaps.length === 0
+          ? `${String(input.leaves.length)} declaration leaf keys across ${String(roots.size)} declaration roots, every one read by shipped code`
+          : `${String(gaps.length)} of ${String(input.leaves.length)} declaration leaf keys are off the ratchet`,
+      findings: gaps.map(declarationReaderFindingFor),
+      data: { roots: [...roots].sort(), leaves: input.leaves.length, files: input.files.length },
+    },
+    args.json,
+  );
 }

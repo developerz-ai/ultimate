@@ -181,8 +181,16 @@ export async function kvGet(
 }
 
 /**
- * Every current value under a wildcard, in one request. A batch direct read answers with the
- * messages and then an empty `204 EOB`; a prefix nobody has written answers `404` and nothing else.
+ * Every current value under a wildcard. A batch direct read answers at most `batch` messages and
+ * then an empty `204 EOB`; a range nobody has written answers `404` and nothing else.
+ *
+ * PAGED, on the last sequence read, and by `next_by_subj` rather than `multi_last`. It was one
+ * `multi_last` batch, and that fails twice past 1,000 members: the batch truncated the set — and
+ * `sweep()`, which differences the full set, announced a `leave` for every member past the cut —
+ * and a real nats-server (2.11, measured) refuses a `multi_last` matching more than 1,024 subjects
+ * outright with `413 Too Many Results`, which the old loop skipped as a marker and returned an
+ * EMPTY set. The bucket keeps one message per subject (`max_msgs_per_subject: 1`), so walking every
+ * message under the filter IS the last value per key. A page shorter than `batch` is the last.
  */
 export async function kvLast(
   client: NatsClient,
@@ -191,19 +199,33 @@ export async function kvLast(
   batch = 1_000,
 ): Promise<readonly KvRecord[]> {
   const subject = `$JS.API.DIRECT.GET.${kvStream(bucket)}`;
-  const body = { multi_last: [kvSubject(bucket, filter)], batch };
-  const replies = await client.requestMany(subject, encoder.encode(JSON.stringify(body)), {
-    until: (message) => message.status === STATUS_EOB || message.status === STATUS_NOT_FOUND,
-  });
-  const records: KvRecord[] = [];
-  for (const reply of replies) {
-    // A status on a batch reply is a marker, never a value — the terminator is filtered by `until`,
-    // and anything else the server slips in (a `408` heartbeat) carries no message to read.
-    if (reply.status !== 0) continue;
-    const record = recordOf(reply, bucket);
-    if (record) records.push(record);
+  const byKey = new Map<string, KvRecord>();
+  let from = 1;
+  for (;;) {
+    const body = { seq: from, next_by_subj: kvSubject(bucket, filter), batch };
+    const replies = await client.requestMany(subject, encoder.encode(JSON.stringify(body)), {
+      until: (message) => message.status === STATUS_EOB || message.status === STATUS_NOT_FOUND,
+    });
+    let last = 0;
+    let read = 0;
+    for (const reply of replies) {
+      // The terminators are filtered by `until`. Any OTHER status — a `408` timeout, a `503` — is
+      // a batch that did not finish, and reading it as the whole set is the truncation above.
+      if (reply.status !== 0) {
+        throw new TransportUnavailableError({
+          transport: 'nats',
+          reason: `${subject} answered status ${reply.status} mid-batch, so the set read was incomplete`,
+        });
+      }
+      read += 1;
+      const seq = Number.parseInt(reply.header('Nats-Sequence') ?? '', 10);
+      if (Number.isSafeInteger(seq) && seq > last) last = seq;
+      const record = recordOf(reply, bucket);
+      if (record) byKey.set(record.key, record);
+    }
+    if (read < batch || last === 0) return [...byKey.values()];
+    from = last + 1;
   }
-  return records;
 }
 
 /** A KV write is a publish that waits for JetStream's ack — a lost put must not read as stored. */

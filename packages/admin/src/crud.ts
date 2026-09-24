@@ -69,6 +69,18 @@ export function decideOperation(
    */
   row?: AdminRow | null,
 ): AdminDecision {
+  // First, before any grant is consulted: an operation the resource does not OFFER is refused for
+  // everyone. `canOperate` checked this for the nav, the buttons and the MCP tools, and the three
+  // direct write functions did not — a `['list', 'detail']` resource deleted a row through
+  // `adminDestroy`. Here, every caller of this function asks it.
+  if (!operationOffered(resource, op)) {
+    return {
+      allowed: false,
+      permission: adminPermissionFor(op),
+      reason: OPERATION_NOT_OFFERED_REASON,
+      trace: [`operations: ${resource.name} does not offer ${op}`],
+    };
+  }
   return decideAll(ctx.authz, permissionsForOperation(resource.name, op), ctx.actor, {
     entity: resource.name,
     ...(id === undefined ? {} : { id }),
@@ -76,9 +88,16 @@ export function decideOperation(
   });
 }
 
+/** Whether the resource declares this operation at all — the one answer, `decideOperation`'s. */
+export const operationOffered = (resource: AdminResource, op: AdminOperation): boolean =>
+  resource.operations.includes(op);
+
+/** The key an operation the resource does not offer is refused with. */
+export const OPERATION_NOT_OFFERED_REASON = 'admin.error.operation-not-offered';
+
 /** `true` when the operation should be offered at all — nav, buttons, MCP tool list. */
 export function canOperate(resource: AdminResource, op: AdminOperation, ctx: CrudCtx): boolean {
-  return resource.operations.includes(op) && decideOperation(resource, op, ctx).allowed;
+  return decideOperation(resource, op, ctx).allowed;
 }
 
 const redactedFields = (resource: AdminResource): readonly string[] =>

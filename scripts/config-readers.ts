@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Enforce, as a ratchet, that every leaf key of `AppConfig` has at least one READER in
 // `packages/*/src`. A key that is declared, defaulted, merged and read by nothing is worse than no
 // key: an operator sets it, redeploys, and nothing changes.
@@ -41,6 +42,7 @@ import {
   configAmbiguityPinnedFor,
   configReaderPinnedFor,
 } from './lib/config-reader-pins';
+import { CORPUS_PATTERNS, corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -73,7 +75,7 @@ export const configDeclaration = async (root: string): Promise<string> =>
   (await Promise.all(CONFIG_FILES.map((path) => Bun.file(`${root}/${path}`).text()))).join('\n');
 
 /** Shipped source of every package. The declaring file is excluded by the caller, not by a glob. */
-const SOURCE_GLOB = 'packages/*/src/**/*.{ts,tsx}';
+const SOURCE_GLOB = CORPUS_PATTERNS.shipped.join(', ');
 
 /**
  * A section's DECLARATION, in both spellings TypeScript offers: `export interface X { … }` and
@@ -156,7 +158,12 @@ export const qualifiedPattern = (leaf: string): RegExp | undefined => {
  * to nothing would silently switch the ambiguity check off for every key in that section, which is
  * the failure mode this whole rule exists to remove one level up.
  */
-export const SECTION_PACKAGE: Readonly<Record<string, string>> = { database: 'db', theme: 'ui' };
+export const SECTION_PACKAGE: Readonly<Record<string, string>> = {
+  database: 'db',
+  // why: `AppConfig.drain` (plan 101 slice 01) is core's lifecycle budget; no package is named `drain`.
+  drain: 'core',
+  theme: 'ui',
+};
 
 /**
  * `realtime.tier` -> `realtime`; `ai.mcp.path` -> `mcp`; a top-level leaf -> undefined.
@@ -390,14 +397,13 @@ export const configReaderFindingFor = (gap: ConfigReaderGap): Finding => FINDING
 
 /** The tree's own answer: the declaration parsed, every shipped file but the declaration read. */
 export async function configReaderInput(root: string): Promise<ConfigReaderInput> {
+  // `shipped` FIRST, so a tree it cannot read is `X_CORPUS_UNSCANNED` and not the first file's
+  // `EACCES`. A test reading a key is not the key being wired — `config.test.ts` reads all thirty.
+  const shipped = await corpus(root, 'shipped');
   const declaration = await configDeclaration(root);
-  const files: ConfigSource[] = [];
-  for (const found of new Bun.Glob(SOURCE_GLOB).scanSync({ cwd: root })) {
-    const path = found.split('\\').join('/');
-    // A test reading a key is not the key being wired — `config.test.ts` reads all thirty.
-    if (path.includes('.test.') || CONFIG_FILES.some((one) => one === path)) continue;
-    files.push({ path, text: await Bun.file(`${root}/${path}`).text() });
-  }
+  const files: ConfigSource[] = shipped
+    .filter((file) => !CONFIG_FILES.some((one) => one === file.path))
+    .map((file) => ({ path: file.path, text: file.source }));
   return {
     leaves: configLeaves(declaration),
     files,

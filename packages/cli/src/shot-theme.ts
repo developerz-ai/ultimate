@@ -6,7 +6,7 @@
 // before the boot reads it: the picture is then what a visitor who chose that theme sees.
 
 import { THEME_STORAGE_KEY } from '@ultimat3/render';
-import type { ColorScheme } from '@ultimat3/scraping';
+import type { ShotColorScheme } from './browser-launcher-port';
 import { BadFlagError } from './errors';
 
 /** What `x shot --theme` accepts: the two the boot honours from storage, and nothing else. */
@@ -19,7 +19,7 @@ const isShotTheme = (value: string): value is ShotTheme =>
 /**
  * `--theme light|dark` on a ROUTE shot, or nothing — the box's own preference and the app's own
  * default, which is what `x shot` has always photographed. Refused by name for any other value:
- * `no-preference` is the scraping vocabulary's clear, not a theme a reader can ask for.
+ * `no-preference` is the browser port's clear, not a theme a reader can ask for.
  */
 export function readThemeFlag(value: string | undefined): ShotTheme | undefined {
   if (value === undefined) return undefined;
@@ -43,7 +43,7 @@ export function readThemeFlag(value: string | undefined): ShotTheme | undefined 
  * `about:blank` is opaque and its `localStorage` throws, and a throw from a new-document script
  * would surface as a page error on a capture that has not navigated yet.
  */
-export function themeChoiceExpression(scheme: ColorScheme): string | undefined {
+export function themeChoiceExpression(scheme: ShotColorScheme): string | undefined {
   if (scheme === 'no-preference') return undefined;
   return (
     `try{localStorage.setItem(${JSON.stringify(THEME_STORAGE_KEY)},${JSON.stringify(scheme)})}` +

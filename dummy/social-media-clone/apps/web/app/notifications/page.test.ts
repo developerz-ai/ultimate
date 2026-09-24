@@ -14,6 +14,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // renders ⟦key⟧ — which the last assertion is what checks for.
 import '@social-media-clone/i18n';
 import { createContext, runWithContext } from '@ultimat3/core';
+import { routeDataFor } from '@ultimat3/render';
 import { renderComponent } from '@ultimat3/render/server';
 
 const FILE = 'apps/web/app/notifications/page.tsx';
@@ -25,9 +26,12 @@ beforeAll(async () => {
 });
 
 test('unit · the empty inbox renders instead of throwing, and says why it is empty', async () => {
-  const html = await runWithContext(createContext({ tz: 'UTC', locale: 'en' }), () =>
-    renderComponent(page.Page, { url: 'http://localhost/notifications' }, FILE),
-  );
+  const url = 'http://localhost/notifications';
+  const html = await runWithContext(createContext({ tz: 'UTC', locale: 'en' }), async () => {
+    // The route's own `load`, through the one resolver every render mode uses.
+    const data = await routeDataFor(page.config, { params: {}, url });
+    return renderComponent(() => page.Page({ data, url }), {}, FILE);
+  });
 
   expect(html).toContain('Nothing has happened yet.');
   expect(html).toContain('0 unread');

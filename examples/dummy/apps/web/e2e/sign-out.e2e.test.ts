@@ -9,8 +9,8 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { E2eApp, E2eTab } from '@ultimat3/cli';
 import { seedId } from '@ultimat3/entity';
+import type { E2eApp, E2eTab } from '@ultimat3/testing';
 import { indexedDbDump, likeCount, readFlag, readText, until } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import { acceptanceBrowser, noBrowser, POSTS, signInAs, startPostly } from './fixtures/postly';

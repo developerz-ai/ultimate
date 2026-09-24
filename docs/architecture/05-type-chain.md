@@ -27,7 +27,7 @@ Only hops 6 and 9 emit files, and both have a drift check in `x verify`. Everyth
 ## Worked example
 
 ```ts
-// packages/db/src/schema/posts.ts                        ← hops 1, 2
+// apps/web/app/posts/entity.ts                           ← hops 1, 2
 import { entity, integer, invariant, text, timestamp, url, uuid } from '@ultimat3/entity';
 
 export const posts = entity('posts', {
@@ -89,7 +89,7 @@ export function PostCard(props: { post: PostView }) {
 
 ## Rename one column, count the errors
 
-Rename `excerpt` → `summary` in `packages/db/src/schema/posts.ts` and change nothing else. `x verify` reports, in this order:
+Rename `excerpt` → `summary` in `apps/web/app/posts/entity.ts` and change nothing else. `x verify` reports, in this order:
 
 | Where it breaks | Error | Message shape |
 |---|---|---|

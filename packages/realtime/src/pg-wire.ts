@@ -36,7 +36,17 @@ const MAX_MESSAGE_BYTES = 64 * 1024 * 1024;
  */
 export class MessageReader {
   readonly #stream: PgStream;
+  /** Bytes of messages whose length is not yet known, or complete ones not yet taken. */
   #buffer: Uint8Array = new Uint8Array(0);
+  /**
+   * One message whose length IS known and whose bytes are still arriving: allocated once at its
+   * full size and filled in place. Joining every chunk onto what was held re-copied the whole
+   * message per chunk — quadratic, measured at 5.2 s of blocked event loop for one 32 MB CopyData
+   * on the replication connection every live window depends on.
+   */
+  #pending: { readonly bytes: Uint8Array; filled: number } | null = null;
+  /** Messages completed out of `#pending`, in arrival order, ahead of anything in `#buffer`. */
+  readonly #ready: Uint8Array[] = [];
 
   constructor(stream: PgStream) {
     this.#stream = stream;
@@ -44,7 +54,8 @@ export class MessageReader {
 
   /** Bytes already read but not yet consumed — what a reconnect would have to replay. */
   get buffered(): number {
-    return this.#buffer.length;
+    const ready = this.#ready.reduce((sum, bytes) => sum + bytes.length, 0);
+    return this.#buffer.length + (this.#pending?.filled ?? 0) + ready;
   }
 
   /** The next complete message, or `undefined` at a clean EOF. */
@@ -54,10 +65,11 @@ export class MessageReader {
       if (framed !== undefined) return framed;
       const chunk = await this.#stream.read();
       if (chunk === undefined) {
-        if (this.#buffer.length === 0) return undefined;
+        const held = this.buffered;
+        if (held === 0) return undefined;
         throw new ReplicationProtocolError({
           stage: 'read',
-          detail: `the connection closed with ${this.#buffer.length} bytes of a partial message`,
+          detail: `the connection closed with ${held} bytes of a partial message`,
           fix: 'x doctor db — the backend was terminated mid-message; the server log names the reason',
         });
       }
@@ -66,18 +78,33 @@ export class MessageReader {
   }
 
   #append(chunk: Uint8Array): void {
+    let rest = chunk;
+    const pending = this.#pending;
+    if (pending !== null) {
+      const take = Math.min(pending.bytes.length - pending.filled, rest.length);
+      pending.bytes.set(rest.subarray(0, take), pending.filled);
+      pending.filled += take;
+      rest = rest.subarray(take);
+      if (pending.filled < pending.bytes.length) return;
+      this.#ready.push(pending.bytes);
+      this.#pending = null;
+    }
+    if (rest.length === 0) return;
     if (this.#buffer.length === 0) {
-      this.#buffer = chunk;
+      this.#buffer = rest;
       return;
     }
-    const joined = new Uint8Array(this.#buffer.length + chunk.length);
+    // Only ever a few bytes are held here: a message whose length is known moves to `#pending`.
+    const joined = new Uint8Array(this.#buffer.length + rest.length);
     joined.set(this.#buffer, 0);
-    joined.set(chunk, this.#buffer.length);
+    joined.set(rest, this.#buffer.length);
     this.#buffer = joined;
   }
 
   /** A message is `tag` + Int32 length that counts itself but not the tag. */
   #take(): PgMessage | undefined {
+    const done = this.#ready.shift();
+    if (done !== undefined) return messageOf(done);
     const buffer = this.#buffer;
     if (buffer.length < 5) return undefined;
     const length = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength).getInt32(
@@ -92,15 +119,23 @@ export class MessageReader {
       });
     }
     const total = length + 1;
-    if (buffer.length < total) return undefined;
-    const message: PgMessage = {
-      tag: String.fromCharCode(buffer[0] ?? 0),
-      body: buffer.subarray(5, total),
-    };
+    if (buffer.length < total) {
+      // The length is known, so the message gets its one allocation now and fills in place.
+      const bytes = new Uint8Array(total);
+      bytes.set(buffer, 0);
+      this.#pending = { bytes, filled: buffer.length };
+      this.#buffer = new Uint8Array(0);
+      return undefined;
+    }
     this.#buffer = buffer.subarray(total);
-    return message;
+    return messageOf(buffer.subarray(0, total));
   }
 }
+
+const messageOf = (whole: Uint8Array): PgMessage => ({
+  tag: String.fromCharCode(whole[0] ?? 0),
+  body: whole.subarray(5),
+});
 
 /** `tag` + Int32 length + body — the shape of every frontend message except the startup packet. */
 export const frame = (tag: string, body: Uint8Array): Uint8Array =>
@@ -189,10 +224,11 @@ export const FIXES: Readonly<Record<string, string>> = {
   // the half of #97 that outlived the three log-injection holes. The publication is the operator's
   // to create; the slot the replicator creates for itself on its next start.
   '42704':
-    'psql "$REPLICATION_URL" -c "CREATE PUBLICATION x_changes FOR ALL TABLES"' +
-    "   # x_changes is the default name; use REPLICATION_PUBLICATION's value where it is set. " +
+    'psql "$REPLICATION_URL" -c "CREATE PUBLICATION x_changes FOR TABLE <every entity table>"' +
+    "   # x_changes is the default name; use REPLICATION_PUBLICATION's value where it is set, and FOR TABLE because FOR ALL TABLES needs a superuser. " +
     "The slot is the replicator's own and it creates one on its next start",
-  '0A000': 'set wal_level = logical in postgresql.conf and restart the server',
+  '0A000':
+    "set wal_level=logical in the server configuration (postgresql.conf, or your managed provider's database flags) and restart the server",
 };
 
 /** What a SQLSTATE this table has no entry for is answered with. */

@@ -78,12 +78,11 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
   /**
    * The five tables `BuiltinAdapter` reads, and the oldest hole in this list.
    *
-   * `packages/auth/src/tables.ts` exports them "so an app can paste them into a migration", and
-   * nothing in the framework has ever applied them — while `x db gen` diffs `describeEntities()`
-   * and these are not `entity()` declarations, so neither half was a file anybody could
-   * hand-write. `examples/dummy/CLAUDE.md` records the consequence in its own words: nobody can
-   * hold a session in the reference app. Applied here on exactly the rule the rate-limit and audit
-   * rows already follow.
+   * Until this row nothing applied them, in dev or in production: they are not `entity()`
+   * declarations, so `x db gen` never saw them, and an app was left to paste per-table exports
+   * into a migration nobody wrote — nobody could hold a session in the reference app. Those
+   * exports are gone; `AUTH_TABLES` is the whole DDL, the 1.3 `x_users` upgrade included, applied
+   * here on exactly the rule the rate-limit and audit rows already follow.
    *
    * `AUTH_TABLE_NAMES` rather than five literals: @ultimat3/auth already publishes the list, and a
    * second copy is a second thing to keep right when a table is added.

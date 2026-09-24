@@ -298,6 +298,15 @@ Every code carries a cause, a runnable `fix:` and a retry classification — see
 `X_SCRAPE_YIELD_COLLAPSED`, `X_SCRAPE_AUTH_FAILED`, `X_SCRAPE_BLOCKED` and `X_SCRAPE_PAGE_CRASHED`
 are the four worth knowing by heart.
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `ScrapeError` | any `ScrapeErrorCode` — `SCRAPE_ERROR_CODES` | `src/errors.ts` |
+
 ## Boundary
 
 Tier 5. May import tiers 0-4 only — enforced by `bun run scripts/boundaries.ts`.

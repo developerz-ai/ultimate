@@ -5,9 +5,9 @@
 import type { JobDriver } from '@ultimat3/jobs';
 import { jobDriver } from '@ultimat3/jobs';
 import type { CommandContext } from './command';
-import { startQueue } from './dev-queue';
-import { resolveServices } from './dev-services';
 import type { CommandResult } from './output';
+import { resolveServices } from './runtime-bindings';
+import { startQueue } from './runtime-queue';
 
 /**
  * `x jobs` needs the app's real driver. Reuse an already-running one first — inside `x dev` or

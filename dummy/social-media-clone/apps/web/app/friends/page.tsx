@@ -4,9 +4,8 @@
 // to invent back the fact the `(requesterId, addresseeId)` key exists to keep, and the inbox is the
 // only one of the five with a control on it — you cannot answer your own request.
 //
-// The component is `async` because a route has no `load` seam: `RouteDefinition` carries render,
-// offline, hydrate, budget, meta and policy, and nothing that fetches. The renderer awaits a
-// promise, so an async component works — recorded here as a workaround, not hidden.
+// The five lists are the route's `load`, resolved once per render inside the request's context —
+// which is what lets it read the signed-in viewer — and handed to the page as `data`.
 
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
@@ -15,7 +14,7 @@ import { currentViewer } from '../../shared/actor';
 import { AppShell } from '../../shared/ui/app-shell';
 import { PageHeading } from '../../shared/ui/page-heading';
 import styles from './page.module.scss';
-import { friendsScreen } from './screen';
+import { type FriendsScreen, friendsScreen } from './screen';
 import { EdgeList } from './ui/edge-list';
 import { RespondForm } from './ui/respond-form';
 import { UnblockForm } from './ui/unblock-form';
@@ -30,6 +29,13 @@ export const config = defineRoute({
   // the MCP tools are gated by.
   policy: { permission: 'friend:read' },
   budget: { js: '0kb', lcp: 2500 },
+  // `null` for no viewer. Unreachable through HTTP — `friend:read` denies an anonymous caller
+  // before the render — but a loader is not the place to assert that: an empty screen beats a
+  // thrown TypeError.
+  load: async (): Promise<{ readonly screen: FriendsScreen | null }> => {
+    const viewer = currentViewer();
+    return { screen: viewer === null ? null : await friendsScreen(viewer.id) };
+  },
   meta: () => ({
     title: t('app.friends.title'),
     description: t('app.friends.description'),
@@ -38,11 +44,12 @@ export const config = defineRoute({
   }),
 });
 
-export async function Page(props: { readonly url?: string | undefined }) {
-  const viewer = currentViewer();
-  // Unreachable through HTTP — `friend:read` denies an anonymous caller before the render — but a
-  // render is not the place to assert that. An empty screen beats a thrown TypeError.
-  if (viewer === null) {
+export function Page(props: {
+  readonly data: { readonly screen: FriendsScreen | null };
+  readonly url?: string | undefined;
+}) {
+  const { screen } = props.data;
+  if (screen === null) {
     return (
       <AppShell url={props.url} width="wide">
         <Text as="p" tone="muted">
@@ -51,8 +58,6 @@ export async function Page(props: { readonly url?: string | undefined }) {
       </AppShell>
     );
   }
-
-  const screen = await friendsScreen(viewer.id);
 
   return (
     <AppShell url={props.url} width="wide">

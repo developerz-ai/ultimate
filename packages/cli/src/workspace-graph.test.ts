@@ -179,6 +179,27 @@ describe('unit · what a source file imports', () => {
     expect(importedPackages(source)).toEqual([]);
   });
 
+  /**
+   * #493: an import inside a template NESTED in a substitution. The line-by-line mask read the
+   * inner backtick as the outer template's close, so `packages/cli` was billed for `@ultimat3/ui`.
+   */
+  test('an import inside a nested template belongs to the emitted file too (#493)', () => {
+    const source = [
+      'export const page = (): string => `',
+      '${sortedImports([',
+      "  `import { Button } from '@ultimat3/ui';`,",
+      '])}',
+      'export const x = 1;',
+      '`;',
+    ].join('\n');
+
+    expect(importedPackages(source)).toEqual([]);
+  });
+
+  test('a file the parser refuses is not silently read as importing nothing', () => {
+    expect(() => importedPackages("import { a } from '@demo/one';\nconst = ;")).toThrow();
+  });
+
   // `from(…)` is the query builder's own opening call and reads exactly like an import.
   test("a `from('table')` call is not an import", () => {
     expect(importedPackages("const rows = from<Row>('posts', () => repo.page());")).toEqual([]);

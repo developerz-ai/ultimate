@@ -2,15 +2,17 @@
 // means "anywhere that runs a container or a binary"; nothing here knows the name of a cloud.
 
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { ERROR_DOCS_URL, frameworkVersion, VERSION_DEFINE } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
+import { buildSpec } from './cmd-build-spec';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
 import { externalArgs } from './compile-externals';
 import { BuildEntryMissingError, UnknownCommandError } from './errors';
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
+import { prepareImage } from './image-prepare';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
@@ -56,9 +58,24 @@ export function requireEntry(root: string, target: BuildTarget): string {
   return absolute;
 }
 
-/** One image for every role; ROLE selects behaviour at start, so there is one artifact to promote. */
-export function dockerArgs(root: string, tag: string): readonly string[] {
-  return ['docker', 'build', '-f', join(root, BUILD_ENTRY.docker), '-t', tag, root];
+/**
+ * One image for every role; ROLE selects behaviour at start, so there is one artifact to promote.
+ * `BUILD_ID` is the manifest's own build id, passed as the build arg the scaffolded Dockerfile
+ * declares: without it the image's `BUILD_ID` was empty and every role computed one at boot, so
+ * two replicas of one image could disagree about the id their clients are served against.
+ */
+export function dockerArgs(root: string, tag: string, buildId: string): readonly string[] {
+  return [
+    'docker',
+    'build',
+    '-f',
+    join(root, BUILD_ENTRY.docker),
+    '--build-arg',
+    `BUILD_ID=${buildId}`,
+    '-t',
+    tag,
+    root,
+  ];
 }
 
 /**
@@ -93,9 +110,15 @@ export function staticArgs(root: string, out: string): readonly string[] {
 
 export function argsFor(
   target: BuildTarget,
-  paths: { readonly root: string; readonly tag: string; readonly out: string },
+  paths: {
+    readonly root: string;
+    readonly tag: string;
+    readonly out: string;
+    /** The docker target's `BUILD_ID` build arg — `appManifest(root)`'s own. */
+    readonly buildId?: string;
+  },
 ): readonly string[] {
-  if (target === 'docker') return dockerArgs(paths.root, paths.tag);
+  if (target === 'docker') return dockerArgs(paths.root, paths.tag, paths.buildId ?? 'dev');
   if (target === 'binary') return binaryArgs(paths.root, paths.out);
   return staticArgs(paths.root, paths.out);
 }
@@ -162,17 +185,7 @@ export function buildResult(input: {
 }
 
 export const buildCommand: CliCommand = {
-  spec: {
-    name: 'build',
-    summary: 'build a container image, a single binary, or a prerendered static site',
-    usage: 'x build --target docker|binary|static [--tag name] [--out path] [--json]',
-    requiresApp: true,
-    flags: [
-      { name: 'target', type: 'string', summary: 'docker | binary | static', default: 'docker' },
-      { name: 'tag', type: 'string', summary: 'image tag (docker target)' },
-      { name: 'out', type: 'string', summary: 'output path (binary and static targets)' },
-    ],
-  },
+  spec: buildSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('build', ctx.cwd).dir;
     const target = readTarget(flagString(ctx.args, 'target'));
@@ -186,15 +199,28 @@ export const buildCommand: CliCommand = {
     const verifySteps = (await import('./cmd-verify')).VERIFY_STEPS.filter((step) =>
       staticSteps.includes(step.name),
     );
-    const verifyResult = await runVerify(verifySteps, { root, runner: ctx.runner });
+    const verifyResult = await runVerify(verifySteps, { root, runner: ctx.runner, env: ctx.env });
     if (!verifyResult.ok) {
       return preflightResult(verifyResult);
     }
 
+    // A relative `--out` is a path the caller typed from where they stand, so it resolves against
+    // the cwd — against the root it landed somewhere else whenever `x build` ran from `apps/web`.
+    const outFlag = flagString(ctx.args, 'out');
     const out =
-      flagString(ctx.args, 'out') ?? join(root, '.x', target === 'static' ? 'static' : 'app');
+      outFlag === undefined
+        ? join(root, '.x', target === 'static' ? 'static' : 'app')
+        : resolve(ctx.cwd, outFlag);
     const tag = flagString(ctx.args, 'tag') ?? 'ultimate-app:dev';
-    const command = argsFor(target, { root, tag, out });
+    // The docker target stamps the manifest's build id into the image, and writes the island
+    // chunks the image serves, so a container boot neither re-derives the one nor rebuilds the other.
+    const buildId = target === 'docker' ? await prepareImage(root) : undefined;
+    const command = argsFor(target, {
+      root,
+      tag,
+      out,
+      ...(buildId === undefined ? {} : { buildId }),
+    });
     // Removed BEFORE the builder runs, so a build that writes no inventory can never be reported
     // with the last one's: a stale emitted list is worse than none, because it reads as this run's.
     if (target === 'static') await removeStaticReport(root);

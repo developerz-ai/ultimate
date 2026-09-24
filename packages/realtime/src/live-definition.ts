@@ -142,7 +142,11 @@ export function liveQueryDefinition(
     },
     snapshot: async ({ input }): Promise<SnapshotResult> => {
       const window = await resolve(input);
-      return { rows: await window.read(), lsn: options.lsn?.() ?? '' };
+      // The position is taken BEFORE the rows: the rows are then at least that new, so the claim
+      // is true. Taken after, a commit landing mid-read was claimed and missing — and every change
+      // up to it is dropped downstream as already folded.
+      const lsn = options.lsn?.() ?? '';
+      return { rows: await window.read(), lsn };
     },
     matcher: (input) => windows.get(queryHash(name, input))?.matcher ?? UNRESOLVED,
     // Read off the same resolved window as the matcher, so the scope the client keys rows under and

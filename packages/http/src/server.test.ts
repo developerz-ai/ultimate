@@ -8,6 +8,7 @@ import {
   drainDeadlineMs,
   inflightCount,
   lifecycleState,
+  readinessGraceMs,
   resetLifecycle,
   shutdownHookCount,
 } from '@ultimat3/core';
@@ -40,6 +41,31 @@ describe('the drain budget', () => {
       config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0, drainTimeoutMs: 5_000 }),
     });
     expect(drainDeadlineMs()).toBe(5_000);
+  });
+
+  // `drain.readinessGraceMs` is an `app.config.ts` key; this option is how it reaches the one
+  // drain. Without a reader it was a key an operator could set and nothing would honour.
+  test("the app config's readiness grace reaches core's drain", () => {
+    resetLifecycle();
+    createServer({
+      routes: [],
+      role: 'web',
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
+      drain: { readinessGraceMs: 7_000 },
+    });
+    expect(readinessGraceMs()).toBe(7_000);
+    resetLifecycle();
+  });
+
+  test('no drain option leaves an app-configured grace alone', () => {
+    configureLifecycle({ readinessGraceMs: 9_000 });
+    createServer({
+      routes: [],
+      role: 'web',
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
+    });
+    expect(readinessGraceMs()).toBe(9_000);
+    resetLifecycle();
   });
 });
 
