@@ -150,7 +150,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   late subscription and RAISES `X_TRANSPORT_UNAVAILABLE`. `#release` takes the reserved bridge, never
   a name.
 - **An upgrade from a foreign page is `403 X_SOCKET_ORIGIN_REFUSED`** before `authenticate`
-  (`sync-origin.ts`, core's `proveSameOrigin`); `AcceptBudget` is spent only AFTER `authenticate`.
+  (`sync-origin.ts`, core's `proveSameOrigin`); `AcceptBudget` is reserved before `authenticate`,
+  `refund()`ed on every exit that takes no socket.
 - **A socket's actor comes from `createSyncNode({ authenticate })` only**, run before
   `server.upgrade`. `null` = 401 `X_SOCKET_UNAUTHENTICATED`; a throw = 503
   `X_SOCKET_AUTH_UNAVAILABLE`. Absent = anonymous, and `start()` warns. The actor lives only in the

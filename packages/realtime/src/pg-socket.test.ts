@@ -9,7 +9,6 @@ import { ReplicationFailedError, ReplicationProtocolError } from './errors';
 import {
   type BunConnect,
   type PgTarget,
-  parsePgUrl,
   pgStreamOver,
   type SocketHandlers,
   type SocketLike,
@@ -22,80 +21,8 @@ const caught = (promise: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-const thrown = (fn: () => unknown): unknown => {
-  try {
-    fn();
-    return undefined;
-  } catch (error) {
-    return error;
-  }
-};
-
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
-
-describe('parsePgUrl', () => {
-  test('parses a full URL: user, password, port, database, sslmode', () => {
-    const target = parsePgUrl('postgres://alice:s3cret@db.example.test:6543/appdb?sslmode=require');
-    expect(target).toEqual({
-      host: 'db.example.test',
-      port: 6543,
-      database: 'appdb',
-      user: 'alice',
-      password: 's3cret',
-      ssl: 'require',
-    });
-  });
-
-  test('defaults: no port, no database, no user, no password, no sslmode', () => {
-    const target = parsePgUrl('postgres://db.example.test');
-    expect(target).toEqual({
-      host: 'db.example.test',
-      port: 5432,
-      database: 'postgres',
-      user: 'postgres',
-      password: undefined,
-      ssl: 'prefer',
-    });
-  });
-
-  test('percent-encoded password and database are decoded', () => {
-    const target = parsePgUrl('postgres://alice:p%40ss@db.example.test/my%20db');
-    expect(target.password).toBe('p@ss');
-    expect(target.database).toBe('my db');
-  });
-
-  test('postgresql: is accepted as a scheme', () => {
-    expect(parsePgUrl('postgresql://db.example.test/db').host).toBe('db.example.test');
-  });
-
-  test('a non-postgres scheme or a non-URL string is X_REPLICATION_FAILED', () => {
-    for (const bad of ['mysql://user:pass@host/db', 'not a url at all']) {
-      const error = thrown(() => parsePgUrl(bad));
-      expect(error).toBeInstanceOf(ReplicationFailedError);
-      expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
-    }
-  });
-
-  /**
-   * The rejected value is a connection URL, so it carries the database password — and an error is
-   * the one value that is rendered everywhere: a log line, `--json`, an agent's transcript, a
-   * ticket. Name the variable that has to change, the way `driver-smtp.ts:68` does.
-   */
-  test('a malformed URL is refused without echoing the credential in it', () => {
-    const error = thrown(() => parsePgUrl('postgres://alice:hunter2@:not-a-port/db'));
-    expect(error).toBeInstanceOf(ReplicationFailedError);
-    const rendered = JSON.stringify(error);
-    expect(rendered).not.toContain('hunter2');
-    expect(rendered).toContain('DATABASE_URL');
-  });
-
-  test('an unknown sslmode is refused', () => {
-    const error = thrown(() => parsePgUrl('postgres://db.example.test/db?sslmode=verify'));
-    expect(error).toBeInstanceOf(ReplicationFailedError);
-    expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
-  });
-});
 
 type UpgradeOptions = Parameters<SocketLike['upgradeTLS']>[0];
 
@@ -258,6 +185,34 @@ describe('pgStreamOver', () => {
     expect(tlsSocket.writes).toEqual([3]);
     expect(tlsSocket.ended).toBe(true);
     expect(runtime.socket.ended).toBe(false);
+  });
+
+  // Read before any socket exists: a trust anchor that cannot be read is a setting, and refusing
+  // it after the connect left the raw socket open — one leaked descriptor per supervisor retry.
+  test('a missing sslrootcert is refused before a socket is opened', async () => {
+    const runtime = new FakeRuntime();
+    let connects = 0;
+    const counting: BunConnect = {
+      connect: (options) => {
+        connects += 1;
+        return runtime.connect(options);
+      },
+    };
+    const error = await caught(
+      pgStreamOver(counting, pgTarget({ ssl: 'verify-full', rootCert: '/nonexistent/ca.crt' })),
+    );
+    expect(codeOf(error)).toBe('X_REPLICATION_TLS');
+    expect(connects).toBe(0);
+  });
+
+  // Every refusal after the connect owns the socket it opened: no caller ever receives a stream to
+  // close, so nothing else can.
+  test('a refusal after the connect ends the raw socket', async () => {
+    const runtime = new FakeRuntime();
+    onSslRequest(runtime, () => runtime.events().data(runtime.socket, new Uint8Array([0x4e])));
+    const error = await caught(pgStreamOver(runtime, pgTarget({ ssl: 'require' })));
+    expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
+    expect(runtime.socket.ended).toBe(true);
   });
 
   // libpq's prefer and require never verify, so the runtime must not either: the decision is

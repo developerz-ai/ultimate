@@ -37,8 +37,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   env schema, web + sync) admits a page on another host, through the new
   `createSyncNode({ allowedOrigins })`. **A deployment serving pages on a different host name than its
   sync node must set `APP_URL` on the sync role.**
-- **realtime:** the sync node's accept budget is spent only by an upgrade that authenticated, so a
-  client dialling without a credential can no longer starve every reconnect on the node.
+- **realtime:** the sync node's accept budget is reserved before `authenticate` and refunded on every
+  exit that takes no socket â€” a reconnect herd reaches the token service bounded by the burst, and a
+  client with no credential can no longer starve every reconnect on the node.
 
 ### Fixed
 

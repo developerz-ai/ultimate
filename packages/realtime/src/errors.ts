@@ -367,7 +367,7 @@ export class SocketOriginRefusedError extends RealtimeError {
     super({
       code: 'X_SOCKET_ORIGIN_REFUSED',
       cause: `the websocket upgrade was refused: ${args.reason}`,
-      fix: "dial the socket from the app's own origin; if the page is served on another host, set APP_URL on the sync role to that origin, or pass createSyncNode({ allowedOrigins: ['https://www.example.com'] })",
+      fix: 'export APP_URL="https://www.example.com"   # on the sync role: the origin the page is served on (or createSyncNode({ allowedOrigins }))',
     });
   }
 }

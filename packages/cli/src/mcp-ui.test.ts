@@ -92,6 +92,8 @@ describe('unit · ui.shot boots the server it photographs once per host, never o
           { url: `${SERVER_URL}/dash`, html: PAGE, evaluate: { [ISLAND_PROBE]: CLEAN } },
         ]),
       routes: () => [{ path: '/dash', file: 'apps/web/app/dash/page.tsx', budgetJs: '10kb' }],
+      // The fake page has settled already; the real 2 s wait per call only raced Bun's 5 s timeout.
+      settleMs: 0,
     });
     try {
       const shot = {

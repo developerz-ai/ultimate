@@ -316,13 +316,13 @@ never stumbled into.
 On drain, `drainPlan()` gives every client its own jittered slot in a spread window and the node
 sends a `reconnect` frame carrying that delay — clients redistribute instead of stampeding.
 `AcceptBudget` is the receiving node's token bucket, and a refusal always carries a retry delay,
-because refusing without one just moves the herd next door. **It is spent only by an upgrade that
-authenticated** (22.1.0): spent first, node-wide, one client dialling with no credential drained it
-and every signed-in reconnect behind it was shed. The bucket guards what an accepted socket costs;
-an unauthenticated dial costs what any HTTP request costs, and gets its 401 without touching it.
-Not per client IP: behind an ingress every dial has the ingress's address, and a forwarded header
-is the caller's own claim. An app with no `authenticate` is unchanged — every dial is admitted
-anyway.
+because refusing without one just moves the herd next door. **A token is reserved before `authenticate`
+and refunded on every exit that takes no socket** (22.1.0): a 401, an authenticator that throws, a
+shed after it, an upgrade that did not take. Reserved first, so a reconnect herd reaches the token
+service bounded by the burst; refunded, because spent-and-kept, one client dialling with no
+credential drained the bucket and every signed-in reconnect behind it was shed. Not per client IP:
+behind an ingress every dial has the ingress's address, and a forwarded header is the caller's own
+claim.
 
 **A socket from a foreign page is refused** — `403 X_SOCKET_ORIGIN_REFUSED`, before `authenticate`
 and before the budget. A websocket carries the session cookie and no CORS applies to it, so a page on

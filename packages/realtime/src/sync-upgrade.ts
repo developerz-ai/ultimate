@@ -93,9 +93,15 @@ export async function handleUpgrade(
   const origin = upgradeOrigin(request, url, deps.allowedOrigins ?? []);
   if (!origin.ok)
     return wireErrorResponse(403, new SocketOriginRefusedError({ reason: origin.reason }));
-  // The count and readiness, not the rate. Decided before `authenticate` so a full node costs no
-  // token service call.
+  // The count and readiness. Decided before `authenticate` so a full node costs no token service
+  // call.
   if (deps.socketCount() >= deps.maxConnections || !deps.ready()) return shed(deps);
+  // The RATE is RESERVED here and REFUNDED on every exit that takes no socket. Reserved first, so a
+  // reconnect herd reaches `authenticate` bounded by the burst — the token service is the first
+  // thing a herd would otherwise flatten. Refunded, because spent-and-kept, one client dialling
+  // with no credential drained the bucket and every signed-in reconnect behind it was shed.
+  if (!deps.accept.tryAccept()) return shed(deps);
+  const refund = (): void => deps.accept.refund();
   let grant: SyncGrant | null = null;
   if (deps.authenticate) {
     try {
@@ -104,6 +110,7 @@ export async function handleUpgrade(
       // A failure is not a denial. The token service timing out must not read to a client as "you
       // may not connect" — it is told to come back, and this node is the one that pages.
       reportError(error, { source: 'realtime', scope: { operation: 'sync.authenticate' } });
+      refund();
       return wireErrorResponse(
         503,
         new SocketAuthUnavailableError({ detail: 'see the node log for the cause' }),
@@ -112,6 +119,7 @@ export async function handleUpgrade(
     // The decision, made before a socket exists: an upgrade is the cheapest thing to refuse and the
     // most expensive thing to take back.
     if (grant === null) {
+      refund();
       return wireErrorResponse(
         401,
         new SocketUnauthenticatedError({ reason: 'authenticate() resolved no actor' }),
@@ -132,13 +140,10 @@ export async function handleUpgrade(
   // reach. Sound because there is no await between this line and `server.upgrade`, and the count
   // moves INSIDE it: Bun runs `websocket.open` synchronously there, which is where `sockets.add`
   // runs.
-  if (!deps.ready() || deps.socketCount() >= deps.maxConnections) return shed(deps);
-  // The RATE is spent here, after `authenticate`, and only by an upgrade that will be taken. It
-  // was spent first, node-wide: one client dialling with no credential drained the bucket and
-  // every signed-in reconnect after it was shed. The bucket guards what an accepted socket costs
-  // — subscribes, snapshots — and an unauthenticated dial costs what any HTTP request costs. Shed
-  // the same way and with the same delay as the count: the client's next move is the same.
-  if (!deps.accept.tryAccept()) return shed(deps);
+  if (!deps.ready() || deps.socketCount() >= deps.maxConnections) {
+    refund();
+    return shed(deps);
+  }
   const data: WsData = {
     socketId: deps.newSocketId(),
     // The node's own id is "not skewed until the hello says so", never "current forever".
@@ -161,10 +166,12 @@ export async function handleUpgrade(
     // failing upgrades left 20 grants. Rethrown untouched — the throw is the operator's diagnosis,
     // and this line owes it the release, not a verdict.
     deps.onUngranted(data.socketId);
+    refund();
     throw error;
   }
   if (!upgraded) {
     deps.onUngranted(data.socketId);
+    refund();
     return new Response('expected websocket', { status: 426 });
   }
   return undefined;

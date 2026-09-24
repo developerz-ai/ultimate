@@ -188,6 +188,15 @@ export class AcceptBudget {
     return true;
   }
 
+  /**
+   * Hands back a token `tryAccept` reserved for work that took no socket — an upgrade whose
+   * credential was refused, or whose authenticator failed. Never past `burst`.
+   */
+  refund(): void {
+    this.#refill();
+    this.#tokens = Math.min(this.#burst, this.#tokens + 1);
+  }
+
   /** Delay to hand a refused client, jittered so refusals do not re-synchronise the herd. */
   retryAfterMs(rng: Rng = Math.random): number {
     const base = Math.ceil(1000 / this.#perSecond);

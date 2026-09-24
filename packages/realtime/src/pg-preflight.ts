@@ -77,13 +77,17 @@ async function warnPartialIdentity(
 ): Promise<void> {
   if (entities.size === 0) return;
   const names = [...entities].map((name) => `'${name}'`).join(', ');
-  // NO identity, not "not FULL": `n` (NOTHING), or `d` (DEFAULT) on a table with no primary key.
+  // NO identity, not "not FULL": `n` (NOTHING), `d` (DEFAULT) with no primary key, or `i` whose
+  // index is gone.
   // A keyed table replicates correctly under DEFAULT — a delete names its key, and the shared
   // window holds the whole row a live query decides on — so naming it was noise on every boot.
   const rows = await connection.query(
     `SELECT c.relname FROM pg_class c WHERE c.relkind = 'r' AND c.relname IN (${names}) ` +
       `AND (c.relreplident = 'n' OR (c.relreplident = 'd' AND NOT EXISTS ` +
-      `(SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary)))`,
+      `(SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary)) ` +
+      // USING INDEX whose index was dropped: `relreplident` stays 'i' and it behaves as NOTHING.
+      `OR (c.relreplident = 'i' AND NOT EXISTS ` +
+      `(SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisreplident)))`,
   );
   const tables = [
     ...new Set(

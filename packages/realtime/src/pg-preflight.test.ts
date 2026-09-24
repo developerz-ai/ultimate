@@ -110,7 +110,9 @@ describe('PgLogicalReplicationFeed', () => {
     expect(String(line?.[1]?.['fix'])).toContain('ALTER TABLE posts REPLICA IDENTITY FULL;');
     expect(String(line?.[1]?.['cause'])).toContain('no replica identity');
     // Asked of the catalog as "no identity", never as "not FULL".
-    expect(server.queries.find((sql) => sql.includes('relreplident'))).toContain('indisprimary');
+    const question = server.queries.find((sql) => sql.includes('relreplident')) ?? '';
+    expect(question).toContain('indisprimary');
+    expect(question).toContain('indisreplident');
     // Before the slot is created, because changing the identity afterwards does not reach a slot
     // that already exists — the check is worthless anywhere later in the sequence.
     const asked = server.queries.findIndex((sql) => sql.includes('relreplident'));

@@ -2,7 +2,7 @@
 // client — which modes exist, which of them VERIFY, what a handshake's authorization error means
 // under each, and where the trust anchor comes from. The socket mechanics are `pg-socket.ts`'s.
 
-import { renderThrowable, stringField } from '@ultimat3/core';
+import { renderFixShellArg, renderThrowable, stringField } from '@ultimat3/core';
 import { ReplicationFailedError, ReplicationTlsError } from './errors';
 
 /**
@@ -71,7 +71,7 @@ const HOST_MISMATCH = 'ERR_TLS_CERT_ALTNAME_INVALID';
  * name; this decides what that report means under `ssl`. `undefined` is "carry on".
  */
 export function judgeHandshake(
-  target: { readonly ssl: SslMode; readonly host: string },
+  target: { readonly ssl: SslMode; readonly host: string; readonly port: number },
   authorizationError: unknown,
 ): ReplicationTlsError | undefined {
   if (!verifies(target.ssl)) return undefined;
@@ -85,7 +85,9 @@ export function judgeHandshake(
     if (target.ssl === 'verify-ca') return undefined;
     return new ReplicationTlsError({
       detail: `the server certificate does not name ${target.host} (${code}) and sslmode=verify-full checks it`,
-      fix: 'openssl s_client -starttls postgres -connect <host>:5432 </dev/null | openssl x509 -noout -ext subjectAltName   # connect with a name it lists, or use ?sslmode=verify-ca to check the chain alone',
+      // The target's own host and port, so the pasted command reaches this server; a host a shell
+      // would misread becomes the libpq env pair instead, which a shell expands rather than runs.
+      fix: `openssl s_client -starttls postgres -connect ${renderFixShellArg(`${target.host}:${target.port}`, '"$PGHOST:$PGPORT"')} </dev/null | openssl x509 -noout -ext subjectAltName   # connect with a name it lists, or use ?sslmode=verify-ca to check the chain alone`,
     });
   }
   return new ReplicationTlsError({
@@ -109,5 +111,14 @@ export async function rootCertificate(rootCert: string | undefined): Promise<str
       fix: 'mount the server CA and point ?sslrootcert= at it, or use ?sslrootcert=system for a public CA',
     });
   }
-  return file.text();
+  // `exists()` is not readability: a secret mounted 0600 for another user exists and still refuses
+  // the read, which escaped as a raw runtime error with no code.
+  try {
+    return await file.text();
+  } catch (error) {
+    throw new ReplicationTlsError({
+      detail: `sslrootcert names a file this process cannot read: ${renderThrowable(error)}`,
+      fix: 'id -u   # the replicator runs as this user: mount the CA readable by it, or use ?sslrootcert=system for a public CA',
+    });
+  }
 }

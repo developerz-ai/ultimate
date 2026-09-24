@@ -157,6 +157,9 @@ export const bunPgStream = (target: PgTarget): Promise<PgStream> =>
  * happen here rather than in the message layer.
  */
 export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promise<PgStream> {
+  // Before any socket exists: a trust anchor that cannot be read is a setting, not a connection,
+  // and refused after the connect it left the raw socket open — one descriptor per retry.
+  const ca = target.ssl === 'disable' ? undefined : await rootCertificate(target.rootCert);
   const queue = new ChunkQueue();
   let draining: (() => void) | undefined;
   /**
@@ -244,7 +247,6 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
    * failure is `X_REPLICATION_TLS` here, never a refused write one step later.
    */
   const upgrade = async (): Promise<SocketLike> => {
-    const ca = await rootCertificate(target.rootCert);
     let settle: ((failure: ReplicationTlsError | undefined) => void) | undefined;
     const handshake = new Promise<ReplicationTlsError | undefined>((resolve) => {
       settle = resolve;
@@ -302,7 +304,22 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
     return tls;
   };
 
-  if (target.ssl !== 'disable') {
+  // Every refusal below owns the socket it opened: the caller never receives a stream to close.
+  try {
+    await negotiate();
+  } catch (failure) {
+    socket.end();
+    throw failure;
+  }
+
+  return {
+    read: () => queue.read(),
+    write: flush,
+    close: () => socket.end(),
+  };
+
+  async function negotiate(): Promise<void> {
+    if (target.ssl === 'disable') return;
     await flush(sslRequest());
     const answer = (await queue.read()) ?? new Uint8Array(0);
     const verdict = answer[0];
@@ -334,10 +351,4 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
       });
     }
   }
-
-  return {
-    read: () => queue.read(),
-    write: flush,
-    close: () => socket.end(),
-  };
 }

@@ -4,6 +4,7 @@
 // upgrade that authenticated — one client with no credential must not starve every reconnect.
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, userActor } from '@ultimat3/core';
+import { SocketOriginRefusedError } from './errors';
 import type { SyncAuthenticator } from './sync-auth';
 import { handleUpgrade, type UpgradeDeps, type UpgradeTarget } from './sync-upgrade';
 import { AcceptBudget } from './thundering-herd';
@@ -108,5 +109,61 @@ describe('the accept budget is spent only by an upgrade that authenticated', () 
     expect(count()).toBe(1);
     // And the budget still binds the ones that did authenticate.
     expect((await handleUpgrade(node, dial({ cookie: 'session=ok' }), server))?.status).toBe(503);
+  });
+});
+
+describe('a reconnect herd reaches authenticate bounded by the burst', () => {
+  test('dials beyond the burst are shed before authenticate; a taken socket keeps its token', async () => {
+    const { server, count } = upgrades();
+    let inFlight = 0;
+    let peak = 0;
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const authenticate: SyncAuthenticator = async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await gate;
+      inFlight -= 1;
+      return { actor: alice };
+    };
+    const accept = new AcceptBudget({ perSecond: 1, burst: 2, clock: frozenClock(0) });
+    const node = deps({ authenticate, accept });
+    const herd = Array.from({ length: 6 }, () => handleUpgrade(node, dial(), server));
+    open();
+    const answers = await Promise.all(herd);
+    expect(peak).toBe(2);
+    expect(answers.filter((answer) => answer?.status === 503)).toHaveLength(4);
+    expect(count()).toBe(2);
+    expect(accept.tokens).toBe(0);
+  });
+
+  test('a refused credential gives its reserved token back', async () => {
+    const { server } = upgrades();
+    const accept = new AcceptBudget({ perSecond: 1, burst: 1, clock: frozenClock(0) });
+    const node = deps({ authenticate: async () => null, accept });
+    expect((await handleUpgrade(node, dial(), server))?.status).toBe(401);
+    expect(accept.tokens).toBe(1);
+  });
+
+  test('an authenticator that throws gives its reserved token back', async () => {
+    const { server } = upgrades();
+    const accept = new AcceptBudget({ perSecond: 1, burst: 1, clock: frozenClock(0) });
+    const node = deps({
+      authenticate: () => Promise.reject(new TypeError('token service down')),
+      accept,
+    });
+    expect((await handleUpgrade(node, dial(), server))?.status).toBe(503);
+    expect(accept.tokens).toBe(1);
+  });
+});
+
+describe('the origin refusal', () => {
+  // A fix is a command an agent can run, never a sentence.
+  test('its fix is the export that admits the page origin', () => {
+    expect(new SocketOriginRefusedError({ reason: 'x' }).fix).toStartWith(
+      'export APP_URL="https://www.example.com"',
+    );
   });
 });
