@@ -316,7 +316,23 @@ never stumbled into.
 On drain, `drainPlan()` gives every client its own jittered slot in a spread window and the node
 sends a `reconnect` frame carrying that delay — clients redistribute instead of stampeding.
 `AcceptBudget` is the receiving node's token bucket, and a refusal always carries a retry delay,
-because refusing without one just moves the herd next door.
+because refusing without one just moves the herd next door. **It is spent only by an upgrade that
+authenticated** (22.1.0): spent first, node-wide, one client dialling with no credential drained it
+and every signed-in reconnect behind it was shed. The bucket guards what an accepted socket costs;
+an unauthenticated dial costs what any HTTP request costs, and gets its 401 without touching it.
+Not per client IP: behind an ingress every dial has the ingress's address, and a forwarded header
+is the caller's own claim. An app with no `authenticate` is unchanged — every dial is admitted
+anyway.
+
+**A socket from a foreign page is refused** — `403 X_SOCKET_ORIGIN_REFUSED`, before `authenticate`
+and before the budget. A websocket carries the session cookie and no CORS applies to it, so a page on
+a sibling host (same-site, which `SameSite=Lax` does not stop) could open one as its visitor. The
+rule is `@ultimat3/core`'s `proveSameOrigin`, the one `@ultimat3/http`'s CSRF check asks, with two
+admissions of the node's own (`sync-origin.ts`): no `Origin` header (RFC 6455 has every browser send
+one, so its absence is not a browser), and the node's own host name at any port or scheme (cookies
+are not port-isolated, and the Compose rung serves the page on `:3000` and the node on `:3001`). A
+page on another host is admitted by `createSyncNode({ allowedOrigins })` — the CLI passes
+`APP_URL`'s origin.
 
 The client dials itself back. A closed socket arms one timer — the node's delay when a `reconnect`
 frame assigned one, otherwise `@ultimat3/core`'s `backoffDelay()` on the client's `BackoffPolicy` — and that timer calls `connect()`, which re-subscribes
@@ -523,6 +539,17 @@ wire twice by a reconnect that raced an ack.
   wrong database's WAL would be silently wrong forever. `REPLICATION_SLOT` (default `x_replicator`)
   and `REPLICATION_PUBLICATION` (default `x_changes`) name the slot and publication, both checked
   against `[a-z_][a-z0-9_]*` before they reach a replication command.
+- **TLS follows libpq's `sslmode`** (`pg-tls.ts`, 22.1.0): `disable`; `allow`, `prefer` (the
+  default) and `require` encrypt and verify **nothing**; `verify-ca` checks the chain;
+  `verify-full` the chain and the host name. `sslrootcert=<path>` is the only trust anchor when
+  set (and turns `require` into `verify-ca`, as libpq does); `sslrootcert=system` means the runtime
+  store and `verify-full`. With neither, the runtime store is used — it honours
+  `NODE_EXTRA_CA_CERTS`; libpq's `~/.postgresql/root.crt` is never read. `allow` is served as
+  `prefer` (TLS offered first), never cleartext first. The runtime never rejects on its own
+  (`rejectUnauthorized: false`); the handshake's report is judged per mode, and a failure is
+  `X_REPLICATION_TLS` naming the check. Until 22.1.0 `prefer` verified — every private-CA server
+  (CNPG) failed as a refused write — and the raw socket kept feeding ciphertext to the reader
+  after the upgrade, so a trusted CA still hung the stream.
 - **`REPLICATION` is a cluster-wide grant.** A `replication=database` session may also run
   `BASE_BACKUP` and `START_REPLICATION PHYSICAL` with no database check, so on a shared Postgres
   cluster the role could copy every database, `pg_authid` included, drop other slots and exhaust
@@ -565,18 +592,17 @@ wire twice by a reconnect that raced an ack.
   *transactions* in commit order, so per-record WAL positions are not monotonic across them. The
   pair sorts in delivery order and is byte-identical on replay, which is what turns at-least-once
   redelivery into a drop instead of a duplicate.
-- **A live query needs `REPLICA IDENTITY FULL`, and the replicator now says so** (`As of
-  2026-08-19`). Deciding whether a row *left* a result set needs the old values; with the default
-  identity a delete replicates only the key columns, and `toRow` accepts that tuple because it only
-  requires a text `id`. `preflight` asks `pg_class.relreplident` for every entity in the list — the
-  fourth question it asks, and **before** `pg_create_logical_replication_slot`, since changing the
-  identity after a slot exists does not reach the rows that slot will decode. It is a **coded
-  warning**, `X_LIVE_REPLICA_IDENTITY`, whose `fix:` is the `ALTER TABLE <t> REPLICA IDENTITY FULL;`
-  per named table — not a throw, because every app on the default identity would otherwise stop
-  booting, which is worse than the partial rows. `ReplicationStreamStats.partialBefore` is the
-  running half: one per change delivered off a relation that is not FULL, so the decisions it
-  actually cost are countable rather than silent. A hard refusal at `x verify` time is the
-  follow-up.
+- **A keyed table does not need `REPLICA IDENTITY FULL`; a table with NO identity is warned**
+  (`As of 2026-09-23`). Under DEFAULT an update carries no old tuple and a delete only the key, and
+  neither decides a live query: the shared window holds the whole row, so a row leaving the result
+  set is decided from the window and a delete by `holds(id)` — proved on real WAL by
+  `pg-identity-window.live.test.ts` (out of the filter, into it, delete, a row never held).
+  `preflight`'s fourth question, **before** `pg_create_logical_replication_slot`, names only the
+  entity tables with no identity (`NOTHING`, or `DEFAULT` with no primary key), whose `UPDATE` and
+  `DELETE` Postgres refuses once published: a **coded warning**, `X_LIVE_REPLICA_IDENTITY`, fix
+  `ALTER TABLE <t> REPLICA IDENTITY FULL;` per table — not a throw. Until 22.1.0 it named every
+  table not on FULL, on every boot. `ReplicationStreamStats.partialBefore` still counts changes off
+  a non-FULL relation — a volume figure, not a correctness one.
 - The record store is **per page**, in memory, and it is not a query cache: it answers "what is
   record X now", never "have I run this query before". Nothing evicts by time or size — a record
   lives as long as something holds it. Persisting it (IndexedDB) is plan 101 slice 12.

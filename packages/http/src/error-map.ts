@@ -425,6 +425,11 @@ export const ERROR_STATUS = {
   X_REALTIME_UNINSTALLED: 500,
   // Boot-time: a realtime config and its environment that disagree refuse before any request.
   X_REALTIME_TOPOLOGY: 500,
+  // The replicator's own Postgres connection failed TLS. A role that never answers a request, so the
+  // row keeps the table closed at 500, beside `X_REALTIME_TOPOLOGY`.
+  X_REPLICATION_TLS: 500,
+  // A browser page on a foreign origin asked for a socket — refused, not unauthenticated: 403.
+  X_SOCKET_ORIGIN_REFUSED: 403,
   X_RECORD_KEY_MISSING: 500,
   X_RECORD_REJECTED: 500,
   X_SYNC_UNCONFIGURED: 500,

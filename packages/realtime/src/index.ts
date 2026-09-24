@@ -74,6 +74,7 @@ export {
   ReplicaIdentityError,
   ReplicationFailedError,
   ReplicationProtocolError,
+  ReplicationTlsError,
   ReplicatorSlotHeldError,
   ServerRenderLiveError,
   SubscriptionLimitError,

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d5eba657edb55e2a1abfd8b4feab76a78702f615eac495eb3b04ea0df0f4d729",
+  "buildId": "91ae65cdeb173d8b35ff881914c8788373664f8a930bfafeaf11f92d68d798b5",
   "tiers": {
     "0": [
       "core",
@@ -2650,6 +2650,11 @@
       "at": "packages/realtime/src/errors.ts"
     },
     {
+      "code": "X_REPLICATION_TLS",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
       "code": "X_REPLICATOR_SLOT_HELD",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
@@ -3191,6 +3196,11 @@
     },
     {
       "code": "X_SOCKET_AUTH_UNAVAILABLE",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_SOCKET_ORIGIN_REFUSED",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
     },

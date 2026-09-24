@@ -12,6 +12,12 @@ import {
 } from './scaffold-env';
 
 describe('unit · the scaffold env declaration', () => {
+  // The sync node admits a socket from APP_URL's origin when the page is served on another host,
+  // so a scaffolded app must be told the variable exists — on both roles that read it.
+  test('APP_URL is declared for web and sync', () => {
+    expect(SCAFFOLD_ENV_SCHEMA.APP_URL.role).toEqual(['web', 'sync']);
+  });
+
   test('every declared variable reaches the committed example', () => {
     expect(checkEnvExample(SCAFFOLD_ENV_SCHEMA, envExampleSource())).toEqual({
       ok: true,

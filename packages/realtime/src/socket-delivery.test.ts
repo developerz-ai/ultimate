@@ -124,14 +124,16 @@ describe('a dropped channel frame is counted', () => {
     ).toBe('counter');
   });
 
-  test('a node that dropped nothing publishes no point at all', () => {
+  // Zero, not absent: a series that appears only at the first drop gives `rate()` nothing to alert
+  // on and makes `absent()` read a healthy node as a missing one.
+  test('a node that dropped nothing publishes 0, with no labels', () => {
     const registry = new SocketRegistry();
     const one = socketOn(registry, 'one');
     registry.joinTopic(one.socket, TOPIC);
 
     registry.deliver(TOPIC, channelFrame());
 
-    expect(droppedSeries()).toBeUndefined();
+    expect(droppedSeries()).toEqual({ value: 0, attributes: {} });
   });
 });
 

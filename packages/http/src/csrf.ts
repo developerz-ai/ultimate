@@ -5,7 +5,7 @@
 // went through. `setRedirect` exists so those form posts work without JS, which makes them a
 // first-class surface here rather than a legacy one.
 
-import { classifyAddress } from '@ultimat3/core';
+import { classifyAddress, proveSameOrigin } from '@ultimat3/core';
 import type { CorsConfig } from './cors';
 import { originListed } from './cors';
 import { HttpError } from './errors';
@@ -25,9 +25,6 @@ export const DEFAULT_CSRF: CsrfConfig = { mode: 'origin' };
 
 /** Methods with no side effects, per RFC 9110. A CSRF check on these is a check on nothing. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
-
-/** The complete `Sec-Fetch-Site` vocabulary. Anything else was written by a non-browser. */
-const KNOWN_SITES = new Set(['same-origin', 'same-site', 'cross-site', 'none']);
 
 export interface CsrfCheckInput {
   readonly method: string;
@@ -60,29 +57,21 @@ export const checkCsrf = (input: CsrfCheckInput): CsrfVerdict => {
   if (input.anonymous) return { ok: true };
   if (input.hasAuthorizationHeader) return { ok: true };
 
-  const site = input.secFetchSite;
-  if (site === 'same-origin' || site === 'none') return { ok: true };
-  if (input.origin === input.selfOrigin) return { ok: true };
+  // The rule itself is core's, shared with the sync node's upgrade: one answer to "did this
+  // come from this app?" on every surface an ambient credential reaches.
+  //
   // `originListed`, never `allowedOrigin`: that one answers the RESPONSE header, and for
   // `origins: ['*'], credentials: false` — the only wildcard `assertCorsConfig` admits — its
   // answer is `'*'`, which is not null and so read as "this origin is one we allow". A
   // credentialed cross-site POST from evil.test was therefore accepted by the check that exists
   // to refuse exactly it. An exact match is the only allowance a write may be built on.
-  if (originListed(input.cors, input.origin)) return { ok: true };
-  // Only the four values a browser can send are quoted back. Anything else is a client that
-  // wrote the header itself, and echoing what it wrote is how a rejected value reaches the log
-  // store and the response body — the same defect the error-map stage's log line had.
-  if (site !== null) {
-    const known = KNOWN_SITES.has(site) ? site : 'a value no browser sends';
-    return { ok: false, reason: `the request reported sec-fetch-site: ${known}` };
-  }
-  return {
-    ok: false,
-    reason:
-      input.origin === null
-        ? 'the request carried neither sec-fetch-site nor origin, so it cannot be shown to be same-origin'
-        : 'the origin it declares is not this app and is not listed in http.cors.origins',
-  };
+  return proveSameOrigin({
+    selfOrigins: [input.selfOrigin],
+    origin: input.origin,
+    secFetchSite: input.secFetchSite,
+    listed: (origin) => originListed(input.cors, origin),
+    listName: 'http.cors.origins',
+  });
 };
 
 /** The origin a browser compares against — the PUBLIC one, so a TLS-terminating proxy agrees. */

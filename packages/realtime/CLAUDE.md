@@ -149,6 +149,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A hub that closed opens nothing**: `close()` sets `#closed` before the walk; `#open` closes a
   late subscription and RAISES `X_TRANSPORT_UNAVAILABLE`. `#release` takes the reserved bridge, never
   a name.
+- **An upgrade from a foreign page is `403 X_SOCKET_ORIGIN_REFUSED`** before `authenticate`
+  (`sync-origin.ts`, core's `proveSameOrigin`); `AcceptBudget` is spent only AFTER `authenticate`.
 - **A socket's actor comes from `createSyncNode({ authenticate })` only**, run before
   `server.upgrade`. `null` = 401 `X_SOCKET_UNAUTHENTICATED`; a throw = 503
   `X_SOCKET_AUTH_UNAVAILABLE`. Absent = anonymous, and `start()` warns. The actor lives only in the
@@ -188,22 +190,19 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **The pump has one way out, `#die`**, which records the failure, stops the confirm timer, closes and
   nulls the connection. `start()` awaits the previous pump before it dials. **`stop()` releases
   everything before it reports anything.**
-- **The replicator ensures its publication; nothing else creates it** (`pg-publication.ts`, called
-  from preflight after `wal_level`): `CREATE PUBLICATION … FOR TABLE` every entity table when
-  missing, `ALTER PUBLICATION … ADD TABLE` the missing ones when present, **never a DROP**. Never
-  `FOR ALL TABLES` (superuser). Only a server ErrorResponse becomes the coded refusal with the
-  statement; a socket failure propagates. No entity is excluded: there is no not-live declaration.
-- **A fix that hands over `REPLICATION` carries `REPLICATION_GRANT_WARNING`** (`pg-wire.ts`): the
-  attribute is cluster-wide (`BASE_BACKUP`, `START_REPLICATION PHYSICAL`), so never a bare
-  `ALTER ROLE … WITH REPLICATION`.
-- **`REPLICA IDENTITY FULL` is checked at preflight, warned, and counted — never thrown** — ahead of
-  `pg_create_logical_replication_slot`. `ReplicationStreamStats.partialBefore` reads
-  `PgRelation.replicaIdentity`, never the tuple.
+- **The replicator ensures its publication** (`pg-publication.ts`, from preflight): `CREATE … FOR
+  TABLE` every entity table, or `ALTER … ADD TABLE` the missing; never a DROP, never `FOR ALL
+  TABLES`. Only a server ErrorResponse becomes the refusal. No not-live declaration exists.
+- **A fix handing over `REPLICATION` carries `REPLICATION_GRANT_WARNING`** (cluster-wide grant).
+- **TLS is libpq's `sslmode`** (`pg-tls.ts`): only `verify-*` verify; the runtime never rejects
+  (`rejectUnauthorized: false`), `judgeHandshake` decides; the raw socket is DEAF after
+  `upgradeTLS` (Bun feeds it ciphertext).
+- **Only a table with NO replica identity is warned** (`NOTHING`, or keyless `DEFAULT`), before the
+  slot. A keyed DEFAULT table is correct: the window decides (`pg-identity-window.live.test.ts`).
 - **Every session pins `datestyle=ISO`, `intervalstyle=postgres`, `extra_float_digits=3`** in the
-  startup packet (`pg-connection.ts`, pinned by `pg-connection.test.ts`), byte for byte what
-  Postgres' own walreceiver sends.
-- A change lsn is `<16 hex commit position><8 hex row position>`; never order by either half alone,
-  never depend on wall time or a process counter.
+  startup packet (`pg-connection.ts`), as Postgres' own walreceiver does.
+- A change lsn is `<16 hex commit position><8 hex row position>`; never order by one half, a wall
+  time or a counter.
 - Slot, publication and entity names match `[a-z_][a-z0-9_]*` before interpolation — a security
   boundary (`pg-identifier.ts`, the one `assertIdentifier`). A SQLSTATE is data: `pg-wire.ts`'s
   `FIXES` is read with `Object.hasOwn`.

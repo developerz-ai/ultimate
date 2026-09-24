@@ -1,5 +1,6 @@
 // Where a page's one socket dials — the framework's answer, so no app owns a `sync-url.ts`. Read
-// once at boot from the deployment's env and handed to every document as `ultimate-sync`.
+// once at boot from the deployment's env and handed to every document as `ultimate-sync` — and
+// the page origin the node admits, which is the same question asked from the other end.
 
 import { ConfigInvalidError } from '@ultimat3/core';
 
@@ -28,4 +29,23 @@ export function syncUrlFrom(env: Readonly<Record<string, string | undefined>>): 
     });
   }
   return declared;
+}
+
+/**
+ * The page origins a sync node admits besides its own host name: `APP_URL`'s, when set. Only a
+ * deployment that serves the page on another host than the node needs it; an unparsable value is
+ * refused rather than read as "no page origin", which would refuse every socket in silence.
+ */
+export function syncOriginsFrom(env: Readonly<Record<string, string | undefined>>): string[] {
+  const declared = env['APP_URL']?.trim() ?? '';
+  if (declared === '') return [];
+  const parsed = URL.parse(declared);
+  if (parsed === null || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+    throw new ConfigInvalidError({
+      cause: 'APP_URL is set but is not an http:// or https:// URL, so no page origin can match it',
+      fix: 'export APP_URL="https://www.example.com"   # the origin your pages are served on',
+      meta: { key: 'APP_URL' },
+    });
+  }
+  return [parsed.origin];
 }

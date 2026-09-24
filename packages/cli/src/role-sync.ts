@@ -20,6 +20,7 @@ import { neighbouringPort, PORT_RANGE, portPairAfter } from './flag-number';
 import { portFree } from './port-probe';
 import type { StartRolesOptions } from './role-start';
 import { syncAuthenticator } from './sync-authenticator';
+import { syncOriginsFrom } from './sync-url';
 import { DEV_BINDING } from './web-binding';
 
 /**
@@ -201,6 +202,9 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
     buildId: options.buildId,
     sockets,
     ...(authenticate === undefined ? {} : { authenticate }),
+    // The page's origin when it is served on another host than this node; the node's own host is
+    // admitted without it. Anything else is refused before `authenticate` (X_SOCKET_ORIGIN_REFUSED).
+    allowedOrigins: syncOriginsFrom(options.env),
     // Tier 1 is presence, and without a registry the node answers a topic subscribe with no member
     // list at all — the KV bucket the transport just created would hold nothing and every `sync`
     // container would run a presence-less protocol. It reads and writes `transport.shared`, so it
