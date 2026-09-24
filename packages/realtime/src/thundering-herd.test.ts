@@ -74,6 +74,19 @@ describe('thundering herd', () => {
     expect(budget.tryAccept()).toBe(true);
     expect(budget.retryAfterMs(() => 0)).toBe(100);
   });
+
+  // A reservation taken before `authenticate` and handed back when no socket is taken: the herd
+  // stays bounded at `burst` in flight, and a dial with no credential costs nobody a token.
+  test('refund hands a reserved token back, never past the burst', () => {
+    const budget = new AcceptBudget({ perSecond: 10, burst: 2, clock: frozenClock(0) });
+    expect(budget.tryAccept()).toBe(true);
+    expect(budget.tryAccept()).toBe(true);
+    budget.refund();
+    expect(budget.tokens).toBe(1);
+    budget.refund();
+    budget.refund();
+    expect(budget.tokens).toBe(2);
+  });
 });
 
 /**

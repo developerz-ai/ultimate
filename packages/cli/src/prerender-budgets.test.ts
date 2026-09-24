@@ -16,7 +16,9 @@ import { readBuildStats } from './budgets';
 import { prerenderSite } from './prerender';
 import { serviceWorkerRegistration } from './sw-artifacts';
 
-const ROOT = join(import.meta.dir, '..', '.prerender-fixture');
+// Its own directory: `prerender.test.ts` and `prerender-islands.test.ts` wrote the SAME root, and
+// under the gate's parallel workers each file's build read the other's `app.config.ts` and output.
+const ROOT = join(import.meta.dir, '..', '.prerender-budgets-fixture');
 
 // `defineRoute`, not a literal: the registry refuses a raw declaration, and this is the exact
 // config `x new` writes for `site/page.tsx` — `js: '0kb'` included, which is the promise under test.

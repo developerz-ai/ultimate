@@ -1,5 +1,5 @@
-// The four refusals the Postgres replication half raises: the wire, the connection, the slot, and
-// the replica identity it warns about.
+// The five refusals the Postgres replication half raises: the wire, the connection, its TLS, the
+// slot, and the replica identity it warns about.
 //
 // Split out of `errors.ts` on the one seam this package already draws — these are the only codes
 // no browser can reach, thrown by `pg-*.ts` and the replicator and by nothing on the client half.
@@ -41,6 +41,22 @@ export class ReplicationFailedError extends RealtimeError {
 }
 
 /**
+ * The replication connection failed TLS: the certificate failed the verification the `sslmode`
+ * asked for, `sslrootcert` named nothing readable, or the handshake itself failed. Its own code
+ * because the fix is a TLS setting, never the network — a certificate refusal used to surface as
+ * `X_REPLICATION_FAILED` "the socket refused a 139-byte write", one step after a silent close.
+ */
+export class ReplicationTlsError extends RealtimeError {
+  constructor(args: { detail: string; fix: string }) {
+    super({
+      code: 'X_REPLICATION_TLS',
+      cause: `postgres replication tls failed: ${args.detail}`,
+      fix: args.fix,
+    });
+  }
+}
+
+/**
  * A second replicator found the advisory lock held. Distinct from `X_REPLICATION_FAILED` because
  * nothing is wrong with this process: the database already has its one replicator, and a second
  * one that started anyway would publish every change twice. Terminal for a container whose whole
@@ -59,29 +75,26 @@ export class ReplicatorSlotHeldError extends RealtimeError {
 }
 
 /**
- * A table in the entity list replicates with a replica identity other than FULL, so its `delete`
- * (and any key-changing `update`) carries the KEY COLUMNS ONLY. `toRow` accepts that tuple —
- * it only requires a text `id` — so the live matcher decides "did this row leave the result set"
- * from a one-column row, and a row policy written against `!row.private` reads `undefined`.
+ * A table in the entity list has NO replica identity — no primary key under DEFAULT, or
+ * `REPLICA IDENTITY NOTHING`. Once it is in the publication Postgres refuses its UPDATE and DELETE
+ * (`cannot update table … because it does not have a replica identity and publishes updates`),
+ * and a change the replicator did see could not be keyed. A keyed table under DEFAULT is correct
+ * and is never named: the shared window holds the whole row a live query decides on.
  *
- * **Raised at preflight and LOGGED, never thrown.** Every app running today on the default
- * identity would stop booting, and the replicator refusing to start is a worse outcome than the
- * partial rows it is warning about. The runtime half is `ReplicationStreamStats.partialBefore`,
- * which counts the changes this actually affects. Refusing it at `x verify` time is the follow-up.
- *
- * The tables are named because the fix is per table, and they are the entity list's own names —
- * every one has already passed `assertIdentifier`, so the `fix:` is SQL that can be pasted.
+ * **Raised at preflight and LOGGED, never thrown**, as it always was: a replicator that will not
+ * start is worse than the tables it names. The tables are the entity list's own names — every one
+ * has already passed `assertIdentifier`, so the `fix:` is SQL that can be pasted.
  */
 export class ReplicaIdentityError extends RealtimeError {
   constructor(args: { tables: readonly string[] }) {
     super({
       code: 'X_LIVE_REPLICA_IDENTITY',
       cause:
-        `${args.tables.join(', ')} replicate with a replica identity other than FULL, so a ` +
-        'delete carries the key columns only and a live query decides visibility from a partial row',
+        `${args.tables.join(', ')} have no replica identity (no primary key, or REPLICA IDENTITY ` +
+        'NOTHING), so once published an UPDATE or DELETE on them fails and a change cannot be keyed',
       fix:
         `${args.tables.map((table) => `ALTER TABLE ${table} REPLICA IDENTITY FULL;`).join(' ')}` +
-        ' -- rows already written to the WAL keep the identity they were written with',
+        ' -- or give each a primary key; rows already in the WAL keep the identity they were written with',
     });
   }
 }

@@ -53,6 +53,12 @@ export interface SyncNodeOptions {
    * is a single-tenant node, and `start()` says so in the log.
    */
   readonly authenticate?: SyncAuthenticator;
+  /**
+   * Exact origins a page may open a socket from, besides this node's own host name — the page's
+   * origin when it is served on another host (`SYNC_URL` on a separate domain). Anything else is
+   * refused `X_SOCKET_ORIGIN_REFUSED` before `authenticate` runs.
+   */
+  readonly allowedOrigins?: readonly string[];
   /** How often an expired grant is re-decided. The clock a socket's authority runs on. */
   readonly reauthenticateIntervalMs?: number;
   readonly clock?: Clock;

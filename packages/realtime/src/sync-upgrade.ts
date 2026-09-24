@@ -3,8 +3,13 @@
 // from what the socket then does — the same line `sync-frames.ts` and `sync-listen.ts` already draw.
 
 import { healthzPayload, readyzPayload, reportError } from '@ultimat3/core';
-import { SocketAuthUnavailableError, SocketUnauthenticatedError } from './errors';
+import {
+  SocketAuthUnavailableError,
+  SocketOriginRefusedError,
+  SocketUnauthenticatedError,
+} from './errors';
 import type { SyncAuthenticator, SyncGrant } from './sync-auth';
+import { upgradeOrigin } from './sync-origin';
 import { toWireError } from './sync-protocol';
 import type { AcceptBudget, Rng } from './thundering-herd';
 
@@ -44,6 +49,11 @@ export interface UpgradeDeps {
   newSocketId(): string;
   readonly authenticate?: SyncAuthenticator | undefined;
   /**
+   * Exact origins a page may dial from besides the node's own host name — `APP_URL`'s, when the
+   * page is served on another host than the node (`sync-origin.ts`).
+   */
+  readonly allowedOrigins?: readonly string[] | undefined;
+  /**
    * Recorded BEFORE `server.upgrade`, because Bun runs `websocket.open` synchronously inside it
    * (measured on bun 1.4.0) and `open` is where the node reads this grant to build the socket's
    * actor. Recorded after, every authenticated socket carried `actor: null` — the topic guard,
@@ -79,12 +89,19 @@ export async function handleUpgrade(
     return deps.ready() ? json(payload) : json({ status: 503, body: payload.body });
   }
   if (url.pathname !== deps.path) return new Response('not found', { status: 404 });
-  // The count, not the rate. Shed the same way and with the same delay attached: a client refused
-  // for a full node and one refused for a fast one have the same next move, and the refusal is
-  // decided before `authenticate` so a full node costs no token service call.
-  if (deps.socketCount() >= deps.maxConnections || !deps.ready() || !deps.accept.tryAccept()) {
-    return shed(deps);
-  }
+  // First, and before anything is spent: a foreign page is refused whatever the node's load.
+  const origin = upgradeOrigin(request, url, deps.allowedOrigins ?? []);
+  if (!origin.ok)
+    return wireErrorResponse(403, new SocketOriginRefusedError({ reason: origin.reason }));
+  // The count and readiness. Decided before `authenticate` so a full node costs no token service
+  // call.
+  if (deps.socketCount() >= deps.maxConnections || !deps.ready()) return shed(deps);
+  // The RATE is RESERVED here and REFUNDED on every exit that takes no socket. Reserved first, so a
+  // reconnect herd reaches `authenticate` bounded by the burst — the token service is the first
+  // thing a herd would otherwise flatten. Refunded, because spent-and-kept, one client dialling
+  // with no credential drained the bucket and every signed-in reconnect behind it was shed.
+  if (!deps.accept.tryAccept()) return shed(deps);
+  const refund = (): void => deps.accept.refund();
   let grant: SyncGrant | null = null;
   if (deps.authenticate) {
     try {
@@ -93,6 +110,7 @@ export async function handleUpgrade(
       // A failure is not a denial. The token service timing out must not read to a client as "you
       // may not connect" — it is told to come back, and this node is the one that pages.
       reportError(error, { source: 'realtime', scope: { operation: 'sync.authenticate' } });
+      refund();
       return wireErrorResponse(
         503,
         new SocketAuthUnavailableError({ detail: 'see the node log for the cause' }),
@@ -101,6 +119,7 @@ export async function handleUpgrade(
     // The decision, made before a socket exists: an upgrade is the cheapest thing to refuse and the
     // most expensive thing to take back.
     if (grant === null) {
+      refund();
       return wireErrorResponse(
         401,
         new SocketUnauthenticatedError({ reason: 'authenticate() resolved no actor' }),
@@ -120,8 +139,11 @@ export async function handleUpgrade(
   // sockets as there were parked requests, and `maxConnections` bounded nothing that a herd could
   // reach. Sound because there is no await between this line and `server.upgrade`, and the count
   // moves INSIDE it: Bun runs `websocket.open` synchronously there, which is where `sockets.add`
-  // runs. No second `tryAccept()`: that budget was spent above.
-  if (!deps.ready() || deps.socketCount() >= deps.maxConnections) return shed(deps);
+  // runs.
+  if (!deps.ready() || deps.socketCount() >= deps.maxConnections) {
+    refund();
+    return shed(deps);
+  }
   const data: WsData = {
     socketId: deps.newSocketId(),
     // The node's own id is "not skewed until the hello says so", never "current forever".
@@ -144,10 +166,12 @@ export async function handleUpgrade(
     // failing upgrades left 20 grants. Rethrown untouched — the throw is the operator's diagnosis,
     // and this line owes it the release, not a verdict.
     deps.onUngranted(data.socketId);
+    refund();
     throw error;
   }
   if (!upgraded) {
     deps.onUngranted(data.socketId);
+    refund();
     return new Response('expected websocket', { status: 426 });
   }
   return undefined;

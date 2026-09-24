@@ -10,12 +10,36 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **realtime:** the replicator's Postgres connection follows libpq's `sslmode` — `allow`/`prefer`/`require`
+  encrypt without verifying, `verify-ca`/`verify-full` verify, `sslrootcert=<file>|system` names the
+  trust anchor; a TLS failure is `X_REPLICATION_TLS`. Fixes `prefer` failing against every private-CA
+  server (CNPG) and a hang reading the stream after the TLS upgrade (the plain socket kept feeding
+  ciphertext to the reader).
+- **realtime:** `X_LIVE_REPLICA_IDENTITY` names only tables with no replica identity (`NOTHING`, or
+  `DEFAULT` without a primary key), whose UPDATE/DELETE Postgres refuses once published. A keyed table
+  on `DEFAULT` is correct for live queries — the shared window decides, proved on real WAL
+  (`pg-identity-window.live.test.ts`) — and is no longer warned about on every boot.
+- **core:** a declared counter with no samples exports `0`, so `channel_frames_dropped_total` and
+  `channel_replay_gaps_total` exist from boot and `rate()` / `absent()` alerts work.
 - **realtime:** the replicator ensures its publication at boot — `CREATE PUBLICATION <name> FOR TABLE
   <every entity table>` when missing, `ALTER PUBLICATION … ADD TABLE` for the entity tables it lacks,
   never a drop — instead of refusing boot; a role that may not is still refused with
   `X_REPLICATION_FAILED` and the statement to run. Every fix line that grants `REPLICATION` warns
   that the grant is cluster-wide (`BASE_BACKUP` reads every database, `pg_authid` included) and links
   `docs/ops/01-kubernetes.md#replication-is-a-cluster-wide-grant`.
+
+### Security
+
+- **realtime:** a sync socket upgrade from a page on another host is refused
+  `403 X_SOCKET_ORIGIN_REFUSED` before `authenticate` (cross-site WebSocket hijacking with the
+  `SameSite=Lax` session cookie), using the same-origin rule CSRF uses — now `proveSameOrigin` in
+  `@ultimat3/core`. The node's own host name is admitted at any port; `APP_URL` (new in the scaffold's
+  env schema, web + sync) admits a page on another host, through the new
+  `createSyncNode({ allowedOrigins })`. **A deployment serving pages on a different host name than its
+  sync node must set `APP_URL` on the sync role.**
+- **realtime:** the sync node's accept budget is reserved before `authenticate` and refunded on every
+  exit that takes no socket — a reconnect herd reaches the token service bounded by the burst, and a
+  client with no credential can no longer starve every reconnect on the node.
 
 ### Fixed
 

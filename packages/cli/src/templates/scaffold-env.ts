@@ -29,6 +29,12 @@ export const SCAFFOLD_ENV_SCHEMA = {
     role: 'sync',
     description: 'Realtime fan-out cluster. Only the sync role is asked for it.',
   },
+  APP_URL: {
+    type: 'url',
+    required: false,
+    role: ['web', 'sync'],
+    description: 'Public origin of the pages. Sync admits sockets from it.',
+  },
   SYNC_URL: {
     type: 'string',
     required: false,

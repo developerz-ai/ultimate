@@ -591,6 +591,11 @@ export type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocab
 export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from './route-vocabulary';
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';
 export {
+  type OriginEvidence,
+  type OriginVerdict,
+  proveSameOrigin,
+} from './same-origin';
+export {
   defineService,
   installedServices,
   registeredServiceNames,

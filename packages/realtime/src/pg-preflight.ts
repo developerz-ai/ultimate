@@ -56,15 +56,16 @@ export async function preflight(
 }
 
 /**
- * The fourth preflight question, and the one that does NOT refuse. A live query decides whether a
- * row left its result set from `change.before`, and under any replica identity but FULL that tuple
- * is the key columns alone — which `toRow` accepts, since it only requires a text `id`.
+ * The fourth preflight question, and the one that does NOT refuse: which entity tables have NO
+ * replica identity. Once such a table is in the publication, Postgres refuses its UPDATE and
+ * DELETE outright, and a change could not be keyed if it did not. A table with a primary key is
+ * not named: under DEFAULT a delete carries its key, and a live query decides against the whole
+ * row its shared window holds, never against `change.before` alone.
  *
  * It runs BEFORE `pg_create_logical_replication_slot`: a slot decodes with the identity the
  * catalog held when the rows were written, so asking after the slot exists answers about a stream
- * nobody is reading yet. It WARNS rather than throws because every app on the default identity
- * would otherwise stop booting, and a replicator that will not start is worse than the partial
- * rows it is complaining about — `ReplicationStreamStats.partialBefore` is the running half.
+ * nobody is reading yet. It WARNS rather than throws, as it always has — a replicator that will
+ * not start is worse than the tables it is naming.
  *
  * Entity names are the ones the constructor already put through `assertIdentifier`, which is what
  * makes both the interpolation and the `fix:` safe; a name postgres answers with that is not in
@@ -76,9 +77,17 @@ async function warnPartialIdentity(
 ): Promise<void> {
   if (entities.size === 0) return;
   const names = [...entities].map((name) => `'${name}'`).join(', ');
+  // NO identity, not "not FULL": `n` (NOTHING), `d` (DEFAULT) with no primary key, or `i` whose
+  // index is gone.
+  // A keyed table replicates correctly under DEFAULT — a delete names its key, and the shared
+  // window holds the whole row a live query decides on — so naming it was noise on every boot.
   const rows = await connection.query(
-    `SELECT relname FROM pg_class WHERE relkind = 'r' AND relreplident <> 'f' ` +
-      `AND relname IN (${names})`,
+    `SELECT c.relname FROM pg_class c WHERE c.relkind = 'r' AND c.relname IN (${names}) ` +
+      `AND (c.relreplident = 'n' OR (c.relreplident = 'd' AND NOT EXISTS ` +
+      `(SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary)) ` +
+      // USING INDEX whose index was dropped: `relreplident` stays 'i' and it behaves as NOTHING.
+      `OR (c.relreplident = 'i' AND NOT EXISTS ` +
+      `(SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisreplident)))`,
   );
   const tables = [
     ...new Set(

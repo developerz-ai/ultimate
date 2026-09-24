@@ -27,7 +27,10 @@ const VERIFY_CTX: VerifyContext = {
   }),
 };
 
-const ROOT = join(import.meta.dir, '..', '.prerender-fixture');
+// Its own directory: `prerender.test.ts` and `prerender-budgets.test.ts` wrote the SAME root, and
+// under the gate's parallel workers one file's `app.config.ts` (a PWA) landed in the other's build
+// — a `<script src="/x-sw-register.js">` on a page this file asserts ships no script.
+const ROOT = join(import.meta.dir, '..', '.prerender-islands-fixture');
 
 // `defineRoute`, not a literal: the registry refuses a raw declaration, and these are the exact
 // configs `x new` writes for site/page.tsx and app/dashboard/page.tsx.

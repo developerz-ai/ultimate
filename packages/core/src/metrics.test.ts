@@ -239,8 +239,9 @@ describe('the instrument registry', () => {
       }
       expect(isUltimateError(caught)).toBe(true);
       expect((caught as UltimateError).code).toBe('X_METRIC_NAME_INVALID');
-      // Nothing was recorded under it: a refused series is not a series.
-      expect(pointsOf('test_label_grammar_total')).toHaveLength(0);
+      // Nothing was recorded under it: a refused series is not a series. What remains is the
+      // declared counter's own zero, with no labels at all.
+      expect(pointsOf('test_label_grammar_total')).toEqual([{ attributes: {}, value: 0 }]);
     });
   });
 

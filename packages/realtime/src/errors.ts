@@ -34,6 +34,8 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_SOCKET_UNAUTHENTICATED',
   'X_SOCKET_AUTH_UNAVAILABLE',
   'X_REALTIME_TOPOLOGY',
+  'X_REPLICATION_TLS',
+  'X_SOCKET_ORIGIN_REFUSED',
 ] as const;
 
 /**
@@ -138,10 +140,12 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_LIVE_SERVER_RENDER: 'a browser-only live operation ran during a server render',
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
   X_LIVE_QUERY_UNKNOWN: 'no live query is registered under the name a subscribe frame asked for',
-  X_LIVE_REPLICA_IDENTITY: 'a replicated table sends a key-only row on delete',
+  X_LIVE_REPLICA_IDENTITY: 'a replicated table has no replica identity',
   X_SOCKET_UNAUTHENTICATED: 'the sync upgrade carried no credential this app accepts',
   X_SOCKET_AUTH_UNAVAILABLE: 'the sync node could not decide who a connecting socket is',
   X_REALTIME_TOPOLOGY: 'a sync node boots on a real database with no reachable change feed',
+  X_REPLICATION_TLS: 'the replication connection failed TLS',
+  X_SOCKET_ORIGIN_REFUSED: 'the websocket upgrade came from another origin',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -172,6 +176,7 @@ export {
   ReplicaIdentityError,
   ReplicationFailedError,
   ReplicationProtocolError,
+  ReplicationTlsError,
   ReplicatorSlotHeldError,
 } from './replication-errors';
 
@@ -347,6 +352,22 @@ export class SocketUnauthenticatedError extends RealtimeError {
       code: 'X_SOCKET_UNAUTHENTICATED',
       cause: `the websocket upgrade was refused: ${args.reason}`,
       fix: 'send the credential createSyncNode({ authenticate }) reads on the upgrade request, or return an anonymous Actor from it to admit this socket',
+    });
+  }
+}
+
+/**
+ * A browser page on another origin asked for a socket. No CORS applies to a websocket and the
+ * session cookie rides it, so admitting the upgrade would open a socket AS the visitor for a page
+ * that is not this app — cross-site websocket hijacking. Decided before `authenticate` and before
+ * the accept budget, so a hostile page costs neither.
+ */
+export class SocketOriginRefusedError extends RealtimeError {
+  constructor(args: { reason: string }) {
+    super({
+      code: 'X_SOCKET_ORIGIN_REFUSED',
+      cause: `the websocket upgrade was refused: ${args.reason}`,
+      fix: 'export APP_URL="https://www.example.com"   # on the sync role: the origin the page is served on (or createSyncNode({ allowedOrigins }))',
     });
   }
 }

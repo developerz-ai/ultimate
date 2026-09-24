@@ -95,6 +95,8 @@ export interface UiHostInput {
   readonly driver?: ((viewport: UiShotInput['viewport']) => Promise<ShotDriver>) | undefined;
   /** Injected by a test: the route table, in place of the registry. */
   readonly routes?: (() => readonly DeclaredRoute[]) | undefined;
+  /** Injected by a test: the settle wait, in place of `DEFAULT_SETTLE_MS` (a real sleep per call). */
+  readonly settleMs?: number | undefined;
 }
 
 export interface UiCapabilities {
@@ -163,7 +165,7 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
         outDir,
         driver,
         boot,
-        settleMs: DEFAULT_SETTLE_MS,
+        settleMs: input.settleMs ?? DEFAULT_SETTLE_MS,
         timeoutMs: DEFAULT_PAGE_TIMEOUT_MS,
         fullPage: shot.fullPage,
         colorScheme: shot.colorScheme,
@@ -197,7 +199,7 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
         root,
         island: island.island,
         ...(island.state === undefined ? {} : { state: island.state }),
-        settleMs: DEFAULT_SETTLE_MS,
+        settleMs: input.settleMs ?? DEFAULT_SETTLE_MS,
         timeoutMs: DEFAULT_PAGE_TIMEOUT_MS,
         ...(executablePath === undefined ? {} : { executablePath }),
         ...(cdpUrl === undefined ? {} : { cdpUrl }),

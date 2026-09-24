@@ -269,6 +269,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           socketCount: () => sockets.count,
           newSocketId: () => uuid(),
           authenticate: options.authenticate,
+          allowedOrigins: options.allowedOrigins,
           onGranted: (socketId, grant) => grants.set(socketId, grant),
           // The other half of recording the grant before the upgrade: an upgrade that never took
           // gets no `close` callback, so this is the only thing that can free its entry.

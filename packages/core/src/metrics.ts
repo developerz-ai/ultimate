@@ -391,11 +391,10 @@ export function counter(name: string, options?: InstrumentOptions): Counter {
 export function gauge(name: string, options?: GaugeOptions): Gauge {
   const instrument = declare(name, 'gauge', options ?? {});
   return {
-    // The screen runs BEFORE the series is resolved, the order `counter.add` already had: a
-    // refused value must cost nothing, and `seriesFor` is not a read — it MINTS a series, one of
-    // a bounded number, keeps it for the life of the process and can trip the cardinality
-    // ceiling. `a.b += finite(…)` evaluates the reference first, so the two cannot be folded
-    // back into one expression.
+    // The screen runs BEFORE the series is resolved, as in `counter.add`: a refused value must
+    // cost nothing, and `seriesFor` MINTS a series — bounded in number, kept for the process's
+    // life, able to trip the cardinality ceiling. `a.b += finite(…)` evaluates the reference
+    // first, so the two cannot be folded into one expression.
     record(value, attributes = {}): void {
       if (!enabled) return;
       const observed = finite(name, value);
@@ -443,6 +442,10 @@ function pointsOf(instrument: Instrument): readonly MetricPoint[] {
       return [];
     }
   }
+  // Declared counter, no sample: 0, not absent (`rate()` needs a series) — until one exists.
+  const unsampled =
+    enabled && instrument.descriptor.kind === 'counter' && instrument.series.size === 0;
+  if (unsampled) return [{ attributes: {}, value: 0 }];
   return [...instrument.series.values()].map((series) =>
     instrument.descriptor.kind === 'histogram'
       ? {

@@ -9,11 +9,11 @@ import { ReplicationFailedError, ReplicationProtocolError } from './errors';
 import {
   type BunConnect,
   type PgTarget,
-  parsePgUrl,
   pgStreamOver,
   type SocketHandlers,
   type SocketLike,
 } from './pg-socket';
+import type { PgStream } from './pg-wire';
 
 const caught = (promise: Promise<unknown>): Promise<unknown> =>
   promise.then(
@@ -21,85 +21,10 @@ const caught = (promise: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-const thrown = (fn: () => unknown): unknown => {
-  try {
-    fn();
-    return undefined;
-  } catch (error) {
-    return error;
-  }
-};
-
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
 
-describe('parsePgUrl', () => {
-  test('parses a full URL: user, password, port, database, sslmode', () => {
-    const target = parsePgUrl('postgres://alice:s3cret@db.example.test:6543/appdb?sslmode=require');
-    expect(target).toEqual({
-      host: 'db.example.test',
-      port: 6543,
-      database: 'appdb',
-      user: 'alice',
-      password: 's3cret',
-      ssl: 'require',
-    });
-  });
-
-  test('defaults: no port, no database, no user, no password, no sslmode', () => {
-    const target = parsePgUrl('postgres://db.example.test');
-    expect(target).toEqual({
-      host: 'db.example.test',
-      port: 5432,
-      database: 'postgres',
-      user: 'postgres',
-      password: undefined,
-      ssl: 'prefer',
-    });
-  });
-
-  test('percent-encoded password and database are decoded', () => {
-    const target = parsePgUrl('postgres://alice:p%40ss@db.example.test/my%20db');
-    expect(target.password).toBe('p@ss');
-    expect(target.database).toBe('my db');
-  });
-
-  test('postgresql: is accepted as a scheme', () => {
-    expect(parsePgUrl('postgresql://db.example.test/db').host).toBe('db.example.test');
-  });
-
-  test('a non-postgres scheme or a non-URL string is X_REPLICATION_FAILED', () => {
-    for (const bad of ['mysql://user:pass@host/db', 'not a url at all']) {
-      const error = thrown(() => parsePgUrl(bad));
-      expect(error).toBeInstanceOf(ReplicationFailedError);
-      expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
-    }
-  });
-
-  /**
-   * The rejected value is a connection URL, so it carries the database password — and an error is
-   * the one value that is rendered everywhere: a log line, `--json`, an agent's transcript, a
-   * ticket. Name the variable that has to change, the way `driver-smtp.ts:68` does.
-   */
-  test('a malformed URL is refused without echoing the credential in it', () => {
-    const error = thrown(() => parsePgUrl('postgres://alice:hunter2@:not-a-port/db'));
-    expect(error).toBeInstanceOf(ReplicationFailedError);
-    const rendered = JSON.stringify(error);
-    expect(rendered).not.toContain('hunter2');
-    expect(rendered).toContain('DATABASE_URL');
-  });
-
-  test('an unknown sslmode is refused', () => {
-    const error = thrown(() => parsePgUrl('postgres://db.example.test/db?sslmode=verify-full'));
-    expect(error).toBeInstanceOf(ReplicationFailedError);
-    expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
-  });
-});
-
-type UpgradeOptions = {
-  readonly tls: { readonly serverName: string; readonly rejectUnauthorized?: boolean };
-  readonly socket: SocketHandlers;
-};
+type UpgradeOptions = Parameters<SocketLike['upgradeTLS']>[0];
 
 /**
  * A `SocketLike` driven by hand: `onWrite` fires synchronously inside `write`, before `write`
@@ -172,6 +97,40 @@ const onSslRequest = (runtime: FakeRuntime, reply: () => void): void => {
   };
 };
 
+type HandshakeScript =
+  | { readonly ok: boolean; readonly error: Error | null }
+  | 'close'
+  | 'end'
+  | Error;
+
+/**
+ * Boots a stream whose SSLRequest is answered `S`, then plays `script` on the TLS socket's
+ * handlers the way Bun does — inside `upgradeTLS`, before it returns, which is the order a real
+ * handshake cannot beat but a careless implementation could still miss.
+ */
+const upgradedOver = async (target: PgTarget, script: HandshakeScript) => {
+  const runtime = new FakeRuntime();
+  const tlsSocket = new FakeSocket();
+  let options: UpgradeOptions | undefined;
+  runtime.socket.onUpgrade = (given) => {
+    options = given;
+    if (script === 'close') given.socket.close();
+    else if (script === 'end') given.socket.end();
+    else if (script instanceof Error) given.socket.error(tlsSocket, script);
+    else given.socket.handshake?.(tlsSocket, script.ok, script.error);
+    return [runtime.socket, tlsSocket];
+  };
+  onSslRequest(runtime, () => runtime.events().data(runtime.socket, new Uint8Array([0x53])));
+  let stream: PgStream | undefined;
+  let failure: unknown;
+  try {
+    stream = await pgStreamOver(runtime, target);
+  } catch (error) {
+    failure = error;
+  }
+  return { runtime, tlsSocket, options, stream, failure, tlsHandlers: options?.socket };
+};
+
 describe('pgStreamOver', () => {
   test("ssl: disable sends no SSLRequest; the first bytes written are the caller's own", async () => {
     const runtime = new FakeRuntime();
@@ -209,6 +168,7 @@ describe('pgStreamOver', () => {
     let serverName: string | undefined;
     runtime.socket.onUpgrade = (options) => {
       serverName = options.tls.serverName;
+      options.socket.handshake?.(tlsSocket, true, null);
       return [runtime.socket, tlsSocket];
     };
     onSslRequest(runtime, () => runtime.events().data(runtime.socket, new Uint8Array([0x53])));
@@ -225,6 +185,112 @@ describe('pgStreamOver', () => {
     expect(tlsSocket.writes).toEqual([3]);
     expect(tlsSocket.ended).toBe(true);
     expect(runtime.socket.ended).toBe(false);
+  });
+
+  // Read before any socket exists: a trust anchor that cannot be read is a setting, and refusing
+  // it after the connect left the raw socket open — one leaked descriptor per supervisor retry.
+  test('a missing sslrootcert is refused before a socket is opened', async () => {
+    const runtime = new FakeRuntime();
+    let connects = 0;
+    const counting: BunConnect = {
+      connect: (options) => {
+        connects += 1;
+        return runtime.connect(options);
+      },
+    };
+    const error = await caught(
+      pgStreamOver(counting, pgTarget({ ssl: 'verify-full', rootCert: '/nonexistent/ca.crt' })),
+    );
+    expect(codeOf(error)).toBe('X_REPLICATION_TLS');
+    expect(connects).toBe(0);
+  });
+
+  // Every refusal after the connect owns the socket it opened: no caller ever receives a stream to
+  // close, so nothing else can.
+  test('a refusal after the connect ends the raw socket', async () => {
+    const runtime = new FakeRuntime();
+    onSslRequest(runtime, () => runtime.events().data(runtime.socket, new Uint8Array([0x4e])));
+    const error = await caught(pgStreamOver(runtime, pgTarget({ ssl: 'require' })));
+    expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
+    expect(runtime.socket.ended).toBe(true);
+  });
+
+  // libpq's prefer and require never verify, so the runtime must not either: the decision is
+  // `judgeHandshake`'s, made on the handshake's authorization error. Bun's default verified, and
+  // every private-CA server (CNPG) failed as "the socket refused a 139-byte write".
+  test('the upgrade never lets the runtime reject: verification is decided per sslmode', async () => {
+    const { runtime, options } = await upgradedOver(pgTarget({ ssl: 'require' }), {
+      ok: false,
+      error: Object.assign(new Error('unable'), { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' }),
+    });
+    expect(options?.tls.rejectUnauthorized).toBe(false);
+    expect(runtime.socket.upgradeCalls).toBe(1);
+  });
+
+  // Bun keeps calling the RAW socket's handlers after `upgradeTLS`, with the CIPHERTEXT. Queued as
+  // protocol bytes, it was "closed with 2007 bytes of a partial message" or a read that never
+  // completed.
+  test('after the upgrade the raw socket is deaf: only the TLS socket feeds the reader', async () => {
+    const { runtime, stream, tlsSocket, tlsHandlers } = await upgradedOver(pgTarget(), {
+      ok: true,
+      error: null,
+    });
+    runtime.events().data(runtime.socket, new Uint8Array([0x17, 0x03, 0x03]));
+    tlsHandlers?.data(tlsSocket, new Uint8Array([0x52]));
+    runtime.events().close();
+    expect(await stream?.read()).toEqual(new Uint8Array([0x52]));
+  });
+
+  test('verify-full with a certificate for another host is X_REPLICATION_TLS, and closes', async () => {
+    const { failure, tlsSocket } = await upgradedOver(pgTarget({ ssl: 'verify-full' }), {
+      ok: false,
+      error: Object.assign(new Error('altname'), { code: 'ERR_TLS_CERT_ALTNAME_INVALID' }),
+    });
+    expect(codeOf(failure)).toBe('X_REPLICATION_TLS');
+    expect(tlsSocket.ended).toBe(true);
+  });
+
+  test('a TLS socket that closes before its handshake is X_REPLICATION_TLS, not a write error', async () => {
+    const { failure } = await upgradedOver(pgTarget(), 'close');
+    expect(codeOf(failure)).toBe('X_REPLICATION_TLS');
+  });
+
+  test('a TLS socket the server ENDS before its handshake is X_REPLICATION_TLS too', async () => {
+    const { failure } = await upgradedOver(pgTarget(), 'end');
+    expect(codeOf(failure)).toBe('X_REPLICATION_TLS');
+  });
+
+  // The TLS socket's own `drain` is what releases a write it only partly took: the raw socket's
+  // handlers are deaf by then, so a drain still routed there would park the write forever.
+  test('a partial write on the TLS socket resumes on the TLS socket’s drain', async () => {
+    const { stream, tlsSocket, tlsHandlers } = await upgradedOver(pgTarget(), {
+      ok: true,
+      error: null,
+    });
+    let first = true;
+    tlsSocket.writeReturns = (length) => {
+      if (!first) return length;
+      first = false;
+      return 1;
+    };
+    const written = stream?.write(new Uint8Array([1, 2, 3]));
+    await Promise.resolve();
+    tlsHandlers?.drain();
+    await written;
+    expect(tlsSocket.writes).toEqual([3, 2]);
+  });
+
+  test('the raw socket ending BEFORE the SSL answer is the unanswered-request refusal', async () => {
+    const runtime = new FakeRuntime();
+    onSslRequest(runtime, () => runtime.events().end());
+    const error = await caught(pgStreamOver(runtime, pgTarget({ ssl: 'prefer' })));
+    expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
+  });
+
+  test('a TLS socket that errors before its handshake carries the runtime message', async () => {
+    const { failure } = await upgradedOver(pgTarget(), new TypeError('wrong version number'));
+    expect(codeOf(failure)).toBe('X_REPLICATION_TLS');
+    expect((failure as { cause?: string }).cause).toContain('wrong version number');
   });
 
   test('an S answer followed by extra bytes in the same chunk is X_REPLICATION_PROTOCOL', async () => {

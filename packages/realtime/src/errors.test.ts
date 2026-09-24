@@ -58,6 +58,9 @@ const ADDED_SINCE = [
   'X_LOCAL_STORE_UNAVAILABLE',
   // 22.0.0 (plan 101, slice 06 n): a sync node no change can reach, refused at boot.
   'X_REALTIME_TOPOLOGY',
+  // 22.1.0: a TLS failure on the replicator's own connection, and a socket from a foreign page.
+  'X_REPLICATION_TLS',
+  'X_SOCKET_ORIGIN_REFUSED',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

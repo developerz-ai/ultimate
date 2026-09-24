@@ -96,11 +96,10 @@ describe('PgLogicalReplicationFeed', () => {
     expect((wrongPlugin as { fix?: string }).fix).toContain('pg_drop_replication_slot');
   });
 
-  // A live query decides "did this row leave the result set" from `change.before`, and under any
-  // replica identity but FULL that tuple is the key columns alone — which `toRow` accepts, because
-  // it only requires a text `id`. Nothing emitted `REPLICA IDENTITY FULL` and nothing checked for
-  // it: the only two occurrences in the tree were a hand-written migration and a live test.
-  test('a table that is not REPLICA IDENTITY FULL is named, with the ALTER that fixes it', async () => {
+  // A table with NO replica identity — no primary key under DEFAULT, or NOTHING — has its UPDATE
+  // and DELETE refused by Postgres once it is published. A keyed table under DEFAULT is correct
+  // and is not named (the catalog query filters it; `pg-identity.live.test.ts` is the real proof).
+  test('a table with no replica identity is named, with the ALTER that fixes it', async () => {
     const warn = spyOn(logger, 'warn');
     const { feed, server } = await start({ script: { partialIdentity: ['posts'] } });
     const line = warn.mock.calls.find((call) => call[0] === 'X_LIVE_REPLICA_IDENTITY');
@@ -109,7 +108,11 @@ describe('PgLogicalReplicationFeed', () => {
 
     expect(line?.[1]).toMatchObject({ tables: ['posts'] });
     expect(String(line?.[1]?.['fix'])).toContain('ALTER TABLE posts REPLICA IDENTITY FULL;');
-    expect(String(line?.[1]?.['cause'])).toContain('partial row');
+    expect(String(line?.[1]?.['cause'])).toContain('no replica identity');
+    // Asked of the catalog as "no identity", never as "not FULL".
+    const question = server.queries.find((sql) => sql.includes('relreplident')) ?? '';
+    expect(question).toContain('indisprimary');
+    expect(question).toContain('indisreplident');
     // Before the slot is created, because changing the identity afterwards does not reach a slot
     // that already exists — the check is worthless anywhere later in the sequence.
     const asked = server.queries.findIndex((sql) => sql.includes('relreplident'));

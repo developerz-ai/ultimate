@@ -58,7 +58,7 @@ are deleted (sync protocol 3): no host ever wired `onMutate`, so every socket wr
 export interface ChangeEvent<R extends Row = Row> {
   readonly entity: string;         // entity name; the matcher's dependency sets are in entity terms
   readonly op: 'insert' | 'update' | 'delete';
-  readonly before: R | null;       // requires REPLICA IDENTITY FULL, see below
+  readonly before: R | null;       // key-only or null under DEFAULT — see below
   readonly after: R | null;
   readonly lsn: string;            // the only ordering authority — see below
   readonly txid: string;
@@ -67,20 +67,29 @@ export interface ChangeEvent<R extends Row = Row> {
 }
 ```
 
-`before` is mandatory for correct matching: deciding whether a row **left** a result set requires the old values, and with Postgres's default replica identity a delete replicates only the key columns.
+**A keyed table does not need `REPLICA IDENTITY FULL`, `As of 2026-09-23`.** Under the default
+identity an `UPDATE` carries **no** old tuple (`before` is `null`) and a `DELETE` carries the key
+columns alone — and neither is what decides a live query. The shared window holds the whole row it
+served, so "did this row leave the result set" is answered from the window (it held `a`; the new
+`after` no longer matches) and a delete is answered by `holds(id)`. Proved against real WAL by
+`packages/realtime/src/pg-identity-window.live.test.ts`: an update moving a row out of the filter
+sends `delete`, one moving a row in sends `insert` with the whole row, a delete of a held row sends
+`delete` from a key-only `before`, and an update or delete of a row the window never held sends
+nothing. This page said `before` was mandatory; that described the matcher before the window.
 
-**It is warned about and counted, never refused `As of 2026-08-19`.** Three facts, and the third is
-the gap:
+What still needs an identity is a table with **none** — `REPLICA IDENTITY NOTHING`, or `DEFAULT`
+with no primary key. Once such a table is in the publication (which the replicator now ensures),
+Postgres refuses its `UPDATE` and `DELETE` outright.
 
 | | State |
 |---|---|
-| the code | `X_LIVE_REPLICA_IDENTITY` exists, is registered and is in the manifest (`packages/realtime/src/errors.ts`) |
-| the check | `warnPartialIdentity` is preflight's fourth question — it asks `pg_class` which replicated tables sit on `relreplident <> 'f'` and logs the code with the exact `ALTER TABLE` per table (`packages/realtime/src/pg-preflight.ts`). It runs **before** `pg_create_logical_replication_slot`, because a slot decodes with the identity the catalog held when the rows were written |
-| the counter | `ReplicationStreamStats.partialBefore` increments on every non-insert change whose relation is not on identity `f` (`pg-replication.ts:372`) — the running half of the same fact |
-| the generator | `x db gen` emits `ALTER TABLE … REPLICA IDENTITY FULL` for every table a live query declares in `subscribes:`, since 2026-08-26 (`GENERATABLE_FORMS` in `@ultimat3/db`) |
-| the refusal | **missing.** It warns rather than throws, deliberately: every app on the default identity would otherwise stop booting, and a replicator that will not start is worse than the partial rows it is complaining about. A table a live query reads but does not name in `subscribes:` gets a log line and no build error |
+| the code | `X_LIVE_REPLICA_IDENTITY` (`packages/realtime/src/errors.ts`) |
+| the check | `warnPartialIdentity` is preflight's fourth question: which entity tables have no identity (`relreplident = 'n'`, or `'d'` with no primary-key index). Warned with the `ALTER TABLE … REPLICA IDENTITY FULL` per table, before `pg_create_logical_replication_slot`. Until 22.1.0 it named every table not on `'f'`, which was every keyed table on every boot |
+| the counter | `ReplicationStreamStats.partialBefore` still counts every non-insert change off a relation not on `'f'` (`pg-replication.ts`) — a volume figure now, not a correctness one |
+| the generator | `x db gen` still emits `ALTER TABLE … REPLICA IDENTITY FULL` for every table a live query names in `subscribes:` (`GENERATABLE_FORMS` in `@ultimat3/db`). Correct but no longer required for a keyed table, and it costs WAL volume: every `UPDATE` and `DELETE` logs the whole old row. Whether to stop emitting it is open |
+| the refusal | none, deliberately: a table with no identity is warned, never refused at boot |
 
-The reference app's `posts` and `likes` carry it at `examples/dummy/packages/db/migrations/0001_init.sql:129-130`. Per axiom 3 the *hard* rule still does not exist: a warning is not a build error → [`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md).
+The reference app's `posts` and `likes` carry `FULL` at `examples/dummy/packages/db/migrations/0001_init.sql:129-130`.
 
 ### The lsn is a pair, not a WAL position
 
