@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.1.0 - 2026-09-24
+
 ### Changed
 
 - **realtime:** the replicator's Postgres connection follows libpq's `sslmode` â€” `allow`/`prefer`/`require`
@@ -45,6 +49,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - **social demo:** its realtime transport follows `NATS_URL`, so its config and its deployment cannot
   disagree.
+
+### Commits
+
+- fix(realtime): Postgres TLS per libpq sslmode, same-origin sync upgrades, bounded accept budget (#517)
+- feat(realtime): replicator ensures its publication; social demo transport follows NATS_URL (#516)
+- docs(roadmap): milestone 11 closed (#515)
 
 ## 22.0.0 - 2026-09-24
 
