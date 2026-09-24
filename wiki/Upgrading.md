@@ -2,11 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Twenty majors have shipped, and this page walks all twenty** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Twenty-one majors have shipped, and this page walks all twenty-one** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 21.x → 22.0.0 | **23** so far — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the in-flight major, still [Unreleased] in `CHANGELOG.md` — the `21.x → 22.0.0` section below, in order |
+| 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
 | 19.x → 20.0.0 | **2**, both `@ultimat3/ui` component behaviour and neither a type change — a `DataTable` that keeps its rows while reloading, and a `Button` whose `loading` no longer sets the native `disabled`. Nothing fails to compile; what changes is what a screen does | the `20.0.0` section, in order |
 | 18.x → 19.0.0 | **2**, both from the same hole — the service worker had no build behind it, so the config key that steers it and the route it falls back to both had to move | the `19.0.0` section, in order |
@@ -33,7 +33,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 74 As of 2026-09-23 — every RELEASED section, which is the sum of every row above whose section
+# 97 As of 2026-09-24 — every RELEASED section, which is the sum of every row above whose section
 # the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
 # grep agrees with this number only while that section is empty, so it moved on every PR that
 # landed a breaking change and moved BACK when the release promoted the section — a count that can
@@ -70,8 +70,7 @@ Each entry changes a surface the table below covers.
 
 ## 21.x → 22.0.0, entry by entry
 
-**Twenty-three entries so far** — 22.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
-`[Unreleased]` entries as they land. Entries 4, 7, 9, 10, 11, 12, 13, 14, 18, 20 and 21 are compile
+**Twenty-three entries**, the `22.0.0` section of `CHANGELOG.md`. Entries 4, 7, 9, 10, 11, 12, 13, 14, 18, 20 and 21 are compile
 errors, and so are parts of 3 (`planDeploy`'s fourth argument), 6 (a declaration with no `policy`)
 and 19 (`selectTransport`'s second argument, `'redis'`). Entry 15 throws when a `sync` pod boots,
 entry 19 when any realtime role boots with a transport and `NATS_URL` that disagree, and entry 6
