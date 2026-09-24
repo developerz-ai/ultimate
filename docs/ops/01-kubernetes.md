@@ -83,9 +83,33 @@ channel). To turn realtime on:
 | # | Step |
 |---|---|
 | 1 | Declare the bus in `app.config.ts` — `realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' }` — then run NATS (JetStream on) and set the **same** `NATS_URL` for `web`, `sync` and the replicator. Both halves or neither: since 22.0.0 `'nats'` with the variable unset, and a `NATS_URL` under `'memory'`, each refuse the boot with `X_CONFIG_INVALID`; `enabled: false` starts no `sync` node and no replicator |
-| 2 | Start Postgres with `wal_level=logical`, and create a publication for the entity tables (`CREATE PUBLICATION x_changes FOR TABLE …`, the replicator's preflight prints the exact statement); the replicator's role needs `REPLICATION` |
+| 2 | Start Postgres with `wal_level=logical`. The replicator's role needs `REPLICATION` — read [the grant is cluster-wide](#replication-is-a-cluster-wide-grant) first. The publication is the replicator's own: at boot it creates `x_changes` (`REPLICATION_PUBLICATION` overrides) `FOR TABLE` every registered entity table, and adds any entity table an existing one lacks — never removing one. `FOR TABLE`, because a table's owner may publish it without a superuser, so the role that ran the migrations can. A role that owns none of them is refused with `X_REPLICATION_FAILED` and the statement to run as one that does |
 | 3 | Enable exactly one replicator per database: `roles.replicator.enabled: true` (chart) or a `ROLE=replicator` service (Compose) |
 | 4 | Enable sync: `roles.sync.enabled: true`, or `replicas: 1` on the Compose `sync` service. The chart's Ingress routes `/_x/sync` only while sync is enabled |
+
+### Replication is a cluster-wide grant
+
+`REPLICATION` is a role attribute of the whole Postgres **cluster**, not of one database. A
+`replication=database` session — the one the replicator opens — can also issue `BASE_BACKUP` and
+`START_REPLICATION PHYSICAL`, and the walsender checks no database for either. So a role holding it
+can:
+
+| With `REPLICATION`, anyone holding the app's URL can | Because |
+|---|---|
+| copy every database on the cluster | a base backup is the whole data directory, `pg_authid` (every role's password hash) included |
+| drop another application's replication slots | every physical slot, and the logical slots of any database it may connect to — `pg_drop_replication_slot` checks the attribute, not who created the slot |
+| exhaust `max_wal_senders` | every other replica and CDC consumer on the cluster then fails to connect |
+
+- **A cluster dedicated to the app** is the answer: the exposure is then the app's own data, which
+  its URL already reached.
+- **On a shared cluster, never grant `REPLICATION` to the app role.** If the replicator must run
+  there, give it a role of its own through `REPLICATION_URL` (same host and database as
+  `DATABASE_URL`, a different user) and restrict `pg_hba.conf`'s `replication` lines to that user
+  and the replicator's source address, so the app's URL cannot open a walsender at all. That role
+  owns no table, so its first boot is refused with the `CREATE PUBLICATION` to run once as the
+  table owner.
+- The replicator's refusals say this too: a missing `REPLICATION` attribute is `X_REPLICATION_FAILED`
+  with a fix line pointing here, never a bare `ALTER ROLE … WITH REPLICATION`.
 
 ## Migrations
 

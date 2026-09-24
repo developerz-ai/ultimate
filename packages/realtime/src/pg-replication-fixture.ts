@@ -8,6 +8,7 @@ import { entity, entityForTable, money, text } from '@ultimat3/entity';
 import type { ChangeEvent } from './changefeed';
 import { PgLogicalReplicationFeed } from './changefeed';
 import { ByteReader, ByteWriter, pgTimestampToEpochMs } from './pg-bytes';
+import { errorResponse } from './pg-connection-fixture';
 import type { PgStream } from './pg-wire';
 import { frame } from './pg-wire';
 
@@ -149,6 +150,10 @@ export const joined = (...parts: readonly Uint8Array[]): Uint8Array => {
 export interface ServerScript {
   readonly walLevel?: string;
   readonly publicationExists?: boolean;
+  /** What `pg_publication_tables` lists for it — the feed's default entity list unless set. */
+  readonly publicationTables?: readonly string[];
+  /** A statement starting with this answers an ErrorResponse, as a role lacking a privilege. */
+  readonly refuse?: string;
   /** `null` = no slot yet, so the feed has to create one. */
   readonly slotPlugin?: string | null;
   /** Table names `pg_class` reports with `relreplident <> 'f'`. Empty is the healthy answer. */
@@ -224,6 +229,15 @@ export class FakeWalsender implements PgStream {
     }
     if (sql === 'SHOW wal_level') {
       this.push(joined(dataRow([this.#script.walLevel ?? 'logical']), complete(), ready()));
+      return;
+    }
+    if (this.#script.refuse !== undefined && sql.startsWith(this.#script.refuse)) {
+      this.push(joined(errorResponse({ C: '42501', M: 'must be owner of table posts' }), ready()));
+      return;
+    }
+    if (sql.includes('pg_publication_tables')) {
+      const rows = (this.#script.publicationTables ?? ['posts']).map((name) => dataRow([name]));
+      this.push(joined(...rows, complete(), ready()));
       return;
     }
     if (sql.includes('pg_publication')) {

@@ -506,7 +506,11 @@ wire twice by a reconnect that raced an ack.
   (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
   publication, every entity's replica identity and the slot — in that order, because the identity
   check is worthless once the slot exists — creates the slot when there is none, and confirms the
-  slot as it goes so the WAL does not grow without bound. `InMemoryChangeFeed` + `InProcessTransport` remain the
+  slot as it goes so the WAL does not grow without bound. **The publication is ensured, not merely
+  checked** (`pg-publication.ts`): missing, it is created `FOR TABLE` every entity table; present,
+  it gains the entity tables it lacks (`ALTER PUBLICATION … ADD TABLE`) and loses none. `FOR TABLE`
+  because a table's owner may publish it without a superuser; a role that may not is refused with
+  `X_REPLICATION_FAILED` and the statement to run as one that may. `InMemoryChangeFeed` + `InProcessTransport` remain the
   defaults for `x dev` and every test.
 - **`selectChangeFeed(env, { entities })` decides which feed a boot installs** — same law
   `selectMailDriver` follows: an unset variable means the embedded default. It returns `{ feed,
@@ -519,6 +523,14 @@ wire twice by a reconnect that raced an ack.
   wrong database's WAL would be silently wrong forever. `REPLICATION_SLOT` (default `x_replicator`)
   and `REPLICATION_PUBLICATION` (default `x_changes`) name the slot and publication, both checked
   against `[a-z_][a-z0-9_]*` before they reach a replication command.
+- **`REPLICATION` is a cluster-wide grant.** A `replication=database` session may also run
+  `BASE_BACKUP` and `START_REPLICATION PHYSICAL` with no database check, so on a shared Postgres
+  cluster the role could copy every database, `pg_authid` included, drop other slots and exhaust
+  the walsenders. Run the replicator against a cluster dedicated to the app, or give it its own role
+  through `REPLICATION_URL` with `pg_hba.conf`'s `replication` lines restricted to it — never grant
+  `REPLICATION` to an app role on a shared cluster. Every fix line that hands the grant over says
+  so (`REPLICATION_GRANT_WARNING`, `pg-wire.ts`) and links
+  [`docs/ops/01-kubernetes.md`](../../docs/ops/01-kubernetes.md#replication-is-a-cluster-wide-grant).
 - **`PgAdvisoryLock` is the production `AdvisoryLock`** — `SELECT
   pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` on its own session. Session-scoped, so a
   crashed replicator releases it automatically: no lease renewal, no fencing token, no split brain.

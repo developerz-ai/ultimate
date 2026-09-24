@@ -1,5 +1,5 @@
-// The four questions asked of a database before `START_REPLICATION`: `wal_level`, the publication,
-// every entity's replica identity and the slot — in that order, because the identity check is
+// The four questions asked of a database before `START_REPLICATION`: `wal_level`, the publication
+// (ensured, not merely asked), every entity's replica identity and the slot — in that order, because the identity check is
 // worthless once the slot exists. Split from `pg-replication.test.ts` at the 500-line ceiling.
 import { describe, expect, spyOn, test } from 'bun:test';
 import { logger } from '@ultimat3/core';
@@ -22,17 +22,18 @@ describe('PgLogicalReplicationFeed', () => {
   test('preflights wal_level, the publication and the slot before it streams', async () => {
     const { server, feed } = await start();
     expect(server.queries[0]).toBe('SHOW wal_level');
-    expect(server.queries[1]).toContain('pg_publication');
-    expect(server.queries[2]).toContain('relreplident');
-    expect(server.queries[3]).toContain('pg_replication_slots');
-    expect(server.queries[4]).toStartWith('START_REPLICATION SLOT ultimate_slot LOGICAL 0/0');
-    expect(server.queries[4]).toContain("publication_names 'ultimate_pub'");
+    expect(server.queries[1]).toContain('FROM pg_publication WHERE');
+    expect(server.queries[2]).toContain('pg_publication_tables');
+    expect(server.queries[3]).toContain('relreplident');
+    expect(server.queries[4]).toContain('pg_replication_slots');
+    expect(server.queries[5]).toStartWith('START_REPLICATION SLOT ultimate_slot LOGICAL 0/0');
+    expect(server.queries[5]).toContain("publication_names 'ultimate_pub'");
     await feed.stop();
   });
 
   test('creates the slot when there is none, and never touches an existing one', async () => {
     const fresh = await start({ script: { slotPlugin: null } });
-    expect(fresh.server.queries[4]).toBe(
+    expect(fresh.server.queries[5]).toBe(
       "SELECT pg_create_logical_replication_slot('ultimate_slot', 'pgoutput')",
     );
     await fresh.feed.stop();
@@ -55,13 +56,33 @@ describe('PgLogicalReplicationFeed', () => {
     expect(fix).not.toContain('ALTER SYSTEM');
   });
 
+  // The replicator ensures its publication: an app has no other way to create one, since every
+  // migration is `x db gen`'s and `FOR ALL TABLES` needs a superuser. Before the slot, because the
+  // slot is only worth creating for a stream that can start.
+  test('a missing publication is created FOR the entity tables before the slot', async () => {
+    const { server, feed } = await start({ script: { publicationExists: false } });
+    await feed.stop();
+    const created = server.queries.indexOf('CREATE PUBLICATION ultimate_pub FOR TABLE posts');
+    const slot = server.queries.findIndex((sql) => sql.includes('pg_replication_slots'));
+    expect(created).toBeGreaterThanOrEqual(0);
+    expect(created).toBeLessThan(slot);
+  });
+
+  test('a publication missing an entity table gains it, and keeps the tables it had', async () => {
+    const { server, feed } = await start({ script: { publicationTables: ['audit_log'] } });
+    await feed.stop();
+    expect(server.queries).toContain('ALTER PUBLICATION ultimate_pub ADD TABLE posts');
+    expect(server.queries.some((sql) => sql.includes('DROP'))).toBe(false);
+  });
+
   // `FOR ALL TABLES` needs a superuser, which a managed database never hands an app role; the
   // publication an app needs is exactly its entities' tables. And streaming needs the REPLICATION
   // role attribute, which no fix line ever named.
-  test('a missing publication is created FOR the entity tables, and names the role attribute', async () => {
-    const noPublication = await start({ script: { publicationExists: false } }).catch(
-      (error: unknown) => error,
-    );
+  test('a role that may not create it is refused with the statement and the role attribute', async () => {
+    const noPublication = await start({
+      script: { publicationExists: false, refuse: 'CREATE PUBLICATION' },
+    }).catch((error: unknown) => error);
+    expect((noPublication as { code?: string }).code).toBe('X_REPLICATION_FAILED');
     const fix = (noPublication as { fix?: string }).fix ?? '';
     expect(fix).toStartWith('CREATE PUBLICATION ultimate_pub FOR TABLE posts;');
     expect(fix).not.toContain('FOR ALL TABLES');

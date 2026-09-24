@@ -151,7 +151,7 @@ services:
     # (X_REALTIME_TOPOLOGY). To turn live queries and channels on: declare realtime: { enabled:
     # true, transport: 'nats', urlEnv: 'NATS_URL' } in app.config.ts, add a NATS service and set the
     # SAME NATS_URL for web, sync and a replicator service (ROLE=replicator, exactly one), start
-    # Postgres with wal_level=logical and a publication for the entity tables, then set replicas: 1.
+    # Postgres with wal_level=logical and a REPLICATION role on a cluster dedicated to this app (the replicator creates its publication at boot), then set replicas: 1.
     # A NATS_URL under transport 'memory' refuses the boot (X_CONFIG_INVALID), and so does 'nats'
     # without one.
     deploy:

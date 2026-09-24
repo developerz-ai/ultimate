@@ -213,10 +213,23 @@ export const describeFields = (fields: Readonly<Record<string, string>>): string
  * not: `changefeed-env -> changefeed -> pg-replication -> pg-wire` is already a chain, so reading
  * the constant here would close it into a cycle. Not re-exported from `index.ts`.
  */
+export const REPLICATION_EXPOSURE_DOC =
+  'https://github.com/developerz-ai/ultimate/blob/main/docs/ops/01-kubernetes.md#replication-is-a-cluster-wide-grant';
+
+/**
+ * What granting `REPLICATION` costs, said wherever a fix hands the grant over. The attribute is
+ * CLUSTER-wide: a `replication=database` session may run `BASE_BACKUP` or `START_REPLICATION
+ * PHYSICAL` with no database check, so on a shared cluster the app role could copy every database,
+ * `pg_authid` included, drop other slots and exhaust the walsenders.
+ */
+export const REPLICATION_GRANT_WARNING =
+  `only on a Postgres cluster dedicated to this app — on a shared cluster REPLICATION lets this ` +
+  `role copy every database (${REPLICATION_EXPOSURE_DOC})`;
+
 export const FIXES: Readonly<Record<string, string>> = {
   '28P01': 'correct the password in the replication URL — the server refused the credentials',
   '28000': 'add a `host replication <user> <cidr> scram-sha-256` line to pg_hba.conf and reload',
-  '42501': 'grant the role REPLICATION: ALTER ROLE <user> WITH REPLICATION',
+  '42501': `ALTER ROLE <user> WITH REPLICATION; -- ${REPLICATION_GRANT_WARNING}`,
   '55006': 'another replicator holds the slot — exactly one replicator per database, by design',
   // NOT `x db replication init`, which this line said until 2026-08-20 and which is not a command:
   // `x db` takes gen, migrate, reset, seed, studio, branch and backfill. It shipped because a fix
