@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "claude (coordinator) + 4 workers"
 owner: sebi
 percent: 100
-current_focus: "released as 22.0.0; remaining: 19 a/h (demo sync/NATS/replicator) and the deferred rows in notes"
+current_focus: "done: 22.0.0 + 22.1.0 released; demo realtime live (infra #1634 closed); follow-ups are the deferred rows in notes"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -81,8 +81,8 @@ slices:
     percent: 100
   - file: 19-infrastructure.md
     tier: 6        # edited from ../infrastructure, in its own repo
-    status: in_progress
-    percent: 80
-evidence: ["#510", "#511", "#512", "developerz-ai/infrastructure#1633"]
+    status: done
+    percent: 100
+evidence: ["#510", "#511", "#512", "#514", "#516", "#517", "#520", "developerz-ai/infrastructure#1633", "developerz-ai/infrastructure#1635", "developerz-ai/infrastructure#1636", "developerz-ai/infrastructure#1639", "developerz-ai/infrastructure#1642"]
 notes: "Built 2026-09-23 by a 4-worker hive in one checkout. Decisions: 18 e raw CDP survives (x shot moved off puppeteer; cli -> scraping edge deleted); 18 f cli pruned fully, other packages non-error internals only; 18 g boot folds the auth 1.3 upgrade; 18 h drift re-stamp shipped (no app hash changed); 18 m realtime keys wired, realtime.enabled defaults true; 01 e reuses X_CURSOR_SECRET_DEV; 06 n/h sync ships off by default in charts/compose. Dropped (code contradicted the row): 02 e, 04 k, 06 j live-window half, 06 n readiness half, 11 h, 14 e, 14 q (scanner unified instead). Deferred: 18 l (plan 102 majors, own plan), 16 j + 19 a/h (need the 22.0.0 release and NATS deploy), measuring dynamic ssr routes (no seam in render), scripts/ -1k LOC target (missed, +139), hCaptcha secret (needs a human). Infra rows b-g,i-k merged as developerz-ai/infrastructure#1633."
 last_updated: 2026-09-24
