@@ -16,6 +16,7 @@ import type { CacheTag } from '@ultimat3/cache';
 import { serializeTags } from '@ultimat3/cache';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
 import { OFFLINE_STRATEGIES } from '@ultimat3/core';
+import type { CacheHint } from '@ultimat3/http';
 import type { Translator } from '@ultimat3/i18n';
 import type { RouteMeta } from '@ultimat3/seo';
 import { RouteLoadInvalidError, RouteMetaMissingError, RouteOfflineMissingError } from './errors';
@@ -159,7 +160,17 @@ export type LoadRequirement<TData> = RouteContext extends TData
   ? unknown
   : { readonly load: RouteLoadFn<TData> };
 
-/** The input shape of `defineRoute` — exactly the contract's nine keys, nothing else. */
+/**
+ * How an `ssr` response may be cached, when the default is wrong for it. The default is decided
+ * by the guard — a gated page is `private, no-store`, an ungated one is offered to a CDN for 30s —
+ * and an ungated page can still be personal: a recipient landing addressed by a capability token
+ * in its path, a verification page that must never answer a superseded result. `'no-store'` is
+ * `private, no-store`; a hint is `@ultimat3/http`'s own `CacheHint`, minus `tags` (a purge
+ * targets `isr` documents, and a key nothing reads is a key that lies). `ssr` only — `modes.ts`.
+ */
+export type RouteCache = 'no-store' | Omit<CacheHint, 'tags'>;
+
+/** The input shape of `defineRoute` — exactly the contract's ten keys, nothing else. */
 export interface RouteDefinition<TData = RouteData> {
   readonly render: RenderMode;
   readonly revalidate?: RevalidateConfig;
@@ -180,6 +191,7 @@ export interface RouteDefinition<TData = RouteData> {
   readonly load?: RouteLoadFn<TData>;
   readonly meta: RouteMetaFn<TData>;
   readonly policy?: RouteGuard;
+  readonly cache?: RouteCache;
 }
 
 /**
@@ -290,6 +302,7 @@ export function defineRoute<TData = RouteData>(
     ...(def.revalidate ? { revalidate: def.revalidate } : {}),
     ...(def.prerender ? { prerender: def.prerender } : {}),
     ...(def.policy ? { policy: def.policy } : {}),
+    ...(def.cache === undefined ? {} : { cache: def.cache }),
   };
 
   assertModeShape(config);

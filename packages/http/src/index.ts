@@ -23,6 +23,7 @@ export {
   asCtx,
   createRequestContext,
   elapsedMs,
+  useRequestBodyBytes,
   useRequestContext,
   useRequestCookie,
   useRequestHeader,

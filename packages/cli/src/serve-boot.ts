@@ -24,7 +24,7 @@ import { assetRoutes } from './runtime-assets';
 import { appRoutes } from './runtime-render';
 import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
-import { storageRoutes } from './runtime-storage';
+import { servedStorage, storageRoutes } from './runtime-storage';
 import { loadDrainConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
 import type { ServedApp, ServeOptions } from './serve-types';
@@ -156,17 +156,19 @@ async function webSurface(
         });
   // The app's own MCP endpoint, through the same call `x dev` makes — see `app-mcp.ts`.
   const mcpMount = await mountAppMcp(options.root);
+  // The app's own disks when it declared any (`defineStorage` in an app module), else this boot's.
+  const served = servedStorage(runtime.storage);
   const routes: readonly Route[] = [
     ...apiRoutes(),
     ...mcpMount.routes,
     ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...assetRoutes({
       root: options.root,
-      storage: runtime.storage,
+      storage: served,
       ...(options.runtime?.images === undefined ? {} : { images: options.runtime.images }),
       ...(pwa === undefined ? {} : { pwa }),
     }),
-    ...storageRoutes({ storage: runtime.storage }),
+    ...storageRoutes({ storage: served }),
     ...islandRoutes(() => islands),
     // The surface stylesheets the documents link. Built from the registry the `loadApp` above
     // filled, so this process serves exactly the CSS it renders against.

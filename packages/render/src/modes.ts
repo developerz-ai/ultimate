@@ -133,6 +133,27 @@ export function assertModeShape(config: RouteShape): void {
     );
   }
 
+  // cache: the `ssr` mode's key alone. `static` and `isr` are content-hashed / TTL'd documents
+  // whose headers ARE the mode, and a `stream` is always `private, no-store` — a declaration on
+  // any of them would be read by nothing.
+  if (config.cache !== undefined && config.render !== 'ssr') {
+    throw new RouteModeInvalidError(
+      `render: '${config.render}' decides its own cache headers, but \`cache\` was declared`,
+      "change render to 'ssr' to declare the cache, or remove cache",
+    );
+  }
+  // A gated page is one actor's document. A shared-cache offer on it is the tenant-leak class
+  // `ssrHeaders` exists to rule out, so a guard can narrow the cache and never widen it.
+  const mode =
+    config.cache === undefined || config.cache === 'no-store' ? 'no-store' : config.cache.mode;
+  if (config.policy !== undefined && (mode === 'public' || mode === 'immutable')) {
+    throw new RouteModeInvalidError(
+      `a route gated by ${config.policy.permission} declares cache mode '${mode}', which offers ` +
+        "one actor's document to a shared cache",
+      "declare cache: 'no-store' or { mode: 'private', … }, or drop the policy",
+    );
+  }
+
   // ssr: cannot be prerendered — the whole point is that it runs per request.
   if (config.render === 'ssr' && config.prerender !== undefined) {
     throw new RouteModeInvalidError(

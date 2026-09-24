@@ -43,7 +43,15 @@ They go straight to the disk, in three calls — and **the client never names th
 |---|---|---|
 | 1. server, in an action | `grantUpload({ disk, orgId: ctx.actor.orgId, request, policy })` | a signed grant for a key the server chose, under the actor's org |
 | 2. browser | `uploadFile({ file, grant, onProgress })` | a PUT with real progress; `storage/upload-client.ts` is the one XHR seam in the browser |
-| 3. server, at `/_storage` | `acceptSignedUpload({ url, secret, disk, orgId, bytes, declaredContentType, policy })` | refuses a bad or expired signature, a key outside the org, more bytes or another type than was granted, or magic bytes that contradict the type |
+| 3. server, at `PUT /_storage/:disk/*key` | mounted by the framework in `x dev` and `runRole`, around `acceptSignedUpload`. Answers `201 { key }` | refuses a bad or expired signature, a key outside the actor's org, more bytes or another type than was granted, or magic bytes that contradict the type |
+
+**The mounted `PUT`** (`As of 2026-09-24`, #523) requires a signed-in actor, like the `GET`. It
+needs no permission: the grant is the authorization, and the action that minted it ran its own
+policy. The route checks the signature and the expiry, and it checks that the key is inside the
+actor's org. It validates the upload against what the grant signed (the content type and
+`maxBytes`), so a PDF granted under `uploadPolicy({ allowedContentTypes: ['application/pdf'] })`
+is accepted, and it does not use `uploadPolicy()`'s image-only default. The signed `maxBytes` caps
+how much of the body is read. `bodyLimitBytes` does not, and neither does an unverified query value.
 
 The signature covers the **constraints** (method, key, expiry, `maxBytes`, content type), so editing
 `?x-max=` invalidates it. Uploads are **sniffed**: `validateUpload()` reads magic bytes and refuses a
@@ -52,6 +60,28 @@ The signature covers the **constraints** (method, key, expiry, `maxBytes`, conte
 The local disk signs with `STORAGE_SIGNING_SECRET`. The shipped development secret is accepted
 **only** in `development` or `test`; a process that names no environment is treated as production
 and refused at construction (`X_ENV_MISSING`).
+
+## Which disks `/_storage` and `/media` serve
+
+`As of 2026-09-24` (#524): **the app's own.** Both routes read the process's one registry per
+request. That registry is the last `defineStorage()` call, which is the app's when an app module
+declares its disks. The boot's env-selected disk (`object` on `S3_ENDPOINT`, else `local`) is
+served only when nothing declared one. A `defineStorage` at module scope in any file under
+`apps/*/` is enough:
+
+```ts
+// apps/web/shared/storage.ts
+export const storage = defineStorage({
+  disks: { uploads: localDriver({ root: '.storage/uploads' }), evidence: s3Driver({ bucket }) },
+  default: 'uploads',
+});
+```
+
+| | |
+|---|---|
+| `storage:read` | the `GET` requires it. When an app declares its own disks, `x verify`'s `policy` step reports `X_PERMISSION_UNKNOWN` if the app's permission set lacks `storage:read`. Before this, the first signed URL returned a `500` |
+| the boot's own disk | still built. In production with no `S3_ENDPOINT`, that is a local disk and still needs `STORAGE_SIGNING_SECRET`. To skip it, export `runtime = { storage }` from `apps/<app>/runtime.ts`. `runRole` reads that file, and it replaces the env-selected disk entirely |
+| `definedStorage()` | the registry or `undefined`, without a throw. It is the question the routes ask |
 
 ## Attachments, quarantine, orphans
 

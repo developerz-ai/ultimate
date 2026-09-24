@@ -79,7 +79,9 @@ export interface DestructiveStatement {
  */
 const RULES: readonly (readonly [DestructiveKind, RegExp])[] = [
   ['drop-table', /\bdrop\s+(?:foreign\s+)?table\b/],
-  ['truncate', /\btruncate\b/],
+  // Statement-leading only: `before truncate` in a trigger and `grant/revoke truncate` name the
+  // operation to guard or permit it, and the rail read them as the operation itself (#522).
+  ['truncate', /^\s*truncate\b/],
   // Inside an `alter table`, a bare `drop <name>` is a column: every sub-clause that drops
   // something the database can rebuild names itself, and all of them are listed here.
   [

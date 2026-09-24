@@ -106,7 +106,7 @@ alter table "posts" drop column "legacy";
 alter table "posts" add column "legacy" text; -- data is not restored
 ```
 
-`destructive.ts` owns the classification — a closed list of four kinds (`drop-table`, `drop-column`, `retype-column`, `truncate`), decided against noise-stripped SQL so a comment or a string literal mentioning "drop table" is never mistaken for the operation.
+`destructive.ts` owns the classification — a closed list of four kinds (`drop-table`, `drop-column`, `retype-column`, `truncate`), decided against noise-stripped SQL so a comment or a string literal mentioning "drop table" is never mistaken for the operation. `truncate` counts only as the statement's first keyword, so an insert-only hardening migration (`create trigger … before truncate …`, `revoke truncate …`) needs no marker.
 
 The criterion is **persisted row data**, not table rewrites: an operation is destructive when applying it removes rows or the values in them. That is why `alter table … drop` names a column and is destructive, while the sub-clauses that name what they drop are excluded — `drop constraint` removes constraint metadata, `drop default`, `drop not null`, `drop identity`, `drop expression` and `drop generated` change column metadata, and a standalone `drop index` removes an auxiliary structure. Every row survives all of them. `retype-column` is on the list for the opposite reason: rewriting a column's type can lose the values it held, whether or not the type is narrower.
 

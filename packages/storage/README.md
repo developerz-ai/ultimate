@@ -179,6 +179,13 @@ and hands over, hashed again here and refused on any disagreement.
 Neither owns a `Request`, a `Response` or a status number — mounting is the host's job, and
 `@ultimat3/http` is the only layer that turns an `X_*` code into a status.
 
+**Step 3 ships.** `As of 2026-09-24` `@ultimat3/cli` mounts `PUT /_storage/:disk/*key` beside the
+`GET` in `x dev` and `runRole` (#523), so an app writes steps 1 and 2 only. The route calls
+`signedUploadConstraints({ url, disk, orgId })` first. That is the verified PUT constraints with
+no bytes, and the signed `maxBytes` caps the body read. Then it calls `acceptSignedUpload` with a
+policy built from the grant's own signed type and ceiling. The routes serve `definedStorage()`,
+the process's one registry, which is the app's `defineStorage` when it declared one (#524).
+
 ## Attachments and orphans
 
 An upload happens **before** the row it belongs to exists, so it lands at

@@ -3,7 +3,7 @@
 // no socket) so the authz stage is the same one production runs.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
 import type { RegisterRouteInput, RenderMode, RouteComponent } from '@ultimat3/render';
 import {
   clearRoutes,
@@ -95,6 +95,49 @@ describe('unit · x dev renders the app routes', () => {
       expect(response.status).toBe(404);
       expect(await response.text()).toContain(`<title>missing ${render}</title>`);
     }
+  });
+
+  test('setRedirect() from a load is a real 3xx, with no document rendered (#525)', async () => {
+    let rendered = 0;
+    registerRoute<{ url: string; params: Record<string, string> }>({
+      file: 'apps/web/site/r/[token]/page.tsx',
+      component: () => {
+        rendered += 1;
+        return h('p', {}, 'never');
+      },
+      config: defineRoute<{ url: string; params: Record<string, string> }>({
+        render: 'ssr',
+        offline: 'network-only',
+        hydrate: 'never',
+        load: async (ctx) => {
+          setRedirect(`/pixel.gif?t=${ctx.params['token'] ?? ''}`, 302);
+          return { url: ctx.url, params: ctx.params };
+        },
+        meta: () => ({ title: 'pixel', description: 'd'.repeat(60) }),
+      }),
+    });
+    const response = await get('/r/abc');
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/pixel.gif?t=abc');
+    // A redirect a loader decided is per request: never offered to a shared cache by default.
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(rendered).toBe(0);
+  });
+
+  test("a route's declared cache reaches the response: 'no-store' on a public ssr page (#525)", async () => {
+    registerRoute({
+      file: 'apps/web/site/verificar/page.tsx',
+      config: defineRoute({
+        render: 'ssr',
+        offline: 'network-only',
+        hydrate: 'never',
+        cache: 'no-store',
+        meta: () => ({ title: 'verify', description: 'd'.repeat(60) }),
+      }),
+    });
+    const response = await get('/verificar');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
 
   test('a static page answers with its own head and content-hashed headers', async () => {

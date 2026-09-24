@@ -54,6 +54,19 @@ describe('unit · destructiveStatements', () => {
 
   test('a truncate', () => {
     expect(destructiveStatements('truncate "post" cascade;')[0]?.kind).toBe('truncate');
+    expect(destructiveStatements('TRUNCATE TABLE only "post";')[0]?.kind).toBe('truncate');
+    expect(destructiveStatements('-- empty it\n  truncate "post";')[0]?.kind).toBe('truncate');
+  });
+
+  test('a statement that prevents or grants truncation is not one (#522)', () => {
+    const up = [
+      'create trigger "evidence_no_truncate" before truncate on "evidence"',
+      '  for each statement execute function reject_mutation();',
+      'revoke truncate on "evidence" from app_role;',
+      'grant select, insert on "evidence" to app_role;',
+      'grant truncate on "scratch" to app_role;',
+    ].join('\n');
+    expect(destructiveStatements(up)).toEqual([]);
   });
 
   test('a retyped column — the one `--allow-destructive` never gated', () => {

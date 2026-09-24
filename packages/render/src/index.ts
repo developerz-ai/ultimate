@@ -128,6 +128,7 @@ export type {
   RenderResult,
   RevalidateConfig,
   RouteBudget,
+  RouteCache,
   RouteConfig,
   RouteContext,
   RouteData,

@@ -43,10 +43,14 @@ export class UltimateRequest {
   readonly raw: Request;
   readonly ctx: RequestContext;
   #body: { parsed: unknown } | undefined;
+  #bytes: Promise<Uint8Array> | undefined;
 
   constructor(raw: Request, ctx: RequestContext) {
     this.raw = raw;
     this.ctx = ctx;
+    // Published on the context so an action handler — which gets a `Ctx`, never this object —
+    // reaches the same cached read (`useRequestBodyBytes()`), not a second reader of the stream.
+    ctx.readBody = () => this.bodyBytes();
   }
 
   get method(): string {
@@ -138,6 +142,16 @@ export class UltimateRequest {
     return parsed;
   }
 
+  /**
+   * The body exactly as sent, whatever its content type: size-capped, read once and cached, and
+   * the very bytes `bodyRaw()` parses. Empty for GET/HEAD and for no body. What a signature over
+   * the raw body is verified against, and what a signed-upload PUT stores.
+   */
+  bodyBytes(): Promise<Uint8Array> {
+    this.#bytes ??= this.#readBytes();
+    return this.#bytes;
+  }
+
   async body<Out>(schema: Schema<Out>): Promise<Out> {
     const outcome = await validate(schema, await this.bodyRaw());
     if (!outcome.ok) throw bodyInvalid(this.pathname, outcome.issues);
@@ -156,8 +170,8 @@ export class UltimateRequest {
     throw buildSkew(client, server);
   }
 
-  async #read(): Promise<unknown> {
-    if (this.method === 'GET' || this.method === 'HEAD') return undefined;
+  /** The declared length, refused up front when it is already over the cap. */
+  #declaredLength(): number | null {
     const limit = this.ctx.config.bodyLimitBytes;
     const header = this.header('content-length');
     // A missing content-length means "unknown", not "empty" — only an explicit 0 is
@@ -166,6 +180,25 @@ export class UltimateRequest {
     if (declared !== null && Number.isFinite(declared) && declared > limit) {
       throw bodyInvalid(this.pathname, [`body is ${declared} bytes, limit is ${limit}`]);
     }
+    return declared;
+  }
+
+  async #readBytes(): Promise<Uint8Array> {
+    if (this.method === 'GET' || this.method === 'HEAD') return new Uint8Array(0);
+    if (this.#declaredLength() === 0) return new Uint8Array(0);
+    // One capped read for every content type, multipart included: the parser runs on bytes this
+    // process already agreed to hold, never on a stream it hands to the runtime unbounded.
+    const limit = this.ctx.config.bodyLimitBytes;
+    const read = await readWithinLimit(this.raw.body, limit);
+    if ('over' in read) {
+      throw bodyInvalid(this.pathname, [`body is at least ${read.over} bytes, limit is ${limit}`]);
+    }
+    return read.bytes;
+  }
+
+  async #read(): Promise<unknown> {
+    if (this.method === 'GET' || this.method === 'HEAD') return undefined;
+    const declared = this.#declaredLength();
     const type = contentTypeOf(this.raw);
     // An EMPTY form is a form with no fields, never "no input": a button-only `<form>` posts
     // `content-length: 0`, and reading that as `undefined` failed every schema with 400.
@@ -182,13 +215,8 @@ export class UltimateRequest {
     }
     if (declared === 0) return form ? {} : undefined;
 
-    // One capped read for every content type, multipart included: the parser runs on bytes this
-    // process already agreed to hold, never on a stream it hands to the runtime unbounded.
-    const read = await readWithinLimit(this.raw.body, limit);
-    if ('over' in read) {
-      throw bodyInvalid(this.pathname, [`body is at least ${read.over} bytes, limit is ${limit}`]);
-    }
-    if (read.bytes.byteLength === 0) return form ? {} : undefined;
+    const bytes = await this.bodyBytes();
+    if (bytes.byteLength === 0) return form ? {} : undefined;
 
     if (type === 'multipart/form-data') {
       try {
@@ -196,7 +224,7 @@ export class UltimateRequest {
         // in — `Response` is the one multipart parser here, exactly as `Request` was.
         // Copied, not passed through: a `Uint8Array<ArrayBufferLike>` may be backed by a
         // `SharedArrayBuffer`, which `Response` does not accept.
-        const form = await new Response(new Uint8Array(read.bytes), {
+        const form = await new Response(new Uint8Array(bytes), {
           headers: { 'content-type': this.raw.headers.get('content-type') ?? type },
         }).formData();
         // `collectFields`, never `Object.fromEntries`: a repeated name is a LIST here for the
@@ -213,7 +241,7 @@ export class UltimateRequest {
       }
     }
 
-    const body = new TextDecoder().decode(read.bytes);
+    const body = new TextDecoder().decode(bytes);
     try {
       if (type === 'application/json' || type.endsWith('+json')) return JSON.parse(body);
       if (type === 'application/x-www-form-urlencoded') {

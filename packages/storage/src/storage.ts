@@ -88,6 +88,16 @@ export function storage(): Storage {
   return current;
 }
 
+/**
+ * The configured storage, or `undefined` before any `defineStorage` — the question a host asks
+ * when it must serve whatever the app installed and fall back to its own disk otherwise. The LAST
+ * call wins, by `defineStorage`'s own contract: there is one registry, so the app's declaration
+ * replaces a host's default rather than sitting beside it.
+ */
+export function definedStorage(): Storage | undefined {
+  return current;
+}
+
 /** Shorthand for the common call. `disk()` alone resolves the default disk. */
 export function disk(name?: string): StorageDriver {
   return storage().disk(name);

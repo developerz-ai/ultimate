@@ -127,6 +127,13 @@ export interface RequestContext extends Ctx {
    * "answer 303" can live without a second return protocol.
    */
   redirect: RedirectIntent | undefined;
+  /**
+   * The request body's exact bytes, through `UltimateRequest`'s one capped, cached read — set by
+   * its constructor, so there is still one reader and one limit. A slot and not the request: the
+   * context is what an action handler can reach (`useRequestBodyBytes()`), and a signature over
+   * the body (SNS, a payment gateway) is over bytes a decode would have rewritten.
+   */
+  readBody: (() => Promise<Uint8Array>) | undefined;
   response: Response | undefined;
   error: unknown;
 }
@@ -228,6 +235,7 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
     rateLimit: undefined,
     cache: undefined,
     redirect: undefined,
+    readBody: undefined,
     response: undefined,
     error: undefined,
   };
@@ -283,6 +291,18 @@ export const useRequestContext = (member = 'the request context'): RequestContex
  * job silently authenticates as nobody.
  */
 export const useRequestHeaders = (): Headers => assertInRequest('request headers').requestHeaders;
+
+/**
+ * The exact bytes of the request in scope's body — what a webhook action verifies a signature
+ * over. `bodyRaw()` decodes `text/*` to a string, and a decode rewrites a BOM, an invalid byte
+ * and nothing else visibly: the signature then fails for a reason no log shows. Same cap, same
+ * cache as the parse the action's input came from, so reading both costs one read.
+ */
+export const useRequestBodyBytes = (): Promise<Uint8Array> => {
+  const read = assertInRequest('request body bytes').readBody;
+  if (read === undefined) throw noRequest('request body bytes');
+  return read();
+};
 
 export const useRequestHeader = (name: string): string | null => useRequestHeaders().get(name);
 

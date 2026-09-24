@@ -18,7 +18,7 @@ import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { assetRoutes } from './runtime-assets';
 import { appRoutes } from './runtime-render';
-import { storageRoutes } from './runtime-storage';
+import { servedStorage, storageRoutes } from './runtime-storage';
 import { styleBundle } from './style-bundle';
 import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
@@ -72,6 +72,8 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   // call `runRole` makes — `POST /mcp` answered 404 in every process the framework booted until
   // one of them asked. Warned once here when `expose` is true and nothing can be mounted.
   const mcpMount = await mountAppMcp(input.root);
+  // `serve-boot.ts`'s answer: the app's declared disks when it has any, read per request.
+  const served = servedStorage(input.storage);
   const routes: readonly Route[] = [
     ...devDashboardRoutes(input.dashboard),
     // The same API table the container serves: a read that answers here and 404s in production
@@ -83,10 +85,10 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     // never shadow `/icons` or `/media`.
     ...assetRoutes({
       root: input.root,
-      storage: input.storage,
+      storage: served,
       ...(pwa === undefined ? {} : { pwa }),
     }),
-    ...storageRoutes({ storage: input.storage }),
+    ...storageRoutes({ storage: served }),
     // The chunks the documents below name. Mounted before the app's routes for the reason
     // `/icons` and `/media` are: a page route must not be able to shadow an asset URL.
     ...islandRoutes(() => input.islands()),

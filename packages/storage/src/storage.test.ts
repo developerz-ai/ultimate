@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { isStorageError, storageNotImplemented } from './errors';
-import { defineStorage, disk, resetStorage, storage } from './storage';
+import { definedStorage, defineStorage, disk, resetStorage, storage } from './storage';
 
 /** A driver stub: `defineStorage` must not touch the file system or a socket to resolve a name. */
 function stubDriver(name: string): StorageDriver {
@@ -144,5 +144,18 @@ describe('disk()', () => {
       caught = error;
     }
     expect(isUltimateError(caught) ? caught.code : '').toBe('X_CONFIG_INVALID');
+  });
+});
+
+describe('definedStorage()', () => {
+  test('is undefined before any defineStorage, never a throw', () => {
+    expect(definedStorage()).toBeUndefined();
+  });
+
+  test('is the LAST defineStorage — the registry an app writes through `disk()` (#524)', () => {
+    defineStorage({ disks: { object: stubDriver('host') } });
+    const app = defineStorage({ disks: { uploads, evidence: media } });
+    expect(definedStorage()).toBe(app);
+    expect(definedStorage()?.diskNames).toEqual(['uploads', 'evidence']);
   });
 });

@@ -8,7 +8,7 @@ import { createContext } from '@ultimat3/core';
 import { clearRoutes, registerRoute } from './registry';
 import type { SsrRenderInput } from './render-ssr';
 import { renderSsr, ssrHeaders } from './render-ssr';
-import type { RouteGuard, RouteMetaFn } from './route';
+import type { RouteCache, RouteGuard, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
 const meta = (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as RouteMetaFn;
@@ -128,5 +128,66 @@ describe('renderSsr screens the status before the Response boundary does', () =>
       const result = await renderSsr(input, () => '<p>p</p>', { buildId: 'b1', status });
       expect(new Response(result.body, { status: result.status }).status).toBe(status);
     }
+  });
+});
+
+describe('ssrHeaders — a route-declared cache (#525)', () => {
+  const cached = (file: string, cache: RouteCache, policy?: RouteGuard) =>
+    registerRoute({
+      file,
+      config: defineRoute({
+        render: 'ssr',
+        offline: 'network-only',
+        hydrate: 'never',
+        meta,
+        cache,
+        ...(policy ? { policy } : {}),
+      }),
+    });
+
+  test("'no-store' makes a public route private and unstored", () => {
+    const entry = cached('apps/web/site/r/[token]/page.tsx', 'no-store');
+    expect(ssrHeaders(entry, { buildId: 'b1' })['cache-control']).toBe('private, no-store');
+  });
+
+  test('a hint is emitted as declared, and its vary joins the defaults', () => {
+    const entry = cached('apps/web/site/verificar/page.tsx', {
+      mode: 'public',
+      maxAgeSeconds: 0,
+      sMaxAgeSeconds: 5,
+      vary: ['x-tenant'],
+    });
+    const headers = ssrHeaders(entry, { buildId: 'b1' });
+    expect(headers['cache-control']).toBe('public, max-age=0, s-maxage=5');
+    expect(headers['vary']).toBe('accept-language, x-tenant');
+  });
+
+  test('a gated route may narrow its cache, never widen it', () => {
+    const entry = cached(
+      'apps/web/app/a/page.tsx',
+      { mode: 'private', maxAgeSeconds: 10 },
+      {
+        permission: 'post:read',
+      },
+    );
+    expect(ssrHeaders(entry, { buildId: 'b1' })['cache-control']).toBe('private, max-age=10');
+    expect(() =>
+      defineRoute({
+        render: 'ssr',
+        offline: 'network-only',
+        meta,
+        policy: { permission: 'post:read' },
+        cache: { mode: 'public', sMaxAgeSeconds: 60 },
+      }),
+    ).toThrow(/X_ROUTE_MODE_INVALID/);
+  });
+
+  test('cache is an ssr key: static, isr and stream own their headers', () => {
+    expect(() =>
+      defineRoute({ render: 'static', offline: 'precache', meta, cache: 'no-store' }),
+    ).toThrow(/X_ROUTE_MODE_INVALID/);
+    expect(() =>
+      defineRoute({ render: 'stream', offline: 'network-only', meta, cache: 'no-store' }),
+    ).toThrow(/X_ROUTE_MODE_INVALID/);
   });
 });

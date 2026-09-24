@@ -2,7 +2,7 @@
 // every consumer imports from here, so this list is the package's contract.
 
 export type { AcceptSignedUploadInput, SignedRequestInput } from './accept';
-export { acceptSignedUpload, readSignedObject } from './accept';
+export { acceptSignedUpload, readSignedObject, signedUploadConstraints } from './accept';
 export type {
   AttachmentTarget,
   PromoteAttachmentInput,
@@ -154,7 +154,7 @@ export {
   verifySignedUrl,
 } from './signed-url';
 export type { Storage, StorageConfig } from './storage';
-export { defineStorage, disk, resetStorage, storage } from './storage';
+export { definedStorage, defineStorage, disk, resetStorage, storage } from './storage';
 export type { UploadCandidate, UploadPolicy, UploadPolicyInit, ValidatedUpload } from './upload';
 export {
   contentTypeMatches,
