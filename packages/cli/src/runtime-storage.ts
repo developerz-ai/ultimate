@@ -17,11 +17,13 @@ import type { Storage, StorageRead } from '@ultimat3/storage';
 import {
   assertSafeKey,
   DEFAULT_SIGNED_URL_BASE,
+  definedStorage,
   isTenantScoped,
   isWithinOrg,
   objectNotFound,
   orgMismatch,
 } from '@ultimat3/storage';
+import { storageUploadRoute } from './runtime-storage-upload';
 
 /**
  * The one capability that gates reading a stored object, on every disk. A permission and not a
@@ -211,6 +213,30 @@ export function storageResponse(request: UltimateRequest, read: StorageRead): Re
   return new Response(new Uint8Array(slice), { status: 206, headers });
 }
 
+/**
+ * The `Storage` the framework's own routes serve: the process's ONE registry when there is one —
+ * the last `defineStorage()`, which is the app's whenever an app module declares its disks — and
+ * the host's env-selected disk only when nothing did. Resolved per call, never captured at mount:
+ * the boot builds its disk before the app's modules load, and `x dev` re-imports them on a save.
+ *
+ * Why not the host's disk alone (#524): an app that declared `defineStorage({ disks: { uploads,
+ * evidence } })` wrote through `disk('evidence')` while `/_storage` and `/media` read the host's
+ * `local`/`object`, so every URL the app's own disks signed answered 404. The app's code and the
+ * framework's routes must be reading one registry, and `defineStorage` says there is only one.
+ */
+export function servedStorage(host: Storage): Storage {
+  const current = (): Storage => definedStorage() ?? host;
+  return {
+    get defaultDisk(): string {
+      return current().defaultDisk;
+    },
+    get diskNames(): readonly string[] {
+      return current().diskNames;
+    },
+    disk: (name?: string) => current().disk(name),
+  };
+}
+
 export interface StorageRoutesOptions {
   /** The configured disks. The driver seam only — this route never assumes a filesystem. */
   readonly storage: Storage;
@@ -249,5 +275,8 @@ export function storageRoutes(options: StorageRoutesOptions): readonly Route[] {
         return storageResponse(request, await readStorageObject(options.storage, input, ctx.actor));
       },
     },
+    // The upload half: the `PUT` every `grantUpload` URL names (#523). One call mounts both, so
+    // no route table can serve the reads of a disk it cannot write to.
+    storageUploadRoute(options.storage),
   ];
 }

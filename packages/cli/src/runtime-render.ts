@@ -19,8 +19,13 @@ import { posix } from 'node:path';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx } from '@ultimat3/core';
 import { CLIENT_SCOPE_HEADER } from '@ultimat3/core';
-import type { RouteMeta as HttpRouteMeta, Route, RouteParams } from '@ultimat3/http';
-import { asCtx, html, stream } from '@ultimat3/http';
+import type {
+  RouteMeta as HttpRouteMeta,
+  RedirectIntent,
+  Route,
+  RouteParams,
+} from '@ultimat3/http';
+import { asCtx, html, NO_STORE, redirect, stream, takeRedirect } from '@ultimat3/http';
 import { currentLocale } from '@ultimat3/i18n';
 import type {
   ClientSyncHead,
@@ -289,14 +294,12 @@ async function documentFrom(
 async function resultFor(
   entry: RouteEntry,
   request: DevRouteData,
+  data: RouteData,
   options: DevRenderOptions,
   isr: IsrController,
   ctx: Ctx,
 ): Promise<RenderResult> {
   const url = new URL(request.url);
-  // ONCE per request, before the mode is chosen. Every branch below reads this same object, so a
-  // route's `load` runs exactly once however its mode splits head from body.
-  const data = await routeDataFor(entry.config, request);
   // The status the loader answered through `withStatus`, 200 when it said nothing. Read once,
   // here, and handed to every mode: this file mints the `Response`, render owns the seam.
   const status = routeStatusOf(data);
@@ -380,6 +383,18 @@ const withScope = (result: RenderResult, scope: string | undefined): RenderResul
     ? result
     : { ...result, headers: { ...result.headers, [CLIENT_SCOPE_HEADER]: scope } };
 
+/**
+ * A loader's redirect. No declared `cache` means `private, no-store`: the loader decided it for
+ * THIS request (it recorded an open, it checked a token), and the mode's default would offer that
+ * decision to a CDN, which would then answer every later request without running the loader. A
+ * declared one is the pipeline's to apply, off `meta.cache`, exactly as for any handler.
+ */
+function loadRedirect(entry: RouteEntry, to: RedirectIntent): Response {
+  const response = redirect(to.location, to.status);
+  if (entry.config.cache === undefined) response.headers.set('cache-control', 'private, no-store');
+  return response;
+}
+
 const responseOf = (result: RenderResult): Response =>
   typeof result.body === 'string'
     ? html(result.body, { status: result.status, headers: result.headers })
@@ -395,6 +410,12 @@ const metaOf = (entry: RouteEntry): HttpRouteMeta => ({
   render: entry.config.render,
   tags: [entry.surface],
   ...(entry.config.policy === undefined ? {} : { policy: entry.config.policy.permission }),
+  // Projected so the router screens its ages at mount (`assertRouteCache`) and the `cache-headers`
+  // stage applies it to a response that wrote none — a loader's redirect. The rendered document
+  // carries its own header, from `ssrHeaders`, which the stage reviews rather than replaces.
+  ...(entry.config.cache === undefined
+    ? {}
+    : { cache: entry.config.cache === 'no-store' ? NO_STORE : entry.config.cache }),
 });
 
 /**
@@ -424,7 +445,15 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
     handler: async (request, ctx): Promise<Response> => {
       const entry = routeFor(registered.path) ?? registered;
       const data: DevRouteData = { url: request.url.href, params: ctx.params };
-      return responseOf(await resultFor(entry, data, options, isr, asCtx(ctx)));
+      // ONCE per request, before the mode is chosen: every branch of `resultFor` reads this same
+      // object, so a route's `load` runs exactly once however its mode splits head from body.
+      const loaded = await routeDataFor(entry.config, data);
+      // `setRedirect()` inside `load` — the same slot an action's handler fills — answers here,
+      // before a document is rendered for a page the visitor is leaving. `withStatus` refuses a
+      // 3xx because a rendered document has no `Location`; this is the path that has one.
+      const to = takeRedirect(ctx);
+      if (to !== undefined) return loadRedirect(entry, to);
+      return responseOf(await resultFor(entry, data, loaded, options, isr, asCtx(ctx)));
     },
   }));
 }

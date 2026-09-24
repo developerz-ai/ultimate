@@ -100,17 +100,28 @@ other — the projections come from `action()`, and nothing was lost by not wrap
 
 `accept.ts` owns no `Request`, no `Response` and no status number: `@ultimat3/http`'s
 `error-map.ts` is the only place an `X_*` code becomes a status, and a second table in a tier-1
-package is the drift that rule exists to prevent. The host mounts two routes around the two
-calls — the same shape `packages/cli/src/runtime-assets.ts` already uses for `/media/*`:
+package is the drift that rule exists to prevent. The host mounts the two routes around the two
+calls — `packages/cli/src/runtime-storage.ts` (`GET`) and `runtime-storage-upload.ts` (`PUT`),
+both returned by the one `storageRoutes()` that `x dev` and `runRole` call, `As of 2026-09-24`
+(#523).
 
-```ts
-{ method: 'PUT', path: '/_storage/:disk/*key', meta: { name: 'storage.put', auth: 'required' },
-  handler: async (request) => Response.json(await acceptSignedUpload({
-    url: request.url.toString(), secret, disk: storage.disk(), orgId: ctx.actor.orgId,
-    bytes: new Uint8Array(await request.arrayBuffer()),
-    declaredContentType: request.headers.get('content-type') ?? undefined,
-  })) }
-```
+| Step of the `PUT` | Why in that order |
+|---|---|
+| the disk segment must be a registered disk, else `X_STORAGE_NOT_FOUND` | the GET's answer; a refusal listing disk names discloses them |
+| `signedUploadConstraints({ url, disk, orgId })` | the signature, expiry, method and tenant, verified BEFORE the body is read — so the signed `maxBytes` caps the read, never `bodyLimitBytes` (an RPC body's limit) and never an unverified query value |
+| `readWithinLimit(body, maxBytes)` | core's counting reader; over is `X_STORAGE_TOO_LARGE` |
+| `acceptSignedUpload({ …, policy: uploadPolicy({ maxBytes, allowedContentTypes: [signed type] }) })` | the GRANT is the policy — `uploadPolicy()`'s default is image-only and would refuse every PDF an app granted on purpose; the magic-byte sniff still runs |
+| `201 { key }` | what `uploadFile` hands back |
+
+The `PUT` is `auth: 'required'` and carries no permission: the action that minted the grant ran
+its own policy, and the route re-proves only what a leaked URL must not buy — the signature, the
+expiry and the actor's tenant.
+
+**The disks served are the process's one registry** (#524): `servedStorage(host)` reads
+`definedStorage() ?? host` per request, so the last `defineStorage()` — the app's, when an app
+module declares its disks — is what `/_storage` and `/media` read, and the boot's env-selected
+disk only when nothing declared one. Per request, because the boot builds its disk before the
+app's modules load and `x dev` re-imports them on a save.
 
 **The segment is the registered disk name, not the driver kind.** The mounted route resolves it
 through the registry, so a disk registered as `uploads` whose URLs said `local` 404s every signature
@@ -119,11 +130,6 @@ hangs its URLs off that; `acceptSignedUpload` reads the base back off `disk.sign
 than re-deriving it from `disk.name`, which is what let both halves agree with each other and
 disagree with the route. `s3Driver` presigns against the provider, declares no `signedUrlBase`, and
 never touches this route.
-
-**Only the `GET` half is mounted by the framework**, `As of 2026-08-19`:
-[`packages/cli/src/runtime-storage.ts:227`](../../packages/cli/src/runtime-storage.ts) serves
-`GET /_storage/:disk/*key` and there is no shipped `PUT`, so `acceptSignedUpload` is reachable only
-from a route an app writes. The snippet above is that route → [`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md).
 
 ## Orphans
 

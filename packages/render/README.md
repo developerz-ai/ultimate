@@ -61,8 +61,10 @@ returns its data through `withStatus(404, data)`. The same object comes back, so
 it (`routeStatusOf`), and a 4xx or 5xx is `robots: noindex` by construction, applied by the
 descriptor's `meta` after the route's own ran. Not a throw: a throw is the framework's error page,
 outside the app's shell, and `As of 2026-09-07` that was the only way to a 404 — ai-maxxing's
-`/fleet/nope` rendered the right page and answered 200. A 3xx is `X_ROUTE_STATUS_INVALID`; a
-redirect is `@ultimat3/http`'s `redirect()`. The static export writes the document whatever the
+`/fleet/nope` rendered the right page and answered 200. A 3xx is `X_ROUTE_STATUS_INVALID`. A
+redirect is `setRedirect(location, status)` from `@ultimat3/http`, called inside `load`: the page
+path answers that 3xx before rendering a document, `private, no-store` unless the route declares a
+`cache` (`As of 2026-09-24`, #525). The static export writes the document whatever the
 loader said — a file has no status — and the build's measurer, which renders with `params: {}`,
 never fails on a loader answering 404.
 
@@ -106,6 +108,15 @@ a rejection, so one `catch` covers both. The budget's *fields* stay optional:
 `budget.js === undefined` still means "declared no JS budget", which is exactly what fails
 a hydrating `site/` route below.
 
+## `cache` on an `ssr` route
+
+`defineRoute({ render: 'ssr', cache: 'no-store' | CacheHint })` replaces `ssrHeaders`' default
+(`private, no-store` gated, `public, max-age=0, s-maxage=30, stale-while-revalidate=300` ungated).
+`'no-store'` is `private, no-store`; a hint (`@ultimat3/http`'s `CacheHint`, minus `tags`) goes
+through `cacheControl()`, and its `vary` joins the defaults. `As of 2026-09-24` (#525). The type is
+`RouteCache`; `@ultimat3/http` is a dependency of this package for that type and for
+`cacheControl` in the server half.
+
 ## Mode invariants, checked at registration
 
 | Mode | Invariant | Error if violated |
@@ -113,6 +124,8 @@ a hydrating `site/` route below.
 | `static` | no per-request state — no `policy`, no `revalidate` | `X_ROUTE_MODE_INVALID` |
 | `isr` | needs a trigger: `revalidate.tags` or `revalidate.ttl`; **no `policy`** — one cached document per URL cannot answer two actors | `X_ROUTE_MODE_INVALID` |
 | `ssr` | cannot be prerendered | `X_ROUTE_MODE_INVALID` |
+| any but `ssr` | declares no `cache` — `static`/`isr` headers are the mode, a `stream` is always `private, no-store` | `X_ROUTE_MODE_INVALID` |
+| gated (`policy`) | its `cache` is never `public`/`immutable` — one actor's document in a shared cache | `X_ROUTE_MODE_INVALID` |
 | `stream` | at least one `<Suspense>` boundary | `X_ROUTE_MODE_INVALID` |
 
 Plus surface rules: `site/` allows `static | isr | ssr`, `app/` allows `stream | ssr`,

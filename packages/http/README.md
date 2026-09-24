@@ -330,6 +330,39 @@ sign-in redirect, which keys on `X_UNAUTHENTICATED` alone.
 The sending half is `webhook()` in `@ultimat3/jobs`. Neither package may import the other, so the
 canonical string is stated in both and pinned by one literal vector asserted in both test files.
 
+## The exact body bytes
+
+`As of 2026-09-24`. `UltimateRequest#bodyBytes()` returns the body exactly as it was sent,
+whatever its content type. It is size-capped (`bodyLimitBytes`), read once and cached, and it is
+the same byte array that `bodyRaw()` parses. An action handler receives a `Ctx` and not the
+request, so it calls `useRequestBodyBytes()` to read the request in scope:
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { useRequestBodyBytes, useRequestHeader } from '@ultimat3/http';
+import { allow } from '@ultimat3/policy';
+
+// The app's own check: SNS signs a canonical string of fields, a gateway signs the bytes.
+declare function verifySender(bytes: Uint8Array, header: string | null, body: string): Promise<void>;
+
+export const ingestSesEvent = action({
+  input: t.string.max(600_000),           // SNS posts text/plain: the decoded body
+  output: t.object({ ok: t.boolean }),
+  policy: allow('public'),                // the signature below authenticates the sender
+  async handle({ input }) {
+    const bytes = await useRequestBodyBytes();   // what the sender signed, byte for byte
+    await verifySender(bytes, useRequestHeader('x-signature'), input);
+    return { ok: true };
+  },
+});
+```
+
+| | |
+|---|---|
+| why not the decoded string | a decode can rewrite a BOM or an invalid UTF-8 byte, and the signature then fails with no visible cause |
+| one reader | `bodyRaw()` and `bodyBytes()` share one capped read, so an action that reads both reads the stream once |
+| off HTTP | `X_NO_REQUEST`: a job or an MCP call has no body bytes |
+
 ## Errors
 
 `X_ROUTE_NOT_FOUND` · `X_METHOD_NOT_ALLOWED` · `X_BODY_INVALID` · `X_UNAUTHENTICATED`

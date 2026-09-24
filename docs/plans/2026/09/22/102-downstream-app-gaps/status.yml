@@ -1,17 +1,17 @@
 plan: 102-downstream-app-gaps
 title: Downstream app gaps
-status: not_started
+status: in_progress
 created_by: sebi
 worked_by: ""
 owner: sebi
-percent: 0
+percent: 3
 current_focus: "13-docs-known-gaps.md step 1 (day-one doc corrections), then 01-core-schema-seams.md"
 slices:
   - {file: 01-core-schema-seams.md, tier: 0, status: not_started, percent: 0}
   - {file: 02-time-months.md, tier: 1, status: not_started, percent: 0}
   - {file: 03-storage-object-lock.md, tier: 1, status: not_started, percent: 0}
   - {file: 04-entity-append-only.md, tier: 1, status: not_started, percent: 0}
-  - {file: 05-http-api-routes-cookies.md, tier: 2, status: not_started, percent: 0}
+  - {file: 05-http-api-routes-cookies.md, tier: 2, status: in_progress, percent: 25, done: "step 1: UltimateRequest#bodyBytes() over one cached capped read, bodyRaw() parses it; useRequestBodyBytes() for an action handler (22.2.0)"}
   - {file: 06-query-audit.md, tier: 3, status: not_started, percent: 0}
   - {file: 07-mcp-surfaces-confirm.md, tier: 3, status: not_started, percent: 0}
   - {file: 08-mail-ses-raw-events.md, tier: 4, status: not_started, percent: 0}
@@ -20,6 +20,7 @@ slices:
   - {file: 11-cli-mounts.md, tier: 5, status: not_started, percent: 0}
   - {file: 12-scaffold-papercuts.md, tier: 5, status: not_started, percent: 0}
   - {file: 13-docs-known-gaps.md, tier: 5, status: not_started, percent: 0}
-evidence: []
+evidence:
+  - "22.2.0: packages/http/src/request.ts bodyBytes(), packages/http/src/context.ts useRequestBodyBytes(); request.test.ts 'bodyBytes() — the exact bytes, one read'"
 notes: "Source: gaps a downstream app hit on its first day (scaffolded 2026-09-22 with create-ultimate 20.2.1), each verified against feat/101-client-seam-tier0-3. Four items remove public surface (AppConfig.locales/defaultLocale, ai.mcp.path, admin MCP tool names, plus AuditRecord.action -> name) and must ride 21.0.0 with BREAKING entries; everything else is minor/patch and may ship in 21.x. Falsified or dropped items are listed under overview.md Risks. Slices 11 and 12 touch files plan 101 also edits; rebase before starting them."
-last_updated: 2026-09-22
+last_updated: 2026-09-24

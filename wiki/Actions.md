@@ -93,7 +93,14 @@ Rejected by that rule: an MCP-specific permission table, a "trusted tool" mode, 
 
 ## `action` must never
 
-- read the request object, headers, or cookies directly — actor and tenant come from `ctx`
+- read the request object, headers, or cookies directly — actor and tenant come from `ctx`.
+  One exception is a sender whose credential is a **signature over the raw body**. Amazon SNS
+  posts `text/plain`, and a payment gateway signs a header over the bytes. The action gets the
+  body parsed (a `text/*` body as a decoded string), and `useRequestBodyBytes()` from
+  `@ultimat3/http` returns the exact bytes that body was parsed from. The read is the same
+  size-capped and cached one, so reading both costs one read. The policy stays
+  `allow('public')`, and the signature check in `handle` authenticates the sender. Off HTTP (a
+  job, MCP) it is `X_NO_REQUEST`
 - render, redirect, or return HTML
 - perform its own authorization inside `handle` — that belongs in `policy`
 - do slow work inline — enqueue a `job`

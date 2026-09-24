@@ -12,7 +12,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 // temporary directory is.
 import { tmpdir } from 'node:os';
 import { frozenClock } from '@ultimat3/core';
-import { acceptSignedUpload, readSignedObject } from './accept';
+import { acceptSignedUpload, readSignedObject, signedUploadConstraints } from './accept';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { isStorageError } from './errors';
@@ -225,5 +225,37 @@ describe('what a mounted route actually holds', () => {
     } finally {
       resetStorage();
     }
+  });
+});
+
+describe('signedUploadConstraints — what a route may read BEFORE the body (#523)', () => {
+  test('answers the verified key, type and ceiling of a genuine PUT grant', async () => {
+    const minted = await grant();
+    const constraints = await signedUploadConstraints({ url: minted.url, disk, orgId: ORG, clock });
+    expect(constraints.key).toBe(minted.key);
+    expect(constraints.contentType).toBe('image/png');
+    expect(constraints.maxBytes).toBe(1024);
+  });
+
+  test('a forged ceiling is refused before a byte is read', async () => {
+    const minted = await grant();
+    const url = new URL(minted.url, 'http://x.test');
+    for (const [name, value] of url.searchParams) {
+      if (value === '1024') url.searchParams.set(name, String(1024 * 1024 * 1024));
+    }
+    expect(
+      await outcomeOf(() =>
+        signedUploadConstraints({ url: url.pathname + url.search, disk, orgId: ORG, clock }),
+      ),
+    ).toMatchObject({ code: 'X_STORAGE_URL_INVALID' });
+  });
+
+  test("another tenant's actor is refused on the verified key", async () => {
+    const minted = await grant();
+    expect(
+      await outcomeOf(() =>
+        signedUploadConstraints({ url: minted.url, disk, orgId: 'org-2', clock }),
+      ),
+    ).toMatchObject({ code: 'X_STORAGE_ORG_MISMATCH' });
   });
 });

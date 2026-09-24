@@ -14,9 +14,11 @@ import {
   roleDefinitions,
 } from '@ultimat3/policy';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
+import { defineStorage, localDriver, resetStorage } from '@ultimat3/storage';
 import { grantedReferences, permissionFindings, policyFindings, siteFile } from './app-permissions';
 import { CLI_ORIGIN, type DuplicateInstall } from './duplicate-packages';
 import type { Finding } from './output';
+import { STORAGE_READ_PERMISSION } from './runtime-storage';
 
 const ROOT = '/tmp/x-app-permissions';
 
@@ -34,6 +36,10 @@ beforeEach(() => {
   clearPermissions();
   clearRoles();
   clearRoutes();
+  // Another suite in this process may have left a registry installed, and a declared storage is
+  // what makes the step ask for `storage:read` — every case below starts from an app that stores
+  // nothing unless it says otherwise.
+  resetStorage();
 });
 
 afterEach(() => {
@@ -94,6 +100,29 @@ describe('unit · a permission a route requires must be one the app declared', (
       file: 'apps/web/app/dashboard/page.tsx',
       config: routeConfig('dashboard:read'),
     });
+    expect(permissionFindings(ROOT)).toEqual([]);
+  });
+});
+
+describe('unit · the mounted /_storage requires storage:read of an app that stores (#524)', () => {
+  afterEach(() => resetStorage());
+
+  test('an app that declared disks and not storage:read is told so by the gate, not by a 500', () => {
+    definePermissions(['post:read']);
+    defineStorage({ disks: { uploads: localDriver({ root: '/tmp/x-app-permissions-disk' }) } });
+    const findings = permissionFindings(ROOT);
+    expect(codesOf(findings)).toEqual(['X_PERMISSION_UNKNOWN']);
+    expect(findings[0]?.cause).toContain('storage:read');
+    expect(findings[0]?.cause).toContain('/_storage');
+  });
+
+  test('declared, it is quiet; and an app that stores nothing is never asked', () => {
+    definePermissions(['post:read', STORAGE_READ_PERMISSION]);
+    defineStorage({ disks: { uploads: localDriver({ root: '/tmp/x-app-permissions-disk' }) } });
+    expect(permissionFindings(ROOT)).toEqual([]);
+    resetStorage();
+    clearPermissions();
+    definePermissions(['post:read']);
     expect(permissionFindings(ROOT)).toEqual([]);
   });
 });

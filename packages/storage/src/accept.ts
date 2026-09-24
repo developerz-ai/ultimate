@@ -124,6 +124,19 @@ async function constraintsFor(
 }
 
 /**
+ * The verified half of a PUT, without the bytes: the signature, the expiry, the method and the
+ * tenant, answered as the constraints the grant signed. A route reads this BEFORE the body so the
+ * signed `maxBytes` — not an HTTP-wide default, and never an unverified query parameter — is the
+ * cap on how much of the body it is willing to hold. `acceptSignedUpload` asks again; an HMAC is
+ * cheap and a second statement of the accept rules would not be.
+ */
+export async function signedUploadConstraints(
+  input: SignedRequestInput,
+): Promise<SignedUrlConstraints> {
+  return constraintsFor(input, 'PUT');
+}
+
+/**
  * Take a presigned PUT and write it, or refuse. Four gates the client cannot move because all
  * four are inside the signature or inside the bytes: the signature itself, the expiry, the byte
  * count against the signed ceiling, and the declared type against both the signature and the

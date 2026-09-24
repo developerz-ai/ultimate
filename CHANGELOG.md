@@ -8,7 +8,42 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **storage / cli:** the signed-upload `PUT /_storage/:disk/*key` is mounted beside the GET, in `x dev`
+  and in `runRole` (#523). A `grantUpload` URL is now PUT-able against the running app and answers
+  `201 { key }`. Authenticated, tenant-checked on the verified key, and validated against what the
+  grant SIGNED (type and `maxBytes`), not `uploadPolicy()`'s image-only default; the signed
+  `maxBytes` — never `bodyLimitBytes` — caps how much of the body is read. New in
+  `@ultimat3/storage`: `signedUploadConstraints(input)`, the verified constraints of a PUT before its
+  bytes are read.
+- **storage:** `definedStorage(): Storage | undefined` — the process's one registry, or `undefined`
+  before any `defineStorage`.
+- **http:** the exact request body bytes (plan 102, slice 05, in part). `UltimateRequest#bodyBytes()` and,
+  for an action handler, `useRequestBodyBytes()` from `@ultimat3/http` — the size-capped, cached
+  bytes `bodyRaw()` parses, so reading both costs one read. For a signature over the raw body
+  (Amazon SNS posts `text/plain`, a payment gateway signs a header over the bytes), which a decode to
+  a string could rewrite.
+- **render:** `defineRoute({ cache: 'no-store' | CacheHint })` on `render: 'ssr'` (#525). Replaces
+  the ungated default `public, s-maxage=30, stale-while-revalidate=300`; `'no-store'` is
+  `private, no-store`. `tags` is not accepted. Refused (`X_ROUTE_MODE_INVALID`) on any other mode, and
+  on a gated route that would offer its document to a shared cache (`public`/`immutable`). The
+  pipeline still turns a `public` answer private for a signed-in actor. `RouteCache` is exported.
+
+### Fixed
+
+- **render / cli:** `setRedirect(location, status)` from a route's `load` answers a real 3xx on the
+  page path (#525), before any document is rendered. `private, no-store` unless the route declares a
+  `cache`. `withStatus` still refuses a 3xx.
+- **cli:** `/_storage` and `/media` serve the APP's disks (#524). They read the process's one storage
+  registry per request — the last `defineStorage()`, which is the app's whenever an app module
+  declares its disks — and fall back to the boot's env-selected disk only when nothing did. Before,
+  every URL an app-declared disk signed answered 404.
+- **cli:** `x verify`'s `policy` step reports `X_PERMISSION_UNKNOWN` for `storage:read` when an app
+  declares its own disks and not that permission (#524). Before, this was a `500` on the first
+  signed URL.
+- **db:** the destructive-migration rail no longer calls `create trigger … before truncate …` or
+  `grant`/`revoke … truncate …` a truncate (#522). Only a statement that starts with `TRUNCATE` is one.
 
 ## 22.1.0 - 2026-09-24
 

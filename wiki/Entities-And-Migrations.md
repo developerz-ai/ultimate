@@ -574,7 +574,7 @@ answer both.
 | Every migration has a `down` | `x db gen` writes both halves of one file, split by a lone `-- down` line |
 | A generated drop | refuses with `X_MIGRATION_IRREVERSIBLE` — its `down` cannot restore the rows. Re-run with `x db gen "<name>" --allow-destructive` |
 | A destructive `up` | must carry `-- destructive: true` as a line in the file. `x db gen` writes it for you; an unmarked one fails `x verify`'s `drift` step with `X_MIGRATION_DESTRUCTIVE` |
-| What counts as destructive | `drop table`, `drop column`, `truncate`, `alter column … type` — a closed list. `drop constraint`, `drop default`, `drop not null` and `drop index` do not: the database rebuilds those |
+| What counts as destructive | `drop table`, `drop column`, `truncate`, `alter column … type` — a closed list. `drop constraint`, `drop default`, `drop not null` and `drop index` do not: the database rebuilds those. A truncate is a statement that **starts with** `TRUNCATE`. `create trigger … before truncate` and `grant`/`revoke … truncate` only name the operation to guard or permit it, and are not truncates (`As of 2026-09-24`, #522) |
 | Only `up` is judged | reversing a `create table` is a `drop table`, so a rail that read `down` would mark every migration ever generated |
 | Mark it before it is applied | the marker is SQL the checksum covers, so adding it to an applied migration is an edit — `X_MIGRATION_CONFLICT`, correctly |
 | Rollout | a marked drop still wants a rollout note; prefer expand → migrate → contract across two releases |

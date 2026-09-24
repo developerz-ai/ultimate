@@ -25,7 +25,7 @@ axiom 6). Never `cli` (upward).
 |---|---|
 | `offline`, `meta` | required by `RouteDefinition`. Never make them optional. |
 | `hydrate` | optional, **derived from `island()`** — `'interaction'` when the module declared one, `'never'` when not. Declaring it still wins and is the only way to reach `idle` / `visible`. Never give an island its own strategy: `RouteDescriptor.hydrate` is read by `sw.js`, the web manifest and `x routes`. |
-| `defineRoute` shape | exactly the contract's 9 keys. New route *metadata* goes inside `meta`. |
+| `defineRoute` shape | exactly the contract's 10 keys (`cache`, `ssr` only, is the tenth). New route *metadata* goes inside `meta`. |
 | `load` | optional, and the ONE server-side data seam. Resolved once per render by `routeDataFor()` and handed to **both** `meta` and the page component. Absent `load`, the context IS the data (`{ params, url }`). |
 | `load` is required when the context cannot supply the data | `LoadRequirement<TData>` in `defineRoute`'s parameter. `RouteContext` is a type ALIAS on purpose — only an alias carries the implicit index signature that makes it a `RouteData`. |
 | A loader's own error | rethrown only when `isUltimateError` says so (core's brand), never a `code` property and never `instanceof UltimateError` — a tier-0 error is branded, not a subclass. Everything else is `X_ROUTE_LOAD_FAILED`. |

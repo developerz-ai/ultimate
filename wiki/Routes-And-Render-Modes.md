@@ -34,7 +34,7 @@ export const config = defineRoute({
 | `kind: 'route'` | the brand | lets the registry reject a non-route export. `isRouteConfig(value)` is the guard |
 | `meta(data)` | the `<head>` producer | **always returns a promise.** A synchronous declared `meta` is wrapped, and a `meta` that throws synchronously becomes a rejection — so `await config.meta(data)` is the one way to fail as well as the one way to succeed, and no consumer branches on a thenable |
 | `budget` | the per-route limits | **always an object**, `{}` when undeclared, rather than a second undefined-check at every call site |
-| `render` `revalidate` `prerender` `offline` `hydrate` `policy` | the declaration, carried through | unchanged. Optional keys are omitted, never set to `undefined` |
+| `render` `revalidate` `prerender` `offline` `hydrate` `policy` `cache` | the declaration, carried through | unchanged. Optional keys are omitted, never set to `undefined` |
 | the whole object | `Object.freeze`d | no consumer can mutate the route another consumer is about to read |
 
 **The always-present `budget` does not weaken the `site/` JS-budget check.** `budget` is always an object, but its *fields* stay optional — so `budget.js === undefined` still means "this route declared no JS budget", and a `site/` route that opts into any `hydrate` other than `never` without one is `X_ROUTE_MODE_INVALID`, exactly as before the normalization. Measuring the declared numbers against the built output is the separate concern in **Budgets**, below.
@@ -45,7 +45,7 @@ Validation runs at **module evaluation**. `defineRoute` checks the shape and the
 |---|---|---|
 | `offline` present and a known strategy | `defineRoute` | `X_ROUTE_OFFLINE_MISSING` |
 | `meta` is a function | `defineRoute` | `X_ROUTE_META_MISSING` |
-| mode-local: known `render` and `hydrate`; `static` with a `policy` or a `revalidate`; `isr` with a `policy` or with no trigger; `ssr` with a `prerender` | `defineRoute` | `X_ROUTE_MODE_INVALID` |
+| mode-local: known `render` and `hydrate`; `static` with a `policy` or a `revalidate`; `isr` with a `policy` or with no trigger; `ssr` with a `prerender`; `cache` on any mode but `ssr`, or a `public`/`immutable` `cache` on a gated route | `defineRoute` | `X_ROUTE_MODE_INVALID` |
 | surface-dependent: mode allowed on the surface; `site/` hydration without `budget.js`; `stream` with no `<Suspense>`; `prerender` on a non-prerenderable mode | `registerRoute` | `X_ROUTE_MODE_INVALID` |
 | the config came from `defineRoute` and not straight from the author | `registerRoute` | `X_ROUTE_UNNORMALIZED` |
 | two files claiming one URL | `registerRoute` | `X_ROUTE_DUPLICATE` |
@@ -80,6 +80,30 @@ A render mode states the mode's **intent**; `@ultimat3/http`'s `cache-headers` s
 | anonymous | the mode's own intent, plus the key dimensions it forgot: `vary: accept-language, cookie, x-timezone` |
 | carrying an identity | `private, max-age=0` — never `public`, never `s-maxage`. `meta.auth` is only `'public' \| 'required'`, so the page that greets a signed-in visitor by name is a `'public'` route whose own header offered it to a CDN for 30 seconds |
 | a content-addressed URL (`immutable`) | left alone. `immutable` asserts the body is a function of the URL, which is what an island chunk is |
+
+### A route's own `cache`, on `ssr`
+
+`As of 2026-09-24`. An ungated `ssr` page is offered to a CDN for 30 seconds
+(`public, max-age=0, s-maxage=30, stale-while-revalidate=300`). A page can be public and still
+personal: a recipient landing addressed by a capability token in its path, or a verification page
+that must never answer with an old result. `cache` replaces that default:
+
+```ts
+export const config = defineRoute({
+  render: 'ssr',
+  offline: 'network-only',
+  cache: 'no-store',                  // or a CacheHint: { mode: 'public', sMaxAgeSeconds: 5 }
+  meta: ({ t }) => ({ title: t('verify.title'), description: t('verify.description') }),
+});
+```
+
+| | |
+|---|---|
+| `'no-store'` | `private, no-store`, the answer a gated page already gets. It carries the principal scope like every private document |
+| a `CacheHint` | `@ultimat3/http`'s own type, without `tags`, emitted by `cacheControl()`. Its `vary` joins the defaults. The router checks its ages at mount (`X_CONFIG_INVALID`) |
+| which modes | `ssr` only. `static` and `isr` are hashed or TTL'd documents whose headers are the mode itself. A `stream` is always `private, no-store`. On any of them `cache` is `X_ROUTE_MODE_INVALID` |
+| a gated route | may narrow its cache (`'no-store'`, `{ mode: 'private', … }`), never widen it. `public` or `immutable` is `X_ROUTE_MODE_INVALID` |
+| a signed-in visitor | the table above still applies. A declared `public` becomes `private, max-age=0` for them |
 
 **An `isr` entry is keyed by the negotiated locale.** The store key is `isrKey(url, locale)` — pathname, the reserved `__x_locale` parameter, then the query with its params sorted. Without it, an app shipping two locales served visitor 2 the document rendered for visitor 1, for the whole TTL, and told the CDN to do the same. The time zone is deliberately **not** a dimension — a locale set is declared and bounded, a zone list is not — so a date on an `isr` page belongs in a zone the page itself names, or the page belongs in `ssr`.
 
@@ -274,11 +298,30 @@ export const config = defineRoute({
 | | |
 |---|---|
 | what it does | records the status against **that object**; hands the same object back, so `load`'s return type, `meta`'s `data` and the page's `props.data` are untouched |
-| which statuses | any 2xx, 4xx or 5xx. A 3xx is `X_ROUTE_STATUS_INVALID` — a redirect is a `Location` and no body, which is `@ultimat3/http`'s `redirect()`. Out of 200–599, or not whole, is refused where it is written, never as a `RangeError` at `new Response` |
+| which statuses | any 2xx, 4xx or 5xx. A 3xx is `X_ROUTE_STATUS_INVALID` — a redirect is a `Location` and no body, which is `setRedirect()` from `load` (below). Out of 200–599, or not whole, is refused where it is written, never as a `RangeError` at `new Response` |
 | SEO | a 4xx or 5xx is `<meta name="robots" content="noindex">` **by construction** — the descriptor's `meta` applies it after the route's own `meta` ran, so a page that does not exist is never indexed however `meta` was written. `follow` and the rest stay the author's; a 200 hands `meta`'s object back untouched |
 | every mode | `ssr`, `stream`, `static`-served and `isr` all answer it; an `isr` entry stores the status beside the HTML and serves it on every hit, stale copies included |
 | the static export | a file has no status. `x build --target static` writes the document whatever the loader said, and the build's measurer — which renders an `app/` route with `params: {}` to weigh it — never fails on a loader answering 404: the status is a fact about the data, not a throw |
 | an untouched app | reads 200 everywhere it did, byte for byte — nothing asks unless a loader answered |
+
+**A redirect is `setRedirect()`, from `load`.** `As of 2026-09-24`. It is the same call an action's
+handler uses, from `@ultimat3/http`. On the page path, the request answers with that `Location`
+and status (default 303, and 302/307/308 when named) and no document is rendered:
+
+```ts
+import { setRedirect } from '@ultimat3/http';
+
+load: async ({ params }) => {
+  await recordOpen(params.token);            // a tracking pixel, a download link
+  setRedirect('/pixel.gif', 302);
+  return { params };                          // never rendered
+},
+```
+
+With no declared `cache`, the redirect is `private, no-store`: the loader decided it for this one
+request, and a cached copy would answer later requests without running the loader. A route with a
+declared `cache` gets that instead. `withStatus` still refuses a 3xx, because a rendered document
+has no `Location`.
 
 **Not a throw, deliberately.** Throwing is the other 404 and it is still there: a route the table
 does not have, or a loader that throws `X_NOT_FOUND`, gets the framework's error page —
