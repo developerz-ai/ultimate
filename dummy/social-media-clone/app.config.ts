@@ -24,7 +24,12 @@ import { checkProductionEnv } from './production-env';
 export const env = defineEnv({
   // --- Core ---
   DATABASE_URL: { type: 'url', required: false, description: 'unset = embedded PGlite' },
-  NATS_URL: { type: 'url', required: false, role: ['web', 'sync', 'worker', 'replicator'] },
+  NATS_URL: {
+    type: 'url',
+    required: false,
+    secret: true, // a NATS URL can carry credentials
+    role: ['web', 'sync', 'worker', 'replicator'],
+  },
   PORT: { type: 'port', default: 3000 },
   // Its own port, because a worker serves no HTTP and must still be scrapable.
   METRICS_PORT: { type: 'port', default: 9090 },
@@ -81,7 +86,9 @@ export const config = defineConfig({
   jobs: { queues: ['social-media-clone-default'], concurrency: 4 },
   // The deployment decides the bus: a NATS_URL set means every realtime role shares it, none means
   // one node's in-process bus. Declared from the same variable so config and env can never
-  // disagree — the framework refuses to boot when they do (X_CONFIG_INVALID).
+  // disagree — the framework refuses to boot when they do (X_CONFIG_INVALID). Read raw, not through
+  // `env`: `env.NATS_URL` is role-scoped, and a role outside that list (scheduler, migrate) with the
+  // variable set would then declare 'memory' against a set NATS_URL and refuse.
   realtime: {
     enabled: true,
     ...(process.env.NATS_URL ? { transport: 'nats', urlEnv: 'NATS_URL' } : { transport: 'memory' }),
