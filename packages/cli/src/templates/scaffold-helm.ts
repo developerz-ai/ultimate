@@ -95,7 +95,7 @@ roles:
     # urlEnv: 'NATS_URL' } in app.config.ts (a NATS_URL under transport 'memory' is refused, and
     # 'nats' without it is too); run NATS and set the SAME NATS_URL for web, sync and the
     # replicator; enable exactly one replicator (below) against a Postgres started with
-    # wal_level=logical and a publication for the entity tables; then set this to true.
+    # wal_level=logical (the replicator creates its publication at boot) and a role with REPLICATION on a cluster dedicated to this app; then set this to true.
     enabled: false
     replicas: 2
     port: 3001

@@ -218,7 +218,9 @@ describe('decoded changes', () => {
 
     expect(events.map((event) => event.after?.['id'])).toEqual(['p3', 'p4']);
     expect(feed.stats().replayed).toBe(2);
-    expect(server.queries[4]).toContain('LOGICAL 0/6000');
+    expect(server.queries.find((sql) => sql.startsWith('START_REPLICATION'))).toContain(
+      'LOGICAL 0/6000',
+    );
     await feed.stop();
   });
 

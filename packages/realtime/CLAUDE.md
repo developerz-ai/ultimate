@@ -188,6 +188,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **The pump has one way out, `#die`**, which records the failure, stops the confirm timer, closes and
   nulls the connection. `start()` awaits the previous pump before it dials. **`stop()` releases
   everything before it reports anything.**
+- **The replicator ensures its publication; nothing else creates it** (`pg-publication.ts`, called
+  from preflight after `wal_level`): `CREATE PUBLICATION … FOR TABLE` every entity table when
+  missing, `ALTER PUBLICATION … ADD TABLE` the missing ones when present, **never a DROP**. Never
+  `FOR ALL TABLES` (superuser). Only a server ErrorResponse becomes the coded refusal with the
+  statement; a socket failure propagates. No entity is excluded: there is no not-live declaration.
+- **A fix that hands over `REPLICATION` carries `REPLICATION_GRANT_WARNING`** (`pg-wire.ts`): the
+  attribute is cluster-wide (`BASE_BACKUP`, `START_REPLICATION PHYSICAL`), so never a bare
+  `ALTER ROLE … WITH REPLICATION`.
 - **`REPLICA IDENTITY FULL` is checked at preflight, warned, and counted — never thrown** — ahead of
   `pg_create_logical_replication_slot`. `ReplicationStreamStats.partialBefore` reads
   `PgRelation.replicaIdentity`, never the tuple.
@@ -197,7 +205,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - A change lsn is `<16 hex commit position><8 hex row position>`; never order by either half alone,
   never depend on wall time or a process counter.
 - Slot, publication and entity names match `[a-z_][a-z0-9_]*` before interpolation — a security
-  boundary. A SQLSTATE is data: `pg-wire.ts`'s `FIXES` is read with `Object.hasOwn`.
+  boundary (`pg-identifier.ts`, the one `assertIdentifier`). A SQLSTATE is data: `pg-wire.ts`'s
+  `FIXES` is read with `Object.hasOwn`.
 - **A live row equals a repository row**: `pg-entity-row.ts` decodes through `@ultimat3/entity`'s
   own `decodeRow` / `entityForTable`, so money (three physical columns), scale and every other kind
   fold exactly as `postgresRepo` folds them.

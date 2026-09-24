@@ -8,7 +8,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **realtime:** the replicator ensures its publication at boot — `CREATE PUBLICATION <name> FOR TABLE
+  <every entity table>` when missing, `ALTER PUBLICATION … ADD TABLE` for the entity tables it lacks,
+  never a drop — instead of refusing boot; a role that may not is still refused with
+  `X_REPLICATION_FAILED` and the statement to run. Every fix line that grants `REPLICATION` warns
+  that the grant is cluster-wide (`BASE_BACKUP` reads every database, `pg_authid` included) and links
+  `docs/ops/01-kubernetes.md#replication-is-a-cluster-wide-grant`.
+
+### Fixed
+
+- **social demo:** its realtime transport follows `NATS_URL`, so its config and its deployment cannot
+  disagree.
 
 ## 22.0.0 - 2026-09-24
 

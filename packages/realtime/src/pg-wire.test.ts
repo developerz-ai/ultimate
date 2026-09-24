@@ -17,6 +17,7 @@ import {
   type PgStream,
   passwordMessage,
   queryMessage,
+  REPLICATION_EXPOSURE_DOC,
   responseFields,
   saslInitialResponse,
   saslResponse,
@@ -346,6 +347,17 @@ describe('responseFields / describeFields / serverError', () => {
     expect(fix).toInclude(`CREATE PUBLICATION ${DEFAULT_REPLICATION_PUBLICATION} FOR TABLE`);
     expect(fix).not.toInclude('FOR ALL TABLES"');
     expect(fix).not.toInclude('x db replication');
+  });
+
+  // The REPLICATION attribute is cluster-wide: a `replication=database` session may run
+  // BASE_BACKUP or START_REPLICATION PHYSICAL with no database check, so on a shared cluster the
+  // grant is a copy of every database. The fix a missing attribute gets must say so, not just
+  // hand over the ALTER ROLE.
+  test('the 42501 fix grants REPLICATION only with the shared-cluster warning and its doc', () => {
+    const fix = FIXES['42501'] ?? '';
+    expect(fix).toInclude('WITH REPLICATION');
+    expect(fix).toInclude('dedicated');
+    expect(fix).toInclude(REPLICATION_EXPOSURE_DOC);
   });
 
   test('a SQLSTATE naming an Object.prototype member falls back, and does not THROW', () => {

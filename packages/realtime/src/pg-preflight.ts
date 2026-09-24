@@ -1,35 +1,20 @@
-// Single responsibility: the four questions asked of a database BEFORE `START_REPLICATION`, and
-// the identifier charset every one of them interpolates through. Three refuse the boot with the
-// exact statement that fixes them; the fourth warns, because refusing it would stop every app on
-// the default replica identity from starting.
+// Single responsibility: the four questions asked of a database BEFORE `START_REPLICATION`. Two
+// refuse the boot with the exact statement that fixes them, one — the publication — is answered by
+// ensuring it (`pg-publication.ts`), and the fourth warns, because refusing it would stop every app
+// on the default replica identity from starting.
 
 import { logger } from '@ultimat3/core';
 import { ReplicaIdentityError, ReplicationFailedError } from './errors';
 import type { PgConnection } from './pg-connection';
-
-/** Identifiers reach a simple query unparameterised, so the charset is the injection boundary. */
-const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
-
-/**
- * The one gate between a caller-supplied name and a simple query. Exported because
- * `PgReplicationStream` checks its slot, publication and entity names in its CONSTRUCTOR — a
- * mistyped `REPLICATION_SLOT` is a boot-time fact, and finding it at the first WAL read means a
- * replicator that reported itself started and then never delivered a change.
- */
-export const assertIdentifier = (kind: string, value: string): string => {
-  if (IDENTIFIER.test(value)) return value;
-  throw new ReplicationFailedError({
-    stage: 'preflight',
-    detail: `${kind} "${value}" is not a lower-case postgres identifier`,
-    fix: `rename the ${kind} to match [a-z_][a-z0-9_]* — it is interpolated into a replication command`,
-  });
-};
+import { assertIdentifier } from './pg-identifier';
+import { ensurePublication } from './pg-publication';
 
 /**
- * The four things that are always misconfigured. Three produce an unreadable server message if
- * left to the server, so each gets its own `fix:` line; the fourth is `warnPartialIdentity` and
- * only warns. `slot` and `publication` are interpolated into simple queries, so the `IDENTIFIER`
- * charset is the injection boundary; re-asserted here rather than trusted, so the guarantee
+ * The four things that are always misconfigured. `wal_level` and the slot produce an unreadable
+ * server message if left to the server, so each gets its own `fix:` line; the publication is
+ * created or extended here, and refused with its statement only when this role may not; the
+ * fourth is `warnPartialIdentity` and only warns. `slot` and `publication` are interpolated into
+ * simple queries, so the identifier charset is the injection boundary; re-asserted here rather than trusted, so the guarantee
  * travels with the function instead of living only in `start()`.
  */
 export async function preflight(
@@ -50,17 +35,7 @@ export async function preflight(
       fix: "set wal_level=logical in the server configuration — postgresql.conf, your managed provider's database flags, or `postgres -c wal_level=logical` on a container — then restart postgres",
     });
   }
-  const publications = await connection.query(
-    `SELECT 1 FROM pg_publication WHERE pubname = '${publication}'`,
-  );
-  if (publications.length === 0) {
-    const [role] = await connection.query('SELECT current_user');
-    throw new ReplicationFailedError({
-      stage: 'preflight',
-      detail: `no publication named "${publication}" exists`,
-      fix: publicationFix(publication, entities, role?.[0]),
-    });
-  }
+  await ensurePublication(connection, publication, entities);
   await warnPartialIdentity(connection, entities);
   const [existing] = await connection.query(
     `SELECT plugin FROM pg_replication_slots WHERE slot_name = '${slot}'`,
@@ -78,25 +53,6 @@ export async function preflight(
       fix: `SELECT pg_drop_replication_slot('${slot}'); -- then start the replicator again`,
     });
   }
-}
-
-/**
- * The publication an app needs is exactly its entities' tables, and `FOR TABLE` is what an app role
- * that owns them may create — `FOR ALL TABLES`, which this said, needs a superuser a managed
- * database never hands out. Streaming also needs the `REPLICATION` role attribute, which no fix
- * line named. Every name here already passed `assertIdentifier`; the role is quoted, because a
- * role name is whatever the operator chose.
- */
-function publicationFix(
-  publication: string,
-  entities: ReadonlySet<string>,
-  role: string | null | undefined,
-): string {
-  const tables = [...entities].sort().join(', ');
-  const create = `CREATE PUBLICATION ${publication} FOR TABLE ${tables};`;
-  const who =
-    typeof role === 'string' && role !== '' ? `"${role.replaceAll('"', '""')}"` : 'CURRENT_USER';
-  return `${create} -- and, if the role cannot stream yet: ALTER ROLE ${who} WITH REPLICATION;`;
 }
 
 /**
