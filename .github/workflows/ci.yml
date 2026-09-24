@@ -492,7 +492,12 @@ jobs:
           prestop_129="$(grep -c '^ *preStop:$' /tmp/deploy-129.yaml || true)"
           echo "deployments=${deployments} startupProbes=${startups} preStop@1.30=${prestop_130} preStop@1.29=${prestop_129}"
           [ "$startups" = "$deployments" ] || fail "startupProbe missing" "${startups} of ${deployments} Deployments carry a startupProbe. fix: every branch of the probes block in docker/helm/templates/_helpers.tpl declares one."
-          [ "$prestop_130" -gt 0 ] || fail "preStop missing on 1.30" "no Deployment renders a preStop sleep on Kubernetes 1.30. fix: see the semverCompare block in docker/helm/templates/_helpers.tpl."
+          # Only a role that serves HTTP has Endpoints to leave, so only web carries the sleep (sync too,
+          # once enabled); worker and scheduler drain on SIGTERM alone. So the check names web rather
+          # than counting, which a sleep lost from web but rendered elsewhere would still pass.
+          case "$(doc_with /tmp/deploy-130.yaml 'name: app-ultimate-web')" in *"preStop:"*"sleep:"*) ;;
+            *) fail "preStop missing on 1.30" "the web Deployment renders no preStop sleep on Kubernetes 1.30. fix: see the semverCompare block in docker/helm/templates/_helpers.tpl." ;;
+          esac
           [ "$prestop_129" = 0 ] || fail "preStop below 1.30" "a preStop sleep rendered on Kubernetes 1.29, which has no lifecycle.preStop.sleep and rejects the object. fix: gate it on semverCompare \">=1.30-0\" .Capabilities.KubeVersion.Version."
           while read -r grace; do
             [ "$grace" -ge 35 ] || fail "grace period too short" "terminationGracePeriodSeconds is ${grace}, below preStop (5) + readiness grace (5) + drain deadline (25) = 35, so the kubelet SIGKILLs a pod that is still draining. fix: raise it in docker/helm/templates/deployments.yaml."

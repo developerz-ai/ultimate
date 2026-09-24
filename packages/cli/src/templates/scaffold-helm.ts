@@ -131,9 +131,9 @@ roles:
     # Fixed 1, and a second replica is safe but pointless: leadership is an expiring row in
     # x_scheduler_leader, so the extra pod stands by.
     replicas: 1
-    # 512Mi, not 256Mi: every role boots through the same server, which builds the app's islands
-    # before any role starts, and a scaffolded app measured ~325 MiB at that peak as ROLE=scheduler
-    # (2026-09-23). At 256Mi the pod was OOMKilled on every boot and a first install never finished.
+    # 512Mi, not 256Mi: a scaffolded app measured ~325 MiB at boot as ROLE=scheduler (2026-09-23),
+    # when every role still built the app's islands first; at 256Mi the pod was OOMKilled on every
+    # boot. Only web builds islands now, so the peak is lower but unmeasured, and the limit stays.
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 512Mi }

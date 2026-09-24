@@ -608,6 +608,11 @@ a current fact: the rules that still hold are in that file, and where the two di
   **Measured, `bun build --target=browser --minify`, one entry importing from `@ultimat3/action`,
   `As of 2026-09-22`:**
 
+  | Entry | before (HEAD `98d16d84`) | onto `clientTransport` | trace headers moved to core's outbound slot | As of 2026-09-23 |
+  |---|---|---|---|---|
+  | `rpc` | 18,097 B | 23,007 B | 18,119 B | 19,074 B |
+  | `rpc` + `createClientFlight` | 23,903 B | 28,823 B | not measured | 25,197 B |
+
   This is the ONE table for these figures; `packages/core/CLAUDE.md` points here. The slot column
   is the `outbound-headers.ts` change (core's `traceHeaders()` left the browser path; its own
   "before" read 23,164 B, the transport column re-measured on a later tree). The last column is

@@ -104,7 +104,9 @@ jobs:
           conclusion="$(gh api \
             "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?check_name=${CHECK}" \
             --jq '[.check_runs[] | select(.status == "completed")]
-                    | sort_by(.completed_at) | last | .conclusion // ""')"
+                    | sort_by(.completed_at) | last | .conclusion // ""' || true)"
+          # `|| true`: a transient API failure is "no verdict", which the check below refuses by
+          # name rather than as a bare set -e exit — the pattern release.yml's gate uses.
           if [ "$conclusion" != success ]; then
             echo "::error::${CHECK} concluded '${conclusion:-no verdict}' for ${SHA} — not publishing. Dispatch this only for a commit ci.yml has passed."
             exit 1

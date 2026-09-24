@@ -18,8 +18,9 @@ idiom per task, the codes you will hit) is [`wiki/Client-Data.md`](../../wiki/Cl
 ## The measured before (20.x, historical)
 
 What 20.x shipped, and what this layer replaced — measured against the 20.x tree on 2026-09-22.
-**Historical:** most of the paths in the right-hand column (`identity-map.ts`, `hooks.ts`,
-`local-store.ts`, `live-socket.ts`) no longer exist; read them with `git show v20.2.2:<path>`.
+**Historical:** every path and line number in the right-hand column is the 20.x tree's — read it
+with `git show v20.2.2:<path>`. Four of the files no longer exist at all (`identity-map.ts`,
+`hooks.ts`, `local-store.ts`, `live-socket.ts`), and the rest have moved on.
 
 | Concern | 20.x | Where |
 |---|---|---|
@@ -28,7 +29,7 @@ What 20.x shipped, and what this layer replaced — measured against the 20.x tr
 | record store | `IdentityMap`, **one per `LiveClient`** (`client.ts:105`), keyed `privateScope(query)` until a snapshot names the entity; HTTP responses never reach it | `packages/realtime/src/identity-map.ts:24`, `packages/realtime/src/client.ts:250` |
 | state per page | a module singleton — `let registered` — and every island is its own `Bun.build` with `splitting: false`, so there is one singleton **per island** | `packages/realtime/src/hooks.ts:23`, `packages/cli/src/island-bundle.ts:84` |
 | sockets | the framework never constructs one; the app does, once per island that mounts a client | `examples/dummy/apps/web/shared/live-socket.ts:19` |
-| optimistic writes | the socket `mutate` frame answers `X_NOT_IMPLEMENTED` unless `createSyncNode({ onMutate })` is passed, and no host passes it | `packages/realtime/src/sync-frames.ts:144-155`, `packages/cli/src/role-sync.ts` |
+| optimistic writes | the socket `mutate` frame answers `X_NOT_IMPLEMENTED` unless `createSyncNode({ onMutate })` is passed, and no host passes it | `packages/realtime/src/sync-frames.ts:144-155`, `packages/cli/src/dev-sync.ts` (renamed `role-sync.ts` in 22.0.0) |
 | offline | `createOpfsLocalStore()` throws; the service worker posts to `/_x/outbox/flush`, which nothing mounts | `packages/realtime/src/local-store.ts:237`, `packages/pwa/src/background-sync.ts:38` |
 
 ## The one path

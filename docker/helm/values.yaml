@@ -154,9 +154,10 @@ roles:
     # grant is session-scoped and the executor is a pool, so it dies when the connection returns and
     # every replica reads itself as leader. A second replica here is safe but pointless — it stands by.
     replicas: 1
-    # 512Mi, not 256Mi: every role boots through the same server, which builds the app's islands
-    # before any role starts, and a scaffolded app measured ~325 MiB at that peak as ROLE=scheduler
-    # (2026-09-23). At 256Mi the pod was OOMKilled on every boot and a first install never finished.
+    # 512Mi, not 256Mi: a scaffolded app measured ~325 MiB at boot as ROLE=scheduler on the kind
+    # deploy proof (docker/deploy-proof/run.sh, 2026-09-23), when every role still built the app's
+    # islands first; at 256Mi the pod was OOMKilled on every boot. Only web builds islands now
+    # (packages/cli/src/serve-boot.ts), so the peak is lower — unmeasured, so the limit stays.
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 512Mi }

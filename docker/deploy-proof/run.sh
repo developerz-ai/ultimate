@@ -36,7 +36,9 @@ step "x new proofapp, on this tree's packages"
 (cd "$REPO" && bun run x -- new proofapp --dir "$WORK" --json >/dev/null)
 mkdir -p "$APP/vendor"
 for dir in "$REPO"/packages/*/; do
-  name="$(jq -r .name "$dir/package.json")"
+  name="$(jq -r '.name // ""' "$dir/package.json")"
+  # A nameless workspace would fall through the case below and ship the npm copy instead of this tree's.
+  [ -n "$name" ] || refuse "$dir/package.json has no name, so it cannot be packed into the proof app. fix: give it its @ultimat3/<pkg> name"
   case "$name" in @ultimat3/*) (cd "$dir" && bun pm pack --destination "$APP/vendor" --quiet >/dev/null 2>&1) ;; esac
 done
 (cd "$APP" && bun -e '

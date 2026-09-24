@@ -48,7 +48,8 @@ spec:
       # framework's readiness grace — `/readyz` answering 503 with the listener still open,
       # `drain.readinessGraceMs` in packages/core, 5s by default outside local environments — then
       # the drain itself, bounded by `drainDeadlineMs()` (packages/core/src/lifecycle.ts, 25s by
-      # default). 5 + 5 + 25 = 35s, so 45 leaves 10s of headroom before SIGKILL.
+      # default). 5 + 5 + 25 = 35s on 1.30+, and 0 + 5 + 25 = 30s below it where no preStop renders, so
+      # 45 leaves at least 10s of headroom before SIGKILL on every version this chart supports.
       #
       # Raise this WITH `configureLifecycle({ deadlineMs })` or a larger readiness grace, never
       # instead of them: the drain abandons its hooks at its own deadline, so a larger grace period
