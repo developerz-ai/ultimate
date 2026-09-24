@@ -24,13 +24,13 @@
     "manifest": "x manifest --json"
   },
   "devDependencies": {
-    "@ultimat3/cache": "21.0.0",
-    "@ultimat3/entity": "21.0.0",
-    "@ultimat3/testing": "21.0.0",
+    "@ultimat3/cache": "22.0.0",
+    "@ultimat3/entity": "22.0.0",
+    "@ultimat3/testing": "22.0.0",
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@ultimat3/cli": "21.0.0",
-    "@ultimat3/core": "21.0.0"
+    "@ultimat3/cli": "22.0.0",
+    "@ultimat3/core": "22.0.0"
   }
 }

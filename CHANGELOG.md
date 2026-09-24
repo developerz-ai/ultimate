@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.0.0 - 2026-09-24
+
 **22.0.0 in progress: plan 101, the framework deep sweep**
 ([`docs/plans/2026/09/23/101-framework-deep-sweep/`](docs/plans/2026/09/23/101-framework-deep-sweep/overview.md)).
 Every breaking entry below has a manual edit in the
@@ -343,6 +347,13 @@ Every breaking entry below has a manual edit in the
   template's `${}`; they used to close the outer template early and hide every literal after it from
   the gate's scanners.
 - **deploy:** a first `helm install` no longer hangs on the pre-install migrate Job.
+
+### Commits
+
+- docs: 22.0.0 leaves flight in Upgrading; milestone 11 closed on main's deploy-proof (0/9,028 failed)
+- feat!: plan 101 — framework deep sweep (22.0.0) (#512)
+- docs(plans): 101 — third sweep and the demo's infrastructure stack (#511)
+- docs(plans): 101 — framework deep sweep, 18 tier-ordered slices (#510)
 
 ## 21.0.0 - 2026-09-23
 

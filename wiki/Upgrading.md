@@ -33,7 +33,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 74 As of 2026-09-23 — every RELEASED section, which is the sum of every row above whose section
+# 97 As of 2026-09-24 — every RELEASED section, which is the sum of every row above whose section
 # the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
 # grep agrees with this number only while that section is empty, so it moved on every PR that
 # landed a breaking change and moved BACK when the release promoted the section — a count that can
