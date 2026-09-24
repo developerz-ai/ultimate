@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.2.0 - 2026-09-24
+
 ### Added
 
 - **storage / cli:** the signed-upload `PUT /_storage/:disk/*key` is mounted beside the GET, in `x dev`
@@ -44,6 +48,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   signed URL.
 - **db:** the destructive-migration rail no longer calls `create trigger … before truncate …` or
   `grant`/`revoke … truncate …` a truncate (#522). Only a statement that starts with `TRUNCATE` is one.
+
+### Commits
+
+- fix: signed-upload PUT, app-declared disks, route cache + load redirect, raw body bytes, truncate classifier (#526)
+- docs(plans): 101 slice 19 done (#521)
 
 ## 22.1.0 - 2026-09-24
 

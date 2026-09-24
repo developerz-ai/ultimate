@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/pwa",
-  "version": "22.1.0",
+  "version": "22.2.0",
   "description": "Generated service worker, web manifest, icons, push and version-skew handling.",
   "license": "MIT",
   "type": "module",
@@ -32,7 +32,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "22.1.0",
-    "@ultimat3/seo": "22.1.0"
+    "@ultimat3/core": "22.2.0",
+    "@ultimat3/seo": "22.2.0"
   }
 }

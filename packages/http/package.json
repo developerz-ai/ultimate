@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/http",
-  "version": "22.1.0",
+  "version": "22.2.0",
   "description": "Owned request lifecycle over Bun.serve: router, ordered pipeline, problem+json errors",
   "license": "MIT",
   "type": "module",
@@ -31,9 +31,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "22.1.0",
-    "@ultimat3/i18n": "22.1.0",
-    "@ultimat3/schema": "22.1.0",
-    "@ultimat3/time": "22.1.0"
+    "@ultimat3/core": "22.2.0",
+    "@ultimat3/i18n": "22.2.0",
+    "@ultimat3/schema": "22.2.0",
+    "@ultimat3/time": "22.2.0"
   }
 }
