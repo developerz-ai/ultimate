@@ -5,7 +5,7 @@
 // Type-only, so it is erased and the 46-component barrel stays out of the mount graph — the
 // values arrive through the dynamic `import()` in `devShellStyle()`, same reason as `data.ts`.
 import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
-import { t } from '@ultimat3/i18n';
+import { FRAMEWORK_CATALOG_LOCALE, translatorFor } from '@ultimat3/i18n';
 import type { ColorRole } from '@ultimat3/ui';
 import { DevDashboardInProdError } from '../errors';
 import { defaultDevSources } from './data';
@@ -156,6 +156,13 @@ html[data-theme="light"] { ${block('light')} }
 html[data-theme="dark"] { ${block('dark')} }
 ${SHELL_LAYOUT}`;
 }
+
+/**
+ * /_x is the framework's own tool, in the framework's own locale (`<html lang="en">` below): its
+ * strings are registered under `FRAMEWORK_CATALOG_LOCALE` only, so the AMBIENT locale — the app's,
+ * `es-co` for an app that defaults to it — answered `⟦dev.panel.mail.title⟧` for every tab.
+ */
+const t = (key: string): string => translatorFor(FRAMEWORK_CATALOG_LOCALE)(key);
 
 function shell(
   style: string,

@@ -145,6 +145,8 @@ export {
   serveApp,
 } from './serve';
 export { quoteArg } from './shell-quote';
+export type { SiteSeo, SiteSeoOptions } from './site-seo';
+export { ROBOTS_PATH, SITEMAP_PATH, siteSeo } from './site-seo';
 export { eachSourceFile, isGenerated, isTest, SOURCE_GLOBS } from './source-files';
 export type { SkippedRoute, StaticReport } from './static-report';
 export { parseStaticReport } from './static-report';

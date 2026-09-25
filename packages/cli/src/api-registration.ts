@@ -34,14 +34,27 @@ export function apiEntriesFor(written: readonly string[]): readonly ApiEntry[] {
   });
 }
 
-/** Every `[...]` entry of a `key: [...]` list in the `defineApi({ ... })` call. */
+/**
+ * Every `[...]` entry of a `key: [...]` list in the `defineApi({ ... })` call, and where it sits:
+ * `line` is the start of the line holding `key: [`, `start` is just past the `[`, `end` is the `]`.
+ *
+ * Searched from `from` (the `defineApi({` call), so a `jobs: [` in a comment or an object above the
+ * call is never the one edited. `line` is found from the key, never from `start`: in a list already
+ * wrapped one entry per line the character AT `start` is the newline after `[`, and a backwards
+ * search from there answered the first ITEM's line — the rewrite then nested a second `jobs: [`
+ * inside the first and left the old `]` behind.
+ */
 const listOf = (
   source: string,
   key: string,
-): { start: number; end: number; items: string[] } | undefined => {
-  const open = new RegExp(`\\n(\\s*)${key}: \\[`).exec(source);
-  if (open === null) return undefined;
-  const start = open.index + open[0].length;
+  from: number,
+): { line: number; start: number; end: number; items: string[] } | undefined => {
+  const open = new RegExp(`\\n([ \\t]*)${key}: \\[`, 'g');
+  open.lastIndex = from;
+  const found = open.exec(source);
+  if (found === null) return undefined;
+  const line = found.index + 1;
+  const start = found.index + found[0].length;
   const end = source.indexOf(']', start);
   if (end === -1) return undefined;
   const items = source
@@ -49,7 +62,7 @@ const listOf = (
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
-  return { start, end, items };
+  return { line, start, end, items };
 };
 
 /**
@@ -68,12 +81,12 @@ export function insertApiEntries(
   for (const entry of entries) {
     const importLine = `import * as ${entry.binding} from '${entry.specifier}';`;
     const call = next.indexOf('defineApi({');
-    const actions = listOf(next, 'actions');
+    const actions = call === -1 ? undefined : listOf(next, 'actions', call);
     if (call === -1 || actions === undefined) {
       skipped.push(entry);
       continue;
     }
-    const list = listOf(next, entry.key);
+    const list = listOf(next, entry.key, call);
     if (list?.items.includes(entry.binding) === true) continue;
     if (list === undefined) {
       // After `actions: [...],` — the order `x new` writes: actions, queries, jobs, tasks.
@@ -82,10 +95,9 @@ export function insertApiEntries(
       next = `${next.slice(0, after + 1)}${line}\n${next.slice(after + 1)}`;
     } else {
       const items = [...list.items, entry.binding];
-      const lineStart = next.lastIndexOf('\n', list.start) + 1;
-      const indent = /^\s*/.exec(next.slice(lineStart))?.[0] ?? '';
+      const indent = /^[ \t]*/.exec(next.slice(list.line))?.[0] ?? '';
       const rewritten = wrapList(indent, `${entry.key}: [`, items, ']');
-      next = `${next.slice(0, lineStart)}${rewritten}${next.slice(list.end + 1)}`;
+      next = `${next.slice(0, list.line)}${rewritten}${next.slice(list.end + 1)}`;
     }
     if (!next.includes(importLine)) next = withImport(next, importLine);
   }
