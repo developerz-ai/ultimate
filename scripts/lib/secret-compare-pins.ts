@@ -55,14 +55,16 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       '`prompt.ts:73` compares a cached prompt `hash` to decide whether to re-render the template. A cache-invalidation check on content this process produced.',
   },
   cli: {
-    count: 15,
+    // why: `site-asset-routes.ts:95` compares a content hash that is already the public asset URL — no secret.
+    count: 16,
     reason:
-      '`app-load.ts` compares a route module’s source `hash` with the one it registered under, to decide whether the file changed since — a content digest of the app’s own source, computed here. build and CLI plumbing: a `candidate` EXECUTABLE PATH, OUTPUT PATH, COMMAND NAME or CI JOB NAME; a parsed CLI `token` and its aliases; a `review.state` from the GitHub API; and a content `hash` compared to decide whether a bundle or a migration changed. None is a credential check. The twelfth arrived 2026-09-06 with `startsWith`: `fix-path.ts:102` asks whether a path-shaped CITATION on a `fix:` line sits under a gitignored directory — `token` there is a file path off a doc line. The fourteenth and fifteenth are `island-shot-index.ts:29,32`, which group a screenshot verdict by island STATE ID — the slug a `.island.states.ts` declares, which is already the screenshot filename stem on disk and is read back off a path. A value the filesystem publishes is not a secret, and renaming the field to dodge the NAME heuristic would trade a real domain word for a lint.',
+      '`app-load.ts` compares a route module’s source `hash` with the one it registered under, to decide whether the file changed since — a content digest of the app’s own source, computed here. build and CLI plumbing: a `candidate` EXECUTABLE PATH, OUTPUT PATH, COMMAND NAME or CI JOB NAME; a parsed CLI `token` and its aliases; a `review.state` from the GitHub API; and a content `hash` compared to decide whether a bundle or a migration changed. None is a credential check. The twelfth arrived 2026-09-06 with `startsWith`: `fix-path.ts:102` asks whether a path-shaped CITATION on a `fix:` line sits under a gitignored directory — `token` there is a file path off a doc line. The fourteenth and fifteenth are `island-shot-index.ts:29,32`, which group a screenshot verdict by island STATE ID — the slug a `.island.states.ts` declares, which is already the screenshot filename stem on disk and is read back off a path. A value the filesystem publishes is not a secret, and renaming the field to dodge the NAME heuristic would trade a real domain word for a lint. The sixteenth is `site-asset-routes.ts:95`, which compares a hashed site asset’s content `hash` with the one spelled in the requested URL — the hash IS the public URL, printed into every page that names the asset.',
   },
   core: {
-    count: 4,
+    // why: `locale-path.ts:35` matches a configured locale code against a URL segment — no secret.
+    count: 5,
     reason:
-      '`lifecycle.ts:250,289` compare a `candidate` REGISTRATION and WAITER by object identity while removing one from a list. `cursor.ts:71` compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_SECRET` is a literal in that file, so there is nothing an attacker does not already have. `image/png-pixels.ts:86` compares one byte of a decoded file against `PNG_SIGNATURE`, the eight-byte magic number every PNG in the world opens with.',
+      '`lifecycle.ts:250,289` compare a `candidate` REGISTRATION and WAITER by object identity while removing one from a list. `cursor.ts:71` compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_SECRET` is a literal in that file, so there is nothing an attacker does not already have. `image/png-pixels.ts:86` compares one byte of a decoded file against `PNG_SIGNATURE`, the eight-byte magic number every PNG in the world opens with. `locale-path.ts:35` matches a `candidate` configured LOCALE against the first URL segment — a locale code the site prints in every prefixed path.',
   },
   db: {
     count: 3,

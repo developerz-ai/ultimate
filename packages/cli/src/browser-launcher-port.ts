@@ -145,6 +145,13 @@ export interface ShotSessionInit {
   readonly clock: ShotClock;
   /** Per-operation default, in ms. */
   readonly timeoutMs: number;
+  /** CSS pixels the page is laid out in. Absent: the driver's own default. */
+  readonly viewport?: { readonly width: number; readonly height: number } | undefined;
+  /**
+   * Sent on every request the page makes. `x shot` pins `accept-language` here so a picture is of
+   * the locale asked for, never of whatever language the machine's Chrome happens to speak.
+   */
+  readonly headers?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface ShotSession {

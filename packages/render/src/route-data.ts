@@ -6,9 +6,21 @@
  */
 
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
-import { useI18n } from '@ultimat3/i18n';
+import {
+  currentLocale,
+  localizedPath,
+  routedLocales,
+  unlocalizedPath,
+  useI18n,
+} from '@ultimat3/i18n';
 import { RouteLoadFailedError } from './errors';
-import type { RouteConfig, RouteContext, RouteData, RouteMetaContext } from './route';
+import type {
+  RouteAlternate,
+  RouteConfig,
+  RouteContext,
+  RouteData,
+  RouteMetaContext,
+} from './route';
 
 /**
  * The route's data for one render.
@@ -75,5 +87,21 @@ export function metaContextFor<TData = RouteData>(
   ctx: RouteContext,
   data: TData,
 ): RouteMetaContext<TData> {
-  return { data, params: ctx.params, url: ctx.url, t: useI18n() };
+  // The UNPREFIXED path: `/en/precios` and `/precios` are one page, and every locale's spelling of
+  // it is derived from that one path rather than by rewriting whichever prefix the request wore.
+  const page = unlocalizedPath(pathnameOf(ctx.url));
+  const inLocale = (locale: string): string => localizedPath(page, locale);
+  const alternates: readonly RouteAlternate[] = routedLocales().map((locale) => ({
+    locale,
+    path: inLocale(locale),
+  }));
+  return {
+    data,
+    params: ctx.params,
+    url: ctx.url,
+    t: useI18n(),
+    locale: currentLocale(),
+    localizedPath: inLocale,
+    alternates,
+  };
 }

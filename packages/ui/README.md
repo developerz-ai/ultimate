@@ -401,21 +401,23 @@ transparent inside a heading or a caption.
 | `weight` | keys of `fontWeightTokens`: `normal` `medium` `semibold` `bold` |
 | `as` | `span` (default) `p` `div` `strong` `em` |
 
-`<Image>` is one `<img>` — no JS, no fetch, no client state. `alt` is a required
-prop, so a missing description is a type error rather than a review comment.
+`<Image>` is one `<img>`, or a `<picture>` around one when `sources` is given — no
+JS, no fetch, no client state. `alt` is a required prop, so a missing description
+is a type error rather than a review comment.
 
 | Prop | Emitted |
 |---|---|
 | `variants` | `srcset`, descriptors derived and ordered ascending (`srcsetFor`) |
-| `sizes` | `sizes`, verbatim |
+| `sources` | `{ avif?, webp? }` width lists → `<source type="image/avif">`, then `image/webp`, before the `<img>` (`sourceSetsFor`) |
+| `sizes` | `sizes`, verbatim, on the `<img>` and every `<source>` |
 | `priority` | `loading="eager"` + `fetchpriority="high"`; otherwise `lazy` + `auto`, always `decoding="async"` |
-| `width` + `height` | inlined attributes — both or neither, so the ratio is always reservable |
+| `width` + `height`, or `aspectRatio` | required — one of the two. Inlined attributes plus `--image-ratio` (`aspect-ratio`), so the box is always reserved (`reservedRatio`) |
 
-Shipped here: the element. Measuring intrinsic dimensions, encoding AVIF/WebP
-renditions and the data-URI blur placeholder are build-pipeline steps
-([`docs/idea/07-rendering-seo.md`](../../docs/idea/07-rendering-seo.md)), not part
-of this package. The component emits what it is handed and fabricates nothing —
-no variants it was not given, no dimensions it did not measure.
+Shipped here: the element. Measuring intrinsic dimensions and encoding AVIF/WebP
+renditions are build-pipeline steps; the URLs come from `asset('assets/…')` in
+`@ultimat3/render` ([Static Assets](../../wiki/Static-Assets.md)). The component
+emits what it is handed and fabricates nothing — no variants it was not given, no
+dimensions it did not measure.
 
 ## Keyboard groups
 
@@ -543,7 +545,7 @@ of truth for the one thing the server decides.
 | `X_UI_FORM_PATH_INVALID` | a form field or control name the path grammar cannot read (`items.0.price`, `items[]`, `__proto__`), or two control names describing different shapes for one path (`user` beside `user.name`) |
 | `X_UI_CONTRAST_INSUFFICIENT` | a `defineTheme()` palette whose resolved channels put a pairing in `CONTRAST_PAIRS` below WCAG 2.2 AA — 4.5:1 for text, 3:1 for the focus ring. Only pairings the brand changed are measured; the cause names the measured ratio and the required one |
 | `X_UI_QR_CAPACITY` | a `<QrCode>` value over version 3's 42-byte ceiling (byte mode, error-correction level M). The encoder draws versions 1–3 only; the cause names the byte count and the ceiling |
-| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
+| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors, one dimension without the other, or no reserved box at all, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
 
 ### Error classes
 

@@ -140,7 +140,7 @@ export type { IconProps } from './components/Icon';
 export { Icon } from './components/Icon';
 export type { IconButtonProps } from './components/IconButton';
 export { IconButton } from './components/IconButton';
-export type { ImageProps } from './components/Image';
+export type { ImageBaseProps, ImageDimensions, ImageProps } from './components/Image';
 export { Image } from './components/Image';
 export type { InfiniteScrollProps } from './components/InfiniteScroll';
 export { InfiniteScroll } from './components/InfiniteScroll';
@@ -148,8 +148,15 @@ export type { InputProps, InputType } from './components/Input';
 export { Input } from './components/Input';
 export type { IconElement, IconGlyph, IconTag } from './components/icon-glyph';
 export { ICON_TAGS, iconElements } from './components/icon-glyph';
-export type { ImageBox, ImageLoadingHints, ImageVariant } from './components/image-source';
-export { boxFor, srcsetFor } from './components/image-source';
+export type {
+  ImageAspectRatio,
+  ImageBox,
+  ImageLoadingHints,
+  ImageSourceSet,
+  ImageSources,
+  ImageVariant,
+} from './components/image-source';
+export { boxFor, reservedRatio, sourceSetsFor, srcsetFor } from './components/image-source';
 export type { LoadMoreInput, LoadMoreState } from './components/infinite-scroll-view';
 export type { KbdProps } from './components/Kbd';
 export { Kbd } from './components/Kbd';

@@ -134,9 +134,15 @@ export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
         await on('Page.enable');
         await on('Network.enable');
         await on('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
+        // Before the first navigation, like the metrics below: a header set after `goto` would
+        // photograph a document negotiated in the machine's own language.
+        if (init.headers !== undefined && Object.keys(init.headers).length > 0) {
+          await on('Network.setExtraHTTPHeaders', { headers: init.headers });
+        }
+        const size = init.viewport ?? viewport;
         await on('Emulation.setDeviceMetricsOverride', {
-          width: viewport.width,
-          height: viewport.height,
+          width: size.width,
+          height: size.height,
           deviceScaleFactor: 1,
           mobile: false,
         });

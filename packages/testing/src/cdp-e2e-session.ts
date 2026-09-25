@@ -27,6 +27,12 @@ export interface CdpE2eSessionOptions {
   readonly connection: CdpConnection;
   /** The load budget every tab's `goto` waits on, and how long a new tab may take to attach. */
   readonly loadTimeoutMs: number;
+  /**
+   * Sent as `Accept-Language` by every page and worker. The e2e step pins the app's default
+   * locale here, so a `site/` page negotiates the same language on every box — never the one the
+   * CI runner's Chrome was installed with.
+   */
+  readonly acceptLanguage?: string | undefined;
 }
 
 const POLL_MS = 50;
@@ -90,6 +96,15 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
       // Network domain is off — an `offline()` that does nothing while the assertion after it
       // reads as proof.
       const configured: Promise<unknown>[] = [send('Network.enable', {}, session)];
+      if (options.acceptLanguage !== undefined) {
+        configured.push(
+          send(
+            'Network.setExtraHTTPHeaders',
+            { headers: { 'accept-language': options.acceptLanguage } },
+            session,
+          ),
+        );
+      }
       if (cut) configured.push(condition(session));
       if (type === 'page') {
         configured.push(send('Page.enable', {}, session), send('Runtime.enable', {}, session));

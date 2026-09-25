@@ -21,6 +21,7 @@ import { assetRoutes } from './runtime-assets';
 import { appRoutes } from './runtime-render';
 import { servedStorage, storageRoutes } from './runtime-storage';
 import { seoRoutes } from './seo-routes';
+import { loadSiteSettings, publicOrigin } from './site-config';
 import { styleBundle } from './style-bundle';
 import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
@@ -55,6 +56,9 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   // is mounted, and the 0kb baseline is not spent on a `<link>` to a file that does not exist.
   const pwa = await loadPwaArtifacts(input.root);
   const theme = themeBoot(await loadThemeMode(input.root));
+  // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
+  const site = await loadSiteSettings(input.root);
+  const origin = publicOrigin(input.env, site);
   // The same call `serve.ts` makes, so the two boots cannot serve different sync targets.
   const sync = await pageSync(input.root, input.env, input.buildId, input.realtime);
   const errorStyles = await errorPageStyleSources(input.root);
@@ -101,7 +105,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     // captured at boot would answer 404 for the href the document now carries.
     ...styleRoutes(() => styleBundle()),
     // `robots.txt` and `sitemap.xml`, the same two files the static export writes (`site-seo.ts`).
-    ...seoRoutes({ env: input.env }),
+    ...seoRoutes({ env: input.env, site }),
     // `x shot --island`'s harness, in the `/_x` dev namespace so no app route can shadow it. It
     // lives here rather than in a second server because everything it needs is in THIS process:
     // the built chunks, the app's stylesheet registry, and the one embedded Postgres a checkout
@@ -119,6 +123,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
       themeHead: theme.head,
+      ...(origin === undefined ? {} : { origin }),
       ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
     }),
   ];

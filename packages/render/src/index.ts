@@ -16,6 +16,9 @@ export type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/cor
 // never had); still named here because `@ultimat3/cli`'s budget reporter reads it beside the route
 // table it prints against.
 export { formatBytes, HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
+/** `asset('assets/x.avif')` → the content-hashed URL the site asset surface serves it at. */
+export type { AssetExtension, AssetPath, AssetResolver } from './asset';
+export { ASSET_DIR, ASSET_EXTENSIONS, asset, assetPathProblem, setAssetResolver } from './asset';
 /** The `<meta name="ultimate-scope">` core's `pageClient()` reads, on private documents only. */
 export {
   CLIENT_PERSIST_META,
@@ -36,6 +39,7 @@ export {
 export { parseTtlMs } from './duration';
 export type { RenderErrorCode } from './errors';
 export {
+  AssetMissingError,
   BudgetExceededError,
   IslandInvalidError,
   IslandNotHydratedError,
@@ -127,6 +131,7 @@ export type {
   PrerenderFn,
   RenderResult,
   RevalidateConfig,
+  RouteAlternate,
   RouteBudget,
   RouteCache,
   RouteConfig,

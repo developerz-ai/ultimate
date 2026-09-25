@@ -8,18 +8,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { OPENAPI_FILE } from './app-openapi';
-import {
-  readOnlyStep,
-  runVerify,
-  VERIFY_STEPS,
-  verifyCommand,
-  verifyStepNames,
-} from './cmd-verify';
+import { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 import { msg } from './messages';
 import { exitCodeFor } from './output';
-import { parseArgs } from './parse';
-import { SPECS } from './registry';
-import { thrownBy } from './thrown-by';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
@@ -275,36 +266,12 @@ describe('unit · x verify', () => {
     expect(result.steps?.map((step) => step.name)).toEqual(['typecheck', 'drift', 'e2e']);
     expect(result.summary).not.toContain(NOT_A_GATE_RUN);
     expect(verifyCommand.spec.flags?.map((flag) => flag.name)).toEqual(['workers', 'only']);
-    expect(verifyCommand.spec.usage).toBe('x verify [--only <step>] [--workers N] [--json]');
+    expect(verifyCommand.spec.usage).toBe(
+      'x verify [--only <step>[,<step>…]] [--workers N] [--json]',
+    );
   });
 
-  // The whole gate is ~18s, 14s of it `tsc -b`, so the loop this closes is "ask about one step".
-  describe('--only names a step, and an unknown one is refused before anything runs', () => {
-    const argsFor = (argv: readonly string[]) => parseArgs(argv, SPECS);
-
-    test('every declared step name reads back as itself', () => {
-      for (const name of VERIFY_STEP_NAMES) {
-        expect([name, readOnlyStep(argsFor(['verify', '--only', name]))]).toEqual([name, name]);
-      }
-      expect(readOnlyStep(argsFor(['verify']))).toBeUndefined();
-    });
-
-    test('a near miss leads with the step it is near, and a runnable invocation', () => {
-      const failure = thrownBy(() => readOnlyStep(argsFor(['verify', '--only', 'lnt'])));
-      expect(failure.code).toBe('X_CLI_BAD_FLAG');
-      expect(failure.cause).toContain('"lnt" is not a gate step');
-      expect(failure.cause).toContain('typecheck, lint');
-      expect(failure.fix).toBe('x verify --only lint --json');
-    });
-
-    // The house rule for a word near nothing: never an invented lead. The gate itself is the
-    // honest fix, and it is a command that runs.
-    test('a word near nothing gets the gate, not a guess', () => {
-      expect(thrownBy(() => readOnlyStep(argsFor(['verify', '--only', 'zzzzzzzzzz']))).fix).toBe(
-        'x verify --json',
-      );
-    });
-  });
+  // `--only`'s reader, single names and lists: `cmd-verify-only.test.ts`.
 
   test('a host check adds findings to the step it was registered for', async () => {
     const withHost: readonly VerifyStep[] = [

@@ -76,3 +76,30 @@ describe('buildRobots', () => {
     expect(txt.endsWith('\n')).toBe(true);
   });
 });
+
+describe('config disallow', () => {
+  test('non-production still disallows everything — the config list cannot reopen it', () => {
+    const body = buildRobots({ ...BASE, environment: 'staging', disallow: ['/panel'] });
+    expect(body).toContain('Disallow: /\n');
+    expect(body).not.toContain('Disallow: /panel');
+  });
+
+  test('production adds each path to the * group, beside Allow: /', () => {
+    const body = buildRobots({ ...BASE, environment: 'production', disallow: ['/panel', '/api'] });
+    expect(body).toContain('User-agent: *\nAllow: /\nDisallow: /panel\nDisallow: /api\n');
+  });
+
+  test('a declared group for another agent is left alone', () => {
+    const body = buildRobots({
+      ...BASE,
+      environment: 'production',
+      groups: [
+        { userAgent: 'GPTBot', disallow: ['/'] },
+        { userAgent: '*', allow: ['/'] },
+      ],
+      disallow: ['/panel'],
+    });
+    expect(body).toContain('User-agent: GPTBot\nDisallow: /\n\n');
+    expect(body).toContain('User-agent: *\nAllow: /\nDisallow: /panel');
+  });
+});

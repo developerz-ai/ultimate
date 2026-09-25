@@ -243,6 +243,20 @@ problem, and never fatal to the write that triggered the bust.
 `x dev` prints which one it installed — `cdn=none`, or `cdn=external(fastly via
 FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 
+## `site` and `seo`
+
+`As of 22.3.0`. The public origin every absolute URL is built against, and what a production `robots.txt` keeps crawlers out of.
+
+```ts
+site: { origin: 'https://www.example.com' },
+seo: { robots: { disallow: ['/panel', '/api'] } },
+```
+
+| field | type | default | notes |
+|---|---|---|---|
+| `site.origin` | `string \| null` | `null` | scheme + host (+ port) only; a path, query or fragment is `X_CONFIG_INVALID`. Canonical, `og:url`, hreflang and the sitemap are absolute against the first of `APP_URL`, `SITE_ORIGIN`, `site.origin`; with none, the request's own origin (served) or `https://localhost` (static build, which warns on stderr when `ULTIMATE_ENV=production`) |
+| `seo.robots.disallow` | `string[]` | `[]` | each starts with `/`. Added to the production `User-agent: *` group. Any other environment still emits `Disallow: /` alone |
+
 ## `pwa`
 
 `offline` is a **block**, not a string, `As of 2026-08` — see [Upgrading](Upgrading). Two booleans, one block; every field is optional except `pwa.name`, `pwa.colors` and `pwa.offline.fallback`, which `enabled: true` makes required.

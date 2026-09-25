@@ -34,6 +34,8 @@ export interface E2eBrowser {
 export interface OpenE2eBrowserOptions {
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
   readonly timeoutMs?: number | undefined;
+  /** Pinned as `Accept-Language` on every request (`cdp-e2e-session.ts`). Absent: Chrome's own. */
+  readonly acceptLanguage?: string | undefined;
 }
 
 /**
@@ -63,7 +65,7 @@ export async function openE2eBrowser(options: OpenE2eBrowserOptions = {}): Promi
   const timeoutMs = budget(options);
   const executable = await findChrome(options.env ?? process.env);
   if (executable === undefined) throw new CdpBrowserMissingError({ tried: CHROME_CANDIDATES });
-  return openLaunched(executable, timeoutMs);
+  return openLaunched(executable, timeoutMs, options.acceptLanguage);
 }
 
 /** `undefined` when this machine has no browser. Every other failure still throws. */
@@ -73,7 +75,7 @@ export async function openE2eBrowserIfAvailable(
   const timeoutMs = budget(options);
   const executable = await findChrome(options.env ?? process.env);
   if (executable === undefined) return undefined;
-  return openLaunched(executable, timeoutMs);
+  return openLaunched(executable, timeoutMs, options.acceptLanguage);
 }
 
 /**
@@ -81,11 +83,19 @@ export async function openE2eBrowserIfAvailable(
  * launched and then refused the CDP handshake would otherwise be left running, holding its profile
  * directory, for the rest of the test process — one leaked browser per failing suite.
  */
-async function openLaunched(executable: string, timeoutMs: number): Promise<E2eBrowser> {
+async function openLaunched(
+  executable: string,
+  timeoutMs: number,
+  acceptLanguage: string | undefined,
+): Promise<E2eBrowser> {
   const launched = await launchChrome({ executable, timeoutMs });
   const { connection } = launched;
   try {
-    const session = await cdpE2eSession({ connection, loadTimeoutMs: timeoutMs });
+    const session = await cdpE2eSession({
+      connection,
+      loadTimeoutMs: timeoutMs,
+      ...(acceptLanguage === undefined ? {} : { acceptLanguage }),
+    });
     return compose(launched, session, await session.newTab());
   } catch (error) {
     launched.close();

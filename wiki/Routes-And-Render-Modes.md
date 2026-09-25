@@ -244,8 +244,8 @@ A missing required property is a **type error**, not a Rich Results Test failure
 
 | Artifact | Derived from | Notes |
 |---|---|---|
-| `sitemap.xml` | all indexable routes + `prerender()` results | `lastmod` from the entity's `updatedAt`; auto-split at 50k URLs into a sitemap index |
-| `robots.txt` | route `robots` fields + `app.config.ts` | sitemap reference included |
+| `sitemap.xml` | all indexable routes + `prerender()` results | one `<url>` per page per locale with `xhtml:link` alternates; `lastmod` from the entity's `updatedAt`; auto-split at 50k URLs into a sitemap index |
+| `robots.txt` | `seo.robots.disallow` in `app.config.ts` | sitemap reference included; anything but `ULTIMATE_ENV=production` is `Disallow: /` |
 | `rss.xml` / `atom.xml` / `feed.json` | routes tagged as feed items | one declaration, three formats |
 | `llms.txt` | `site/` route titles + descriptions | machine-readable site summary for agents |
 | `404` / `500` | required routes | missing one is a build error |
@@ -256,12 +256,13 @@ Nothing here is a plugin. Deleting a route removes it from the sitemap in the sa
 
 | Feature | Behavior |
 |---|---|
-| Locale routing | `/`, `/es/`, `/de/` from the configured locale list — no per-route wiring |
-| `hreflang` | full reciprocal set emitted per route, including `x-default` |
-| Per-locale static output | each locale is prerendered separately; no client-side locale swap on `site/` |
+| Locale routing | `/`, `/en/`, `/de/` from the locales `defineCatalogs()` declared — no per-route wiring. The prefix is stripped before matching; `/<default>/x` 301s to `/x`; an unrouted prefix is a plain 404 |
+| `site/` locale | the URL alone: unprefixed is always the default locale, never negotiated; no `Vary: accept-language` |
+| `hreflang` | full reciprocal set emitted per route, BCP 47 region form, including `x-default`; absolute against the public origin |
+| Per-locale static output | each `site/` page is prerendered once per locale (`index.html`, `en/index.html`); no client-side locale swap on `site/` |
 | Missing key | renders `⟦key⟧` in dev, **fails `x verify`** in CI |
 | Numbers / dates / money | `Intl.*` with an explicit IANA `timeZone` and ISO currency; never a hand-rolled format |
-| Localized metadata | `meta` receives `locale`; a locale missing a description is the same build error |
+| Localized metadata | `meta` receives `locale`, `localizedPath(locale)` and `alternates` |
 
 See [I18n](I18n), [Timezones and dates](Timezones-And-Dates), [Money](Money).
 

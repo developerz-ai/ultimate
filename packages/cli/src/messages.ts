@@ -257,6 +257,7 @@ const CATALOG = {
     '    the diff has moved under this thread — {line} is where the comment was written',
   'cli.test.fail': '{failed} of {workers} shard(s) failed',
   'cli.test.affected.none': 'nothing is affected by {base}...HEAD — 0 test file(s) ran',
+  'cli.test.empty': 'no test file matches {selection} — 0 test file(s) ran (--allow-empty)',
   'cli.test.pass': '{files} test file(s) on {workers} worker(s) passed in {ms}ms',
   'cli.test.sampled': 'sampled {kept} of {total} {type} file(s)',
   'cli.test.type.fail': '{type} — {failed} of {workers} shard(s) failed',

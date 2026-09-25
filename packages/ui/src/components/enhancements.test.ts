@@ -204,6 +204,27 @@ describe('ThemeToggle', () => {
     }
   });
 
+  test('select mode keeps "system" when the server passed the BOOTED theme as initial', () => {
+    // An island passes `initial` = what the boot script stamped on <html> (`dark` for an app with
+    // `theme.defaultMode: 'dark'`). That is the RESOLVED theme, not the visitor's choice: a
+    // select seeded with it claimed "dark" was chosen, and picking "system" looked like a no-op.
+    const rt = runtime();
+    const env = themeEnv();
+    env.dark = true;
+    try {
+      const nodes = renderNodes(ThemeToggle, { mode: 'select', initial: 'dark', env });
+      expect(
+        withAttr(byTag(nodes, 'option'), 'selected', true).map((node) => node.props['value']),
+      ).toEqual(['system']);
+      // And the booted theme still reached the page: nothing was stored, nothing was applied.
+      rt.flush();
+      expect(env.stored).toBeNull();
+      expect(env.applied).toEqual([]);
+    } finally {
+      rt.restore();
+    }
+  });
+
   test('picking a theme in select mode persists it; picking system clears the choice', () => {
     const rt = runtime();
     const env = themeEnv();

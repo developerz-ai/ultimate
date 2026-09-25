@@ -3,6 +3,7 @@
 // serves it), so a crawler reads the same two files from a CDN and from a container.
 
 import type { Environment } from '@ultimat3/core';
+import { localeConfig, localizedPath, routedLocales, unlocalizedPath } from '@ultimat3/i18n';
 import type { RouteEntry } from '@ultimat3/render';
 import { routeEntries } from '@ultimat3/render';
 import { enumeratePrerender, fillPath } from '@ultimat3/render/server';
@@ -24,6 +25,11 @@ export interface SiteSeoOptions {
    * the same list, enumerated by the same function the prerenderer calls.
    */
   readonly pagesFor?: ((routePath: string) => readonly string[]) | undefined;
+  /**
+   * `seo.robots.disallow` from `app.config.ts` (`loadSiteSettings`). Added to the production
+   * `User-agent: *` group; a non-production `robots.txt` still disallows everything.
+   */
+  readonly disallow?: readonly string[] | undefined;
 }
 
 export interface SiteSeo {
@@ -36,8 +42,15 @@ export interface SiteSeo {
 const isPublicSite = (entry: RouteEntry): boolean =>
   entry.surface === 'site' && entry.config.policy === undefined;
 
+/**
+ * A dynamic route's pages, UNPREFIXED and once each. A static export's report lists every locale's
+ * copy (`/blog/a` and `/en/blog/a`), and the sitemap localizes each page itself — reading the
+ * prefixed copies back as pages of their own listed `/en/en/blog/a`.
+ */
 const pagesOf = async (entry: RouteEntry, options: SiteSeoOptions): Promise<readonly string[]> => {
-  if (options.pagesFor !== undefined) return options.pagesFor(entry.path);
+  if (options.pagesFor !== undefined) {
+    return [...new Set(options.pagesFor(entry.path).map((path) => unlocalizedPath(path)))];
+  }
   const params = await enumeratePrerender(entry);
   return params.map((set) => fillPath(entry.pattern.source, set));
 };
@@ -65,13 +78,29 @@ async function publicSiteRoutes(options: SiteSeoOptions): Promise<readonly Route
 }
 
 export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
-  const sitemap = await buildSitemap(await publicSiteRoutes(options), { baseUrl: options.baseUrl });
+  // Every routed locale, with `xhtml:link` alternates: one `<url>` per page per locale, each
+  // naming the whole cluster and `x-default`. A single-locale app passes none and gets the plain
+  // urlset it always had — an alternates cluster of one is noise.
+  const locales = routedLocales();
+  const defaultLocale = localeConfig().fallback;
+  const sitemap = await buildSitemap(await publicSiteRoutes(options), {
+    baseUrl: options.baseUrl,
+    ...(locales.length < 2
+      ? {}
+      : {
+          locales,
+          defaultLocale,
+          localizePath: (path: string, locale: string) =>
+            localizedPath(path, locale, defaultLocale),
+        }),
+  });
   // Past 50,000 URLs `files` are `/sitemap-N.xml` and the index is `/sitemap.xml`; below it,
   // `files` is that one file and there is no index.
   const sitemaps = sitemap.index === undefined ? sitemap.files : [sitemap.index, ...sitemap.files];
   const robots = buildRobots({
     baseUrl: options.baseUrl,
     sitemaps: [SITEMAP_PATH],
+    ...(options.disallow === undefined ? {} : { disallow: options.disallow }),
     ...(options.environment === undefined ? {} : { environment: options.environment }),
   });
   return { robots, sitemaps };

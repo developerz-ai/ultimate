@@ -8,7 +8,86 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **render, cli:** public site assets. Files under `apps/web/site/assets/**` (avif, webp, png,
+  jpg, gif, svg, ico, woff2, mp4, webm, vtt) are named with `asset('assets/x.avif')` from
+  `@ultimat3/render`, which returns a content-hashed URL (`/assets/x.3f2a1b9c.avif`). `x dev` and
+  the container serve it `public, max-age=31536000, immutable` with the right content type and
+  byte-range support. `writeSiteAssets()` copies every asset into the static export under the same
+  name. The path is typed (`AssetPath`), and a missing file fails the render with the new
+  `X_ASSET_MISSING`, so `x build --target static` fails on it. See
+  [Static Assets](https://github.com/developerz-ai/ultimate/wiki/Static-Assets).
+- **ui:** `<Image sources={{ avif, webp }}>` renders a `<picture>` with AVIF, then WebP, then the
+  `<img>`. `priority` is `fetchpriority="high"` and never lazy.
+- **cli:** `x shot --locale <l>` sends `Accept-Language: <l>` and opens `/<l>/…` for a non-default
+  locale. `x shot --matrix` photographs every site route × locale × light/dark × 390/1440 px into
+  `.x/shot/matrix/`, with an `index.html` contact sheet.
+- **cli:** `x verify --only typecheck,lint,boundaries` runs several steps in one process, in gate
+  order. It is still `NOT A GATE RUN`. An unknown or empty item is `X_CLI_BAD_FLAG`, which names
+  every valid step.
+- **cli:** `x test --filter a/,b/` keeps files matching any of the listed substrings, in one run. An
+  empty item is refused, because an empty substring matches every file.
+- **cli:** with `x test --allow-empty`, a selection that matches no test file exits 0, spawns
+  nothing and says so (`data.files: 0`, `data.empty: true`). Without the flag it is still
+  `X_TEST_NO_FILES`.
+- **cli:** the `errors` step accepts a repo script as the command in a `fix:` line (`bin/check
+  --full`, `./bin/probe`), even when the line has a banned word such as "check".
+- **http, i18n:** locale prefix routing. A leading `/<locale>/` for a routed non-default locale
+  is stripped before the route table is matched and sets `ctx.locale`, over `?locale=`, the
+  cookie, the user and `Accept-Language`. `/fr/x` for an unrouted `fr` is still a 404, and
+  `/<default>/x` is a `301` to `/x` (`308` for a non-GET). New `RouteMeta.localeSource`
+  (`'path' | 'request'`) and `RequestContext.pathLocale`. `@ultimat3/i18n` adds `routedLocales()`,
+  `localizedPath(path, locale)`, `splitLocalePrefix()` and `unlocalizedPath()`; `@ultimat3/core`
+  adds the same arithmetic over an explicit list (`localizePath`, `splitLocalePath`) for browser
+  code.
+- **cli:** `x build --target static` prerenders each `site/` page once per routed locale:
+  `index.html` in the default locale, `en/index.html` for `en`, each with its own `<html lang>`.
+  `PrerenderedPage.locale`, `PrerenderReport.origin` and `PrerenderReport.warnings` are new.
+- **render, seo:** `meta` receives `locale`, `localizedPath(locale)` and `alternates`. The head
+  carries the full hreflang cluster in BCP 47 region form (`es-CO`) plus `x-default`, and
+  `og:locale` / `og:locale:alternate` (`es_CO`), with no route code. A route's own `alternates`
+  still replace the set. New `hreflangTag()`, `ogLocaleTag()` and `localizedAlternates()`.
+- **core, cli, seo:** `site.origin` and `seo.robots.disallow` in `app.config.ts`. Canonical,
+  `og:url`, hreflang and the sitemap are absolute against `APP_URL`, then `SITE_ORIGIN`, then
+  `site.origin`. A production static build with none of them warns on stderr. The disallow paths
+  go into the production `robots.txt`; any other environment still disallows everything.
+  `loadSiteSettings(root)` and `publicOrigin(env, site)` are exported from `@ultimat3/cli`, and
+  `siteSeo` takes `disallow`.
+- **cli, seo:** the sitemap lists every page once per locale, each with `xhtml:link` alternates in
+  BCP 47 form.
+- **ui:** `<LocaleSwitcher path={pathname}>` links each locale to the same page through
+  `localizePath`, unprefixed for the default. `hrefFor` still overrides it.
+
+### Changed
+
+- **ui:** `<Image>` needs a reserved box: `width` + `height`, or `aspectRatio` (`'16 / 9'`). An
+  image with neither is `X_UI_INVALID_VALUE`, because it shifts the layout when it decodes.
+- **cli, testing:** `x shot` and the e2e harness pin `Accept-Language` to the app's
+  `defaultLocale`. A capture or an e2e page no longer depends on the language of the machine's
+  Chrome.
+- **cli:** the default test width is `ceil(cpus × 1.5)`, bounded by free memory at 1 GiB per
+  worker. The fixed ceiling of 8 is gone: a 12-core box now defaults to 18. `--workers` accepts up
+  to 64.
+- **cli:** in `x verify --only … --json`, `data.only` is always a list (`["lint"]`), even for one
+  step.
+- **http, cli:** a `site/` route takes its locale from its URL alone. The unprefixed path is
+  always `defaultLocale`, with no `Accept-Language` negotiation, and `Vary` drops
+  `accept-language`. Before, `x dev` and the container answered `/` in the browser's language
+  while the static export served the default. `app/` routes still resolve in the order
+  `query → cookie → user → header`.
+- **cli:** canonical and `og:url` are absolute. Before, they were the bare path.
+- **cli:** in a static export, `siteSeo`'s `pagesFor` may list the prefixed copies (`/en/blog/a`).
+  They are read back unprefixed, so the sitemap never lists them twice.
+
+### Fixed
+
+- **ui:** `<ThemeToggle mode="select" initial="dark">` shows "system" until the visitor has
+  stored a choice. Before, it showed the booted theme as though the visitor had chosen it.
+- **cli:** the static export renders in the app's default locale. `createContext()` defaulted it
+  to core's `en`, so a site whose default was Spanish shipped `index.html` as `lang="en"`.
+- **render:** repeated `og:locale:alternate` and `article:tag` meta tags survive the head dedupe.
+  Before, only the last one was kept.
 
 ## 22.2.2 - 2026-09-25
 

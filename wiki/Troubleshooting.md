@@ -126,7 +126,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | A test flakes | **fix it or delete it the same day** | there is no `retry: 3`. A test that passes twice and fails the third trains people to ignore red |
 | Snapshot/UUID churn between runs | not using `seed(name)` | seeds are deterministic: same input → identical rows, identical UUIDs |
 | Job test doesn't drain | queue not advanced | `await runJobs.drain()`; workers run deterministically in tests |
-| Want the failing worker's database after the run | there is **no** `--keep-db` — `x test` declares `--workers`, `--worker`, `--filter` and `--sample` and nothing else, and the harness calls `drop()` at teardown ([`packages/testing/src/harness.ts:108`](https://github.com/developerz-ai/ultimate/blob/main/packages/testing/src/harness.ts)) | what survives is the migrated template, `ultimate_test_template` — the clones are `ultimate_test_template_w<N>`. Inspect the template: `psql "$TEST_DATABASE_URL" -c "\l"`, then connect to it. To hold a clone open, assert inside the test rather than after it |
+| Want the failing worker's database after the run | there is **no** `--keep-db` — `x test` declares `--workers`, `--worker`, `--filter`, `--allow-empty`, `--sample` and the `--affected` trio, and nothing else, and the harness calls `drop()` at teardown ([`packages/testing/src/harness.ts:108`](https://github.com/developerz-ai/ultimate/blob/main/packages/testing/src/harness.ts)) | what survives is the migrated template, `ultimate_test_template` — the clones are `ultimate_test_template_w<N>`. Inspect the template: `psql "$TEST_DATABASE_URL" -c "\l"`, then connect to it. To hold a clone open, assert inside the test rather than after it |
 
 ## MCP and AI
 

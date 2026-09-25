@@ -65,7 +65,7 @@ const prerender =
 // landed on disk — which is what \`x build --target static --json\` reads back.
 
 import { join } from 'node:path';
-import { DEFAULT_ORIGIN, type PrerenderReport, prerenderSite, siteSeo } from '@ultimat3/cli';
+import { loadSiteSettings, type PrerenderReport, prerenderSite, siteSeo } from '@ultimat3/cli';
 
 const root = join(import.meta.dir, '..', '..');
 const flag = Bun.argv.indexOf('--out');
@@ -90,9 +90,11 @@ const origin = Bun.env.SITE_ORIGIN;
  * \`robots.txt\` fails closed — anything that is not \`ULTIMATE_ENV=production\` emits
  * \`Disallow: /\` and advertises no sitemap — so a preview build cannot outrank the real site.
  */
-async function writeSeoFiles(report: PrerenderReport, baseUrl: string): Promise<readonly string[]> {
+async function writeSeoFiles(report: PrerenderReport): Promise<readonly string[]> {
   const seo = await siteSeo({
-    baseUrl,
+    // The origin the pages were built against, so the sitemap and every canonical agree.
+    baseUrl: report.origin,
+    disallow: (await loadSiteSettings(root)).disallow,
     pagesFor: (route) =>
       report.pages.filter((page) => page.route === route).map((page) => page.path),
   });
@@ -103,7 +105,7 @@ async function writeSeoFiles(report: PrerenderReport, baseUrl: string): Promise<
 
 if (import.meta.main) {
   const report = await prerenderSite({ root, out, ...(origin === undefined ? {} : { origin }) });
-  const seo = await writeSeoFiles(report, origin ?? DEFAULT_ORIGIN);
+  const seo = await writeSeoFiles(report);
   await Bun.stdout.write(
     \`\${JSON.stringify({ ok: true, out: report.out, emitted: report.pages, skipped: report.skipped, unmeasured: report.unmeasured, report: report.report, seo })}\\n\`,
   );

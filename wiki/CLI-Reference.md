@@ -31,7 +31,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill | shipped |
-| `x verify [--only <step>] [--workers N]` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>` runs ONE of them for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only`), writing no floor file; an unknown name is refused with the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
+| `x verify [--only <step>[,<step>…]] [--workers N]` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
@@ -446,15 +446,19 @@ Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is no
 ## x verify
 
 ```bash
-x verify [--only <step>] [--workers N] [--json]
+x verify [--only <step>[,<step>…]] [--workers N] [--json]
 ```
 
 The single gate. Green means shippable; CI runs exactly this. One step list, in cost order, shared
 with the framework repo's own `bun run verify` — and **the gate is this command with no flag**,
-because "green" has to mean the same thing for everyone. `--only <step>` runs ONE step for an
-iteration loop and is not a gate run: it announces `NOT A GATE RUN` in the summary and in `--json`
-(`data.notAGateRun`, `data.only`), exits with that step's own status, and writes no floor file. An
-unknown name is refused with the nearest match. There is no `--skip`. A step with nothing to check in this project
+because "green" has to mean the same thing for everyone. `--only <step>` runs one step for an
+iteration loop, and `--only typecheck,lint,boundaries` runs several in ONE process — one CLI boot
+and one app load instead of one per step — always in the gate's declared order, whatever order they
+were typed in. Neither is a gate run: it announces `NOT A GATE RUN` in the summary and in `--json`
+(`data.notAGateRun`, and `data.only` as the list of steps — a list of one for a single name), exits
+with the steps' own status, and writes no floor file — even a list naming every step. An unknown or
+empty item is refused (`X_CLI_BAD_FLAG`) naming every valid step, with a fix that corrects the typo
+and keeps the rest of the list. There is no `--skip`. A step with nothing to check in this project
 reports as skipped (`-`), never as passed — and the summary counts skips apart from passes and
 names them, so a gate that is green because a suite does not exist has to say so on the one line
 every reader sees:
@@ -486,8 +490,12 @@ declaration and say so in the output. **`x test live` and `x test e2e` obey the 
 files `x verify` ran one over. `--workers` is accepted there and clamps to 1. That clamp read the
 POSITIONAL, so the bare `x test --workers 8` still widened over the same files until 2026-09; the
 selection is now partitioned by each file's own type. The default oversubscribes the cores —
-`clamp(round(cpus * 1.5), 2, 8)` — because leaving a core spare measured *slower than not sharding
-at all* on a 4-core runner, where the split's own cost is not covered by three workers.
+`max(2, min(ceil(cpus * 1.5), floor(freemem / 1 GiB)))` — because leaving a core spare measured
+*slower than not sharding at all* on a 4-core runner, where the split's own cost is not covered by
+three workers. **No fixed ceiling of 8, `As of 22.3`**: it held a 12-core box with 30 GB free to 8.
+Free memory is the bound instead (`WORKER_BYTES` in `packages/cli/src/test-workers.ts`, measured: a
+marginal worker costs ~0.45 GB of peak RSS). `--workers` accepts 2 to 64 on `x verify` and 1 to 64
+on `x test`; an explicit width is the caller's call and is not held to memory.
 
 **Bun owns the pool, `As of 2026-08-27`.** The CLI used to pack the files into N bins itself
 (largest-first greedy over file SIZE) and spawn one `bun test` per bin; `--parallel=N` hands each
@@ -961,7 +969,7 @@ Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_CATALOG_INVALID`
 ## x test
 
 ```bash
-x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
+x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empty] [--sample N]
        [--affected [--base <ref>] [--dirty]] [--workers N] [--worker I] [--json]
        [-- <bun test flags>]
 ```
@@ -969,16 +977,17 @@ x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | *(positional)* | test type | every type | one of the six; a test's type is its filename suffix |
-| `--filter` | string | — | only files whose path contains this substring |
+| `--filter` | string | — | only files whose path contains this substring — or ANY of several, comma-separated (`--filter apps/web/app/billing/,apps/web/app/case/`), in one run. An empty item (`a,,b`) is refused: `''` matches every path |
+| `--allow-empty` | boolean | off | a selection that matches no test file exits **0**, spawns nothing, and says so (`no test file matches … — 0 test file(s) ran`, `data.files: 0`, `data.empty: true`) instead of `X_TEST_NO_FILES`. For a runner that computes the selection; a hand-typed typo stays red without it |
 | `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
-| `--workers` | string | CPUs | worker count; each worker gets its own template-cloned database |
+| `--workers` | string | `ceil(cpus * 1.5)`, held to free memory | worker count, 1 to 64; each worker gets its own template-cloned database |
 | `--worker` | string | — | run only shard I of an N-way split of the selection, serially — one CI job's share, and the flag `--workers` bounds |
 | `--affected` | boolean | off | narrow the selection to the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
 | `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |
 | `-- <args>` | tail | — | handed to `bun test` verbatim, before the file list — `x test unit -- --coverage --bail`. The reproduce line carries it back. **`x test` is the only command that reads a `--` tail**: every other one refuses it (`X_CLI_BAD_FLAG`) rather than dropping it, which is what all of them did until 2026-09 |
 
-The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES`; an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.
+The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES` (green with `--allow-empty`); an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.
 
 `--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failure's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to run at all and a rerun without it selects the whole corpus.
 
@@ -1015,7 +1024,8 @@ Three rules the set obeys:
 ```bash
 x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
                [--timeout 30000] [--browser <path>] [--cdp-url <ws://…>]
-               [--allow-hosts a.com,b.com] [--theme light|dark] [--json]
+               [--allow-hosts a.com,b.com] [--theme light|dark] [--locale <l>] [--json]
+x shot --matrix [<route>] [--locale <l>] [--theme light|dark] [--json]
 x shot --island <name> [--state <id>] [--json]
 x shot --all-islands [--json]
 ```
@@ -1033,6 +1043,8 @@ x shot --all-islands [--json]
 | `--browser` | `PUPPETEER_EXECUTABLE_PATH`, then `CHROME_PATH` | refused before anything boots if the path does not exist |
 | `--cdp-url` | `SCRAPE_CDP_URL` | **attach** to a browser somebody else is running instead of launching one here. `ws:`/`wss:`/`http:`/`https:`; anything else is refused before the attach |
 | `--allow-hosts` | the app's host only | extra hosts the page may request |
+| `--locale` | the app's `defaultLocale`, **always pinned** | one of the app's `locales`, `As of 2026-09-25`. Sent as `Accept-Language` on every request the page makes, and for a non-default locale the path is prefixed (`x shot /precios --locale en` opens `/en/precios`). Absent, `Accept-Language` is still pinned to the default locale, so a picture never depends on the language of the machine's Chrome. An undeclared locale is `X_CLI_BAD_FLAG` before anything boots; refused beside `--island` |
+| `--matrix` | off | every static `site/` route × every locale × `light`/`dark` × 390 and 1440 px, into `.x/shot/matrix/<route>/<locale>/<theme>-<width>/`, plus `.x/shot/matrix/index.html`, a contact sheet of every picture with failures marked. One dev server for the whole run. A `<route>` narrows it to that route, `--locale` and `--theme` to one value of their axis; `ok` only when every cell's verdict is. Refused beside `--island`/`--all-islands` |
 | `--theme` | absent — the box's own preference and the app's own `theme.defaultMode` | `light` or `dark`, `As of 2026-09-19`. Both `prefers-color-scheme` is emulated **and** the scheme is stored as the visitor's choice under `THEME_STORAGE_KEY` before navigation — the boot script since 20.2.0 answers `defaultMode` before the OS, so emulation alone photographs a dark-default app dark whatever was asked (#489). The `ui.shot`/`ui.inspect`/`ui.interact` tools' `theme` is this flag. Refused beside `--island`, which photographs both themes |
 
 **`verdict.json` is the half that gates**, and the more important of the two files: a picture cannot tell you the island threw or logged. It carries the console lines, the island counts, the canvas size, the network tallies — and `blind`, which names what this capture could **not** observe. A tool that silently omits what it cannot see is worse than one that says so.

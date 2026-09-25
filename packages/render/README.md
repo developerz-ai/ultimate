@@ -453,6 +453,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
+| `AssetMissingError` | `X_ASSET_MISSING` | `src/errors.ts` |
 | `BudgetExceededError` | `X_BUDGET_EXCEEDED` | `src/errors.ts` |
 | `IslandInvalidError` | `X_ISLAND_INVALID` | `src/errors.ts` |
 | `IslandNotHydratedError` | `X_ISLAND_NOT_HYDRATED` | `src/errors.ts` |
@@ -477,6 +478,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `defineRoute` | the `route` primitive |
 | `withStatus`, `routeStatusOf` | the status a loader answers, carried on its data; 200 when nothing asked |
 | `island`, `createIslandCollector` | one interactive component on a static page |
+| `asset`, `setAssetResolver`, `assetPathProblem`, `AssetPath` | `asset('assets/x.avif')` → the content-hashed URL of a public site file; the table is the CLI's ([Static Assets](../../wiki/Static-Assets.md)) |
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
 | `registerRoute`, `describeRoutes`, `routeFor`, `routePathFromFile` | the route table |
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |

@@ -17,16 +17,18 @@ import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
  * Run every step, never bailing early: an agent fixing three things at once needs all
  * three findings from one run, not one per round-trip.
  *
- * `ctx.only` narrows the list to one step. The narrowing lives HERE rather than in `cmd-verify.ts`
- * so that every caller of the runner — the command, `x build`, the MCP host — gets the banner and
- * the `--json` flag with it, instead of one of them filtering a list quietly.
+ * `ctx.only` narrows the list to the steps it names, kept in declared order. The narrowing lives
+ * HERE rather than in `cmd-verify.ts` so that every caller of the runner — the command, `x build`,
+ * the MCP host — gets the banner and the `--json` flag with it, instead of one of them filtering a
+ * list quietly.
  */
 export async function runVerify(
   steps: readonly VerifyStep[],
   ctx: VerifyContext,
 ): Promise<CommandResult> {
   const floor = await readVerifyFloor(ctx.root);
-  const selected = ctx.only === undefined ? steps : steps.filter((step) => step.name === ctx.only);
+  const only = onlyList(ctx.only);
+  const selected = only === undefined ? steps : steps.filter((step) => only.includes(step.name));
   const byName = new Map<string, StepResult>();
   const began = performance.now();
   // The static steps wait for the serial suites and then run BESIDE them — only when `live` is in
@@ -75,7 +77,7 @@ export async function runVerify(
     // Rendered through the catalog like every other summary this file emits; the machine marker
     // is `data.notAGateRun` below. It was a bare `NOT A GATE RUN` constant, which put one
     // user-facing string outside `messages.ts` for a fact `--json` was already carrying twice.
-    summary: ctx.only === undefined ? summary : msg('cli.verify.notAGateRun', { summary }),
+    summary: only === undefined ? summary : msg('cli.verify.notAGateRun', { summary }),
     steps: results,
     // `skipped` is a list beside `failed` and not a count, because the two answer the same kind of
     // question — *which* steps, not how many — and a caller ratcheting on coverage needs the names.
@@ -85,12 +87,17 @@ export async function runVerify(
       durationMs: totalMs,
       // A BOOLEAN beside the banner, so a reader of `--json` never has to substring-match a
       // summary line to learn that this run checked one thing.
-      ...(ctx.only === undefined ? {} : { notAGateRun: true, only: ctx.only }),
+      // `only` is always the LIST, in declared order — one name is a list of one.
+      ...(only === undefined ? {} : { notAGateRun: true, only: [...only] }),
     },
     // The step's own status: one step, so `failedSteps` is that step and nothing else.
     exitCode: failedSteps.length === 0 ? 0 : 1,
   };
 }
+
+/** One name or several, as one list — the context accepts both, every reader here wants a list. */
+const onlyList = (only: VerifyContext['only']): readonly string[] | undefined =>
+  only === undefined ? undefined : typeof only === 'string' ? [only] : only;
 
 /**
  * What the counts are allowed to claim. A step that does not apply is recorded green so the run

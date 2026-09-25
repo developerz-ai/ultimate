@@ -129,6 +129,24 @@ export interface RouteMetaContext<TData = RouteData> {
   readonly url: string;
   /** The request's own translator. Never a hardcoded string in a `<title>`. */
   readonly t: Translator;
+  /**
+   * The locale this document renders in: a `/<locale>/` prefix's, the default on an unprefixed
+   * `site/` page, the negotiated one elsewhere. What a localized `description` is chosen by.
+   */
+  readonly locale: string;
+  /** This page's own path spelled in `locale` — unprefixed for the default, `/en/…` otherwise. */
+  readonly localizedPath: (locale: string) => string;
+  /**
+   * This page in every routed locale, the default first — what the automatic hreflang cluster is
+   * built from. One entry for a single-locale app.
+   */
+  readonly alternates: readonly RouteAlternate[];
+}
+
+/** One page in one locale. */
+export interface RouteAlternate {
+  readonly locale: string;
+  readonly path: string;
 }
 
 /** What an author writes. Sync or async, whichever the page's data needs. */

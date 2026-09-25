@@ -13,7 +13,13 @@ import { registeredJobs, registeredTasks } from '@ultimat3/jobs';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
 import { listQueries, registerQueries } from '@ultimat3/query';
 import type { RouteConfig } from '@ultimat3/render';
-import { isRouteConfig, pageComponentOf, registerRoute, routeEntries } from '@ultimat3/render';
+import {
+  isRouteConfig,
+  pageComponentOf,
+  registerRoute,
+  routeEntries,
+  setAssetResolver,
+} from '@ultimat3/render';
 // For the SIDE EFFECT, and it is this module's to hold: importing `@ultimat3/render/server`
 // installs the `.tsx`/`.scss` Bun plugin, a plugin only transforms modules loaded AFTER it, and
 // every app module below is loaded by the dynamic `import()` in this file. Before the render
@@ -27,6 +33,7 @@ import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
+import { siteAssetTable } from './site-assets';
 import { isTest } from './source-files';
 
 /** Every place an app keeps code the framework has to see. */
@@ -113,6 +120,10 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   // path — under the container's `WORKDIR /app` that path's first segment is `app/`, and every
   // sheet, the site's included, classified as app CSS.
   setStylesheetRoot(root);
+  // And before any page renders: `asset('assets/…')` answers from this app's own table, in
+  // `x dev`, the container and the static build alike — one install, three processes.
+  const assets = siteAssetTable(root);
+  setAssetResolver((path) => assets.resolve(path).url);
   const files: string[] = [];
   const findings: Finding[] = [];
 

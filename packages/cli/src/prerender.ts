@@ -4,7 +4,15 @@
 // only which routes qualify and where the bytes land.
 
 import { join } from 'node:path';
-import { createContext, isUltimateError, renderThrowable, runWithContext } from '@ultimat3/core';
+import {
+  createContext,
+  DEFAULT_ENVIRONMENT,
+  isUltimateError,
+  renderThrowable,
+  runWithContext,
+  tryResolveEnvironment,
+} from '@ultimat3/core';
+import { localeConfig, localizedPath, routedLocales } from '@ultimat3/i18n';
 import type { RouteEntry } from '@ultimat3/render';
 import { describeRoutes, routeEntries } from '@ultimat3/render';
 import { renderStatic } from '@ultimat3/render/server';
@@ -19,9 +27,12 @@ import { buildIslands, writeIslands } from './island-bundle';
 import { measureDatabase } from './measure-database';
 import { measurePaths } from './measure-paths';
 import { measureScope, withAppUrl } from './measure-scope';
+import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
 import { loadPwaArtifacts, WEB_MANIFEST_PATH, writePwaIcons } from './pwa-artifacts';
 import { routeDocument } from './runtime-render';
+import { writeSiteAssets } from './site-assets';
+import { loadSiteSettings, originWarning, publicOrigin } from './site-config';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 import { styleBundle, writeStyles } from './style-bundle';
@@ -53,15 +64,22 @@ export const isPrerenderable = (entry: RouteEntry): boolean =>
 export interface PrerenderOptions {
   readonly root: string;
   readonly out: string;
-  /** Origin the rendered `<head>` builds canonical and og:url from. */
+  /**
+   * Origin the rendered `<head>` builds canonical, og:url and hreflang from. Absent: `APP_URL`,
+   * `SITE_ORIGIN`, then `site.origin` from `app.config.ts`, then `DEFAULT_ORIGIN` — with a warning
+   * on a production build, because a placeholder canonical is one a search engine indexes.
+   */
   readonly origin?: string;
 }
 
 export interface PrerenderedPage {
   /** The DECLARED route, `/blog/:slug` — one route can write many pages, and the report groups them. */
   readonly route: string;
+  /** The URL the page is served at — `/en/pricing` for a non-default locale. */
   readonly path: string;
-  /** Relative to `out`, POSIX, as `renderStatic` computed it. */
+  /** The locale the page was rendered in. */
+  readonly locale: string;
+  /** Relative to `out`, POSIX — under `<locale>/` for a non-default locale. */
   readonly file: string;
   readonly hash: string;
   readonly bytes: number;
@@ -101,6 +119,10 @@ export interface PrerenderReport {
    * has to reach the build's own report. Empty for an app with no service worker.
    */
   readonly serviceWorkerWarnings: readonly string[];
+  /** What this build could not get right on its own — today, a production build with no origin. */
+  readonly warnings: readonly string[];
+  /** The origin every absolute URL in the export was built against — hand it to `siteSeo`. */
+  readonly origin: string;
 }
 
 /**
@@ -149,7 +171,17 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   await clearPrerenderOut(options.out, options.root);
   await loadApp(options.root);
   const buildId = (await appManifest(options.root)).manifest.buildId;
-  const origin = options.origin ?? DEFAULT_ORIGIN;
+  const declaredOrigin =
+    options.origin ?? publicOrigin(process.env, await loadSiteSettings(options.root));
+  const origin = declaredOrigin ?? DEFAULT_ORIGIN;
+  // Written to stderr as well as returned: an app's `prerender.ts` prints its report as ONE JSON
+  // line on stdout, and a build that parses it must not meet a warning inside it.
+  const warnings = originWarning(tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT, declaredOrigin);
+  for (const warning of warnings) process.stderr.write(`warning: ${warning}\n`);
+  // After `loadApp`: `defineCatalogs()` configures the locales on the app's own import. The
+  // default first, so every other pass writes beside a tree that already holds the unprefixed one.
+  const locales = routedLocales();
+  const defaultLocale = localeConfig().fallback;
   const pages: PrerenderedPage[] = [];
   const skipped: SkippedRoute[] = [];
   const routes: RouteStats[] = [];
@@ -171,6 +203,9 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // pages whose `<link>` names a file the artifact does not have.
   const styles = styleBundle();
   await writeStyles(styles, options.out);
+  // The hashed `site/assets/**` copies every document's `asset()` URL names — once, never per
+  // locale: an asset is the same bytes in every language, so `/en/` pages link the root's copy.
+  writeSiteAssets(options.root, options.out);
   // Same rule, one asset further: a browser asks for `/favicon.ico` on the first page it loads,
   // and a static export has no route to answer it — so the bytes the served surfaces would have
   // returned go into the artifact instead of leaving a 404 in every visitor's console.
@@ -230,7 +265,12 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // build. One context for the build, `role: 'web'` because that is the role serving these
   // documents, and this build's own id so a component reading `ctx.buildId` stamps the artifact
   // with the id the report and the stats carry.
-  const ctx = createContext({ role: 'web', buildId });
+  // ONE PER LOCALE, and the locale is the context's: `createContext` defaults it to core's `en`, so a
+  // Spanish-default site was prerendered in English — `<html lang="en">` over English copy — while
+  // the served process answered Spanish. Each `site/` page is rendered once per routed locale.
+  const contexts = new Map(
+    locales.map((locale) => [locale, createContext({ role: 'web', buildId, locale })]),
+  );
   // A SECOND scope, for the branch below that renders only to weigh (`measure-scope.ts`): a
   // request context holding the app's measurement actor, with the app's own API answered in
   // process, because an `app/` page's `load` calls policy-guarded queries over its typed client
@@ -244,10 +284,17 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     routeDocument(entry, data, {
       resolveIsland: (file: string) => islands.resolverFor(file),
       themeHead: theme.head,
+      origin,
       ...(pwa === undefined ? {} : { pwaHead: pwa.head + (swHead ?? '') }),
     });
-  const document = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
-    runWithContext(ctx, () => render(entry, data));
+  const document = (
+    locale: string,
+    entry: RouteEntry,
+    data: { url: string; params: Record<string, string> },
+  ) =>
+    runWithContext(contexts.get(locale) ?? createContext({ role: 'web', buildId, locale }), () =>
+      render(entry, data),
+    );
 
   try {
     for (const entry of routeEntries()) {
@@ -303,10 +350,16 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         }
         continue;
       }
-      const artifacts = await renderStatic(
-        entry,
-        ({ path, params }) => document(entry, { url: new URL(path, origin).href, params }),
-        { buildId },
+      const artifacts = await localizedArtifacts(locales, defaultLocale, (locale) =>
+        renderStatic(
+          entry,
+          ({ path, params }) =>
+            document(locale, entry, {
+              url: new URL(localizedPath(path, locale, defaultLocale), origin).href,
+              params,
+            }),
+          { buildId },
+        ),
       );
       // `enumeratePrerender` answers `[]` for a dynamic route with no `prerender()`, so a
       // `render: 'static'` route with a param writes nothing and used to be reported NOWHERE — past
@@ -329,6 +382,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         pages.push({
           route: entry.path,
           path: artifact.path,
+          locale: artifact.locale,
           file: artifact.outputPath,
           hash: artifact.hash,
           bytes,
@@ -403,5 +457,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     islands: islands.chunks.map((chunk) => chunk.file),
     styles: styles.chunks.map((chunk) => chunk.url),
     serviceWorkerWarnings: serviceWorker?.warnings ?? [],
+    warnings,
+    origin,
   };
 }

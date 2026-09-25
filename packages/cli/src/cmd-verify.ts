@@ -2,12 +2,12 @@
 // same list in the terminal and in --json, and a non-zero exit if any step fails. Green means
 // shippable (axiom 5): one step list, no second checklist, no CI-only step.
 //
-// `--only <step>` is the ONE narrowing, decided as D6, and it does not weaken that: the GATE is
-// the no-flag run, and a narrowed run says `NOT A GATE RUN` in the summary and in `--json` so no
+// `--only <step>[,<step>…]` is the ONE narrowing, decided as D6, and it does not weaken that: the
+// GATE is the no-flag run, and a narrowed run says `NOT A GATE RUN` in the summary and in `--json` so no
 // reader of either can take it for one. `--skip` stays refused — it would let a caller drop the
 // step that was going to fail and still read the output as a whole-tree verdict.
 
-import { nearestName } from '@ultimat3/core';
+import { nearestName, renderFixShellArg } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { verifySpec } from './cmd-verify-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -35,7 +35,7 @@ export const verifyCommand: CliCommand = {
     // Both readers before the run: an unrunnable flag must be refused in milliseconds, not after
     // `tsc -b` has spent fourteen seconds on a run the caller cannot use.
     const workers = readWorkers(ctx.args);
-    const only = readOnlyStep(ctx.args);
+    const only = readOnlySteps(ctx.args);
     return runVerify(VERIFY_STEPS, {
       root,
       runner: ctx.runner,
@@ -47,27 +47,42 @@ export const verifyCommand: CliCommand = {
 };
 
 /**
- * The step `--only` names, or nothing. Refused against `VERIFY_STEP_NAMES` — the same constant the
- * runner's list is built from — so a typo can never be read as "narrow to no steps at all", which
- * is a run that passes by checking nothing.
+ * The steps `--only` names, or nothing: one step (`--only lint`) or a comma-separated list
+ * (`--only typecheck,lint,boundaries`) run in ONE process, in the gate's declared order whatever
+ * order they were typed in. Refused against `VERIFY_STEP_NAMES` — the same constant the runner's
+ * list is built from — so a typo can never be read as "narrow to no steps at all", which is a run
+ * that passes by checking nothing. An empty item (`lint,,drift`, a trailing comma) is refused for
+ * the same reason.
  *
- * A near miss leads with the step it is near; a word near NOTHING gets the gate itself rather than
- * an invented lead, which is the rule `parse.ts` already follows for a command that resembles
- * none. Both arms are commands that run.
+ * A near miss leads with the list as it would be with each typo corrected; an item near NOTHING
+ * gets the gate itself rather than an invented lead, which is the rule `parse.ts` already follows
+ * for a command that resembles none. Both arms are commands that run.
  */
-export const readOnlyStep = (args: ParsedArgs): VerifyStepName | undefined => {
+export const readOnlySteps = (args: ParsedArgs): readonly VerifyStepName[] | undefined => {
   const raw = flagString(args, 'only');
   if (raw === undefined) return undefined;
-  const found = VERIFY_STEP_NAMES.find((name) => name === raw);
-  if (found !== undefined) return found;
-  const suggestion = nearestName(raw, VERIFY_STEP_NAMES);
+  const items = raw.split(',').map((item) => item.trim());
+  const unknown = items.filter((item) => !isStepName(item));
+  if (unknown.length === 0) {
+    return VERIFY_STEP_NAMES.filter((name) => items.includes(name));
+  }
+  const corrected = items.map((item) =>
+    isStepName(item) ? item : nearestName(item, VERIFY_STEP_NAMES),
+  );
+  const fix = corrected.every((item) => item !== undefined)
+    ? `x verify --only ${renderFixShellArg([...new Set(corrected)].join(','), '<step,step>')} --json`
+    : 'x verify --json';
+  const named = unknown.map((item) => (item === '' ? '(empty)' : `"${item}"`)).join(', ');
   throw new BadFlagError({
     flag: 'only',
     command: 'verify',
-    reason: `"${raw}" is not a gate step (${VERIFY_STEP_NAMES.join(', ')})`,
-    fix: suggestion === undefined ? 'x verify --json' : `x verify --only ${suggestion} --json`,
+    reason: `${named} ${unknown.length === 1 ? 'is not a gate step' : 'are not gate steps'} (${VERIFY_STEP_NAMES.join(', ')})`,
+    fix,
   });
 };
+
+const isStepName = (raw: string): raw is VerifyStepName =>
+  (VERIFY_STEP_NAMES as readonly string[]).includes(raw);
 
 /**
  * Both bounds are the constants the flag summary already names, so `x help verify` and the reader

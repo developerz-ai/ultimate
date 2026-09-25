@@ -1,12 +1,12 @@
-// Three components whose rules live in a pure module beside them (`link-target`, `image-source`,
-// `accordion-view`) — already tested there. What is NOT tested there is the wiring: whether the
-// component asks the rule, and whether the answer reaches the element. A `javascript:` href refused
-// by `linkTarget` and then emitted anyway by `<Link>` passes every test the helper has.
+// Two components whose rules live in a pure module beside them (`link-target`, `accordion-view`)
+// — already tested there; `Image`'s wiring is `Image.test.ts`. What is NOT tested there is the
+// wiring: whether the component asks the rule, and whether the answer reaches the element. A
+// `javascript:` href refused by `linkTarget` and then emitted anyway by `<Link>` passes every test
+// the helper has.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { byTag, fire, one, type ProbeNode, probe, renderNodes, unprobe } from '../jsx-probe';
 import { Accordion } from './Accordion';
-import { Image } from './Image';
 import { Link } from './Link';
 
 describe('the content components', () => {
@@ -73,71 +73,6 @@ describe('the content components', () => {
         children: 'Docs',
       });
       expect(byTag(internal, 'span')).toEqual([]);
-    });
-  });
-
-  describe('Image', () => {
-    test('is lazy and low priority unless it is the LCP image', () => {
-      const img = one(byTag(renderNodes(Image, { src: '/a.png', alt: 'A' }), 'img'), 'image');
-      expect(img.props['loading']).toBe('lazy');
-      expect(img.props['fetchpriority']).toBe('auto');
-      expect(img.props['decoding']).toBe('async');
-    });
-
-    test('priority flips both hints together — eager alone still queues behind the rest', () => {
-      const img = one(
-        byTag(renderNodes(Image, { src: '/a.png', alt: 'A', priority: true }), 'img'),
-        'image',
-      );
-      expect(img.props['loading']).toBe('eager');
-      expect(img.props['fetchpriority']).toBe('high');
-    });
-
-    test('fabricates no dimensions it was not handed', () => {
-      const bare = one(byTag(renderNodes(Image, { src: '/a.png', alt: 'A' }), 'img'), 'image');
-      expect(bare.props['width']).toBeUndefined();
-      expect(bare.props['height']).toBeUndefined();
-      expect(bare.props['srcset']).toBeUndefined();
-
-      // One dimension alone reserves no ratio: refused where it is written, not emitted half.
-      expect(() => renderNodes(Image, { src: '/a.png', alt: 'A', width: 620 })).toThrow(
-        expect.objectContaining({ code: 'X_UI_INVALID_VALUE' }),
-      );
-    });
-
-    test('both dimensions reach the element, so the box is reserved before load', () => {
-      const img = one(
-        byTag(renderNodes(Image, { src: '/a.png', alt: 'A', width: 620, height: 320 }), 'img'),
-        'image',
-      );
-      expect(img.props['width']).toBe(620);
-      expect(img.props['height']).toBe(320);
-    });
-
-    test('the srcset is the derived one, ascending, whatever order the caller wrote', () => {
-      const img = one(
-        byTag(
-          renderNodes(Image, {
-            src: '/a.png',
-            alt: 'A',
-            sizes: '100vw',
-            variants: [
-              { src: '/a-1200.png', width: 1200 },
-              { src: '/a-600.png', width: 600 },
-            ],
-          }),
-          'img',
-        ),
-        'image',
-      );
-      expect(img.props['srcset']).toBe('/a-600.png 600w, /a-1200.png 1200w');
-      expect(img.props['sizes']).toBe('100vw');
-    });
-
-    test('an empty src is refused where it is written, not shipped as a broken element', () => {
-      expect(() => renderNodes(Image, { src: '   ', alt: 'A' })).toThrow(
-        expect.objectContaining({ code: 'X_UI_INVALID_VALUE' }),
-      );
     });
   });
 

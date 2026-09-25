@@ -26,7 +26,11 @@ export type ThemeChoice = Theme | 'system';
 
 export interface ThemeToggleProps {
   mode?: 'toggle' | 'select' | undefined;
-  /** Server-render value; the effect corrects it on the client before paint. */
+  /**
+   * The theme in force at server render — the toggle's glyph. Never the select's choice: nothing
+   * on the server knows whether the visitor chose it, so the select shows "system" until the
+   * effect reads storage.
+   */
   initial?: Theme | undefined;
   /** Injectable for tests and for non-DOM hosts. */
   env?: ThemeEnv | undefined;
@@ -36,7 +40,10 @@ export interface ThemeToggleProps {
 export function ThemeToggle(props: ThemeToggleProps): JSX.Element {
   const ui = useUi();
   const rt = solid();
-  const [choice, setChoice] = rt.createSignal<ThemeChoice>(props.initial ?? 'system');
+  // "system" until the effect reads storage, whatever `initial` says: `initial` is the RESOLVED
+  // theme the boot stamped on <html>, and seeding the choice with it made the select claim the
+  // visitor had picked it — so picking "system" looked like a no-op on every first paint.
+  const [choice, setChoice] = rt.createSignal<ThemeChoice>('system');
   const [resolved, setResolved] = rt.createSignal<Theme>(props.initial ?? 'light');
 
   const env = (): ThemeEnv => props.env ?? browserThemeEnv();

@@ -7,7 +7,7 @@ export const shotSpec: CommandSpec = {
   name: 'shot',
   summary: 'photograph one route, one island in a state it declares, or every island in the app',
   usage:
-    'x shot <route> | --island <name> [--state <id>] | --all-islands [--port 0] [--out <dir>] [--settle 2000] [--json]',
+    'x shot <route> [--locale <l>] [--theme light|dark] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--port 0] [--out <dir>] [--settle 2000] [--json]',
   requiresApp: true,
   flags: [
     { name: 'port', type: 'string', summary: 'dev port (0 lets the kernel pick a free one)' },
@@ -26,6 +26,20 @@ export const shotSpec: CommandSpec = {
       name: 'theme',
       type: 'string',
       summary: "light or dark, stored as the visitor's choice; absent is the app's own default",
+    },
+    {
+      name: 'locale',
+      type: 'string',
+      summary:
+        "one of the app's locales: sent as Accept-Language, and a /<locale>/ prefix unless it is the default (absent: the default locale, pinned)",
+    },
+    // A flag and not a second command, for `--island`'s reason below: the matrix is many route
+    // shots, each one exactly what `x shot <route> --locale <l> --theme <t>` would take.
+    {
+      name: 'matrix',
+      type: 'boolean',
+      summary:
+        'every site route × locale × light/dark × 390/1440 px into .x/shot/matrix/, plus an index.html contact sheet',
     },
     // A FLAG on `x shot` and never a second command: photographing a route and photographing a
     // component are one job with two subjects, and a parallel command would be the second path

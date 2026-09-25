@@ -42,6 +42,11 @@ export const COMMAND_TOKENS: readonly RegExp[] = [
   // Built from `fix-path.ts`'s extension list, because the token that makes a fix count as an
   // instruction is exactly the token `citedPathProblem` then has to resolve.
   new RegExp(FILE_TOKEN_PATTERN),
+  // A repo script, run as written: `bin/check --full`, `./bin/probe`. An app's gate is `bin/check`,
+  // so without this the one command its fixes most often name read as the banned word "check".
+  // Anchored like `x` above — `/usr/bin/env` and `robin/check` are not the repo's scripts.
+  // (`scripts/<name>.ts` is already a file token.)
+  /(?:^|[\s;|&("'`])(?:\.\/)?bin\/[\w.-]+/,
   /\b(?:app\.config\.ts|package\.json|tsconfig\.json|bunfig\.toml|\.env(?:\.[\w.-]+)?)\b/,
 ];
 

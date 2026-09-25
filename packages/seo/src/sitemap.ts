@@ -4,6 +4,7 @@
 
 import { assert } from '@ultimat3/core';
 import { sitemapTooLarge } from './errors';
+import { hreflangTag } from './locale-tags';
 import { type ChangeFreq, expandRoute, indexableRoutes, type RouteRecord } from './routes';
 import { absoluteUrl, attributes, escapeXml } from './xml';
 
@@ -95,7 +96,9 @@ export async function sitemapUrls(
         path: localize(path, locale, options),
       }));
       const alternates: SitemapAlternate[] = localised.map((entry) => ({
-        hreflang: entry.locale,
+        // BCP 47 region form (`es-CO`), the spelling `renderMeta` puts in the head: one cluster,
+        // one vocabulary, whether a crawler reads the page or the sitemap.
+        hreflang: hreflangTag(entry.locale),
         href: absoluteUrl(options.baseUrl, entry.path),
       }));
       // `x-default` only when it names a URL THIS sitemap lists. It was the bare `path` for every
