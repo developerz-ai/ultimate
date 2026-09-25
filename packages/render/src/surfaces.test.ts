@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { SurfaceBoundaryError } from './errors';
-import { assertSurfaceBoundary, checkSurfaceBoundary, importGraph, surfaceOf } from './surfaces';
+import {
+  assertSurfaceBoundary,
+  checkSurfaceBoundary,
+  importGraph,
+  surfaceOf,
+  surfaceUnder,
+} from './surfaces';
 
 describe('surfaceOf', () => {
   test('reads the surface out of a monorepo path', () => {
@@ -8,6 +14,47 @@ describe('surfaceOf', () => {
     expect(surfaceOf('apps/web/app/charts/sparkline.tsx')).toBe('app');
     expect(surfaceOf('apps/web/shared/ui/button.tsx')).toBe('shared');
     expect(surfaceOf('packages/domain/index.ts')).toBe(null);
+  });
+});
+
+// Reproduced in production: the scaffold's Dockerfile runs the app from `WORKDIR /app`, so every
+// ABSOLUTE stylesheet path starts `/app/` — and the first `app/` segment won. The site page, the
+// shared global layer and every package sheet classified as `app`, `stylesFor('site')` was empty,
+// and every prerendered page shipped with no `<link>` at all.
+describe('surfaceUnder', () => {
+  test('an app root named app/ does not make every file an app/ file', () => {
+    expect(surfaceUnder('/app', '/app/apps/web/site/page.module.scss')).toBe('site');
+    expect(surfaceUnder('/app', '/app/apps/web/shared/global.scss')).toBe('shared');
+    expect(surfaceUnder('/app', '/app/apps/web/app/feed/page.module.scss')).toBe('app');
+    expect(surfaceUnder('/app', '/app/packages/ui/src/card.module.scss')).toBe(null);
+  });
+
+  test('nor does a root with site/ somewhere above it', () => {
+    expect(surfaceUnder('/srv/site/x', '/srv/site/x/apps/web/app/feed/page.module.scss')).toBe(
+      'app',
+    );
+    expect(surfaceUnder('/srv/site/x/', '/srv/site/x/apps/web/shared/global.scss')).toBe('shared');
+  });
+
+  // A package sheet is carried by both graphs; `node_modules/lib/app/theme.scss` is not app code
+  // because the library happens to keep its sheets in a directory called `app`.
+  test('an installed package sheet has no surface, whatever directories it sits in', () => {
+    expect(surfaceUnder('/app', '/app/node_modules/@ultimat3/ui/src/card.module.scss')).toBe(null);
+    expect(surfaceUnder('/app', '/app/node_modules/some-lib/app/theme.scss')).toBe(null);
+    expect(
+      surfaceUnder('/app', '/app/apps/web/node_modules/@ultimat3/ui/src/stack.module.scss'),
+    ).toBe(null);
+  });
+
+  test('a file outside the root is read as it always was', () => {
+    expect(surfaceUnder('/app', '/srv/demo/apps/web/site/page.module.scss')).toBe('site');
+    expect(surfaceUnder('/app', '/srv/demo/packages/ui/src/card.module.scss')).toBe(null);
+    // A sibling whose name merely STARTS with the root is not under it.
+    expect(surfaceUnder('/app', '/apple/apps/web/site/page.module.scss')).toBe('site');
+  });
+
+  test('Windows separators are read as POSIX ones', () => {
+    expect(surfaceUnder('C:\\app', 'C:\\app\\apps\\web\\site\\page.module.scss')).toBe('site');
   });
 });
 

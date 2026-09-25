@@ -94,6 +94,7 @@ packages/cli/.mcp-fixture/
 packages/cli/.island-fixture/
 packages/cli/.overrides-fixture/
 packages/cli/.prerender-fixture/
+packages/cli/.prerender-app-root-fixture/
 packages/cli/.mcp-host-fixture/
 packages/cli/.roles-script-csp-fixture/
 

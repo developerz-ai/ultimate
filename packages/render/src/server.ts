@@ -30,6 +30,7 @@ export {
   installRenderLoader,
   loadStylesheet,
   registeredStylesheets,
+  setStylesheetRoot,
   stylesFor,
   stylesheetsRevision,
   transformTsx,
