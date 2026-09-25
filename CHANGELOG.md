@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.2.2 - 2026-09-25
+
 ### Added
 
 - **cli:** the web role serves `GET /robots.txt` and `GET /sitemap.xml` in `x dev` and in
@@ -38,6 +42,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   ambient locale.
 - **render:** `setStylesheetRoot` resolves a relative root, so `loadApp('.')` from `/app` classifies
   sheets correctly. Found in review of #528.
+
+### Commits
+
+- fix(render): resolve a relative stylesheet root before comparing it (#532)
+- fix(cli,admin): runtime robots.txt + sitemap.xml, no sync meta when realtime is off, api index edit, /_x locale (#530)
 
 ## 22.2.1 - 2026-09-25
 
