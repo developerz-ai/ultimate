@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.3.0 - 2026-09-25
+
 ### Added
 
 - **render, cli:** public site assets. Files under `apps/web/site/assets/**` (avif, webp, png,
@@ -88,6 +92,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   to core's `en`, so a site whose default was Spanish shipped `index.html` as `lang="en"`.
 - **render:** repeated `og:locale:alternate` and `article:tag` meta tags survive the head dedupe.
   Before, only the last one was kept.
+
+### Commits
+
+- feat(http,render,seo,cli,ui): /<locale>/ prefix routing, per-locale prerender, hashed site assets, faster gate (#535)
 
 ## 22.2.2 - 2026-09-25
 
