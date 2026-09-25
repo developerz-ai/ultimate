@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.2.1 - 2026-09-25
+
 ### Fixed
 
 - **render / cli:** a stylesheet's surface is read below the app root, never off its absolute path.
@@ -19,6 +23,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `@ultimat3/render/server`; the working directory when unset), sheets registered earlier are
   reclassified, and a sheet under `node_modules/` is a package sheet whatever its directories are
   called. Route and boundary classification already read root-relative paths and are unchanged.
+
+### Commits
+
+- fix(render): classify stylesheet surfaces below the app root, not off the absolute path (#528)
 
 ## 22.2.0 - 2026-09-24
 

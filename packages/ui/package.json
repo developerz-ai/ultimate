@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/ui",
-  "version": "22.2.0",
+  "version": "22.2.1",
   "description": "SolidJS design system: semantic design tokens, dark/RTL-ready SCSS modules, a11y primitives",
   "license": "MIT",
   "type": "module",
@@ -48,10 +48,10 @@
     "icons": "bun run src/icons/build-icons.ts"
   },
   "dependencies": {
-    "@ultimat3/core": "22.2.0",
-    "@ultimat3/i18n": "22.2.0",
-    "@ultimat3/money": "22.2.0",
-    "@ultimat3/time": "22.2.0"
+    "@ultimat3/core": "22.2.1",
+    "@ultimat3/i18n": "22.2.1",
+    "@ultimat3/money": "22.2.1",
+    "@ultimat3/time": "22.2.1"
   },
   "peerDependencies": {
     "solid-js": "^1.9.0"
