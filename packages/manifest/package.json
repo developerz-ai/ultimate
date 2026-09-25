@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/manifest",
-  "version": "22.2.1",
+  "version": "22.2.2",
   "description": "x.manifest.json: deterministic generated facts, contract diff, AGENTS.md budget",
   "license": "MIT",
   "type": "module",
@@ -31,11 +31,11 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/action": "22.2.1",
-    "@ultimat3/core": "22.2.1",
-    "@ultimat3/entity": "22.2.1",
-    "@ultimat3/jobs": "22.2.1",
-    "@ultimat3/query": "22.2.1",
-    "@ultimat3/realtime": "22.2.1"
+    "@ultimat3/action": "22.2.2",
+    "@ultimat3/core": "22.2.2",
+    "@ultimat3/entity": "22.2.2",
+    "@ultimat3/jobs": "22.2.2",
+    "@ultimat3/query": "22.2.2",
+    "@ultimat3/realtime": "22.2.2"
   }
 }
