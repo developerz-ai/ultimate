@@ -48,3 +48,17 @@ budgets are **not** here: they are the `budgets` step and `X_BUDGET_EXCEEDED`.
 | `parseImageQuery()` | the one reader of the `?w=&f=&q=` a responsive image URL carries (`X_IMAGE_QUERY_INVALID`) |
 
 Every `X_SEO_*` and image code is in [Error codes](Error-Codes).
+
+## `robots.txt` and `sitemap.xml`
+
+One answer, served two ways. `siteSeo()` from `@ultimat3/cli` builds both from the route table. It
+takes the public `site/` routes (no `policy`), leaves out any page whose `meta` says
+`robots: { index: false }`, and expands a dynamic route through its `prerender()`.
+
+| Where | How |
+|---|---|
+| static export | the scaffolded `apps/web/prerender.ts` writes `siteSeo()`'s files into `.x/static`. A dynamic route lists exactly the pages the build emitted |
+| web role (`x dev`, `runRole`) | `GET /robots.txt` and `GET /sitemap.xml`, `public, max-age=3600`, built per request. Absolute against `APP_URL`, else `SITE_ORIGIN`, else the request's own origin. `As of 2026-09-25` (22.2.2) |
+
+Past 50,000 URLs, `/sitemap.xml` is the index. The web role serves the index but not the
+`/sitemap-N.xml` parts, so a site that large serves its sitemap from the static export.

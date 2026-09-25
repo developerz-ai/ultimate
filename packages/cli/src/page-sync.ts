@@ -3,6 +3,7 @@
 // `ultimate-build`, `ultimate-sync-worker`, the boot script), and the persisted record types a
 // private document names. One call from both boots, so the two cannot serve different targets.
 
+import type { RealtimeConfig } from '@ultimat3/core';
 import { persistedRecordTypes } from '@ultimat3/entity';
 import type { Route } from '@ultimat3/http';
 import type { ClientSyncHead } from '@ultimat3/render';
@@ -19,7 +20,11 @@ export interface PageSync {
   readonly routes: readonly Route[];
   /** The scripts those routes serve, for the service worker to precache beside the islands. */
   readonly scripts: readonly FrameworkScript[];
-  readonly head: ClientSyncHead;
+  /**
+   * `undefined` when `realtime.enabled` is false: no node is started (`role-realtime.ts`), so a
+   * document naming one would hand the page runtime a target nothing serves.
+   */
+  readonly head: ClientSyncHead | undefined;
   /**
    * The record types the app persists, read per render off the entity registry — the app's modules
    * register their entities during boot, so a value captured here could predate them.
@@ -36,7 +41,13 @@ export async function pageSync(
   root: string,
   env: Readonly<Record<string, string | undefined>>,
   buildId: string,
+  realtime: Pick<RealtimeConfig, 'enabled'>,
 ): Promise<PageSync> {
+  // Off: no `ultimate-sync`, no worker, no boot script — the boot is the outbox and the disk
+  // restore, which exist to feed the socket. Checked before either build, which would be wasted.
+  if (!realtime.enabled) {
+    return { routes: [], scripts: [], head: undefined, persisted: persistedRecordTypes };
+  }
   const syncUrl = syncUrlFrom(env);
   const worker = await buildSyncWorker(root);
   const boot = await buildPageBoot(root);

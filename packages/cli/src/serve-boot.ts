@@ -25,6 +25,7 @@ import { appRoutes } from './runtime-render';
 import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
 import { servedStorage, storageRoutes } from './runtime-storage';
+import { seoRoutes } from './seo-routes';
 import { loadDrainConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
 import type { ServedApp, ServeOptions } from './serve-types';
@@ -139,7 +140,7 @@ async function webSurface(
   const theme = themeBoot(await loadThemeMode(options.root));
   // The page's sync target and its scripts — the same call `x dev` makes, so the two cannot differ.
   // Before the service worker, which precaches those scripts.
-  const sync = await pageSync(options.root, options.env, buildId);
+  const sync = await pageSync(options.root, options.env, buildId, runtime.realtime);
   // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
   // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
   // route added here cannot be missing from the precache manifest.
@@ -173,12 +174,14 @@ async function webSurface(
     // The surface stylesheets the documents link. Built from the registry the `loadApp` above
     // filled, so this process serves exactly the CSS it renders against.
     ...styleRoutes(() => styleBundle()),
+    // `robots.txt` and `sitemap.xml`, the same two files the static export writes (`site-seo.ts`).
+    ...seoRoutes({ env: options.env }),
     // The page's one socket: its worker script, served beside the islands for their reason.
     ...sync.routes,
     ...appRoutes({
       buildId,
       resolveIsland: (file) => islands.resolverFor(file),
-      sync: sync.head,
+      ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
       themeHead: theme.head,
       ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),

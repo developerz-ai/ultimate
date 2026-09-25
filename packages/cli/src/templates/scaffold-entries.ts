@@ -65,9 +65,7 @@ const prerender =
 // landed on disk — which is what \`x build --target static --json\` reads back.
 
 import { join } from 'node:path';
-import { DEFAULT_ORIGIN, type PrerenderReport, prerenderSite } from '@ultimat3/cli';
-import { routeEntries } from '@ultimat3/render';
-import { buildRobots, buildSitemap, type RouteRecord } from '@ultimat3/seo';
+import { DEFAULT_ORIGIN, type PrerenderReport, prerenderSite, siteSeo } from '@ultimat3/cli';
 
 const root = join(import.meta.dir, '..', '..');
 const flag = Bun.argv.indexOf('--out');
@@ -79,42 +77,28 @@ const out = (flag === -1 ? undefined : Bun.argv[flag + 1]) ?? join(root, '.x', '
 const origin = Bun.env.SITE_ORIGIN;
 
 /**
- * The route table as \`@ultimat3/seo\` reads it. \`RouteRecord\` is a static row and \`defineRoute\`
- * is a live declaration, so one has to be projected onto the other — and \`prerenderSite\` has
- * already loaded the app by the time this runs, which is what fills \`routeEntries()\`.
+ * \`sitemap.xml\` and \`robots.txt\`, into the same directory the HTML went: a static export is
+ * served with no process behind it, so the CDN needs the files. \`siteSeo\` is the same answer a
+ * running web role serves at \`/sitemap.xml\` and \`/robots.txt\` — the public \`site/\` routes, a
+ * page whose \`meta\` says \`robots: { index: false }\` left out — so a crawler reads one sitemap
+ * from the CDN and from the container.
  *
- * A DYNAMIC route contributes exactly the URLs this build enumerated for it, read back off the
- * report rather than by calling \`prerender()\` a second time: the sitemap then cannot name a page
- * the artifact does not contain, which is the only failure mode a sitemap really has.
- */
-const siteRoutes = (report: PrerenderReport): readonly RouteRecord[] =>
-  routeEntries()
-    .filter((entry) => entry.surface === 'site')
-    .map((entry) => ({
-      path: entry.path,
-      file: entry.file,
-      surface: 'site' as const,
-      render: entry.config.render,
-      prerender: () =>
-        report.pages.filter((page) => page.route === entry.path).map((page) => page.path),
-    }));
-
-/**
- * \`sitemap.xml\` and \`robots.txt\`, into the same directory the HTML went. Both belong to the
- * ARTIFACT rather than to a request: a static export is served with no process behind it, so a
- * route that answered them at run time would be a file the CDN never has.
+ * A DYNAMIC route contributes exactly the URLs this build emitted for it, read back off the report
+ * rather than by calling \`prerender()\` a second time: the sitemap then cannot name a page the
+ * artifact does not contain.
  *
- * \`buildRobots\` fails closed — anything that is not \`ULTIMATE_ENV=production\` emits
+ * \`robots.txt\` fails closed — anything that is not \`ULTIMATE_ENV=production\` emits
  * \`Disallow: /\` and advertises no sitemap — so a preview build cannot outrank the real site.
  */
 async function writeSeoFiles(report: PrerenderReport, baseUrl: string): Promise<readonly string[]> {
-  const sitemap = await buildSitemap(siteRoutes(report), { baseUrl });
-  // Past 50,000 URLs \`files\` are \`/sitemap-N.xml\` and the index is \`/sitemap.xml\`; below it,
-  // \`files\` is that one file and there is no index. Writing both lists covers each case once.
-  const written = sitemap.index === undefined ? sitemap.files : [sitemap.index, ...sitemap.files];
-  for (const file of written) await Bun.write(join(out, file.path), file.xml);
-  await Bun.write(join(out, 'robots.txt'), buildRobots({ baseUrl, sitemaps: ['/sitemap.xml'] }));
-  return [...written.map((file) => file.path), '/robots.txt'];
+  const seo = await siteSeo({
+    baseUrl,
+    pagesFor: (route) =>
+      report.pages.filter((page) => page.route === route).map((page) => page.path),
+  });
+  for (const file of seo.sitemaps) await Bun.write(join(out, file.path), file.xml);
+  await Bun.write(join(out, 'robots.txt'), seo.robots);
+  return [...seo.sitemaps.map((file) => file.path), '/robots.txt'];
 }
 
 if (import.meta.main) {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { staticDevSources } from './data';
 import { assertDevOnly, DEV_PANELS, devDashboard, devShellStyle } from './server';
 
@@ -168,5 +169,24 @@ describe('devShellStyle', () => {
       new Request('http://x/_x/routes'),
     );
     expect(await html?.text()).toContain(`<style>${style}</style>`);
+  });
+});
+
+// Reported by an app whose default locale is `es-co`: every tab and question on /_x read
+// `⟦dev.panel.mail.title⟧`. The framework's strings are registered under `en` only, on purpose, and
+// the shell rendered through the AMBIENT locale — the app's. /_x is the framework's own English
+// tool (`<html lang="en">`), so it reads the framework catalog in its own locale.
+describe('/_x in an app whose locale is not en', () => {
+  test('every tab and the question render as text, never as a missing key', async () => {
+    configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' });
+    try {
+      const dashboard = devDashboard({ role: 'web', env: 'development', sources });
+      const html = await (await dashboard.handle(new Request('http://x/_x/mail')))?.text();
+      expect(html).toContain('>Mail</a>');
+      expect(html).toContain('what did that email look like, in that locale?');
+      expect(html).not.toContain('⟦');
+    } finally {
+      resetLocaleConfig();
+    }
   });
 });

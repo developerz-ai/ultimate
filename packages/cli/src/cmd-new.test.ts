@@ -404,15 +404,13 @@ describe('unit · x new · the API surface registers the app own primitives by n
  * to answer — and `default: true` is a field only `--json` renders.
  */
 describe('unit · x new · the sitemap and robots.txt it wires', () => {
-  // Decision D2: `@ultimat3/seo` had eleven exports with zero callers anywhere, and `buildSitemap`
-  // / `buildRobots` are the two the framework has no live equivalent for. They are wired into the
-  // STATIC ENTRY rather than into a route because both belong to the artifact: a static export is
-  // served with no process behind it, so a route answering them is a file the CDN never has.
-  test('the static entry builds both, and the app declares the package it builds them with', () => {
+  // Decision D2 wired `buildSitemap` / `buildRobots` into the STATIC ENTRY, because a static export
+  // is served with no process behind it. A container is served WITH one, and answered 404 for both
+  // until 22.2.2: the entry now writes `siteSeo`'s answer, the same one the web role serves.
+  test('the static entry writes both, from the answer the web role serves', () => {
     const entry = emitted('apps/web/prerender.ts', true);
-    expect(entry).toContain("from '@ultimat3/seo'");
-    expect(entry).toContain('buildSitemap(');
-    expect(entry).toContain('buildRobots(');
+    expect(entry).toContain("from '@ultimat3/cli'");
+    expect(entry).toContain('siteSeo(');
     expect(entry).toContain("'robots.txt'");
     expect(emitted('package.json', true)).toContain('"@ultimat3/seo"');
   });

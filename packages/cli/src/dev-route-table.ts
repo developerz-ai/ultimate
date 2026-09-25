@@ -2,6 +2,7 @@
 // names, the island and sync-worker scripts, and the app's pages last. Split from `cmd-dev.ts` at its
 // 500-line ceiling; `serve.ts` composes the production table from the same builders.
 
+import type { RealtimeConfig } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { describeRoutes } from '@ultimat3/render';
 import type { Storage } from '@ultimat3/storage';
@@ -19,6 +20,7 @@ import { loadPwaArtifacts } from './pwa-artifacts';
 import { assetRoutes } from './runtime-assets';
 import { appRoutes } from './runtime-render';
 import { servedStorage, storageRoutes } from './runtime-storage';
+import { seoRoutes } from './seo-routes';
 import { styleBundle } from './style-bundle';
 import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
@@ -34,6 +36,8 @@ export interface DevRouteTableInput {
   readonly dashboard: DevDashboardInput;
   /** A getter: the watcher tick rebuilds the islands, and a captured bundle would serve the first. */
   readonly islands: () => IslandBundle;
+  /** `app.config.ts`'s `realtime`, as the boot obeyed it: off, no document names a sync node. */
+  readonly realtime: Pick<RealtimeConfig, 'enabled'>;
 }
 
 export interface DevRouteTable {
@@ -52,7 +56,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   const pwa = await loadPwaArtifacts(input.root);
   const theme = themeBoot(await loadThemeMode(input.root));
   // The same call `serve.ts` makes, so the two boots cannot serve different sync targets.
-  const sync = await pageSync(input.root, input.env, input.buildId);
+  const sync = await pageSync(input.root, input.env, input.buildId, input.realtime);
   const errorStyles = await errorPageStyleSources(input.root);
   // Built once at boot and NOT rebuilt with the islands on a watcher tick: a service worker that
   // changes under a page it controls is the update path, and one per keystroke exercises it per save.
@@ -96,6 +100,8 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     // reason the islands are: a rebuilt island registers CSS, which mints a new URL, and a table
     // captured at boot would answer 404 for the href the document now carries.
     ...styleRoutes(() => styleBundle()),
+    // `robots.txt` and `sitemap.xml`, the same two files the static export writes (`site-seo.ts`).
+    ...seoRoutes({ env: input.env }),
     // `x shot --island`'s harness, in the `/_x` dev namespace so no app route can shadow it. It
     // lives here rather than in a second server because everything it needs is in THIS process:
     // the built chunks, the app's stylesheet registry, and the one embedded Postgres a checkout
@@ -110,7 +116,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     ...appRoutes({
       buildId: input.buildId,
       resolveIsland: (file) => input.islands().resolverFor(file),
-      sync: sync.head,
+      ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
       themeHead: theme.head,
       ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),

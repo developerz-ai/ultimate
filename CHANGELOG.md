@@ -8,7 +8,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **cli:** the web role serves `GET /robots.txt` and `GET /sitemap.xml` in `x dev` and in
+  `runRole`. Until now only the static export wrote them: a `ROLE=web` container answered 404 for
+  both, and an app has no way to add a non-page GET route. Both come from the new `siteSeo()`
+  (exported from `@ultimat3/cli`): the public `site/` routes (no `policy`), minus any page whose
+  `meta` says `robots: { index: false }`, dynamic routes expanded through `prerender()`. URLs are
+  absolute against `APP_URL`, else `SITE_ORIGIN`, else the request's origin. Production allows the
+  crawl and names the absolute sitemap; anything else is `Disallow: /`. The scaffolded
+  `apps/web/prerender.ts` now writes `siteSeo()`'s files, so the export and the process serve the
+  same two files. An app scaffolded earlier keeps its own `writeSeoFiles`; replace its body with
+  `siteSeo({ baseUrl, pagesFor })` to match. Past 50,000 URLs the web role serves the index but
+  not the `/sitemap-N.xml` parts.
+
+### Fixed
+
+- **cli:** with `realtime: { enabled: false }`, documents no longer carry
+  `<meta name="ultimate-sync">`, the sync-worker meta or the page-boot script, and the worker and
+  boot routes are not mounted. No sync node is started in that case, so the page runtime was handed
+  a target nothing served.
+- **cli:** `x g job` / `x g task` no longer corrupt `apps/web/api/index.ts` when its `jobs:` or
+  `tasks:` list is already one entry per line, which is the shape the generator itself writes once
+  a list passes 100 columns. The rewrite nested a second `jobs: [` inside the first and left the old
+  `]` behind. Lists are now also searched only inside the `defineApi({` call.
+- **admin:** the `/_x` dev dashboard renders its tabs and questions in the framework's own locale.
+  In an app whose default locale is not `en`, every tab read `⟦dev.panel.mail.title⟧`. The
+  framework catalog is registered under `en` only, and the shell translated through the app's
+  ambient locale.
 
 ## 22.2.1 - 2026-09-25
 

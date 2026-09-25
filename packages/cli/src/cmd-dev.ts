@@ -223,6 +223,7 @@ async function bootDev(
     storage: runtime.storage,
     dashboard,
     islands: () => state.islands,
+    realtime: runtime.realtime,
   });
 
   // The app's `apps/<app>/runtime.ts`, composed exactly as `runRole` composes a caller's

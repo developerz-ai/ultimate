@@ -54,3 +54,79 @@ describe('unit · inserting into the scaffolded index', () => {
     expect(insertApiEntries(foreign, entries)).toEqual({ source: foreign, skipped: entries });
   });
 });
+
+// Reproduced from an app: `x g task <name> --feature <slice>` writes the task AND its job, and the
+// app's `jobs:` list was already one entry per line — which is the shape this edit itself produces
+// once a list passes 100 columns. The line-start lookup landed on the first ITEM rather than on
+// `jobs: [`, so the rewrite nested a second `jobs: [` inside the first and orphaned its `]`.
+describe('unit · a list already wrapped one entry per line', () => {
+  const WRAPPED = [
+    "import { defineApi } from '@ultimat3/action';",
+    "import * as anchorDayJob from '../app/evidence/jobs/anchor-day-job';",
+    "import * as anchorDay from '../app/evidence/tasks/anchor-day';",
+    "import * as health from './health';",
+    '',
+    'export const api = defineApi({',
+    '  // Every primitive module under apps/web/app/*/{actions,queries,live,jobs,tasks}/, one entry each.',
+    '  actions: [',
+    '    health,',
+    '  ],',
+    '  jobs: [',
+    '    anchorDayJob,',
+    '    expireCreditsJob,',
+    '  ],',
+    '  tasks: [',
+    '    anchorDay,',
+    '  ],',
+    '});',
+    '',
+  ].join('\n');
+
+  test('a task and its job land in their lists, each list still one well-formed literal', () => {
+    const entries = apiEntriesFor([
+      'apps/web/app/billing/tasks/purge-drafts.ts',
+      'apps/web/app/billing/jobs/purge-drafts-job.ts',
+    ]);
+    const { source, skipped } = insertApiEntries(WRAPPED, entries);
+
+    expect(skipped).toEqual([]);
+    expect(source.match(/jobs: \[/g)).toHaveLength(1);
+    expect(source.match(/tasks: \[/g)).toHaveLength(1);
+    expect(source).toContain('  jobs: [anchorDayJob, expireCreditsJob, purgeDraftsJob],\n');
+    expect(source).toContain('  tasks: [anchorDay, purgeDrafts],\n');
+    expect(source).toContain('  actions: [\n    health,\n  ],\n');
+    expect(source.endsWith('});\n')).toBe(true);
+    // And it stays that way: the next run finds both names and changes nothing.
+    expect(insertApiEntries(source, entries).source).toBe(source);
+  });
+
+  // The scaffold's own index, grown one job at a time past the 100-column wrap — the shape every
+  // app reaches on its own, with nothing but this generator writing the list.
+  test('growing the scaffold index one job at a time keeps one jobs list, every job in it', () => {
+    const names = [
+      'alpha',
+      'bravo',
+      'charlie',
+      'delta',
+      'echo',
+      'foxtrot',
+      'golf',
+      'hotel',
+      'india',
+      'juliet',
+      'kilo',
+      'lima',
+    ];
+    let source = indexOf(true);
+    for (const name of names) {
+      source = insertApiEntries(
+        source,
+        apiEntriesFor([`apps/web/app/${name}-slice/jobs/${name}-job.ts`]),
+      ).source;
+    }
+    expect(source.match(/jobs: \[/g)).toHaveLength(1);
+    const list = /jobs: \[(?<body>[^\]]*)\]/.exec(source)?.groups?.['body'] ?? '';
+    for (const name of names) expect(list).toContain(`${name}Job`);
+    expect(list).toContain('reindexPost');
+  });
+});
