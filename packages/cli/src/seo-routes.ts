@@ -5,24 +5,22 @@
 import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
+import { NO_SITE_SETTINGS, publicOrigin, type SiteSettings } from './site-config';
 import { ROBOTS_PATH, SITEMAP_PATH, siteSeo } from './site-seo';
 
 export interface SeoRoutesOptions {
   readonly env: Readonly<Record<string, string | undefined>>;
+  /** `site.origin` and `seo.robots.disallow` from `app.config.ts` (`loadSiteSettings`). */
+  readonly site?: SiteSettings;
 }
 
 /**
- * The public origin: `APP_URL`, the one the framework's runtime already names for it (OAuth's
- * redirect, the sync node's admitted origin); else `SITE_ORIGIN`, the static build's; else the
+ * The public origin — `publicOrigin()`: `APP_URL`, `SITE_ORIGIN`, then `site.origin` — else the
  * request's own. A container behind an ingress sees its pod address as the request's host, which
  * is why the declared origin comes first — a sitemap of `http://10.0.0.7:3000/…` indexes nothing.
  */
-function originOf(env: SeoRoutesOptions['env'], request: UltimateRequest): string {
-  for (const key of ['APP_URL', 'SITE_ORIGIN']) {
-    const declared = env[key]?.trim() ?? '';
-    if (declared !== '') return declared.replace(/\/+$/, '');
-  }
-  return new URL(request.url).origin;
+function originOf(options: SeoRoutesOptions, request: UltimateRequest): string {
+  return publicOrigin(options.env, options.site ?? NO_SITE_SETTINGS) ?? new URL(request.url).origin;
 }
 
 /**
@@ -35,7 +33,11 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
   const environment: Environment =
     tryResolveEnvironment({ env: options.env }) ?? DEFAULT_ENVIRONMENT;
   const answer = async (request: UltimateRequest) =>
-    await siteSeo({ baseUrl: originOf(options.env, request), environment });
+    await siteSeo({
+      baseUrl: originOf(options, request),
+      environment,
+      disallow: options.site?.disallow ?? [],
+    });
 
   return [
     {

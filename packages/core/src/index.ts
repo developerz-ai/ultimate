@@ -111,6 +111,14 @@ export type {
 export { defineConfig, INBOX_RETENTION_KEYS } from './config';
 export type { PwaColors, PwaConfig, PwaOfflineConfig, PwaSchemeColors } from './config-pwa';
 export { PWA_COLOR_KEYS, PWA_SCHEMES } from './config-pwa';
+export type {
+  SeoConfig,
+  SeoConfigInput,
+  SeoRobotsConfig,
+  SiteConfig,
+  SiteSections,
+  SiteSectionsInput,
+} from './config-site';
 export type { ConflictPolicy, ResolveConflictOptions, Row } from './conflict-policy';
 export { resolveConflict } from './conflict-policy';
 export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
@@ -536,6 +544,8 @@ export { installSignalHandlers } from './lifecycle-signals';
 export { isSelfOrigin, listeningOrigins, markListening, resetListeners } from './listeners';
 export type { Direction } from './locale-direction';
 export { directionOf, isRtl } from './locale-direction';
+export type { LocalePathSplit } from './locale-path';
+export { localeSegment, localizePath, splitLocalePath } from './locale-path';
 export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
 export type { MeasurementActorFactory } from './measurement-actor';
 export {

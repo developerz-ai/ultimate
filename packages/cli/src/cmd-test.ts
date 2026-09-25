@@ -17,7 +17,14 @@ import type { CommandResult, JsonValue } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
 import { quoteArg } from './shell-quote';
-import { discoverTests, missingSelection, readSample, readType, sampleFiles } from './test-select';
+import {
+  discoverTests,
+  missingSelection,
+  readFilters,
+  readSample,
+  readType,
+  sampleFiles,
+} from './test-select';
 import { runShards } from './test-shards';
 import { defaultWorkers, SERIAL_TYPES, WORKER_CEILING } from './test-workers';
 import type { TestType } from './verify-tests';
@@ -100,16 +107,37 @@ const withScope = (result: CommandResult, scope: AffectedScope): CommandResult =
   data: { ...asObject(result.data), affected: affectedScopeJson(scope) },
 });
 
+/** The selection that matched nothing, as one phrase for `cli.test.empty`. */
+const describeSelection = (missing: { type?: string; filter?: string }): string =>
+  [
+    missing.type === undefined ? undefined : `type ${missing.type}`,
+    missing.filter === undefined ? undefined : `"${missing.filter}"`,
+  ]
+    .filter((part) => part !== undefined)
+    .join(' and ') || 'the selection';
+
 export const testCommand: CliCommand = {
   spec: testSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const type = readOnlyType(ctx.args.positionals);
     const filter = flagString(ctx.args, 'filter');
+    const filters = readFilters(filter);
     const sample = readSample(ctx.args);
     const scope = await readAffectedScope(ctx);
-    const discovered = await discoverTests(ctx.cwd, filter, type);
+    const discovered = await discoverTests(ctx.cwd, filters, type);
     if (discovered.length === 0) {
-      throw new NoTestFilesError({ root: ctx.cwd, ...missingSelection(type, filter) });
+      const missing = missingSelection(type, filter);
+      // `--allow-empty` is for a caller that COMPUTED the selection — a scoped runner handing over
+      // the paths a diff touched, some of which hold no test yet. Green, spawning nothing, and
+      // never read as "the suite passed": the line names the selection that matched nothing and
+      // `data.files` is 0. Without the flag an empty selection stays X_TEST_NO_FILES, because a
+      // typo'd `--filter` typed by hand is exactly the run that must not pass.
+      if (flagBool(ctx.args, 'allow-empty')) {
+        return ok('test', msg('cli.test.empty', { selection: describeSelection(missing) }), {
+          data: { ...missing, files: 0, empty: true },
+        });
+      }
+      throw new NoTestFilesError({ root: ctx.cwd, ...missing });
     }
     const selected =
       scope === undefined

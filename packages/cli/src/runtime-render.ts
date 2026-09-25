@@ -26,7 +26,7 @@ import type {
   RouteParams,
 } from '@ultimat3/http';
 import { asCtx, html, NO_STORE, redirect, stream, takeRedirect } from '@ultimat3/http';
-import { currentLocale } from '@ultimat3/i18n';
+import { currentLocale, localeConfig } from '@ultimat3/i18n';
 import type {
   ClientSyncHead,
   IslandCollector,
@@ -107,6 +107,12 @@ export interface DocumentOptions {
    * with no scope carries none.
    */
   readonly persisted?: () => readonly string[];
+  /**
+   * The public origin canonical, `og:url` and hreflang are absolute against — `publicOrigin()`
+   * from `site-config.ts`. Absent, the request's own origin: a relative canonical is one a crawler
+   * resolves against whatever host it happened to fetch from, a CDN's or a preview's.
+   */
+  readonly origin?: string;
 }
 
 export interface DevRenderOptions extends DocumentOptions {
@@ -142,24 +148,37 @@ const headFor = async (
   data: RouteData,
   options: DocumentOptions,
   scope?: string,
-): Promise<string> =>
-  renderHead(
-    headFromMeta(
-      await entry.config.meta(metaContextFor(ctx, data)),
-      seoRenderers({ path: new URL(ctx.url).pathname }),
-      [
-        ...(options.sync === undefined ? [] : clientSyncTags(options.sync)),
-        // The page boot rides the scope tag: its whole job — restoring a principal's persisted
-        // records and replaying its queued writes — is per principal, and a shareable document
-        // (no scope tag) has neither. Cheaper than walking the page's islands, and exact.
-        ...(scope === undefined
-          ? []
-          : [clientScopeTag(scope), ...clientPersistTags(options.persisted?.() ?? [])]),
-      ],
-    ),
-  ) +
-  (options.themeHead ?? '') +
-  (options.pwaHead ?? '');
+): Promise<string> => {
+  const meta = metaContextFor(ctx, data);
+  const url = new URL(ctx.url);
+  return (
+    renderHead(
+      headFromMeta(
+        await entry.config.meta(meta),
+        seoRenderers({
+          path: url.pathname,
+          baseUrl: options.origin ?? url.origin,
+          localization: {
+            locale: meta.locale,
+            defaultLocale: localeConfig().fallback,
+            alternates: meta.alternates,
+          },
+        }),
+        [
+          ...(options.sync === undefined ? [] : clientSyncTags(options.sync)),
+          // The page boot rides the scope tag: its whole job — restoring a principal's persisted
+          // records and replaying its queued writes — is per principal, and a shareable document
+          // (no scope tag) has neither. Cheaper than walking the page's islands, and exact.
+          ...(scope === undefined
+            ? []
+            : [clientScopeTag(scope), ...clientPersistTags(options.persisted?.() ?? [])]),
+        ],
+      ),
+    ) +
+    (options.themeHead ?? '') +
+    (options.pwaHead ?? '')
+  );
+};
 
 /**
  * `<link rel="stylesheet">` for the surface's own stylesheets, or nothing at all when the surface
@@ -409,6 +428,9 @@ const metaOf = (entry: RouteEntry): HttpRouteMeta => ({
   auth: entry.config.policy === undefined ? 'public' : 'required',
   render: entry.config.render,
   tags: [entry.surface],
+  // A `site/` page is prerendered once per locale and served as files, so its locale is its URL's:
+  // the unprefixed path is the default, and the served process must answer what the file says.
+  localeSource: entry.surface === 'site' ? 'path' : 'request',
   ...(entry.config.policy === undefined ? {} : { policy: entry.config.policy.permission }),
   // Projected so the router screens its ages at mount (`assertRouteCache`) and the `cache-headers`
   // stage applies it to a response that wrote none — a loader's redirect. The rendered document

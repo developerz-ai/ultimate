@@ -102,6 +102,24 @@ export function configureLocales(partial: Partial<LocaleConfig>): LocaleConfig {
   return config;
 }
 
+const isShippedSet = (supported: readonly Locale[]): boolean =>
+  supported.length === SUPPORTED_LOCALES.length &&
+  supported.every((locale, index) => locale === SUPPORTED_LOCALES[index]);
+
+/**
+ * The locales a URL may name, the default first: the app's declared set, or the fallback alone
+ * when it declared none. What prefix routing, the per-locale prerender, hreflang
+ * and the sitemap all enumerate — one list, so none of them can name a page another never made.
+ */
+export function routedLocales(): readonly Locale[] {
+  // The shipped `supported` set is the thirty tags the framework can NEGOTIATE, not the ones an app
+  // translated: routing it would publish thirty copies of an English-only site. Compared by value,
+  // never tracked by a flag — `@ultimat3/testing`'s snapshot restores the config through
+  // `configureLocales`, and a flag set by that call would read the defaults as a declaration.
+  if (isShippedSet(config.supported)) return [config.fallback];
+  return [config.fallback, ...config.supported.filter((locale) => locale !== config.fallback)];
+}
+
 export function localeConfig(): LocaleConfig {
   return config;
 }

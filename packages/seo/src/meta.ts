@@ -2,6 +2,7 @@
 // for a global default: a route that does not declare a description does not get
 // one, it fails the build (see validate.ts).
 
+import { hreflangTag, type MetaLocalization, ogLocaleTag } from './locale-tags';
 import { absoluteUrl } from './xml';
 
 /**
@@ -100,6 +101,33 @@ export interface RenderMetaOptions {
   baseUrl?: string;
   /** Resolved path, used when `canonical` is omitted. */
   path?: string;
+  /**
+   * The document's locale and the page in every routed locale. Given, and the route declares no
+   * `alternates` of its own, the full hreflang cluster is emitted — every locale plus `x-default` —
+   * with `og:locale` and one `og:locale:alternate` per other locale. A cluster of one is none.
+   */
+  localization?: MetaLocalization;
+}
+
+/**
+ * The hreflang set a route did not have to write: one entry per locale, BCP 47 region form, and
+ * `x-default` naming the default locale's page. Empty for a single-locale app — an hreflang cluster
+ * of one tells a crawler nothing and costs every document a tag.
+ */
+export function localizedAlternates(
+  localization: MetaLocalization | undefined,
+): readonly AlternateLocale[] {
+  if (localization === undefined || localization.alternates.length < 2) return [];
+  const cluster = localization.alternates.map((page) => ({
+    hreflang: hreflangTag(page.locale),
+    href: page.path,
+  }));
+  const fallback = localization.alternates.find(
+    (page) => page.locale === localization.defaultLocale,
+  );
+  return fallback === undefined
+    ? cluster
+    : [...cluster, { hreflang: 'x-default', href: fallback.path }];
 }
 
 /**
@@ -190,16 +218,30 @@ export function renderMeta(meta: RouteMeta, options: RenderMetaOptions = {}): re
 
   // --- Open Graph ------------------------------------------------------------
   const og = meta.og ?? {};
+  const localization = options.localization;
+  const ogLocale =
+    og.locale ?? (localization === undefined ? undefined : ogLocaleTag(localization.locale));
   const ogEntries: Array<[string, string | undefined]> = [
     ['og:type', og.type ?? 'website'],
     ['og:title', og.title ?? meta.title],
     ['og:description', og.description ?? meta.description],
     ['og:url', og.url === undefined ? canonicalHref : abs(og.url)],
     ['og:site_name', og.siteName],
-    ['og:locale', og.locale],
+    ['og:locale', ogLocale],
   ];
   for (const [property, content] of ogEntries) {
     if (content !== undefined) tags.push({ tag: 'meta', attrs: { property, content } });
+  }
+  // Every OTHER locale the page exists in — a repeatable property, which `@ultimat3/render`'s head
+  // dedupe keys by content as well (`head-seo.ts`), so N alternates do not collapse to the last.
+  if (localization !== undefined && localization.alternates.length > 1) {
+    for (const page of localization.alternates) {
+      if (page.locale === localization.locale) continue;
+      tags.push({
+        tag: 'meta',
+        attrs: { property: 'og:locale:alternate', content: ogLocaleTag(page.locale) },
+      });
+    }
   }
   if (og.image !== undefined) {
     const image = typeof og.image === 'string' ? { url: og.image } : og.image;
@@ -251,7 +293,10 @@ export function renderMeta(meta: RouteMeta, options: RenderMetaOptions = {}): re
   }
 
   // --- hreflang --------------------------------------------------------------
-  for (const alternate of hreflangSet(meta.alternates ?? [], meta.xDefault ?? canonicalHref)) {
+  // A route's own `alternates` win whole; otherwise the cluster comes from the routed locales.
+  const declared = meta.alternates ?? [];
+  const alternates = declared.length > 0 ? declared : localizedAlternates(localization);
+  for (const alternate of hreflangSet(alternates, meta.xDefault ?? canonicalHref)) {
     tags.push({
       tag: 'link',
       attrs: { rel: 'alternate', hreflang: alternate.hreflang, href: abs(alternate.href) },

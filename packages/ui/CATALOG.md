@@ -478,17 +478,19 @@ A button whose only content is an icon, so `label` is mandatory: it becomes the 
 
 ### Image
 
-Zero-CLS image primitive: a plain <img>, no JS, no fetch, no client state.  The build-time half of the pipeline in `docs/idea/07-rendering-seo.md` — reading real dimensions, encoding AVIF/WebP renditions, the data-URI blur placeholder — is NOT here. This component emits exactly what it is handed and fabricates nothing: no variants it was not given, no dimensions it did not measure.
+Zero-CLS image primitive: a plain <img>, or a <picture> around one when AVIF/WebP renditions are handed in. No JS, no fetch, no client state.  The encoding half of the pipeline — AVIF/WebP renditions, measured dimensions — is the app's build step; the URLs come from `asset('assets/…')` in the page. This component emits exactly what it is handed and fabricates nothing, except the one thing it insists on: a reserved box.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
-| `src` | `string` | yes |  |
+| `src` | `string` | yes | The fallback every browser can decode — usually the JPEG/PNG rendition. |
 | `alt` | `string` | yes | Required, with no default: an <Image> whose meaning is undescribed is a type error at the call site. Pass `alt=""` for a decorative image, deliberately. |
-| `variants` | `readonly ImageVariant[]` | — | Renditions to offer; the descriptors and their order are derived, not written. |
-| `sizes` | `string` | — | Layout width of the box, e.g. `(max-width: 700px) 100vw, 620px`. |
-| `priority` | `boolean` | — | The LCP image, at most one per route: eager, high fetch priority. |
-| `width` | `number` | — | Intrinsic dimensions, from the build step that measured them. Both or neither. |
+| `variants` | `readonly ImageVariant[]` | — | Renditions of `src`'s own encoding; the descriptors and their order are derived. |
+| `sources` | `ImageSources` | — | AVIF and WebP renditions, each a width list: `{ avif: [{ src: asset('…'), width: 640 }] }`. |
+| `sizes` | `string` | — | Layout width of the box, e.g. `(max-width: 700px) 100vw, 620px`. Applies to every set. |
+| `priority` | `boolean` | — | The LCP image, at most one per route: eager, `fetchpriority="high"`, never lazy. |
+| `width` | `number` | — | Intrinsic size in CSS pixels, from the step that encoded it. Both, or `aspectRatio`. |
 | `height` | `number` | — |  |
+| `aspectRatio` | `ImageAspectRatio` | — | `'16 / 9'` — the reservation when the intrinsic size is not known. Never beside width/height. |
 | `class` | `string` | — |  |
 
 ### InfiniteScroll
@@ -565,10 +567,12 @@ Locale picker. Option labels come from `Intl.DisplayNames` in each locale's own 
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
-| `locales` | `readonly Locale[]` | yes |  |
+| `locales` | `readonly Locale[]` | yes | Every locale to offer, the DEFAULT first — `routedLocales()` from `@ultimat3/i18n`. |
 | `value` | `Locale` | — | Defaults to the context locale. |
 | `onLocaleChange` | `((locale: Locale) => void)` | — |  |
-| `hrefFor` | `((locale: Locale) => string)` | — | Render as links instead of a select, for a 0kb-JS `site/` route. |
+| `hrefFor` | `((locale: Locale) => string)` | — | Render as links instead of a select, for a 0kb-JS `site/` route. Defaults, when `path` is given, to that page in each locale — `localizedPath`: unprefixed for the default, `/en/…` otherwise — so a site's switcher needs no href of its own. |
+| `path` | `string` | — | The page's own path, prefixed or not — `new URL(props.url).pathname`. Turns on links mode. |
+| `defaultLocale` | `Locale` | — | The unprefixed locale. Defaults to `locales[0]`, which is where `routedLocales()` puts it. |
 | `class` | `string` | — |  |
 
 ### Menu
@@ -879,7 +883,7 @@ Theme control. `toggle` flips light/dark; `select` also offers "system", which c
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `mode` | `'toggle' \| 'select'` | — |  |
-| `initial` | `Theme` | — | Server-render value; the effect corrects it on the client before paint. |
+| `initial` | `Theme` | — | The theme in force at server render — the toggle's glyph. Never the select's choice: nothing on the server knows whether the visitor chose it, so the select shows "system" until the effect reads storage. |
 | `env` | `ThemeEnv` | — | Injectable for tests and for non-DOM hosts. |
 | `class` | `string` | — |  |
 

@@ -183,9 +183,11 @@ describe('unit · x test --workers is bounded by the ceiling it documents', () =
     const summary = (testCommand.spec.flags ?? []).find((flag) => flag.name === 'workers')?.summary;
     expect(summary).not.toContain('CPUs - 1');
     expect(summary).toContain(`max ${WORKER_CEILING}`);
-    expect(defaultWorkers(4)).toBe(6);
-    expect(defaultWorkers(1)).toBe(WORKER_FLOOR);
-    expect(defaultWorkers(64)).toBe(WORKER_CEILING);
+    expect(summary).toContain('held to free memory');
+    const plenty = Number.MAX_SAFE_INTEGER;
+    expect(defaultWorkers(4, plenty)).toBe(6);
+    expect(defaultWorkers(1, plenty)).toBe(WORKER_FLOOR);
+    expect(defaultWorkers(64, plenty)).toBe(WORKER_CEILING);
   });
 });
 

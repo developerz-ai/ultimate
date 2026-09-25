@@ -7,6 +7,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { renderFixShellArg } from '@ultimat3/core';
 import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
@@ -22,6 +23,7 @@ import {
   refuseSweepWithRoute,
   refuseSweepWithState,
 } from './cmd-shot-island';
+import { MATRIX_DIR, matrixRoutes, planShotMatrix, runShotMatrix } from './cmd-shot-matrix';
 import { shotSpec } from './cmd-shot-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
@@ -30,6 +32,12 @@ import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
 import { shotBrowserChoice } from './shot-browser';
+import {
+  acceptLanguageHeaders,
+  loadShotLocales,
+  localizedShotPath,
+  readLocaleFlag,
+} from './shot-locale';
 import type { BootDevServer, ShotServer } from './shot-server';
 import { allowHostsFrom, devServerFor, SHOT_DIR } from './shot-server';
 import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
@@ -202,6 +210,13 @@ export interface ShotRun {
    * and the point of `defaultMode` — and `ui.shot` names one explicitly for exactly that reason.
    */
   readonly colorScheme?: ShotColorScheme | undefined;
+  /** CSS pixels the page is laid out in; absent is the driver's default. */
+  readonly viewport?: { readonly width: number; readonly height: number } | undefined;
+  /**
+   * Sent as `Accept-Language` on every request. The command always sets it — `--locale`, or the
+   * app's default locale — so a picture never depends on the language of the machine's Chrome.
+   */
+  readonly acceptLanguage?: string | undefined;
   readonly now?: (() => Date) | undefined;
   /**
    * Something to do with the page AFTER the islands settled and BEFORE the picture — `ui.inspect`
@@ -238,6 +253,10 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       rules: { allowHosts: allowHostsFrom(server.url, options.extraHosts) },
       clock: systemShotClock,
       timeoutMs: options.timeoutMs,
+      ...(options.viewport === undefined ? {} : { viewport: options.viewport }),
+      ...(options.acceptLanguage === undefined
+        ? {}
+        : { headers: acceptLanguageHeaders(options.acceptLanguage) }),
     });
     const page = session.page;
     if (options.colorScheme !== undefined) {
@@ -323,6 +342,9 @@ export const shotCommand: CliCommand = {
     const theme = readThemeFlag(flagString(ctx.args, 'theme'));
     const positional = ctx.args.positionals[0];
     const sweep = flagBool(ctx.args, 'all-islands');
+    const matrix = flagBool(ctx.args, 'matrix');
+    const app = await loadShotLocales(root);
+    const locale = readLocaleFlag(flagString(ctx.args, 'locale'), app);
     // Every ambiguous pair refused BY NAME, before a value is read: a reader who typed two
     // subjects has a belief about which one runs, and half of them would be wrong.
     if (sweep && island !== undefined && island !== '') refuseSweepWithIsland(island);
@@ -333,8 +355,25 @@ export const shotCommand: CliCommand = {
       refuseRouteWithIsland(positional, island);
     }
     const component = sweep || (island !== undefined && island !== '');
+    // The matrix photographs ROUTES; a component beside it is two subjects.
+    if (matrix && component) {
+      throw new BadFlagError({
+        flag: 'matrix',
+        command: 'shot',
+        reason: 'photographs every site route; --island and --all-islands photograph components',
+        fix: 'x shot --matrix --json',
+      });
+    }
     // An island is photographed in BOTH themes by the harness, which owns its `data-theme` and
     // carries no boot script — so a theme asked for beside one is a request nothing could honour.
+    if (component && locale !== undefined) {
+      throw new BadFlagError({
+        flag: 'locale',
+        command: 'shot',
+        reason: 'photographs a route; an island is photographed in the locale its states declare',
+        fix: `x shot / --locale ${renderFixShellArg(locale, '<locale>')} --json`,
+      });
+    }
     if (component && theme !== undefined) {
       throw new BadFlagError({
         flag: 'theme',
@@ -343,7 +382,8 @@ export const shotCommand: CliCommand = {
         fix: 'x shot / --theme light --json',
       });
     }
-    const route = component ? '' : readRoute(positional);
+    // `--matrix` alone is every site route; a route beside it narrows the matrix to that one.
+    const route = component || (matrix && positional === undefined) ? '' : readRoute(positional);
     const port = intFlag(ctx.args, 'port', PORT_RANGE.min, DEFAULT_PORT, PORT_RANGE.max);
     const settleMs = intFlag(ctx.args, 'settle', 0, DEFAULT_SETTLE_MS);
     const timeoutMs = intFlag(ctx.args, 'timeout', 1, DEFAULT_PAGE_TIMEOUT_MS);
@@ -381,16 +421,34 @@ export const shotCommand: CliCommand = {
       ...(executablePath === undefined ? {} : { executablePath }),
       ...(cdpUrl === undefined ? {} : { cdpUrl }),
     });
+    const base = {
+      driver,
+      settleMs,
+      timeoutMs,
+      fullPage: flagBool(ctx.args, 'full'),
+      extraHosts: flagString(ctx.args, 'allow-hosts'),
+    };
+    if (matrix) {
+      // `--locale` and `--theme` narrow the matrix to one value of their axis.
+      const cells = planShotMatrix({
+        routes: route === '' ? await matrixRoutes(root) : [route],
+        locales: locale === undefined ? app.locales : [locale],
+        defaultLocale: app.defaultLocale,
+        ...(theme === undefined ? {} : { themes: [theme] }),
+      });
+      const outDir = out === undefined ? join(root, MATRIX_DIR) : resolve(root, out);
+      return runShotMatrix({ cells, outDir, boot, shoot: runShot, base });
+    }
+    const shown = locale ?? app.defaultLocale;
+    const path = localizedShotPath(route, shown, app.defaultLocale);
     return shotResult(
       await runShot({
-        route,
-        outDir: out === undefined ? join(root, SHOT_DIR, shotSlug(route)) : resolve(root, out),
-        driver,
+        ...base,
+        route: path,
+        outDir: out === undefined ? join(root, SHOT_DIR, shotSlug(path)) : resolve(root, out),
         boot,
-        settleMs,
-        timeoutMs,
-        fullPage: flagBool(ctx.args, 'full'),
-        extraHosts: flagString(ctx.args, 'allow-hosts'),
+        // Pinned whether or not `--locale` was given: the default locale, never the box's own.
+        acceptLanguage: shown,
         ...(theme === undefined ? {} : { colorScheme: theme }),
       }),
     );

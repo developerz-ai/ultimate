@@ -3,8 +3,9 @@
 // suite two different ways, and the `--worker N` reproduction a shard failure prints would then
 // name a shard the gate never ran.
 
-// Bun ships no CPU-count primitive; `cpus()` is the fallback when navigator cannot answer.
-import { cpus } from 'node:os';
+// Bun ships no CPU-count or free-memory primitive: `cpus()` is the fallback when navigator cannot
+// answer, and `freemem()` is the only reader of available memory.
+import { cpus, freemem } from 'node:os';
 import type { TestType } from '@ultimat3/testing';
 
 /** navigator first: it is the runtime's own answer, and it respects a container's CPU limit. */
@@ -14,7 +15,7 @@ export function availableCpus(): number {
 }
 
 /**
- * Deliberately MORE workers than cores, with a ceiling.
+ * Deliberately MORE workers than cores, bounded by memory rather than by a fixed count.
  *
  * `cpus - 1` is the intuitive default and it was measured to be worthless exactly where it has to
  * pay off. On a 4-core `ubuntu-latest` — the runner this repo commits to — the `unit` step:
@@ -32,23 +33,62 @@ export function availableCpus(): number {
  * resolution, on `--isolate` rebuilding a registry per file, and on waiting for its database.
  * Oversubscribing fills those stalls.
  *
- * The ceiling is memory, not cores. A worker is a whole Bun process with the framework's module
- * graph loaded and — in the typed suites — its own cloned Postgres or an in-process PGlite, so
- * width costs hundreds of MB per step. It binds on a developer's 12- or 32-core machine, which is
- * exactly where an unbounded count would swap.
+ * The bound is memory, not cores. A worker is a whole Bun process with the framework's module
+ * graph loaded and — in the typed suites — its own cloned Postgres or an in-process PGlite. Until
+ * 22.3 that was a FIXED ceiling of 8, which held a 12-core box to 8 workers with 30 GB free: the
+ * notificado.co `unit` step (381 files) sat at 51s on 8 workers against a 90s gate budget. The
+ * ceiling is now what the machine can actually hold — `os.freemem()` (MemAvailable on Linux, so
+ * reclaimable page cache counts as free) divided by `WORKER_BYTES` — which still binds on a small
+ * CI runner and on a loaded laptop, the two places an unbounded count would swap.
  *
  * The floor of 2 keeps a 1-core box sharding rather than silently reverting to serial.
  */
-export const WORKER_CEILING = 8;
-
-/** Oversubscription factor. See the table above — it is measured, not chosen for roundness. */
 export const WORKER_OVERSUBSCRIBE = 1.5;
 
 /** The floor the paragraph above names: a 1-core box shards rather than reverting to serial. */
 export const WORKER_FLOOR = 2;
 
-export const defaultWorkers = (available: number = availableCpus()): number =>
-  Math.max(WORKER_FLOOR, Math.min(WORKER_CEILING, Math.round(available * WORKER_OVERSUBSCRIBE)));
+/**
+ * What one test worker is budgeted at, for the memory bound above. MEASURED — peak RSS of the whole
+ * `x test unit` process tree on the notificado.co corpus (381 files, PGlite per worker), 12-core
+ * box, `As of 2026-09-25`:
+ *
+ *   | workers | peak tree RSS |
+ *   |---------|---------------|
+ *   | 8       | 20.7 GB       |
+ *   | 12      | 22.5 GB       |
+ *   | 16      | 24.3 GB       |
+ *
+ * The MARGINAL worker costs ~0.45 GB (the slope); the ~17 GB intercept is the corpus itself —
+ * every file's module graph and database, retained per worker — and does not shrink with fewer
+ * workers, so it is not this bound's to budget. The constant is the slope doubled and rounded to a
+ * power of two, because free memory is read once, before a single worker has started.
+ */
+export const WORKER_BYTES = 1024 * 1024 * 1024;
+
+/**
+ * The most `--workers` accepts, on either command. Not a default and not a memory rule — a sanity
+ * bound: without one `--workers 5000` parsed, the run clamped only to the file count, and it
+ * started one Bun process per test FILE. An explicit width below it is the caller's call.
+ */
+export const WORKER_CEILING = 64;
+
+/** Bun ships no memory primitive; `freemem()` is libuv's MemAvailable on Linux. */
+export const availableMemory = (): number => freemem();
+
+/**
+ * `ceil(cpus x 1.5)`, held to what free memory can carry and never below the floor. The file-count
+ * clamp is `test-passes.ts`'s (every pass is clamped to its own file list), because only the
+ * caller knows the selection.
+ */
+export const defaultWorkers = (
+  available: number = availableCpus(),
+  freeBytes: number = availableMemory(),
+): number => {
+  const byCpu = Math.ceil(available * WORKER_OVERSUBSCRIBE);
+  const byMemory = Math.floor(freeBytes / WORKER_BYTES);
+  return Math.max(WORKER_FLOOR, Math.min(byCpu, byMemory, WORKER_CEILING));
+};
 
 /**
  * Which types run across worker processes, and why the other two cannot.

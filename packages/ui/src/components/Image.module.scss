@@ -17,3 +17,9 @@
   color: t.role('fg-muted');
   font-size: t.text(sm);
 }
+
+// A <picture> only chooses a source; it must not become a box of its own, or the <img>'s
+// reservation above would sit inside an inline wrapper with a line box of its own.
+.picture {
+  display: contents;
+}

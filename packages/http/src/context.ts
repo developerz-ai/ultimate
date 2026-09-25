@@ -112,6 +112,11 @@ export interface RequestContext extends Ctx {
    */
   actor: Actor;
   locale: string;
+  /**
+   * The locale a leading `/<locale>/` segment named, set by the `context` stage before the route
+   * is matched. Authoritative: the `locale` stage answers it over every other source.
+   */
+  pathLocale: string | undefined;
   tz: string;
   /** What the CLIENT says it is running, from `config.buildIdHeader`. `assertBuild()` reads it. */
   clientBuildId: string | null;
@@ -228,6 +233,7 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
     route: undefined,
     actor: anonymousActor(),
     locale: localeConfig().fallback,
+    pathLocale: undefined,
     tz: timeConfig().defaultZone,
     clientBuildId: null,
     input: undefined,

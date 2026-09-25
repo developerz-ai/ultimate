@@ -7,22 +7,22 @@ import { WORKER_CEILING, WORKER_FLOOR, WORKER_OVERSUBSCRIBE } from './test-worke
 export const verifySpec: CommandSpec = {
   name: 'verify',
   summary: 'the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets',
-  usage: 'x verify [--only <step>] [--workers N] [--json]',
+  usage: 'x verify [--only <step>[,<step>…]] [--workers N] [--json]',
   requiresApp: true,
   // Two flags, and only one of them narrows. `--workers` changes how wide the test steps
-  // spread, never which steps run. `--only` runs one step and says so in both renderers —
+  // spread, never which steps run. `--only` runs the steps it names and says so in both renderers —
   // never silently, which is the whole of what makes it safe to have.
   flags: [
     {
       name: 'workers',
       type: 'string',
-      summary: `test processes per parallel step (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
+      summary: `test processes per parallel step (default: ${WORKER_OVERSUBSCRIBE}x CPUs rounded up, held to free memory; min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
     },
     {
       name: 'only',
       type: 'string',
       summary:
-        'run ONE step by name — an iteration loop, NOT A GATE RUN; the gate is this command with no flag',
+        'run the named step(s), comma-separated, in one process — an iteration loop, NOT A GATE RUN; the gate is this command with no flag',
     },
   ],
 };

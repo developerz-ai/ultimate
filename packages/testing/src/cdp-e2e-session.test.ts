@@ -94,6 +94,37 @@ describe('cdpE2eSession', () => {
     ]);
   });
 
+  test('a pinned Accept-Language reaches every target before it is released', async () => {
+    const { connection, calls, emit } = fake();
+    const session = await cdpE2eSession({
+      connection,
+      loadTimeoutMs: 500,
+      acceptLanguage: 'es-co',
+    });
+    await session.newTab();
+    emit('Target.attachedToTarget', {
+      sessionId: 'worker-session',
+      targetInfo: { type: 'shared_worker', targetId: 'w-1' },
+    });
+    await settle();
+
+    for (const target of ['tab-session', 'worker-session']) {
+      const on = calls.filter((call) => call.sessionId === target);
+      const pin = on.findIndex((call) => call.method === 'Network.setExtraHTTPHeaders');
+      expect(on[pin]?.params).toEqual({ headers: { 'accept-language': 'es-co' } });
+      expect(pin).toBeLessThan(
+        on.findIndex((call) => call.method === 'Runtime.runIfWaitingForDebugger'),
+      );
+    }
+  });
+
+  test('with nothing pinned no header is sent — the browser keeps its own', async () => {
+    const { connection, calls } = fake();
+    const session = await cdpE2eSession({ connection, loadTimeoutMs: 500 });
+    await session.newTab();
+    expect(calls.some((call) => call.method === 'Network.setExtraHTTPHeaders')).toBe(false);
+  });
+
   test('a paused target that answers nothing until released is still released at once', async () => {
     // The deadlock: configuration AWAITED before the release, on a target that serves no command
     // while it waits for a debugger. The SharedWorker stayed paused for the full call deadline,

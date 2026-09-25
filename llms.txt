@@ -231,6 +231,7 @@ The single public documentation surface; there is no separate marketing site. So
 - [Storage and uploads](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Storage-And-Uploads.md): named disks, safe keys, the three-call signed upload, quarantine, orphans.
 - [Feature flags](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Feature-Flags.md): permanent switches and temporary ones that cannot be forgotten.
 - [SEO](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/SEO.md): enforced meta, typed JSON-LD, sitemaps, fail-closed robots, feeds, responsive images.
+- [Static assets](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Static-Assets.md).
 - [I18n](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/I18n.md): flat catalogs, loud misses, locale routing, `hreflang`.
 - [Theming](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Theming.md): 24 semantic colour roles as RGB channels, every token scale, `defineTheme()`, what contrast is gated.
 - [UI components](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/UI-Components.md): the four page composites, and the generated 52-component catalog.

@@ -12,8 +12,6 @@ import {
   lifecycleState,
   reportError,
 } from '@ultimat3/core';
-import { resolveLocale } from '@ultimat3/i18n';
-import { resolveTimeZone } from '@ultimat3/time';
 import { signInRedirect } from './auth-redirect';
 import { defaultCache, offersSharedCache, PRIVATE_CACHE, reviewedHint } from './cache-policy';
 import { type HttpConfig, stripBasePath } from './config';
@@ -35,9 +33,10 @@ import {
 } from './errors';
 import type { ServerHooks } from './hooks';
 import { acceptsHtml } from './html-render';
-import { readCookie } from './locale';
+import { dropVary, localeFromPath, routeLocalePrefix } from './locale-prefix';
 import { compose, type Middleware } from './middleware';
 import { overlayResponse } from './overlay';
+import { resolvePreferences } from './preferences';
 import { type RateLimitDecision, type RateLimiter, rateLimitSpends } from './rate-limit';
 import { rateLimited } from './rate-limit-errors';
 import type { UltimateRequest } from './request';
@@ -173,8 +172,13 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       if (config.buildId !== null) ctx.headers.set(config.buildIdHeader, config.buildId);
       request.assertBuild();
 
+      // A `/<locale>/` prefix is stripped BEFORE the match, never by middleware: middleware wraps
+      // matched routes only, so `/en/precios` could never reach the `/precios` route through it.
+      // A refusal still names the path as REQUESTED, so a 404 for `/en/x` does not say `/x`.
       const pathname = stripBasePath(ctx.url.pathname, config.basePath);
-      const match = matchRoute(input.table, ctx.method, pathname);
+      const routed = routeLocalePrefix(pathname, ctx, config.basePath);
+      if (routed instanceof Response) return routed;
+      const match = matchRoute(input.table, ctx.method, routed);
       if (!match.ok) {
         if (match.reason === 'not-found') throw routeNotFound(ctx.method, pathname);
         if (match.reason === 'path-invalid') throw pathInvalid(pathname, match.segment);
@@ -457,6 +461,9 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         if (name === 'vary') addVary(response, [value]);
         else response.headers.set(name, value);
       }
+      // After every contributor: a locale read off the URL makes the body a function of the URL,
+      // and a CDN keying it on `accept-language` too stores one copy per browser for nothing.
+      if (localeFromPath(ctx)) dropVary(response, 'accept-language');
       for (const [name, value] of Object.entries(
         responseSecurityHeaders(config.security, ctx.https),
       )) {
@@ -468,31 +475,3 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
   };
   return table;
 };
-
-/**
- * `ctx.locale`, `ctx.tz` and `content-language` from every source the request carries — the
- * cookie, the header and, once `auth` has run, the actor's saved preference. One function for both
- * stages, so the order is always the owners' (`resolveLocale`, `resolveTimeZone`) and never this
- * file's.
- */
-function resolvePreferences(
-  request: UltimateRequest,
-  ctx: RequestContext,
-  config: HttpConfig,
-): void {
-  const cookies = request.header('cookie');
-  ctx.locale = resolveLocale({
-    // Documented as a source and never read until 2026-09: an email preview link's `?locale=es`
-    // rendered in the visitor's cookie locale. The ORDER stays `resolveLocale`'s.
-    query: ctx.url.searchParams.get('locale'),
-    header: request.header('accept-language'),
-    cookie: readCookie(cookies, config.locale.cookie),
-    user: ctx.actor.locale,
-  }).locale;
-  ctx.tz = resolveTimeZone({
-    cookie: readCookie(cookies, config.tz.cookie),
-    header: request.header(config.tz.header),
-    user: ctx.actor.tz ?? null,
-  }).zone;
-  ctx.headers.set('content-language', ctx.locale);
-}

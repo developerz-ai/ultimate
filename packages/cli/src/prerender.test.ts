@@ -190,7 +190,9 @@ describe('x build --target static', () => {
     const html = await Bun.file(join(out, 'index.html')).text();
     expect(html.startsWith('<!doctype html>')).toBe(true);
     expect(html).toContain('<title>Home</title>');
-    expect(html).toContain('<link rel="canonical" href="/">');
+    // Absolute, against the build's origin: a relative canonical is one a crawler resolves against
+    // whichever host it fetched from — a CDN's, a preview's.
+    expect(html).toContain('<link rel="canonical" href="https://example.test">');
     const page = report.pages[0];
     expect(page?.bytes).toBe(html.length);
     // The hash is the artifact's identity — the ETag and the precache revision are the same value.

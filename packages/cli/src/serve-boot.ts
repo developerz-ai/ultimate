@@ -29,6 +29,7 @@ import { seoRoutes } from './seo-routes';
 import { loadDrainConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
 import type { ServedApp, ServeOptions } from './serve-types';
+import { loadSiteSettings, publicOrigin } from './site-config';
 import { styleBundle } from './style-bundle';
 import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
@@ -138,6 +139,9 @@ async function webSurface(
   // prevent, and it is the one an operator cannot see without installing the app.
   const pwa = await loadPwaArtifacts(options.root);
   const theme = themeBoot(await loadThemeMode(options.root));
+  // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
+  const site = await loadSiteSettings(options.root);
+  const origin = publicOrigin(options.env, site);
   // The page's sync target and its scripts — the same call `x dev` makes, so the two cannot differ.
   // Before the service worker, which precaches those scripts.
   const sync = await pageSync(options.root, options.env, buildId, runtime.realtime);
@@ -175,7 +179,7 @@ async function webSurface(
     // filled, so this process serves exactly the CSS it renders against.
     ...styleRoutes(() => styleBundle()),
     // `robots.txt` and `sitemap.xml`, the same two files the static export writes (`site-seo.ts`).
-    ...seoRoutes({ env: options.env }),
+    ...seoRoutes({ env: options.env, site }),
     // The page's one socket: its worker script, served beside the islands for their reason.
     ...sync.routes,
     ...appRoutes({
@@ -184,6 +188,7 @@ async function webSurface(
       ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
       themeHead: theme.head,
+      ...(origin === undefined ? {} : { origin }),
       ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
       // Only when a store was supplied. `createIsrController` defaults to a per-process memory
       // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of

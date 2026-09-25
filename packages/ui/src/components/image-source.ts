@@ -180,3 +180,68 @@ function assertPixels(value: number): void {
     throw invalidValueError('Image', value, 'a positive whole number of CSS pixels');
   }
 }
+
+/** `16 / 9`, as CSS writes it — the reservation when the intrinsic size is not known. */
+export type ImageAspectRatio = `${number} / ${number}`;
+
+const RATIO = /^\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*$/;
+
+/**
+ * The box an image reserves, which it ALWAYS reserves: both intrinsic dimensions, or an explicit
+ * `aspectRatio` — never neither, which is a layout shift waiting for the decode, and never both,
+ * which is two answers to one question. The returned ratio is what `--image-ratio` carries.
+ */
+export function reservedRatio(
+  width: number | undefined,
+  height: number | undefined,
+  aspectRatio: string | undefined,
+): string {
+  if (aspectRatio !== undefined) {
+    if (width !== undefined || height !== undefined) {
+      throw invalidValueError(
+        'Image',
+        { width, height, aspectRatio },
+        'width and height, or aspectRatio — not both, which would be two ratios for one box',
+      );
+    }
+    const match = RATIO.exec(aspectRatio);
+    if (match === null || Number(match[1]) <= 0 || Number(match[2]) <= 0) {
+      throw invalidValueError('Image', aspectRatio, 'an aspectRatio such as "16 / 9"');
+    }
+    return `${match[1]} / ${match[2]}`;
+  }
+  const box = boxFor(width, height);
+  if (box === undefined) {
+    throw invalidValueError(
+      'Image',
+      { width, height },
+      'width and height (the intrinsic size) or an aspectRatio — an image with neither reserves no box and shifts the layout when it decodes',
+    );
+  }
+  return ratioFor(box) as string;
+}
+
+/** Modern encodings, offered in this order ahead of the `<img>`'s own `src`. */
+export interface ImageSources {
+  readonly avif?: readonly ImageVariant[] | undefined;
+  readonly webp?: readonly ImageVariant[] | undefined;
+}
+
+export interface ImageSourceSet {
+  readonly type: 'image/avif' | 'image/webp';
+  readonly srcset: string;
+}
+
+/**
+ * One `<source>` per encoding handed in, AVIF first: the browser takes the FIRST type it can
+ * decode, so the smaller encoding has to be asked about before the larger one.
+ */
+export function sourceSetsFor(sources: ImageSources | undefined): readonly ImageSourceSet[] {
+  if (sources === undefined) return [];
+  const sets: ImageSourceSet[] = [];
+  const avif = srcsetFor(sources.avif);
+  if (avif !== undefined) sets.push({ type: 'image/avif', srcset: avif });
+  const webp = srcsetFor(sources.webp);
+  if (webp !== undefined) sets.push({ type: 'image/webp', srcset: webp });
+  return sets;
+}

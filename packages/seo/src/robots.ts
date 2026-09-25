@@ -18,6 +18,12 @@ export interface RobotsConfig {
   /** Omitted means "resolve from the environment"; anything but `production` disallows all. */
   environment?: Environment | undefined;
   groups?: readonly RobotsGroup[];
+  /**
+   * Paths every crawler is kept out of — `app.config.ts`'s `seo.robots.disallow`. Added to the
+   * default `User-agent: *` group, or to each declared group that names `*`. Production only: a
+   * non-production `robots.txt` already disallows everything.
+   */
+  disallow?: readonly string[];
   /** Sitemap paths or absolute URLs. Only emitted in production. */
   sitemaps?: readonly string[];
   /** Extra lines appended verbatim, e.g. a `Host:` directive. */
@@ -57,10 +63,16 @@ export function buildRobots(config: RobotsConfig): string {
     return `${lines.join('\n')}\n`;
   }
 
-  const groups: readonly RobotsGroup[] =
+  const declared: readonly RobotsGroup[] =
     config.groups === undefined || config.groups.length === 0
       ? [{ userAgent: '*', allow: ['/'] }]
       : config.groups;
+  const extra = config.disallow ?? [];
+  const groups = declared.map((group) =>
+    extra.length === 0 || !agents(group.userAgent).includes('*')
+      ? group
+      : { ...group, disallow: [...(group.disallow ?? []), ...extra] },
+  );
 
   for (const group of groups) {
     for (const agent of agents(group.userAgent)) lines.push(`User-agent: ${agent}`);

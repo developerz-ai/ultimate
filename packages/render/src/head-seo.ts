@@ -16,6 +16,13 @@ const IDENTITY: Readonly<Record<SeoHeadTag['tag'], readonly string[]>> = {
 };
 
 /**
+ * Open Graph properties a document carries once PER VALUE. Keyed by property alone, the dedupe
+ * kept the last: an article with three tags published one, and a page in three locales named one
+ * alternate. Their content is part of their identity.
+ */
+const REPEATABLE_PROPERTIES = new Set(['og:locale:alternate', 'article:tag']);
+
+/**
  * `<meta name="description">` → `meta:description`. Scripts also carry their position: a page
  * with three JSON-LD nodes emits three tags with identical attributes, and keying them alike
  * would collapse the graph down to its last node.
@@ -24,7 +31,14 @@ export function headTagKey(tag: SeoHeadTag, index: number): string {
   const identity = IDENTITY[tag.tag]
     .map((name) => tag.attrs[name])
     .filter((value): value is string => value !== undefined);
-  return [tag.tag, ...identity, ...(tag.tag === 'script' ? [String(index)] : [])].join(':');
+  const property = tag.attrs['property'];
+  const repeated =
+    property !== undefined && REPEATABLE_PROPERTIES.has(property)
+      ? [tag.attrs['content'] ?? '']
+      : [];
+  return [tag.tag, ...identity, ...repeated, ...(tag.tag === 'script' ? [String(index)] : [])].join(
+    ':',
+  );
 }
 
 export function toHeadTag(tag: SeoHeadTag, index: number): HeadTag {

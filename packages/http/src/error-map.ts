@@ -376,6 +376,10 @@ export const ERROR_STATUS = {
   // request that ran the loader, so it needs a row for the same reason the line above does: an
   // unclassified 500 blanks the sentence naming the status and the `redirect()` to use instead.
   X_ROUTE_STATUS_INVALID: 500,
+  // `asset('assets/…')` named a file that is not on disk. The static build refuses it, but an `ssr`
+  // page calls `asset()` INSIDE the request it renders, so it reaches a caller there — a deploy
+  // defect, never the visitor's, hence 500, declared so the cause naming the missing file survives.
+  X_ASSET_MISSING: 500,
   // @ultimat3/mail
   // The deployment configured no transport. It reaches a caller only through an inline
   // `send(…, { sync: true })` inside a request; the queued path dead-letters instead. A server-side

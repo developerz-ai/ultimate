@@ -47,6 +47,7 @@
 - [Storage and uploads](Storage-And-Uploads)
 - [Feature flags](Feature-Flags)
 - [SEO](SEO)
+- [Static assets](Static-Assets)
 
 **Cross-cutting**
 

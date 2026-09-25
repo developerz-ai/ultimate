@@ -77,4 +77,30 @@ describe('LocaleSwitcher', () => {
     expect(links.map((node) => node.props['aria-current'])).toEqual([undefined, 'true']);
     expect(links.map((node) => node.props['children'])).toEqual(['English', 'Deutsch']);
   });
+
+  test('without path or hrefFor there are no links — a select, never a nav of empty hrefs', () => {
+    const nodes = renderNodes(LocaleSwitcher, { locales: ['es-co', 'en'] });
+    expect(byTag(nodes, 'a')).toEqual([]);
+  });
+
+  test('path alone links each locale to this page — the default unprefixed, the rest prefixed', () => {
+    const nodes = renderNodes(LocaleSwitcher, {
+      locales: ['es-co', 'en'],
+      value: 'en',
+      path: '/en/precios',
+    });
+    expect(byTag(nodes, 'a').map((node) => node.props['href'])).toEqual([
+      '/precios',
+      '/en/precios',
+    ]);
+  });
+
+  test('an explicit defaultLocale decides which link is unprefixed', () => {
+    const nodes = renderNodes(LocaleSwitcher, {
+      locales: ['en', 'es-co'],
+      defaultLocale: 'es-co',
+      path: '/',
+    });
+    expect(byTag(nodes, 'a').map((node) => node.props['href'])).toEqual(['/en/', '/']);
+  });
 });

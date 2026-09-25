@@ -12,6 +12,8 @@ import { BASE_FIX, CACHE_TIER_FIX, TIMEZONE_FIX } from './config-fixes';
 import { type Input, lastSaid, layered } from './config-merge';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, pwaIssues } from './config-pwa';
+import type { SeoConfig, SiteConfig, SiteSectionsInput } from './config-site';
+import { mergeSite, siteIssues } from './config-site';
 import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
 import { defaultReadinessGraceMs, readinessGraceIssue } from './lifecycle-grace';
@@ -212,6 +214,8 @@ export interface AppConfig {
   readonly notify: NotifyConfig;
   readonly ai: AiConfig;
   readonly drain: DrainConfig;
+  readonly site: SiteConfig;
+  readonly seo: SeoConfig;
 }
 
 /** `mcp` is the only member, and it is NESTED — `Input<AiConfig>` would make it all-or-nothing. */
@@ -230,7 +234,7 @@ export interface PwaConfigInput extends Omit<Input<PwaConfig>, 'offline'> {
   readonly offline?: Input<PwaOfflineConfig> | undefined;
 }
 
-export interface AppConfigInput {
+export interface AppConfigInput extends SiteSectionsInput {
   readonly name: string;
   readonly locales?: readonly string[] | undefined;
   readonly defaultLocale?: string | undefined;
@@ -271,7 +275,7 @@ function isLocale(value: string): boolean {
   }
 }
 
-function defaults(name: string): Omit<AppConfig, 'name'> {
+function defaults(name: string): Omit<AppConfig, 'name' | 'site' | 'seo'> {
   return {
     locales: ['en'],
     defaultLocale: 'en',
@@ -380,6 +384,7 @@ function validate(config: AppConfig): void {
   // remedy, because `pwa.enabled` turning four other requirements on is a question about that block
   // and nothing else here.
   if (pwaIssues(config.pwa, issues)) pwaFix.push(PWA_FIX);
+  siteIssues(config, issues);
 
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
@@ -487,6 +492,7 @@ export function defineConfig(
       base.drain,
       layers.map((layer) => layer.drain),
     ),
+    ...mergeSite(layers),
   };
 
   validate(config);

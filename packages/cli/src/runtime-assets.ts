@@ -26,13 +26,17 @@ import {
   authorizeStorageRead,
   STORAGE_READ_PERMISSION,
 } from './runtime-storage';
+import { siteAssetRoutes } from './site-asset-routes';
+import { siteAssetTable } from './site-assets';
 
 /**
  * Storage-backed images. `responsiveImage({ src: '/media/<key>' })` mints its variants under it.
  * Guarded exactly as `/_storage` is — an object reachable through two URLs must not be reachable
  * on two different terms — so a `src` under this path needs a signed-in reader holding
- * `storage:read`. A genuinely public image belongs in `apps/web/site/`, which is served as a
- * static asset and never touches a disk holding another tenant's uploads.
+ * `storage:read`. A genuinely public image belongs in `apps/web/site/assets/`, named with
+ * `asset('assets/…')`: served below at a content-hashed `/assets/*` URL, copied into the static
+ * export under the same name (`site-assets.ts`), and never touching a disk that holds another
+ * tenant's uploads.
  */
 export const MEDIA_BASE_PATH = '/media';
 
@@ -222,6 +226,10 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
   // container is the dev/prod difference this package's own rule forbids. `favicon.ts` owns what
   // the answer IS — this file only says the app's asset surface is where it hangs.
   routes.push(faviconRoute(options.root));
+  // And every other public file of the site: `apps/web/site/assets/**` at the hashed URLs
+  // `asset()` mints, immutable. The same table `loadApp` installed for the renderer, so the URL a
+  // document names and the URL this answers are one computation.
+  routes.push(...siteAssetRoutes(siteAssetTable(options.root)));
   // Same rule one asset further along: the icons above are the ones this manifest NAMES, so the
   // two belong to one surface and cannot be mounted from two places without drifting apart.
   if (options.pwa !== undefined) routes.push(pwaManifestRoute(options.pwa));

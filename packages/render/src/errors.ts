@@ -25,6 +25,7 @@ export const RENDER_ERROR_CODES = [
   // stylesheet registry and `stylesFor`, so "the CSS a document on this surface carries" is a fact
   // about render's own output. `x verify` is only the surface that reports it.
   'X_STYLES_GLOBAL_MISSING',
+  'X_ASSET_MISSING',
 ] as const;
 
 export type RenderErrorCode = (typeof RENDER_ERROR_CODES)[number];
@@ -47,6 +48,7 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_ISLAND_NOT_HYDRATED: 'a page renders an island that nothing would ever boot',
   X_STYLES_GLOBAL_MISSING:
     'a surface renders documents whose CSS defines no :root custom properties',
+  X_ASSET_MISSING: 'a page names a site asset the app does not have',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -268,6 +270,22 @@ export class RouteStatusInvalidError extends UltimateError {
   constructor(cause: string, fix: string) {
     super({
       code: RouteStatusInvalidError.code,
+      cause,
+      fix,
+    });
+  }
+}
+
+/**
+ * `asset('assets/…')` named a file the app's site asset table does not hold. Raised while the
+ * page RENDERS, so the static build fails on it the way it fails on a bad island — a hashed URL
+ * that 404s in every browser is the one outcome a build-checked helper exists to prevent.
+ */
+export class AssetMissingError extends UltimateError {
+  static readonly code = 'X_ASSET_MISSING' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: AssetMissingError.code,
       cause,
       fix,
     });

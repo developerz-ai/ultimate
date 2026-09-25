@@ -49,7 +49,7 @@ interface RunJson {
   readonly failed: readonly string[];
   readonly skipped: readonly string[];
   readonly notAGateRun?: boolean;
-  readonly only?: string;
+  readonly only?: readonly string[];
 }
 
 const dataOf = (data: unknown): RunJson => data as RunJson;
@@ -92,7 +92,7 @@ describe('unit · x verify --only is an iteration loop, never the gate', () => {
     // mistake a narrowed run for a green gate. `summary` rides in the JSON body too.
     expect(result.summary.startsWith(NOT_A_GATE_RUN)).toBe(true);
     expect(dataOf(result.data).notAGateRun).toBe(true);
-    expect(dataOf(result.data).only).toBe('lint');
+    expect(dataOf(result.data).only).toEqual(['lint']);
   });
 
   test('it exits with the step own status, both ways', async () => {

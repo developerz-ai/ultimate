@@ -124,6 +124,18 @@ describe('unit · a session is one page, configured before it loads anything', (
     expect(wire.calls.at(-1)?.sessionId).toBe('S1');
   });
 
+  test('a session asks for its own viewport and headers before the first navigation', async () => {
+    const { wire } = await opened(attach, {
+      viewport: { width: 390, height: 844 },
+      headers: { 'accept-language': 'es-co' },
+    });
+    const headers = wire.calls.find((call) => call.method === 'Network.setExtraHTTPHeaders');
+    expect(headers?.params).toEqual({ headers: { 'accept-language': 'es-co' } });
+    expect(headers?.sessionId).toBe('S1');
+    expect(wire.calls.at(-1)?.method).toBe('Emulation.setDeviceMetricsOverride');
+    expect(wire.calls.at(-1)?.params).toMatchObject({ width: 390, height: 844 });
+  });
+
   test('close ends the launched browser once, however often it is called', async () => {
     const { session, closedCount } = await opened();
     await session.close();

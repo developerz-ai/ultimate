@@ -37,6 +37,22 @@ describe('fixProblem', () => {
     expect(fixProblem('runWithContext(createContext({ … }), fn)')).toBeUndefined();
   });
 
+  // An app's own gate is `bin/check`, and "check" is a banned word: without the script token,
+  // `fix: 'bin/check --full'` — the exact command to run — was refused as advice.
+  test('accepts a repo script as the command: bin/<name> and scripts/<name>.ts', () => {
+    expect(fixProblem('bin/check --full')).toBeUndefined();
+    expect(fixProblem('run ./bin/check, then commit')).toBeUndefined();
+    expect(fixProblem('check the chain: scripts/verify-chain.ts --deep')).toBeUndefined();
+    expect(fixProblem('try again: bin/probe')).toBeUndefined();
+  });
+
+  test('a script-shaped word that is not a repo script path still reads as advice', () => {
+    // `/usr/bin/…` is a system path, not the repo's script, and "bin" alone names nothing.
+    expect(fixProblem('check /usr/bin/env')).toContain('names no command, call or file');
+    expect(fixProblem('check the bin')).toContain('names no command, call or file');
+    expect(fixProblem('make sure robin/check passes')).toContain('names no command, call or file');
+  });
+
   test('accepts an instruction with no banned phrase and no command', () => {
     expect(fixProblem('move this call inside a handler')).toBeUndefined();
   });

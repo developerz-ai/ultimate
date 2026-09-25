@@ -71,6 +71,14 @@ export interface RouteMeta {
   readonly rateLimitBucket?: Bucket;
   readonly tags?: readonly string[];
   readonly description?: string;
+  /**
+   * Where this route's locale comes from. `'request'` (the default) is `resolveLocale`'s order —
+   * query → cookie → user → header. `'path'` is the URL alone: a `/<locale>/` prefix names it and
+   * the unprefixed path is ALWAYS the default locale, so the response is a function of its URL and
+   * `Vary: accept-language` is dropped. A prerendered `site/` page is `'path'`: the file a CDN
+   * serves for `/` cannot negotiate, so the served process must not either.
+   */
+  readonly localeSource?: 'path' | 'request';
 }
 
 export type RouteHandler = (

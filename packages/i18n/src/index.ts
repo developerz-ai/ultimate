@@ -36,6 +36,7 @@ export {
   resetCatalogs,
   resetLocaleConfig,
   resolveLocale,
+  routedLocales,
   t,
   translatorFor,
   useI18n,
@@ -83,6 +84,13 @@ export {
   pluralVariantsOf,
   selectPluralKey,
 } from './interpolate';
+export {
+  type LocalePrefix,
+  localeSegment,
+  localizedPath,
+  splitLocalePrefix,
+  unlocalizedPath,
+} from './locale-path';
 export {
   assertSupportedLocale,
   DEFAULT_LOCALE,

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "bee9a9add15b522a62a134156e3c7c38125a636fb96749e8c7f2d8ee76257419",
+  "buildId": "27e8a34a147c84efa7134a442894569460aa8624173a632c2477d6da2ee3e956",
   "tiers": {
     "0": [
       "core",
@@ -433,6 +433,11 @@
       "code": "X_APPROXIMATE_COUNT_FILTERED",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ASSET_MISSING",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
     },
     {
       "code": "X_ASYNC_CONTEXT_UNAVAILABLE",

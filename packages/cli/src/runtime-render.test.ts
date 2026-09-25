@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
+import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import type { RegisterRouteInput, RenderMode, RouteComponent } from '@ultimat3/render';
 import {
   clearRoutes,
@@ -200,17 +201,26 @@ describe('unit · x dev renders the app routes', () => {
     //
     // ONE server for both requests, for the reason the query test above gives: `serve()` builds a
     // fresh `IsrController` per call, so two servers could never observe a cache hit at all.
-    register({ file: 'apps/web/site/pricing/page.tsx', render: 'isr', revalidate: { ttl: '5m' } });
-    const server = serve();
-    const langOf = async (locale: string): Promise<string> => {
-      const response = await server.fetch(
-        new Request('http://dev.test/pricing', { headers: { 'accept-language': locale } }),
-      );
-      return /<html lang="(?<lang>[^"]*)"/.exec(await response.text())?.groups?.['lang'] ?? '';
-    };
+    // A `site/` page's locale is its URL's (`/es/pricing`), so the two visitors now differ by path
+    // AND by `ctx.locale` — the English one asked first, and the Spanish one must not get it.
+    configureLocales({ supported: ['en', 'es'], fallback: 'en' });
+    try {
+      register({
+        file: 'apps/web/site/pricing/page.tsx',
+        render: 'isr',
+        revalidate: { ttl: '5m' },
+      });
+      const server = serve();
+      const langOf = async (path: string): Promise<string> => {
+        const response = await server.fetch(new Request(`http://dev.test${path}`));
+        return /<html lang="(?<lang>[^"]*)"/.exec(await response.text())?.groups?.['lang'] ?? '';
+      };
 
-    expect(await langOf('es')).toBe('es');
-    expect(await langOf('en')).toBe('en');
+      expect(await langOf('/pricing')).toBe('en');
+      expect(await langOf('/es/pricing')).toBe('es');
+    } finally {
+      resetLocaleConfig();
+    }
   });
 
   test('a dynamic segment reaches meta as a param, matched by the router', async () => {
@@ -335,14 +345,35 @@ describe('unit · x dev renders the app routes', () => {
     register({ file: 'apps/web/site/page.tsx', render: 'static' });
     register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
 
-    expect(await (await get('/', { 'accept-language': 'de-DE,de;q=0.9' })).text()).toContain(
-      '<html lang="de">',
-    );
     expect(await (await get('/feed', { 'accept-language': 'ja' })).text()).toContain(
       '<html lang="ja">',
     );
     // No preference is the app's configured fallback, which is where `'en'` legitimately comes from.
     expect(await (await get('/')).text()).toContain('<html lang="en">');
+  });
+
+  // A `site/` page is prerendered once per locale and a CDN serves `/` as ONE file, so the served
+  // process may not negotiate it either: `/` answered German to a German browser from `x dev` and
+  // the default from the export — the prod bug that made every Spanish-default site English.
+  test('a site page is its URL`s locale: the default unprefixed, `/<locale>/` otherwise', async () => {
+    configureLocales({ supported: ['en', 'de'], fallback: 'en' });
+    try {
+      register({ file: 'apps/web/site/page.tsx', render: 'static' });
+      const german = await get('/', { 'accept-language': 'de-DE,de;q=0.9' });
+      expect(await german.text()).toContain('<html lang="en">');
+      expect((german.headers.get('vary') ?? '').toLowerCase()).not.toContain('accept-language');
+
+      const prefixed = await (await get('/de/')).text();
+      expect(prefixed).toContain('<html lang="de">');
+      expect(prefixed).toContain('<link rel="canonical" href="http://dev.test/de/">');
+      expect(prefixed).toContain('hreflang="x-default" href="http://dev.test"');
+
+      const duplicate = await get('/en/');
+      expect(duplicate.status).toBe(301);
+      expect(duplicate.headers.get('location')).toBe('/');
+    } finally {
+      resetLocaleConfig();
+    }
   });
 
   test('a streamed page flushes the component in its first chunk', async () => {

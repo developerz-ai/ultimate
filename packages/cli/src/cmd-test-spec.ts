@@ -10,7 +10,7 @@ export const testSpec: CommandSpec = {
   name: 'test',
   summary:
     'run one test type — or the whole suite — across N workers, one isolated database per worker',
-  usage: `x test [${TEST_TYPES.join('|')}] [--filter text] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--worker I] [--json] [-- <bun test flags>]`,
+  usage: `x test [${TEST_TYPES.join('|')}] [--filter path[,path…]] [--allow-empty] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--worker I] [--json] [-- <bun test flags>]`,
   positionalChoices: TEST_TYPES,
   // The one command that hands a tail to another tool — `bun test` — and the reason
   // `CommandSpec.passthrough` exists: `x test unit -- --coverage --bail` parsed both flags and
@@ -20,7 +20,7 @@ export const testSpec: CommandSpec = {
     {
       name: 'workers',
       type: 'string',
-      summary: `bun worker count (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
+      summary: `bun worker count (default: ${WORKER_OVERSUBSCRIBE}x CPUs rounded up, held to free memory, min ${WORKER_FLOOR}; max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
     },
     {
       name: 'worker',
@@ -28,7 +28,17 @@ export const testSpec: CommandSpec = {
       summary:
         'run only shard I of an N-way split of the selection, serially — one CI job\u2019s share',
     },
-    { name: 'filter', type: 'string', summary: 'only files whose path contains this substring' },
+    {
+      name: 'filter',
+      type: 'string',
+      summary: 'only files whose path contains this substring — or any of several, comma-separated',
+    },
+    {
+      name: 'allow-empty',
+      type: 'boolean',
+      summary:
+        'a selection that matches no test file exits 0 with a line saying so, instead of X_TEST_NO_FILES',
+    },
     {
       name: 'sample',
       type: 'string',

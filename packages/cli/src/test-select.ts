@@ -5,7 +5,7 @@
 import { join } from 'node:path';
 // Bun ships no equivalent: `join` builds the host-separator path from the scan root to a hit.
 // Sizing is Bun's own (`Bun.file().size`), so nothing here reaches for `node:fs`.
-import { nearestName } from '@ultimat3/core';
+import { nearestName, renderFixShellArg } from '@ultimat3/core';
 import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
@@ -45,17 +45,21 @@ const IGNORED = ['/dist/', '/build/', '/node_modules/', '/examples/', '/dummy/']
  * File size stands in for duration: cheap to read, and it correlates far better than file count.
  * `type`, when given, narrows to exactly the files verify-tests.ts would run for that suite — one
  * owner per path, decided by `ownerOf` there and never a second time here.
+ *
+ * `filter` is one substring or several: a path is kept when it contains ANY of them, so an app's
+ * scoped runner hands `x test` every affected slice at once instead of one process per slice.
  */
 export async function discoverTests(
   root: string,
-  filter?: string,
+  filter?: string | readonly string[],
   type?: TestType,
 ): Promise<readonly TestFile[]> {
+  const filters = filter === undefined ? undefined : typeof filter === 'string' ? [filter] : filter;
   const files: TestFile[] = [];
   for await (const found of new Bun.Glob(TEST_GLOB).scan({ cwd: root, absolute: false })) {
     const path = found.split('\\').join('/');
     if (IGNORED.some((part) => `/${path}`.includes(part))) continue;
-    if (filter !== undefined && !path.includes(filter)) continue;
+    if (filters !== undefined && !filters.some((part) => path.includes(part))) continue;
     if (type !== undefined && !belongsToType(path, type)) continue;
     files.push({ path, bytes: Bun.file(join(root, path)).size });
   }
@@ -132,6 +136,29 @@ export function readSample(args: ParsedArgs): number | undefined {
     });
   }
   return value;
+}
+
+/**
+ * `--filter`'s value as the list `discoverTests` matches: comma-separated, each item trimmed. An
+ * empty item is refused rather than dropped — `''` is a substring of every path, so `a,,b` would
+ * quietly widen a narrowed run back to the whole suite.
+ */
+export function readFilters(raw: string | undefined): readonly string[] | undefined {
+  if (raw === undefined) return undefined;
+  const items = raw.split(',').map((item) => item.trim());
+  if (items.some((item) => item === '')) {
+    const kept = items.filter((item) => item !== '');
+    throw new BadFlagError({
+      flag: 'filter',
+      command: 'test',
+      reason: `"${raw}" holds an empty path, and an empty substring matches every test file`,
+      fix:
+        kept.length === 0
+          ? 'x test --json'
+          : `x test --filter ${renderFixShellArg(kept.join(','), '<path,path>')}`,
+    });
+  }
+  return items;
 }
 
 /** The selection, as `NoTestFilesError` wants it: only the parts the caller actually asked for. */

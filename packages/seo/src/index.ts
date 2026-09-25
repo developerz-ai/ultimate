@@ -70,6 +70,8 @@ export {
   SoftwareApplication,
   WebSite,
 } from './ld';
+export type { LocalizedPage, MetaLocalization } from './locale-tags';
+export { hreflangTag, ogLocaleTag } from './locale-tags';
 export type {
   AlternateLocale,
   HeadTag,
@@ -85,6 +87,7 @@ export {
   applyTitleTemplate,
   DESCRIPTION_MAX_LENGTH,
   hreflangSet,
+  localizedAlternates,
   renderMeta,
   robotsContent,
   TITLE_MAX_LENGTH,
