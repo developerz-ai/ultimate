@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major ‚
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.2.2 - 2026-09-25
+
 ### Added
 
 - **cli:** the web role serves `GET /robots.txt` and `GET /sitemap.xml` in `x dev` and in
@@ -36,6 +40,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major ‚
   In an app whose default locale is not `en`, every tab read `‚ü¶dev.panel.mail.title‚üß`. The
   framework catalog is registered under `en` only, and the shell translated through the app's
   ambient locale.
+
+### Commits
+
+- fix(cli,admin): runtime robots.txt + sitemap.xml, no sync meta when realtime is off, api index edit, /_x locale (#530)
 
 ## 22.2.1 - 2026-09-25
 
