@@ -91,6 +91,25 @@ export function surfaceOf(file: string): Surface | null {
   return locateSurface(file)?.surface ?? null;
 }
 
+/**
+ * The surface of an ABSOLUTE path, read from the part below the app `root`. `surfaceOf` takes the
+ * first surface-named segment, which is right for the root-relative paths the route table and the
+ * boundary check hold — and wrong for an absolute one whose root is itself called `app/`: the
+ * scaffold's container runs from `WORKDIR /app`, and every stylesheet there read as `app`, so the
+ * site bundle was empty and every site document shipped with no stylesheet at all.
+ *
+ * A file outside `root` is read as `surfaceOf` reads it. A file inside an installed package
+ * (`node_modules/…`) has no surface whatever its directories are called: it is a package sheet,
+ * which both graphs carry.
+ */
+export function surfaceUnder(root: string, file: string): Surface | null {
+  const base = normalize(root).replace(/\/+$/, '');
+  const path = normalize(file);
+  const relative = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path;
+  if (/(?:^|\/)node_modules\//.test(relative)) return null;
+  return surfaceOf(relative);
+}
+
 function normalize(file: string): string {
   return file.replace(/\\/g, '/').replace(/^\.\//, '');
 }

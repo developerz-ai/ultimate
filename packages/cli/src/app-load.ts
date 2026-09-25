@@ -19,8 +19,9 @@ import { isRouteConfig, pageComponentOf, registerRoute, routeEntries } from '@ul
 // every app module below is loaded by the dynamic `import()` in this file. Before the render
 // barrel split it came free with the line above; after it, the only other path to `/server` from
 // here is six hops through `error-contract` → `fix-command` → the command registry, which is an
-// accident one refactor away from compiling every app's `.tsx` to `React.createElement`.
-import '@ultimat3/render/server';
+// accident one refactor away from compiling every app's `.tsx` to `React.createElement`. The named
+// import is a value import, so the side effect holds without the bare line it replaced.
+import { setStylesheetRoot } from '@ultimat3/render/server';
 import { APP_CONFIG_FILE } from './app-root';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
@@ -108,6 +109,10 @@ export function resetAppLoad(): void {
 }
 
 export async function loadApp(root: string): Promise<LoadedApp> {
+  // Before any import: a stylesheet's surface is read below the app root, never off its absolute
+  // path — under the container's `WORKDIR /app` that path's first segment is `app/`, and every
+  // sheet, the site's included, classified as app CSS.
+  setStylesheetRoot(root);
   const files: string[] = [];
   const findings: Finding[] = [];
 

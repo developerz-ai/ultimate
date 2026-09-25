@@ -8,7 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **render / cli:** a stylesheet's surface is read below the app root, never off its absolute path.
+  Under the scaffold container's `WORKDIR /app` every absolute path starts with an `app/` segment,
+  so every sheet — `site/` modules, `shared/global.scss`, `@ultimat3/ui`'s — classified as `app`,
+  `stylesFor('site')` was empty, and every prerendered and `site/` document shipped with no
+  `<link rel="stylesheet">`. The same held for any root with `site/`, `api/` or `shared/` above it.
+  `loadApp(root)` now names the root before it imports a module (`setStylesheetRoot`, new in
+  `@ultimat3/render/server`; the working directory when unset), sheets registered earlier are
+  reclassified, and a sheet under `node_modules/` is a package sheet whatever its directories are
+  called. Route and boundary classification already read root-relative paths and are unchanged.
 
 ## 22.2.0 - 2026-09-24
 

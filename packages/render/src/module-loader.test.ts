@@ -11,6 +11,7 @@ import {
   JSX_FACTORY_SPECIFIER,
   loadStylesheet,
   registeredStylesheets,
+  setStylesheetRoot,
   stylesFor,
   stylesheetsRevision,
   transformTsx,
@@ -27,6 +28,7 @@ const occurrences = (haystack: string, needle: string): number => haystack.split
 
 afterEach(() => {
   clearStylesheets();
+  setStylesheetRoot(undefined);
 });
 
 describe('installRenderLoader', () => {
@@ -229,5 +231,55 @@ describe('stylesFor', () => {
     loadStylesheet(GLOBAL, GLOBAL_CSS);
     loadStylesheet(PACKAGE, '.card{color:green}');
     expect(stylesFor('app').startsWith(GLOBAL_CSS)).toBe(true);
+  });
+});
+
+// The container runs the app from `WORKDIR /app`, so every absolute path a Bun plugin hands the
+// loader starts with an `app/` segment. Classified from the absolute path, the site page, the
+// global layer and the UI kit all landed on `app`, and every site document went out unstyled.
+describe('an app served from /app', () => {
+  const ROOT = '/app';
+  const SITE_SHEET = '/app/apps/web/site/page.module.scss';
+  const APP_SHEET = '/app/apps/web/app/feed/page.module.scss';
+  const GLOBAL_SHEET = '/app/apps/web/shared/global.scss';
+  const KIT_SHEET = '/app/node_modules/@ultimat3/ui/src/stack.module.scss';
+
+  test('each sheet is classified by where it sits in the app, not by the root it sits under', () => {
+    setStylesheetRoot(ROOT);
+    loadStylesheet(SITE_SHEET, '.hero{color:red}');
+    loadStylesheet(APP_SHEET, '.feed{color:blue}');
+    loadStylesheet(GLOBAL_SHEET, GLOBAL_CSS);
+    loadStylesheet(KIT_SHEET, '.stack{display:flex}');
+
+    const surfaces = Object.fromEntries(registeredStylesheets().map((s) => [s.file, s.surface]));
+    expect(surfaces).toEqual({
+      [SITE_SHEET]: 'site',
+      [APP_SHEET]: 'app',
+      [GLOBAL_SHEET]: 'shared',
+      [KIT_SHEET]: null,
+    });
+    const site = stylesFor('site');
+    expect(site).toContain('color:red');
+    expect(site).toContain('--color-fg:');
+    expect(site).toContain('display:flex');
+    expect(site).not.toContain('color:blue');
+  });
+
+  // The order `x build` meets: a sheet can register before `loadApp` names the root, and a
+  // classification frozen at registration would keep the answer the wrong root gave.
+  test('naming the root reclassifies what registered before it, and moves the revision', () => {
+    setStylesheetRoot('/');
+    loadStylesheet(SITE_SHEET, '.hero{color:red}');
+    expect(stylesFor('site')).toBe('');
+
+    const before = stylesheetsRevision();
+    setStylesheetRoot(ROOT);
+    expect(stylesFor('site')).toContain('color:red');
+    expect(stylesheetsRevision()).toBeGreaterThan(before);
+
+    // Naming the same root again changes no answer, so it mints no new stylesheet URL.
+    const settled = stylesheetsRevision();
+    setStylesheetRoot(ROOT);
+    expect(stylesheetsRevision()).toBe(settled);
   });
 });

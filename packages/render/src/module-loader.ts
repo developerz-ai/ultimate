@@ -8,7 +8,7 @@ import { renderThrowable } from '@ultimat3/core';
 import { compileStylesheet, isGlobalStylesheet, stripCharset } from './css-modules';
 import { PrerenderFailedError } from './errors';
 import type { Surface } from './surfaces';
-import { surfaceOf } from './surfaces';
+import { surfaceUnder } from './surfaces';
 
 /**
  * Why a transform at all: `tsconfig.json` says `jsx: 'preserve'`, which makes Bun fall back to the
@@ -101,6 +101,32 @@ export function registeredStylesheets(): readonly Stylesheet[] {
   return [...stylesheets.values()];
 }
 
+/**
+ * The directory a sheet's surface is read below. Absent, the process's working directory — which
+ * is the app root in the container (`WORKDIR /app`) and under every `x` command run from one.
+ */
+let stylesheetRoot: string | undefined;
+
+const surfaceOfSheet = (path: string): Surface | null =>
+  surfaceUnder(stylesheetRoot ?? process.cwd(), path);
+
+/**
+ * Names the app root the registry classifies against; `loadApp` calls it before importing a module.
+ * Every sheet already registered is classified again, because a sheet can load before the root is
+ * named — and a classification frozen then would keep the answer the wrong root gave. The revision
+ * moves only when an answer does, so naming the same root twice mints no new stylesheet URL.
+ * `undefined` returns to the working directory.
+ */
+export function setStylesheetRoot(root: string | undefined): void {
+  stylesheetRoot = root;
+  for (const [path, sheet] of stylesheets) {
+    const surface = surfaceOfSheet(path);
+    if (surface === sheet.surface) continue;
+    stylesheets.set(path, { ...sheet, surface });
+    revision += 1;
+  }
+}
+
 /** Test seam: the registry is process-global because the module cache it mirrors is too. */
 export function clearStylesheets(): void {
   if (stylesheets.size > 0) revision += 1;
@@ -159,7 +185,7 @@ export function loadStylesheet(path: string, source: string): string {
     if (stylesheets.get(path)?.css !== compiled.css) revision += 1;
     stylesheets.set(path, {
       file: path,
-      surface: surfaceOf(path),
+      surface: surfaceOfSheet(path),
       global: isGlobalStylesheet(path),
       css: compiled.css,
     });

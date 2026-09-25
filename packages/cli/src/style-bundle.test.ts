@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path API — nothing native joins a directory to a file.
 import { join } from 'node:path';
-import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
+import { clearStylesheets, loadStylesheet, setStylesheetRoot } from '@ultimat3/render/server';
 import { STYLE_BASE_PATH, styleBundle, styleBundleOf, writeStyles } from './style-bundle';
 
 const SITE = '/srv/demo/apps/web/site/page.module.scss';
@@ -24,6 +24,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   clearStylesheets();
+  setStylesheetRoot(undefined);
   await rm(OUT, { recursive: true, force: true });
 });
 
@@ -98,5 +99,50 @@ describe('styleBundle', () => {
     const url = bundle.chunks[0]?.url ?? '';
 
     expect(await Bun.file(join(OUT, url.slice(1))).text()).toBe('.hero{color:red}');
+  });
+});
+
+// The container's shape: the app runs from `WORKDIR /app`, so every sheet's absolute path begins
+// with an `app/` segment. The fingerprinted pipeline has to hold there exactly as it does in a
+// checkout — the site gets a file of its own, and its name moves with its bytes and only with them.
+describe('styleBundle, for an app served from /app', () => {
+  const SITE_SHEET = '/app/apps/web/site/page.module.scss';
+  const APP_SHEET = '/app/apps/web/app/feed/page.module.scss';
+  const GLOBAL_SHEET = '/app/apps/web/shared/global.scss';
+
+  beforeEach(() => {
+    setStylesheetRoot('/app');
+  });
+
+  test('the site gets its own content-hashed file, carrying the global layer and no app CSS', () => {
+    loadStylesheet(GLOBAL_SHEET, ':root{--space-9:9rem}');
+    loadStylesheet(SITE_SHEET, '.hero{color:red}');
+    loadStylesheet(APP_SHEET, '.feed{color:blue}');
+    const bundle = styleBundle();
+    const site = bundle.hrefFor('site') ?? '';
+    const app = bundle.hrefFor('app') ?? '';
+
+    expect(site).toMatch(new RegExp(`^${STYLE_BASE_PATH}/[0-9a-f]{8}\\.css$`));
+    expect(site).not.toBe(app);
+    const css = bundle.chunkAt(site)?.css ?? '';
+    expect(css).toContain('--space-9:9rem');
+    expect(css).toContain('color:red');
+    expect(css).not.toContain('color:blue');
+  });
+
+  test('the site URL is stable while its CSS is, and moves only when its CSS does', () => {
+    loadStylesheet(SITE_SHEET, '.hero{color:red}');
+    loadStylesheet(APP_SHEET, '.feed{color:blue}');
+    const first = styleBundle().hrefFor('site');
+
+    // The same bytes again, and an edit on the OTHER surface: neither is a reason to re-download.
+    loadStylesheet(SITE_SHEET, '.hero{color:red}');
+    loadStylesheet(APP_SHEET, '.feed{color:purple}');
+    expect(styleBundle().hrefFor('site')).toBe(first);
+
+    loadStylesheet(SITE_SHEET, '.hero{color:green}');
+    const moved = styleBundle().hrefFor('site') ?? '';
+    expect(moved).not.toBe(first);
+    expect(styleBundle().chunkAt(moved)?.css).toContain('color:green');
   });
 });
