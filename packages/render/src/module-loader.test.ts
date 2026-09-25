@@ -265,6 +265,15 @@ describe('an app served from /app', () => {
     expect(site).not.toContain('color:blue');
   });
 
+  // `loadApp('.')` from `/app` names a RELATIVE root, and every path the plugin hands the loader is
+  // absolute: compared as written, the root matched nothing and the `/app/` segment won again.
+  test('a relative root is resolved against the working directory before it is compared', () => {
+    setStylesheetRoot('app');
+    const sheet = join(process.cwd(), 'app', 'apps/web/site/page.module.scss');
+    loadStylesheet(sheet, '.hero{color:red}');
+    expect(registeredStylesheets()[0]?.surface).toBe('site');
+  });
+
   // The order `x build` meets: a sheet can register before `loadApp` names the root, and a
   // classification frozen at registration would keep the answer the wrong root gave.
   test('naming the root reclassifies what registered before it, and moves the revision', () => {

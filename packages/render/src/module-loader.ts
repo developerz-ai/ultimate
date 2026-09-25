@@ -4,6 +4,9 @@
  * `bun test` all load a component the same way and there is no separate "bundled" behaviour.
  */
 
+// why: Bun ships no path API, and a relative app root has to be resolved against the working
+// directory before it can be compared with the absolute paths the Bun plugin hands this loader.
+import { resolve } from 'node:path';
 import { renderThrowable } from '@ultimat3/core';
 import { compileStylesheet, isGlobalStylesheet, stripCharset } from './css-modules';
 import { PrerenderFailedError } from './errors';
@@ -115,10 +118,12 @@ const surfaceOfSheet = (path: string): Surface | null =>
  * Every sheet already registered is classified again, because a sheet can load before the root is
  * named — and a classification frozen then would keep the answer the wrong root gave. The revision
  * moves only when an answer does, so naming the same root twice mints no new stylesheet URL.
- * `undefined` returns to the working directory.
+ * A relative root is resolved against the working directory. `undefined` returns to the working
+ * directory.
  */
 export function setStylesheetRoot(root: string | undefined): void {
-  stylesheetRoot = root;
+  // Resolved: `loadApp('.')` is a legal call, and `.` is a prefix of no absolute path.
+  stylesheetRoot = root === undefined ? undefined : resolve(root);
   for (const [path, sheet] of stylesheets) {
     const surface = surfaceOfSheet(path);
     if (surface === sheet.surface) continue;

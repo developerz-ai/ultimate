@@ -36,6 +36,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   In an app whose default locale is not `en`, every tab read `⟦dev.panel.mail.title⟧`. The
   framework catalog is registered under `en` only, and the shell translated through the app's
   ambient locale.
+- **render:** `setStylesheetRoot` resolves a relative root, so `loadApp('.')` from `/app` classifies
+  sheets correctly. Found in review of #528.
 
 ## 22.2.1 - 2026-09-25
 
