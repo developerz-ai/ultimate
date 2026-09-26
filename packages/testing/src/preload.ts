@@ -8,6 +8,7 @@
 import { installDeterminism } from './determinism';
 import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
+import { releasePluginsAfterIsolatedFile } from './isolated-plugins';
 import { installRegistryLeakGuard } from './registry-leak-guard';
 import { sealNetwork } from './sealed-network';
 
@@ -24,6 +25,10 @@ registerFrameworkFixtures();
 // One `bun test` invocation is one process: a file that leaves a process-global registry dirty
 // fails a later file in another package, for a reason nothing in that file explains.
 installRegistryLeakGuard();
+
+// Isolated runs only (`x test` says so): Bun 1.4.0 keeps every finished file alive while a plugin
+// is registered. See `isolated-plugins.ts`.
+releasePluginsAfterIsolatedFile();
 
 // Opt-out exists for one case: a test that deliberately exercises a real integration in a job the
 // team runs on purpose. It is an env var, not an API, so it cannot be set from inside a test file.

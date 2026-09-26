@@ -111,8 +111,10 @@ let installed = false;
  * otherwise register the hooks twice and report every leak twice.
  *
  * Under `--isolate` each file gets its own module registry, so the guard judges that one file and
- * nothing carries across — which is correct, not a hole: with `--isolate` there is no cross-file
- * pollution to find, and a file that leaks is still reported against itself.
+ * no REGISTRY state carries across — which is correct, not a hole: a file that leaks is still
+ * reported against itself. MEMORY does carry across: on Bun 1.4.0 the plugin this registers keeps
+ * every finished file's global object alive for the life of the worker (~57 MB per file measured).
+ * `isolated-plugins.ts` clears the plugins after each isolated file.
  */
 export function installRegistryLeakGuard(): void {
   if (installed) return;

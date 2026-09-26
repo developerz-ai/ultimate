@@ -27,7 +27,10 @@
 // in the gate would notice had gone stale.
 //
 // TWO THINGS THE OLD SPLIT OWNED AND BUN NOW OWNS. `--parallel` implies `--isolate`, so the
-// per-FILE module registry that made an arbitrary partition safe at all is unchanged. And the
+// per-FILE module registry that made an arbitrary partition safe at all is unchanged. Isolation is
+// not per-file MEMORY, though: on Bun 1.4.0 a finished file's global object is never freed while
+// any `Bun.plugin` handler is registered, so every child gets `ULTIMATE_TEST_ISOLATED=1` and
+// `@ultimat3/testing`'s preload clears the plugins after each file (`isolated-plugins.ts`). And the
 // per-WORKER database survives untouched: `@ultimat3/testing`'s `workerId` already read
 // `BUN_TEST_WORKER_ID` as its second key, which is exactly what Bun sets, 1..N, one per real
 // process (probed on 1.4.0). `ULTIMATE_TEST_WORKER` stays the first key and is what `--worker`
@@ -41,6 +44,10 @@ import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import { quoteArg } from './shell-quote';
 import { testEnvOverrides } from './test-dotenv';
+
+/** `@ultimat3/testing`'s `ISOLATED_ENV`, restated: `cli → testing` is a runtime edge, kept to fixtures. */
+export const ISOLATED_TEST_ENV = 'ULTIMATE_TEST_ISOLATED';
+
 import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
 import type { TestType } from './verify-tests';
@@ -231,6 +238,8 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   // same parent env, so the leaked-key set cannot differ pass to pass.
   const envOverrides: Record<string, string | undefined> = {
     ...testEnvOverrides(options.root, options.env ?? Bun.env),
+    // Every run this spawns is isolated (`--parallel` or `--isolate`) unless the caller opted out.
+    ...((options.passthrough ?? []).includes('--no-isolate') ? {} : { [ISOLATED_TEST_ENV]: '1' }),
   };
   const passes = testPasses({
     files: options.files,

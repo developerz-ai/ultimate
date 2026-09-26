@@ -8,7 +8,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **testing, cli:** `x test` held every finished test file in memory. Bun 1.4.0 never frees a
+  file's global object under `--isolate` (implied by `--parallel`) while any `Bun.plugin` handler is
+  registered, and the framework registers two per file (the registry leak guard, render's loader):
+  on notificado.co each of 18 workers climbed to 2.1–2.3 GB, ~30 GB total. `x test` now sets
+  `ULTIMATE_TEST_ISOLATED=1` on every isolated child (not with `-- --no-isolate`), and the testing
+  preload runs `Bun.plugin.clearAll()` after each file then (`releasePluginsAfterIsolatedFile`);
+  the next file's preload registers them again. Measured there: per-worker peak 1.0–1.5 GB, 18 GB
+  total. Never in a shared run, where render's loader would not re-register.
 
 ## 22.3.5 - 2026-09-26
 

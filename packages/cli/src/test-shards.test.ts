@@ -14,12 +14,13 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: Bun exposes no temp-directory root.
 import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
+import { ISOLATED_ENV } from '@ultimat3/testing';
 import { testCommand } from './cmd-test';
 import type { ExecOptions, Runner } from './exec';
 import { renderJson } from './output';
 import { flagBool, flagString, parseArgs } from './parse';
 import type { TestFile } from './test-select';
-import { filesIn, reproduceFor, runShards, testArgs } from './test-shards';
+import { filesIn, ISOLATED_TEST_ENV, reproduceFor, runShards, testArgs } from './test-shards';
 
 interface Call {
   readonly command: readonly string[];
@@ -110,6 +111,27 @@ describe('unit · the argv one bun test receives', () => {
 });
 
 describe('unit · x test execution', () => {
+  // Bun 1.4.0 keeps every finished file alive under --isolate while a plugin is registered; the
+  // testing preload frees them only when it is told the run is isolated (`isolated-plugins.ts`).
+  test('every isolated child is told so, and a --no-isolate one is not', async () => {
+    expect(ISOLATED_TEST_ENV).toBe(ISOLATED_ENV);
+    const isolated = recorder();
+    await runShards({ root: '/repo', runner: isolated.runner, files: corpus(6), workers: 2 });
+    expect(isolated.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBe('1');
+    const shard = recorder();
+    await runShards({ root: '/repo', runner: shard.runner, files: corpus(6), workers: 2, only: 0 });
+    expect(shard.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBe('1');
+    const shared = recorder();
+    await runShards({
+      root: '/repo',
+      runner: shared.runner,
+      files: corpus(6),
+      workers: 2,
+      passthrough: ['--no-isolate'],
+    });
+    expect(shared.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBeUndefined();
+  });
+
   test('one bun test carries every selected file, once', async () => {
     const { calls, runner } = recorder();
     const files = corpus(40);
