@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.3.3 - 2026-09-26
+
 ### Security
 
 - **pwa:** a page rendered for someone is never cached. From 21.0.0 a `private`/`no-store`
@@ -36,6 +40,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `/en/manifest.webmanifest` (`start_url: '/en/'`) for `en` â€” sharing one `id` (`pwa.id`, default
   `/`), each document linking its own. New optional `pwa.description`, `pwa.categories`,
   `pwa.shortcuts`, `pwa.screenshots`; text is a string or one per locale.
+
+### Commits
+
+- fix(pwa,cli,core,render): personal pages never cached, precache only precached pages' islands, per-locale rules and manifests (#543)
 
 ## 22.3.2 - 2026-09-26
 

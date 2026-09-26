@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/query",
-  "version": "22.3.2",
+  "version": "22.3.3",
   "description": "The query primitive: a policy-checked read, optionally live, with cursor pagination and an incremental matcher",
   "license": "MIT",
   "type": "module",
@@ -36,11 +36,11 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/cache": "22.3.2",
-    "@ultimat3/core": "22.3.2",
-    "@ultimat3/entity": "22.3.2",
-    "@ultimat3/http": "22.3.2",
-    "@ultimat3/policy": "22.3.2",
-    "@ultimat3/schema": "22.3.2"
+    "@ultimat3/cache": "22.3.3",
+    "@ultimat3/core": "22.3.3",
+    "@ultimat3/entity": "22.3.3",
+    "@ultimat3/http": "22.3.3",
+    "@ultimat3/policy": "22.3.3",
+    "@ultimat3/schema": "22.3.3"
   }
 }
