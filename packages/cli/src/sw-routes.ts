@@ -2,8 +2,9 @@
 // Split from the emitter because mounting is HTTP and generation is a build: `prerender.ts` writes
 // both artifacts as files and mounts nothing, and it must not have to import a route table to do it.
 
-import type { CacheHint, Route } from '@ultimat3/http';
+import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
+import { revalidatedResponse } from './revalidated-response';
 import type { ServiceWorkerArtifacts } from './sw-artifacts';
 import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, SW_SCOPE } from './sw-artifacts';
 
@@ -14,9 +15,6 @@ import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, SW_SCOPE } from './sw-artifacts'
  * script caching at 24h on their own; this removes the question.
  */
 const SW_CACHE: CacheHint = { mode: 'private', maxAgeSeconds: 0 };
-
-/** Content-addressed in neither path, so the register script gets the favicon's hour. */
-const REGISTER_CACHE: CacheHint = { mode: 'public', maxAgeSeconds: 3600 };
 
 /** `/sw.js` and `/x-sw-register.js`, mounted by `x dev` and by the container alike. */
 export const serviceWorkerRoutes = (artifacts: ServiceWorkerArtifacts): readonly Route[] => [
@@ -42,12 +40,11 @@ export const serviceWorkerRoutes = (artifacts: ServiceWorkerArtifacts): readonly
     method: 'GET',
     path: SW_REGISTER_PATH,
     meta: { name: 'pwa.serviceWorkerRegister', auth: 'public' },
-    handler: () =>
-      applyCacheHeaders(
-        new Response(artifacts.register, {
-          headers: { 'content-type': 'text/javascript; charset=utf-8' },
-        }),
-        REGISTER_CACHE,
-      ),
+    // Revalidated on every load, never an hour (22.3.2). The URL carries no content hash — it is
+    // named by every document, so hashing it would re-render them all for a four-line script — and
+    // at `max-age=3600` a changed register script reached a returning visitor up to an hour late.
+    // A strong ETag makes the check a 304. Still an EXTERNAL script: see `SW_REGISTER_PATH`.
+    handler: (request: UltimateRequest) =>
+      revalidatedResponse(request, artifacts.register, 'text/javascript; charset=utf-8'),
   },
 ];

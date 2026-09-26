@@ -77,10 +77,34 @@ are both compile errors, `As of 2026-08`.
 
 | `render` | Strategy | Rationale |
 |---|---|---|
-| `static` | `cache-first` | immutable per build |
-| `isr` | `stale-while-revalidate` | matches ISR's own semantics exactly |
+| `static` | `network-first` | the document names this deploy's hashed assets; the precached copy is the offline answer |
+| `isr` | `network-first` | the server's ISR cache is already stale-while-revalidate; a second, older copy in the browser only delays a deploy |
 | `ssr` | `network-first` | caching a per-request render is a correctness bug; the offline fallback answers on failure |
-| `stream` | `stale-while-revalidate` | the shell is the cacheable part and the holes re-fetch anyway |
+| `stream` | `network-first` | the shell names this deploy's chunks; the cached copy is the offline answer |
+
+**Every document is network-first, `As of 22.3.2`.** Every rule the worker routes is a document —
+content-hashed chunks get none and live in the browser's HTTP cache (`immutable`). Until 22.3.2
+`static` was `cache-first` and `isr`/`stream` `stale-while-revalidate`, so an online navigation got
+the HTML the old worker held, naming the old deploy's CSS and islands, until the visitor pressed
+Shift+F5. `offline: 'precache'` still precaches the document: precache decides what answers
+offline, not what answers while the network does. A per-route `strategy` can still ask for
+`cache-first` or `stale-while-revalidate`.
+
+**A new worker takes over at once**, `As of 22.3.2`: the install block calls `self.skipWaiting()`, so
+a deploy's worker activates when its precache is filled rather than when every tab of the origin
+has closed. It never reloads a page — the open tab keeps what it has, gets `AppUpdateAvailable`,
+and its next navigation is answered with the new HTML. `x-sw-register.js` also calls
+`registration.update()` when a hidden tab becomes visible again, at most once per five minutes, so
+a tab left open for days finds the new worker before its next click. A browser still running a
+22.3.1 worker converges with no user action: its next navigation fetches the new `sw.js`, which
+skips waiting and claims the tab — that one navigation is still the old worker's cached copy, and
+the one after it is fresh.
+
+**`immutable` is for a content-hashed URL only**, `As of 22.3.2`. `/x-sw-register.js` (was
+`max-age=3600`) and the `/icons/*` matrix (was `immutable`, under names that are sizes, not bytes)
+answer `public, max-age=0, must-revalidate` with a strong ETag, and a 304 when unchanged — so a new
+register script or a new `icon.png` reaches every client on its next load. `sw.js` stays
+`private, max-age=0`; `manifest.webmanifest` and `/favicon.ico` keep their hour.
 
 **There is no per-mode `offline` default** — `offline` is required by `defineRoute`'s type and again
 at runtime (`X_ROUTE_OFFLINE_MISSING`). It is read *before* the mode: `offline: 'network-only'` is a

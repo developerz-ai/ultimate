@@ -38,8 +38,8 @@ Excluded always: `api/` responses, anything under an authenticated path unless `
 
 | `render` | `offline` default | Strategy | Rationale |
 |---|---|---|---|
-| `static` | `precache` | cache-first, revalidate on build ID change | immutable per build |
-| `isr` | `runtime` | stale-while-revalidate | matches ISR's own semantics exactly |
+| `static` | `precache` | network-first; the precache is the offline copy (`As of 22.3.2` — cache-first served the old deploy's HTML until a hard reload) | the document names this build's hashed assets |
+| `isr` | `runtime` | network-first (`As of 22.3.2`; was stale-while-revalidate) | the server's ISR cache is already the stale copy |
 | `ssr` | `network-only` | network, offline fallback on failure | caching a per-request render is a correctness bug |
 | `stream` | `runtime` | network-first for the document, cache-first for chunks | shell freshness matters; chunks are content-hashed |
 | `spa` | `precache` | shell cache-first, data network-only | the shell is static; the data never is |

@@ -72,4 +72,30 @@ describe('serviceWorkerRoutes', () => {
     expect(response.headers.get('service-worker-allowed')).toBe('/');
     expect(response.headers.get('content-type')).toContain('javascript');
   });
+
+  /**
+   * `public, max-age=3600` under a URL with no content hash: a register script that changed —
+   * 22.3.2's own `registration.update()` among them — reached a returning visitor up to an hour
+   * late (measured on notificado.co). Revalidated on every load now, and a 304 when unchanged.
+   */
+  test('the register script is revalidated on every load, never cached for an hour', async () => {
+    const route = routes[1];
+    if (route === undefined) expect.unreachable('the register route was not mounted');
+    const call = async (headers: Record<string, string> = {}): Promise<Response> => {
+      const url = new URL(`http://dev.test${SW_REGISTER_PATH}`);
+      const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
+      const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+      return route.handler(new UltimateRequest(new Request(url, { headers }), ctx), ctx);
+    };
+
+    const first = await call();
+    expect(first.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    expect(await first.text()).toContain('navigator.serviceWorker');
+    const etag = first.headers.get('etag');
+    if (etag === null) return expect.unreachable('a revalidated script carries no ETag');
+
+    const again = await call({ 'if-none-match': etag });
+    expect(again.status).toBe(304);
+    expect(await again.text()).toBe('');
+  });
 });

@@ -98,6 +98,7 @@ Tier 4. Imports `@ultimat3/core`, `i18n`, `money`, `time` — **not `schema`**, 
 |---|---|
 | `src/tokens/*.scss` | canonical token maps + `_mixins.scss` authoring helpers |
 | `src/tokens/theme.scss` | the only stylesheet that emits global custom properties |
+| `src/tokens/reset.scss` | the reset, ZERO specificity: every rule a component may restyle sits in `:where(…)` whole, pseudo-class inside (`:where(a:hover)`, never `:where(a):hover`). `a:hover` (0,1,1) beat `.primary` and hid a button link's text until 22.3.2. `reset.test.ts` computes it |
 | `src/theme/runtime-slot.ts` | the module-scope slot holding the app's Solid runtime — and nothing else, so registering one costs an island 72 B |
 | `src/theme/solid-adapter.ts` | the runtime's SHAPE, and the one rule that decides which runtime a render gets |
 | `src/theme/inert-runtime.ts` | `INERT_SOLID_RUNTIME` — what a server render IS, not a stub of what it lacks |

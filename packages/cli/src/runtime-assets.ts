@@ -20,6 +20,7 @@ import { faviconRoute } from './favicon';
 import { iconPlan, iconRenderer } from './icon-assets';
 import type { PwaArtifacts } from './pwa-artifacts';
 import { pwaManifestRoute } from './pwa-artifacts';
+import { revalidatedResponse } from './revalidated-response';
 import {
   AUTHORIZED_OBJECT_CACHE,
   assertReadableKey,
@@ -41,8 +42,10 @@ import { siteAssetTable } from './site-assets';
 export const MEDIA_BASE_PATH = '/media';
 
 /**
- * A generated icon and a content-addressed variant answer forever with the same bytes, so the
- * immutable hint is a fact about the key. It is NOT a fact about this route — see `mediaCache`.
+ * A content-addressed variant answers forever with the same bytes, so the immutable hint is a fact
+ * about the key. It is NOT a fact about this route — see `mediaCache`. The generated ICONS are not
+ * content-addressed (`/icons/icon-192.png` names a size, not bytes), so they revalidate instead —
+ * see `revalidatedResponse`.
  */
 const IMMUTABLE_IMAGE: CacheHint = { mode: 'immutable' };
 
@@ -198,8 +201,12 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
     method: 'GET',
     path: entry.outputPath,
     meta: { name: `assets.icon.${entry.spec.filename}`, auth: 'public', tags: ['assets'] },
+    // Revalidated, never `immutable` (22.3.2): the file name is the icon's SIZE, so a new
+    // `icon.png` shipped under the same URLs and every client that had seen the old one kept it for
+    // a year. The manifest and the apple-touch links name these paths, so a hashed URL would move
+    // every document and the manifest with it; a 304 is the cheaper fix.
     handler: async (request: UltimateRequest): Promise<Response> =>
-      imageResponse(await render(plan, request.pathname), 'image/png', IMMUTABLE_IMAGE),
+      revalidatedResponse(request, await render(plan, request.pathname), 'image/png'),
   }));
   // The icons above are genuinely public — they are rendered from a file committed in the app, and
   // an install prompt fetches them before anyone has signed in. `/media` is the opposite: it serves

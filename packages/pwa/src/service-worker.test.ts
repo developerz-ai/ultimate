@@ -82,14 +82,21 @@ describe('generateServiceWorker', () => {
     const output = generateServiceWorker(routes, config, 'build-1');
     const byPattern = new Map(output.rules.map((rule) => [rule.pattern, rule.strategy]));
 
-    expect(byPattern.get('^/$')).toBe('cache-first');
-    expect(byPattern.get('^/blog/[^/]+/?$')).toBe('stale-while-revalidate');
-    expect(byPattern.get('^/dashboard/?$')).toBe('stale-while-revalidate');
+    // Every document is network-first, in every mode (22.3.2). `/` is `static` + `precache`: the
+    // entry is still precached, so it answers OFFLINE, but online the network's copy wins — the
+    // precached one is the previous deploy's HTML the moment a new one ships.
+    expect(byPattern.get('^/$')).toBe('network-first');
+    expect(byPattern.get('^/blog/[^/]+/?$')).toBe('network-first');
+    expect(byPattern.get('^/dashboard/?$')).toBe('network-first');
     // `precache` and `network-first` together, which is not a contradiction: the entry is in the
-    // precache so the route answers offline, and online it asks the network first because an
-    // authed `app/` document is one actor's own. No `app/` mode maps to `cache-first` — the row
-    // that did was `spa`, and serving one member's cached HTML to the next is what it cost.
+    // precache so the route answers offline, and online it asks the network first. No mode maps to
+    // `cache-first` — `spa` did, and serving one member's cached HTML to the next is what it cost.
     expect(byPattern.get('^/reports/?$')).toBe('network-first');
+    const cacheByPattern = new Map(output.rules.map((rule) => [rule.pattern, rule.cache]));
+    expect(cacheByPattern.get('^/$')).toBe('precache');
+    // No document strategy that answers from cache while online is emitted at all.
+    expect(output.source).not.toContain('async function cacheFirst');
+    expect(output.source).not.toContain('async function staleWhileRevalidate');
     // api/ renders nothing, so it gets no cache rule at all.
     expect([...byPattern.keys()].some((p) => p.includes('api'))).toBe(false);
   });

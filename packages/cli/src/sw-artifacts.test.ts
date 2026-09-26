@@ -13,6 +13,7 @@ import type { RenderedDocument, ServiceWorkerArtifacts } from './sw-artifacts';
 import {
   SERVICE_WORKER_PATH,
   SW_REGISTER_PATH,
+  SW_UPDATE_INTERVAL_MS,
   serviceWorkerArtifacts,
   serviceWorkerHead,
 } from './sw-artifacts';
@@ -260,5 +261,108 @@ describe('a route revision is its document, not the deploy', () => {
         pwa({ offline: { fallback: null, image: null, font: null, neverCache: [] } }),
       ),
     ).toBeUndefined();
+  });
+});
+
+/**
+ * The register script, EXECUTED against a stub `navigator` / `document` / clock. A browser checks
+ * for a new `sw.js` on a navigation, so a tab left open for days found the new worker only on the
+ * click the old one had already answered. The script asks again when a hidden tab comes back —
+ * throttled, and never with a reload or a `skip-waiting` (the worker skips waiting itself).
+ */
+describe('the register script, executed', () => {
+  function run() {
+    let now = 1_000_000;
+    let visibility: 'visible' | 'hidden' = 'visible';
+    let updates = 0;
+    let reloads = 0;
+    const posted: unknown[] = [];
+    const onLoad: (() => void)[] = [];
+    const onVisibility: (() => void)[] = [];
+    const registration = {
+      update: async (): Promise<void> => {
+        updates += 1;
+      },
+      waiting: { postMessage: (data: unknown): void => void posted.push(data) },
+    };
+    const navigatorStub = {
+      serviceWorker: {
+        register: async (path: string, options: { scope: string }) => {
+          expect([path, options.scope]).toEqual([SERVICE_WORKER_PATH, '/']);
+          return registration;
+        },
+      },
+    };
+    const documentStub = {
+      get visibilityState() {
+        return visibility;
+      },
+      addEventListener: (type: string, fn: () => void): void => {
+        if (type === 'visibilitychange') onVisibility.push(fn);
+      },
+    };
+    const script = new Function(
+      'navigator',
+      'addEventListener',
+      'document',
+      'Date',
+      'location',
+      build().register,
+    ) as (...args: unknown[]) => void;
+    script(
+      navigatorStub,
+      (type: string, fn: () => void) => (type === 'load' ? onLoad.push(fn) : undefined),
+      documentStub,
+      { now: () => now },
+      {
+        reload: (): void => {
+          reloads += 1;
+        },
+      },
+    );
+    return {
+      load: async (): Promise<void> => {
+        for (const fn of onLoad) fn();
+        await Bun.sleep(0);
+      },
+      show: async (elapsedMs: number): Promise<void> => {
+        now += elapsedMs;
+        visibility = 'hidden';
+        for (const fn of onVisibility) fn();
+        visibility = 'visible';
+        for (const fn of onVisibility) fn();
+        await Bun.sleep(0);
+      },
+      updates: (): number => updates,
+      reloads: (): number => reloads,
+      posted,
+    };
+  }
+
+  test('a tab that comes back after the interval asks the browser for a new worker', async () => {
+    const page = run();
+    await page.load();
+    expect(page.updates()).toBe(0);
+
+    await page.show(SW_UPDATE_INTERVAL_MS);
+    expect(page.updates()).toBe(1);
+  });
+
+  test('a tab refocused inside the interval does not re-download the worker', async () => {
+    const page = run();
+    await page.load();
+    await page.show(SW_UPDATE_INTERVAL_MS - 1);
+    expect(page.updates()).toBe(0);
+    await page.show(1);
+    await page.show(1_000);
+    expect(page.updates()).toBe(1);
+  });
+
+  test('it never reloads the page and never posts skip-waiting — the worker skips on its own', async () => {
+    const page = run();
+    await page.load();
+    await page.show(SW_UPDATE_INTERVAL_MS);
+    expect(page.reloads()).toBe(0);
+    expect(page.posted).toEqual([]);
   });
 });

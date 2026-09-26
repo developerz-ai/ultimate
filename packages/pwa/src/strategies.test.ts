@@ -35,14 +35,24 @@ function fakeEnv(seed: Map<string, Response>, network: () => Promise<Response>):
 }
 
 describe('render mode → strategy', () => {
+  // Every rule is a DOCUMENT, and a document online is the network's. `static` was `cache-first`
+  // and `isr`/`stream` `stale-while-revalidate`, so an online navigation got the HTML the old
+  // worker held — the previous deploy, linking the previous deploy's hashed assets — until the
+  // visitor pressed Shift+F5 (22.3.1, notificado.co).
   test.each<[RenderMode, StrategyName]>([
-    ['static', 'cache-first'],
-    ['isr', 'stale-while-revalidate'],
+    ['static', 'network-first'],
+    ['isr', 'network-first'],
     ['ssr', 'network-first'],
-    ['stream', 'stale-while-revalidate'],
+    ['stream', 'network-first'],
   ])('%s → %s', (mode, expected) => {
     expect(MODE_STRATEGY[mode]).toBe(expected);
     expect(strategyFor(route({ mode }))).toBe(expected);
+  });
+
+  test('a static precached site page is network-first — the precache is its offline copy only', () => {
+    expect(strategyFor(route({ mode: 'static', surface: 'site', offline: 'precache' }))).toBe(
+      'network-first',
+    );
   });
 
   test("offline: 'network-only' overrides the mode default", () => {

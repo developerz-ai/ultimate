@@ -8,7 +8,35 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **pwa:** a deploy reached a returning visitor only after Shift+F5 (measured on notificado.co,
+  22.3.1). Two causes, both in the generated `sw.js`. Every document rule is now `network-first`:
+  `MODE_STRATEGY` mapped `static` to `cache-first` and `isr`/`stream` to `stale-while-revalidate`,
+  so an online navigation was answered with the HTML the old worker held — naming the old deploy's
+  hashed CSS and islands. The precached / pages-cached copy is now the OFFLINE answer only;
+  `offline: 'precache'` still precaches, and a per-route `strategy` still overrides. And the new
+  worker calls `self.skipWaiting()` in `install`: nothing ever posted `skip-waiting`, so a new
+  worker waited until every tab of the origin closed. It never reloads a page — the open tab gets
+  `AppUpdateAvailable`, and its next navigation is the new HTML. A browser still on a 22.3.1
+  worker converges with no user action: its next navigation fetches the new `sw.js`, which takes
+  over at once; that navigation is the last one answered from the old cache.
+- **cli:** `x-sw-register.js` calls `registration.update()` when a hidden tab becomes visible, at
+  most once per five minutes, so a tab left open for days finds the new worker before its next
+  click. It never posts `skip-waiting` and never reloads.
+- **cli:** `immutable` only for a content-hashed URL. `/x-sw-register.js` (was
+  `public, max-age=3600`) and the `/icons/*` matrix (was `public, max-age=31536000, immutable`,
+  under names that are sizes, not bytes — a replaced `icon.png` never reached a client that had
+  seen the old one) answer `public, max-age=0, must-revalidate` with a strong ETag, and 304 when it
+  matches `If-None-Match`.
+- **ui:** the reset is zero-specificity. `a:hover` is (0,1,1), so it beat any single class on a
+  link: `<a class="primary">` — a filled button link — showed accent-strong text on its
+  accent-strong hover background, i.e. no text. Every rule a component may restyle is now inside
+  `:where(…)` whole (`:where(a:hover)`, since `:where(a):hover` is still (0,1,0)), including the
+  focus ring, `:target`, headings, form controls, `hr` and `table`. Left specific on purpose: the
+  modal scroll lock, the live-region class, the reduced-motion guard, and `::selection` (a
+  pseudo-element is invalid inside `:where()`). An app rule on a bare element (`a { … }`) now beats
+  the reset whatever the stylesheet order.
 
 ## 22.3.1 - 2026-09-26
 

@@ -55,15 +55,49 @@ describe('the emitted install block, executed', () => {
     expect(await (await sw.request('/pricing')).text()).toBe('bytes for /pricing');
   });
 
-  // Online, the same miss cost a second download of every precached byte.
-  test('answers online from the precache without a second network request', async () => {
+  // Online, the same miss cost a second download of every precached byte: the network is asked
+  // ONCE per navigation — for the page — and never a second time for a mis-keyed copy.
+  test('online, a precached page costs one network request, not two', async () => {
     const sw = swHarness();
     sw.load(generateServiceWorker(precached, config, 'build-1').source);
     await sw.install();
     const afterInstall = sw.fetched.length;
 
     await sw.request('/pricing');
-    expect(sw.fetched).toHaveLength(afterInstall);
+    expect(sw.fetched.slice(afterInstall)).toEqual(['https://app.test/pricing']);
+  });
+
+  /**
+   * The Shift+F5 defect (22.3.1, measured on notificado.co): a `static` route with
+   * `offline: 'precache'` was cache-first, so every online navigation was answered with the HTML
+   * this worker precached — the previous deploy's, naming the previous deploy's hashed CSS and
+   * islands. The precache is the OFFLINE copy; online, the network's document wins.
+   */
+  test('online, a precached page is the NEW deploy the server answers, never the precached copy', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    await sw.install();
+    sw.answerWith((request) =>
+      new URL(request.url).pathname === '/pricing' ? new Response('the next deploy') : undefined,
+    );
+
+    expect(await (await sw.request('/pricing')).text()).toBe('the next deploy');
+    // And the fresh copy is what offline answers from now on.
+    sw.goOffline();
+    expect(await (await sw.request('/pricing')).text()).toBe('the next deploy');
+  });
+
+  /**
+   * A new worker used to WAIT until every tab of the origin closed: nothing posted `skip-waiting`,
+   * so a returning visitor ran the old worker for days. The install block skips waiting itself —
+   * which is also what moves a browser still on a 22.3.1 worker, whose register script never asks.
+   */
+  test('the install skips waiting, so the new worker takes over without a closed tab', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    expect(sw.skippedWaiting()).toBe(0);
+    await sw.install();
+    expect(sw.skippedWaiting()).toBe(1);
   });
 });
 
