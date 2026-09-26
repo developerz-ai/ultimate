@@ -23,9 +23,15 @@ export const ISOLATED_ENV = 'ULTIMATE_TEST_ISOLATED';
  */
 export function releasePluginsAfterIsolatedFile(
   env: Readonly<Record<string, string | undefined>> = Bun.env,
-): void {
-  if (env[ISOLATED_ENV] !== '1') return;
-  afterAll(() => {
-    Bun.plugin.clearAll();
-  });
+  after: (hook: () => void) => void = afterAll,
+  plugin: { clearAll(): void } = Bun.plugin,
+): boolean {
+  if (env[ISOLATED_ENV] !== '1') return false;
+  after(() => clearPlugins(plugin));
+  return true;
 }
+
+/** Every `Bun.plugin` handler this process registered. The next file's preload registers them again. */
+export const clearPlugins = (plugin: { clearAll(): void } = Bun.plugin): void => {
+  plugin.clearAll();
+};

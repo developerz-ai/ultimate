@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive delete; `rm(…, { force: true })` removes a root that may not exist.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path'; // why: Bun exposes no path API — nothing native joins a path.
+import { clearPlugins, ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
 
 const ROOT = join(import.meta.dir, '..', '.isolated-plugins-fixture');
 const PRELOAD = join(import.meta.dir, 'preload.ts');
@@ -36,9 +37,14 @@ test('${name}', async () => {
 `;
 
 const run = async (args: readonly string[], env: Record<string, string | undefined>) => {
+  // Built key by key: a parent `x test` run sets the flag itself, and `undefined` must REMOVE it.
+  const merged: Record<string, string> = {};
+  for (const [key, value] of Object.entries({ ...Bun.env, ...env })) {
+    if (value !== undefined) merged[key] = value;
+  }
   const child = Bun.spawn(['bun', 'test', ...args], {
     cwd: ROOT,
-    env: { ...Bun.env, ...env },
+    env: merged,
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -88,4 +94,36 @@ describe('a shared run keeps its plugins', () => {
     expect(result.text).not.toContain('is not defined');
     expect(result.code).toBe(0);
   }, 120_000);
+});
+
+describe('releasePluginsAfterIsolatedFile', () => {
+  test('hooks the clear only when the run says it is isolated', () => {
+    const hooked: (() => void)[] = [];
+    const after = (hook: () => void): void => void hooked.push(hook);
+    let cleared = 0;
+    // Never Bun's own registry here: this file may share its process with later ones.
+    const plugin = {
+      clearAll: (): void => {
+        cleared += 1;
+      },
+    };
+    expect(releasePluginsAfterIsolatedFile({}, after, plugin)).toBe(false);
+    expect(releasePluginsAfterIsolatedFile({ [ISOLATED_ENV]: '0' }, after, plugin)).toBe(false);
+    expect(hooked).toEqual([]);
+    expect(releasePluginsAfterIsolatedFile({ [ISOLATED_ENV]: '1' }, after, plugin)).toBe(true);
+    expect(hooked).toHaveLength(1);
+    hooked[0]?.();
+    expect(cleared).toBe(1);
+  });
+
+  // Never Bun's own here: this file may share its process with later ones in a serial run.
+  test('clearPlugins empties the plugin registry it is handed', () => {
+    let cleared = 0;
+    clearPlugins({
+      clearAll: () => {
+        cleared += 1;
+      },
+    });
+    expect(cleared).toBe(1);
+  });
 });
