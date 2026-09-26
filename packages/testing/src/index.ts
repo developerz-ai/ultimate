@@ -250,6 +250,7 @@ export {
   missingIslandFiles,
   normalizeIslandName,
 } from './island-states-resolve';
+export { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
 export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
 export { createLiveNode } from './live-node';
 /**

@@ -8,6 +8,7 @@
 import { installDeterminism } from '../packages/testing/src/determinism';
 import { registerFrameworkFixtures } from '../packages/testing/src/framework-fixtures';
 import '../packages/testing/src/matchers';
+import { releasePluginsAfterIsolatedFile } from '../packages/testing/src/isolated-plugins';
 import { installRegistryLeakGuard } from '../packages/testing/src/registry-leak-guard';
 import { sealNetwork } from '../packages/testing/src/sealed-network';
 
@@ -24,6 +25,10 @@ registerFrameworkFixtures();
 // `bun run test` runs every package in ONE process, so a file that leaves a process-global
 // registry dirty fails a later file in another package. The guard names the file that leaked.
 installRegistryLeakGuard();
+
+// Isolated runs only (`x test` says so): Bun 1.4.0 keeps every finished file alive while a plugin
+// is registered. See `isolated-plugins.ts`.
+releasePluginsAfterIsolatedFile();
 
 // Opt-out is an env var, not an API, so no test file can quietly unseal the network for itself.
 if (Bun.env['ULTIMATE_TEST_ALLOW_NET'] !== '1') sealNetwork();
