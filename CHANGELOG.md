@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.3.2 - 2026-09-26
+
 ### Fixed
 
 - **pwa:** a deploy reached a returning visitor only after Shift+F5 (measured on notificado.co,
@@ -37,6 +41,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   modal scroll lock, the live-region class, the reduced-motion guard, and `::selection` (a
   pseudo-element is invalid inside `:where()`). An app rule on a bare element (`a { â€¦ }`) now beats
   the reset whatever the stylesheet order.
+
+### Commits
+
+- fix(pwa,cli,ui): network-first documents, worker skips waiting, revalidated register/icons, zero-specificity reset (#540)
 
 ## 22.3.1 - 2026-09-26
 
