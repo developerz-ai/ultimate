@@ -236,13 +236,13 @@ function serializeRules(rules: readonly RouteRule[]): string {
  * `caches.match(req)` on the bare URL — `ignoreSearch` defaults to `false` — so an entry left
  * keyed under `?v=<revision>` is a permanent miss: offline serves the fallback document instead
  * of the page that was precached, and online every precached byte is downloaded a second time.
- * `addAll` still does the fetching, because its all-or-nothing failure is what stops a
- * half-populated precache from activating; the second pass only re-keys what it stored.
+ * Each entry is fetched and stored on its own, `As of 22.3.4`: `addAll`'s all-or-nothing was meant
+ * to stop a half-populated precache from activating, and instead one 404 blocked every install
+ * of every deploy (notificado.co, 22.3.2) — a stuck worker is worse than a missing offline copy.
  *
  * The separator in front of `v=` is chosen per entry, because `PrecacheAsset.url` is public API
  * and a bundler emits a query of its own: a fixed `?` built `...?locale=en?v=<rev>`, and a single
- * non-200 for it rejects `addAll`, which rejects the install — no precache, no offline document,
- * no version-skew header, and a worker that never activates at all.
+ * non-200 for it cost that entry its offline copy.
  *
  * `skipWaiting()` FIRST, `As of 22.3.2`: a new worker activates as soon as its precache is filled,
  * never "once every tab of the origin is closed", which for a returning visitor was days. Nothing
@@ -259,15 +259,17 @@ self.addEventListener('install',(event)=>{
   self.skipWaiting();
   event.waitUntil((async()=>{
     const cache=await caches.open(PRECACHE);
+    // ONE ENTRY AT A TIME, and a failure costs that entry only. addAll was all-or-nothing: one
+    // asset answering 404 rejected the install on every deploy, and every visitor stayed on the
+    // first worker that ever installed. A missing entry is fetched from the network when asked for.
     // Revision is a content hash: unchanged assets are not re-downloaded across deploys.
     // The separator is picked per entry: a precache URL may already carry a query.
-    const fetched=PRECACHE_MANIFEST.map((e)=>new Request(e.url+(e.url.indexOf('?')<0?'?':'&')+'v='+e.revision,{cache:'reload'}));
-    await cache.addAll(fetched);
-    for(let i=0;i<PRECACHE_MANIFEST.length;i++){
-      const stored=await cache.match(fetched[i]);
-      if(stored)await cache.put(new Request(PRECACHE_MANIFEST[i].url),stored);
-      await cache.delete(fetched[i]);
-    }
+    await Promise.all(PRECACHE_MANIFEST.map(async(e)=>{
+      try{
+        const r=await fetch(new Request(e.url+(e.url.indexOf('?')<0?'?':'&')+'v='+e.revision,{cache:'reload'}));
+        if(r.ok)await cache.put(new Request(e.url),r);
+      }catch(err){}
+    }));
   })());
 });`.trim();
 

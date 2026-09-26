@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive delete; `rm(…, { force: true })` removes a root that may not exist.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path'; // why: Bun exposes no path API — nothing native joins a path.
+import { clearStylesheets, stylesFor } from '@ultimat3/render/server';
 import { buildIslands } from './island-bundle';
 import { ISLAND_STORE_DIR, readIslandStore, writeIslandStore } from './island-store';
 
@@ -64,5 +65,38 @@ describe('unit · the island store', () => {
     const index = (await Bun.file(path).json()) as Record<string, unknown>;
     await Bun.write(path, JSON.stringify({ ...index, bun: '0.0.1' }));
     expect((await readIslandStore(ROOT)).stale).toContain('on Bun 0.0.1');
+  });
+});
+
+/**
+ * A container that served the stored chunks never ran the island build, so an island's own
+ * `.module.scss` never registered: its rules were missing from every pod that read the store, and
+ * present on any that rebuilt — two surface stylesheets for one image (notificado.co, 22.3.2).
+ */
+describe('unit · the island store carries the island stylesheets', () => {
+  const STYLED =
+    "import styles from './styled.module.scss';\n" +
+    'export function mount(el: HTMLElement): void { el.className = styles.box ?? ""; }\n';
+
+  test('the index names them, app-relative; a boot from the store registers them', async () => {
+    await write('apps/web/site/styled.module.scss', '.box{color:teal}');
+    await write('apps/web/site/styled.island.tsx', STYLED);
+    await stored();
+    const index = (await Bun.file(join(ROOT, ISLAND_STORE_DIR, 'index.json')).json()) as {
+      stylesheets: string[];
+    };
+    expect(index.stylesheets).toEqual(['apps/web/site/styled.module.scss']);
+    clearStylesheets();
+    expect(stylesFor('site')).not.toContain('teal');
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+    expect(stylesFor('site')).toContain('teal');
+  });
+
+  test('a store naming a stylesheet the app no longer has is refused', async () => {
+    await write('apps/web/site/styled.module.scss', '.box{color:teal}');
+    await write('apps/web/site/styled.island.tsx', STYLED);
+    await stored();
+    await rm(join(ROOT, 'apps/web/site/styled.module.scss'));
+    expect((await readIslandStore(ROOT)).stale).toContain('an island stylesheet, is missing');
   });
 });

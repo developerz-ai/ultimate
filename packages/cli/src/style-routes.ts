@@ -4,7 +4,7 @@
 // image.
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, json } from '@ultimat3/http';
+import { applyCacheHeaders, json, NO_STORE } from '@ultimat3/http';
 import type { StyleBundle } from './style-bundle';
 import { STYLE_BASE_PATH } from './style-bundle';
 
@@ -32,7 +32,7 @@ export function styleRoutes(source: StyleSource): readonly Route[] {
       handler: (request: UltimateRequest): Response => {
         const chunk = source().chunkAt(request.pathname);
         if (chunk === undefined) {
-          return json(
+          const missing = json(
             {
               ok: false,
               error: {
@@ -45,6 +45,8 @@ export function styleRoutes(source: StyleSource): readonly Route[] {
             },
             { status: 404 },
           );
+          // `no-store`: a miss on a content-hashed URL must not be pinned by a CDN or a proxy.
+          return applyCacheHeaders(missing, NO_STORE);
         }
         return applyCacheHeaders(
           new Response(chunk.css, { headers: { 'content-type': 'text/css; charset=utf-8' } }),

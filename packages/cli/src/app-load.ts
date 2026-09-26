@@ -115,6 +115,28 @@ export function resetAppLoad(): void {
   routeSources.clear();
 }
 
+/**
+ * Every module path the app globs match, SORTED. `Bun.Glob` answers in directory order, which is
+ * the filesystem's — ext4 hashes names with a per-filesystem seed — so two pods of one image
+ * imported the app in two orders, registered its stylesheets in two orders, and served two
+ * different `/styles/<hash>.css` for one page (notificado.co, 22.3.2). Import order is the
+ * stylesheet cascade's order, so it must be the same everywhere.
+ */
+export async function appModulePaths(root: string): Promise<readonly string[]> {
+  // Pattern by pattern, as before — only the order WITHIN a pattern was the filesystem's.
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const pattern of APP_GLOBS) {
+    const matched: string[] = [];
+    for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
+      if (!seen.has(absolute)) matched.push(absolute);
+      seen.add(absolute);
+    }
+    found.push(...matched.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+  }
+  return found;
+}
+
 export async function loadApp(root: string): Promise<LoadedApp> {
   // Before any import: a stylesheet's surface is read below the app root, never off its absolute
   // path — under the container's `WORKDIR /app` that path's first segment is `app/`, and every
@@ -127,36 +149,34 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   const files: string[] = [];
   const findings: Finding[] = [];
 
-  for (const pattern of APP_GLOBS) {
-    for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
-      // A SEGMENT, never a substring: an app checked out under
-      // `~/dev/node_modules-experiments/myapp` answered `includes('node_modules')` for every
-      // file it holds, so this loop imported none of them and the app registered nothing.
-      // The ROOT-RELATIVE path is tested, never the absolute one: an app checked out under
-      // `~/work/my.test.app` matched `.test.` on every file and loaded none of them.
-      const file = relative(root, absolute).split(sep).join('/');
-      if (hasPathSegment(absolute, 'node_modules') || isTest(file)) continue;
-      if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
-        continue;
-      }
-      // The source is read BEFORE the import, and only on the file's first pass — a rescan of a
-      // registered module reads nothing here. A route entry is bound to the bytes the module was
-      // evaluated from, and a read AFTER the import cannot know which bytes those were: a save
-      // landing between the two bound V1's component to V2's hash, so the next scan saw nothing to
-      // do and served V1 until the save after. Read first, the worst case is one re-import the
-      // next tick, of a file that did change.
-      const snapshot = registered.has(absolute) ? undefined : await Bun.file(absolute).text();
-      let module: Record<string, unknown>;
-      try {
-        module = (await import(absolute)) as Record<string, unknown>;
-      } catch (error) {
-        findings.push({ ...findingFrom(error), at: file });
-        continue;
-      }
-      files.push(file);
-      const finding = await register(absolute, file, module, snapshot);
-      if (finding !== undefined) findings.push(finding);
+  for (const absolute of await appModulePaths(root)) {
+    // A SEGMENT, never a substring: an app checked out under
+    // `~/dev/node_modules-experiments/myapp` answered `includes('node_modules')` for every
+    // file it holds, so this loop imported none of them and the app registered nothing.
+    // The ROOT-RELATIVE path is tested, never the absolute one: an app checked out under
+    // `~/work/my.test.app` matched `.test.` on every file and loaded none of them.
+    const file = relative(root, absolute).split(sep).join('/');
+    if (hasPathSegment(absolute, 'node_modules') || isTest(file)) continue;
+    if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
+      continue;
     }
+    // The source is read BEFORE the import, and only on the file's first pass — a rescan of a
+    // registered module reads nothing here. A route entry is bound to the bytes the module was
+    // evaluated from, and a read AFTER the import cannot know which bytes those were: a save
+    // landing between the two bound V1's component to V2's hash, so the next scan saw nothing to
+    // do and served V1 until the save after. Read first, the worst case is one re-import the
+    // next tick, of a file that did change.
+    const snapshot = registered.has(absolute) ? undefined : await Bun.file(absolute).text();
+    let module: Record<string, unknown>;
+    try {
+      module = (await import(absolute)) as Record<string, unknown>;
+    } catch (error) {
+      findings.push({ ...findingFrom(error), at: file });
+      continue;
+    }
+    files.push(file);
+    const finding = await register(absolute, file, module, snapshot);
+    if (finding !== undefined) findings.push(finding);
   }
 
   files.sort();

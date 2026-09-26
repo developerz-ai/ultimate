@@ -8,7 +8,24 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **cli, render:** two pods of one image served two different `/styles/<hash>.css` for one page
+  (notificado.co, 22.3.2), so a page's stylesheet 404ed on whichever pod had not minted it. Three
+  causes. `loadApp` imported the app in `Bun.Glob` order — directory order, which ext4 hashes with a
+  per-filesystem seed — and import order is stylesheet order; it now imports sorted within each
+  glob. An island build loads its sheets in parallel, so their arrival order was a race; island-only
+  sheets are now ordered by path after the server graph's (`loadStylesheet(path, source, 'island')`).
+  And a container serving the stored islands never registered an island's own stylesheet at all;
+  the island store now records them and the boot registers them. A process also keeps serving every
+  stylesheet it minted (the last 32), so a late import cannot 404 a URL a document already names.
+- **pwa:** one precache entry answering 404 failed the install on every deploy (`addAll` is
+  all-or-nothing), so every visitor stayed on the first worker that ever installed, serving pages
+  that named assets gone from the server, until Shift+F5. Each entry is now fetched and stored on
+  its own; a failed entry costs its offline copy only, and the new worker installs, skips waiting,
+  claims the tabs and posts `AppUpdateAvailable`.
+- **cli:** a miss on a content-hashed URL (`/styles/*`, `/islands/*`) is `no-store`. It was
+  `public, max-age=0, s-maxage=60, stale-while-revalidate=600`, which let a CDN pin the 404.
 
 ## 22.3.3 - 2026-09-26
 

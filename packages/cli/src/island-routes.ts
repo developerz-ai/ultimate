@@ -3,7 +3,7 @@
 // would be a page that boots in `x dev` and 404s in the image.
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, json } from '@ultimat3/http';
+import { applyCacheHeaders, json, NO_STORE } from '@ultimat3/http';
 import type { IslandBundle } from './island-bundle';
 import { ISLAND_BASE_PATH } from './island-bundle';
 
@@ -28,7 +28,7 @@ export function islandRoutes(source: IslandSource): readonly Route[] {
       handler: (request: UltimateRequest): Response => {
         const chunk = source().chunkAt(request.pathname);
         if (chunk === undefined) {
-          return json(
+          const missing = json(
             {
               ok: false,
               error: {
@@ -45,6 +45,8 @@ export function islandRoutes(source: IslandSource): readonly Route[] {
             },
             { status: 404 },
           );
+          // `no-store`: a miss on a content-hashed URL must not be pinned by a CDN or a proxy.
+          return applyCacheHeaders(missing, NO_STORE);
         }
         return applyCacheHeaders(
           new Response(chunk.code, { headers: { 'content-type': 'text/javascript' } }),

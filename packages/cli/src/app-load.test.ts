@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LocaleConfig } from '@ultimat3/i18n';
 import { configureLocales, localeConfig } from '@ultimat3/i18n';
-import { loadApp } from './app-load';
+import { appModulePaths, loadApp } from './app-load';
 
 let root = '';
 
@@ -137,5 +137,33 @@ console.log(JSON.stringify(app.findings.map((finding) => finding.code)));`;
     const out = await new Response(child.stdout).text();
     expect(await child.exited).toBe(0);
     expect(JSON.parse(out.trim().split('\n').at(-1) ?? '[]')).toEqual(['X_APP_EMPTY']);
+  });
+});
+
+/**
+ * `Bun.Glob` answers in directory order, which ext4 derives from a per-filesystem hash seed: two
+ * pods of one image imported the app in two orders, registered its stylesheets in two orders, and
+ * served two different `/styles/<hash>.css` for one page (notificado.co, 22.3.2).
+ */
+describe('unit · the app is imported in one order on every machine', () => {
+  test('module paths are sorted within each glob, whatever order the files were created in', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ultimate-app-order-'));
+    try {
+      const names = ['zeta', 'alpha', 'mu', 'beta', 'omega', 'delta', 'kappa', 'eta'];
+      for (const name of names) {
+        await Bun.write(join(root, `apps/web/app/${name}/page.tsx`), 'export {};\n');
+        await Bun.write(join(root, `packages/${name}/src/index.ts`), 'export {};\n');
+      }
+      const paths = (await appModulePaths(root)).map((path) => path.slice(root.length + 1));
+      const app = paths.filter((path) => path.startsWith('apps/'));
+      const packages = paths.filter((path) => path.startsWith('packages/'));
+      expect(app).toEqual([...app].sort());
+      expect(packages).toEqual([...packages].sort());
+      // The glob order itself is kept: every app module before any package module.
+      expect(paths).toEqual([...app, ...packages]);
+      expect(app).toHaveLength(names.length);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

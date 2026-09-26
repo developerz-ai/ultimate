@@ -78,6 +78,14 @@ export interface Stylesheet {
   readonly surface: Surface | null;
   /** A plain (non-module) stylesheet: the tokens and the reset, which the cascade needs first. */
   readonly global: boolean;
+  /**
+   * Registered only by an ISLAND build, never by the server's module graph. Such a sheet is ordered
+   * by path, not by arrival: `Bun.build` loads an island graph in parallel, so its arrival order
+   * differs between processes, and the surface stylesheet — its URL a hash of the joined bytes —
+   * differed between two pods of one image (notificado.co, 22.3.2: one pod's `/styles/<hash>.css`
+   * was the other's 404, and each `sw.js` precached a sheet the other did not serve).
+   */
+  readonly island: boolean;
   readonly css: string;
 }
 
@@ -158,9 +166,17 @@ export function stylesFor(surface: Surface | null): string {
   );
   // `stripCharset` on every sheet, not only the first: a `@charset` or a BOM is legal at byte 0 of
   // a FILE and nowhere else, and this join is what turns seven files into one.
-  return [...carried.filter((sheet) => sheet.global), ...carried.filter((sheet) => !sheet.global)]
-    .map((sheet) => stripCharset(sheet.css))
-    .join('');
+  //
+  // Within each group, the server graph's sheets keep load order — deterministic, because `loadApp`
+  // imports in sorted order, and meaningful, because a page's module loads after the component
+  // module it overrides — and the island-only sheets follow, by path.
+  const byPath = (a: Stylesheet, b: Stylesheet): number =>
+    a.file < b.file ? -1 : a.file > b.file ? 1 : 0;
+  const group = (global: boolean): Stylesheet[] => [
+    ...carried.filter((sheet) => sheet.global === global && !sheet.island),
+    ...carried.filter((sheet) => sheet.global === global && sheet.island).sort(byPath),
+  ];
+  return [...group(true), ...group(false)].map((sheet) => stripCharset(sheet.css)).join('');
 }
 
 /**
@@ -181,17 +197,26 @@ export function transformTsx(source: string): string {
  * compilation — so a token file `@use`d by twenty `page.module.scss` would inline its `:root` block
  * twenty times. One file, imported for its side effect, is the shape that cannot do that.
  */
-export function loadStylesheet(path: string, source: string): string {
+export function loadStylesheet(
+  path: string,
+  source: string,
+  origin: 'module' | 'island' = 'module',
+): string {
   const compiled = compileStylesheet(path, source);
   // An EMPTY compile unregisters: under `x dev` an edit that deleted every rule left the old entry
   // in place, serving rules the file no longer had until the process restarted.
   if (compiled.css.length === 0 && stylesheets.delete(path)) revision += 1;
   if (compiled.css.length > 0) {
-    if (stylesheets.get(path)?.css !== compiled.css) revision += 1;
+    const held = stylesheets.get(path);
+    // Island-only until the server graph loads it too; then it takes its place in load order.
+    const island = origin === 'island' && (held === undefined || held.island);
+    if (held?.css !== compiled.css || held.island !== island) revision += 1;
+    if (held?.island === true && !island) stylesheets.delete(path);
     stylesheets.set(path, {
       file: path,
       surface: surfaceOfSheet(path),
       global: isGlobalStylesheet(path),
+      island,
       css: compiled.css,
     });
   }
