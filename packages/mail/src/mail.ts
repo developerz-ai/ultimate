@@ -43,6 +43,12 @@ export interface SendOptions {
   readonly cc?: readonly string[] | undefined;
   readonly bcc?: readonly string[] | undefined;
   readonly unsubscribeUrl?: string | undefined;
+  /**
+   * Default `true`: `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) rides with
+   * `List-Unsubscribe`. `false` when `unsubscribeUrl` is a GET confirm page that cannot take the
+   * one-click POST — the header and the footer link stay, the POST promise goes.
+   */
+  readonly unsubscribeOneClick?: boolean | undefined;
   readonly idempotencyKey?: string | undefined;
   /** Deliver inline instead of through the queue. Tests and CLI one-shots only. */
   readonly sync?: boolean | undefined;
@@ -133,6 +139,7 @@ export function renderMessage<I>(
     cc: options.cc,
     bcc: options.bcc,
     unsubscribeUrl: options.unsubscribeUrl,
+    unsubscribeOneClick: options.unsubscribeOneClick,
     idempotencyKey: options.idempotencyKey,
   };
   // Here, not in a driver: interpolated data reaches `Subject`, and whether a break in it injects

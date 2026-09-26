@@ -6,6 +6,7 @@ import {
   availableCpus,
   availableMemory,
   defaultWorkers,
+  sharedWorkers,
   WORKER_BYTES,
   WORKER_CEILING,
   WORKER_FLOOR,
@@ -53,5 +54,20 @@ describe('unit · default worker count', () => {
     expect(availableMemory()).toBeGreaterThan(0);
     expect(defaultWorkers()).toBeGreaterThanOrEqual(WORKER_FLOOR);
     expect(defaultWorkers()).toBeLessThanOrEqual(WORKER_CEILING);
+  });
+});
+
+describe('unit · the width of a suite that shares the machine', () => {
+  test('one worker per core — never the 1.5x a suite alone gets', () => {
+    expect(sharedWorkers(8, PLENTY)).toBe(8);
+    expect(sharedWorkers(12, PLENTY)).toBe(12);
+    expect(defaultWorkers(8, PLENTY)).toBe(12);
+  });
+
+  test('memory still binds, and the floor still holds', () => {
+    expect(sharedWorkers(12, WORKER_BYTES * 5)).toBe(5);
+    expect(sharedWorkers(1, PLENTY)).toBe(WORKER_FLOOR);
+    expect(sharedWorkers(12, 0)).toBe(WORKER_FLOOR);
+    expect(sharedWorkers(256, PLENTY)).toBe(WORKER_CEILING);
   });
 });

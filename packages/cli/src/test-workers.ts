@@ -91,6 +91,19 @@ export const defaultWorkers = (
 };
 
 /**
+ * The width for a parallel suite that SHARES the machine — `x verify` runs the static steps beside
+ * `live`, `job`, `e2e` and `eval` (`verify-run.ts`), and each of those scans is a CPU-bound process
+ * of its own. `defaultWorkers()`' oversubscription fills a worker's own stalls when nothing else
+ * wants the cores; beside six other processes it only multiplies the contention. Measured on
+ * notificado.co, 8 vCPU (#537): at 1.5x, `errors` went 1.8s alone → 7.9s in the gate and
+ * `boundaries` 2.3s → 9.7s. So: one worker per core, still held to what memory can carry.
+ */
+export const sharedWorkers = (
+  available: number = availableCpus(),
+  freeBytes: number = availableMemory(),
+): number => Math.min(defaultWorkers(available, freeBytes), Math.max(WORKER_FLOOR, available));
+
+/**
  * Which types run across worker processes, and why the other two cannot.
  *
  * Parallel is safe when the only thing a test file shares with another file is the database, and

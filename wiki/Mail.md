@@ -34,6 +34,7 @@ inline only with `{ sync: true }` or when no job driver is configured.
 | every string is a `mail.<id>.<slot>` key | English ships in the package catalog; an app catalog overrides it — translating the framework mails is shipping keys, never editing a template |
 | every date takes an IANA zone | `options.tz`, else `ctx.tz`, else `UTC` |
 | no CR/LF in a header-bound field | refused in rendering and again in the send job (`X_MAIL_HEADER_INVALID`), so every driver refuses the same message |
+| `unsubscribeUrl` is one-click unless you say otherwise | it emits `List-Unsubscribe: <url>` plus `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), a promise that a POST to that URL unsubscribes. When the URL is a confirm page — GET shows a button and must never unsubscribe, because scanners prefetch — pass `unsubscribeOneClick: false`: the `-Post` line goes, `List-Unsubscribe` and the footer link stay |
 | sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, and an idempotency key derived from the mail id and the rendered message, so a retry is one email |
 
 ## Which driver a boot installs

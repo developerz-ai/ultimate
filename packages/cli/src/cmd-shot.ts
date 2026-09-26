@@ -45,6 +45,7 @@ import { readThemeFlag, themeChoiceExpression } from './shot-theme';
 import type { IslandCount, ShotArtifacts } from './shot-verdict';
 import {
   buildVerdict,
+  documentStatus,
   ISLAND_PROBE,
   parseIslandProbe,
   shotLines,
@@ -219,6 +220,11 @@ export interface ShotRun {
   readonly acceptLanguage?: string | undefined;
   readonly now?: (() => Date) | undefined;
   /**
+   * `--expect-status`: the document status this shot is ok with — `404` to photograph the not-found
+   * page on purpose. Absent means any 2xx, and anything else fails the verdict with the status.
+   */
+  readonly expectStatus?: number | undefined;
+  /**
    * Something to do with the page AFTER the islands settled and BEFORE the picture — `ui.inspect`
    * reads the DOM here, on the one navigation the picture already paid for. `settle` re-runs the
    * island poll (an action that mounts something changes the count the verdict reports); the
@@ -265,6 +271,9 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       if (choice !== undefined) await page.prepare(choice);
     }
     await page.goto(requestedUrl, { timeout: options.timeoutMs });
+    // Read NOW as well as at capture: the network ring is bounded, and a page that fires a few
+    // hundred requests while it settles evicts the document entry the verdict needs.
+    const landedStatus = documentStatus(page.network(), page.url());
     if (options.settleMs > 0) await Bun.sleep(options.settleMs);
     // The probe may legitimately answer nothing — a page that refuses evaluation, a driver with no
     // JS engine. `null` says so; a `0` would read as "the route renders no islands", which is a
@@ -303,6 +312,8 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       network: page.network(),
       networkDropped: page.networkDropped(),
       islands,
+      landedStatus,
+      ...(options.expectStatus === undefined ? {} : { expectStatus: options.expectStatus }),
     });
     mkdirSync(options.outDir, { recursive: true });
     const image = join(options.outDir, SHOT_IMAGE);
@@ -387,6 +398,11 @@ export const shotCommand: CliCommand = {
     const port = intFlag(ctx.args, 'port', PORT_RANGE.min, DEFAULT_PORT, PORT_RANGE.max);
     const settleMs = intFlag(ctx.args, 'settle', 0, DEFAULT_SETTLE_MS);
     const timeoutMs = intFlag(ctx.args, 'timeout', 1, DEFAULT_PAGE_TIMEOUT_MS);
+    // Read only when given: its absence means "any 2xx", which no single default number can say.
+    const expectStatus =
+      flagString(ctx.args, 'expect-status') === undefined
+        ? undefined
+        : intFlag(ctx.args, 'expect-status', 100, 200, 599);
     // Which browser this run gets — start one here, or attach to one somebody else is running.
     // Decided by `shot-browser.ts` over plain inputs, and decided HERE, before a dev server or a
     // provider session exists to pay for a typo. It also PROBES for an installed Chrome and refuses
@@ -427,6 +443,7 @@ export const shotCommand: CliCommand = {
       timeoutMs,
       fullPage: flagBool(ctx.args, 'full'),
       extraHosts: flagString(ctx.args, 'allow-hosts'),
+      ...(expectStatus === undefined ? {} : { expectStatus }),
     };
     if (matrix) {
       // `--locale` and `--theme` narrow the matrix to one value of their axis.

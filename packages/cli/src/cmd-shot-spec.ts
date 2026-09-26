@@ -7,7 +7,7 @@ export const shotSpec: CommandSpec = {
   name: 'shot',
   summary: 'photograph one route, one island in a state it declares, or every island in the app',
   usage:
-    'x shot <route> [--locale <l>] [--theme light|dark] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--port 0] [--out <dir>] [--settle 2000] [--json]',
+    'x shot <route> [--locale <l>] [--theme light|dark] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--expect-status 404] [--port 0] [--out <dir>] [--settle 2000] [--json]',
   requiresApp: true,
   flags: [
     { name: 'port', type: 'string', summary: 'dev port (0 lets the kernel pick a free one)' },
@@ -15,6 +15,12 @@ export const shotSpec: CommandSpec = {
     { name: 'full', type: 'boolean', summary: 'whole page, not the fold', default: true },
     { name: 'settle', type: 'string', summary: 'ms to wait after load before capturing' },
     { name: 'timeout', type: 'string', summary: 'ms one navigation may take' },
+    {
+      name: 'expect-status',
+      type: 'string',
+      summary:
+        'the document status this shot is ok with (e.g. 404); absent: any 2xx, else it fails',
+    },
     { name: 'browser', type: 'string', summary: 'Chrome or Chromium binary to launch' },
     {
       name: 'cdp-url',

@@ -5,6 +5,7 @@
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
+import { sharedWorkers } from './test-workers';
 import {
   floorRequires,
   readVerifyFloor,
@@ -40,6 +41,10 @@ export async function runVerify(
     await pending;
     pending = undefined;
   };
+  // A parallel suite inside that window shares the cores with the static group, so its DEFAULT
+  // width is one per core (`sharedWorkers`); an explicit `--workers` is the caller's and stands.
+  const shared: VerifyContext =
+    ctx.workers === undefined && beside.length > 0 ? { ...ctx, workers: sharedWorkers() } : ctx;
   for (const step of selected) {
     if (beside.includes(step)) continue;
     if (step.name === SERIAL_SUITES[0]) {
@@ -51,7 +56,8 @@ export async function runVerify(
     } else if (!SERIAL_SUITES.includes(step.name)) {
       await join();
     }
-    byName.set(step.name, await runStep(step, ctx, floor));
+    const inWindow = pending !== undefined && SERIAL_SUITES.includes(step.name);
+    byName.set(step.name, await runStep(step, inWindow ? shared : ctx, floor));
   }
   await join();
   // Reported in the declared order, whatever order the steps finished in: the table, `--json` and

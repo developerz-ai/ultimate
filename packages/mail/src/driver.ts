@@ -27,6 +27,12 @@ export interface MailMessage {
   readonly cc?: readonly string[] | undefined;
   readonly bcc?: readonly string[] | undefined;
   readonly unsubscribeUrl?: string | undefined;
+  /**
+   * `false` drops `List-Unsubscribe-Post` and keeps the GET-only `List-Unsubscribe`: for an
+   * `unsubscribeUrl` that is a confirm page, which cannot honour RFC 8058's promise that a POST to
+   * it unsubscribes. Absent means `true` — one-click, what Gmail and Yahoo require of bulk senders.
+   */
+  readonly unsubscribeOneClick?: boolean | undefined;
   readonly idempotencyKey?: string | undefined;
 }
 
@@ -47,14 +53,17 @@ export interface MailDriver {
 
 /**
  * RFC 8058 one-click unsubscribe. Gmail and Yahoo require it for bulk senders and
- * reward it for transactional ones, so it is computed here rather than per driver.
+ * reward it for transactional ones, so it is computed here rather than per driver. The `-Post`
+ * line is a promise that a POST to the URL unsubscribes, so `unsubscribeOneClick: false` omits it.
  */
 export function messageHeaders(message: MailMessage): Readonly<Record<string, string>> {
   const headers: Record<string, string> = { 'Auto-Submitted': 'auto-generated' };
   if (message.replyTo !== undefined) headers['Reply-To'] = message.replyTo;
   if (message.unsubscribeUrl !== undefined) {
     headers['List-Unsubscribe'] = `<${message.unsubscribeUrl}>`;
-    headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+    if (message.unsubscribeOneClick !== false) {
+      headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+    }
   }
   return headers;
 }
