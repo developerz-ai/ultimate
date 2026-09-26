@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/auth",
-  "version": "22.3.5",
+  "version": "22.3.6",
   "description": "Sessions, passwords, OAuth, MFA and api keys — resolved to one Actor",
   "license": "MIT",
   "type": "module",
@@ -31,8 +31,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "22.3.5",
-    "@ultimat3/db": "22.3.5",
-    "@ultimat3/schema": "22.3.5"
+    "@ultimat3/core": "22.3.6",
+    "@ultimat3/db": "22.3.6",
+    "@ultimat3/schema": "22.3.6"
   }
 }
