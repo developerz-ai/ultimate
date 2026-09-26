@@ -292,3 +292,50 @@ describe('an app served from /app', () => {
     expect(stylesheetsRevision()).toBe(settled);
   });
 });
+
+/**
+ * Two pods of one image served two different `/styles/<hash>.css` for one page (notificado.co,
+ * 22.3.2), because the surface stylesheet joined sheets in ARRIVAL order and an island build's
+ * arrival order is the bundler's race. Island-only sheets are ordered by path.
+ */
+describe('the surface stylesheet does not depend on the order an island build loaded its sheets', () => {
+  const A = '/srv/demo/apps/web/app/a/a.module.scss';
+  const B = '/srv/demo/apps/web/app/b/b.module.scss';
+  const C = '/srv/demo/apps/web/app/c/c.module.scss';
+  const marker = (path: string): string => `mark-${path.split('/').at(-2)}`;
+  const build = (order: readonly string[]): string => {
+    clearStylesheets();
+    setStylesheetRoot('/srv/demo');
+    loadStylesheet(GLOBAL, GLOBAL_CSS);
+    loadStylesheet(APP, '.page{color:red}');
+    for (const path of order) loadStylesheet(path, `.${marker(path)}{color:blue}`, 'island');
+    return stylesFor('app');
+  };
+
+  test('every arrival order joins to the same bytes', () => {
+    const first = build([A, B, C]);
+    expect(build([C, A, B])).toBe(first);
+    expect(build([B, C, A])).toBe(first);
+  });
+
+  test('the server graph keeps load order, and island-only sheets follow it', () => {
+    const css = build([B, A]);
+    expect(css).toContain('page');
+    expect(css).toContain('mark-a');
+    expect(css).toContain('mark-b');
+    expect(css.indexOf('page')).toBeLessThan(css.indexOf('mark-a'));
+    expect(css.indexOf('mark-a')).toBeLessThan(css.indexOf('mark-b'));
+  });
+
+  test('a sheet the server graph loads after an island did takes its place in load order', () => {
+    clearStylesheets();
+    setStylesheetRoot('/srv/demo');
+    loadStylesheet(B, '.b{color:blue}', 'island');
+    loadStylesheet(APP, '.page{color:red}');
+    loadStylesheet(B, '.b{color:blue}');
+    expect(registeredStylesheets().map((sheet) => [sheet.file, sheet.island])).toEqual([
+      [APP, false],
+      [B, false],
+    ]);
+  });
+});

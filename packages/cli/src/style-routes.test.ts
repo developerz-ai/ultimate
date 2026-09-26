@@ -70,6 +70,9 @@ describe('surface stylesheets over HTTP', () => {
     const response = await serve().fetch(new Request('http://dev.test/styles/deadbeef.css'));
 
     expect(response.status).toBe(404);
+    // A content-hashed URL that misses is never cacheable: a CDN holding this 404 for a minute
+    // pinned the miss after the file appeared (it was `public, s-maxage=60, …` on notificado.co).
+    expect(response.headers.get('cache-control')).toContain('no-store');
     const body = (await response.json()) as { error?: { code?: string; fix?: string } };
     expect(body.error?.code).toBe('X_ROUTE_NOT_FOUND');
     const fix = body.error?.fix ?? '';

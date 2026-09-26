@@ -7,11 +7,12 @@
 // that names a different set of islands than the app has, or a chunk whose bytes do not hash to
 // what the index recorded is refused, and the boot builds instead — with the reason logged.
 
-import { join } from 'node:path'; // why: Bun ships no path-join primitive.
+import { join, relative, sep } from 'node:path'; // why: Bun ships no path-join primitive.
 import { frameworkVersion, logger } from '@ultimat3/core';
-import { contentHash } from '@ultimat3/render/server';
+import { contentHash, loadStylesheet } from '@ultimat3/render/server';
 import type { IslandBundle, IslandChunk } from './island-bundle';
 import { buildIslands, discoverIslands, islandBundle } from './island-bundle';
+import { islandStylesheets } from './island-styles';
 
 /** App-root-relative: `COPY . .` carries it into the image with the rest of `.x/`. */
 export const ISLAND_STORE_DIR = '.x/islands';
@@ -28,6 +29,13 @@ interface StoreIndex {
   readonly framework: string;
   readonly bun: string;
   readonly chunks: readonly StoredChunk[];
+  /**
+   * The stylesheets the island build registered, app-relative and sorted. Registered again at boot
+   * from the app's own sources, so a container serving these chunks joins the SAME surface
+   * stylesheet a build would — without them an island-only sheet was missing from every pod that
+   * read the store, and present on any that rebuilt.
+   */
+  readonly stylesheets: readonly string[];
 }
 
 const chunkFile = (url: string): string => url.slice(url.lastIndexOf('/') + 1);
@@ -50,7 +58,16 @@ export async function writeIslandStore(
       identity: contentHash(chunk.code),
     });
   }
-  const index: StoreIndex = { framework: frameworkVersion(), bun: Bun.version, chunks };
+  const stylesheets = islandStylesheets()
+    .map((path) => relative(root, path).split(sep).join('/'))
+    .filter((path) => !path.startsWith('..'))
+    .sort();
+  const index: StoreIndex = {
+    framework: frameworkVersion(),
+    bun: Bun.version,
+    chunks,
+    stylesheets,
+  };
   await Bun.write(join(dir, INDEX), `${JSON.stringify(index, null, 2)}\n`);
   return [...written, `${ISLAND_STORE_DIR}/${INDEX}`];
 }
@@ -74,7 +91,10 @@ function parseIndex(value: unknown): StoreIndex | undefined {
       return undefined;
     parsed.push({ file, moduleId, url, identity });
   }
-  return { framework: record['framework'], bun: record['bun'], chunks: parsed };
+  const sheets = record['stylesheets'];
+  // Absent in a 22.3.2 store: read as none, and the boot builds when it matters (see below).
+  const stylesheets = Array.isArray(sheets) ? sheets.filter(isString) : [];
+  return { framework: record['framework'], bun: record['bun'], chunks: parsed, stylesheets };
 }
 
 /** A verified store, or the one sentence saying why it cannot be served. */
@@ -112,6 +132,13 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
       code,
       bytes: new TextEncoder().encode(code).byteLength,
     });
+  }
+  // In sorted order, as `island` sheets: `stylesFor` orders those by path, so this is the same
+  // surface stylesheet the build that wrote the store joined.
+  for (const sheet of index.stylesheets) {
+    const source = Bun.file(join(root, sheet));
+    if (!(await source.exists())) return { stale: `${sheet}, an island stylesheet, is missing` };
+    loadStylesheet(join(root, sheet), await source.text(), 'island');
   }
   return { bundle: islandBundle(chunks) };
 }

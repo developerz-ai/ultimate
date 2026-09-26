@@ -17,6 +17,16 @@ import { IslandBuildFailedError } from './errors';
 const STYLESHEET = /\.s?css$/;
 
 /**
+ * Every stylesheet an island build has loaded in this process, absolute. `x build --target docker`
+ * writes them into the island store, so a container that serves the stored chunks registers the
+ * same sheets a build would have — and every pod of one image joins the same surface stylesheet.
+ */
+const islandSheets = new Set<string>();
+
+/** Sorted, so the store index is byte-identical for identical input. */
+export const islandStylesheets = (): readonly string[] => [...islandSheets].sort();
+
+/**
  * `loadStylesheet`, not `compileStylesheet`: compiling alone answers the class names and drops the
  * RULES on the floor, and an island is the one importer a document's own module graph never sees.
  * Registering here is what puts them in `stylesFor(surface)` — `buildIslands` runs before the first
@@ -28,7 +38,8 @@ export const islandStylesPlugin: BunPlugin = {
     build.onLoad({ filter: STYLESHEET }, async ({ path }) => {
       const source = await Bun.file(path).text();
       try {
-        return { contents: loadStylesheet(path, source), loader: 'js' };
+        islandSheets.add(path);
+        return { contents: loadStylesheet(path, source, 'island'), loader: 'js' };
       } catch (error) {
         // A coded failure already names the file and carries a fix — re-wrapping it would bury
         // both. Anything else is rendered through `renderThrowable`, because this is the plugin's

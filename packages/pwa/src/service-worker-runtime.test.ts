@@ -36,6 +36,44 @@ describe('the emitted install block, executed', () => {
     ]);
   });
 
+  // The measured failure (notificado.co, 22.3.2): one precached stylesheet answered 404, `addAll`
+  // rejected, and the install failed on every deploy — every visitor stayed on the first worker
+  // that ever installed, serving pages that named assets gone from the server, until Shift+F5.
+  test('an entry that fails costs that entry, never the install', async () => {
+    const sw = swHarness();
+    const assets = [
+      { url: '/styles/gone.css', revision: '/styles/gone.css', bytes: 1 },
+      { url: '/styles/here.css', revision: '/styles/here.css', bytes: 1 },
+    ];
+    sw.load(generateServiceWorker(precached, { ...config, assets }, 'build-1').source);
+    sw.answerWith((request) =>
+      new URL(request.url).pathname === '/styles/gone.css'
+        ? new Response('missing', { status: 404 })
+        : undefined,
+    );
+    await sw.install();
+    await sw.activate();
+
+    const cache = sw.caches.get(cacheNamespace('build-1', 'precache'));
+    const keys = [...(cache?.entries.keys() ?? [])];
+    expect(keys).toContain('https://app.test/styles/here.css');
+    expect(keys).toContain('https://app.test/pricing');
+    expect(keys).not.toContain('https://app.test/styles/gone.css');
+    expect(sw.messages).toContainEqual({ type: 'AppUpdateAvailable', to: 'build-1' });
+  });
+
+  test('a network error on one entry does not reject the install either', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    sw.answerWith((request) => {
+      if (new URL(request.url).pathname === '/pricing') throw new TypeError('reset');
+      return undefined;
+    });
+    await sw.install();
+    const cache = sw.caches.get(cacheNamespace('build-1', 'precache'));
+    expect([...(cache?.entries.keys() ?? [])]).toContain('https://app.test/');
+  });
+
   test('fetches each entry revision-addressed, so a deploy re-downloads only what changed', async () => {
     const sw = swHarness();
     sw.load(generateServiceWorker(precached, config, 'build-1').source);

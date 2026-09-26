@@ -72,14 +72,36 @@ let memo: { readonly revision: number; readonly bundle: StyleBundle } | undefine
 export function styleBundle(): StyleBundle {
   const revision = stylesheetsRevision();
   if (memo !== undefined && memo.revision === revision) return memo.bundle;
-  const bundle = styleBundleOf(
+  const current = styleBundleOf(
     STYLED_SURFACES.map((surface) => ({ surface, css: stylesFor(surface) })).filter(
       (sheet) => sheet.css.length > 0,
     ),
   );
+  for (const chunk of current.chunks) {
+    minted.delete(chunk.url);
+    minted.set(chunk.url, chunk);
+  }
+  while (minted.size > MINTED_KEPT) {
+    const oldest = minted.keys().next().value;
+    if (oldest === undefined) break;
+    minted.delete(oldest);
+  }
+  const bundle: StyleBundle = {
+    ...current,
+    chunkAt: (url: string): StyleChunk | undefined => current.chunkAt(url) ?? minted.get(url),
+  };
   memo = { revision, bundle };
   return bundle;
 }
+
+/**
+ * Every stylesheet this process has minted, newest last, so a URL it once linked keeps answering
+ * after the registry moves — a module imported late, an island rebuilt under `x dev`. The worker
+ * precached the boot-time URL and a document rendered a minute ago names it; a 404 there is a page
+ * with no CSS. Bounded, because `x dev` mints one per edit.
+ */
+const minted = new Map<string, StyleChunk>();
+const MINTED_KEPT = 32;
 
 /**
  * Test seam, and the shape `islandBundle` has: a table built from what the caller supplies.

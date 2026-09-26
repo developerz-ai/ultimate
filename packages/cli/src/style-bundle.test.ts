@@ -29,6 +29,19 @@ afterEach(async () => {
 });
 
 describe('styleBundle', () => {
+  // A document rendered a minute ago, and the worker's boot-time precache, name the URL this process
+  // minted then. When a late import moves the registry, that URL must still answer — a 404 there is
+  // a page with no CSS and an install that never completes (notificado.co, 22.3.2).
+  test('a stylesheet this process minted keeps answering after the registry moves', () => {
+    loadStylesheet(SITE, '.hero{color:red}');
+    const first = styleBundle().hrefFor('site') ?? '';
+    loadStylesheet(APP, '.late{color:blue}');
+    loadStylesheet(SITE, '.hero{color:green}');
+    const bundle = styleBundle();
+    expect(bundle.hrefFor('site')).not.toBe(first);
+    expect(bundle.chunkAt(first)?.css).toContain('color:red');
+  });
+
   test('one content-addressed URL per surface, and a site page never links app CSS', () => {
     loadStylesheet(SITE, '.hero{color:red}');
     loadStylesheet(APP, '.feed{color:blue}');
@@ -144,5 +157,35 @@ describe('styleBundle, for an app served from /app', () => {
     const moved = styleBundle().hrefFor('site') ?? '';
     expect(moved).not.toBe(first);
     expect(styleBundle().chunkAt(moved)?.css).toContain('color:green');
+  });
+});
+
+/**
+ * Two pods of one image, two different `/styles/<hash>.css` for one page (notificado.co, 22.3.2).
+ * Built in two separate PROCESSES, with the island sheets arriving in two different orders, the
+ * surface stylesheet — and so its URL — is the same.
+ */
+describe('the surface stylesheet URL is the same in every process', () => {
+  const script = (order: readonly string[]): string => `
+    import { loadStylesheet, setStylesheetRoot } from '@ultimat3/render/server';
+    import { styleBundle } from './src/style-bundle';
+    setStylesheetRoot('/srv/demo');
+    loadStylesheet('/srv/demo/apps/web/shared/global.scss', ':root{--fg:1}');
+    loadStylesheet('/srv/demo/apps/web/app/page.module.scss', '.page{color:red}');
+    for (const name of ${JSON.stringify(order)}) {
+      loadStylesheet('/srv/demo/apps/web/app/' + name + '/x.module.scss', '.' + name + '{color:blue}', 'island');
+    }
+    console.log(styleBundle().hrefFor('app'));`;
+
+  const run = (order: readonly string[]): string => {
+    const child = Bun.spawnSync(['bun', '-e', script(order)], { cwd: join(import.meta.dir, '..') });
+    if (child.exitCode !== 0) expect.unreachable(child.stderr.toString());
+    return child.stdout.toString().trim();
+  };
+
+  test('shuffled island sheets, two processes, one URL', () => {
+    const first = run(['alpha', 'beta', 'gamma', 'delta']);
+    expect(first).toMatch(new RegExp(`^${STYLE_BASE_PATH}/[0-9a-f]{8}\\.css$`));
+    expect(run(['delta', 'gamma', 'alpha', 'beta'])).toBe(first);
   });
 });
