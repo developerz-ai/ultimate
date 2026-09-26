@@ -8,7 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **render:** 22.3.4 still minted a different `/styles/<hash>.css` on every boot of one image
+  (notificado.co: two pods, `acb0b5fb` vs `ae42d479` for `/`, each the other's 404). The two bodies
+  were the same bytes in a different order â€” `@ultimat3/ui`'s AppShell and Avatar sheets swapped.
+  A `.scss` registers in Bun's `onLoad`, which runs as the loader FETCHES a module's dependencies,
+  in parallel, so arrival order was a race; sorting the imports (22.3.4) could not order it.
+  `stylesFor` now orders by the sheets alone (`stylesheetOrder`): the global layer, then package
+  sheets, then `shared/`, then the surface's own, each by app-root-relative path. Reproduced with
+  two real boots of the app (4 of 4 differing before, 4 of 4 identical after), and pinned by a test
+  that boots the reference app in three processes.
 
 ## 22.3.4 - 2026-09-26
 

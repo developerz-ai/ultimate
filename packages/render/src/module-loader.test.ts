@@ -318,16 +318,17 @@ describe('the surface stylesheet does not depend on the order an island build lo
     expect(build([B, C, A])).toBe(first);
   });
 
-  test('the server graph keeps load order, and island-only sheets follow it', () => {
+  test('an island sheet is ordered by path among the surface sheets, not after them', () => {
     const css = build([B, A]);
     expect(css).toContain('page');
     expect(css).toContain('mark-a');
     expect(css).toContain('mark-b');
-    expect(css.indexOf('page')).toBeLessThan(css.indexOf('mark-a'));
+    // apps/web/app/a < apps/web/app/b < apps/web/app/dashboard
     expect(css.indexOf('mark-a')).toBeLessThan(css.indexOf('mark-b'));
+    expect(css.indexOf('mark-b')).toBeLessThan(css.indexOf('page'));
   });
 
-  test('a sheet the server graph loads after an island did takes its place in load order', () => {
+  test('a sheet the server graph loads after an island did is no longer island-only', () => {
     clearStylesheets();
     setStylesheetRoot('/srv/demo');
     loadStylesheet(B, '.b{color:blue}', 'island');
@@ -337,5 +338,54 @@ describe('the surface stylesheet does not depend on the order an island build lo
       [APP, false],
       [B, false],
     ]);
+  });
+});
+
+/**
+ * 22.3.4 still minted a different `/styles/<hash>.css` per boot of ONE image (notificado.co). The
+ * server's own `.scss` imports register in Bun's `onLoad`, which runs as the loader FETCHES a
+ * module's dependencies — in parallel — not as it evaluates them: measured on a real build of the
+ * app, three boots registered `@ultimat3/ui`'s Accordion, Alert, AppShell, AsyncRegion, Avatar and
+ * BarChart sheets in three orders and minted three URLs. Arrival order is not an order.
+ */
+describe('the surface stylesheet is the same for any registration order', () => {
+  const UI = (name: string): string =>
+    `/srv/demo/node_modules/@ultimat3/ui/src/${name}.module.scss`;
+  const TOKENS = '/srv/demo/node_modules/@ultimat3/ui/src/tokens.scss';
+  const sheets: readonly (readonly [string, string])[] = [
+    [UI('Alert'), '.alert{color:red}'],
+    [UI('Button'), '.button{color:blue}'],
+    [UI('Avatar'), '.avatar{color:green}'],
+    [GLOBAL, GLOBAL_CSS],
+    [TOKENS, ':root{--ui:1}'],
+    [APP, '.page{color:teal}'],
+    ['/srv/demo/apps/web/shared/shell.module.scss', '.shell{color:navy}'],
+  ];
+  const joined = (order: readonly number[]): string => {
+    clearStylesheets();
+    setStylesheetRoot('/srv/demo');
+    for (const i of order) {
+      const [path, css] = sheets[i] ?? ['', ''];
+      loadStylesheet(path, css);
+    }
+    return stylesFor('app');
+  };
+
+  test('every permutation joins to the same bytes', () => {
+    const first = joined([0, 1, 2, 3, 4, 5, 6]);
+    expect(joined([6, 5, 4, 3, 2, 1, 0])).toBe(first);
+    expect(joined([2, 0, 5, 1, 6, 4, 3])).toBe(first);
+  });
+
+  test('library before app: package sheets, then shared/, then the surface — globals first', () => {
+    const css = joined([6, 5, 4, 3, 2, 1, 0]);
+    const at = (needle: string): number => {
+      expect(css).toContain(needle);
+      return css.indexOf(needle);
+    };
+    expect(at('--ui:1')).toBeLessThan(at('--color-fg'));
+    expect(at('--color-fg')).toBeLessThan(at('.alert'));
+    expect(at('.button')).toBeLessThan(at('.shell'));
+    expect(at('.shell')).toBeLessThan(at('.page'));
   });
 });

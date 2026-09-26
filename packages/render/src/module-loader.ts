@@ -79,11 +79,9 @@ export interface Stylesheet {
   /** A plain (non-module) stylesheet: the tokens and the reset, which the cascade needs first. */
   readonly global: boolean;
   /**
-   * Registered only by an ISLAND build, never by the server's module graph. Such a sheet is ordered
-   * by path, not by arrival: `Bun.build` loads an island graph in parallel, so its arrival order
-   * differs between processes, and the surface stylesheet — its URL a hash of the joined bytes —
-   * differed between two pods of one image (notificado.co, 22.3.2: one pod's `/styles/<hash>.css`
-   * was the other's 404, and each `sw.js` precached a sheet the other did not serve).
+   * Registered only by an ISLAND build, never by the server's module graph — what `x build --target
+   * docker` records in the island store. Not an ordering key: every sheet is ordered by
+   * `stylesheetOrder`, whoever registered it.
    */
   readonly island: boolean;
   readonly css: string;
@@ -147,18 +145,25 @@ export function clearStylesheets(): void {
 }
 
 /**
- * The CSS a document on `surface` must carry: the global layer first, then the modules, each group
- * in load order. A `site/` page never receives `app/` CSS — that is axiom 6 applied to bytes the
- * browser parses, not just bytes it executes.
+ * The CSS a document on `surface` must carry. A `site/` page never receives `app/` CSS — that is
+ * axiom 6 applied to bytes the browser parses, not just bytes it executes.
  *
  * `shared/` is carried by both graphs by definition — it is the one directory both surfaces import
  * from, and it is where an app's own global stylesheet lives. Filtering it out (which this did)
  * meant an app could put its tokens in the one place the convention names and have every document
  * silently drop them.
  *
- * Globals sort ahead of modules rather than riding load order: the reset styles bare elements at
- * the lowest specificity there is, so a reset that happened to register after a module rule wins
- * ties it must lose. Insertion order alone made that depend on which page a request hit first.
+ * THE ORDER IS A FUNCTION OF THE SHEETS, NEVER OF THEIR ARRIVAL (22.3.5). A sheet registers in Bun's
+ * `onLoad`, which runs as the loader fetches a module's dependencies — in parallel — and an island
+ * build's too: the arrival order differed on every boot of one image, and so did the joined bytes
+ * and the `/styles/<hash>.css` minted from them (notificado.co, 22.3.2–22.3.4: two pods, two URLs,
+ * each the other's 404). `stylesheetOrder` is the whole rule:
+ *
+ * | key | first | why |
+ * |---|---|---|
+ * | global | the global layer | the reset styles bare elements at the lowest specificity there is, so a reset after a module rule wins ties it must lose |
+ * | owner | a package's sheet, then `shared/`, then the surface's own | library before app: an app's rule wins a tie against the component it restyles |
+ * | path | app-root-relative, by code unit | a total order; the same on every machine |
  */
 export function stylesFor(surface: Surface | null): string {
   const carried = [...stylesheets.values()].filter(
@@ -166,17 +171,28 @@ export function stylesFor(surface: Surface | null): string {
   );
   // `stripCharset` on every sheet, not only the first: a `@charset` or a BOM is legal at byte 0 of
   // a FILE and nowhere else, and this join is what turns seven files into one.
-  //
-  // Within each group, the server graph's sheets keep load order — deterministic, because `loadApp`
-  // imports in sorted order, and meaningful, because a page's module loads after the component
-  // module it overrides — and the island-only sheets follow, by path.
-  const byPath = (a: Stylesheet, b: Stylesheet): number =>
-    a.file < b.file ? -1 : a.file > b.file ? 1 : 0;
-  const group = (global: boolean): Stylesheet[] => [
-    ...carried.filter((sheet) => sheet.global === global && !sheet.island),
-    ...carried.filter((sheet) => sheet.global === global && sheet.island).sort(byPath),
-  ];
-  return [...group(true), ...group(false)].map((sheet) => stripCharset(sheet.css)).join('');
+  return carried
+    .sort(stylesheetOrder)
+    .map((sheet) => stripCharset(sheet.css))
+    .join('');
+}
+
+const OWNER_RANK = (sheet: Stylesheet): number =>
+  sheet.surface === null ? 0 : sheet.surface === 'shared' ? 1 : 2;
+
+/** Relative to the app root, so a container at `/app` and a laptop order one app alike. */
+const orderPath = (sheet: Stylesheet): string => {
+  const root = stylesheetRoot ?? process.cwd();
+  return sheet.file.startsWith(`${root}/`) ? sheet.file.slice(root.length + 1) : sheet.file;
+};
+
+/** See `stylesFor`: global layer, then owner, then path. Exported for the tests that pin it. */
+export function stylesheetOrder(a: Stylesheet, b: Stylesheet): number {
+  if (a.global !== b.global) return a.global ? -1 : 1;
+  const owner = OWNER_RANK(a) - OWNER_RANK(b);
+  if (owner !== 0) return owner;
+  const [x, y] = [orderPath(a), orderPath(b)];
+  return x < y ? -1 : x > y ? 1 : 0;
 }
 
 /**
