@@ -89,6 +89,8 @@ export function swHarness() {
    * late passed every test. Recorded here AND thrown, as the browser throws.
    */
   const lateWaitUntil: string[] = [];
+  /** How many times the worker called `self.skipWaiting()` — the install block must, once. */
+  let skippedWaiting = 0;
   let offline = false;
   let respond: ((request: Request) => Response | undefined) | undefined;
   const fetcher = async (request: Request | string): Promise<Response> => {
@@ -138,7 +140,9 @@ export function swHarness() {
           postMessage: (data: unknown): void => void messages.push(data),
         })),
     },
-    skipWaiting: (): void => undefined,
+    skipWaiting: async (): Promise<void> => {
+      skippedWaiting += 1;
+    },
   };
 
   return {
@@ -185,6 +189,7 @@ export function swHarness() {
       await work;
     },
     lateWaitUntil,
+    skippedWaiting: (): number => skippedWaiting,
     /** The response, as the page receives it — the cache copy is NOT awaited, see `settled`. */
     async respond(path: string): Promise<Response> {
       let answer: Promise<Response> | undefined;

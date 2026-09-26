@@ -23,10 +23,13 @@ export const SW_SCOPE = '/';
  */
 export const SW_REGISTER_PATH = '/x-sw-register.js';
 
+/** How long a returning tab waits between two `sw.js` update checks — five minutes. */
+export const SW_UPDATE_INTERVAL_MS = 300_000;
+
 export interface ServiceWorkerArtifacts {
   /** `sw.js`, deterministic for identical input. */
   readonly source: string;
-  /** `x-sw-register.js`, the four lines that install it. */
+  /** `x-sw-register.js`, the lines that install it and look for its successor. */
   readonly register: string;
   /** The `<script src>` tag, appended to `PwaArtifacts.head` by every surface that serves it. */
   readonly head: string;
@@ -133,25 +136,42 @@ const staticAssets = (
     .sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 
 /**
- * Four lines, and every one of them earns it. `load` because registration competes with the page's
- * own first paint for the same network. `scope: '/'` stated rather than inferred, so a change to
- * where the file is served is a build-time refusal (`assertScope`) instead of a worker that
- * silently controls a subdirectory. The `catch` because a registration that throws in a browser
- * with service workers disabled — an incognito profile, an enterprise policy — must not take an
- * otherwise working page down with it.
+ * The registration, and every line of it earns its bytes. `load` because registration competes with
+ * the page's own first paint for the same network. `scope: '/'` stated rather than inferred, so a
+ * change to where the file is served is a build-time refusal (`assertScope`) instead of a worker
+ * that silently controls a subdirectory. The `catch` because a registration that throws in a
+ * browser with service workers disabled — an incognito profile, an enterprise policy — must not
+ * take an otherwise working page down with it.
+ *
+ * `registration.update()` when a hidden tab comes back, at most once per `SW_UPDATE_INTERVAL_MS`
+ * (22.3.2). A browser checks for a new `sw.js` on a NAVIGATION; a tab left open for days makes
+ * none, so the new worker was found only on the click that was already answered by the old one. The
+ * throttle keeps an alt-tabbing reader from re-downloading the worker on every focus, and the
+ * swallowed rejection is the offline case. It never posts `skip-waiting` and never reloads: the
+ * worker skips waiting itself (`@ultimat3/pwa`'s install block), and a reload under a reader who is
+ * typing is the one thing an update must not do — the next navigation gets the new HTML.
  *
  * EXPORTED because a static export has to put these bytes on disk BEFORE it renders, not after.
  * The file is named by every document and weighed by `measureDocumentJs`, and it used to be
  * written last, beside `sw.js` — so the measurement read a file that did not exist yet on a clean
  * output directory, and the PREVIOUS build's copy on a reused one. `sw.js` still comes last, for
  * the reason its own comment gives (its precache manifest is built from the rendered documents'
- * content hashes); this half depends on nothing but two constants, so it can and must come first.
+ * content hashes); this half depends on nothing but constants, so it can and must come first.
  */
 export const serviceWorkerRegistration = (): string =>
   `if ('serviceWorker' in navigator) {
   addEventListener('load', function () {
     navigator.serviceWorker
       .register(${JSON.stringify(SERVICE_WORKER_PATH)}, { scope: ${JSON.stringify(SW_SCOPE)} })
+      .then(function (registration) {
+        var checked = Date.now();
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState !== 'visible') return;
+          if (Date.now() - checked < ${SW_UPDATE_INTERVAL_MS}) return;
+          checked = Date.now();
+          registration.update().catch(function () {});
+        });
+      })
       .catch(function (error) { console.warn('service worker registration failed', error); });
   });
 }

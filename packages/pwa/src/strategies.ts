@@ -1,7 +1,8 @@
 /**
  * The four caching strategies as named functions, plus the render-mode → strategy table.
- * You never choose a strategy by hand: the route's render mode already encodes how fresh
- * its bytes have to be, so the mapping is derived and the override is the exception.
+ * You never choose a strategy by hand: the mapping is derived and the override is the exception.
+ * Every rule the worker routes is a DOCUMENT, and a document is network-first in every mode — the
+ * cached copy is what offline gets, never what an online visitor gets (22.3.2).
  */
 
 import type { OfflineStrategy, RenderMode } from '@ultimat3/core';
@@ -52,6 +53,16 @@ export interface PwaRoute {
 /**
  * Render mode → runtime strategy. The whole reason `sw.js` is generated, not written.
  *
+ * Every row is `network-first`, `As of 22.3.2`, because every rule this table feeds is a
+ * DOCUMENT: `routeRules` projects page routes only, and content-hashed chunks never get a rule —
+ * they are `immutable` in the browser's HTTP cache. `static: 'cache-first'` and
+ * `isr`/`stream: 'stale-while-revalidate'` answered an ONLINE navigation from the copy the old
+ * worker held, and that copy is the old HTML naming the old hashed CSS and islands, so a visitor saw
+ * a deploy only after Shift+F5 (measured on notificado.co, 22.3.1). A precached or pages-cached
+ * document is the OFFLINE answer, which `networkFirst` already is on a failed fetch; the render
+ * mode still decides WHERE that copy lives (`cacheFor`: precache or pages), not whether it is
+ * served while the network answers. A per-route `strategy` is still the override.
+ *
  * Two separate things make the closed set hold, and the table needed both. `Record<RenderMode, …>`
  * over the TIER-0 union is the exhaustiveness check — this was keyed on a hand-copy, which is how
  * `spa` went on mapping to `cache-first` after `spa` was deleted from the vocabulary: the one
@@ -63,10 +74,10 @@ export interface PwaRoute {
  * AND an extra key are both build errors.
  */
 export const MODE_STRATEGY = Object.freeze<Record<RenderMode, StrategyName>>({
-  static: 'cache-first',
-  isr: 'stale-while-revalidate',
+  static: 'network-first',
+  isr: 'network-first',
   ssr: 'network-first',
-  stream: 'stale-while-revalidate',
+  stream: 'network-first',
 });
 
 export function strategyFor(route: PwaRoute): StrategyName {

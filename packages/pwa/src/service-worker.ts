@@ -308,9 +308,20 @@ function serializeRules(rules: readonly RouteRule[]): string {
  * and a bundler emits a query of its own: a fixed `?` built `...?locale=en?v=<rev>`, and a single
  * non-200 for it rejects `addAll`, which rejects the install — no precache, no offline document,
  * no version-skew header, and a worker that never activates at all.
+ *
+ * `skipWaiting()` FIRST, `As of 22.3.2`: a new worker activates as soon as its precache is filled,
+ * never "once every tab of the origin is closed", which for a returning visitor was days. Nothing
+ * else could do it — no page ever posted `skip-waiting` — and it has to be the worker's own call,
+ * because the one that must converge is a browser still running a 22.3.1 worker and that release's
+ * register script, neither of which will ever ask. Safe for a tab open across the release: this
+ * worker routes documents only (content-hashed chunks come from the network and the HTTP cache,
+ * never from a cache it deletes on activate), and it never reloads a page — the tab's NEXT
+ * navigation is answered network-first by the new worker.
  */
 const INSTALL_BLOCK = `
 self.addEventListener('install',(event)=>{
+  // Take over as soon as the precache is in: a waiting worker otherwise waits for every tab to close.
+  self.skipWaiting();
   event.waitUntil((async()=>{
     const cache=await caches.open(PRECACHE);
     // Revision is a content hash: unchanged assets are not re-downloaded across deploys.
@@ -387,6 +398,10 @@ const SKEW_STATUS = 409;
  * is stale, it stops stamping, re-issues the request untagged so the document actually loads, and
  * tells every window an update is waiting. Skew detection is not lost — it has already fired, and
  * its whole purpose is to get the client onto the new build, which is what the app now does.
+ *
+ * Still needed after the install block's `skipWaiting()` (22.3.2): that removes the WAITING half,
+ * but the server can roll forward before the browser has fetched the new `sw.js` at all, and a
+ * worker from before 22.3.2 is the one answering in between.
  */
 function fetchBlock(): string {
   return `

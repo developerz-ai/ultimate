@@ -110,13 +110,43 @@ describe('unit · dev assets · pwa icons', () => {
     });
   });
 
+  test('an unchanged icon answers 304, and a replaced source is a new ETag', async () => {
+    await Bun.write(join(root, ICON_SOURCE), png(1024, 1024));
+    const first = await call(assetRoutes({ root, storage }), '/icons/apple-touch-icon.png');
+    const etag = first.headers.get('etag') ?? expect.unreachable('an icon carries no ETag');
+    expect(first.headers.get('cache-control')).not.toContain('immutable');
+
+    const url = new URL('http://dev.test/icons/apple-touch-icon.png');
+    const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
+    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const route = assetRoutes({ root, storage }).find(
+      (candidate) => candidate.path === '/icons/apple-touch-icon.png',
+    );
+    if (route === undefined) return expect.unreachable('the apple-touch icon was not mounted');
+    const again = await route.handler(
+      new UltimateRequest(new Request(url, { headers: { 'if-none-match': etag } }), ctx),
+      ctx,
+    );
+    expect(again.status).toBe(304);
+
+    // A new source under the SAME URL — the case `immutable` could never serve.
+    const repainted = createRaster(1024, 1024, 'fixture');
+    repainted.pixels.fill(200);
+    await Bun.write(join(root, ICON_SOURCE), encodeImage(repainted, 'png'));
+    const replaced = await call(assetRoutes({ root, storage }), '/icons/apple-touch-icon.png');
+    expect(replaced.headers.get('etag')).not.toBe(etag);
+  });
+
   test('an icon route answers with a square PNG of that entry size', async () => {
     await Bun.write(join(root, ICON_SOURCE), png(1024, 1024));
     const routes = assetRoutes({ root, storage });
 
     const response = await call(routes, '/icons/icon-192.png');
     expect(response.headers.get('content-type')).toBe('image/png');
-    expect(response.headers.get('cache-control')).toContain('immutable');
+    // `/icons/icon-192.png` names a SIZE, not bytes: `immutable` kept a replaced icon on every
+    // client for a year (22.3.2). Revalidated, with a strong ETag, instead.
+    expect(response.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    expect(response.headers.get('etag')).toMatch(/^"[0-9a-f]{8}"$/);
     expect(probeImage(new Uint8Array(await response.arrayBuffer()))).toMatchObject({
       format: 'png',
       width: 192,

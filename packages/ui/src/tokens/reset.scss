@@ -1,6 +1,15 @@
 // Modern reset. Assumes `theme.scss` has already run — every value here is a
 // token, so the reset itself flips with the theme. Plus the one GLOBAL class the package owns:
 // the element wearing it is created by `announce()` at runtime, so no component module can hold it.
+//
+// ZERO SPECIFICITY, every rule a component might restyle: `:where(…)` around the whole selector
+// (22.3.2). A reset is the floor, and any single class must beat it. `a:hover` is (0,1,1), so it
+// beat `.primary` (0,1,0) on an `<a class="primary">` — a filled button link showed accent-strong
+// text on its accent-strong hover background, i.e. no text. `:where(a):hover` is still (0,1,0):
+// the pseudo-class goes INSIDE the `:where`. The rules deliberately left outside are the ones meant
+// to win (the modal scroll lock, the live region, the reduced-motion guard) and `::selection`,
+// which a `:where()` would drop outright — a pseudo-element is not valid inside one.
+// `reset.test.ts` computes every selector's specificity.
 
 @use 'index' as t;
 
@@ -18,18 +27,18 @@
 // The `*` above outranks the UA stylesheet's `dialog { margin: auto }`, which is the ONLY thing
 // that centres a modal `<dialog>` in its viewport — so every `Dialog` and every app dialog opened
 // pinned to the top-left corner until the app restated the margin itself. Restated once, here.
-dialog {
+:where(dialog) {
   margin: auto;
 }
 
-html {
+:where(html) {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   tab-size: 4;
   scroll-behavior: smooth;
 }
 
-body {
+:where(body) {
   min-block-size: 100dvh;
   background: t.role('bg');
   color: t.role('fg');
@@ -40,12 +49,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
+:where(h1, h2, h3, h4, h5, h6) {
   color: t.role('fg-strong');
   font-weight: t.weight(semibold);
   line-height: t.leading(tight);
@@ -53,80 +57,69 @@ h6 {
   text-wrap: balance;
 }
 
-h1 { font-size: t.text(3xl); }
-h2 { font-size: t.text(2xl); }
-h3 { font-size: t.text(xl); }
-h4 { font-size: t.text(lg); }
+:where(h1) { font-size: t.text(3xl); }
+:where(h2) { font-size: t.text(2xl); }
+:where(h3) { font-size: t.text(xl); }
+:where(h4) { font-size: t.text(lg); }
 
-p,
-li {
+:where(p, li) {
   text-wrap: pretty;
 }
 
-a {
+:where(a) {
   color: t.role('accent');
   text-decoration-thickness: 1px;
   text-underline-offset: 0.15em;
+}
 
-  &:hover {
-    color: t.role('accent-strong');
-  }
+:where(a:hover) {
+  color: t.role('accent-strong');
 }
 
 // Intrinsic ratio preserved and dimensions honoured so CLS stays at 0.
-img,
-picture,
-video,
-canvas,
-svg {
+:where(img, picture, video, canvas, svg) {
   display: block;
   max-inline-size: 100%;
   block-size: auto;
 }
 
-input,
-button,
-textarea,
-select {
+:where(input, button, textarea, select) {
   font: inherit;
   color: inherit;
 }
 
-button {
+:where(button) {
   background: none;
   border: 0;
   cursor: pointer;
 }
 
-code,
-kbd,
-pre,
-samp {
+:where(code, kbd, pre, samp) {
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
 
-hr {
+:where(hr) {
   border: 0;
   border-block-start: 1px solid t.role('line');
 }
 
-table {
+:where(table) {
   border-collapse: collapse;
   inline-size: 100%;
 }
 
-:target {
+:where(:target) {
   scroll-margin-block-start: var(--space-12);
 }
 
 // Themed keyboard focus for anything the component layer forgot.
-:focus-visible {
+:where(:focus-visible) {
   outline: 2px solid t.role('accent');
   outline-offset: 2px;
 }
 
-:focus:not(:focus-visible) {
+:where(:focus:not(:focus-visible)) {
   outline: none;
 }
 

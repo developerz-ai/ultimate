@@ -12,11 +12,15 @@ const { source, precache, warnings } = generateServiceWorker(describeRoutes(), c
 
 | Render mode | Strategy | Why |
 |---|---|---|
-| `static` | cache-first | built once; the URL's bytes only change on deploy |
-| `isr` | stale-while-revalidate | stale is correct by construction, refresh behind |
-| `stream` | stale-while-revalidate | shell is reusable, holes come from the network |
+| `static` | network-first | the document names this deploy's hashed assets; the precache is the offline copy |
+| `isr` | network-first | the server's ISR cache is already the stale one; a browser copy only delays a deploy |
+| `stream` | network-first | the shell names this deploy's chunks; the cache is the offline copy |
 | `ssr` | network-first | freshness is the point; cache is the offline safety net |
-| `spa` | cache-first | the shell is identical for every actor |
+
+Every rule is a document, so every mode is network-first (22.3.2): `static` was cache-first and
+`isr`/`stream` stale-while-revalidate, and an online visitor got the previous deploy's HTML until a
+hard reload. `offline: 'precache'` still precaches — for offline. The worker calls `skipWaiting()`
+in `install`, so a deploy takes over without every tab closing; it never reloads a page.
 
 Overrides: `offline: 'network-only'` forces `network-only`; a per-route `strategy` wins over
 everything. `api/` routes get no cache rule at all.

@@ -52,10 +52,19 @@ describe('the emitted activate block, executed', () => {
  * written to the cache — a `stream` route, and any slow body, reached the tab only once complete.
  */
 describe('a streamed response through the worker', () => {
+  // `/legacy` keeps the emitted stale-while-revalidate under test: no render mode maps to it since
+  // 22.3.2, but a per-route `strategy` still can.
   const streamedRoutes: readonly PwaRoute[] = [
     { path: '/feed', surface: 'app', mode: 'stream', offline: 'runtime' },
     { path: '/about', surface: 'site', mode: 'isr', offline: 'runtime' },
     { path: '/news', surface: 'site', mode: 'ssr', offline: 'runtime' },
+    {
+      path: '/legacy',
+      surface: 'site',
+      mode: 'isr',
+      offline: 'runtime',
+      strategy: 'stale-while-revalidate',
+    },
   ];
 
   function gatedBody(): { body: ReadableStream<Uint8Array>; finish(): void } {
@@ -91,9 +100,10 @@ describe('a streamed response through the worker', () => {
   });
 
   test.each([
-    ['a private stream (stale-while-revalidate)', '/feed', { 'x-ultimate-scope': 's1' }],
-    ['a shareable page (stale-while-revalidate)', '/about', {}],
-    ['a shareable page (network-first)', '/news', {}],
+    ['a private stream (network-first)', '/feed', { 'x-ultimate-scope': 's1' }],
+    ['a shareable isr page (network-first)', '/about', {}],
+    ['a shareable ssr page (network-first)', '/news', {}],
+    ['a shareable page (stale-while-revalidate, by override)', '/legacy', {}],
   ] as const)(
     '%s: the page reads the first chunk before the body ends',
     async (_label, path, extra) => {
@@ -126,7 +136,13 @@ describe('a streamed response through the worker', () => {
 describe('a stale-while-revalidate refresh keeps its event alive', () => {
   test('waitUntil is called before the cached answer is returned, never after', async () => {
     const routes: readonly PwaRoute[] = [
-      { path: '/about', surface: 'site', mode: 'isr', offline: 'runtime' },
+      {
+        path: '/about',
+        surface: 'site',
+        mode: 'isr',
+        offline: 'runtime',
+        strategy: 'stale-while-revalidate',
+      },
     ];
     const sw = swHarness();
     sw.load(generateServiceWorker(routes, config, 'build-1').source);
