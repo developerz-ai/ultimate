@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.3.4 - 2026-09-26
+
 ### Fixed
 
 - **cli, render:** two pods of one image served two different `/styles/<hash>.css` for one page
@@ -26,6 +30,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   claims the tabs and posts `AppUpdateAvailable`.
 - **cli:** a miss on a content-hashed URL (`/styles/*`, `/islands/*`) is `no-store`. It was
   `public, max-age=0, s-maxage=60, stale-while-revalidate=600`, which let a CDN pin the 404.
+
+### Commits
+
+- fix(cli,render,pwa): one stylesheet per image across pods, resilient SW install, no-store asset misses (#545)
 
 ## 22.3.3 - 2026-09-26
 
