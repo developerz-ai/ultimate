@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.3.5 - 2026-09-26
+
 ### Fixed
 
 - **render:** 22.3.4 still minted a different `/styles/<hash>.css` on every boot of one image
@@ -19,6 +23,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   sheets, then `shared/`, then the surface's own, each by app-root-relative path. Reproduced with
   two real boots of the app (4 of 4 differing before, 4 of 4 identical after), and pinned by a test
   that boots the reference app in three processes.
+
+### Commits
+
+- fix(render): order surface stylesheets by the sheets, never by arrival (#547)
 
 ## 22.3.4 - 2026-09-26
 
