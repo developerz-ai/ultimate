@@ -189,7 +189,9 @@ async function webSurface(
       persisted: sync.persisted,
       themeHead: theme.head,
       ...(origin === undefined ? {} : { origin }),
-      ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
+      ...(pwa === undefined
+        ? {}
+        : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
       // Only when a store was supplied. `createIsrController` defaults to a per-process memory
       // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of
       // the fleet while the other eleven keep serving the page it just invalidated.

@@ -16,7 +16,15 @@ const BUILD_ID = 'build-7';
 const pwa = (patch: Partial<PwaArtifacts> = {}): PwaArtifacts => ({
   body: '{}',
   head: '<link rel="manifest" href="/manifest.webmanifest">',
-  offline: { fallback: '/offline', image: null, font: null, neverCache: [] },
+  manifests: [],
+  headFor: () => '<link rel="manifest" href="/manifest.webmanifest">',
+  offline: {
+    fallback: '/offline',
+    image: null,
+    font: null,
+    neverCache: [],
+    personalPages: 'never',
+  },
   backgroundSync: false,
   push: false,
   ...patch,

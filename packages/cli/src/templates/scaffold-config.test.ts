@@ -162,6 +162,7 @@ describe('unit · the app.config.ts x new writes', () => {
       image: null,
       font: null,
       neverCache: [],
+      personalPages: 'never',
     });
     expect(Object.keys(built.pwa).sort()).toEqual([
       'backgroundSync',

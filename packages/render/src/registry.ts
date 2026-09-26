@@ -68,7 +68,19 @@ export interface RouteDescriptor {
   readonly prerenderable: boolean;
   readonly dynamic: boolean;
   readonly hasPolicy: boolean;
+  /**
+   * The document is rendered FOR someone: a `policy`, a `stream` (always `private, no-store`), or a
+   * declared `cache` of `no-store` / `private`. `sw.js` never caches one (`@ultimat3/pwa`'s
+   * `strategyFor`): a per-member page kept for offline answered the previous member's data on a
+   * shared device after sign-out.
+   */
+  readonly personal: boolean;
   readonly islands: readonly string[];
+  /**
+   * Each island's `src`, relative to `file`, in `islands` order — what the island bundle resolves
+   * to a chunk URL, so `sw.js` precaches only the chunks a precached page boots.
+   */
+  readonly islandSources: readonly string[];
   readonly budgetJs: string | null;
   readonly budgetLcp: number | null;
 }
@@ -361,10 +373,20 @@ function buildDescriptors(): RouteDescriptor[] {
     prerenderable: entry.config.prerender !== undefined,
     dynamic: entry.pattern.keys.length > 0,
     hasPolicy: entry.config.policy !== undefined,
+    personal: isPersonal(entry.config),
     islands: entry.islands,
+    islandSources: entry.config.islands.map((spec) => spec.src),
     budgetJs: entry.config.budget.js ?? null,
     budgetLcp: entry.config.budget.lcp ?? null,
   }));
+}
+
+/** See `RouteDescriptor.personal`. */
+function isPersonal(config: RouteConfig): boolean {
+  if (config.policy !== undefined || config.render === 'stream') return true;
+  const cache = config.cache;
+  if (cache === undefined) return false;
+  return cache === 'no-store' || cache.mode === 'no-store' || cache.mode === 'private';
 }
 
 /**

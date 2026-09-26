@@ -5,7 +5,8 @@
 import { describe, expect, test } from 'bun:test';
 import { CAPABILITIES, CAPABILITY_SW_MARKERS } from './capabilities';
 import { PwaNoOfflineFallbackError, SwScopeInvalidError } from './errors';
-import type { RouteRule, ServiceWorkerConfig } from './service-worker';
+import type { RouteRule } from './route-rules';
+import type { ServiceWorkerConfig } from './service-worker';
 import { assertScope, generateServiceWorker } from './service-worker';
 import type { PwaRoute } from './strategies';
 

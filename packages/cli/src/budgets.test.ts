@@ -340,7 +340,15 @@ describe("unit · the framework-injected runtime is not the app's JS", () => {
   const PWA: PwaArtifacts = {
     body: '{}',
     head: '',
-    offline: { fallback: '/offline', image: null, font: null, neverCache: [] },
+    manifests: [],
+    headFor: () => '',
+    offline: {
+      fallback: '/offline',
+      image: null,
+      font: null,
+      neverCache: [],
+      personalPages: 'never',
+    },
     backgroundSync: false,
     push: false,
   };

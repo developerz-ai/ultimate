@@ -285,7 +285,7 @@ function defaults(name: string): Omit<AppConfig, 'name' | 'site' | 'seo'> {
     auth: { signInPath: null },
     pwa: {
       enabled: false,
-      offline: { fallback: null, image: null, font: null, neverCache: [] },
+      offline: { fallback: null, image: null, font: null, neverCache: [], personalPages: 'never' },
       backgroundSync: false,
       push: false,
       name: '',

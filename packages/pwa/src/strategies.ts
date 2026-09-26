@@ -34,6 +34,12 @@ export interface PwaRoute {
   /** Explicit per-route override; wins over the derived strategy. */
   readonly strategy?: StrategyName;
   /**
+   * Rendered FOR someone — a policy, a `stream`, a declared `no-store`/`private` cache (render's
+   * `RouteDescriptor.personal`). Such a page is `network-only` and never precached: kept for
+   * offline, it answered the previous member's data on a shared device after sign-out.
+   */
+  readonly personal?: boolean;
+  /**
    * Content hash of the built HTML — the precache revision. Fed by the CLI's prerender pass; the
    * `buildId` is the fallback, and it re-downloads every precached page on every deploy.
    */
@@ -83,7 +89,7 @@ export const MODE_STRATEGY = Object.freeze<Record<RenderMode, StrategyName>>({
 export function strategyFor(route: PwaRoute): StrategyName {
   if (route.strategy !== undefined) return route.strategy;
   // `network-only` is a declaration that this URL must never be answered from a cache.
-  if (route.offline === 'network-only') return 'network-only';
+  if (route.offline === 'network-only' || route.personal === true) return 'network-only';
   return MODE_STRATEGY[route.mode];
 }
 

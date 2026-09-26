@@ -20,6 +20,8 @@ export interface SwEvent {
   readonly request?: Request;
   /** What a `postMessage` from a window delivers — the payload, not a wrapper. */
   readonly data?: unknown;
+  /** The window that posted a message, when a test wants its reply. */
+  readonly source?: { postMessage(data: unknown): void };
   waitUntil(work: Promise<unknown>): void;
   respondWith(work: Promise<Response>): void;
 }
@@ -30,6 +32,16 @@ export const SW_ORIGIN = 'https://app.test';
 export class SwRequest extends Request {
   constructor(input: Request | string, init?: RequestInit) {
     super(typeof input === 'string' ? new URL(input, SW_ORIGIN).href : input, init);
+  }
+}
+
+/**
+ * A top-level navigation. `mode: 'navigate'` cannot be passed to a `Request` constructor — only the
+ * browser makes one — so the stand-in reports it; the offline document is chosen on it.
+ */
+export class NavigationRequest extends SwRequest {
+  override get mode(): RequestMode {
+    return 'navigate';
   }
 }
 
@@ -191,7 +203,7 @@ export function swHarness() {
     lateWaitUntil,
     skippedWaiting: (): number => skippedWaiting,
     /** The response, as the page receives it — the cache copy is NOT awaited, see `settled`. */
-    async respond(path: string): Promise<Response> {
+    async respond(path: string, navigate = false): Promise<Response> {
       let answer: Promise<Response> | undefined;
       let finished = false;
       let pending = 0;
@@ -199,7 +211,7 @@ export function swHarness() {
         pending -= 1;
       };
       listeners.get('fetch')?.({
-        request: new SwRequest(path),
+        request: navigate ? new NavigationRequest(path) : new SwRequest(path),
         waitUntil: (p) => {
           if (finished && pending === 0) {
             lateWaitUntil.push(path);
@@ -218,6 +230,12 @@ export function swHarness() {
       finished = true;
       return response;
     },
+    /** A top-level navigation, answered and settled — what the offline document is chosen for. */
+    async respondNavigate(path: string): Promise<Response> {
+      const answer = await this.respond(path, true);
+      await this.settled();
+      return answer;
+    },
     /** Every `waitUntil` the worker has extended its events with, settled — the cache writes. */
     async settled(): Promise<void> {
       await Promise.allSettled(extended.splice(0));
@@ -229,10 +247,11 @@ export function swHarness() {
       return answer;
     },
     /** A `postMessage` from a window, awaited through the handler's own `waitUntil`. */
-    async message(data: unknown): Promise<void> {
+    async message(data: unknown, reply?: (data: unknown) => void): Promise<void> {
       let work: Promise<unknown> = Promise.resolve();
       listeners.get('message')?.({
         data,
+        ...(reply === undefined ? {} : { source: { postMessage: reply } }),
         waitUntil: (p) => {
           work = p;
         },

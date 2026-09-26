@@ -32,7 +32,7 @@ export const config = defineRoute({
 | The offline fallback route | required (see below) |
 | The app shell for `spa` routes | build output |
 
-Excluded always: `api/` responses, anything under an authenticated path unless `offline: 'precache'` is explicit, and any asset over the configured single-file cap. Total precache size is a **budget** — exceeding it fails `x verify` rather than shipping a 40MB install. (Designed, not shipped: `PrecacheManifest.warnings` carries the overrun and nothing reads it, because nothing builds a precache manifest — [#362](https://github.com/developerz-ai/ultimate/issues/362).)
+Excluded always: `api/` responses, every personal route (a policy, a `stream`, a `no-store`/`private` cache — `network-only`, never stored, `As of 22.3.3`), and any asset over the configured single-file cap. Total precache size is a **budget** — exceeding it fails `x verify` rather than shipping a 40MB install. (Designed, not shipped: `PrecacheManifest.warnings` carries the overrun and nothing reads it, because nothing builds a precache manifest — [#362](https://github.com/developerz-ai/ultimate/issues/362).)
 
 ### Runtime strategy from render mode
 
@@ -54,7 +54,7 @@ From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG):
 
 | Generated | Detail |
 |---|---|
-| `manifest.webmanifest` | **emitted**, `As of 2026-08-27` ([#362](https://github.com/developerz-ai/ultimate/issues/362)) — `name` from `pwa.name`, `theme_color`/`background_color` from `pwa.colors`, `icons` from the one source icon, and `short_name`, `start_url`, `scope`, `display`, `orientation`, `lang`, `dir` from `generateWebManifest`'s own defaults. **No `description`**: `AppConfig.pwa` has no field for one, so nothing supplies it — the generator would emit it if a caller passed one. `sw.js` and `x-sw-register.js` are emitted too, `As of 2026-08` ([#390](https://github.com/developerz-ai/ultimate/issues/390)); the remaining rows on this page are still designed, not shipped |
+| `manifest.webmanifest` | **emitted**, `As of 2026-08-27` ([#362](https://github.com/developerz-ai/ultimate/issues/362)) — `name` from `pwa.name`, `theme_color`/`background_color` from `pwa.colors`, `icons` from the one source icon, and `short_name`, `scope`, `display`, `orientation`, `dir` from `generateWebManifest`'s own defaults. `As of 22.3.3` one manifest per routed locale (`/en/manifest.webmanifest`), each with its locale's `lang` and `start_url`, one shared `id`, and `description` / `categories` / `shortcuts` / `screenshots` from `pwa.*` ([PWA and offline](../../wiki/PWA-And-Offline.md)). `sw.js` and `x-sw-register.js` are emitted too, `As of 2026-08` ([#390](https://github.com/developerz-ai/ultimate/issues/390)); the remaining rows on this page are still designed, not shipped |
 | Icons | 192/256/384/512 + maskable variants + `apple-touch-icon` |
 | Favicons | `.ico` + SVG |
 | iOS splash screens | full device matrix |

@@ -108,6 +108,17 @@ describe('buildPrecacheManifest', () => {
     expect(manifest.entries.map((e) => e.url)).toEqual(['/App.js', '/_boot.js', '/app.js']);
   });
 
+  test('a personal page is never precached, even when it declares precache', () => {
+    const manifest = buildPrecacheManifest({
+      buildId: 'b1',
+      routes: [
+        { path: '/', surface: 'site', mode: 'static', offline: 'precache' },
+        { path: '/panel', surface: 'app', mode: 'ssr', offline: 'precache', personal: true },
+      ],
+    });
+    expect(manifest.entries.map((entry) => entry.url)).toEqual(['/']);
+  });
+
   test('a dynamic route cannot be precached as one URL and says so', () => {
     const manifest = buildPrecacheManifest({ buildId: 'b1', routes });
     expect(manifest.entries.some((e) => e.url === '/blog/:slug')).toBe(false);

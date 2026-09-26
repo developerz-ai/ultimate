@@ -88,7 +88,7 @@ export interface DocumentOptions {
    * projects per-route SEO. Passed through `DocumentOptions` for `resolveIsland`'s reason — the
    * boot knows it, the renderer cannot ask.
    */
-  readonly pwaHead?: string;
+  readonly pwaHead?: string | ((locale: string) => string);
   /**
    * The no-flash theme `<script>` from `theme-boot.ts`, or absent for a caller that renders no
    * documents a browser paints. Document-level for `pwaHead`'s reason — the same tag on every page,
@@ -176,7 +176,8 @@ const headFor = async (
       ),
     ) +
     (options.themeHead ?? '') +
-    (options.pwaHead ?? '')
+    // Per locale: each links its own locale's manifest (`PwaArtifacts.headFor`).
+    (typeof options.pwaHead === 'function' ? options.pwaHead(meta.locale) : (options.pwaHead ?? ''))
   );
 };
 

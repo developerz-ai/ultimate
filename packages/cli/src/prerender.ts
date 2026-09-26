@@ -29,7 +29,7 @@ import { measurePaths } from './measure-paths';
 import { measureScope, withAppUrl } from './measure-scope';
 import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
-import { loadPwaArtifacts, WEB_MANIFEST_PATH, writePwaIcons } from './pwa-artifacts';
+import { loadPwaArtifacts, writePwaIcons } from './pwa-artifacts';
 import { routeDocument } from './runtime-render';
 import { writeSiteAssets } from './site-assets';
 import { loadSiteSettings, originWarning, publicOrigin } from './site-config';
@@ -249,7 +249,11 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     await Bun.write(join(options.out, SW_REGISTER_PATH.slice(1)), serviceWorkerRegistration());
   }
   if (pwa !== undefined) {
-    await Bun.write(join(options.out, WEB_MANIFEST_PATH.slice(1)), pwa.body);
+    // One per routed locale — `/en/manifest.webmanifest` beside the default one — each at the
+    // path its own documents link.
+    for (const manifest of pwa.manifests) {
+      await Bun.write(join(options.out, manifest.path.slice(1)), manifest.body);
+    }
     // And the icons that manifest NAMES. A static host runs no `assetRoutes()`, so every
     // `/icons/*` entry would be a 404 in the install prompt — the manifest half of the same
     // promise `favicon.ico` above keeps. Nothing when the app committed no source icon, which is
@@ -285,7 +289,9 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       resolveIsland: (file: string) => islands.resolverFor(file),
       themeHead: theme.head,
       origin,
-      ...(pwa === undefined ? {} : { pwaHead: pwa.head + (swHead ?? '') }),
+      ...(pwa === undefined
+        ? {}
+        : { pwaHead: (locale: string) => pwa.headFor(locale) + (swHead ?? '') }),
     });
   const document = (
     locale: string,
@@ -391,10 +397,15 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         // so the precache revision and the HTTP validator can never disagree about one document.
         // Keyed by the FILLED path, which for a non-dynamic route is the declared one; a dynamic
         // route is not precached as a single URL anyway (`buildPrecacheManifest` skips it).
-        documents.set(artifact.path, { revision: artifact.hash, bytes });
         // Measured from the document that was just written, so the `budgets` step compares a
         // declared budget against bytes that exist on disk rather than against a graph's estimate.
         const measured = await measureDocumentJs(artifact.html, options.out);
+        // `assets` too: the chunks this page names are the ones the worker precaches with it.
+        documents.set(artifact.path, {
+          revision: artifact.hash,
+          bytes,
+          assets: measured.entries.map((entry) => entry.url),
+        });
         const chain = heaviestSource(islands, measured.entries);
         if (heaviest !== undefined && heaviest.jsBytes >= measured.jsBytes) continue;
         heaviest = {

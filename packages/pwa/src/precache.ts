@@ -8,6 +8,7 @@
 // budget message on the other side of the build stopped at `kb`, for the same byte count.
 import { finiteCount, formatBytes } from '@ultimat3/core';
 import type { PwaRoute } from './strategies';
+import { strategyFor } from './strategies';
 
 export interface PrecacheAsset {
   readonly url: string;
@@ -102,6 +103,10 @@ export function buildPrecacheManifest(input: PrecacheInput): PrecacheManifest {
     if (route.offline !== 'precache') continue;
     // A dynamic route has no single URL to precache; its instances are runtime-cached.
     if (route.dynamic === true) continue;
+    // A page the worker will never answer from a cache (`personal`, or an explicit network-only
+    // override) is not worth an install-time download — and a personal one fetched anonymously
+    // at install is a sign-in redirect, stored.
+    if (strategyFor(route) === 'network-only') continue;
     add({
       url: route.path,
       revision: route.revision ?? input.buildId,
