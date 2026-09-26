@@ -56,8 +56,10 @@ export const config = defineConfig({
     enabled: true,
     // The document an offline navigation gets when the cache has no answer. Required once
     // `enabled` is true: an installable app that shows the browser's error page offline is the
-    // failure the block exists to prevent.
-    offline: { fallback: '/offline' },
+    // failure the block exists to prevent. `personalPages: 'last-member'`: the feed is offline-first
+    // (a like taken offline survives a reload), so the most recent member's own copy is kept —
+    // and sign-out's `Clear-Site-Data: "cache", "storage"` (`signOutHeaders`) is what empties it.
+    offline: { fallback: '/offline', personalPages: 'last-member' },
     backgroundSync: true,
     name: 'Ultimate Dummy',
     colors: {

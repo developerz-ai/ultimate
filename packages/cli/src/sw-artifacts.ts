@@ -3,13 +3,19 @@
 // until #390. Beside `pwa-artifacts.ts` and not inside it: that file needs a root and a config
 // file, this one needs a booted app and a finished build.
 
-import type { PrecacheAsset, PrecacheManifest, PwaRoute } from '@ultimat3/pwa';
+import { localeConfig, routedLocales } from '@ultimat3/i18n';
+import type { PrecacheManifest } from '@ultimat3/pwa';
 import { generateServiceWorker } from '@ultimat3/pwa';
 import type { RouteDescriptor } from '@ultimat3/render';
 import type { IslandBundle } from './island-bundle';
+import { ISLAND_BASE_PATH } from './island-bundle';
 import { msg } from './messages';
 import type { PwaArtifacts } from './pwa-artifacts';
 import type { StyleBundle } from './style-bundle';
+import type { RenderedDocument, RoutedLocales } from './sw-precache-plan';
+import { localePrefixes, precacheAssets, pwaRoutes } from './sw-precache-plan';
+
+export type { RenderedDocument, RoutedLocales } from './sw-precache-plan';
 
 /** Root scope, so `/sw.js` and nothing under a directory — `assertScope` refuses the rest. */
 export const SERVICE_WORKER_PATH = '/sw.js';
@@ -66,74 +72,12 @@ export interface ServiceWorkerInput {
    * offline reload that cannot load the boot restores no record and shows the old count.
    */
   readonly scripts?: readonly { readonly url: string; readonly bytes: number }[];
+  /**
+   * The routed locales, default first. Absent, `@ultimat3/i18n`'s own — the answer the server routes
+   * with, set once the app's catalogs are loaded, which every caller has done by now.
+   */
+  readonly locales?: RoutedLocales;
 }
-
-/**
- * One rendered document, as the precache manifest needs it.
- *
- * `revision` is `contentHash(html)` — `@ultimat3/render`'s own, the function that already stamps
- * an ETag — and never the build id. `precache.ts`' header states the rule and nothing kept it:
- * `pwaRoutes` projected four of `PwaRoute`'s eight fields, so every route entry read
- * `{"url":"/","revision":"build-aaa","bytes":0}` and two deploys of a byte-identical site
- * re-fetched every precached document. The zero was the second half — `DEFAULT_PRECACHE_WARN_BYTES`
- * is a 5 MB budget over a total that could not count one byte of HTML.
- */
-export interface RenderedDocument {
-  readonly revision: string;
-  readonly bytes: number;
-}
-
-/**
- * The route table, as the service worker sees it. `api/` is dropped: an API response is a JSON
- * document whose freshness is the app's business, and precaching one serves a stale answer to a
- * client that had a network. Only the fields a browser can act on cross — a descriptor carries
- * budgets and policy flags it has no use for — plus, for a route this build rendered, the content
- * hash and the byte count of the document it produced.
- */
-const pwaRoutes = (
-  routes: readonly RouteDescriptor[],
-  documents: ReadonlyMap<string, RenderedDocument>,
-): readonly PwaRoute[] =>
-  // `flatMap` rather than `filter().map()`: the filter's predicate does not narrow `surface` for
-  // the map that follows it, and `PwaRoute` declares the two navigable surfaces only. A cast would
-  // hide the day a fifth surface arrives.
-  routes.flatMap((route): readonly PwaRoute[] => {
-    // `shared/` is dropped with `api/`, and for a stronger reason: it is not a URL at all — the
-    // surface exists so two routes can import one module, and a browser can never navigate to it.
-    if (route.surface !== 'site' && route.surface !== 'app') return [];
-    // A `Map`, so a route path that happens to spell a prototype member cannot answer with one.
-    const document = documents.get(route.path);
-    return [
-      {
-        path: route.path,
-        surface: route.surface,
-        mode: route.mode,
-        offline: route.offline,
-        dynamic: route.dynamic,
-        // Absent rather than invented for a route no build rendered — an `ssr` page, or one this
-        // pass could not produce. `buildPrecacheManifest` then falls back to the build id, which
-        // is the honest answer when there are no bytes to hash.
-        ...(document === undefined ? {} : { revision: document.revision, bytes: document.bytes }),
-      },
-    ];
-  });
-
-/**
- * Every island chunk and every surface stylesheet, precached. They are content-addressed and
- * served `immutable`, so the revision IS the URL's hash and a byte-identical asset across deploys
- * is never re-downloaded.
- *
- * Sorted by url, because `buildPrecacheManifest` sorts its own entries but the ASSET list is what
- * decides which of two equal urls wins, and `sw.js` must be byte-identical for identical input.
- */
-const staticAssets = (
-  islands: IslandBundle,
-  styles: StyleBundle,
-  scripts: readonly { readonly url: string; readonly bytes: number }[],
-): readonly PrecacheAsset[] =>
-  [...islands.chunks, ...styles.chunks, ...scripts]
-    .map((chunk) => ({ url: chunk.url, revision: chunk.url, bytes: chunk.bytes }))
-    .sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 
 /**
  * The registration, and every line of it earns its bytes. `load` because registration competes with
@@ -212,10 +156,13 @@ export function serviceWorkerArtifacts(
   // Absent when this pass did not render the fallback (no route serves it — `x doctor` reports
   // that as `X_PWA_NO_OFFLINE_FALLBACK`), and then `@ultimat3/pwa` falls back to the build id.
   const fallbackDocument = documents.get(fallback);
+  const locales = input.locales ?? { routed: routedLocales(), fallback: localeConfig().fallback };
   const output = generateServiceWorker(
-    pwaRoutes(input.routes, documents),
+    pwaRoutes(input.routes, documents, locales),
     {
       scope: SW_SCOPE,
+      runtimeAssets: [`${ISLAND_BASE_PATH}/`],
+      localePrefixes: localePrefixes(locales),
       swPath: SERVICE_WORKER_PATH,
       ...(fallbackDocument === undefined
         ? {}
@@ -228,9 +175,18 @@ export function serviceWorkerArtifacts(
         ...(pwa.offline.image === null ? {} : { image: pwa.offline.image }),
         ...(pwa.offline.font === null ? {} : { font: pwa.offline.font }),
         neverCache: pwa.offline.neverCache,
+        personalPages: pwa.offline.personalPages,
       },
       capabilities: { backgroundSync: pwa.backgroundSync, push: pwa.push },
-      assets: staticAssets(input.islands, input.styles, input.scripts ?? []),
+      assets: precacheAssets({
+        routes: input.routes,
+        documents,
+        locales,
+        islands: input.islands,
+        styles: input.styles,
+        scripts: input.scripts ?? [],
+        fallback,
+      }),
     },
     input.buildId,
   );

@@ -84,6 +84,8 @@ export type {
 export { generateWebManifest, renderThemeColorMeta, serializeWebManifest } from './manifest';
 export type { OfflineConfig, OfflineFallback } from './offline-fallback';
 export { offlineFallbackSource, requireOfflineFallback } from './offline-fallback';
+export type { PersonalPages } from './pages-cache-source';
+export { CLEAR_PAGES_MESSAGE, PAGES_CLEARED_MESSAGE } from './pages-cache-source';
 export type { PrecacheAsset, PrecacheEntry, PrecacheInput, PrecacheManifest } from './precache';
 export {
   buildPrecacheManifest,
@@ -105,8 +107,10 @@ export {
   subscribeSource,
   subscriptionState,
 } from './push';
-export type { RouteRule, ServiceWorkerConfig, ServiceWorkerOutput } from './service-worker';
-export { assertScope, generateServiceWorker, routeRules } from './service-worker';
+export type { RouteRule } from './route-rules';
+export { assetRules, routeRules } from './route-rules';
+export type { ServiceWorkerConfig, ServiceWorkerOutput } from './service-worker';
+export { assertScope, generateServiceWorker } from './service-worker';
 export type {
   PwaRoute,
   StrategyCache,

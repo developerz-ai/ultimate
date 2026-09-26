@@ -12,6 +12,8 @@ export interface RouteFixture {
   readonly mode: RenderMode;
   readonly offline: OfflineStrategy;
   readonly dynamic?: boolean;
+  readonly personal?: boolean;
+  readonly islandSources?: readonly string[];
 }
 
 export const routeDescriptor = (fixture: RouteFixture): RouteDescriptor => ({
@@ -26,7 +28,9 @@ export const routeDescriptor = (fixture: RouteFixture): RouteDescriptor => ({
   prerenderable: fixture.mode === 'static',
   dynamic: fixture.dynamic ?? false,
   hasPolicy: false,
+  personal: fixture.personal ?? false,
   islands: [],
+  islandSources: fixture.islandSources ?? [],
   budgetJs: null,
   budgetLcp: null,
 });

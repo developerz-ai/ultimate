@@ -8,7 +8,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+- **pwa:** a page rendered for someone is never cached. From 21.0.0 a `private`/`no-store`
+  document was kept in a per-member partition for offline, so after sign-out an offline navigation
+  on a shared device showed the previous member's data (notificado.co, `/casos`). Now every cache
+  the worker opens refuses a response that is `private`/`no-store` or carries `x-ultimate-scope`,
+  whatever the rule; a PERSONAL route — a `policy`, a `stream`, or `cache: 'no-store'` /
+  `{ mode: 'no-store' | 'private' }` (new `RouteDescriptor.personal`) — is `network-only` and never
+  precached. New message `{ type: 'clear-pages' }` (`CLEAR_PAGES_MESSAGE`) empties every build's
+  pages cache and answers `{ type: 'pages-cleared' }`; post it on sign-out.
+  An offline-first app opts back into 21.0.0's per-member offline copy with
+  `pwa.offline.personalPages: 'last-member'` (`examples/dummy` does); the default is `'never'`.
+
+### Fixed
+
+- **pwa, cli:** the install precached EVERY island chunk (~1 MB on notificado.co, admin and payment
+  islands included) on a first anonymous visit. The precache now names only the chunks a precached
+  page or the offline document boots — read from the rendered documents in a static export, from
+  each route's declared `island()`s at boot (new `RouteDescriptor.islandSources`). Every other chunk
+  is cached on first use: `/islands/` is a `cache-first` runtime rule (`runtimeAssets`).
+- **pwa, cli:** no `/en/…` URL had a worker rule, so a non-default locale was never cached or
+  offline. The worker gets every route once per routed locale, each precached at its own content
+  hash, and an offline navigation under `/en/` gets `/en/offline` (`localePrefixes`).
+- **cli, core:** the manifest said `lang: "en"` for an `es-co` app, and there was one for both
+  locales. Now one per routed locale — `/manifest.webmanifest` for the default,
+  `/en/manifest.webmanifest` (`start_url: '/en/'`) for `en` — sharing one `id` (`pwa.id`, default
+  `/`), each document linking its own. New optional `pwa.description`, `pwa.categories`,
+  `pwa.shortcuts`, `pwa.screenshots`; text is a string or one per locale.
 
 ## 22.3.2 - 2026-09-26
 

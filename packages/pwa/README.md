@@ -105,7 +105,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Export | Owns |
 |---|---|
 | `generateServiceWorker` | `sw.js` from the route table; deterministic for identical input |
-| `strategyFor`, `MODE_STRATEGY`, `cacheFirst`, … | the four strategies + the mapping table |
+| `strategyFor`, `MODE_STRATEGY`, `cacheFirst`, … | the four strategies + the mapping table; a `personal` route is `network-only` |
+| `routeRules`, `assetRules` | the worker's rule list: routes most specific first, runtime asset prefixes (`/islands/`) ahead of them |
+| `CLEAR_PAGES_MESSAGE`, `PAGES_CLEARED_MESSAGE` | `{ type: 'clear-pages' }` — post it to the worker on sign-out; it empties every pages cache and answers `{ type: 'pages-cleared' }` |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |
 | `buildId`, `detectSkew`, `retentionPlan` | version skew |
 | `generateWebManifest` | the manifest + `theme-color` metas for both schemes, from a `WebManifestInput`. Called by `@ultimat3/cli` (`pwa-artifacts.ts`) `As of 2026-08-27`, so `x dev`, the container and the static export all emit `manifest.webmanifest` |

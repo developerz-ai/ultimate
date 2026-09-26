@@ -23,7 +23,8 @@ import { existsSync } from 'node:fs';
 // necessity `favicon.ts` and `runtime-assets.ts` each record for their own root-relative constant.
 import { join } from 'node:path';
 import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
-import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
+import { localeSegment } from '@ultimat3/core';
+import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
 import {
   appleTouchLinks,
@@ -35,6 +36,8 @@ import { escapeAttribute } from '@ultimat3/seo';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
 import { hasSourceIcon, iconPlan, iconRenderer } from './icon-assets';
+import type { AppLocales } from './pwa-manifest-locales';
+import { appLocales, localeMembers, spellIn } from './pwa-manifest-locales';
 
 /** What a browser fetches from `<link rel="manifest">`. The spec's own extension, not `.json`. */
 export const WEB_MANIFEST_PATH = '/manifest.webmanifest';
@@ -45,9 +48,18 @@ export const WEB_MANIFEST_PATH = '/manifest.webmanifest';
  */
 const MANIFEST_CACHE: CacheHint = { mode: 'public', maxAgeSeconds: 3600 };
 
+/** One routed locale's manifest: where it is served, its bytes, and the `<head>` that names it. */
+export interface LocalizedManifest {
+  readonly locale: string;
+  /** `/manifest.webmanifest` for the default locale, `/en/manifest.webmanifest` for `en`. */
+  readonly path: string;
+  readonly body: string;
+  readonly head: string;
+}
+
 /** The two strings every surface needs: the file's bytes, and what `<head>` must carry to name it. */
 export interface PwaArtifacts {
-  /** `manifest.webmanifest`, serialized. */
+  /** The DEFAULT locale's `manifest.webmanifest`, serialized — `manifests[0].body`. */
   readonly body: string;
   /**
    * `<link rel="manifest">`, both `theme-color` metas, and every apple-touch icon link. One string
@@ -56,6 +68,14 @@ export interface PwaArtifacts {
    * no manifest is an iOS icon for an app iOS will not add.
    */
   readonly head: string;
+  /**
+   * One manifest per routed locale, default first. Each speaks its own `lang`, starts at its own
+   * home and spells its shortcuts in its own locale; one `id` makes them one installed app. There
+   * was one manifest, `lang: "en"`, for an `es-co` app with an English half (22.3.2).
+   */
+  readonly manifests: readonly LocalizedManifest[];
+  /** The `<head>` for a document in `locale` — it links that locale's manifest. */
+  headFor(locale: string): string;
   /**
    * The three `pwa` keys the SERVICE WORKER needs, carried here because this is the one module
    * that reads an app's config file — `sw-artifacts.ts` needs the route table and the island
@@ -102,6 +122,9 @@ function colorsOf(value: unknown): PwaColors | undefined {
 interface InstallableApp {
   readonly name: string;
   readonly colors: PwaColors;
+  /** The block itself, for the manifest members `pwa-manifest-locales.ts` reads per locale. */
+  readonly block: Record<string, unknown>;
+  readonly locales: AppLocales;
   readonly offline: PwaOfflineConfig;
   readonly backgroundSync: boolean;
   readonly push: boolean;
@@ -121,7 +144,14 @@ async function loadInstallable(root: string): Promise<InstallableApp | undefined
   const name = text(pwa['name']);
   const colors = colorsOf(pwa['colors']);
   if (name === undefined || colors === undefined) return undefined;
-  return { name, colors, offline: offlineOf(pwa['offline']), ...flags(pwa) };
+  return {
+    name,
+    colors,
+    block: pwa,
+    locales: appLocales(config),
+    offline: offlineOf(pwa['offline']),
+    ...flags(pwa),
+  };
 }
 
 /**
@@ -142,6 +172,7 @@ function offlineOf(value: unknown): PwaOfflineConfig {
     neverCache: Array.isArray(patterns)
       ? patterns.filter((entry): entry is string => typeof entry === 'string')
       : [],
+    personalPages: block['personalPages'] === 'last-member' ? 'last-member' : 'never',
   };
 }
 
@@ -172,22 +203,46 @@ export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | und
   // own rule forbids. Read at boot, like the rest of this function: adding the file takes effect
   // on the next start, because the manifest is generated once and served as bytes.
   const icons = (await hasSourceIcon(root)) ? iconPlan() : undefined;
-  const result = generateWebManifest({
-    name: app.name,
-    tokens: app.colors,
-    icons: icons?.manifestIcons ?? [],
+  const manifests = app.locales.routed.map((locale): LocalizedManifest => {
+    const result = generateWebManifest({
+      name: app.name,
+      tokens: app.colors,
+      icons: icons?.manifestIcons ?? [],
+      ...localeMembers(app.block, locale, app.locales),
+    });
+    const path = spellIn(WEB_MANIFEST_PATH, locale, app.locales);
+    return {
+      locale,
+      path,
+      body: serializeWebManifest(result.manifest),
+      head:
+        `<link rel="manifest" href="${escapeAttribute(path)}">` +
+        renderThemeColorMeta(result.themeColorMeta) +
+        (icons === undefined ? '' : appleTouchLinks(icons)),
+    };
   });
+  // `routed` always holds the default first, so this is never undefined; the guard is the type's.
+  const primary = manifests[0];
+  if (primary === undefined) return undefined;
   return {
     offline: app.offline,
     backgroundSync: app.backgroundSync,
     push: app.push,
-    body: serializeWebManifest(result.manifest),
-    head:
-      `<link rel="manifest" href="${escapeAttribute(WEB_MANIFEST_PATH)}">` +
-      renderThemeColorMeta(result.themeColorMeta) +
-      (icons === undefined ? '' : appleTouchLinks(icons)),
+    body: primary.body,
+    head: primary.head,
+    manifests,
+    headFor: (locale: string): string => manifestIn(manifests, locale)?.head ?? primary.head,
   };
 }
+
+/** The manifest `locale` names, by URL segment (`es-CO` is `es-co`), if the app routes it. */
+const manifestIn = (
+  manifests: readonly LocalizedManifest[],
+  locale: string | undefined,
+): LocalizedManifest | undefined =>
+  locale === undefined
+    ? undefined
+    : manifests.find((manifest) => localeSegment(manifest.locale) === localeSegment(locale));
 
 /**
  * The icon bytes a STATIC export has to carry, written under `out`. Answers the paths it wrote.
@@ -219,10 +274,18 @@ export async function writePwaIcons(root: string, out: string): Promise<readonly
 export const pwaManifestRoute = (artifacts: PwaArtifacts): Route => ({
   method: 'GET',
   path: WEB_MANIFEST_PATH,
-  meta: { name: 'assets.manifest', auth: 'public', cache: MANIFEST_CACHE, tags: ['assets'] },
-  handler: async (_request: UltimateRequest): Promise<Response> =>
+  // `'path'`: `/en/manifest.webmanifest` reaches this route with its prefix split off and `en` as the
+  // locale, and the bare path is the default locale's — never negotiated, so a CDN may cache both.
+  meta: {
+    name: 'assets.manifest',
+    auth: 'public',
+    cache: MANIFEST_CACHE,
+    tags: ['assets'],
+    localeSource: 'path',
+  },
+  handler: async (_request: UltimateRequest, ctx: RequestContext): Promise<Response> =>
     applyCacheHeaders(
-      new Response(artifacts.body, {
+      new Response(manifestIn(artifacts.manifests, ctx.locale)?.body ?? artifacts.body, {
         headers: { 'content-type': 'application/manifest+json; charset=utf-8' },
       }),
       MANIFEST_CACHE,

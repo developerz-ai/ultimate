@@ -37,6 +37,12 @@ export interface PwaOfflineConfig {
   readonly image: string | null;
   readonly font: string | null;
   readonly neverCache: readonly string[];
+  /**
+   * A page rendered for someone (a policy, a `stream`, a `no-store`/`private` cache). `'never'`
+   * (default): not cached anywhere, its route `network-only`. `'last-member'`: kept offline for the
+   * most recent member only — declare it only with a sign-out that clears it (`clear-pages`).
+   */
+  readonly personalPages: 'never' | 'last-member';
 }
 
 export interface PwaConfig {
@@ -58,6 +64,52 @@ export interface PwaConfig {
    * worse than a boot that names the four values it needs.
    */
   readonly colors: PwaColors | undefined;
+  /**
+   * The manifest `id`: one installed app across every locale's manifest. Absent, the scope (`/`),
+   * which is what a browser computes from the default locale's `start_url` anyway.
+   */
+  readonly id?: string;
+  /** The install sheet's description. One string, or one per locale (`{ 'es-co': …, en: … }`). */
+  readonly description?: PwaText;
+  /** `categories`, e.g. `['business', 'productivity']` — W3C's list is a hint, not an enum. */
+  readonly categories?: readonly string[];
+  /** Home-screen shortcuts. `url` is the DEFAULT locale's path; each manifest spells it in its own. */
+  readonly shortcuts?: readonly PwaShortcut[];
+  /** Chrome's richer install sheet. `src` may differ per locale — a screenshot shows copy. */
+  readonly screenshots?: readonly PwaScreenshot[];
+}
+
+/**
+ * Manifest text, per locale where it is read: a string is every locale's, a record is keyed by
+ * locale tag and falls back to the default locale's entry. Each locale gets its own manifest
+ * (`/manifest.webmanifest`, `/en/manifest.webmanifest`), so each speaks its own language.
+ */
+export type PwaText = string | Readonly<Record<string, string>>;
+
+export interface PwaImage {
+  /** Absolute path, e.g. `/assets/shortcut-panel.png`. */
+  readonly src: string;
+  readonly sizes: string;
+  readonly type: string;
+  readonly purpose?: 'any' | 'maskable' | 'monochrome';
+}
+
+export interface PwaShortcut {
+  readonly name: PwaText;
+  readonly shortName?: PwaText;
+  readonly description?: PwaText;
+  /** The default locale's absolute path (`/panel`); the `en` manifest names `/en/panel`. */
+  readonly url: string;
+  readonly icons?: readonly PwaImage[];
+}
+
+export interface PwaScreenshot {
+  /** Absolute path, or one per locale. */
+  readonly src: PwaText;
+  readonly sizes: string;
+  readonly type: string;
+  readonly formFactor?: 'narrow' | 'wide';
+  readonly label?: PwaText;
 }
 
 /**
@@ -127,6 +179,12 @@ export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
       `pwa.offline.fallback is required when pwa.enabled is true and must be an absolute route path like "/offline", and is ${describeValue(fallback)}`,
     );
   }
+  const personal: unknown = pwa.offline?.personalPages;
+  if (personal !== undefined && personal !== 'never' && personal !== 'last-member') {
+    issues.push(
+      `pwa.offline.personalPages must be 'never' or 'last-member', and is ${describeValue(personal)}`,
+    );
+  }
   // `typeof !== 'object' || null`, never `=== undefined`: an untyped `app.config.ts` writing
   // `pwa.colors: null` reached `null[scheme]` one line down and took the boot out with a native
   // `TypeError`, from the validator whose whole job is producing an instruction instead of one.
@@ -145,5 +203,33 @@ export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
       }
     }
   }
+  manifestIssues(pwa, issues);
   return issues.length > before;
+}
+
+/** A path the manifest names must be absolute: a relative one resolves against the manifest's URL. */
+const absolute = (value: unknown): boolean => typeof value === 'string' && value.startsWith('/');
+
+const texts = (value: unknown): readonly unknown[] =>
+  value !== null && typeof value === 'object' ? Object.values(value) : [value];
+
+/** The optional manifest members, screened for the one mistake a browser drops them for silently. */
+function manifestIssues(pwa: PwaConfig, issues: string[]): void {
+  if (pwa.id !== undefined && !absolute(pwa.id)) {
+    issues.push(`pwa.id must be an absolute path like "/", and is ${describeValue(pwa.id)}`);
+  }
+  for (const [i, shortcut] of (pwa.shortcuts ?? []).entries()) {
+    if (!absolute(shortcut?.url)) {
+      issues.push(
+        `pwa.shortcuts[${i}].url must be an absolute path, and is ${describeValue(shortcut?.url)}`,
+      );
+    }
+  }
+  for (const [i, screenshot] of (pwa.screenshots ?? []).entries()) {
+    if (!texts(screenshot?.src).every(absolute)) {
+      issues.push(
+        `pwa.screenshots[${i}].src must be an absolute path (or one per locale), and is ${describeValue(screenshot?.src)}`,
+      );
+    }
+  }
 }

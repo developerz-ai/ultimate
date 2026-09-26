@@ -124,7 +124,9 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       persisted: sync.persisted,
       themeHead: theme.head,
       ...(origin === undefined ? {} : { origin }),
-      ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
+      ...(pwa === undefined
+        ? {}
+        : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
     }),
   ];
 

@@ -238,6 +238,40 @@ describe('route table', () => {
     expect(first.find((r) => r.path === '/blog/:slug')?.dynamic).toBe(true);
   });
 
+  // `sw.js` reads `personal` to never cache a page rendered for someone: kept for offline, a
+  // member's page answered the next person on a shared device after sign-out.
+  test('a page rendered for someone is personal: a policy, a stream, a no-store or private cache', () => {
+    const ssr = { render: 'ssr', offline: 'runtime', hydrate: 'never', meta } as const;
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticConfig });
+    registerRoute({ file: 'apps/web/app/open/page.tsx', config: defineRoute(ssr) });
+    registerRoute({
+      file: 'apps/web/app/gated/page.tsx',
+      config: defineRoute({ ...ssr, policy: { permission: 'posts:read' } }),
+    });
+    registerRoute({
+      file: 'apps/web/app/feed/page.tsx',
+      config: defineRoute({ ...ssr, render: 'stream' }),
+      suspenseBoundaries: 1,
+    });
+    registerRoute({
+      file: 'apps/web/app/verdict/page.tsx',
+      config: defineRoute({ ...ssr, cache: 'no-store' }),
+    });
+    registerRoute({
+      file: 'apps/web/app/mine/page.tsx',
+      config: defineRoute({ ...ssr, cache: { mode: 'private', maxAgeSeconds: 0 } }),
+    });
+    const personal = Object.fromEntries(describeRoutes().map((r) => [r.path, r.personal]));
+    expect(personal).toEqual({
+      '/': false,
+      '/feed': true,
+      '/gated': true,
+      '/mine': true,
+      '/open': false,
+      '/verdict': true,
+    });
+  });
+
   // This package's own `matchRoute` is gone — `@ultimat3/http`'s trie (`stages.ts`) is the one
   // matcher, and two exported matchers with different precedence rules is one too many. What it
   // read stays exported and stays covered here: the compiled pattern a route registers, and the

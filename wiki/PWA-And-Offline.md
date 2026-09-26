@@ -61,11 +61,11 @@ export const config = defineRoute({
 | Included | Source |
 |---|---|
 | Every route with `offline: 'precache'` | route table + its `prerender()` URLs |
-| The JS/CSS chunks those routes import | real bundle graph, not a glob |
+| The island chunks those routes boot, every surface stylesheet, the framework scripts | rendered documents / declared islands, `As of 22.3.3` |
 | Fonts, icons, and `priority` images they reference | asset graph |
 | The offline fallback route | required (see below) |
 
-Excluded always: `api/` responses, anything under an authenticated path unless `offline: 'precache'` is explicit, and any asset over the configured single-file cap.
+Excluded always: `api/` responses and every personal route (a policy, a `stream`, a `no-store`/`private` cache) — even with `offline: 'precache'`, `As of 22.3.3`.
 
 Total precache size is a **warning, not a budget, `As of 2026-08`**: `buildPrecacheManifest` puts `DEFAULT_PRECACHE_WARN_BYTES` overruns on `PrecacheManifest.warnings`, and **nothing reads that field** — no `x verify` step loads a precache manifest, because nothing builds one. Designed as a budget; not one today.
 
@@ -113,19 +113,43 @@ without consulting the table. A per-route `strategy` overrides both.
 
 Overriding `offline` is allowed. Contradictions are **not** rejected `As of 2026-08`: `offline: 'precache'` on a `render: 'ssr'` route is accepted, and `X_SW_UNCACHEABLE` is a reserved name nothing raises ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)). The scope half *is* enforced — `X_SW_SCOPE_INVALID`, when the service-worker scope cannot serve the routes it precaches. Until the coherence check ships, review the pairing yourself: a per-request render has no cacheable body, so `precache` on `ssr` means the shell is served stale.
 
-**A private page is one member's, and the cache knows it**, `As of 2026-09-22` (21.0.0; a security fix, affected since 19.0.0). A document is private when it is
-`cache-control: private` or `no-store`, or carries `x-ultimate-scope` (every scope-tagged document
-does). Such a document:
+**A page rendered for someone is never cached**, `As of 22.3.3` (a security fix). A route is
+*personal* when it has a `policy`, is `render: 'stream'`, or declares `cache: 'no-store'` /
+`{ mode: 'no-store' | 'private' }` (`RouteDescriptor.personal`). Its rule is `network-only` in every
+locale and it is never precached, whatever its `offline` says; a per-route `strategy` is still the
+override. And whatever the rule, the worker **stores no response** that is `cache-control: private`
+or `no-store`, or carries `x-ultimate-scope`, in any cache. From 21.0.0 to 22.3.2 such a response
+was kept in a per-member partition for offline, so after sign-out an offline navigation on a shared
+device showed the previous member's data. Offline, a personal page is the offline document.
 
-| Rule | Why |
-|---|---|
-| is never answered from cache while online, whatever the route's `offline` strategy | the pages cache was keyed by URL alone, so `/feed` rendered for one member answered the next on the same browser |
-| is kept only in its principal's own partition, which only the offline path reads | offline, a member sees their own last copy |
-| wipes every other partition when stored | offline answers the most recent member only |
-| is not kept at all without a scope header | there is no principal to file it under |
+An offline-first app can take 21.0.0's mode back, explicitly: `pwa.offline.personalPages:
+'last-member'` routes a personal page by its render mode again and keeps the most recent member's
+own copy in a per-principal partition that only the offline path reads (never answered online,
+never precached). Declare it only with a sign-out that clears it — `clear-pages` below, or
+`signOutHeaders()`' `Clear-Site-Data`. `examples/dummy` does, for its offline feed.
 
-A shareable document is cached and served as before. Sign-out's `Clear-Site-Data: "cache",
-"storage"` empties every partition.
+| Message | Sent by | Worker does |
+|---|---|---|
+| `{ type: 'clear-pages' }` | the page, on sign-out | deletes every build's pages cache (`x-pages-*`, and any 22.3.2 partition), then answers the posting window `{ type: 'pages-cleared' }` |
+
+```ts
+// sign-out, before navigating away — CLEAR_PAGES_MESSAGE from @ultimat3/pwa
+navigator.serviceWorker?.controller?.postMessage({ type: 'clear-pages' });
+```
+
+The precache is untouched: marketing pages still answer offline. `Clear-Site-Data: "storage"` on
+the sign-out response empties Cache Storage too, and is the belt to this message's braces.
+
+**The English site is offline too**, `As of 22.3.3`. The server strips a non-default locale's prefix
+before it matches (`/en/precios` is `/precios` in English), and the worker matches pathnames, so it
+now gets every route once per routed locale — same strategy, same cache, its own precache revision.
+An offline navigation under `/en/` gets `/en/offline` when that is precached, else the default one.
+
+**Islands are precached only for precached pages**, `As of 22.3.3`. Every island chunk was precached,
+so a first anonymous visit downloaded every island the app has (~1 MB on notificado.co). Now a chunk
+is precached only when a precached page (or the offline document) boots it — the static export reads
+the rendered documents, the container each route's declared `island()`s. Every other chunk is cached
+the first time a page asks for it: `/islands/` is a `cache-first` runtime rule.
 
 **The installing page is cached too**, `As of 2026-09-22` (21.0.0). The page that registers the worker loaded before the worker controlled it, so no strategy saw it, and an `offline: 'runtime'` route was unavailable offline until a second online visit. On `activate`, the worker now runs each open window's URL through its route's own strategy, the same rule every later visit follows. It is best effort: a failure costs the warm-up only.
 
@@ -137,12 +161,32 @@ From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG). **Emitted a
 
 | Generated | Detail |
 |---|---|
-| `manifest.webmanifest` | name, short_name, description, `start_url`, `scope`, display, theme + background from design tokens |
+| `manifest.webmanifest` | the DEFAULT locale's: `lang` is `defaultLocale` (was a hardcoded `en` until 22.3.3), `start_url` `/`, `id` `pwa.id` or `/`, theme + background from `pwa.colors` |
+| `/<locale>/manifest.webmanifest` | one per other routed locale, `As of 22.3.3`: its own `lang`, `start_url: '/en/'`, the SAME `id` (one installed app), its text and its shortcut URLs in that locale. Each document links its own locale's manifest |
 | Icons | 192/256/384/512 + maskable variants + `apple-touch-icon` |
 | Favicons | `.ico` + SVG |
-| iOS splash screens | full device matrix |
-| Shortcuts | from routes marked `shortcut: true` |
-| Screenshots | captured from the built `site/` landing page for install prompts |
+| `description`, `categories`, `shortcuts`, `screenshots` | from `pwa.*`, `As of 22.3.3` — below |
+
+```ts
+// app.config.ts — every member optional; text is a string or one per locale
+pwa: {
+  enabled: true, name: 'Notificado', offline: { fallback: '/offline' }, colors: { … },
+  id: '/',                                     // default: '/'
+  description: { 'es-co': '…', en: '…' },
+  categories: ['business', 'productivity'],
+  shortcuts: [{                                // url: the DEFAULT locale's path; en gets /en/panel
+    name: { 'es-co': 'Panel', en: 'Dashboard' }, shortName?: …, description?: …,
+    url: '/panel', icons?: [{ src: '/assets/…png', sizes: '96x96', type: 'image/png' }],
+  }],
+  screenshots: [{                              // src: one path, or one per locale
+    src: { 'es-co': '/assets/…-es.png', en: '/assets/…-en.png' },
+    sizes: '1280x800', type: 'image/png', formFactor: 'wide', label?: { … },
+  }],
+}
+```
+
+`defineConfig` refuses a relative `id`, shortcut `url` or screenshot `src` — a browser drops those
+in silence. A record missing a locale falls back to the default locale's entry.
 
 No icon-generator service, no 30-file `public/` directory to maintain. Theme and background colours come from semantic [theme](Theming) tokens, never a raw hex.
 

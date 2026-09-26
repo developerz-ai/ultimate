@@ -109,7 +109,16 @@ export type {
   ThemeMode,
 } from './config';
 export { defineConfig, INBOX_RETENTION_KEYS } from './config';
-export type { PwaColors, PwaConfig, PwaOfflineConfig, PwaSchemeColors } from './config-pwa';
+export type {
+  PwaColors,
+  PwaConfig,
+  PwaImage,
+  PwaOfflineConfig,
+  PwaSchemeColors,
+  PwaScreenshot,
+  PwaShortcut,
+  PwaText,
+} from './config-pwa';
 export { PWA_COLOR_KEYS, PWA_SCHEMES } from './config-pwa';
 export type {
   SeoConfig,

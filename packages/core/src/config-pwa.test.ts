@@ -109,6 +109,64 @@ describe('defineConfig · the pwa block an install can be built from', () => {
     expect(config.pwa.offline.fallback).toBe('/offline');
   });
 
+  test('the install sheet members are kept verbatim: id, description, categories, shortcuts, screenshots', () => {
+    const members = {
+      id: '/',
+      description: { 'es-co': 'Notificaciones electrónicas', en: 'Electronic notices' },
+      categories: ['business', 'productivity'],
+      shortcuts: [{ name: { 'es-co': 'Panel', en: 'Dashboard' }, url: '/panel' }],
+      screenshots: [
+        { src: '/assets/home-wide.png', sizes: '1280x800', type: 'image/png', formFactor: 'wide' },
+      ],
+    } as const;
+    const config = defineConfig({
+      name: 'myapp',
+      pwa: {
+        enabled: true,
+        offline: { fallback: '/offline' },
+        name: 'My App',
+        colors: COLORS,
+        ...members,
+      },
+    });
+    expect(config.pwa).toMatchObject(members);
+  });
+
+  test('a relative path in a manifest member is refused, since a browser drops it in silence', () => {
+    const cause = causeOf(() =>
+      defineConfig({
+        name: 'myapp',
+        pwa: {
+          enabled: true,
+          offline: { fallback: '/offline' },
+          name: 'My App',
+          colors: COLORS,
+          id: 'app',
+          shortcuts: [{ name: 'Panel', url: 'panel' }],
+          screenshots: [{ src: { en: 'shot.png' }, sizes: '1x1', type: 'image/png' }],
+        },
+      }),
+    );
+    expect(cause).toContain('pwa.id must be an absolute path');
+    expect(cause).toContain('pwa.shortcuts[0].url must be an absolute path');
+    expect(cause).toContain('pwa.screenshots[0].src must be an absolute path');
+  });
+
+  test('personalPages is never or last-member, and nothing else', () => {
+    const cause = causeOf(() =>
+      defineConfig({
+        name: 'myapp',
+        pwa: {
+          enabled: true,
+          offline: { fallback: '/offline', personalPages: 'always' as never },
+          name: 'My App',
+          colors: COLORS,
+        },
+      }),
+    );
+    expect(cause).toContain("pwa.offline.personalPages must be 'never' or 'last-member'");
+  });
+
   test('a partial offline block keeps the defaults beside it, one level down', () => {
     // `section` applies a patch ONE level deep, so a flat `Input<PwaConfig>` would have replaced
     // the whole block — leaving `image`, `font` and `neverCache` absent at run time while the type
@@ -122,6 +180,7 @@ describe('defineConfig · the pwa block an install can be built from', () => {
       image: null,
       font: null,
       neverCache: [],
+      personalPages: 'never',
     });
   });
 

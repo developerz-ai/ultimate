@@ -5,6 +5,7 @@
  */
 
 import { PwaNoOfflineFallbackError } from './errors';
+import type { PersonalPages } from './pages-cache-source';
 
 export interface OfflineConfig {
   /** Route path of the offline document, e.g. `/offline`. Required. */
@@ -14,6 +15,8 @@ export interface OfflineConfig {
   readonly font?: string;
   /** Requests that must never be answered from a cache (auth, payments). */
   readonly neverCache?: readonly string[];
+  /** A page rendered for someone: `'never'` cached (default), or `'last-member'`. `PersonalPages`. */
+  readonly personalPages?: PersonalPages;
 }
 
 export interface OfflineFallback {
@@ -21,6 +24,7 @@ export interface OfflineFallback {
   readonly image: string | null;
   readonly font: string | null;
   readonly neverCache: readonly string[];
+  readonly personalPages: PersonalPages;
 }
 
 /**
@@ -80,18 +84,32 @@ export function requireOfflineFallback(
     image: config.image ?? null,
     font: config.font ?? null,
     neverCache: config.neverCache ?? [],
+    personalPages: config.personalPages === 'last-member' ? 'last-member' : 'never',
   };
 }
 
-/** Emitted into `sw.js`: what to serve when a navigation cannot be answered. */
-export function offlineFallbackSource(fallback: OfflineFallback): string {
+/**
+ * Emitted into `sw.js`: what to serve when a navigation cannot be answered. `localePrefixes` are
+ * the non-default routed locales' URL segments: a navigation under `/en/` tries `/en` + the offline
+ * document first, so an English visitor offline is not handed the default locale's page.
+ */
+export function offlineFallbackSource(
+  fallback: OfflineFallback,
+  localePrefixes: readonly string[] = [],
+): string {
   const image = fallback.image === null ? 'null' : JSON.stringify(fallback.image);
+  const locales = [...new Set(localePrefixes)].sort();
   return `
 const OFFLINE_DOC=${JSON.stringify(fallback.document)};
 const OFFLINE_IMAGE=${image};
+const OFFLINE_LOCALES=${JSON.stringify(locales)};
 async function offlineFallback(req){
   const c=await caches.open(PRECACHE);
-  if(req.mode==='navigate'){const d=await c.match(OFFLINE_DOC);if(d)return d}
+  if(req.mode==='navigate'){
+    const seg=new URL(req.url).pathname.split('/')[1];
+    if(OFFLINE_LOCALES.indexOf(seg)!==-1){const l=await c.match('/'+seg+OFFLINE_DOC);if(l)return l}
+    const d=await c.match(OFFLINE_DOC);if(d)return d
+  }
   if(OFFLINE_IMAGE&&req.destination==='image'){const i=await c.match(OFFLINE_IMAGE);if(i)return i}
   return new Response('',{status:503,statusText:'Offline'})
 }`.trim();

@@ -30,7 +30,15 @@ const BUILD_ID = 'sw-e2e-build';
 const pwa: PwaArtifacts = {
   body: '{}',
   head: '',
-  offline: { fallback: '/offline', image: null, font: null, neverCache: [] },
+  manifests: [],
+  headFor: () => '',
+  offline: {
+    fallback: '/offline',
+    image: null,
+    font: null,
+    neverCache: [],
+    personalPages: 'never',
+  },
   backgroundSync: false,
   push: false,
 };

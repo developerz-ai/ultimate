@@ -15,13 +15,21 @@ import { isEnabled, resolveCapabilities } from './capabilities';
 import { SwScopeInvalidError } from './errors';
 import type { OfflineConfig } from './offline-fallback';
 import { offlineFallbackSource, requireOfflineFallback } from './offline-fallback';
-import { PAGES_CACHE_SOURCE } from './pages-cache-source';
+import type { PersonalPages } from './pages-cache-source';
+import {
+  CLEAR_PAGES_MESSAGE,
+  PAGES_CACHE_PREFIX,
+  PAGES_CLEARED_MESSAGE,
+  pagesCacheSource,
+} from './pages-cache-source';
 import type { PrecacheAsset, PrecacheManifest } from './precache';
 import { buildPrecacheManifest, serializePrecacheManifest } from './precache';
 import type { VapidConfig } from './push';
 import { pushSource } from './push';
-import type { PwaRoute, StrategyName } from './strategies';
-import { STRATEGY_FN_NAMES, STRATEGY_SOURCE, strategyFor } from './strategies';
+import type { RouteRule } from './route-rules';
+import { assetRules, routeRules } from './route-rules';
+import type { PwaRoute } from './strategies';
+import { STRATEGY_FN_NAMES, STRATEGY_SOURCE } from './strategies';
 import {
   APP_UPDATE_AVAILABLE,
   assertBuildId,
@@ -54,15 +62,20 @@ export interface ServiceWorkerConfig {
   readonly offlineFallbackRevision?: string;
   readonly offlineFallbackBytes?: number;
   readonly vapid?: VapidConfig;
+  /**
+   * Path prefixes of content-addressed assets the precache leaves out (`/islands/`), cached the
+   * first time a page asks for one — `cache-first`, runtime cache. See `assetRules`.
+   */
+  readonly runtimeAssets?: readonly string[];
+  /**
+   * The URL segments of every non-default routed locale (`['en']` for an `es-co` app). A navigation
+   * under `/en/` that finds no network gets `/en` + the offline document when that one is
+   * precached, never the default locale's page.
+   */
+  readonly localePrefixes?: readonly string[];
   /** Build ids whose caches must survive this activation (see `retentionPlan`). */
   readonly retainBuildIds?: readonly string[];
   readonly precacheWarnBytes?: number;
-}
-
-export interface RouteRule {
-  readonly pattern: string;
-  readonly strategy: StrategyName;
-  readonly cache: 'precache' | 'runtime' | 'pages';
 }
 
 export interface ServiceWorkerOutput {
@@ -98,91 +111,6 @@ export function assertScope(swPath: string, scope: string): void {
   }
 }
 
-const segmentsOf = (path: string): readonly string[] =>
-  path.split('/').filter((segment) => segment.length > 0);
-
-/**
- * How specifically a path claims a URL: a literal segment beats a `:param`, which beats a `*`.
- * The weights are `@ultimat3/render`'s `compilePattern`, verbatim (100 / 10 / 1), so the service
- * worker and the server rank the same pathname the same way.
- *
- * DUPLICATED, not imported: `render` and `pwa` are both tier 4 and a sideways import is a build
- * error. The shared home is `@ultimat3/core`'s `route-vocabulary.ts` — tier 0, already the owner of
- * `RENDER_MODES` / `OFFLINE_STRATEGIES` / `HYDRATE_STRATEGIES` for exactly this reason — and moving
- * it there is the follow-up this comment exists to name.
- */
-function specificityOf(path: string): number {
-  return segmentsOf(path).reduce((total, segment) => {
-    if (segment.startsWith('*')) return total + 1;
-    if (segment.startsWith(':')) return total + 10;
-    return total + 100;
-  }, 0);
-}
-
-/**
- * A catch-all is a FALLBACK, and it sorts behind every rule that is not one — a second key, because
- * a sum over segments cannot say it. `/` has no segments and so scores 0, while `/*rest` scores 1:
- * on specificity alone a single root catch-all outranks the home page, and with it every precached
- * entry in the table. The rule this expresses is the one a reader already assumes — a pattern that
- * matches everything answers only what nothing else claimed.
- */
-const hasWildcard = (path: string): boolean =>
-  segmentsOf(path).some((segment) => segment.startsWith('*'));
-
-/**
- * Ordered MOST SPECIFIC FIRST, because the emitted `ruleFor` returns the first pattern that
- * matches and has no notion of specificity of its own. Sorted alphabetically it did not: `:` (0x3A)
- * and `*` (0x2A) both sort before every letter, so `/posts/:id` shadowed `/posts/new` and a single
- * `/*` catch-all shadowed the entire table — every entry in `PRECACHE_MANIFEST` downloaded at
- * install and then never looked up, and a route the app declared cacheable served `network-only`,
- * which offline is the `/offline` document.
- *
- * The path stays as the tie-break, so the emitted file is still byte-identical for identical input
- * — compared by CODE UNIT, never `localeCompare`, which answers from the runtime's ICU default and
- * collation version: `/Posts` sorted before `/posts` on one machine and after it on the next, for
- * the same route table. The rule `@ultimat3/jobs`' `job.ts` states for `x.manifest.json`, applied
- * to the artifact this file emits.
- */
-const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
-export function routeRules(routes: readonly PwaRoute[]): readonly RouteRule[] {
-  return [...routes]
-    .filter((route) => route.surface !== 'api')
-    .sort(
-      (a, b) =>
-        Number(hasWildcard(a.path)) - Number(hasWildcard(b.path)) ||
-        specificityOf(b.path) - specificityOf(a.path) ||
-        byCodeUnit(a.path, b.path),
-    )
-    .map((route) => {
-      const strategy = strategyFor(route);
-      return {
-        pattern: toPattern(route.path),
-        strategy,
-        cache: cacheFor(route, strategy),
-      };
-    });
-}
-
-function cacheFor(route: PwaRoute, strategy: StrategyName): 'precache' | 'runtime' | 'pages' {
-  if (strategy === 'network-only') return 'runtime';
-  if (route.offline === 'precache' && route.dynamic !== true) return 'precache';
-  return 'pages';
-}
-
-function toPattern(path: string): string {
-  if (path === '/') return '^/$';
-  const body = path
-    .split('/')
-    .map((segment) => {
-      if (segment.startsWith(':')) return '[^/]+';
-      if (segment.startsWith('*')) return '.*';
-      return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    })
-    .join('/');
-  return `^${body}/?$`;
-}
-
 /** Emit `sw.js`. `routes` are `@ultimat3/render` descriptors, passed as data. */
 export function generateServiceWorker(
   routes: readonly PwaRoute[],
@@ -195,7 +123,13 @@ export function generateServiceWorker(
 
   const fallback = requireOfflineFallback(config.offline);
   const capabilities = resolveCapabilities(config.capabilities);
-  const rules = routeRules(routes);
+  // `last-member` routes a personal page by its render mode again — the pages facade partitions it.
+  // The precache below still skips it: fetched anonymously at install, it is a sign-in redirect.
+  const routed =
+    fallback.personalPages === 'last-member'
+      ? routes.map((route) => ({ ...route, personal: false }))
+      : routes;
+  const rules = [...assetRules(config.runtimeAssets ?? [], scope), ...routeRules(routed)];
 
   const precache = buildPrecacheManifest({
     buildId,
@@ -225,10 +159,10 @@ export function generateServiceWorker(
     `const PRECACHE_MANIFEST=${serializePrecacheManifest(precache)};`,
     `const ROUTE_RULES=${serializeRules(rules)};`,
     usedStrategies.map((strategy) => STRATEGY_SOURCE[strategy]).join('\n'),
-    offlineFallbackSource(fallback),
+    offlineFallbackSource(fallback, config.localePrefixes ?? []),
     INSTALL_BLOCK,
     activateBlock(),
-    fetchBlock(),
+    fetchBlock(fallback.personalPages),
     messageBlock(isEnabled(capabilities, 'backgroundSync')),
   ];
 
@@ -272,6 +206,7 @@ const SCOPE=${JSON.stringify(scope)};
 const PRECACHE=${JSON.stringify(cacheNamespace(buildId, 'precache'))};
 const RUNTIME=${JSON.stringify(cacheNamespace(buildId, 'runtime'))};
 const PAGES=${JSON.stringify(cacheNamespace(buildId, 'pages'))};
+const PAGES_PREFIX=${JSON.stringify(PAGES_CACHE_PREFIX)};
 const RETAINED=${JSON.stringify(retainedCaches(retained))};
 const NEVER_CACHE=${JSON.stringify(neverCache)};
 const BUILD_HEADER=${JSON.stringify(BUILD_ID_HEADER)};
@@ -291,7 +226,7 @@ function serializeRules(rules: readonly RouteRule[]): string {
   const rows = rules.map(
     (rule) =>
       `{"p":${JSON.stringify(rule.pattern)},"s":${JSON.stringify(STRATEGY_FN_NAMES[rule.strategy])},` +
-      `"c":${JSON.stringify(rule.cache)}}`,
+      `"c":${JSON.stringify(rule.cache)}${rule.asset === true ? ',"a":1' : ''}}`,
   );
   return `[${rows.join(',')}]`;
 }
@@ -403,14 +338,14 @@ const SKEW_STATUS = 409;
  * but the server can roll forward before the browser has fetched the new `sw.js` at all, and a
  * worker from before 22.3.2 is the one answering in between.
  */
-function fetchBlock(): string {
+function fetchBlock(personalPages: PersonalPages): string {
   return `
 function ruleFor(url){
   for(const r of ROUTE_RULES){if(new RegExp(r.p).test(url.pathname))return r}
   return null
 }
 function cacheName(kind){return kind==='precache'?PRECACHE:kind==='pages'?PAGES:RUNTIME}
-${PAGES_CACHE_SOURCE}
+${pagesCacheSource(personalPages)}
 const STRATEGIES={cacheFirst:typeof cacheFirst==='function'?cacheFirst:null,
   networkFirst:typeof networkFirst==='function'?networkFirst:null,
   staleWhileRevalidate:typeof staleWhileRevalidate==='function'?staleWhileRevalidate:null,
@@ -425,8 +360,9 @@ self.addEventListener('fetch',(event)=>{
   if(!rule)return;
   const fn=STRATEGIES[rule.s];
   if(!fn)return;
-  // Every proxied request carries the client's build id so the server can detect skew.
-  const tagged=new Request(req,{headers:withBuild(req.headers)});
+  // Every proxied DOCUMENT carries the client's build id so the server can detect skew. An asset
+  // goes as the browser asked: a no-cors request's headers cannot be extended.
+  const tagged=rule.a?req:new Request(req,{headers:withBuild(req.headers)});
   event.respondWith(fn(tagged,cacheName(rule.c),fallbackFor(rule,req),(p)=>event.waitUntil(p)).then((res)=>healSkew(req,res)));
 });
 function withBuild(headers){
@@ -471,6 +407,7 @@ function messageBlock(backgroundSync: boolean): string {
 self.addEventListener('message',(event)=>{
   const d=event.data||{};
   if(d.type==='skip-waiting')self.skipWaiting();
-  if(d.type==='build-id')event.source&&event.source.postMessage({type:'build-id',buildId:BUILD_ID});${flush}
+  if(d.type==='build-id')event.source&&event.source.postMessage({type:'build-id',buildId:BUILD_ID});
+  if(d.type===${JSON.stringify(CLEAR_PAGES_MESSAGE)})event.waitUntil(clearPages().then(()=>event.source&&event.source.postMessage({type:${JSON.stringify(PAGES_CLEARED_MESSAGE)}})));${flush}
 });`.trim();
 }

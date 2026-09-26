@@ -23,7 +23,15 @@ const BUILD_ID = 'build-7';
 const pwa = (patch: Partial<PwaArtifacts> = {}): PwaArtifacts => ({
   body: '{}',
   head: '<link rel="manifest" href="/manifest.webmanifest">',
-  offline: { fallback: '/offline', image: null, font: null, neverCache: [] },
+  manifests: [],
+  headFor: () => '<link rel="manifest" href="/manifest.webmanifest">',
+  offline: {
+    fallback: '/offline',
+    image: null,
+    font: null,
+    neverCache: [],
+    personalPages: 'never',
+  },
   backgroundSync: false,
   push: false,
   ...patch,
@@ -55,7 +63,15 @@ describe('serviceWorkerArtifacts', () => {
     // the app has no way to tell that from a fallback that is simply empty.
     expect(
       serviceWorkerArtifacts({
-        pwa: pwa({ offline: { fallback: null, image: null, font: null, neverCache: [] } }),
+        pwa: pwa({
+          offline: {
+            fallback: null,
+            image: null,
+            font: null,
+            neverCache: [],
+            personalPages: 'never',
+          },
+        }),
         buildId: BUILD_ID,
         routes: ROUTES,
         islands: islandBundle([]),
@@ -117,7 +133,13 @@ describe('serviceWorkerArtifacts', () => {
 
   test('neverCache reaches the worker, so an auth path is never answered from a cache', () => {
     const source = build({
-      offline: { fallback: '/offline', image: null, font: null, neverCache: ['/auth'] },
+      offline: {
+        fallback: '/offline',
+        image: null,
+        font: null,
+        neverCache: ['/auth'],
+        personalPages: 'never',
+      },
     }).source;
 
     expect(source).toContain('/auth');
@@ -258,7 +280,15 @@ describe('a route revision is its document, not the deploy', () => {
     // And an app with no fallback gets no worker and therefore no tag — one predicate, read twice.
     expect(
       serviceWorkerHead(
-        pwa({ offline: { fallback: null, image: null, font: null, neverCache: [] } }),
+        pwa({
+          offline: {
+            fallback: null,
+            image: null,
+            font: null,
+            neverCache: [],
+            personalPages: 'never',
+          },
+        }),
       ),
     ).toBeUndefined();
   });
