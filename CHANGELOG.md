@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.3.1 - 2026-09-26
+
 ### Added
 
 - **mail:** `send(â€¦, { unsubscribeUrl, unsubscribeOneClick: false })` keeps the GET-only
@@ -45,6 +49,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   the verdict, and the summary names the status (`--expect-status` for the page you mean to
   photograph). Subresource failures are still counted and still don't gate. `--matrix` marks the
   cell failed.
+
+### Commits
+
+- fix(mail,cli,render): GET-only List-Unsubscribe, Sass cache for manifest, :global() quotes, x shot fails on 404 (#538)
 
 ## 22.3.0 - 2026-09-25
 
