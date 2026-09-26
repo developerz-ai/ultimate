@@ -42,6 +42,8 @@ export function mailIdempotencyKey(message: MailMessage): string {
       tz: message.tz,
       replyTo: message.replyTo ?? '',
       unsubscribeUrl: message.unsubscribeUrl ?? '',
+      // Only when it changes the wire: every key minted before the option existed stays the same.
+      ...(message.unsubscribeOneClick === false ? { unsubscribeOneClick: false } : {}),
     }),
   );
   return `mail:${message.mailId}:${digest}`;

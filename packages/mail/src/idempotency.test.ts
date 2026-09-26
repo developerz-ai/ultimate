@@ -99,6 +99,7 @@ test('every other field that reaches the wire changes the key', () => {
     { locale: 'de' },
     { tz: 'UTC' },
     { unsubscribeUrl: 'https://postly.test/u/abc' },
+    { unsubscribeOneClick: false },
     { mailId: 'invite' },
     { to: ['grace@example.test'] },
   ];
@@ -125,4 +126,13 @@ test('a caller key is scoped to its mail, so two templates cannot dedupe each ot
   );
 
   expect(welcome).not.toBe(verify);
+});
+
+test('unsubscribeOneClick left out or true keeps the key every earlier release minted', () => {
+  const base = mailIdempotencyKey(messageFixture({ unsubscribeUrl: 'https://postly.test/u/abc' }));
+  expect(
+    mailIdempotencyKey(
+      messageFixture({ unsubscribeUrl: 'https://postly.test/u/abc', unsubscribeOneClick: true }),
+    ),
+  ).toBe(base);
 });

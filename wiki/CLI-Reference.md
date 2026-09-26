@@ -1024,7 +1024,8 @@ Three rules the set obeys:
 ```bash
 x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
                [--timeout 30000] [--browser <path>] [--cdp-url <ws://…>]
-               [--allow-hosts a.com,b.com] [--theme light|dark] [--locale <l>] [--json]
+               [--allow-hosts a.com,b.com] [--theme light|dark] [--locale <l>]
+               [--expect-status 404] [--json]
 x shot --matrix [<route>] [--locale <l>] [--theme light|dark] [--json]
 x shot --island <name> [--state <id>] [--json]
 x shot --all-islands [--json]
@@ -1043,13 +1044,14 @@ x shot --all-islands [--json]
 | `--browser` | `PUPPETEER_EXECUTABLE_PATH`, then `CHROME_PATH` | refused before anything boots if the path does not exist |
 | `--cdp-url` | `SCRAPE_CDP_URL` | **attach** to a browser somebody else is running instead of launching one here. `ws:`/`wss:`/`http:`/`https:`; anything else is refused before the attach |
 | `--allow-hosts` | the app's host only | extra hosts the page may request |
+| `--expect-status` | absent — any 2xx | the document status this shot is ok with, `As of 2026-09-26`: `x shot /nope --expect-status 404` photographs the not-found page on purpose. Absent, a non-2xx document fails the verdict and the summary names the status. With `--matrix` it applies to every cell |
 | `--locale` | the app's `defaultLocale`, **always pinned** | one of the app's `locales`, `As of 2026-09-25`. Sent as `Accept-Language` on every request the page makes, and for a non-default locale the path is prefixed (`x shot /precios --locale en` opens `/en/precios`). Absent, `Accept-Language` is still pinned to the default locale, so a picture never depends on the language of the machine's Chrome. An undeclared locale is `X_CLI_BAD_FLAG` before anything boots; refused beside `--island` |
 | `--matrix` | off | every static `site/` route × every locale × `light`/`dark` × 390 and 1440 px, into `.x/shot/matrix/<route>/<locale>/<theme>-<width>/`, plus `.x/shot/matrix/index.html`, a contact sheet of every picture with failures marked. One dev server for the whole run. A `<route>` narrows it to that route, `--locale` and `--theme` to one value of their axis; `ok` only when every cell's verdict is. Refused beside `--island`/`--all-islands` |
 | `--theme` | absent — the box's own preference and the app's own `theme.defaultMode` | `light` or `dark`, `As of 2026-09-19`. Both `prefers-color-scheme` is emulated **and** the scheme is stored as the visitor's choice under `THEME_STORAGE_KEY` before navigation — the boot script since 20.2.0 answers `defaultMode` before the OS, so emulation alone photographs a dark-default app dark whatever was asked (#489). The `ui.shot`/`ui.inspect`/`ui.interact` tools' `theme` is this flag. Refused beside `--island`, which photographs both themes |
 
 **`verdict.json` is the half that gates**, and the more important of the two files: a picture cannot tell you the island threw or logged. It carries the console lines, the island counts, the canvas size, the network tallies — and `blind`, which names what this capture could **not** observe. A tool that silently omits what it cannot see is worse than one that says so.
 
-`ok` is four conditions, and `buildVerdict` in `packages/cli/src/shot-verdict.ts` is where they are decided — read it there rather than trusting a count here: **nothing logged an error**, **nothing threw**, **no island failed to mount**, and **the document photographed is the route asked for**. The island condition is new in 8.0.0: before it, every island's `mount()` could reject and the run still reported `ok: true`, "clean". The last matters most: a route behind `auth: 'required'` photographs the sign-in page and reports every island missing, which reads as a bug in the app when it is a bug in the capture.
+`ok` is decided by `buildVerdict` in `packages/cli/src/shot-verdict.ts` — read it there rather than trusting a count here: **nothing logged an error**, **nothing threw**, **no island failed to mount**, **the document photographed is the route asked for**, and **the document answered 2xx** (or exactly `--expect-status`; `status` and `expectedStatus` ride `verdict.json`, `null` when no response was seen — unseen never gates). A failed subresource — a missing favicon — is counted under `network.failed` and never gates. The island condition is new in 8.0.0: before it, every island's `mount()` could reject and the run still reported `ok: true`, "clean". The last matters most: a route behind `auth: 'required'` photographs the sign-in page and reports every island missing, which reads as a bug in the app when it is a bug in the capture.
 
 **It drives `x dev`, never the static build.** `x build --target static` prerenders `site/` only, so an `app/` route would photograph the landing page. If an `x dev` is already running on the checkout it is **reused** rather than booted over — embedded Postgres is single-writer, so a second boot is `X_DEV_ALREADY_RUNNING` and no picture is ever taken. The verdict says which happened.
 

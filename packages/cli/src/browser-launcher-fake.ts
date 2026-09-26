@@ -26,6 +26,8 @@ export interface FakeShotPage {
   readonly url: string;
   readonly html: string;
   readonly evaluate?: Readonly<Record<string, string>> | undefined;
+  /** The document's HTTP status. Absent is 200 — the page was recorded because it exists. */
+  readonly status?: number | undefined;
 }
 
 /** A PNG signature, and nothing behind it: deterministic bytes, never a render. */
@@ -76,7 +78,8 @@ function fakePage(byUrl: ReadonlyMap<string, FakeShotPage>, init: ShotSessionIni
     network.push({
       method: 'GET',
       url: page.url,
-      status: 200,
+      // Data the page answers with, never a bound — a recorded page exists, so absent is a 200.
+      status: page.status === undefined ? 200 : page.status,
       resourceType: 'document',
       at: init.clock.now().getTime(),
     });

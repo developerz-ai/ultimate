@@ -91,6 +91,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       "`live.ts:177` compares a subscription `queryHash` against the cursor's to detect that the query changed under a live subscription. Both sides are hashes of a query this process compiled.",
   },
+  render: {
+    // why: `sass-cache.ts` compares two sha256 hashes of stylesheet files in the checkout — no secret.
+    count: 1,
+    reason:
+      '`sass-cache.ts` compares the sha256 `digest` of a stylesheet the compiler read against the one stored beside a cached compile, to decide whether the entry is still valid. Both sides are hashes of source files in the checkout — nothing a caller supplies and nothing secret.',
+  },
   realtime: {
     count: 7,
     reason:

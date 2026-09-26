@@ -11,6 +11,7 @@ import { renderThrowable } from '@ultimat3/core';
 import type * as Sass from 'sass';
 import { PrerenderFailedError } from './errors';
 import { contentHash } from './render-static';
+import { cachedSassCompile } from './sass-cache';
 
 export interface CompiledStylesheet {
   readonly css: string;
@@ -145,13 +146,18 @@ export function scopeClasses(
     classes[name] = local;
     return `.${local}`;
   });
-  const restored = scoped.replace(
-    MASKED,
-    // The mask is dense and index-addressed, so a miss is impossible; `??` only keeps
-    // `noUncheckedIndexedAccess` honest.
-    (_match, index: string) => literals[Number(index)] ?? '',
-  );
-  return { css: restored, classes };
+  // Recursive: a `:global()` payload is masked AFTER the strings inside it were, so its literal
+  // holds their placeholders — one pass restored `html[data-theme='light']` as
+  // `html[data-theme=\0 0 \0]`, a selector that matched nothing. A literal only ever holds
+  // placeholders with LOWER indexes than its own, so the recursion ends.
+  const restore = (text: string): string =>
+    text.replace(
+      MASKED,
+      // The mask is dense and index-addressed, so a miss is impossible; `??` only keeps
+      // `noUncheckedIndexedAccess` honest.
+      (_match, index: string) => restore(literals[Number(index)] ?? ''),
+    );
+  return { css: restore(scoped), classes };
 }
 
 /** The fix line for a stylesheet that names tokens `@ultimat3/ui/tokens` does not export. */
@@ -198,20 +204,45 @@ const sassCompiler = (): typeof Sass => {
   return loadedSass;
 };
 
+/** Changes whenever the `compileString` options below do, so a cached entry never outlives them. */
+const COMPILE_OPTIONS = 'v1 compressed charset:false loadPaths:dirname importer:package';
+
+let loadedVersion: string | undefined;
+
+/** `sass`'s own version, without evaluating `sass` — the cache key needs it before any compile. */
+const sassVersion = (): string => {
+  loadedVersion ??= String(
+    (require('sass/package.json') as { readonly version?: unknown }).version ?? 'unknown',
+  );
+  return loadedVersion;
+};
+
 export function compileStylesheet(file: string, source: string): CompiledStylesheet {
   let css: string;
   try {
+    // Everything that is not a loaded file goes in the key: the compiler, the options below (named
+    // by `COMPILE_OPTIONS`), the path the relative `@use`s resolve from, and the source itself. The
+    // version is read from Sass's package.json, so a run whose every sheet hits never loads Sass.
+    const key = `${sassVersion()}\0${COMPILE_OPTIONS}\0${file}\0${source}`;
     css = stripCharset(
-      sassCompiler().compileString(source, {
-        url: pathToFileURL(file),
-        loadPaths: [dirname(file)],
-        importers: [packageImporter(dirname(file))],
-        style: 'compressed',
-        // No `@charset`, no BOM — see `stripCharset`. Dart Sass writes one for any compressed
-        // output holding a non-ASCII character, and re-emits an escaped `\\00b7` as the literal
-        // character, so escaping in the app cannot avoid it.
-        charset: false,
-      }).css,
+      cachedSassCompile(key, () => {
+        const result = sassCompiler().compileString(source, {
+          url: pathToFileURL(file),
+          loadPaths: [dirname(file)],
+          importers: [packageImporter(dirname(file))],
+          style: 'compressed',
+          // No `@charset`, no BOM — see `stripCharset`. Dart Sass writes one for any compressed
+          // output holding a non-ASCII character, and re-emits an escaped `\\00b7` as the literal
+          // character, so escaping in the app cannot avoid it.
+          charset: false,
+        });
+        return {
+          css: result.css,
+          loaded: result.loadedUrls.map((loaded) =>
+            loaded.protocol === 'file:' ? fileURLToPath(loaded) : undefined,
+          ),
+        };
+      }),
     );
   } catch (error) {
     // `renderThrowable`, never `.message`/`String()`: an importer, a plugin or a future Sass

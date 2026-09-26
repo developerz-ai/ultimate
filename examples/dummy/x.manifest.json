@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "8bae2522e37cb615",
+  "buildId": "46e0680fea17d504",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -2157,6 +2157,9 @@
           "unsubscribeUrl": {
             "type": "string",
             "format": "uri"
+          },
+          "unsubscribeOneClick": {
+            "type": "boolean"
           },
           "idempotencyKey": {
             "type": "string",

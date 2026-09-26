@@ -25,6 +25,9 @@ export const SHOT_MESSAGE_KEYS = [
   'cli.shot.ok',
   'cli.shot.errors',
   'cli.shot.redirected',
+  'cli.shot.status',
+  'cli.shot.document',
+  'cli.shot.documentUnknown',
   'cli.shot.picture',
   'cli.shot.verdict',
   'cli.shot.server.booted',
@@ -146,6 +149,13 @@ export interface ShotInput {
   readonly networkDropped: number;
   /** `null` when the probe could not run or did not parse. Never a zero standing in for unknown. */
   readonly islands: IslandCount | null;
+  /**
+   * The document's status as read right after navigation. Only a fallback: the network ring is
+   * bounded, so on a page of a few hundred requests the document entry may be gone by capture time.
+   */
+  readonly landedStatus?: number | null | undefined;
+  /** `--expect-status`: the one status this shot is ok with. Absent means any 2xx. */
+  readonly expectStatus?: number | undefined;
 }
 
 export interface ShotVerdict extends ShotInput {
@@ -161,9 +171,43 @@ export interface ShotVerdict extends ShotInput {
    * gating, like a console warning: a missing favicon would otherwise fail every shot of every app.
    */
   readonly failed: number;
+  /**
+   * The HTTP status of the document photographed. `null` when no driver response carried one —
+   * "not seen" never gates, like an uncounted island, and is never reported as a 200.
+   */
+  readonly status: number | null;
+  /** The status asked for with `--expect-status`, or `null` for "any 2xx". */
+  readonly expectedStatus: number | null;
   /** What this verdict cannot see, stated every time — a `0` whose blind spots are named. */
   readonly blind: readonly string[];
 }
+
+const withoutFragment = (url: string): string => {
+  const hash = url.indexOf('#');
+  return hash === -1 ? url : url.slice(0, hash);
+};
+
+/**
+ * The status of the LAST document response at `url` — the last, because a reload or a redirect
+ * back re-requests it and the picture is of the latest. The fragment is dropped: `location.href`
+ * keeps it and no request ever carries one.
+ */
+export function documentStatus(network: readonly NetworkEntry[], url: string): number | null {
+  const target = withoutFragment(url);
+  for (let index = network.length - 1; index >= 0; index -= 1) {
+    const entry = network[index];
+    if (entry === undefined || entry.resourceType !== 'document') continue;
+    if (withoutFragment(entry.url) !== target) continue;
+    if (entry.status !== undefined) return entry.status;
+  }
+  return null;
+}
+
+/** ok for a status: the one expected, or any 2xx when none was. Unseen is not a failure. */
+const statusOk = (status: number | null, expected: number | null): boolean => {
+  if (expected !== null) return status === expected;
+  return status === null || (status >= 200 && status < 300);
+};
 
 /**
  * What a shot is blind to, each naming the mechanism rather than apologising. Constant because
@@ -183,7 +227,7 @@ const levelCount = (lines: readonly ConsoleLine[], level: ConsoleLine['level']):
   lines.filter((line) => line.level === level).length;
 
 /**
- * `ok` is four conditions, and every one is something a picture cannot show: nothing on the page
+ * `ok` is five conditions, and every one is something a picture cannot show: nothing on the page
  * logged an error, nothing THREW, no island's `mount()` REJECTED, and the document photographed is
  * the route that was asked for.
  *
@@ -195,16 +239,23 @@ const levelCount = (lines: readonly ConsoleLine[], level: ConsoleLine['level']):
  * an uncounted probe (`null`) out of the verdict — "not counted" is not "none failed".
  * A redirect is a failure of the CAPTURE rather than of the app: an agent that
  * photographs the sign-in page and files "the island did not mount" is the outcome this prevents.
+ * A fifth (`As of 2026-09-26`): the document answered 2xx, or exactly `--expect-status`. A 404
+ * page is clean by every other clause, and `x shot /typo` reported it ok.
  */
 export function buildVerdict(input: ShotInput): ShotVerdict {
   const errors = levelCount(input.console, 'error');
+  const status = documentStatus(input.network, input.finalUrl) ?? input.landedStatus ?? null;
+  const expectedStatus = input.expectStatus ?? null;
   return {
     ...input,
     ok:
       errors === 0 &&
       input.pageErrors.length === 0 &&
       (input.islands?.failed ?? 0) === 0 &&
-      input.requestedUrl === input.finalUrl,
+      input.requestedUrl === input.finalUrl &&
+      statusOk(status, expectedStatus),
+    status,
+    expectedStatus,
     redirected: input.requestedUrl !== input.finalUrl,
     errors,
     warnings: levelCount(input.console, 'warn'),
@@ -241,6 +292,8 @@ export function verdictJson(verdict: ShotVerdict): JsonValue {
     requestedUrl: verdict.requestedUrl,
     finalUrl: verdict.finalUrl,
     redirected: verdict.redirected,
+    status: verdict.status,
+    expectedStatus: verdict.expectedStatus,
     server: verdict.server,
     capturedAt: verdict.capturedAt,
     screenshot: verdict.screenshot,
@@ -301,6 +354,9 @@ export function shotLines(artifacts: ShotArtifacts): readonly string[] {
   const canvas = verdict.canvas;
   return [
     msg(`cli.shot.server.${verdict.server}`, { url: verdict.finalUrl }),
+    verdict.status === null
+      ? msg('cli.shot.documentUnknown')
+      : msg('cli.shot.document', { status: verdict.status }),
     canvas === null
       ? msg('cli.shot.canvasUnreadable', { bytes: verdict.bytes.byteLength })
       : msg('cli.shot.canvas', { width: canvas.width, height: canvas.height }),
@@ -337,6 +393,13 @@ export function shotLines(artifacts: ShotArtifacts): readonly string[] {
 export const shotSummary = (verdict: ShotVerdict): string => {
   if (verdict.redirected) {
     return msg('cli.shot.redirected', { route: verdict.route, url: verdict.finalUrl });
+  }
+  if (!statusOk(verdict.status, verdict.expectedStatus)) {
+    return msg('cli.shot.status', {
+      route: verdict.route,
+      status: verdict.status ?? 'unseen',
+      expected: verdict.expectedStatus ?? '2xx',
+    });
   }
   // Ahead of the console count, because a throw is the more severe fact AND the quieter one: an
   // island that died can log nothing at all, so `errors` would report a clean page.

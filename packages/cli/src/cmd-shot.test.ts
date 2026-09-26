@@ -456,3 +456,35 @@ describe('unit · which server the picture is of', () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+describe('unit · a 404 is not a clean shot', () => {
+  const missing = (): ShotDriver =>
+    fakeShotDriver([
+      {
+        url: `${SERVER_URL}${ROUTE}`,
+        html: PAGE,
+        status: 404,
+        evaluate: { [ISLAND_PROBE]: CLEAN_ANSWER },
+      },
+    ]);
+
+  test('the not-found page fails the verdict, with the status in verdict.json', async () => {
+    const out = join(dir, 'status-404');
+    const artifacts = await runShot(runFor(out, { driver: missing() }));
+    expect(artifacts.verdict.ok).toBe(false);
+    const verdict = await readVerdict(out);
+    expect([verdict['ok'], verdict['status']]).toEqual([false, 404]);
+  });
+
+  test('expectStatus: 404 photographs it on purpose and is ok', async () => {
+    const out = join(dir, 'status-404-expected');
+    const artifacts = await runShot(runFor(out, { driver: missing(), expectStatus: 404 }));
+    expect([artifacts.verdict.ok, artifacts.verdict.status]).toEqual([true, 404]);
+  });
+
+  test('a recorded page with no status is a 200 and stays ok', async () => {
+    const out = join(dir, 'status-200');
+    const artifacts = await runShot(runFor(out, { driver: driverAnswering(CLEAN_ANSWER) }));
+    expect([artifacts.verdict.ok, artifacts.verdict.status]).toEqual([true, 200]);
+  });
+});

@@ -2,6 +2,7 @@
 // before them (#14). What is pinned is the order a reader sees — unchanged — and the overlap itself.
 
 import { describe, expect, test } from 'bun:test';
+import { defaultWorkers, sharedWorkers } from './test-workers';
 import { runVerify } from './verify-run';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
@@ -60,6 +61,47 @@ describe('unit · the static steps overlap the serial suites', () => {
     expect(log.indexOf('end contract')).toBeGreaterThan(-1);
     expect(log.indexOf('end manifest')).toBeLessThan(log.indexOf('start drift'));
     expect(log.indexOf('end manifest')).toBeGreaterThan(-1);
+  });
+
+  // #537: the static group is six CPU-bound processes, so a suite beside it oversubscribing the
+  // cores 1.5x made every step in the window about twice as slow.
+  test('a suite inside the window defaults to one worker per core; one outside keeps its default', async () => {
+    const seen = new Map<string, number | undefined>();
+    const steps = VERIFY_STEP_NAMES.map(
+      (name): VerifyStep => ({
+        name,
+        summary: name,
+        run: async (ctx) => {
+          seen.set(name, ctx.workers);
+          await new Promise<void>((resolve) => setTimeout(resolve, 1));
+          return { ok: true, findings: [] };
+        },
+      }),
+    );
+    await runVerify(steps, { root: '/nonexistent', runner });
+    expect(seen.get('unit')).toBeUndefined();
+    expect(seen.get('contract')).toBeUndefined();
+    for (const name of ['live', 'job', 'e2e', 'eval']) expect(seen.get(name)).toBe(sharedWorkers());
+    // The static steps themselves and everything after the join see the caller's context.
+    expect(seen.get('lint')).toBeUndefined();
+    expect(seen.get('drift')).toBeUndefined();
+    expect(sharedWorkers()).toBeLessThanOrEqual(defaultWorkers());
+  });
+
+  test("an explicit --workers is the caller's, inside the window too", async () => {
+    const seen = new Map<string, number | undefined>();
+    const steps = VERIFY_STEP_NAMES.map(
+      (name): VerifyStep => ({
+        name,
+        summary: name,
+        run: async (ctx) => {
+          seen.set(name, ctx.workers);
+          return { ok: true, findings: [] };
+        },
+      }),
+    );
+    await runVerify(steps, { root: '/nonexistent', runner, workers: 20 });
+    expect([seen.get('unit'), seen.get('job')]).toEqual([20, 20]);
   });
 
   test('a one-step run is exactly that step, never the group it belongs to', async () => {

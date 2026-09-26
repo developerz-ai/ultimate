@@ -34,6 +34,7 @@ delivers inline only when `{ sync: true }` is passed or no job driver is configu
 | Every colour is a token | `MAIL_TOKENS` in `layout.ts` holds light + dark hexes; templates never see a hex |
 | Every date takes an IANA zone | `options.tz`, else `ctx.tz`, else `UTC` |
 | No CR/LF in a header-bound field | checked in `renderMessage` and again in `sendMailJob`, so every driver refuses the same message (`X_MAIL_HEADER_INVALID`). `mime.ts` keeps its own gate for the headers the SMTP transport mints itself |
+| `unsubscribeUrl` is one-click unless you say otherwise | it emits `List-Unsubscribe: <url>` plus `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), a promise that a POST to that URL unsubscribes. When the URL is a confirm page — GET shows a button and must never unsubscribe, because scanners prefetch — pass `unsubscribeOneClick: false`: the `-Post` line goes, `List-Unsubscribe` and the footer link stay |
 | Sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, idempotency key `mail:<mailId>:<hash(recipients + rendered)>` — 128 bits, ASCII, under Resend's 256-character limit at any recipient count — or `(mailId, your key)` when you pass one (digested if it is not a short ASCII token) — a caller's key is scoped to its mail so two templates cannot dedupe each other away |
 
 ## Drivers

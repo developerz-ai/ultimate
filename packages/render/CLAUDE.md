@@ -94,7 +94,7 @@ axiom 6). Never `cli` (upward).
 | Escaping | `html.ts` only — including `render-stream.ts`'s `holeMarker` and `revealChunk` (`JSON.stringify`), and `head.ts`'s `themeScript`. `escapeAttribute` is `@ultimat3/seo`'s, re-exported by `html.ts`. |
 | Script and style CONTENT | never raw: `escapeText`, `escapeRawTextContent` (`</` → `<\/`, `<!--` → `<\!--`), or `escapeJsonContent` for a `type` ending in `json`. Never HTML-escape a script body. |
 | Which export is the page | `route-component.ts`: `Page` → a single `…Page` → a single capitalised function. |
-| Stylesheets | compiled by `css-modules.ts`, grouped per surface, served by the CLI as one content-hashed file per surface (`@ultimat3/cli`'s `style-bundle.ts`) from `stylesFor`. `sass` is this package's only third-party dependency. |
+| Stylesheets | compiled by `css-modules.ts`, grouped per surface, served by the CLI as one content-hashed file per surface (`@ultimat3/cli`'s `style-bundle.ts`) from `stylesFor`. `sass` is this package's only third-party dependency. Each compile goes through `sass-cache.ts`: `.x/cache/sass/` under cwd, a hit only while every file the compile read hashes the same; `setSassCacheDir(null)` turns it off. |
 | CSS order | `stylesFor` sorts **globals before modules** (`isGlobalStylesheet`). `shared/` is carried by both graphs. |
 | The global layer | the app's `shared/global.scss` `@use`s `@ultimat3/ui/global.scss`, side-effect-imported by `shared/global.ts` (this package may not import `ui`). `x verify` fails with `X_STYLES_GLOBAL_MISSING` when a surface's document defines none. |
 | Colours | tokens and `data-theme` only. No hex in `head.ts` or any emitted script. |

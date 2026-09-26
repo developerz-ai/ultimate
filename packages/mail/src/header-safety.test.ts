@@ -89,3 +89,16 @@ describe('an address list is header-bound too', () => {
     ).not.toThrow();
   });
 });
+
+test('List-Unsubscribe is still gated when the one-click POST line is switched off', () => {
+  const error = caught(() =>
+    assertHeaderSafe(
+      message({
+        unsubscribeUrl: 'https://postly.test/u/abc\r\nBcc: x@evil.test',
+        unsubscribeOneClick: false,
+      }),
+    ),
+  );
+  expect(error.code).toBe('X_MAIL_HEADER_INVALID');
+  expect(error.cause).toContain('List-Unsubscribe');
+});

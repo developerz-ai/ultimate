@@ -81,6 +81,25 @@ describe('scopeClasses', () => {
     );
   });
 
+  // The quoted value is masked as a string first, then the `:global()` payload holding that mask
+  // is masked again — one restore pass left the inner placeholder in, and the browser read
+  // `html[data-theme=\u00000\u0000]`, which printed as `html[data-theme=0]` and matched nothing.
+  test.each([["html[data-theme='light']"], ['html[data-theme="light"]']])(
+    'a quoted attribute inside :global(%s) survives byte for byte',
+    (selector) => {
+      const out = scopeClasses(`:global(${selector}) .card{color:red}`, 'h');
+      expect(out.css).toBe(`${selector} .card_h{color:red}`);
+      expect(out.css).not.toContain('\u0000');
+    },
+  );
+
+  test('a url() and a string inside one :global() both come back, in order', () => {
+    const css = `:global([data-a='x.y'] [data-b="p.q"]) .c{background:url(a.b)}`;
+    expect(scopeClasses(css, 'h').css).toBe(
+      `[data-a='x.y'] [data-b="p.q"] .c_h{background:url(a.b)}`,
+    );
+  });
+
   test('an unclosed :global( is left exactly as written rather than swallowing the sheet', () => {
     const css = '.a :global(th{color:red}.b{color:blue}';
     expect(scopeClasses(css, 'h').css).toBe('.a_h :global(th{color:red}.b_h{color:blue}');
@@ -99,6 +118,14 @@ describe('compileStylesheet', () => {
     const b = compileStylesheet('/elsewhere/entirely/page.module.scss', '.hero{color:red}');
     expect(a.classes).toEqual(b.classes);
   });
+
+  test.each([["html[data-theme='light']"], ['html[data-theme="light"]']])(
+    'a compiled module keeps the quoted value in :global(%s)',
+    (selector) => {
+      const out = compileStylesheet(TOKENS, `:global(${selector}) .card{color:red}`);
+      expect(out.css).toMatch(/^html\[data-theme=(['"])light\1\] \.card_[0-9a-f]{8}\{color:red\}$/);
+    },
+  );
 
   test('a plain stylesheet keeps its class names', () => {
     const out = compileStylesheet('/srv/demo/apps/web/shared/tokens.scss', '.hero{color:red}');

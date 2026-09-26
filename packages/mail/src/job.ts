@@ -21,6 +21,7 @@ export const mailMessageSchema: StandardSchemaV1<unknown, MailMessage> = t.objec
   cc: t.array(t.email).optional(),
   bcc: t.array(t.email).optional(),
   unsubscribeUrl: t.url.optional(),
+  unsubscribeOneClick: t.boolean.optional(),
   idempotencyKey: t.string.optional(),
 });
 

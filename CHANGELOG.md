@@ -8,7 +8,43 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **mail:** `send(…, { unsubscribeUrl, unsubscribeOneClick: false })` keeps the GET-only
+  `List-Unsubscribe` header and drops `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, for an
+  unsubscribe URL that is a confirm page and cannot honour RFC 8058's one-click POST. Default
+  `true`: every existing send, and its idempotency key, is unchanged. The header gate still covers
+  the URL. The `mail.send` job's input gained the optional field, so an app that sends mail sees
+  `X_MANIFEST_BREAKING` on `jobs.mail.send.input` in `contract-diff` until it re-commits its
+  baseline with `x manifest`. A queued payload from before the upgrade still parses.
+- **cli:** `x shot --expect-status <n>` — the document status a shot is ok with, for photographing
+  a not-found page on purpose. `verdict.json` carries `status` and `expectedStatus`.
+
+### Changed
+
+- **render:** stylesheet compiles are cached on disk under `.x/cache/sass/`, keyed by the Sass
+  version, the file and its source, and valid only while every file the compile read (partials,
+  `@ultimat3/ui/tokens`) hashes the same. Every `.module.scss` re-parsed the token package on each
+  load: on notificado.co (144 sheets) that was 4.8 s wall / 11 s CPU of every app load. A warm load
+  compiles nothing and never evaluates Sass (0.27 s). `x manifest --check` on the demo app: 4.2 s →
+  1.3 s. The same load serves `x build`, then `x verify`, then `x dev`. An unwritable directory
+  costs only the cache (#537).
+- **cli:** inside `x verify`, a parallel suite that runs beside the static steps (`live`, `job`,
+  `e2e`, `eval`) now defaults to one worker per core (`sharedWorkers()`, still memory-bounded)
+  instead of 1.5×. The static steps are CPU-bound processes of their own, and the extra half
+  doubled their time (#537). `unit` and `contract` run alone and keep 1.5×. `--workers` still
+  overrides both.
+
+### Fixed
+
+- **render:** `:global(html[data-theme='light'])` in a CSS module compiled to
+  `html[data-theme=\u00000\u0000]` — shown as `html[data-theme=0]` — so the rule matched nothing.
+  A quoted string inside a `:global()` was masked twice and restored once. Both quote styles now
+  round-trip byte for byte.
+- **cli:** `x shot` reported a 404 page as ok. A document that answers anything but 2xx now fails
+  the verdict, and the summary names the status (`--expect-status` for the page you mean to
+  photograph). Subresource failures are still counted and still don't gate. `--matrix` marks the
+  cell failed.
 
 ## 22.3.0 - 2026-09-25
 

@@ -91,6 +91,33 @@ describe('buildMimeMessage', () => {
     ]);
   });
 
+  test('unsubscribeOneClick: false keeps the GET-only List-Unsubscribe and drops the POST promise', () => {
+    const url = 'https://postly.test/u/confirm?t=1';
+    // A confirm page: GET shows a button and must never unsubscribe (scanners prefetch), so it
+    // cannot honour RFC 8058's POST — the header that promises one must not be sent.
+    expect(
+      messageHeaders(baseMessage({ unsubscribeUrl: url, unsubscribeOneClick: false })),
+    ).toEqual({
+      'Auto-Submitted': 'auto-generated',
+      'List-Unsubscribe': `<${url}>`,
+    });
+    // Default and explicit `true` stay one-click.
+    for (const unsubscribeOneClick of [undefined, true]) {
+      expect(
+        messageHeaders(baseMessage({ unsubscribeUrl: url, unsubscribeOneClick }))[
+          'List-Unsubscribe-Post'
+        ],
+      ).toBe('List-Unsubscribe=One-Click');
+    }
+    const built = buildMimeMessage(
+      baseMessage({ unsubscribeUrl: url, unsubscribeOneClick: false }),
+      baseOptions(),
+    );
+    const headerBlock = built.slice(0, built.indexOf('\r\n\r\n'));
+    expect(headerBlock).toContain(`List-Unsubscribe: <${url}>`);
+    expect(headerBlock).not.toContain('List-Unsubscribe-Post');
+  });
+
   test('Cc is omitted entirely when there is no cc list', () => {
     const built = buildMimeMessage(baseMessage(), baseOptions());
     const headerBlock = built.slice(0, built.indexOf('\r\n\r\n'));

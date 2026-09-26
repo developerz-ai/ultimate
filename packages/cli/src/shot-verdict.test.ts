@@ -313,9 +313,10 @@ describe('unit · the artifact says what it does not know', () => {
         inputFor({
           network: [
             entry({ status: 200 }),
-            entry({ status: 404 }),
-            entry({ status: 503 }),
-            entry(),
+            // Subresources: the DOCUMENT's own status gates (below), a failed favicon never does.
+            entry({ url: 'http://localhost:4321/favicon.ico', resourceType: 'image', status: 404 }),
+            entry({ url: 'http://localhost:4321/api/feed', resourceType: 'fetch', status: 503 }),
+            entry({ url: 'http://localhost:4321/pending.js', resourceType: 'script' }),
           ],
         }),
       ),
@@ -415,5 +416,57 @@ describe('unit · every key x shot renders is in the catalog', () => {
   test('no rendered line falls back to ⟦key⟧', () => {
     const known = new Set(messageKeys());
     expect(SHOT_MESSAGE_KEYS.filter((key) => !known.has(key))).toEqual([]);
+  });
+});
+
+describe('unit · the document status gates, unless it was the status asked for', () => {
+  test('a 404 document fails the verdict and the summary names the status', () => {
+    const verdict = buildVerdict(inputFor({ network: [entry({ status: 404 })] }));
+    expect([verdict.ok, verdict.status, verdict.expectedStatus]).toEqual([false, 404, null]);
+    expect(shotSummary(verdict)).toContain('HTTP 404');
+    expect(shotSummary(verdict)).toContain('2xx');
+    const json = verdictJson(verdict) as Record<string, unknown>;
+    expect([json['status'], json['expectedStatus']]).toEqual([404, null]);
+  });
+
+  test('a 500 fails too, and any 2xx passes', () => {
+    expect(buildVerdict(inputFor({ network: [entry({ status: 500 })] })).ok).toBe(false);
+    expect(buildVerdict(inputFor({ network: [entry({ status: 200 })] })).ok).toBe(true);
+    expect(buildVerdict(inputFor({ network: [entry({ status: 204 })] })).ok).toBe(true);
+  });
+
+  test('--expect-status 404 makes the not-found page the subject, and a 200 then fails', () => {
+    const expected = buildVerdict(
+      inputFor({ network: [entry({ status: 404 })], expectStatus: 404 }),
+    );
+    expect([expected.ok, expected.expectedStatus]).toEqual([true, 404]);
+    const found = buildVerdict(inputFor({ network: [entry({ status: 200 })], expectStatus: 404 }));
+    expect(found.ok).toBe(false);
+    expect(shotSummary(found)).toContain('expected 404');
+  });
+
+  test('an unseen status never gates and is never reported as a 200', () => {
+    const verdict = buildVerdict(inputFor({ network: [] }));
+    expect([verdict.ok, verdict.status]).toEqual([true, null]);
+  });
+
+  test('the photographed document is matched by url — a 404 script does not fail the shot', () => {
+    const verdict = buildVerdict(
+      inputFor({
+        network: [
+          entry({ status: 200 }),
+          entry({ url: 'http://localhost:4321/x.js', resourceType: 'script', status: 404 }),
+          entry({ url: 'http://localhost:4321/frame', status: 404 }),
+        ],
+        finalUrl: 'http://localhost:4321/app#top',
+        requestedUrl: 'http://localhost:4321/app#top',
+      }),
+    );
+    expect([verdict.ok, verdict.status, verdict.failed]).toEqual([true, 200, 2]);
+  });
+
+  test('the status read on landing stands in when the ring evicted the document', () => {
+    const verdict = buildVerdict(inputFor({ network: [], landedStatus: 404 }));
+    expect([verdict.ok, verdict.status]).toEqual([false, 404]);
   });
 });

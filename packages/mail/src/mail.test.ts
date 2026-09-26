@@ -11,9 +11,11 @@ import { blocks } from './blocks';
 import {
   createMemoryDriver,
   type MemoryMailDriver,
+  messageHeaders,
   resetMailDriver,
   setMailDriver,
 } from './driver';
+import { mailMessageSchema } from './job';
 import {
   defineMail,
   mailFor,
@@ -162,6 +164,27 @@ test('cc and bcc are accepted and the unsubscribe url reaches both parts', async
   ]);
   expect(entry?.message.html).toContain('https://example.test/unsubscribe?token=abc');
   expect(entry?.message.text).toContain('https://example.test/unsubscribe?token=abc');
+});
+
+test('unsubscribeOneClick: false reaches the envelope and survives the queue schema', async () => {
+  await send(
+    basicMail,
+    { name: 'Ada' },
+    {
+      to: 'ada@example.test',
+      locale: 'en',
+      unsubscribeUrl: 'https://example.test/unsubscribe/confirm?token=abc',
+      unsubscribeOneClick: false,
+    },
+  );
+  const sent = memory.sent[0]?.message;
+  expect(sent?.unsubscribeOneClick).toBe(false);
+  if (sent === undefined) expect.unreachable('expected one sent message');
+  const parsed = await mailMessageSchema['~standard'].validate(sent);
+  expect('issues' in parsed && parsed.issues !== undefined).toBe(false);
+  expect(messageHeaders(sent)['List-Unsubscribe-Post']).toBeUndefined();
+  // The footer link is the same GET confirm page.
+  expect(sent.html).toContain('https://example.test/unsubscribe/confirm?token=abc');
 });
 
 describe('the registry', () => {

@@ -189,6 +189,12 @@ const CATALOG = {
   'cli.shot.ok': '{route} clean — {islands} island(s) mounted, nothing logged and nothing threw',
   'cli.shot.errors': '{route}: {errors} console error(s) — verdict.json names each one',
   'cli.shot.redirected': '{route} redirected to {url} — the picture is not the route asked for',
+  // After the redirect and before everything else: a 404 page can be spotless, and a picture of
+  // "Not found" read as the route is the capture lying about its subject.
+  'cli.shot.status':
+    '{route} answered HTTP {status}, expected {expected} — the picture is that response, not the page',
+  'cli.shot.document': '  document HTTP {status}',
+  'cli.shot.documentUnknown': '  document status not seen — the driver recorded no response for it',
   'cli.shot.server.booted': '  server   booted for this shot on {url}',
   'cli.shot.server.reused': '  server   the x dev already running on {url}',
   'cli.shot.canvas': '  canvas   {width}x{height}',
