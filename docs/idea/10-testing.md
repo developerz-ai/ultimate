@@ -30,7 +30,7 @@ Not shipped, and not implied: per-file truncation, a `readonly` savepoint mode, 
 
 | Claim | Reality |
 |---|---|
-| `x verify` runs tests in parallel | **yes**, since the gate was routed through the same machinery `x test` uses. `unit`, `contract`, `job` and `eval` each run one `bun test --parallel=N`; `--workers N` overrides the default |
+| `x verify` runs tests in parallel | **yes**, since the gate was routed through the same machinery `x test` uses. `unit`, `contract`, `job` and `eval` each run `bun test --parallel=N`, in sequential batches of at most 24 files a worker so the peak memory is the width's and not the corpus's; `--workers N` overrides the default |
 | every step runs in parallel | **no.** `live` and `e2e` are serial by declaration (`SERIAL_TYPES`), and `x test live` reads that same list `As of 2026-08-27` — it did not until then, so the command a human types while debugging ran eight processes over files the gate ran one over. A logical replication slot is named at the Postgres **cluster** level, not inside a database, so a per-worker database does not isolate it and two workers race `pg_create_logical_replication_slot`. `e2e` runs against one built `dist/` and one browser profile |
 | a scaffolded app tests in parallel | **still no.** `x new` writes `"test": "bun test"` ([`templates/scaffold-repo.ts`](../../packages/cli/src/templates/scaffold-repo.ts)) |
 | parallel is faster here | **measured, and it depends on the machine.** On this 12-core box `unit` went 63s → 24s at 454 files. On a free 4-core `ubuntu-latest`: serial 43.2s, 3 workers 44.8s, 6 workers 34.8s — which is why the default oversubscribes rather than leaving a core spare |

@@ -3,8 +3,8 @@
 // is never a race, and a race is never a selection bug.
 
 import type { Runner } from './exec';
-import { execOutput } from './exec';
 import type { Finding } from './output';
+import { runBatches, testBatches } from './test-batches';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
@@ -26,7 +26,8 @@ export interface ParallelRunOptions {
 }
 
 /**
- * ONE `bun test --parallel=N`, not N processes this file spawns and packs itself.
+ * `bun test --parallel=N` per batch (`test-batches.ts`), not N processes this file spawns and
+ * packs itself.
  *
  * Two things make an arbitrary partition safe here and neither is optional. `--parallel` implies
  * `--isolate`, so every FILE gets a fresh module registry — half a dozen registries in this
@@ -42,9 +43,17 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
   const files = options.files.map((file) => file.path);
   const workers = Math.max(1, Math.min(Math.trunc(options.workers), files.length || 1));
   const envOverrides = testEnvOverrides(options.root, options.env ?? Bun.env);
-  const result = await options.runner(testArgs({ files, workers }), {
-    cwd: options.root,
-    ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
+  // Batched exactly as `x test` batches the same selection at the same width, so the gate's
+  // `fix:` line — `x test <type> --workers N` — reruns the very processes that failed.
+  const batches = testBatches(files, workers);
+  const result = await runBatches({
+    runner: options.runner,
+    batches,
+    argsFor: (batch) => testArgs({ files: batch, workers: Math.min(workers, batch.length) }),
+    options: {
+      cwd: options.root,
+      ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
+    },
   });
   // `failureOf` is `x test`'s own, imported rather than restated: the two paths report the SAME
   // failed `bun test`, so a second literal here is two `cause:` strings and two `fix:` lines free
@@ -56,9 +65,11 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
     ok: findings.length === 0,
     findings,
     workers,
-    tests: countsOf([result]),
+    // Per batch: each process printed its own summary, and one parse of the joined text would
+    // read only the last one.
+    tests: countsOf(result.results),
     // Only on failure: a green run's summary is already the step table's, and the reader of a red
     // gate needs the assertion diff.
-    ...(result.ok ? {} : { output: execOutput(result) }),
+    ...(result.ok ? {} : { output: result.output }),
   };
 }

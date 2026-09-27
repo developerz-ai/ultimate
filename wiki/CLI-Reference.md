@@ -488,19 +488,35 @@ the two edits that resolve it. A repo with no such file is not ratcheted, and a 
 not run is refused by the `manifest` step (`X_CONFIG_INVALID`) rather than silently covering
 nothing. Removing a line is allowed; it just has to be a diff somebody reviews.
 
-`--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` run as one
+`--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` run as
 `bun test --parallel=N`, each worker with its own database; `live` and `e2e` are serial by
 declaration and say so in the output. **`x test live` and `x test e2e` obey the same declaration,
 `As of 2026-08-27`** — they did not, so `x test live --workers 8` ran eight processes over the very
 files `x verify` ran one over. `--workers` is accepted there and clamps to 1. That clamp read the
 POSITIONAL, so the bare `x test --workers 8` still widened over the same files until 2026-09; the
 selection is now partitioned by each file's own type. The default oversubscribes the cores —
-`max(2, min(ceil(cpus * 1.5), floor(freemem / 1 GiB)))` — because leaving a core spare measured
-*slower than not sharding at all* on a 4-core runner, where the split's own cost is not covered by
-three workers. **No fixed ceiling of 8, `As of 22.3`**: it held a 12-core box with 30 GB free to 8.
-Free memory is the bound instead (`WORKER_BYTES` in `packages/cli/src/test-workers.ts`, measured: a
-marginal worker costs ~0.45 GB of peak RSS). `--workers` accepts 2 to 64 on `x verify` and 1 to 64
+`max(2, min(ceil(cpus * 1.5), floor(freemem * 0.6 / 1.5 GiB)))` — because leaving a core spare
+measured *slower than not sharding at all* on a 4-core runner, where the split's own cost is not
+covered by three workers. **No fixed ceiling of 8, `As of 22.3`**: it held a 12-core box with 30 GB
+free to 8. Memory is the bound instead (`WORKER_BYTES` and `MEMORY_SHARE` in
+`packages/cli/src/test-workers.ts`): 1.5 GiB a worker — the largest single worker measured on a
+768-file PGlite corpus — against 60% of what was available when the run started, because nothing
+else on the box stops growing once it has. `--workers` accepts 2 to 64 on `x verify` and 1 to 64
 on `x test`; an explicit width is the caller's call and is not held to memory.
+
+**A large selection runs in batches, `As of 22.6.2`.** A `--parallel` worker's heap grows with
+every file it runs and is returned only when its `bun test` exits, so one process over the whole
+corpus peaked higher with every test an app added — and the default of 22.6.1 (18 workers on a
+12-core box with 35 GB free, 1 GiB budgeted a worker) took a 45 GB machine with no swap down.
+A pass now runs as `ceil(files / (workers x 24))` `bun test --parallel=N` processes in sequence,
+the files dealt round-robin over the sorted list, so the peak depends on the width and not on the
+corpus. notificado.co's `x test unit`, 768 files, 12 cores: 22.6.1's default (18 workers, one
+process) peaked at 17.1-18.2 GB of process tree in 132-167s; 22.6.2's default (13-14 workers,
+3 batches) at 11.3-12.2 GB in 152-163s, on a box shared at load 30-40. At the same width the split
+costs no wall time within noise (12 workers: 150-158s unbatched, 147s in three batches). The split is a pure function of the file list and the width,
+so the `fix:` a failure prints (`x test unit --workers N`) reruns the same batches; a
+`--worker I` rerun is one process over one shard and is never split. `--json` carries `batches`
+when a pass was split, and each batch's output is kept under a line naming it.
 
 **Bun owns the pool, `As of 2026-08-27`.** The CLI used to pack the files into N bins itself
 (largest-first greedy over file SIZE) and spawn one `bun test` per bin; `--parallel=N` hands each
@@ -985,7 +1001,7 @@ x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empt
 | `--filter` | string | — | only files whose path contains this substring — or ANY of several, comma-separated (`--filter apps/web/app/billing/,apps/web/app/case/`), in one run. An empty item (`a,,b`) is refused: `''` matches every path |
 | `--allow-empty` | boolean | off | a selection that matches no test file exits **0**, spawns nothing, and says so (`no test file matches … — 0 test file(s) ran`, `data.files: 0`, `data.empty: true`) instead of `X_TEST_NO_FILES`. For a runner that computes the selection; a hand-typed typo stays red without it |
 | `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
-| `--workers` | string | `ceil(cpus * 1.5)`, held to free memory | worker count, 1 to 64; each worker gets its own template-cloned database |
+| `--workers` | string | `ceil(cpus * 1.5)`, held to 60% of free memory at 1.5 GiB a worker | worker count, 1 to 64; each worker gets its own template-cloned database |
 | `--worker` | string | — | run only shard I of an N-way split of the selection, serially — one CI job's share, and the flag `--workers` bounds |
 | `--affected` | boolean | off | narrow the selection to the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |

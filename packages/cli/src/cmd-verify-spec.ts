@@ -2,7 +2,13 @@
 // read it without loading `cmd-verify.ts`, which `registry.ts` imports only when the command runs.
 
 import type { CommandSpec } from './parse';
-import { WORKER_CEILING, WORKER_FLOOR, WORKER_OVERSUBSCRIBE } from './test-workers';
+import {
+  MEMORY_SHARE,
+  WORKER_BYTES,
+  WORKER_CEILING,
+  WORKER_FLOOR,
+  WORKER_OVERSUBSCRIBE,
+} from './test-workers';
 
 export const verifySpec: CommandSpec = {
   name: 'verify',
@@ -16,7 +22,7 @@ export const verifySpec: CommandSpec = {
     {
       name: 'workers',
       type: 'string',
-      summary: `test processes per parallel step (default: ${WORKER_OVERSUBSCRIBE}x CPUs rounded up, held to free memory; min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
+      summary: `test processes per parallel step (default: ${WORKER_OVERSUBSCRIBE}x CPUs rounded up, held to ${MEMORY_SHARE * 100}% of free memory at ${WORKER_BYTES / 2 ** 30} GiB a worker; min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
     },
     {
       name: 'only',
