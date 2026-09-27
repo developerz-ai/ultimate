@@ -7,7 +7,11 @@
 
 import type { ActionPathStyle, ActionRoute } from '@ultimat3/core';
 import { ACTION_PATH_STYLES, actionRoute } from '@ultimat3/core';
-import { ActionHttpPathInvalidError, ActionPathStyleInvalidError } from './errors-http';
+import {
+  ActionHttpPathInvalidError,
+  ActionPathDerivedEarlyError,
+  ActionPathStyleInvalidError,
+} from './errors-http';
 import { defOf } from './invoke';
 import { seatedActions } from './registry-store';
 
@@ -35,6 +39,14 @@ const PINNED_PATH = /^(\/[a-z0-9][a-z0-9._~-]*)+$/;
 
 let style: ActionPathStyle = 'resource';
 
+/**
+ * Every path handed out BY NAME (`derivePath`, `actionHttpPath('name')`), by name. A caller may
+ * keep the string — a page's form target in a module-level const — so a later style that moves
+ * one of these is a URL no route serves; `setActionPathStyle` refuses it instead. Bounded by the
+ * number of action names, and a path the new style keeps is not a stale one.
+ */
+const handedOut = new Map<string, string>();
+
 /** The app's declared style — `'resource'` until `defineApi` says otherwise. */
 export function actionPathStyle(): ActionPathStyle {
   return style;
@@ -45,13 +57,22 @@ export function setActionPathStyle(next: unknown): ActionPathStyle {
   if (!ACTION_PATH_STYLES.some((known) => known === next)) {
     throw new ActionPathStyleInvalidError(next);
   }
-  style = next as ActionPathStyle;
+  const declared = next as ActionPathStyle;
+  if (declared !== style) {
+    const stale = [...handedOut]
+      .map(([name, was]) => ({ name, was, now: routeUnder(declared, name, pinOf(name)).path }))
+      .filter((row) => row.now !== row.was)
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    if (stale.length > 0) throw new ActionPathDerivedEarlyError({ style: declared, stale });
+  }
+  style = declared;
   return style;
 }
 
 /** Test seam, beside `resetRegistry`. */
 export function resetActionPathStyle(): void {
   style = 'resource';
+  handedOut.clear();
 }
 
 /** Refuses a pin that is not a static lowercase path, or one under the framework's `/_x`. */
@@ -81,11 +102,20 @@ export function assertPinnedPath(name: string, path: unknown): void {
  * verb and resource stay the style's — they label the operation, the path is where it lives.
  */
 export function routeFor(name: string, pin: string | undefined): ActionRoute {
-  const derived = actionRoute(name, style);
-  return pin === undefined ? derived : { ...derived, path: pin };
+  return routeUnder(style, name, pin);
 }
 
-/** The route a registered NAME is served at: its pin when it declares one, else the style's. */
+const routeUnder = (under: ActionPathStyle, name: string, pin: string | undefined): ActionRoute => {
+  const derived = actionRoute(name, under);
+  return pin === undefined ? derived : { ...derived, path: pin };
+};
+
+/**
+ * The route a registered NAME is served at: its pin when it declares one, else the style's. The
+ * one by-name answer an app is given, so it is the one recorded — see `handedOut`.
+ */
 export function resolveActionRoute(name: string): ActionRoute {
-  return routeFor(name, pinOf(name));
+  const route = routeFor(name, pinOf(name));
+  handedOut.set(name, route.path);
+  return route;
 }

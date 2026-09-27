@@ -84,13 +84,16 @@ export const ERROR_STATUS = {
   X_WEBHOOK_SIGNATURE_INVALID: 401,
   X_WEBHOOK_SIGNATURE_STALE: 401,
   // Boot refusals of the app's HTTP declaration (a bearer mount, an action's pinned path or the
-  // app's path style, the openapi block, the MCP oauth block, a page's `post`) — never a request's
+  // app's path style or a path derived before it, the openapi block, the MCP oauth block or an
+  // idempotent tool shadowing its key argument, a page's `post`) — never a request's
   // answer; 500 if one ever escaped into a response: the deployment is wrong, the caller is not.
   X_BEARER_MOUNT_INVALID: 500,
   X_ACTION_HTTP_PATH_INVALID: 500,
   X_ACTION_PATH_STYLE_INVALID: 500,
+  X_ACTION_PATH_DERIVED_EARLY: 500,
   X_OPENAPI_CONFIG_INVALID: 500,
   X_MCP_OAUTH_INVALID: 500,
+  X_MCP_IDEMPOTENCY_KEY_SHADOWED: 500,
   X_ROUTE_POST_INVALID: 500,
   // @ultimat3/action — the code every primitive throws when the CALLER's input fails the schema
   // the primitive declared. 400 because that is what the published OpenAPI operation promises for

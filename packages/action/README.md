@@ -185,6 +185,12 @@ One rule per app, declared once — `defineApi({ http: { pathStyle } })` — plu
   `derivePath(name)` (pin-aware) and `actionHttpPath(action | name)`. The browser's `rpc()` derives
   from the name alone, so it is told the style: `rpc({ baseUrl, pathStyle: 'readable' })`; a pinned
   action is called through `action.client()`, which holds the pin.
+- **The style is read when the path is derived, so derive it late.** The scan evaluates
+  `apps/web/api/index.ts` before any other module, so a page or admin view already sees the declared
+  style. A module the index itself imports runs before its `defineApi` call: a module-level
+  `const SIGN_OUT = derivePath('signOut').path` there captures the default style, and the
+  declaration refuses the switch with `X_ACTION_PATH_DERIVED_EARLY`, naming it. Derive inside the
+  component or function instead.
 
 ```ts
 import { defineApi } from '@ultimat3/action';

@@ -27,6 +27,35 @@ export class ActionPathStyleInvalidError extends UltimateError {
   }
 }
 
+/**
+ * A path was handed out under one style and the app then declared another. The string is already
+ * captured — a module-level `const SIGN_OUT = derivePath('signOut').path` — so re-deriving the
+ * registry cannot reach it: that form would post to a URL no route serves. Refused at the
+ * declaration, naming every stale capture, rather than answered 404 in production.
+ */
+export class ActionPathDerivedEarlyError extends UltimateError {
+  constructor(input: {
+    readonly style: string;
+    readonly stale: readonly {
+      readonly name: string;
+      readonly was: string;
+      readonly now: string;
+    }[];
+  }) {
+    const shown = input.stale
+      .slice(0, 5)
+      .map((row) => `${row.name} (${row.was}, now ${row.now})`)
+      .join(', ');
+    const more = input.stale.length > 5 ? ` and ${input.stale.length - 5} more` : '';
+    super({
+      code: 'X_ACTION_PATH_DERIVED_EARLY',
+      cause: `pathStyle '${input.style}' was declared after a path was already derived under the previous style: ${shown}${more} — any module that kept that string holds a URL no route serves`,
+      fix: 'derive the path where it is used — inside the component or function, never in a module-level const — or import the module that calls defineApi({ http: { pathStyle } }) before the one that derives it',
+      meta: { style: input.style, names: input.stale.map((row) => row.name) },
+    });
+  }
+}
+
 export class OpenApiConfigInvalidError extends UltimateError {
   constructor(reason: string) {
     super({

@@ -74,6 +74,7 @@ That line is the entire integration. From the existing declaration:
 | output schema | `output` |
 | description | `mcp.description` |
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical |
+| idempotency | `idempotent: true` adds one optional argument, `idempotencyKey` (string, 1–255), to the tool's `inputSchema`. `tools/call` removes it from the arguments and passes it to `invoke` as the key — the `Idempotency-Key` header's MCP twin, filed under action, caller and key — so a retry with the same key replays the first result and the same key with other arguments is `X_IDEMPOTENCY_CONFLICT`. The action's input never sees it. An argument, not `params._meta`: a model-driven client cannot set `_meta`, and the retry that needs the key is the agent's |
 | audit trail | the same OTel span and log line as an HTTP call |
 
 The projected tool's `run` **is** `invoke` — the same entry point the HTTP route calls (`packages/mcp/src/projectable.ts`). Policy runs inside it, so there is nothing to keep in sync. The projection itself adds **no** MCP scope: a second gate hard-coded into the projection would sit in front of the only gate that matters, and the two would eventually disagree. `defineAppMcp`'s `scopes:` map may still attach one from outside — a property of the connection's token, never invented by the projection.
@@ -312,6 +313,7 @@ $ x verify --json
 |---|---|---|
 | `X_MCP_TOOL_UNKNOWN` | no visible tool answers that name (role-hidden and absent are indistinguishable) | `tools/list` to read the catalog this caller may use |
 | `X_MCP_ARGS_INVALID` | arguments failed the tool's declared JSON Schema | re-read `inputSchema` from `tools/list` and resend |
+| `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an `idempotent: true` action's input declares `idempotencyKey`, the tool argument reserved for the retry key — refused at boot | rename the action's input field |
 | `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | reconnect with a token whose scopes include the one `cause` names — the app's `resolveToken(token)` is what returns them — or drop that scope from `defineAppMcp({ scopes })`. Scopes are fixed for the life of a connection, so a grant takes effect on the next one. **Not** `x token grant`: that command is `PLANNED` and exits `X_NOT_IMPLEMENTED` |
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool the server does not project | spell the name as one of the tools the server actually projects, or drop it from that `scopes` entry |
 | `X_MCP_SCOPE_CONFLICT` | two `scopes:` entries claim the same tool | keep the tool under the single scope a token must hold for it, and remove the other entry |
