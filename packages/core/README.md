@@ -498,6 +498,7 @@ never a silently wrong page.
 |---|---|
 | Signature | truncated HMAC-SHA256, compared in constant time |
 | Secret | `configureCursorSigning()` at boot, else `ULTIMATE_CURSOR_SECRET`. **Read when a cursor is signed, never at import** — an app whose `openSecrets()` sets the variable during boot would otherwise sign every cursor with the dev key. Rotating it invalidates every open cursor |
+| Also keys | `keyedFingerprint(value, purpose)` — `h1:<key id>:<HMAC>` over `canonicalJson`, under a per-purpose key derived from this secret; the fingerprint to PERSIST (`@ultimat3/action`'s idempotency `requestHash`). `compareFingerprint` answers `match` / `mismatch` / `unverifiable` (other key), and still checks a legacy bare `fingerprint()` exactly. Rotating the secret makes in-window stored fingerprints `unverifiable` |
 | Signed, not encrypted | the client already has these rows; what it must not do is *invent* a position |
 | `usesDevCursorSecret()` | true while the shipped dev key is in use |
 | `resetCursorSigning()` | test seam: forget `configureCursorSigning` and fall back to the environment |

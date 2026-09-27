@@ -4,7 +4,7 @@
  * a value or a failure — and a concurrent duplicate is refused rather than run twice, because a
  * double charge is worse than a 409.
  */
-import { fingerprint, isUltimateError, logger } from '@ultimat3/core';
+import { compareFingerprint, isUltimateError, keyedFingerprint, logger } from '@ultimat3/core';
 import {
   IdempotencyConflictError,
   IdempotencyNotSharedError,
@@ -57,7 +57,12 @@ export function isIdempotencyStatus(value: string): value is IdempotencyStatus {
 export interface IdempotencyRecord {
   readonly id: string;
   readonly key: string;
-  /** Fingerprint of the parsed input — a reused key with a new payload is a bug. */
+  /**
+   * KEYED fingerprint of the parsed input (`keyedFingerprint`, HMAC under the app's signing
+   * secret) — a reused key with a new payload is a bug. Never a bare hash: the record outlives the
+   * request by a day, and an unkeyed hash of an input holding a short account number is an
+   * offline oracle for that number to anyone who can read the table.
+   */
   readonly requestHash: string;
   readonly status: IdempotencyStatus;
   readonly value: unknown;
@@ -172,6 +177,9 @@ export function assertIdempotencyScope(
   if (store.scope !== 'shared') throw new IdempotencyNotSharedError(store.scope);
 }
 
+/** The `purpose` the request fingerprint is keyed under — one derived key, for this use only. */
+export const IDEMPOTENCY_FINGERPRINT_PURPOSE = 'action.idempotency.request';
+
 export interface IdempotentOutcome<T> {
   readonly value: T;
   readonly replayed: boolean;
@@ -196,11 +204,9 @@ export async function withIdempotency<T>(
   input: unknown,
   run: () => Promise<T>,
 ): Promise<IdempotentOutcome<T>> {
-  const requestHash = fingerprint(input);
+  const requestHash = keyedFingerprint(input, IDEMPOTENCY_FINGERPRINT_PURPOSE);
   const { record, created } = await store.reserve(key, requestHash);
-  if (record.requestHash !== requestHash) {
-    throw new IdempotencyConflictError(key, 'payload-mismatch');
-  }
+  if (record.requestHash !== requestHash) assertSamePayload(key, record.requestHash, input);
   if (!created) {
     if (record.status === 'in-flight') throw new IdempotencyConflictError(key, 'in-flight');
     if (record.status === 'failed') throw new IdempotencyReplayedFailureError(key, record.failure);
@@ -222,6 +228,21 @@ export async function withIdempotency<T>(
   // lapsed cannot land on the replacement that reclaimed the key.
   await store.settle(key, value, record.id);
   return { value, replayed: false };
+}
+
+/**
+ * A stored fingerprint that is not this request's exact string. A legacy unkeyed one (a row
+ * written before keying) is still checked exactly. One keyed under a secret this process does not
+ * hold — the signing secret rotated inside the window — cannot be checked either way, and is
+ * answered by its STATUS alone: replay, never re-run. Refusing it would 409 every honest retry
+ * across a rotation; running it would be the double charge. What is lost for that window only is
+ * the "same key, different body" diagnosis, and a warning says so.
+ */
+function assertSamePayload(key: string, stored: string, input: unknown): void {
+  const verdict = compareFingerprint(stored, input, IDEMPOTENCY_FINGERPRINT_PURPOSE);
+  if (verdict === 'mismatch') throw new IdempotencyConflictError(key, 'payload-mismatch');
+  if (verdict === 'unverifiable')
+    logger.warn('action.idempotency.fingerprint-unverifiable', { key });
 }
 
 /**

@@ -509,6 +509,12 @@ export {
 } from './intl-cache';
 export { isIsoDateTime } from './iso-date';
 export { isJsonObject } from './json-object';
+export type { FingerprintMatch } from './keyed-fingerprint';
+export {
+  compareFingerprint,
+  KEYED_FINGERPRINT_VERSION,
+  keyedFingerprint,
+} from './keyed-fingerprint';
 export type {
   HealthPayload,
   HealthReport,

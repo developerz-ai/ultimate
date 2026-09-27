@@ -95,9 +95,12 @@ top-level `UltimateError` use in `error-codes.ts`.
   derives their retry classification from the same set. It is a `SIDE_EFFECTS_ANCHORS` entry.
 - `timing-safe-equal.ts` is the one constant-time comparison (`@ultimat3/auth`, `@ultimat3/storage`).
 - **`canonical-json.ts`: `canonicalJson` is INJECTIVE and `fingerprint` is SHA-256/16 of it** — the
-  hash every sharing key is taken over (`action`'s `requestHash`, `query`'s `queryHash`, `realtime`'s
-  `qid`). `NaN`, `±Infinity` and `-0` are bare tokens; `Date`, `Map` and `Set` are TAGGED. Never a
+  hash every in-memory sharing key is taken over (`query`'s `queryHash`, `realtime`'s `qid`).
+  `NaN`, `±Infinity` and `-0` are bare tokens; `Date`, `Map` and `Set` are TAGGED. Never a
   fourth copy, never parseable (`@ultimat3/action`'s `stableStringify` is the document form).
+- **A PERSISTED fingerprint is `keyedFingerprint`** (`keyed-fingerprint.ts`: HMAC under a per-purpose
+  key derived from the cursor secret, `h1:` versioned) — `action`'s idempotency `requestHash`. An
+  unkeyed prefix in a table is an offline oracle for a short account number in the input.
 - **`decimal-order.ts`'s `compareDecimalText` answers `undefined` for a non-decimal**, and only a
   caller that knows the column's kind may ask (`@ultimat3/entity`'s `compareByKind`) — never
   `@ultimat3/query`, whose `OrderKey` has no kind.
