@@ -68,17 +68,25 @@ export interface BatchedRun {
 /**
  * Run `batches` one after another — never `Promise.all`, which would put every batch's workers on
  * the machine at once and undo the bound — and keep going after a red one, because the caller
- * asked for the whole selection and a report that stops at the first failure hides the rest.
+ * asked for the whole selection and a report that stops at the first failure hides the rest. The
+ * one exception is a caller that asked to stop (`stopOnFailure`, i.e. `-- --bail`).
  */
 export async function runBatches(input: {
   readonly runner: Runner;
   readonly batches: readonly (readonly string[])[];
   readonly argsFor: (files: readonly string[]) => readonly string[];
   readonly options: Parameters<Runner>[1];
+  /**
+   * Launch no further batch once one is red. Set for a caller-forwarded `--bail`: Bun stops a
+   * process at its threshold, and without this the next batch would start over from zero.
+   */
+  readonly stopOnFailure?: boolean;
 }): Promise<BatchedRun> {
   const results: ExecResult[] = [];
   for (const files of input.batches) {
-    results.push(await input.runner(input.argsFor(files), input.options));
+    const result = await input.runner(input.argsFor(files), input.options);
+    results.push(result);
+    if (!result.ok && input.stopOnFailure === true) break;
   }
   const first = results.find((result) => !result.ok);
   const output =

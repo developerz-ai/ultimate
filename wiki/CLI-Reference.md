@@ -515,7 +515,8 @@ process) peaked at 17.1-18.2 GB of process tree in 132-167s; 22.6.2's default (1
 3 batches) at 11.3-12.2 GB in 152-163s, on a box shared at load 30-40. At the same width the split
 costs no wall time within noise (12 workers: 150-158s unbatched, 147s in three batches). The split is a pure function of the file list and the width,
 so the `fix:` a failure prints (`x test unit --workers N`) reruns the same batches; a
-`--worker I` rerun is one process over one shard and is never split. `--json` carries `batches`
+`--worker I` rerun is one process over one shard and is never split, and neither is a `-- --watch`
+run; a forwarded `-- --bail` starts no batch after a red one. `x test --json` carries `batches`
 when a pass was split, and each batch's output is kept under a line naming it.
 
 **Bun owns the pool, `As of 2026-08-27`.** The CLI used to pack the files into N bins itself

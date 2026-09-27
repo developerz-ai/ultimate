@@ -266,6 +266,7 @@ const CATALOG = {
   'cli.test.empty': 'no test file matches {selection} — 0 test file(s) ran (--allow-empty)',
   'cli.test.pass': '{files} test file(s) on {workers} worker(s) passed in {ms}ms',
   'cli.test.batch': '── batch {batch} of {batches} · {files} file(s) ──',
+  'cli.test.batches': ' · {batches} batches',
   'cli.test.sampled': 'sampled {kept} of {total} {type} file(s)',
   'cli.test.type.fail': '{type} — {failed} of {workers} shard(s) failed',
   'cli.test.type.pass': '{type} — {files} test file(s) on {workers} worker(s) passed in {ms}ms',

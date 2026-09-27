@@ -246,6 +246,9 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     // Every run this spawns is isolated (`--parallel` or `--isolate`) unless the caller opted out.
     ...((options.passthrough ?? []).includes('--no-isolate') ? {} : { [ISOLATED_TEST_ENV]: '1' }),
   };
+  const passthrough = options.passthrough ?? [];
+  const watching = passthrough.includes('--watch');
+  const bailing = passthrough.some((arg) => arg === '--bail' || arg.startsWith('--bail='));
   const passes = testPasses({
     files: options.files,
     workers: options.workers,
@@ -261,12 +264,14 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   for (const pass of passes) {
     const files = pass.files.map((file) => file.path);
     // A `--worker` rerun is one process over one shard and is never split: shard i of the rerun
-    // must be the same files as shard i of the run it reproduces. Every other pass is spent in
-    // `test-batches.ts`' batches, one `bun test` after another.
-    const batches = only === undefined ? testBatches(files, pass.workers) : [files];
+    // must be the same files as shard i of the run it reproduces. Nor is `-- --watch`, which never
+    // exits, so a second batch would never start. Every other pass is spent in `test-batches.ts`'
+    // batches, one `bun test` after another.
+    const batches = only === undefined && !watching ? testBatches(files, pass.workers) : [files];
     const result = await runBatches({
       runner: options.runner,
       batches,
+      stopOnFailure: bailing,
       argsFor: (batch) =>
         testArgs({
           files: batch,
@@ -292,7 +297,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       only === undefined ? `${pass.workers} worker(s)` : `shard ${only} of ${pass.workers}`;
     steps.push({
       name: `${pass.type === undefined ? label : `${pass.type} · ${label}`} · ${files.length} files${
-        batches.length > 1 ? ` · ${batches.length} batches` : ''
+        batches.length > 1 ? msg('cli.test.batches', { batches: batches.length }) : ''
       }`,
       ok: result.ok,
       durationMs: result.durationMs,

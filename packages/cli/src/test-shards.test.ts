@@ -164,6 +164,31 @@ describe('unit · x test execution', () => {
     expect((result.data as { reproduce: string }).reproduce).toBe('x test --workers 4');
   });
 
+  test('-- --watch is never batched: the first process never exits, so a second never starts', async () => {
+    const { calls, runner } = recorder();
+    const files = corpus(BATCH_FILES_PER_WORKER * 4 * 2 + 3);
+    await runShards({ root: '/repo', runner, files, workers: 4, passthrough: ['--watch'] });
+    expect(calls.length).toBe(1);
+    expect(filesIn(calls[0]?.command ?? [])).toHaveLength(files.length);
+  });
+
+  test('-- --bail starts no batch after a red one', async () => {
+    const { calls, runner } = recorder(true);
+    const files = corpus(BATCH_FILES_PER_WORKER * 4 * 2 + 3);
+    const result = await runShards({
+      root: '/repo',
+      runner,
+      files,
+      workers: 4,
+      passthrough: ['--bail=1'],
+    });
+    expect(calls.length).toBe(1);
+    expect(result.ok).toBe(false);
+    const all = recorder(true);
+    await runShards({ root: '/repo', runner: all.runner, files, workers: 4 });
+    expect(all.calls.length).toBe(3);
+  });
+
   test('a --worker rerun is never batched: shard i is the same files as in the run', async () => {
     const { calls, runner } = recorder();
     await runShards({
