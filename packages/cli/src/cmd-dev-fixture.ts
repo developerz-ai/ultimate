@@ -131,6 +131,32 @@ export function Page() {
 }
 `,
 
+  // An ISR page whose body is a COMPONENT in another file — the shape every real page has. What the
+  // component-reload test rewrites: the page module's own bytes never change, so only evicting what
+  // imports the component re-evaluates it, and only clearing the ISR store stops the first render
+  // from answering for the rest of the process (notificado.co, 2026-09-27).
+  'apps/web/site/news/headline.tsx': `export function Headline() {
+  return <h1>headline one</h1>;
+}
+`,
+
+  'apps/web/site/news/page.tsx': `import { defineRoute } from '@ultimat3/render';
+import { Headline } from './headline';
+
+export const config = defineRoute({
+  render: 'isr',
+  revalidate: { ttl: '1h' },
+  offline: 'runtime',
+  hydrate: 'never',
+  budget: { js: '0kb' },
+  meta: () => ({ title: 'News', description: 'A page whose component is edited while x dev runs' }),
+});
+
+export function Page() {
+  return <main><Headline /></main>;
+}
+`,
+
   // A stylesheet the page imports, because that import is what registers it — and the document's
   // inline `<style>` is what the CSP has to name. Without one this file served no styled page and
   // could not have caught the policy that blanked every deployed app.

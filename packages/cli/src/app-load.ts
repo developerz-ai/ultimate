@@ -6,12 +6,12 @@
 // Bun ships no `Bun.*` path API: `relative`/`sep` turn an absolute scan hit into the app-root-
 // relative POSIX path every finding and every manifest fact is keyed by.
 import { join, relative, resolve, sep } from 'node:path';
-import { listActions, registerActions } from '@ultimat3/action';
-import { describeEntities } from '@ultimat3/entity';
+import { isAction, isMutator, listActions, registerActions } from '@ultimat3/action';
+import { describeEntities, registeredEntities } from '@ultimat3/entity';
 import { localeConfig } from '@ultimat3/i18n';
-import { registeredJobs, registeredTasks } from '@ultimat3/jobs';
+import { isJobHandle, isTaskHandle, registeredJobs, registeredTasks } from '@ultimat3/jobs';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
-import { listQueries, registerQueries } from '@ultimat3/query';
+import { isQuery, listQueries, registerQueries } from '@ultimat3/query';
 import type { RouteConfig } from '@ultimat3/render';
 import {
   isRouteConfig,
@@ -28,6 +28,13 @@ import {
 // accident one refactor away from compiling every app's `.tsx` to `React.createElement`. The named
 // import is a value import, so the side effect holds without the bare line it replaced.
 import { setStylesheetRoot } from '@ultimat3/render/server';
+import {
+  evictChanged,
+  pinModule,
+  resetReloadGraph,
+  trackModule,
+  trackStylesheets,
+} from './app-reload-graph';
 import { API_INDEX, APP_CONFIG_FILE } from './app-root';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
@@ -89,30 +96,29 @@ export interface LoadedApp {
 
 // A module is imported and registered once per PROCESS: `import()` caches, and a registry rejects
 // a second registration of a name. So a rescan refreshes the facts DERIVED from the registries —
-// the manifest and its build id — and, for exactly one kind of module, the primitive itself. A
-// ROUTE module whose source changed is imported again under `?x-reload=<hash>`, the one cache key
-// Bun honours, and `registerRoute` replaces the entry for the same file; its own imports resolve
-// to the modules already cached, which is what makes it safe. An action, a query or an entity
-// stays registered once: its exports are held by every module that imported it, a second instance
-// would be a duplicate name in its registry, and no re-import can rebind the importers — those
-// edits need a restart. Until 2026-09-07 the route module took the same rule, so a save re-bundled
-// the island (`buildIslands` reads the disk) and kept the FIRST page component — a new island
-// rendering under an old page's props, which is the mixed generation `x dev` served.
+// the manifest and its build id — and, for exactly one kind of module, the registration itself. A
+// rescan first evicts every changed module, and everything that imports it, from Bun's registry
+// (`app-reload-graph.ts`), so the loop's own `import()` evaluates the new chain; a ROUTE module
+// that comes back as a different instance has its entry replaced. A module that defines a
+// primitive (an action, a query, an entity, a job, a task) is pinned instead — its exports are held
+// by every importer and a second instance would be a duplicate name in its registry — so those
+// edits still need a restart. Until 2026-09-27 only the route module itself was re-imported, under
+// `?x-reload=<hash>`, and every component it imports stayed the cached one: `x dev` logged
+// "reloaded" and served the old component.
 const registered = new Set<string>();
 // A registration failure is sticky: the file is never retried, so the finding is replayed.
 const failures = new Map<string, Finding>();
-// Route modules only: the hash of the source each one registered from, which is what a rescan
-// compares the disk against. A save that leaves the bytes alone re-imports nothing.
-const routeSources = new Map<string, bigint>();
-
-/** The query a re-imported route module carries. `module-loader.ts`'s filter admits it. */
-const RELOAD_QUERY = 'x-reload';
+// Route modules only: the module instance each one registered from. A rescan that imports the same
+// instance registers nothing; a different one (the file or something it imports was evicted) is
+// the page the author saved.
+const routeModules = new Map<string, Record<string, unknown>>();
 
 /** Test seam, and what `x dev` would call if it ever restarted the registries in-process. */
 export function resetAppLoad(): void {
   registered.clear();
   failures.clear();
-  routeSources.clear();
+  routeModules.clear();
+  resetReloadGraph();
 }
 
 /**
@@ -156,6 +162,9 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   setAssetResolver((path) => assets.resolve(path).url);
   const files: string[] = [];
   const findings: Finding[] = [];
+  // A rescan: whatever changed on disk since the last one, and everything importing it, leaves
+  // Bun's module registry before the loop below imports it again.
+  if (registered.size > 0) await evictChanged(root);
 
   for (const absolute of await appModulePaths(root)) {
     // A SEGMENT, never a substring: an app checked out under
@@ -168,13 +177,16 @@ export async function loadApp(root: string): Promise<LoadedApp> {
     if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
       continue;
     }
-    // The source is read BEFORE the import, and only on the file's first pass — a rescan of a
-    // registered module reads nothing here. A route entry is bound to the bytes the module was
-    // evaluated from, and a read AFTER the import cannot know which bytes those were: a save
-    // landing between the two bound V1's component to V2's hash, so the next scan saw nothing to
-    // do and served V1 until the save after. Read first, the worst case is one re-import the
-    // next tick, of a file that did change.
-    const snapshot = registered.has(absolute) ? undefined : await Bun.file(absolute).text();
+    // The source is read BEFORE the import, on the file's first pass and for every route module —
+    // a rescan of any other registered module reads nothing here. What is recorded is bound to the
+    // bytes the module was evaluated from, and a read AFTER the import cannot know which bytes
+    // those were: a save landing between the two bound V1's component to V2's hash, so the next
+    // scan saw nothing to do and served V1 until the save after. Read first, the worst case is one
+    // re-import the next tick, of a file that did change.
+    const first = !registered.has(absolute) && !failures.has(absolute);
+    const snapshot =
+      first || routeModules.has(absolute) ? await Bun.file(absolute).text() : undefined;
+    if (first && snapshot !== undefined) await trackModule(absolute, snapshot, root);
     let module: Record<string, unknown>;
     try {
       module = (await import(absolute)) as Record<string, unknown>;
@@ -188,6 +200,7 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   }
 
   files.sort();
+  await trackStylesheets(root);
   // An app that imported NOTHING and reported nothing is a registry every later step reads as
   // empty-and-fine. With an `app.config.ts` beside it, that is never what the author meant.
   if (
@@ -226,8 +239,8 @@ const emptyAppFinding = (root: string): Finding => ({
 
 /**
  * Registers a module once; every later call replays whatever the first one reported — except for
- * a route module, which a later call re-registers from disk when its source has changed.
- * `snapshot` is the source read before the module's first import, and absent on every later call.
+ * a route module, which a later call re-registers when the import handed back a new instance.
+ * `snapshot` is the source read before this import: always for a first pass and a route module.
  */
 async function register(
   absolute: string,
@@ -237,22 +250,41 @@ async function register(
 ): Promise<Finding | undefined> {
   const previous = failures.get(absolute);
   if (previous !== undefined) return previous;
-  if (snapshot === undefined) return reloadRoute(absolute, file);
+  if (registered.has(absolute)) return reloadRoute(absolute, file, module, snapshot);
   registered.add(absolute);
   try {
     const config = module['config'];
     const route = isRouteConfig(config) ? config : undefined;
-    if (route !== undefined) registerRouteModule(file, module, route, snapshot);
+    if (route !== undefined && snapshot !== undefined) {
+      registerRouteModule(file, module, route, snapshot);
+      routeModules.set(absolute, module);
+    }
+    if (definesPrimitive(module, route !== undefined) || file === API_INDEX) pinModule(absolute);
     registerActions(module);
     registerQueries(module);
-    // Only a route module is ever re-imported, so only a route module's hash is worth keeping.
-    if (route !== undefined) routeSources.set(absolute, Bun.hash.wyhash(snapshot));
     return undefined;
   } catch (error) {
     const finding: Finding = { ...findingFrom(error), at: file };
     failures.set(absolute, finding);
     return finding;
   }
+}
+
+/**
+ * A module whose instance must be the one every importer and every registry holds. A route module
+ * may export an action beside its page — it has always been re-imported, and its actions stayed
+ * registered from the first instance — so only an entity, a job or a task pins a route.
+ */
+function definesPrimitive(module: Record<string, unknown>, route: boolean): boolean {
+  // The registry holds an entry per entity; the value a module exports is the entry's `core`.
+  const entities = new Set<unknown>(registeredEntities().flatMap((entry) => [entry, entry.core]));
+  return Object.values(module).some(
+    (value) =>
+      entities.has(value) ||
+      isJobHandle(value) ||
+      isTaskHandle(value) ||
+      (!route && (isAction(value) || isQuery(value) || isMutator(value))),
+  );
 }
 
 /**
@@ -283,25 +315,26 @@ function registerRouteModule(
 }
 
 /**
- * A registered route module, on a rescan: imported again if the file no longer hashes to what it
- * registered from, and left alone otherwise. A save that will not import is a finding at the file
- * and NOT a sticky one — the next save is tried again — and the entry it would have replaced stays
- * registered, so the last page that did import is the one served meanwhile.
+ * A registered route module, on a rescan: re-registered when the import handed back a different
+ * instance — the file or something it imports was evicted — and left alone otherwise. A save that
+ * will not import never reaches here (the loop reports it, not sticky), so the last page that did
+ * import is the one served meanwhile.
  */
-async function reloadRoute(absolute: string, file: string): Promise<Finding | undefined> {
-  const registeredFrom = routeSources.get(absolute);
-  if (registeredFrom === undefined) return undefined;
-  const source = await Bun.file(absolute).text();
-  const hash = Bun.hash.wyhash(source);
-  if (hash === registeredFrom) return undefined;
+function reloadRoute(
+  absolute: string,
+  file: string,
+  module: Record<string, unknown>,
+  source: string | undefined,
+): Finding | undefined {
+  const held = routeModules.get(absolute);
+  if (held === undefined || held === module || source === undefined) return undefined;
   try {
-    const module = (await import(`${absolute}?${RELOAD_QUERY}=${hash}`)) as Record<string, unknown>;
     const config = module['config'];
     // A file that stopped being a route is not un-registered — the table has no verb for it, and a
-    // deleted file needs a restart either way. Its hash is recorded so the same save is not
-    // re-imported on every later tick.
+    // deleted file needs a restart either way. Its instance is recorded so the same save is not
+    // re-registered on every later tick.
     if (isRouteConfig(config)) registerRouteModule(file, module, config, source);
-    routeSources.set(absolute, hash);
+    routeModules.set(absolute, module);
     return undefined;
   } catch (error) {
     return { ...findingFrom(error), at: file };
