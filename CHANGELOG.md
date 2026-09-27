@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.6.2 - 2026-09-27
+
 ### Fixed
 
 - **cli:** `x test` and `x verify`'s parallel test steps have a bounded peak memory that no longer
@@ -21,6 +25,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   11.3–12.2 GB at the new one (14 workers, 3 batches), the same wall within noise (152–163s against
   132–167s). Counts, failures and the `fix:` reproduction hold across batches; `--json` carries
   `batches` when a pass was split, and `--worker I` reruns are never split.
+
+### Commits
+
+- fix(cli): bound test-run peak memory — sequential batches, honest per-worker budget (#563)
 
 ## 22.6.1 - 2026-09-27
 
