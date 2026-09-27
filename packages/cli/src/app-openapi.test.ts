@@ -3,7 +3,7 @@
 // 2026-09 the file had only the actions, and every `GET /_x/query/<name>` the server mounted was
 // a route the spec had never heard of.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove.
 import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
@@ -45,6 +45,13 @@ describe('openApiJson', () => {
 });
 
 describe('the complete document and a mount document', () => {
+  // Before as well as after: `declare()` switches the path style, which refuses any path an EARLIER
+  // file handed out by name and never reset (`X_ACTION_PATH_DERIVED_EARLY`) — this block's premise
+  // is a registry holding only what it declares, whatever ran before it in the process.
+  beforeEach(() => {
+    resetRegistry();
+    resetActions();
+  });
   afterEach(() => {
     resetRegistry();
     resetActions();

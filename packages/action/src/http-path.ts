@@ -111,11 +111,21 @@ const routeUnder = (under: ActionPathStyle, name: string, pin: string | undefine
 };
 
 /**
- * The route a registered NAME is served at: its pin when it declares one, else the style's. The
- * one by-name answer an app is given, so it is the one recorded — see `handedOut`.
+ * The route a registered NAME is served at, for the framework's own projections — the route
+ * table, the OpenAPI operation, a deprecation's successor. Re-derived on every call and never
+ * held by app code, so nothing is recorded: a test that mounted routes must not make a later
+ * test's style declaration look like a stranded capture.
+ */
+export function servedActionRoute(name: string): ActionRoute {
+  return routeFor(name, pinOf(name));
+}
+
+/**
+ * The same answer, handed to APP code by name (`derivePath`, `actionHttpPath('name')`) — which
+ * may keep the string, so it is the one recorded; see `handedOut`.
  */
 export function resolveActionRoute(name: string): ActionRoute {
-  const route = routeFor(name, pinOf(name));
+  const route = servedActionRoute(name);
   handedOut.set(name, route.path);
   return route;
 }

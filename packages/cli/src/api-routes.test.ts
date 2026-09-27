@@ -1,7 +1,7 @@
 // One table, both halves. `x dev` and a container mount `apiRoutes()` and nothing else, so a
 // surface that answers in one and 404s in the other has to break this test first.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { action, defineApi, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
 import { allow } from '@ultimat3/policy';
 import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
@@ -11,6 +11,12 @@ import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 
 const Input = t.object({ orgId: t.uuid });
 
+// Before as well as after: a test here declares `pathStyle: 'readable'`, which refuses any path an
+// earlier file handed out by name and never reset — the registry is this file's premise, not theirs.
+beforeEach(() => {
+  resetActions();
+  resetQueries();
+});
 afterEach(() => {
   resetActions();
   resetQueries();

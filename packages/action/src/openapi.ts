@@ -9,9 +9,10 @@
 
 import type { AnyAction } from './action';
 import { operationTagOf, toOpenApiOperation } from './http';
+import { servedActionRoute } from './http-path';
 import { actionName } from './invoke';
 import { type JsonSchemaObject, jsonSchemaOf, sortSchema } from './json-schema';
-import { derivePath, inputSchemaName, outputSchemaName, PROBLEM_SCHEMA_NAME } from './naming';
+import { inputSchemaName, outputSchemaName, PROBLEM_SCHEMA_NAME } from './naming';
 import { listActions } from './registry';
 import { stableStringify } from './stable';
 
@@ -50,7 +51,7 @@ export function buildOpenApi(options: BuildOpenApiOptions = {}): OpenApiDocument
 
   for (const target of actions) {
     const name = actionName(target);
-    const { path } = derivePath(name);
+    const { path } = servedActionRoute(name);
     paths[path] = { post: toOpenApiOperation(target) };
     schemas[inputSchemaName(name)] = sortSchema(jsonSchemaOf(target.input));
     schemas[outputSchemaName(name)] = sortSchema(jsonSchemaOf(target.output));
