@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.6.1 - 2026-09-27
+
 ### Fixed
 
 - **cli:** the module scan evaluates `apps/web/api/index.ts` FIRST, before every other app module.
@@ -31,6 +35,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   than `params._meta`: model-driven clients cannot set `_meta`. An idempotent action whose input
   already declares `idempotencyKey` is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot. New export
   `MCP_IDEMPOTENCY_KEY_ARG`.
+
+### Commits
+
+- fix: API declaration loads first; early-derived path refusal; idempotency keys over MCP (#561)
 
 ## 22.6.0 - 2026-09-27
 
