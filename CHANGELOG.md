@@ -8,7 +8,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **cli:** `x dev` now hands the app's `apps/<app>/runtime.ts` overrides to `startServices`, as the
+  container boot (`withAppRuntime`) always did — so `storage` (and `jobs`, `mail`, …) are the ones
+  development runs. It built its own embedded disk before, so an app's `/_storage` routes and its
+  actions wrote to two places in `x dev` and to one in production.
+- **cli:** `x g route <path>` takes a URL path — `x g route casos/[id]/notificar` writes
+  `apps/web/app/casos/[id]/notificar/page.tsx`. Each segment is a word or `[param]`/`[...rest]`;
+  `..`, `.` and empty segments stay `X_CLI_BAD_FLAG`. It refused any `/` before, so a nested page
+  was generated flat and moved by hand.
+- **cli:** a PWA screenshot or shortcut-icon `src` under `/assets/` resolves to its content-hashed
+  URL, as `asset()` does in a page; a missing file is `X_ASSET_MISSING` at boot. The manifest took
+  `src` verbatim while the site serves an asset only at its hashed URL, so an app had to hash its
+  own screenshots or ship a 404 in the install sheet.
 
 ## 22.3.6 - 2026-09-26
 

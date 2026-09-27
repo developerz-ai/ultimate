@@ -188,6 +188,11 @@ pwa: {
 `defineConfig` refuses a relative `id`, shortcut `url` or screenshot `src` — a browser drops those
 in silence. A record missing a locale falls back to the default locale's entry.
 
+A screenshot or shortcut-icon `src` under `/assets/` is a file in `apps/web/site/assets/`, and the
+manifest names its **content-hashed** URL (`/assets/pwa/wide-es-co.1a2b3c4d.png`), exactly as
+`asset()` does in a page — the site serves an asset only there (`As of 22.4`). A missing file is
+`X_ASSET_MISSING` at boot; any other `src` is published as written.
+
 No icon-generator service, no 30-file `public/` directory to maintain. Theme and background colours come from semantic [theme](Theming) tokens, never a raw hex.
 
 ### Offline fallback is required in the type

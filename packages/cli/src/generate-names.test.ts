@@ -25,6 +25,15 @@ describe('unit · a generator name is a safe directory and a valid identifier', 
     expect(readFeature('blog-post', 'action')).toBe('blog-post');
   });
 
+  test('a route name is a URL path: nested and dynamic segments land under their directory', () => {
+    for (const bad of ['../evil', 'a/../b', 'a//b', 'a\\b', 'casos/[id', 'casos/./x', '[]']) {
+      expect(refusal(() => readName(bad, 'route')).code).toBe('X_CLI_BAD_FLAG');
+    }
+    expect(readName('/casos/[id]/notificar', 'route')).toBe('casos/[id]/notificar');
+    const files = generate({ kind: 'route', name: readName('casos/[id]/notificar', 'route') });
+    expect(files.map((file) => file.path)).toContain('apps/web/app/casos/[id]/notificar/page.tsx');
+  });
+
   test('a reserved word or a leading digit is refused, with a name that works in the fix', () => {
     const reserved = refusal(() => readName('delete', 'action'));
     expect(reserved.code).toBe('X_CLI_BAD_FLAG');

@@ -410,15 +410,15 @@ describe('unit · x dev boots the app', () => {
     expect(server.mcp).toBe('/mcp');
   });
 
-  // `x dev` passed no app middleware at all until 2026-09-05 — only the read-replica override —
-  // so an app's chain reached no development process. The fixture's `apps/web/runtime.ts` stamps
-  // every response; the stamp on a page the app serves is the chain, composed and running.
-  test("the app's apps/web/runtime.ts middleware runs in development", async () => {
+  // `x dev` passed no app middleware until 2026-09-05 and no app DISK until 22.4 (it built its own):
+  // the fixture's `apps/web/runtime.ts` stamps every response and declares the one disk, `appdisk`.
+  test("the app's apps/web/runtime.ts middleware and storage run in development", async () => {
     const page = await fetchDev('/pricing');
     expect(page.status).toBe(200);
     expect(page.headers.get('x-dev-runtime')).toBe('app');
     const served = page.headers.get('x-ultimate-build'); // BUILD_ID: reported must be served
     expect(`${server.buildId} ${String(served)}`).toBe('stamped-7 stamped-7');
+    expect(server.runtime.storage.diskNames).toEqual(['appdisk']);
   });
 
   // Under the embedded database a subscription took its snapshot and then heard nothing — PGlite
