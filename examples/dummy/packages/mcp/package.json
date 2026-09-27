@@ -19,9 +19,9 @@
   "dependencies": {
     "@postly/core": "0.0.1",
     "@postly/domain": "0.0.1",
-    "@ultimat3/action": "22.5.1",
-    "@ultimat3/core": "22.5.1",
-    "@ultimat3/mcp": "22.5.1",
-    "@ultimat3/testing": "22.5.1"
+    "@ultimat3/action": "22.6.0",
+    "@ultimat3/core": "22.6.0",
+    "@ultimat3/mcp": "22.6.0",
+    "@ultimat3/testing": "22.6.0"
   }
 }
