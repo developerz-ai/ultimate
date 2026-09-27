@@ -25,6 +25,17 @@ export const config = defineRoute({
 | Owns | render mode, hydration timing, metadata, offline strategy |
 | Never | touch the DB directly, hold business logic, or omit `meta.description` in `site/` — that is a build error |
 
+### `post` — a page URL that also answers `POST`
+
+`defineRoute({ render: 'ssr', …, post: 'unsubscribeOnboarding' })` (`As of 22.6.0`) mounts `POST`
+at the page's own path, answered by that action — its policy, idempotency and redirect — with the
+URL's query merged over the posted fields (the query wins a shared name: it is the URL the server
+minted). The RFC 8058 case: the mail client POSTs `List-Unsubscribe=One-Click` to `/correos/baja?t=…`
+and the action receives `{ t, 'List-Unsubscribe': 'One-Click' }`; the page's `GET` stays the confirm
+page, and its form can post to itself with no JavaScript. Declare optional input keys for what the
+client posts. Not an export name, or on `render: 'static'`: `X_ROUTE_POST_INVALID` at declaration;
+naming no registered action: the same code at boot.
+
 ## The descriptor
 
 `route` is the one primitive whose façade is a **normalized descriptor** rather than a set of projection methods, because a route declares no behaviour to project. It is read by the router, the prerenderer, the sitemap and the budget check — and is designed to be read by `sw.js` generation, which no build calls yet ([#362](https://github.com/developerz-ai/ultimate/issues/362)). The descriptor's job is to hand all of them **one shape** so none of them branches. There is no `.describe()` on a route either — `describeRoutes()` is the one route list.

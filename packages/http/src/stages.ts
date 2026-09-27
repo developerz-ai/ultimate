@@ -203,10 +203,13 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
     },
 
     auth: async (request, ctx) => {
-      if (hooks.authenticate !== undefined) {
+      // A route's own authenticator REPLACES the app's, never runs beside it: a bearer mount must
+      // not also accept the session cookie the app's hook would resolve (`RouteMeta.authenticate`).
+      const authenticate = ctx.route?.meta.authenticate ?? hooks.authenticate;
+      if (authenticate !== undefined) {
         // The hook says "anonymous" with null; the context says it with core's anonymous actor,
         // because `asCtx` publishes this object as a `Ctx` and `Ctx.actor` is never null.
-        ctx.actor = (await hooks.authenticate(request, ctx)) ?? anonymousActor();
+        ctx.actor = (await authenticate(request, ctx)) ?? anonymousActor();
         // The `user` rung the `locale` stage could not know: re-resolved through the same owners,
         // so a cookie the reader chose still beats a saved locale where i18n's order says it does.
         if (ctx.actor.locale !== undefined || ctx.actor.tz !== undefined) {

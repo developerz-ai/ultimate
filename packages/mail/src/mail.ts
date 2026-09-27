@@ -46,8 +46,10 @@ export interface SendOptions {
   readonly unsubscribeUrl?: string | undefined;
   /**
    * Default `true`: `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) rides with
-   * `List-Unsubscribe`. `false` when `unsubscribeUrl` is a GET confirm page that cannot take the
-   * one-click POST — the header and the footer link stay, the POST promise goes.
+   * `List-Unsubscribe`, and it is the supported path — one url for the header and the footer, a
+   * page whose `GET` confirms and whose `POST` unsubscribes (`defineRoute({ post: '<action>' })`).
+   * `false` is the fallback for a url that cannot take the POST: the header and the footer link
+   * stay, the POST promise goes.
    */
   readonly unsubscribeOneClick?: boolean | undefined;
   readonly idempotencyKey?: string | undefined;

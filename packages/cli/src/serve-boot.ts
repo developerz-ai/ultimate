@@ -8,7 +8,7 @@ import { configureLifecycle } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { describeRoutes } from '@ultimat3/render';
 import { createIsrController } from '@ultimat3/render/server';
-import { apiRoutes } from './api-routes';
+import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
@@ -169,7 +169,12 @@ async function webSurface(
   const served = servedStorage(runtime.storage);
   const routes: readonly Route[] = [
     ...apiRoutes(),
+    // The bearer doors onto a cut of the same routes (`defineApi({ http: { mounts } })`), counted
+    // on the store this boot's limiter uses, so one token's allowance is one number fleet-wide.
+    ...apiMountRoutes(options.runtime?.rateLimitStore ?? runtime.rateLimitStore),
     ...mcpMount.routes,
+    // The app's own plain routes (`apps/<app>/runtime.ts` `routes`), before any page can shadow one.
+    ...(options.runtime?.routes ?? []),
     ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...assetRoutes({
       root: options.root,
@@ -186,6 +191,8 @@ async function webSurface(
     ...seoRoutes({ env: options.env, site }),
     // The page's one socket: its worker script, served beside the islands for their reason.
     ...sync.routes,
+    // A page's `POST`, bound to an action (`defineRoute({ post })`) — beside the page's `GET`.
+    ...pagePostRoutes(),
     ...appRoutes({
       buildId,
       resolveIsland: (file) => islands.resolverFor(file),

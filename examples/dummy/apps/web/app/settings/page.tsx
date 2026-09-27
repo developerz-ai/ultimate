@@ -66,8 +66,13 @@ export const config = defineRoute({
    * idempotency header and the principal fence every other write takes. Most of the growth is the
    * transport's error registry and trace headers, where shrinking belongs. +712 B for the layout's
    * update banner, which could never appear while it was a server component.
+   *
+   * measured: 40,047 B (2026-09-27; `x build --target static`'s `.x/build-stats.json`), against
+   * 40,140 (`39.2kb`).
+   * why: the typed client's own growth, the same bytes `/pricing` states: the `'readable'` action
+   * path style and three new error titles in `@ultimat3/action`'s registry.
    */
-  budget: { js: '39kb', lcp: 1800 },
+  budget: { js: '39.2kb', lcp: 1800 },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

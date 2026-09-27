@@ -18,6 +18,7 @@ import type {
 } from './action';
 import { action, isAction } from './action';
 import type { Deprecation } from './deprecation';
+import type { ActionHttp } from './http-path';
 import { assertConflictClock } from './mutator-clock';
 import type { ActionPolicy } from './policy-gate';
 
@@ -94,6 +95,8 @@ export interface MutatorDef<
   readonly rateLimit?: ActionRateLimit;
   /** Same key, same meaning as an action's: `Deprecation`/`Sunset` on every response. */
   readonly deprecated?: Deprecation;
+  /** Same key, same meaning as an action's: `http: { path }` pins the URL. */
+  readonly http?: ActionHttp;
   readonly idempotent?: boolean;
   /**
    * The row a row-level `policy` decides about — an action's `row`, and dropped on the way into
@@ -164,6 +167,7 @@ export function mutator<
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
     ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),
     ...(def.deprecated === undefined ? {} : { deprecated: def.deprecated }),
+    ...(def.http === undefined ? {} : { http: def.http }),
     ...(row === undefined ? {} : { row: (args: ActionRowArgs<TInput>) => row.call(def, args) }),
     ...(def.idempotent === undefined ? {} : { idempotent: def.idempotent }),
     ...(def.audit === undefined ? {} : { audit: def.audit }),

@@ -6,7 +6,7 @@ import { join } from 'node:path'; // why: Bun ships no path-join primitive.
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { writeAppManifest } from './app-manifest';
-import { OPENAPI_FILE, openApiJson } from './app-openapi';
+import { openApiArtifacts } from './app-openapi';
 
 export interface ArtifactOptions {
   /** `x manifest --no-openapi` writes the manifest alone. */
@@ -31,9 +31,11 @@ export async function writeAppArtifacts(
     await writeAppManifest(root, manifest);
     written.push(MANIFEST_FILENAME);
   }
-  if (options.openapi && (await present(OPENAPI_FILE))) {
-    await Bun.write(join(root, OPENAPI_FILE), openApiJson(manifest));
-    written.push(OPENAPI_FILE);
+  // `openapi.json`, then each bearer mount's own document (`openapi.v1.json`), from one projection.
+  for (const artifact of options.openapi ? openApiArtifacts(manifest) : []) {
+    if (!(await present(artifact.file))) continue;
+    await Bun.write(join(root, artifact.file), artifact.text);
+    written.push(artifact.file);
   }
   return written;
 }

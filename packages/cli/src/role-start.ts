@@ -43,6 +43,7 @@ import { pgExecutorFor } from './runtime-queue';
 import type { RunningServices } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
 import { inlineStyleSources } from './style-csp';
+import { syncConnectSources } from './sync-url';
 import { DEV_BINDING } from './web-binding';
 
 // Declared beside the option types so `x dev`'s spec reads it without loading this module.
@@ -248,6 +249,9 @@ function startWeb(options: StartRolesOptions, mount?: WebSocketMount<SyncWs>): S
             extend: {
               'style-src': inlineStyleSources(options.inlineStyles ?? []),
               'script-src': inlineScriptSources(options.inlineScripts ?? []),
+              // A sync node on ANOTHER origin (`SYNC_URL`), admitted by that origin alone — the
+              // baseline's `'self'` is every same-origin rung.
+              'connect-src': syncConnectSources(options.env),
             },
           },
         },

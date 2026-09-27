@@ -33,6 +33,18 @@ describe('telemetry', () => {
     expect(span.ended).toBe(true);
   });
 
+  test('updateName renames a live span and is exported under the new name; ended spans keep theirs', () => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter, clock: frozenClock(0) });
+    const span = startSpan('GET');
+    span.updateName('GET /r/:token');
+    expect(span.name).toBe('GET /r/:token');
+    span.end();
+    span.updateName('GET /r/abc123');
+    expect(span.name).toBe('GET /r/:token');
+    expect(exporter.spans.map((one) => one.name)).toEqual(['GET /r/:token']);
+  });
+
   test('nested spans share the trace and record the parent', () => {
     const exporter = memoryExporter();
     configureTelemetry({ exporter, clock: frozenClock(0) });

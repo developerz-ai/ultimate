@@ -15,11 +15,16 @@
 import type { CacheTag } from '@ultimat3/cache';
 import { serializeTags } from '@ultimat3/cache';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
-import { OFFLINE_STRATEGIES } from '@ultimat3/core';
+import { OFFLINE_STRATEGIES, renderCauseValue } from '@ultimat3/core';
 import type { CacheHint } from '@ultimat3/http';
 import type { Translator } from '@ultimat3/i18n';
 import type { RouteMeta } from '@ultimat3/seo';
-import { RouteLoadInvalidError, RouteMetaMissingError, RouteOfflineMissingError } from './errors';
+import {
+  RouteLoadInvalidError,
+  RouteMetaMissingError,
+  RouteOfflineMissingError,
+  RoutePostInvalidError,
+} from './errors';
 import type { IslandSpec } from './island';
 import { drainDeclaredIslands } from './island';
 import { assertModeShape } from './modes';
@@ -188,7 +193,7 @@ export type LoadRequirement<TData> = RouteContext extends TData
  */
 export type RouteCache = 'no-store' | Omit<CacheHint, 'tags'>;
 
-/** The input shape of `defineRoute` — exactly the contract's ten keys, nothing else. */
+/** The input shape of `defineRoute` — exactly the contract's eleven keys, nothing else. */
 export interface RouteDefinition<TData = RouteData> {
   readonly render: RenderMode;
   readonly revalidate?: RevalidateConfig;
@@ -210,6 +215,15 @@ export interface RouteDefinition<TData = RouteData> {
   readonly meta: RouteMetaFn<TData>;
   readonly policy?: RouteGuard;
   readonly cache?: RouteCache;
+  /**
+   * Answer `POST` to THIS page's URL with the named action — its export name, as registered — with
+   * the URL's query merged over the posted fields. What an RFC 8058 one-click unsubscribe needs:
+   * the mail client POSTs `List-Unsubscribe=One-Click` to the very URL the footer links, and the
+   * action (its policy decides who may; `allow()` for an anonymous token link) does the work.
+   * The page itself stays the `GET`, and a form on it can post to its own URL with no JavaScript.
+   * Never on `static`: a file on disk has no process to answer a `POST`.
+   */
+  readonly post?: string;
 }
 
 /**
@@ -289,6 +303,8 @@ export function defineRoute<TData = RouteData>(
     );
   }
 
+  if (def.post !== undefined) assertPostBinding(def.post, def.render);
+
   const declaredMeta = def.meta;
   const declaredLoad = def.load;
   // Drained unconditionally, even when `hydrate` is stated: the list must not survive into the
@@ -321,10 +337,25 @@ export function defineRoute<TData = RouteData>(
     ...(def.prerender ? { prerender: def.prerender } : {}),
     ...(def.policy ? { policy: def.policy } : {}),
     ...(def.cache === undefined ? {} : { cache: def.cache }),
+    ...(def.post === undefined ? {} : { post: def.post }),
   };
 
   assertModeShape(config);
   return Object.freeze(config);
+}
+
+/** An export name, on a mode a process answers. The action's EXISTENCE is checked at boot. */
+function assertPostBinding(post: unknown, render: unknown): void {
+  if (typeof post !== 'string' || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(post)) {
+    throw new RoutePostInvalidError(
+      `post: ${renderCauseValue(post)} is not an action's export name`,
+    );
+  }
+  if (render === 'static') {
+    throw new RoutePostInvalidError(
+      `post: '${post}' sits on a render: 'static' page, a file on disk with no process to answer a POST`,
+    );
+  }
 }
 
 /** Only `index` is decided here; `follow` and the rest stay the author's. */

@@ -22,6 +22,7 @@ import type { ActionRateLimit, AnyAction } from './action';
 import type { Deprecation } from './deprecation';
 import { recordDeprecatedCall, renderDeprecation } from './deprecation';
 import { ActionDeprecationInvalidError } from './errors';
+import { actionPathStyle } from './http-path';
 import { actionName, defOf, invoke } from './invoke';
 import {
   derivePath,
@@ -31,7 +32,7 @@ import {
   schemaRef,
   toOperationId,
 } from './naming';
-import { admitsAnonymous, policyCapability } from './policy-gate';
+import { admitsAnonymous, policyCapability, policyPermissions } from './policy-gate';
 import { carriesRecords, recordResponse } from './record-wire';
 import { IDEMPOTENCY_HEADER } from './wire-headers';
 
@@ -56,8 +57,30 @@ async function writeOriginOf(req: UltimateRequest): Promise<string | undefined> 
  * kebab-cased (`updateUserProfile` -> `/api/user-profiles/update`). See `naming.ts`.
  */
 export function toRoute(target: AnyAction): Route {
+  return projectRoute(target, derivePath(actionName(target)).path, (req) => req.bodyRaw());
+}
+
+/**
+ * The same action, bound to a PAGE's URL for `POST` (`defineRoute({ post: 'unsubscribe' })`): the
+ * URL's query members merged OVER the body's, so an RFC 8058 one-click `POST /baja?t=…` with
+ * `List-Unsubscribe=One-Click` reaches the action as `{ t, 'List-Unsubscribe': 'One-Click' }`.
+ * The query wins a name both carry — it is the URL the server minted. Everything else is
+ * `toRoute`'s: the policy, the idempotency, the redirect a handler asks for, the problem document.
+ */
+export function toPostBinding(target: AnyAction, path: string): Route {
+  return projectRoute(target, path, async (req) => {
+    const body = await req.bodyRaw();
+    const fields = typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {};
+    return { ...fields, ...req.queryRaw() };
+  });
+}
+
+function projectRoute(
+  target: AnyAction,
+  path: string,
+  readInput: (req: UltimateRequest) => Promise<unknown>,
+): Route {
   const name = actionName(target);
-  const { path, resource } = derivePath(name);
   const def = defOf(target);
   // Rendered ONCE, at projection: a date that cannot become a header is a mount-time refusal,
   // not a surprise on the first request — the same rule `toBucket` follows for a rate limit.
@@ -80,7 +103,7 @@ export function toRoute(target: AnyAction): Route {
     //
     // The pipeline already parsed and size-capped the body; parsing it again here
     // would be a second, differently-behaved parser for the same bytes.
-    const raw = await req.bodyRaw();
+    const raw = await readInput(req);
     const key = def.idempotent === true ? req.header(IDEMPOTENCY_HEADER) : null;
     let replayed = false;
     // The header NAMES the write whatever the declaration, idempotent or not: a page sends one
@@ -138,7 +161,7 @@ export function toRoute(target: AnyAction): Route {
     // only ever added SCHEMA validation on top. `X_BODY_INVALID` keeps its job, which is a body
     // failing a plain `route.ts`'s own schema, where no primitive owns the input.
     cache: { mode: 'no-store', tags: tagKeys(def.cache?.invalidates ?? []) },
-    tags: [resource],
+    tags: [operationTagOf(target)],
     // Name AND numbers. The name alone selected a bucket the limiter's table never held, so
     // `bucketFor` fell through to `default` — 120 burst for an action that declared 5. The
     // numbers ride along and `withRouteBuckets` registers them at construction.
@@ -149,6 +172,22 @@ export function toRoute(target: AnyAction): Route {
   };
 
   return { method: 'POST', path, handler, meta };
+}
+
+/**
+ * The operation's one tag. Under `'resource'` it is the derived resource, as it always was. Under
+ * `'readable'` the path no longer names a resource, and guessing one from the words after the verb
+ * is the defect the style exists to end (`signIn` → `in`) — so the tag is the resource the POLICY
+ * names (`can('cases:create')` → `cases`): whose operation it is, which is what a reader groups by.
+ */
+export function operationTagOf(target: AnyAction): string {
+  const name = actionName(target);
+  if (actionPathStyle() === 'resource') return derivePath(name).resource;
+  const policy = defOf(target).policy;
+  // A grant first; an `allow('x:y')` names its resource in the label alone.
+  const named = policyPermissions(policy)[0] ?? policyCapability(policy);
+  const resource = /^([a-z0-9][a-z0-9_-]*):/i.exec(named)?.[1];
+  return resource === undefined ? 'api' : resource.toLowerCase();
 }
 
 export interface OpenApiOperation {
@@ -168,14 +207,13 @@ export interface OpenApiOperation {
 export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
   const name = actionName(target);
   const def = defOf(target);
-  const path = derivePath(name);
   const idempotent = def.idempotent === true;
   const deprecation = deprecationMetaFor(name, def.deprecated);
   const outputRef = schemaRef(outputSchemaName(name));
   const enveloped = carriesRecords(target.output);
   return {
     operationId: toOperationId(name),
-    tags: [path.resource],
+    tags: [operationTagOf(target)],
     summary: def.mcp?.description ?? name,
     ...(deprecation === undefined ? {} : { deprecated: true }),
     parameters: idempotent ? [IDEMPOTENCY_PARAMETER] : [],

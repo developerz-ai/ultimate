@@ -96,6 +96,13 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   },
 ];
 
+/**
+ * `GET /posts/:id` — the route pattern, or the bare method when nothing matched (OpenTelemetry's
+ * HTTP server span rule). Exported for the test that pins it; never built from `url.pathname`.
+ */
+export const routeSpanName = (method: string, routePath: string | undefined): string =>
+  routePath === undefined ? method : `${method} ${routePath}`;
+
 export interface PipelineDeps {
   readonly table: RouteTable;
   readonly config?: HttpConfig;
@@ -251,7 +258,11 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
       // a handler calls — sees the same context object without threading it by hand.
       return await runWithContext(asCtx(ctx), () =>
         withSpan(
-          `${ctx.method} ${url.pathname}`,
+          // The METHOD alone until the router has spoken — never the concrete path. A URL is
+          // attacker-chosen and carries capability tokens (`/r/<token>`, `/ics/<token>.ics`), and
+          // a span name is exported verbatim to every collector. `routeSpanName` renames it to
+          // the route PATTERN once one matched.
+          ctx.method,
           async (span) => {
             // This package's ONE metrics call site. `finally`, not the happy line: `execute`
             // answers every stage's throw with a problem response, but a counter that skipped the
@@ -262,6 +273,7 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
             try {
               const response = await execute(request, ctx, deadline);
               status = response.status;
+              span.updateName(routeSpanName(ctx.method, ctx.route?.path));
               // The root span of every request carried no attributes at all, so an exporter got a
               // name and a duration and nothing to correlate: which request, which outcome. These
               // four are what a reader joins on — `x-request-id` off the response, the status the
@@ -269,14 +281,16 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
               span.setAttributes({
                 'http.request_id': ctx.requestId,
                 'http.method': ctx.method,
-                'http.route': url.pathname,
+                // The PATTERN (`/r/:token`), the OpenTelemetry meaning of `http.route` — the
+                // concrete path leaked every token a URL carries into the trace store.
+                'http.route': ctx.route?.path ?? UNMATCHED_ROUTE,
                 'http.status_code': response.status,
               });
               return response;
             } finally {
-              // The span may carry the concrete path — a trace is sampled and thrown away. A
-              // metric is a stored series per label set, so this is the route PATTERN
-              // (`/posts/:id`), and `recordRequest` folds the status to its class for the same
+              // The route PATTERN (`/posts/:id`), exactly as the span above is named: a metric is
+              // a stored series per label set, and a concrete path is attacker-chosen and may
+              // carry a token. And `recordRequest` folds the status to its class for the same
               // reason. Nothing here is attacker-chosen or per-user.
               recordRequest({
                 method: ctx.method,

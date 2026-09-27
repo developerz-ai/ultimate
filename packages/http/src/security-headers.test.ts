@@ -43,8 +43,26 @@ describe('buildCsp()', () => {
     const csp = buildCsp(config);
     const connectSrc = csp.split('; ').find((part) => part.startsWith('connect-src'));
     expect(connectSrc).toContain("'self'");
-    expect(connectSrc).toContain('ws:');
+    expect(connectSrc).toContain('blob:');
     expect(connectSrc).toContain('https://api.example.com');
+  });
+
+  test('connect-src admits no bare ws:/wss: scheme — a socket to any host is an exfiltration path', () => {
+    const connectSrc = buildCsp(DEFAULT_SECURITY)
+      .split('; ')
+      .find((part) => part.startsWith('connect-src'));
+    expect(connectSrc).toBe("connect-src 'self' blob:");
+    const sources = connectSrc?.split(' ').slice(1) ?? [];
+    expect(sources).not.toContain('ws:');
+    expect(sources).not.toContain('wss:');
+  });
+
+  test('a cross-origin sync node is admitted by its exact origin through extend', () => {
+    const csp = buildCsp({
+      ...DEFAULT_SECURITY,
+      csp: { ...DEFAULT_SECURITY.csp, extend: { 'connect-src': ['wss://sync.example.com'] } },
+    });
+    expect(csp).toContain("connect-src 'self' blob: wss://sync.example.com");
   });
 
   test('config.csp.extend can introduce a directive absent from the baseline', () => {

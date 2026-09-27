@@ -55,6 +55,9 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
     "a mutator declares conflict: 'last-write-wins' and its entity has no number clock column",
   X_OUTPUT_INVALID: 'a handler returned a value its output schema rejects',
   X_RPC_FAILED: 'an RPC call failed without a problem+json body',
+  X_ACTION_HTTP_PATH_INVALID: "an action's pinned http.path is not a static lowercase path",
+  X_ACTION_PATH_STYLE_INVALID: "defineApi's http.pathStyle is not a known style",
+  X_OPENAPI_CONFIG_INVALID: "defineApi's openapi block cannot produce a valid document",
 };
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"

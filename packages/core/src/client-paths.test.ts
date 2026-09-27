@@ -29,6 +29,41 @@ describe('actionPath', () => {
   });
 });
 
+describe("actionPath, 'readable' style", () => {
+  test.each([
+    ['signIn', '/api/sign-in'],
+    ['signUp', '/api/sign-up'],
+    ['health', '/api/health'],
+    ['subscribe', '/api/subscribe'],
+    ['viewCustomer360', '/api/view-customer360'],
+    ['viewAsOrg', '/api/view-as-org'],
+    ['adminCreateCoupon', '/api/admin-create-coupon'],
+    ['recordManualPayout', '/api/record-manual-payout'],
+    ['publishPost', '/api/publish-post'],
+    ['SYNC_HTTP_URL', '/api/sync-http-url'],
+  ])('%s -> %s', (name, path) => {
+    expect(actionPath(name, 'readable')).toBe(path);
+  });
+
+  test('no plural is forced and verb/resource are the name split, not a guess', () => {
+    expect(actionRoute('updateUserProfile', 'readable')).toEqual({
+      verb: 'update',
+      resource: 'user-profile',
+      path: '/api/update-user-profile',
+    });
+    expect(actionRoute('health', 'readable')).toEqual({
+      verb: 'health',
+      resource: 'health',
+      path: '/api/health',
+    });
+  });
+
+  test("the default is still 'resource' — an app that declares nothing keeps every URL", () => {
+    expect(actionPath('signIn')).toBe('/api/ins/sign');
+    expect(actionPath('signIn', 'resource')).toBe('/api/ins/sign');
+  });
+});
+
 describe('queryPath', () => {
   test.each([
     ['liveFeed', '/_x/query/live-feed'],

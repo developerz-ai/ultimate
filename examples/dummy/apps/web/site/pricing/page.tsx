@@ -82,8 +82,15 @@ export const config = defineRoute({
    * why: the chunk is 130 B heavier than on 2026-09-22 from `@ultimat3/core`'s browser transport,
    * which it imports whole; the in-process dispatch `x build` measures `app/` routes with costs 0 B
    * here (it wraps `fetch` server-side only), so this raise is that 130 B and nothing else.
+   *
+   * measured: 22,098 B (2026-09-27; `x build --target static`'s `.x/build-stats.json`) — the
+   * island chunk 20,500 + the runtimes, against 22,118 (`21.6kb`).
+   * why: +481 B, all function the typed client now carries: core's `actionRoute` learned the
+   * `'readable'` path style (`rpc({ pathStyle })`, ~200 B), and `@ultimat3/action`'s error
+   * registry — which the client imports for its decode — gained the titles of three new codes
+   * (`X_ACTION_HTTP_PATH_INVALID`, `X_ACTION_PATH_STYLE_INVALID`, `X_OPENAPI_CONFIG_INVALID`).
    */
-  budget: { js: '21.2kb', lcp: 1500 },
+  budget: { js: '21.6kb', lcp: 1500 },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

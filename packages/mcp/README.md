@@ -253,6 +253,19 @@ did not.
 | the body cap | `mcpHttpRoute({ bodyLimitBytes })` · `defineAppMcp({ bodyLimitBytes })` | `DEFAULT_MCP_BODY_LIMIT_BYTES`, 1 MiB |
 | the numbers | `mcpHttpRoute({ rateLimits })` · `defineAppMcp({ rateLimits })` | `MCP_RATE_LIMITS` |
 | where they are counted | `mcpHttpRoute({ rateLimitStore })` · `defineAppMcp({ rateLimitStore })` | a per-**process** memory store — N replicas behind one URL each enforce the full allowance, so a fleet passes `postgresRateLimitStore({ executor })` |
+| OAuth discovery | `mcpHttpRoute({ oauth })` · `defineAppMcp({ oauth })` | absent: the 401 is `Bearer realm="ultimate-mcp"` |
+
+### OAuth discovery (RFC 9728)
+
+`defineAppMcp({ oauth: { authorizationServers: ['https://www.example.com'] } })` (`As of 22.6.0`;
+MCP authorization spec 2025-06-18, unchanged in 2025-11-25): every 401 carries
+`WWW-Authenticate: Bearer realm="ultimate-mcp", resource_metadata="<origin>/.well-known/oauth-protected-resource<path>"`
+(`error="invalid_token"` when a token was sent), and `route.protectedResource` carries the document
+and the two paths it is served at — path-inserted per RFC 9728 §3.1 and the root — which
+`@ultimat3/cli` mounts as public `GET`s beside `POST /mcp`. `resource` defaults to the request's
+PUBLIC origin (`handle(request, { origin })`, which the boot fills from `ctx.https`) + the mount
+path; `scopes_supported` to the `scopes` map's keys. Issuers must be https (http on loopback):
+`X_MCP_OAUTH_INVALID`. The authorization server is the app's own routes.
 
 ## Resources
 

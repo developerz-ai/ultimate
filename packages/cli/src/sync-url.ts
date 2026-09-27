@@ -32,6 +32,17 @@ export function syncUrlFrom(env: Readonly<Record<string, string | undefined>>): 
 }
 
 /**
+ * What the page's CSP `connect-src` must add for the socket: nothing when the node is on the page
+ * origin (`'self'` covers ws/wss there), else `SYNC_URL`'s ORIGIN exactly — never a bare `wss:`
+ * scheme, which would admit a socket to any host (`@ultimat3/http`'s baseline dropped it).
+ */
+export function syncConnectSources(env: Readonly<Record<string, string | undefined>>): string[] {
+  const url = syncUrlFrom(env);
+  if (url === SYNC_PATH) return [];
+  return [new URL(url).origin];
+}
+
+/**
  * The page origins a sync node admits besides its own host name: `APP_URL`'s, when set. Only a
  * deployment that serves the page on another host than the node needs it; an unparsable value is
  * refused rather than read as "no page origin", which would refuse every socket in silence.

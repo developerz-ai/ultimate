@@ -14,13 +14,14 @@ import type { ContractTest, ContractTestOptions } from './contract-test';
 import type { Deprecation } from './deprecation';
 import { facadeFor } from './facade';
 import type { OpenApiOperation } from './http';
+import type { ActionHttp } from './http-path';
+import { routeFor } from './http-path';
 import type { IdempotencyStore } from './idempotency';
 import { actionName, defOf, hasDef, invoke, stashDef } from './invoke';
 import type { ActionJobHandle } from './job-handle';
 import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
 import type { McpToolDescriptor } from './mcp-tool';
-import { derivePath } from './naming';
 import {
   type ActionPolicy,
   policyCapability,
@@ -91,6 +92,12 @@ export interface ActionDef<
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
+  /**
+   * The HTTP projection's one per-action knob: `http: { path }` pins the URL whatever the app's
+   * `pathStyle` derives — for a webhook a vendor was given. Everything else about the route (the
+   * method, the policy, the body) stays the framework's.
+   */
+  readonly http?: ActionHttp;
   /**
    * On its way out. Declared here and projected everywhere at once: `Deprecation` and `Sunset`
    * response headers (RFC 9745 / RFC 8594), a `rel="successor-version"` link when `replacedBy`
@@ -203,6 +210,7 @@ export interface AnyActionDef {
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
+  readonly http?: ActionHttp;
   readonly deprecated?: Deprecation;
   readonly idempotent?: boolean;
   readonly audit?: boolean;
@@ -329,7 +337,7 @@ function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1
 export function describeAction(target: AnyAction): ActionDescriptor {
   const name = actionName(target);
   const def = defOf(target);
-  const path = derivePath(name);
+  const path = routeFor(name, def.http?.path);
   const mcp = def.mcp;
   return {
     kind: 'action',

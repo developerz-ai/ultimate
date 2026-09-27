@@ -185,6 +185,23 @@ describe('defineHttpConfig', () => {
  * dev error overlay — absolute paths, module layout, internal causes — to any anonymous request
  * that provoked a 5xx, with the CSP report-only and therefore enforcing nothing.
  */
+describe('security.hsts merges key by key', () => {
+  const scope = { rateLimit: { scope: 'process' as const } };
+  test('{ preload: true } alone opts into preload and keeps the default age and subdomains', () => {
+    const config = defineHttpConfig({ ...scope, security: { hsts: { preload: true } } });
+    expect(config.security.hsts).toEqual({ ...DEFAULT_SECURITY.hsts, preload: true } as never);
+    expect(config.security.hsts?.maxAgeSeconds).toBe(63_072_000);
+  });
+
+  test('absent keeps the default, which never preloads', () => {
+    expect(defineHttpConfig(scope).security.hsts?.preload).toBe(false);
+  });
+
+  test('null sends none', () => {
+    expect(defineHttpConfig({ ...scope, security: { hsts: null } }).security.hsts).toBeNull();
+  });
+});
+
 describe('dev is decided by ULTIMATE_ENV, not NODE_ENV alone', () => {
   const withEnv = <T>(values: Record<string, string | undefined>, run: () => T): T => {
     const previous = new Map<string, string | undefined>();

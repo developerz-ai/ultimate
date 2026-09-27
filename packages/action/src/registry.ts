@@ -4,15 +4,20 @@
  * actions. Registration is also where a missing policy becomes a build error.
  */
 
+import type { ActionPathStyle } from '@ultimat3/core';
 import { SchemaUnsupportedError } from '@ultimat3/schema';
 import type { ActionDescriptor, AnyAction } from './action';
 import { isAction, nameAction } from './action';
+import { resetApiDeclaration } from './api-declaration';
 import { ActionDuplicateError, ActionPathDuplicateError, ActionPolicyMissingError } from './errors';
+import { assertPinnedPath, resetActionPathStyle, routeFor, setActionPathStyle } from './http-path';
 import { assertIdempotencyScope } from './idempotency';
+import { defOf } from './invoke';
 import { jsonSchemaOf, mcpSchemaOf } from './json-schema';
-import { derivePath } from './naming';
+import type { ActionPath } from './naming';
+import { seatedActions } from './registry-store';
 
-const registry = new Map<string, AnyAction>();
+const registry = seatedActions;
 
 /**
  * Derived route -> the action name that owns it. A second index because the name is not the
@@ -46,7 +51,9 @@ export function registerAction<A extends AnyAction>(name: string, target: A): A 
     throw new ActionPolicyMissingError(name);
   }
   assertProjectable(name, target);
-  const { path } = derivePath(name);
+  const pin = defOf(target).http?.path;
+  if (pin !== undefined) assertPinnedPath(name, pin);
+  const { path } = routeFor(name, pin);
   const owner = paths.get(path);
   if (owner !== undefined && owner !== name) {
     throw new ActionPathDuplicateError({ name, existing: owner, path });
@@ -55,6 +62,37 @@ export function registerAction<A extends AnyAction>(name: string, target: A): A 
   registry.set(name, named);
   paths.set(path, name);
   return named;
+}
+
+/**
+ * Where `target` is served — its pin, else the app's style over its name. A NAME is resolved
+ * through the registry, so a pin declared on the action is honoured for a caller that only has the
+ * name (a deprecation's `replacedBy`, a page minting an island's endpoint).
+ */
+export function actionHttpPath(target: AnyAction | string): ActionPath {
+  if (typeof target === 'string') {
+    const seated = registry.get(target);
+    return seated === undefined ? routeFor(target, undefined) : actionHttpPath(seated);
+  }
+  return routeFor(target.name, defOf(target).http?.path);
+}
+
+/**
+ * The app's `pathStyle`, applied to every action already seated and every one registered after.
+ * Re-derived whole, so two names the new style folds onto one URL are refused here rather than
+ * left for the router to seat one of.
+ */
+export function configureActionPathStyle(style: ActionPathStyle): void {
+  setActionPathStyle(style);
+  paths.clear();
+  for (const [name, target] of [...registry.entries()].sort(byName)) {
+    const { path } = actionHttpPath(target);
+    const owner = paths.get(path);
+    if (owner !== undefined && owner !== name) {
+      throw new ActionPathDuplicateError({ name, existing: owner, path });
+    }
+    paths.set(path, name);
+  }
 }
 
 /**
@@ -114,6 +152,8 @@ export function describeActions(): readonly ActionDescriptor[] {
 export function resetRegistry(): void {
   registry.clear();
   paths.clear();
+  resetActionPathStyle();
+  resetApiDeclaration();
 }
 
 function byName(a: readonly [string, AnyAction], b: readonly [string, AnyAction]): number {

@@ -69,6 +69,12 @@ export interface Span {
   addEvent(name: string, attributes?: SpanAttributes): Span;
   recordError(error: unknown): Span;
   setStatus(code: SpanStatusCode, message?: string): Span;
+  /**
+   * Rename a span that learned what it is only after it started — an HTTP server span is opened
+   * before the router matches, and its name must be the route PATTERN (`GET /r/:token`), never the
+   * concrete URL, which carries capability tokens. A no-op once the span has ended.
+   */
+  updateName(name: string): Span;
   end(): void;
 }
 
@@ -194,7 +200,8 @@ function inboundParent(parent: SpanContext | undefined): SpanContext | undefined
   return parent === undefined || parent.spanId === '' ? undefined : parent;
 }
 
-export function startSpan(name: string, options?: StartSpanOptions): Span {
+export function startSpan(initialName: string, options?: StartSpanOptions): Span {
+  let name = initialName;
   // A live span is what gives an outbound typed call a trace to continue; see the module.
   installTraceHeaders();
   const parent = options?.parent ?? currentSpanContext();
@@ -219,7 +226,9 @@ export function startSpan(name: string, options?: StartSpanOptions): Span {
   let ended = false;
 
   const span: Span = {
-    name,
+    get name(): string {
+      return name;
+    },
     context,
     get ended(): boolean {
       return ended;
@@ -258,6 +267,10 @@ export function startSpan(name: string, options?: StartSpanOptions): Span {
     },
     setStatus(code, message) {
       status = { code, message };
+      return span;
+    },
+    updateName(next) {
+      if (!ended) name = next;
       return span;
     },
     end(): void {

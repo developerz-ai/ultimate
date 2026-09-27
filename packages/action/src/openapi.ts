@@ -8,7 +8,7 @@
  */
 
 import type { AnyAction } from './action';
-import { toOpenApiOperation } from './http';
+import { operationTagOf, toOpenApiOperation } from './http';
 import { actionName } from './invoke';
 import { type JsonSchemaObject, jsonSchemaOf, sortSchema } from './json-schema';
 import { derivePath, inputSchemaName, outputSchemaName, PROBLEM_SCHEMA_NAME } from './naming';
@@ -18,13 +18,20 @@ import { stableStringify } from './stable';
 export interface OpenApiInfo {
   readonly title: string;
   readonly version: string;
+  readonly description?: string;
 }
 
 export interface OpenApiDocument {
   readonly openapi: '3.1.0';
   readonly info: OpenApiInfo;
+  /** Only in the complete document (`defineApi({ openapi: { servers } })`). */
+  readonly servers?: readonly { readonly url: string; readonly description?: string }[];
   readonly paths: Record<string, unknown>;
-  readonly components: { readonly schemas: Record<string, JsonSchemaObject> };
+  readonly components: {
+    readonly schemas: Record<string, JsonSchemaObject>;
+    /** Only in the complete document — `completeOpenApi` / `mountOpenApi`. */
+    readonly securitySchemes?: Readonly<Record<string, unknown>>;
+  };
   readonly tags: readonly { readonly name: string }[];
 }
 
@@ -43,11 +50,11 @@ export function buildOpenApi(options: BuildOpenApiOptions = {}): OpenApiDocument
 
   for (const target of actions) {
     const name = actionName(target);
-    const { path, resource } = derivePath(name);
+    const { path } = derivePath(name);
     paths[path] = { post: toOpenApiOperation(target) };
     schemas[inputSchemaName(name)] = sortSchema(jsonSchemaOf(target.input));
     schemas[outputSchemaName(name)] = sortSchema(jsonSchemaOf(target.output));
-    tags.add(resource);
+    tags.add(operationTagOf(target));
   }
 
   return {

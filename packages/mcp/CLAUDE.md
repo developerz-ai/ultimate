@@ -22,6 +22,7 @@ import. The CLI wires it.
 | `dev-server.ts` | the 13 dev tools; depends only on an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself |
+| `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`); the authorization server is the app's |
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "61d7ec7aa99da15eddc59b67b91d248278e7fe50083f5834e52018186f7b826c",
+  "buildId": "56f2cc8443adb3de9244b8c65df0f01aca5853e31e0b72c0d8f19040136fe4c9",
   "tiers": {
     "0": [
       "core",
@@ -260,6 +260,11 @@
       "at": "packages/action/src/errors.ts"
     },
     {
+      "code": "X_ACTION_HTTP_PATH_INVALID",
+      "owner": "action",
+      "at": "packages/action/src/errors-http.ts"
+    },
+    {
       "code": "X_ACTION_JOB_UNBRIDGED",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
@@ -268,6 +273,11 @@
       "code": "X_ACTION_PATH_DUPLICATE",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_ACTION_PATH_STYLE_INVALID",
+      "owner": "action",
+      "at": "packages/action/src/errors-http.ts"
     },
     {
       "code": "X_ACTION_POLICY_MISSING",
@@ -503,6 +513,11 @@
       "code": "X_BACKFILL_UNKNOWN",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_BEARER_MOUNT_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_BENCH_CLAIM_STALE",
@@ -1970,6 +1985,11 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_OAUTH_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_PROTOCOL",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -2233,6 +2253,11 @@
       "code": "X_OAUTH_TOKEN_INVALID",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_OPENAPI_CONFIG_INVALID",
+      "owner": "action",
+      "at": "packages/action/src/errors-http.ts"
     },
     {
       "code": "X_OTLP_ENDPOINT_INVALID",
@@ -2776,6 +2801,11 @@
     },
     {
       "code": "X_ROUTE_OFFLINE_MISSING",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ROUTE_POST_INVALID",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
     },

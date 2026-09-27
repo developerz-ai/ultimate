@@ -6,7 +6,9 @@
  */
 
 import { type PrimitiveKind, primitiveRegistrar, type RegisteredPrimitive } from '@ultimat3/core';
-import { registerActions } from './registry';
+import type { ApiHttp, ApiOpenApi } from './api-declaration';
+import { declareApi } from './api-declaration';
+import { configureActionPathStyle, registerActions } from './registry';
 
 /** A module namespace: `import * as postActions from './actions'`. */
 export type ApiModule = Readonly<Record<string, unknown>>;
@@ -25,6 +27,13 @@ export interface ApiDef {
   readonly jobs?: ApiModules;
   /** A task only enqueues jobs; handing it over here is what names its cron after its export. */
   readonly tasks?: ApiModules;
+  /**
+   * The API's HTTP shape as a whole: `pathStyle` (how every action name becomes a URL) and
+   * `mounts` (bearer-token doors onto a cut of it, like `/v1`). Read by the boot and `x manifest`.
+   */
+  readonly http?: ApiHttp;
+  /** Declaring it opts `openapi.json` into the complete document — see `ApiOpenApi`. */
+  readonly openapi?: ApiOpenApi;
 }
 
 type Get<TDef, TKey extends string> = TKey extends keyof TDef ? TDef[TKey] : undefined;
@@ -82,6 +91,13 @@ export interface Api<TDef extends ApiDef> {
  * `@ultimat3/jobs` are on this tier and importing either sideways is a build error.
  */
 export function defineApi<const TDef extends ApiDef>(def: TDef): Api<TDef> {
+  // FIRST: the style decides every path the registrations below are checked against, and it
+  // re-derives the ones the framework's module scan may already have seated under the default.
+  if (def.http?.pathStyle !== undefined) configureActionPathStyle(def.http.pathStyle);
+  declareApi({
+    ...(def.http === undefined ? {} : { http: def.http }),
+    ...(def.openapi === undefined ? {} : { openapi: def.openapi }),
+  });
   const actionModules = [
     ...moduleList(def.actions),
     ...moduleList(def.mutators),

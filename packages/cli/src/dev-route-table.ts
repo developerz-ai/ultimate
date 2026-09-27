@@ -3,10 +3,10 @@
 // 500-line ceiling; `serve.ts` composes the production table from the same builders.
 
 import type { RealtimeConfig } from '@ultimat3/core';
-import type { Route } from '@ultimat3/http';
+import type { RateLimitStore, Route } from '@ultimat3/http';
 import { describeRoutes } from '@ultimat3/render';
 import type { Storage } from '@ultimat3/storage';
-import { apiRoutes } from './api-routes';
+import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { mountAppMcp } from './app-mcp';
 import type { DevDashboardInput } from './dev-dashboard';
 import { devDashboardRoutes } from './dev-dashboard';
@@ -39,6 +39,10 @@ export interface DevRouteTableInput {
   readonly islands: () => IslandBundle;
   /** `app.config.ts`'s `realtime`, as the boot obeyed it: off, no document names a sync node. */
   readonly realtime: Pick<RealtimeConfig, 'enabled'>;
+  /** The web role's limiter store — what a bearer mount counts per-token allowances on. */
+  readonly rateLimitStore?: RateLimitStore | undefined;
+  /** `apps/<app>/runtime.ts`'s plain `routes`, mounted as the container mounts them. */
+  readonly appRoutes?: readonly Route[] | undefined;
 }
 
 export interface DevRouteTable {
@@ -87,7 +91,9 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     // The same API table the container serves: a read that answers here and 404s in production
     // is exactly the drift one composition exists to prevent.
     ...apiRoutes(),
+    ...apiMountRoutes(input.rateLimitStore),
     ...mcpMount.routes,
+    ...(input.appRoutes ?? []),
     // The image pipeline's only HTTP surface: the icons the web manifest declares, and the
     // variants every `srcset` promises. Mounted before the app's own routes so a page route can
     // never shadow `/icons` or `/media`.
@@ -117,6 +123,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     }),
     ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...sync.routes,
+    ...pagePostRoutes(),
     ...appRoutes({
       buildId: input.buildId,
       resolveIsland: (file) => input.islands().resolverFor(file),

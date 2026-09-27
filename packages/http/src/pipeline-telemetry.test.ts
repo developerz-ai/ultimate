@@ -162,6 +162,36 @@ describe('the request span', () => {
     expect(typeof root?.attributes['http.request_id']).toBe('string');
   });
 
+  test('a parameterised route names the PATTERN, never the concrete URL and the token in it', async () => {
+    const pipeline = createPipeline({
+      table: createRouter([
+        {
+          method: 'GET',
+          path: '/r/:token',
+          handler: () => new Response('ok'),
+          meta: { name: 'landing', auth: 'public' },
+        },
+      ]),
+      config,
+    });
+    const spans = await spansOf(() =>
+      pipeline.handle(get('/r/secret-capability-token'), { role: 'web' }),
+    );
+    const root = spans.find((span) => span.parentSpanId === undefined);
+    expect(root?.name).toBe('GET /r/:token');
+    expect(root?.attributes['http.route']).toBe('/r/:token');
+    expect(JSON.stringify(root)).not.toContain('secret-capability-token');
+  });
+
+  test('an unmatched request is named by its method alone', async () => {
+    const pipeline = pipelineWith({});
+    const spans = await spansOf(() => pipeline.handle(get('/wp-admin/secret'), { role: 'web' }));
+    const root = spans.find((span) => span.parentSpanId === undefined);
+    expect(root?.name).toBe('GET');
+    expect(root?.attributes['http.route']).toBe('unmatched');
+    expect(JSON.stringify(root)).not.toContain('wp-admin');
+  });
+
   test('the id on the span is the id on the response, or the two cannot be joined', async () => {
     const pipeline = pipelineWith({});
     const answered: Response[] = [];
