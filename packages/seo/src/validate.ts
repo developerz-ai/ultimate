@@ -14,6 +14,7 @@ import {
   type SeoErrorCode,
   titleTemplateSlotMissing,
 } from './errors';
+import { linkError, linkProblem } from './links';
 import { applyTitleTemplate, DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, TITLE_SLOT } from './meta';
 import { indexableRoutes, isDynamic, type RouteRecord } from './routes';
 import { absoluteUrl } from './xml';
@@ -126,6 +127,15 @@ export function validateMeta(
         );
       }
       push(descriptions, meta.description, route.file);
+    }
+
+    // The same predicate the renderer throws on, reported here at the route FILE and before any
+    // request: an unsafe href in a static route's meta fails the build rather than a visitor.
+    for (const link of meta.links ?? []) {
+      const problem = linkProblem(link);
+      if (problem !== undefined) {
+        issues.push(issueOf(linkError(link, problem, route.file), route.path, route.file));
+      }
     }
 
     // A canonical is only checkable for a static path: a dynamic route's

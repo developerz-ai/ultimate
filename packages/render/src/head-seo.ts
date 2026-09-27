@@ -31,14 +31,30 @@ export function headTagKey(tag: SeoHeadTag, index: number): string {
   const identity = IDENTITY[tag.tag]
     .map((name) => tag.attrs[name])
     .filter((value): value is string => value !== undefined);
+  // A link with no hreflang and no canonical rel is one of the route's own `links`, and two of
+  // them share a rel by design — two font preloads, a preconnect per origin. Keyed by rel alone,
+  // the second replaced the first. Its href is part of what it is.
+  const rel = tag.attrs['rel'];
+  const href = tag.attrs['href'];
+  const linkHref =
+    tag.tag === 'link' &&
+    rel !== 'canonical' &&
+    tag.attrs['hreflang'] === undefined &&
+    href !== undefined
+      ? [href]
+      : [];
   const property = tag.attrs['property'];
   const repeated =
     property !== undefined && REPEATABLE_PROPERTIES.has(property)
       ? [tag.attrs['content'] ?? '']
       : [];
-  return [tag.tag, ...identity, ...repeated, ...(tag.tag === 'script' ? [String(index)] : [])].join(
-    ':',
-  );
+  return [
+    tag.tag,
+    ...identity,
+    ...linkHref,
+    ...repeated,
+    ...(tag.tag === 'script' ? [String(index)] : []),
+  ].join(':');
 }
 
 export function toHeadTag(tag: SeoHeadTag, index: number): HeadTag {

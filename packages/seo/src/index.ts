@@ -7,6 +7,7 @@ export {
   duplicateMeta,
   imageQueryInvalid,
   ldInvalid,
+  linkInvalid,
   metaMissing,
   metaTooLong,
   notImplementedDriver,
@@ -70,6 +71,8 @@ export {
   SoftwareApplication,
   WebSite,
 } from './ld';
+export type { HeadLink, HeadLinkAs, HeadLinkRel } from './links';
+export { linkProblem } from './links';
 export type { LocalizedPage, MetaLocalization } from './locale-tags';
 export { hreflangTag, ogLocaleTag } from './locale-tags';
 export type {

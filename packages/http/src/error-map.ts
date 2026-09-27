@@ -392,6 +392,10 @@ export const ERROR_STATUS = {
   // page calls `asset()` INSIDE the request it renders, so it reaches a caller there — a deploy
   // defect, never the visitor's, hence 500, declared so the cause naming the missing file survives.
   X_ASSET_MISSING: 500,
+  // @ultimat3/seo — a `meta.links` entry an `ssr` page's `meta()` built from data: an unsafe href,
+  // a preload with no `as`. Thrown while that request renders its head, so it reaches the caller —
+  // an authoring defect, never the visitor's, hence 500 with the cause naming the link intact.
+  X_SEO_LINK_INVALID: 500,
   // @ultimat3/mail
   // The deployment configured no transport. It reaches a caller only through an inline
   // `send(…, { sync: true })` inside a request; the queued path dead-letters instead. A server-side
