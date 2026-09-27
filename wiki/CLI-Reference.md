@@ -164,16 +164,24 @@ git will not commit and the dev loop will not reload. A save that touches five f
 and a save arriving while a reload is still building is one more reload after it, never a second one
 racing it.
 
-**What a reload changes, `As of 2026-09-07`.** A route module — `page.tsx`, `route.ts` — is
-imported again when its source changed and its entry replaced, so the next request serves the page
-on disk; its islands are re-bundled on the same tick, so the two are one generation. A save that
-will not import is a finding on `/_x` and the last page that did import stays up. Everything else
-is registered once per process — an action, a query, an entity, a component a page imports — and an
-edit there needs a restart: its exports are already held by every module that imported it, and Bun
-has no way to rebind them. The route's guard (`policy`) is read by the HTTP pipeline at boot, so
-adding one is a restart too. Before this date the route module took the restart rule as well, and a
-save served a NEW island under an OLD page: the old props, and the placeholder the new island renders
-when they are missing.
+**What a reload changes, `As of 2026-09-27`.** Every file the process loaded is hashed on each
+reload; a changed one — a component, a helper, a `.module.scss`, a Sass partial a sheet `@use`s, a
+JSON catalog — leaves Bun's module registry together with every module that imports it, up to the
+route modules, and the scan imports that chain again. A route module that comes back as a new
+instance has its entry replaced, so the next request serves what is on disk; its islands are
+re-bundled on the same tick, so the two are one generation; the `isr` store is emptied, so a page's
+first render does not answer for its whole ttl. A save that will not import is a finding on `/_x`
+and the last page that did import stays up. The replaced instances are collected — nothing is kept
+per save ([`app-reload-graph.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/app-reload-graph.ts)).
+
+A module that **defines a primitive** — it exports an entity, an action, a query, a mutator, a job
+or a task, or it is `apps/web/api/index.ts` — is pinned: never re-evaluated, and the invalidation
+stops at it. An edit there needs a restart: its exports are held by every importer and by a registry
+that refuses a second definition of one name. The route's guard (`policy`) is read by the HTTP
+pipeline at boot, so adding one is a restart too, and so is an edited site asset under an unchanged
+stylesheet that names it with Sass `asset()`. Until 2026-09-27 only the edited route module itself
+was re-imported (`?x-reload=<hash>`), and every component it imported stayed the cached one: `x dev`
+logged `reloaded` and rendered the old component until a restart.
 
 Without `--once` the process stays up until it is signalled. `Ctrl-C` runs the same three-phase
 drain a production `SIGTERM` runs — stop accepting, finish in-flight, close — and only then

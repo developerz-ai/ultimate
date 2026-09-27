@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "670130d14fbd2dd1e2c7c4401906dee5e5510d963ecde1a1e486092a25c5c72c",
+  "buildId": "8223ba8b09df8f846fc77012874e5c4c720dcecdcf5bb5a2abdbb3e35d11f37f",
   "tiers": {
     "0": [
       "core",
@@ -3126,6 +3126,11 @@
     },
     {
       "code": "X_SEO_DUPLICATE_META",
+      "owner": "seo",
+      "at": "packages/seo/src/errors.ts"
+    },
+    {
+      "code": "X_SEO_LINK_INVALID",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
     },

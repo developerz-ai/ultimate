@@ -18,6 +18,7 @@ export const SEO_ERROR_CODES = {
   ldInvalid: 'X_LD_INVALID',
   sitemapTooLarge: 'X_SITEMAP_TOO_LARGE',
   imageQueryInvalid: 'X_IMAGE_QUERY_INVALID',
+  linkInvalid: 'X_SEO_LINK_INVALID',
 } as const;
 
 export type SeoErrorCode = (typeof SEO_ERROR_CODES)[keyof typeof SEO_ERROR_CODES];
@@ -38,6 +39,7 @@ registerErrorCodes({
   X_LD_INVALID: { title: 'JSON-LD node is missing a required schema.org field' },
   X_SITEMAP_TOO_LARGE: { title: 'sitemap exceeds the 50,000-entry protocol limit' },
   X_IMAGE_QUERY_INVALID: { title: 'an image transform query parameter is present but unusable' },
+  X_SEO_LINK_INVALID: { title: 'a route meta link is unsafe or would fetch nothing' },
 });
 
 export interface SeoErrorInit {
@@ -108,6 +110,21 @@ export function canonicalMismatch(file: string, canonical: string, expected: str
     cause: `${file} declares canonical ${canonical} but the route resolves to ${expected}`,
     fix: `set meta.canonical to ${expected} in ${file}, or delete it and let the route supply it`,
     meta: { file, canonical, expected },
+  });
+}
+
+/**
+ * A `meta.links` entry that cannot ship: an href that is not a path or an http(s) URL, a preload
+ * with no `as`, a font preload with no `crossorigin`. `file` is known to the build gate and not to
+ * a render — the renderer's message names the link, which the route's source contains verbatim.
+ */
+export function linkInvalid(link: string, problem: string, file?: string): SeoError {
+  const where = file === undefined ? 'the route' : file;
+  return new SeoError({
+    code: SEO_ERROR_CODES.linkInvalid,
+    cause: `${where} declares meta ${link}, which ${problem}`,
+    fix: `edit links in defineRoute({ meta }) in ${where}: a path or an http(s) href, \`as\` on every preload, crossorigin: 'anonymous' on a font preload`,
+    meta: { link, problem, ...(file === undefined ? {} : { file }) },
   });
 }
 

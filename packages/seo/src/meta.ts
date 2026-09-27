@@ -2,6 +2,7 @@
 // for a global default: a route that does not declare a description does not get
 // one, it fails the build (see validate.ts).
 
+import { type HeadLink, linkTags } from './links';
 import { hreflangTag, type MetaLocalization, ogLocaleTag } from './locale-tags';
 import { absoluteUrl } from './xml';
 
@@ -82,6 +83,12 @@ export interface RouteMeta {
   themeColor?: readonly ThemeColor[];
   /** JSON-LD nodes from `ld.*`. Rendered as one script tag per node. */
   ld?: readonly Readonly<Record<string, unknown>>[];
+  /**
+   * Extra `<link>` tags for `<head>`, in order: a font preload, a preconnect, a feed. An href is a
+   * path or an http(s) URL, a preload names `as`, a font preload names `crossorigin` — anything
+   * else is `X_SEO_LINK_INVALID`. Never absolutised: a preload must hit the origin the page did.
+   */
+  links?: readonly HeadLink[];
 }
 
 export interface HeadTag {
@@ -302,6 +309,9 @@ export function renderMeta(meta: RouteMeta, options: RenderMetaOptions = {}): re
       attrs: { rel: 'alternate', hreflang: alternate.hreflang, href: abs(alternate.href) },
     });
   }
+
+  // --- the route's own links --------------------------------------------------
+  tags.push(...linkTags(meta.links ?? []));
 
   // --- theme-color per colour scheme ----------------------------------------
   for (const entry of meta.themeColor ?? []) {

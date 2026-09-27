@@ -5,6 +5,7 @@
 import type { RealtimeConfig } from '@ultimat3/core';
 import type { RateLimitStore, Route } from '@ultimat3/http';
 import { describeRoutes } from '@ultimat3/render';
+import type { IsrController } from '@ultimat3/render/server';
 import type { Storage } from '@ultimat3/storage';
 import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { mountAppMcp } from './app-mcp';
@@ -43,6 +44,11 @@ export interface DevRouteTableInput {
   readonly rateLimitStore?: RateLimitStore | undefined;
   /** `apps/<app>/runtime.ts`'s plain `routes`, mounted as the container mounts them. */
   readonly appRoutes?: readonly Route[] | undefined;
+  /**
+   * The ISR controller the page routes render through — `x dev`'s own, because a reload has to
+   * empty it: a stored render outlives the module that produced it.
+   */
+  readonly isr?: IsrController | undefined;
 }
 
 export interface DevRouteTable {
@@ -126,6 +132,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     ...pagePostRoutes(),
     ...appRoutes({
       buildId: input.buildId,
+      ...(input.isr === undefined ? {} : { isr: input.isr }),
       resolveIsland: (file) => input.islands().resolverFor(file),
       ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,

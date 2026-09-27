@@ -42,9 +42,9 @@ describe('unit · the Sass compile cache', () => {
     writeFileSync(dep, '$a: 1;');
     setSassCacheDir(cache);
     const first = counting('.a{color:red}', [dep]);
-    expect(cachedSassCompile('k', first.compile)).toBe('.a{color:red}');
+    expect(cachedSassCompile('k', first.compile).css).toBe('.a{color:red}');
     const second = counting('.never{}', [dep]);
-    expect(cachedSassCompile('k', second.compile)).toBe('.a{color:red}');
+    expect(cachedSassCompile('k', second.compile).css).toBe('.a{color:red}');
     expect([first.calls(), second.calls()]).toEqual([1, 0]);
   });
 
@@ -56,7 +56,7 @@ describe('unit · the Sass compile cache', () => {
     cachedSassCompile('k', counting('.old{}', [dep]).compile);
     writeFileSync(dep, '$a: 2; // a different size and different bytes');
     const again = counting('.new{}', [dep]);
-    expect(cachedSassCompile('k', again.compile)).toBe('.new{}');
+    expect(cachedSassCompile('k', again.compile).css).toBe('.new{}');
     expect(again.calls()).toBe(1);
   });
 
@@ -68,13 +68,13 @@ describe('unit · the Sass compile cache', () => {
     cachedSassCompile('k', counting('.old{}', [dep]).compile);
     rmSync(dep);
     const again = counting('.new{}', []);
-    expect(cachedSassCompile('k', again.compile)).toBe('.new{}');
+    expect(cachedSassCompile('k', again.compile).css).toBe('.new{}');
   });
 
   test('a different key is a different entry', () => {
     setSassCacheDir(join(dir, 'keys'));
     cachedSassCompile('one', counting('.one{}', []).compile);
-    expect(cachedSassCompile('two', counting('.two{}', []).compile)).toBe('.two{}');
+    expect(cachedSassCompile('two', counting('.two{}', []).compile).css).toBe('.two{}');
   });
 
   test('a corrupt entry is a miss, never a throw', () => {
@@ -82,7 +82,7 @@ describe('unit · the Sass compile cache', () => {
     setSassCacheDir(cache);
     cachedSassCompile('k', counting('.a{}', []).compile);
     for (const name of readdirSync(cache)) writeFileSync(join(cache, name), '{"v":1,"css":');
-    expect(cachedSassCompile('k', counting('.b{}', []).compile)).toBe('.b{}');
+    expect(cachedSassCompile('k', counting('.b{}', []).compile).css).toBe('.b{}');
   });
 
   test('an unwritable cache directory costs the cache, never the compile', () => {
@@ -91,7 +91,7 @@ describe('unit · the Sass compile cache', () => {
     cachedSassCompile('seed', counting('.a{}', []).compile);
     chmodSync(cache, 0o500);
     try {
-      expect(cachedSassCompile('k', counting('.b{}', []).compile)).toBe('.b{}');
+      expect(cachedSassCompile('k', counting('.b{}', []).compile).css).toBe('.b{}');
     } finally {
       chmodSync(cache, 0o700);
     }
@@ -121,5 +121,31 @@ describe('unit · the Sass compile cache', () => {
     // And the partial it @use-d is part of the entry: editing it changes the answer.
     writeFileSync(partial, '@mixin pad { padding: 2px; }');
     expect(compileStylesheet(file, source).css).toContain('padding:2px');
+  });
+});
+
+describe('unit · the Sass compile cache · assets', () => {
+  test('a hit carries the partials it read, and an entry with assets asks whether they still hold', () => {
+    const cache = join(tmpdir(), `x-sass-assets-${process.pid}`);
+    setSassCacheDir(cache);
+    try {
+      const output: SassOutput = {
+        css: '.a{}',
+        loaded: [],
+        assets: [['assets/a.png', '/assets/a.1.png']],
+      };
+      cachedSassCompile('asset-key', () => output);
+      let compiled = 0;
+      const recompile = (): SassOutput => {
+        compiled += 1;
+        return { css: '.b{}', loaded: [], assets: [] };
+      };
+      expect(cachedSassCompile('asset-key', recompile, () => true).css).toBe('.a{}');
+      expect(compiled).toBe(0);
+      expect(cachedSassCompile('asset-key', recompile, () => false).css).toBe('.b{}');
+      expect(compiled).toBe(1);
+    } finally {
+      setSassCacheDir(undefined);
+    }
   });
 });

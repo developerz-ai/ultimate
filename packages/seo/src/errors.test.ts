@@ -16,6 +16,7 @@ describe('SEO_ERROR_CODES', () => {
       'X_LD_INVALID',
       'X_SEO_CANONICAL_MISMATCH',
       'X_SEO_DUPLICATE_META',
+      'X_SEO_LINK_INVALID',
       'X_SEO_META_MISSING',
       'X_SEO_META_TOO_LONG',
       'X_SITEMAP_TOO_LARGE',

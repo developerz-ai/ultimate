@@ -76,3 +76,38 @@ describe('seoRenderers', () => {
     expect(renderHead(tags)).toContain('href="https://postly.test/pricing"');
   });
 });
+
+describe('seoRenderers · RouteMeta.links', () => {
+  test('two preloads with one rel both reach <head> — href is part of a link identity', () => {
+    const html = renderHead(
+      headFromMeta(
+        {
+          title: 'Home',
+          canonical: '/',
+          links: [
+            {
+              rel: 'preload',
+              href: '/a.woff2',
+              as: 'font',
+              type: 'font/woff2',
+              crossorigin: 'anonymous',
+            },
+            {
+              rel: 'preload',
+              href: '/b.woff2',
+              as: 'font',
+              type: 'font/woff2',
+              crossorigin: 'anonymous',
+            },
+          ],
+        },
+        seoRenderers(),
+      ),
+    );
+    expect(html).toContain(
+      '<link rel="preload" href="/a.woff2" as="font" type="font/woff2" crossorigin="anonymous">',
+    );
+    expect(html).toContain('href="/b.woff2"');
+    expect(html).toContain('<link rel="canonical" href="/">');
+  });
+});

@@ -13,8 +13,10 @@ import type { OverlayNotice, RequestContext } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { createIsrController } from '@ultimat3/render/server';
 import { loadSignInPath } from './app-auth';
 import { appManifest } from './app-manifest';
+import { enableReloadTracking } from './app-reload-graph';
 import { requireAppRoot } from './app-root';
 import { loadAppRuntime } from './app-runtime';
 import { devSpec } from './cmd-dev-spec';
@@ -128,6 +130,9 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // EVERY boot: a scratch server (`x shot`, `ui.shot`) boots here too, and without this a
   // fail-closed dev actor installs nothing — the picture is of a 401. Idempotent.
   declareDevEnvironment(options.env);
+  // Before the first scan: the watcher's rescans evict a saved module AND everything importing it,
+  // and that needs the import graph recorded as each module is first loaded (`app-reload-graph.ts`).
+  enableReloadTracking(true);
   // The declaration lands on `process.env`; the env this boot passes on must carry it too, or every
   // service resolved from `options.env` still reads no `ULTIMATE_ENV`.
   const env = needsDevEnvironmentDeclaration(options.env)
@@ -224,7 +229,11 @@ async function bootDev(
   };
   const panels = devPanels(dashboard).map((panel) => panel.key);
 
+  // `x dev`'s own, so a reload can empty it: an `isr` page's first render was otherwise served for
+  // its whole ttl after every save, whatever the modules behind it now said.
+  const isr = createIsrController({ buildId });
   const { routes, theme, errorStyles, mcpPath } = await devRouteTable({
+    isr,
     root: options.root,
     env: options.env,
     buildId,
@@ -283,6 +292,7 @@ async function bootDev(
       state.manifest = manifest;
       state.appFindings = findings;
       state.islands = islands;
+      for (const path of isr.store().paths()) isr.store().delete(path);
       state.reloads += 1;
       state.reloadFinding = undefined;
       options.onReload?.(file, Math.round(performance.now() - started));

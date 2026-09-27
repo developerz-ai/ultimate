@@ -30,17 +30,47 @@ export const config = defineRoute({
 | `X_SEO_CANONICAL_MISMATCH` | `meta.canonical` does not resolve to the route's own URL |
 | `X_LD_INVALID` | a JSON-LD node missing a required schema.org field — and a required field is required in the builder's **input type**, so `ld.Article` without `datePublished` does not compile. A CMS `null` in one is the same coded refusal |
 | `X_SITEMAP_TOO_LARGE` | the sitemap index past 50,000 files |
+| `X_SEO_LINK_INVALID` | a `meta.links` entry whose href is not a path or an `http(s)` URL (`javascript:`, `data:` …), a `preload` with no `as`, or a font preload with no `crossorigin`. Thrown while the page renders (SSR and prerender) and reported at the route file by the `seo` step |
 
 `x verify`'s `seo` step runs `validateMeta` over every `site/` route: missing, duplicate and
 over-long meta fail the gate. Canonical checks are skipped there, because an app declares no base
 URL; JSON-LD, sitemaps and robots are enforced where they are built — each builder throws. Performance
 budgets are **not** here: they are the `budgets` step and `X_BUDGET_EXCEEDED`.
 
+## Head links
+
+`meta.links` puts `<link>` tags in `<head>` — a font preload, a preconnect, a feed — typed, in
+declaration order, for SSR and prerender alike. `canonical` and hreflang keep their own fields, and
+the surface stylesheet is the renderer's, so neither `rel` is spellable here.
+
+```ts
+export const config = defineRoute({
+  render: 'static',
+  meta: () => ({
+    title: 'Notificado',
+    description: 'Notificaciones electrónicas con constancia de entrega',
+    links: [
+      {
+        rel: 'preload',
+        href: asset('assets/fonts/inter-var.woff2'),
+        as: 'font',
+        type: 'font/woff2',
+        crossorigin: 'anonymous',
+      },
+      { rel: 'alternate', href: '/feed.xml', type: 'application/rss+xml' },
+    ],
+  }),
+});
+```
+
+Fields: `rel`, `href`, `as`, `type`, `crossorigin`, `media`. Two links of one `rel` are two tags:
+a link's `href` is part of its identity when the head is deduped.
+
 ## The pieces
 
 | Call | Answers |
 |---|---|
-| `renderMeta()` | the head tags: title (a `$` in a title is kept verbatim), canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per scheme |
+| `renderMeta()` | the head tags: title (a `$` in a title is kept verbatim), canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per scheme, `links` |
 | `buildSitemap()` | from the route table and each route's `prerender()`, per-locale alternates, split into an index past 50k |
 | `buildRobots()` | **fail-closed**: only the literal `production` environment opts into indexing; anything else — staging, a laptop, an unset variable — is `Disallow: /` with no sitemap line |
 | `buildFeed()` | RSS 2.0, Atom and JSON Feed from one item list. An item date must be ISO-8601 with an offset or `Z`; one that is not is treated as absent (and an offsetless one is logged as `seo.feed.date_offsetless`), never read through the server's zone |

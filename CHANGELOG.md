@@ -8,7 +8,32 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **cli:** `x dev` serves an edited COMPONENT, not only an edited page. A reload re-imported only
+  the changed route module (`?x-reload=<hash>`), and every module it imports resolved to the
+  instance already in Bun's cache, so a save to a component, a helper, a `.module.scss` or a Sass
+  partial logged `reloaded` and rendered the old code until a restart (notificado.co: the panel's
+  balance card and the home page). A reload now hashes every loaded file and evicts each changed one
+  and everything importing it from Bun's module registry (`app-reload-graph.ts`), so the scan
+  evaluates the new chain; a module that defines a primitive (entity, action, query, mutator, job,
+  task, the API index) is pinned and still needs a restart. Evicting instead of a query per save
+  keeps the process flat: 50 saves of a component holding 8 MB add no retained generations.
+- **cli:** `x dev` empties its `isr` store on every reload — an `isr` page's first render answered
+  for its whole ttl after every save.
+
+### Added
+
+- **render:** `asset('assets/…')` in Sass. `src: url(asset('assets/fonts/inter.woff2'))` compiles to
+  the content-hashed URL `/assets/*` serves, in `x dev`, the container and the static build; a
+  missing file is `X_ASSET_MISSING` at compile time. The Sass disk cache re-checks each asset a
+  cached sheet named (entry format v2), and `CompiledStylesheet.dependencies` /
+  `Stylesheet.dependencies` name the partials a sheet read.
+- **seo:** `RouteMeta.links` — typed `<link>` tags in `<head>` (`rel`, `href`, `as`, `type`,
+  `crossorigin`, `media`) for SSR and prerender. An href that is not a path or an `http(s)` URL, a
+  preload with no `as` and a font preload with no `crossorigin` are `X_SEO_LINK_INVALID`, thrown at
+  render and reported at the route file by the `seo` step. **render:** a link's `href` is part of its
+  head-dedupe identity (except `canonical` and hreflang alternates), so two preloads are two tags.
 
 ## 22.6.2 - 2026-09-27
 

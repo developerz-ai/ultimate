@@ -510,6 +510,7 @@ No secret and no signature reaches a `cause`, a `fix` or a `meta`, and a URL is 
 | `X_LD_INVALID` | JSON-LD node is missing a required schema.org field | an `ld.*` helper called with a partial object | supply the field named in `cause` |
 | `X_SITEMAP_TOO_LARGE` | sitemap exceeds the 50,000-entry limit | too many prerendered URLs in one file | enable sitemap index splitting in `app.config.ts` |
 | `X_IMAGE_QUERY_INVALID` | a minted image URL's `?w=`/`?q=` value is present but unusable | `?w=0`, `?w=-5`, `?q=150` on a URL `responsiveImage()` minted | request a positive integer, e.g. `?w=640` (quality is `1`-`100`, e.g. `?q=75`) |
+| `X_SEO_LINK_INVALID` | a route meta link is unsafe or would fetch nothing | a javascript:/data: href, a preload with no as, or a font preload with no crossorigin | edit links in the route's defineRoute({ meta }): an http(s) or relative href, as on every preload, crossorigin on a font preload |
 
 ## PWA and build skew
 
