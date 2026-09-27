@@ -57,7 +57,14 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`ctx.actor` is never null** — the `auth` stage turns the hook's `null` into `anonymousActor()`.
 - **The context carries the inbound headers, never the `Request`** (`ctx.requestHeaders`,
   `useRequestHeader` / `useRequestCookie`).
-- **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.**
+- **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A route may
+  REPLACE it with `meta.authenticate` (never run beside it): `bearerMount` sets it so a session
+  cookie authenticates nothing on `/v1/*`.
+- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): same
+  handler, policy, idempotency; adds the credential (bearer only, `WWW-Authenticate` on 401), the
+  cut (outside the token's scopes = `X_ROUTE_NOT_FOUND`, the MCP rule), and a per-token bucket
+  keyed by a SHA-256 of the token. Bad prefix / unknown name / double claim:
+  `X_BEARER_MOUNT_INVALID` at construction.
 - **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
 
 ## Rules — the pipeline
@@ -67,6 +74,11 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `finalize.ts` owns the tail. Imports go `pipeline.ts` → `stages.ts`; a stage reads
   `StageRunnersInput`, never `PipelineDeps`. A new stage is an entry in both `PIPELINE_STAGES` and the
   `Record<StageName, StageRun>` table, with a `why` and a test.
+- **The request span is named by the route PATTERN** (`GET /r/:token`, `routeSpanName`), started
+  as the bare method and renamed after the match; `http.route` is the pattern or `unmatched`. A
+  concrete URL carries tokens and is attacker-chosen — never a span name, attribute or label.
+- **The CSP `connect-src` is `'self' blob:`** — no bare `ws:`/`wss:`. A cross-origin sync node is
+  the boot's `csp.extend` of that origin exactly. `security.hsts` merges key by key.
 - **The two inbound ids are read BEFORE the context and the span** (`correlation.ts`, core's
   `parseTraceparent`). `x-request-id` is gated on `trustProxy`; `traceparent` deliberately is not.
 - **Every proxy-supplied header goes through `forwardedElement(header, hops)`** — the entry at
@@ -211,6 +223,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `webhook-verify.ts` | the INBOUND webhook: the canonical string, the constant-time mac check and the replay window. The outbound half is `webhook()` in `@ultimat3/jobs`, which this package can never import |
 | `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only, plus `readCookie`. It negotiates nothing |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
+| `bearer-mount.ts` | a second door onto existing routes: `Authorization: Bearer` on a prefix, the scope cut, the per-token allowance |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
 
 ## Commands

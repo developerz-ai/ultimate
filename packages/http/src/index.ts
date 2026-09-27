@@ -15,6 +15,13 @@ export {
 export type { AppHttpConfig, BootOwnedHttpKey } from './app-config';
 export { configuredHttp, configureHttp, mergeHttpConfig, resetHttpConfig } from './app-config';
 export { NEXT_PARAM, nextAfterSignIn, signInRedirect } from './auth-redirect';
+export type {
+  BearerCaller,
+  BearerMountInput,
+  BearerMountRateLimit,
+  BearerResolver,
+} from './bearer-mount';
+export { bearerMount, bearerTokenOf, mountedPath } from './bearer-mount';
 export type { HttpConfig, HttpConfigInput } from './config';
 export { defineHttpConfig, MAX_PROXY_HOPS } from './config';
 export type { ActorView, RequestContext, RequestContextInit } from './context';
@@ -33,7 +40,7 @@ export type { InboundCorrelation } from './correlation';
 export type { CorsConfig } from './cors';
 export { allowedOrigin, corsHeaders, DEFAULT_CORS, originListed, preflight } from './cors';
 export type { CsrfCheckInput, CsrfConfig, CsrfMode, CsrfVerdict } from './csrf';
-export { checkCsrf, csrfBlocked } from './csrf';
+export { checkCsrf, csrfBlocked, selfOrigin } from './csrf';
 export type { Deadline } from './deadline';
 export { REQUEST_TIMEOUT_HEADER, resolveTimeoutMs, startDeadline } from './deadline';
 export type { ErrorFacts, ProblemDocument } from './error-facts';
@@ -66,6 +73,7 @@ export {
 } from './error-status';
 export type { HttpErrorCode } from './errors';
 export {
+  bearerMountInvalid,
   bodyInvalid,
   buildSkew,
   draining,

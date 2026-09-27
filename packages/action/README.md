@@ -164,9 +164,70 @@ keeps the second number off the first caller's bill.
 
 ## Path derivation
 
-First camelCase word is the verb; the rest is the resource, last word pluralized,
-kebab-cased. The **MCP tool name is not derived at all** — it is the export name verbatim, because
+One rule per app, declared once — `defineApi({ http: { pathStyle } })` — plus a per-action pin.
+
+| `pathStyle` | `publishPost` | `signIn` | `health` | `viewCustomer360` |
+|---|---|---|---|---|
+| `'resource'` (default) | `/api/posts/publish` | `/api/ins/sign` | `/api/healths/invoke` | `/api/customer360s/view` |
+| `'readable'` | `/api/publish-post` | `/api/sign-in` | `/api/health` | `/api/view-customer360` |
+
+- **`'resource'`** guesses a noun from the words after the first and pluralizes it — right for
+  `verbNoun`, ungrammatical otherwise. It stays the default: changing it moves every URL an app
+  serves, so an app opts in.
+- **`'readable'`** guesses nothing: `/api/<kebab-cased export name>`, the rule `/_x/query/<kebab>`
+  follows for reads. The OpenAPI tag becomes the resource the POLICY names (`can('cases:create')`
+  → `cases`), never a noun parsed from `In`.
+- **`http: { path }` pins one action's URL** whatever the style — for a webhook a vendor holds:
+  `action({ …, http: { path: '/api/webhooks/wompi' } })`. Static, lowercase, no params, never
+  `/_x` (`X_ACTION_HTTP_PATH_INVALID`). A pin colliding with another path is
+  `X_ACTION_PATH_DUPLICATE` at boot.
+- Every server-side reader agrees: `toRoute`, `toOpenApiOperation`, `describeAction`,
+  `derivePath(name)` (pin-aware) and `actionHttpPath(action | name)`. The browser's `rpc()` derives
+  from the name alone, so it is told the style: `rpc({ baseUrl, pathStyle: 'readable' })`; a pinned
+  action is called through `action.client()`, which holds the pin.
+
+```ts
+import { defineApi } from '@ultimat3/action';
+import type { BearerResolver } from '@ultimat3/http';
+
+declare const resolveToken: BearerResolver; // the app's MCP token resolver
+declare const MCP_SCOPES: Readonly<Record<string, readonly string[]>>;
+
+export const api = defineApi({
+  // actions, queries, jobs, tasks — as always
+  http: {
+    pathStyle: 'readable',
+    // A second door onto a cut of the SAME routes: Authorization: Bearer only (a session cookie
+    // authenticates nothing there), 404 for a primitive outside the token's scopes, and a
+    // per-token allowance answered with RateLimit-* and 429 + Retry-After.
+    mounts: [{
+      prefix: '/v1',
+      scopes: MCP_SCOPES,            // scope -> [primitive names]; the map defineAppMcp takes
+      resolveToken,                  // the MCP resolver: token -> { actor, scopes } | null
+      rateLimit: { limit: 120, windowMs: 60_000 },
+      openapi: 'openapi.v1.json',    // x manifest writes only the cut here; x verify checks it
+    }],
+  },
+  // Declaring it (any key) makes openapi.json COMPLETE: info, servers, securitySchemes
+  // (cookie; bearer when a mount exists), 401 + 429 (Retry-After) on every authenticated
+  // operation, RateLimit-* on rate-limited ones. Absent, the bytes are what they were.
+  openapi: {
+    title: 'Notificado API',
+    version: '1.0.0',
+    servers: [{ url: 'https://www.notificado.co' }],
+    sessionCookie: 'session',
+  },
+});
+```
+
+`toPostBinding(action, path)` is the same projection bound to a PAGE's URL for `POST`, the URL's
+query merged over the posted fields (query wins): what `defineRoute({ post: '<action>' })` mounts,
+for an RFC 8058 one-click unsubscribe.
+
+The **MCP tool name is not derived at all** — it is the export name verbatim, because
 that is what `defineAppMcp`'s `scopes:` and a `tools/call` have to spell.
+
+Under the default style:
 
 | Action | Route | MCP tool |
 |---|---|---|

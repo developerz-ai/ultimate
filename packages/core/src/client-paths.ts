@@ -52,11 +52,41 @@ export function pluralize(word: string): string {
 }
 
 /**
- * `publishPost` -> `/api/posts/publish`, `updateUserProfile` -> `/api/user-profiles/update`,
- * `checkout` -> `/api/checkouts/invoke` (single-word fallback).
+ * How an action's export name becomes its URL. Declared once per app
+ * (`defineApi({ http: { pathStyle } })`), never per action — one app, one rule.
+ *
+ * | style | `publishPost` | `signIn` | `health` |
+ * |---|---|---|---|
+ * | `'resource'` (default) | `/api/posts/publish` | `/api/ins/sign` | `/api/healths/invoke` |
+ * | `'readable'` | `/api/publish-post` | `/api/sign-in` | `/api/health` |
+ *
+ * `'resource'` guesses a noun from the words after the first and pluralizes it, which is right for
+ * `verbNoun` names and ungrammatical for everything else. `'readable'` guesses nothing: the path IS
+ * the name, kebab-cased — the rule `/_x/query/<kebab>` has always followed for reads.
  */
-export function actionRoute(name: string): ActionRoute {
+export type ActionPathStyle = 'resource' | 'readable';
+
+export const ACTION_PATH_STYLES: readonly ActionPathStyle[] = ['resource', 'readable'];
+
+/** Every action is served under one prefix, whichever style derives the rest. */
+export const ACTION_PATH_PREFIX = '/api';
+
+/**
+ * `publishPost` -> `/api/posts/publish`, `updateUserProfile` -> `/api/user-profiles/update`,
+ * `checkout` -> `/api/checkouts/invoke` (single-word fallback) — the `'resource'` style.
+ * `'readable'` -> `/api/publish-post`, `/api/update-user-profile`, `/api/checkout`: `verb` is the
+ * first word and `resource` the rest, both unpluralized, and neither is part of the path.
+ */
+export function actionRoute(name: string, style: ActionPathStyle = 'resource'): ActionRoute {
   const words = splitWords(name);
+  if (style === 'readable') {
+    const kebab = words.length === 0 ? 'invoke' : words.join('-');
+    return {
+      verb: words[0] ?? 'invoke',
+      resource: words.length < 2 ? kebab : words.slice(1).join('-'),
+      path: `${ACTION_PATH_PREFIX}/${kebab}`,
+    };
+  }
   const head = words[0] ?? 'invoke';
   if (words.length < 2) {
     const resource = pluralize(head);
@@ -68,9 +98,9 @@ export function actionRoute(name: string): ActionRoute {
   return { verb: head, resource, path: `/api/${resource}/${head}` };
 }
 
-/** The path an action is POSTed to — `actionRoute(name).path`. */
-export function actionPath(name: string): string {
-  return actionRoute(name).path;
+/** The path an action is POSTed to — `actionRoute(name, style).path`. */
+export function actionPath(name: string, style: ActionPathStyle = 'resource'): string {
+  return actionRoute(name, style).path;
 }
 
 /** `liveFeed` -> `/_x/query/live-feed`, read with `GET …?orgId=…`. */

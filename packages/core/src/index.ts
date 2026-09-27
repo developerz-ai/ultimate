@@ -68,8 +68,10 @@ export type {
   FlightPlan,
 } from './client-flight';
 export { createClientFlight, DEFAULT_CLIENT_RETRY, isTransientFailure } from './client-flight';
-export type { ActionRoute } from './client-paths';
+export type { ActionPathStyle, ActionRoute } from './client-paths';
 export {
+  ACTION_PATH_PREFIX,
+  ACTION_PATH_STYLES,
   actionPath,
   actionRoute,
   pluralize,

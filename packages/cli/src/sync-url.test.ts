@@ -1,7 +1,7 @@
 // The one rule for where a page's socket dials, now the framework's rather than each app's.
 
 import { describe, expect, test } from 'bun:test';
-import { SYNC_PATH, syncOriginsFrom, syncUrlFrom } from './sync-url';
+import { SYNC_PATH, syncConnectSources, syncOriginsFrom, syncUrlFrom } from './sync-url';
 
 describe('syncUrlFrom', () => {
   test('no SYNC_URL is the same-origin path — the node every rung already serves there', () => {
@@ -48,5 +48,17 @@ describe('syncOriginsFrom', () => {
       }
     })();
     expect((error as { code?: string }).code).toBe('X_CONFIG_INVALID');
+  });
+});
+
+describe('syncConnectSources', () => {
+  test('nothing for the same-origin node — the CSP baseline self covers it', () => {
+    expect(syncConnectSources({})).toEqual([]);
+  });
+
+  test('the ORIGIN of a cross-origin SYNC_URL, never a bare scheme', () => {
+    expect(syncConnectSources({ SYNC_URL: 'wss://sync.example.com:8443/_x/sync' })).toEqual([
+      'wss://sync.example.com:8443',
+    ]);
   });
 });

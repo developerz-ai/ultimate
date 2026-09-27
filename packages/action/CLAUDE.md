@@ -21,6 +21,10 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `define-api.ts` | `defineApi({ actions, mutators, queries, llm, jobs, tasks })` — the app's one boot call |
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
+| `openapi-complete.ts` | the COMPLETE document (`defineApi({ openapi })`: info, servers, security schemes, 401/429 by the ROUTE's `meta.auth`) and a bearer mount's own cut |
+| `http-path.ts` | where an action is served: the app's `pathStyle` + a per-action `http.path` pin, read lazily by every projection |
+| `api-declaration.ts` | `defineApi({ http, openapi })` held process-wide for the boot and `x manifest` |
+| `errors-http.ts` | the three HTTP-declaration refusals (codes registered in `errors.ts`) |
 | `client.ts` | typed RPC client (browser-safe: no server imports) — dispatches through core's `clientTransport` |
 | `record-wire.ts` | the record envelope on the HTTP projection: `carriesRecords` (from the output schema), the enveloped 200, and its OpenAPI shape. Server-only — `client.ts` never imports it |
 | `wire-issues.ts` | the ONE reader of a problem document's `issues` member — an untrusted array back into `@ultimat3/schema`'s `ValidationIssue` shape |
@@ -68,6 +72,14 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.
 - **`registerAction` guards the derived PATH as well as the name** (`X_ACTION_PATH_DUPLICATE`; a
   second index cleared by `resetRegistry`).
+- **A path is the app's `pathStyle` or the action's pin, never a third answer** (`http-path.ts`).
+  `'resource'` stays the default (changing it moves every URL). `defineApi` sets the style FIRST and
+  `configureActionPathStyle` re-derives every seated action (the module scan may have seated them
+  under the default). `derivePath(name)` is pin-aware through `installPinLookup` — handed down by
+  `registry.ts`, never imported up (cycle through `action.ts`). `rpc()` cannot see a pin: it takes
+  `pathStyle`; `action.client()` holds the pin.
+- **`defineApi({ openapi })` opts into the complete document; absent, `openapi.json`'s bytes are
+  unchanged** — an upgrade must not make a committed contract stale by itself.
 - Registration names the action the app exported, in place. Naming an already-named action is the
   only case that twins.
 - A mutator projects `.local`, `.server`, `.conflict` plus every action member — no aliases.

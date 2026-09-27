@@ -35,7 +35,7 @@ export function facadeFor<TInput extends StandardSchemaV1, TOutput extends Stand
       invoke(self(), input, { ...options, actor }) as Promise<InferOutput<TOutput>>,
     tool: () => toMcpTool(self()),
     openapi: () => toOpenApiOperation(self()),
-    client: (options) => clientMethodFor(actionName(self()), options),
+    client: (options) => clientMethodFor(actionName(self()), options, def.http?.path),
     job: () => toJobHandle(self()),
     contract: (options) => contractTestsFor(self(), options),
   };

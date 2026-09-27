@@ -10,7 +10,7 @@
 // param branch would also match, and a dead end in the static branch still falls
 // back to the param branch. Two routes that would tie are a build error
 // (`X_ROUTE_CONFLICT`) rather than a coin flip.
-import type { RenderMode } from '@ultimat3/core';
+import type { Actor, RenderMode } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { routeConflict } from './errors';
 import type { Bucket } from './rate-limit';
@@ -79,6 +79,16 @@ export interface RouteMeta {
    * serves for `/` cannot negotiate, so the served process must not either.
    */
   readonly localeSource?: 'path' | 'request';
+  /**
+   * THIS route's authenticator, in place of the app's `configureAuthenticator()` — never beside
+   * it. A route that states one is reached only through the credential it names: a bearer mount
+   * (`bearerMount`) sets it so a session cookie authenticates NOTHING there, which is also what
+   * keeps a cross-site form from riding a cookie into it. `null` is anonymous, as the hook's is.
+   */
+  readonly authenticate?: (
+    request: UltimateRequest,
+    ctx: RequestContext,
+  ) => Promise<Actor | null> | Actor | null;
 }
 
 export type RouteHandler = (

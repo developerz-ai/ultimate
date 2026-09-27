@@ -327,7 +327,7 @@ configureHttp({
 | `drainTimeoutMs` | `null` | `null` means "this app has not said" and core's own deadline stands. Declaring it IS declaring the process-wide drain budget, so it overrides `configureLifecycle({ deadlineMs })` |
 | `cors` | `origins: []`, `credentials: true` | `origins: ['*']` with `credentials: true` is `X_CORS_CONFIG_INVALID` at boot — no browser accepts the pair |
 | `csrf` | `mode: 'origin'` | `'origin' \| 'off'`. `mode: 'token'` is deliberately not shipped |
-| `security` | HSTS off until https is affirmed, CSP report-only in dev | `security.csp.extend` merges **per directive** with the boot's own hashes, so admitting a CDN source does not evict the hydration runtime's and lock every island out |
+| `security` | HSTS off until https is affirmed, CSP report-only in dev | `security.csp.extend` merges **per directive** with the boot's own hashes, so admitting a CDN source does not evict the hydration runtime's and lock every island out. `connect-src` is `'self' blob:` — no bare `ws:`/`wss:` (a socket to any host); a sync node on another origin (`SYNC_URL`) is added by that origin alone (`As of 22.6.0`). `security.hsts` merges key by key: `{ preload: true }` alone opts into preload over the two-year default, `null` sends none |
 | `locale` / `tz` | header + cookie names | it decides WHERE the request's locale and zone are read from; `@ultimat3/i18n` and `@ultimat3/time` decide what they mean |
 | `rateLimit` | `enabled`, `buckets`, `defaultBucket`, `tenantBucket: null` | `scope` is boot-owned (below). `tenantBucket` names a bucket a whole tenant spends **beside** the caller's own; a name `buckets` does not declare is `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN` at boot |
 

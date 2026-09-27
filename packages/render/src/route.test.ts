@@ -159,3 +159,29 @@ describe('the descriptor always carries a budget', () => {
     ).not.toThrow();
   });
 });
+
+describe('defineRoute({ post })', () => {
+  const page = { offline: 'network-only' as const, meta: () => ({ title: 'Baja' }) };
+
+  test('carries the action name on the descriptor', () => {
+    expect(defineRoute({ ...page, render: 'ssr', post: 'unsubscribeOnboarding' }).post).toBe(
+      'unsubscribeOnboarding',
+    );
+  });
+
+  test('absent stays absent — a page that binds nothing is byte-identical', () => {
+    expect('post' in defineRoute({ ...page, render: 'ssr' })).toBe(false);
+  });
+
+  test.each([['unsubscribe-onboarding'], [''], ['1abc']])('%j is not an export name', (post) => {
+    expect(() => defineRoute({ ...page, render: 'ssr', post })).toThrow(
+      expect.objectContaining({ code: 'X_ROUTE_POST_INVALID' }),
+    );
+  });
+
+  test('a static page has no process to answer the POST', () => {
+    expect(() => defineRoute({ ...page, render: 'static', post: 'unsubscribe' })).toThrow(
+      expect.objectContaining({ code: 'X_ROUTE_POST_INVALID' }),
+    );
+  });
+});

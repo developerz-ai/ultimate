@@ -286,6 +286,23 @@ every stage (middleware, finalize, security headers), and an upgraded request mu
 halves above cannot carry a case, the fallback is a long-poll `action` (`GET`-shaped, returning
 `{ frames, cursor }` and re-called on return), which is what the app that asked shipped.
 
+### A second door: `bearerMount` (`/v1/*`)
+
+`As of 22.6.0`. `bearerMount({ prefix, routes, scopes, resolveToken, rateLimit?, rateLimitStore? })`
+re-serves routes the app already projects under a prefix — same handler, same policy — and changes
+exactly three things. Apps declare it through `defineApi({ http: { mounts } })` (`@ultimat3/action`);
+`@ultimat3/cli` builds it in both boots over `apiRoutes()`.
+
+| On the mount | Answer |
+|---|---|
+| credential | `Authorization: Bearer` ONLY — `meta.authenticate` replaces the app's authenticator, so a session cookie authenticates nothing here (and a bearer call needs no CSRF proof) |
+| no / unresolved token | 401, `WWW-Authenticate: Bearer` / `Bearer error="invalid_token"` |
+| a primitive outside the token's `scopes` | 404 `X_ROUTE_NOT_FOUND`, identical to an unknown path — MCP's hidden-tool rule |
+| per-token allowance | `RateLimit-Limit/-Remaining/-Reset` on every answer, 429 + `Retry-After` past it; keyed by a SHA-256 of the token |
+| paths | `/api/<x>` → `<prefix>/<x>`, `/_x/query/<x>` → `GET <prefix>/<x>` (`mountedPath`) |
+
+`RouteMeta.authenticate` is the mechanism: a route that states one is reached only through it.
+
 ## Inbound webhooks
 
 `verifyWebhookSignature(request, { secret })` is the receiving half of the framework's webhook

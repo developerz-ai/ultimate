@@ -136,5 +136,6 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 | Log level | `LOG_LEVEL`, default `info` |
 | Secret redaction | a `Secret` is redacted by value before every other branch, at any depth → [Configuration](Configuration) |
 | Request context | the ALS context carries the request id every log line and span inherits |
+| Request span name | `GET /r/:token` — the route PATTERN, never the concrete URL (a token in a path would reach every collector); `http.route` carries the same pattern, and an unmatched request is named by its method alone with `http.route: unmatched` (`As of 22.6.0`) |
 
 Running an app for real — the PaaS → Compose → Kubernetes ladder, secrets, dashboards, datastore sizing, DR and runbooks — is the operations manual: [`docs/ops/`](https://github.com/developerz-ai/ultimate/tree/main/docs/ops), and specifically [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md). Recommendations only; the framework depends on none of it.

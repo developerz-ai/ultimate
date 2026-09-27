@@ -16,6 +16,7 @@ import { McpToolDuplicateError } from './errors';
 import { exposedPrimitives } from './exposed';
 import { toolsFrom, toolsListed } from './from-action';
 import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
+import type { McpOAuth } from './oauth-metadata';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
 import type { AnyMcpTool, McpVerbClass } from './registry';
@@ -118,6 +119,17 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * `postgresRateLimitStore({ executor })` the web role takes.
    */
   readonly rateLimitStore?: RateLimitStore | undefined;
+  /**
+   * OAuth discovery for remote MCP clients (the MCP authorization spec, RFC 9728): the route's 401
+   * says `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"`,
+   * and the boot serves that document (and the root one) naming `authorizationServers`. The
+   * authorization server — consent, `/oauth/token` — is the app's own routes.
+   *
+   * ```ts
+   * oauth: { authorizationServers: ['https://www.example.com'], resourceName: 'Example' },
+   * ```
+   */
+  readonly oauth?: McpOAuth | undefined;
 }
 
 export interface AppMcp {
@@ -201,6 +213,9 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
           ...(input.bodyLimitBytes !== undefined ? { bodyLimitBytes: input.bodyLimitBytes } : {}),
           ...(input.rateLimits !== undefined ? { rateLimits: input.rateLimits } : {}),
           ...(input.rateLimitStore !== undefined ? { rateLimitStore: input.rateLimitStore } : {}),
+          ...(input.oauth === undefined
+            ? {}
+            : { oauth: input.oauth, scopes: Object.keys(input.scopes ?? {}) }),
         });
 
   return { server, tools: projected, route };

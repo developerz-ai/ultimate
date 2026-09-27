@@ -58,8 +58,51 @@ describe('appMcpMount', () => {
     // The http pipeline must not pre-judge: the route reads its own bearer token.
     expect(route.meta).toEqual({ name: APP_MCP_ROUTE_NAME, auth: 'public', enforcedBy: 'handler' });
     const raw = new Request('http://app.test/agent', { method: 'POST' });
-    const response = await route.handler({ raw } as unknown as UltimateRequest, {} as never);
+    const ctx = { url: new URL(raw.url), https: true } as never;
+    const response = await route.handler({ raw } as unknown as UltimateRequest, ctx);
     expect(await response.text()).toBe('mcp:POST');
+  });
+
+  test('hands the route the PUBLIC origin, and serves the oauth metadata when declared', async () => {
+    const root = await fixture('oauth', {
+      'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+      'apps/web/mcp.ts': `export const mcp = {
+  server: {},
+  tools: [],
+  route: {
+    method: 'POST',
+    path: '/mcp',
+    rateLimitClass: () => 'read',
+    limits: { read: 1, write: 1 },
+    protectedResource: {
+      paths: ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-protected-resource'],
+      document: (origin) => ({ resource: origin + '/mcp', authorization_servers: [origin] }),
+    },
+    handle: async (_request, seen) => new Response(seen.origin),
+  },
+};
+`,
+    });
+    const mount = await appMcpMount(root);
+    expect(mount.routes.map((route) => `${route.method} ${route.path}`)).toEqual([
+      'POST /mcp',
+      'GET /.well-known/oauth-protected-resource/mcp',
+      'GET /.well-known/oauth-protected-resource',
+    ]);
+    // Behind a TLS-terminating ingress: an http:// internal URL, and ctx.https affirmed.
+    const raw = new Request('http://www.example.com/mcp', { method: 'POST' });
+    const ctx = { url: new URL(raw.url), https: true } as never;
+    const [post, metadata] = mount.routes;
+    if (post === undefined || metadata === undefined) return expect.unreachable('routes mounted');
+    const answered = await post.handler({ raw } as unknown as UltimateRequest, ctx);
+    expect(await answered.text()).toBe('https://www.example.com');
+    const document = await metadata.handler({ raw } as unknown as UltimateRequest, ctx);
+    expect(await document.json()).toEqual({
+      resource: 'https://www.example.com/mcp',
+      authorization_servers: ['https://www.example.com'],
+    });
+    expect(document.headers.get('access-control-allow-origin')).toBe('*');
+    expect(metadata.meta.auth).toBe('public');
   });
 
   test('expose true and no mcp.ts is one instruction, naming the file to write', async () => {

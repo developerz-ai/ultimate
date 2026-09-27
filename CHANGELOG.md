@@ -8,7 +8,71 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **core, action, cli:** `defineApi({ http: { pathStyle: 'readable' } })` — an action's URL is its
+  kebab-cased export name (`signIn` → `/api/sign-in`, `health` → `/api/health`,
+  `viewCustomer360` → `/api/view-customer360`) instead of the guessed plural resource
+  (`/api/ins/sign`). The default stays `'resource'`: no app's URLs move until it opts in. Under
+  `'readable'` the OpenAPI tag is the resource the policy names (`can('cases:create')` → `cases`).
+  `action({ http: { path: '/api/webhooks/wompi' } })` (and on `mutator()`) pins one action's URL
+  whatever the style — for paths a vendor holds. The typed client takes the style:
+  `rpc({ baseUrl, pathStyle: 'readable' })`; `action.client()` honours a pin. `derivePath(name)` is
+  now style- and pin-aware; new `actionHttpPath`, `configureActionPathStyle`, `actionPathStyle`,
+  core `actionRoute(name, style)` / `actionPath(name, style)`, `ActionPathStyle`,
+  `ACTION_PATH_STYLES`, `ACTION_PATH_PREFIX`. New codes `X_ACTION_HTTP_PATH_INVALID`,
+  `X_ACTION_PATH_STYLE_INVALID`.
+- **action, cli:** `defineApi({ openapi: { title, version, description, servers, sessionCookie } })`
+  opts `openapi.json` into the complete document: the app's `info` and `servers`,
+  `components.securitySchemes` (`cookie`; `bearer` when a mount exists), and `401` + `429` (with
+  `Retry-After`) Problem responses on every operation whose route authenticates, `RateLimit-*`
+  headers on rate-limited ones. Without the block the bytes are unchanged. `completeOpenApi`,
+  `mountOpenApi`, `apiDeclaration`. New code `X_OPENAPI_CONFIG_INVALID`.
+- **http, action, cli:** bearer mounts — `defineApi({ http: { mounts: [{ prefix: '/v1', scopes,
+  resolveToken, rateLimit, openapi: 'openapi.v1.json' }] } })` serves a cut of the same routes at
+  `/v1/*` (`/api/create-case` → `/v1/create-case`, `/_x/query/case-list` → `GET /v1/case-list`).
+  Only `Authorization: Bearer` authenticates there — a session cookie reaches nothing, so no CSRF
+  proof is needed; no or unresolved token is 401 with `WWW-Authenticate`; a primitive outside the
+  token's scopes is 404 like MCP's unknown tool; a per-token allowance answers `RateLimit-*` and
+  429 + `Retry-After`. `scopes`/`resolveToken` take exactly what `defineAppMcp` takes. `x manifest`
+  writes the mount's own document and `x verify` refuses it stale or missing. `@ultimat3/http`:
+  `bearerMount`, `bearerTokenOf`, `mountedPath`, `RouteMeta.authenticate` (a route's own
+  authenticator REPLACES the app's), `selfOrigin` exported. New code `X_BEARER_MOUNT_INVALID`.
+- **mcp, cli:** `defineAppMcp({ oauth: { authorizationServers, resource?, scopesSupported?,
+  resourceName?, resourceDocumentation? } })` — MCP authorization-spec discovery (RFC 9728): every
+  401 carries `WWW-Authenticate: Bearer realm="ultimate-mcp", resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"`
+  (`error="invalid_token"` when a token was sent), and both boots serve the metadata at that
+  path-inserted URL and at the root. The origin is the pipeline's public one (`ctx.https`).
+  `McpRouteDescriptor.protectedResource`, `handle(request, { origin })`. New code
+  `X_MCP_OAUTH_INVALID`.
+- **cli:** `apps/<app>/runtime.ts` → `runtime.routes` — plain HTTP routes at paths no primitive
+  projects to (`/.well-known/oauth-authorization-server`, a form-encoded `POST /oauth/token`
+  answering RFC 6749 JSON), mounted by `x dev` and the container through the whole pipeline.
+- **render, action, cli:** `defineRoute({ render: 'ssr', …, post: '<actionExportName>' })` binds
+  `POST` at the page's own URL to that action, the URL's query merged over the posted fields
+  (query wins) — an RFC 8058 one-click `POST /baja?t=…` with `List-Unsubscribe=One-Click` works
+  anonymously while `GET` stays the confirm page. `toPostBinding(action, path)`. New code
+  `X_ROUTE_POST_INVALID` (not an export name, on a `static` page, or — at boot — no such action).
+- **http:** `configureHttp({ security: { hsts: { preload: true } } })` — `hsts` now merges key by
+  key over the two-year default; `null` still sends none.
+- **core:** `Span.updateName(name)`.
+
+### Changed
+
+- **http:** CSP `connect-src` is `'self' blob:` — the bare `ws:`/`wss:` schemes (a socket to any
+  host) are gone. Same-origin realtime is covered by `'self'` (CSP Level 3); the boot adds a
+  cross-origin `SYNC_URL`'s origin exactly.
+- **mail:** one-click unsubscribe is documented as the supported path — one url for header and
+  footer, a page whose `GET` confirms and whose `POST` (`defineRoute({ post })`) unsubscribes;
+  `unsubscribeOneClick: false` is the fallback.
+
+### Security
+
+- **http:** the request span was named `GET /r/<token>` and carried the concrete path in
+  `http.route`, exporting every capability token in a URL to the trace collector. The span is now
+  named by the route PATTERN (`GET /r/:token`, or the bare method when nothing matched) and
+  `http.route` is the pattern or `unmatched`.
+- **mcp:** a 401 for a token that did not resolve now says `error="invalid_token"` (RFC 6750).
 
 ## 22.5.1 - 2026-09-27
 

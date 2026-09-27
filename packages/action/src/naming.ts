@@ -6,7 +6,8 @@
  */
 
 import type { ActionRoute } from '@ultimat3/core';
-import { actionRoute, splitWords } from '@ultimat3/core';
+import { splitWords } from '@ultimat3/core';
+import { resolveActionRoute } from './http-path';
 
 /**
  * The path rule is `@ultimat3/core`'s `client-paths.ts` — the typed client, the route and the
@@ -18,12 +19,15 @@ export { pluralize, splitWords } from '@ultimat3/core';
 export type ActionPath = ActionRoute;
 
 /**
- * `publishPost`        -> POST /api/posts/publish
- * `updateUserProfile`  -> POST /api/user-profiles/update
- * `checkout`           -> POST /api/checkouts/invoke   (single-word fallback)
+ * Where the action NAMED `name` is served, as the running app serves it: its `http.path` pin
+ * when the registered action declares one, else the app's `pathStyle` over the name.
+ *
+ * `'resource'` (the default): `publishPost` -> POST /api/posts/publish,
+ * `updateUserProfile` -> /api/user-profiles/update, `checkout` -> /api/checkouts/invoke.
+ * `'readable'`: `publishPost` -> /api/publish-post, `signIn` -> /api/sign-in.
  */
 export function derivePath(name: string): ActionPath {
-  return actionRoute(name);
+  return resolveActionRoute(name);
 }
 
 // There is deliberately no `toToolName`. An MCP tool name is the export name verbatim — the one

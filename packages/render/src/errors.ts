@@ -26,6 +26,7 @@ export const RENDER_ERROR_CODES = [
   // about render's own output. `x verify` is only the surface that reports it.
   'X_STYLES_GLOBAL_MISSING',
   'X_ASSET_MISSING',
+  'X_ROUTE_POST_INVALID',
 ] as const;
 
 export type RenderErrorCode = (typeof RENDER_ERROR_CODES)[number];
@@ -49,6 +50,7 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_STYLES_GLOBAL_MISSING:
     'a surface renders documents whose CSS defines no :root custom properties',
   X_ASSET_MISSING: 'a page names a site asset the app does not have',
+  X_ROUTE_POST_INVALID: "a page route's post binding cannot be mounted",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -183,6 +185,21 @@ export class PrerenderFailedError extends UltimateError {
 }
 
 /** `load` is optional, so this catches a value that is present and not callable. */
+/**
+ * `defineRoute({ post })` that cannot be mounted: not an export name, on a page no process
+ * answers (`static`, `spa`), or — at boot — naming no registered action.
+ */
+export class RoutePostInvalidError extends UltimateError {
+  static readonly code = 'X_ROUTE_POST_INVALID' as const;
+  constructor(cause: string) {
+    super({
+      code: RoutePostInvalidError.code,
+      cause,
+      fix: "defineRoute({ render: 'ssr', ..., post: '<actionExportName>' }) naming an action the app registers — x actions list --json prints them",
+    });
+  }
+}
+
 export class RouteLoadInvalidError extends UltimateError {
   static readonly code = 'X_ROUTE_LOAD_INVALID' as const;
   constructor(cause: string, fix: string) {

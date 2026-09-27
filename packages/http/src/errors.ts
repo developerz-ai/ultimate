@@ -38,6 +38,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_CSRF_BLOCKED',
   'X_WEBHOOK_SIGNATURE_INVALID',
   'X_WEBHOOK_SIGNATURE_STALE',
+  'X_BEARER_MOUNT_INVALID',
 ] as const;
 
 /**
@@ -101,6 +102,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_CSRF_BLOCKED: 'a credentialed write arrived from an origin that is not allowed to make it',
   X_WEBHOOK_SIGNATURE_INVALID: 'the inbound webhook is not signed by the holder of this secret',
   X_WEBHOOK_SIGNATURE_STALE: 'the inbound webhook is signed correctly and is too old to accept',
+  X_BEARER_MOUNT_INVALID: 'a bearer mount declaration cannot be served as written',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title
@@ -214,6 +216,14 @@ export const bodyInvalid = (
     // the one instruction the reader is given fails when they run it. `x routes` ships, and
     // `hasInputSchema` plus the route's name is what it prints.
     fix: `x routes --json   # find ${pathname}, then send a body matching its input schema`,
+  });
+
+/** At construction: a hole in a scope, or a prefix shadowing `/api` or `/_x`, never serves. */
+export const bearerMountInvalid = (prefix: string, reason: string): HttpError =>
+  new HttpError({
+    code: 'X_BEARER_MOUNT_INVALID',
+    cause: `the bearer mount at ${JSON.stringify(prefix)} cannot be served: ${reason}`,
+    fix: "declare mounts: [{ prefix: '/v1', scopes: { 'cases:read': ['caseList'] }, resolveToken }] in defineApi({ http }) — a prefix of lowercase segments that is not /api or /_x, naming only registered actions and queries (x routes --json lists them)",
   });
 
 export const unauthenticated = (pathname: string): HttpError =>

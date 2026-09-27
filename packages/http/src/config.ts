@@ -97,11 +97,29 @@ export interface HttpConfigInput {
   readonly tz?: Partial<TimeZoneConfig>;
   readonly cors?: Partial<CorsConfig>;
   readonly csrf?: Partial<CsrfConfig>;
-  readonly security?: Partial<Omit<SecurityConfig, 'csp'>> & {
+  readonly security?: Partial<Omit<SecurityConfig, 'csp' | 'hsts'>> & {
     readonly csp?: Partial<SecurityConfig['csp']>;
+    /**
+     * Merged over `DEFAULT_SECURITY.hsts` key by key, so `{ preload: true }` alone is the preload
+     * opt-in (submit the host at hstspreload.org only after that). `null` sends no HSTS at all.
+     */
+    readonly hsts?: Partial<NonNullable<SecurityConfig['hsts']>> | null;
   };
   readonly rateLimit?: Partial<RateLimitConfig>;
 }
+
+/** Key by key over the default two-year policy; `null` is the one way to send none. */
+const resolveHsts = (
+  input: Partial<NonNullable<SecurityConfig['hsts']>> | null | undefined,
+): SecurityConfig['hsts'] => {
+  if (input === null) return null;
+  const base = DEFAULT_SECURITY.hsts ?? {
+    maxAgeSeconds: 63_072_000,
+    includeSubdomains: true,
+    preload: false,
+  };
+  return { ...base, ...input };
+};
 
 /**
  * `basePath` is stripped before matching so route paths never encode the mount point.
@@ -268,7 +286,12 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     tz: { ...DEFAULT_TZ_CONFIG, ...input.tz },
     cors,
     csrf: { ...DEFAULT_CSRF, ...input.csrf },
-    security: { ...DEFAULT_SECURITY, ...input.security, csp },
+    security: {
+      ...DEFAULT_SECURITY,
+      ...input.security,
+      csp,
+      hsts: resolveHsts(input.security?.hsts),
+    },
     rateLimit: resolveRateLimitConfig(input.rateLimit),
   };
 };

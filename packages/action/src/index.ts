@@ -58,6 +58,18 @@ export type {
 } from './action';
 export { action, describeAction, isAction } from './action';
 /**
+ * The app's API as a whole — `defineApi({ http: { pathStyle, mounts }, openapi })` — read back by
+ * the boot (bearer mounts) and `x manifest` (the complete and per-mount documents).
+ */
+export type {
+  ApiDeclaration,
+  ApiHttp,
+  ApiMount,
+  ApiOpenApi,
+  OpenApiServer,
+} from './api-declaration';
+export { apiDeclaration } from './api-declaration';
+/**
  * The audit seam. `AuditSink` is the whole extension point: the framework supplies the record
  * and never the row. `audit-gate.ts` stays unexported — the sink has one caller, and that
  * absence is what keeps it one.
@@ -123,14 +135,24 @@ export {
   RemoteActionError,
   RpcFailedError,
 } from './errors';
+export {
+  ActionHttpPathInvalidError,
+  ActionPathStyleInvalidError,
+  OpenApiConfigInvalidError,
+} from './errors-http';
 export type { OpenApiOperation } from './http';
 export {
   BUILD_ID_HEADER,
   IDEMPOTENCY_HEADER,
+  operationTagOf,
   REPLAYED_HEADER,
   toOpenApiOperation,
+  toPostBinding,
   toRoute,
 } from './http';
+/** `http: { path }` on an action pins its URL; the app's `pathStyle` derives every other one. */
+export type { ActionHttp } from './http-path';
+export { actionPathStyle } from './http-path';
 /**
  * The idempotency seam. `withIdempotency` and `IDEMPOTENCY_HEADER` are both public, so a plain
  * mutating `route` can reserve-and-replay exactly as an action does — `idempotencyKeyFor` is the
@@ -208,6 +230,12 @@ export type { ActionPath } from './naming';
 export { derivePath, inputSchemaName, outputSchemaName, pluralize } from './naming';
 export type { BuildOpenApiOptions, OpenApiDocument, OpenApiInfo } from './openapi';
 export { buildOpenApi, serializeOpenApi } from './openapi';
+export {
+  BEARER_SCHEME,
+  COOKIE_SCHEME,
+  completeOpenApi,
+  mountOpenApi,
+} from './openapi-complete';
 export type { ActionPolicy, PolicySubject, Surface } from './policy-gate';
 /**
  * `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on.
@@ -223,6 +251,8 @@ export {
   policyPermissions,
 } from './policy-gate';
 export {
+  actionHttpPath,
+  configureActionPathStyle,
   describeActions,
   getAction,
   listActions,

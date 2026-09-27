@@ -23,6 +23,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_GROUP_CONFLICT',
   'X_MCP_SURFACE_INVALID',
   'X_MCP_LIST_PARAMS_INVALID',
+  'X_MCP_OAUTH_INVALID',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -47,6 +48,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_GROUP_CONFLICT: 'two resource groups claim one MCP tool',
   X_MCP_SURFACE_INVALID: 'the MCP meta surface is declared inconsistently',
   X_MCP_LIST_PARAMS_INVALID: "a tool's listParams names a key its own input does not accept",
+  X_MCP_OAUTH_INVALID: 'the MCP oauth block cannot be published as protected-resource metadata',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -414,6 +416,17 @@ export class McpRateLimitedError extends UltimateError {
       // carrying the number only in its prose sheds a caller with no delay to honour, which is the
       // stampede `admit` exists to spread.
       meta: { retryAfterSeconds: input.retryAfterSeconds },
+    });
+  }
+}
+
+/** `defineAppMcp({ oauth })` refused at boot — see `oauth-metadata.ts`. */
+export class McpOAuthInvalidError extends UltimateError {
+  constructor(reason: string) {
+    super({
+      code: 'X_MCP_OAUTH_INVALID',
+      cause: `defineAppMcp({ oauth }) cannot be published as protected-resource metadata: ${reason}`,
+      fix: "defineAppMcp({ ..., oauth: { authorizationServers: ['https://www.example.com'] } }) — at least one absolute https (or http://localhost) issuer URL; resource and resourceDocumentation, when set, absolute URLs with no fragment",
     });
   }
 }

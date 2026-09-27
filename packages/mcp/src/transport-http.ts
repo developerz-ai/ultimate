@@ -24,6 +24,15 @@ import { finiteCount, readWithinLimit, systemClock } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import { memoryRateLimitStore, toBucket } from '@ultimat3/http';
 import { McpBodyTooLargeError, McpRateLimitedError } from './errors';
+import type { McpOAuth } from './oauth-metadata';
+import {
+  assertMcpOAuth,
+  bearerChallenge,
+  metadataPaths,
+  metadataUrlFor,
+  protectedResourceMetadata,
+  resourceUrl,
+} from './oauth-metadata';
 import type { McpCaller, McpRole, McpVerbClass } from './registry';
 import type { McpServer } from './server';
 import type { JsonRpcResponse } from './wire';
@@ -75,6 +84,28 @@ export interface McpHttpTransportInput {
   readonly rateLimitStore?: RateLimitStore | undefined;
   /** The one clock the buckets refill on. Defaulted, never read inline, so a test can freeze it. */
   readonly clock?: Clock | undefined;
+  /**
+   * Publish RFC 9728 protected-resource metadata and name it in every 401's `WWW-Authenticate` —
+   * the discovery an OAuth-capable MCP client (a remote connector) starts from. Absent, the 401
+   * says `Bearer realm="ultimate-mcp"` as it always did.
+   */
+  readonly oauth?: McpOAuth | undefined;
+  /** `scopes_supported` when `oauth.scopesSupported` is not stated: the app's scope names. */
+  readonly scopes?: readonly string[] | undefined;
+}
+
+/** How the host saw the request — what a bare `Request` behind a TLS-terminating proxy cannot say. */
+export interface McpRequestOrigin {
+  /** The PUBLIC origin, `https://www.example.com`. Defaults to the request URL's own. */
+  readonly origin?: string | undefined;
+}
+
+/** The metadata half of an `oauth` route: where to serve it and what to answer. */
+export interface McpProtectedResource {
+  /** `/.well-known/oauth-protected-resource/mcp` and the root one. `GET`, public. */
+  readonly paths: readonly string[];
+  /** The document, for the public origin the request arrived on. */
+  document(origin: string): Record<string, unknown>;
 }
 
 export interface McpRouteDescriptor {
@@ -84,7 +115,9 @@ export interface McpRouteDescriptor {
   rateLimitClass(body: unknown): McpVerbClass;
   /** Requests per minute per caller, by class — what `handle` actually spends against. */
   readonly limits: Readonly<Record<McpVerbClass, number>>;
-  handle(request: Request): Promise<Response>;
+  /** Present exactly when the route was built with `oauth`. */
+  readonly protectedResource?: McpProtectedResource;
+  handle(request: Request, seen?: McpRequestOrigin): Promise<Response>;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json' } as const;
@@ -118,23 +151,41 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
   });
 
   const path = input.path ?? '/mcp';
+  const oauth = input.oauth;
+  if (oauth !== undefined) assertMcpOAuth(oauth);
+  const scopes = input.scopes ?? [];
+  const resourceOf = (request: Request, seen: McpRequestOrigin | undefined): string | undefined =>
+    oauth === undefined
+      ? undefined
+      : resourceUrl(oauth, seen?.origin ?? new URL(request.url).origin, path);
 
   return {
     method: 'POST',
     path,
     limits,
     rateLimitClass: (body) => server.classify(body),
+    ...(oauth === undefined
+      ? {}
+      : {
+          protectedResource: {
+            paths: metadataPaths(path),
+            document: (origin: string) =>
+              protectedResourceMetadata(oauth, resourceUrl(oauth, origin, path), scopes),
+          },
+        }),
 
-    async handle(request: Request): Promise<Response> {
+    async handle(request: Request, seen?: McpRequestOrigin): Promise<Response> {
       // Every authentication answer lands BEFORE the body is read. Parsing first meant a caller
       // holding a rejected token still learned whether its JSON was well formed — `400 parse
       // error` for one payload and `401` for the next is exactly the oracle the 401 exists to
       // remove, and it costs nothing to close: the body is not an input to any of these.
+      const resource = resourceOf(request, seen);
+      const metadataUrl = resource === undefined ? undefined : metadataUrlFor(resource);
       const token = bearerToken(request);
-      if (token === null) return unauthorized();
+      if (token === null) return unauthorized(bearerChallenge(metadataUrl, false));
 
       const resolved = await input.resolveToken(token);
-      if (resolved === null) return unauthorized();
+      if (resolved === null) return unauthorized(bearerChallenge(metadataUrl, true));
       if (!isAgentActor(resolved.actor)) return notAnAgent();
 
       // Read through the counting reader, never `request.json()`: the cap has to be enforced
@@ -253,7 +304,7 @@ function notAnAgent(): Response {
   );
 }
 
-function unauthorized(): Response {
+function unauthorized(challenge: string): Response {
   return new Response(
     JSON.stringify({
       code: 'X_MCP_PROTOCOL',
@@ -262,7 +313,7 @@ function unauthorized(): Response {
     }),
     {
       status: 401,
-      headers: { ...JSON_HEADERS, 'www-authenticate': 'Bearer realm="ultimate-mcp"' },
+      headers: { ...JSON_HEADERS, 'www-authenticate': challenge },
     },
   );
 }

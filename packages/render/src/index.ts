@@ -54,6 +54,7 @@ export {
   RouteMetaMissingError,
   RouteModeInvalidError,
   RouteOfflineMissingError,
+  RoutePostInvalidError,
   RouteStatusInvalidError,
   SurfaceBoundaryError,
 } from './errors';

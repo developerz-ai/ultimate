@@ -62,8 +62,14 @@ const baseline = (config: SecurityConfig): Record<string, readonly string[]> => 
   'style-src-attr': ["'unsafe-inline'"],
   'img-src': ["'self'", 'data:', 'blob:'],
   'font-src': ["'self'"],
-  // ws:/wss: are required by the realtime tiers; blob: by streamed responses.
-  'connect-src': ["'self'", 'ws:', 'wss:', 'blob:'],
+  // `'self'` and nothing wider. The bare `ws:`/`wss:` schemes this used to carry let a script
+  // injected anywhere on the page open a socket to ANY host — an exfiltration channel the rest of
+  // the policy exists to close. CSP Level 3 matches `'self'` against the page's own host over
+  // ws/wss as well (every evergreen engine, As of 2026-09), which is where the sync node is
+  // served on every rung that shares the page origin. A sync node on ANOTHER origin (`SYNC_URL`)
+  // is added by the boot through `csp.extend` — its origin exactly, never a scheme.
+  // blob: is required by streamed responses.
+  'connect-src': ["'self'", 'blob:'],
   'worker-src': ["'self'", 'blob:'],
   'manifest-src': ["'self'"],
   'media-src': ["'self'", 'blob:'],

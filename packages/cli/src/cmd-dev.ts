@@ -232,6 +232,8 @@ async function bootDev(
     dashboard,
     islands: () => state.islands,
     realtime: runtime.realtime,
+    rateLimitStore: appRuntime?.rateLimitStore ?? runtime.rateLimitStore,
+    appRoutes: appRuntime?.routes,
   });
 
   // The app's `apps/<app>/runtime.ts`, composed exactly as `runRole` composes a caller's

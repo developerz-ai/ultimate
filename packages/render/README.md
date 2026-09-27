@@ -117,6 +117,15 @@ through `cacheControl()`, and its `vary` joins the defaults. `As of 2026-09-24` 
 `RouteCache`; `@ultimat3/http` is a dependency of this package for that type and for
 `cacheControl` in the server half.
 
+## `post` — the page's URL also answers `POST`
+
+`defineRoute({ render: 'ssr', …, post: 'unsubscribeOnboarding' })` binds `POST <this page's path>`
+to the named action: its policy, idempotency and redirect, with the URL's query merged over the
+posted fields (query wins). An RFC 8058 one-click `POST /correos/baja?t=…` with
+`List-Unsubscribe=One-Click` reaches the action as `{ t, 'List-Unsubscribe': 'One-Click' }`, while
+`GET` stays the confirm page. `@ultimat3/cli` mounts it in both boots; a name no action is
+registered under is `X_ROUTE_POST_INVALID` at boot, as is `post` on a `static` page.
+
 ## Mode invariants, checked at registration
 
 | Mode | Invariant | Error if violated |

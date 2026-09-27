@@ -64,6 +64,7 @@ export {
   McpArgsInvalidError,
   McpBodyTooLargeError,
   McpNotBranchDbError,
+  McpOAuthInvalidError,
   McpProtocolError,
   McpQueryRejectedError,
   McpRateLimitedError,
@@ -111,6 +112,13 @@ export {
   META_TOOL_NAMES,
   oneLineParams,
 } from './meta-surface';
+export type { McpOAuth } from './oauth-metadata';
+export {
+  metadataPaths,
+  metadataUrlFor,
+  PROTECTED_RESOURCE_WELL_KNOWN,
+  protectedResourceMetadata,
+} from './oauth-metadata';
 export type { ListedPrimitive } from './projectable';
 export { asProjectable } from './projectable';
 export type { QueryLimits, QueryResult, QueryRows } from './query-limits';
@@ -156,6 +164,8 @@ export type { CreateMcpServerInput, McpWire } from './server';
 export { createMcpServer, McpServer } from './server';
 export type {
   McpHttpTransportInput,
+  McpProtectedResource,
+  McpRequestOrigin,
   McpRouteDescriptor,
   ResolvedToken,
 } from './transport-http';

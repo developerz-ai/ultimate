@@ -11,6 +11,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
+import { json, selfOrigin } from '@ultimat3/http';
 import { type AppMcp, McpAppUnmountedError } from '@ultimat3/mcp';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
@@ -113,14 +114,37 @@ export async function appMcpMount(root: string): Promise<AppMcpMount> {
         warning: new McpAppUnmountedError({ reason: 'no-route', path: declared.path, file }),
       };
     }
+    // The PUBLIC origin, as the pipeline resolved it (`ctx.https` honours a trusted proxy's
+    // `x-forwarded-proto`): behind a TLS-terminating ingress the raw request URL is `http://` on
+    // an internal host, and a `resource_metadata` naming that is a URL no client can reach.
+    const resource = route.protectedResource;
     return {
       routes: [
         {
           method: 'POST',
           path: declared.path,
-          handler: (request) => route.handle(request.raw),
+          handler: (request, ctx) =>
+            route.handle(request.raw, { origin: selfOrigin(ctx.url, ctx.https) }),
           meta: { name: APP_MCP_ROUTE_NAME, auth: 'public', enforcedBy: 'handler' },
         },
+        // RFC 9728 protected-resource metadata, when the app declared `oauth`: path-inserted and
+        // at the root, so a client probing either finds the authorization server.
+        ...(resource === undefined
+          ? []
+          : resource.paths.map(
+              (path): Route => ({
+                method: 'GET',
+                path,
+                handler: (_request, ctx) => {
+                  const response = json(resource.document(selfOrigin(ctx.url, ctx.https)));
+                  // A browser-hosted MCP client reads this cross-origin; it holds nothing secret.
+                  response.headers.set('access-control-allow-origin', '*');
+                  response.headers.set('cache-control', 'public, max-age=3600');
+                  return response;
+                },
+                meta: { name: `${APP_MCP_ROUTE_NAME}.oauth-protected-resource`, auth: 'public' },
+              }),
+            )),
       ],
       path: declared.path,
       warning: undefined,

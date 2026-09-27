@@ -98,8 +98,42 @@ container. The contract is one file:
 | exposed and unmountable | `X_MCP_APP_UNMOUNTED`, logged once | no file exports `mcp`, or it was built without `resolveToken` (no `route`); the fix names the file to write |
 
 The same discovery serves an app's `RuntimeOverrides`: `apps/<app>/runtime.ts` exporting `runtime`
-reaches `x dev` (its middleware and rate-limit store) and `runRole` when `apps/web/server.ts`
-passes none — one middleware chain in development and in the container, not two.
+reaches `x dev` (its middleware, rate-limit store and plain `routes`) and `runRole` when
+`apps/web/server.ts` passes none — one middleware chain in development and in the container, not two.
+`runtime.routes` (`As of 22.6.0`) is the one escape hatch for a URL no primitive projects to and a
+wire format none speaks — an OAuth token endpoint answering RFC 6749 JSON to a form-encoded POST —
+mounted after the framework's routes and before the pages, through the whole pipeline.
+
+### OAuth discovery for remote connectors
+
+`defineAppMcp({ oauth })` makes the endpoint an OAuth 2.1 protected resource per the MCP
+authorization spec (2025-06-18; unchanged in 2025-11-25) and RFC 9728 (`As of 22.6.0`):
+
+```ts
+export const mcp = defineAppMcp({
+  include: 'exposed',
+  scopes: MCP_SCOPES,
+  resolveToken,
+  oauth: {
+    authorizationServers: ['https://www.example.com'], // issuer(s); https, or http on localhost
+    resourceName: 'Example',
+    // resource: 'https://www.example.com/mcp',   // omitted: the request's PUBLIC origin + path
+    // scopesSupported: [...],                     // omitted: Object.keys(scopes)
+  },
+});
+```
+
+| What | Answer |
+|---|---|
+| 401 (no token) | `WWW-Authenticate: Bearer realm="ultimate-mcp", resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"` |
+| 401 (token did not resolve) | the same plus `error="invalid_token"` |
+| `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` | `{ resource, authorization_servers, bearer_methods_supported: ['header'], scopes_supported, resource_name }`, public, `access-control-allow-origin: *` — mounted by both boots beside `POST /mcp` |
+| origin | `ctx.https` + host as the pipeline resolved them, so a TLS-terminating ingress yields `https://…` |
+
+The authorization server (`/.well-known/oauth-authorization-server`, `/oauth/authorize`,
+`/oauth/token`) is the app's: consent is a page, and the endpoints whose wire format RFC 6749/8414
+fixes are plain routes from `apps/<app>/runtime.ts` → `runtime.routes`. Without `oauth`, the 401 is
+`Bearer realm="ultimate-mcp"` as before. Bad block: `X_MCP_OAUTH_INVALID` at definition.
 
 ## Three outcomes, deliberately different
 

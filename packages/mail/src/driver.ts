@@ -28,9 +28,11 @@ export interface MailMessage {
   readonly bcc?: readonly string[] | undefined;
   readonly unsubscribeUrl?: string | undefined;
   /**
-   * `false` drops `List-Unsubscribe-Post` and keeps the GET-only `List-Unsubscribe`: for an
-   * `unsubscribeUrl` that is a confirm page, which cannot honour RFC 8058's promise that a POST to
-   * it unsubscribes. Absent means `true` — one-click, what Gmail and Yahoo require of bulk senders.
+   * Absent means `true` — one-click, what Gmail and Yahoo require of bulk senders, and the
+   * supported path: the url is a page whose `GET` confirms and whose `POST` unsubscribes
+   * (`defineRoute({ post: '<action>' })` in `@ultimat3/render`). `false` drops
+   * `List-Unsubscribe-Post` and keeps the GET-only `List-Unsubscribe`, for a url that cannot yet
+   * honour RFC 8058's promise that a POST to it unsubscribes.
    */
   readonly unsubscribeOneClick?: boolean | undefined;
   readonly idempotencyKey?: string | undefined;

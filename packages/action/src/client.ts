@@ -15,7 +15,13 @@
  * check (`onResponse`) and the action-named error decode (`decodeError`). The caller still gets exactly the action's output — the envelope
  * never reaches the return type.
  */
-import type { ClientFlight, ClientRetry, FetchLike, UltimateError } from '@ultimat3/core';
+import type {
+  ActionPathStyle,
+  ClientFlight,
+  ClientRetry,
+  FetchLike,
+  UltimateError,
+} from '@ultimat3/core';
 import {
   actionPath,
   clientTransport,
@@ -77,6 +83,13 @@ export interface ClientOptions {
    * nothing else, which is what every caller written before this option existed already gets.
    */
   readonly flight?: ClientFlight;
+  /**
+   * The server's `defineApi({ http: { pathStyle } })`, restated: the browser derives each URL from
+   * the name and cannot read the server's registry. Absent is `'resource'`, the server's default.
+   * A per-action `http.path` pin is honoured by `action.client()` (it holds the declaration); the
+   * name-only `rpc()` proxy cannot see one, so a pinned action is called through its own client.
+   */
+  readonly pathStyle?: ActionPathStyle;
 }
 
 /**
@@ -108,8 +121,10 @@ export function rpc<TActions extends ActionMap>(options: ClientOptions): Client<
 export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
   name: string,
   options: ClientOptions,
+  pinnedPath?: string,
 ): ClientMethod<TInput, TOutput> {
-  const url = `${options.baseUrl.replace(/\/+$/, '')}${actionPath(name)}`;
+  const path = pinnedPath ?? actionPath(name, options.pathStyle ?? 'resource');
+  const url = `${options.baseUrl.replace(/\/+$/, '')}${path}`;
   const onResponse = (response: Response): void =>
     assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
   const decodeError = (status: number, text: string): UltimateError | undefined =>

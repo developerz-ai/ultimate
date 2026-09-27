@@ -5,7 +5,7 @@
 // as the first arm of `overrides?.x ?? <the env-selected default>`.
 
 import type { PurgeDriver } from '@ultimat3/cache';
-import type { Middleware, RateLimitStore } from '@ultimat3/http';
+import type { Middleware, RateLimitStore, Route } from '@ultimat3/http';
 import type { JobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import type { SyncAuthenticator, Transport } from '@ultimat3/realtime/server';
@@ -60,6 +60,15 @@ export interface RuntimeOverrides {
   readonly isrStore?: IsrStore;
   /** Prepended to the pipeline by `createServer`, which `startRoles` never passed one. */
   readonly middleware?: readonly Middleware[];
+  /**
+   * Plain HTTP routes at paths no primitive projects to — `/.well-known/oauth-authorization-server`,
+   * a form-encoded `POST /oauth/token` answering RFC 6749 JSON, a feed with its own content type.
+   * Mounted by both boots, after the framework's own and before the pages, through the same
+   * pipeline (`meta.auth` required, CSRF, limits, security headers). The one escape hatch for a
+   * wire format a primitive cannot speak: an action answers JSON or a problem document, a page
+   * answers a document, and a protocol that fixes its own error shape is neither.
+   */
+  readonly routes?: readonly Route[];
   /** The `/media/*` transform. Omitted, `builtinImageDriver` — core's PNG/JPEG pipeline. */
   readonly images?: ImageTransformDriver;
   /**

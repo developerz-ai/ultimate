@@ -32,6 +32,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | `rateLimit` | `{ limit: number; windowMs: number }` | no | registers a bucket named after the action, enforced at the **HTTP** edge — the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. Keyed actor → org → IP. **Not** read at the MCP edge: `/mcp` buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) and never sees this declaration |
 | `idempotent` | `boolean` | no | marks the action safe to retry with an `Idempotency-Key` header |
+| `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a vendor holds (`'/api/webhooks/wompi'`). Static, lowercase, no params, never `/_x` (`X_ACTION_HTTP_PATH_INVALID`) |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
 
 `ctx` members an action may use:
@@ -72,7 +73,7 @@ Every projection needs the name `registerActions()` stamps on. It names the expo
 
 | # | Artifact | Derived from | Notes |
 |---|---|---|---|
-| 1 | **HTTP route** | name + `input` | `POST /api/posts/publish` — first word is the verb, the rest is the pluralized resource. Body parsed by `input`, errors are `UltimateError` JSON |
+| 1 | **HTTP route** | name + `input` | `POST /api/posts/publish` — first word is the verb, the rest is the pluralized resource (the default `pathStyle: 'resource'`); `defineApi({ http: { pathStyle: 'readable' } })` makes it `/api/publish-post`, the kebab-cased name, and `http.path` pins one. Body parsed by `input`, errors are `UltimateError` JSON |
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | `publishPost.openapi()`, emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
 | 3 | **Typed client function** | `input` + `output` | one map-wide client, `export const client = rpc<Api['actions']>({ baseUrl })`, then `await client.publishPost({ postId })` in `app/`; or `publishPost.client({ baseUrl })` for a single method. `rpc` is the only name for the map-wide client — no `createClient` alias, no fetch, no codegen step to remember |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
@@ -82,6 +83,17 @@ Every projection needs the name `registerActions()` stamps on. It names the expo
 Plus cache invalidation: `cache.invalidates` fans out to request memo, in-process LRU (all instances, over NATS), Redis, ISR pages, and the CDN purge webhook in one hop ([Caching and invalidation](Caching-And-Invalidation)).
 
 There is **one execution path**. HTTP, MCP, jobs, and direct server calls differ only in the surface they declare, which selects how a denial is rendered — never whether authz runs and never how input is validated.
+
+## The API as a whole — `defineApi({ http, openapi })`
+
+`As of 22.6.0`. Declared once, beside the primitives, and read by the boot and `x manifest`:
+
+| Key | Effect |
+|---|---|
+| `http.pathStyle` | `'resource'` (default — every existing URL stays) or `'readable'`: `signIn` → `/api/sign-in`, `health` → `/api/health`. Also pass it to the browser client: `rpc({ baseUrl, pathStyle: 'readable' })` |
+| `http.mounts[]` | `{ prefix: '/v1', scopes, resolveToken, rateLimit?, openapi? }` — a second door onto a cut of the same routes. Only `Authorization: Bearer` authenticates there (a session cookie reaches nothing, so no CSRF proof is needed); a primitive outside the token's scopes answers **404** like MCP's unknown tool; no/invalid token **401** with `WWW-Authenticate: Bearer`; a per-token allowance answers `RateLimit-*` and **429** + `Retry-After`. `scopes` is the map `defineAppMcp` takes; `resolveToken` the same resolver. `/api/create-case` → `/v1/create-case`, `/_x/query/case-list` → `GET /v1/case-list` |
+| `http.mounts[].openapi` | a file (`'openapi.v1.json'`) `x manifest` writes with only the cut, bearer-secured; `x verify` refuses it stale or missing |
+| `openapi` | `{ title, version, description, servers, sessionCookie }` — any key makes `openapi.json` complete: `info`, `servers`, `securitySchemes` (`cookie`, plus `bearer` with a mount), `401` + `429` (with `Retry-After`) on every operation its route authenticates, `RateLimit-*` on rate-limited ones. Absent, the bytes are unchanged |
 
 ## One authz system
 
