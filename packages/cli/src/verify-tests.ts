@@ -18,8 +18,11 @@ import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
 import { discoverTests } from './test-select';
-import { defaultWorkers, SERIAL_TYPES } from './test-workers';
+import { machineLease } from './test-slots';
+import type { WorkerPlan } from './test-workers';
+import { availableCpus, SERIAL_TYPES, totalMemory, workerPlan } from './test-workers';
 import { withE2eApp } from './verify-e2e';
+import { shardFiles } from './verify-shard';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
 import { runParallel } from './verify-test-run';
@@ -212,16 +215,48 @@ const runSerial = async (ctx: VerifyContext, type: TestType): Promise<StepOutcom
 
 const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome> => {
   if (isSerial(type)) return runSerial(ctx, type);
-  const files = await filesFor(ctx.root, type);
+  const discoveredFiles = await filesFor(ctx.root, type);
+  // Under `--shard`, this job runs its slice and says which — `x verify merge` checks the slices.
+  // An EMPTY slice is a pass with zero tests, never the serial fallback below (which would run
+  // the whole type): the zero-tests floor is `merge`'s to apply, on the summed counts.
+  const shard =
+    ctx.shard === undefined
+      ? undefined
+      : shardFiles(
+          discoveredFiles.map((file) => file.path),
+          ctx.shard,
+          ctx.shard.timings,
+        );
+  if (shard !== undefined && shard.files.length === 0) {
+    return { ok: true, findings: [], workers: 0, tests: { ran: 0, skipped: 0 }, shard };
+  }
+  const files =
+    shard === undefined
+      ? discoveredFiles
+      : discoveredFiles.filter((file) => shard.files.includes(file.path));
   if (files.length === 0) return runSerial(ctx, type);
-  return runParallel({
+  const env = ctx.env ?? Bun.env;
+  const plan =
+    ctx.workers === undefined ? workerPlan(availableCpus(), totalMemory(), env) : undefined;
+  const workers = ctx.workers ?? (plan as WorkerPlan).workers;
+  const lease = plan === undefined ? undefined : machineLease(plan.workers, env);
+  const outcome = await runParallel({
     root: ctx.root,
     runner: ctx.runner,
     files,
-    workers: ctx.workers ?? defaultWorkers(),
+    workers,
     type,
+    isolate: ctx.isolate === true,
+    widthReason:
+      plan === undefined
+        ? `${String(Math.min(workers, files.length))} workers (--workers)`
+        : files.length < plan.workers
+          ? `${String(files.length)} of ${plan.reason}`
+          : plan.reason,
+    ...(lease === undefined ? {} : { lease }),
     ...(ctx.env === undefined ? {} : { env: ctx.env }),
   });
+  return shard === undefined ? outcome : { ...outcome, shard };
 };
 
 const isApp = (root: string): boolean => existsSync(join(root, APP_CONFIG_FILE));

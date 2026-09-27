@@ -6,6 +6,7 @@
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
 import { RegistryLeakError } from './errors';
+import { runFileBoundary } from './file-boundary';
 import type { ProcessRegistrySnapshot } from './registry-snapshot';
 import { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
 
@@ -34,7 +35,7 @@ import { captureProcessRegistries, restoreProcessRegistries } from './registry-s
  *   | permissions / roles | `restorePermissions` / `restoreRoles` | `@ultimat3/policy` | yes |
  *   | routes | `clearRoutes` | `@ultimat3/render` | **no** |
  *   | jobs | `resetJobs` | `@ultimat3/jobs` | **no** |
- *   | tasks | `resetTasks` | `@ultimat3/jobs` | **no** |
+ *   | tasks | `restoreTasks` | `@ultimat3/jobs` | yes (22.7) |
  *   | actions | `resetRegistry` | `@ultimat3/action` | **no** |
  *   | queries | `resetRegistry` | `@ultimat3/query` | **no** |
  *   | models / prompts / agents | `resetModels` / `resetPrompts` / `resetAgents` | `@ultimat3/ai` | **no** |
@@ -172,6 +173,8 @@ export function installRegistryLeakGuard(): void {
       // `.test.tsx` files exist and the convention is `<file>.test.ts`, so the narrower filter
       // costs nothing today; a `.test.tsx` added later is unguarded rather than mis-compiled.
       build.onLoad({ filter: /\.test\.ts$/ }, async (args) => {
+        // Before the registry restore: an island disposed here still needs its fake DOM.
+        runFileBoundary();
         close();
         pending = repoRelative(args.path);
         return {

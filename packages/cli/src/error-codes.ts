@@ -198,6 +198,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_FEATURE_UNKNOWN',
   'X_ROUTE_ASYNC_PAGE',
   'X_BUDGET_PARAMS_UNDECLARED',
+  'X_TEST_BUDGET_INVALID',
+  'X_VERIFY_SHARD_INVALID',
+  'X_VERIFY_MERGE_INCOMPLETE',
+  'X_VERIFY_MERGE_INPUT',
 ] as const;
 
 /**
@@ -345,6 +349,10 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ROUTE_ASYNC_PAGE: 'a route exports an async Page',
   X_BUDGET_PARAMS_UNDECLARED:
     'a dynamic route with a budget declares no prerender() paths to weigh it by',
+  X_TEST_BUDGET_INVALID: 'a test memory budget or worker cap env var does not parse',
+  X_VERIFY_SHARD_INVALID: 'x verify --shard was given a spec or a step list it cannot split',
+  X_VERIFY_MERGE_INCOMPLETE: 'x verify merge was handed parts that do not add up to the whole gate',
+  X_VERIFY_MERGE_INPUT: 'a part handed to x verify merge is not an x verify --json document',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

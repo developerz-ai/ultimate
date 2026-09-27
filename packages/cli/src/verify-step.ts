@@ -5,7 +5,7 @@
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
-import type { Finding } from './output';
+import type { Finding, ShardFacts } from './output';
 import type { TestCounts } from './test-counts';
 
 /**
@@ -79,6 +79,21 @@ export interface VerifyContext {
    */
   readonly workers?: number;
   /**
+   * A fresh global per test file (`bun test --isolate`). Absent means `x.verify.json`'s
+   * `"isolate"`, and absent there means off — the default since 22.7.
+   */
+  readonly isolate?: boolean;
+  /**
+   * One slice of an n-way CI split of each selected parallel step's file list (`--shard i/n`,
+   * 1-based `index`). Only with `only`; `x verify merge` reassembles the verdict.
+   */
+  readonly shard?: {
+    readonly index: number;
+    readonly total: number;
+    /** Bun `--timings` durations: greedy longest-first instead of round-robin. */
+    readonly timings?: Readonly<Record<string, number>>;
+  };
+  /**
    * Some steps, by name — an iteration loop, and the one thing here that IS a narrowing. The
    * whole gate costs minutes (3m19s at the framework root on 12 cores, `As of 2026-09-23`), which
    * is the cost of asking a question about one step. A list (`x verify --only typecheck,lint`) runs
@@ -103,6 +118,10 @@ export interface StepOutcome {
    * reading the step list's source.
    */
   readonly workers?: number;
+  /** Why `workers` is what it is — `4 workers (budget 4.0 GB)`. Printed on the step line. */
+  readonly widthReason?: string;
+  /** The CI slice this step ran, under `--shard`: which files, and a hash of the whole list. */
+  readonly shard?: ShardFacts;
   /**
    * What the suite executed, for the steps that run one. Absent means this step spawned no test
    * process at all — a check step, or the `eval` step answering with declarations alone — and is

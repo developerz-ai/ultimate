@@ -88,17 +88,34 @@ export function testArgs(input: {
    * same in silence: they refuse the `--` instead.
    */
   readonly passthrough?: readonly string[];
+  /**
+   * A fresh global per FILE. Off by default since 22.7 — `--parallel` implies it, so the default
+   * run says `--no-isolate` — and on for a repository whose `x.verify.json` says `"isolate": true`
+   * or a caller's `--isolate`. Measured, 4 workers: the framework's unit corpus 168s isolated,
+   * 77s not; a notificado.co third 85-107s isolated, 20s not (`test-workers.ts`).
+   */
+  readonly isolate?: boolean;
 }): readonly string[] {
   const files = [...input.files].sort();
   const extra = input.passthrough ?? [];
+  const isolate =
+    extra.includes('--isolate') || (input.isolate === true && !extra.includes('--no-isolate'));
+  const bare = extra.filter((arg) => arg !== '--isolate' && arg !== '--no-isolate');
   return input.shard === undefined
-    ? ['bun', 'test', `--parallel=${String(input.workers)}`, ...extra, ...files]
+    ? [
+        'bun',
+        'test',
+        `--parallel=${String(input.workers)}`,
+        ...(isolate ? [] : ['--no-isolate']),
+        ...bare,
+        ...files,
+      ]
     : [
         'bun',
         'test',
-        '--isolate',
+        ...(isolate ? ['--isolate'] : []),
         `--shard=${String(input.shard + 1)}/${String(input.workers)}`,
-        ...extra,
+        ...bare,
         ...files,
       ];
 }
@@ -129,6 +146,8 @@ export interface ReproduceOptions {
   readonly shard?: number;
   /** What the caller put after `--`. It reaches `bun test`, so a rerun without it runs differently. */
   readonly passthrough?: readonly string[];
+  /** The run was isolated per file; the rerun must be too. */
+  readonly isolate?: boolean;
 }
 
 /**
@@ -151,6 +170,7 @@ export function reproduceFor(options: ReproduceOptions): string {
     '--workers',
     String(options.workers),
     ...(options.shard === undefined ? [] : ['--worker', String(options.shard)]),
+    ...(options.isolate === true ? ['--isolate'] : []),
     // Last, and after a `--` of its own, because that is where the caller typed it and where the
     // parser will find it again. Quoted for `shell-quote.ts`'s reason: a reproduce line is pasted.
     ...(options.passthrough === undefined || options.passthrough.length === 0
@@ -185,7 +205,18 @@ export interface RunShardsOptions {
    * fallback so much as a seam this file's own tests use to hand it a fixture instead.
    */
   readonly env?: Readonly<Record<string, string | undefined>>;
+  /** A fresh global per file (`x.verify.json` `"isolate": true`, or `--isolate`). Default off. */
+  readonly isolate?: boolean;
+  /** The machine-pool lease (`test-slots.ts`), for a default-width run. */
+  readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
 }
+
+const isolatedRun = (options: RunShardsOptions): boolean => {
+  const extra = options.passthrough ?? [];
+  return (
+    extra.includes('--isolate') || (options.isolate === true && !extra.includes('--no-isolate'))
+  );
+};
 
 /**
  * The reproduction's inputs for ONE pass: `workers` is that pass's real width, not the ask, and
@@ -202,6 +233,7 @@ const planOf = (
   ...(options.sample === undefined ? {} : { sample: options.sample.kept }),
   ...(options.affected === undefined ? {} : { affected: options.affected }),
   ...(options.only === undefined ? {} : { shard: options.only }),
+  ...(options.isolate === true ? { isolate: true } : {}),
   ...(options.passthrough === undefined || options.passthrough.length === 0
     ? {}
     : { passthrough: options.passthrough }),
@@ -243,8 +275,9 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   // same parent env, so the leaked-key set cannot differ pass to pass.
   const envOverrides: Record<string, string | undefined> = {
     ...testEnvOverrides(options.root, options.env ?? Bun.env),
-    // Every run this spawns is isolated (`--parallel` or `--isolate`) unless the caller opted out.
-    ...((options.passthrough ?? []).includes('--no-isolate') ? {} : { [ISOLATED_TEST_ENV]: '1' }),
+    // Only an isolated run: the preload clears `Bun.plugin` handlers after each file, which in a
+    // shared global would leave the next `.tsx` compiling with Bun's classic factory.
+    ...(isolatedRun(options) ? { [ISOLATED_TEST_ENV]: '1' } : {}),
   };
   const passthrough = options.passthrough ?? [];
   const watching = passthrough.includes('--watch');
@@ -272,12 +305,19 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       runner: options.runner,
       batches,
       stopOnFailure: bailing,
-      argsFor: (batch) =>
+      workers: pass.workers,
+      // A `--worker` rerun is one process whatever its N says, and a serial pass is one worker:
+      // only a default-width parallel pass leases from the machine pool.
+      ...(only === undefined && pass.workers > 1 && options.lease !== undefined
+        ? { lease: options.lease }
+        : {}),
+      argsFor: (batch, width) =>
         testArgs({
           files: batch,
-          workers: Math.min(pass.workers, batch.length),
+          workers: only === undefined ? width : pass.workers,
           ...(only === undefined ? {} : { shard: only }),
           ...(options.passthrough === undefined ? {} : { passthrough: options.passthrough }),
+          ...(options.isolate === undefined ? {} : { isolate: options.isolate }),
         }),
       options: {
         cwd: options.root,

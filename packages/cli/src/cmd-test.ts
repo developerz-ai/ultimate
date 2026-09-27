@@ -26,7 +26,16 @@ import {
   sampleFiles,
 } from './test-select';
 import { runShards } from './test-shards';
-import { defaultWorkers, SERIAL_TYPES, WORKER_CEILING } from './test-workers';
+import { machineLease } from './test-slots';
+import type { WorkerPlan } from './test-workers';
+import {
+  availableCpus,
+  SERIAL_TYPES,
+  totalMemory,
+  WORKER_CEILING,
+  workerPlan,
+} from './test-workers';
+import { readVerifyFloor } from './verify-floor';
 import type { TestType } from './verify-tests';
 import { TEST_TYPES } from './verify-tests';
 
@@ -159,7 +168,12 @@ export const testCommand: CliCommand = {
       });
     }
     const files = sample === undefined ? selected : sampleFiles(selected, sample);
-    const requested = readIndex(ctx.args, 'workers', 1) ?? defaultWorkers();
+    const explicit = readIndex(ctx.args, 'workers', 1);
+    const plan =
+      explicit === undefined ? workerPlan(availableCpus(), totalMemory(), ctx.env) : undefined;
+    const requested = explicit ?? (plan as WorkerPlan).workers;
+    const floor = await readVerifyFloor(ctx.cwd);
+    const isolate = flagBool(ctx.args, 'isolate') || floor?.isolate === true;
     // The width a `--worker` index is judged against, and nothing else: which files really run one
     // at a time is `test-passes.ts`, off the FILES rather than off the positional. This line read
     // the positional alone until 2026-09 and the comment here claimed it made a serial type serial
@@ -183,6 +197,10 @@ export const testCommand: CliCommand = {
       env: ctx.env,
       files,
       workers,
+      ...(isolate ? { isolate } : {}),
+      // A default-width run leases its workers from the machine pool, so a second `x test` or
+      // gate on the same box runs narrower instead of doubling its memory.
+      ...(plan === undefined ? {} : withLease(machineLease(plan.workers, ctx.env))),
       ...(only === undefined ? {} : { only }),
       ...(filter === undefined ? {} : { filter }),
       ...(type === undefined ? {} : { type }),
@@ -201,3 +219,8 @@ export const testCommand: CliCommand = {
     return scope === undefined ? result : withScope(result, scope);
   },
 };
+
+const withLease = (
+  lease: ReturnType<typeof machineLease>,
+): { lease?: NonNullable<ReturnType<typeof machineLease>> } =>
+  lease === undefined ? {} : { lease };

@@ -18,6 +18,8 @@ import {
   registeredLocales,
   resetCatalogs,
 } from '@ultimat3/i18n';
+import type { TaskHandle } from '@ultimat3/jobs';
+import { registeredTasks, restoreTasks } from '@ultimat3/jobs';
 import type { RoleMap } from '@ultimat3/policy';
 import {
   knownPermissions,
@@ -39,6 +41,12 @@ export interface ProcessRegistrySnapshot {
   readonly roles: RoleMap;
   /** Kept beside the map: restoring through `defineRoles()` would rewrite every site. */
   readonly roleSites: Readonly<Record<string, string>>;
+  /**
+   * Scheduled tasks. Since 22.7 a worker process runs many files in ONE global, so a task a test
+   * body registered (`packages/jobs/src/task.test.ts`'s deliberately throwing `aBrokenDigest`)
+   * fired in every later file's `appManifest` round — 14 framework failures, measured.
+   */
+  readonly tasks: readonly TaskHandle[];
 }
 
 export function captureProcessRegistries(): ProcessRegistrySnapshot {
@@ -48,6 +56,7 @@ export function captureProcessRegistries(): ProcessRegistrySnapshot {
     permissions: knownPermissions(),
     roles: roleDefinitions(),
     roleSites: roleDeclarationSites(),
+    tasks: registeredTasks(),
   };
 }
 
@@ -63,6 +72,7 @@ export function restoreProcessRegistries(snapshot: ProcessRegistrySnapshot): voi
   restoreCatalogs(snapshot.catalogs);
   restorePermissions(snapshot.permissions);
   restoreRoles(snapshot.roles, snapshot.roleSites);
+  restoreTasks(snapshot.tasks);
 }
 
 /**

@@ -6,6 +6,16 @@ import { ERROR_DOCS_URL, renderThrowable, singleLine, stringField } from '@ultim
 import { msg } from './messages';
 import type { TestCounts } from './test-counts';
 
+/** One shard's share of one step's corpus — what `x verify merge` checks the parts against. */
+export interface ShardFacts {
+  readonly index: number;
+  readonly total: number;
+  /** sha256 of the step's WHOLE sorted file list: every shard of one split carries the same one. */
+  readonly corpusHash: string;
+  /** The files this shard ran. */
+  readonly files: readonly string[];
+}
+
 export interface Finding {
   readonly code: string;
   readonly cause: string;
@@ -31,6 +41,10 @@ export interface StepResult {
   readonly output?: string;
   /** Worker processes the step used; `1` means it ran serially. Absent for a non-test step. */
   readonly workers?: number;
+  /** Why the width is what it is — `4 workers (budget 4.0 GB)`. */
+  readonly widthReason?: string;
+  /** Under `x verify --shard`: this step's slice of its corpus. */
+  readonly shard?: ShardFacts;
   /**
    * What the step's suite executed. Absent for a step that spawned no test process, which is NOT
    * the same state as `{ ran: 0 }` — a step with no suite and a suite whose every test skipped
@@ -175,6 +189,7 @@ const mark = (step: StepResult): string => {
  */
 const width = (step: StepResult): string => {
   if (step.workers === undefined || step.skipped === true) return '';
+  if (step.widthReason !== undefined) return `  ${singleLine(step.widthReason)}`;
   return `  ${step.workers === 1 ? msg('cli.verify.serial') : msg('cli.verify.workers', { workers: step.workers })}`;
 };
 
@@ -227,6 +242,17 @@ export function renderJson(result: CommandResult): string {
     skipped: step.skipped === true,
     findings: step.findings,
     ...(step.workers === undefined ? {} : { workers: step.workers }),
+    ...(step.widthReason === undefined ? {} : { widthReason: step.widthReason }),
+    ...(step.shard === undefined
+      ? {}
+      : {
+          shard: {
+            index: step.shard.index,
+            total: step.shard.total,
+            corpusHash: step.shard.corpusHash,
+            files: [...step.shard.files],
+          },
+        }),
     // The counts the human line's `why()` renders, as numbers: a `--json` reader deciding whether
     // a skipped lane is missing a suite or missing a prerequisite needs the same fact CI's log has.
     ...(step.tests === undefined ? {} : { tests: step.tests }),

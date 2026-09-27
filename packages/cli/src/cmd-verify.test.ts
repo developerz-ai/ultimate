@@ -265,10 +265,15 @@ describe('unit · x verify', () => {
     const result = await runVerify(stubs, ctx);
     expect(result.steps?.map((step) => step.name)).toEqual(['typecheck', 'drift', 'e2e']);
     expect(result.summary).not.toContain(NOT_A_GATE_RUN);
-    expect(verifyCommand.spec.flags?.map((flag) => flag.name)).toEqual(['workers', 'only']);
-    expect(verifyCommand.spec.usage).toBe(
-      'x verify [--only <step>[,<step>…]] [--workers N] [--json]',
-    );
+    expect(verifyCommand.spec.flags?.map((flag) => flag.name)).toEqual([
+      'workers',
+      'only',
+      'shard',
+      'timings',
+      'isolate',
+    ]);
+    expect(verifyCommand.spec.subcommands).toEqual(['run', 'merge']);
+    expect(verifyCommand.spec.defaultSubcommand).toBe('run');
   });
 
   // `--only`'s reader, single names and lists: `cmd-verify-only.test.ts`.

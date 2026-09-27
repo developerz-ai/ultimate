@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "8223ba8b09df8f846fc77012874e5c4c720dcecdcf5bb5a2abdbb3e35d11f37f",
+  "buildId": "856f1ef0c70fc5395e6ae351d8bd0c69534f8ab82f4df9bf428b327b08580de2",
   "tiers": {
     "0": [
       "core",
@@ -3480,6 +3480,11 @@
       "at": "scripts/test-bare-error.ts"
     },
     {
+      "code": "X_TEST_BUDGET_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_TEST_DB_UNAVAILABLE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -3866,6 +3871,21 @@
     },
     {
       "code": "X_VERIFY_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_MERGE_INCOMPLETE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_MERGE_INPUT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_SHARD_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

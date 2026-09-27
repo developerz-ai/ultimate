@@ -11,7 +11,7 @@ import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import type { CronResolver } from './scheduler';
 import { createScheduler } from './scheduler';
-import { getTask, registeredTasks, resetTasks, task } from './task';
+import { getTask, registeredTasks, resetTasks, restoreTasks, task } from './task';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -286,5 +286,16 @@ describe('a task is refused at declaration, never at the first tick', () => {
     clock.advance(4 * 3_600_000);
     const fired = await scheduler.tick();
     expect(fired.map((occurrence) => occurrence.task)).toEqual(['zGoodDigest']);
+  });
+});
+
+describe('restoreTasks', () => {
+  test('puts the registry back to exactly the snapshot — a task registered after it is gone', () => {
+    const kept = task({ name: 'keptTask', cron: '0 3 * * *', tz: 'UTC', enqueue: () => [] });
+    const snapshot = registeredTasks();
+    task({ name: 'leakedTask', cron: '0 4 * * *', tz: 'UTC', enqueue: () => [] });
+    restoreTasks(snapshot);
+    expect(registeredTasks()).toEqual([kept]);
+    expect(getTask('leakedTask')).toBeUndefined();
   });
 });

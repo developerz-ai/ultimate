@@ -8,6 +8,8 @@
 import { installDeterminism } from './determinism';
 import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
+import { onFileBoundary } from './file-boundary';
+import { disposeLiveIslands } from './fixture-island';
 import { releasePluginsAfterIsolatedFile } from './isolated-plugins';
 import { installRegistryLeakGuard } from './registry-leak-guard';
 import { sealNetwork } from './sealed-network';
@@ -25,6 +27,11 @@ registerFrameworkFixtures();
 // One `bun test` invocation is one process: a file that leaves a process-global registry dirty
 // fails a later file in another package, for a reason nothing in that file explains.
 installRegistryLeakGuard();
+
+// A worker runs many files in one global unless the repo opted into `--isolate` (22.7): a mount a
+// file never disposed is disposed between files, and `file-boundary.ts` then puts `globalThis`
+// back to what the first file saw.
+onFileBoundary(disposeLiveIslands);
 
 // Isolated runs only (`x test` says so): Bun 1.4.0 keeps every finished file alive while a plugin
 // is registered. See `isolated-plugins.ts`.
