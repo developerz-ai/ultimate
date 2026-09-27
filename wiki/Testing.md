@@ -390,6 +390,45 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 | `route` | metadata presence, budget, and offline strategy |
 | `llm` prompt | an evals file (missing evals fails `x verify`) |
 
+## Memory, width and isolation
+
+`As of 22.7`. The gate is built for the machines it runs on — 8-16 GB, 2-8 cores, often two agents'
+gates at once — and it is held to a **memory budget**, not to whatever looks free.
+
+- **Width.** `min(4 GiB, 25% of total RAM)` divided by 1.25 GiB a worker, clamped to `1..cores`:
+  3 workers on a 16 GB box, 1 on an 8 GB one. Never more workers than cores. The step line says
+  what it chose and why — `3 workers (budget 4.0 GB)`. `ULTIMATE_TEST_MEMORY_BUDGET=3g` replaces
+  the budget, `ULTIMATE_TEST_MAX_WORKERS=2` caps the width, `--workers N` wins over both. Total RAM,
+  never "free": page cache counts as free, and two gates each planning on it took a 45 GB box down.
+- **One budget per machine.** Each batch of workers leases that many slots from a pool of lock
+  files under the OS temp dir (one per worker the budget allows; a dead holder's slot is taken
+  over). A second `x test` or `x verify` on the same box gets what is left and runs narrower, or
+  waits for one slot, instead of doubling the memory. `ULTIMATE_TEST_SLOTS=0` turns it off.
+- **No per-file isolation by default.** A worker keeps one global and one module registry across
+  the files it runs (`bun test --parallel=N --no-isolate`) — measured 2-5x faster than `--isolate`
+  at the same width. Between two files the testing preload hands the next file the process it would
+  have had alone: undisposed island mounts are disposed, `globalThis` and `process.env` go back to
+  the first file's baseline, the permission/role/catalog registries are restored (as a union — a
+  module imported once per worker declares once), tasks exactly, and `.tsx` always compiles with
+  the app's JSX factory. A repository whose tests need a fresh global per file says
+  `"isolate": true` in `x.verify.json`, or passes `--isolate` to `x test` / `x verify`.
+- **Workers recycle.** A pass runs as batches of at most 48 files a worker, each batch a fresh
+  `bun test` process, so a worker's heap is returned every batch.
+
+Measured, `As of 2026-09-27`, 12-core box, whole process tree sampled every 200 ms:
+
+| run | workers | wall | peak RSS |
+|---|---|---|---|
+| notificado.co `x test unit` (768 files), 22.6.2 default (isolated) | 14 (+parent) | 193 s | 13.1 GB |
+| the same, 22.7 default | 3 | 166-172 s | 3.4-3.8 GB |
+| framework `x test unit` (1620 files), 22.7 default | 3 | 115-125 s | 2.9-3.0 GB |
+
+A worker on the embedded database (PGlite) cannot go much below 1 GB: one booted PGlite holds
+0.9-1.1 GB RSS even after `close()` and a full GC.
+
+For CI, where wall time matters more than one box's memory, the gate splits across jobs:
+[CI: the gate across parallel jobs](CI-Parallel-Gate).
+
 ## `x verify`
 
 The single gate. Green means shippable.

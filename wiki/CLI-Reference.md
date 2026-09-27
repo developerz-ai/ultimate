@@ -31,7 +31,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill | shipped |
-| `x verify [--only <step>[,<step>…]] [--workers N]` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
+| `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
@@ -459,8 +459,19 @@ Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is no
 ## x verify
 
 ```bash
-x verify [--only <step>[,<step>…]] [--workers N] [--json]
+x verify [--only <step>[,<step>…] [--shard i/n [--timings file]]] [--workers N] [--isolate] [--json]
+x verify merge <part.json…> [--json]
 ```
+
+**`As of 22.7`** — the width is a memory budget (`min(4 GiB, 25% of RAM)` at 1.25 GiB a worker,
+at most one per core, printed on the step line; `ULTIMATE_TEST_MEMORY_BUDGET` /
+`ULTIMATE_TEST_MAX_WORKERS` override, `--workers` wins), shared machine-wide across concurrent runs,
+and test files are NOT isolated unless `--isolate` or `x.verify.json` `"isolate": true` says so →
+[Testing](Testing#memory-width-and-isolation). `--shard i/n` (with `--only unit|contract|job`)
+runs one CI job's deterministic slice, and `x verify merge` folds every job's `--json` part back
+into the gate verdict (`X_VERIFY_SHARD_INVALID`, `X_VERIFY_MERGE_INCOMPLETE`,
+`X_VERIFY_MERGE_INPUT`) → [CI: the gate across parallel jobs](CI-Parallel-Gate). The paragraphs
+below on `--workers` and batching describe 22.6 and earlier where they differ.
 
 The single gate. Green means shippable; CI runs exactly this. One step list, in cost order, shared
 with the framework repo's own `bun run verify` — and **the gate is this command with no flag**,
@@ -588,7 +599,7 @@ Errors: `X_VERIFY_FAILED` (with the failing step names), plus each step's own co
 ## x build
 
 ```bash
-x build --target docker|binary|static [--tag name] [--out path] [--json]
+x build --target docker|binary|static [--tag name] [--out path] [--no-preflight] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
@@ -596,6 +607,7 @@ x build --target docker|binary|static [--tag name] [--out path] [--json]
 | `--target` | string | `docker` | `docker` (one image, all roles), `binary` (`bun build --compile`), `static` (prerendered `site/`) |
 | `--tag` | string | `ultimate-app:dev` | image tag, docker target |
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets |
+| `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as `bin/check` does. `As of 22.7` |
 
 ### Every target has one entry file
 

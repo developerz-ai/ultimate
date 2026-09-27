@@ -60,6 +60,7 @@
 - [Resource management](Resource-Management)
 - [Migrations and backfills](Migrations-And-Backfills)
 - [Testing](Testing)
+- [CI: the gate across parallel jobs](CI-Parallel-Gate)
 
 **Reference**
 
