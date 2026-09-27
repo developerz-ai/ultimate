@@ -249,23 +249,29 @@ jobs:
           fi
           while IFS="$(printf '\t')" read -r tier names; do
             [ -n "$tier" ] || continue
-            args=""
+            # ONE `npm publish` per package, never `-w a -w b …` in one command. Each invocation
+            # exchanges its own short-lived OIDC token: v22.4.0's tier-0 command published core,
+            # then died `E401 … token is invalid` on schema 71 s later while the registry was slow
+            # to stage — and every re-run lost the rest of its tier the same way.
             for name in $names; do
               held="$(npm view "${name}@${VERSION}" version 2>/dev/null || true)"
               if [ "$held" = "$VERSION" ]; then
                 echo "::notice::skipping ${name}@${VERSION} — npm already holds it, published by an earlier attempt of this release"
-              else
-                args="$args -w $name"
+                continue
               fi
+              echo "::group::npm publish — tier $tier: $name"
+              if ! out="$(npm publish -w "$name" 2>&1)"; then
+                echo "$out"
+                # npm STAGES a publish before `npm view` can see it, so an attempt that raced a
+                # previous one meets its own staged copy. That version is already this release's.
+                if printf '%s' "$out" | grep -q 'previously staged version'; then
+                  echo "::notice::${name}@${VERSION} is staged by an earlier attempt — npm will publish it"
+                  echo "::endgroup::"
+                  continue
+                fi
+                exit 1
+              fi
+              echo "$out"
+              echo "::endgroup::"
             done
-            if [ -z "$args" ]; then
-              echo "tier $tier: every package is already on npm at ${VERSION}"
-              continue
-            fi
-            echo "::group::npm publish — tier $tier:$args"
-            # Unquoted on purpose: `$args` is a list of flags this step just built, and quoting it
-            # would hand npm one argument containing spaces.
-            # shellcheck disable=SC2086
-            npm publish $args
-            echo "::endgroup::"
           done <<< "$plan"
