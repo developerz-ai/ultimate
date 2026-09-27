@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.5.0 - 2026-09-27
+
 ### Added
 
 - **core, http, realtime, cli:** `health: { readiness: 'process' }` in `app.config.ts` (default
@@ -23,6 +27,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `previously staged` by an earlier attempt of the same release is a notice, not a failure. npm now
   stages a publish before `npm view` can see it, so v22.4.0's resumed runs died `E409` on packages
   the previous attempt had already published, and a mid-tier `E401` lost the rest of its tier.
+
+### Commits
+
+- feat(core,http,realtime,cli): health.readiness 'process' â€” a dependency blip no longer empties the ingress (#555)
+- fix(release): publish one package per npm call; a staged version is not a failure (#554)
 
 ## 22.4.0 - 2026-09-27
 
