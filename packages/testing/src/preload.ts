@@ -8,6 +8,7 @@
 import { installDeterminism } from './determinism';
 import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
+import { installAppJsxLoader } from './app-jsx-loader';
 import { onFileBoundary } from './file-boundary';
 import { disposeLiveIslands } from './fixture-island';
 import { releasePluginsAfterIsolatedFile } from './isolated-plugins';
@@ -32,6 +33,9 @@ installRegistryLeakGuard();
 // file never disposed is disposed between files, and `file-boundary.ts` then puts `globalThis`
 // back to what the first file saw.
 onFileBoundary(disposeLiveIslands);
+
+// An app's `.tsx` compiles with the app's JSX factory on the first file, never cached classic.
+await installAppJsxLoader();
 
 // Isolated runs only (`x test` says so): Bun 1.4.0 keeps every finished file alive while a plugin
 // is registered. See `isolated-plugins.ts`.

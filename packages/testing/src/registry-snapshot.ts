@@ -109,3 +109,33 @@ function restoreCatalogs(snapshot: readonly (readonly [Locale, Catalog])[]): voi
     registerCatalog(locale, mergeCatalogs(inherited.get(locale) ?? {}, live.get(locale) ?? {}));
   }
 }
+
+/**
+ * What a shared worker restores to after a file: everything any earlier file's module graph
+ * declared, plus what this file inherited. Since 22.7 a worker runs many files in one module
+ * registry, so a module a file imports evaluates ONCE — a later file that resets the permission
+ * set at module scope would otherwise hand every file after it a registry missing declarations no
+ * cached module will ever make again (measured on notificado.co: "admin:read is not in the
+ * permission set (8 known)"). Newer wins on a conflict, so a file's own redefinition still stands
+ * for that file.
+ */
+export function mergeSnapshots(
+  older: ProcessRegistrySnapshot | undefined,
+  newer: ProcessRegistrySnapshot,
+): ProcessRegistrySnapshot {
+  if (older === undefined) return newer;
+  const catalogs = new Map(older.catalogs);
+  for (const [locale, catalog] of newer.catalogs) {
+    catalogs.set(locale, mergeCatalogs(catalogs.get(locale) ?? {}, catalog));
+  }
+  const tasks = new Map(older.tasks.map((handle) => [handle.name, handle] as const));
+  for (const handle of newer.tasks) tasks.set(handle.name, handle);
+  return {
+    locales: newer.locales,
+    catalogs: [...catalogs],
+    permissions: [...new Set([...older.permissions, ...newer.permissions])],
+    roles: { ...older.roles, ...newer.roles },
+    roleSites: { ...older.roleSites, ...newer.roleSites },
+    tasks: [...tasks.values()],
+  };
+}

@@ -42,31 +42,35 @@ export const GATE_BUDGET_SHARE = 0.25;
 
 /**
  * What one test worker is planned at. MEASURED, whole-tree RSS sampled every 200 ms, Bun 1.4.0,
- * 12-core box, `As of 2026-09-27`, 4 workers, NO isolation:
+ * 12-core box, `As of 2026-09-27`, NO isolation:
  *
- *   | corpus                                   | peak tree | largest worker | tree / worker |
- *   |------------------------------------------|-----------|----------------|---------------|
- *   | framework unit (1616 files)              | 3.61 GB   | 1.52 GB        | 0.90 GB       |
- *   | notificado.co unit, 1/3 (256 files)      | 3.65 GB   | 1.33 GB        | 0.91 GB       |
+ *   | corpus                                  | workers | batch | peak tree | tree / worker |
+ *   |-----------------------------------------|---------|-------|-----------|---------------|
+ *   | framework unit (1620 files)             | 4       | 24    | 3.61-3.78 GB | 0.90-0.95 GB |
+ *   | notificado.co unit (768 files)          | 4       | 24    | 4.26-4.58 GB | 1.07-1.15 GB |
+ *   | notificado.co unit (768 files)          | 4       | 48    | 4.35 GB   | 1.09 GB       |
+ *   | notificado.co unit (768 files)          | 3       | 24    | 3.28-3.61 GB | 1.09-1.20 GB |
  *
- * The planning figure is what the TREE costs per worker at its peak, not the largest single
- * worker: workers do not all peak at the same instant, and planning at the largest one held a
- * 4 GiB budget to two workers for a tree that measured 3.6 GB at four. The floor of a worker is
- * not the test runner: a Bun process that has booted ONE PGlite sits at 0.9-1.1 GB RSS even after
- * `close()` and a full GC (measured standalone, same box), so a suite on the embedded database
- * cannot plan below ~1 GB a worker whatever the runner does.
+ * The planning figure is what the TREE costs per worker at its peak — the `x` parent and Bun's
+ * coordinator included — rounded up from the heaviest corpus, not the largest single worker:
+ * workers do not all peak at the same instant. The floor of a worker is not the runner: a Bun
+ * process that has booted ONE PGlite sits at 0.9-1.1 GB RSS even after `close()` and a full GC
+ * (measured standalone), so a suite on the embedded database cannot plan below ~1 GB a worker.
  */
-export const WORKER_BYTES = 1024 * 1024 * 1024;
+export const WORKER_BYTES = 1.25 * 1024 * 1024 * 1024;
 
 /** The fewest workers `--workers` accepts and the fewest a default plans: one is a legal width. */
 export const WORKER_FLOOR = 1;
 
 /**
  * Files each worker is handed before its `bun test` process is thrown away and a fresh one takes
- * the next batch (`test-batches.ts`, which carries the measurement). What makes the peak a function
- * of the width rather than of the corpus.
+ * the next batch (`test-batches.ts`, which carries the measurement) — the worker RECYCLE point.
+ * 24 until 22.7, when every file re-evaluated the module graph under `--isolate` and the heap grew
+ * per file; without isolation a worker's peak is set by its heaviest live PGlite, not by the file
+ * count (notificado.co, 4 workers: 24/worker 4.26-4.58 GB in 128-135 s over 8 batches, 48/worker
+ * 4.35 GB in 127 s over 4, 12/worker 3.87 GB in 263 s over 16), so fewer, longer batches.
  */
-export const BATCH_FILES_PER_WORKER = 24;
+export const BATCH_FILES_PER_WORKER = 48;
 
 /**
  * The most `--workers` accepts, on either command. Not a default and not a memory rule — a sanity

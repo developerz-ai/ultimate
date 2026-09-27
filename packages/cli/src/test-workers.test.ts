@@ -51,16 +51,18 @@ describe('unit · the budget refuses what it cannot read', () => {
 describe('unit · the default width', () => {
   // The OOM of 2026-09-27: 12 cores, 45 GB, no swap. 22.6.2 planned 14 workers off MemAvailable;
   // the budget is a quarter of TOTAL memory capped at 4 GiB, whatever the page cache says.
-  test('a 12-core 45 GB box plans 4 workers, not 14', () => {
+  test('a 12-core 45 GB box plans 3 workers, not 14', () => {
     const plan = workerPlan(12, 45 * GiB, NO_ENV);
     expect(plan.budgetBytes).toBe(GATE_BUDGET_CAP);
-    expect(plan.workers).toBe(4);
-    expect(plan.reason).toBe('4 workers (budget 4.0 GB)');
+    expect(plan.workers).toBe(3);
+    expect(plan.reason).toBe('3 workers (budget 4.0 GB)');
+    // The plan fits the budget at the planning figure.
+    expect(plan.workers * WORKER_BYTES).toBeLessThanOrEqual(plan.budgetBytes);
   });
 
-  test('the machines Ultimate is for: 8 GB → 2 workers, 16 GB → 4', () => {
-    expect(defaultWorkers(8, 8 * GiB, NO_ENV)).toBe(2);
-    expect(defaultWorkers(8, 16 * GiB, NO_ENV)).toBe(4);
+  test('the machines Ultimate is for: 8 GB → 1 worker, 16 GB → 3', () => {
+    expect(defaultWorkers(8, 8 * GiB, NO_ENV)).toBe(1);
+    expect(defaultWorkers(8, 16 * GiB, NO_ENV)).toBe(3);
     expect(memoryBudget(8 * GiB, NO_ENV)).toBe(2 * GiB);
   });
 
@@ -78,12 +80,12 @@ describe('unit · the default width', () => {
   });
 
   test('the budget env replaces the default, and the cap env narrows it', () => {
-    expect(defaultWorkers(16, 64 * GiB, { [MEMORY_BUDGET_ENV]: '8g' })).toBe(8);
-    const capped = workerPlan(16, 64 * GiB, { [MEMORY_BUDGET_ENV]: '8g', [MAX_WORKERS_ENV]: '3' });
+    expect(defaultWorkers(16, 64 * GiB, { [MEMORY_BUDGET_ENV]: '10g' })).toBe(8);
+    const capped = workerPlan(16, 64 * GiB, { [MEMORY_BUDGET_ENV]: '10g', [MAX_WORKERS_ENV]: '3' });
     expect(capped.workers).toBe(3);
     expect(capped.reason).toBe(`3 workers (${MAX_WORKERS_ENV}=3)`);
     // A cap above the plan is not a raise.
-    expect(defaultWorkers(16, 16 * GiB, { [MAX_WORKERS_ENV]: '12' })).toBe(4);
+    expect(defaultWorkers(16, 16 * GiB, { [MAX_WORKERS_ENV]: '12' })).toBe(3);
   });
 
   test('the sanity ceiling holds even on a budget that would allow more', () => {

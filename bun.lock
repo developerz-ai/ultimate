@@ -526,6 +526,7 @@
         "@ultimat3/policy": "22.6.2",
         "@ultimat3/query": "22.6.2",
         "@ultimat3/realtime": "22.6.2",
+        "@ultimat3/render": "22.6.2",
         "@ultimat3/time": "22.6.2",
       },
     },

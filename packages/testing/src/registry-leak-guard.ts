@@ -8,7 +8,11 @@ import { knownTags, registeredTiers } from '@ultimat3/cache';
 import { RegistryLeakError } from './errors';
 import { runFileBoundary } from './file-boundary';
 import type { ProcessRegistrySnapshot } from './registry-snapshot';
-import { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
+import {
+  captureProcessRegistries,
+  mergeSnapshots,
+  restoreProcessRegistries,
+} from './registry-snapshot';
 
 /**
  * What is REPORTED, and why only these two. Both are BOOT installs — `declareTags` takes the
@@ -130,6 +134,10 @@ export function installRegistryLeakGuard(): void {
       }
     | undefined;
   const leaks: RegistryLeak[] = [];
+  // Everything every earlier file inherited, merged: what a shared worker restores to.
+  let accumulated: ProcessRegistrySnapshot | undefined;
+  // The locale config before any app code ran — preload time.
+  const pristineLocales = JSON.stringify(captureProcessRegistries().locales);
 
   const close = (): void => {
     if (current === undefined) return;
@@ -138,7 +146,24 @@ export function installRegistryLeakGuard(): void {
     // The repair, at the only point it is safe: the file is over and the next one has not
     // evaluated yet, so what goes back is exactly what that file inherited — module-scope
     // declarations included, which is the half a plain `resetX()` in a `beforeEach` destroys.
-    restoreProcessRegistries(current.snapshot);
+    //
+    // Declarations are put back as a UNION with what the process holds now (22.7, shared worker):
+    // a module a test imported lazily declared its permissions and roles once, for the life of the
+    // worker, and taking them away here would leave every later file without them. Tasks go back
+    // EXACTLY: one a test body registered must not fire in the next file's scheduler round.
+    const live = captureProcessRegistries();
+    const merged = mergeSnapshots(live, current.snapshot);
+    // Locales likewise: a file whose baseline still held the framework's pristine config, and
+    // that imported the app's catalog module lazily (in a test body), configured the worker's
+    // locales for good — the module will not evaluate again — so that config stays.
+    const unconfigured = JSON.stringify(current.snapshot.locales) === pristineLocales;
+    const restored = {
+      ...merged,
+      locales: unconfigured ? live.locales : current.snapshot.locales,
+      tasks: current.snapshot.tasks,
+    };
+    restoreProcessRegistries(restored);
+    accumulated = mergeSnapshots(accumulated, restored);
     current = undefined;
   };
 
@@ -150,7 +175,7 @@ export function installRegistryLeakGuard(): void {
     current = {
       file: pending,
       before: sampleRegistries(),
-      snapshot: captureProcessRegistries(),
+      snapshot: (accumulated = mergeSnapshots(accumulated, captureProcessRegistries())),
     };
     pending = undefined;
   };

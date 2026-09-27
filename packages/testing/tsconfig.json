@@ -39,6 +39,9 @@
       "path": "../realtime"
     },
     {
+      "path": "../render"
+    },
+    {
       "path": "../time"
     }
   ]
