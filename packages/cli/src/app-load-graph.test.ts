@@ -30,6 +30,13 @@ const PARTIAL = join(DIR, '_tokens.scss');
 const LABEL = join(DIR, 'label.ts');
 const ENTITY = join(DIR, 'entity.ts');
 const ACTIONS = join(DIR, 'actions.ts');
+// A typed client whose every property read throws until the env names an origin — the shape of
+// examples/dummy's `shared/client.ts`. Asking it "are you a primitive?" must not read it.
+const CLIENT = join(ROOT, 'apps/web/shared/client.ts');
+const CLIENT_SOURCE = `export const client = new Proxy({}, {
+  get() { throw new TypeError('APP_URL is unset'); },
+});
+`;
 
 const PAGE_SOURCE = `import { defineRoute } from '@ultimat3/render';
 import { Card } from './card';
@@ -95,6 +102,7 @@ beforeAll(async () => {
   await Bun.write(LABEL, label('first'));
   await Bun.write(ENTITY, ENTITY_SOURCE);
   await Bun.write(ACTIONS, ACTIONS_SOURCE);
+  await Bun.write(CLIENT, CLIENT_SOURCE);
 });
 
 afterAll(async () => {

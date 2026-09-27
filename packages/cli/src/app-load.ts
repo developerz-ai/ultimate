@@ -278,13 +278,21 @@ async function register(
 function definesPrimitive(module: Record<string, unknown>, route: boolean): boolean {
   // The registry holds an entry per entity; the value a module exports is the entry's `core`.
   const entities = new Set<unknown>(registeredEntities().flatMap((entry) => [entry, entry.core]));
-  return Object.values(module).some(
-    (value) =>
-      entities.has(value) ||
-      isJobHandle(value) ||
-      isTaskHandle(value) ||
-      (!route && (isAction(value) || isQuery(value) || isMutator(value))),
-  );
+  const defines = (value: unknown): boolean =>
+    entities.has(value) ||
+    isJobHandle(value) ||
+    isTaskHandle(value) ||
+    (!route && (isAction(value) || isQuery(value) || isMutator(value)));
+  return Object.values(module).some((value) => {
+    // A brand check reads a property, and an export may be a proxy whose every read throws until
+    // the env is set — examples/dummy's typed client throws X_ENV_MISSING without APP_URL. A value
+    // that cannot be asked is not a primitive: every primitive is a plain branded object.
+    try {
+      return defines(value);
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**
