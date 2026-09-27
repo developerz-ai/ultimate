@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.4.0 - 2026-09-27
+
 ### Added
 
 - **mcp:** `defineAppMcp({ surface, groups })` â€” a constant MCP surface. `surface: 'meta'` (or a
@@ -40,6 +44,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   URL, as `asset()` does in a page; a missing file is `X_ASSET_MISSING` at boot. The manifest took
   `src` verbatim while the site serves an asset only at its hashed URL, so an app had to hash its
   own screenshots or ship a 404 in the install sheet.
+
+### Commits
+
+- fix(cli): x dev honours the app runtime disks; x g route takes a path; PWA asset srcs hashed (#552)
+- feat(mcp,mail): meta MCP surface with list params; outbound mail transform hook (#551)
 
 ## 22.3.6 - 2026-09-26
 
