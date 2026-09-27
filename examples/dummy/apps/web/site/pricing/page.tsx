@@ -89,8 +89,13 @@ export const config = defineRoute({
    * `'readable'` path style (`rpc({ pathStyle })`, ~200 B), and `@ultimat3/action`'s error
    * registry — which the client imports for its decode — gained the titles of three new codes
    * (`X_ACTION_HTTP_PATH_INVALID`, `X_ACTION_PATH_STYLE_INVALID`, `X_OPENAPI_CONFIG_INVALID`).
+   *
+   * measured: 22,172 B (2026-09-27; `x build --target static`'s `.x/build-stats.json`), against
+   * 22,221 (`21.7kb`).
+   * why: +74 B, the one title the same error registry gained — `X_ACTION_PATH_DERIVED_EARLY`, the
+   * refusal of a path captured before the app's `pathStyle` was declared — shortened to fit.
    */
-  budget: { js: '21.6kb', lcp: 1500 },
+  budget: { js: '21.7kb', lcp: 1500 },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

@@ -8,7 +8,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **cli:** the module scan evaluates `apps/web/api/index.ts` FIRST, before every other app module.
+  Sorted, `apps/admin/**` ran before it, so a module-level `derivePath('signOut').path` there
+  captured the default style's `/api/outs/sign` and a form posted to a URL no route served once the
+  app declared `defineApi({ http: { pathStyle: 'readable' } })` (notificado.co, 22.6.0). One scan
+  backs `x dev`, `runRole`, `x build`'s prerender, `x manifest`, `x routes` and `x verify`, so all of
+  them get the order; an app's test preload already imports the index first.
+- **action:** a path handed out by name (`derivePath(name)`, `actionHttpPath('name')`) under one
+  style, then moved by a later `pathStyle` declaration, is refused at that declaration with
+  `X_ACTION_PATH_DERIVED_EARLY` naming every stale capture — instead of a 404 in production. It
+  catches what ordering cannot: a capture inside the api index's own import graph, which evaluates
+  before the `defineApi` call. The fix it names: derive where the path is used, not in a
+  module-level const. A path the new style does not move (a pin) is not stale.
+- **mcp:** `idempotent: true` actions are idempotent over MCP. Their tool advertises one reserved,
+  optional argument, `idempotencyKey` (string, 1–255), in `tools/list`; `tools/call` takes it out
+  of the arguments and hands it to `invoke` as the key, so a retried call replays the first result
+  (`X_IDEMPOTENCY_CONFLICT` for the same key with different arguments), filed under action, caller
+  and key exactly as the HTTP `Idempotency-Key` header is. The action's input never sees it;
+  non-idempotent tools do not advertise it and refuse it (`X_MCP_ARGS_INVALID`). An argument rather
+  than `params._meta`: model-driven clients cannot set `_meta`. An idempotent action whose input
+  already declares `idempotencyKey` is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot. New export
+  `MCP_IDEMPOTENCY_KEY_ARG`.
 
 ## 22.6.0 - 2026-09-27
 

@@ -22,10 +22,9 @@ import type { ActionRateLimit, AnyAction } from './action';
 import type { Deprecation } from './deprecation';
 import { recordDeprecatedCall, renderDeprecation } from './deprecation';
 import { ActionDeprecationInvalidError } from './errors';
-import { actionPathStyle } from './http-path';
+import { actionPathStyle, servedActionRoute } from './http-path';
 import { actionName, defOf, invoke } from './invoke';
 import {
-  derivePath,
   inputSchemaName,
   outputSchemaName,
   PROBLEM_SCHEMA_NAME,
@@ -57,7 +56,7 @@ async function writeOriginOf(req: UltimateRequest): Promise<string | undefined> 
  * kebab-cased (`updateUserProfile` -> `/api/user-profiles/update`). See `naming.ts`.
  */
 export function toRoute(target: AnyAction): Route {
-  return projectRoute(target, derivePath(actionName(target)).path, (req) => req.bodyRaw());
+  return projectRoute(target, servedActionRoute(actionName(target)).path, (req) => req.bodyRaw());
 }
 
 /**
@@ -182,7 +181,7 @@ function projectRoute(
  */
 export function operationTagOf(target: AnyAction): string {
   const name = actionName(target);
-  if (actionPathStyle() === 'resource') return derivePath(name).resource;
+  if (actionPathStyle() === 'resource') return servedActionRoute(name).resource;
   const policy = defOf(target).policy;
   // A grant first; an `allow('x:y')` names its resource in the label alone.
   const named = policyPermissions(policy)[0] ?? policyCapability(policy);
@@ -266,7 +265,7 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
 
 /**
  * The headers this action's `deprecated:` block renders to, or nothing. The successor's URL comes
- * from `derivePath` — the same derivation the route and the client use, never a second one.
+ * from `servedActionRoute` — `derivePath`'s derivation, the one the route and the client use.
  */
 function deprecationHeadersFor(
   name: string,
@@ -274,7 +273,7 @@ function deprecationHeadersFor(
 ): Readonly<Record<string, string>> | undefined {
   if (deprecated === undefined) return undefined;
   const successor =
-    deprecated.replacedBy === undefined ? undefined : derivePath(deprecated.replacedBy).path;
+    deprecated.replacedBy === undefined ? undefined : servedActionRoute(deprecated.replacedBy).path;
   const rendered = renderDeprecation(deprecated, successor);
   if (!rendered.ok) throw new ActionDeprecationInvalidError(name, rendered.field, rendered.value);
   return rendered.headers;

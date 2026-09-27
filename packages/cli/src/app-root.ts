@@ -6,6 +6,12 @@ import { dirname, join, resolve } from 'node:path';
 import { BunVersionError, NotInAppError } from './errors';
 
 export const APP_CONFIG_FILE = 'app.config.ts';
+
+/**
+ * The one file `defineApi` is called from in a scaffolded app — here, beside the config file, so
+ * the module scan can import it first without pulling the generators into the serve graph.
+ */
+export const API_INDEX = 'apps/web/api/index.ts';
 export const MANIFEST_FILE = 'x.manifest.json';
 /**
  * The floor the shipped `x` enforces, and it must not sit below what `x` EMITS. It said `1.3.0`

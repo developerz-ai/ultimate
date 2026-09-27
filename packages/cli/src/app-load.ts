@@ -5,7 +5,7 @@
 
 // Bun ships no `Bun.*` path API: `relative`/`sep` turn an absolute scan hit into the app-root-
 // relative POSIX path every finding and every manifest fact is keyed by.
-import { join, relative, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { listActions, registerActions } from '@ultimat3/action';
 import { describeEntities } from '@ultimat3/entity';
 import { localeConfig } from '@ultimat3/i18n';
@@ -28,7 +28,7 @@ import {
 // accident one refactor away from compiling every app's `.tsx` to `React.createElement`. The named
 // import is a value import, so the side effect holds without the bare line it replaced.
 import { setStylesheetRoot } from '@ultimat3/render/server';
-import { APP_CONFIG_FILE } from './app-root';
+import { API_INDEX, APP_CONFIG_FILE } from './app-root';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';
@@ -116,11 +116,17 @@ export function resetAppLoad(): void {
 }
 
 /**
- * Every module path the app globs match, SORTED. `Bun.Glob` answers in directory order, which is
- * the filesystem's — ext4 hashes names with a per-filesystem seed — so two pods of one image
- * imported the app in two orders, registered its stylesheets in two orders, and served two
- * different `/styles/<hash>.css` for one page (notificado.co, 22.3.2). Import order is the
- * stylesheet cascade's order, so it must be the same everywhere.
+ * Every module path the app globs match, SORTED — with the API index first. `Bun.Glob` answers in
+ * directory order, which is the filesystem's — ext4 hashes names with a per-filesystem seed — so
+ * two pods of one image imported the app in two orders, registered its stylesheets in two orders,
+ * and served two different `/styles/<hash>.css` for one page (notificado.co, 22.3.2). Import order
+ * is the stylesheet cascade's order, so it must be the same everywhere.
+ *
+ * The API index leads because `defineApi({ http: { pathStyle } })` is what every action URL is
+ * derived under: sorted, `apps/admin/**` evaluated before it, and a module-level
+ * `derivePath('signOut').path` there captured the default style's `/api/outs/sign` — a form
+ * posting to a URL no route served (notificado.co, 22.6.0). Anything still evaluated before the
+ * declaration (the index's own imports) is refused at it, `X_ACTION_PATH_DERIVED_EARLY`.
  */
 export async function appModulePaths(root: string): Promise<readonly string[]> {
   // Pattern by pattern, as before — only the order WITHIN a pattern was the filesystem's.
@@ -134,7 +140,9 @@ export async function appModulePaths(root: string): Promise<readonly string[]> {
     }
     found.push(...matched.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
   }
-  return found;
+  // Resolved, like the glob's own answers: `loadApp('.')` is a legal call.
+  const index = resolve(root, API_INDEX);
+  return found.includes(index) ? [index, ...found.filter((path) => path !== index)] : found;
 }
 
 export async function loadApp(root: string): Promise<LoadedApp> {

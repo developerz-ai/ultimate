@@ -58,6 +58,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_ACTION_HTTP_PATH_INVALID: "an action's pinned http.path is not a static lowercase path",
   X_ACTION_PATH_STYLE_INVALID: "defineApi's http.pathStyle is not a known style",
   X_OPENAPI_CONFIG_INVALID: "defineApi's openapi block cannot produce a valid document",
+  X_ACTION_PATH_DERIVED_EARLY: 'a path was derived before pathStyle changed',
 };
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"

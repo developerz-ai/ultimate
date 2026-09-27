@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c1fae1f10b22baab3cc6942a83e0ddb66abf84324ef23114ba505c72716c46a7",
+  "buildId": "a5e9758ec62fb723de409c40997b4a2f4042b6702a2d651f19223566dcd511ba",
   "tiers": {
     "0": [
       "core",
@@ -268,6 +268,11 @@
       "code": "X_ACTION_JOB_UNBRIDGED",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_ACTION_PATH_DERIVED_EARLY",
+      "owner": "action",
+      "at": "packages/action/src/errors-http.ts"
     },
     {
       "code": "X_ACTION_PATH_DUPLICATE",
@@ -1971,6 +1976,11 @@
     },
     {
       "code": "X_MCP_GROUP_UNKNOWN",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_IDEMPOTENCY_KEY_SHADOWED",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

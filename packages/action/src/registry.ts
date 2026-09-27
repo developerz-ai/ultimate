@@ -10,7 +10,13 @@ import type { ActionDescriptor, AnyAction } from './action';
 import { isAction, nameAction } from './action';
 import { resetApiDeclaration } from './api-declaration';
 import { ActionDuplicateError, ActionPathDuplicateError, ActionPolicyMissingError } from './errors';
-import { assertPinnedPath, resetActionPathStyle, routeFor, setActionPathStyle } from './http-path';
+import {
+  assertPinnedPath,
+  resetActionPathStyle,
+  resolveActionRoute,
+  routeFor,
+  setActionPathStyle,
+} from './http-path';
 import { assertIdempotencyScope } from './idempotency';
 import { defOf } from './invoke';
 import { jsonSchemaOf, mcpSchemaOf } from './json-schema';
@@ -70,10 +76,8 @@ export function registerAction<A extends AnyAction>(name: string, target: A): A 
  * name (a deprecation's `replacedBy`, a page minting an island's endpoint).
  */
 export function actionHttpPath(target: AnyAction | string): ActionPath {
-  if (typeof target === 'string') {
-    const seated = registry.get(target);
-    return seated === undefined ? routeFor(target, undefined) : actionHttpPath(seated);
-  }
+  // By NAME is how a page mints a form target, so it answers through the recorded path.
+  if (typeof target === 'string') return resolveActionRoute(target);
   return routeFor(target.name, defOf(target).http?.path);
 }
 
@@ -86,7 +90,7 @@ export function configureActionPathStyle(style: ActionPathStyle): void {
   setActionPathStyle(style);
   paths.clear();
   for (const [name, target] of [...registry.entries()].sort(byName)) {
-    const { path } = actionHttpPath(target);
+    const { path } = routeFor(name, defOf(target).http?.path);
     const owner = paths.get(path);
     if (owner !== undefined && owner !== name) {
       throw new ActionPathDuplicateError({ name, existing: owner, path });

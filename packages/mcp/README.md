@@ -287,6 +287,24 @@ implements the emitted subset (objects, arrays, enums, `required`, `additionalPr
 bounds, `default`) and applies declared defaults. Actions still re-parse authoritatively
 inside their own handler.
 
+## Idempotency over MCP
+
+An `idempotent: true` action's tool carries one reserved, optional argument,
+`MCP_IDEMPOTENCY_KEY_ARG` (`'idempotencyKey'`, string, 1–255), advertised in `tools/list` and held
+to that schema here. `tools/call` takes it out of the arguments and hands it to `invoke` as the
+idempotency key — what the `Idempotency-Key` header is over HTTP, filed under action, caller and
+key — so an agent retrying a timed-out call with the same key gets the first result back:
+
+```json
+{ "method": "tools/call", "params": { "name": "sendNotification",
+  "arguments": { "caseId": "c1", "idempotencyKey": "7f0c…" } } }
+```
+
+The action's own input never sees the key. A non-idempotent tool does not advertise it and refuses
+it (`X_MCP_ARGS_INVALID`). An argument, not `params._meta`: `_meta` is for host metadata and a
+model-driven client cannot set it. An idempotent action whose input already names `idempotencyKey`
+is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot.
+
 ## Errors
 
 | Code | Meaning |
@@ -296,6 +314,7 @@ inside their own handler.
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool this server does not project |
 | `X_MCP_SCOPE_CONFLICT` | two scopes in `defineAppMcp`'s `scopes:` claim one tool |
 | `X_MCP_ARGS_INVALID` | arguments failed the declared schema |
+| `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an idempotent action's input declares `idempotencyKey`, the reserved retry-key argument |
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
 | `X_MCP_QUERY_REJECTED` | `db.query` given anything but one read-only statement |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a production or otherwise non-branch database |
@@ -315,6 +334,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpAppUnmountedError` | `X_MCP_APP_UNMOUNTED` | `src/errors.ts` |
 | `McpArgsInvalidError` | `X_MCP_ARGS_INVALID` | `src/errors.ts` |
 | `McpBodyTooLargeError` | `X_MCP_BODY_TOO_LARGE` | `src/errors.ts` |
+| `McpIdempotencyKeyShadowedError` | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | `src/errors.ts` |
 | `McpGroupConflictError` | `X_MCP_GROUP_CONFLICT` | `src/meta-errors.ts` |
 | `McpGroupUnknownError` | `X_MCP_GROUP_UNKNOWN` | `src/meta-errors.ts` |
 | `McpListParamsInvalidError` | `X_MCP_LIST_PARAMS_INVALID` | `src/meta-errors.ts` |

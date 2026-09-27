@@ -296,6 +296,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_ACTION_HTTP_PATH_INVALID` | an action's pinned http.path is not a static lowercase path | the pin carries a parameter, an uppercase letter, a trailing slash, or claims the framework /_x namespace | set http: { path: '/api/webhooks/wompi' } — a leading slash, lowercase segments of a-z 0-9 . _ ~ -, no :param or *wildcard, and never under /_x |
 | `X_ACTION_PATH_STYLE_INVALID` | defineApi's http.pathStyle is not a known style | defineApi's http.pathStyle is not a known style | defineApi({ ..., http: { pathStyle: 'readable' } }) — or 'resource', the default |
 | `X_OPENAPI_CONFIG_INVALID` | defineApi's openapi block cannot produce a valid document | defineApi's openapi block cannot produce a valid document | defineApi({ ..., openapi: { title: 'My API', version: '1.0.0', servers: [{ url: 'https://www.example.com' }] } }) — non-empty title and version, absolute http(s) server URLs, and a document file name ending in .json |
+| `X_ACTION_PATH_DERIVED_EARLY` | a path was derived before pathStyle changed | a module-level derivePath(name).path ran before defineApi declared the style, so that module holds a URL no route serves | derive the path where it is used (inside the component or function), not in a module-level const — or import apps/web/api/index.ts before the module that derives it |
 
 A code the SERVER threw keeps its own code on the client — including one this table never
 lists, because an app declares its own through `registerErrorStatus`. The typed client rebuilds
@@ -635,6 +636,7 @@ Three of them are raised at `notifier(...)`, while the app's modules load, so th
 | `X_MCP_SURFACE_INVALID` | the MCP meta surface is declared inconsistently | surface: 'meta' with no groups, or groups with a flat-only surface | declare groups: together with surface: 'meta' (or a surface function) in defineAppMcp, or drop both |
 | `X_MCP_LIST_PARAMS_INVALID` | a tool's listParams names a key its own input does not accept | listParams whitelists a filter, sort, fields, cursor or limit key the query would never read | add the key to the query's input schema, or drop it from mcp.listParams |
 | `X_MCP_OAUTH_INVALID` | the MCP oauth block cannot be published as protected-resource metadata | the MCP oauth block cannot be published as protected-resource metadata | defineAppMcp({ ..., oauth: { authorizationServers: ['https://www.example.com'] } }) — at least one absolute https (or http://localhost) issuer URL, and resource, when set, an absolute URL with no fragment |
+| `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an idempotent action's input declares idempotencyKey, the MCP argument reserved for the idempotency key | the tool argument would be both the action's input and the retry key | rename the action's idempotencyKey input field — MCP clients pass the Idempotency-Key as the reserved idempotencyKey argument |
 
 ## Scraping
 

@@ -10,6 +10,7 @@ import type { AnyQuery } from '@ultimat3/query';
 import { isQuery, queryName, sourceFor } from '@ultimat3/query';
 import { asCallerContext } from './caller-context';
 import type { McpExposure, ProjectablePrimitive } from './from-action';
+import { takeIdempotencyKeyArg, withIdempotencyKeyArg } from './idempotency-arg';
 import { toWireSchema } from './input-schema';
 import type { McpListParams } from './list-params';
 
@@ -40,16 +41,26 @@ export function asProjectable(listed: ListedPrimitive): ProjectablePrimitive {
 
 export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
   const exposure = exposureOf(target.mcp);
+  // Throws `X_ACTION_UNREGISTERED` on an unnamed action rather than projecting a tool called
+  // `''`: a nameless tool is unaddressable by the scope map, by `tools/call`, and by the author.
+  const name = actionName(target);
+  const wire = toWireSchema(target.input);
+  // `idempotent: true` is honoured on this surface exactly as over HTTP: the caller's key reaches
+  // `invoke`, which files it under the action, the caller and the key (`idempotencyKeyFor`).
+  const keyed = target.describe().idempotent;
   return {
-    // Throws `X_ACTION_UNREGISTERED` on an unnamed action rather than projecting a tool called
-    // `''`: a nameless tool is unaddressable by the scope map, by `tools/call`, and by the author.
-    name: actionName(target),
+    name,
     ...(exposure === undefined ? {} : { mcp: exposure }),
     ...(exposure?.description === undefined ? {} : { description: exposure.description }),
-    inputJsonSchema: toWireSchema(target.input),
+    inputJsonSchema: keyed ? withIdempotencyKeyArg(name, wire) : wire,
     mutates: true,
     // The actor rides in on the options: `invoke` swaps it inside the one execution path.
-    run: ({ input, actor }) => invoke(target, input, { surface: 'mcp', actor }),
+    run: keyed
+      ? ({ input: args, actor }) => {
+          const { input, idempotencyKey } = takeIdempotencyKeyArg(args);
+          return invoke(target, input, { surface: 'mcp', actor, idempotencyKey });
+        }
+      : ({ input, actor }) => invoke(target, input, { surface: 'mcp', actor }),
   };
 }
 

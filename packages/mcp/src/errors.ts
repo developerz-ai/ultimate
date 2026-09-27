@@ -24,6 +24,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_SURFACE_INVALID',
   'X_MCP_LIST_PARAMS_INVALID',
   'X_MCP_OAUTH_INVALID',
+  'X_MCP_IDEMPOTENCY_KEY_SHADOWED',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -49,6 +50,8 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_SURFACE_INVALID: 'the MCP meta surface is declared inconsistently',
   X_MCP_LIST_PARAMS_INVALID: "a tool's listParams names a key its own input does not accept",
   X_MCP_OAUTH_INVALID: 'the MCP oauth block cannot be published as protected-resource metadata',
+  X_MCP_IDEMPOTENCY_KEY_SHADOWED:
+    "an idempotent action's input declares idempotencyKey, the MCP argument reserved for the idempotency key",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -427,6 +430,22 @@ export class McpOAuthInvalidError extends UltimateError {
       code: 'X_MCP_OAUTH_INVALID',
       cause: `defineAppMcp({ oauth }) cannot be published as protected-resource metadata: ${reason}`,
       fix: "defineAppMcp({ ..., oauth: { authorizationServers: ['https://www.example.com'] } }) — at least one absolute https (or http://localhost) issuer URL; resource and resourceDocumentation, when set, absolute URLs with no fragment",
+    });
+  }
+}
+
+/**
+ * An idempotent action's tool carries the reserved `idempotencyKey` argument, and this action's
+ * own input already names a field that. One argument cannot be both the input a handler reads and
+ * the key a retry replays under, so the projection refuses at boot instead of guessing which.
+ */
+export class McpIdempotencyKeyShadowedError extends UltimateError {
+  constructor(input: { readonly name: string; readonly argument: string }) {
+    super({
+      code: 'X_MCP_IDEMPOTENCY_KEY_SHADOWED',
+      cause: `${input.name} is idempotent and its input declares "${input.argument}", the MCP argument reserved for the idempotency key`,
+      fix: `rename ${input.name}'s "${input.argument}" input field — MCP clients send the Idempotency-Key as the reserved "${input.argument}" argument, and the action receives the rest`,
+      meta: { action: input.name, argument: input.argument },
     });
   }
 }

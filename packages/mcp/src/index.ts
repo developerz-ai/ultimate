@@ -63,6 +63,7 @@ export {
   McpAppUnmountedError,
   McpArgsInvalidError,
   McpBodyTooLargeError,
+  McpIdempotencyKeyShadowedError,
   McpNotBranchDbError,
   McpOAuthInvalidError,
   McpProtocolError,
@@ -86,6 +87,7 @@ export {
   toolsFrom,
   toolsListed,
 } from './from-action';
+export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
 export { toWireSchema } from './input-schema';
 export type { ListFilterOp, McpListParams } from './list-params';
 export { DEFAULT_LIST_MAX_LIMIT, listParamsSchema } from './list-params';

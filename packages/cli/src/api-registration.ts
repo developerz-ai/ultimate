@@ -3,12 +3,10 @@
 // nothing lists keeps the positional `anonymous-job-2` that `job()` minted, on the queue row, in
 // `x.manifest.json` and in every dead-letter trace — under a green gate (plan 101 slice 11 b).
 
+import { API_INDEX } from './app-root';
 import { containedPath } from './generate-write';
 import { camel } from './templates/naming';
 import { wrapList } from './templates/wrap';
-
-/** The one file `defineApi` is called from in a scaffolded app. */
-export const API_INDEX = 'apps/web/api/index.ts';
 
 /** One module to import as a namespace and list under a `defineApi` key. */
 export interface ApiEntry {

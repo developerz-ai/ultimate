@@ -31,7 +31,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | `mcp.description` | `string` | no | the tool description an agent reads, and the OpenAPI `summary`. Contract text, so it stays outside `t()` — `openapi.json` must not depend on a locale. Write it for a stranger |
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | `rateLimit` | `{ limit: number; windowMs: number }` | no | registers a bucket named after the action, enforced at the **HTTP** edge — the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. Keyed actor → org → IP. **Not** read at the MCP edge: `/mcp` buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) and never sees this declaration |
-| `idempotent` | `boolean` | no | marks the action safe to retry with an `Idempotency-Key` header |
+| `idempotent` | `boolean` | no | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument |
 | `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a vendor holds (`'/api/webhooks/wompi'`). Static, lowercase, no params, never `/_x` (`X_ACTION_HTTP_PATH_INVALID`) |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
 
@@ -90,7 +90,7 @@ There is **one execution path**. HTTP, MCP, jobs, and direct server calls differ
 
 | Key | Effect |
 |---|---|
-| `http.pathStyle` | `'resource'` (default — every existing URL stays) or `'readable'`: `signIn` → `/api/sign-in`, `health` → `/api/health`. Also pass it to the browser client: `rpc({ baseUrl, pathStyle: 'readable' })` |
+| `http.pathStyle` | `'resource'` (default — every existing URL stays) or `'readable'`: `signIn` → `/api/sign-in`, `health` → `/api/health`. Also pass it to the browser client: `rpc({ baseUrl, pathStyle: 'readable' })`. The module scan evaluates `apps/web/api/index.ts` first, so a module-level `derivePath(name)` anywhere else sees the declared style; one evaluated earlier (inside the index's own imports) is refused at the declaration, `X_ACTION_PATH_DERIVED_EARLY` — derive inside the function that uses it |
 | `http.mounts[]` | `{ prefix: '/v1', scopes, resolveToken, rateLimit?, openapi? }` — a second door onto a cut of the same routes. Only `Authorization: Bearer` authenticates there (a session cookie reaches nothing, so no CSRF proof is needed); a primitive outside the token's scopes answers **404** like MCP's unknown tool; no/invalid token **401** with `WWW-Authenticate: Bearer`; a per-token allowance answers `RateLimit-*` and **429** + `Retry-After`. `scopes` is the map `defineAppMcp` takes; `resolveToken` the same resolver. `/api/create-case` → `/v1/create-case`, `/_x/query/case-list` → `GET /v1/case-list` |
 | `http.mounts[].openapi` | a file (`'openapi.v1.json'`) `x manifest` writes with only the cut, bearer-secured; `x verify` refuses it stale or missing |
 | `openapi` | `{ title, version, description, servers, sessionCookie }` — any key makes `openapi.json` complete: `info`, `servers`, `securitySchemes` (`cookie`, plus `bearer` with a mount), `401` + `429` (with `Retry-After`) on every operation its route authenticates, `RateLimit-*` on rate-limited ones. Absent, the bytes are unchanged |

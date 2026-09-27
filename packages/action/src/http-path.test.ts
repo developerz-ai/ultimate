@@ -52,9 +52,50 @@ describe('pathStyle', () => {
   test('re-derives what the module scan already seated under the default', () => {
     const signIn = make();
     defineApi({ actions: { signIn } });
-    expect(actionHttpPath('signIn').path).toBe('/api/ins/sign');
+    // `describe()` reads the seat and hands no path out by name, so the switch below is legal.
+    expect(signIn.describe().path).toBe('/api/ins/sign');
     defineApi({ actions: { signIn }, http: { pathStyle: 'readable' } });
     expect(actionHttpPath('signIn').path).toBe('/api/sign-in');
+  });
+
+  // The Notificado 22.6.0 adoption: the loader evaluated `apps/admin/**` before the api index, so
+  // `const SIGN_OUT_PATH = derivePath('signOut').path` captured `/api/outs/sign` and the sign-out
+  // form 404'd once `defineApi` declared 'readable'. The capture is a string no re-derivation can
+  // reach, so the declaration that would strand it is what refuses.
+  test('a path handed out by name before the style changes is refused, naming it', () => {
+    const captured = derivePath('signOut').path;
+    expect(captured).toBe('/api/outs/sign');
+    expect(() =>
+      defineApi({ actions: { signOut: make() }, http: { pathStyle: 'readable' } }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'X_ACTION_PATH_DERIVED_EARLY',
+        meta: { style: 'readable', names: ['signOut'] },
+      }),
+    );
+  });
+
+  test('actionHttpPath by name is a hand-out too', () => {
+    actionHttpPath('signIn');
+    expect(() => configureActionPathStyle('readable')).toThrow(
+      expect.objectContaining({ code: 'X_ACTION_PATH_DERIVED_EARLY' }),
+    );
+  });
+
+  test('a hand-out the new style does not move is not stale, and one after it is fine', () => {
+    // Pinned: the same URL under either style, so nothing captured is stranded.
+    defineApi({ actions: { hook: make({ path: '/api/webhooks/hook' }) } });
+    expect(derivePath('hook').path).toBe('/api/webhooks/hook');
+    configureActionPathStyle('readable');
+    expect(derivePath('signOut').path).toBe('/api/sign-out');
+    // Declaring the SAME style again moves nothing.
+    expect(() => configureActionPathStyle('readable')).not.toThrow();
+  });
+
+  test('resetRegistry forgets every hand-out', () => {
+    derivePath('signOut');
+    resetRegistry();
+    expect(() => configureActionPathStyle('readable')).not.toThrow();
   });
 
   test('an unknown style is refused by code', () => {
