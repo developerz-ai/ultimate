@@ -454,12 +454,13 @@ describe('meta surface — manage_resource is the flat call, through another doo
   });
 
   test('invalid tool arguments are identical', async () => {
-    await parity(
+    const response = await parity(
       call('publishPost', {}),
       manage('posts', 'publishPost', {}),
       flatOwner(['posts:write']),
       metaOwner(['posts:write']),
     );
+    expect(response?.error?.code).toBe(INVALID_PARAMS);
   });
 
   test('manage_resource is metered as the tool it reaches', () => {

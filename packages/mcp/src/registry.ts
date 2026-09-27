@@ -98,7 +98,7 @@ export interface McpTool<A extends ToolArgs = ToolArgs> {
   readonly destructive?: boolean;
   /**
    * A list query's whitelist of `filters` / `sort` / `fields` / `cursor` + `limit`. Published by
-   * `describe_resource` and enforced by `manage_resource` before the tool's own input schema;
+   * `describe_resource` and enforced by `manage_resource` alongside the tool's own input schema;
    * the flat surface ignores it (the tool's `inputSchema` is its contract there).
    */
   readonly listParams?: McpListParams;

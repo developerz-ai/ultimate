@@ -309,10 +309,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpProtocolError` | `X_MCP_PROTOCOL` | `src/errors.ts` |
 | `McpSurfaceInvalidError` | `X_MCP_SURFACE_INVALID` | `src/meta-errors.ts` |
 | `McpQueryRejectedError` | `X_MCP_QUERY_REJECTED` | `src/errors.ts` |
-| `McpRateLimitedError` | `X_MCP_GROUP_UNKNOWN` · `X_MCP_GROUP_CONFLICT` | `groups:` names a tool not projected · lists one tool twice |
-| `X_MCP_SURFACE_INVALID` | `surface` and `groups` disagree |
-| `X_MCP_LIST_PARAMS_INVALID` | `listParams` whitelists a key the tool's input does not declare |
-| `X_MCP_RATE_LIMITED` | `src/errors.ts` |
+| `McpRateLimitedError` | `X_MCP_RATE_LIMITED` | `src/errors.ts` |
 | `McpResourceDuplicateError` | `X_MCP_RESOURCE_DUPLICATE` | `src/errors.ts` |
 | `McpScopeConflictError` | `X_MCP_SCOPE_CONFLICT` | `src/errors.ts` |
 | `McpScopeDeniedError` | `X_MCP_SCOPE_DENIED` | `src/errors.ts` |

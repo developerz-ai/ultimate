@@ -66,7 +66,9 @@ export async function metaCall(
   }
   // `manage_resource`: address → the SAME resolve and dispatch a flat call takes, audited under
   // the tool it reached. Visibility first (a hidden pair is an absent pair), then the shared
-  // resolver's scope → args, with a list whitelist checked before the tool's own schema.
+  // resolver's scope → args. A list whitelist's issues REPLACE the tool schema's: both are pure
+  // checks with nothing run between them, so which is evaluated first is invisible — the answer
+  // names the whitelist, which is the contract `describe_resource` published.
   const resource = args.value['resource'] as string;
   const action = args.value['action'] as string;
   const tool = meta.locate(resource, action, caller);

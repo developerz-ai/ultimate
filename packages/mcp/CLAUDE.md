@@ -38,7 +38,7 @@ import. The CLI wires it.
 ## Invariants
 
 - **`manage_resource` is a second DOOR, never a second PATH** (`As of 2026-09-26`): locate (visibility,
-  else the absent answer) → the shared `resolve` (scope → args, list whitelist first) → `dispatch`,
+  else the absent answer) → the shared `resolve` (scope → args; a list whitelist's issues win) → `dispatch`,
   audited under the inner tool. `tools/list` shows what `tools/call` answers PER CALLER: a meta caller
   cannot call a grouped tool by name, a flat caller never sees the meta tools, and every not-found a
   meta caller gets carries `META_UNKNOWN_FIX`. Default `'flat'` builds no `MetaSurface`.

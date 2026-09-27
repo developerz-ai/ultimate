@@ -314,6 +314,6 @@ export const transformFailed = (mailId: string, reason: string): MailError =>
   new MailError({
     code: 'X_MAIL_TRANSFORM_FAILED',
     cause: `the mail transform failed for "${mailId}": ${reason} — the mail was not sent`,
-    fix: 'fix the function passed to setMailTransform() so it returns { subject, html, text } strings for every mail it is handed — or setMailTransform(undefined) to send untransformed',
+    fix: `make the setMailTransform() hook return { subject, html, text } strings for "${mailId}" (return the rendered argument unchanged for a mail it does not track), then retry the send`,
     meta: { mailId },
   });

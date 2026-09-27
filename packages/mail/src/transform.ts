@@ -67,13 +67,14 @@ export async function applyMailTransform(message: MailMessage): Promise<MailMess
     html: message.html,
     text: message.text,
   });
-  let out: unknown;
+  // Reading the result is inside the same guard as the call: a returned object whose `subject`
+  // getter throws is a failed transform too, never a raw error escaping `send()`.
+  let next: MailRendered | undefined;
   try {
-    out = await transform(rendered, meta);
+    next = asRendered(await transform(rendered, meta));
   } catch (error) {
     throw transformFailed(message.mailId, `it threw (${describe(error)})`);
   }
-  const next = asRendered(out);
   if (next === undefined) {
     throw transformFailed(message.mailId, 'it returned no { subject, html, text } strings');
   }
@@ -95,8 +96,13 @@ function asRendered(value: unknown): MailRendered | undefined {
   return { subject, html, text };
 }
 
-/** A name for the throw, never its message: an app's error text may carry a recipient. */
+/**
+ * What KIND of value was thrown, from a closed list — never its message and never its `name`,
+ * which are the app's strings and may carry a recipient address.
+ */
+const KNOWN_ERRORS = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError']);
+
 function describe(error: unknown): string {
-  if (error instanceof Error) return error.name;
+  if (error instanceof Error) return KNOWN_ERRORS.has(error.name) ? error.name : 'an Error';
   return typeof error;
 }

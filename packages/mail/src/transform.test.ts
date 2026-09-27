@@ -45,7 +45,7 @@ let calls: MailTransformMeta[] = [];
 
 /** Deterministic per untransformed key — the contract `MailTransform` states. */
 const pixel = (meta: MailTransformMeta): string =>
-  `<img src="https://app.test/m/o/${meta.idempotencyKey.length}.gif">`;
+  `<img src="https://app.test/m/o/${meta.idempotencyKey.slice(-12)}.gif">`;
 
 beforeEach(() => {
   resetMailDriver();
@@ -78,6 +78,29 @@ test('a transform returning no message, or an empty text part, fails the send to
   setMailTransform(() => ({ subject: 'x' }) as never);
   expect(await codeOf(send(trackedMail, { name: 'Ada' }, TO))).toBe('X_MAIL_TRANSFORM_FAILED');
   setMailTransform((r) => ({ ...r, text: '  ' }));
+  expect(await codeOf(send(trackedMail, { name: 'Ada' }, TO))).toBe('X_MAIL_TRANSFORM_FAILED');
+  expect(memory.sent).toHaveLength(0);
+});
+
+test('a result whose getter throws is a failed transform, and the throw names no app string', async () => {
+  class Leaky extends Error {
+    override name = 'ada@example.test';
+  }
+  setMailTransform(() => {
+    throw new Leaky('ada@example.test');
+  });
+  const leaked = await send(trackedMail, { name: 'Ada' }, TO).catch((error: unknown) => error);
+  expect(JSON.stringify({ cause: (leaked as { cause?: string }).cause })).not.toContain('ada@');
+  setMailTransform(
+    () =>
+      ({
+        get subject(): string {
+          throw new TypeError('getter');
+        },
+        html: '',
+        text: 'x',
+      }) as never,
+  );
   expect(await codeOf(send(trackedMail, { name: 'Ada' }, TO))).toBe('X_MAIL_TRANSFORM_FAILED');
   expect(memory.sent).toHaveLength(0);
 });
@@ -131,7 +154,11 @@ test('a queued send stores the transformed bytes, and a job retry reuses them wi
 
   const row = await queue.introspect?.job(first.id);
   const queued = row?.input as MailMessage;
-  expect(queued.html).toContain('/m/o/');
+  expect(queued.html).toContain(pixel(calls[0] as MailTransformMeta));
+  // A different mail is a different key, so a different pixel.
+  await send(trackedMail, { name: 'Grace' }, TO);
+  expect(pixel(calls[2] as MailTransformMeta)).not.toBe(pixel(calls[0] as MailTransformMeta));
+  calls.length = 2;
   // Two attempts of the job — a retry after a timeout — deliver the identical message.
   await sendMailJob.run({ input: queued } as JobRunArgs<MailMessage>);
   await sendMailJob.run({ input: queued } as JobRunArgs<MailMessage>);
