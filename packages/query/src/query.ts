@@ -55,6 +55,24 @@ export interface QueryMcp {
    * Forbidden. See `ActionMcp.visibleTo`, which this mirrors exactly.
    */
   readonly visibleTo?: readonly string[];
+  /**
+   * The list whitelist an MCP meta surface composes over (`@ultimat3/mcp` `McpListParams`):
+   * `filters` field → operators, sortable `sort` fields, pickable `fields`, `maxLimit`. Flat keys:
+   * the query's own `input` declares `status_eq`, `sort`, `fields`, `cursor`, `limit` and
+   * implements them; `manage_resource` refuses anything outside the whitelist before it runs.
+   */
+  readonly listParams?: QueryListParams;
+}
+
+/** One comparison a list filter accepts. A filter key is `<field><op>`: `status_eq`. */
+export type QueryListFilterOp = '_eq' | '_in' | '_gt' | '_lt' | '_cont';
+
+/** Structural twin of `@ultimat3/mcp`'s `McpListParams` (tier 3 cannot import tier 4). */
+export interface QueryListParams {
+  readonly filters?: Readonly<Record<string, readonly QueryListFilterOp[]>>;
+  readonly sort?: readonly string[];
+  readonly fields?: readonly string[];
+  readonly maxLimit?: number;
 }
 
 /**

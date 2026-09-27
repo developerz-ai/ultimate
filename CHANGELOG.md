@@ -8,6 +8,24 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **mcp:** `defineAppMcp({ surface, groups })` — a constant MCP surface. `surface: 'meta'` (or a
+  per-caller `(caller) => 'meta' | 'flat'`) serves `list_resources`, `describe_resource` (batched)
+  and `manage_resource` in place of one tool per grouped primitive; ungrouped tools stay flat. The
+  meta dispatcher runs the flat call's own resolve → policy → audit path, so answers are
+  byte-identical, a hidden tool is ToolNotFound through either door, and `manage_resource` is
+  metered as the tool it reaches. Default `'flat'`: nothing changes. `McpTool.confirms` marks a
+  write a human finishes. New codes `X_MCP_GROUP_UNKNOWN`, `X_MCP_GROUP_CONFLICT`,
+  `X_MCP_SURFACE_INVALID`.
+- **mcp, query:** `listParams` on a query's `mcp` block (`QueryListParams`) and on `McpTool` —
+  a whitelist of flat filter keys (`status_eq`, `_in`, `_gt`, `_lt`, `_cont`), `sort`, `fields`,
+  keyset `cursor` + `limit`, published by `describe_resource` and enforced by `manage_resource`;
+  a key the query input does not declare is `X_MCP_LIST_PARAMS_INVALID` at boot.
+- **mail:** `setMailTransform(fn)` — an app-level outbound hook run once per `send()` after render
+  and before the idempotency key, so the queue row and every retry carry the transformed bytes. A
+  throw fails the send with `X_MAIL_TRANSFORM_FAILED`; nothing is sent untransformed.
+
 ### Fixed
 
 - **cli:** `x dev` now hands the app's `apps/<app>/runtime.ts` overrides to `startServices`, as the
