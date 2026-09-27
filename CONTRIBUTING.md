@@ -135,7 +135,7 @@ Conventional commits, imperative mood, lower case:
 
 ```
 feat(query): live queries reject an unbounded select
-fix(cli): x verify exits non-zero when a step throws
+fix(cli): the gate exits non-zero when a step throws
 docs(jobs): step names are identifiers, not labels
 chore(deps): bump biome to 2.4.16
 ```

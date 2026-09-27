@@ -181,9 +181,7 @@ describe('unit · reading a part', () => {
           cwd: dir,
           args: parseArgs(['verify', ...argv], SPECS),
           env: {},
-          runner: async () => {
-            throw new Error('merge spawns nothing');
-          },
+          runner: async () => expect.unreachable('merge spawns nothing'),
         }) as unknown as Parameters<typeof verifyCommand.run>[0];
       expect((await verifyCommand.run(ctx(['merge'])).catch((e) => e)).code).toBe('X_CLI_BAD_FLAG');
       expect((await verifyCommand.run(ctx(['merge', 'gone.json'])).catch((e) => e)).code).toBe(

@@ -28,7 +28,7 @@ describe('unit · --shard refusals', () => {
     expect(thrownBy(() => assertShardable(undefined)).code).toBe('X_VERIFY_SHARD_INVALID');
     const serial = thrownBy(() => assertShardable(['unit', 'live']));
     expect(serial.code).toBe('X_VERIFY_SHARD_INVALID');
-    expect(serial.message).toContain('live cannot be split');
+    expect(serial.cause).toContain('live cannot be split');
     expect(serial.fix).toBe('x verify --only unit --shard 1/4 --json');
     expect(thrownBy(() => assertShardable(['e2e'])).fix).toBe('x verify --only e2e --json');
     expect(() => assertShardable(['unit', 'contract', 'job'])).not.toThrow();

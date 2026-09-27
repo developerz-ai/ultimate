@@ -180,11 +180,8 @@ export function installRegistryLeakGuard(): void {
   // how an app declares its tags — and everything after this point is the file's own to undo.
   hookHost[BASELINE_HOOK] = () => {
     if (pending === undefined) return;
-    current = {
-      file: pending,
-      before: sampleRegistries(),
-      snapshot: (accumulated = mergeSnapshots(accumulated, captureProcessRegistries())),
-    };
+    accumulated = mergeSnapshots(accumulated, captureProcessRegistries());
+    current = { file: pending, before: sampleRegistries(), snapshot: accumulated };
     pending = undefined;
   };
 

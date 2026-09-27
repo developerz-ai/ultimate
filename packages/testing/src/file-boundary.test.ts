@@ -49,7 +49,7 @@ describe('unit · file boundary env', () => {
     env['ULTIMATE_EVAL_RECORD'] = '1';
     env['A'] = 'changed';
     delete env['B'];
-    expect(restoreEnv(snapshot, env).sort()).toEqual(['A', 'B', 'ULTIMATE_EVAL_RECORD']);
+    expect([...restoreEnv(snapshot, env)].sort()).toEqual(['A', 'B', 'ULTIMATE_EVAL_RECORD']);
     expect(env).toEqual({ A: '1', B: '2' });
   });
 });
