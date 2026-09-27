@@ -85,7 +85,7 @@ export async function handleUpgrade(
   // its sockets to the rest of the fleet.
   if (url.pathname === '/healthz') return json(healthzPayload());
   if (url.pathname === '/readyz') {
-    const payload = readyzPayload();
+    const payload = readyzPayload({ deep: url.searchParams.get('deep') === '1' });
     return deps.ready() ? json(payload) : json({ status: 503, body: payload.body });
   }
   if (url.pathname !== deps.path) return new Response('not found', { status: 404 });

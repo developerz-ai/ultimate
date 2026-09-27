@@ -3,11 +3,14 @@
 // and reports the same /healthz + /readyz state.
 
 import { type Clock, systemClock } from './clock';
+import type { ReadinessMode } from './config-health';
+import { assertReadinessMode } from './config-health';
 import { UltimateError } from './errors';
 import { finiteCount } from './finite-option';
 import { settleWithin } from './lifecycle-deadline';
 import { lifecycleDrained } from './lifecycle-errors';
 import { defaultReadinessGraceMs, readinessGraceIssue } from './lifecycle-grace';
+import type { ReadinessCheck, ReadinessStatus } from './lifecycle-readiness';
 import { type LogFields, type Logger, logger as rootLogger } from './logger';
 
 export type HealthState = 'starting' | 'ready' | 'draining' | 'stopped';
@@ -64,28 +67,11 @@ export interface LifecycleOptions {
    * A whole number from 0 to 60000; 0 is no grace.
    */
   readonly readinessGraceMs?: number | undefined;
+  /** What a failing check does to `/readyz` — see `ReadinessMode`. Default `'dependencies'`. */
+  readonly readiness?: ReadinessMode | undefined;
   readonly clock?: Clock | undefined;
   readonly logger?: Logger | undefined;
 }
-
-export type ReadinessStatus = 'ok' | 'failing';
-
-/**
- * Synchronous, and that is the design, not a limitation. **Do not widen this to
- * `() => Promise<boolean>`** — the signature is the mechanism.
- *
- * A readiness endpoint that does I/O is a liveness bomb. A probe that awaits a network call takes
- * as long as the dependency does, so a slow database makes the endpoint miss its `timeoutSeconds`,
- * the kubelet reads that as unready, and capacity is pulled from an already-struggling system —
- * the outage the probe existed to prevent, caused by the probe. Worse under a liveness probe
- * sharing the handler: the pod is killed and restarts into the same slow database, cold.
- *
- * So the owner of the dependency keeps a boolean fresh — a pool exposes `isOpen`, a background
- * poller flips a flag on its own schedule with its own timeout — and this reads it. That puts the
- * waiting where a timeout can be tuned, and leaves this path unable to block. A check that throws
- * is `failing`.
- */
-export type ReadinessCheck = () => boolean;
 
 export interface HealthReport {
   readonly state: HealthState;
@@ -123,6 +109,7 @@ const DEFAULT_DEADLINE_MS = 25_000;
 let deadlineMs = DEFAULT_DEADLINE_MS;
 /** `undefined` means "the environment's default", read when a drain starts, not at import. */
 let graceMs: number | undefined;
+let readinessMode: ReadinessMode = 'dependencies';
 let clock: Clock = systemClock;
 let log: Logger = rootLogger;
 let state: HealthState = 'starting';
@@ -155,6 +142,7 @@ export function configureLifecycle(options: LifecycleOptions): void {
     }
     graceMs = options.readinessGraceMs;
   }
+  if (options.readiness !== undefined) readinessMode = assertReadinessMode(options.readiness);
   if (options.clock !== undefined) {
     clock = options.clock;
     startedAtMono = clock.monotonic();
@@ -451,13 +439,15 @@ export function drain(signal = 'manual'): Promise<void> {
   return drainPromise;
 }
 
-export function healthReport(): HealthReport {
+export function healthReport(mode: ReadinessMode = readinessMode): HealthReport {
   const checks = readinessChecks();
+  const dependencies = Object.values(checks).every((status) => status === 'ok');
   return {
     state,
     // `ready` is the same predicate `/readyz` answers on, so a body and its status can never
     // disagree — a 200 whose body says `ready: false` is the bug this shares one source to avoid.
-    ready: state === 'ready' && Object.values(checks).every((status) => status === 'ok'),
+    // `'process'` mode leaves the checks OUT of it, and still reports every one of them below.
+    ready: state === 'ready' && (mode === 'process' || dependencies),
     uptimeMs: Math.round(clock.monotonic() - startedAtMono),
     inflight,
     buildId: process.env['BUILD_ID'] ?? 'dev',
@@ -477,9 +467,12 @@ export function healthzPayload(): HealthPayload {
   return { ok, status: ok ? 200 : 503, body };
 }
 
-/** Readiness: may this instance receive traffic? 503 while starting, draining or any check fails. */
-export function readyzPayload(): HealthPayload {
-  const body = healthReport();
+/**
+ * Readiness: may this instance receive traffic? 503 while starting or draining, and — in the
+ * default `'dependencies'` mode, or always with `deep` (`/readyz?deep=1`) — while any check fails.
+ */
+export function readyzPayload(options: { readonly deep?: boolean } = {}): HealthPayload {
+  const body = healthReport(options.deep === true ? 'dependencies' : readinessMode);
   return { ok: body.ready, status: body.ready ? 200 : 503, body };
 }
 
@@ -487,6 +480,7 @@ export function readyzPayload(): HealthPayload {
 export function resetLifecycle(): void {
   deadlineMs = DEFAULT_DEADLINE_MS;
   graceMs = undefined;
+  readinessMode = 'dependencies';
   clock = systemClock;
   log = rootLogger;
   state = 'starting';

@@ -48,6 +48,8 @@ The body is `{ state, ready, uptimeMs, inflight, buildId, checks, registered, ro
 | `transport` | only when the transport can report a connection: NATS can, the in-process bus cannot | `transport.connected` |
 | anything per-role | **never** `As of 2026-08-22` | this table used to list five — replication lag, migration-version skew, "one pool claiming", "holds the leader lock", "slot active" — and none was wired. A `scheduler` standby does not report not-ready; it serves no readiness endpoint |
 
+**`health: { readiness: 'process' }` in `app.config.ts`** (`As of 22.5`; default `'dependencies'`). Every replica shares the database, so one blip fails `database` everywhere at once and the ingress answers "no available server" for the whole site — pages that never touch the database included. In `'process'` mode `/readyz` is 503 only while starting, draining or stopped; a failing check stays 200 with `ready: true` and the check still named `failing` in `checks`. `/readyz?deep=1` always answers in `'dependencies'` mode — point monitoring there. Web and sync roles alike; liveness is unchanged in both modes.
+
 **`registered: 0` is a real answer, not an error.** An empty registry is still ready, so a 200 means no more than "the socket is bound" — which is what the chart's and compose's healthchecks route traffic on. Read `registered` before you trust `checks: {}`.
 
 ## Graceful drain on SIGTERM

@@ -8,7 +8,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **core, http, realtime, cli:** `health: { readiness: 'process' }` in `app.config.ts` (default
+  `'dependencies'`, unchanged). In `'process'` mode `/readyz` is 503 only while starting, draining or
+  stopped; a failing readiness check stays 200 and is still reported by name in `checks`, so one
+  database blip no longer pulls every replica out of the ingress at once. `/readyz?deep=1` always
+  answers on the dependencies, for monitoring. `configureLifecycle({ readiness })`,
+  `readyzPayload({ deep })`, types `HealthConfig`, `ReadinessMode`, `READINESS_MODES`.
 
 ## 22.4.0 - 2026-09-27
 

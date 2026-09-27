@@ -290,7 +290,11 @@ export const createServer = (options: ServerOptions): ServerHandle => {
           // Health endpoints answer outside the pipeline on purpose: a draining or
           // rate-limited process must still be able to say what it is doing.
           '/healthz': () => healthResponse(healthzPayload()),
-          '/readyz': () => healthResponse(readyzPayload()),
+          // `?deep=1` always answers on the dependencies, whatever `health.readiness` says.
+          '/readyz': (request: Request) =>
+            healthResponse(
+              readyzPayload({ deep: new URL(request.url).searchParams.get('deep') === '1' }),
+            ),
         },
       };
       // Two calls, not one options object with a spread: `Bun.serve` types `fetch` as returning a
