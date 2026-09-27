@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.6.0 - 2026-09-27
+
 ### Added
 
 - **core, action, cli:** `defineApi({ http: { pathStyle: 'readable' } })` â€” an action's URL is its
@@ -73,6 +77,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   named by the route PATTERN (`GET /r/:token`, or the bare method when nothing matched) and
   `http.route` is the pattern or `unmatched`.
 - **mcp:** a 401 for a token that did not resolve now says `error="invalid_token"` (RFC 6750).
+
+### Commits
+
+- feat(action,http,mcp,render): readable API paths, complete OpenAPI, Bearer mounts, MCP OAuth discovery, page POST binding, route-named spans (#559)
 
 ## 22.5.1 - 2026-09-27
 
