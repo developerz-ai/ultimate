@@ -149,12 +149,15 @@ export function installRegistryLeakGuard(): void {
     // evaluated yet, so what goes back is exactly what that file inherited — module-scope
     // declarations included, which is the half a plain `resetX()` in a `beforeEach` destroys.
     //
-    // Declarations are put back as a UNION with what the process holds now (22.7, shared worker):
-    // a module a test imported lazily declared its permissions and roles once, for the life of the
-    // worker, and taking them away here would leave every later file without them. Tasks go back
-    // EXACTLY: one a test body registered must not fire in the next file's scheduler round.
+    // In an APP, declarations are put back as a UNION with what the process holds now (22.7,
+    // shared worker): an app module a test imported lazily declared its permissions and roles once,
+    // for the life of the worker, and taking them away here would leave every later file without
+    // them. The framework repository's own suites keep the exact restore: many of them lean on an
+    // EMPTY permission set (no validation), and a test body's declaration must not switch it on for
+    // every later file. Tasks go back EXACTLY everywhere: one a test body registered must not fire
+    // in the next file's scheduler round.
     const live = captureProcessRegistries();
-    const merged = mergeSnapshots(live, current.snapshot);
+    const merged = inApp ? mergeSnapshots(live, current.snapshot) : current.snapshot;
     // Locales likewise, in one case: the file's baseline still held the framework's pristine
     // config and an app's `defineCatalogs()` ran during the file (a lazily imported catalog
     // module) — that configured the worker for good, since the module will not evaluate again.

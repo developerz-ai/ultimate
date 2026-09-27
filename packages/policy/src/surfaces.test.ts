@@ -27,6 +27,9 @@ beforeEach(() => {
   defineRoles({ editor: { grants: ['post:publish'] } });
 });
 
+// Declared before the module-scope `can()`: in a shared worker (22.7) an earlier file may have left
+// a non-empty permission set, and `can()` validates against whatever set is live.
+definePermissions(['post:publish'] as const);
 const policy = can<Input>('post:publish');
 const editor = testActor('editor', { roles: ['editor'] }).actor;
 const guest = testActor('guest', { roles: [] }).actor;
