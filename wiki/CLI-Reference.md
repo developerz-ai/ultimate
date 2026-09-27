@@ -251,6 +251,11 @@ x g guard <name>                            # a convention this app enforces, as
 
 Alias: `x generate`.
 
+`<name>` is one directory segment for every generator but `route`, whose name is its URL:
+`x g route casos/[id]/notificar` writes `apps/web/app/casos/[id]/notificar/page.tsx`. Each segment
+is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and empty segments are
+`X_CLI_BAD_FLAG`.
+
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--feature` | string | derived from the name | feature slice to write into |

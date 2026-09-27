@@ -108,7 +108,49 @@ describe('the install sheet members an app declares', () => {
     ", screenshots: [{ src: { 'es-co': '/assets/home-es.png', en: '/assets/home-en.png' }," +
     " sizes: '1280x800', type: 'image/png', formFactor: 'wide', label: { 'es-co': 'Inicio', en: 'Home' } }]";
 
+  /** The three images MEMBERS names, as committed files under the site's assets. */
+  const writeAssets = async (): Promise<void> => {
+    for (const name of ['panel', 'home-es', 'home-en']) {
+      await Bun.write(join(root, `apps/web/site/assets/${name}.png`), `png-${name}`);
+    }
+  };
+  const HASHED = (name: string): RegExp => new RegExp(`^/assets/${name}\\.[0-9a-f]{8}\\.png$`);
+
+  // The site serves an asset ONLY at its content-hashed URL, and the manifest took `src` verbatim,
+  // so an `/assets/…` screenshot was a 404 in the install sheet unless the app hashed it itself.
+  test('an asset-path screenshot or shortcut icon that has no file is refused at boot', async () => {
+    const refused = await load(TWO_LOCALES, MEMBERS).then(
+      () => 'loaded',
+      (error: { code?: string }) => error.code,
+    );
+    expect(refused).toBe('X_ASSET_MISSING');
+  });
+
+  test('asset-path screenshots and shortcut icons answer their content-hashed URL', async () => {
+    await writeAssets();
+    const artifacts = await load(TWO_LOCALES, MEMBERS);
+    const es = parse(artifacts.body) as {
+      screenshots: { src: string }[];
+      shortcuts: { icons: { src: string }[] }[];
+    };
+    const en = bodyAt(artifacts, '/en/manifest.webmanifest') as typeof es;
+    expect(es.screenshots[0]?.src).toMatch(HASHED('home-es'));
+    expect(en.screenshots[0]?.src).toMatch(HASHED('home-en'));
+    expect(en.shortcuts[0]?.icons[0]?.src).toMatch(HASHED('panel'));
+  });
+
+  test('a src that is not an asset path passes untouched', async () => {
+    const artifacts = await load(
+      TWO_LOCALES,
+      ", screenshots: [{ src: 'https://cdn.test/wide.png', sizes: '1280x800', type: 'image/png' }]",
+    );
+    expect((parse(artifacts.body)['screenshots'] as { src: string }[])[0]?.src).toBe(
+      'https://cdn.test/wide.png',
+    );
+  });
+
   test('each manifest carries them in its own language, with its own URLs', async () => {
+    await writeAssets();
     const artifacts = await load(TWO_LOCALES, MEMBERS);
     const es = parse(artifacts.body);
     const en = bodyAt(artifacts, '/en/manifest.webmanifest');
@@ -119,19 +161,19 @@ describe('the install sheet members an app declares', () => {
       {
         name: 'Panel',
         url: '/panel',
-        icons: [{ src: '/assets/panel.png', sizes: '96x96', type: 'image/png' }],
+        icons: [{ src: expect.stringMatching(HASHED('panel')), sizes: '96x96', type: 'image/png' }],
       },
     ]);
     expect(en['shortcuts']).toEqual([
       {
         name: 'Dashboard',
         url: '/en/panel',
-        icons: [{ src: '/assets/panel.png', sizes: '96x96', type: 'image/png' }],
+        icons: [{ src: expect.stringMatching(HASHED('panel')), sizes: '96x96', type: 'image/png' }],
       },
     ]);
     expect(en['screenshots']).toEqual([
       {
-        src: '/assets/home-en.png',
+        src: expect.stringMatching(HASHED('home-en')),
         sizes: '1280x800',
         type: 'image/png',
         form_factor: 'wide',

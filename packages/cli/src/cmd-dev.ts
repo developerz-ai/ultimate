@@ -47,6 +47,7 @@ import {
   withRealtimeEvents,
 } from './runtime-bindings';
 import { liveFeedLabel } from './runtime-live-feed';
+import type { RuntimeOverrides } from './runtime-overrides';
 import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
 import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './runtime-services';
@@ -133,14 +134,20 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     ? { ...options.env, ULTIMATE_ENV: 'development' }
     : options.env;
   const resolved = resolveServices(options.root, env);
-  const runtime: RunningServices = await startServices(resolved, env);
+  // The app's `apps/<app>/runtime.ts`, read ONCE and handed to `startServices` exactly as
+  // `serve.ts`'s `withAppRuntime` does — so the disks (`storage`), the queue, the mail driver and
+  // every other override a deployment declares are the ones development runs too. Until 22.4 this
+  // boot passed nothing here and built its own embedded disk, so an app's `/_storage` routes and its
+  // actions wrote to two different places in `x dev` and to one in production.
+  const appRuntime = await loadAppRuntime(options.root);
+  const runtime: RunningServices = await startServices(resolved, env, appRuntime);
   // The events binding the boot line reports is the bus the runtime chose, read off it.
   const services = withRealtimeEvents(resolved, env, runtime.realtime);
   // `serve.ts`'s `releaseBoot` shape: everything acquired from here on is released, newest first,
   // if the boot throws — a failed `x dev` left PGlite holding `.x/pgdata` for the retry to meet.
   const acquired: (() => void | Promise<void>)[] = [() => runtime.stop()];
   try {
-    return await bootDev(options, services, runtime, acquired);
+    return await bootDev(options, services, runtime, acquired, appRuntime);
   } catch (error) {
     await releaseBoot(acquired);
     throw error;
@@ -152,6 +159,7 @@ async function bootDev(
   services: ReturnType<typeof resolveServices>,
   runtime: RunningServices,
   acquired: (() => void | Promise<void>)[],
+  appRuntime: RuntimeOverrides | undefined,
 ): Promise<DevServer> {
   // Installed before the app loads, so a span opened during registration is already recorded.
   // Tracing is always on in the framework and free until an exporter is configured; `x dev` is
@@ -229,11 +237,7 @@ async function bootDev(
   // The app's `apps/<app>/runtime.ts`, composed exactly as `runRole` composes a caller's
   // `runtime`: the replica scope in front, the app's own middleware behind it. Before this the
   // first argument was `undefined` here and an app's middleware reached no development process.
-  const replicaOverride = replicaOverrides(
-    await loadAppRuntime(options.root),
-    services.db,
-    options.env,
-  );
+  const replicaOverride = replicaOverrides(appRuntime, services.db, options.env);
   const running = await startRoles({
     roles: options.roles ?? DEV_ROLES,
     port: options.port,

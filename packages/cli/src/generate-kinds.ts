@@ -114,9 +114,33 @@ export function readName(raw: string | undefined, kind: Generator): string {
       example: exampleFor(kind),
     });
   }
+  // A route's name IS its URL: `x g route casos/[id]/notificar` writes the page under the
+  // directory that serves it. Every other generator's name is one directory segment.
+  if (kind === 'route') return readRoutePath(raw);
   refusePath(raw, 'name', kind);
   refuseBadIdentifier(raw, kind);
   return raw;
+}
+
+/** A static segment, or `[param]` / `[...rest]` — the directory convention `x routes` reads. */
+const ROUTE_SEGMENT = /^(?:[A-Za-z0-9][A-Za-z0-9_-]*|\[(?:\.\.\.)?[A-Za-z][A-Za-z0-9_-]*\])$/;
+
+/**
+ * `x g route` refused any path until 22.4, so a nested or dynamic page (`casos/[id]/notificar`)
+ * had to be generated flat and moved by hand — and the move is where the generated test's URL and
+ * the directory stopped agreeing. Each segment is checked on its own, which is also the traversal
+ * guard: `..`, `.`, an empty segment and a backslash are not segments this pattern admits.
+ */
+function readRoutePath(raw: string): string {
+  const segments = raw.replace(/^\/+/, '').split('/');
+  const bad = segments.find((segment) => !ROUTE_SEGMENT.test(segment));
+  if (bad === undefined) return raw.replace(/^\/+/, '');
+  throw new BadFlagError({
+    flag: 'name',
+    command: 'g route',
+    reason: `"${raw}" has the segment "${bad}", and a route segment is a word (a-z, 0-9, -, _) or [param] / [...rest]`,
+    fix: 'x g route posts/[slug] --surface site',
+  });
 }
 
 /** `--feature`, refused where it is a path: it is a DIRECTORY under the surface, one segment. */

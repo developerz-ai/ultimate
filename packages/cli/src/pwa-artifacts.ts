@@ -32,12 +32,15 @@ import {
   renderThemeColorMeta,
   serializeWebManifest,
 } from '@ultimat3/pwa';
+import type { AssetPath } from '@ultimat3/render';
+import { assetPathProblem } from '@ultimat3/render';
 import { escapeAttribute } from '@ultimat3/seo';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
 import { hasSourceIcon, iconPlan, iconRenderer } from './icon-assets';
 import type { AppLocales } from './pwa-manifest-locales';
 import { appLocales, localeMembers, spellIn } from './pwa-manifest-locales';
+import { parseHashedAssetUrl, siteAssetTable } from './site-assets';
 
 /** What a browser fetches from `<link rel="manifest">`. The spec's own extension, not `.json`. */
 export const WEB_MANIFEST_PATH = '/manifest.webmanifest';
@@ -208,7 +211,7 @@ export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | und
       name: app.name,
       tokens: app.colors,
       icons: icons?.manifestIcons ?? [],
-      ...localeMembers(app.block, locale, app.locales),
+      ...withHashedAssets(localeMembers(app.block, locale, app.locales), root),
     });
     const path = spellIn(WEB_MANIFEST_PATH, locale, app.locales);
     return {
@@ -232,6 +235,41 @@ export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | und
     head: primary.head,
     manifests,
     headFor: (locale: string): string => manifestIn(manifests, locale)?.head ?? primary.head,
+  };
+}
+
+/**
+ * A screenshot or shortcut icon written as the asset it is — `assets/pwa/wide.png` or
+ * `/assets/pwa/wide.png` — answers the content-hashed URL the site actually serves, exactly as
+ * `asset()` does in a page. The site serves an asset ONLY at its hashed URL, and the manifest took
+ * `src` verbatim, so an app had to hash its own screenshots to avoid shipping a 404 in the install
+ * sheet (notificado.co's `pwa-install.ts`). A missing file is `X_ASSET_MISSING` at boot, never a
+ * broken image in an install prompt; any other `src` (absolute, already hashed) passes untouched.
+ */
+function withHashedAssets<M extends ReturnType<typeof localeMembers>>(members: M, root: string): M {
+  const resolve = (src: string): string => {
+    const path = src.replace(/^\//, '');
+    if (!path.startsWith('assets/') || parseHashedAssetUrl(`/${path}`) !== undefined) return src;
+    if (assetPathProblem(path) !== undefined) return src;
+    return siteAssetTable(root).resolve(path as AssetPath).url;
+  };
+  return {
+    ...members,
+    ...(members.screenshots === undefined
+      ? {}
+      : { screenshots: members.screenshots.map((shot) => ({ ...shot, src: resolve(shot.src) })) }),
+    ...(members.shortcuts === undefined
+      ? {}
+      : {
+          shortcuts: members.shortcuts.map((shortcut) =>
+            shortcut.icons === undefined
+              ? shortcut
+              : {
+                  ...shortcut,
+                  icons: shortcut.icons.map((icon) => ({ ...icon, src: resolve(icon.src) })),
+                },
+          ),
+        }),
   };
 }
 

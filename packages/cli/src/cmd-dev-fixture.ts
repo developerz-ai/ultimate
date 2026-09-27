@@ -6,7 +6,7 @@
 // What the app declares, and what each declaration is here to prove:
 //   app.config.ts               the root marker a real `x dev` cannot start without; `ai.mcp` by default
 //   apps/web/mcp.ts             the app's own MCP endpoint, mounted by the web role
-//   apps/web/runtime.ts         the app's middleware, reaching a development process
+//   apps/web/runtime.ts         the app's middleware and disks, reaching a development process
 //   .git/HEAD                   the fixture is its own repository — see the entry below
 //   apps/web/app/hello/*        an SSR page with a component, edited on disk while `x dev` runs
 //   apps/web/app/notes/*        a memory-backed entity and a live query, fed by the in-process bridge
@@ -46,13 +46,19 @@ export const mcp = defineAppMcp({ include: 'exposed', resolveToken: () => null }
 
   // The app's own middleware, in the contract `app-runtime.ts` reads: a header on every response
   // is the cheapest proof that the chain `x dev` composed is the app's and not only the replica's.
-  'apps/web/runtime.ts': `const stamp = async (request, ctx, next) => {
+  // Its disks too: `x dev` built its own embedded disk and ignored this one until 22.4.
+  'apps/web/runtime.ts': `import { defineStorage, localDriver } from '@ultimat3/storage';
+const stamp = async (request, ctx, next) => {
   const response = await next(request, ctx);
   const headers = new Headers(response.headers);
   headers.set('x-dev-runtime', 'app');
   return new Response(response.body, { status: response.status, headers });
 };
-export const runtime = { middleware: [stamp] };
+const storage = defineStorage({
+  disks: { appdisk: localDriver({ root: new URL('../../.app-disk', import.meta.url).pathname }) },
+  default: 'appdisk',
+});
+export const runtime = { middleware: [stamp], storage };
 `,
 
   // A memory-backed entity, so the fixture needs no migration: the row observer sits on
