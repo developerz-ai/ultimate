@@ -324,6 +324,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MAIL_SEND_FAILED',
     'X_MAIL_TEMPLATE_UNKNOWN',
     'X_MAIL_TEXT_MISSING',
+    'X_MAIL_TRANSFORM_FAILED',
   ],
   // tier 4 — build-time only: the manifest emitter and the `AGENTS.md` rules, all on `x verify`.
   manifest: [
@@ -336,6 +337,9 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   // status. Revisit if the MCP host is ever mounted on an HTTP route inside the pipeline.
   mcp: [
     'X_MCP_ARGS_INVALID',
+    'X_MCP_GROUP_CONFLICT',
+    'X_MCP_GROUP_UNKNOWN',
+    'X_MCP_LIST_PARAMS_INVALID',
     'X_MCP_NOT_BRANCH_DB',
     'X_MCP_PROTOCOL',
     'X_MCP_QUERY_REJECTED',
@@ -343,6 +347,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MCP_SCOPE_CONFLICT',
     'X_MCP_SCOPE_DENIED',
     'X_MCP_SCOPE_UNKNOWN',
+    'X_MCP_SURFACE_INVALID',
     'X_MCP_TOOL_DUPLICATE',
     'X_MCP_TOOL_UNDECLARED',
     'X_MCP_TOOL_UNKNOWN',

@@ -20,6 +20,7 @@ export const MAIL_ERROR_CODES = [
   'X_MAIL_HEADER_INVALID',
   'X_MAIL_ADDRESS_INVALID',
   'X_MAIL_SEND_FAILED',
+  'X_MAIL_TRANSFORM_FAILED',
 ] as const;
 
 export type MailErrorCode = (typeof MAIL_ERROR_CODES)[number];
@@ -34,6 +35,7 @@ export const MAIL_ERROR_TITLES: Readonly<Record<MailErrorCode, string>> = {
   X_MAIL_HEADER_INVALID: 'a header value carries a line break',
   X_MAIL_ADDRESS_INVALID: 'an envelope address could restructure the SMTP command line',
   X_MAIL_SEND_FAILED: 'the mail transport refused the message',
+  X_MAIL_TRANSFORM_FAILED: 'the app mail transform threw or returned no message',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -301,4 +303,17 @@ export const sendFailed = (failure: SendFailure): MailError =>
       retryable: failure.retryable,
       ...(failure.status === undefined ? {} : { status: failure.status }),
     },
+  });
+
+/**
+ * The app's `setMailTransform` hook threw, or handed back something that is not a message. The
+ * send FAILS: delivering the untransformed mail would be a send the app believes was tracked (or
+ * rewritten) and was not, and nothing downstream could tell the difference.
+ */
+export const transformFailed = (mailId: string, reason: string): MailError =>
+  new MailError({
+    code: 'X_MAIL_TRANSFORM_FAILED',
+    cause: `the mail transform failed for "${mailId}": ${reason} — the mail was not sent`,
+    fix: 'fix the function passed to setMailTransform() so it returns { subject, html, text } strings for every mail it is handed — or setMailTransform(undefined) to send untransformed',
+    meta: { mailId },
   });

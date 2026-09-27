@@ -31,8 +31,17 @@ import. The CLI wires it.
 | `input-schema.ts` | Standard Schema → the `JsonSchema` subset `validate-args.ts` enforces |
 | `readonly-sql.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
+| `meta-surface.ts` | `surface: 'meta'` catalog: `list_resources` / `describe_resource`, `groups:` boot checks; dispatch stays in `server.ts` |
+| `list-params.ts` | `listParams` whitelist → the schema `manage_resource` enforces (flat keys: `status_eq`) |
+| `meta-errors.ts` · `framework-error.ts` | meta boot refusals · a thrown value read and rendered (split from `server.ts`) |
 
 ## Invariants
+
+- **`manage_resource` is a second DOOR, never a second PATH** (`As of 2026-09-26`): locate (visibility,
+  else the absent answer) → the shared `resolve` (scope → args, list whitelist first) → `dispatch`,
+  audited under the inner tool. `tools/list` shows what `tools/call` answers PER CALLER: a meta caller
+  cannot call a grouped tool by name, a flat caller never sees the meta tools, and every not-found a
+  meta caller gets carries `META_UNKNOWN_FIX`. Default `'flat'` builds no `MetaSurface`.
 
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a `defineAppMcp` file
   imports one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on

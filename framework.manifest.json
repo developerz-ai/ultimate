@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c9cb5fa760df0901a224367fb0add7f412aa329c431ab3b33507d39f93b45c0b",
+  "buildId": "a337325f7b1ce7c5678a723bdec479919cbbe4931e5d2f19cd60bc8630b7bf71",
   "tiers": {
     "0": [
       "core",
@@ -1905,6 +1905,11 @@
       "at": "packages/mail/src/errors.ts"
     },
     {
+      "code": "X_MAIL_TRANSFORM_FAILED",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
       "code": "X_MANIFEST_BREAKING",
       "owner": "manifest",
       "at": "packages/manifest/src/errors.ts"
@@ -1945,6 +1950,21 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_GROUP_CONFLICT",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_GROUP_UNKNOWN",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_LIST_PARAMS_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_NOT_BRANCH_DB",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -1981,6 +2001,11 @@
     },
     {
       "code": "X_MCP_SCOPE_UNKNOWN",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_SURFACE_INVALID",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

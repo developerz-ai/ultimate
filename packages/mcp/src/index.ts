@@ -86,6 +86,31 @@ export {
   toolsListed,
 } from './from-action';
 export { toWireSchema } from './input-schema';
+export type { ListFilterOp, McpListParams } from './list-params';
+export { DEFAULT_LIST_MAX_LIMIT, listParamsSchema } from './list-params';
+export {
+  McpGroupConflictError,
+  McpGroupUnknownError,
+  McpListParamsInvalidError,
+  McpSurfaceInvalidError,
+  META_UNKNOWN_FIX,
+} from './meta-errors';
+export type {
+  DescribedAction,
+  McpResourceGroup,
+  McpResourceGroups,
+  McpSurface,
+  McpSurfaceOption,
+  MetaAction,
+  MetaResource,
+} from './meta-surface';
+export {
+  DESCRIBE_RESOURCE,
+  LIST_RESOURCES,
+  MANAGE_RESOURCE,
+  META_TOOL_NAMES,
+  oneLineParams,
+} from './meta-surface';
 export type { ListedPrimitive } from './projectable';
 export { asProjectable } from './projectable';
 export type { QueryLimits, QueryResult, QueryRows } from './query-limits';

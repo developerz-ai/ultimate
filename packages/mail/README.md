@@ -23,6 +23,30 @@ await send(receiptMail, { name: user.name, url }, { to: user.email, locale: ctx.
 `send` validates `data` through the mail's schema, renders, then enqueues `mail.send`. It
 delivers inline only when `{ sync: true }` is passed or no job driver is configured.
 
+### The outbound transform
+
+`setMailTransform(fn)` installs one app-level hook, run once per `send()` after render and before
+the idempotency key is minted — so the key, the queue row and every retry carry its bytes, and a
+job retry never re-runs it. It rewrites `{ subject, html, text }` (never recipients or headers) and
+receives `{ mailName, to, idempotencyKey, locale }`, where `idempotencyKey` is the UNtransformed
+key: key a tracking row on it and a re-called `send()` gets the same pixel id and dedupes. A throw
+or a malformed result is `X_MAIL_TRANSFORM_FAILED` and nothing is sent. `setMailTransform(undefined)`
+removes it; with none installed a send is byte-identical to before.
+
+```ts
+import { type MailRendered, type MailTransformMeta, setMailTransform } from '@ultimat3/mail';
+
+declare const TRACKED: ReadonlySet<string>;
+declare function addPixelAndWrapLinks(
+  rendered: MailRendered,
+  meta: MailTransformMeta,
+): Promise<MailRendered>;
+
+setMailTransform(async (rendered, meta) =>
+  TRACKED.has(meta.mailName) ? await addPixelAndWrapLinks(rendered, meta) : rendered,
+);
+```
+
 ## Rules
 
 | Rule | Why |
@@ -126,6 +150,7 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_CREDENTIAL_MISSING` | set `SMTP_URL` (or `RESEND_API_KEY`) and `MAIL_FROM` in the deployment — an operations one |
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
 | `X_MAIL_ADDRESS_INVALID` | pass a bare `addr-spec` — an envelope address may hold no control character and no `<`/`>` |
+| `X_MAIL_TRANSFORM_FAILED` | the `setMailTransform` hook threw or returned no `{ subject, html, text }` — fix the hook; the mail was not sent |
 | `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help — and so does `error.retry`, which is what `sendMailJob` acts on: `terminal` dead-letters a 550 or a rejected credential at attempt 1 instead of sending it four more times |
 
 ### Error classes

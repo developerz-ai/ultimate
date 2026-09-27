@@ -178,6 +178,49 @@ beside the action, because a scope is a capability of the CONNECTION's token —
 stays the only rule that reads the input. A name this server does not project is
 `X_MCP_SCOPE_UNKNOWN` at boot; one tool claimed by two scopes is `X_MCP_SCOPE_CONFLICT`.
 
+### A constant surface: `surface: 'meta'`
+
+A large or sparsely used catalog blows an agent's context one tool per primitive. `surface: 'meta'`
+serves three tools instead, however many primitives sit behind them; tools named in no group
+(`docs`, `whoami`) stay flat beside them. The default is `'flat'` and changes nothing.
+
+```ts
+import { defineAppMcp } from '@ultimat3/mcp';
+
+defineAppMcp({
+  include: 'exposed',
+  surface: (caller) => (caller.role?.startsWith('staff') ? 'meta' : 'flat'), // or 'meta'
+  groups: {
+    payouts: {
+      description: 'Affiliate payout batches',
+      tools: ['previewPayoutBatch', 'listPayoutBatches'],
+    },
+  },
+});
+```
+
+| Tool | Answers |
+|---|---|
+| `list_resources` | `{ resources: [{ name, description, actions: [{ name, kind: 'query'\|'action', description, params, confirms?, scope? }] }] }` — `params` is a one-line hint (`batchId: string, note?: string`) |
+| `describe_resource` | `{ resources: string[] }` (batched) → each action's full `inputSchema` |
+| `manage_resource` | `{ resource, action, params }` → the flat tool's answer, byte for byte |
+
+`manage_resource` is the flat `tools/call` through another door: visibility (a hidden or misaddressed
+pair answers what an absent one does), then the shared resolver's scope and argument gates, then the
+tool's own policy, audited under the tool's name and metered in its bucket. A meta caller cannot call
+a grouped tool by name, and a flat caller never sees the meta tools. `confirms: true` on an
+`McpTool` marks a write a human finishes. Boot refuses `X_MCP_GROUP_UNKNOWN`,
+`X_MCP_GROUP_CONFLICT`, `X_MCP_SURFACE_INVALID` (meta without groups, groups nobody is served) and a
+meta tool name taken by an app tool (`X_MCP_TOOL_DUPLICATE`).
+
+**List params.** A list query declares its whitelist, `mcp: { expose: true, listParams: { filters:
+{ status: ['_eq', '_in'], createdAt: ['_gt', '_lt'] }, sort: ['createdAt'], fields: ['id', 'status'],
+maxLimit: 100 } }`. Keys are FLAT — `status_eq`, `createdAt_gt`, `sort: '-createdAt'`, `fields`,
+`cursor` (opaque keyset), `limit` — because a query's input travels as a query string; the query's
+own `input` declares them and implements them. `describe_resource` publishes the whitelist and
+`manage_resource` refuses anything outside it (`X_MCP_ARGS_INVALID`) before the query runs; a
+whitelisted key the input does not declare is `X_MCP_LIST_PARAMS_INVALID` at boot.
+
 ## Transports
 
 | Transport | Entry | Auth |
@@ -244,6 +287,9 @@ inside their own handler.
 | `X_MCP_QUERY_REJECTED` | `db.query` given anything but one read-only statement |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a production or otherwise non-branch database |
 | `X_MCP_RESOURCE_DUPLICATE` | two resources claim one `ultimate://` URI — refused at registration, as a duplicate tool name is |
+| `X_MCP_GROUP_UNKNOWN` · `X_MCP_GROUP_CONFLICT` | `groups:` names a tool not projected · lists one tool twice |
+| `X_MCP_SURFACE_INVALID` | `surface` and `groups` disagree |
+| `X_MCP_LIST_PARAMS_INVALID` | `listParams` whitelists a key the tool's input does not declare |
 | `X_MCP_RATE_LIMITED` | the caller spent its per-minute allowance for this request's class. Its own code rather than `@ultimat3/http`'s `X_RATE_LIMITED` because the KNOB differs — `rateLimits` on the route, never `rateLimit.buckets` in `app.config.ts` |
 
 ### Error classes
@@ -256,10 +302,17 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpAppUnmountedError` | `X_MCP_APP_UNMOUNTED` | `src/errors.ts` |
 | `McpArgsInvalidError` | `X_MCP_ARGS_INVALID` | `src/errors.ts` |
 | `McpBodyTooLargeError` | `X_MCP_BODY_TOO_LARGE` | `src/errors.ts` |
+| `McpGroupConflictError` | `X_MCP_GROUP_CONFLICT` | `src/meta-errors.ts` |
+| `McpGroupUnknownError` | `X_MCP_GROUP_UNKNOWN` | `src/meta-errors.ts` |
+| `McpListParamsInvalidError` | `X_MCP_LIST_PARAMS_INVALID` | `src/meta-errors.ts` |
 | `McpNotBranchDbError` | `X_MCP_NOT_BRANCH_DB` | `src/errors.ts` |
 | `McpProtocolError` | `X_MCP_PROTOCOL` | `src/errors.ts` |
+| `McpSurfaceInvalidError` | `X_MCP_SURFACE_INVALID` | `src/meta-errors.ts` |
 | `McpQueryRejectedError` | `X_MCP_QUERY_REJECTED` | `src/errors.ts` |
-| `McpRateLimitedError` | `X_MCP_RATE_LIMITED` | `src/errors.ts` |
+| `McpRateLimitedError` | `X_MCP_GROUP_UNKNOWN` · `X_MCP_GROUP_CONFLICT` | `groups:` names a tool not projected · lists one tool twice |
+| `X_MCP_SURFACE_INVALID` | `surface` and `groups` disagree |
+| `X_MCP_LIST_PARAMS_INVALID` | `listParams` whitelists a key the tool's input does not declare |
+| `X_MCP_RATE_LIMITED` | `src/errors.ts` |
 | `McpResourceDuplicateError` | `X_MCP_RESOURCE_DUPLICATE` | `src/errors.ts` |
 | `McpScopeConflictError` | `X_MCP_SCOPE_CONFLICT` | `src/errors.ts` |
 | `McpScopeDeniedError` | `X_MCP_SCOPE_DENIED` | `src/errors.ts` |

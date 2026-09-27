@@ -58,6 +58,7 @@ export {
   sendFailed,
   templateUnknown,
   textMissing,
+  transformFailed,
 } from './errors';
 export { assertHeaderSafe } from './header-safety';
 
@@ -96,7 +97,6 @@ export {
 export type { RenderableMail, RenderedMail, RenderOptions } from './render';
 export { renderMail, textOf } from './render';
 export type { SmtpConnector, SmtpStream } from './smtp-client';
-
 export {
   FRAMEWORK_MAILS,
   type InviteInput,
@@ -119,3 +119,5 @@ export {
   welcomeInput,
   welcomeMail,
 } from './templates';
+export type { MailRendered, MailTransform, MailTransformMeta } from './transform';
+export { mailTransform, setMailTransform } from './transform';

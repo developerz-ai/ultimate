@@ -22,11 +22,18 @@
 | `mime.ts` | `MailMessage` → RFC 5322: header order, RFC 2047, folding, quoted-printable |
 | `base64.ts` | base64 over UTF-8 bytes, shared by RFC 2047 and SMTP AUTH |
 | `job.ts` | `sendMailJob` and the envelope schema |
+| `transform.ts` | `setMailTransform`: the app's outbound hook, run once per `send()` before the key |
 | `idempotency.ts` | `mailIdempotencyKey` — apart from `job.ts` because the transports need it too |
 | `catalog.ts` | English source strings for `mail.*`. Data, not code |
 | `html.ts` | escaping + `safeUrl`. The only place that builds an attribute |
 
 ## Rules
+
+- **The transform runs in `send()` only, AFTER render and BEFORE `mailIdempotencyKey`** (`As of
+  2026-09-26`): the key, the queue row and every job retry carry the transformed bytes, and the job
+  never re-runs it. Not in `renderMessage` (previews). It rewrites `subject`/`html`/`text` only; its
+  result is re-checked by `assertHeaderSafe`; a throw or a malformed result is
+  `X_MAIL_TRANSFORM_FAILED` and nothing is sent. None installed ⇒ the same object, byte-identical.
 
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a `defineMail` file
   imports one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on

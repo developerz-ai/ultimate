@@ -135,6 +135,8 @@ export type {
   QueryDef,
   QueryDescriptor,
   QueryFacade,
+  QueryListFilterOp,
+  QueryListParams,
   QueryMcp,
   QueryOptions,
   QueryRateLimit,
