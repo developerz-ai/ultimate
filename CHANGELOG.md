@@ -8,7 +8,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+- **action, core:** the idempotency record's `requestHash` (the `x_idempotency.request_hash`
+  column, kept for the 24 h window) was a 64-bit UNKEYED SHA-256 prefix of the whole action input,
+  so a low-entropy secret in an input (a bank account number, an ID number) with the other fields
+  known was brute-forceable offline from a database read. It is now
+  `keyedFingerprint(input, purpose)` â€” `h1:<key id>:<HMAC-SHA-256, 128 bits>` under a key derived
+  from the existing `ULTIMATE_CURSOR_SECRET` (production boot already refuses the dev key). No new
+  env var, no migration. Rows written by an earlier build are still compared exactly until they
+  expire; a row keyed under a rotated-away secret replays on its status (never re-runs, never a
+  false 409) and logs `action.idempotency.fingerprint-unverifiable`. New in core:
+  `keyedFingerprint`, `compareFingerprint`, `KEYED_FINGERPRINT_VERSION`, type `FingerprintMatch`.
 
 ## 22.5.0 - 2026-09-27
 

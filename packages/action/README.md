@@ -358,6 +358,16 @@ post-commit: a handler that took the money and then failed its own `output:` sch
 The reservation is settled as a FAILURE and the retry re-throws it under the first attempt's own
 code. Releasing it there is what made idempotency the cause of a double charge.
 
+**The stored payload fingerprint is keyed.** `requestHash` is `keyedFingerprint(input, …)` from
+`@ultimat3/core`: `h1:<key id>:<HMAC-SHA-256/128>` under a key derived from the app's signing
+secret (`ULTIMATE_CURSOR_SECRET` / `configureCursorSigning`), never a bare hash — the row lives a
+day, and an unkeyed hash of an input holding a short account or ID number is brute-forced offline
+from a table read. A row fingerprinted by a pre-22.5.1 build (16 bare hex characters) is still
+compared exactly until it ages out. A row keyed under a secret this process does not hold (a
+rotation inside the window) is answered on its status alone — replay, never re-run — and logs
+`action.idempotency.fingerprint-unverifiable`: a mismatched body under that key is not diagnosed
+for that window, and no honest retry gets a false 409.
+
 **Where the records live is declared, and refused at registration.** The default store is process
 memory — bounded, swept on a 24h window, and `scope: 'process'`. An app on more than one replica
 must say so and bring a store that can keep it, or the retry that lands on another replica finds

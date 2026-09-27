@@ -52,6 +52,14 @@ function currentSecret(): string {
   return configured ?? Bun.env['ULTIMATE_CURSOR_SECRET'] ?? DEV_SECRET;
 }
 
+/**
+ * The app's signing secret, exactly as cursor signing reads it. Internal to `@ultimat3/core`:
+ * `keyed-fingerprint.ts` derives its own key from it, so an app has one secret to set, not two.
+ */
+export function currentSigningSecret(): string {
+  return currentSecret();
+}
+
 /** Set once at boot from the app secret. Rotating it invalidates every open cursor. */
 export function configureCursorSigning(next: string): void {
   configured = next;

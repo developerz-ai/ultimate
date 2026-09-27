@@ -119,6 +119,10 @@ export function canonicalJson(value: unknown): string {
  * hands one caller another's rows. FNV-1a/32, which two of the three copies started as, is
  * 4x10^9 values and brute-forceable offline in seconds: an input landing on another read's key was
  * something an attacker could mint rather than something they had to wait for.
+ *
+ * UNKEYED, so never the thing to PERSIST beside input that may hold a low-entropy secret — a
+ * 64-bit prefix of a known hash is an offline oracle for a short account number. A stored
+ * fingerprint is `keyedFingerprint` (`keyed-fingerprint.ts`).
  */
 export function fingerprint(value: unknown): string {
   return new Bun.CryptoHasher('sha256').update(canonicalJson(value)).digest('hex').slice(0, 16);
