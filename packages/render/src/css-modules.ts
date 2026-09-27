@@ -9,7 +9,8 @@ import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderThrowable } from '@ultimat3/core';
 import type * as Sass from 'sass';
-import { PrerenderFailedError } from './errors';
+import { type AssetPath, asset } from './asset';
+import { AssetMissingError, PrerenderFailedError } from './errors';
 import { contentHash } from './render-static';
 import { cachedSassCompile } from './sass-cache';
 
@@ -17,6 +18,12 @@ export interface CompiledStylesheet {
   readonly css: string;
   /** `hero` → `hero_1f2e3d4c`. Empty for a plain (non-module) stylesheet. */
   readonly classes: Readonly<Record<string, string>>;
+  /**
+   * Every OTHER file the compilation read — the partials it `@use`s, `@forward`s or `@import`s,
+   * transitively, as absolute paths. What `x dev` watches to recompile a sheet whose own bytes
+   * did not change.
+   */
+  readonly dependencies: readonly string[];
 }
 
 /** A file is a CSS module when its name says so — one spelling, per the `.module.scss` convention. */
@@ -217,17 +224,59 @@ const sassVersion = (): string => {
   return loadedVersion;
 };
 
+/**
+ * `asset('assets/fonts/inter.woff2')` in Sass — the same path, the same table and the same refusals
+ * as the TypeScript `asset()`, so `src: url(asset('assets/fonts/inter.woff2'))` compiles to the
+ * content-hashed URL `/assets/*` serves. Records each call for the disk cache (`SassOutput.assets`)
+ * and keeps the typed failure: Sass wraps a thrown function error in its own exception, and an
+ * `X_ASSET_MISSING` must reach the author as itself, not as a Sass stack.
+ */
+function sassAssetFunction(
+  sass: typeof Sass,
+  calls: [string, string][],
+  failed: { error?: AssetMissingError },
+): Record<string, Sass.CustomFunction<'sync'>> {
+  return {
+    'asset($path)': (args: readonly Sass.Value[]): Sass.Value => {
+      const path = args[0]?.assertString('path').text ?? '';
+      try {
+        const url = asset(path as AssetPath);
+        calls.push([path, url]);
+        return new sass.SassString(url, { quotes: true });
+      } catch (error) {
+        if (error instanceof AssetMissingError) failed.error = error;
+        throw error;
+      }
+    },
+  };
+}
+
+/** A cache entry's assets are current when each path still resolves to the URL it baked in. */
+const assetsCurrent = (assets: readonly (readonly [string, string])[]): boolean => {
+  try {
+    return assets.every(([path, url]) => asset(path as AssetPath) === url);
+  } catch {
+    return false;
+  }
+};
+
 export function compileStylesheet(file: string, source: string): CompiledStylesheet {
   let css: string;
+  let dependencies: readonly string[];
+  const failed: { error?: AssetMissingError } = {};
   try {
     // Everything that is not a loaded file goes in the key: the compiler, the options below (named
     // by `COMPILE_OPTIONS`), the path the relative `@use`s resolve from, and the source itself. The
     // version is read from Sass's package.json, so a run whose every sheet hits never loads Sass.
     const key = `${sassVersion()}\0${COMPILE_OPTIONS}\0${file}\0${source}`;
-    css = stripCharset(
-      cachedSassCompile(key, () => {
-        const result = sassCompiler().compileString(source, {
+    const output = cachedSassCompile(
+      key,
+      () => {
+        const sass = sassCompiler();
+        const assets: [string, string][] = [];
+        const result = sass.compileString(source, {
           url: pathToFileURL(file),
+          functions: sassAssetFunction(sass, assets, failed),
           loadPaths: [dirname(file)],
           importers: [packageImporter(dirname(file))],
           style: 'compressed',
@@ -241,10 +290,17 @@ export function compileStylesheet(file: string, source: string): CompiledStylesh
           loaded: result.loadedUrls.map((loaded) =>
             loaded.protocol === 'file:' ? fileURLToPath(loaded) : undefined,
           ),
+          assets,
         };
-      }),
+      },
+      assetsCurrent,
+    );
+    css = stripCharset(output.css);
+    dependencies = output.loaded.filter(
+      (loaded): loaded is string => loaded !== undefined && loaded !== file,
     );
   } catch (error) {
+    if (failed.error !== undefined) throw failed.error;
     // `renderThrowable`, never `.message`/`String()`: an importer, a plugin or a future Sass
     // release can throw a value whose own read raises, and this frame is what turns a failed
     // compile into `X_PRERENDER_FAILED` naming the file — a laundered read leaves it a bare one.
@@ -254,9 +310,9 @@ export function compileStylesheet(file: string, source: string): CompiledStylesh
       `edit ${file}: ${TOKEN_FIX}`,
     );
   }
-  if (!isCssModule(file)) return { css, classes: {} };
+  if (!isCssModule(file)) return { css, classes: {}, dependencies };
   // Content-addressed, not path-addressed: a checkout at a different absolute path must produce
   // byte-identical CSS, which a hash over the absolute filename would not.
   const scoped = scopeClasses(css, contentHash(`${file.split('/').pop() ?? file} ${source}`));
-  return { css: scoped.css, classes: scoped.classes };
+  return { css: scoped.css, classes: scoped.classes, dependencies };
 }

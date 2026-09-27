@@ -13,7 +13,7 @@ import { join } from 'node:path';
 export const SASS_CACHE_DIR = join('.x', 'cache', 'sass');
 
 /** Bumped when the entry shape changes, so an old entry is a miss and never a misread. */
-const ENTRY_VERSION = 1;
+const ENTRY_VERSION = 2;
 
 /** `undefined`: the default dir under cwd. `null`: off. A string: that directory. */
 let configured: string | null | undefined;
@@ -37,6 +37,12 @@ const sha256 = (input: string | Uint8Array): string =>
 export interface SassOutput {
   readonly css: string;
   readonly loaded: readonly (string | undefined)[];
+  /**
+   * Every `asset('assets/…')` the compilation called, `[path, url]`. The URL is content-hashed, so
+   * an entry is only valid while each path still resolves to the URL baked into its css — an
+   * edited font under an unchanged sheet would otherwise be served at its old hash.
+   */
+  readonly assets?: readonly (readonly [string, string])[];
 }
 
 interface Entry {
@@ -44,6 +50,7 @@ interface Entry {
   readonly css: string;
   /** `[absolute path, sha256 of its bytes]` for every file the compilation read. */
   readonly loaded: readonly (readonly [string, string])[];
+  readonly assets: readonly (readonly [string, string])[];
 }
 
 /**
@@ -80,12 +87,23 @@ const isEntry = (value: unknown): value is Entry => {
         pair.length === 2 &&
         typeof pair[0] === 'string' &&
         typeof pair[1] === 'string',
+    ) &&
+    Array.isArray(entry['assets']) &&
+    entry['assets'].every(
+      (pair: unknown) =>
+        Array.isArray(pair) &&
+        pair.length === 2 &&
+        typeof pair[0] === 'string' &&
+        typeof pair[1] === 'string',
     )
   );
 };
 
+/** Answers whether every `[path, url]` an entry baked in still resolves to that url. */
+export type AssetCheck = (assets: readonly (readonly [string, string])[]) => boolean;
+
 /** A hit only when every file the stored compilation read is byte-identical today. */
-const readHit = (file: string): string | undefined => {
+const readHit = (file: string, assetsValid: AssetCheck): SassOutput | undefined => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(file, 'utf8'));
@@ -93,9 +111,9 @@ const readHit = (file: string): string | undefined => {
     return undefined;
   }
   if (!isEntry(parsed)) return undefined;
-  return parsed.loaded.every(([path, digest]) => digestOf(path) === digest)
-    ? parsed.css
-    : undefined;
+  if (!parsed.loaded.every(([path, digest]) => digestOf(path) === digest)) return undefined;
+  if (parsed.assets.length > 0 && !assetsValid(parsed.assets)) return undefined;
+  return { css: parsed.css, loaded: parsed.loaded.map(([path]) => path), assets: parsed.assets };
 };
 
 /**
@@ -111,7 +129,7 @@ const store = (dir: string, file: string, output: SassOutput): void => {
     loaded.push([path, digestOf(path)]);
   }
   if (loaded.some(([, digest]) => digest === undefined)) return;
-  const entry = { v: ENTRY_VERSION, css: output.css, loaded };
+  const entry = { v: ENTRY_VERSION, css: output.css, loaded, assets: output.assets ?? [] };
   try {
     mkdirSync(dir, { recursive: true });
     const temporary = `${file}.${process.pid}.${Bun.nanoseconds()}.tmp`;
@@ -123,17 +141,23 @@ const store = (dir: string, file: string, output: SassOutput): void => {
 };
 
 /**
- * The css `compile` would return for `key`, read from disk when a previous compilation of the
- * same key read the same bytes. `key` must name everything that is not a loaded file: the
- * compiler version, the options, the file's path and its source.
+ * What `compile` would return for `key` — the css and every file it read — from disk when a
+ * previous compilation of the same key read the same bytes. `key` must name everything that is not
+ * a loaded file: the compiler version, the options, the file's path and its source. The loaded
+ * list is returned on a hit too: `x dev` reloads a sheet when a partial it `@use`s changes, and a
+ * hit that forgot its partials would make that the one sheet that never reloads.
  */
-export function cachedSassCompile(key: string, compile: () => SassOutput): string {
+export function cachedSassCompile(
+  key: string,
+  compile: () => SassOutput,
+  assetsValid: AssetCheck = () => false,
+): SassOutput {
   const dir = cacheDir();
-  if (dir === null) return compile().css;
+  if (dir === null) return compile();
   const file = join(dir, `${sha256(key)}.json`);
-  const hit = readHit(file);
+  const hit = readHit(file, assetsValid);
   if (hit !== undefined) return hit;
   const output = compile();
   store(dir, file, output);
-  return output.css;
+  return output;
 }

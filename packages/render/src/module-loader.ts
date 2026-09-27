@@ -85,6 +85,8 @@ export interface Stylesheet {
    */
   readonly island: boolean;
   readonly css: string;
+  /** The partials this sheet's compilation read (`CompiledStylesheet.dependencies`). */
+  readonly dependencies: readonly string[];
 }
 
 const stylesheets = new Map<string, Stylesheet>();
@@ -234,6 +236,7 @@ export function loadStylesheet(
       global: isGlobalStylesheet(path),
       island,
       css: compiled.css,
+      dependencies: compiled.dependencies,
     });
   }
   return `export default ${JSON.stringify(compiled.classes)};`;

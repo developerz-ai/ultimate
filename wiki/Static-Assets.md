@@ -43,6 +43,27 @@ import { Image } from '@ultimat3/ui';
 Call `asset()` in a page or a server component, never in an island. A browser has no asset table, so
 there it throws `X_ASSET_MISSING`: pass the URL to the island as a prop instead.
 
+## From a stylesheet
+
+Sass has the same function, over the same table: `asset('assets/…')` inside `url()` compiles to the
+hashed URL, in `x dev`, the container and `x build --target static` alike.
+
+```scss
+@font-face {
+  font-family: Inter;
+  src: url(asset('assets/fonts/inter-var.woff2')) format('woff2');
+  font-display: swap;
+}
+
+.hero { background-image: url(asset('assets/hero-1280.avif')); }
+```
+
+→ `src: url("/assets/fonts/inter-var.9c1d2e3f.woff2") format("woff2")`. A missing file or a path
+outside `assets/` is `X_ASSET_MISSING` at compile time, naming the path — not a Sass stack. The Sass
+disk cache re-checks every asset a cached sheet named, so a replaced font is never served under its
+old hash. Sass has no table without an app loaded, so a unit test that compiles such a sheet
+installs one with `setAssetResolver`, as below.
+
 ## Served types
 
 | Extension | `content-type` |
