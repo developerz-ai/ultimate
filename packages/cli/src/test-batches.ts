@@ -31,6 +31,7 @@
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
+import { SLOT_HELD_ENV } from './test-slots';
 import { BATCH_FILES_PER_WORKER } from './test-workers';
 
 /**
@@ -100,7 +101,12 @@ export async function runBatches(input: {
     const width = Math.min(want, lease?.count ?? want);
     let result: ExecResult;
     try {
-      result = await input.runner(input.argsFor(files, width), input.options);
+      result = await input.runner(
+        input.argsFor(files, width),
+        lease === undefined
+          ? input.options
+          : { ...input.options, env: { ...input.options.env, [SLOT_HELD_ENV]: '1' } },
+      );
     } finally {
       lease?.release();
     }

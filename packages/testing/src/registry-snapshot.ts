@@ -10,6 +10,7 @@
 
 import type { Catalog, Locale, LocaleConfig } from '@ultimat3/i18n';
 import {
+  catalogDeclarationCount,
   catalogFor,
   configureLocales,
   localeConfig,
@@ -47,6 +48,8 @@ export interface ProcessRegistrySnapshot {
    * fired in every later file's `appManifest` round — 14 framework failures, measured.
    */
   readonly tasks: readonly TaskHandle[];
+  /** `defineCatalogs()` calls so far — see `@ultimat3/i18n`'s `catalogDeclarationCount`. */
+  readonly catalogDeclarations: number;
 }
 
 export function captureProcessRegistries(): ProcessRegistrySnapshot {
@@ -57,6 +60,7 @@ export function captureProcessRegistries(): ProcessRegistrySnapshot {
     roles: roleDefinitions(),
     roleSites: roleDeclarationSites(),
     tasks: registeredTasks(),
+    catalogDeclarations: catalogDeclarationCount(),
   };
 }
 
@@ -137,5 +141,6 @@ export function mergeSnapshots(
     roles: { ...older.roles, ...newer.roles },
     roleSites: { ...older.roleSites, ...newer.roleSites },
     tasks: [...tasks.values()],
+    catalogDeclarations: Math.max(older.catalogDeclarations, newer.catalogDeclarations),
   };
 }

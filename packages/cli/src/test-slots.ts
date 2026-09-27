@@ -27,6 +27,13 @@ export const SLOTS_DIR_ENV = 'ULTIMATE_TEST_SLOTS_DIR';
 /** `0` turns the machine pool off — a CI runner that runs one job per VM has nothing to share. */
 export const SLOTS_ENV = 'ULTIMATE_TEST_SLOTS';
 
+/**
+ * Set on every `bun test` a leased batch spawns: the slots are already held for that process
+ * tree, so an `x test` / `x verify` a test runs inside it (the framework's own suites do) must
+ * not lease again — it would wait on its own parent's slots.
+ */
+export const SLOT_HELD_ENV = 'ULTIMATE_TEST_SLOT_HELD';
+
 /** How long a run waits for its first slot before it runs one worker anyway, and says so. */
 export const SLOT_WAIT_MS = 10 * 60 * 1000;
 
@@ -38,7 +45,8 @@ export const slotsDir = (env: Env = Bun.env): string =>
   env[SLOTS_DIR_ENV] ??
   join(tmpdir(), `ultimate-test-slots-${String(process.getuid?.() ?? 'user')}`);
 
-export const slotsEnabled = (env: Env = Bun.env): boolean => env[SLOTS_ENV] !== '0';
+export const slotsEnabled = (env: Env = Bun.env): boolean =>
+  env[SLOTS_ENV] !== '0' && env[SLOT_HELD_ENV] !== '1' && Bun.env[SLOT_HELD_ENV] !== '1';
 
 /** A lease on `count` workers' worth of the machine. `count` is at least 1. */
 export interface SlotLease {

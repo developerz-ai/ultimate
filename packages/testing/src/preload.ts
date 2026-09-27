@@ -25,6 +25,12 @@ installDeterminism({
 
 registerFrameworkFixtures();
 
+// Inside a test process the machine's test slots are already accounted for — by the `x test` /
+// `x verify` that spawned it, or by nobody when `bun test` ran bare. An `x test` a test runs in
+// process (the framework's own suites do) must never lease from the real pool: it would wait on
+// its own parent's slots. `@ultimat3/cli`'s `test-slots.ts` reads this.
+Bun.env['ULTIMATE_TEST_SLOT_HELD'] ??= '1';
+
 // One `bun test` invocation is one process: a file that leaves a process-global registry dirty
 // fails a later file in another package, for a reason nothing in that file explains.
 installRegistryLeakGuard();
@@ -33,6 +39,14 @@ installRegistryLeakGuard();
 // file never disposed is disposed between files, and `file-boundary.ts` then puts `globalThis`
 // back to what the first file saw.
 onFileBoundary(disposeLiveIslands);
+
+// A shared worker only (an isolated file is a fresh registry anyway): the app's
+// `defineApi({ pathStyle })` evaluates once per worker, in whichever file first imports it, and
+// must not be refused because an EARLIER file derived action paths under the default style.
+if (Bun.env['ULTIMATE_TEST_ISOLATED'] !== '1') {
+  const { forgetHandedOutActionPaths } = await import('@ultimat3/action');
+  onFileBoundary(forgetHandedOutActionPaths);
+}
 
 // An app's `.tsx` compiles with the app's JSX factory on the first file, never cached classic.
 await installAppJsxLoader();

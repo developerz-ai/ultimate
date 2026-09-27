@@ -35,6 +35,32 @@ interface Baseline {
 }
 
 let baseline: Baseline | undefined;
+let envBaseline: Readonly<Record<string, string | undefined>> | undefined;
+
+/**
+ * `process.env` back to what the first file saw: a test that sets `ULTIMATE_EVAL_RECORD` (or any
+ * key) and forgets it changes what every later file on the worker reads — measured, the framework's
+ * own `verify.run` MCP test then saw the eval step red. Returns the keys it touched.
+ */
+export function restoreEnv(
+  snapshot: Readonly<Record<string, string | undefined>>,
+  env: Record<string, string | undefined> = process.env,
+): readonly string[] {
+  const touched: string[] = [];
+  for (const key of Object.keys(env)) {
+    if (!(key in snapshot)) {
+      delete env[key];
+      touched.push(key);
+    }
+  }
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (env[key] !== value && value !== undefined) {
+      env[key] = value;
+      touched.push(key);
+    }
+  }
+  return touched;
+}
 
 /**
  * The globals the process started with — taken at the FIRST file boundary, not at preload time,
@@ -97,6 +123,7 @@ export function restoreGlobals(snapshot: Baseline, host: object = globalThis): r
 export function runFileBoundary(): void {
   if (baseline === undefined) {
     baseline = captureGlobals();
+    envBaseline = { ...process.env };
     return;
   }
   for (const hook of hooks) {
@@ -107,4 +134,5 @@ export function runFileBoundary(): void {
     }
   }
   restoreGlobals(baseline);
+  if (envBaseline !== undefined) restoreEnv(envBaseline);
 }

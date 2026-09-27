@@ -5,6 +5,7 @@
 
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
+import { isAppRoot } from './app-jsx-loader';
 import { RegistryLeakError } from './errors';
 import { runFileBoundary } from './file-boundary';
 import type { ProcessRegistrySnapshot } from './registry-snapshot';
@@ -138,6 +139,7 @@ export function installRegistryLeakGuard(): void {
   let accumulated: ProcessRegistrySnapshot | undefined;
   // The locale config before any app code ran — preload time.
   const pristineLocales = JSON.stringify(captureProcessRegistries().locales);
+  const inApp = isAppRoot();
 
   const close = (): void => {
     if (current === undefined) return;
@@ -153,13 +155,19 @@ export function installRegistryLeakGuard(): void {
     // EXACTLY: one a test body registered must not fire in the next file's scheduler round.
     const live = captureProcessRegistries();
     const merged = mergeSnapshots(live, current.snapshot);
-    // Locales likewise: a file whose baseline still held the framework's pristine config, and
-    // that imported the app's catalog module lazily (in a test body), configured the worker's
-    // locales for good — the module will not evaluate again — so that config stays.
-    const unconfigured = JSON.stringify(current.snapshot.locales) === pristineLocales;
+    // Locales likewise, in one case: the file's baseline still held the framework's pristine
+    // config and an app's `defineCatalogs()` ran during the file (a lazily imported catalog
+    // module) — that configured the worker for good, since the module will not evaluate again.
+    // A test that called `configureLocales()` by hand is undone, as before.
+    // Only in an app: there `defineCatalogs()` can only be THE app's catalog module, while the
+    // framework repository's own suites define a fixture app's catalogs per test, to be undone.
+    const declaredLazily =
+      inApp &&
+      JSON.stringify(current.snapshot.locales) === pristineLocales &&
+      live.catalogDeclarations > current.snapshot.catalogDeclarations;
     const restored = {
       ...merged,
-      locales: unconfigured ? live.locales : current.snapshot.locales,
+      locales: declaredLazily ? live.locales : current.snapshot.locales,
       tasks: current.snapshot.tasks,
     };
     restoreProcessRegistries(restored);

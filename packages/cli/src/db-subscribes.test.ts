@@ -7,7 +7,7 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive remove, and a fixture tree left behind grows one directory per run.
 import { rmSync } from 'node:fs';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
-import { can } from '@ultimat3/policy';
+import { can, definePermissions } from '@ultimat3/policy';
 import { from, query, registerQuery, resetRegistry, t } from '@ultimat3/query';
 import { generateAppMigration } from './db-generate';
 import { replicaIdentityTables } from './db-subscribes';
@@ -92,6 +92,9 @@ describe('unit · the tables a live query declares it is patched from', () => {
 
 describe('unit · x db gen emits the ALTER the declaration asks for', () => {
   const declareApp = (): void => {
+    // Declared here, not assumed: in a shared worker another file's permission set is live, and
+    // `can()` refuses a permission no declaration names.
+    definePermissions(['note:read']);
     entity('subscribes_test_note', {
       table: 'subscribes_test_notes',
       columns: { id: uuid().primaryKey(), body: text({ max: 200 }) },

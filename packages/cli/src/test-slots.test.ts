@@ -87,6 +87,7 @@ describe('unit · machine test slots', () => {
   test('the directory and the off switch read from the environment', () => {
     expect(slotsDir({ ULTIMATE_TEST_SLOTS_DIR: '/x/y' })).toBe('/x/y');
     expect(slotsEnabled({ ULTIMATE_TEST_SLOTS: '0' })).toBe(false);
-    expect(slotsEnabled({})).toBe(true);
+    expect(slotsEnabled({ ULTIMATE_TEST_SLOT_HELD: '1' })).toBe(false);
+    if (Bun.env['ULTIMATE_TEST_SLOT_HELD'] !== '1') expect(slotsEnabled({})).toBe(true);
   });
 });

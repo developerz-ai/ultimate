@@ -70,6 +70,16 @@ export function setActionPathStyle(next: unknown): ActionPathStyle {
 }
 
 /** Test seam, beside `resetRegistry`. */
+/**
+ * Forget which paths were handed out, keeping the style. `@ultimat3/testing` calls it between two
+ * test files of one worker (22.7, no `--isolate`): a path an earlier FILE derived is not one this
+ * file's boot handed out, and the app's `defineApi({ pathStyle })` — evaluated once per worker, by
+ * whichever file first imports it — must not be refused over it.
+ */
+export function forgetHandedOutActionPaths(): void {
+  handedOut.clear();
+}
+
 export function resetActionPathStyle(): void {
   style = 'resource';
   handedOut.clear();
