@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.5.1 - 2026-09-27
+
 ### Security
 
 - **action, core:** the idempotency record's `requestHash` (the `x_idempotency.request_hash`
@@ -20,6 +24,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   expire; a row keyed under a rotated-away secret replays on its status (never re-runs, never a
   false 409) and logs `action.idempotency.fingerprint-unverifiable`. New in core:
   `keyedFingerprint`, `compareFingerprint`, `KEYED_FINGERPRINT_VERSION`, type `FingerprintMatch`.
+
+### Commits
+
+- fix(action,core): key the persisted idempotency fingerprint â€” HMAC, not a bare SHA-256 prefix (#557)
 
 ## 22.5.0 - 2026-09-27
 
