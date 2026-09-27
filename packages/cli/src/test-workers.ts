@@ -35,11 +35,11 @@ export function availableCpus(): number {
  *
  * The bound is memory, not cores. A worker is a whole Bun process with the framework's module
  * graph loaded and — in the typed suites — its own cloned Postgres or an in-process PGlite. Until
- * 22.3 that was a FIXED ceiling of 8, which held a 12-core box to 8 workers with 30 GB free: the
- * notificado.co `unit` step (381 files) sat at 51s on 8 workers against a 90s gate budget. The
- * ceiling is now what the machine can actually hold — `os.freemem()` (MemAvailable on Linux, so
- * reclaimable page cache counts as free) divided by `WORKER_BYTES` — which still binds on a small
- * CI runner and on a loaded laptop, the two places an unbounded count would swap.
+ * 22.3 that was a FIXED ceiling of 8, which held a 12-core box to 8 workers with 30 GB free. The
+ * ceiling is now what the machine can actually hold — `MEMORY_SHARE` of `os.freemem()`
+ * (MemAvailable on Linux, so reclaimable page cache counts as free) divided by `WORKER_BYTES` —
+ * which binds on a small CI runner, on a loaded laptop and on a box shared with other sessions,
+ * the places an unbounded count swaps or, with no swap, is OOM-killed.
  *
  * The floor of 2 keeps a 1-core box sharding rather than silently reverting to serial.
  */
@@ -49,22 +49,44 @@ export const WORKER_OVERSUBSCRIBE = 1.5;
 export const WORKER_FLOOR = 2;
 
 /**
- * What one test worker is budgeted at, for the memory bound above. MEASURED — peak RSS of the whole
- * `x test unit` process tree on the notificado.co corpus (381 files, PGlite per worker), 12-core
- * box, `As of 2026-09-25`:
+ * What one test worker is budgeted at, for the memory bound above. MEASURED — whole-tree RSS of
+ * `x test unit` on the notificado.co corpus (768 files, PGlite per file), 12-core box, Bun 1.4.0,
+ * `As of 2026-09-27`, batched by `BATCH_FILES_PER_WORKER`:
  *
- *   | workers | peak tree RSS |
- *   |---------|---------------|
- *   | 8       | 20.7 GB       |
- *   | 12      | 22.5 GB       |
- *   | 16      | 24.3 GB       |
+ *   | workers | batches | peak tree RSS | largest single worker |
+ *   |---------|---------|---------------|-----------------------|
+ *   | 12      | 3       | 10.8-11.4 GB  | 1.38-1.41 GB          |
+ *   | 14      | 3       | 12.2 GB       | 1.39 GB               |
+ *   | 18      | 2       | 15.9 GB       | 1.47 GB               |
  *
- * The MARGINAL worker costs ~0.45 GB (the slope); the ~17 GB intercept is the corpus itself —
- * every file's module graph and database, retained per worker — and does not shrink with fewer
- * workers, so it is not this bound's to budget. The constant is the slope doubled and rounded to a
- * power of two, because free memory is read once, before a single worker has started.
+ * Unbatched, the same box at 22.6.1's default of 18 workers peaked at 17.1-18.2 GB, and the same
+ * run's wall clock was 132-167s against 152-163s for this default (14 workers, 3 batches) — within
+ * the noise of a box at load 30-40.
+ *
+ * The constant is the LARGEST single worker rounded up, not the average (~0.88 GB), so the bound
+ * holds even on the run where every worker peaks at the same moment. The 2026-09-25 figure it
+ * replaces (1 GiB, from a "~0.45 GB slope over a ~17 GB intercept") budgeted the slope and waved
+ * the intercept away as "the corpus"; that intercept was per-worker growth over an unbatched run,
+ * and an 18-worker default on 35 GB free took a 45 GB box with no swap down (2026-09-27).
  */
-export const WORKER_BYTES = 1024 * 1024 * 1024;
+export const WORKER_BYTES = 1.5 * 1024 * 1024 * 1024;
+
+/**
+ * The share of available memory a default-width run may plan to use. Never all of it, because free
+ * memory is read ONCE, before a single worker has started, and a dev box is never only running the
+ * tests: a type-checker, an editor's language server, another agent's gate all grow after that
+ * read. A run that plans on every free byte is one neighbour away from the OOM killer. 0.6 and not
+ * less because the plan is made at the LARGEST worker's peak: measured, the whole tree peaks at
+ * ~0.9 GB a worker, so the real peak lands near 35-40% of what was available at the start.
+ */
+export const MEMORY_SHARE = 0.6;
+
+/**
+ * Files each worker is handed before its `bun test` process is thrown away and a fresh one takes
+ * the next batch (`test-batches.ts`, which carries the measurement). What makes the peak a function
+ * of the width rather than of the corpus.
+ */
+export const BATCH_FILES_PER_WORKER = 24;
 
 /**
  * The most `--workers` accepts, on either command. Not a default and not a memory rule — a sanity
@@ -77,7 +99,8 @@ export const WORKER_CEILING = 64;
 export const availableMemory = (): number => freemem();
 
 /**
- * `ceil(cpus x 1.5)`, held to what free memory can carry and never below the floor. The file-count
+ * `ceil(cpus x 1.5)`, held to `MEMORY_SHARE` of free memory at `WORKER_BYTES` a worker, and never
+ * below the floor. The file-count
  * clamp is `test-passes.ts`'s (every pass is clamped to its own file list), because only the
  * caller knows the selection.
  */
@@ -86,7 +109,7 @@ export const defaultWorkers = (
   freeBytes: number = availableMemory(),
 ): number => {
   const byCpu = Math.ceil(available * WORKER_OVERSUBSCRIBE);
-  const byMemory = Math.floor(freeBytes / WORKER_BYTES);
+  const byMemory = Math.floor((freeBytes * MEMORY_SHARE) / WORKER_BYTES);
   return Math.max(WORKER_FLOOR, Math.min(byCpu, byMemory, WORKER_CEILING));
 };
 

@@ -6,6 +6,7 @@ import {
   availableCpus,
   availableMemory,
   defaultWorkers,
+  MEMORY_SHARE,
   sharedWorkers,
   WORKER_BYTES,
   WORKER_CEILING,
@@ -32,10 +33,24 @@ describe('unit · default worker count', () => {
     expect(defaultWorkers(16, PLENTY)).toBe(24);
   });
 
-  test('free memory bounds the width, one WORKER_BYTES per worker', () => {
-    expect(defaultWorkers(12, WORKER_BYTES * 10)).toBe(10);
-    expect(defaultWorkers(12, WORKER_BYTES * 10.9)).toBe(10);
-    expect(defaultWorkers(32, WORKER_BYTES * 20)).toBe(20);
+  test('free memory bounds the width: MEMORY_SHARE of it, one WORKER_BYTES per worker', () => {
+    // A share of free memory, never all of it: the read happens once, before anything else grows.
+    expect(MEMORY_SHARE).toBeGreaterThanOrEqual(0.5);
+    expect(MEMORY_SHARE).toBeLessThanOrEqual(0.6);
+    const free = (workers: number): number => (WORKER_BYTES * workers) / MEMORY_SHARE;
+    expect(defaultWorkers(12, free(10))).toBe(10);
+    expect(defaultWorkers(12, free(10.9))).toBe(10);
+    expect(defaultWorkers(32, free(20))).toBe(20);
+  });
+
+  // The box that was OOM-killed on 2026-09-27: 12 cores, ~35 GB available, no swap. The old
+  // budget (1 GiB a worker, all of free memory) planned 18 workers — 17-18 GB of test tree,
+  // measured, on a machine other sessions were also growing into.
+  test('the 12-core, 35 GB box plans what it can carry at the measured per-worker peak', () => {
+    const planned = defaultWorkers(12, 35e9);
+    expect(planned).toBe(13);
+    // Even if every worker peaked at the measured largest single worker at the same moment.
+    expect(planned * 1.46e9).toBeLessThan(35e9 * MEMORY_SHARE);
   });
 
   test('the sanity ceiling still holds on a machine with everything', () => {
@@ -65,7 +80,7 @@ describe('unit · the width of a suite that shares the machine', () => {
   });
 
   test('memory still binds, and the floor still holds', () => {
-    expect(sharedWorkers(12, WORKER_BYTES * 5)).toBe(5);
+    expect(sharedWorkers(12, (WORKER_BYTES * 5) / MEMORY_SHARE)).toBe(5);
     expect(sharedWorkers(1, PLENTY)).toBe(WORKER_FLOOR);
     expect(sharedWorkers(12, 0)).toBe(WORKER_FLOOR);
     expect(sharedWorkers(256, PLENTY)).toBe(WORKER_CEILING);

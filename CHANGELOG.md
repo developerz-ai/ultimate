@@ -8,7 +8,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **cli:** `x test` and `x verify`'s parallel test steps have a bounded peak memory that no longer
+  grows with the corpus. A `--parallel` worker's heap grows with every file it runs and is returned
+  only when its `bun test` exits, so one process over the whole selection peaked higher with every
+  test an app added; 22.6.1's default (18 workers on a 12-core box with 35 GB free) took a 45 GB
+  machine with no swap down. A pass now runs as sequential batches of at most 24 files a worker
+  (`test-batches.ts`), dealt round-robin over the sorted list, and the default width is held to 60%
+  of available memory at 1.5 GiB a worker — the largest single worker measured — instead of all of
+  it at 1 GiB. notificado.co's `x test unit` (768 files): 17.1–18.2 GB peak at the old default,
+  11.3–12.2 GB at the new one (14 workers, 3 batches), the same wall within noise (152–163s against
+  132–167s). Counts, failures and the `fix:` reproduction hold across batches; `--json` carries
+  `batches` when a pass was split, and `--worker I` reruns are never split.
 
 ## 22.6.1 - 2026-09-27
 

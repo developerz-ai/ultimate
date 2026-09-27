@@ -11,6 +11,7 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { ExecResult, Runner } from './exec';
 import type { TestFile } from './test-select';
 import { filesIn } from './test-shards';
+import { BATCH_FILES_PER_WORKER } from './test-workers';
 import { runParallel } from './verify-test-run';
 
 const files = (count: number): readonly TestFile[] =>
@@ -136,5 +137,42 @@ describe('runParallel', () => {
     expect(outcome.workers).toBe(2);
     expect(seen[0]?.command).toContain('--parallel=2');
     expect(outcome.findings[0]?.fix).toBe('x test unit --workers 2');
+  });
+
+  // A corpus past the cap is several `bun test` processes in sequence, so the peak is bounded by
+  // the width — and the ratchet's counts and the red output have to survive the split.
+  test('a large selection runs in batches, and the counts are summed across them', async () => {
+    const { runner, seen } = testRunner(false);
+    const selection = files(BATCH_FILES_PER_WORKER * 2 * 3);
+    const outcome = await runParallel({
+      root: '/app',
+      runner,
+      files: selection,
+      workers: 2,
+      type: 'unit',
+    });
+    expect(seen.length).toBe(3);
+    for (const call of seen) expect(call.command).toContain('--parallel=2');
+    expect(seen.flatMap((call) => filesIn(call.command)).sort()).toEqual(
+      selection.map((file) => file.path).sort(),
+    );
+    expect(outcome.tests?.ran).toBe(6);
+    expect(outcome.workers).toBe(2);
+  });
+
+  test('a red batch fails the step with every batch in the output, and the rerun is the width', async () => {
+    const { runner } = testRunner(true);
+    const outcome = await runParallel({
+      root: '/app',
+      runner,
+      files: files(BATCH_FILES_PER_WORKER * 2 + 1),
+      workers: 2,
+      type: 'unit',
+    });
+    expect(outcome.ok).toBe(false);
+    expect(outcome.findings).toHaveLength(1);
+    expect(outcome.findings[0]?.fix).toBe('x test unit --workers 2');
+    expect(outcome.output).toContain('batch 2 of 2');
+    expect(outcome.tests?.ran).toBe(2);
   });
 });

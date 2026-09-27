@@ -4,7 +4,14 @@
 import { TEST_TYPES } from '@ultimat3/testing/test-types';
 import { DEFAULT_BASE } from './affected';
 import type { CommandSpec } from './parse';
-import { SERIAL_TYPES, WORKER_CEILING, WORKER_FLOOR, WORKER_OVERSUBSCRIBE } from './test-workers';
+import {
+  MEMORY_SHARE,
+  SERIAL_TYPES,
+  WORKER_BYTES,
+  WORKER_CEILING,
+  WORKER_FLOOR,
+  WORKER_OVERSUBSCRIBE,
+} from './test-workers';
 
 export const testSpec: CommandSpec = {
   name: 'test',
@@ -20,7 +27,7 @@ export const testSpec: CommandSpec = {
     {
       name: 'workers',
       type: 'string',
-      summary: `bun worker count (default: ${WORKER_OVERSUBSCRIBE}x CPUs rounded up, held to free memory, min ${WORKER_FLOOR}; max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
+      summary: `bun worker count (default: ${WORKER_OVERSUBSCRIBE}x CPUs rounded up, held to ${MEMORY_SHARE * 100}% of free memory at ${WORKER_BYTES / 2 ** 30} GiB a worker, min ${WORKER_FLOOR}; max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
     },
     {
       name: 'worker',

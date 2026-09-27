@@ -21,6 +21,7 @@ import { renderJson } from './output';
 import { flagBool, flagString, parseArgs } from './parse';
 import type { TestFile } from './test-select';
 import { filesIn, ISOLATED_TEST_ENV, reproduceFor, runShards, testArgs } from './test-shards';
+import { BATCH_FILES_PER_WORKER } from './test-workers';
 
 interface Call {
   readonly command: readonly string[];
@@ -144,6 +145,61 @@ describe('unit · x test execution', () => {
     // `workerId` already reads — so a `--parallel` run must NOT pin every worker to one database
     // by exporting `ULTIMATE_TEST_WORKER`, which is that function's first key.
     expect(calls[0]?.env?.['ULTIMATE_TEST_WORKER']).toBeUndefined();
+  });
+
+  test('a corpus past the per-worker cap is batches in sequence, every file once, same width', async () => {
+    const { calls, runner } = recorder();
+    const files = corpus(BATCH_FILES_PER_WORKER * 4 * 2 + 3);
+    const result = await runShards({ root: '/repo', runner, files, workers: 4 });
+
+    expect(calls.length).toBe(3);
+    for (const call of calls) expect(call.command).toContain('--parallel=4');
+    expect(calls.flatMap((call) => filesIn(call.command)).sort()).toEqual(
+      files.map((f) => f.path).sort(),
+    );
+    // One step for the pass, and the rerun names the width, which is all the split depends on.
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps?.[0]?.name).toContain('3 batches');
+    expect((result.data as { batches?: number }).batches).toBe(3);
+    expect((result.data as { reproduce: string }).reproduce).toBe('x test --workers 4');
+  });
+
+  test('-- --watch is never batched: the first process never exits, so a second never starts', async () => {
+    const { calls, runner } = recorder();
+    const files = corpus(BATCH_FILES_PER_WORKER * 4 * 2 + 3);
+    await runShards({ root: '/repo', runner, files, workers: 4, passthrough: ['--watch'] });
+    expect(calls.length).toBe(1);
+    expect(filesIn(calls[0]?.command ?? [])).toHaveLength(files.length);
+  });
+
+  test('-- --bail starts no batch after a red one', async () => {
+    const { calls, runner } = recorder(true);
+    const files = corpus(BATCH_FILES_PER_WORKER * 4 * 2 + 3);
+    const result = await runShards({
+      root: '/repo',
+      runner,
+      files,
+      workers: 4,
+      passthrough: ['--bail=1'],
+    });
+    expect(calls.length).toBe(1);
+    expect(result.ok).toBe(false);
+    const all = recorder(true);
+    await runShards({ root: '/repo', runner: all.runner, files, workers: 4 });
+    expect(all.calls.length).toBe(3);
+  });
+
+  test('a --worker rerun is never batched: shard i is the same files as in the run', async () => {
+    const { calls, runner } = recorder();
+    await runShards({
+      root: '/repo',
+      runner,
+      files: corpus(BATCH_FILES_PER_WORKER * 10),
+      workers: 4,
+      only: 1,
+    });
+    expect(calls.length).toBe(1);
+    expect(calls[0]?.command).toContain('--shard=2/4');
   });
 
   test('a key `.env.development` leaked into this process is not handed to the bun test child', async () => {

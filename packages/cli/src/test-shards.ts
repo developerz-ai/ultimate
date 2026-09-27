@@ -2,6 +2,11 @@
 // reproduces it exactly. Split out of cmd-test.ts because a printed reproduction is only true if
 // it carries every input to the run — that rule is this file's, and argv parsing is that one's.
 //
+// ONE PROCESS PER BATCH, N WORKERS. Until 2026-09-27 it was one process for the whole selection;
+// a worker's heap grows with every file it runs, so that process's peak grew with the corpus, and
+// `test-batches.ts` now spends each pass as a few `--parallel=N` processes in sequence — the
+// measurement is its header. Everything below still holds inside a batch.
+//
 // ONE PROCESS, N WORKERS, `As of 2026-08-27`. This file used to pack the files into N bins itself
 // (largest-first greedy over file SIZE) and `Promise.all` one `bun test` per bin. Bun 1.4 runs the
 // pool itself — `--parallel=N`, which starts each file on the next free worker — so the packer is
@@ -39,7 +44,6 @@
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { AffectedSelection } from './affected';
 import type { Runner } from './exec';
-import { execOutput } from './exec';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import { quoteArg } from './shell-quote';
@@ -48,6 +52,7 @@ import { testEnvOverrides } from './test-dotenv';
 /** `@ultimat3/testing`'s `ISOLATED_ENV`, restated: `cli → testing` is a runtime edge, kept to fixtures. */
 export const ISOLATED_TEST_ENV = 'ULTIMATE_TEST_ISOLATED';
 
+import { runBatches, testBatches } from './test-batches';
 import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
 import type { TestType } from './verify-tests';
@@ -219,10 +224,10 @@ export const failureOf = (code: number, files: number, plan: ReproduceOptions): 
 });
 
 /**
- * ONE `bun test` PER PASS, and one pass unless the selection mixes serial files with the rest —
- * `test-passes.ts` decides that, and this spends it. Bun owns the pool inside a pass and hands
- * each free worker the next file, so nothing here decides which file runs where; see this file's
- * header for what that measured.
+ * ONE `bun test` PER BATCH, a pass being as many batches as `test-batches.ts` cuts it into, and
+ * one pass unless the selection mixes serial files with the rest — `test-passes.ts` decides that,
+ * and this spends it. Bun owns the pool inside a batch and hands each free worker the next file, so
+ * nothing here decides which file runs where; see this file's header for what that measured.
  *
  * Sequential, never `Promise.all`: the whole point of a serial pass is that nothing runs beside
  * it. And every pass runs even after one fails — the caller asked for a suite, and a report that
@@ -241,6 +246,9 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     // Every run this spawns is isolated (`--parallel` or `--isolate`) unless the caller opted out.
     ...((options.passthrough ?? []).includes('--no-isolate') ? {} : { [ISOLATED_TEST_ENV]: '1' }),
   };
+  const passthrough = options.passthrough ?? [];
+  const watching = passthrough.includes('--watch');
+  const bailing = passthrough.some((arg) => arg === '--bail' || arg.startsWith('--bail='));
   const passes = testPasses({
     files: options.files,
     workers: options.workers,
@@ -250,18 +258,28 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   const started = performance.now();
   const steps: StepResult[] = [];
   const spent: JsonValue[] = [];
+  let batchCount = 0;
   let ok = true;
   let exitCode = 0;
   for (const pass of passes) {
     const files = pass.files.map((file) => file.path);
-    const result = await options.runner(
-      testArgs({
-        files,
-        workers: pass.workers,
-        ...(only === undefined ? {} : { shard: only }),
-        ...(options.passthrough === undefined ? {} : { passthrough: options.passthrough }),
-      }),
-      {
+    // A `--worker` rerun is one process over one shard and is never split: shard i of the rerun
+    // must be the same files as shard i of the run it reproduces. Nor is `-- --watch`, which never
+    // exits, so a second batch would never start. Every other pass is spent in `test-batches.ts`'
+    // batches, one `bun test` after another.
+    const batches = only === undefined && !watching ? testBatches(files, pass.workers) : [files];
+    const result = await runBatches({
+      runner: options.runner,
+      batches,
+      stopOnFailure: bailing,
+      argsFor: (batch) =>
+        testArgs({
+          files: batch,
+          workers: Math.min(pass.workers, batch.length),
+          ...(only === undefined ? {} : { shard: only }),
+          ...(options.passthrough === undefined ? {} : { passthrough: options.passthrough }),
+        }),
+      options: {
         cwd: options.root,
         ...(Object.keys(envOverrides).length === 0 && only === undefined
           ? {}
@@ -272,24 +290,28 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
               },
             }),
       },
-    );
+    });
+    batchCount += batches.length;
     const plan = planOf(options, pass);
     const label =
       only === undefined ? `${pass.workers} worker(s)` : `shard ${only} of ${pass.workers}`;
     steps.push({
-      name: `${pass.type === undefined ? label : `${pass.type} · ${label}`} · ${files.length} files`,
+      name: `${pass.type === undefined ? label : `${pass.type} · ${label}`} · ${files.length} files${
+        batches.length > 1 ? msg('cli.test.batches', { batches: batches.length }) : ''
+      }`,
       ok: result.ok,
       durationMs: result.durationMs,
       // `output.ts` documents this field as absent for a NON-test step, so omitting it here made
       // `renderJson` describe the test step as one — recoverable only by parsing `name`.
       workers: pass.workers,
       findings: result.ok ? [] : [failureOf(result.code, files.length, plan)],
-      output: execOutput(result),
+      output: result.output,
     });
     spent.push({
       ...(pass.type === undefined ? {} : { type: pass.type }),
       files: files.length,
       workers: pass.workers,
+      ...(batches.length > 1 ? { batches: batches.length } : {}),
       ok: result.ok,
       exitCode: result.code,
       reproduce: reproduceFor(plan),
@@ -321,6 +343,8 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     // Only when the split made more than one, so a single-pass run's JSON is byte-identical to
     // what it has always been — and a mixed one can never be read as if it were a single run.
     ...(spent.length > 1 ? { passes: spent } : {}),
+    // Only when some pass was split, for the same reason: an unbatched run's JSON is unchanged.
+    ...(batchCount > spent.length ? { batches: batchCount } : {}),
     ok,
     exitCode,
     reproduce: reproduceFor(plan),
