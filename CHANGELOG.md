@@ -17,6 +17,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   answers on the dependencies, for monitoring. `configureLifecycle({ readiness })`,
   `readyzPayload({ deep })`, types `HealthConfig`, `ReadinessMode`, `READINESS_MODES`.
 
+### Fixed
+
+- **release:** the publish step runs one `npm publish` per package, and a package npm reports as
+  `previously staged` by an earlier attempt of the same release is a notice, not a failure. npm now
+  stages a publish before `npm view` can see it, so v22.4.0's resumed runs died `E409` on packages
+  the previous attempt had already published, and a mid-tier `E401` lost the rest of its tier.
+
 ## 22.4.0 - 2026-09-27
 
 ### Added
