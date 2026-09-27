@@ -421,7 +421,13 @@ Measured, `As of 2026-09-27`, 12-core box, whole process tree sampled every 200 
 |---|---|---|---|
 | notificado.co `x test unit` (768 files), 22.6.2 default (isolated) | 14 (+parent) | 193 s | 13.1 GB |
 | the same, 22.7 default | 3 | 166-172 s | 3.4-3.8 GB |
-| framework `x test unit` (1620 files), 22.7 default | 3 | 115-125 s | 2.9-3.0 GB |
+| framework `x test unit` (1620 files), no isolation | 3 | 115-125 s | 2.9-3.0 GB |
+| framework `bun run verify` (whole gate, `"isolate": true`) | 3 | 227 s | 3.4 GB |
+
+The framework repository itself opts back into `"isolate": true`: its suites exercise the
+process-global registries on purpose (fixture apps per test, empty permission sets), and without
+isolation a handful of files fail depending on which worker ran what before them. Apps do not
+need it — notificado.co's unit, contract and job tiers pass without isolation.
 
 A worker on the embedded database (PGlite) cannot go much below 1 GB: one booted PGlite holds
 0.9-1.1 GB RSS even after `close()` and a full GC.
