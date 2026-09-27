@@ -3,16 +3,27 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
-import { FRAMEWORK_CODE, singleLine, stringField } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
 import { auditResourceRead, auditToolCall, outcomeForCode, outcomeForResult } from './audit';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
+import { asFrameworkError, renderFrameworkError } from './framework-error';
+import { metaCall } from './meta-call';
+import { META_UNKNOWN_FIX } from './meta-errors';
+import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
+import { MANAGE_RESOURCE, META_TOOL_ENTRIES, META_TOOL_NAMES, MetaSurface } from './meta-surface';
 import { promptListEntry, promptsGet } from './prompts-get';
-import type { AnyMcpTool, McpCaller, McpToolResult, McpVerbClass, ToolListEntry } from './registry';
+import type {
+  AnyMcpTool,
+  McpCaller,
+  McpToolResult,
+  McpVerbClass,
+  ToolListEntry,
+  ToolResolution,
+} from './registry';
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { ResourceRegistry } from './resources';
-import type { JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire';
+import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire';
 import {
   defaultServerInfo,
   errorResponse,
@@ -49,6 +60,10 @@ export interface CreateMcpServerInput {
   readonly resources?: readonly McpResource[];
   readonly prompts?: readonly McpPrompt[];
   readonly serverInfo?: ServerInfo;
+  /** `'flat'` (the default): one tool per primitive. See `McpSurfaceOption`. */
+  readonly surface?: McpSurfaceOption | undefined;
+  /** The meta catalog's resources. Required with a surface that can be `'meta'`. */
+  readonly groups?: McpResourceGroups | undefined;
 }
 
 /** The set of JSON-RPC methods this server answers. Kept in sync with `classify`. */
@@ -66,11 +81,17 @@ const METHODS = [
 export function createMcpServer(input: CreateMcpServerInput = {}): McpServer {
   const tools = new ToolRegistry().registerAll(input.tools ?? []);
   const resources = new ResourceRegistry().registerAll(input.resources ?? []);
+  const meta = MetaSurface.build({
+    surface: input.surface,
+    groups: input.groups,
+    tools: input.tools ?? [],
+  });
   return new McpServer(
     tools,
     resources,
     input.prompts ?? [],
     input.serverInfo ?? defaultServerInfo(),
+    meta,
   );
 }
 
@@ -79,17 +100,21 @@ export class McpServer {
   readonly resources: ResourceRegistry;
   private readonly prompts: readonly McpPrompt[];
   private readonly serverInfo: ServerInfo;
+  /** `undefined` for a flat-only server — every existing app, byte for byte. */
+  private readonly meta: MetaSurface | undefined;
 
   constructor(
     tools: ToolRegistry,
     resources: ResourceRegistry,
     prompts: readonly McpPrompt[],
     serverInfo: ServerInfo,
+    meta?: MetaSurface,
   ) {
     this.tools = tools;
     this.resources = resources;
     this.prompts = prompts;
     this.serverInfo = serverInfo;
+    this.meta = meta;
   }
 
   async handle(
@@ -160,7 +185,19 @@ export class McpServer {
 
   /** Role-filtered catalog. Exposed so a transport can answer a cheap capability probe. */
   list(caller: McpCaller): readonly ToolListEntry[] {
-    return this.tools.list(caller);
+    const flat = this.tools.list(caller);
+    const meta = this.metaFor(caller);
+    if (meta === undefined) return flat;
+    // Constant: the three meta tools plus whatever the app left ungrouped (`docs`, `whoami`).
+    return [...flat.filter((tool) => !meta.isGrouped(tool.name)), ...META_TOOL_ENTRIES].sort(
+      (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+    );
+  }
+
+  /** The meta surface when THIS caller is served it, else `undefined`. */
+  private metaFor(caller: McpCaller): MetaSurface | undefined {
+    const meta = this.meta;
+    return meta !== undefined && meta.surfaceFor(caller) === 'meta' ? meta : undefined;
   }
 
   /**
@@ -174,10 +211,18 @@ export class McpServer {
    */
   classify(body: unknown): McpVerbClass {
     if (!isJsonRpcRequest(body) || body.method !== 'tools/call') return 'read';
-    const name = paramsOf(body)?.['name'];
+    const params = paramsOf(body);
+    const name = params?.['name'];
     // An unresolvable call is refused before it runs, so charging it the strict bucket
     // only costs a broken client — it never hands an unproven verb the cheap one.
     if (typeof name !== 'string') return 'write';
+    if (this.meta !== undefined && name === MANAGE_RESOURCE) {
+      // Billed as the tool it reaches, so the dispatcher is never a cheap door to a write.
+      const args = params?.['arguments'];
+      const action = isRecord(args) ? args['action'] : undefined;
+      return typeof action === 'string' ? this.tools.verbClass(action) : 'write';
+    }
+    if (this.meta !== undefined && META_TOOL_NAMES.includes(name)) return 'read';
     return this.tools.verbClass(name);
   }
 
@@ -190,9 +235,45 @@ export class McpServer {
       return errorResponse(id, INVALID_PARAMS, 'tools/call params.name must be a string');
     }
 
+    const meta = this.metaFor(caller);
+    if (meta !== undefined) {
+      const answered = await metaCall(
+        {
+          tools: this.tools,
+          dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who),
+          notFound: (at, tool, who, fix) => this.notFound(at, tool, who, fix),
+        },
+        meta,
+        { id, name, rawArgs: params['arguments'], caller },
+      );
+      if (answered !== undefined) return answered;
+    }
+    return this.dispatch(
+      id,
+      name,
+      this.tools.resolve(name, params['arguments'] ?? {}, caller),
+      caller,
+    );
+  }
+
+  /** OUTCOME 1, the one answer for absent and hidden alike. See `dispatch`. */
+  private notFound(id: JsonRpcId, name: string, caller: McpCaller, fix: string): JsonRpcResponse {
+    auditToolCall({ tool: name, outcome: 'hidden', caller, code: 'X_MCP_TOOL_UNKNOWN' });
+    return errorResponse(id, METHOD_NOT_FOUND, `tool not found: ${name} — ${fix}`);
+  }
+
+  /**
+   * Resolve → run → audit, for a flat `tools/call` and for `manage_resource` alike: ONE path, so
+   * the two surfaces cannot answer the same call differently.
+   */
+  private async dispatch(
+    id: JsonRpcId,
+    name: string,
+    resolved: ToolResolution,
+    caller: McpCaller,
+  ): Promise<JsonRpcResponse> {
     // Three outcomes, deliberately different — and every one of them audited, including the
     // one that tells the caller nothing. See `audit.ts`.
-    const resolved = this.tools.resolve(name, params['arguments'] ?? {}, caller);
     switch (resolved.kind) {
       // OUTCOME 1. Absent AND role-hidden collapse to the same answer, with no `data` at
       // all: any extra field would be the difference a prober is looking for. The message
@@ -200,8 +281,12 @@ export class McpServer {
       // nothing about whether the name exists: the same sentence for a stale name and for a
       // tool this role may never see, so the hint is not a second oracle.
       case 'not-found':
-        auditToolCall({ tool: name, outcome: 'hidden', caller, code: 'X_MCP_TOOL_UNKNOWN' });
-        return errorResponse(id, METHOD_NOT_FOUND, `tool not found: ${name} — ${TOOL_UNKNOWN_FIX}`);
+        return this.notFound(
+          id,
+          name,
+          caller,
+          this.metaFor(caller) ? META_UNKNOWN_FIX : TOOL_UNKNOWN_FIX,
+        );
       // OUTCOME 2. The caller can already see this tool, so naming the missing scope leaks
       // nothing — and the fix travels with it, built by the error that owns the wording.
       case 'scope-denied': {
@@ -369,55 +454,5 @@ function protocolRefusal(message: string, error: McpProtocolError): JsonRpcRespo
   });
 }
 
-interface FrameworkError {
-  readonly code: string;
-  /** `''` for a foreign thrown object that carries no title. See `renderFrameworkError`. */
-  readonly title: string;
-  readonly cause: string;
-  readonly fix: string;
-}
-
-/**
- * Read a thrown framework error, or `undefined` when it is not one (a genuine bug, which
- * becomes `-32603` with no internals leaked). Structural rather than `instanceof`: the
- * transport must stay independent of which package threw.
- */
-function asFrameworkError(error: unknown): FrameworkError | undefined {
-  // `stringField` from `@ultimat3/core`, never `typeof e.code === 'string'`: the value is whatever
-  // an app's handler, its driver or its SDK threw, so each read is a getter call or a `Proxy`
-  // trap. This runs inside the catch block that owes the caller an answer, and a probe that
-  // raises here leaves the JSON-RPC request with no response at all — not even the `-32603` the
-  // header promises for a genuine bug.
-  const code = stringField(error, 'code');
-  // `FRAMEWORK_CODE`, never `startsWith('X_')`: the substituted `fix:` below interpolates this
-  // value into a COMMAND an agent is told to run, and `X_$(id)` passes a prefix test. A code is
-  // `X_SCREAMING_SNAKE` and nothing else, so a value that is not one is not a framework error —
-  // it takes the `-32603` branch, which leaks nothing of the throw.
-  if (code === undefined || !FRAMEWORK_CODE.test(code)) return undefined;
-  return {
-    code,
-    title: stringField(error, 'title') ?? '',
-    cause: stringField(error, 'cause') ?? 'unknown',
-    // A substituted fix is still a fix an agent will act on, so it has to be runnable. `see docs`
-    // named no docs and no command; `code` is already narrowed to an `X_` string by the guard
-    // above, so the substitute is the one command that explains exactly this code.
-    fix: stringField(error, 'fix') ?? `x errors explain ${code}`,
-  };
-}
-
-/**
- * The agent-readable form, BYTE-IDENTICAL to `UltimateError.format()` — one denial reads the
- * same over MCP as it does in the terminal, so an agent that learned the shape from `x` does
- * not have to learn a second one here. Dropping the title would be a second rendering of the
- * same contract, and the two would drift.
- *
- * The bare-`code` head is the fallback for a foreign thrown object that carries `code`/`cause`
- * but no title; a real `UltimateError` always has one.
- */
-function renderFrameworkError(error: FrameworkError): string {
-  const head =
-    error.title === ''
-      ? singleLine(error.code)
-      : `${singleLine(error.code)}: ${singleLine(error.title)}`;
-  return `${head}\n  cause: ${singleLine(error.cause)}\n  fix:   ${singleLine(error.fix)}`;
-}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);

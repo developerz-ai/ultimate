@@ -11,6 +11,7 @@ import { isQuery, queryName, sourceFor } from '@ultimat3/query';
 import { asCallerContext } from './caller-context';
 import type { McpExposure, ProjectablePrimitive } from './from-action';
 import { toWireSchema } from './input-schema';
+import type { McpListParams } from './list-params';
 
 /**
  * What `defineAppMcp`'s `actions:`/`queries:` accept.
@@ -90,6 +91,7 @@ function exposureOf(declared: DeclaredMcp | undefined): McpExposure | undefined 
     expose: isMcpExposed(declared),
     ...(declared.description === undefined ? {} : { description: declared.description }),
     ...(declared.visibleTo === undefined ? {} : { visibleTo: declared.visibleTo }),
+    ...(declared.listParams === undefined ? {} : { listParams: declared.listParams }),
   };
 }
 
@@ -98,4 +100,6 @@ interface DeclaredMcp {
   readonly expose: boolean;
   readonly description?: string;
   readonly visibleTo?: readonly string[];
+  /** `QueryMcp` only; an action has no list to compose. */
+  readonly listParams?: McpListParams;
 }

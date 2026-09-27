@@ -15,6 +15,7 @@ import { appToolPrimitives } from './app-tool';
 import { McpToolDuplicateError } from './errors';
 import { exposedPrimitives } from './exposed';
 import { toolsFrom, toolsListed } from './from-action';
+import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
 import type { AnyMcpTool, McpVerbClass } from './registry';
@@ -74,6 +75,26 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * ```
    */
   readonly scopes?: McpScopes;
+  /**
+   * `'flat'` (the default — nothing changes for an app that omits it): one tool per primitive.
+   * `'meta'`: a CONSTANT `tools/list` — `list_resources`, `describe_resource`,
+   * `manage_resource` — with every tool named in `groups` behind them; the rest (`docs`,
+   * `whoami`) stay flat beside them. A function decides per population, from the caller alone:
+   *
+   * ```ts
+   * surface: (caller) => (caller.role?.startsWith('staff') ? 'meta' : 'flat'),
+   * ```
+   *
+   * Same policies, scopes, visibility and audit either way: `manage_resource` resolves to the
+   * tool and runs it on the path a flat `tools/call` takes.
+   */
+  readonly surface?: McpSurfaceOption;
+  /**
+   * The meta catalog: resource name → `{ description, tools }`, by TOOL NAME like `scopes`.
+   * Required with a surface that can be `'meta'`; refused with one that cannot. A name no tool
+   * answers to is `X_MCP_GROUP_UNKNOWN`, a tool in two groups `X_MCP_GROUP_CONFLICT`.
+   */
+  readonly groups?: McpResourceGroups;
   /** Bearer-token resolution. Omit to expose no HTTP route (stdio/embedded only). */
   resolveToken?(token: string): Promise<ResolvedToken | null> | ResolvedToken | null;
   /** Mount path. Defaults to `/mcp`. */
@@ -164,6 +185,8 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     resources: input.resources ?? [],
     prompts: toPrompts(input.prompts ?? []),
     serverInfo: { name: input.name ?? 'ultimate-app', version: input.version ?? '0.0.0' },
+    ...(input.surface === undefined ? {} : { surface: input.surface }),
+    ...(input.groups === undefined ? {} : { groups: input.groups }),
   };
   const server = createMcpServer(config);
 

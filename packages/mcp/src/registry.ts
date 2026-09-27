@@ -20,6 +20,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { McpToolDuplicateError } from './errors';
+import type { McpListParams } from './list-params';
 import type { ArgIssue } from './validate-args';
 import { validateArgs } from './validate-args';
 import type { JsonSchema } from './wire';
@@ -95,6 +96,17 @@ export interface McpTool<A extends ToolArgs = ToolArgs> {
    * cheap read chatter by omission.
    */
   readonly destructive?: boolean;
+  /**
+   * A list query's whitelist of `filters` / `sort` / `fields` / `cursor` + `limit`. Published by
+   * `describe_resource` and enforced by `manage_resource` alongside the tool's own input schema;
+   * the flat surface ignores it (the tool's `inputSchema` is its contract there).
+   */
+  readonly listParams?: McpListParams;
+  /**
+   * A catalog hint: this write answers "awaiting confirmation" and a human finishes it. Shown by
+   * `list_resources` so an agent plans for the hand-off; it changes nothing about the call.
+   */
+  readonly confirms?: boolean;
   // Method syntax (not a property) so a tool declared with narrower args stays assignable.
   handle(args: A, caller: McpCaller): Promise<McpToolResult>;
 }

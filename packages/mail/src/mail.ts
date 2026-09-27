@@ -14,6 +14,7 @@ import { mailIdempotencyKey } from './idempotency';
 import { sendMailJob } from './job';
 import { BASE_LAYOUT } from './layout';
 import { type RenderableMail, renderMail } from './render';
+import { applyMailTransform } from './transform';
 
 export interface MailDefinition<I> extends RenderableMail<I> {
   readonly id: string;
@@ -160,7 +161,9 @@ export async function send<I>(
   data: I,
   options: SendOptions,
 ): Promise<SendResult> {
-  const message = renderMessage(mail, data, options);
+  // Transform BEFORE the key: the key, the queue row and every retry carry the transformed bytes,
+  // and the job never re-runs the hook. Not in `renderMessage`, which previews call.
+  const message = await applyMailTransform(renderMessage(mail, data, options));
   const key = mailIdempotencyKey(message);
   const queue = jobDriver();
 

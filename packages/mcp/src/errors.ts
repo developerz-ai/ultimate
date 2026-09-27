@@ -19,6 +19,10 @@ export const MCP_ERROR_CODES = [
   'X_MCP_RATE_LIMITED',
   'X_MCP_APP_UNMOUNTED',
   'X_MCP_BODY_TOO_LARGE',
+  'X_MCP_GROUP_UNKNOWN',
+  'X_MCP_GROUP_CONFLICT',
+  'X_MCP_SURFACE_INVALID',
+  'X_MCP_LIST_PARAMS_INVALID',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -39,6 +43,10 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_RATE_LIMITED: "the caller has spent its allowance for this request's class",
   X_MCP_APP_UNMOUNTED: "the app's MCP endpoint is exposed in config and nothing can be mounted",
   X_MCP_BODY_TOO_LARGE: 'one MCP message is larger than the transport holds',
+  X_MCP_GROUP_UNKNOWN: 'defineAppMcp groups a tool this server does not project',
+  X_MCP_GROUP_CONFLICT: 'two resource groups claim one MCP tool',
+  X_MCP_SURFACE_INVALID: 'the MCP meta surface is declared inconsistently',
+  X_MCP_LIST_PARAMS_INVALID: "a tool's listParams names a key its own input does not accept",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

@@ -27,6 +27,7 @@
 import type { Actor } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import { McpToolUndeclaredError } from './errors';
+import type { McpListParams } from './list-params';
 import type { AnyMcpTool, McpCaller, McpRole, McpToolResult, ToolArgs } from './registry';
 import { jsonResult } from './registry';
 import type { JsonSchema } from './wire';
@@ -49,6 +50,8 @@ export interface McpExposure {
   readonly visibleTo?: readonly McpRole[];
   /** Override the projected tool name. Defaults to the primitive's own name. */
   readonly name?: string;
+  /** A list query's whitelist, carried to the tool for the meta surface. See `McpListParams`. */
+  readonly listParams?: McpListParams;
 }
 
 /**
@@ -88,6 +91,7 @@ export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
     primitive.mcp?.description ?? primitive.description ?? `Run the "${primitive.name}" action.`;
   const mutates = primitive.mutates ?? true;
   const visibleTo = primitive.mcp?.visibleTo;
+  const listParams = primitive.mcp?.listParams;
 
   return {
     name,
@@ -95,6 +99,7 @@ export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
     inputSchema: primitive.inputJsonSchema ?? NO_ARGS,
     destructive: mutates,
     ...(visibleTo !== undefined ? { visibleTo } : {}),
+    ...(listParams !== undefined ? { listParams } : {}),
     // No `scope` from here: see the header. `defineAppMcp`'s `scopes:` map may add one.
     async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
       // ONE authz system, TWO surfaces. This `run` IS `invoke`; the HTTP route reaches the
