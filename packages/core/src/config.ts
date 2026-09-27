@@ -9,6 +9,8 @@ import { CURRENCY_CODE_PATTERN } from '@ultimat3/schema';
 import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 import { countIssue } from './config-count';
 import { BASE_FIX, CACHE_TIER_FIX, TIMEZONE_FIX } from './config-fixes';
+import type { DrainConfig, HealthConfig } from './config-health';
+import { readinessModeIssue } from './config-health';
 import { type Input, lastSaid, layered } from './config-merge';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, pwaIssues } from './config-pwa';
@@ -183,20 +185,6 @@ export interface AiConfig {
   readonly mcp: McpConfig;
 }
 
-/**
- * How a SIGTERM'd process leaves the load balancer. Read by `@ultimat3/http`'s `createServer`
- * (`ServerOptions.drain`), which hands it to core's `configureLifecycle`.
- */
-export interface DrainConfig {
-  /**
-   * `/readyz` answers 503 for this long before the listener closes, so endpoints stop routing here
-   * first. Default 0 in development/test and 5000 everywhere else — a process naming NO environment
-   * included. A whole number, 0–60000. The chart's `terminationGracePeriodSeconds` must exceed it
-   * plus the drain budget.
-   */
-  readonly readinessGraceMs: number;
-}
-
 export interface AppConfig {
   readonly name: string;
   readonly locales: readonly string[];
@@ -214,6 +202,7 @@ export interface AppConfig {
   readonly notify: NotifyConfig;
   readonly ai: AiConfig;
   readonly drain: DrainConfig;
+  readonly health: HealthConfig;
   readonly site: SiteConfig;
   readonly seo: SeoConfig;
 }
@@ -251,6 +240,7 @@ export interface AppConfigInput extends SiteSectionsInput {
   readonly notify?: Input<NotifyConfig> | undefined;
   readonly ai?: AiConfigInput | undefined;
   readonly drain?: Input<DrainConfig> | undefined;
+  readonly health?: Input<HealthConfig> | undefined;
 }
 
 /** An overlay from `config/<concern>.ts`. No `name` — the base owns it. */
@@ -308,6 +298,7 @@ function defaults(name: string): Omit<AppConfig, 'name' | 'site' | 'seo'> {
     ai: { mcp: { expose: true, path: '/mcp' } },
     // Read from the process env when the config is DEFINED — the same env the drain will run in.
     drain: { readinessGraceMs: defaultReadinessGraceMs() },
+    health: { readiness: 'dependencies' },
   };
 }
 
@@ -352,6 +343,7 @@ function validate(config: AppConfig): void {
     countIssue('jobs.visibilityTimeoutMs', config.jobs.visibilityTimeoutMs, 1),
     countIssue('cache.defaultTtlMs', config.cache.defaultTtlMs, 0),
     readinessGraceIssue(config.drain.readinessGraceMs),
+    readinessModeIssue(config.health.readiness),
   ];
   for (const issue of counts) if (issue !== undefined) issues.push(issue);
   if (config.jobs.queues.length === 0) issues.push('jobs.queues must list at least one queue');
@@ -491,6 +483,10 @@ export function defineConfig(
     drain: layered(
       base.drain,
       layers.map((layer) => layer.drain),
+    ),
+    health: layered(
+      base.health,
+      layers.map((layer) => layer.health),
     ),
     ...mergeSite(layers),
   };

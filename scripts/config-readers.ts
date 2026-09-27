@@ -67,6 +67,7 @@ export const CONFIG_FILES = [
   'packages/core/src/config.ts',
   'packages/core/src/config-pwa.ts',
   'packages/core/src/config-site.ts',
+  'packages/core/src/config-health.ts',
 ] as const;
 export const CONFIG_FILE = CONFIG_FILES[0];
 export const ROOT_INTERFACE = 'AppConfig';
@@ -163,6 +164,8 @@ export const SECTION_PACKAGE: Readonly<Record<string, string>> = {
   database: 'db',
   // why: `AppConfig.drain` (plan 101 slice 01) is core's lifecycle budget; no package is named `drain`.
   drain: 'core',
+  // why: `AppConfig.health` is what core's `/readyz` answers on; no package is named `health`.
+  health: 'core',
   // why: `AppConfig.site` is the public origin; the CLI's document and sitemap builders read it.
   site: 'cli',
   theme: 'ui',

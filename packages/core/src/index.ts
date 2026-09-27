@@ -98,7 +98,6 @@ export type {
   AuthConfig,
   CacheConfig,
   DatabaseConfig,
-  DrainConfig,
   JobsConfig,
   McpConfig,
   NotifyConfig,
@@ -109,6 +108,8 @@ export type {
   ThemeMode,
 } from './config';
 export { defineConfig, INBOX_RETENTION_KEYS } from './config';
+export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
+export { READINESS_MODES } from './config-health';
 export type {
   PwaColors,
   PwaConfig,
@@ -515,8 +516,6 @@ export type {
   LifecycleOptions,
   OnShutdownOptions,
   ProcessSignal,
-  ReadinessCheck,
-  ReadinessStatus,
   ShutdownHook,
   ShutdownPhase,
   ShutdownReason,
@@ -548,6 +547,7 @@ export {
   READINESS_GRACE_DEFAULT_MS,
   READINESS_GRACE_MAX_MS,
 } from './lifecycle-grace';
+export type { ReadinessCheck, ReadinessStatus } from './lifecycle-readiness';
 export type { SignalHandlerOptions } from './lifecycle-signals';
 export { installSignalHandlers } from './lifecycle-signals';
 export { isSelfOrigin, listeningOrigins, markListening, resetListeners } from './listeners';

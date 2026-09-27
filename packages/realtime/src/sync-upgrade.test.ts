@@ -4,7 +4,15 @@
 // connection, and no sweep repairs it because a grant with no `expiresAt` never expires.
 
 import { describe, expect, test } from 'bun:test';
-import { type Actor, frozenClock, userActor } from '@ultimat3/core';
+import {
+  type Actor,
+  configureLifecycle,
+  frozenClock,
+  markReady,
+  registerReadinessCheck,
+  resetLifecycle,
+  userActor,
+} from '@ultimat3/core';
 import type { SyncAuthenticator, SyncGrant } from './sync-auth';
 import { handleUpgrade, type UpgradeDeps, type UpgradeTarget, type WsData } from './sync-upgrade';
 import { AcceptBudget } from './thundering-herd';
@@ -167,5 +175,37 @@ describe('the upgrade records ?build= when the dial carries one', () => {
   test('a dial without it is recorded as this node, for the hello to correct', async () => {
     const data = await upgrade('http://node/_x/sync');
     expect(data?.clientBuildId).toBe('build-1');
+  });
+});
+
+// `health.readiness: 'process'` reaches the sync node's own `/readyz` too, and `?deep=1` still
+// answers on the dependencies — the same two answers the web role's native route gives.
+describe('the sync node honours the readiness mode', () => {
+  test("a failing check is 200 in 'process' mode and 503 with ?deep=1", async () => {
+    resetLifecycle();
+    try {
+      configureLifecycle({ readiness: 'process' });
+      registerReadinessCheck('database', () => false);
+      markReady();
+      const target = rig({ accepts: true });
+      const shallow = await handleUpgrade(
+        target.deps,
+        new Request('http://node/readyz'),
+        target.server,
+      );
+      const deep = await handleUpgrade(
+        target.deps,
+        new Request('http://node/readyz?deep=1'),
+        target.server,
+      );
+      expect(shallow?.status).toBe(200);
+      if (shallow === undefined) return expect.unreachable('/readyz answered nothing');
+      expect(((await shallow.json()) as { checks: object }).checks).toEqual({
+        database: 'failing',
+      });
+      expect(deep?.status).toBe(503);
+    } finally {
+      resetLifecycle();
+    }
   });
 });

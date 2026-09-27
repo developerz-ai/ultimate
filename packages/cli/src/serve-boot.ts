@@ -4,6 +4,7 @@
 // — are this file's.
 
 import type { Role } from '@ultimat3/core';
+import { configureLifecycle } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { describeRoutes } from '@ultimat3/render';
 import { createIsrController } from '@ultimat3/render/server';
@@ -26,7 +27,7 @@ import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
 import { servedStorage, storageRoutes } from './runtime-storage';
 import { seoRoutes } from './seo-routes';
-import { loadDrainConfig } from './serve-drain';
+import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
 import type { ServedApp, ServeOptions } from './serve-types';
 import { loadSiteSettings, publicOrigin } from './site-config';
@@ -77,6 +78,9 @@ export async function bootRoles(boot: {
   // still wins — that is the deploy talking.
   const metricsPort = metricsPortFor(options.env, port, options.metricsPort);
   const drain = await loadDrainConfig(options.root);
+  // Process-wide, so every role's `/readyz` — web, sync, worker — answers in the declared mode.
+  const health = await loadHealthConfig(options.root);
+  if (health?.readiness !== undefined) configureLifecycle({ readiness: health.readiness });
   const replicaOverride = replicaOverrides(options.runtime, runtime.services.db, options.env);
   const running = await startRoles({
     roles: [role],
