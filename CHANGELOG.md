@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.8.2 - 2026-09-28
+
 ### Fixed
 
 - **http, cli:** `x-ultimate-location` â€” the hand-back the client router follows â€” named the public
@@ -18,6 +22,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   for a same-origin redirect rewritten for the router â€” and the router resolves it against the page
   it runs in; a cross-origin target is kept exactly as the app's `Location` gave it. New export:
   `locationFor(target, base)` (http).
+
+### Commits
+
+- fix(http,cli): x-ultimate-location is a path for same-origin targets (#575)
 
 ## 22.8.1 - 2026-09-28
 
