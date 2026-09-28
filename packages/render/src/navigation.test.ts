@@ -1,10 +1,17 @@
-// The controller over the fake DOM and a `fetch` the test answers: every verdict it acts on, the
-// forms, the prefetch cache and what empties it, back/forward, scroll, a failed swap, a cancelled
-// navigation, `stop()`. Chrome proves the same through the real server
-// (`packages/cli/e2e/client-navigation-*.e2e.test.ts`); this is the branch coverage beside it.
+// The controller over the fake DOM and a `fetch` the test answers — every verdict, forms, the
+// prefetch cache, real input, history, a failed swap, `stop()`. Chrome: `client-navigation-*.e2e`.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { notifyClientWrite, rescope } from '@ultimat3/core/page';
 import { startNavigation } from './navigation';
+import {
+  answers,
+  click,
+  currentRouter,
+  fire,
+  page,
+  stopRouter,
+  tab,
+} from './navigation-controller-fixture';
 import {
   FakeDocument,
   type FakeElement,
@@ -13,84 +20,11 @@ import {
   fakeWindow,
   h,
   htmlAnswer,
-  routerHead,
   settle,
 } from './navigation-dom-fixture';
 import { NAVIGATE_EVENT, NAVIGATED_EVENT, NAVIGATION_ERROR_EVENT } from './navigation-rules';
 
-type Handler = (init: RequestInit | undefined) => Response | Promise<Response>;
-
-const page = (
-  title: string,
-  meta: { scope?: string; build?: string } = {},
-  body: FakeElement[] = [],
-) =>
-  new FakeDocument(routerHead(title, [], meta), [
-    h('main', {}, [
-      h('h1', {}, title),
-      h('a', { id: 'to-b', href: '/b' }, 'b'),
-      h('a', { id: 'to-c', href: '/c' }, 'c'),
-      h('a', { id: 'to-slow', href: '/slow' }, 'slow'),
-      h('a', { id: 'plain', href: '/b', 'data-x-no-prefetch': '' }, 'plain'),
-      ...body,
-    ]),
-    h('script', {}, `hydrate(${title})`),
-  ]);
-
-let router: ReturnType<typeof startNavigation>;
-afterEach(() => {
-  router?.stop();
-  router = undefined;
-});
-
-/** A tab on `/a` whose `fetch` answers from `routes`; `calls` records `METHOD path purpose`. */
-function tab(routes: Record<string, Handler>, doc = page('A')) {
-  const calls: string[] = [];
-  const fetch = (url: string, init?: RequestInit): Promise<Response> => {
-    const u = new URL(url);
-    const headers = (init?.headers ?? {}) as Record<string, string>;
-    calls.push(
-      `${init?.method ?? 'GET'} ${u.pathname}${u.search} ${headers['x-ultimate-navigation']}`,
-    );
-    const handler = routes[u.pathname];
-    if (handler === undefined) return Promise.reject(new TypeError('network'));
-    return Promise.resolve(handler(init));
-  };
-  const win = fakeWindow(doc, 'https://app.test/a', fetch);
-  router = startNavigation(win as unknown as Window);
-  return { win, doc, calls };
-}
-
-/** An event the way a browser dispatches it: cancelable, with its target and fields. */
-function fire(
-  on: EventTarget,
-  type: string,
-  target: unknown,
-  fields: Record<string, unknown> = {},
-): Event {
-  const event = new Event(type, { cancelable: true, bubbles: true });
-  Object.defineProperty(event, 'target', { value: target });
-  for (const [key, value] of Object.entries({
-    button: 0,
-    metaKey: false,
-    ctrlKey: false,
-    shiftKey: false,
-    altKey: false,
-    ...fields,
-  })) {
-    Object.defineProperty(event, key, { value });
-  }
-  on.dispatchEvent(event);
-  return event;
-}
-
-const click = (win: FakeWindow, id: string, fields?: Record<string, unknown>) =>
-  fire(win, 'click', win.document.getElementById(id), fields);
-
-const answers = {
-  b: () => htmlAnswer('page:B', page('B')),
-  c: () => htmlAnswer('page:C', page('C')),
-};
+afterEach(stopRouter);
 
 describe('startNavigation', () => {
   test('a document that did not opt in is left alone; a second start is the same router', () => {
@@ -103,7 +37,7 @@ describe('startNavigation', () => {
       ),
     ).toBeUndefined();
     const { win } = tab({});
-    expect(startNavigation(win as unknown as Window)).toBe(router);
+    expect(startNavigation(win as unknown as Window)).toBe(currentRouter());
   });
 });
 
@@ -433,8 +367,7 @@ describe('history and scroll', () => {
 describe('stop', () => {
   test('lets go of every listener', async () => {
     const { win, calls } = tab({ '/b': answers.b });
-    router?.stop();
-    router = undefined;
+    stopRouter();
     click(win, 'to-b');
     await settle();
     expect(calls).toEqual([]);

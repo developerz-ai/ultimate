@@ -179,6 +179,30 @@ describe('cdpE2eTab', () => {
     ]);
   });
 
+  test('pointerClick moves, presses and releases at the element centre; a missing one refuses', async () => {
+    const box =
+      '(() => { const el = document.querySelector("#go"); if (!el) return null; const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()';
+    const { connection, calls } = fakeConnection({ [`Runtime.evaluate:${box}`]: value([40, 12]) });
+    const page = tabOn(connection);
+    await page.pointerClick('#go');
+    expect(
+      calls
+        .filter((call) => call.method === 'Input.dispatchMouseEvent')
+        .map((call) => [
+          call.params['type'],
+          call.params['x'],
+          call.params['y'],
+          call.params['button'],
+        ]),
+    ).toEqual([
+      ['mouseMoved', 40, 12, 'none'],
+      ['mousePressed', 40, 12, 'left'],
+      ['mouseReleased', 40, 12, 'left'],
+    ]);
+    const thrown = await page.pointerClick('#missing').catch((error: unknown) => error);
+    expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
+  });
+
   test('waitFor refuses by name when the expression never holds', async () => {
     const { connection } = fakeConnection({
       'Runtime.evaluate:Boolean(window.ready)': value(false),

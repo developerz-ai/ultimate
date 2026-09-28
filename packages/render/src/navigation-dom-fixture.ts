@@ -257,6 +257,11 @@ export class FakeDocument extends EventTarget {
     node.adopt(this);
     return node;
   }
+  /** What a test says is under the pointer, for a click the browser aimed at `<html>`. */
+  underPointer: FakeElement | null = null;
+  elementFromPoint(): FakeElement | null {
+    return this.underPointer;
+  }
   getElementById(id: string): FakeElement | null {
     return this.documentElement.querySelectorAll('[id]').find((el) => el.id === id) ?? null;
   }
@@ -375,6 +380,7 @@ export function fakeWindow(doc: FakeDocument, url: string, fetch: FakeWindow['fe
   globals['DOMParser'] = FakeParser;
   globals['HTMLFormElement'] = FakeForm;
   globals['FormData'] = FakeFormData;
+  globals['HTMLElement'] = FakeElement;
   return self;
 }
 

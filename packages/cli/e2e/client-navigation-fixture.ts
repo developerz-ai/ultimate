@@ -324,7 +324,20 @@ const pipeline = createServer({
     },
   }),
 });
-const server = Bun.serve({ port: 0, fetch: (request) => pipeline.fetch(request) });
+/** Every REQUEST the browser sent a page route, as `METHOD /path purpose` — a refused one too. */
+export const requests: string[] = [];
+const server = Bun.serve({
+  port: 0,
+  fetch: (request) => {
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith('/_x/') && !/\.(js|css)$/.test(url.pathname)) {
+      requests.push(
+        `${request.method} ${url.pathname} ${request.headers.get('x-ultimate-navigation') ?? 'full'}`,
+      );
+    }
+    return pipeline.fetch(request);
+  },
+});
 server.unref();
 other.unref();
 export const base = `http://localhost:${String(server.port)}`;

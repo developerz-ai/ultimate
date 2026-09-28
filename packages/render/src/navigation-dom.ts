@@ -56,13 +56,13 @@ const hush = (): void => undefined;
  * leaves an unhandled rejection behind. A throw inside `apply` rejects `updateCallbackDone`, which
  * the caller awaits and turns into a full load.
  */
-export async function transition(win: Window, apply: () => void): Promise<void> {
+export async function transition(
+  win: Window,
+  apply: () => void,
+  track?: (running: RunningTransition | undefined) => void,
+): Promise<void> {
   const doc = win.document as Document & {
-    startViewTransition?: (update: () => void) => {
-      updateCallbackDone: Promise<void>;
-      ready: Promise<void>;
-      finished: Promise<void>;
-    };
+    startViewTransition?: (update: () => void) => RunningTransition;
   };
   const still = win.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
   if (doc.startViewTransition === undefined || still) {
@@ -70,9 +70,21 @@ export async function transition(win: Window, apply: () => void): Promise<void> 
     return;
   }
   const running = doc.startViewTransition(apply);
+  track?.(running);
   running.ready.catch(hush);
-  running.finished.catch(hush);
+  running.finished.then(
+    () => track?.(undefined),
+    () => track?.(undefined),
+  );
   await running.updateCallbackDone;
+}
+
+/** The part of a `ViewTransition` the router uses. */
+export interface RunningTransition {
+  readonly updateCallbackDone: Promise<void>;
+  readonly ready: Promise<void>;
+  readonly finished: Promise<void>;
+  skipTransition?(): void;
 }
 
 /** Where a keyboard or screen-reader user lands: the page's `<main>`, else its first heading. */

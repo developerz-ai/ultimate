@@ -111,8 +111,14 @@ export const config = defineRoute({
    * why: client navigation (`navigation: { client: ['app'] }` in `app.config.ts`) — the router,
    * `/_x/navigation/<hash>.js`, 18,276 B on every `app/` document, charged like the page boot: it
    * is interactivity this app opted into, and a route cannot remove it; `/settings`' reason for the island bytes.
+   *
+   * measured: 156,585 B (2026-09-28: 155,790 above + the router's 795, measured by
+   * `x build --target static` on `/posts/new` and `/settings`), against 157,184 (`153.5kb`).
+   * why: the router's input fixes (22.8.1) — a click the view transition aimed at `<html>` is given
+   * to the element under the pointer, a press skips the running transition, and a press or click
+   * cancels the pending prefetch, so a fast click sends one request, not two (+795 B).
    */
-  budget: { js: '152.5kb', lcp: 2000 },
+  budget: { js: '153.5kb', lcp: 2000 },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.

@@ -18,6 +18,25 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   bytes (the budgets step weighs the emitted document). Behaviour is unchanged where it matters: a
   link TO it was already a full load; its own links and forms are now the browser's, which is what a
   document page means; the next soft page it links to boots the router again.
+- **render:** a click in the first ~250 ms after a soft navigation was lost. While the view
+  transition animates, Chrome hit-tests every press to `<html>`; the release lands on the real
+  element, so the click — aimed at their common ancestor — reached nothing (no soft navigation, no
+  full load). A press during a transition now skips it (`skipTransition()`), and a click aimed at
+  `<html>` by such a press is given to the element under the pointer (`elementFromPoint`) — a link,
+  a submit button or an island's control alike. With `prefers-reduced-motion: reduce` there was no
+  transition and no loss, which is how it was found.
+- **render:** a fast click sent two requests for the page: the soft GET, then the prefetch the
+  pointer's arrival had scheduled 65 ms earlier (and the focus the press gave the link scheduled
+  another). A press or click now cancels the pending prefetch, a focus that comes from a press is
+  not an intent, and no prefetch starts for the page a navigation is already fetching. The router is
+  19,071 B (7,065 B gzip), +795 B.
+
+### Added
+
+- **testing:** `E2eTab.pointerClick(selector)` — a click the BROWSER hit-tests (pointer moved,
+  pressed and released at the element's centre through `Input.dispatchMouseEvent`), so an overlay
+  painted over the element receives it, as it would a person's. `click()` dispatches at the element
+  and cannot see that.
 
 ## 22.8.0 - 2026-09-28
 

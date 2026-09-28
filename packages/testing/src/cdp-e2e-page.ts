@@ -44,6 +44,13 @@ export interface E2eTab extends E2eBrowserPage {
    * with `evaluate('location.href = …')` and poll with `waitFor`.
    */
   scripting(enabled: boolean): Promise<void>;
+  /**
+   * A REAL click: the pointer moved to the element's centre, pressed and released through
+   * `Input.dispatchMouseEvent`, so the browser hit-tests it as it would a person's — and anything
+   * painted over the element (a view transition's overlay, a modal) receives it instead. `click()`
+   * dispatches straight at the element and can never see that.
+   */
+  pointerClick(selector: string): Promise<void>;
   /** Reload and wait for the load, at the url the tab already had. */
   reload(): Promise<void>;
   /** Poll `expression` in the page until it is truthy, or refuse naming `what`. */
@@ -164,6 +171,26 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
           method: `click(${selector})`,
           detail: 'no element in the page matches that selector',
         });
+      }
+    },
+    async pointerClick(selector: string): Promise<void> {
+      const at = await evaluate(
+        `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`,
+      );
+      if (!Array.isArray(at) || typeof at[0] !== 'number' || typeof at[1] !== 'number') {
+        throw new CdpCallFailedError({
+          method: `pointerClick(${selector})`,
+          detail: 'no element in the page matches that selector',
+        });
+      }
+      const [x, y] = at;
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) {
+        const pressed = type !== 'mouseMoved';
+        await send(
+          'Input.dispatchMouseEvent',
+          { type, x, y, button: pressed ? 'left' : 'none', clickCount: pressed ? 1 : 0 },
+          sessionId,
+        );
       }
     },
     offline: (enabled: boolean) => options.offline(enabled),
