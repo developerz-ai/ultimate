@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.7.1 - 2026-09-28
+
 ### Fixed
 
 - **http:** a shared cache is never offered an exchange it cannot replay. The `cache-headers` stage
@@ -31,6 +35,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **cli:** "fifty saves do not grow the process" measures the live JS heap after two full
   collections instead of RSS (which the allocator keeps high under load with nothing retained), and
   its line tightens from 120 MB to 40 MB â€” five retained 8 MB generations now fail it.
+
+### Commits
+
+- fix(http,mcp): auth failures / POST answers never shared-cacheable; 401 names scope; two load flakes (#568)
 
 ## 22.7.0 - 2026-09-28
 
