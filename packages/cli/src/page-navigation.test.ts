@@ -110,7 +110,7 @@ describe('unit · the gate over real pages — what a router request may run', (
       new Request('http://dev.test/r/abc', { headers: router('soft') }),
     );
     expect(answer.status).toBe(204);
-    expect(answer.headers.get('x-ultimate-location')).toBe('http://dev.test/r/abc');
+    expect(answer.headers.get('x-ultimate-location')).toBe('/r/abc');
     expect(loads).toEqual([]);
   });
 
@@ -134,7 +134,7 @@ describe('unit · the gate over real pages — what a router request may run', (
       new Request('http://dev.test/casos', { headers: router('soft') }),
     );
     expect(answer.status).toBe(204);
-    expect(answer.headers.get('x-ultimate-location')).toBe('http://dev.test/casos');
+    expect(answer.headers.get('x-ultimate-location')).toBe('/casos');
     expect(loads).toEqual([]);
   });
 

@@ -8,7 +8,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **http, cli:** `x-ultimate-location` — the hand-back the client router follows — named the public
+  site with the INTERNAL request's scheme. Behind a TLS-terminating proxy the process sees
+  `http://…`, so a soft visit to a `navigation: 'document'` page, a non-page route or another
+  principal's page answered `x-ultimate-location: http://www.example.com/…` (HSTS hid it in
+  browsers). A same-origin target is now its path, query and fragment only — for that hand-back and
+  for a same-origin redirect rewritten for the router — and the router resolves it against the page
+  it runs in; a cross-origin target is kept exactly as the app's `Location` gave it. New export:
+  `locationFor(target, base)` (http).
 
 ## 22.8.1 - 2026-09-28
 

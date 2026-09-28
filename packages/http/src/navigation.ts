@@ -24,6 +24,19 @@ export function navigationPurpose(request: Request): NavigationPurpose | null {
 
 const SAFE = new Set(['GET', 'HEAD']);
 
+/**
+ * What `x-ultimate-location` says. A target on THIS origin is its path, query and fragment and
+ * nothing else: behind a TLS-terminating proxy the request URL this process sees is
+ * `http://internal…`, so an absolute URL built from it named the public site as `http://` (HSTS
+ * hid it; it was still wrong). The router resolves a path against the page it runs in, whose origin
+ * is the one the visitor typed. A target on ANOTHER origin is kept exactly as the app gave it.
+ */
+export function locationFor(target: string, base: URL): string {
+  const resolved = new URL(target, base);
+  if (resolved.origin !== base.origin) return target;
+  return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+}
+
 /** "Load this with a real navigation" — never stored anywhere, it answers one request. */
 export function relocate(location: string, headers?: Headers): Response {
   const out = new Headers(headers);
@@ -54,7 +67,7 @@ export function navigationGate(
   const ours = navigation !== undefined && navigation.surface === surface;
   if (ours && (purpose === 'soft' || navigation.prefetch)) return undefined;
   if (purpose === 'prefetch') return new Response(null, { status: 204, headers: NO_STORE });
-  return relocate(url.href);
+  return relocate(locationFor(url.href, url));
 }
 
 const NO_STORE = { 'cache-control': 'no-store' } as const;
@@ -75,5 +88,5 @@ export function redirectForRouter(
   if (response.status < 300 || response.status > 399) return undefined;
   const location = response.headers.get('location');
   if (location === null) return undefined;
-  return relocate(new URL(location, base).href, response.headers);
+  return relocate(locationFor(location, base), response.headers);
 }
