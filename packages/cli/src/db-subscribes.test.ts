@@ -7,7 +7,7 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive remove, and a fixture tree left behind grows one directory per run.
 import { rmSync } from 'node:fs';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
-import { can, definePermissions, knownPermissions, restorePermissions } from '@ultimat3/policy';
+import { can } from '@ultimat3/policy';
 import { from, query, registerQuery, resetRegistry, t } from '@ultimat3/query';
 import { generateAppMigration } from './db-generate';
 import { replicaIdentityTables } from './db-subscribes';
@@ -29,14 +29,9 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-// The permission set as this file found it: `declareApp` adds `note:read` for its own query, and a
-// set left non-empty turns every later file's undeclared `can()` into X_PERMISSION_UNKNOWN.
-const inherited = knownPermissions();
-
 afterEach(() => {
   clearRegistry();
   resetRegistry();
-  restorePermissions(inherited);
 });
 
 describe('unit · the tables a live query declares it is patched from', () => {
@@ -97,9 +92,6 @@ describe('unit · the tables a live query declares it is patched from', () => {
 
 describe('unit · x db gen emits the ALTER the declaration asks for', () => {
   const declareApp = (): void => {
-    // Declared here, not assumed: in a shared worker another file's permission set may be live,
-    // and `can()` refuses a permission no declaration names. `afterEach` puts the set back.
-    definePermissions(['note:read']);
     entity('subscribes_test_note', {
       table: 'subscribes_test_notes',
       columns: { id: uuid().primaryKey(), body: text({ max: 200 }) },

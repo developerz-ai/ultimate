@@ -2,13 +2,16 @@
 // files belong to a type and this one owns what happens to them once selected — a wrong file list
 // is never a race, and a race is never a selection bug.
 
+// why: Bun ships no path-join primitive; the timings cache lives under the run's root.
+import { join } from 'node:path';
 import type { Runner } from './exec';
 import type { Finding } from './output';
 import { runBatches, testBatches } from './test-batches';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
-import { failureOf, ISOLATED_TEST_ENV, testArgs } from './test-shards';
+import { failureOf, ISOLATED_TEST_ENV, TEST_TIMINGS_FILE, testArgs } from './test-shards';
+import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
 import type { StepOutcome } from './verify-step';
 // Type-only, so nothing here evaluates verify-tests.ts and the two files cannot form a cycle.
 import type { TestType } from './verify-tests';
@@ -54,14 +57,23 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
   };
   // Batched exactly as `x test` batches the same selection at the same width, so the gate's
   // `fix:` line — `x test <type> --workers N` — reruns the very processes that failed.
-  const batches = testBatches(files, workers);
+  const batches = testBatches(
+    files,
+    workers,
+    options.isolate === true ? BATCH_FILES_PER_WORKER : SHARED_BATCH_FILES_PER_WORKER,
+  );
   const result = await runBatches({
     runner: options.runner,
     batches,
     workers,
     ...(options.lease === undefined || workers === 1 ? {} : { lease: options.lease }),
     argsFor: (batch, width) =>
-      testArgs({ files: batch, workers: width, isolate: options.isolate === true }),
+      testArgs({
+        files: batch,
+        workers: width,
+        isolate: options.isolate === true,
+        timings: join(options.root, TEST_TIMINGS_FILE),
+      }),
     options: {
       cwd: options.root,
       ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),

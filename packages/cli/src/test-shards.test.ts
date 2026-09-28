@@ -21,7 +21,7 @@ import { renderJson } from './output';
 import { flagBool, flagString, parseArgs } from './parse';
 import type { TestFile } from './test-select';
 import { filesIn, ISOLATED_TEST_ENV, reproduceFor, runShards, testArgs } from './test-shards';
-import { BATCH_FILES_PER_WORKER } from './test-workers';
+import { SHARED_BATCH_FILES_PER_WORKER as BATCH_FILES_PER_WORKER } from './test-workers';
 
 interface Call {
   readonly command: readonly string[];
@@ -91,6 +91,23 @@ describe('unit · the argv one bun test receives', () => {
       passthrough: ['--no-isolate'],
     });
     expect(overridden.filter((arg) => arg === '--no-isolate')).toHaveLength(1);
+  });
+
+  // The slowest files first, from a local cache every run refreshes; a caller's own flag wins.
+  test('a parallel run reads and refreshes the timings cache; the shard form and a caller override do not', () => {
+    const args = testArgs({ files: ['a.test.ts'], workers: 2, timings: '/r/.x/test-timings.json' });
+    expect(args).toContain('--timings=/r/.x/test-timings.json');
+    expect(args).toContain('--update-timings');
+    expect(
+      testArgs({ files: ['a.test.ts'], workers: 2, shard: 0, timings: '/r/t.json' }).join(' '),
+    ).not.toContain('--timings');
+    const own = testArgs({
+      files: ['a.test.ts'],
+      workers: 2,
+      timings: '/r/t.json',
+      passthrough: ['--timings=mine.json'],
+    });
+    expect(own.filter((arg) => arg.startsWith('--timings'))).toEqual(['--timings=mine.json']);
   });
 
   // 0-based on the flag, 1-based in bun's own grammar. Off by one here is a rerun of the wrong

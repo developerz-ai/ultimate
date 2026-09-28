@@ -16,14 +16,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `ULTIMATE_TEST_MEMORY_BUDGET` (e.g. `3g`) and `ULTIMATE_TEST_MAX_WORKERS` override it
   (`X_TEST_BUDGET_INVALID` on a value that does not parse); `--workers` still wins, and now accepts
   1. Each batch leases its workers from a machine-wide pool of lock files, so concurrent gates share
-  one budget (`ULTIMATE_TEST_SLOTS=0` turns it off). Batches are 48 files a worker.
+  one budget (`ULTIMATE_TEST_SLOTS=0` turns it off). Without isolation a pass is ONE long-lived
+  `bun test` per run (recycled past 256 files a worker; 24 under `--isolate`), and every parallel run
+  reads and refreshes `.x/test-timings.json` so Bun starts the slowest files first.
 - **cli, testing:** test files are no longer isolated by default: `bun test --parallel=N
   --no-isolate`. `--isolate` on `x test`/`x verify`, or `"isolate": true` in `x.verify.json`, opts
   back in. Between files of a worker the testing preload disposes undisposed island mounts,
   restores `globalThis` and `process.env`, restores the permission/role/catalog registries as a
   union and the task registry exactly, forgets action paths an earlier file derived, and (in an
   app) installs the render JSX loader up front. notificado.co `x test unit`, 768 files: 22.6.2's
-  default 14 workers, 193 s, 13.1 GB peak â†’ 3 workers, 166-172 s, 3.4-3.8 GB; the framework's own
+  default 14 workers, 193 s, 13.1 GB peak â†’ 3 workers, 134 s, 3.6 GB (89.8 s, 3.7 GB once its
+  test database uses `reusableDatabase`); the framework's own
   unit tier 115-125 s at 2.9-3.0 GB.
 
 ### Added
@@ -36,6 +39,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   [CI: the gate across parallel jobs](https://github.com/developerz-ai/ultimate/wiki/CI-Parallel-Gate).
 - **cli:** `x build --no-preflight` skips the six static steps a following `x verify` runs anyway;
   the scaffolded `bin/check` uses it.
+- **testing:** `reusableDatabase(open)` â€” one embedded database per worker, its data reset to the
+  template between files (a PGlite boot from a template is 2.4-7 s a file). notificado.co unit with
+  it: 3 workers, 89.8 s, 3.7 GB (134 s without it).
 - **jobs:** `restoreTasks`. **i18n:** `catalogDeclarationCount`. **action:**
   `forgetHandedOutActionPaths`.
 

@@ -55,6 +55,9 @@ describe('unit · --shard refusals', () => {
       );
       writeFileSync(join(dir, 'ok.json'), '{"a.test.ts": 12}');
       expect(await readTimings(join(dir, 'ok.json'))).toEqual({ 'a.test.ts': 12 });
+      // Bun's own --update-timings shape.
+      writeFileSync(join(dir, 'bun.json'), '{"version":1,"files":{"a.test.ts": 7}}');
+      expect(await readTimings(join(dir, 'bun.json'))).toEqual({ 'a.test.ts': 7 });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -3,21 +3,15 @@
  * deadline and a concurrency refusal are all pinned as exact numbers rather than waited for.
  */
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { createClientFlight, declaredErrorRetry, isTransientFailure } from '@ultimat3/core';
-import { can, definePermissions, knownPermissions, restorePermissions } from '@ultimat3/policy';
+import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { type FetchLike, queryClient } from './client';
 import { query } from './query';
 import { from } from './source';
 
 type PostRow = { readonly id: string; readonly title: string };
-
-// Declared, then handed back: `can()` validates against whatever permission set is live, and in a
-// shared worker (22.7) an earlier file may have left one.
-const inheritedPermissions = knownPermissions();
-definePermissions(['post:read']);
-afterAll(() => restorePermissions(inheritedPermissions));
 
 const publicPost = query({
   input: t.object({ slug: t.string }),

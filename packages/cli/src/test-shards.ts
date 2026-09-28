@@ -26,10 +26,11 @@
 // file's packer and its `Shard` type gone, one process instead of eight, and Bun's own summary
 // instead of eight merged ones (issue #342).
 //
-// `--timings` IS REFUSED FOR THE SAME REASON. Bun will start the slowest files first from a
+// `--timings` WAS REFUSED FOR THE SAME REASON (until 22.7, below). Bun will start the slowest files first from a
 // recorded timings file, but there is at most the ~5s between the measured 59.8s median and the
 // 54.6s floor in it — against a committed JSON that goes stale on every test edit and that nothing
-// in the gate would notice had gone stale.
+// in the gate would notice had gone stale. 22.7 uses it differently: a LOCAL cache under `.x/`
+// (`TEST_TIMINGS_FILE`), rewritten by every run, so it cannot go stale and nothing is committed.
 //
 // TWO THINGS THE OLD SPLIT OWNED AND BUN NOW OWNS. `--parallel` implies `--isolate`, so the
 // per-FILE module registry that made an arbitrary partition safe at all is unchanged. Isolation is
@@ -41,6 +42,8 @@
 // process (probed on 1.4.0). `ULTIMATE_TEST_WORKER` stays the first key and is what `--worker`
 // still sets, so a single-shard rerun keeps naming its own database.
 
+// why: Bun ships no path-join primitive; the timings cache lives under the run's root.
+import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { AffectedSelection } from './affected';
 import type { Runner } from './exec';
@@ -52,9 +55,13 @@ import { testEnvOverrides } from './test-dotenv';
 /** `@ultimat3/testing`'s `ISOLATED_ENV`, restated: `cli → testing` is a runtime edge, kept to fixtures. */
 export const ISOLATED_TEST_ENV = 'ULTIMATE_TEST_ISOLATED';
 
+/** Bun's per-file durations, cached under the run's root and refreshed by every parallel run. */
+export const TEST_TIMINGS_FILE = '.x/test-timings.json';
+
 import { runBatches, testBatches } from './test-batches';
 import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
+import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
 import type { TestType } from './verify-tests';
 
 /**
@@ -95,6 +102,12 @@ export function testArgs(input: {
    * 77s not; a notificado.co third 85-107s isolated, 20s not (`test-workers.ts`).
    */
   readonly isolate?: boolean;
+  /**
+   * A per-file durations cache (`TEST_TIMINGS_FILE`): Bun starts the slowest files first from it
+   * and rewrites it after the run, so the last straggler is never the file that started last.
+   * Parallel form only; a caller's own `--timings` wins.
+   */
+  readonly timings?: string;
 }): readonly string[] {
   const files = [...input.files].sort();
   const extra = input.passthrough ?? [];
@@ -107,6 +120,9 @@ export function testArgs(input: {
         'test',
         `--parallel=${String(input.workers)}`,
         ...(isolate ? [] : ['--no-isolate']),
+        ...(input.timings === undefined || bare.some((arg) => arg.startsWith('--timings'))
+          ? []
+          : [`--timings=${input.timings}`, '--update-timings']),
         ...bare,
         ...files,
       ]
@@ -300,7 +316,14 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     // must be the same files as shard i of the run it reproduces. Nor is `-- --watch`, which never
     // exits, so a second batch would never start. Every other pass is spent in `test-batches.ts`'
     // batches, one `bun test` after another.
-    const batches = only === undefined && !watching ? testBatches(files, pass.workers) : [files];
+    const batches =
+      only === undefined && !watching
+        ? testBatches(
+            files,
+            pass.workers,
+            isolatedRun(options) ? BATCH_FILES_PER_WORKER : SHARED_BATCH_FILES_PER_WORKER,
+          )
+        : [files];
     const result = await runBatches({
       runner: options.runner,
       batches,
@@ -318,6 +341,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
           ...(only === undefined ? {} : { shard: only }),
           ...(options.passthrough === undefined ? {} : { passthrough: options.passthrough }),
           ...(options.isolate === undefined ? {} : { isolate: options.isolate }),
+          timings: join(options.root, TEST_TIMINGS_FILE),
         }),
       options: {
         cwd: options.root,

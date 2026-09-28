@@ -39,7 +39,8 @@ x verify --only unit --shard 2/4 --json > part-unit-2.json
   design (one replication slot, one built output) and are refused with `X_VERIFY_SHARD_INVALID`.
 - The split is a pure function of the step's **sorted** file list: round-robin by default, so job
   2 of 4 is the same files on every runner and on your laptop. `--timings <file>` (Bun's
-  `--timings` format, `{ "path": ms }`) splits greedy longest-first instead; a file the timings do
+  `--timings` file, e.g. the `.x/test-timings.json` every parallel run refreshes — cache it
+  between CI runs) splits greedy longest-first instead; a file the timings do
   not know is costed at their median.
 - The part's JSON carries `data.shard` (`index`, `total`, and per step the `corpusHash` of the whole
   list plus the `files` this shard ran), and each step carries the same facts as `steps[].shard`.

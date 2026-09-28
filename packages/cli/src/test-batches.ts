@@ -39,9 +39,13 @@ import { BATCH_FILES_PER_WORKER } from './test-workers';
  * in `workers x BATCH_FILES_PER_WORKER`, which is every small selection and every `--filter`.
  * Otherwise the fewest groups that fit, dealt round-robin so their sizes differ by at most one.
  */
-export function testBatches(files: readonly string[], workers: number): readonly string[][] {
+export function testBatches(
+  files: readonly string[],
+  workers: number,
+  perWorker: number = BATCH_FILES_PER_WORKER,
+): readonly string[][] {
   const sorted = [...files].sort();
-  const cap = Math.max(1, Math.trunc(workers)) * BATCH_FILES_PER_WORKER;
+  const cap = Math.max(1, Math.trunc(workers)) * Math.max(1, Math.trunc(perWorker));
   const count = Math.max(1, Math.ceil(sorted.length / cap));
   const batches: string[][] = Array.from({ length: count }, () => []);
   sorted.forEach((file, index) => {

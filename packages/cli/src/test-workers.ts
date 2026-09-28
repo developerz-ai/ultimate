@@ -63,14 +63,22 @@ export const WORKER_BYTES = 1.25 * 1024 * 1024 * 1024;
 export const WORKER_FLOOR = 1;
 
 /**
- * Files each worker is handed before its `bun test` process is thrown away and a fresh one takes
- * the next batch (`test-batches.ts`, which carries the measurement) — the worker RECYCLE point.
- * 24 until 22.7, when every file re-evaluated the module graph under `--isolate` and the heap grew
- * per file; without isolation a worker's peak is set by its heaviest live PGlite, not by the file
- * count (notificado.co, 4 workers: 24/worker 4.26-4.58 GB in 128-135 s over 8 batches, 48/worker
- * 4.35 GB in 127 s over 4, 12/worker 3.87 GB in 263 s over 16), so fewer, longer batches.
+ * Files each ISOLATED worker is handed before its `bun test` process is thrown away and a fresh one
+ * takes the next batch (`test-batches.ts`, which carries the measurement): under `--isolate` every
+ * file re-evaluates the module graph and the heap grows per file, so the recycle point is what
+ * makes the peak a function of the width rather than of the corpus.
  */
-export const BATCH_FILES_PER_WORKER = 48;
+export const BATCH_FILES_PER_WORKER = 24;
+
+/**
+ * The recycle point WITHOUT isolation (the default since 22.7). A shared worker's peak is set by
+ * its live PGlite, not by how many files it has run, and a batch boundary is pure cost: every
+ * worker restarts, re-imports the app and re-boots its database, and the batch waits on its
+ * slowest file. Measured on notificado.co's unit tier (768 files, 281 s of file time, 3 workers,
+ * no isolation): 6 batches of 48/worker 150-172 s, ONE batch 92-94 s at 3.9 GB peak — the work
+ * floor (281 s / 3). 256 a worker keeps a recycle point for a corpus far past that size.
+ */
+export const SHARED_BATCH_FILES_PER_WORKER = 256;
 
 /**
  * The most `--workers` accepts, on either command. Not a default and not a memory rule — a sanity

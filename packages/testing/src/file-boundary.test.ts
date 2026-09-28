@@ -53,3 +53,18 @@ describe('unit · file boundary env', () => {
     expect(env).toEqual({ A: '1', B: '2' });
   });
 });
+
+describe('unit · the boundary itself', () => {
+  test('the first call takes the baseline; later calls run every hook, a throwing one included', async () => {
+    const { onFileBoundary, runFileBoundary } = await import('./file-boundary');
+    const seen: string[] = [];
+    onFileBoundary(() => {
+      seen.push('a');
+      throw new TypeError('an island disposer threw');
+    });
+    onFileBoundary(() => seen.push('b'));
+    runFileBoundary();
+    runFileBoundary();
+    expect(seen.slice(-2)).toEqual(['a', 'b']);
+  });
+});

@@ -70,7 +70,7 @@ export const corpusHash = (files: readonly string[]): string => {
   return hasher.digest('hex');
 };
 
-/** Per-file durations in ms — Bun's `--timings` format: `{ "path": ms }`. */
+/** Per-file durations in ms — `{ "path": ms }`, as in Bun's `--timings` file's `files`. */
 export type Timings = Readonly<Record<string, number>>;
 
 /**
@@ -129,6 +129,11 @@ export async function readTimings(path: string): Promise<Timings> {
     parsed = JSON.parse(await file.text());
   } catch {
     parsed = undefined;
+  }
+  // Bun's own `--update-timings` writes `{ "version": 1, "files": { "path": ms } }`; a bare map
+  // is accepted too.
+  if (typeof parsed === 'object' && parsed !== null && 'files' in parsed) {
+    parsed = (parsed as { files: unknown }).files;
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new VerifyShardInvalidError({

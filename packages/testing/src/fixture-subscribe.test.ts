@@ -6,19 +6,10 @@
 // already do — and say nothing about the two joins this driver adds: `setRowObserver` seeing a
 // committed write, and `liveQueryDefinition` turning a declared query into something subscribable.
 
-import { afterAll, afterEach, beforeEach, test as bunTest, describe, expect } from 'bun:test';
+import { afterEach, beforeEach, test as bunTest, describe, expect } from 'bun:test';
 import { type Actor, createContext, runWithContext, userActor } from '@ultimat3/core';
 import { database, defaultDriver, entity, setRowObserver, text, uuid } from '@ultimat3/entity';
-import {
-  can,
-  definePermissions,
-  defineRoles,
-  knownPermissions,
-  restorePermissions,
-  restoreRoles,
-  roleDeclarationSites,
-  roleDefinitions,
-} from '@ultimat3/policy';
+import { can, definePermissions, defineRoles } from '@ultimat3/policy';
 import { from, query, registerQueries, resetRegistry, t } from '@ultimat3/query';
 import { createSubscribeDriver, type SubscribeDriver } from './fixture-subscribe';
 import { testName } from './test-types';
@@ -42,17 +33,8 @@ const db = database({ notes });
 // A real permission and a real role, because the whole point of the driver is that the
 // per-subscriber gate runs — a stub policy would make every one of these tests pass with the gate
 // removed.
-const inheritedPermissions = knownPermissions();
-const inheritedRoles = roleDefinitions();
-const inheritedSites = roleDeclarationSites();
 definePermissions(['note:read']);
 defineRoles({ member: { grants: ['note:read'] } });
-// Handed back: a permission set this file leaves non-empty turns every later file's undeclared
-// `can()` into X_PERMISSION_UNKNOWN in a shared worker (22.7).
-afterAll(() => {
-  restorePermissions(inheritedPermissions);
-  restoreRoles(inheritedRoles, inheritedSites);
-});
 
 /** Tenant-scoped and bounded, which `live: true` requires — an unbounded live query is a leak. */
 const liveNotes = query({

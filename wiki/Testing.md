@@ -412,15 +412,21 @@ gates at once — and it is held to a **memory budget**, not to whatever looks f
   module imported once per worker declares once), tasks exactly, and `.tsx` always compiles with
   the app's JSX factory. A repository whose tests need a fresh global per file says
   `"isolate": true` in `x.verify.json`, or passes `--isolate` to `x test` / `x verify`.
-- **Workers recycle.** A pass runs as batches of at most 48 files a worker, each batch a fresh
-  `bun test` process, so a worker's heap is returned every batch.
+- **One long-lived process per worker.** Without isolation a worker's memory is set by its live
+  database, not by how many files it ran, so a pass is ONE `bun test --parallel=N` (recycled only
+  past 256 files a worker; 24 under `--isolate`, whose heap grows per file). Every parallel run
+  reads and refreshes `.x/test-timings.json`, so Bun starts the slowest files first.
+- **One database per worker.** `reusableDatabase(open)` from `@ultimat3/testing` opens an
+  embedded database once per worker and resets its DATA to the template between files (truncate,
+  re-insert the snapshot, reset sequences, triggers off meanwhile) — a PGlite boot from a migrated
+  template costs 2.4-7 s, which a per-file database pays in every file.
 
 Measured, `As of 2026-09-27`, 12-core box, whole process tree sampled every 200 ms:
 
 | run | workers | wall | peak RSS |
 |---|---|---|---|
 | notificado.co `x test unit` (768 files), 22.6.2 default (isolated) | 14 (+parent) | 193 s | 13.1 GB |
-| the same, 22.7 default | 3 | 166-172 s | 3.4-3.8 GB |
+| the same, 22.7 default | 3 | 92-94 s | 3.9 GB |
 | framework `x test unit` (1620 files), no isolation | 3 | 115-125 s | 2.9-3.0 GB |
 | framework `bun run verify` (whole gate, `"isolate": true`) | 3 | 227 s | 3.4 GB |
 
