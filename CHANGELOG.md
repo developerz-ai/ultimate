@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.8.0 - 2026-09-28
+
 ### Added
 
 - **render, cli, core, http:** client navigation â€” soft navigation over server-rendered documents,
@@ -58,6 +62,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **examples/dummy:** the `app/` surface opts into client navigation, `/feed` and `/settings` into
   prefetch; `/posts/new` (`20.5kb`), `/settings` (`57.5kb`), `/posts/:id` (`152.5kb`) and `/pricing`
   (`22kb`) budgets raised by the measured bytes.
+
+### Commits
+
+- feat(render,http,core,cli): client-side navigation â€” soft navigation over server-rendered documents (#570)
 
 ## 22.7.1 - 2026-09-28
 
