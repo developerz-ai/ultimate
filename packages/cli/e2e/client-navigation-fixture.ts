@@ -60,6 +60,8 @@ interface Doc {
   readonly islands?: readonly string[];
   /** `ultimate-scope`: the principal this document was rendered for. */
   readonly scope?: string;
+  /** `false` for a `navigation: 'document'` page: `runtime-render.ts` names no router on it. */
+  readonly router?: boolean;
 }
 
 /** The persisted shell: a nav whose current item carries `aria-current` and the class that styles it. */
@@ -104,9 +106,16 @@ export const INLINE_HEAD = 'window.__inlineRan = (window.__inlineRan || 0) + 1;'
 const documentOf = (doc: Doc): string => {
   const kept = islandMarkup('shell');
   const islands = (doc.islands ?? []).map(islandMarkup);
-  const nav = renderHead(
-    clientNavigationTags({ surface: doc.surface ?? APP, buildId: BUILD, scriptUrl: script.url }),
-  );
+  const nav =
+    doc.router === false
+      ? ''
+      : renderHead(
+          clientNavigationTags({
+            surface: doc.surface ?? APP,
+            buildId: BUILD,
+            scriptUrl: script.url,
+          }),
+        );
   return (
     `<!doctype html><html lang="en"><head><title>${doc.title}</title>` +
     `<meta name="description" content="about ${doc.title}">${nav}${doc.head ?? ''}` +
@@ -248,7 +257,7 @@ const routes: Route[] = [
   })),
   page('/done', (url) => ({ title: `Done ${url.searchParams.get('name') ?? ''}`, path: '/done' })),
   // A page that must be a real document load — a recipient's open, a token consumed.
-  page('/doc', () => ({ title: 'Doc', path: '/doc' }), null),
+  page('/doc', () => ({ title: 'Doc', path: '/doc', router: false }), null),
   // Not pages at all: an evidence GET, a download, JSON.
   route(
     'GET',
@@ -315,7 +324,20 @@ const pipeline = createServer({
     },
   }),
 });
-const server = Bun.serve({ port: 0, fetch: (request) => pipeline.fetch(request) });
+/** Every REQUEST the browser sent a page route, as `METHOD /path purpose` — a refused one too. */
+export const requests: string[] = [];
+const server = Bun.serve({
+  port: 0,
+  fetch: (request) => {
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith('/_x/') && !/\.(js|css)$/.test(url.pathname)) {
+      requests.push(
+        `${request.method} ${url.pathname} ${request.headers.get('x-ultimate-navigation') ?? 'full'}`,
+      );
+    }
+    return pipeline.fetch(request);
+  },
+});
 server.unref();
 other.unref();
 export const base = `http://localhost:${String(server.port)}`;
@@ -334,16 +356,29 @@ export const session = (): E2eBrowser | undefined => browser;
 /** The suite's tab. */
 export const currentTab = (): E2eTab => tab;
 
-/** Opens this suite's own browser and tab; call inside the suite's `describe`. */
+/** A hook's own deadline — above the browser's 30 s launch budget, never Bun's 5 s default. */
+const HOOK_TIMEOUT_MS = 60_000;
+
+/**
+ * Opens this suite's own browser and tab; call inside the suite's `describe`. Deterministic both
+ * ways, because the suites share one test process with every other suite of the package: the close
+ * is AWAITED until Chrome has exited (a browser still shutting down slowed the next suite's launch
+ * past its deadline on a 4-CPU runner), and a launch that outlived its `beforeAll` — whose hook
+ * already failed — is still waited for and closed in `afterAll`, or it would keep the process alive.
+ */
 export function useBrowser(): void {
+  let opening: Promise<E2eBrowser | undefined> | undefined;
   beforeAll(async () => {
-    browser = required ? await openE2eBrowser() : await openE2eBrowserIfAvailable();
+    opening = required ? openE2eBrowser() : openE2eBrowserIfAvailable();
+    browser = await opening;
     if (browser === undefined) expect.unreachable('a browser was found and then would not open');
     tab = await browser.session.newTab();
-  }, 60_000);
-  afterAll(() => {
-    browser?.close();
-  });
+  }, HOOK_TIMEOUT_MS);
+  afterAll(async () => {
+    const launched = await opening?.catch(() => undefined);
+    await (launched ?? browser)?.closed?.();
+    browser = undefined;
+  }, HOOK_TIMEOUT_MS);
 }
 
 export const read = (expression: string): Promise<unknown> => tab.evaluate(expression);

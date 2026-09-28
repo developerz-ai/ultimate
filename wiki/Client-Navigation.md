@@ -42,14 +42,14 @@ export const config = defineRoute({ render: 'ssr', …, navigation: 'prefetch' }
 |---|---|---|
 | absent | swaps the page in on a click; never fetches it early | a prefetch gets an empty `204` |
 | `'prefetch'` | also fetches it on hover/focus | a prefetch is answered like a visit |
-| `'document'` | always a real document load | a soft visit gets `204` + `x-ultimate-location`; the browser's own load runs it once |
+| `'document'` | always a real document load; the page itself carries **no router** (`As of 22.8.1`): no script, no navigation metas, none of the router's bytes charged to its budget — a `0b` page stays `0b`, and its own links and forms are plain browser navigations | a soft visit gets `204` + `x-ultimate-location`; the browser's own load runs it once |
 
 **Use `'document'` for every GET that records something** — a recipient opening a link, a download
 logged as evidence, a one-time token. **Use `'prefetch'` only for a GET that does nothing but
 render.** Declaring either on a surface without client navigation refuses the boot
 (`X_ROUTE_NAVIGATION_INVALID`).
 
-An opted-in document carries:
+An opted-in document (every page of the surface except a `'document'` one) carries:
 
 | Tag | Why |
 |---|---|
@@ -57,7 +57,7 @@ An opted-in document carries:
 | `<meta name="x-ultimate-build" content="…">` | the skew check |
 | `<script src="/_x/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
 
-**Budget:** the router is 18,276 B minified (6,852 B gzip) `As of 2026-09-28`. It is **charged** to
+**Budget:** the router is 19,071 B minified (7,065 B gzip) `As of 22.8.1`. It is **charged** to
 every route on the surface, like realtime's page boot, because it is interactivity the app opted
 into. Raise a route's `budget.js` by the measured amount (`bun run budget-raises`).
 
@@ -158,7 +158,10 @@ In one order, so no frame is unstyled and no island runs twice:
    CSP hash — the router re-inserts the same text, and the policy judges it as on a full load.
 
 Inside `document.startViewTransition` when the browser has it and `prefers-reduced-motion` is not
-`reduce`. Style the transition with the standard `::view-transition-*` pseudo-elements.
+`reduce`. Style the transition with the standard `::view-transition-*` pseudo-elements. While it
+animates the browser hit-tests every press to `<html>`, so a press skips the animation to the new
+page and its click is given to the element under the pointer (`As of 22.8.1`): the visitor's first
+click after a swap is never lost.
 
 ## History, scroll, focus
 
@@ -190,7 +193,9 @@ documents, keyed with the query sorted and without the fragment.
 | a `BroadcastChannel('ultimate:navigation')` message from another tab — each of the above posts one | |
 
 Never prefetched at all: a link with `data-x-no-prefetch`, anything the click rules leave to the
-browser, and anything on `Save-Data` or a `2g`/`slow-2g` connection.
+browser, anything on `Save-Data` or a `2g`/`slow-2g` connection, and the page a navigation is
+already fetching. A press or click cancels a pending hover's prefetch, and the focus a press gives a
+link is not an intent — so a fast click sends exactly one request (`As of 22.8.1`).
 
 ## Opting a link or form out
 

@@ -86,6 +86,14 @@ export interface LaunchedBrowser {
   readonly connection: CdpConnection;
   /** Idempotent: closes the connection, kills the process, deletes the profile. */
   close(): void;
+  /**
+   * `close()`, then resolves once the process has EXITED — SIGTERM, then SIGKILL after
+   * `CLOSE_GRACE_MS`, never waiting longer than twice that. What a suite's `afterAll` awaits: a
+   * Chrome told to die but still shutting down competes with the next suite's launch on a 4-CPU
+   * runner, and one still running keeps the test process from exiting at all. Optional so a test
+   * double of a launch need not model a process; `launchChrome` always provides it.
+   */
+  closed?(): Promise<void>;
 }
 
 export interface LaunchOptions {
@@ -125,6 +133,9 @@ function stderrTail(stream: ReadableStream<Uint8Array>): {
  */
 const FAILURE_DRAIN_MS = 1_000;
 
+/** How long a closed Chrome gets to exit on SIGTERM before it is killed outright. */
+export const CLOSE_GRACE_MS = 5_000;
+
 const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
   Promise.race([work, Bun.sleep(ms)]);
 
@@ -163,9 +174,24 @@ export async function launchChrome(options: LaunchOptions): Promise<LaunchedBrow
     child.kill();
     rmSync(profileDir, { recursive: true, force: true });
   };
+  let exiting: Promise<void> | undefined;
+  const closeAndWait = (): Promise<void> => {
+    close();
+    exiting ??= (async () => {
+      const exited =
+        (await within(
+          CLOSE_GRACE_MS,
+          child.exited.then(() => true),
+        )) === true;
+      if (exited) return;
+      child.kill('SIGKILL');
+      await within(CLOSE_GRACE_MS, child.exited);
+    })();
+    return exiting;
+  };
   try {
     await connection.send('Browser.getVersion');
-    return { connection, close };
+    return { connection, close, closed: closeAndWait };
   } catch {
     await within(FAILURE_DRAIN_MS, child.exited);
     close();

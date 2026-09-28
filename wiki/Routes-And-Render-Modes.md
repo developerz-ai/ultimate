@@ -45,7 +45,7 @@ anywhere else `X_ROUTE_NAVIGATION_INVALID` at boot, and any value but these two 
 |---|---|---|
 | absent | swaps it in on a click; never fetches it early | answers a prefetch `204`, runs nothing |
 | `'prefetch'` | also fetches it on hover/focus | answers a prefetch like a visit. Only for a GET that does nothing but render |
-| `'document'` | always a real document load | answers a soft visit `204` + `x-ultimate-location`, runs nothing; the browser's load runs it once. For a GET that records something: an open, a download, a token consumed |
+| `'document'` | always a real document load, and the page carries no router (no script, no metas, no bytes charged) | answers a soft visit `204` + `x-ultimate-location`, runs nothing; the browser's load runs it once. For a GET that records something: an open, a download, a token consumed — and for a `0b` page |
 
 ## The descriptor
 

@@ -142,12 +142,20 @@ export function navigationHeadFor(
   return { surface: surfaceKey(head, surface), buildId: head.buildId, scriptUrl: head.scriptUrl };
 }
 
-/** The router's meta, build and script — only on a surface that opted in. */
+/**
+ * The router's meta, build and script — only on a page of a surface that opted in, and never on a
+ * `navigation: 'document'` page. That page is a document by declaration: every link to it is a real
+ * load, and it is where an app puts a 0 kB page (a recipient's evidence page, a magic link, an
+ * unsubscribe, a payment return — `budget.js: '0b'`, `hydrate: 'never'`). With no router on it, its
+ * own links and forms are the browser's, which is what a document page means; `budgets.ts` weighs
+ * the emitted document, so a page that names no router is charged none.
+ */
 export function navigationTagsOf(
   head: NavigationDocumentHead | undefined,
-  surface: string,
+  entry: Pick<RouteEntry, 'surface' | 'config'>,
 ): readonly HeadTag[] {
-  const tags = navigationHeadFor(head, surface);
+  if (entry.config.navigation === 'document') return [];
+  const tags = navigationHeadFor(head, entry.surface);
   return tags === undefined ? [] : clientNavigationTags(tags);
 }
 

@@ -57,8 +57,14 @@ export const config = defineRoute({
    * `/_x/navigation/<hash>.js`, 18,276 B on every `app/` document, charged like the page boot: it
    * is interactivity this app opted into, and a route cannot remove it. +40 B in the `idle` runtime, which now visits each island root once
    * so it can re-run over a swapped-in body.
+   *
+   * measured: 21,536 B (2026-09-28; `x build --target static`'s `.x/build-stats.json`), against
+   * 22,016 (`21.5kb`).
+   * why: the router's input fixes (22.8.1) — a click the view transition aimed at `<html>` is given
+   * to the element under the pointer, a press skips the running transition, and a press or click
+   * cancels the pending prefetch, so a fast click sends one request, not two (+795 B).
    */
-  budget: { js: '20.5kb', lcp: 1200 },
+  budget: { js: '21.5kb', lcp: 1200 },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 

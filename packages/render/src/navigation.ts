@@ -29,9 +29,18 @@ import {
   formFields,
   handOver,
   linkFacts,
+  type RunningTransition,
   transition,
 } from './navigation-dom';
 import { type Answer, fetchDocument, metaOf } from './navigation-fetch';
+import {
+  type EntryState,
+  entryOf,
+  STATE_KEY,
+  saveEntryScroll,
+  scrollAfter,
+  withoutFragment,
+} from './navigation-history';
 import {
   answerMovesTab,
   type FormFacts,
@@ -75,28 +84,8 @@ export interface NavigationRouter {
   stop(): void;
 }
 
-/** The router's own slot in `history.state`, beside whatever an app keeps there. */
-const STATE_KEY = '__x';
-interface EntryState {
-  readonly scroll: readonly [number, number];
-  /** The document this entry shows — what back/forward compares with the one on screen. */
-  readonly doc: string;
-}
-
 /** One channel per origin: a principal change or a write in one tab empties every tab's cache. */
 const CHANNEL = 'ultimate:navigation';
-
-const withoutFragment = (url: string): string => url.split('#')[0] ?? url;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-const entryOf = (state: unknown): EntryState | undefined => {
-  const entry = isRecord(state) ? state[STATE_KEY] : undefined;
-  return isRecord(entry) && typeof entry['doc'] === 'string'
-    ? (entry as unknown as EntryState)
-    : undefined;
-};
 
 interface RouterWindow extends Window {
   __xNavigation?: NavigationRouter;
@@ -118,6 +107,16 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     ),
   );
   let rendered = withoutFragment(win.location.href);
+  /** The URL a navigation in flight is fetching: a prefetch never asks for it a second time. */
+  let navigatingTo: string | undefined;
+  /** The view transition still animating, which a press skips to the new page. */
+  let animating: RunningTransition | undefined;
+  /** Between a press and its click: the focus the press gives a link is not a hover. */
+  let pressed = false;
+  /** The press landed while a transition was painting over the page (see `onClick`). */
+  let pressedOverTransition = false;
+  /** The pending prefetch of a hover, cancelled by anything that navigates. */
+  let intent: number | undefined;
   let untrusted = false;
   let inflight: AbortController | undefined;
   const live = announcer(doc);
@@ -135,15 +134,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   const offWrite = onClientWrite(forget);
   const offRescope = onRescope(forget);
 
-  const saveScroll = (): void => {
-    const state = (win.history.state ?? {}) as Record<string, unknown>;
-    const held = entryOf(state)?.doc;
-    // Only into the entry of the document ON SCREEN: between a back/forward and its swap, the
-    // current entry is the next page's, and this scroll offset is not its to keep.
-    if (held !== undefined && held !== rendered) return;
-    const entry: EntryState = { scroll: [win.scrollX, win.scrollY], doc: held ?? rendered };
-    win.history.replaceState({ ...state, [STATE_KEY]: entry }, '');
-  };
+  const saveScroll = (): void => saveEntryScroll(win, rendered);
+
   saveScroll();
   // Saved as the visitor scrolls, once the scroll settles — so FORWARD restores too, and a
   // browser's cap on `replaceState` calls is never approached.
@@ -157,7 +149,10 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     fetchDocument(win, doc, url, purpose, init);
 
   const prefetch = (url: string): void => {
-    if (untrusted || withoutFragment(url) === rendered || cache.get(url) !== undefined) return;
+    const key = withoutFragment(url);
+    if (untrusted || key === rendered || key === navigatingTo || cache.get(url) !== undefined) {
+      return;
+    }
     // Cached whatever it answers: an empty `204` (the route did not opt in) is remembered too, so
     // a second hover does not ask again. Only a reusable page ever answers a click (`reusable`).
     cache.set(url, request(url, 'prefetch'));
@@ -168,22 +163,6 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     const detail = { url, method, reason };
     const event = new CustomEvent(NAVIGATION_ERROR_EVENT, { detail, cancelable: true });
     if (doc.dispatchEvent(event)) win.location.assign(win.location.href);
-  };
-
-  /**
-   * Where the new page lands: the saved offset on back/forward, the fragment's element, else the
-   * top. `instant`, whatever the page's `scroll-behavior` says — `@ultimat3/ui`'s reset makes it
-   * `smooth`, and a new page is a new place, which a full load jumps to rather than glides to.
-   */
-  const scrollAfter = (url: string, mode: NavigateOptions['history']): void => {
-    const hash = new URL(url).hash;
-    const target = hash.length > 1 ? doc.getElementById(decodeURIComponent(hash.slice(1))) : null;
-    const saved = entryOf(win.history.state);
-    const to = (left: number, top: number): void =>
-      win.scrollTo({ left, top, behavior: 'instant' as ScrollBehavior });
-    if (mode === 'none' && saved !== undefined) to(saved.scroll[0], saved.scroll[1]);
-    else if (target !== null) target.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
-    else to(0, 0);
   };
 
   const answerFor = (
@@ -231,6 +210,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     inflight?.abort();
     const mine = new AbortController();
     inflight = mine;
+    win.clearTimeout(intent);
+    navigatingTo = withoutFragment(url);
     if (options.history !== 'none') saveScroll();
     const progress = win.setTimeout(
       () => doc.documentElement.setAttribute(NAVIGATING_ATTRIBUTE, ''),
@@ -296,23 +277,30 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         await loadStylesheets(doc, missingStylesheets(doc, next));
         if (mine.signal.aborted) return;
         let swapped: ReturnType<typeof swapDocument> | undefined;
-        await transition(win, () => {
-          // A newer navigation started while the sheets loaded: this answer is no longer asked for.
-          if (mine.signal.aborted) return;
-          swapped = swapDocument(doc, next, owned);
-          // Emptied here and filled after the scripts, so a page with the same title still reads out.
-          live.textContent = '';
-          swapped.body.append(live);
-          rendered = withoutFragment(landed);
-          if (options.history !== 'none') {
-            const same = landed === win.location.href || options.history === 'replace';
-            const state = { [STATE_KEY]: { scroll: [0, 0], doc: rendered } satisfies EntryState };
-            if (same) win.history.replaceState(state, '', landed);
-            else win.history.pushState(state, '', landed);
-          }
-          // Inside the swap, so a view transition's "after" frame is already where the page lands.
-          scrollAfter(landed, options.history);
-        });
+        const track = (running: RunningTransition | undefined): void => {
+          animating = running;
+        };
+        await transition(
+          win,
+          () => {
+            // A newer navigation started while the sheets loaded: this answer is no longer asked for.
+            if (mine.signal.aborted) return;
+            swapped = swapDocument(doc, next, owned);
+            // Emptied here and filled after the scripts, so a page with the same title still reads out.
+            live.textContent = '';
+            swapped.body.append(live);
+            rendered = withoutFragment(landed);
+            if (options.history !== 'none') {
+              const same = landed === win.location.href || options.history === 'replace';
+              const state = { [STATE_KEY]: { scroll: [0, 0], doc: rendered } satisfies EntryState };
+              if (same) win.history.replaceState(state, '', landed);
+              else win.history.pushState(state, '', landed);
+            }
+            // Inside the swap, so a view transition's "after" frame is already where the page lands.
+            scrollAfter(win, doc, landed, options.history);
+          },
+          track,
+        );
         const done = swapped;
         if (done === undefined) return;
         if (method === 'POST' && answerMovesTab(facts)) {
@@ -339,12 +327,37 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       win.clearTimeout(progress);
       if (inflight === mine) {
         inflight = undefined;
+        navigatingTo = undefined;
         doc.documentElement.removeAttribute(NAVIGATING_ATTRIBUTE);
       }
     }
   };
 
+  const onPress = (): void => {
+    pressed = true;
+    pressedOverTransition = animating !== undefined;
+    // A press is not a hover: the click it becomes navigates, and a guess on its heels is a
+    // second request for the same page. And a press during the animation skips to the new page.
+    win.clearTimeout(intent);
+    animating?.skipTransition?.();
+  };
+  const onRelease = (): void => {
+    pressed = false;
+  };
+
   const onClick = (event: MouseEvent): void => {
+    win.clearTimeout(intent);
+    // While a view transition paints, the browser hit-tests every press to `<html>`: the press
+    // skipped the animation (`onPress`), the release landed on the real element, and the click —
+    // aimed at their common ancestor — reached nothing. The visitor's first click after a swap was
+    // lost. It is given to the element under the pointer NOW, whatever it is: a link, a submit
+    // button, an island's own control.
+    if (pressedOverTransition && event.target === doc.documentElement) {
+      pressedOverTransition = false;
+      const hit = doc.elementFromPoint(event.clientX, event.clientY);
+      if (hit !== null && hit !== doc.documentElement && hit instanceof HTMLElement) hit.click();
+      return;
+    }
     const anchor = anchorOf(event.target);
     if (anchor === null) return;
     const verdict = linkVerdict(linkFacts(win, anchor, event));
@@ -393,8 +406,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     void navigate(verdict.url, { method: 'POST', body });
   };
 
-  let intent: number | undefined;
   const onIntent = (event: Event): void => {
+    // The focus a press gives a link: its click is a moment away, and it navigates.
+    if (event.type === 'focusin' && pressed) return;
     const anchor = anchorOf(event.target);
     if (anchor === null) return;
     const verdict = linkVerdict(linkFacts(win, anchor));
@@ -456,6 +470,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   doc.addEventListener('focusin', onIntent);
   doc.addEventListener('touchstart', onIntent, { passive: true });
   win.addEventListener('popstate', onPop);
+  doc.addEventListener('pointerdown', onPress, { capture: true, passive: true });
+  doc.addEventListener('pointerup', onRelease, { capture: true, passive: true });
+  doc.addEventListener('pointercancel', onRelease, { capture: true, passive: true });
 
   const router: NavigationRouter = {
     navigate,
@@ -469,6 +486,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       doc.removeEventListener('focusin', onIntent);
       doc.removeEventListener('touchstart', onIntent);
       win.removeEventListener('popstate', onPop);
+      doc.removeEventListener('pointerdown', onPress, { capture: true });
+      doc.removeEventListener('pointerup', onRelease, { capture: true });
+      doc.removeEventListener('pointercancel', onRelease, { capture: true });
       offWrite();
       offRescope();
       channel?.close();

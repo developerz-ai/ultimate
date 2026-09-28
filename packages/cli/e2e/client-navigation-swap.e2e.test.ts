@@ -6,8 +6,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  base,
   click,
   currentTab,
+  MARK,
   noBrowser,
   ran,
   read,
@@ -215,6 +217,34 @@ describe.skipIf(noBrowser)('client navigation · the swap and its fallbacks', ()
         ),
       ).toBe(0);
       expect(await read('window.__inlineRan')).toBe(1);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a navigation: 'document' page carries no router: its links are the browser's, and the next soft page has one again",
+    async () => {
+      await currentTab().goto(`${base}/doc`);
+      await currentTab().waitFor('document.title === "Doc"', 'the document page');
+      expect(await read('window.__xNavigation === undefined')).toBe(true);
+      expect(
+        await read('document.querySelectorAll("script[src*=\'/_x/navigation/\']").length'),
+      ).toBe(0);
+      await read(MARK);
+      ran.length = 0;
+      await click('to-b');
+      await currentTab().waitFor(
+        'window.__kept === undefined && document.title === "B"',
+        'a full load',
+      );
+      expect(ran).toEqual(['GET /b full']);
+      await currentTab().waitFor('window.__xNavigation !== undefined', 'the router, back');
+      await read(MARK);
+      ran.length = 0;
+      await click('to-a');
+      await currentTab().waitFor('document.title === "A"', 'A');
+      expect(await sameDocument()).toBe(true);
+      expect(ran).toEqual(['GET /a soft']);
     },
     TIMEOUT_MS,
   );
