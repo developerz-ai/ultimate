@@ -1,0 +1,48 @@
+plan: 101-audit-bugs-and-gaps
+title: "Audit sweep: bugs, gaps, drift"
+status: not_started
+created_by: sebi
+worked_by: ""
+owner: sebi
+percent: 0
+current_focus: "01-core-money-storage.md, 02-db-transaction.md, 03-http-entity.md can start in parallel; owner decisions needed before 09 section A"
+slices:
+  - file: 01-core-money-storage.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 02-db-transaction.md
+    tier: 1
+    status: not_started
+    percent: 0
+  - file: 03-http-entity.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 04-jobs.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 05-tier4-5-services.md
+    tier: 4
+    status: not_started
+    percent: 0
+  - file: 06-cli.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 07-release-ci.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 08-architecture-dedup.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 09-gaps-and-docs.md
+    tier: 0
+    status: not_started
+    percent: 0
+evidence: []
+notes: "Audited at fcfe31dc (22.8.2). Unaudited: realtime server, render SSR, db migrate/drift, entity repos/tenancy, http pipeline stages, auth oauth/jwks, most guards and CLI generators."
+last_updated: 2026-09-28
