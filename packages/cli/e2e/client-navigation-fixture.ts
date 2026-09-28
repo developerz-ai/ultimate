@@ -356,16 +356,29 @@ export const session = (): E2eBrowser | undefined => browser;
 /** The suite's tab. */
 export const currentTab = (): E2eTab => tab;
 
-/** Opens this suite's own browser and tab; call inside the suite's `describe`. */
+/** A hook's own deadline — above the browser's 30 s launch budget, never Bun's 5 s default. */
+const HOOK_TIMEOUT_MS = 60_000;
+
+/**
+ * Opens this suite's own browser and tab; call inside the suite's `describe`. Deterministic both
+ * ways, because the suites share one test process with every other suite of the package: the close
+ * is AWAITED until Chrome has exited (a browser still shutting down slowed the next suite's launch
+ * past its deadline on a 4-CPU runner), and a launch that outlived its `beforeAll` — whose hook
+ * already failed — is still waited for and closed in `afterAll`, or it would keep the process alive.
+ */
 export function useBrowser(): void {
+  let opening: Promise<E2eBrowser | undefined> | undefined;
   beforeAll(async () => {
-    browser = required ? await openE2eBrowser() : await openE2eBrowserIfAvailable();
+    opening = required ? openE2eBrowser() : openE2eBrowserIfAvailable();
+    browser = await opening;
     if (browser === undefined) expect.unreachable('a browser was found and then would not open');
     tab = await browser.session.newTab();
-  }, 60_000);
-  afterAll(() => {
-    browser?.close();
-  });
+  }, HOOK_TIMEOUT_MS);
+  afterAll(async () => {
+    const launched = await opening?.catch(() => undefined);
+    await (launched ?? browser)?.closed?.();
+    browser = undefined;
+  }, HOOK_TIMEOUT_MS);
 }
 
 export const read = (expression: string): Promise<unknown> => tab.evaluate(expression);

@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import {
   CHROME_CANDIDATES,
   CHROME_PATH_ENV,
+  CLOSE_GRACE_MS,
   chromeLaunchFlags,
   findChrome,
   launchChrome,
@@ -114,6 +115,36 @@ describe('launchChrome', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test('closed() resolves once the process has exited — at once when SIGTERM ends it', async () => {
+    const { fake, dir } = await fakeBrowser(`${ANSWER}sleep 30\n`);
+    try {
+      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+      const started = performance.now();
+      await launched.closed?.();
+      expect(performance.now() - started).toBeLessThan(CLOSE_GRACE_MS);
+      // Idempotent: the second call is the same wait, already over.
+      await launched.closed?.();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('closed() kills a browser that ignores SIGTERM, and still resolves — bounded', async () => {
+    const { fake, dir } = await fakeBrowser(
+      `trap '' TERM\n${ANSWER}while true; do sleep 1; done\n`,
+    );
+    try {
+      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+      const started = performance.now();
+      await launched.closed?.();
+      const took = performance.now() - started;
+      expect(took).toBeGreaterThanOrEqual(CLOSE_GRACE_MS - 100);
+      expect(took).toBeLessThan(CLOSE_GRACE_MS * 2 + 1_000);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   test('a browser that dies before answering is X_CDP_LAUNCH_FAILED quoting its own stderr', async () => {
     const { fake, dir } = await fakeBrowser(

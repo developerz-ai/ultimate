@@ -29,6 +29,11 @@ export interface E2eBrowser {
   readonly session: E2eSession;
   /** Idempotent, and it closes both halves: the CDP socket, then the process and its profile. */
   close(): void;
+  /**
+   * `close()`, resolving once the process has exited (bounded — `CLOSE_GRACE_MS`, then SIGKILL).
+   * Optional so a test double need not model a process; the launched browser always has it.
+   */
+  closed?(): Promise<void>;
 }
 
 export interface OpenE2eBrowserOptions {
@@ -55,6 +60,10 @@ const compose = (launched: LaunchedBrowser, session: E2eSession, page: E2eTab): 
   // the process out from under an open connection makes every in-flight call report "the browser
   // closed the CDP connection", which is true and useless.
   close: () => launched.close(),
+  closed: async () => {
+    if (launched.closed === undefined) launched.close();
+    else await launched.closed();
+  },
 });
 
 /**

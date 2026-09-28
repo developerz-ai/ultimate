@@ -138,9 +138,10 @@ describe.skipIf(chrome === undefined && !required)(
       await page.waitForServiceWorker();
     }, HOOK_TIMEOUT_MS);
 
-    afterAll(() => {
-      browser?.close();
-    });
+    // Awaited until Chrome has EXITED (bounded): the next suite in this process launches its own.
+    afterAll(async () => {
+      await browser?.closed?.();
+    }, 30_000);
 
     test(
       'it installs, activates and takes control of the page',
