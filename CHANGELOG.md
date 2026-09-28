@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.8.1 - 2026-09-28
+
 ### Fixed
 
 - **cli:** a `navigation: 'document'` page no longer carries the client router. Every page of a
@@ -37,6 +41,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   pressed and released at the element's centre through `Input.dispatchMouseEvent`), so an overlay
   painted over the element receives it, as it would a person's. `click()` dispatches at the element
   and cannot see that.
+
+### Commits
+
+- fix(cli): a navigation: 'document' page ships no router (#573)
 
 ## 22.8.0 - 2026-09-28
 
