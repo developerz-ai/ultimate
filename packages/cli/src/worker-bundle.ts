@@ -23,6 +23,12 @@ export const PAGE_BOOT_BASE_PATH = '/_x/page-boot';
 /** Realtime's page boot, from the APP's install. */
 export const PAGE_BOOT_SPECIFIER = '@ultimat3/realtime/boot';
 
+/** Under the dev namespace too; one per document whose surface opted into client navigation. */
+export const NAVIGATION_BASE_PATH = '/_x/navigation';
+
+/** Render's client router, from the APP's install — the copy its documents were rendered by. */
+export const NAVIGATION_SPECIFIER = '@ultimat3/render/navigation';
+
 /** One framework script: the sync worker or the page boot. */
 export interface FrameworkScript {
   /** `<base>/<hash>.js` — what the document names. */
@@ -70,6 +76,23 @@ export function buildPageBoot(
     'page boot',
     PAGE_BOOT_SPECIFIER,
     PAGE_BOOT_BASE_PATH,
+    options.entry,
+  );
+}
+
+/**
+ * The client router (`navigation: { client }` in `app.config.ts`), or `undefined` when the app's
+ * render predates it. Built only when a surface opted in — see `pageNavigation`.
+ */
+export function buildNavigationScript(
+  root: string,
+  options: BuildSyncWorkerOptions = {},
+): Promise<FrameworkScript | undefined> {
+  return buildFrameworkScript(
+    root,
+    'client router',
+    NAVIGATION_SPECIFIER,
+    NAVIGATION_BASE_PATH,
     options.entry,
   );
 }
@@ -156,6 +179,10 @@ export function syncWorkerRoutes(source: SyncWorkerSource): readonly Route[] {
 
 export function pageBootRoutes(source: SyncWorkerSource): readonly Route[] {
   return [scriptRoute(PAGE_BOOT_BASE_PATH, 'assets.page-boot', 'page boot', source)];
+}
+
+export function navigationRoutes(source: SyncWorkerSource): readonly Route[] {
+  return [scriptRoute(NAVIGATION_BASE_PATH, 'assets.navigation', 'client router', source)];
 }
 
 function scriptRoute(

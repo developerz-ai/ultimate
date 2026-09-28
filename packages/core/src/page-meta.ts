@@ -39,3 +39,26 @@ export const CLIENT_SYNC_WORKER_META = 'ultimate-sync-worker';
  * place it learns which types `@ultimat3/realtime`'s persister may write. Absent = none.
  */
 export const CLIENT_PERSIST_META = 'ultimate-persist';
+
+/**
+ * The client router's request headers (`@ultimat3/render`'s `navigation.ts`), read by
+ * `@ultimat3/http`'s navigation gate before any app code runs. `soft` is a visit the router will
+ * swap in; `prefetch` is a guess nobody clicked yet — answered only by a route that opted in.
+ */
+export const CLIENT_NAVIGATION_HEADER = 'x-ultimate-navigation';
+
+/** `<app>:<surface>` of the document the router is running in — the only pages it may swap in. */
+export const CLIENT_NAVIGATION_SURFACE_HEADER = 'x-ultimate-surface';
+
+/**
+ * The principal of the document the router is running in, when it carries `ultimate-scope`.
+ * Absent means an unscoped document. A page rendered for someone else is refused before `load`.
+ */
+export const CLIENT_NAVIGATION_SCOPE_HEADER = 'x-ultimate-navigation-scope';
+
+/**
+ * On a `204` to a router request: "load THIS with a real navigation". The server answers it
+ * instead of a redirect (the handler already ran; the browser follows once) and instead of a page
+ * that must be a real document load (nothing ran; the browser loads it once).
+ */
+export const CLIENT_NAVIGATION_LOCATION_HEADER = 'x-ultimate-location';

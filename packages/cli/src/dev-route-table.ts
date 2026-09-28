@@ -16,6 +16,7 @@ import type { IslandBundle } from './island-bundle';
 import { islandHarnessRoutes } from './island-harness-route';
 import { islandRoutes } from './island-routes';
 import { loadIslandStates } from './island-states-load';
+import { loadNavigation, pageNavigation } from './page-navigation';
 import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { assetRoutes } from './runtime-assets';
@@ -71,6 +72,12 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   const origin = publicOrigin(input.env, site);
   // The same call `serve.ts` makes, so the two boots cannot serve different sync targets.
   const sync = await pageSync(input.root, input.env, input.buildId, input.realtime);
+  // The client router, when a surface opted in (`navigation.client`) — the same call in both boots.
+  const navigation = await pageNavigation(
+    input.root,
+    await loadNavigation(input.root),
+    input.buildId,
+  );
   const errorStyles = await errorPageStyleSources(input.root);
   // Built once at boot and NOT rebuilt with the islands on a watcher tick: a service worker that
   // changes under a page it controls is the update path, and one per keystroke exercises it per save.
@@ -83,7 +90,10 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
           routes: describeRoutes(),
           islands: input.islands(),
           styles: styleBundle(),
-          scripts: sync.scripts,
+          scripts: [
+            ...sync.scripts,
+            ...(navigation.script === undefined ? [] : [navigation.script]),
+          ],
         });
 
   // The app's own MCP endpoint, discovered from `apps/<app>/mcp.ts` and mounted through the SAME
@@ -129,6 +139,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     }),
     ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...sync.routes,
+    ...navigation.routes,
     ...pagePostRoutes(),
     ...appRoutes({
       buildId: input.buildId,
@@ -136,6 +147,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       resolveIsland: (file) => input.islands().resolverFor(file),
       ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
+      ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       themeHead: theme.head,
       ...(origin === undefined ? {} : { origin }),
       ...(pwa === undefined

@@ -35,6 +35,7 @@ import type { ServerHooks } from './hooks';
 import { acceptsHtml } from './html-render';
 import { dropVary, localeFromPath, routeLocalePrefix } from './locale-prefix';
 import { compose, type Middleware } from './middleware';
+import { navigationGate, redirectForRouter } from './navigation';
 import { overlayResponse } from './overlay';
 import { resolvePreferences } from './preferences';
 import { type RateLimitDecision, type RateLimiter, rateLimitSpends } from './rate-limit';
@@ -187,7 +188,8 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       }
       ctx.route = match.route;
       ctx.params = match.params;
-      return undefined;
+      // Before auth and every app hook: a router request a route may not answer runs nothing.
+      return navigationGate(request.raw, ctx.method, ctx.url, match.route.meta.navigation);
     },
 
     /**
@@ -434,6 +436,12 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
     },
 
     response: (request, ctx) => {
+      // First, so everything below lands on the answer the router actually gets.
+      const handedOver =
+        ctx.response === undefined
+          ? undefined
+          : redirectForRouter(request.raw, ctx.response, ctx.url);
+      if (handedOver !== undefined) ctx.response = handedOver;
       const response = ctx.response;
       if (response === undefined) return undefined;
       for (const [name, value] of ctx.headers) response.headers.set(name, value);

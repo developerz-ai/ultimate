@@ -53,6 +53,7 @@ export {
   RouteLoadInvalidError,
   RouteMetaMissingError,
   RouteModeInvalidError,
+  RouteNavigationInvalidError,
   RouteOfflineMissingError,
   RoutePostInvalidError,
   RouteStatusInvalidError,
@@ -111,6 +112,46 @@ export {
   defaultIslandBudget,
   MODE_SPECS,
 } from './modes';
+/** Client-side navigation over server-rendered documents — `navigation: { client }` surfaces. */
+export type { CachedDocument, NavigationCache, NavigationCacheOptions } from './navigation-cache';
+export { cacheKey, NAVIGATION_CACHE_MAX_ENTRIES, navigationCache } from './navigation-cache';
+export type {
+  CachedFacts,
+  FormFacts,
+  FormVerdict,
+  LinkFacts,
+  LinkVerdict,
+  NativeReason,
+  PrefetchFacts,
+  ResponseFacts,
+  ResponseVerdict,
+} from './navigation-rules';
+export {
+  formVerdict,
+  linkVerdict,
+  mayPrefetch,
+  NAVIGATE_EVENT,
+  NAVIGATED_EVENT,
+  NAVIGATING_ATTRIBUTE,
+  NAVIGATION_CACHE_TTL_MS,
+  NAVIGATION_ERROR_EVENT,
+  NAVIGATION_HEADER,
+  NAVIGATION_LOCATION_HEADER,
+  NAVIGATION_MAX_HOPS,
+  NAVIGATION_META,
+  NAVIGATION_NO_PREFETCH_ATTRIBUTE,
+  NAVIGATION_NO_STORE_REUSE_MS,
+  NAVIGATION_PERSIST_ATTRIBUTE,
+  NAVIGATION_PREFETCH_DELAY_MS,
+  NAVIGATION_PROGRESS_DELAY_MS,
+  NAVIGATION_RELOAD_ATTRIBUTE,
+  NAVIGATION_SCOPE_HEADER,
+  NAVIGATION_SURFACE_HEADER,
+  responseVerdict,
+  reusable,
+} from './navigation-rules';
+export type { ClientNavigationHead } from './navigation-tags';
+export { clientNavigationTags } from './navigation-tags';
 export type {
   CompiledPattern,
   RegisterRouteInput,
@@ -145,9 +186,16 @@ export type {
   RouteMetaAsyncFn,
   RouteMetaContext,
   RouteMetaFn,
+  RouteNavigationMode,
   RouteParams,
 } from './route';
-export { DEFAULT_ISLAND_HYDRATE, defineRoute, isRouteConfig, tagKeys } from './route';
+export {
+  DEFAULT_ISLAND_HYDRATE,
+  defineRoute,
+  isRouteConfig,
+  ROUTE_NAVIGATION_MODES,
+  tagKeys,
+} from './route';
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';

@@ -12,6 +12,8 @@ import { BASE_FIX, CACHE_TIER_FIX, TIMEZONE_FIX } from './config-fixes';
 import type { DrainConfig, HealthConfig } from './config-health';
 import { readinessModeIssue } from './config-health';
 import { type Input, lastSaid, layered } from './config-merge';
+import type { NavigationConfig, NavigationSectionInput } from './config-navigation';
+import { mergeNavigation, navigationIssues } from './config-navigation';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, pwaIssues } from './config-pwa';
 import type { SeoConfig, SiteConfig, SiteSectionsInput } from './config-site';
@@ -205,6 +207,7 @@ export interface AppConfig {
   readonly health: HealthConfig;
   readonly site: SiteConfig;
   readonly seo: SeoConfig;
+  readonly navigation: NavigationConfig;
 }
 
 /** `mcp` is the only member, and it is NESTED — `Input<AiConfig>` would make it all-or-nothing. */
@@ -223,7 +226,7 @@ export interface PwaConfigInput extends Omit<Input<PwaConfig>, 'offline'> {
   readonly offline?: Input<PwaOfflineConfig> | undefined;
 }
 
-export interface AppConfigInput extends SiteSectionsInput {
+export interface AppConfigInput extends SiteSectionsInput, NavigationSectionInput {
   readonly name: string;
   readonly locales?: readonly string[] | undefined;
   readonly defaultLocale?: string | undefined;
@@ -265,7 +268,7 @@ function isLocale(value: string): boolean {
   }
 }
 
-function defaults(name: string): Omit<AppConfig, 'name' | 'site' | 'seo'> {
+function defaults(name: string): Omit<AppConfig, 'name' | 'site' | 'seo' | 'navigation'> {
   return {
     locales: ['en'],
     defaultLocale: 'en',
@@ -373,10 +376,10 @@ function validate(config: AppConfig): void {
   }
 
   // What an install needs, asked at BOOT and not at emit — `config-pwa.ts` owns the rules and the
-  // remedy, because `pwa.enabled` turning four other requirements on is a question about that block
-  // and nothing else here.
+  // remedy: `pwa.enabled` turning four other requirements on is a question about that block alone.
   if (pwaIssues(config.pwa, issues)) pwaFix.push(PWA_FIX);
   siteIssues(config, issues);
+  navigationIssues(config, issues);
 
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
@@ -489,6 +492,7 @@ export function defineConfig(
       layers.map((layer) => layer.health),
     ),
     ...mergeSite(layers),
+    ...mergeNavigation(layers),
   };
 
   validate(config);

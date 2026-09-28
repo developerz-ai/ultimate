@@ -36,6 +36,17 @@ page, and its form can post to itself with no JavaScript. Declare optional input
 client posts. Not an export name, or on `render: 'static'`: `X_ROUTE_POST_INVALID` at declaration;
 naming no registered action: the same code at boot.
 
+### `navigation` — how the client router treats this page
+
+Only on a surface listed in `app.config.ts` `navigation.client` ([Client navigation](Client-Navigation));
+anywhere else `X_ROUTE_NAVIGATION_INVALID` at boot, and any value but these two at declaration.
+
+| Value | The router | The server, before `load` |
+|---|---|---|
+| absent | swaps it in on a click; never fetches it early | answers a prefetch `204`, runs nothing |
+| `'prefetch'` | also fetches it on hover/focus | answers a prefetch like a visit. Only for a GET that does nothing but render |
+| `'document'` | always a real document load | answers a soft visit `204` + `x-ultimate-location`, runs nothing; the browser's load runs it once. For a GET that records something: an open, a download, a token consumed |
+
 ## The descriptor
 
 `route` is the one primitive whose façade is a **normalized descriptor** rather than a set of projection methods, because a route declares no behaviour to project. It is read by the router, the prerenderer, the sitemap and the budget check — and is designed to be read by `sw.js` generation, which no build calls yet ([#362](https://github.com/developerz-ai/ultimate/issues/362)). The descriptor's job is to hand all of them **one shape** so none of them branches. There is no `.describe()` on a route either — `describeRoutes()` is the one route list.

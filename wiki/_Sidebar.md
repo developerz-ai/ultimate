@@ -37,6 +37,7 @@
 - [Batching and preloading](Batching-And-Preloading)
 - [N+1 detection](N-Plus-One-Detection)
 - [PWA and offline](PWA-And-Offline)
+- [Client navigation](Client-Navigation)
 - [MCP and AI](MCP-And-AI)
 - [Agents](Agents)
 - [Admin dashboard](Admin-Dashboard)

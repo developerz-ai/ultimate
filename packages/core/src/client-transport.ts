@@ -21,6 +21,7 @@ import type { Answer, TransportRequest } from './client-dispatch';
 import { dispatch } from './client-dispatch';
 import { transportFailed } from './client-problem';
 import { scopeChanged } from './client-scope-error';
+import { notifyClientWrite } from './client-writes';
 import type { RecordEnvelope } from './record-envelope';
 import { decodeRecordEnvelope } from './record-envelope';
 import { pageClient, recordSink } from './record-sink';
@@ -31,22 +32,31 @@ export async function clientTransport<T = unknown>(req: TransportRequest): Promi
   const read = req.method === 'GET';
   const issued = pageClient().scope.epoch;
   const flight = req.flight;
-  const answer: Answer =
-    flight === undefined
-      ? await dispatch(req, read, issued, undefined)
-      : await flight.run({
-          // A mutation never joins another mutation, idempotency key or not: the key is for the
-          // server's replay, and sharing one dispatch would hide the second intent from it.
-          key: read ? flight.keyFor(req.url, { signal: req.signal, fresh: req.fresh }) : undefined,
-          abortable: read,
-          // A stream is read once, so a second attempt re-sends a body that is already spent —
-          // and fails as the network would, until the attempts run out. One attempt, always.
-          retry: req.rawBody instanceof ReadableStream ? ONCE : req.retry,
-          run: (signal) => dispatch(req, read, issued, signal),
-          // `dispatch` makes every wire failure `X_CLIENT_TRANSPORT_FAILED`; a bare throw that
-          // reaches the flight is a caller hook's, never the network's.
-          classified: true,
-        });
+  let answer: Answer;
+  try {
+    answer =
+      flight === undefined
+        ? await dispatch(req, read, issued, undefined)
+        : await flight.run({
+            // A mutation never joins another mutation, idempotency key or not: the key is for the
+            // server's replay, and sharing one dispatch would hide the second intent from it.
+            key: read
+              ? flight.keyFor(req.url, { signal: req.signal, fresh: req.fresh })
+              : undefined,
+            abortable: read,
+            // A stream is read once, so a second attempt re-sends a body that is already spent —
+            // and fails as the network would, until the attempts run out. One attempt, always.
+            retry: req.rawBody instanceof ReadableStream ? ONCE : req.retry,
+            run: (signal) => dispatch(req, read, issued, signal),
+            // `dispatch` makes every wire failure `X_CLIENT_TRANSPORT_FAILED`; a bare throw that
+            // reaches the flight is a caller hook's, never the network's.
+            classified: true,
+          });
+  } finally {
+    // After it settles, landed or not — a write that failed on the wire may still have committed,
+    // and announcing it before it settled left a window for a prefetch to cache the old state.
+    if (!read) notifyClientWrite(req.url);
+  }
   const current = pageClient().scope.epoch;
   // A read that raced the abort still belongs to the previous principal.
   if (read && current !== issued) throw scopeChanged(req.url, issued, current);

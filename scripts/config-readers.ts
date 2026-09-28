@@ -68,6 +68,7 @@ export const CONFIG_FILES = [
   'packages/core/src/config-pwa.ts',
   'packages/core/src/config-site.ts',
   'packages/core/src/config-health.ts',
+  'packages/core/src/config-navigation.ts',
 ] as const;
 export const CONFIG_FILE = CONFIG_FILES[0];
 export const ROOT_INTERFACE = 'AppConfig';
@@ -168,6 +169,9 @@ export const SECTION_PACKAGE: Readonly<Record<string, string>> = {
   health: 'core',
   // why: `AppConfig.site` is the public origin; the CLI's document and sitemap builders read it.
   site: 'cli',
+  // why: `AppConfig.navigation` is the client router's opt-in; the CLI reads it to build and name
+  // the router (`page-navigation.ts`), and no package is named `navigation`.
+  navigation: 'cli',
   theme: 'ui',
 };
 

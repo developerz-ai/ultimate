@@ -129,9 +129,13 @@ var props=p?JSON.parse(p.textContent||'{}'):{};
 return el.__x=import(e).then(function(m){return m.mount(el,props)}).then(
 function(r){el.setAttribute('${ISLAND_MOUNTED_ATTRIBUTE}','');return r},
 function(x){el.setAttribute('${ISLAND_FAILED_ATTRIBUTE}',x&&x.message||'1');throw x})}
-function each(s,f){Array.prototype.forEach.call(document.querySelectorAll(s),f)}
+function each(s,f){Array.prototype.forEach.call(document.querySelectorAll(s),function(el){if(!el.__v){el.__v=1;f(el)}})}
 function hush(){}
 `.trim();
+// `each` visits an island root ONCE per tab (`el.__v`): the client router (`navigation-swap.ts`)
+// re-runs this same runtime over every body it swaps in, and an island it carried across
+// (`data-x-persist`) must not get a second `catchUp` — its listeners would replay every later click
+// twice. One bootstrap path, safe to run again, instead of a second mount API for the router.
 // `hush` above: `boot` rethrows, so every runtime below has to terminate the chain it starts or
 // the page reports an unhandled rejection for a failure it already recorded on the element.
 

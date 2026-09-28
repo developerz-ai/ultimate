@@ -50,8 +50,15 @@ export const config = defineRoute({
    * announcement, no realtime and no page boot, and `@ultimat3/core/page` for the two names it
    * shares with the worker and the render. It was 0 while the banner was a server component that
    * could never appear.
+   *
+   * measured: 20,741 B (2026-09-28; `x build --target static`'s `.x/build-stats.json`), against
+   * 20,992 (`20.5kb`).
+   * why: client navigation (`navigation: { client: ['app'] }` in `app.config.ts`) — the router,
+   * `/_x/navigation/<hash>.js`, 18,276 B on every `app/` document, charged like the page boot: it
+   * is interactivity this app opted into, and a route cannot remove it. +40 B in the `idle` runtime, which now visits each island root once
+   * so it can re-run over a swapped-in body.
    */
-  budget: { js: '3kb', lcp: 1200 },
+  budget: { js: '20.5kb', lcp: 1200 },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 

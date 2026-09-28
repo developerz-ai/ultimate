@@ -67,7 +67,8 @@ export interface ServiceWorkerInput {
    */
   readonly documents?: ReadonlyMap<string, RenderedDocument>;
   /**
-   * The page's framework scripts — realtime's page boot and sync worker (`pageSync(…).scripts`).
+   * The page's framework scripts — realtime's page boot and sync worker (`pageSync(…).scripts`), and
+   * the client router when a surface opted in (`pageNavigation(…).script`).
    * Precached beside the island chunks for their reason: source-addressed and `immutable`, and an
    * offline reload that cannot load the boot restores no record and shows the old count.
    */

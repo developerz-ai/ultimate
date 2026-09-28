@@ -90,6 +90,7 @@ export { clientTransport } from './client-transport';
 /** What a typed client puts on the wire. `retryForStatus` is what fills a failure's `retry`. */
 export type { WireAnswer } from './client-wire';
 export { FRAMEWORK_CODE, problemOf, retryForStatus, traceHeaders } from './client-wire';
+export { notifyClientWrite, onClientWrite } from './client-writes';
 export { type Clock, type FrozenClock, frozenClock, systemClock } from './clock';
 export type {
   AiConfig,
@@ -112,6 +113,13 @@ export type {
 export { defineConfig, INBOX_RETENTION_KEYS } from './config';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
+export type {
+  NavigationConfig,
+  NavigationSection,
+  NavigationSectionInput,
+  NavigationSurface,
+} from './config-navigation';
+export { NAVIGATION_SURFACES } from './config-navigation';
 export type {
   PwaColors,
   PwaConfig,
@@ -578,6 +586,10 @@ export { OUTBOX_DRAIN_MESSAGE, type OutboxDrainMessage } from './outbox-drain';
 export {
   APP_UPDATE_MESSAGE,
   CLIENT_BUILD_META,
+  CLIENT_NAVIGATION_HEADER,
+  CLIENT_NAVIGATION_LOCATION_HEADER,
+  CLIENT_NAVIGATION_SCOPE_HEADER,
+  CLIENT_NAVIGATION_SURFACE_HEADER,
   CLIENT_PERSIST_META,
   CLIENT_SCOPE_HEADER,
   CLIENT_SCOPE_META,

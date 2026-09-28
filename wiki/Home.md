@@ -86,6 +86,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Batching and preloading](Batching-And-Preloading) | JIT preload, `.preload()`, `insertAll`/`upsertAll`/`updateWhere`, `inBatches`, the tenancy guarantee |
 | [N+1 detection](N-Plus-One-Detection) | the two codes, `expectedQueryLoop`, four surfaces, why prod pays nothing |
 | [PWA and offline](PWA-And-Offline) | generated `sw.js`, precache budgets, version skew |
+| [Client navigation](Client-Navigation) | soft navigation over server-rendered pages: one config line per surface, swap, prefetch, history, focus |
 | [MCP and AI](MCP-And-AI) | the dev MCP server, every action as a tool, the `llm()` gateway, evals |
 | [Agents](Agents) | `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap |
 | [Admin dashboard](Admin-Dashboard) | the generated admin app and its MCP surface |

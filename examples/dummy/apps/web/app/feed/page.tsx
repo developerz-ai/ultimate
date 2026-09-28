@@ -56,6 +56,10 @@ export const config = defineRoute({
    */
   offline: 'runtime',
   hydrate: 'idle',
+  // Fetched on hover as well as on click: this page's GET only renders — it records nothing, so a
+  // guess that never becomes a visit costs one read. The server refuses a prefetch of any page
+  // that does not say this (`@ultimat3/http`'s navigation gate).
+  navigation: 'prefetch',
   /**
    * measured: 125,056 B (2026-09-22; `x build`'s `buildIslands`, `buildPageBoot`,
    * `hydrateRuntimeBytes`) — the island chunk 92,973 + the update banner 712 + the page boot

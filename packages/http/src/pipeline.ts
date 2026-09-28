@@ -46,7 +46,7 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   {
     name: 'context',
     phase: 'request',
-    why: 'creates the ambient context and binds the matched route; build skew is checked here because a stale client must be told to reload before it gets a 404 for a route it no longer knows',
+    why: "creates the ambient context and binds the matched route; build skew is checked here because a stale client must be told to reload before it gets a 404 for a route it no longer knows — and a client-router request the route may not answer (a prefetch it did not opt into, a soft visit to anything but a page of that router's surface) is answered here, before auth or any app code runs",
   },
   {
     name: 'locale',
@@ -92,7 +92,7 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   {
     name: 'response',
     phase: 'finalize',
-    why: 'last: CORS, security headers, server-timing and the accumulated context headers are merged onto whatever the stages produced',
+    why: 'last: a redirect answered to a client-router request becomes 204 + x-ultimate-location (the router follows it once, never fetch), then CORS, security headers, server-timing and the accumulated context headers are merged onto whatever the stages produced',
   },
 ];
 

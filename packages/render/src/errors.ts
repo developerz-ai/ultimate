@@ -27,6 +27,7 @@ export const RENDER_ERROR_CODES = [
   'X_STYLES_GLOBAL_MISSING',
   'X_ASSET_MISSING',
   'X_ROUTE_POST_INVALID',
+  'X_ROUTE_NAVIGATION_INVALID',
 ] as const;
 
 export type RenderErrorCode = (typeof RENDER_ERROR_CODES)[number];
@@ -51,6 +52,8 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
     'a surface renders documents whose CSS defines no :root custom properties',
   X_ASSET_MISSING: 'a page names a site asset the app does not have',
   X_ROUTE_POST_INVALID: "a page route's post binding cannot be mounted",
+  X_ROUTE_NAVIGATION_INVALID:
+    "a route's navigation is not 'prefetch' or 'document', or its surface has no client navigation",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -196,6 +199,21 @@ export class RoutePostInvalidError extends UltimateError {
       code: RoutePostInvalidError.code,
       cause,
       fix: "defineRoute({ render: 'ssr', ..., post: '<actionExportName>' }) naming an action the app registers — x actions list --json prints them",
+    });
+  }
+}
+
+/**
+ * `defineRoute({ navigation })` that says nothing a process can honour: a value other than
+ * `'prefetch'` or `'document'`, or — at boot — a page whose surface has no client navigation.
+ */
+export class RouteNavigationInvalidError extends UltimateError {
+  static readonly code = 'X_ROUTE_NAVIGATION_INVALID' as const;
+  constructor(cause: string) {
+    super({
+      code: RouteNavigationInvalidError.code,
+      cause,
+      fix: "defineRoute({ ..., navigation: 'prefetch' | 'document' }) on a page whose surface is listed in app.config.ts navigation.client, or remove the key",
     });
   }
 }

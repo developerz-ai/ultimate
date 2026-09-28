@@ -164,6 +164,21 @@ describe('cdpE2eTab', () => {
     expect(recorded).toEqual([true, false]);
   });
 
+  test('scripting() is THIS tab’s switch: script execution disabled, then enabled again', async () => {
+    const { connection, calls } = fakeConnection();
+    const page = tabOn(connection);
+
+    await page.scripting(false);
+    await page.scripting(true);
+
+    expect(
+      calls.map((call) => [call.method, call.params['value'], call.sessionId] as const),
+    ).toEqual([
+      ['Emulation.setScriptExecutionDisabled', true, 'session-1'],
+      ['Emulation.setScriptExecutionDisabled', false, 'session-1'],
+    ]);
+  });
+
   test('waitFor refuses by name when the expression never holds', async () => {
     const { connection } = fakeConnection({
       'Runtime.evaluate:Boolean(window.ready)': value(false),

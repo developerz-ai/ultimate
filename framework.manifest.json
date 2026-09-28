@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5595cec4a073e9ff983c1290a5600602dc8d5966f877aa8e731070f978fb6147",
+  "buildId": "31437bbe8a7e29070442dddc19d3ea6f533902f18a9a4139ecff360b02c99945",
   "tiers": {
     "0": [
       "core",
@@ -2801,6 +2801,11 @@
     },
     {
       "code": "X_ROUTE_MODE_INVALID",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ROUTE_NAVIGATION_INVALID",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
     },
