@@ -174,7 +174,9 @@ build_flags=""
 for arg in "$@"; do
   case "$arg" in --json|-j) build_flags="--json" ;; esac
 done
-bunx x build --target static $build_flags
+# \`--no-preflight\`: the build's own preflight is x verify's first six steps (typecheck, lint,
+# boundaries, filesize, package-shape, errors), and the gate below runs them anyway — once is enough.
+bunx x build --target static --no-preflight $build_flags
 exec bunx x verify "$@"
 `;
 

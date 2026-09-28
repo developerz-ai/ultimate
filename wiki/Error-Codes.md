@@ -994,6 +994,10 @@ Two sets override the table, in `failures.ts`:
 | `X_FEATURE_UNKNOWN` | x g --feature names a slice that does not exist | A generator writing into a slice refuses one with no directory rather than inventing an entity table for it | x g resource <feature> |
 | `X_ROUTE_ASYNC_PAGE` | a route exports an async Page | Its data read bypasses load, so it gets neither load caching nor its meta | in <file>: move each await in Page into export const load = (ctx) => ..., and read it with the page data prop |
 | `X_BUDGET_PARAMS_UNDECLARED` | a dynamic route with a budget declares no prerender() paths to weigh it by | The budgets step: the build renders an app/ route only to weigh it, and a route with params needs one real path to render | add prerender: () => [{ <param>: '<a real value>' }] to the route's defineRoute, then x build --target static |
+| `X_TEST_BUDGET_INVALID` | a test memory budget or worker cap env var does not parse | ULTIMATE_TEST_MEMORY_BUDGET is not a size like 3g/512m, or ULTIMATE_TEST_MAX_WORKERS is not a positive integer | ULTIMATE_TEST_MEMORY_BUDGET=3g x verify   # or unset it; ULTIMATE_TEST_MAX_WORKERS takes a positive integer |
+| `X_VERIFY_SHARD_INVALID` | x verify --shard was given a spec or a step list it cannot split | the spec is not i/n with 1<=i<=n, --only is missing, or --only names a step that is not unit, contract or job | x verify --only unit --shard 1/4 --json |
+| `X_VERIFY_MERGE_INCOMPLETE` | x verify merge was handed parts that do not add up to the whole gate | a gate step is missing, a shard of a split step is missing or duplicated, or two shards counted different corpora | x verify merge parts/*.json --json   # after every CI job uploaded its part |
+| `X_VERIFY_MERGE_INPUT` | a part handed to x verify merge is not an x verify --json document | the file is missing, empty, not JSON, or not the output of x verify --json | x verify --only <step> --json > part.json   # one document per part |
 
 ## Reserved codes
 

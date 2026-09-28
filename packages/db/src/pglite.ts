@@ -299,6 +299,10 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
         (driver) => driver.close(),
         () => undefined,
       );
+      // A closed PGlite's WASM heap (~0.5 GB) is returned only when the collector finds it, and
+      // a test worker that opens one per file held two or three dead ones at a time. One full
+      // collection at close hands it back before the next file boots its own.
+      if (pending !== undefined) Bun.gc(true);
     },
   };
 }

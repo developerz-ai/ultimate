@@ -294,6 +294,7 @@ const CATALOG = {
   // included. Its own line and not `allSkipped` with a zero, because the repair differs — there is
   // no skipped test to read a reason off, so the files the step selected hold no test.
   'cli.verify.ranNothing': 'found no test to run in the file(s) it selected',
+  'cli.verify.merged': 'merged {parts} part(s) — {summary}',
   'cli.verify.serial': 'serial',
   'cli.verify.workers': '{workers} workers',
   'cli.env.checked': '{count} declared variable(s), all present and valid',

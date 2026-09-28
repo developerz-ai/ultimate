@@ -7,18 +7,26 @@
 // reader of either can take it for one. `--skip` stays refused — it would let a caller drop the
 // step that was going to fail and still read the output as a whole-tree verdict.
 
+// why: Bun ships no path-joining primitive: `join`/`isAbsolute` resolve a part path against the cwd.
+import { isAbsolute, join } from 'node:path';
 import { nearestName, renderFixShellArg } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { verifySpec } from './cmd-verify-spec';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError } from './errors';
+import { BadFlagError, MissingPositionalError } from './errors';
 import { readIntFlag } from './flag-number';
-import type { CommandResult } from './output';
+import type { CommandResult, JsonValue } from './output';
 import type { ParsedArgs } from './parse';
-import { flagString } from './parse';
+import { flagBool, flagString } from './parse';
 import { WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 import { VERIFY_STEPS } from './verify-checks';
+import { VerifyMergeInputError, VerifyShardInvalidError } from './verify-errors';
+import { readVerifyFloor } from './verify-floor';
+import type { VerifyPart } from './verify-merge';
+import { mergeParts, parsePart } from './verify-merge';
 import { runVerify } from './verify-run';
+import type { ShardSpec, Timings } from './verify-shard';
+import { assertShardable, parseShard, readTimings } from './verify-shard';
 import type { VerifyStepName } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
 
@@ -32,19 +40,87 @@ export const verifyCommand: CliCommand = {
   spec: verifySpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('verify', ctx.cwd).dir;
-    // Both readers before the run: an unrunnable flag must be refused in milliseconds, not after
+    if (ctx.args.subcommand === 'merge') return mergeCommand(root, ctx.args.positionals, ctx.cwd);
+    // Every reader before the run: an unrunnable flag must be refused in milliseconds, not after
     // `tsc -b` has spent fourteen seconds on a run the caller cannot use.
     const workers = readWorkers(ctx.args);
     const only = readOnlySteps(ctx.args);
-    return runVerify(VERIFY_STEPS, {
+    const shard = await readShard(ctx.args, only);
+    const isolate = flagBool(ctx.args, 'isolate') ? true : undefined;
+    const result = await runVerify(VERIFY_STEPS, {
       root,
       runner: ctx.runner,
       env: ctx.env,
       ...(workers === undefined ? {} : { workers }),
       ...(only === undefined ? {} : { only }),
+      ...(shard === undefined ? {} : { shard }),
+      ...(isolate === undefined ? {} : { isolate }),
     });
+    return shard === undefined ? result : withShardData(result, shard);
   },
 };
+
+/**
+ * `--shard i/n` (and `--timings`), validated before anything runs: only beside `--only`, and only
+ * over the parallel suites. `--timings` without `--shard` is refused rather than ignored.
+ */
+export async function readShard(
+  args: ParsedArgs,
+  only: readonly VerifyStepName[] | undefined,
+): Promise<(ShardSpec & { readonly timings?: Timings }) | undefined> {
+  const raw = flagString(args, 'shard');
+  const timingsPath = flagString(args, 'timings');
+  if (raw === undefined) {
+    if (timingsPath !== undefined) {
+      throw new VerifyShardInvalidError({
+        reason: '--timings balances a --shard split and does nothing without one',
+      });
+    }
+    return undefined;
+  }
+  const spec = parseShard(raw);
+  assertShardable(only);
+  if (timingsPath === undefined) return spec;
+  return { ...spec, timings: await readTimings(timingsPath) };
+}
+
+/** `data.shard`: which slice this part is, per step — what `x verify merge` reads back. */
+const withShardData = (result: CommandResult, shard: ShardSpec): CommandResult => {
+  const data = (result.data ?? {}) as Record<string, JsonValue>;
+  const steps: Record<string, JsonValue> = {};
+  for (const step of result.steps ?? []) {
+    if (step.shard === undefined) continue;
+    steps[step.name] = { corpusHash: step.shard.corpusHash, files: [...step.shard.files] };
+  }
+  return {
+    ...result,
+    data: { ...data, shard: { index: shard.index, total: shard.total, steps } },
+  };
+};
+
+async function mergeCommand(
+  root: string,
+  files: readonly string[],
+  cwd: string,
+): Promise<CommandResult> {
+  if (files.length === 0) {
+    throw new MissingPositionalError({
+      command: 'verify merge',
+      positional: 'part.json…',
+      example: 'x verify merge parts/*.json --json',
+    });
+  }
+  const parts: VerifyPart[] = [];
+  for (const file of files) {
+    const path = isAbsolute(file) ? file : join(cwd, file);
+    const handle = Bun.file(path);
+    if (!(await handle.exists())) {
+      throw new VerifyMergeInputError({ file, reason: 'does not exist' });
+    }
+    parts.push(parsePart(file, await handle.text()));
+  }
+  return mergeParts(parts, await readVerifyFloor(root));
+}
 
 /**
  * The steps `--only` names, or nothing: one step (`--only lint`) or a comma-separated list

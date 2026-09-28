@@ -31,6 +31,7 @@
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
+import { SLOT_HELD_ENV } from './test-slots';
 import { BATCH_FILES_PER_WORKER } from './test-workers';
 
 /**
@@ -38,9 +39,13 @@ import { BATCH_FILES_PER_WORKER } from './test-workers';
  * in `workers x BATCH_FILES_PER_WORKER`, which is every small selection and every `--filter`.
  * Otherwise the fewest groups that fit, dealt round-robin so their sizes differ by at most one.
  */
-export function testBatches(files: readonly string[], workers: number): readonly string[][] {
+export function testBatches(
+  files: readonly string[],
+  workers: number,
+  perWorker: number = BATCH_FILES_PER_WORKER,
+): readonly string[][] {
   const sorted = [...files].sort();
-  const cap = Math.max(1, Math.trunc(workers)) * BATCH_FILES_PER_WORKER;
+  const cap = Math.max(1, Math.trunc(workers)) * Math.max(1, Math.trunc(perWorker));
   const count = Math.max(1, Math.ceil(sorted.length / cap));
   const batches: string[][] = Array.from({ length: count }, () => []);
   sorted.forEach((file, index) => {
@@ -53,6 +58,8 @@ export function testBatches(files: readonly string[], workers: number): readonly
 export interface BatchedRun {
   /** One per batch, in order — `countsOf` reads each one's own Bun summary. */
   readonly results: readonly ExecResult[];
+  /** The width each batch really ran at, after the machine lease. */
+  readonly widths: readonly number[];
   readonly ok: boolean;
   /** The first non-zero exit, or 0. */
   readonly code: number;
@@ -74,7 +81,15 @@ export interface BatchedRun {
 export async function runBatches(input: {
   readonly runner: Runner;
   readonly batches: readonly (readonly string[])[];
-  readonly argsFor: (files: readonly string[]) => readonly string[];
+  /** `width` is the batch's real worker count — the ask, narrowed by the machine lease. */
+  readonly argsFor: (files: readonly string[], width: number) => readonly string[];
+  /** The width each batch asks for; required with `lease`. */
+  readonly workers?: number;
+  /**
+   * Lease the batch's workers from the machine pool (`test-slots.ts`) before it starts, and give
+   * them back when it exits — so two runs on one box share its budget batch by batch.
+   */
+  readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
   readonly options: Parameters<Runner>[1];
   /**
    * Launch no further batch once one is red. Set for a caller-forwarded `--bail`: Bun stops a
@@ -83,9 +98,24 @@ export async function runBatches(input: {
   readonly stopOnFailure?: boolean;
 }): Promise<BatchedRun> {
   const results: ExecResult[] = [];
+  const widths: number[] = [];
   for (const files of input.batches) {
-    const result = await input.runner(input.argsFor(files), input.options);
+    const want = Math.max(1, Math.min(input.workers ?? files.length, files.length));
+    const lease = input.lease === undefined ? undefined : await input.lease(want);
+    const width = Math.min(want, lease?.count ?? want);
+    let result: ExecResult;
+    try {
+      result = await input.runner(
+        input.argsFor(files, width),
+        lease === undefined
+          ? input.options
+          : { ...input.options, env: { ...input.options.env, [SLOT_HELD_ENV]: '1' } },
+      );
+    } finally {
+      lease?.release();
+    }
     results.push(result);
+    widths.push(width);
     if (!result.ok && input.stopOnFailure === true) break;
   }
   const first = results.find((result) => !result.ok);
@@ -106,6 +136,7 @@ export async function runBatches(input: {
           .join('\n');
   return {
     results,
+    widths,
     ok: first === undefined,
     code: first?.code ?? 0,
     durationMs: results.reduce((sum, result) => sum + result.durationMs, 0),

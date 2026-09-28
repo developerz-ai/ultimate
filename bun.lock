@@ -516,6 +516,7 @@
       "name": "@ultimat3/testing",
       "version": "22.6.2",
       "dependencies": {
+        "@ultimat3/action": "22.6.2",
         "@ultimat3/cache": "22.6.2",
         "@ultimat3/core": "22.6.2",
         "@ultimat3/db": "22.6.2",
@@ -526,6 +527,7 @@
         "@ultimat3/policy": "22.6.2",
         "@ultimat3/query": "22.6.2",
         "@ultimat3/realtime": "22.6.2",
+        "@ultimat3/render": "22.6.2",
         "@ultimat3/time": "22.6.2",
       },
     },

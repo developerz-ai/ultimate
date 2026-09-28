@@ -8,6 +8,43 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Changed
+
+- **cli:** the default test width is a memory BUDGET — `min(4 GiB, max(2.75 GiB, 25% of total RAM))` at 1.25 GiB
+  a worker (2 on an 8 GB box, 3 from 16 GB), clamped to `1..cores` — instead of `ceil(cpus x 1.5)` held to 60% of `freemem()` (which
+  counts page cache). The step line prints it: `3 workers (budget 4.0 GB)`.
+  `ULTIMATE_TEST_MEMORY_BUDGET` (e.g. `3g`) and `ULTIMATE_TEST_MAX_WORKERS` override it
+  (`X_TEST_BUDGET_INVALID` on a value that does not parse); `--workers` still wins, and now accepts
+  1. Each batch leases its workers from a machine-wide pool of lock files, so concurrent gates share
+  one budget (`ULTIMATE_TEST_SLOTS=0` turns it off). Without isolation a pass is ONE long-lived
+  `bun test` per run (recycled past 256 files a worker; 24 under `--isolate`), and every parallel run
+  reads and refreshes `.x/test-timings.json` so Bun starts the slowest files first.
+- **cli, testing:** test files are no longer isolated by default: `bun test --parallel=N
+  --no-isolate`. `--isolate` on `x test`/`x verify`, or `"isolate": true` in `x.verify.json`, opts
+  back in. Between files of a worker the testing preload disposes undisposed island mounts,
+  restores `globalThis` and `process.env`, restores the permission/role/catalog registries as a
+  union and the task registry exactly, forgets action paths an earlier file derived, and (in an
+  app) installs the render JSX loader up front. notificado.co `x test unit`, 768 files: 22.6.2's
+  default 14 workers, 193 s, 13.1 GB peak → 3 workers, 134 s, 3.6 GB (89.8 s, 3.7 GB once its
+  test database uses `reusableDatabase`); the framework's own
+  unit tier 115-125 s at 2.9-3.0 GB.
+
+### Added
+
+- **cli:** `x verify --only unit|contract|job --shard i/n [--timings file]` runs one CI job's
+  deterministic slice (round-robin over the sorted list, or greedy longest-first from Bun timings),
+  carrying `data.shard` and `steps[].shard` (`corpusHash`, `files`); the zero-tests floor is
+  deferred to `x verify merge <part.json…>`, which folds every part into the gate verdict and names
+  any gap (`X_VERIFY_SHARD_INVALID`, `X_VERIFY_MERGE_INCOMPLETE`, `X_VERIFY_MERGE_INPUT`). Guide:
+  [CI: the gate across parallel jobs](https://github.com/developerz-ai/ultimate/wiki/CI-Parallel-Gate).
+- **cli:** `x build --no-preflight` skips the six static steps a following `x verify` runs anyway;
+  the scaffolded `bin/check` uses it.
+- **testing:** `reusableDatabase(open)` — one embedded database per worker, its data reset to the
+  template between files (a PGlite boot from a template is 2.4-7 s a file). notificado.co unit with
+  it: 3 workers, 89.8 s, 3.7 GB (134 s without it).
+- **jobs:** `restoreTasks`. **i18n:** `catalogDeclarationCount`. **action:**
+  `forgetHandedOutActionPaths`.
+
 ### Fixed
 
 - **cli:** `x dev` serves an edited COMPONENT, not only an edited page. A reload re-imported only
@@ -34,6 +71,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   preload with no `as` and a font preload with no `crossorigin` are `X_SEO_LINK_INVALID`, thrown at
   render and reported at the route file by the `seo` step. **render:** a link's `href` is part of its
   head-dedupe identity (except `canonical` and hreflang alternates), so two preloads are two tags.
+
+- **action:** `toRoute` honours an unseated action's own pinned `http.path` instead of the style's
+  derived one.
+- **db:** a PGlite client's `close()` runs a full GC, so its WASM heap is returned before the next
+  test file boots its own.
 
 ## 22.6.2 - 2026-09-27
 

@@ -5,9 +5,15 @@
 
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
+import { isAppRoot } from './app-jsx-loader';
 import { RegistryLeakError } from './errors';
+import { runFileBoundary } from './file-boundary';
 import type { ProcessRegistrySnapshot } from './registry-snapshot';
-import { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
+import {
+  captureProcessRegistries,
+  mergeSnapshots,
+  restoreProcessRegistries,
+} from './registry-snapshot';
 
 /**
  * What is REPORTED, and why only these two. Both are BOOT installs — `declareTags` takes the
@@ -34,7 +40,7 @@ import { captureProcessRegistries, restoreProcessRegistries } from './registry-s
  *   | permissions / roles | `restorePermissions` / `restoreRoles` | `@ultimat3/policy` | yes |
  *   | routes | `clearRoutes` | `@ultimat3/render` | **no** |
  *   | jobs | `resetJobs` | `@ultimat3/jobs` | **no** |
- *   | tasks | `resetTasks` | `@ultimat3/jobs` | **no** |
+ *   | tasks | `restoreTasks` | `@ultimat3/jobs` | yes (22.7) |
  *   | actions | `resetRegistry` | `@ultimat3/action` | **no** |
  *   | queries | `resetRegistry` | `@ultimat3/query` | **no** |
  *   | models / prompts / agents | `resetModels` / `resetPrompts` / `resetAgents` | `@ultimat3/ai` | **no** |
@@ -129,6 +135,11 @@ export function installRegistryLeakGuard(): void {
       }
     | undefined;
   const leaks: RegistryLeak[] = [];
+  // Everything every earlier file inherited, merged: what a shared worker restores to.
+  let accumulated: ProcessRegistrySnapshot | undefined;
+  // The locale config before any app code ran — preload time.
+  const pristineLocales = JSON.stringify(captureProcessRegistries().locales);
+  const inApp = isAppRoot();
 
   const close = (): void => {
     if (current === undefined) return;
@@ -137,7 +148,33 @@ export function installRegistryLeakGuard(): void {
     // The repair, at the only point it is safe: the file is over and the next one has not
     // evaluated yet, so what goes back is exactly what that file inherited — module-scope
     // declarations included, which is the half a plain `resetX()` in a `beforeEach` destroys.
-    restoreProcessRegistries(current.snapshot);
+    //
+    // In an APP, declarations are put back as a UNION with what the process holds now (22.7,
+    // shared worker): an app module a test imported lazily declared its permissions and roles once,
+    // for the life of the worker, and taking them away here would leave every later file without
+    // them. The framework repository's own suites keep the exact restore: many of them lean on an
+    // EMPTY permission set (no validation), and a test body's declaration must not switch it on for
+    // every later file. Tasks go back EXACTLY everywhere: one a test body registered must not fire
+    // in the next file's scheduler round.
+    const live = captureProcessRegistries();
+    const merged = inApp ? mergeSnapshots(live, current.snapshot) : current.snapshot;
+    // Locales likewise, in one case: the file's baseline still held the framework's pristine
+    // config and an app's `defineCatalogs()` ran during the file (a lazily imported catalog
+    // module) — that configured the worker for good, since the module will not evaluate again.
+    // A test that called `configureLocales()` by hand is undone, as before.
+    // Only in an app: there `defineCatalogs()` can only be THE app's catalog module, while the
+    // framework repository's own suites define a fixture app's catalogs per test, to be undone.
+    const declaredLazily =
+      inApp &&
+      JSON.stringify(current.snapshot.locales) === pristineLocales &&
+      live.catalogDeclarations > current.snapshot.catalogDeclarations;
+    const restored = {
+      ...merged,
+      locales: declaredLazily ? live.locales : current.snapshot.locales,
+      tasks: current.snapshot.tasks,
+    };
+    restoreProcessRegistries(restored);
+    accumulated = mergeSnapshots(accumulated, restored);
     current = undefined;
   };
 
@@ -146,11 +183,8 @@ export function installRegistryLeakGuard(): void {
   // how an app declares its tags — and everything after this point is the file's own to undo.
   hookHost[BASELINE_HOOK] = () => {
     if (pending === undefined) return;
-    current = {
-      file: pending,
-      before: sampleRegistries(),
-      snapshot: captureProcessRegistries(),
-    };
+    accumulated = mergeSnapshots(accumulated, captureProcessRegistries());
+    current = { file: pending, before: sampleRegistries(), snapshot: accumulated };
     pending = undefined;
   };
 
@@ -172,6 +206,8 @@ export function installRegistryLeakGuard(): void {
       // `.test.tsx` files exist and the convention is `<file>.test.ts`, so the narrower filter
       // costs nothing today; a `.test.tsx` added later is unguarded rather than mis-compiled.
       build.onLoad({ filter: /\.test\.ts$/ }, async (args) => {
+        // Before the registry restore: an island disposed here still needs its fake DOM.
+        runFileBoundary();
         close();
         pending = repoRelative(args.path);
         return {

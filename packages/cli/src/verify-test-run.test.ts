@@ -11,7 +11,7 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { ExecResult, Runner } from './exec';
 import type { TestFile } from './test-select';
 import { filesIn } from './test-shards';
-import { BATCH_FILES_PER_WORKER } from './test-workers';
+import { SHARED_BATCH_FILES_PER_WORKER as BATCH_FILES_PER_WORKER } from './test-workers';
 import { runParallel } from './verify-test-run';
 
 const files = (count: number): readonly TestFile[] =>

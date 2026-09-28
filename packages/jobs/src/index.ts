@@ -308,7 +308,7 @@ export type {
   TaskHandle,
   TaskJobResult,
 } from './task';
-export { getTask, isTaskHandle, registeredTasks, resetTasks, task } from './task';
+export { getTask, isTaskHandle, registeredTasks, resetTasks, restoreTasks, task } from './task';
 /**
  * The tenant a job's body runs under. The TYPE only: `NO_JOB_TENANT`, `jobRunActor` and
  * `jobTenantFor` stay unexported. The first would be a second spelling of `'none'` (axiom 1 — the

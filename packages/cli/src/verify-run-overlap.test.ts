@@ -63,9 +63,9 @@ describe('unit · the static steps overlap the serial suites', () => {
     expect(log.indexOf('end manifest')).toBeGreaterThan(-1);
   });
 
-  // #537: the static group is six CPU-bound processes, so a suite beside it oversubscribing the
-  // cores 1.5x made every step in the window about twice as slow.
-  test('a suite inside the window defaults to one worker per core; one outside keeps its default', async () => {
+  // #537 narrowed a suite inside the window to one worker per core; since 22.7 the default is at
+  // most that everywhere, so no step's context is rewritten — each plans its own budgeted width.
+  test('no suite has its width rewritten, inside the window or out', async () => {
     const seen = new Map<string, number | undefined>();
     const steps = VERIFY_STEP_NAMES.map(
       (name): VerifyStep => ({
@@ -81,11 +81,11 @@ describe('unit · the static steps overlap the serial suites', () => {
     await runVerify(steps, { root: '/nonexistent', runner });
     expect(seen.get('unit')).toBeUndefined();
     expect(seen.get('contract')).toBeUndefined();
-    for (const name of ['live', 'job', 'e2e', 'eval']) expect(seen.get(name)).toBe(sharedWorkers());
+    for (const name of ['live', 'job', 'e2e', 'eval']) expect(seen.get(name)).toBeUndefined();
     // The static steps themselves and everything after the join see the caller's context.
     expect(seen.get('lint')).toBeUndefined();
     expect(seen.get('drift')).toBeUndefined();
-    expect(sharedWorkers()).toBeLessThanOrEqual(defaultWorkers());
+    expect(sharedWorkers()).toBe(defaultWorkers());
   });
 
   test("an explicit --workers is the caller's, inside the window too", async () => {

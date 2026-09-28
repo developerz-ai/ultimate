@@ -27,6 +27,16 @@ export interface CatalogSet<TLocales extends CatalogSources> {
   keys(): string[];
 }
 
+let declarations = 0;
+
+/**
+ * How many times `defineCatalogs()` has run in this process. `@ultimat3/testing` reads it across a
+ * test file: an app's catalog module imported lazily in a test body configures the worker's
+ * locales once for good (the module is cached), while a test that calls `configureLocales()` by
+ * hand is a change to undo — this count is what tells the two apart.
+ */
+export const catalogDeclarationCount = (): number => declarations;
+
 export function defineCatalogs<TLocales extends CatalogSources>(
   input: DefineCatalogsInput<TLocales>,
 ): CatalogSet<TLocales> {
@@ -44,6 +54,7 @@ export function defineCatalogs<TLocales extends CatalogSources>(
     registerCatalog(locale, catalog);
   }
   configureLocales({ supported: locales, fallback: input.default });
+  declarations += 1;
 
   const catalogs = Object.fromEntries(loaded) as Readonly<Record<keyof TLocales & string, Catalog>>;
   return {

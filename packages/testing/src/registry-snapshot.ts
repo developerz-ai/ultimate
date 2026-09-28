@@ -10,6 +10,7 @@
 
 import type { Catalog, Locale, LocaleConfig } from '@ultimat3/i18n';
 import {
+  catalogDeclarationCount,
   catalogFor,
   configureLocales,
   localeConfig,
@@ -18,6 +19,8 @@ import {
   registeredLocales,
   resetCatalogs,
 } from '@ultimat3/i18n';
+import type { TaskHandle } from '@ultimat3/jobs';
+import { registeredTasks, restoreTasks } from '@ultimat3/jobs';
 import type { RoleMap } from '@ultimat3/policy';
 import {
   knownPermissions,
@@ -39,6 +42,14 @@ export interface ProcessRegistrySnapshot {
   readonly roles: RoleMap;
   /** Kept beside the map: restoring through `defineRoles()` would rewrite every site. */
   readonly roleSites: Readonly<Record<string, string>>;
+  /**
+   * Scheduled tasks. Since 22.7 a worker process runs many files in ONE global, so a task a test
+   * body registered (`packages/jobs/src/task.test.ts`'s deliberately throwing `aBrokenDigest`)
+   * fired in every later file's `appManifest` round — 14 framework failures, measured.
+   */
+  readonly tasks: readonly TaskHandle[];
+  /** `defineCatalogs()` calls so far — see `@ultimat3/i18n`'s `catalogDeclarationCount`. */
+  readonly catalogDeclarations: number;
 }
 
 export function captureProcessRegistries(): ProcessRegistrySnapshot {
@@ -48,6 +59,8 @@ export function captureProcessRegistries(): ProcessRegistrySnapshot {
     permissions: knownPermissions(),
     roles: roleDefinitions(),
     roleSites: roleDeclarationSites(),
+    tasks: registeredTasks(),
+    catalogDeclarations: catalogDeclarationCount(),
   };
 }
 
@@ -63,6 +76,7 @@ export function restoreProcessRegistries(snapshot: ProcessRegistrySnapshot): voi
   restoreCatalogs(snapshot.catalogs);
   restorePermissions(snapshot.permissions);
   restoreRoles(snapshot.roles, snapshot.roleSites);
+  restoreTasks(snapshot.tasks);
 }
 
 /**
@@ -98,4 +112,35 @@ function restoreCatalogs(snapshot: readonly (readonly [Locale, Catalog])[]): voi
   for (const locale of new Set([...inherited.keys(), ...live.keys()])) {
     registerCatalog(locale, mergeCatalogs(inherited.get(locale) ?? {}, live.get(locale) ?? {}));
   }
+}
+
+/**
+ * What a shared worker restores to after a file: everything any earlier file's module graph
+ * declared, plus what this file inherited. Since 22.7 a worker runs many files in one module
+ * registry, so a module a file imports evaluates ONCE — a later file that resets the permission
+ * set at module scope would otherwise hand every file after it a registry missing declarations no
+ * cached module will ever make again (measured on notificado.co: "admin:read is not in the
+ * permission set (8 known)"). Newer wins on a conflict, so a file's own redefinition still stands
+ * for that file.
+ */
+export function mergeSnapshots(
+  older: ProcessRegistrySnapshot | undefined,
+  newer: ProcessRegistrySnapshot,
+): ProcessRegistrySnapshot {
+  if (older === undefined) return newer;
+  const catalogs = new Map(older.catalogs);
+  for (const [locale, catalog] of newer.catalogs) {
+    catalogs.set(locale, mergeCatalogs(catalogs.get(locale) ?? {}, catalog));
+  }
+  const tasks = new Map(older.tasks.map((handle) => [handle.name, handle] as const));
+  for (const handle of newer.tasks) tasks.set(handle.name, handle);
+  return {
+    locales: newer.locales,
+    catalogs: [...catalogs],
+    permissions: [...new Set([...older.permissions, ...newer.permissions])],
+    roles: { ...older.roles, ...newer.roles },
+    roleSites: { ...older.roleSites, ...newer.roleSites },
+    tasks: [...tasks.values()],
+    catalogDeclarations: Math.max(older.catalogDeclarations, newer.catalogDeclarations),
+  };
 }

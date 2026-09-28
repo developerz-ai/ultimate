@@ -218,6 +218,26 @@ function installGlobals(values: Readonly<Record<string, unknown>>): () => void {
  * file's island. The disposer runs while the fake `document` is still installed, because what it
  * clears (a listener on `document`, an interval whose callback reads it) was made against that one.
  */
+/**
+ * Every mount not yet disposed. A worker runs many files in one global (22.7), so a mount a file
+ * forgot to `using` is disposed at the file boundary (`file-boundary.ts`) instead of handing its
+ * fake `window`/`document` to every later file.
+ */
+const liveMounts = new Set<() => void>();
+
+/** Dispose every mount still installed, newest first. Returns how many there were. */
+export function disposeLiveIslands(): number {
+  const pending = [...liveMounts].reverse();
+  for (const dispose of pending) {
+    try {
+      dispose();
+    } catch {
+      // The island's own disposer threw; its globals were still restored in `dispose`'s finally.
+    }
+  }
+  return pending.length;
+}
+
 export async function mountIsland(options: MountIslandOptions): Promise<MountedIsland> {
   // `only`, because this fixture has always KNOWN which island it wants and asked for all of them
   // anyway — `island-bundle.ts` added the option for exactly this caller ("a test that mounts a
@@ -266,6 +286,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
       // disposer is idempotent while an island's `clearInterval` wrapper need not be.
       if (disposed) return;
       disposed = true;
+      liveMounts.delete(dispose);
       try {
         unmount?.();
       } finally {
@@ -274,6 +295,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
         restore();
       }
     };
+    liveMounts.add(dispose);
     const resolve = (target: string | FakeElement | null | undefined): FakeElement | null =>
       typeof target === 'string' ? el.querySelector(target) : (target ?? null);
     return {

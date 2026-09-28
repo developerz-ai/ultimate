@@ -38,6 +38,11 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ENV_MISSING: 'x env check --json',
   X_ENV_EXAMPLE_DRIFT: 'x env example --json',
   X_TEST_NO_FILES: 'x test --json   # from the repo root, or pass --cwd to it',
+  X_TEST_BUDGET_INVALID: 'ULTIMATE_TEST_MEMORY_BUDGET=3g x verify --json',
+  X_VERIFY_SHARD_INVALID: 'x verify --only unit --shard 1/4 --json',
+  X_VERIFY_MERGE_INCOMPLETE:
+    'x verify merge parts/*.json --json   # after every CI job uploaded its part',
+  X_VERIFY_MERGE_INPUT: 'x verify --only unit --json > part.json   # one document per part',
   X_TEST_SHARD_FAILED: 'x test --workers 1 --json',
   X_SCAFFOLD_PATH_ESCAPE: 'x g route posts --json   # a path with no ".." segment',
   X_GENERATE_JSON_INVALID:

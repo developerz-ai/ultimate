@@ -259,3 +259,13 @@ export function resetTasks(): void {
   registry.clear();
   anonymous = 0;
 }
+
+/**
+ * Put the registry back to exactly `handles` — `@ultimat3/testing`'s between-files restore, so a
+ * task one test file registers in a test body does not fire in the next file's scheduler round.
+ * Each handle keeps the name it was registered under.
+ */
+export function restoreTasks(handles: readonly TaskHandle[]): void {
+  registry.clear();
+  for (const handle of handles) registry.set(handle.name, handle);
+}

@@ -4,20 +4,13 @@
 import { TEST_TYPES } from '@ultimat3/testing/test-types';
 import { DEFAULT_BASE } from './affected';
 import type { CommandSpec } from './parse';
-import {
-  MEMORY_SHARE,
-  SERIAL_TYPES,
-  WORKER_BYTES,
-  WORKER_CEILING,
-  WORKER_FLOOR,
-  WORKER_OVERSUBSCRIBE,
-} from './test-workers';
+import { SERIAL_TYPES, WORKER_BYTES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 
 export const testSpec: CommandSpec = {
   name: 'test',
   summary:
     'run one test type — or the whole suite — across N workers, one isolated database per worker',
-  usage: `x test [${TEST_TYPES.join('|')}] [--filter path[,path…]] [--allow-empty] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--worker I] [--json] [-- <bun test flags>]`,
+  usage: `x test [${TEST_TYPES.join('|')}] [--filter path[,path…]] [--allow-empty] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--worker I] [--isolate] [--json] [-- <bun test flags>]`,
   positionalChoices: TEST_TYPES,
   // The one command that hands a tail to another tool — `bun test` — and the reason
   // `CommandSpec.passthrough` exists: `x test unit -- --coverage --bail` parsed both flags and
@@ -27,7 +20,13 @@ export const testSpec: CommandSpec = {
     {
       name: 'workers',
       type: 'string',
-      summary: `bun worker count (default: ${WORKER_OVERSUBSCRIBE}x CPUs rounded up, held to ${MEMORY_SHARE * 100}% of free memory at ${WORKER_BYTES / 2 ** 30} GiB a worker, min ${WORKER_FLOOR}; max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
+      summary: `bun worker count (default: one per ${WORKER_BYTES / 2 ** 30} GiB of a min(4 GiB, max(2.75 GiB, 25% of RAM)) budget, at most one per core; ULTIMATE_TEST_MEMORY_BUDGET and ULTIMATE_TEST_MAX_WORKERS override, min ${WORKER_FLOOR}; max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
+    },
+    {
+      name: 'isolate',
+      type: 'boolean',
+      summary:
+        'a fresh global per test file (bun test --isolate) — off by default since 22.7; x.verify.json "isolate": true makes it the repo default',
     },
     {
       name: 'worker',

@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { resetPrompts } from '@ultimat3/ai';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import type { JsonRpcResponse, ToolArgs } from '@ultimat3/mcp';
 import { resetAppLoad } from './app-load';
@@ -87,6 +88,9 @@ beforeAll(async () => {
   );
   await Bun.write(join(ROOT, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   resetAppLoad();
+  // The fixture app has no prompt: one an earlier file on this worker registered would make the
+  // eval step red for a reason this file never introduced.
+  resetPrompts();
   const recording = recordingRunner(() => PASSING);
   calls = recording.calls;
   // Builds the REAL capability object: `databaseTarget` runs here, nothing else does.

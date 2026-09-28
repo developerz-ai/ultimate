@@ -5,7 +5,6 @@
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
-import { sharedWorkers } from './test-workers';
 import {
   floorRequires,
   readVerifyFloor,
@@ -41,23 +40,27 @@ export async function runVerify(
     await pending;
     pending = undefined;
   };
-  // A parallel suite inside that window shares the cores with the static group, so its DEFAULT
-  // width is one per core (`sharedWorkers`); an explicit `--workers` is the caller's and stands.
-  const shared: VerifyContext =
-    ctx.workers === undefined && beside.length > 0 ? { ...ctx, workers: sharedWorkers() } : ctx;
+  // Isolation is the floor file's unless the caller said: absent in both is off (22.7).
+  const base: VerifyContext =
+    ctx.isolate === undefined && floor?.isolate !== undefined
+      ? { ...ctx, isolate: floor.isolate }
+      : ctx;
+  // A parallel suite inside the overlap window used to be narrowed to one worker per core; the
+  // default is at most that already (`test-workers.ts`), so the window runs the same plan.
+  const shared: VerifyContext = base;
   for (const step of selected) {
     if (beside.includes(step)) continue;
     if (step.name === SERIAL_SUITES[0]) {
       pending = Promise.all(
         beside.map(async (other) => {
-          byName.set(other.name, await runStep(other, ctx, floor));
+          byName.set(other.name, await runStep(other, base, floor));
         }),
       ).then(() => undefined);
     } else if (!SERIAL_SUITES.includes(step.name)) {
       await join();
     }
     const inWindow = pending !== undefined && SERIAL_SUITES.includes(step.name);
-    byName.set(step.name, await runStep(step, inWindow ? shared : ctx, floor));
+    byName.set(step.name, await runStep(step, inWindow ? shared : base, floor));
   }
   await join();
   // Reported in the declared order, whatever order the steps finished in: the table, `--json` and
@@ -113,7 +116,7 @@ const onlyList = (only: VerifyContext['only']): readonly string[] | undefined =>
  * vacuous gate stayed invisible. It names the skipped steps, not just how many: "17/17" is worth
  * something only when the gap is visible in the same glance.
  */
-function verifySummary(input: {
+export function verifySummary(input: {
   readonly results: readonly StepResult[];
   readonly failed: readonly string[];
   readonly skipped: readonly string[];
@@ -196,7 +199,9 @@ async function runStep(
   // ONE definition of "nothing ran", read twice, because the floor decides which of the two
   // things it means — exactly as it already does for a step whose `applies` said no.
   const tests = outcome.tests;
-  const nothingRan = tests !== undefined && tests.ran === 0;
+  // A shard's slice may hold nothing, or only skipped tests, and still be a correct slice: the
+  // "did the suite run at all" question is asked by `x verify merge`, on the summed counts.
+  const nothingRan = tests !== undefined && tests.ran === 0 && outcome.shard === undefined;
   const required = floorRequires(floor, step.name);
   // A step the floor requires whose suite executed nothing is the same vanished suite as a step
   // with no files at all — the run just had to finish before it could be seen. Appended to the
@@ -213,6 +218,8 @@ async function runStep(
     findings: [...outcome.findings, ...vanished],
     ...(outcome.output === undefined ? {} : { output: outcome.output }),
     ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
+    ...(outcome.widthReason === undefined ? {} : { widthReason: outcome.widthReason }),
+    ...(outcome.shard === undefined ? {} : { shard: outcome.shard }),
     ...(tests === undefined ? {} : { tests }),
   };
 }

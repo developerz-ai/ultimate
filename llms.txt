@@ -241,6 +241,7 @@ The single public documentation surface; there is no separate marketing site. So
 - [Resource management](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Resource-Management.md): `Disposable` db resources, `using`/`await using`, idempotent release, compile-time pins.
 - [Migrations and backfills](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Migrations-And-Backfills.md): one migration engine and ledger, the destructive-migration rail, `backfill()` as a `job` factory.
 - [Testing](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Testing.md): six test types, cloned databases, sealed network, `x verify`.
+- [CI: the gate across parallel jobs](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/CI-Parallel-Gate.md).
 - [CLI reference](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/CLI-Reference.md): every `x` command and flag, with `--json` examples.
 - [Error codes](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Error-Codes.md): every `X_*` code: meaning, cause, exact fix.
 - [Configuration](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Configuration.md): every `app.config.ts` field and every env var.

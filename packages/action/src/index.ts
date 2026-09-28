@@ -152,7 +152,7 @@ export {
 } from './http';
 /** `http: { path }` on an action pins its URL; the app's `pathStyle` derives every other one. */
 export type { ActionHttp } from './http-path';
-export { actionPathStyle } from './http-path';
+export { actionPathStyle, forgetHandedOutActionPaths } from './http-path';
 /**
  * The idempotency seam. `withIdempotency` and `IDEMPOTENCY_HEADER` are both public, so a plain
  * mutating `route` can reserve-and-replay exactly as an action does — `idempotencyKeyFor` is the

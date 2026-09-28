@@ -41,6 +41,13 @@ export interface VerifyFloor {
    * found` from its own shell, not a framework opinion about which compiler is correct.
    */
   readonly typecheckBin?: string;
+  /**
+   * Run every parallel test file in a fresh global (`bun test --isolate`). Absent or `false` is
+   * the default since 22.7: one global per worker process, reused across the files it runs — 2-5x
+   * faster, measured (`test-workers.ts`). A repository whose tests lean on per-file module state
+   * says `true` here once, in the file that configures the gate, and `x test`/`x verify` honour it.
+   */
+  readonly isolate?: boolean;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
   readonly problems: readonly string[];
 }
@@ -50,6 +57,22 @@ export const BUDGET_FIELD = 'agentsMdMaxBytes';
 
 /** The floor's typecheck-binary key. Named once: the problem quotes it and the fix repairs it. */
 export const TYPECHECK_BIN_FIELD = 'typecheckBin';
+
+/** The floor's isolation key. */
+export const ISOLATE_FIELD = 'isolate';
+
+function readIsolate(payload: Record<string, unknown> | undefined): {
+  isolate?: boolean;
+  problems: readonly string[];
+} {
+  const raw = payload?.[ISOLATE_FIELD];
+  if (raw === undefined) return { problems: [] };
+  if (typeof raw !== 'boolean')
+    return {
+      problems: [`"${ISOLATE_FIELD}" is ${JSON.stringify(raw)}, which is not true or false`],
+    };
+  return { isolate: raw, problems: [] };
+}
 
 /**
  * `agentsMdMaxBytes`, or a reason it is not one. A budget that is not a positive whole number is
@@ -123,16 +146,19 @@ export function parseVerifyFloor(
   const record = asRecord(payload);
   const budget = readBudget(record);
   const typecheckBin = readTypecheckBin(record);
+  const isolate = readIsolate(record);
   const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
     return {
       steps: [],
       ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
       ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
+      ...(isolate.isolate === undefined ? {} : { isolate: isolate.isolate }),
       problems: [
         'it has no "steps" array of step names',
         ...budget.problems,
         ...typecheckBin.problems,
+        ...isolate.problems,
       ],
     };
   }
@@ -142,7 +168,9 @@ export function parseVerifyFloor(
     steps: named.filter((step) => declared.includes(step)),
     ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
     ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
+    ...(isolate.isolate === undefined ? {} : { isolate: isolate.isolate }),
     problems: [
+      ...isolate.problems,
       ...(named.length === steps.length ? [] : ['"steps" holds an entry that is not a string']),
       ...typecheckBin.problems,
       ...(unknown.length === 0

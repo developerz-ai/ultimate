@@ -56,7 +56,13 @@ async function writeOriginOf(req: UltimateRequest): Promise<string | undefined> 
  * kebab-cased (`updateUserProfile` -> `/api/user-profiles/update`). See `naming.ts`.
  */
 export function toRoute(target: AnyAction): Route {
-  return projectRoute(target, servedActionRoute(actionName(target)).path, (req) => req.bodyRaw());
+  // The handle's OWN pin first: an action projected before (or without) being seated under its
+  // name still has the path it declared. Reading only the seated registry answered the style's
+  // derived path for an unseated pinned action — right by coincidence under `resource`, wrong
+  // under `readable` (a shared test worker whose app declared it, 22.7).
+  const pinned = defOf(target).http?.path;
+  const path = pinned ?? servedActionRoute(actionName(target)).path;
+  return projectRoute(target, path, (req) => req.bodyRaw());
 }
 
 /**

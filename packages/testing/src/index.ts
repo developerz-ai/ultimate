@@ -271,6 +271,8 @@ export type { RegistryLeak, RegistrySample } from './registry-leak-guard';
 export { installRegistryLeakGuard, leakBetween, sampleRegistries } from './registry-leak-guard';
 export type { ProcessRegistrySnapshot } from './registry-snapshot';
 export { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
+export type { DatabaseSnapshot } from './reusable-database';
+export { restoreDatabase, reusableDatabase, snapshotDatabase } from './reusable-database';
 export type { MockRoute, NetworkSnapshot, NetworkState } from './sealed-network';
 // `setNetworkState` is deliberately not here: it is the offline gate's one writer, and a test that
 // called it directly would bypass the `network` fixture's disposal and leave the whole process

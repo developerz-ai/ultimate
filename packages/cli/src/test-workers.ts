@@ -3,10 +3,12 @@
 // suite two different ways, and the `--worker N` reproduction a shard failure prints would then
 // name a shard the gate never ran.
 
-// Bun ships no CPU-count or free-memory primitive: `cpus()` is the fallback when navigator cannot
-// answer, and `freemem()` is the only reader of available memory.
-import { cpus, freemem } from 'node:os';
+// Bun ships no CPU-count or memory primitive: `cpus()` is the fallback when navigator cannot
+// answer, and `totalmem()` is the only reader of the machine's RAM.
+// why: Bun ships no CPU-count or total-memory primitive.
+import { cpus, totalmem } from 'node:os';
 import type { TestType } from '@ultimat3/testing';
+import { TestBudgetInvalidError } from './verify-errors';
 
 /** navigator first: it is the runtime's own answer, and it respects a container's CPU limit. */
 export function availableCpus(): number {
@@ -15,78 +17,75 @@ export function availableCpus(): number {
 }
 
 /**
- * Deliberately MORE workers than cores, bounded by memory rather than by a fixed count.
+ * The width of a default run is a MEMORY question first and a CPU question second, and the memory
+ * it plans on is a BUDGET, not "whatever looks free".
  *
- * `cpus - 1` is the intuitive default and it was measured to be worthless exactly where it has to
- * pay off. On a 4-core `ubuntu-latest` — the runner this repo commits to — the `unit` step:
+ * Until 22.7 the default was `ceil(cpus x 1.5)` held to 60% of `os.freemem()`. Both halves failed
+ * on the machines Ultimate is for (8-16 GB, 2-8 cores, often two agents' gates at once):
  *
- *   | workers | wall  |
- *   |---------|-------|
- *   | serial  | 43.2s |
- *   | 3 (cpus - 1) | 44.8s |   <- the old default: slower than not sharding at all
- *   | 4       | 41.6s |
- *   | 6       | 34.8s |
+ * - `freemem()` is MemAvailable, which counts reclaimable page cache, so a box that had just built
+ *   read as mostly free. Two gates planned independently, each took 14-18 workers, and on
+ *   2026-09-27 a 45 GB box with no swap was OOM-killed with 36 `bun` processes holding ~40 GB.
+ * - 1.5x the cores only paid when every worker was stalled on `--isolate` rebuilding a module
+ *   registry per file. Without isolation (the default since 22.7, below) a worker is CPU-bound,
+ *   and oversubscribing only multiplies memory.
  *
- * Three workers on four cores loses to serial because sharding is not free — each worker reloads
- * the framework's module graph — and three of them cannot cover that cost. The reason more-than-
- * cores wins is that a test worker is not CPU-bound end to end: it spends real time on module
- * resolution, on `--isolate` rebuilding a registry per file, and on waiting for its database.
- * Oversubscribing fills those stalls.
- *
- * The bound is memory, not cores. A worker is a whole Bun process with the framework's module
- * graph loaded and — in the typed suites — its own cloned Postgres or an in-process PGlite. Until
- * 22.3 that was a FIXED ceiling of 8, which held a 12-core box to 8 workers with 30 GB free. The
- * ceiling is now what the machine can actually hold — `MEMORY_SHARE` of `os.freemem()`
- * (MemAvailable on Linux, so reclaimable page cache counts as free) divided by `WORKER_BYTES` —
- * which binds on a small CI runner, on a loaded laptop and on a box shared with other sessions,
- * the places an unbounded count swaps or, with no swap, is OOM-killed.
- *
- * The floor of 2 keeps a 1-core box sharding rather than silently reverting to serial.
+ * So: `min(GATE_BUDGET_CAP, max(GATE_BUDGET_FLOOR, GATE_BUDGET_SHARE x TOTAL memory))` — total, never free, so the plan
+ * is the same on every run of the same machine — divided by `WORKER_BYTES`, clamped to 1..cpus.
+ * `ULTIMATE_TEST_MEMORY_BUDGET` (e.g. `3g`) replaces the budget, `ULTIMATE_TEST_MAX_WORKERS` caps
+ * the width, and an explicit `--workers` wins over both.
  */
-export const WORKER_OVERSUBSCRIBE = 1.5;
+export const GATE_BUDGET_CAP = 4 * 1024 * 1024 * 1024;
 
-/** The floor the paragraph above names: a 1-core box shards rather than reverting to serial. */
-export const WORKER_FLOOR = 2;
+/** A quarter of the machine: an editor, a language server and another agent's gate need the rest. */
+export const GATE_BUDGET_SHARE = 0.25;
 
 /**
- * What one test worker is budgeted at, for the memory bound above. MEASURED — whole-tree RSS of
- * `x test unit` on the notificado.co corpus (768 files, PGlite per file), 12-core box, Bun 1.4.0,
- * `As of 2026-09-27`, batched by `BATCH_FILES_PER_WORKER`:
- *
- *   | workers | batches | peak tree RSS | largest single worker |
- *   |---------|---------|---------------|-----------------------|
- *   | 12      | 3       | 10.8-11.4 GB  | 1.38-1.41 GB          |
- *   | 14      | 3       | 12.2 GB       | 1.39 GB               |
- *   | 18      | 2       | 15.9 GB       | 1.47 GB               |
- *
- * Unbatched, the same box at 22.6.1's default of 18 workers peaked at 17.1-18.2 GB, and the same
- * run's wall clock was 132-167s against 152-163s for this default (14 workers, 3 batches) — within
- * the noise of a box at load 30-40.
- *
- * The constant is the LARGEST single worker rounded up, not the average (~0.88 GB), so the bound
- * holds even on the run where every worker peaks at the same moment. The 2026-09-25 figure it
- * replaces (1 GiB, from a "~0.45 GB slope over a ~17 GB intercept") budgeted the slope and waved
- * the intercept away as "the corpus"; that intercept was per-worker growth over an unbatched run,
- * and an 18-worker default on 35 GB free took a 45 GB box with no swap down (2026-09-27).
+ * The budget never plans below this: enough for TWO workers at `WORKER_BYTES`. A quarter of an
+ * 8 GB laptop (2 GiB) planned one worker, ~4.7 min for notificado.co's unit tier; two stay inside
+ * the owner's 1-4 GB gate target (~2.6 GB measured).
  */
-export const WORKER_BYTES = 1.5 * 1024 * 1024 * 1024;
+export const GATE_BUDGET_FLOOR = 2.75 * 1024 * 1024 * 1024;
 
 /**
- * The share of available memory a default-width run may plan to use. Never all of it, because free
- * memory is read ONCE, before a single worker has started, and a dev box is never only running the
- * tests: a type-checker, an editor's language server, another agent's gate all grow after that
- * read. A run that plans on every free byte is one neighbour away from the OOM killer. 0.6 and not
- * less because the plan is made at the LARGEST worker's peak: measured, the whole tree peaks at
- * ~0.9 GB a worker, so the real peak lands near 35-40% of what was available at the start.
+ * What one test worker is planned at. MEASURED, whole-tree RSS sampled every 200 ms, Bun 1.4.0,
+ * 12-core box, `As of 2026-09-27`, NO isolation:
+ *
+ *   | corpus                                  | workers | batch | peak tree | tree / worker |
+ *   |-----------------------------------------|---------|-------|-----------|---------------|
+ *   | framework unit (1620 files)             | 4       | 24    | 3.61-3.78 GB | 0.90-0.95 GB |
+ *   | notificado.co unit (768 files)          | 4       | 24    | 4.26-4.58 GB | 1.07-1.15 GB |
+ *   | notificado.co unit (768 files)          | 4       | 48    | 4.35 GB   | 1.09 GB       |
+ *   | notificado.co unit (768 files)          | 3       | 24    | 3.28-3.61 GB | 1.09-1.20 GB |
+ *
+ * The planning figure is what the TREE costs per worker at its peak — the `x` parent and Bun's
+ * coordinator included — rounded up from the heaviest corpus, not the largest single worker:
+ * workers do not all peak at the same instant. The floor of a worker is not the runner: a Bun
+ * process that has booted ONE PGlite sits at 0.9-1.1 GB RSS even after `close()` and a full GC
+ * (measured standalone), so a suite on the embedded database cannot plan below ~1 GB a worker.
  */
-export const MEMORY_SHARE = 0.6;
+export const WORKER_BYTES = 1.25 * 1024 * 1024 * 1024;
+
+/** The fewest workers `--workers` accepts and the fewest a default plans: one is a legal width. */
+export const WORKER_FLOOR = 1;
 
 /**
- * Files each worker is handed before its `bun test` process is thrown away and a fresh one takes
- * the next batch (`test-batches.ts`, which carries the measurement). What makes the peak a function
- * of the width rather than of the corpus.
+ * Files each ISOLATED worker is handed before its `bun test` process is thrown away and a fresh one
+ * takes the next batch (`test-batches.ts`, which carries the measurement): under `--isolate` every
+ * file re-evaluates the module graph and the heap grows per file, so the recycle point is what
+ * makes the peak a function of the width rather than of the corpus.
  */
 export const BATCH_FILES_PER_WORKER = 24;
+
+/**
+ * The recycle point WITHOUT isolation (the default since 22.7). A shared worker's peak is set by
+ * its live PGlite, not by how many files it has run, and a batch boundary is pure cost: every
+ * worker restarts, re-imports the app and re-boots its database, and the batch waits on its
+ * slowest file. Measured on notificado.co's unit tier (768 files, 281 s of file time, 3 workers,
+ * no isolation): 6 batches of 48/worker 150-172 s, ONE batch 92-94 s at 3.9 GB peak — the work
+ * floor (281 s / 3). 256 a worker keeps a recycle point for a corpus far past that size.
+ */
+export const SHARED_BATCH_FILES_PER_WORKER = 256;
 
 /**
  * The most `--workers` accepts, on either command. Not a default and not a memory rule — a sanity
@@ -95,36 +94,126 @@ export const BATCH_FILES_PER_WORKER = 24;
  */
 export const WORKER_CEILING = 64;
 
-/** Bun ships no memory primitive; `freemem()` is libuv's MemAvailable on Linux. */
-export const availableMemory = (): number => freemem();
+/** Replaces the budget: `3g`, `512m`, `4GiB`, or a byte count. */
+export const MEMORY_BUDGET_ENV = 'ULTIMATE_TEST_MEMORY_BUDGET';
 
-/**
- * `ceil(cpus x 1.5)`, held to `MEMORY_SHARE` of free memory at `WORKER_BYTES` a worker, and never
- * below the floor. The file-count
- * clamp is `test-passes.ts`'s (every pass is clamped to its own file list), because only the
- * caller knows the selection.
- */
-export const defaultWorkers = (
-  available: number = availableCpus(),
-  freeBytes: number = availableMemory(),
-): number => {
-  const byCpu = Math.ceil(available * WORKER_OVERSUBSCRIBE);
-  const byMemory = Math.floor((freeBytes * MEMORY_SHARE) / WORKER_BYTES);
-  return Math.max(WORKER_FLOOR, Math.min(byCpu, byMemory, WORKER_CEILING));
+/** Caps the default width: a positive integer. */
+export const MAX_WORKERS_ENV = 'ULTIMATE_TEST_MAX_WORKERS';
+
+/** Bun ships no memory primitive; `totalmem()` is the machine's (or the cgroup-blind host's) RAM. */
+export const totalMemory = (): number => totalmem();
+
+type Env = Readonly<Record<string, string | undefined>>;
+
+const UNITS: Readonly<Record<string, number>> = {
+  '': 1,
+  b: 1,
+  k: 1024,
+  kb: 1024,
+  kib: 1024,
+  m: 1024 ** 2,
+  mb: 1024 ** 2,
+  mib: 1024 ** 2,
+  g: 1024 ** 3,
+  gb: 1024 ** 3,
+  gib: 1024 ** 3,
 };
 
 /**
+ * `3g` → 3 GiB. Binary units whatever the spelling, because the reader is sizing against RSS and
+ * RSS is pages. `undefined` for anything else — the caller refuses it with the value in the cause,
+ * rather than a typo silently meaning "the default".
+ */
+export const parseBytes = (raw: string): number | undefined => {
+  const match = /^\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*$/i.exec(raw);
+  if (match === null) return undefined;
+  const unit = (match[2] ?? '').toLowerCase();
+  if (!Object.hasOwn(UNITS, unit)) return undefined;
+  const bytes = Math.floor(Number(match[1]) * (UNITS[unit] as number));
+  return Number.isFinite(bytes) && bytes > 0 ? bytes : undefined;
+};
+
+/** Why the width is what it is, in words a step line can print. */
+export interface WorkerPlan {
+  readonly workers: number;
+  readonly budgetBytes: number;
+  /** Which bound decided the width. */
+  readonly boundBy: 'budget' | 'cpus' | 'max-workers';
+  /** `4 workers (budget 4.0 GB)` — the step line's suffix. */
+  readonly reason: string;
+}
+
+const gb = (bytes: number): string => (bytes / 1024 ** 3).toFixed(1);
+
+/** The budget a default run plans on: the env override, or `min(4 GiB, max(2.75 GiB, 25% of RAM))`. */
+export function memoryBudget(total: number = totalMemory(), env: Env = Bun.env): number {
+  const raw = env[MEMORY_BUDGET_ENV];
+  if (raw !== undefined && raw.trim() !== '') {
+    const bytes = parseBytes(raw);
+    if (bytes === undefined) throw new TestBudgetInvalidError(MEMORY_BUDGET_ENV, raw);
+    return bytes;
+  }
+  return Math.min(
+    GATE_BUDGET_CAP,
+    Math.max(GATE_BUDGET_FLOOR, Math.floor(Math.max(0, total) * GATE_BUDGET_SHARE)),
+  );
+}
+
+const maxWorkersOf = (env: Env): number | undefined => {
+  const raw = env[MAX_WORKERS_ENV];
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const value = Number(raw.trim());
+  if (!Number.isInteger(value) || value < 1) throw new TestBudgetInvalidError(MAX_WORKERS_ENV, raw);
+  return value;
+};
+
+/**
+ * `clamp(1..cpus, floor(budget / WORKER_BYTES))`, then `ULTIMATE_TEST_MAX_WORKERS`. Never more
+ * workers than cores, never fewer than one. The file-count clamp is `test-passes.ts`'s, because
+ * only the caller knows the selection.
+ */
+export function workerPlan(
+  cpus: number = availableCpus(),
+  total: number = totalMemory(),
+  env: Env = Bun.env,
+): WorkerPlan {
+  const budgetBytes = memoryBudget(total, env);
+  const cores = Math.max(1, Math.trunc(cpus));
+  const byBudget = Math.max(WORKER_FLOOR, Math.floor(budgetBytes / WORKER_BYTES));
+  const cap = maxWorkersOf(env);
+  let workers = Math.min(cores, byBudget, WORKER_CEILING);
+  let boundBy: WorkerPlan['boundBy'] = byBudget <= cores ? 'budget' : 'cpus';
+  if (cap !== undefined && cap < workers) {
+    workers = cap;
+    boundBy = 'max-workers';
+  }
+  const noun = workers === 1 ? 'worker' : 'workers';
+  const why =
+    boundBy === 'max-workers'
+      ? `${MAX_WORKERS_ENV}=${String(cap)}`
+      : boundBy === 'cpus'
+        ? `${String(cores)} cores, budget ${gb(budgetBytes)} GB`
+        : `budget ${gb(budgetBytes)} GB`;
+  return { workers, budgetBytes, boundBy, reason: `${String(workers)} ${noun} (${why})` };
+}
+
+/** The width alone — `workerPlan(...).workers`. */
+export const defaultWorkers = (
+  cpus: number = availableCpus(),
+  total: number = totalMemory(),
+  env: Env = Bun.env,
+): number => workerPlan(cpus, total, env).workers;
+
+/**
  * The width for a parallel suite that SHARES the machine — `x verify` runs the static steps beside
- * `live`, `job`, `e2e` and `eval` (`verify-run.ts`), and each of those scans is a CPU-bound process
- * of its own. `defaultWorkers()`' oversubscription fills a worker's own stalls when nothing else
- * wants the cores; beside six other processes it only multiplies the contention. Measured on
- * notificado.co, 8 vCPU (#537): at 1.5x, `errors` went 1.8s alone → 7.9s in the gate and
- * `boundaries` 2.3s → 9.7s. So: one worker per core, still held to what memory can carry.
+ * `live`, `job`, `e2e` and `eval` (`verify-run.ts`). The default is already one worker per core at
+ * most, so this is the same plan; it stays a name of its own so the overlap window has one reader.
  */
 export const sharedWorkers = (
-  available: number = availableCpus(),
-  freeBytes: number = availableMemory(),
-): number => Math.min(defaultWorkers(available, freeBytes), Math.max(WORKER_FLOOR, available));
+  cpus: number = availableCpus(),
+  total: number = totalMemory(),
+  env: Env = Bun.env,
+): number => defaultWorkers(cpus, total, env);
 
 /**
  * Which types run across worker processes, and why the other two cannot.

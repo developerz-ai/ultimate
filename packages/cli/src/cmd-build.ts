@@ -184,6 +184,16 @@ export function buildResult(input: {
   };
 }
 
+/** The static steps `x build` runs before it builds, and `--no-preflight` leaves to the gate. */
+export const PREFLIGHT_STEPS: readonly string[] = [
+  'typecheck',
+  'lint',
+  'boundaries',
+  'filesize',
+  'package-shape',
+  'errors',
+];
+
 export const buildCommand: CliCommand = {
   spec: buildSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
@@ -194,14 +204,19 @@ export const buildCommand: CliCommand = {
     // an agent spends on the wrong question.
     requireEntry(root, target);
 
-    // Run static verify steps before building.
-    const staticSteps = ['typecheck', 'lint', 'boundaries', 'filesize', 'package-shape', 'errors'];
-    const verifySteps = (await import('./cmd-verify')).VERIFY_STEPS.filter((step) =>
-      staticSteps.includes(step.name),
-    );
-    const verifyResult = await runVerify(verifySteps, { root, runner: ctx.runner, env: ctx.env });
-    if (!verifyResult.ok) {
-      return preflightResult(verifyResult);
+    // Run static verify steps before building — unless the caller is a gate that runs the same
+    // six steps itself right after (`bin/check`: `x build --no-preflight && x verify`), where the
+    // preflight was the same ~17 s of typecheck/lint/scans paid twice per run. The default stays
+    // safe: a bare `x build` never ships an artifact from a tree that does not typecheck.
+    const preflight = ctx.args.flags.get('preflight') !== false;
+    if (preflight) {
+      const verifySteps = (await import('./cmd-verify')).VERIFY_STEPS.filter((step) =>
+        PREFLIGHT_STEPS.includes(step.name),
+      );
+      const verifyResult = await runVerify(verifySteps, { root, runner: ctx.runner, env: ctx.env });
+      if (!verifyResult.ok) {
+        return preflightResult(verifyResult);
+      }
     }
 
     // A relative `--out` is a path the caller typed from where they stand, so it resolves against

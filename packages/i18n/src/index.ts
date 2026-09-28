@@ -44,6 +44,7 @@ export {
 export {
   type CatalogSet,
   type CatalogSources,
+  catalogDeclarationCount,
   type DefineCatalogsInput,
   defineCatalogs,
 } from './define-catalogs';

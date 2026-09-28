@@ -390,6 +390,58 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 | `route` | metadata presence, budget, and offline strategy |
 | `llm` prompt | an evals file (missing evals fails `x verify`) |
 
+## Memory, width and isolation
+
+`As of 22.7`. The gate is built for the machines it runs on — 8-16 GB, 2-8 cores, often two agents'
+gates at once — and it is held to a **memory budget**, not to whatever looks free.
+
+- **Width.** `min(4 GiB, max(2.75 GiB, 25% of total RAM))` divided by 1.25 GiB a worker, clamped to `1..cores`:
+  3 workers on a 16 GB box, 2 on an 8 GB one (the 2.75 GiB floor). Never more workers than cores. The step line says
+  what it chose and why — `3 workers (budget 4.0 GB)`. `ULTIMATE_TEST_MEMORY_BUDGET=3g` replaces
+  the budget, `ULTIMATE_TEST_MAX_WORKERS=2` caps the width, `--workers N` wins over both. Total RAM,
+  never "free": page cache counts as free, and two gates each planning on it took a 45 GB box down.
+- **One budget per machine.** Each batch of workers leases that many slots from a pool of lock
+  files under the OS temp dir (one per worker the budget allows; a dead holder's slot is taken
+  over). A second `x test` or `x verify` on the same box gets what is left and runs narrower, or
+  waits for one slot, instead of doubling the memory. `ULTIMATE_TEST_SLOTS=0` turns it off.
+- **No per-file isolation by default.** A worker keeps one global and one module registry across
+  the files it runs (`bun test --parallel=N --no-isolate`) — measured 2-5x faster than `--isolate`
+  at the same width. Between two files the testing preload hands the next file the process it would
+  have had alone: undisposed island mounts are disposed, `globalThis` and `process.env` go back to
+  the first file's baseline, the permission/role/catalog registries are restored (as a union — a
+  module imported once per worker declares once), tasks exactly, and `.tsx` always compiles with
+  the app's JSX factory. A repository whose tests need a fresh global per file says
+  `"isolate": true` in `x.verify.json`, or passes `--isolate` to `x test` / `x verify`.
+- **One long-lived process per worker.** Without isolation a worker's memory is set by its live
+  database, not by how many files it ran, so a pass is ONE `bun test --parallel=N` (recycled only
+  past 256 files a worker; 24 under `--isolate`, whose heap grows per file). Every parallel run
+  reads and refreshes `.x/test-timings.json`, so Bun starts the slowest files first.
+- **One database per worker.** `reusableDatabase(open)` from `@ultimat3/testing` opens an
+  embedded database once per worker and resets its DATA to the template between files (truncate,
+  re-insert the snapshot, reset sequences, triggers off meanwhile) — a PGlite boot from a migrated
+  template costs 2.4-7 s, which a per-file database pays in every file.
+
+Measured, `As of 2026-09-27`, 12-core box, whole process tree sampled every 200 ms:
+
+| run | workers | wall | peak RSS |
+|---|---|---|---|
+| notificado.co `x test unit` (768 files), 22.6.2 default (isolated) | 14 (+parent) | 193 s | 13.1 GB |
+| the same, 22.7 default (16 GB+ box), test DB on `reusableDatabase` | 3 | 90-93 s | 3.7-3.9 GB |
+| the same, 2 workers (an 8 GB box's default) | 2 | 150 s | 2.6 GB |
+| framework `x test unit` (1620 files), no isolation | 3 | 115-125 s | 2.9-3.0 GB |
+| framework `bun run verify` (whole gate, `"isolate": true`) | 3 | 227 s | 3.4 GB |
+
+The framework repository itself opts back into `"isolate": true`: its suites exercise the
+process-global registries on purpose (fixture apps per test, empty permission sets), and without
+isolation a handful of files fail depending on which worker ran what before them. Apps do not
+need it — notificado.co's unit, contract and job tiers pass without isolation.
+
+A worker on the embedded database (PGlite) cannot go much below 1 GB: one booted PGlite holds
+0.9-1.1 GB RSS even after `close()` and a full GC.
+
+For CI, where wall time matters more than one box's memory, the gate splits across jobs:
+[CI: the gate across parallel jobs](CI-Parallel-Gate).
+
 ## `x verify`
 
 The single gate. Green means shippable.

@@ -1,88 +1,111 @@
-// The default width of a parallel test run. One number, and both of its bounds matter: too few and
-// the gate is the serial gate again, too many and a worker per core swaps a CI runner.
+// The default width of a parallel test run: a memory BUDGET divided by what a worker costs, never
+// more workers than cores. Refusals first — a budget that does not parse must never mean "default".
 
 import { describe, expect, test } from 'bun:test';
 import {
   availableCpus,
-  availableMemory,
   defaultWorkers,
-  MEMORY_SHARE,
+  GATE_BUDGET_CAP,
+  MAX_WORKERS_ENV,
+  MEMORY_BUDGET_ENV,
+  memoryBudget,
+  parseBytes,
   sharedWorkers,
+  totalMemory,
   WORKER_BYTES,
   WORKER_CEILING,
   WORKER_FLOOR,
+  workerPlan,
 } from './test-workers';
 
-/** Enough memory that only the CPU arm can bind. */
-const PLENTY = WORKER_BYTES * 1000;
+const GiB = 1024 ** 3;
+const NO_ENV = {};
 
-describe('unit · default worker count', () => {
-  test('it OVERSUBSCRIBES the cores, because cpus - 1 lost to serial on the target runner', () => {
-    // The number that matters: a free 4-core `ubuntu-latest`. Measured there, `unit` took 43.2s
-    // serial, 44.8s at 3 workers (the old `cpus - 1`) and 34.8s at 6. Three workers on four cores
-    // could not cover sharding's own cost, so the gate paid for parallelism and got nothing.
-    expect(defaultWorkers(4, PLENTY)).toBe(6);
-    expect(defaultWorkers(2, PLENTY)).toBe(3);
-    // Rounded UP: 3 cores x 1.5 is 4.5, and the half worker is the one that fills a stall.
-    expect(defaultWorkers(3, PLENTY)).toBe(5);
+describe('unit · the budget refuses what it cannot read', () => {
+  test('a memory budget that does not parse is X_TEST_BUDGET_INVALID, naming the value', () => {
+    for (const raw of ['lots', '3x', '-1g', '0', 'g']) {
+      expect(() => memoryBudget(16 * GiB, { [MEMORY_BUDGET_ENV]: raw })).toThrow(
+        expect.objectContaining({ code: 'X_TEST_BUDGET_INVALID' }),
+      );
+    }
   });
 
-  // The regression this replaced: a fixed ceiling of 8 held a 12-core box with 30 GB free to 8.
-  test('a big machine with the memory for it is NOT capped at 8', () => {
-    expect(defaultWorkers(12, PLENTY)).toBe(18);
-    expect(defaultWorkers(16, PLENTY)).toBe(24);
+  test('a worker cap that is not a positive integer is refused, not ignored', () => {
+    for (const raw of ['0', '2.5', 'four', '-3']) {
+      expect(() => workerPlan(8, 16 * GiB, { [MAX_WORKERS_ENV]: raw })).toThrow(
+        expect.objectContaining({ code: 'X_TEST_BUDGET_INVALID' }),
+      );
+    }
   });
 
-  test('free memory bounds the width: MEMORY_SHARE of it, one WORKER_BYTES per worker', () => {
-    // A share of free memory, never all of it: the read happens once, before anything else grows.
-    expect(MEMORY_SHARE).toBeGreaterThanOrEqual(0.5);
-    expect(MEMORY_SHARE).toBeLessThanOrEqual(0.6);
-    const free = (workers: number): number => (WORKER_BYTES * workers) / MEMORY_SHARE;
-    expect(defaultWorkers(12, free(10))).toBe(10);
-    expect(defaultWorkers(12, free(10.9))).toBe(10);
-    expect(defaultWorkers(32, free(20))).toBe(20);
+  test('sizes read as binary units whatever the spelling', () => {
+    expect(parseBytes('3g')).toBe(3 * GiB);
+    expect(parseBytes('3GiB')).toBe(3 * GiB);
+    expect(parseBytes('512m')).toBe(512 * 1024 ** 2);
+    expect(parseBytes('1.5G')).toBe(1.5 * GiB);
+    expect(parseBytes('1073741824')).toBe(GiB);
+    expect(parseBytes('3 tb')).toBeUndefined();
+  });
+});
+
+describe('unit · the default width', () => {
+  // The OOM of 2026-09-27: 12 cores, 45 GB, no swap. 22.6.2 planned 14 workers off MemAvailable;
+  // the budget is a quarter of TOTAL memory capped at 4 GiB, whatever the page cache says.
+  test('a 12-core 45 GB box plans 3 workers, not 14', () => {
+    const plan = workerPlan(12, 45 * GiB, NO_ENV);
+    expect(plan.budgetBytes).toBe(GATE_BUDGET_CAP);
+    expect(plan.workers).toBe(3);
+    expect(plan.reason).toBe('3 workers (budget 4.0 GB)');
+    // The plan fits the budget at the planning figure.
+    expect(plan.workers * WORKER_BYTES).toBeLessThanOrEqual(plan.budgetBytes);
   });
 
-  // The box that was OOM-killed on 2026-09-27: 12 cores, ~35 GB available, no swap. The old
-  // budget (1 GiB a worker, all of free memory) planned 18 workers — 17-18 GB of test tree,
-  // measured, on a machine other sessions were also growing into.
-  test('the 12-core, 35 GB box plans what it can carry at the measured per-worker peak', () => {
-    const planned = defaultWorkers(12, 35e9);
-    expect(planned).toBe(13);
-    // Even if every worker peaked at the measured largest single worker at the same moment.
-    expect(planned * 1.46e9).toBeLessThan(35e9 * MEMORY_SHARE);
+  test('the machines Ultimate is for: 8 GB → 2 workers, 16 GB → 3', () => {
+    expect(defaultWorkers(4, 8 * GiB, NO_ENV)).toBe(2);
+    expect(defaultWorkers(8, 16 * GiB, NO_ENV)).toBe(3);
+    // A quarter of 8 GB is 2 GiB, which would plan one worker: the floor holds it at two.
+    expect(memoryBudget(8 * GiB, NO_ENV)).toBe(2.75 * GiB);
+    expect(memoryBudget(16 * GiB, NO_ENV)).toBe(4 * GiB);
   });
 
-  test('the sanity ceiling still holds on a machine with everything', () => {
-    expect(defaultWorkers(256, PLENTY)).toBe(WORKER_CEILING);
+  test('never more workers than cores — no oversubscription', () => {
+    const plan = workerPlan(2, 64 * GiB, { [MEMORY_BUDGET_ENV]: '32g' });
+    expect(plan.workers).toBe(2);
+    expect(plan.boundBy).toBe('cpus');
+    expect(plan.reason).toContain('2 cores');
   });
 
-  test('a one-core or starved box still shards, and no input yields zero workers', () => {
-    // Two, not one: a single worker is serial with the sharding overhead still paid for.
-    expect(defaultWorkers(1, PLENTY)).toBe(WORKER_FLOOR);
-    expect(defaultWorkers(0, PLENTY)).toBe(WORKER_FLOOR);
-    expect(defaultWorkers(12, 0)).toBe(WORKER_FLOOR);
+  test('never fewer than one, on a starved or zero-core box', () => {
+    expect(defaultWorkers(1, 64 * GiB, NO_ENV)).toBe(1);
+    expect(defaultWorkers(0, 64 * GiB, NO_ENV)).toBe(1);
+    // No RAM reading at all still plans on the floor's two workers, never zero.
+    expect(defaultWorkers(12, 0, NO_ENV)).toBe(2);
+    expect(defaultWorkers(12, 0, { [MEMORY_BUDGET_ENV]: '1g' })).toBe(WORKER_FLOOR);
+  });
+
+  test('the budget env replaces the default, and the cap env narrows it', () => {
+    expect(defaultWorkers(16, 64 * GiB, { [MEMORY_BUDGET_ENV]: '10g' })).toBe(8);
+    const capped = workerPlan(16, 64 * GiB, { [MEMORY_BUDGET_ENV]: '10g', [MAX_WORKERS_ENV]: '3' });
+    expect(capped.workers).toBe(3);
+    expect(capped.reason).toBe(`3 workers (${MAX_WORKERS_ENV}=3)`);
+    // A cap above the plan is not a raise.
+    expect(defaultWorkers(16, 16 * GiB, { [MAX_WORKERS_ENV]: '12' })).toBe(3);
+  });
+
+  test('the sanity ceiling holds even on a budget that would allow more', () => {
+    expect(defaultWorkers(256, 1024 * GiB, { [MEMORY_BUDGET_ENV]: '512g' })).toBe(WORKER_CEILING);
+  });
+
+  test('a shared suite plans the same width — the default is already one per core at most', () => {
+    expect(sharedWorkers(8, 16 * GiB, NO_ENV)).toBe(defaultWorkers(8, 16 * GiB, NO_ENV));
   });
 
   test('the real machine answers with something runnable', () => {
     expect(availableCpus()).toBeGreaterThanOrEqual(1);
-    expect(availableMemory()).toBeGreaterThan(0);
-    expect(defaultWorkers()).toBeGreaterThanOrEqual(WORKER_FLOOR);
-    expect(defaultWorkers()).toBeLessThanOrEqual(WORKER_CEILING);
-  });
-});
-
-describe('unit · the width of a suite that shares the machine', () => {
-  test('one worker per core — never the 1.5x a suite alone gets', () => {
-    expect(sharedWorkers(8, PLENTY)).toBe(8);
-    expect(sharedWorkers(12, PLENTY)).toBe(12);
-    expect(defaultWorkers(8, PLENTY)).toBe(12);
-  });
-
-  test('memory still binds, and the floor still holds', () => {
-    expect(sharedWorkers(12, (WORKER_BYTES * 5) / MEMORY_SHARE)).toBe(5);
-    expect(sharedWorkers(1, PLENTY)).toBe(WORKER_FLOOR);
-    expect(sharedWorkers(12, 0)).toBe(WORKER_FLOOR);
-    expect(sharedWorkers(256, PLENTY)).toBe(WORKER_CEILING);
+    expect(totalMemory()).toBeGreaterThan(0);
+    expect(WORKER_BYTES).toBeGreaterThan(0);
+    const workers = defaultWorkers(availableCpus(), totalMemory(), NO_ENV);
+    expect(workers).toBeGreaterThanOrEqual(1);
+    expect(workers).toBeLessThanOrEqual(availableCpus());
   });
 });

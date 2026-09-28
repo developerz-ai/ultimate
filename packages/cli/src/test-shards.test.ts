@@ -21,7 +21,7 @@ import { renderJson } from './output';
 import { flagBool, flagString, parseArgs } from './parse';
 import type { TestFile } from './test-select';
 import { filesIn, ISOLATED_TEST_ENV, reproduceFor, runShards, testArgs } from './test-shards';
-import { BATCH_FILES_PER_WORKER } from './test-workers';
+import { SHARED_BATCH_FILES_PER_WORKER as BATCH_FILES_PER_WORKER } from './test-workers';
 
 interface Call {
   readonly command: readonly string[];
@@ -61,38 +61,66 @@ const firstCode = (result: {
 }): string => result.steps?.flatMap((step) => [...step.findings])[0]?.code ?? '';
 
 describe('unit · the argv one bun test receives', () => {
-  test('the whole selection is one --parallel run, files listed explicitly', () => {
+  test('the whole selection is one --parallel run, files listed explicitly, NOT isolated', () => {
     expect(testArgs({ files: ['b.test.ts', 'a.test.ts'], workers: 4 })).toEqual([
       'bun',
       'test',
       '--parallel=4',
+      '--no-isolate',
       'a.test.ts',
       'b.test.ts',
     ]);
   });
 
-  // The rule an arbitrary partition depends on. Half the framework's registries are
-  // process-global, and a serial run only passes because glob order happens to put every
-  // declaring file before every file that reads what it left behind — measured, a bare
-  // `bun test packages/` is 282 failures and the same corpus under `--isolate` is 0.
-  // `--parallel` implies it; the shard form has to say it, and that is the whole reason this
-  // case names both branches rather than one.
-  test('every file gets a fresh module registry, in both forms', () => {
-    // `--parallel` implies `--isolate` (bun 1.4.0), so the flag is deliberately NOT repeated.
-    expect(testArgs({ files: ['a.test.ts'], workers: 2 })).toContain('--parallel=2');
-    expect(testArgs({ files: ['a.test.ts'], workers: 2, shard: 0 })).toContain('--isolate');
+  // 22.7: isolation is opt-in. `--parallel` implies `--isolate`, so the default run must say
+  // `--no-isolate`; the shard form is serial and simply omits `--isolate`. The framework repo
+  // itself opts back in through `x.verify.json` (its registries are process-global by design).
+  test('isolation is opt-in, in both forms, and a caller’s -- --no-isolate beats the floor', () => {
+    expect(testArgs({ files: ['a.test.ts'], workers: 2 })).toContain('--no-isolate');
+    expect(testArgs({ files: ['a.test.ts'], workers: 2, shard: 0 })).not.toContain('--isolate');
+    expect(testArgs({ files: ['a.test.ts'], workers: 2, isolate: true })).not.toContain(
+      '--no-isolate',
+    );
+    expect(testArgs({ files: ['a.test.ts'], workers: 2, shard: 0, isolate: true })).toContain(
+      '--isolate',
+    );
+    const overridden = testArgs({
+      files: ['a.test.ts'],
+      workers: 2,
+      isolate: true,
+      passthrough: ['--no-isolate'],
+    });
+    expect(overridden.filter((arg) => arg === '--no-isolate')).toHaveLength(1);
+  });
+
+  // The slowest files first, from a local cache every run refreshes; a caller's own flag wins.
+  test('a parallel run reads and refreshes the timings cache; the shard form and a caller override do not', () => {
+    const args = testArgs({ files: ['a.test.ts'], workers: 2, timings: '/r/.x/test-timings.json' });
+    expect(args).toContain('--timings=/r/.x/test-timings.json');
+    expect(args).toContain('--update-timings');
+    expect(
+      testArgs({ files: ['a.test.ts'], workers: 2, shard: 0, timings: '/r/t.json' }).join(' '),
+    ).not.toContain('--timings');
+    const own = testArgs({
+      files: ['a.test.ts'],
+      workers: 2,
+      timings: '/r/t.json',
+      passthrough: ['--timings=mine.json'],
+    });
+    expect(own.filter((arg) => arg.startsWith('--timings'))).toEqual(['--timings=mine.json']);
   });
 
   // 0-based on the flag, 1-based in bun's own grammar. Off by one here is a rerun of the wrong
   // eighth of the corpus, reported as the one that failed.
   test('--worker I is bun shard I+1 of N, serial within the shard', () => {
-    expect(testArgs({ files: ['a.test.ts', 'b.test.ts'], workers: 8, shard: 3 })).toEqual([
+    expect(
+      testArgs({ files: ['a.test.ts', 'b.test.ts'], workers: 8, shard: 3, isolate: true }),
+    ).toEqual(['bun', 'test', '--isolate', '--shard=4/8', 'a.test.ts', 'b.test.ts']);
+    expect(testArgs({ files: ['a.test.ts'], workers: 8, shard: 3 })).toEqual([
       'bun',
       'test',
-      '--isolate',
       '--shard=4/8',
       'a.test.ts',
-      'b.test.ts',
     ]);
   });
 
@@ -114,23 +142,48 @@ describe('unit · the argv one bun test receives', () => {
 describe('unit · x test execution', () => {
   // Bun 1.4.0 keeps every finished file alive under --isolate while a plugin is registered; the
   // testing preload frees them only when it is told the run is isolated (`isolated-plugins.ts`).
-  test('every isolated child is told so, and a --no-isolate one is not', async () => {
+  test('only an isolated child is told so — the default shared-global run is not', async () => {
     expect(ISOLATED_TEST_ENV).toBe(ISOLATED_ENV);
-    const isolated = recorder();
-    await runShards({ root: '/repo', runner: isolated.runner, files: corpus(6), workers: 2 });
-    expect(isolated.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBe('1');
-    const shard = recorder();
-    await runShards({ root: '/repo', runner: shard.runner, files: corpus(6), workers: 2, only: 0 });
-    expect(shard.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBe('1');
     const shared = recorder();
+    await runShards({ root: '/repo', runner: shared.runner, files: corpus(6), workers: 2 });
+    expect(shared.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBeUndefined();
+    const isolated = recorder();
     await runShards({
       root: '/repo',
-      runner: shared.runner,
+      runner: isolated.runner,
       files: corpus(6),
       workers: 2,
-      passthrough: ['--no-isolate'],
+      isolate: true,
     });
-    expect(shared.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBeUndefined();
+    expect(isolated.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBe('1');
+    const optedIn = recorder();
+    await runShards({
+      root: '/repo',
+      runner: optedIn.runner,
+      files: corpus(6),
+      workers: 2,
+      passthrough: ['--isolate'],
+    });
+    expect(optedIn.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBe('1');
+  });
+
+  test('a default-width run leases each batch from the machine pool and runs at what it got', async () => {
+    const { calls, runner } = recorder();
+    const leased: number[] = [];
+    let released = 0;
+    await runShards({
+      root: '/repo',
+      runner,
+      files: corpus(6),
+      workers: 4,
+      lease: async (want) => {
+        leased.push(want);
+        return { count: 1, release: () => (released += 1) };
+      },
+    });
+    expect(leased).toEqual([4]);
+    expect(released).toBe(1);
+    expect(calls[0]?.command).toContain('--parallel=1');
   });
 
   test('one bun test carries every selected file, once', async () => {
