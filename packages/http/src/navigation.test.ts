@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { navigationGate, redirectForRouter } from './navigation';
+import { locationFor, navigationGate, redirectForRouter } from './navigation';
 import { redirect } from './response';
 import type { Route, RouteNavigation } from './router';
 import { createServer } from './server';
@@ -36,7 +36,7 @@ describe('navigationGate — what a router request may not reach', () => {
     for (const nav of [undefined, page({ surface: 'admin:app' }), page({ surface: 'web:site' })]) {
       const answer = navigationGate(at(soft), 'GET', URL_AT, nav);
       expect(answer?.status).toBe(204);
-      expect(answer?.headers.get('x-ultimate-location')).toBe(URL_AT.href);
+      expect(answer?.headers.get('x-ultimate-location')).toBe('/r/tok/d/1');
     }
   });
 
@@ -53,14 +53,35 @@ describe('navigationGate — what a router request may not reach', () => {
   });
 });
 
+describe('locationFor — what x-ultimate-location says', () => {
+  // Behind a TLS-terminating proxy this process sees `http://internal…`; the visitor is on https.
+  const internal = new URL('http://www.notificado.co/r/tok/d/1');
+
+  test('a target on this origin is its path, query and fragment — never a scheme to get wrong', () => {
+    expect(locationFor(internal.href, internal)).toBe('/r/tok/d/1');
+    expect(locationFor('/done?x=1#hecho', internal)).toBe('/done?x=1#hecho');
+    expect(locationFor('../casos?page=2', internal)).toBe('/r/tok/casos?page=2');
+  });
+
+  test('a target on another origin is kept exactly as the app gave it', () => {
+    expect(locationFor('https://pay.test/checkout?ref=7', internal)).toBe(
+      'https://pay.test/checkout?ref=7',
+    );
+    // The public https origin is ANOTHER origin to a process that sees http: kept as written.
+    expect(locationFor('https://www.notificado.co/panel', internal)).toBe(
+      'https://www.notificado.co/panel',
+    );
+  });
+});
+
 describe('redirectForRouter', () => {
-  test('a redirect to a router request becomes 204 + an absolute location, cookies kept', () => {
+  test('a redirect to a router request becomes 204 + a same-origin PATH, cookies kept', () => {
     const answered = redirect('/done?x=1', 303);
     answered.headers.append('set-cookie', 'a=1; Path=/');
     answered.headers.append('set-cookie', 'b=2; Path=/');
     const out = redirectForRouter(at(soft, 'POST'), answered, URL_AT);
     expect(out?.status).toBe(204);
-    expect(out?.headers.get('x-ultimate-location')).toBe('https://app.test/done?x=1');
+    expect(out?.headers.get('x-ultimate-location')).toBe('/done?x=1');
     expect(out?.headers.get('location')).toBeNull();
     expect(out?.headers.getSetCookie()).toEqual(['a=1; Path=/', 'b=2; Path=/']);
   });
@@ -120,7 +141,7 @@ describe('through the pipeline', () => {
     ran.length = 0;
     const answer = await hit('/evidence', soft);
     expect(answer.status).toBe(204);
-    expect(answer.headers.get('x-ultimate-location')).toBe('http://app.test/evidence');
+    expect(answer.headers.get('x-ultimate-location')).toBe('/evidence');
     expect(ran).toEqual([]);
     expect((await hit('/evidence')).status).toBe(200);
     expect(ran).toEqual(['/evidence']);
@@ -133,11 +154,20 @@ describe('through the pipeline', () => {
     expect(ran).toEqual(['/page', '/eager']);
   });
 
+  test('behind a TLS proxy (the process sees http), the hand-back names no scheme at all', async () => {
+    const answer = await server.fetch(
+      new Request('http://www.notificado.co/evidence?t=1', {
+        headers: { ...soft, 'x-forwarded-proto': 'https' },
+      }),
+    );
+    expect(answer.headers.get('x-ultimate-location')).toBe('/evidence?t=1');
+  });
+
   test('a redirect answered to the router is handed over after ONE execution', async () => {
     ran.length = 0;
     const answer = await hit('/go', soft);
     expect(answer.status).toBe(204);
-    expect(answer.headers.get('x-ultimate-location')).toBe('http://app.test/landing');
+    expect(answer.headers.get('x-ultimate-location')).toBe('/landing');
     expect(ran).toEqual(['/go']);
     // A browser's own request is untouched.
     expect((await hit('/go')).status).toBe(302);

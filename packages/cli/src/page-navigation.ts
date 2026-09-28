@@ -13,7 +13,7 @@ import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx, NavigationSurface } from '@ultimat3/core';
 import { CLIENT_NAVIGATION_SCOPE_HEADER, NAVIGATION_SURFACES } from '@ultimat3/core';
 import type { Route, RouteNavigation, UltimateRequest } from '@ultimat3/http';
-import { navigationPurpose, relocate } from '@ultimat3/http';
+import { locationFor, navigationPurpose, relocate } from '@ultimat3/http';
 import type { ClientNavigationHead, HeadTag, RouteEntry } from '@ultimat3/render';
 import {
   clientNavigationTags,
@@ -210,5 +210,7 @@ export function principalRelocation(
 ): Response | undefined {
   if (navigationPurpose(request.raw) === null) return undefined;
   const said = request.header(CLIENT_NAVIGATION_SCOPE_HEADER);
-  return said === scopeOf(entry, ctx, buildId) ? undefined : relocate(request.url.href);
+  return said === scopeOf(entry, ctx, buildId)
+    ? undefined
+    : relocate(locationFor(request.url.href, request.url));
 }
