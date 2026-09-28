@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.7.0 - 2026-09-28
+
 ### Changed
 
 - **cli:** the default test width is a memory BUDGET â€” `min(4 GiB, max(2.75 GiB, 25% of total RAM))` at 1.25 GiB
@@ -76,6 +80,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   derived one.
 - **db:** a PGlite client's `close()` runs a full GC, so its WASM heap is returned before the next
   test file boots its own.
+
+### Commits
+
+- feat: lean gate â€” memory-budgeted width, machine-wide slots, no-isolate default, CI shards + verify merge, build --no-preflight (#566)
+- fix(cli): x dev reloads imported modules; feat: Sass asset(), RouteMeta.links (#565)
 
 ## 22.6.2 - 2026-09-27
 
