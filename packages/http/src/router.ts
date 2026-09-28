@@ -33,6 +33,13 @@ export const HTTP_METHODS: readonly HttpMethod[] = [
 
 export type RouteParams = Readonly<Record<string, string>>;
 
+/** Which router may swap this page in, and whether it may be fetched before a click. */
+export interface RouteNavigation {
+  /** `<app>:<surface>` — the router's own document must carry the same. */
+  readonly surface: string;
+  readonly prefetch: boolean;
+}
+
 export interface RouteMeta {
   /** Stable id used by rate-limit keys, traces and the manifest. */
   readonly name: string;
@@ -79,6 +86,13 @@ export interface RouteMeta {
    * serves for `/` cannot negotiate, so the served process must not either.
    */
   readonly localeSource?: 'path' | 'request';
+  /**
+   * Present ONLY on a page the client router may swap in: its `<app>:<surface>` and whether it
+   * may be prefetched. Absent — every action, query, asset, storage and app route, and a page
+   * declared `navigation: 'document'` — a router request is answered before the route runs
+   * (`navigation.ts`'s gate): `204` to a prefetch, `204` + `x-ultimate-location` to a soft visit.
+   */
+  readonly navigation?: RouteNavigation;
   /**
    * THIS route's authenticator, in place of the app's `configureAuthenticator()` — never beside
    * it. A route that states one is reached only through the credential it names: a bearer mount

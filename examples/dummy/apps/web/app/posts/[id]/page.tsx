@@ -103,8 +103,16 @@ export const config = defineRoute({
    * realtime — 26,444 B of the header's count is the like control's too. Down from 145,000 when
    * the outbox left the like control for the page boot (7,940 B); the shared runtime is #505, and
    * this number comes DOWN again when it lands.
+   *
+   * measured: 155,790 B (2026-09-28: 137,060 above + the router 18,276 + 40 in the runtime + 207
+   * in each of the two islands that reach core's transport, each measured by
+   * `x build --target static` on `/posts/new`, `/settings` and `/feed` — a dynamic route that build
+   * does not prerender), against 156,160 (`152.5kb`).
+   * why: client navigation (`navigation: { client: ['app'] }` in `app.config.ts`) — the router,
+   * `/_x/navigation/<hash>.js`, 18,276 B on every `app/` document, charged like the page boot: it
+   * is interactivity this app opted into, and a route cannot remove it; `/settings`' reason for the island bytes.
    */
-  budget: { js: '134kb', lcp: 2000 },
+  budget: { js: '152.5kb', lcp: 2000 },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.

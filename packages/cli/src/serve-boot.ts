@@ -18,6 +18,7 @@ import { islandRoutes } from './island-routes';
 import { loadOrBuildIslands } from './island-store';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
+import { loadNavigation, pageNavigation } from './page-navigation';
 import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { startRoles } from './role-start';
@@ -149,6 +150,12 @@ async function webSurface(
   // The page's sync target and its scripts — the same call `x dev` makes, so the two cannot differ.
   // Before the service worker, which precaches those scripts.
   const sync = await pageSync(options.root, options.env, buildId, runtime.realtime);
+  // The client router, when a surface opted in (`navigation.client`) — the same call in both boots.
+  const navigation = await pageNavigation(
+    options.root,
+    await loadNavigation(options.root),
+    buildId,
+  );
   // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
   // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
   // route added here cannot be missing from the precache manifest.
@@ -161,7 +168,10 @@ async function webSurface(
           routes: describeRoutes(),
           islands,
           styles: styleBundle(),
-          scripts: sync.scripts,
+          scripts: [
+            ...sync.scripts,
+            ...(navigation.script === undefined ? [] : [navigation.script]),
+          ],
         });
   // The app's own MCP endpoint, through the same call `x dev` makes — see `app-mcp.ts`.
   const mcpMount = await mountAppMcp(options.root);
@@ -191,6 +201,7 @@ async function webSurface(
     ...seoRoutes({ env: options.env, site }),
     // The page's one socket: its worker script, served beside the islands for their reason.
     ...sync.routes,
+    ...navigation.routes,
     // A page's `POST`, bound to an action (`defineRoute({ post })`) — beside the page's `GET`.
     ...pagePostRoutes(),
     ...appRoutes({
@@ -198,6 +209,7 @@ async function webSurface(
       resolveIsland: (file) => islands.resolverFor(file),
       ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
+      ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       themeHead: theme.head,
       ...(origin === undefined ? {} : { origin }),
       ...(pwa === undefined

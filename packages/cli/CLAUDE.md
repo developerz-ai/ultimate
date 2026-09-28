@@ -83,6 +83,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `runtime-overrides.ts` | the one field a host hands the framework a driver through — and `routes`, the plain routes for a wire format no primitive speaks (OAuth token endpoint) |
 | `app-openapi.ts` | `openapi.json` (complete when `defineApi({ openapi })` is declared) and each bearer mount's own document; staleness for all of them |
 | `script-csp.ts` / `style-csp.ts` / `style-bundle.ts` / `page-sync.ts` / `worker-bundle.ts` | CSP hashes, the CSS file, the page's sync target and worker |
+| `page-navigation.ts` | the client router for `navigation.client` surfaces — built, routed and named ONCE for `x dev`, the container and the static export; none opted in builds nothing |
 | `island-bundle.ts` / `island-store.ts` / `island-realtime.ts` / `solid-loader.ts` | islands: one `Bun.build` each, source-addressed; `x build --target docker` writes a verified store the container loads |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, the watcher, the reload, the lock, the port |
 

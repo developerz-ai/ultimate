@@ -20,6 +20,7 @@ export { actionPath, queryPath, splitWords } from './client-paths';
 export type { ClientScope } from './client-scope';
 export { onRescope, rescope } from './client-scope';
 export { clientTransport } from './client-transport';
+export { notifyClientWrite, onClientWrite } from './client-writes';
 export { type Clock, systemClock } from './clock';
 export type { ConflictPolicy, Row } from './conflict-policy';
 // Registry-free: it merges two rows and throws nothing, so the page's record store settles a
@@ -38,6 +39,10 @@ export { OUTBOX_DRAIN_MESSAGE } from './outbox-drain';
 export {
   APP_UPDATE_MESSAGE,
   CLIENT_BUILD_META,
+  CLIENT_NAVIGATION_HEADER,
+  CLIENT_NAVIGATION_LOCATION_HEADER,
+  CLIENT_NAVIGATION_SCOPE_HEADER,
+  CLIENT_NAVIGATION_SURFACE_HEADER,
   CLIENT_PERSIST_META,
   CLIENT_SCOPE_HEADER,
   CLIENT_SCOPE_META,

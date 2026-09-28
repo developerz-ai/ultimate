@@ -442,7 +442,13 @@ describe('this repository', () => {
       expect(measured.get('packages/money')).toEqual(['src/errors.ts']);
       // `server.ts` calls `installRenderLoader()` — the BUILD-TIME barrel is the side effect here,
       // and `index.ts` (the client half) is inert, which is what lets it bundle for a browser.
-      expect(measured.get('packages/render')).toEqual(['src/errors.ts', 'src/server.ts']);
+      // `navigation-entry.ts` is `@ultimat3/render/navigation`: importing it STARTS the client
+      // router — the one browser entry whose effect is the point — and no barrel re-exports it.
+      expect(measured.get('packages/render')).toEqual([
+        'src/errors.ts',
+        'src/navigation-entry.ts',
+        'src/server.ts',
+      ]);
       expect(measured.get('packages/time')).toEqual(['src/errors.ts']);
       // `errors.ts` is pure since #490: the `registerErrorCodes()` call is its own module, and
       // `theme/ambient.ts` registers the server's `useUi()` reader at import.

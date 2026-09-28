@@ -35,8 +35,10 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      * when the replay learned to aim a keyboard or scripted press — `detail: 0` at (0, 0) — by the
      * pressed node's PATH rather than a hit test of the page's corner. Since then `idle` is the
      * HEAVIEST single-strategy runtime, so the ceiling below is taken over the worse of the two.
+     * 1,744 -> 1,784 on 2026-09-28 (+40 B in the shared prelude): `each` visits an island root once
+     * per tab, so the client router can re-run this runtime over a swapped-in body.
      */
-    hydrateRuntimeIdle: 1_744,
+    hydrateRuntimeIdle: 1_784,
     /**
      * `DEFAULT_ISLAND_HYDRATE` is `'interaction'` (`route.ts:33`), so THIS is the runtime an island
      * route declaring no `hydrate` actually ships. The budget derivation used `idle` and understated
@@ -58,8 +60,11 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      *
      * Moved 1,251 -> 1,629 on 2026-09-22: `aim` and the queue moved into `catchUp`, shared with
      * `idle` (+49 B for the call), and the replay learned to aim by the pressed node's path (+329 B).
+     *
+     * Moved 1,629 -> 1,669 on 2026-09-28: the prelude's `each` marks the roots it visited (+40 B),
+     * so the runtime is safe to run again over a body the client router swapped in.
      */
-    hydrateRuntimeDefault: 1_629,
+    hydrateRuntimeDefault: 1_669,
   } as const;
 
   /** What the allowance has to clear: the costlier of the two runtimes an island gets unasked. */

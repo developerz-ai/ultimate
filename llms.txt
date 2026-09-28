@@ -221,6 +221,7 @@ The single public documentation surface; there is no separate marketing site. So
 - [Batching and preloading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Batching-And-Preloading.md): JIT preload, `.preload()`, `insertAll`/`upsertAll`/`updateWhere`, `inBatches`, the tenancy guarantee.
 - [N+1 detection](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/N-Plus-One-Detection.md): the two codes, `expectedQueryLoop`, four surfaces, why prod pays nothing.
 - [PWA and offline](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/PWA-And-Offline.md): generated `sw.js`, precache budgets, version skew.
+- [Client navigation](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Client-Navigation.md): soft navigation over server-rendered pages: one config line per surface, swap, prefetch, history, focus.
 - [MCP and AI](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/MCP-And-AI.md): the dev MCP server, every action as a tool, the `llm()` gateway, evals.
 - [Agents](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Agents.md): `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap.
 - [Admin dashboard](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Admin-Dashboard.md): the generated admin app and its MCP surface.

@@ -287,6 +287,18 @@ pwa: {
 | `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `serviceWorkerWarnings` entry saying so, rather than leaving the switch quietly inert |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
+## `navigation`
+
+Which surfaces move between their pages by client-side navigation over server-rendered documents — [Client navigation](Client-Navigation).
+
+```ts
+navigation: { client: ['app'] },
+```
+
+| field | type | default | notes |
+|---|---|---|---|
+| `navigation.client` | `('site' \| 'app')[]` | `[]` | **read** by `x dev`, the container and `x build --target static`: a listed surface's documents carry the router (`/_x/navigation/<hash>.js`, charged to each route's `budget.js`). `api`, `shared`, a duplicate or a non-list → `X_CONFIG_INVALID`. The last layer that lists surfaces wins |
+
 ## `http`
 
 **Not an `app.config.ts` block, and never was.** `AppConfigInput` has no `http` key. `@ultimat3/core` is tier 0 and cannot hold `@ultimat3/http`'s types, so an `http` block here would be a **second declaration** of `HttpConfigInput` in a package that can never check it against the real one. An app declares its half with `configureHttp()`, at module scope in a file under `apps/*/` — the same seam `configureAuthenticator()` and `defineStorage()` are, and for the same reason.

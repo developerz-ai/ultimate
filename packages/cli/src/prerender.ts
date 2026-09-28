@@ -27,6 +27,7 @@ import { buildIslands, writeIslands } from './island-bundle';
 import { measureDatabase } from './measure-database';
 import { measurePaths } from './measure-paths';
 import { measureScope, withAppUrl } from './measure-scope';
+import { loadNavigation, pageNavigation } from './page-navigation';
 import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
 import { loadPwaArtifacts, writePwaIcons } from './pwa-artifacts';
@@ -228,6 +229,17 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // names it either.
   const pwa = await loadPwaArtifacts(options.root);
   const theme = themeBoot(await loadThemeMode(options.root));
+  // The client router, for the surfaces that opted in: written BEFORE any document names it, for
+  // the register's reason below — `measureDocumentJs` weighs it off disk, and it is charged to
+  // the route (the interactivity the app asked for), so it must be there to be weighed.
+  const navigation = await pageNavigation(
+    options.root,
+    await loadNavigation(options.root),
+    buildId,
+  );
+  if (navigation.script !== undefined) {
+    await Bun.write(join(options.out, navigation.script.url.slice(1)), navigation.script.code);
+  }
   // The registration TAG now, the worker itself after the render loop — the two halves are wanted
   // at different moments and used to be taken at the same one. Every document below has to name
   // `/x-sw-register.js`, and the worker's precache manifest is built from the content hash of
@@ -289,6 +301,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       resolveIsland: (file: string) => islands.resolverFor(file),
       themeHead: theme.head,
       origin,
+      ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       ...(pwa === undefined
         ? {}
         : { pwaHead: (locale: string) => pwa.headFor(locale) + (swHead ?? '') }),
@@ -434,6 +447,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
           islands,
           styles,
           documents,
+          ...(navigation.script === undefined ? {} : { scripts: [navigation.script] }),
         });
   // `sw.js` only: `serviceWorker.register` IS `serviceWorkerRegistration()`, already on disk above
   // and identical by construction. A second writer of one path is how the two could ever disagree.

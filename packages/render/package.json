@@ -6,7 +6,8 @@
   "type": "module",
   "sideEffects": [
     "./src/errors.ts",
-    "./src/server.ts"
+    "./src/server.ts",
+    "./src/navigation-entry.ts"
   ],
   "repository": {
     "type": "git",
@@ -19,7 +20,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./server": "./src/server.ts"
+    "./server": "./src/server.ts",
+    "./navigation": "./src/navigation-entry.ts"
   },
   "files": [
     "src",

@@ -110,6 +110,8 @@ export type { LocaleConfig, TimeZoneConfig } from './locale';
 export { DEFAULT_LOCALE_CONFIG, readCookie } from './locale';
 export type { Middleware } from './middleware';
 export { compose } from './middleware';
+export type { NavigationPurpose } from './navigation';
+export { navigationGate, navigationPurpose, redirectForRouter, relocate } from './navigation';
 export type { OverlayMeta, OverlayNotice } from './overlay';
 export { overlayResponse, wantsOverlay } from './overlay';
 export { OVERLAY_STYLE } from './overlay-style';
@@ -186,6 +188,7 @@ export type {
   RouteDescription,
   RouteHandler,
   RouteMeta,
+  RouteNavigation,
   RouteParams,
   RouteTable,
 } from './router';

@@ -69,6 +69,12 @@ export const config = defineConfig({
   },
 
   ai: { mcp: { expose: true, path: '/mcp' } },
+
+  // The authed app moves between its pages without a full load: the router fetches the next
+  // server-rendered document and swaps it in, keeping the socket and the page store alive. `site/`
+  // is not listed, so the marketing pages stay 0kb of JS. Sign-out still reloads: its 303 lands on
+  // a document rendered for nobody, and a new principal is always a full navigation.
+  navigation: { client: ['app'] },
 });
 
 /**

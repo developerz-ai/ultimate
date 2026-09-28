@@ -22,6 +22,7 @@ import type { RouteMeta } from '@ultimat3/seo';
 import {
   RouteLoadInvalidError,
   RouteMetaMissingError,
+  RouteNavigationInvalidError,
   RouteOfflineMissingError,
   RoutePostInvalidError,
 } from './errors';
@@ -193,7 +194,18 @@ export type LoadRequirement<TData> = RouteContext extends TData
  */
 export type RouteCache = 'no-store' | Omit<CacheHint, 'tags'>;
 
-/** The input shape of `defineRoute` — exactly the contract's eleven keys, nothing else. */
+/**
+ * How the client router treats this page (`navigation: { client }` surfaces only). Absent: swapped
+ * in on a click, never fetched before one. `'prefetch'`: may also be fetched on intent — only for a
+ * page whose GET does nothing but render. `'document'`: always a real document load, the route run
+ * once by the browser — for a GET that records something (an open, a download, a token consumed).
+ * The server enforces both before `load` (`@ultimat3/http`'s navigation gate).
+ */
+export type RouteNavigationMode = 'prefetch' | 'document';
+
+export const ROUTE_NAVIGATION_MODES: readonly RouteNavigationMode[] = ['prefetch', 'document'];
+
+/** The input shape of `defineRoute` — exactly the contract's twelve keys, nothing else. */
 export interface RouteDefinition<TData = RouteData> {
   readonly render: RenderMode;
   readonly revalidate?: RevalidateConfig;
@@ -224,6 +236,8 @@ export interface RouteDefinition<TData = RouteData> {
    * Never on `static`: a file on disk has no process to answer a `POST`.
    */
   readonly post?: string;
+  /** See `RouteNavigationMode`. Refused on a surface without client navigation, at boot. */
+  readonly navigation?: RouteNavigationMode;
 }
 
 /**
@@ -304,6 +318,11 @@ export function defineRoute<TData = RouteData>(
   }
 
   if (def.post !== undefined) assertPostBinding(def.post, def.render);
+  if (def.navigation !== undefined && !ROUTE_NAVIGATION_MODES.includes(def.navigation)) {
+    throw new RouteNavigationInvalidError(
+      `navigation: ${renderCauseValue(def.navigation)} is not one of ${ROUTE_NAVIGATION_MODES.join(', ')}`,
+    );
+  }
 
   const declaredMeta = def.meta;
   const declaredLoad = def.load;
@@ -338,6 +357,7 @@ export function defineRoute<TData = RouteData>(
     ...(def.policy ? { policy: def.policy } : {}),
     ...(def.cache === undefined ? {} : { cache: def.cache }),
     ...(def.post === undefined ? {} : { post: def.post }),
+    ...(def.navigation === undefined ? {} : { navigation: def.navigation }),
   };
 
   assertModeShape(config);

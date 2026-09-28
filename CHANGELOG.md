@@ -8,7 +8,56 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **render, cli, core, http:** client navigation — soft navigation over server-rendered documents,
+  opted in per surface with `navigation: { client: ['app'] }` in `app.config.ts`, and per page with `defineRoute`'s twelfth key,
+  `navigation: 'prefetch' | 'document'` (`X_ROUTE_NAVIGATION_INVALID` for any other value or off a
+  `navigation.client` surface). A same-surface link or form fetches the next page its route renders
+  anyway and swaps it into the tab: stylesheets loaded first, old islands disposed, persisted
+  elements (`data-x-persist`) carried with their attributes and `aria-current` re-synced, server
+  head tags diffed (JSON-LD replaced, script-added tags kept, the old page's stylesheets retired, the
+  new page's head scripts run once), new islands booted by the same inline hydration runtime, inside
+  `startViewTransition` unless `prefers-reduced-motion`. History with each entry's document,
+  scroll saved as it happens (back and forward), focus to `<main>`, an `aria-live` announcement,
+  `data-x-navigating` past 150 ms, an in-flight navigation aborted by the next.
+  **Nothing is sent twice**: `@ultimat3/http` answers a router request before auth or app code —
+  a prefetch of any route that did not declare `'prefetch'` with `204`, a soft GET to anything but a
+  page of the router's `<app>:<surface>` (and a page for another principal) with `204` +
+  `x-ultimate-location` — and turns any 3xx answered to the router into the same hand-over, cookies
+  kept. The router fetches with `redirect: 'manual'`, never re-submits a POST
+  (`ultimate:navigation-error`, cancelable), and hands a non-page answer to the browser from the bytes
+  it received. Prefetch cache (per tab, memory, 30 s, 20 entries) never answers with a non-2xx or a
+  hand-over, keeps a `no-store` page 5 s, and is emptied by POSTs, `onClientWrite` (new in core,
+  announced by `clientTransport` after every write settles), `onRescope` and a `BroadcastChannel`
+  across tabs. The router is `@ultimat3/render/navigation`, built by the CLI to
+  `/_x/navigation/<hash>.js` (18,276 B, 6,852 B gzip), served `immutable`, written by the static
+  export, precached by the service worker, charged to each opted-in route's `budget.js`. New exports:
+  `linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `navigationCache`,
+  `clientNavigationTags`, `ROUTE_NAVIGATION_MODES`, `RouteNavigationInvalidError`, the
+  `NAVIGATION_*`/`NAVIGATE*_EVENT` names (render); `navigationGate`, `redirectForRouter`, `relocate`,
+  `navigationPurpose`, `RouteMeta.navigation` (http); `onClientWrite`, `notifyClientWrite`,
+  `CLIENT_NAVIGATION_*` headers, `NAVIGATION_SURFACES`, `NavigationConfig` (core).
+  [Client navigation](https://github.com/developerz-ai/ultimate/wiki/Client-Navigation).
+  **What an app that does not opt in pays** (default `navigation.client: []`): no router script, no
+  head tag, no route; +40 B in the inline hydration runtime of every page with an island (below);
+  +207 B in an island that reaches `clientTransport` (the write announcement, below); and one header
+  check per request in `@ultimat3/http`'s gate, inert unless a request carries
+  `x-ultimate-navigation` — which only the router sends.
+- **testing:** `E2eTab.scripting(enabled)` — `Emulation.setScriptExecutionDisabled` for one tab, so
+  an e2e can prove a page works with no JavaScript.
+
+### Changed
+
+- **render:** the inline hydration runtime visits each island root once per tab (`el.__v`), so it can
+  run again over a swapped-in body without booting a carried island twice: +40 B per runtime
+  (`idle` 1,784, `interaction` 1,669, `visible` 886). `DEFAULT_ISLAND_JS_BYTES` still clears the
+  worst case (19,581) with 899 B of headroom.
+- **core:** `clientTransport` announces every write through `onClientWrite` once it settles (+207 B
+  in an island that reaches the transport).
+- **examples/dummy:** the `app/` surface opts into client navigation, `/feed` and `/settings` into
+  prefetch; `/posts/new` (`20.5kb`), `/settings` (`57.5kb`), `/posts/:id` (`152.5kb`) and `/pricing`
+  (`22kb`) budgets raised by the measured bytes.
 
 ## 22.7.1 - 2026-09-28
 

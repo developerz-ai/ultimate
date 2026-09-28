@@ -66,6 +66,12 @@ import {
   streamResult,
 } from '@ultimat3/render/server';
 import { realtimeIslandFiles } from './island-realtime';
+import {
+  type NavigationDocumentHead,
+  navigationMetaOf,
+  navigationTagsOf,
+  principalRelocation,
+} from './page-navigation';
 import { styleBundle } from './style-bundle';
 
 /**
@@ -113,6 +119,11 @@ export interface DocumentOptions {
    * resolves against whatever host it happened to fetch from, a CDN's or a preview's.
    */
   readonly origin?: string;
+  /**
+   * The client router — `pageNavigation(…).head`. A document of a surface listed in
+   * `navigation.client` names it; every other document carries none of it.
+   */
+  readonly navigation?: NavigationDocumentHead;
 }
 
 export interface DevRenderOptions extends DocumentOptions {
@@ -166,6 +177,7 @@ const headFor = async (
         }),
         [
           ...(options.sync === undefined ? [] : clientSyncTags(options.sync)),
+          ...navigationTagsOf(options.navigation, entry.surface),
           // The page boot rides the scope tag: its whole job — restoring a principal's persisted
           // records and replaying its queued writes — is per principal, and a shareable document
           // (no scope tag) has neither. Cheaper than walking the page's islands, and exact.
@@ -420,11 +432,8 @@ const responseOf = (result: RenderResult): Response =>
     ? html(result.body, { status: result.status, headers: result.headers })
     : stream(result.body, { status: result.status, headers: result.headers });
 
-/**
- * `auth` follows the route's own guard, so a gated page is gated in dev by the same pipeline
- * stage that gates it in production. A route that declares no policy is public by declaration.
- */
-const metaOf = (entry: RouteEntry): HttpRouteMeta => ({
+/** `auth` follows the route's own guard: a gated page is gated in dev by the production stage. */
+const metaOf = (entry: RouteEntry, head?: NavigationDocumentHead): HttpRouteMeta => ({
   name: entry.file,
   auth: entry.config.policy === undefined ? 'public' : 'required',
   render: entry.config.render,
@@ -439,6 +448,8 @@ const metaOf = (entry: RouteEntry): HttpRouteMeta => ({
   ...(entry.config.cache === undefined
     ? {}
     : { cache: entry.config.cache === 'no-store' ? NO_STORE : entry.config.cache }),
+  // Which router may swap this page in, read by `@ultimat3/http`'s gate before anything runs.
+  ...navigationMetaOf(entry, head),
 });
 
 /**
@@ -462,11 +473,14 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
     method: 'GET' as const,
     path: registered.path,
     get meta(): HttpRouteMeta {
-      return metaOf(routeFor(registered.path) ?? registered);
+      return metaOf(routeFor(registered.path) ?? registered, options.navigation);
     },
     // `ctx.params` is the router's own match — the CLI never re-parses a path it did not match.
     handler: async (request, ctx): Promise<Response> => {
       const entry = routeFor(registered.path) ?? registered;
+      // A soft visit onto another principal's document is a real load — answered before `load`.
+      const moved = principalRelocation(entry, request, asCtx(ctx), options.buildId);
+      if (moved !== undefined) return moved;
       const data: DevRouteData = { url: request.url.href, params: ctx.params };
       // ONCE per request, before the mode is chosen: every branch of `resultFor` reads this same
       // object, so a route's `load` runs exactly once however its mode splits head from body.

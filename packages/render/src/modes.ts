@@ -246,12 +246,12 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * (`settings.island.tsx`) is 17,797 B. No `budget.js` under 4096 was reachable by any of them, on
  * any surface, because the allowance is measured above the baseline and not against it.
  *
- * The number: 17,797 (the heaviest island this repo actually ships) + 1,744 (`hydrateRuntimeBytes`
+ * The number: 17,797 (the heaviest island this repo actually ships) + 1,784 (`hydrateRuntimeBytes`
  * for one `idle` directive — `defaultHydrate('app')`, and since 2026-09-22 the costlier of the two
- * runtimes an island gets unasked; `DEFAULT_ISLAND_HYDRATE`'s `'interaction'` is 1,629) =
- * **19,541**. That is the worst case an app reaches without writing a number down. 20,480 is the
- * next whole kilobyte above it, leaving 939 B of headroom and still under 2x 19,541, so a route
- * bundling the same island twice is refused. `island-budget.test.ts` asserts all three. `visible` costs 846, so an island route
+ * runtimes an island gets unasked; `DEFAULT_ISLAND_HYDRATE`'s `'interaction'` is 1,669) =
+ * **19,581**. That is the worst case an app reaches without writing a number down. 20,480 is the
+ * next whole kilobyte above it, leaving 899 B of headroom and still under 2x 19,581, so a route
+ * bundling the same island twice is refused. `island-budget.test.ts` asserts all three. `visible` costs 886, so an island route
  * that declares it pays less; the default is what the budget has to clear.
  *
  * All three grew by 129 B on 2026-08-21 (from 881 / 615 / 687), when the prelude learned to mark a

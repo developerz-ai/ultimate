@@ -54,6 +54,10 @@ export const config = defineRoute({
   /** Never precached: this document is one member's own row, and a shared cache entry is a leak. */
   offline: 'runtime',
   hydrate: 'idle',
+  // Fetched on hover as well as on click: this page's GET only renders — it records nothing, so a
+  // guess that never becomes a visit costs one read. The server refuses a prefetch of any page
+  // that does not say this (`@ultimat3/http`'s navigation gate).
+  navigation: 'prefetch',
   /**
    * measured: 39,416 B (2026-09-22; `buildIslands`, `hydrateRuntimeBytes`) — the island chunk
    * 36,960 + the update banner 712 + the `idle` runtime 1,744, against 39,936. No page boot: it
@@ -71,8 +75,15 @@ export const config = defineRoute({
    * 40,140 (`39.2kb`).
    * why: the typed client's own growth, the same bytes `/pricing` states: the `'readable'` action
    * path style and three new error titles in `@ultimat3/action`'s registry.
+   *
+   * measured: 58,644 B (2026-09-28; `x build --target static`'s `.x/build-stats.json`), against
+   * 58,880 (`57.5kb`).
+   * why: client navigation (`navigation: { client: ['app'] }` in `app.config.ts`) — the router,
+   * `/_x/navigation/<hash>.js`, 18,276 B on every `app/` document, charged like the page boot: it
+   * is interactivity this app opted into, and a route cannot remove it. +247 B in the islands: the runtime's once-per-root visit (40) and core's
+   * transport announcing every write (`onClientWrite`), which is what empties the router's cache.
    */
-  budget: { js: '39.2kb', lcp: 1800 },
+  budget: { js: '57.5kb', lcp: 1800 },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

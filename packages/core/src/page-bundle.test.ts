@@ -97,12 +97,18 @@ describe('the browser path to the page seam', () => {
 
   // Everything the entry exports at once — the transport, the URL rule, the fence and the helpers a
   // browser hook uses — is the ceiling a realtime island can reach through this path.
-  test('the whole entry reaches no titles table and stays under 15 kB (14,070 B as of 2026-09-22)', async () => {
+  //
+  // measured: 15,470 B (2026-09-28), against 16,384. It was 14,888 at the tip before this change
+  // (14,070 on 2026-09-22). why: +582 B, client navigation's seam — `client-writes.ts`
+  // (`onClientWrite`, which `clientTransport` fires after every write so the router's prefetch
+  // cache is emptied) and the four `CLIENT_NAVIGATION_*` header names the router and
+  // `@ultimat3/http`'s gate share. The next whole kilobyte above the measurement.
+  test('the whole entry reaches no titles table and stays under 16 kB (15,470 B as of 2026-09-28)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(15_360);
+    expect(bytes).toBeLessThan(16_384);
   }, 60_000);
 
   test('the barrel still drags both titles tables — the reason the subpath exists', async () => {

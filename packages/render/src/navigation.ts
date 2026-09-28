@@ -1,0 +1,480 @@
+/**
+ * The client router: soft navigation over server-rendered documents. A same-surface link or form
+ * fetches the next document the server renders anyway (its own mode, its own policy, its own cache
+ * headers) and swaps it in, so the tab keeps its islands, its socket and its state between pages.
+ * NOT a render mode — every page is still rendered by its route; without this script, or with
+ * `data-x-reload`, the same markup is an ordinary full-page web app.
+ *
+ * One rule over every branch: NOTHING THE ROUTER SENT IS SENT AGAIN. The server answers a request
+ * a route may not take before running it (`@ultimat3/http`'s navigation gate), hands a redirect
+ * over instead of letting `fetch` follow it, and a POST is never re-submitted — after a failed
+ * one, only the server knows what landed.
+ *
+ * Loaded as one deferred classic script (`@ultimat3/cli` builds it to `/_x/navigation/<hash>.js`)
+ * on documents whose surface opted in (`navigation: { client: [...] }` in `app.config.ts`).
+ */
+
+import {
+  CLIENT_BUILD_META,
+  CLIENT_SCOPE_META,
+  onClientWrite,
+  onRescope,
+} from '@ultimat3/core/page';
+import { navigationCache } from './navigation-cache';
+import {
+  anchorOf,
+  announcer,
+  fieldText,
+  focusMain,
+  formFields,
+  handOver,
+  linkFacts,
+  transition,
+} from './navigation-dom';
+import { type Answer, fetchDocument, metaOf } from './navigation-fetch';
+import {
+  answerMovesTab,
+  type FormFacts,
+  formVerdict,
+  linkVerdict,
+  mayPrefetch,
+  NAVIGATE_EVENT,
+  NAVIGATED_EVENT,
+  NAVIGATING_ATTRIBUTE,
+  NAVIGATION_ERROR_EVENT,
+  NAVIGATION_META,
+  NAVIGATION_NO_PREFETCH_ATTRIBUTE,
+  NAVIGATION_PREFETCH_DELAY_MS,
+  NAVIGATION_PROGRESS_DELAY_MS,
+  NAVIGATION_RELOAD_ATTRIBUTE,
+  type ResponseFacts,
+  responseVerdict,
+  reusable,
+} from './navigation-rules';
+import {
+  documentHead,
+  loadStylesheets,
+  missingStylesheets,
+  notePersisted,
+  runScripts,
+  swapDocument,
+} from './navigation-swap';
+
+export interface NavigateOptions {
+  readonly method?: 'GET' | 'POST';
+  readonly body?: BodyInit;
+  /** `push` for a new visit, `replace` for the same URL, `none` for a back/forward. */
+  readonly history?: 'push' | 'replace' | 'none';
+  /** Redirects already followed for this navigation. */
+  readonly hops?: number;
+}
+
+export interface NavigationRouter {
+  navigate(url: string, options?: NavigateOptions): Promise<void>;
+  prefetch(url: string): void;
+  stop(): void;
+}
+
+/** The router's own slot in `history.state`, beside whatever an app keeps there. */
+const STATE_KEY = '__x';
+interface EntryState {
+  readonly scroll: readonly [number, number];
+  /** The document this entry shows — what back/forward compares with the one on screen. */
+  readonly doc: string;
+}
+
+/** One channel per origin: a principal change or a write in one tab empties every tab's cache. */
+const CHANNEL = 'ultimate:navigation';
+
+const withoutFragment = (url: string): string => url.split('#')[0] ?? url;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const entryOf = (state: unknown): EntryState | undefined => {
+  const entry = isRecord(state) ? state[STATE_KEY] : undefined;
+  return isRecord(entry) && typeof entry['doc'] === 'string'
+    ? (entry as unknown as EntryState)
+    : undefined;
+};
+
+interface RouterWindow extends Window {
+  __xNavigation?: NavigationRouter;
+}
+
+/**
+ * Starts the router on a document that opted in, once per tab; `undefined` on one that did not —
+ * a page without `ultimate-navigation` is never intercepted, whatever script it loaded.
+ */
+export function startNavigation(win: RouterWindow = window): NavigationRouter | undefined {
+  const doc = win.document;
+  if (win.__xNavigation !== undefined) return win.__xNavigation;
+  if (metaOf(doc, NAVIGATION_META) === null || !('DOMParser' in win)) return undefined;
+
+  const cache = navigationCache<Answer>();
+  const ran = new Set(
+    [...doc.querySelectorAll('script[src]')].map(
+      (s) => new URL(s.getAttribute('src') ?? '', doc.baseURI).href,
+    ),
+  );
+  let rendered = withoutFragment(win.location.href);
+  let untrusted = false;
+  let inflight: AbortController | undefined;
+  const live = announcer(doc);
+  const owned = documentHead(doc);
+  notePersisted(doc);
+  win.history.scrollRestoration = 'manual';
+
+  const channel = 'BroadcastChannel' in win ? new BroadcastChannel(CHANNEL) : undefined;
+  if (channel !== undefined) channel.onmessage = () => cache.clear();
+  /** This tab and every other: a write or a new principal makes every held page suspect. */
+  const forget = (): void => {
+    cache.clear();
+    channel?.postMessage('clear');
+  };
+  const offWrite = onClientWrite(forget);
+  const offRescope = onRescope(forget);
+
+  const saveScroll = (): void => {
+    const state = (win.history.state ?? {}) as Record<string, unknown>;
+    const held = entryOf(state)?.doc;
+    // Only into the entry of the document ON SCREEN: between a back/forward and its swap, the
+    // current entry is the next page's, and this scroll offset is not its to keep.
+    if (held !== undefined && held !== rendered) return;
+    const entry: EntryState = { scroll: [win.scrollX, win.scrollY], doc: held ?? rendered };
+    win.history.replaceState({ ...state, [STATE_KEY]: entry }, '');
+  };
+  saveScroll();
+  // Saved as the visitor scrolls, once the scroll settles — so FORWARD restores too, and a
+  // browser's cap on `replaceState` calls is never approached.
+  let settle: number | undefined;
+  const onScroll = (): void => {
+    win.clearTimeout(settle);
+    settle = win.setTimeout(saveScroll, 150);
+  };
+
+  const request = (url: string, purpose: 'soft' | 'prefetch', init?: RequestInit) =>
+    fetchDocument(win, doc, url, purpose, init);
+
+  const prefetch = (url: string): void => {
+    if (untrusted || withoutFragment(url) === rendered || cache.get(url) !== undefined) return;
+    // Cached whatever it answers: an empty `204` (the route did not opt in) is remembered too, so
+    // a second hover does not ask again. Only a reusable page ever answers a click (`reusable`).
+    cache.set(url, request(url, 'prefetch'));
+  };
+
+  /** Cancelable; its default is a GET of the page the visitor is on. Nothing is re-sent. */
+  const failed = (url: string, method: string, reason: string): void => {
+    const detail = { url, method, reason };
+    const event = new CustomEvent(NAVIGATION_ERROR_EVENT, { detail, cancelable: true });
+    if (doc.dispatchEvent(event)) win.location.assign(win.location.href);
+  };
+
+  /**
+   * Where the new page lands: the saved offset on back/forward, the fragment's element, else the
+   * top. `instant`, whatever the page's `scroll-behavior` says — `@ultimat3/ui`'s reset makes it
+   * `smooth`, and a new page is a new place, which a full load jumps to rather than glides to.
+   */
+  const scrollAfter = (url: string, mode: NavigateOptions['history']): void => {
+    const hash = new URL(url).hash;
+    const target = hash.length > 1 ? doc.getElementById(decodeURIComponent(hash.slice(1))) : null;
+    const saved = entryOf(win.history.state);
+    const to = (left: number, top: number): void =>
+      win.scrollTo({ left, top, behavior: 'instant' as ScrollBehavior });
+    if (mode === 'none' && saved !== undefined) to(saved.scroll[0], saved.scroll[1]);
+    else if (target !== null) target.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+    else to(0, 0);
+  };
+
+  const answerFor = (
+    url: string,
+    method: 'GET' | 'POST',
+    options: NavigateOptions,
+    signal: AbortSignal,
+  ) => {
+    if (method === 'POST') {
+      forget();
+      return request(url, 'soft', {
+        method,
+        ...(options.body === undefined ? {} : { body: options.body }),
+        signal,
+      });
+    }
+    const held = cache.peek(url);
+    cache.delete(url);
+    if (held === undefined) return request(url, 'soft', { signal });
+    return held.value.then(
+      (answer) =>
+        reusable({
+          status: answer.status,
+          html: answer.html !== null,
+          location: answer.location,
+          noStore: answer.noStore,
+          ageMs: held.ageMs,
+        })
+          ? answer
+          : request(url, 'soft', { signal }),
+      () => request(url, 'soft', { signal }),
+    );
+  };
+
+  const navigate = async (url: string, options: NavigateOptions = {}): Promise<void> => {
+    const method = options.method ?? 'GET';
+    // After an answer for another principal or build was shown in place, this tab is no longer
+    // trusted to swap: every navigation is a real load (`answerMovesTab`).
+    if (untrusted && method === 'GET') {
+      win.location.assign(url);
+      return;
+    }
+    const detail = { url, method };
+    if (!doc.dispatchEvent(new CustomEvent(NAVIGATE_EVENT, { detail, cancelable: true }))) return;
+    inflight?.abort();
+    const mine = new AbortController();
+    inflight = mine;
+    if (options.history !== 'none') saveScroll();
+    const progress = win.setTimeout(
+      () => doc.documentElement.setAttribute(NAVIGATING_ATTRIBUTE, ''),
+      NAVIGATION_PROGRESS_DELAY_MS,
+    );
+    try {
+      let answer: Answer;
+      try {
+        answer = await answerFor(url, method, options, mine.signal);
+      } catch {
+        if (mine.signal.aborted) return;
+        // A GET that never arrived is the browser's to try; a POST that failed is never re-sent.
+        if (method === 'GET') win.location.assign(url);
+        else failed(url, method, 'the request failed on the network');
+        return;
+      }
+      if (mine.signal.aborted) return;
+      const next =
+        answer.html === null ? null : new DOMParser().parseFromString(answer.html, 'text/html');
+      const facts: ResponseFacts = {
+        method,
+        requested: url,
+        status: answer.status,
+        opaqueRedirect: answer.opaqueRedirect,
+        location: answer.location,
+        contentType: answer.contentType,
+        hops: options.hops ?? 0,
+        surface: metaOf(doc, NAVIGATION_META),
+        nextSurface: next === null ? null : metaOf(next, NAVIGATION_META),
+        build: metaOf(doc, CLIENT_BUILD_META),
+        nextBuild: answer.build ?? (next === null ? null : metaOf(next, CLIENT_BUILD_META)),
+        scope: metaOf(doc, CLIENT_SCOPE_META),
+        nextScope: next === null ? null : metaOf(next, CLIENT_SCOPE_META),
+      };
+      const verdict = responseVerdict(facts);
+      switch (verdict.kind) {
+        case 'stay':
+          return;
+        case 'failed':
+          failed(url, method, verdict.reason);
+          return;
+        case 'load':
+          // A principal change the router saw, or one the server may have signalled by handing
+          // over the very URL it was asked for (it cannot say which): every tab forgets.
+          if (verdict.reason === 'another principal' || verdict.url === url) forget();
+          win.location.assign(verdict.url);
+          return;
+        case 'follow':
+          await navigate(verdict.url, {
+            history: options.history === 'none' ? 'replace' : 'push',
+            hops: (options.hops ?? 0) + 1,
+          });
+          return;
+        case 'hand-over':
+          if (answer.body !== null) handOver(win, answer.body, answer.disposition);
+          return;
+        default:
+          break;
+      }
+      if (next === null) return;
+      const landed = `${withoutFragment(url)}${new URL(url).hash}`;
+      try {
+        await loadStylesheets(doc, missingStylesheets(doc, next));
+        if (mine.signal.aborted) return;
+        let swapped: ReturnType<typeof swapDocument> | undefined;
+        await transition(win, () => {
+          // A newer navigation started while the sheets loaded: this answer is no longer asked for.
+          if (mine.signal.aborted) return;
+          swapped = swapDocument(doc, next, owned);
+          // Emptied here and filled after the scripts, so a page with the same title still reads out.
+          live.textContent = '';
+          swapped.body.append(live);
+          rendered = withoutFragment(landed);
+          if (options.history !== 'none') {
+            const same = landed === win.location.href || options.history === 'replace';
+            const state = { [STATE_KEY]: { scroll: [0, 0], doc: rendered } satisfies EntryState };
+            if (same) win.history.replaceState(state, '', landed);
+            else win.history.pushState(state, '', landed);
+          }
+          // Inside the swap, so a view transition's "after" frame is already where the page lands.
+          scrollAfter(landed, options.history);
+        });
+        const done = swapped;
+        if (done === undefined) return;
+        if (method === 'POST' && answerMovesTab(facts)) {
+          untrusted = true;
+          forget();
+        }
+        await runScripts(done.headScripts, ran, (fresh) => {
+          doc.head.append(fresh);
+          owned.add(fresh);
+        });
+        await runScripts([...done.body.querySelectorAll('script')], ran, (fresh, inert) =>
+          inert.replaceWith(fresh),
+        );
+        focusMain(doc);
+        live.textContent = doc.title;
+        doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
+      } catch {
+        // A swap that failed part-way leaves a page nobody rendered: a GET is loaded for real; a
+        // POST's answer cannot be asked for again, so the visitor is told and shown this page.
+        if (method === 'GET') win.location.assign(landed);
+        else failed(url, method, 'the answer could not be shown');
+      }
+    } finally {
+      win.clearTimeout(progress);
+      if (inflight === mine) {
+        inflight = undefined;
+        doc.documentElement.removeAttribute(NAVIGATING_ATTRIBUTE);
+      }
+    }
+  };
+
+  const onClick = (event: MouseEvent): void => {
+    const anchor = anchorOf(event.target);
+    if (anchor === null) return;
+    const verdict = linkVerdict(linkFacts(win, anchor, event));
+    if (verdict.kind !== 'soft') return;
+    event.preventDefault();
+    void navigate(verdict.url);
+  };
+
+  const onSubmit = (event: SubmitEvent): void => {
+    const form = event.target;
+    // An untrusted tab (`answerMovesTab`) leaves every form to the browser.
+    if (!(form instanceof HTMLFormElement) || untrusted) return;
+    const submitter = event.submitter;
+    const fields = formFields(form, submitter);
+    const say = (attr: string, fallback: string): string =>
+      submitter?.getAttribute(`form${attr}`) ?? form.getAttribute(attr) ?? fallback;
+    const facts: FormFacts = {
+      action: new URL(say('action', win.location.href) || win.location.href, doc.baseURI).href,
+      current: win.location.href,
+      method: say('method', 'get').toLowerCase(),
+      enctype: say('enctype', 'application/x-www-form-urlencoded').toLowerCase(),
+      target: say('target', ''),
+      defaultPrevented: event.defaultPrevented,
+      reload:
+        form.hasAttribute(NAVIGATION_RELOAD_ATTRIBUTE) ||
+        submitter?.hasAttribute(NAVIGATION_RELOAD_ATTRIBUTE) === true,
+      // `unknown`: a browser yields a `File` for a file input, whatever a server-side type says.
+      hasFile: [...fields.values()].some(
+        (value: unknown) => value instanceof File && value.name !== '',
+      ),
+      fields: [...fields].map(
+        ([name, value]: [string, unknown]) => [name, fieldText(value)] as const,
+      ),
+    };
+    const verdict = formVerdict(facts);
+    if (verdict.kind === 'native') return;
+    event.preventDefault();
+    if (verdict.kind === 'get') {
+      void navigate(verdict.url);
+      return;
+    }
+    const body =
+      verdict.encoding === 'multipart'
+        ? fields
+        : new URLSearchParams(facts.fields.map(([name, value]) => [name, value]));
+    void navigate(verdict.url, { method: 'POST', body });
+  };
+
+  let intent: number | undefined;
+  const onIntent = (event: Event): void => {
+    const anchor = anchorOf(event.target);
+    if (anchor === null) return;
+    const verdict = linkVerdict(linkFacts(win, anchor));
+    const connection = (
+      win.navigator as { connection?: { saveData?: boolean; effectiveType?: string } }
+    ).connection;
+    if (
+      verdict.kind !== 'soft' ||
+      !mayPrefetch({
+        url: verdict.url,
+        noPrefetch: anchor.hasAttribute(NAVIGATION_NO_PREFETCH_ATTRIBUTE),
+        saveData: connection?.saveData,
+        effectiveType: connection?.effectiveType,
+      })
+    ) {
+      return;
+    }
+    win.clearTimeout(intent);
+    const delay = event.type === 'pointerover' ? NAVIGATION_PREFETCH_DELAY_MS : 0;
+    intent = win.setTimeout(() => prefetch(verdict.url), delay);
+  };
+  const onLeave = (): void => win.clearTimeout(intent);
+
+  /**
+   * Back/forward. The router's own entries name the document they show; any other entry (an app's
+   * own `pushState`) shows the document of its PATH. Either way, when that is not the document on
+   * screen it is fetched; when it is, only the scroll moves — the app keeps its own history.
+   */
+  const onPop = (event: PopStateEvent): void => {
+    // A save still pending belongs to the entry just left.
+    win.clearTimeout(settle);
+    const url = win.location.href;
+    const entry = entryOf(event.state);
+    const wanted = entry?.doc ?? withoutFragment(url);
+    const same =
+      entry !== undefined
+        ? wanted === rendered
+        : new URL(url).pathname === new URL(rendered).pathname;
+    if (!same) {
+      void navigate(url, { history: 'none' });
+      return;
+    }
+    if (entry !== undefined) {
+      win.scrollTo({
+        left: entry.scroll[0],
+        top: entry.scroll[1],
+        behavior: 'instant' as ScrollBehavior,
+      });
+    }
+  };
+
+  // `window`, bubble phase: after every handler on the page — Solid delegates to `document` — has
+  // had its chance to `preventDefault`, which the rules then honour.
+  win.addEventListener('click', onClick);
+  win.addEventListener('submit', onSubmit);
+  win.addEventListener('scroll', onScroll, { passive: true });
+  doc.addEventListener('pointerover', onIntent, { passive: true });
+  doc.addEventListener('pointerout', onLeave, { passive: true });
+  doc.addEventListener('focusin', onIntent);
+  doc.addEventListener('touchstart', onIntent, { passive: true });
+  win.addEventListener('popstate', onPop);
+
+  const router: NavigationRouter = {
+    navigate,
+    prefetch,
+    stop() {
+      win.removeEventListener('click', onClick);
+      win.removeEventListener('submit', onSubmit);
+      win.removeEventListener('scroll', onScroll);
+      doc.removeEventListener('pointerover', onIntent);
+      doc.removeEventListener('pointerout', onLeave);
+      doc.removeEventListener('focusin', onIntent);
+      doc.removeEventListener('touchstart', onIntent);
+      win.removeEventListener('popstate', onPop);
+      offWrite();
+      offRescope();
+      channel?.close();
+      delete win.__xNavigation;
+    },
+  };
+  win.__xNavigation = router;
+  return router;
+}

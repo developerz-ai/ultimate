@@ -35,6 +35,15 @@ export interface E2eTab extends E2eBrowserPage {
   readonly targetId: string;
   /** Browser-wide, like the switch it models: every tab AND every worker goes with it. */
   offline(enabled: boolean): Promise<void>;
+  /**
+   * THIS tab's scripting, off or back on (`Emulation.setScriptExecutionDisabled`): the page's own
+   * scripts stop. What proves a page works with no JS — a link that only a script could follow is
+   * a page that fails for every visitor whose JS did not load. Takes effect from the next document.
+   * Off, `evaluate` still answers a SYNCHRONOUS expression and `click` still clicks, but no page
+   * callback runs — so `goto`, which waits on the page's `load` listener, never settles: navigate
+   * with `evaluate('location.href = …')` and poll with `waitFor`.
+   */
+  scripting(enabled: boolean): Promise<void>;
   /** Reload and wait for the load, at the url the tab already had. */
   reload(): Promise<void>;
   /** Poll `expression` in the page until it is truthy, or refuse naming `what`. */
@@ -158,6 +167,9 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
       }
     },
     offline: (enabled: boolean) => options.offline(enabled),
+    async scripting(enabled: boolean): Promise<void> {
+      await send('Emulation.setScriptExecutionDisabled', { value: !enabled }, sessionId);
+    },
     async reload(): Promise<void> {
       const at = current;
       // Reload is a navigation to the url the tab already has — the one wait the port proves.

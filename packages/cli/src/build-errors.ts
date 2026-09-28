@@ -35,8 +35,8 @@ export class IslandBuildFailedError extends UltimateError {
   }
 }
 
-/** Which framework script a page ships: the one sync worker, or the one page boot. */
-export type FrameworkScriptKind = 'sync worker' | 'page boot';
+/** Which framework script a page ships: the sync worker, the page boot, or the client router. */
+export type FrameworkScriptKind = 'sync worker' | 'page boot' | 'client router';
 
 /**
  * One of the page's framework scripts would not bundle. Same code as an island: "a browser entry

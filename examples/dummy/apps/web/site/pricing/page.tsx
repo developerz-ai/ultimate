@@ -94,8 +94,15 @@ export const config = defineRoute({
    * 22,221 (`21.7kb`).
    * why: +74 B, the one title the same error registry gained — `X_ACTION_PATH_DERIVED_EARLY`, the
    * refusal of a path captured before the app's `pathStyle` was declared — shortened to fit.
+   *
+   * measured: 22,419 B (2026-09-28; `x build --target static`'s `.x/build-stats.json`), against
+   * 22,528 (`22kb`).
+   * why: +207 B in the contact island, the 40 B the hydration runtime now spends visiting each
+   * island root once (so the client router can re-run it over a swapped body) and core's transport
+   * announcing every write (`onClientWrite`), which is what empties a router's prefetch cache. This
+   * page ships no router: `site/` did not opt into client navigation.
    */
-  budget: { js: '21.7kb', lcp: 1500 },
+  budget: { js: '22kb', lcp: 1500 },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every
