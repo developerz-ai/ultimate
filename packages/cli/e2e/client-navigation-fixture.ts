@@ -60,6 +60,8 @@ interface Doc {
   readonly islands?: readonly string[];
   /** `ultimate-scope`: the principal this document was rendered for. */
   readonly scope?: string;
+  /** `false` for a `navigation: 'document'` page: `runtime-render.ts` names no router on it. */
+  readonly router?: boolean;
 }
 
 /** The persisted shell: a nav whose current item carries `aria-current` and the class that styles it. */
@@ -104,9 +106,16 @@ export const INLINE_HEAD = 'window.__inlineRan = (window.__inlineRan || 0) + 1;'
 const documentOf = (doc: Doc): string => {
   const kept = islandMarkup('shell');
   const islands = (doc.islands ?? []).map(islandMarkup);
-  const nav = renderHead(
-    clientNavigationTags({ surface: doc.surface ?? APP, buildId: BUILD, scriptUrl: script.url }),
-  );
+  const nav =
+    doc.router === false
+      ? ''
+      : renderHead(
+          clientNavigationTags({
+            surface: doc.surface ?? APP,
+            buildId: BUILD,
+            scriptUrl: script.url,
+          }),
+        );
   return (
     `<!doctype html><html lang="en"><head><title>${doc.title}</title>` +
     `<meta name="description" content="about ${doc.title}">${nav}${doc.head ?? ''}` +
@@ -248,7 +257,7 @@ const routes: Route[] = [
   })),
   page('/done', (url) => ({ title: `Done ${url.searchParams.get('name') ?? ''}`, path: '/done' })),
   // A page that must be a real document load — a recipient's open, a token consumed.
-  page('/doc', () => ({ title: 'Doc', path: '/doc' }), null),
+  page('/doc', () => ({ title: 'Doc', path: '/doc', router: false }), null),
   // Not pages at all: an evidence GET, a download, JSON.
   route(
     'GET',

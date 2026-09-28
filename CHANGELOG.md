@@ -8,7 +8,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **cli:** a `navigation: 'document'` page no longer carries the client router. Every page of a
+  `navigation.client` surface was named the router script and its `ultimate-navigation` /
+  `x-ultimate-build` metas, so a 0 kB document page — a recipient's evidence page, a magic link, an
+  unsubscribe, a payment return (`budget.js: '0b'`, `hydrate: 'never'`) — shipped 17.8 kB and failed
+  `X_BUDGET_EXCEEDED`. Now such a page names none of the three and is charged none of the router's
+  bytes (the budgets step weighs the emitted document). Behaviour is unchanged where it matters: a
+  link TO it was already a full load; its own links and forms are now the browser's, which is what a
+  document page means; the next soft page it links to boots the router again.
 
 ## 22.8.0 - 2026-09-28
 

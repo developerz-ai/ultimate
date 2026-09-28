@@ -8,7 +8,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-dir or recursive-delete API.
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: Bun exposes no temp-directory path of its own.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path API — nothing native joins a path.
@@ -25,6 +25,7 @@ import {
   registerRoute,
   routeEntries,
 } from '@ultimat3/render';
+import { measureDocumentJs } from './budgets';
 import type { NavigationDocumentHead } from './page-navigation';
 import {
   assertRouteNavigation,
@@ -232,6 +233,28 @@ describe('unit · the router route and the document that names it', () => {
     expect(await served.text()).toBe(script.code);
     const stale = await server.fetch(new Request('http://dev.test/_x/navigation/0000.js'));
     expect(stale.status).toBe(404);
+  });
+
+  test("a navigation: 'document' page names no router — and so is charged none of its bytes", async () => {
+    page('apps/web/app/casos/page.tsx');
+    page('apps/web/app/r/[token]/page.tsx', { navigation: 'document' });
+    const server = serverFor();
+    const soft = await (await server.fetch(new Request('http://dev.test/casos'))).text();
+    const doc = await (await server.fetch(new Request('http://dev.test/r/abc'))).text();
+
+    expect(soft).toContain('/_x/navigation/n.js');
+    expect(doc).not.toContain('/_x/navigation/');
+    expect(doc).not.toContain(NAVIGATION_META);
+    // Weighed the way the budgets step weighs a document: against the router's file on disk.
+    const out = await mkdtemp(join(tmpdir(), 'ultimate-nav-budget-'));
+    try {
+      await mkdir(join(out, '_x', 'navigation'), { recursive: true });
+      await writeFile(join(out, '_x', 'navigation', 'n.js'), 'x'.repeat(18_000));
+      expect((await measureDocumentJs(soft, out)).jsBytes).toBe(18_000);
+      expect((await measureDocumentJs(doc, out)).jsBytes).toBe(0);
+    } finally {
+      await rm(out, { recursive: true, force: true });
+    }
   });
 
   test('only an opted-in surface names the router, the surface and the build', async () => {

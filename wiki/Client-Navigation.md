@@ -42,14 +42,14 @@ export const config = defineRoute({ render: 'ssr', …, navigation: 'prefetch' }
 |---|---|---|
 | absent | swaps the page in on a click; never fetches it early | a prefetch gets an empty `204` |
 | `'prefetch'` | also fetches it on hover/focus | a prefetch is answered like a visit |
-| `'document'` | always a real document load | a soft visit gets `204` + `x-ultimate-location`; the browser's own load runs it once |
+| `'document'` | always a real document load; the page itself carries **no router** (`As of 22.8.1`): no script, no navigation metas, none of the router's bytes charged to its budget — a `0b` page stays `0b`, and its own links and forms are plain browser navigations | a soft visit gets `204` + `x-ultimate-location`; the browser's own load runs it once |
 
 **Use `'document'` for every GET that records something** — a recipient opening a link, a download
 logged as evidence, a one-time token. **Use `'prefetch'` only for a GET that does nothing but
 render.** Declaring either on a surface without client navigation refuses the boot
 (`X_ROUTE_NAVIGATION_INVALID`).
 
-An opted-in document carries:
+An opted-in document (every page of the surface except a `'document'` one) carries:
 
 | Tag | Why |
 |---|---|

@@ -177,7 +177,7 @@ const headFor = async (
         }),
         [
           ...(options.sync === undefined ? [] : clientSyncTags(options.sync)),
-          ...navigationTagsOf(options.navigation, entry.surface),
+          ...navigationTagsOf(options.navigation, entry),
           // The page boot rides the scope tag: its whole job — restoring a principal's persisted
           // records and replaying its queued writes — is per principal, and a shareable document
           // (no scope tag) has neither. Cheaper than walking the page's islands, and exact.
