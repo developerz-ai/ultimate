@@ -8,7 +8,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **http:** a shared cache is never offered an exchange it cannot replay. The `cache-headers` stage
+  now answers `cache-control: no-store` + `pragma: no-cache` for any non-`GET`/`HEAD` request and any
+  `4xx`/`5xx`, before the route default, a declared `meta.cache`/`ctx.cache` hint, or a handler's own
+  shared offer (`public`/`s-maxage`) is applied; a handler's `private` or `no-store` is left as
+  written. Before, an anonymous `POST /mcp` refused `401` + `WWW-Authenticate` went out
+  `public, max-age=0, s-maxage=60, stale-while-revalidate=600`, and an app's `POST /oauth/token` error
+  (RFC 6749 §5.1) carried the same. New export: `replayableExchange(method, status)`.
+- **mcp:** the 401 challenge on an `oauth` route carries `scope="…"` — the supported scopes
+  (`oauth.scopesSupported`, else the `defineAppMcp({ scopes })` names), sorted and space-separated —
+  per the MCP authorization spec (2025-06-18 / 2025-11-25) and RFC 6750 §3, after `error="invalid_token"`
+  (only when a token was sent) and `resource_metadata`. A scope that is not an RFC 6749 scope-token
+  (space, quote, backslash, empty) is refused at construction (`X_MCP_OAUTH_INVALID`). Every answer
+  `mcpHttpRoute` gives — 401, 403, 413, 429, 400, 200, 202 — is `cache-control: no-store`, so
+  `x mcp serve` (no pipeline) says it too. The in-band `X_MCP_SCOPE_DENIED` stays a JSON-RPC error
+  on a 200; there is no HTTP 403 `insufficient_scope` path to annotate.
+- **schema:** the `TZ=UTC` / `TZ=America/New_York` parity test spawns its two `bun -e` children
+  concurrently, names a child's stderr when it crashes, and states a 60 s budget — it timed out at
+  bun's 5 s default on a loaded runner (release PR #567).
+- **cli:** "fifty saves do not grow the process" measures the live JS heap after two full
+  collections instead of RSS (which the allocator keeps high under load with nothing retained), and
+  its line tightens from 120 MB to 40 MB — five retained 8 MB generations now fail it.
 
 ## 22.7.0 - 2026-09-28
 

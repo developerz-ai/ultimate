@@ -13,7 +13,13 @@ import {
   reportError,
 } from '@ultimat3/core';
 import { signInRedirect } from './auth-redirect';
-import { defaultCache, offersSharedCache, PRIVATE_CACHE, reviewedHint } from './cache-policy';
+import {
+  defaultCache,
+  offersSharedCache,
+  PRIVATE_CACHE,
+  replayableExchange,
+  reviewedHint,
+} from './cache-policy';
 import { type HttpConfig, stripBasePath } from './config';
 import { actorView, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
@@ -40,7 +46,14 @@ import { resolvePreferences } from './preferences';
 import { type RateLimitDecision, type RateLimiter, rateLimitSpends } from './rate-limit';
 import { rateLimited } from './rate-limit-errors';
 import type { UltimateRequest } from './request';
-import { addVary, applyCacheHeaders, problem, redirect, SHARED_CACHE_VARY } from './response';
+import {
+  addVary,
+  applyCacheHeaders,
+  NO_STORE,
+  problem,
+  redirect,
+  SHARED_CACHE_VARY,
+} from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
 import { responseSecurityHeaders } from './security-headers';
 import { validate } from './validate';
@@ -327,6 +340,18 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       const response = ctx.response;
       if (response === undefined) return undefined;
       const declared = response.headers.get('cache-control');
+      // The EXCHANGE first, before any hint or declaration: a POST's answer or a refusal is never
+      // a shared cache's to replay, whatever the route or the handler offered (`replayableExchange`).
+      // `pragma: no-cache` beside it is RFC 6749 §5.1's pair for a token endpoint's answer, and
+      // costs nothing anywhere else. Only an OFFER is overruled — a handler's own `private` or
+      // `no-store` already says less than this would.
+      if (!replayableExchange(ctx.method, response.status)) {
+        if (declared === null || offersSharedCache(declared)) {
+          applyCacheHeaders(response, NO_STORE);
+          if (!response.headers.has('pragma')) response.headers.set('pragma', 'no-cache');
+        }
+        return undefined;
+      }
       if (declared === null) {
         const hint = ctx.cache ?? ctx.route?.meta.cache ?? defaultCache(ctx.route, ctx.actor);
         applyCacheHeaders(response, reviewedHint(hint, ctx.actor));
