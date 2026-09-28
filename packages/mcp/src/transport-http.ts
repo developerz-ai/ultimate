@@ -27,11 +27,13 @@ import { McpBodyTooLargeError, McpRateLimitedError } from './errors';
 import type { McpOAuth } from './oauth-metadata';
 import {
   assertMcpOAuth,
+  assertScopeTokens,
   bearerChallenge,
   metadataPaths,
   metadataUrlFor,
   protectedResourceMetadata,
   resourceUrl,
+  supportedScopes,
 } from './oauth-metadata';
 import type { McpCaller, McpRole, McpVerbClass } from './registry';
 import type { McpServer } from './server';
@@ -120,7 +122,14 @@ export interface McpRouteDescriptor {
   handle(request: Request, seen?: McpRequestOrigin): Promise<Response>;
 }
 
-const JSON_HEADERS = { 'content-type': 'application/json' } as const;
+/**
+ * Every answer on this route is one caller's: a 401 challenge, a refusal, a JSON-RPC result for
+ * the token that asked. `no-store` on all of them (RFC 6750 §3 / RFC 6749 §5.1 for the auth
+ * answers), stated HERE because the descriptor is also served bare by `x mcp serve`, where no
+ * pipeline stage decides a cache header for it.
+ */
+const NO_STORE_HEADERS = { 'cache-control': 'no-store' } as const;
+const JSON_HEADERS = { 'content-type': 'application/json', ...NO_STORE_HEADERS } as const;
 
 export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
   const { server } = input;
@@ -154,6 +163,9 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
   const oauth = input.oauth;
   if (oauth !== undefined) assertMcpOAuth(oauth);
   const scopes = input.scopes ?? [];
+  // What the 401 names in `scope="…"` — only on an `oauth` route, the one a client discovers from.
+  const challengeScopes = oauth === undefined ? [] : supportedScopes(oauth, scopes);
+  assertScopeTokens(challengeScopes);
   const resourceOf = (request: Request, seen: McpRequestOrigin | undefined): string | undefined =>
     oauth === undefined
       ? undefined
@@ -182,10 +194,11 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       const resource = resourceOf(request, seen);
       const metadataUrl = resource === undefined ? undefined : metadataUrlFor(resource);
       const token = bearerToken(request);
-      if (token === null) return unauthorized(bearerChallenge(metadataUrl, false));
+      if (token === null) return unauthorized(bearerChallenge(metadataUrl, false, challengeScopes));
 
       const resolved = await input.resolveToken(token);
-      if (resolved === null) return unauthorized(bearerChallenge(metadataUrl, true));
+      if (resolved === null)
+        return unauthorized(bearerChallenge(metadataUrl, true, challengeScopes));
       if (!isAgentActor(resolved.actor)) return notAnAgent();
 
       // Read through the counting reader, never `request.json()`: the cap has to be enforced
@@ -253,7 +266,7 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       // not a spelled `/mcp`.
       const response = await server.handle(body, caller, { transport: 'http', path });
       // A notification has no response. 202 with an empty body is the MCP-correct answer.
-      if (response === null) return new Response(null, { status: 202 });
+      if (response === null) return new Response(null, { status: 202, headers: NO_STORE_HEADERS });
       // JSON-RPC errors are 200s: the transport succeeded, the call did not. Only a
       // malformed envelope (below) is an HTTP-level failure.
       const status = response.error?.code === INVALID_REQUEST && response.id === null ? 400 : 200;

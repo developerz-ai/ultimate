@@ -13,7 +13,7 @@ import {
   reportError,
 } from '@ultimat3/core';
 import { signInRedirect } from './auth-redirect';
-import { defaultCache, offersSharedCache, PRIVATE_CACHE, reviewedHint } from './cache-policy';
+import { finalizeCacheHeaders } from './cache-stage';
 import { type HttpConfig, stripBasePath } from './config';
 import { actorView, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
@@ -40,7 +40,7 @@ import { resolvePreferences } from './preferences';
 import { type RateLimitDecision, type RateLimiter, rateLimitSpends } from './rate-limit';
 import { rateLimited } from './rate-limit-errors';
 import type { UltimateRequest } from './request';
-import { addVary, applyCacheHeaders, problem, redirect, SHARED_CACHE_VARY } from './response';
+import { addVary, problem, redirect } from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
 import { responseSecurityHeaders } from './security-headers';
 import { validate } from './validate';
@@ -324,26 +324,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
     },
 
     'cache-headers': (_request, ctx) => {
-      const response = ctx.response;
-      if (response === undefined) return undefined;
-      const declared = response.headers.get('cache-control');
-      if (declared === null) {
-        const hint = ctx.cache ?? ctx.route?.meta.cache ?? defaultCache(ctx.route, ctx.actor);
-        applyCacheHeaders(response, reviewedHint(hint, ctx.actor));
-        return undefined;
-      }
-      // A declaration is the MODE's intent, never the last word: `@ultimat3/render`'s `ssrHeaders`
-      // offers any route without a `policy` to a CDN for 30 seconds, and `meta.auth` is
-      // `'public' | 'required'` — so the page that greets a signed-in visitor by name is a
-      // `'public'` route whose own header says `s-maxage`. This stage is the one owner of the
-      // final answer, which is why it REVIEWS what the handler wrote instead of standing down;
-      // the rule beside it was otherwise unreachable for every page route in every app.
-      if (!offersSharedCache(declared)) return undefined;
-      if (!isAnonymous(ctx.actor)) {
-        applyCacheHeaders(response, PRIVATE_CACHE);
-        return undefined;
-      }
-      addVary(response, SHARED_CACHE_VARY);
+      if (ctx.response !== undefined) finalizeCacheHeaders(ctx.response, ctx);
       return undefined;
     },
 

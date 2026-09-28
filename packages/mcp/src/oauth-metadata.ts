@@ -89,7 +89,7 @@ export function protectedResourceMetadata(
   resource: string,
   scopes: readonly string[],
 ): Record<string, unknown> {
-  const supported = oauth.scopesSupported ?? scopes;
+  const supported = supportedScopes(oauth, scopes);
   return {
     resource,
     authorization_servers: [...oauth.authorizationServers],
@@ -102,13 +102,43 @@ export function protectedResourceMetadata(
   };
 }
 
+/** `scopes_supported` and the challenge's `scope`: the stated list, else the app's scope names. */
+export function supportedScopes(oauth: McpOAuth, scopes: readonly string[]): readonly string[] {
+  return [...(oauth.scopesSupported ?? scopes)].sort();
+}
+
+/** RFC 6749 §3.3 `scope-token = 1*( %x21 / %x23-5B / %x5D-7E )`. */
+const SCOPE_TOKEN = /^[\x21\x23-\x5B\x5D-\x7E]+$/;
+
+/**
+ * At construction, beside `assertMcpOAuth`: every scope the challenge will name must be a
+ * scope-token. A space would split one scope into two in `scope="a b"`, and a quote or backslash
+ * would end the quoted-string early — a header a client parses into something nobody declared.
+ */
+export function assertScopeTokens(scopes: readonly string[]): void {
+  for (const scope of scopes) {
+    if (!SCOPE_TOKEN.test(scope)) {
+      throw new McpOAuthInvalidError(
+        `scope ${JSON.stringify(scope)} is not an RFC 6749 scope-token (printable ASCII, no space, quote or backslash)`,
+      );
+    }
+  }
+}
+
 /**
  * The challenge a 401 carries. `error="invalid_token"` only when a token WAS sent (RFC 6750
- * §3.1: a request with no credential gets no error code).
+ * §3.1: a request with no credential gets no error code). `scope` names what the resource
+ * supports (RFC 6750 §3, MCP authorization 2025-06-18 / 2025-11-25 "scope selection"), so a
+ * client can ask for it without first fetching the metadata; omitted when there is none.
  */
-export function bearerChallenge(metadataUrl: string | undefined, tokenSent: boolean): string {
+export function bearerChallenge(
+  metadataUrl: string | undefined,
+  tokenSent: boolean,
+  scopes: readonly string[] = [],
+): string {
   const params = ['realm="ultimate-mcp"'];
   if (tokenSent) params.push('error="invalid_token"');
   if (metadataUrl !== undefined) params.push(`resource_metadata="${metadataUrl}"`);
+  if (scopes.length > 0) params.push(`scope="${scopes.join(' ')}"`);
   return `Bearer ${params.join(', ')}`;
 }

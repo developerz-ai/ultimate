@@ -190,22 +190,31 @@ import { label } from './label';
 const ballast = new Array(1_000_000).fill(${n});
 export function Card() { return <p class={styles.card}>n${n} {label} {ballast.length}</p>; }
 `;
-    const rss = (): number => {
+    // The LIVE JS heap after a full collection, not RSS. The ballast is a JS array, so a retained
+    // generation is in `heapUsed` byte for byte (8 MB each), and a collected one leaves it. RSS
+    // was the flaky reading: the allocator keeps freed pages mapped, so under load (other suites
+    // allocating in parallel, a GC that has not returned pages yet) it rose with nothing retained.
+    // Two collections, because the first can leave finalizer-reachable garbage for the second.
+    const liveHeap = (): number => {
       Bun.gc(true);
-      return process.memoryUsage().rss;
+      Bun.gc(true);
+      return process.memoryUsage().heapUsed;
     };
-    // Warm-up: the first few generations settle JIT and allocator state.
+    // Warm-up: the first few generations settle JIT and allocator state, and the baseline is
+    // taken only after them.
     for (let n = 0; n < 5; n += 1) {
       await Bun.write(CARD, heavy(n));
       await rescan();
     }
-    const start = rss();
+    const start = liveHeap();
     for (let n = 5; n < 55; n += 1) {
       await Bun.write(CARD, heavy(n));
       await rescan();
     }
     expect(await rendered()).toContain('n54 third');
-    // Each generation holds 8 MB of ballast: fifty retained ones would be 400 MB.
-    expect(rss() - start).toBeLessThan(120 * 1024 * 1024);
+    // Each generation holds 8 MB of ballast: fifty retained ones would be 400 MB of live heap. The
+    // live heap is steady enough (well under 1 MB of drift here) that the line sits TIGHTER than
+    // the old RSS one did — five retained generations cross it, where RSS needed fifteen.
+    expect(liveHeap() - start).toBeLessThan(40 * 1024 * 1024);
   }, 60_000);
 });

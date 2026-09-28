@@ -53,6 +53,55 @@ describe('the 401 challenge', () => {
     );
   });
 
+  // MCP authorization spec 2025-06-18 / 2025-11-25 and RFC 6750 §3: the challenge names the scopes
+  // the resource supports, so a client asks the authorization server for them without first
+  // fetching the metadata document.
+  test('carries scope="…" — the supported scopes, sorted and space-separated', async () => {
+    const route = mcpHttpRoute({
+      server,
+      resolveToken: () => null,
+      oauth: OAUTH,
+      scopes: ['cases:write', 'cases:read'],
+    });
+    const res = await route.handle(post(), { origin: 'https://www.example.com' });
+    expect(res.headers.get('www-authenticate')).toBe(
+      'Bearer realm="ultimate-mcp", resource_metadata="https://www.example.com/.well-known/oauth-protected-resource/mcp", scope="cases:read cases:write"',
+    );
+    const stale = await route.handle(post({ authorization: 'Bearer stale' }), {
+      origin: 'https://www.example.com',
+    });
+    expect(stale.headers.get('www-authenticate')).toBe(
+      'Bearer realm="ultimate-mcp", error="invalid_token", resource_metadata="https://www.example.com/.well-known/oauth-protected-resource/mcp", scope="cases:read cases:write"',
+    );
+  });
+
+  test('a stated scopesSupported is the scope the challenge names, as the document does', async () => {
+    const route = mcpHttpRoute({
+      server,
+      resolveToken: () => null,
+      oauth: { ...OAUTH, scopesSupported: ['mcp'] },
+      scopes: ['cases:read'],
+    });
+    const res = await route.handle(post(), { origin: 'https://www.example.com' });
+    expect(res.headers.get('www-authenticate')).toEndWith(', scope="mcp"');
+  });
+
+  test('no scopes, no scope parameter', async () => {
+    const route = mcpHttpRoute({ server, resolveToken: () => null, oauth: OAUTH });
+    const res = await route.handle(post(), { origin: 'https://www.example.com' });
+    expect(res.headers.get('www-authenticate')).not.toContain('scope=');
+  });
+
+  // RFC 6749 §5.1 / RFC 6750 §3: an authentication answer is never stored, least of all by a
+  // shared cache that would hand one caller's challenge to the next.
+  test('every 401 is cache-control: no-store', async () => {
+    const route = mcpHttpRoute({ server, resolveToken: () => null, oauth: OAUTH });
+    const anonymous = await route.handle(post(), { origin: 'https://www.example.com' });
+    expect(anonymous.headers.get('cache-control')).toBe('no-store');
+    const stale = await route.handle(post({ authorization: 'Bearer stale' }));
+    expect(stale.headers.get('cache-control')).toBe('no-store');
+  });
+
   test('without oauth the challenge is the one it always was', async () => {
     const route = mcpHttpRoute({ server, resolveToken: () => null });
     const res = await route.handle(post());
@@ -115,6 +164,24 @@ describe('the oauth block is refused at definition', () => {
       expect.objectContaining({ code: 'X_MCP_OAUTH_INVALID' }),
     );
   });
+
+  // A scope-token is `%x21 / %x23-5B / %x5D-7E` (RFC 6749 §3.3): a space splits it in the
+  // challenge's list and a quote or backslash ends the quoted-string early.
+  test.each([['two words'], ['say"hi'], ['back\\slash'], ['']])(
+    'a scope %j that cannot travel in a challenge is refused',
+    (scope) => {
+      expect(() =>
+        mcpHttpRoute({ server, resolveToken: () => null, oauth: OAUTH, scopes: [scope] }),
+      ).toThrow(expect.objectContaining({ code: 'X_MCP_OAUTH_INVALID' }));
+      expect(() =>
+        mcpHttpRoute({
+          server,
+          resolveToken: () => null,
+          oauth: { ...OAUTH, scopesSupported: [scope] },
+        }),
+      ).toThrow(expect.objectContaining({ code: 'X_MCP_OAUTH_INVALID' }));
+    },
+  );
 
   test('http is accepted on loopback, for bin/dev', () => {
     expect(() =>

@@ -49,3 +49,16 @@ export const defaultCache = (route: Route | undefined, actor: Actor): CacheHint 
  */
 export const reviewedHint = (hint: CacheHint, actor: Actor): CacheHint =>
   hint.mode === 'public' && !isAnonymous(actor) ? PRIVATE_CACHE : hint;
+
+const REPLAYABLE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD']);
+
+/**
+ * Whether a shared cache could ever replay this EXCHANGE to someone else. Only a safe method's
+ * answer can be (a CDN keys on the URL, and a POST's answer is a function of its body), and never
+ * a 4xx/5xx: a `401` + `WWW-Authenticate` is a challenge to THIS caller, an RFC 6749 §5.1 error
+ * must be `no-store`, and the next request may well succeed. The route default and a declared
+ * shared offer were both decided without the method or the status, so an anonymous `POST /mcp`
+ * refused `401` went out `public, s-maxage=60, stale-while-revalidate=600`.
+ */
+export const replayableExchange = (method: string, status: number): boolean =>
+  REPLAYABLE_METHODS.has(method.toUpperCase()) && status < 400;
