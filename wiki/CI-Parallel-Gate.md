@@ -132,7 +132,7 @@ pass: its steps are missing and `merge` names them.
 ## Width and memory, per job
 
 Each job sizes its own test width the same way the laptop does (`x verify` prints it on the step
-line, e.g. `3 workers (budget 4.0 GB)`): a budget of `min(4 GiB, 25% of the runner's RAM)`,
+line, e.g. `3 workers (budget 4.0 GB)`): a budget of `min(4 GiB, max(2.75 GiB, 25% of the runner's RAM))`,
 1.25 GiB planned per worker, never more workers than cores. On a 16 GB `ubuntu-latest` that is 3
 workers. `ULTIMATE_TEST_MEMORY_BUDGET=6g` or `ULTIMATE_TEST_MAX_WORKERS=4` override it; `--workers`
 wins over both. The machine-wide slot pool (see [Testing](Testing#memory-width-and-isolation))

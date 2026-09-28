@@ -463,7 +463,7 @@ x verify [--only <step>[,<step>…] [--shard i/n [--timings file]]] [--workers N
 x verify merge <part.json…> [--json]
 ```
 
-**`As of 22.7`** — the width is a memory budget (`min(4 GiB, 25% of RAM)` at 1.25 GiB a worker,
+**`As of 22.7`** — the width is a memory budget (`min(4 GiB, max(2.75 GiB, 25% of RAM))` at 1.25 GiB a worker,
 at most one per core, printed on the step line; `ULTIMATE_TEST_MEMORY_BUDGET` /
 `ULTIMATE_TEST_MAX_WORKERS` override, `--workers` wins), shared machine-wide across concurrent runs,
 and test files are NOT isolated unless `--isolate` or `x.verify.json` `"isolate": true` says so →

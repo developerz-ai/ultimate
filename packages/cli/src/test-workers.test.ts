@@ -60,10 +60,12 @@ describe('unit · the default width', () => {
     expect(plan.workers * WORKER_BYTES).toBeLessThanOrEqual(plan.budgetBytes);
   });
 
-  test('the machines Ultimate is for: 8 GB → 1 worker, 16 GB → 3', () => {
-    expect(defaultWorkers(8, 8 * GiB, NO_ENV)).toBe(1);
+  test('the machines Ultimate is for: 8 GB → 2 workers, 16 GB → 3', () => {
+    expect(defaultWorkers(4, 8 * GiB, NO_ENV)).toBe(2);
     expect(defaultWorkers(8, 16 * GiB, NO_ENV)).toBe(3);
-    expect(memoryBudget(8 * GiB, NO_ENV)).toBe(2 * GiB);
+    // A quarter of 8 GB is 2 GiB, which would plan one worker: the floor holds it at two.
+    expect(memoryBudget(8 * GiB, NO_ENV)).toBe(2.75 * GiB);
+    expect(memoryBudget(16 * GiB, NO_ENV)).toBe(4 * GiB);
   });
 
   test('never more workers than cores — no oversubscription', () => {
@@ -76,7 +78,9 @@ describe('unit · the default width', () => {
   test('never fewer than one, on a starved or zero-core box', () => {
     expect(defaultWorkers(1, 64 * GiB, NO_ENV)).toBe(1);
     expect(defaultWorkers(0, 64 * GiB, NO_ENV)).toBe(1);
-    expect(defaultWorkers(12, 0, NO_ENV)).toBe(WORKER_FLOOR);
+    // No RAM reading at all still plans on the floor's two workers, never zero.
+    expect(defaultWorkers(12, 0, NO_ENV)).toBe(2);
+    expect(defaultWorkers(12, 0, { [MEMORY_BUDGET_ENV]: '1g' })).toBe(WORKER_FLOOR);
   });
 
   test('the budget env replaces the default, and the cap env narrows it', () => {

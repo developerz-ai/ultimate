@@ -10,8 +10,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
-- **cli:** the default test width is a memory BUDGET — `min(4 GiB, 25% of total RAM)` at 1.25 GiB
-  a worker, clamped to `1..cores` — instead of `ceil(cpus x 1.5)` held to 60% of `freemem()` (which
+- **cli:** the default test width is a memory BUDGET — `min(4 GiB, max(2.75 GiB, 25% of total RAM))` at 1.25 GiB
+  a worker (2 on an 8 GB box, 3 from 16 GB), clamped to `1..cores` — instead of `ceil(cpus x 1.5)` held to 60% of `freemem()` (which
   counts page cache). The step line prints it: `3 workers (budget 4.0 GB)`.
   `ULTIMATE_TEST_MEMORY_BUDGET` (e.g. `3g`) and `ULTIMATE_TEST_MAX_WORKERS` override it
   (`X_TEST_BUDGET_INVALID` on a value that does not parse); `--workers` still wins, and now accepts

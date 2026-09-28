@@ -30,7 +30,7 @@ export function availableCpus(): number {
  *   registry per file. Without isolation (the default since 22.7, below) a worker is CPU-bound,
  *   and oversubscribing only multiplies memory.
  *
- * So: `min(GATE_BUDGET_CAP, GATE_BUDGET_SHARE x TOTAL memory)` — total, never free, so the plan
+ * So: `min(GATE_BUDGET_CAP, max(GATE_BUDGET_FLOOR, GATE_BUDGET_SHARE x TOTAL memory))` — total, never free, so the plan
  * is the same on every run of the same machine — divided by `WORKER_BYTES`, clamped to 1..cpus.
  * `ULTIMATE_TEST_MEMORY_BUDGET` (e.g. `3g`) replaces the budget, `ULTIMATE_TEST_MAX_WORKERS` caps
  * the width, and an explicit `--workers` wins over both.
@@ -39,6 +39,13 @@ export const GATE_BUDGET_CAP = 4 * 1024 * 1024 * 1024;
 
 /** A quarter of the machine: an editor, a language server and another agent's gate need the rest. */
 export const GATE_BUDGET_SHARE = 0.25;
+
+/**
+ * The budget never plans below this: enough for TWO workers at `WORKER_BYTES`. A quarter of an
+ * 8 GB laptop (2 GiB) planned one worker, ~4.7 min for notificado.co's unit tier; two stay inside
+ * the owner's 1-4 GB gate target (~2.6 GB measured).
+ */
+export const GATE_BUDGET_FLOOR = 2.75 * 1024 * 1024 * 1024;
 
 /**
  * What one test worker is planned at. MEASURED, whole-tree RSS sampled every 200 ms, Bun 1.4.0,
@@ -138,7 +145,7 @@ export interface WorkerPlan {
 
 const gb = (bytes: number): string => (bytes / 1024 ** 3).toFixed(1);
 
-/** The budget a default run plans on: the env override, or `min(4 GiB, 25% of total RAM)`. */
+/** The budget a default run plans on: the env override, or `min(4 GiB, max(2.75 GiB, 25% of RAM))`. */
 export function memoryBudget(total: number = totalMemory(), env: Env = Bun.env): number {
   const raw = env[MEMORY_BUDGET_ENV];
   if (raw !== undefined && raw.trim() !== '') {
@@ -146,7 +153,10 @@ export function memoryBudget(total: number = totalMemory(), env: Env = Bun.env):
     if (bytes === undefined) throw new TestBudgetInvalidError(MEMORY_BUDGET_ENV, raw);
     return bytes;
   }
-  return Math.min(GATE_BUDGET_CAP, Math.floor(Math.max(0, total) * GATE_BUDGET_SHARE));
+  return Math.min(
+    GATE_BUDGET_CAP,
+    Math.max(GATE_BUDGET_FLOOR, Math.floor(Math.max(0, total) * GATE_BUDGET_SHARE)),
+  );
 }
 
 const maxWorkersOf = (env: Env): number | undefined => {

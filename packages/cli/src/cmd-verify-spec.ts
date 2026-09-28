@@ -24,7 +24,7 @@ export const verifySpec: CommandSpec = {
       name: 'workers',
       type: 'string',
       subcommands: ['run'],
-      summary: `test processes per parallel step (default: one per ${WORKER_BYTES / 2 ** 30} GiB of a min(4 GiB, 25% of RAM) budget, at most one per core; ULTIMATE_TEST_MEMORY_BUDGET and ULTIMATE_TEST_MAX_WORKERS override; min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
+      summary: `test processes per parallel step (default: one per ${WORKER_BYTES / 2 ** 30} GiB of a min(4 GiB, max(2.75 GiB, 25% of RAM)) budget, at most one per core; ULTIMATE_TEST_MEMORY_BUDGET and ULTIMATE_TEST_MAX_WORKERS override; min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
     },
     {
       name: 'only',

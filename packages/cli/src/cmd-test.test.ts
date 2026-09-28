@@ -183,7 +183,7 @@ describe('unit · x test --workers is bounded by the ceiling it documents', () =
     const summary = (testCommand.spec.flags ?? []).find((flag) => flag.name === 'workers')?.summary;
     expect(summary).not.toContain('CPUs - 1');
     expect(summary).toContain(`max ${WORKER_CEILING}`);
-    expect(summary).toContain('min(4 GiB, 25% of RAM) budget, at most one per core');
+    expect(summary).toContain('min(4 GiB, max(2.75 GiB, 25% of RAM)) budget, at most one per core');
     const plenty = { ULTIMATE_TEST_MEMORY_BUDGET: '1024g' };
     expect(defaultWorkers(4, 1, plenty)).toBe(4);
     expect(defaultWorkers(1, 1, plenty)).toBe(WORKER_FLOOR);

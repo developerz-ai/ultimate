@@ -395,8 +395,8 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 `As of 22.7`. The gate is built for the machines it runs on — 8-16 GB, 2-8 cores, often two agents'
 gates at once — and it is held to a **memory budget**, not to whatever looks free.
 
-- **Width.** `min(4 GiB, 25% of total RAM)` divided by 1.25 GiB a worker, clamped to `1..cores`:
-  3 workers on a 16 GB box, 1 on an 8 GB one. Never more workers than cores. The step line says
+- **Width.** `min(4 GiB, max(2.75 GiB, 25% of total RAM))` divided by 1.25 GiB a worker, clamped to `1..cores`:
+  3 workers on a 16 GB box, 2 on an 8 GB one (the 2.75 GiB floor). Never more workers than cores. The step line says
   what it chose and why — `3 workers (budget 4.0 GB)`. `ULTIMATE_TEST_MEMORY_BUDGET=3g` replaces
   the budget, `ULTIMATE_TEST_MAX_WORKERS=2` caps the width, `--workers N` wins over both. Total RAM,
   never "free": page cache counts as free, and two gates each planning on it took a 45 GB box down.
@@ -426,7 +426,8 @@ Measured, `As of 2026-09-27`, 12-core box, whole process tree sampled every 200 
 | run | workers | wall | peak RSS |
 |---|---|---|---|
 | notificado.co `x test unit` (768 files), 22.6.2 default (isolated) | 14 (+parent) | 193 s | 13.1 GB |
-| the same, 22.7 default | 3 | 92-94 s | 3.9 GB |
+| the same, 22.7 default (16 GB+ box), test DB on `reusableDatabase` | 3 | 90-93 s | 3.7-3.9 GB |
+| the same, 2 workers (an 8 GB box's default) | 2 | 150 s | 2.6 GB |
 | framework `x test unit` (1620 files), no isolation | 3 | 115-125 s | 2.9-3.0 GB |
 | framework `bun run verify` (whole gate, `"isolate": true`) | 3 | 227 s | 3.4 GB |
 
