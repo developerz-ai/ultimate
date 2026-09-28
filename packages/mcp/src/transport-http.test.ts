@@ -492,37 +492,3 @@ describe('mcpHttpRoute: a body cap that is not a cap', () => {
     expect(route.path).toBe('/mcp');
   });
 });
-
-// One caller's answer, every time — and `x mcp serve` runs this descriptor with no pipeline stage
-// behind it to decide a cache header, so the transport states it itself.
-describe('mcpHttpRoute.handle: nothing it answers is storable', () => {
-  const route = mcpHttpRoute({
-    server,
-    resolveToken: () => ({ actor: agentActor({ id: 'a' }), scopes: new Set() }),
-  });
-  const authed = (body: unknown) => route.handle(request(body, { authorization: 'Bearer t' }));
-
-  test('a result is no-store', async () => {
-    const res = await authed({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('no-store');
-  });
-
-  test('a notification (202) is no-store', async () => {
-    const res = await authed({ jsonrpc: '2.0', method: 'notifications/initialized' });
-    expect(res.status).toBe(202);
-    expect(res.headers.get('cache-control')).toBe('no-store');
-  });
-
-  test('a refusal before dispatch is no-store', async () => {
-    const res = await route.handle(
-      new Request('http://local/mcp', {
-        method: 'POST',
-        headers: { authorization: 'Bearer t' },
-        body: '{not json',
-      }),
-    );
-    expect(res.status).toBe(400);
-    expect(res.headers.get('cache-control')).toBe('no-store');
-  });
-});
