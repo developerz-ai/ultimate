@@ -115,6 +115,8 @@ let log: Logger = rootLogger;
 let state: HealthState = 'starting';
 let startedAtMono = clock.monotonic();
 let inflight = 0;
+/** Bumped by `resetLifecycle()`: a `beginWork()` finisher only ever counts down its own lifetime. */
+let lifetime = 0;
 let registrations: Registration[] = [];
 let drainPromise: Promise<void> | undefined;
 let idleWaiters: (() => void)[] = [];
@@ -281,9 +283,13 @@ export function onShutdown(
 export function beginWork(): () => void {
   inflight += 1;
   let done = false;
+  const born = lifetime;
   return () => {
     if (done) return;
     done = true;
+    // One from before `resetLifecycle()` drove the fresh count to -1, and the drain's in-flight
+    // wait (idle only at exactly 0) then sat out its whole budget.
+    if (born !== lifetime) return;
     inflight -= 1;
     if (inflight === 0) {
       const waiters = idleWaiters;
@@ -486,6 +492,7 @@ export function resetLifecycle(): void {
   state = 'starting';
   startedAtMono = clock.monotonic();
   inflight = 0;
+  lifetime += 1;
   registrations = [];
   drainPromise = undefined;
   idleWaiters = [];

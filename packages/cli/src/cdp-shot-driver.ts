@@ -139,6 +139,15 @@ export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
         if (init.headers !== undefined && Object.keys(init.headers).length > 0) {
           await on('Network.setExtraHTTPHeaders', { headers: init.headers });
         }
+        // `Network.setCookie` needs the Network domain on and precedes `goto` for the header's
+        // reason: a consent banner decided after the first paint is a picture of the banner.
+        for (const cookie of init.cookies ?? []) {
+          await on('Network.setCookie', {
+            name: cookie.name,
+            value: cookie.value,
+            url: cookie.url,
+          });
+        }
         const size = init.viewport ?? viewport;
         await on('Emulation.setDeviceMetricsOverride', {
           width: size.width,
@@ -146,7 +155,11 @@ export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
           deviceScaleFactor: 1,
           mobile: false,
         });
-        return { page: cdpShotPage({ connection, sessionId, init, watch }), close };
+        // A classic scrollbar takes ~15px of the layout, so a page "at 1440" was laid out at 1425 and
+        // a full-page capture came back 1425 wide. Hidden, the page is laid out at the width asked
+        // for, which is what a phone's overlay scrollbar and the reviewer's expectation both are.
+        await on('Emulation.setScrollbarsHidden', { hidden: true });
+        return { page: cdpShotPage({ connection, sessionId, init, watch, viewport: size }), close };
       } catch (error) {
         await close();
         throw error;

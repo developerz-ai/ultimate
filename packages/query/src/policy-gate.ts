@@ -9,6 +9,7 @@ import { assertNever, isAnonymous } from '@ultimat3/core';
 import type { Policy, Surface as PolicySurface } from '@ultimat3/policy';
 import {
   enforce,
+  enforceBeforeInput,
   policyPermissions as flattenedPermissions,
   admitsAnonymous as policyAdmitsAnonymous,
 } from '@ultimat3/policy';
@@ -37,6 +38,23 @@ export function guard(policy: QueryPolicy, subject: QuerySubject, surface: Query
     input: subject.input,
     actor: subject.actor,
     row: subject.row,
+    ctx: subject.ctx,
+  });
+  if (denial !== undefined) throw new QueryDeniedError(subject.query, denial);
+}
+
+/**
+ * The actor-only half of `guard`, run BEFORE the input is parsed — the twin of
+ * `@ultimat3/action`'s. A reader the policy refuses whatever they send is answered 403 (or 401),
+ * never `X_INPUT_INVALID` with the read's input schema in it. Undecided passes to `guard`.
+ */
+export function guardBeforeInput(
+  policy: QueryPolicy,
+  subject: Omit<QuerySubject, 'input' | 'row'>,
+  surface: QuerySurface,
+): void {
+  const denial = enforceBeforeInput(policySurface(surface), policy, {
+    actor: subject.actor,
     ctx: subject.ctx,
   });
   if (denial !== undefined) throw new QueryDeniedError(subject.query, denial);

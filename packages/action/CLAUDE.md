@@ -52,7 +52,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 
 ## Invariants — execution and authz
 
-- Every surface goes through `invoke`: parse input, evaluate policy, handle, parse output. A second
+- Every surface goes through `invoke`: the policy's actor half (`guardBeforeInput`, 403 before the
+  parse), parse input, evaluate policy, handle, parse output. A second
   execution path is the one unforgivable change here.
 - **An explicit `ctx` is INSTALLED, never merely passed** — the ambient context (which
   `@ultimat3/entity`'s tenant guard reads) must be the identity `guard()` decided about.

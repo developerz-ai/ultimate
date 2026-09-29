@@ -68,6 +68,11 @@ export interface IslandReadiness {
   /** The crop target's rectangle in VIEWPORT coordinates, which is what the DOM answers. */
   readonly box: IslandBox;
   /**
+   * `box` grown to every open popup the page shows (`POPUP_SELECTOR`), same coordinates: what the
+   * picture is cropped to, so a listbox or a portalled menu is in it. Absent: the box alone.
+   */
+  readonly frame?: IslandBox | undefined;
+  /**
    * The page's scroll offset at the moment the box was measured. A capture clip is in PAGE
    * coordinates, so this is what turns one into the other — and it is a separate field rather than
    * an addition inside the probe because `box` is published in the verdict and means the DOM's own
@@ -99,6 +104,7 @@ const readinessSchema: StandardSchemaV1<unknown, IslandReadiness> = t.object({
   failed: t.nullable(t.string),
   filled: t.boolean,
   box: t.object({ x: t.number, y: t.number, width: t.number, height: t.number }),
+  frame: t.optional(t.object({ x: t.number, y: t.number, width: t.number, height: t.number })),
   scroll: t.object({ x: t.number, y: t.number }),
   overflow: t.object({ x: t.boolean, y: t.boolean }),
   page: t.object({ width: t.number, height: t.number }),

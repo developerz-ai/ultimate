@@ -5,6 +5,7 @@ import type { Ctx } from '@ultimat3/core';
 import { emptyClauseList } from './errors';
 import { actorHas } from './grant-index';
 import { assertPermission, type KnownPermission, type Permission } from './permissions';
+import { markPreInput, type PreInputRun, preInputRun } from './pre-input-brand';
 import type { Actor } from './roles';
 
 export type PolicyDecision =
@@ -101,47 +102,65 @@ export const can = <I = unknown, R = unknown>(
 ): Policy<I, R> => {
   assertPermission(permission);
   const label = permission;
-  return {
+  // The actor half of the rule, on its own: it reads nothing the caller sent, which is what lets
+  // the before-input gate (`pre-input.ts`) refuse a caller who may never call this before their
+  // payload is parsed — and a 403 then says nothing about the input schema.
+  const gate = (actor: Actor | null): PolicyDecision | undefined => {
+    if (actor === null) return denied(`no actor for ${label}`, 'X_UNAUTHENTICATED');
+    if (!actorHas(actor, permission as Permission)) return denied(`actor lacks ${label}`);
+    return undefined;
+  };
+  const policy: Policy<I, R> = {
     kind: 'permission',
     label,
     permissions: [permission as Permission],
     children: [],
     run(args, recorder, depth = 0) {
-      if (args.actor === null) {
-        return record(recorder, this, depth, denied(`no actor for ${label}`, 'X_UNAUTHENTICATED'));
-      }
-      if (!actorHas(args.actor, permission as Permission)) {
-        return record(recorder, this, depth, denied(`actor lacks ${label}`));
-      }
+      const refused = gate(args.actor);
+      if (refused !== undefined) return record(recorder, this, depth, refused);
       if (predicate === undefined) return record(recorder, this, depth, ALLOWED);
       return record(recorder, this, depth, asDecision(predicate(args), label));
     },
   };
+  return markPreInput(policy, (args, recorder, depth) => {
+    const refused = gate(args.actor);
+    if (refused !== undefined) return record(recorder, policy, depth, refused);
+    // A predicate reads the input (or the row), so with one the clause is undecided until then.
+    return predicate === undefined ? record(recorder, policy, depth, ALLOWED) : undefined;
+  });
 };
 
 /** Explicitly public. Saying so is required; forgetting a policy is a build error. */
-export const allow = <I = unknown, R = unknown>(label = 'allow'): Policy<I, R> => ({
-  kind: 'allow',
-  label,
-  permissions: [],
-  children: [],
-  run(_args, recorder, depth = 0) {
-    return record(recorder, this, depth, ALLOWED);
-  },
-});
+export const allow = <I = unknown, R = unknown>(label = 'allow'): Policy<I, R> => {
+  const policy: Policy<I, R> = {
+    kind: 'allow',
+    label,
+    permissions: [],
+    children: [],
+    run(_args, recorder, depth = 0) {
+      return record(recorder, this, depth, ALLOWED);
+    },
+  };
+  return markPreInput(policy, (_args, recorder, depth) => record(recorder, policy, depth, ALLOWED));
+};
 
 export const deny = <I = unknown, R = unknown>(
   reason: string,
   code = 'X_FORBIDDEN',
-): Policy<I, R> => ({
-  kind: 'deny',
-  label: `deny(${reason})`,
-  permissions: [],
-  children: [],
-  run(_args, recorder, depth = 0) {
-    return record(recorder, this, depth, denied(reason, code));
-  },
-});
+): Policy<I, R> => {
+  const policy: Policy<I, R> = {
+    kind: 'deny',
+    label: `deny(${reason})`,
+    permissions: [],
+    children: [],
+    run(_args, recorder, depth = 0) {
+      return record(recorder, this, depth, denied(reason, code));
+    },
+  };
+  return markPreInput(policy, (_args, recorder, depth) =>
+    record(recorder, policy, depth, denied(reason, code)),
+  );
+};
 
 /**
  * Every permission a policy tree references, deduped and sorted. This is the list a compliance
@@ -166,15 +185,22 @@ const combined = <I, R>(
   label: string,
   children: readonly Policy<I, R>[],
   decide: (args: PolicyArgs<I, R>, recorder: Recorder | undefined, depth: number) => PolicyDecision,
-): Policy<I, R> => ({
-  kind,
-  label,
-  permissions: flatten(children),
-  children,
-  run(args, recorder, depth = 0) {
-    return record(recorder, this, depth, decide(args, recorder, depth + 1));
-  },
-});
+  pre: PreInputRun,
+): Policy<I, R> => {
+  const policy: Policy<I, R> = {
+    kind,
+    label,
+    permissions: flatten(children),
+    children,
+    run(args, recorder, depth = 0) {
+      return record(recorder, this, depth, decide(args, recorder, depth + 1));
+    },
+  };
+  return markPreInput(policy, (args, recorder, depth) => {
+    const decision = pre(args, recorder, depth + 1);
+    return decision === undefined ? undefined : record(recorder, policy, depth, decision);
+  });
+};
 
 /**
  * First denial wins, and its reason is the reason — short-circuit, left to right.
@@ -197,6 +223,17 @@ export const and = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Polic
         if (!decision.allowed) return decision;
       }
       return ALLOWED;
+    },
+    // Any clause that denies whatever the input is denies the conjunction whatever the input is —
+    // even past an undecided clause to its left, whose own verdict could only add a denial.
+    (args, recorder, depth) => {
+      let undecided = false;
+      for (const policy of policies) {
+        const decision = preInputRun(policy, args, recorder, depth);
+        if (decision === undefined) undecided = true;
+        else if (!decision.allowed) return decision;
+      }
+      return undecided ? undefined : ALLOWED;
     },
   );
 };
@@ -235,6 +272,25 @@ export const or = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy
       }
       return unauthenticated ?? last;
     },
+    // Decided only when some clause allows, or every clause denies; one undecided clause could
+    // still allow, so the disjunction waits for the input.
+    (args, recorder, depth) => {
+      let last: PolicyDecision = denied('no clause allowed this actor');
+      let unauthenticated: PolicyDecision | undefined;
+      let undecided = false;
+      for (const policy of policies) {
+        const decision = preInputRun(policy, args, recorder, depth);
+        if (decision === undefined) {
+          undecided = true;
+          continue;
+        }
+        if (decision.allowed) return ALLOWED;
+        if (decision.code === 'X_UNAUTHENTICATED') unauthenticated = decision;
+        last = decision;
+      }
+      if (undecided) return undefined;
+      return unauthenticated ?? last;
+    },
   );
 };
 
@@ -247,10 +303,20 @@ export const or = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy
  * route becomes a public internal route: the mistake is invisible in `and(can(…), not(can(…)))`
  * because the first clause carries the authentication, and it ships the moment someone simplifies.
  */
-export const not = <I, R = unknown>(policy: Policy<I, R>): Policy<I, R> =>
-  combined('not', `not(${policy.label})`, [policy], (args, recorder, depth) => {
-    const decision = policy.run(args, recorder, depth);
+export const not = <I, R = unknown>(policy: Policy<I, R>): Policy<I, R> => {
+  const invert = (decision: PolicyDecision): PolicyDecision => {
     if (decision.allowed) return denied(`not(${policy.label}) — inner clause allowed`);
     if (decision.code === 'X_UNAUTHENTICATED') return decision;
     return ALLOWED;
-  });
+  };
+  return combined(
+    'not',
+    `not(${policy.label})`,
+    [policy],
+    (args, recorder, depth) => invert(policy.run(args, recorder, depth)),
+    (args, recorder, depth) => {
+      const decision = preInputRun(policy, args, recorder, depth);
+      return decision === undefined ? undefined : invert(decision);
+    },
+  );
+};

@@ -10,7 +10,7 @@
 // tool therefore has no authz of its own — it borrows the action tier's, so a rule change cannot
 // apply to routes and miss tools.
 
-import { actorOf, guard, InputInvalidError } from '@ultimat3/action';
+import { actorOf, guard, guardBeforeInput, InputInvalidError } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
 import { useContext } from '@ultimat3/core';
 import type { KnownPermission } from '@ultimat3/policy';
@@ -103,14 +103,22 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
     },
     inputJsonSchema: toWireSchema(def.input),
     mutates: def.destructive ?? true,
+    admit: (actor) =>
+      asCallerContext(actor, () => {
+        const ctx = useContext();
+        guardBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
+      }),
     run: ({ input, actor }) =>
       // The caller is the actor for the WHOLE call. A child context is how the framework
       // impersonates, so the policy subject and whatever `handle` reads off `ctx.actor` are
       // the same identity by construction rather than by two call sites agreeing.
       asCallerContext(actor, async () => {
         const ctx = useContext();
-        // The AUTHORITATIVE parse, in the same slot `invoke` puts it: before the policy, before
-        // the handler. A projected action re-parses inside `invoke`; a hand-written tool has no
+        // The policy's actor half first, as in `invoke`: a caller refused whatever they send is
+        // told X_FORBIDDEN, never the tool's argument schema.
+        guardBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
+        // The AUTHORITATIVE parse, in the same slot `invoke` puts it: before the full policy,
+        // before the handler. A projected action re-parses inside `invoke`; a hand-written tool has no
         // second parse, so `handle` was typed `InferOutput<TInput>` and handed whatever
         // `validate-args.ts` let past the wire subset — which carries no `format`, so a `t.uuid`
         // arrived as any string at all. `InputInvalidError` because a tool argument is an action

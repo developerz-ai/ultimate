@@ -14,6 +14,7 @@ import { readinessProbe } from './island-harness-script';
 import { IslandRequestUnstubbedError, IslandUnphotographableError } from './island-shot-errors';
 import type { IslandReadiness, IslandStateShot } from './island-verdict';
 import { parseReadiness } from './island-verdict';
+import { type ShotCookiePair, shotCookies } from './shot-cookie';
 import type { ShotServer } from './shot-server';
 import { allowHostsFrom } from './shot-server';
 import { SETTLE_POLL_MS, settleReadiness } from './shot-settle';
@@ -120,7 +121,8 @@ export function photographFault(
 }
 
 /**
- * The capture rectangle for a readiness answer, in PAGE coordinates: the crop target's own box,
+ * The capture rectangle for a readiness answer, in PAGE coordinates: the crop target's frame (its
+ * own box grown to every open popup),
  * translated out of the viewport coordinates `getBoundingClientRect()` answers in, then grown by
  * `margin` on every side and CLAMPED to the document.
  *
@@ -136,10 +138,13 @@ export function photographFault(
  * the parser's floor and not a second opinion.
  */
 export function clipFor(seen: IslandReadiness | null, margin: number): CaptureClip {
-  const x = (seen?.box.x ?? 0) + (seen?.scroll.x ?? 0);
-  const y = (seen?.box.y ?? 0) + (seen?.scroll.y ?? 0);
-  const width = seen?.box.width ?? 0;
-  const height = seen?.box.height ?? 0;
+  // The frame, not the box: an open listbox, menu or popover lies outside the island's own box,
+  // and cropping to the box photographed an `open` state closed. The frame always contains the box.
+  const framed = seen?.frame ?? seen?.box;
+  const x = (framed?.x ?? 0) + (seen?.scroll.x ?? 0);
+  const y = (framed?.y ?? 0) + (seen?.scroll.y ?? 0);
+  const width = framed?.width ?? 0;
+  const height = framed?.height ?? 0;
   const left = Math.max(0, x - margin);
   const top = Math.max(0, y - margin);
   const right = Math.min(seen?.page.width ?? x + width, x + width + margin);
@@ -159,6 +164,8 @@ export interface IslandCaptureRun {
   readonly timeoutMs: number;
   readonly extraHosts?: string | undefined;
   readonly cropMarginPx?: number | undefined;
+  /** `--cookie`, scoped to the harness's server once it is up. */
+  readonly cookies?: readonly ShotCookiePair[] | undefined;
 }
 
 const quietly = async (stop: () => Promise<void>): Promise<void> => {
@@ -189,6 +196,9 @@ export async function captureIslandState(
       rules: { allowHosts: allowHostsFrom(server.url, options.extraHosts) },
       clock: systemShotClock,
       timeoutMs: options.timeoutMs,
+      ...(options.cookies === undefined || options.cookies.length === 0
+        ? {}
+        : { cookies: shotCookies(options.cookies, new URL(server.url).toString()) }),
     });
     const page = session.page;
     // BEFORE the navigation, so the first paint already has it: `prefers-color-scheme` is a live

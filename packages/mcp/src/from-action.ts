@@ -96,6 +96,11 @@ export interface ProjectablePrimitive {
   readonly outputWrap?: string;
   /** The one server-authoritative entry point. Runs policy, then the handler. */
   run(args: { input: unknown; actor: Actor }): Promise<unknown>;
+  /**
+   * The policy's actor half, alone: throws the denial `run` would raise for this actor whatever
+   * the input, returns otherwise. Becomes the tool's `admit`. Absent: no before-args gate.
+   */
+  admit?(actor: Actor): void;
 }
 
 /**
@@ -132,6 +137,9 @@ export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
     destructive: mutates,
     ...(visibleTo !== undefined ? { visibleTo } : {}),
     ...(listParams !== undefined ? { listParams } : {}),
+    ...(primitive.admit === undefined
+      ? {}
+      : { admit: (caller: McpCaller) => primitive.admit?.(caller.actor) }),
     // No `scope` from here: see the header. `defineAppMcp`'s `scopes:` map may add one.
     async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
       // ONE authz system, TWO surfaces. This `run` IS `invoke`; the HTTP route reaches the

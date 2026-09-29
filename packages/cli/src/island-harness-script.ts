@@ -179,11 +179,28 @@ export function harnessScript(options: HarnessScriptOptions): string {
  *
  * `selector` is the crop target the manifest declared; the island's own host element when absent.
  */
+/**
+ * What an island shows OUTSIDE its own box while a state is open: a combobox's listbox, a menu, a
+ * popover or a dialog — often portalled to `<body>`, so no descendant walk would find it. The crop
+ * is the union of the target's box and every visible match, so an `open` state photographs open.
+ * `:popover-open` is last and dropped on an engine that cannot parse it.
+ */
+export const POPUP_SELECTOR =
+  '[role=listbox],[role=menu],[role=dialog],[role=alertdialog],[role=tooltip],dialog[open],:popover-open';
+
 export const readinessProbe = (selector: string): string =>
   `(function(){var W=window.${HARNESS_GLOBAL}||{};` +
   'var host=document.querySelector("[data-x-island]");' +
   `var box=document.querySelector(${JSON.stringify(selector)})||host;` +
   'var r=box?box.getBoundingClientRect():{width:0,height:0,x:0,y:0};' +
+  // The frame: the box grown to every open popup the page shows, in the same viewport coordinates.
+  'var fl=r.x,ft=r.y,fr=r.x+r.width,fb=r.y+r.height,ps=[];' +
+  `try{ps=document.querySelectorAll(${JSON.stringify(POPUP_SELECTOR)})}` +
+  `catch(e){ps=document.querySelectorAll(${JSON.stringify(POPUP_SELECTOR.replace(',:popover-open', ''))})}` +
+  'for(var i=0;box&&i<ps.length;i++){var s=getComputedStyle(ps[i]);' +
+  'if(s.display==="none"||s.visibility==="hidden")continue;var q=ps[i].getBoundingClientRect();' +
+  'if(q.width===0||q.height===0)continue;fl=Math.min(fl,q.x);ft=Math.min(ft,q.y);' +
+  'fr=Math.max(fr,q.x+q.width);fb=Math.max(fb,q.y+q.height)}' +
   'return{harness:W.harness===true,ready:W.ready===true,' +
   'unstubbed:(W.unstubbed||[]).slice(),' +
   // Recorded beside `unstubbed`, never merged into it: a socket a component opened and never
@@ -198,6 +215,7 @@ export const readinessProbe = (selector: string): string =>
   // and rendered nothing is the silence a non-zero box would otherwise read as success.
   'filled:box?(box.children.length>0||(box.textContent||"").trim().length>0):false,' +
   'box:{x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)},' +
+  'frame:{x:Math.round(fl),y:Math.round(ft),width:Math.round(fr-fl),height:Math.round(fb-ft)},' +
   // The box is VIEWPORT coordinates — what `getBoundingClientRect()` answers — and a capture clip
   // is PAGE coordinates. They agree only while the page is at the origin, which is the one case a
   // harness happens to be in and is not a rule anything enforces: a state whose component sits

@@ -26,6 +26,7 @@ import {
   islandVerdictJson,
 } from './island-verdict';
 import type { CommandResult } from './output';
+import type { ShotCookiePair } from './shot-cookie';
 import type { ShotServer } from './shot-server';
 import { SHOT_DIR } from './shot-server';
 
@@ -152,6 +153,8 @@ export interface IslandShotInput {
   readonly settleMs: number;
   readonly timeoutMs: number;
   readonly extraHosts?: string | undefined;
+  /** `--cookie`, set in every state's session for the harness's own origin. */
+  readonly cookies?: readonly ShotCookiePair[] | undefined;
   readonly executablePath?: string | undefined;
   /** A provider's session, or a sidecar. One attach per viewport, memoised like a launch. */
   readonly cdpUrl?: string | undefined;
@@ -195,6 +198,7 @@ export async function islandShot(input: IslandShotInput): Promise<IslandArtifact
     settleMs: input.settleMs,
     timeoutMs: input.timeoutMs,
     ...(input.extraHosts === undefined ? {} : { extraHosts: input.extraHosts }),
+    ...(input.cookies === undefined ? {} : { cookies: input.cookies }),
     ...(input.minBytes === undefined ? {} : { minBytes: input.minBytes }),
   });
 }
@@ -225,6 +229,7 @@ export async function islandSweep(input: IslandSweepInput): Promise<IslandSweepA
     settleMs: input.settleMs,
     timeoutMs: input.timeoutMs,
     ...(input.extraHosts === undefined ? {} : { extraHosts: input.extraHosts }),
+    ...(input.cookies === undefined ? {} : { cookies: input.cookies }),
     ...(input.minBytes === undefined ? {} : { minBytes: input.minBytes }),
   });
 }

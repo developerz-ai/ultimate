@@ -29,7 +29,7 @@ import {
   readThrough,
 } from './cache';
 import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
-import { actorOf, guard } from './policy-gate';
+import { actorOf, guard, guardBeforeInput } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
 import type { SqlSource } from './source';
 
@@ -204,8 +204,17 @@ async function buildSource(
 ): Promise<SqlSource<object>> {
   const def = defOf(target);
   const name = queryName(target);
-  const input = await validate(def.input, raw, name);
   const unenforced = options.unenforced;
+  // The actor half of the policy first, exactly as `invoke` does it: a reader refused whatever
+  // they send learns nothing about this read's input schema from an `X_INPUT_INVALID`.
+  if (unenforced === undefined) {
+    guardBeforeInput(
+      def.policy,
+      { actor: actorOf(ctx), ctx, query: name },
+      options.surface ?? 'server',
+    );
+  }
+  const input = await validate(def.input, raw, name);
   if (unenforced === undefined) {
     guard(
       def.policy,

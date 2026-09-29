@@ -153,6 +153,32 @@ and one reader. A `path` the admin does not declare throws `X_ADMIN_PAGE_PATH_IN
 paths that would have worked — a page serving an admin URL the admin never built is a screen whose
 permissions nothing composed.
 
+### A refused page answers 403
+
+`guardedPage()` renders `AdminPageDenied` in place of the page, and the page's `load` decides the
+status: a mount that resolves the body in `load` answers the refusal with `withStatus` from
+`@ultimat3/render`, asking the same `decideAll` the guard asked. As of 2026-09.
+
+```ts
+import { type AdminApp, type AdminPageProps, adminRouteFor, decideAll } from '@ultimat3/admin';
+import { withStatus } from '@ultimat3/render';
+
+declare const admin: AdminApp;
+declare function adminCtxForRequest(): AdminPageProps['ctx'];
+
+const route = adminRouteFor(admin, `${admin.basePath}/ops`);
+
+// The mount's `load`: the guarded body, and the status the same decision answers.
+export const load = async ({ params, url }: Omit<AdminPageProps, 'ctx'>) => {
+  const ctx = adminCtxForRequest();
+  const data = { body: route.component === null ? null : await route.component({ ctx, params, url }) };
+  return decideAll(ctx.authz, route.permissions, ctx.actor).allowed ? data : withStatus(403, data);
+};
+```
+
+The same page, inside the app's shell, with a 403 (and `noindex`) on the response. `withStatus(404,
+…)` is the answer for a row the page cannot find.
+
 ### Splitting the admin across files
 
 `defineAdmin` takes **plain values** — `entities`, `resources`, `actions`, `jobs`, `pages`, `nav`,

@@ -7,7 +7,7 @@ export const shotSpec: CommandSpec = {
   name: 'shot',
   summary: 'photograph one route, one island in a state it declares, or every island in the app',
   usage:
-    'x shot <route> [--locale <l>] [--theme light|dark] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--expect-status 404] [--port 0] [--out <dir>] [--settle 2000] [--json]',
+    'x shot <route> [--locale <l>] [--theme light|dark] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--cookie <name=value>] [--expect-status 404] [--port 0] [--out <dir>] [--settle 2000] [--json]',
   requiresApp: true,
   flags: [
     { name: 'port', type: 'string', summary: 'dev port (0 lets the kernel pick a free one)' },
@@ -28,6 +28,12 @@ export const shotSpec: CommandSpec = {
       summary: 'attach to a browser somebody else is running (a provider session, a sidecar)',
     },
     { name: 'allow-hosts', type: 'string', summary: 'extra hosts the page may request' },
+    {
+      name: 'cookie',
+      type: 'string',
+      summary:
+        'name=value[,name=value] set for the app before the first navigation (e.g. consent=granted)',
+    },
     {
       name: 'theme',
       type: 'string',

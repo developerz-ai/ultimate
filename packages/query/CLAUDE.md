@@ -38,7 +38,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 
 ## Invariants — the read path
 
-- Every surface goes through `sourceFor`: parse input, evaluate policy, build the source. A second
+- Every surface goes through `sourceFor`: the policy's actor half (`guardBeforeInput`), parse input,
+  evaluate policy, build the source. A second
   read path is the one unforgivable change here.
 - **An explicit `ctx` is INSTALLED, never merely passed** — the ambient context (which
   `@ultimat3/entity`'s tenant guard reads) must be the identity `guard()` decided about.

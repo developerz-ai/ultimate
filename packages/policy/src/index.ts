@@ -57,6 +57,8 @@ export type {
 } from './policy';
 export { ALLOWED, allow, and, can, denied, deny, not, or, policyPermissions } from './policy';
 export { admitsAnonymous } from './policy-anonymous';
+export type { PreInputArgs } from './pre-input';
+export { decideBeforeInput, enforceBeforeInput } from './pre-input';
 export type { Actor, RoleDef, RoleMap } from './roles';
 export {
   clearRoles,

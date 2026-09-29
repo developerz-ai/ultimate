@@ -32,6 +32,16 @@ export async function validateInput<S extends StandardSchemaV1>(
 }
 
 /**
+ * The parse without the refusal: the value, or `undefined` when it does not parse. Only for a
+ * record of an attempt already refused on other grounds (`invoke`'s audit of a before-input
+ * denial) — never on a path that goes on to run anything.
+ */
+export async function parsedOrNothing(schema: StandardSchemaV1, raw: unknown): Promise<unknown> {
+  const result = await validateAsync(schema, raw);
+  return result.issues === undefined ? result.value : undefined;
+}
+
+/**
  * The handler's return value is data too. Parsing it is what makes the OpenAPI
  * response schema, the typed client and the MCP `outputSchema` true rather than
  * documentation — a handler that drifts from `output` fails on its own call.

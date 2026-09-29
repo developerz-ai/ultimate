@@ -32,6 +32,7 @@ import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
 import { shotBrowserChoice } from './shot-browser';
+import { readCookieFlag, type ShotCookiePair, shotCookies } from './shot-cookie';
 import {
   acceptLanguageHeaders,
   loadShotLocales,
@@ -218,6 +219,11 @@ export interface ShotRun {
    * app's default locale — so a picture never depends on the language of the machine's Chrome.
    */
   readonly acceptLanguage?: string | undefined;
+  /**
+   * `--cookie`: set before the first navigation, each for the server's own URL once it is up —
+   * so a consent banner (or any cookie-held choice) is decided in the picture.
+   */
+  readonly cookies?: readonly ShotCookiePair[] | undefined;
   readonly now?: (() => Date) | undefined;
   /**
    * `--expect-status`: the document status this shot is ok with — `404` to photograph the not-found
@@ -263,6 +269,9 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       ...(options.acceptLanguage === undefined
         ? {}
         : { headers: acceptLanguageHeaders(options.acceptLanguage) }),
+      ...(options.cookies === undefined || options.cookies.length === 0
+        ? {}
+        : { cookies: shotCookies(options.cookies, new URL(server.url).toString()) }),
     });
     const page = session.page;
     if (options.colorScheme !== undefined) {
@@ -354,6 +363,7 @@ export const shotCommand: CliCommand = {
     const positional = ctx.args.positionals[0];
     const sweep = flagBool(ctx.args, 'all-islands');
     const matrix = flagBool(ctx.args, 'matrix');
+    const cookies = readCookieFlag(flagString(ctx.args, 'cookie'));
     const app = await loadShotLocales(root);
     const locale = readLocaleFlag(flagString(ctx.args, 'locale'), app);
     // Every ambiguous pair refused BY NAME, before a value is read: a reader who typed two
@@ -424,6 +434,7 @@ export const shotCommand: CliCommand = {
       ...(flagString(ctx.args, 'allow-hosts') === undefined
         ? {}
         : { extraHosts: flagString(ctx.args, 'allow-hosts') }),
+      ...(cookies.length === 0 ? {} : { cookies }),
       boot,
     };
     if (sweep) return islandSweepResult(await islandSweep(shared));
@@ -444,6 +455,7 @@ export const shotCommand: CliCommand = {
       fullPage: flagBool(ctx.args, 'full'),
       extraHosts: flagString(ctx.args, 'allow-hosts'),
       ...(expectStatus === undefined ? {} : { expectStatus }),
+      ...(cookies.length === 0 ? {} : { cookies }),
     };
     if (matrix) {
       // `--locale` and `--theme` narrow the matrix to one value of their axis.

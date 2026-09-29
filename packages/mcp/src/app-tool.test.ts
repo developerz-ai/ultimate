@@ -117,10 +117,17 @@ describe('a hand-written tool parses its own input', () => {
   });
 });
 
-describe('the parse sits where invoke puts it — before the policy', () => {
-  test('an invalid input under a denying policy is X_INPUT_INVALID, as an action would be', async () => {
+describe('the parse sits where invoke puts it — after the actor gate, before the predicate', () => {
+  test('an invalid input under a denying policy is X_FORBIDDEN, as an action would be', async () => {
     const error = await thrownBy(run(definition(), { postId: 'not-a-uuid' }, stranger));
-    expect(codeOf(error)).toBe('X_INPUT_INVALID');
+    expect(codeOf(error)).toBe('X_FORBIDDEN');
+    expect(seen).toEqual([]);
+  });
+
+  test('admit refuses the stranger on the actor alone, and lets the holder through', () => {
+    const primitive = appToolPrimitive('archivePost', definition());
+    expect(() => primitive.admit?.(stranger)).toThrow();
+    expect(() => primitive.admit?.(owner)).not.toThrow();
   });
 
   test('a valid input under a denying policy is still X_FORBIDDEN', async () => {

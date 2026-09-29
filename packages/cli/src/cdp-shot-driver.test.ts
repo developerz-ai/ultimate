@@ -119,9 +119,35 @@ describe('unit · a session is one page, configured before it loads anything', (
       'Network.enable',
       'Fetch.enable',
       'Emulation.setDeviceMetricsOverride',
+      'Emulation.setScrollbarsHidden',
     ]);
-    expect(wire.calls.at(-1)?.params).toMatchObject({ width: 800, height: 600 });
-    expect(wire.calls.at(-1)?.sessionId).toBe('S1');
+    const metrics = wire.calls.find((call) => call.method === 'Emulation.setDeviceMetricsOverride');
+    expect(metrics?.params).toMatchObject({ width: 800, height: 600 });
+    expect(metrics?.sessionId).toBe('S1');
+  });
+
+  // A classic scrollbar took 15px of the layout, so a "1440" picture was of a 1425px page, and a
+  // full-page capture (cut to the content size) came back 1425 wide.
+  test('scrollbars are hidden, so the page lays out at the full declared width', async () => {
+    const { wire } = await opened(attach, { viewport: { width: 1440, height: 900 } });
+    const hidden = wire.calls.find((call) => call.method === 'Emulation.setScrollbarsHidden');
+    expect(hidden?.params).toEqual({ hidden: true });
+    expect(hidden?.sessionId).toBe('S1');
+  });
+
+  test('cookies are set on the page before the first navigation', async () => {
+    const { wire } = await opened(attach, {
+      cookies: [{ name: 'consent', value: 'granted', url: 'http://localhost:4321/' }],
+    });
+    const cookie = wire.calls.find((call) => call.method === 'Network.setCookie');
+    expect(cookie?.params).toEqual({
+      name: 'consent',
+      value: 'granted',
+      url: 'http://localhost:4321/',
+    });
+    expect(wire.methods().indexOf('Network.setCookie')).toBeGreaterThan(
+      wire.methods().indexOf('Network.enable'),
+    );
   });
 
   test('a session asks for its own viewport and headers before the first navigation', async () => {
@@ -132,8 +158,8 @@ describe('unit · a session is one page, configured before it loads anything', (
     const headers = wire.calls.find((call) => call.method === 'Network.setExtraHTTPHeaders');
     expect(headers?.params).toEqual({ headers: { 'accept-language': 'es-co' } });
     expect(headers?.sessionId).toBe('S1');
-    expect(wire.calls.at(-1)?.method).toBe('Emulation.setDeviceMetricsOverride');
-    expect(wire.calls.at(-1)?.params).toMatchObject({ width: 390, height: 844 });
+    const metrics = wire.calls.find((call) => call.method === 'Emulation.setDeviceMetricsOverride');
+    expect(metrics?.params).toMatchObject({ width: 390, height: 844 });
   });
 
   test('close ends the launched browser once, however often it is called', async () => {
@@ -349,6 +375,21 @@ describe('unit · capture and emulation', () => {
       clip: { x: 0, y: 0, width: 800, height: 2401, scale: 1 },
       captureBeyondViewport: true,
     });
+  });
+
+  test('a full-page capture is never narrower than the viewport it was laid out in', async () => {
+    const { page, wire } = await opened(
+      (call) => {
+        if (call.method === 'Page.getLayoutMetrics')
+          return { cssContentSize: { width: 1425, height: 3000 } };
+        if (call.method === 'Page.captureScreenshot') return { data: btoa('x') };
+        return attach(call);
+      },
+      { viewport: { width: 1440, height: 900 } },
+    );
+    await page.screenshot({ fullPage: true });
+    const shot = wire.calls.find((call) => call.method === 'Page.captureScreenshot');
+    expect(shot?.params).toMatchObject({ clip: { x: 0, y: 0, width: 1440, height: 3000 } });
   });
 
   test('fullPage beside a clip is refused rather than resolved in silence', async () => {

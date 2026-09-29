@@ -129,6 +129,7 @@ export {
   actorOf,
   admitsAnonymous,
   guard,
+  guardBeforeInput,
   policyCapability,
   policyPermissions,
 } from './policy-gate';

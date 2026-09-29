@@ -26,13 +26,24 @@ const member: McpCaller = {
   scopes: new Set<string>(),
 };
 
+/** Holds the permission, so a bad argument is an argument problem and not a denial. */
+const publisher: McpCaller = {
+  actor: agentActor({ id: 'a2', orgId: 'o1', roles: ['publisher'] }),
+  scopes: new Set<string>(),
+};
+
 const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
 
-const call = (server: McpServer, name: string, args: Record<string, unknown> = {}) =>
+const call = (
+  server: McpServer,
+  name: string,
+  args: Record<string, unknown> = {},
+  caller: McpCaller = member,
+) =>
   inRequest(() =>
     server.handle(
       { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
-      member,
+      caller,
     ),
   );
 
@@ -41,7 +52,7 @@ const text = (response: Awaited<ReturnType<typeof call>>): string =>
 
 beforeEach(() => {
   definePermissions(['post:publish']);
-  defineRoles({ member: { grants: [] } });
+  defineRoles({ member: { grants: [] }, publisher: { grants: ['post:publish'] } });
   registerAction(
     'publishPost',
     action({
@@ -89,7 +100,8 @@ describe('a policy denial', () => {
 
 describe('an invalid argument', () => {
   test('names the field and tells a remote caller to correct it, not to run a CLI', async () => {
-    const body = text(await call(defineAppMcp({ include: 'exposed' }).server, 'publishPost'));
+    const server = defineAppMcp({ include: 'exposed' }).server;
+    const body = text(await call(server, 'publishPost', {}, publisher));
     expect(body).toStartWith('X_INPUT_INVALID');
     expect(body).toInclude('postId');
     expect(body).not.toInclude('x actions describe');

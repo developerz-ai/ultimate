@@ -37,7 +37,7 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 
 | Member | Is | Rule |
 |---|---|---|
-| `liveFeed(input, options?)` | the read | parse input → evaluate policy → build source → execute, through the cache tiers |
+| `liveFeed(input, options?)` | the read | the policy's actor half → parse input → evaluate policy → build source → execute, through the cache tiers. A reader refused whatever they send is 401/403, never `X_INPUT_INVALID` |
 | `.as(actor, input, options?)` | the same read, as someone else | keeps the surrounding context whole — services, clock, locale, trace — and swaps only the actor. `null` is the signed-out caller |
 | `.page(input, { first, after? })` | one bounded page | `{ rows, endCursor, hasNextPage }`. The cursor is signed and scoped to `queryHash(name, input)` — the query's name and its parsed input, never `first` or `after`, which are controls rather than scope. There is no `offset` and there never will be |
 | `.live(input, options?)` | the subscription descriptor | a `LiveQuery` carrying the **same** policy object, re-evaluated per subscriber |

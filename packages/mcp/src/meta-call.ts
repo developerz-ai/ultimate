@@ -83,7 +83,9 @@ export async function metaCall(
   let resolved = host.tools.resolve(action, input, caller);
   if (resolved.kind !== 'scope-denied' && resolved.kind !== 'not-found') {
     const listed = validateArgs(schemaOf(tool), input);
-    if (!listed.ok) resolved = { kind: 'invalid-args', name: action, issues: listed.issues };
+    if (!listed.ok) {
+      resolved = { kind: 'invalid-args', name: action, issues: listed.issues, tool };
+    }
   }
   return host.dispatch(id, action, resolved, caller);
 }
