@@ -92,6 +92,7 @@ packages/cli/.dev-fixture/
 packages/cli/.app-reload-fixture/
 packages/cli/.app-graph-fixture/
 packages/cli/.dev-reload-fixture/
+packages/cli/.dev-restart-fixture/
 packages/cli/.site-assets-scss-fixture/
 packages/cli/.mcp-fixture/
 packages/cli/.island-fixture/

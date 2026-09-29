@@ -80,7 +80,8 @@ export function toQueryRoute(target: AnyQuery): Route {
       return answerRow(row);
     }
     // With a page control the answer is the `Page` envelope `query.page()` answers a server
-    // caller with — `{ rows, endCursor, hasNextPage }`, the same names, so a cursor read off the
+    // caller with — `{ rows, nextCursor, hasMore, endCursor, hasNextPage }`, the same names (the
+    // last two aliases of the first two), so a cursor read off the
     // wire and one read off a direct call are the same string in the same field. Without one the
     // answer is the bare array it has always been: every client written before the controls
     // existed keeps reading rows, and `hasNextPage` never rides on a row where a page marker

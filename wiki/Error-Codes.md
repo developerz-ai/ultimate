@@ -1002,6 +1002,7 @@ Two sets override the table, in `failures.ts`:
 | `X_VERIFY_MERGE_INCOMPLETE` | x verify merge was handed parts that do not add up to the whole gate | a gate step is missing, a shard of a split step is missing or duplicated, or two shards counted different corpora | x verify merge parts/*.json --json   # after every CI job uploaded its part |
 | `X_VERIFY_MERGE_INPUT` | a part handed to x verify merge is not an x verify --json document | the file is missing, empty, not JSON, or not the output of x verify --json | x verify --only <step> --json > part.json   # one document per part |
 | `X_SITEMAP_EXTRA_INVALID` | a seo.sitemap.extra path names no public page | the path matches no registered route, a route that declares a policy, an api/ route, or a site/ page the sitemap already lists | x routes --json   # then list in seo.sitemap.extra only a path a registered app/ route without a policy answers |
+| `X_DEV_RESTART_REQUIRED` | a save reached a module that defines a primitive; only a new process serves it | a slice service, a view under defineAdmin, or an action/query/entity/job file itself was saved, and the module that defines the primitive still holds the old code | restart x dev — the supervised x dev restarts itself; an embedded startDev() passes onRestart |
 
 ## Reserved codes
 

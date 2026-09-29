@@ -211,7 +211,9 @@ export const api = defineApi({
       scopes: MCP_SCOPES,            // scope -> [primitive names]; the map defineAppMcp takes
       resolveToken,                  // the MCP resolver: token -> { actor, scopes } | null
       rateLimit: { limit: 120, windowMs: 60_000 },
-      openapi: 'openapi.v1.json',    // x manifest writes only the cut here; x verify checks it
+      openapi: 'openapi.v1.json',    // x manifest writes only the cut here; x verify checks it —
+                                     // each operation `security: [{ bearer: ['<its scope>'] }]`,
+                                     // the bearer scheme lists every scope (x-ultimate.scopes)
     }],
   },
   // Declaring it (any key) makes openapi.json COMPLETE: info, servers, securitySchemes

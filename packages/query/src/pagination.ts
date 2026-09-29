@@ -20,10 +20,30 @@ import { compareRows, seekKeyOf, totalOrder } from './shape';
 import type { SqlSource } from './source';
 import { isAfterKey } from './source';
 
+/**
+ * One page. `nextCursor` / `hasMore` are the preferred names; `endCursor` / `hasNextPage` are the
+ * same two values under the names every client before 22.12 reads — aliases, both always present,
+ * never able to disagree because `pageOf` is the one place that writes them.
+ */
 export interface Page<TRow> {
   readonly rows: readonly TRow[];
+  /** The signed cursor that continues this listing; `null` on an empty page. */
+  readonly nextCursor: string | null;
+  /** Whether another page follows. */
+  readonly hasMore: boolean;
+  /** Alias of `nextCursor`. */
   readonly endCursor: string | null;
+  /** Alias of `hasMore`. */
   readonly hasNextPage: boolean;
+}
+
+/** Builds a `Page` from its two facts — the only constructor, so the aliases cannot drift. */
+export function pageOf<TRow>(
+  rows: readonly TRow[],
+  nextCursor: string | null,
+  hasMore: boolean,
+): Page<TRow> {
+  return { rows, nextCursor, hasMore, endCursor: nextCursor, hasNextPage: hasMore };
 }
 
 export interface PaginateArgs extends SourceOptions {
@@ -70,20 +90,17 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   const last = rows[rows.length - 1];
   const seek = last === undefined ? null : seekKeyOf(last, shape);
 
-  return {
-    rows,
-    endCursor:
-      seek === null
-        ? null
-        : encodeCursor({
-            scope: hash,
-            // The id rides TYPED at the tail of the key — core's `id` slot is a string — so a
-            // numeric or bigint tiebreak compares as a number on the next page, not lexically.
-            key: [...seek.key, seek.id].map(serializeSortValue),
-            id: String(seek.id),
-          }),
-    hasNextPage: scoped.length > args.first,
-  };
+  const nextCursor =
+    seek === null
+      ? null
+      : encodeCursor({
+          scope: hash,
+          // The id rides TYPED at the tail of the key — core's `id` slot is a string — so a
+          // numeric or bigint tiebreak compares as a number on the next page, not lexically.
+          key: [...seek.key, seek.id].map(serializeSortValue),
+          id: String(seek.id),
+        });
+  return pageOf(rows, nextCursor, scoped.length > args.first);
 }
 
 /**

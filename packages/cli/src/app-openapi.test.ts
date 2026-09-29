@@ -104,6 +104,19 @@ describe('the complete document and a mount document', () => {
     expect(Object.keys(v1Doc.paths)).toEqual(['/v1/create-case']);
   });
 
+  test('openapi.v1.json secures each operation with the scope the mount maps it to', () => {
+    declare({ title: 'Notificado API', version: '1.0.0' });
+    const v1 = openApiArtifacts(manifest).find((artifact) => artifact.file === 'openapi.v1.json');
+    const v1Doc = JSON.parse(v1?.text ?? '{}') as {
+      paths: Record<string, { post?: { security?: unknown } }>;
+      components: { securitySchemes: Record<string, { 'x-ultimate'?: unknown }> };
+    };
+    expect(v1Doc.paths['/v1/create-case']?.post?.security).toEqual([{ bearer: ['cases:write'] }]);
+    expect(v1Doc.components.securitySchemes['bearer']?.['x-ultimate']).toEqual({
+      scopes: { 'cases:write': ['createCase'] },
+    });
+  });
+
   test('a declared mount document that was never written is stale', async () => {
     declare({ title: 'Notificado API', version: '1.0.0' });
     const root = join(tmpdir(), `x-app-openapi-${process.pid}`);

@@ -8,7 +8,39 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **query:** the page envelope — `query.page()` and `GET /_x/query/<name>?_first=…` — also answers
+  `nextCursor` (the value of `endCursor`) and `hasMore` (the value of `hasNextPage`). They are the
+  preferred names; the old two stay, always equal, documented as aliases and not deprecated.
+  `openapi.json`'s envelope schema lists all five as required, each alias described as one, and
+  `_after` is documented as taking `nextCursor`. `Page<T>` gains both fields (built by one
+  constructor, so the pairs cannot disagree). A client reading `endCursor`/`hasNextPage` is
+  unaffected.
+- **action, cli:** a bearer mount's document (`http.mounts[].openapi`, e.g. `openapi.v1.json`)
+  secures each operation with the scope that names it — `security: [{ bearer: ['cases:read'] }]`
+  instead of `bearer: []` — and `components.securitySchemes.bearer` documents the scope map: every
+  scope with the operations it unlocks, in its `description` and as `x-ultimate.scopes`
+  (`{ '<scope>': ['<operation>', …] }`, both sorted). `x-ultimate.scope` per operation is unchanged.
+  The complete `openapi.json` is unchanged. Regenerate with `x manifest --openapi`; `x verify`
+  reports the old document as stale.
+- **cli:** `X_DEV_RESTART_REQUIRED` — a save in an unsupervised dev process (`startDev()` with no
+  `onRestart`) reached a module that defines a primitive; reported on `/_x`.
+
+### Fixed
+
+- **cli:** `x dev` served stale code after a save that reached a module defining a primitive — a
+  slice's `service.ts` imported by its query, an admin page's `ui-*.tsx` under `defineAdmin`, or
+  the action/query/entity/job file itself. That module is never re-imported (its registry refuses
+  a second definition, and the route table holds its first instance), so it kept the old code while
+  `x dev` logged `reloaded`. The reload graph now records every pinned module a save reaches
+  (`takeStalePins`), and `x dev` runs as a supervisor plus a serving child: on such a save the child
+  prints `restarting: <file> under <module> — …` on stderr, drains, releases the port, the lock and
+  the embedded database, and exits `75`; the supervisor boots a fresh child on the same port
+  (`--port 0` is pinned to one free port first). Saves that reach no pinned module keep the
+  in-process reload (unchanged speed). SIGINT/SIGTERM to the supervisor are forwarded and never
+  answered with a respawn. `--once` is unsupervised; `startDev({ onRestart })` receives the pins
+  instead of `onReload`.
 
 ## 22.11.0 - 2026-09-29
 

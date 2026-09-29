@@ -16,7 +16,8 @@ import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { createIsrController } from '@ultimat3/render/server';
 import { loadSignInPath } from './app-auth';
 import { appManifest } from './app-manifest';
-import { enableReloadTracking } from './app-reload-graph';
+import type { StalePin } from './app-reload-graph';
+import { enableReloadTracking, takeStalePins } from './app-reload-graph';
 import { requireAppRoot } from './app-root';
 import { loadAppRuntime } from './app-runtime';
 import { devSpec } from './cmd-dev-spec';
@@ -29,6 +30,7 @@ import { createStatementLedger } from './dev-n-plus-one';
 import { devPortFor } from './dev-port';
 import { coalesceReloads } from './dev-reload';
 import { devRouteTable } from './dev-route-table';
+import { childRestart, restartFinding } from './dev-supervisor';
 import { createTraceRecorder } from './dev-traces';
 import { watchTree } from './dev-watch-tree';
 import { holdUntilShutdown } from './hold';
@@ -108,6 +110,12 @@ export interface StartDevOptions {
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly roles?: readonly Role[];
   readonly onReload?: (file: string, durationMs: number) => void;
+  /**
+   * A save reached a module that defines a primitive, so this process cannot serve it
+   * (`takeStalePins`). Given, it is called INSTEAD of `onReload` — `x dev`'s child drains and exits
+   * for its supervisor to boot a fresh one. Absent, the save is `X_DEV_RESTART_REQUIRED` on `/_x`.
+   */
+  readonly onRestart?: (pins: readonly StalePin[]) => void;
 }
 
 /**
@@ -294,8 +302,14 @@ async function bootDev(
       state.islands = islands;
       for (const path of isr.store().paths()) isr.store().delete(path);
       state.reloads += 1;
-      state.reloadFinding = undefined;
-      options.onReload?.(file, Math.round(performance.now() - started));
+      // Read on EVERY rebuild, so a pin one save reached is never reported against the next save.
+      const pins = takeStalePins();
+      state.reloadFinding =
+        pins.length > 0 && options.onRestart === undefined
+          ? restartFinding(options.root, pins)
+          : undefined;
+      if (pins.length > 0 && options.onRestart !== undefined) options.onRestart(pins);
+      else options.onReload?.(file, Math.round(performance.now() - started));
     },
     // Same rule as a module that will not import: a save the manifest cannot be rebuilt from is
     // a finding on `/_x`, never an unhandled rejection that takes the dev server down.
@@ -375,6 +389,7 @@ export const devCommand: CliCommand = {
     // The directory is CLAIMED from here down, so a boot that throws has to give it back — the
     // `releaseBoot` shape, with one acquisition. Without it the first failed `x dev` in a shell
     // refuses every later one with a pid that is no longer running.
+    const restart = childRestart(root, ctx.env);
     const server = await startDev({
       root,
       port,
@@ -384,6 +399,8 @@ export const devCommand: CliCommand = {
         if (!ctx.args.json)
           process.stdout.write(`${msg('cli.dev.hmr', { file, ms: durationMs })}\n`);
       },
+      // Supervised, a save this process cannot serve is a drain and an exit for a fresh child.
+      ...restart.options,
     }).catch((error: unknown) => {
       release();
       throw error;
@@ -461,12 +478,17 @@ export const devCommand: CliCommand = {
     // directory locked by a process that no longer exists.
     return {
       ...result,
-      hold: holdUntilShutdown('dev', async () => {
-        // The lock first: a stop() that throws must not leave a file claiming this pid still owns
-        // the directory, because the next boot would then refuse for a process that is gone.
-        clearLock(services.stateDir);
-        await server.stop();
-      }),
+      hold: holdUntilShutdown(
+        'dev',
+        async () => {
+          // The lock first: a stop() that throws must not leave a file claiming this pid still owns
+          // the directory, because the next boot would then refuse for a process that is gone.
+          clearLock(services.stateDir);
+          await server.stop();
+        },
+        // Released — the port, the lock and the embedded database are free for the next child.
+        { exit: restart.exit },
+      ),
     };
   },
 };

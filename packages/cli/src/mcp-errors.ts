@@ -253,6 +253,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only budgets --json   # after moving each await in Page into export const load',
   X_SITEMAP_EXTRA_INVALID:
     'x routes --json   # then list in seo.sitemap.extra only a path a registered app/ route without a policy answers',
+  X_DEV_RESTART_REQUIRED:
+    'x dev --json   # a fresh process; the supervised x dev restarts itself on such a save',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
