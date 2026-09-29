@@ -59,6 +59,34 @@ on as the transport's `fetchImpl`. The transport owns `Accept`, the trace/budget
 principal fence, and the error decode — a non-`problem+json` failure (a gateway's HTML) is core's
 `X_CLIENT_TRANSPORT_FAILED`, a `problem+json` one is the server's own code, verbatim.
 
+### One object — `single: true`
+
+A detail read declares `single: true`. The route answers the first row as the body and **404
+`X_NOT_FOUND`** when `sql` returns none (a list read answers `200 []`), refuses `_first`/`_after`
+(400), and `openapi.json` documents one object with a `404` and no page controls. `.client()` and
+`queryClient` type it `Promise<TRow>` with no `.page`. In process nothing moves: `postById({ id })`,
+`.as()`, `.page()`, `.live()` and the MCP tool still answer `readonly TRow[]`, so opting in breaks no
+`[0]` already written. `As of 2026-09-29`.
+
+```ts
+import { can } from '@ultimat3/policy';
+import { from, query, queryClient, t } from '@ultimat3/query';
+
+type Post = { readonly id: string; readonly title: string };
+declare const posts: readonly Post[];
+
+export const postById = query({
+  input: t.object({ id: t.uuid }),
+  policy: can('post:read'),
+  single: true,
+  sql: ({ id }) => from<Post>('posts', posts).where({ id }).limit(1),
+});
+
+const queries = queryClient<{ postById: typeof postById }>({ baseUrl: '' });
+const post: Post = await queries.postById({ id: '018f4a1c-1b2c-7d3e-8f90-abcdef012345' }); // or X_NOT_FOUND
+const rows: readonly Post[] = await postById({ id: post.id }); // in process: still the rows
+```
+
 ### Records — `rows:` puts a read's answer in the page's store
 
 ```ts
@@ -514,6 +542,8 @@ router feature here.
 | `X_QUERY_NOT_PAGEABLE` | a paged or live read returned a row with no `id` | select the primary key: `db.<rows>.select({ id: true, … })` |
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x queries describe <name> --json` |
 | `X_QUERY_UNREGISTERED` | used before `registerQueries()` ran | register at boot |
+| `X_NOT_FOUND` | a `single: true` read matched no row — the HTTP route's 404 only (entity's code) | `x queries describe <name> --json` prints the SQL |
+| `X_QUERY_SINGLE_INVALID` | `single:` declared as something other than a boolean | `single: true`, or drop the key |
 | `X_QUERY_FOREIGN` | a look-alike was projected as a query | declare it with `query({ … })` |
 | `X_CLIENT_TRANSPORT_FAILED` | `.client()` got no response, or a non-`problem+json` failure (core's code, since 21.0.0; was `X_RPC_FAILED`) | check the gateway in front of the app: `x doctor --json` |
 
@@ -537,6 +567,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `QueryInputUnencodableError` | `X_QUERY_INPUT_UNENCODABLE` | `src/errors.ts` |
 | `QueryNotPageableError` | `X_QUERY_NOT_PAGEABLE` | `src/errors.ts` |
 | `QueryPolicyMissingError` | `X_QUERY_POLICY_MISSING` | `src/errors.ts` |
+| `QueryRowNotFoundError` | `X_NOT_FOUND` | `src/errors.ts` |
+| `QuerySingleInvalidError` | `X_QUERY_SINGLE_INVALID` | `src/errors.ts` |
 | `QuerySubscribesDriftError` | `X_QUERY_SUBSCRIBES_DRIFT` | `src/errors.ts` |
 | `QuerySubscribesInvalidError` | `X_QUERY_SUBSCRIBES_INVALID` | `src/errors.ts` |
 | `QueryUnregisteredError` | `X_QUERY_UNREGISTERED` | `src/errors.ts` |

@@ -64,6 +64,7 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   ['text value', () => text().$parse(1)],
   ['text max declaration', () => text({ max: 2.5 })],
   ['text past max', () => text({ max: 3 }).$parse('abcdef')],
+  ['text NUL character', () => text().$parse('a\u0000b')],
   ['integer value', () => integer().$parse(1.5)],
   ['boolean value', () => boolean().$parse('yes')],
   ['timestamp value', () => timestamp().$parse('nope')],

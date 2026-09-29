@@ -19,7 +19,7 @@ import {
   makeColumn,
   makeTimestamp,
 } from './column';
-import { got, oneOf } from './column-values';
+import { got, oneOf, refuseNul } from './column-values';
 import { refuseColumn } from './refuse';
 import type {
   Column,
@@ -118,6 +118,9 @@ export const url = (): Column<string> =>
     'text',
     (value) => {
       if (typeof value === 'string') {
+        // Before the parse, outside its `catch`: WHATWG percent-encodes a NUL in a path, so
+        // `new URL` accepts it, and the value stored is the caller's — NUL included.
+        refuseNul(value);
         try {
           const parsed = new URL(value);
           // The scheme is stored in its canonical LOWER case: the CHECK is `~ '^https?://'`, so

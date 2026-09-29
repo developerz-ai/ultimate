@@ -433,6 +433,11 @@ is the shape a table already has, `As of 2026-08`.
 | `bytes()` | `bytea` | `Uint8Array`, normalised across both drivers |
 | `arrayOf(column)` | `<element>[]` | `readonly T[]`, each member parsed by the element column |
 
+**No NUL in text.** `text()` and `url()` refuse a string carrying U+0000 (`X_INVARIANT_VIOLATED`,
+`column.format`) — the one character a Postgres `text` value cannot hold (SQLSTATE 22021), so the
+memory driver no longer stores what production answers `X_DB_STATEMENT_FAILED` for. `t.string`
+refuses it at the wire first, as a 400. `As of 2026-09-29`.
+
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
 `.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)`.
 

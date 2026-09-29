@@ -22,7 +22,7 @@ export interface ExplainResult extends SqlText {
  * surfaces that expose it (`/_x`, the CLI) are admin-gated in their own right.
  */
 export async function explain<TInput extends StandardSchemaV1, TRow extends object>(
-  target: Query<TInput, TRow>,
+  target: Query<TInput, TRow, boolean>,
   input: unknown,
   ctx?: Ctx,
 ): Promise<ExplainResult> {

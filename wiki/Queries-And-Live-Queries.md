@@ -23,6 +23,7 @@ export const liveFeed = query({
 | `input` | yes | Standard Schema; `t` re-exported from `@ultimat3/query`, so a query file imports one package. The shipped provider is `@ultimat3/schema`'s dependency-free builtin — ArkType, Zod and Valibot are optional swaps behind `configureSchemaProvider`, and no adapter ships. Parsed before `policy`, before `sql`. Becomes the GET query string, the client hook argument, and the MCP tool's JSON Schema |
 | `policy` | yes | `can('<perm>')`, optionally with a predicate over `{ input, actor }`. Evaluated at HTTP call, client hook, subscribe, **and per delivered row** |
 | `live` | no — default `false` | registers the query with the incremental matcher. Requires a deterministic, bounded `sql` |
+| `single` | no — default `false` | `true` declares a read of ONE object (a detail page's row by id or slug). Only the wire changes: the HTTP GET answers the first row `sql` returns as the body, **404 `X_NOT_FOUND`** when there is none (a list read answers `200 []`), refuses `_first`/`_after` (400), and `openapi.json` documents one object, a `404` and no page controls. The typed client answers `Promise<TRow>` and has no `.page`. Every in-process caller — `read(input)`, `.as()`, `.page()`, `.live()`, the MCP tool — keeps `readonly TRow[]`. Anything but a boolean is `X_QUERY_SINGLE_INVALID`. `As of 2026-09-29` |
 | `sql` | yes | `(input) => SqlSource`. `from()` (`@ultimat3/query`) wraps an already-resolved `@ultimat3/entity` repo call and restates `where`/`orderBy`/`limit` for the matcher to read back; `select`/`preload` happen inside that repo call, before `from()` ever sees a row. No ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | `mcp.visibleTo` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
@@ -101,7 +102,30 @@ Mounted for every registered query by `x dev` and by a container, from one compo
 | Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge |
 | Failures | `application/problem+json` carrying the code, cause and fix. A non-framework throw is the server's 500, never dressed as a read failure |
 | A page | `?_first=20` answers `.page()`'s own envelope — `{ rows, endCursor, hasNextPage }` — and `&_after=<endCursor>` continues it. Without a control the answer is the bare array. The keys carry an underscore because `first` is a legal input member (a listing's own page size); declaring `_first` or `_after` as input is `X_QUERY_INPUT_UNENCODABLE`. A size outside 1–10,000 or an `_after` without `_first` is **400** `X_INPUT_INVALID`; a cursor that is not this read's is **400** `X_CURSOR_INVALID`. `As of 2026-09` |
-| In `openapi.json` | every read, as a `GET` path item: the input as `in: query` parameters, then `_first` and `_after`, and a `200` that is `oneOf` the rows and the envelope |
+| In `openapi.json` | every read, as a `GET` path item: the input as `in: query` parameters, then `_first` and `_after`, and a `200` that is `oneOf` the rows and the envelope. A `single: true` read: the input parameters only, a `200` that is one object, a `404`, and `x-ultimate.single: true` |
+| One object | `single: true` answers the row itself, or **404** `X_NOT_FOUND` — see below |
+
+### A read of one object — `single: true`
+
+```ts
+export const postById = query({
+  input: t.object({ id: t.uuid }),
+  policy: can('post:read'),
+  single: true,
+  sql: ({ id }) => db.posts.where({ id }).limit(1),
+});
+// GET /_x/query/post-by-id?id=…  → 200 { id, title, … }  ·  404 X_NOT_FOUND
+// await postById.client({ baseUrl })({ id })  → Promise<Row>
+// await postById({ id })                       → readonly Row[]  (unchanged in process)
+```
+
+| Fact | Rule |
+|---|---|
+| The body | the FIRST row `sql` returns — the one every in-process `[0]` of the same read takes. Say `.limit(1)`: nothing counts the rest |
+| No row | **404** `X_NOT_FOUND`, `@ultimat3/entity`'s code, whose fix prints the SQL. The policy runs first, so a caller it denies is still 403 |
+| Page controls | `_first` or `_after` is **400** `X_INPUT_INVALID`, and neither is published |
+| `rows:` | the envelope as usual, with the row as `data` |
+| Not changed | `read(input)`, `.as()`, `.page()`, `.live()` and the MCP tool still answer rows. `useQuery` reads lists: a single read in an island is `.client()` or `queryClient` |
 
 ### Two spellings of that client, one URL
 
@@ -117,7 +141,7 @@ export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
 |---|---|
 | When the map-wide one is the only option | a surface that may not import the feature — `site/`, where an edge into `app/` is `X_BOUNDARY_VIOLATION`. `.client()` needs the query object; `queryClient` needs only the `Api` **type** |
 | Why two clients and not one | actions and queries are two registries (`defineApi`'s `actions:` and `queries:` keys) answering two methods. A read taken off the action client is a name that does not exist on `Api['actions']` — a compile error, which is the point |
-| Types | the read's own `input` and row type. A read answers `readonly TRow[]`, `limit(1)` included: a detail route unwraps the row, it is never handed one by the client |
+| Types | the read's own `input` and row type. A list read answers `readonly TRow[]`, `limit(1)` included; a `single: true` read answers `TRow` and rejects with `X_NOT_FOUND` when the route 404s |
 | Failures | the server's own code, off `problem+json` — `X_INPUT_INVALID` stays `X_INPUT_INVALID`. A gateway answering HTML, a network fault and a 2xx body that is not JSON are `X_CLIENT_TRANSPORT_FAILED`, the same code an action's client answers. It was `X_RPC_FAILED` until 21.0.0 |
 | Rows are JSON | what `response.json()` parsed, exactly as `rpc` hands back. A query declares no output schema — row types come from the `SqlSource` its `sql:` returns — so a `Date` column arrives as the ISO string, and the surface that formats one converts at its `load` |
 | `then` is not a read | the proxy answers `undefined` for it, so `await queries` resolves to the client instead of fetching `/_x/query/then`. Same rule in `rpc` |

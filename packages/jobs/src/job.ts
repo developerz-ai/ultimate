@@ -163,6 +163,7 @@ export interface JobHandle<I = unknown> {
 export type AnyJobHandle = JobHandle<unknown>;
 
 const registry = new Map<string, AnyJobHandle>();
+/** Process-monotonic — `resetJobs()` deliberately leaves it alone. */
 let anonymous = 0;
 
 /**
@@ -396,9 +397,12 @@ export function registeredJobs(): readonly AnyJobHandle[] {
   return [...registry.values()].sort((a, b) => byName(a.name, b.name));
 }
 
+/**
+ * Clears the registry and NOT the counter, for `resetTasks`'s reason: an `anonymous-job-<n>`
+ * re-minted after a reset shares its name with a handle an earlier test file still holds.
+ */
 export function resetJobs(): void {
   registry.clear();
-  anonymous = 0;
 }
 
 /**

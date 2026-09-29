@@ -27,15 +27,17 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_QUERY_SUBSCRIBES_DRIFT: 'a live query subscribes to a relation its own sql never reads',
   X_QUERY_SUBSCRIBES_INVALID: 'a query declares subscribed relations no live read can use',
   X_QUERY_UNREGISTERED: 'a query was used before it was registered',
+  X_QUERY_SINGLE_INVALID: 'a query declares single: as something other than a boolean',
 };
 
 /**
- * Codes `@ultimat3/action` owns that this package only throws. It describes an action's job —
- * enforcing an input schema — so action declares the title and query never re-declares it: two
- * copies of a title are two titles, one of which is stale. `X_RPC_FAILED` left this list in
+ * Codes another package owns that this one only throws. `X_INPUT_INVALID` describes an action's
+ * job — enforcing an input schema — and `X_NOT_FOUND` is `@ultimat3/entity`'s "no row for that
+ * id", which a `single: true` read answers over HTTP. The owner declares the title and query never
+ * re-declares it: two copies of a title are two titles, one of which is stale. `X_RPC_FAILED` left this list in
  * 21.0.0: the typed read client's wire failures are `@ultimat3/core`'s `clientTransport`'s now.
  */
-export const QUERY_BORROWED_ERROR_CODES = ['X_INPUT_INVALID'] as const;
+export const QUERY_BORROWED_ERROR_CODES = ['X_INPUT_INVALID', 'X_NOT_FOUND'] as const;
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"
 // from an X_ERROR_CODE_DUPLICATE at import into whichever module loaded first deciding the title.
@@ -321,6 +323,31 @@ export class QueryInputInvalidError extends UltimateError {
       code: 'X_INPUT_INVALID',
       cause: `input for query "${name}" failed validation: ${detail}`,
       fix: `x queries describe ${name} --json  # prints the expected input schema`,
+    });
+  }
+}
+
+/**
+ * A `single: true` read matched no row. The HTTP route's answer only — every in-process caller of
+ * the same read gets `[]`, as it always has. `@ultimat3/entity`'s code, so the status (404) and the
+ * title are the ones a repo's `findById` miss already answers, not a second "not found".
+ */
+export class QueryRowNotFoundError extends UltimateError {
+  constructor(name: string) {
+    super({
+      code: 'X_NOT_FOUND',
+      cause: `query "${name}" is declared single: true and its sql matched no row for this input`,
+      fix: `x queries describe ${name} --json  # prints the SQL — a stale id, another tenant's row or a soft-deleted one matches nothing`,
+    });
+  }
+}
+
+export class QuerySingleInvalidError extends UltimateError {
+  constructor(value: unknown) {
+    super({
+      code: 'X_QUERY_SINGLE_INVALID',
+      cause: `a query declares single: as ${typeof value}, and only a boolean says whether it reads one object`,
+      fix: 'write single: true for a read of one object, or drop the key for a list read',
     });
   }
 }

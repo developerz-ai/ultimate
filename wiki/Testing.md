@@ -409,8 +409,10 @@ gates at once — and it is held to a **memory budget**, not to whatever looks f
   at the same width. Between two files the testing preload hands the next file the process it would
   have had alone: undisposed island mounts are disposed, `globalThis` and `process.env` go back to
   the first file's baseline, the permission/role/catalog registries are restored (as a union — a
-  module imported once per worker declares once), tasks exactly, and `.tsx` always compiles with
-  the app's JSX factory. A repository whose tests need a fresh global per file says
+  module imported once per worker declares once), tasks exactly (an `anonymous-task-<n>` or
+  `anonymous-job-<n>` name is never re-minted in a process — `resetTasks()`/`resetJobs()` clear
+  the registry, not the counter — so a later file's task cannot take an earlier one's seat), and
+  `.tsx` always compiles with the app's JSX factory. A repository whose tests need a fresh global per file says
   `"isolate": true` in `x.verify.json`, or passes `--isolate` to `x test` / `x verify`.
 - **One long-lived process per worker.** Without isolation a worker's memory is set by its live
   database, not by how many files it ran, so a pass is ONE `bun test --parallel=N` (recycled only

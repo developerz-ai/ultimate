@@ -4,6 +4,7 @@
 
 import { literal } from '@ultimat3/db';
 import { describeValue } from '@ultimat3/schema';
+import { refuseColumn } from './refuse';
 
 /**
  * The rejected value, rendered as its SHAPE and never its content — `@ultimat3/schema`'s
@@ -35,3 +36,18 @@ export const oneOf =
   (values: readonly string[]) =>
   (name: string): string =>
     `${name} in (${values.map((value) => literal(value).text).join(', ')})`;
+
+/**
+ * U+0000 is the one character a Postgres `text` value cannot hold (SQLSTATE 22021). Refused in the
+ * column parser for the reason every rule in this package is: the memory driver would store what
+ * production answers `X_DB_STATEMENT_FAILED` for. `t.string` refuses it at the wire first; this is
+ * the same rule for a value that reached the row by any other path — a job, a seed, an import.
+ */
+export const refuseNul = (value: string): string =>
+  value.includes('\u0000')
+    ? refuseColumn(
+        'format',
+        `expected text without a NUL character (U+0000), ${got(value)} that contains one`,
+        "strip it at the call site — value.replaceAll('\\u0000', '') — Postgres text cannot store U+0000; binary content is bytea()",
+      )
+    : value;

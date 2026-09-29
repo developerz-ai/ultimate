@@ -11,13 +11,17 @@ import { toBucket } from '@ultimat3/http';
 import { coerceQuery } from '@ultimat3/schema';
 import type { Deprecation } from './deprecation';
 import { recordDeprecatedCall, renderDeprecation } from './deprecation';
-import { QueryDeprecationInvalidError } from './errors';
+import {
+  QueryDeprecationInvalidError,
+  QueryInputInvalidError,
+  QueryRowNotFoundError,
+} from './errors';
 import { derivePath } from './naming';
-import { pageControlsOf } from './page-controls';
+import { PAGE_FIRST_KEY, pageControlsOf } from './page-controls';
 import { admitsAnonymous, policyCapability } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, runQuery } from './read';
-import { recordAnswerFor } from './record-answer';
+import { recordAnswerFor, recordRowAnswerFor } from './record-answer';
 
 /**
  * `liveFeed` -> `GET /_x/query/live-feed`. Named for the primitive rather than spelled
@@ -31,6 +35,7 @@ export function toQueryRoute(target: AnyQuery): Route {
   // not a surprise on the first read.
   const sunsetting = deprecationHeadersFor(name, target.deprecated);
   const answer = recordAnswerFor(target.rows);
+  const answerRow = recordRowAnswerFor(target.rows);
 
   const handler = async (request: UltimateRequest): Promise<Response> => {
     if (sunsetting !== undefined) {
@@ -59,6 +64,21 @@ export function toQueryRoute(target: AnyQuery): Route {
     // read's, and a schema that refused unknown keys would otherwise refuse every paged call.
     const { input: values, page } = pageControlsOf(name, request.queryRaw());
     const input = coerceQuery(target.input, values);
+    if (target.single === true) {
+      // Refused, not ignored: a caller paging a read of one object has the wrong read in mind, and
+      // a silently dropped `_first` would answer a shape it did not ask for.
+      if (page !== undefined) {
+        throw new QueryInputInvalidError(
+          name,
+          `${PAGE_FIRST_KEY} pages a list, and this read is declared single: true — it answers one row, or 404`,
+        );
+      }
+      // The first row — what every in-process `[0]` of the same read already takes. None is the
+      // 404 a detail URL means, where a list read answers `200 []`.
+      const [row] = await runQuery(target, input, { surface: 'http' });
+      if (row === undefined) throw new QueryRowNotFoundError(name);
+      return answerRow(row);
+    }
     // With a page control the answer is the `Page` envelope `query.page()` answers a server
     // caller with — `{ rows, endCursor, hasNextPage }`, the same names, so a cursor read off the
     // wire and one read off a direct call are the same string in the same field. Without one the

@@ -12,9 +12,9 @@ import type { Actor, Ctx } from '@ultimat3/core';
 import { fingerprint } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryCacheScope } from './cache';
-import type { QueryClientMethod, QueryClientOptions } from './client';
+import type { QueryClientMethodOf, QueryClientOptions } from './client';
 import type { Deprecation } from './deprecation';
-import { QueryCacheTtlInvalidError } from './errors';
+import { QueryCacheTtlInvalidError, QuerySingleInvalidError } from './errors';
 import { facadeFor } from './facade';
 import { assertEncodableInput } from './input-shape';
 import type { LiveQuery, ToLiveOptions } from './live';
@@ -86,11 +86,25 @@ export interface QueryRateLimit {
   readonly windowMs: number;
 }
 
-export interface QueryDef<TInput extends StandardSchemaV1, TRow extends object> {
+export interface QueryDef<
+  TInput extends StandardSchemaV1,
+  TRow extends object,
+  TSingle extends boolean = boolean,
+> {
   readonly input: TInput;
   readonly policy: QueryPolicy;
   /** `true` makes the read subscribable — see `toLiveQuery`. */
   readonly live?: boolean;
+  /**
+   * `true` declares a read of ONE object — a detail page's row by id or slug. Only the WIRE
+   * changes: `GET /_x/query/<name>` answers that row itself (the first one `sql` returns), and
+   * **404 `X_NOT_FOUND`** when `sql` returns none, where a list read answers `200 []`; the OpenAPI
+   * operation documents one object and no `_first`/`_after`, which the route refuses (400). The
+   * typed client answers `Promise<TRow>`. Every in-process caller — `read(input)`, `.as()`,
+   * `.page()`, `.live()` and the MCP tool — keeps the rows it always had, so opting in breaks no
+   * `[0]` a server file already wrote. Omitted is `false`: a list.
+   */
+  readonly single?: TSingle;
   /**
    * The relations this live read is patched from — the tables `x db gen` grants
    * `REPLICA IDENTITY FULL`, without which logical replication carries no old row on an UPDATE
@@ -205,6 +219,7 @@ export interface AnyQueryDef {
   readonly input: StandardSchemaV1;
   readonly policy: QueryPolicy;
   readonly live?: boolean;
+  readonly single?: boolean;
   readonly subscribes?: readonly string[];
   readonly rows?: StandardSchemaV1;
   sql(input: unknown, ctx: Ctx): SqlSource<object>;
@@ -219,6 +234,8 @@ export interface AnyQuery {
   readonly name: string;
   /** Declared `live: true`. The subscription itself is `live()`. */
   readonly isLive: boolean;
+  /** Declared `single: true` — the route answers one object or 404. Absent is a list read. */
+  readonly single?: boolean;
   /** The declaration, minus `sql`: readable, and never a way to run it. */
   readonly input: StandardSchemaV1;
   readonly policy: QueryPolicy;
@@ -245,11 +262,14 @@ export interface AnyQuery {
 export interface Query<
   TInput extends StandardSchemaV1 = StandardSchemaV1,
   TRow extends object = Record<string, unknown>,
+  TSingle extends boolean = false,
 > extends AnyQuery {
   /** Callable server-side with the same types the client and the MCP tool see. */
   (input: InferInput<TInput>, options?: QueryOptions): Promise<readonly TRow[]>;
   readonly input: TInput;
-  named(name: string): Query<TInput, TRow>;
+  /** The declaration, as a type: what `.client()` and `queryClient` read the wire shape off. */
+  readonly single?: TSingle;
+  named(name: string): Query<TInput, TRow, TSingle>;
   as(
     actor: Actor | null,
     input: InferInput<TInput>,
@@ -261,14 +281,19 @@ export interface Query<
    * Typed against this query's input and row type, which is the whole point of it —
    * so it lives here and not on the schema-erased `AnyQuery` view.
    */
-  client(options: QueryClientOptions): QueryClientMethod<TInput, TRow>;
+  client(options: QueryClientOptions): QueryClientMethodOf<TInput, TRow, TSingle>;
 }
 
 /** The fluent half of a query: lifted declaration plus one method per projection. */
-export type QueryFacade<TInput extends StandardSchemaV1, TRow extends object> = Pick<
-  Query<TInput, TRow>,
+export type QueryFacade<
+  TInput extends StandardSchemaV1,
+  TRow extends object,
+  TSingle extends boolean = false,
+> = Pick<
+  Query<TInput, TRow, TSingle>,
   | 'input'
   | 'policy'
+  | 'single'
   | 'subscribes'
   | 'rows'
   | 'cache'
@@ -282,15 +307,22 @@ export type QueryFacade<TInput extends StandardSchemaV1, TRow extends object> = 
   | 'client'
 >;
 
-export function query<TInput extends StandardSchemaV1, TRow extends object>(
-  def: QueryDef<TInput, TRow>,
-): Query<TInput, TRow> {
+export function query<
+  TInput extends StandardSchemaV1,
+  TRow extends object,
+  TSingle extends boolean = false,
+>(def: QueryDef<TInput, TRow, TSingle>): Query<TInput, TRow, TSingle> {
   // Here and not in `toQueryRoute`: a read is projected to `GET /_x/query/<kebab>` whether or not
   // anyone mounts it, and the typed client derives that same URL — so an input a query string
   // cannot carry is wrong for every call, and the file that declared it is where it is repaired.
   assertEncodableInput(def.input);
   assertCacheTtl(def.cache);
   assertSubscribes(def.subscribes, def.live);
+  // A JS caller or generated code can write `single: 'yes'`; truthiness would read it as `true`
+  // on the route and `false` in the type, so anything but a boolean is refused where it is written.
+  if (def.single !== undefined && typeof def.single !== 'boolean') {
+    throw new QuerySingleInvalidError(def.single);
+  }
   // Snapshot and freeze BEFORE registration. `build()` stores `def` and `facadeFor()` exposes the
   // same array, so a caller holding the literal it passed could mutate the list AFTER validation
   // — and that list is what the manifest publishes and what `x db gen` grants REPLICA IDENTITY
@@ -335,20 +367,20 @@ export function nameQuery<Q extends AnyQuery>(target: Q, name: string): Q {
   return target;
 }
 
-function build<TInput extends StandardSchemaV1, TRow extends object>(
-  def: QueryDef<TInput, TRow>,
+function build<TInput extends StandardSchemaV1, TRow extends object, TSingle extends boolean>(
+  def: QueryDef<TInput, TRow, TSingle>,
   name: string,
-): Query<TInput, TRow> {
+): Query<TInput, TRow, TSingle> {
   const callable = (
     input: InferInput<TInput>,
     options: QueryOptions = {},
   ): Promise<readonly TRow[]> => runQuery(self, input, options);
 
-  const self: Query<TInput, TRow> = Object.assign(callable, {
+  const self: Query<TInput, TRow, TSingle> = Object.assign(callable, {
     kind: 'query' as const,
     isLive: def.live === true,
     describe: (): QueryDescriptor => describeQuery(self),
-    named: (next: string): Query<TInput, TRow> => build(def, next),
+    named: (next: string): Query<TInput, TRow, TSingle> => build(def, next),
     ...facadeFor(def, () => self),
   });
   // `name` on a function is non-writable, so Object.assign cannot set it.
