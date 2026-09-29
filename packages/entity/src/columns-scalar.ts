@@ -1,10 +1,10 @@
 // Single responsibility: the three plain scalar columns — `text`, `integer`, `boolean` — each
 // refusing in `$parse` exactly what Postgres refuses at the column, so the memory driver cannot
-// store a value production answers 23514 or 22003 for. Split from `columns.ts` at its ceiling.
+// store a value production answers 23514, 22003 or 22021 (a NUL in text) for. Split from `columns.ts` at its ceiling.
 
 import { charCount } from '@ultimat3/schema';
 import { column } from './column';
-import { got } from './column-values';
+import { got, refuseNul } from './column-values';
 import { refuseColumn } from './refuse';
 import type { Column } from './types';
 
@@ -43,7 +43,7 @@ export const text = (options: TextOptions = {}): Column<string> => {
           `truncate at the call site, or widen the column — text({ max: ${charCount(value)} }) — and run x db gen "widen the text"`,
         );
       }
-      return value;
+      return refuseNul(value);
     },
     max === undefined ? {} : { length: max, check: (name) => `char_length(${name}) <= ${max}` },
   );

@@ -30,6 +30,17 @@ export function recordAnswerFor(rows: StandardSchemaV1 | undefined): RecordAnswe
   };
 }
 
+/**
+ * The same decision for a `single: true` read, whose answer is ONE row: the row itself, or the
+ * envelope with that row as `data` and its records beside it — the shape an action's record wire
+ * answers for a single output, so the transport unwraps both the same way.
+ */
+export function recordRowAnswerFor(rows: StandardSchemaV1 | undefined): (row: object) => Response {
+  if (!answersRecords(rows)) return (row) => json(row);
+  return (row) =>
+    json(encodeRecordEnvelope(row, collect(rows, [row])), { headers: { [RECORDS_HEADER]: '1' } });
+}
+
 /** The one predicate the route and the OpenAPI projection both ask: can this read answer records? */
 export function answersRecords(rows: StandardSchemaV1 | undefined): rows is StandardSchemaV1 {
   return rows !== undefined && hasEntityRows(rows);

@@ -120,3 +120,30 @@ describe('timestamp() takes only a string that names its instant', () => {
     expect(timestamp().$parse(at.getTime()).getTime()).toBe(at.getTime());
   });
 });
+
+// U+0000 is the one character Postgres text refuses (22021): the memory driver stored it, so a test
+// passed a write production answered `X_DB_STATEMENT_FAILED` for.
+describe('a text column refuses a NUL character, as Postgres does', () => {
+  const refusal = (parse: (value: unknown) => unknown, value: unknown): string => {
+    try {
+      parse(value);
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    return 'accepted';
+  };
+
+  test.each([
+    ['text', text().$parse, 'hunter2\u0000'],
+    ['text({ max })', text({ max: 50 }).$parse, 'hunter2\u0000'],
+    ['url', url().$parse, 'https://a.example/hunter2\u0000'],
+  ] as const)('%s refuses it, naming the fact and not the value', (_name, parse, value) => {
+    const message = refusal(parse, value);
+    expect(message).toContain('column.format: expected text without a NUL character (U+0000)');
+    expect(message).not.toContain('hunter2');
+  });
+
+  test('a tab, a newline and the other C0 controls are text Postgres stores', () => {
+    expect(text().$parse('a\tb\nc\r\u0001')).toBe('a\tb\nc\r\u0001');
+  });
+});

@@ -65,7 +65,7 @@ export function queryName(target: AnyQuery): string {
 
 /** Validate, authorize, then read — the same three steps on every surface. */
 export function runQuery<TInput extends StandardSchemaV1, TRow extends object>(
-  target: Query<TInput, TRow>,
+  target: Query<TInput, TRow, boolean>,
   raw: unknown,
   options?: QueryOptions,
 ): Promise<readonly TRow[]>;

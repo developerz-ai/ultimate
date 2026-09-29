@@ -8,7 +8,35 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **query:** `single: true` on a query declaration — a read of one object. Only the wire changes:
+  `GET /_x/query/<name>` answers the first row `sql` returns as the body and **404 `X_NOT_FOUND`**
+  when it returns none (a list read answers `200 []`), and refuses `_first`/`_after` with 400
+  `X_INPUT_INVALID`; `openapi.json` documents one object, a `404`, no page controls and
+  `x-ultimate.single: true`. `.client()` and `queryClient` type it `Promise<TRow>` with no `.page`.
+  Every in-process caller — `read(input)`, `.as()`, `.page()`, `.live()`, the MCP tool — keeps
+  `readonly TRow[]`, so opting in breaks no `[0]` already written. New exports:
+  `QuerySingleClientMethod`, `QueryClientMethodOf`, `QueryRowNotFoundError` (`X_NOT_FOUND`,
+  entity's code), `QuerySingleInvalidError` (`X_QUERY_SINGLE_INVALID`, a non-boolean `single:`).
+  `Query` gains a third type parameter, `TSingle`, defaulting to `false`.
+
+### Fixed
+
+- **schema, entity:** a string carrying U+0000 reached Postgres, which refuses it in `text` and
+  `jsonb` (SQLSTATE 22021), so any action or query storing or filtering on user text answered
+  `X_DB_STATEMENT_FAILED` — a 500 — for one `%00`. Every string-backed `t` (`string`, `uuid`,
+  `email`, `url`, `timezone`, `locale`, `slug`, `cursor`) and every `t.record` key now refuses it:
+  a 400 `X_INPUT_INVALID` naming the field, never the value, on actions, query search strings and
+  every other surface that parses through `t`. `text()` and `url()` columns refuse it too
+  (`X_INVARIANT_VIOLATED`, `column.format`), so the memory driver no longer stores what production
+  refuses. Only NUL: tabs, newlines and the other C0 controls are legal text Postgres stores.
+- **jobs, testing:** `resetTasks()` and `resetJobs()` rewound the counter behind
+  `anonymous-task-<n>` / `anonymous-job-<n>`, so after a reset the next anonymous task re-minted a
+  name an earlier test file's handle still held. With `@ultimat3/testing` restoring registries
+  between files (22.7's shared workers), the name-keyed snapshot merge dropped one of the two, or
+  `task()` refused its own fresh name as `X_JOB_DUPLICATE` — order-dependent failures in whichever
+  file ran next. The counters are now process-monotonic; a reset clears the registry only.
 
 ## 22.8.2 - 2026-09-28
 

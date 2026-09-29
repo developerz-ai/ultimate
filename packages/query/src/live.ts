@@ -108,7 +108,7 @@ export function liveEpoch(): string {
 }
 
 export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends object>(
-  target: Query<TInput, TRow>,
+  target: Query<TInput, TRow, boolean>,
   input: unknown,
   options: ToLiveOptions = {},
 ): Promise<LiveQuery> {

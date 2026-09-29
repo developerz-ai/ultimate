@@ -36,7 +36,7 @@ export interface PaginateArgs extends SourceOptions {
  * sliced after execution and the source is doing more work than it should.
  */
 export async function paginate<TInput extends StandardSchemaV1, TRow extends object>(
-  target: Query<TInput, TRow>,
+  target: Query<TInput, TRow, boolean>,
   input: unknown,
   args: PaginateArgs,
 ): Promise<Page<TRow>> {

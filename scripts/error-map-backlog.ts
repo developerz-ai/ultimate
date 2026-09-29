@@ -254,6 +254,8 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_QUERY_FOREIGN',
     'X_QUERY_INPUT_UNENCODABLE',
     'X_QUERY_POLICY_MISSING',
+    // Judged at `query()`, where the declaration is written — never on a request.
+    'X_QUERY_SINGLE_INVALID',
     // Both follow `X_MATCHER_UNSUPPORTED` above, which is raised one line away in `live.ts`:
     // a live read is a WebSocket subscription carrying a `kind`, not a request carrying a status.
     // `_INVALID` is judged at `query()` and never reaches a request at all.

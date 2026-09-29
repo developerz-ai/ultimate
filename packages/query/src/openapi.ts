@@ -76,6 +76,7 @@ export function queryOpenApiPaths(
  */
 export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknown> {
   const name = queryName(target);
+  if (target.single === true) return singleOperation(target, name);
   return {
     operationId: name,
     tags: [QUERY_TAG],
@@ -115,6 +116,46 @@ export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknow
     },
   };
 }
+
+/**
+ * A `single: true` read: one object, a 404 when there is none, and no page controls — the route
+ * refuses them, so advertising them would document a guaranteed 400. Everything else — the input
+ * parameters, the record envelope, the `x-ultimate` block — is the list operation's, unchanged.
+ */
+function singleOperation(target: AnyQuery, name: string): Record<string, unknown> {
+  const records = answersRecords(target.rows);
+  return {
+    operationId: name,
+    tags: [QUERY_TAG],
+    summary: target.mcp?.description ?? name,
+    ...(target.deprecated === undefined ? {} : { deprecated: true }),
+    parameters: inputParameters(target.input),
+    responses: {
+      '200': {
+        description: 'ok',
+        content: {
+          'application/json': {
+            schema: records ? recordEnvelopeSchema(SINGLE_ANSWER) : SINGLE_ANSWER,
+          },
+        },
+        ...(records ? { headers: RECORDS_OPENAPI_HEADER } : {}),
+      },
+      '400': problemResponse('X_INPUT_INVALID'),
+      '403': problemResponse('policy denied'),
+      '404': problemResponse('X_NOT_FOUND — the read matched no row for this input'),
+    },
+    'x-ultimate': {
+      capability: policyCapability(target.policy),
+      live: target.isLive,
+      single: true,
+      cacheTags: tagKeys(target.cache?.tags ?? []),
+      tool: isExposed(target) ? name : null,
+    },
+  };
+}
+
+/** One row. Its members are not published — a query declares no output schema, as `ANSWERS` says. */
+const SINGLE_ANSWER: Readonly<Record<string, unknown>> = { type: 'object' };
 
 /** The two controls, spelled from `page-controls.ts` so the document cannot drift from the route. */
 const PAGE_PARAMETERS: readonly Record<string, unknown>[] = [

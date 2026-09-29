@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "087e6f78050788038f8a704858692b6e1b66c500a2960d4630240fa269517b6c",
+  "buildId": "74b55cf6b35e72209fbee051a9f82503d9bd8f0981aae9f1f3b38b88e23871f1",
   "tiers": {
     "0": [
       "core",
@@ -2511,6 +2511,11 @@
     },
     {
       "code": "X_QUERY_POLICY_MISSING",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_SINGLE_INVALID",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
     },

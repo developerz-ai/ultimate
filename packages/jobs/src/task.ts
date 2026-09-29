@@ -97,6 +97,7 @@ export interface TaskHandle {
 }
 
 const registry = new Map<string, TaskHandle>();
+/** Process-monotonic — see `resetTasks`, which deliberately leaves it alone. */
 let anonymous = 0;
 
 /** Occurrences one round may fire when neither the declaration nor a catch-up says otherwise. */
@@ -186,7 +187,8 @@ export function task(definition: TaskDefinition): TaskHandle {
   origin.set(handle, { declaredName: definition.name !== undefined });
   // Refused here, not at `registerTask`: a second `task({ name: 'nightly' })` would otherwise
   // replace the seated handle, and the scheduler's persisted `lastFiredAt` — keyed by that name —
-  // would silently start driving a different cron. The anonymous names cannot collide.
+  // would silently start driving a different cron. The anonymous names cannot collide — the
+  // counter only ever grows, `resetTasks()` included.
   if (registry.has(name)) throw new JobNameTakenError({ kind: 'task', name });
   registry.set(name, handle);
   return handle;
@@ -255,9 +257,15 @@ export function getTask(name: string): TaskHandle | undefined {
   return registry.get(name);
 }
 
+/**
+ * Clears the registry and NOT the counter. `anonymous-task-<n>` is unique per PROCESS, never per
+ * reset: `@ultimat3/testing` hands a worker's earlier handles back after a file (`restoreTasks`),
+ * and a counter rewound here re-minted `anonymous-task-1` for the next file's task — the restored
+ * handle and the new one then shared a name, so `task()` refused it as taken or the name-keyed
+ * snapshot merge dropped one, depending on which file ran first.
+ */
 export function resetTasks(): void {
   registry.clear();
-  anonymous = 0;
 }
 
 /**

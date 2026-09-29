@@ -299,3 +299,32 @@ describe('restoreTasks', () => {
     expect(getTask('leakedTask')).toBeUndefined();
   });
 });
+
+describe('the anonymous counter', () => {
+  // `resetTasks()` rewound it, so a task minted after a reset shared `anonymous-task-1` with a
+  // handle `@ultimat3/testing` had just restored — `task()` then refused its own fresh name.
+  test('survives a reset, so a restored handle and a new one never share a name', () => {
+    resetTasks();
+    const before = task({ cron: '0 3 * * *', tz: 'UTC', enqueue: () => [] });
+    resetTasks();
+    restoreTasks([before]);
+    const after = task({ cron: '0 3 * * *', tz: 'UTC', enqueue: () => [] });
+    expect(after.name).not.toBe(before.name);
+    expect(registeredTasks()).toHaveLength(2);
+  });
+
+  test('and the job counter follows the same rule', () => {
+    const anonymousJob = () =>
+      job<Record<string, never>>({
+        tenant: 'none',
+        input: passthrough<Record<string, never>>(),
+        idempotencyKey: () => 'k',
+        retry: { attempts: 1 },
+        run: () => Promise.resolve(),
+      });
+    resetJobs();
+    const before = anonymousJob();
+    resetJobs();
+    expect(anonymousJob().name).not.toBe(before.name);
+  });
+});

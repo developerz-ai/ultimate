@@ -102,9 +102,9 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
       '`errors.ts:106` splices a POLICY LABEL into `x policy explain <label>`. The label is the id a `can()` declaration passed as its first argument, in this process.',
   },
   query: {
-    count: 2,
+    count: 3,
     reason:
-      '`errors.ts:85,304` splice a QUERY NAME into `x queries describe <name>`. The name is the key its own `query()` registered under.',
+      '`errors.ts:89,325,340` splice a QUERY NAME into `x policy explain <name>` and `x queries describe <name>`. The name is the key its own `query()` registered under. why: `single: true` added X_QUERY_SINGLE_INVALID, whose fix names the query it refused.',
   },
   render: {
     count: 1,

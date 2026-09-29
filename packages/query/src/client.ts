@@ -76,6 +76,26 @@ export interface QueryClientMethod<TInput extends StandardSchemaV1, TRow extends
 }
 
 /**
+ * A `single: true` read's method: the route answers the row itself, or 404 `X_NOT_FOUND` — which
+ * the transport rejects with, as it does every problem document. No `page`: the route refuses the
+ * page controls on a single read, so the method a list read carries would be a guaranteed 400.
+ */
+export type QuerySingleClientMethod<TInput extends StandardSchemaV1, TRow extends object> = (
+  input: InferInput<TInput>,
+  options?: QueryCallOptions,
+) => Promise<TRow>;
+
+/**
+ * The method a read's declaration projects to. DISTRIBUTIVE on purpose: for `boolean` it is the
+ * union, so a `Query<I, R, true>` is still assignable where `Query<I, R, boolean>` is asked for.
+ */
+export type QueryClientMethodOf<
+  TInput extends StandardSchemaV1,
+  TRow extends object,
+  TSingle extends boolean,
+> = TSingle extends true ? QuerySingleClientMethod<TInput, TRow> : QueryClientMethod<TInput, TRow>;
+
+/**
  * Loose constraint on purpose: a map of concrete `Query<TInput, TRow>` values must be
  * assignable to it, while `QueryClient<T>` still recovers each read's own input schema and
  * row type. The mirror of `@ultimat3/action`'s `ActionLike`.
@@ -89,8 +109,12 @@ export type QueryMap = Record<string, QueryLike>;
 
 /** `queries.publicPost({ slug })`, with the input schema and the row type both inferred. */
 export type QueryClient<TQueries extends QueryMap> = {
-  readonly [K in keyof TQueries]: TQueries[K] extends Query<infer TInput, infer TRow>
-    ? QueryClientMethod<TInput, TRow>
+  readonly [K in keyof TQueries]: TQueries[K] extends Query<
+    infer TInput,
+    infer TRow,
+    infer TSingle extends boolean
+  >
+    ? QueryClientMethodOf<TInput, TRow, TSingle>
     : never;
 };
 

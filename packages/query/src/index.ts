@@ -57,9 +57,11 @@ export type {
   QueryCallOptions,
   QueryClient,
   QueryClientMethod,
+  QueryClientMethodOf,
   QueryClientOptions,
   QueryLike,
   QueryMap,
+  QuerySingleClientMethod,
 } from './client';
 /** `queryClient` is the map-wide read client; `queryClientMethodFor` is what `.client()` binds. */
 export { queryClient, queryClientMethodFor } from './client';
@@ -79,6 +81,8 @@ export {
   QueryInputUnencodableError,
   QueryNotPageableError,
   QueryPolicyMissingError,
+  QueryRowNotFoundError,
+  QuerySingleInvalidError,
   QuerySubscribesDriftError,
   QuerySubscribesInvalidError,
   QueryUnregisteredError,

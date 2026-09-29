@@ -7,6 +7,7 @@
  */
 
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import type { QueryClientMethodOf } from './client';
 import { queryClientMethodFor } from './client';
 import { toLiveQuery } from './live';
 import { toQueryTool } from './mcp-tool';
@@ -18,13 +19,19 @@ import { queryName, runQuery } from './read';
  * `self` is a thunk on purpose: the façade is attached while the query is still
  * being assembled, so every method resolves the query when it is called, not now.
  */
-export function facadeFor<TInput extends StandardSchemaV1, TRow extends object>(
-  def: QueryDef<TInput, TRow>,
-  self: () => Query<TInput, TRow>,
-): QueryFacade<TInput, TRow> {
+export function facadeFor<
+  TInput extends StandardSchemaV1,
+  TRow extends object,
+  TSingle extends boolean,
+>(
+  def: QueryDef<TInput, TRow, TSingle>,
+  self: () => Query<TInput, TRow, TSingle>,
+): QueryFacade<TInput, TRow, TSingle> {
   return {
     input: def.input,
     policy: def.policy,
+    // Only when declared, like every lifted field: a list read's surface is unchanged.
+    ...(def.single === undefined ? {} : { single: def.single }),
     ...(def.subscribes === undefined ? {} : { subscribes: def.subscribes }),
     ...(def.rows === undefined ? {} : { rows: def.rows }),
     ...(def.cache === undefined ? {} : { cache: def.cache }),
@@ -39,6 +46,13 @@ export function facadeFor<TInput extends StandardSchemaV1, TRow extends object>(
     page: (input, args) => paginate(self(), input, args),
     live: (input, options) => toLiveQuery(self(), input, options),
     tool: () => toQueryTool(self()),
-    client: (options) => queryClientMethodFor(queryName(self()), options),
+    // One implementation for both wire shapes: the route decides the body, the transport parses
+    // it, and only the TYPE differs — a single read's method answers the row, and has no `page`.
+    client: (options) =>
+      queryClientMethodFor<TInput, TRow>(queryName(self()), options) as QueryClientMethodOf<
+        TInput,
+        TRow,
+        TSingle
+      >,
   };
 }
