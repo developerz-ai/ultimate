@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.11.0 - 2026-09-29
+
 ### Changed
 
 - **policy, action, query, mcp:** the policy's ACTOR half is decided before the input is parsed.
@@ -54,6 +58,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   published once the drain has resolved" timed out on CI.
 - **examples/dummy:** `orgs/repo.test.ts` counts ids in its own block â€” sharing `posts/repo.test.ts`'s
   put that file's member in this file's first org whenever the two landed on one worker.
+
+### Commits
+
+- fix(policy): decide the actor-only part of a policy before parsing input (403, not a 400 that lists the schema); x shot exact widths, --cookie, popups in island crops; lifecycle generations fix the jobs drain race (#583)
 
 ## 22.10.0 - 2026-09-29
 
