@@ -8,12 +8,88 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **mcp:** `initialize` answers `instructions` when the app declares them —
+  `defineAppMcp({ instructions })` / `createMcpServer({ instructions })`, a string or
+  `(caller) => string | undefined` for per-population advice (staff vs customer). A function that
+  throws or answers blank sends none and the handshake still answers. New type: `McpInstructions`.
+- **mcp, action, query:** tool metadata per MCP 2025-06-18. `tools/list` publishes `title`
+  (`mcp: { title }`) and `annotations`, derived from the primitive — a query
+  `{ readOnlyHint: true }`, an action `{ readOnlyHint: false, destructiveHint: true,
+  idempotentHint: <idempotent> }` — and overridden key by key by `mcp: { annotations }` on the
+  action or query (`openWorldHint` is published only when declared). Hand-written app tools take
+  `title` and `annotations` too; `list_resources` and `describe_resource` are read-only,
+  `manage_resource` a write. New exports: `McpToolAnnotations`, `deriveAnnotations`,
+  `toolListEntry` (mcp), `McpAnnotationHints` (action), `QueryMcpAnnotations` (query).
+- **mcp:** `outputSchema` and `structuredContent`. An action whose `output` has an object root
+  publishes it as `outputSchema`; a query that declares `rows` publishes `{ rows: [<row>] }`. The
+  schema is structure only (type, properties, required, items, enum, const, anyOf) — a client
+  refuses a result that misses its schema, so no bound, pattern or `additionalProperties` is
+  promised about a value the server produced. Every successful call of such a tool answers
+  `structuredContent` (the serialized answer read back, a query's under `rows`) beside the text
+  block; `manage_resource` answers it byte for byte. New exports: `structuredResult`,
+  `toOutputSchema`, `toRowsOutputSchema`.
+- **mcp:** `measureMcpSurface(server, caller)` — the characters of `tools/list`, `list_resources`
+  and `instructions` one caller reads, off the wire — and `assertMcpSurfaceBudget(server, caller,
+  { toolsList, listResources, instructions })`, which throws the new `X_MCP_SURFACE_OVER_BUDGET`
+  (`McpSurfaceOverBudgetError`) naming every surface over its ceiling. `McpServer.catalog(caller)`
+  answers the meta catalog as data (`MetaResource[]`) for a test.
+- **core, action, query, policy, auth, http, mcp:** `callerFix` — the fix for a REMOTE caller when
+  `fix` names something only the app's developer can run. `UltimateErrorInit.callerFix`,
+  `UltimateError.callerFix`, `format({ audience: 'caller' | 'developer' })`, `fixFor(error,
+  audience)`, type `ErrorAudience`. The framework's denials declare one — `X_FORBIDDEN` from
+  policy, action, query, auth and http ("ask the account owner or an administrator to grant …;
+  retrying is refused the same way"), `X_MCP_SCOPE_DENIED` ("ask for a token that includes the
+  scope, then reconnect"), `X_INPUT_INVALID` ("correct the fields against the published schema").
+  `defineAppMcp` renders it by default (`errorAudience: 'caller'`; `'developer'` restores `fix`);
+  `createMcpServer` — the dev server — keeps `'developer'`. A production problem document carries
+  `callerFix` as its `fix`; dev mode, the terminal, the log line and `--json` keep the developer's.
+- **mcp:** an error's `docs`, when it is not the framework's one Error-Codes page — an app's
+  `docs://recipes/...` guide on its own `UltimateError` — renders as a fourth `docs:` line of the
+  tool result (and a resource-read refusal's `data.docs`). Branded errors only. Over HTTP it was
+  already the problem document's `docs`.
+- **core, cli, seo:** `seo.sitemap` in `app.config.ts`. `extra: ['/verificar', '/estado']` lists
+  public pages outside `site/` — each must be answered by an `app/` route with no `policy`, and is
+  listed per routed locale with the hreflang cluster and `x-default` a `site/` page gets; a path no
+  ungated `app/` route answers (or an `api/` route, a gated page, a `site/` page) is the new
+  `X_SITEMAP_EXTRA_INVALID` when the sitemap is built. `lastmod: 'none' | 'git' | 'mtime' | 'build'`
+  fills `<lastmod>` per URL — the route file's last commit (its mtime without a work tree), its
+  mtime, or one timestamp — read once per file per process; default `'none'`, as before.
+  `siteSeo({ sitemap, root })` takes both; the web role passes them, and the scaffolded
+  `prerender.ts` reads them from `loadSiteSettings(root)` — an app with its own `prerender.ts` adds
+  `sitemap: settings.sitemap, root`. New: `SeoSitemapConfig`, `SitemapLastmod`,
+  `SITEMAP_LASTMOD_SOURCES` (core), `RouteRecord.sitemap` (seo), `SitemapExtraInvalidError` (cli).
+
+### Changed
+
+- **mcp:** invalid tool arguments are a tool **result** — `isError: true`, `X_INPUT_INVALID`, each
+  issue addressed by path, the code HTTP answers for the same input — not a JSON-RPC `-32602`.
+  Clients surface a protocol error to the human and hide it from the model, which then retried
+  blind. `-32602` remains for a call that is not one (no `params`, a non-string `name`) and
+  `-32601` for an unknown tool or method. The audit outcome is still `invalid-args`.
+  `X_MCP_ARGS_INVALID` is no longer raised on the wire; `McpArgsInvalidError` stays exported.
+  `InputInvalidError` takes an optional fourth argument, `'action' | 'tool'`, naming the subject in
+  its cause.
+- **mcp:** a tool's text block is compact JSON (`jsonResult`), not 2-space — every byte of a result
+  stays in the caller's context for the session. `list_resources` answers plain text, one line per
+  resource and one per action (`  publishPost (action; confirms; scope posts:write) {postId:
+  string} — Publish a draft post`); a staff catalog measured 32.5k characters as JSON. A consumer
+  that `JSON.parse`d either reads `structuredContent`, `server.catalog(caller)` or the text.
+  `describe_resource` stays JSON. New export: `renderCatalog`.
+- **http:** `Vary: accept-language` is sent only when the header can decide the locale. An app
+  whose `configureLocales({ order })` leaves `'header'` out no longer varies on it — every SSR
+  and ISR page added it whatever the order, so a CDN stored one copy per browser language of a
+  page that could not differ by it. A path-locale route already dropped it.
 
 ## 22.9.1 - 2026-09-29
 
 ### Fixed
 
+- **schema:** every browser bundle holding a typed client shed ~1 kB (`examples/dummy` `/pricing`
+  22,639 -> 21,594 B). `SCHEMA_ERROR_CODES` moved to a data-only leaf, `src/error-codes.ts`: declared
+  beside `SchemaError`, core's load-time registration of it kept the class and its subclasses in
+  every island, because a class with a computed member is never tree-shaken. Exports unchanged.
 - **release:** 22.9.0 did not reach the registry for `@ultimat3/money` and `@ultimat3/jobs` — a first, failed run left both versions *staged* on npm, and npm refuses to publish over a staged version (409). 22.9.1 is 22.9.0 re-published under a fresh version for every package; no code change.
 
 ### Commits

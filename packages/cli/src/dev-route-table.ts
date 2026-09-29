@@ -127,7 +127,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     // captured at boot would answer 404 for the href the document now carries.
     ...styleRoutes(() => styleBundle()),
     // `robots.txt` and `sitemap.xml`, the same two files the static export writes (`site-seo.ts`).
-    ...seoRoutes({ env: input.env, site }),
+    ...seoRoutes({ env: input.env, site, root: input.root }),
     // `x shot --island`'s harness, in the `/_x` dev namespace so no app route can shadow it. It
     // lives here rather than in a second server because everything it needs is in THIS process:
     // the built chunks, the app's stylesheet registry, and the one embedded Postgres a checkout

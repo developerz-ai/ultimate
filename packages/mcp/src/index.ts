@@ -73,6 +73,7 @@ export {
   McpScopeConflictError,
   McpScopeDeniedError,
   McpScopeUnknownError,
+  McpSurfaceOverBudgetError,
   McpToolDuplicateError,
   McpToolUndeclaredError,
   McpToolUnknownError,
@@ -81,6 +82,7 @@ export {
 export { exposedPrimitives } from './exposed';
 export type { McpExposure, ProjectablePrimitive } from './from-action';
 export {
+  deriveAnnotations,
   isExposed,
   toolFromAction,
   toolFromQuery,
@@ -88,7 +90,7 @@ export {
   toolsListed,
 } from './from-action';
 export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
-export { toWireSchema } from './input-schema';
+export { toOutputSchema, toRowsOutputSchema, toWireSchema } from './input-schema';
 export type { ListFilterOp, McpListParams } from './list-params';
 export { DEFAULT_LIST_MAX_LIMIT, listParamsSchema } from './list-params';
 export {
@@ -113,6 +115,7 @@ export {
   MANAGE_RESOURCE,
   META_TOOL_NAMES,
   oneLineParams,
+  renderCatalog,
 } from './meta-surface';
 export type { McpOAuth } from './oauth-metadata';
 export {
@@ -136,6 +139,7 @@ export type {
   McpCaller,
   McpRole,
   McpTool,
+  McpToolAnnotations,
   McpToolResult,
   McpVerbClass,
   McpVisibility,
@@ -143,7 +147,14 @@ export type {
   ToolListEntry,
   ToolResolution,
 } from './registry';
-export { jsonResult, ToolRegistry, textResult, visibleToCaller } from './registry';
+export {
+  jsonResult,
+  structuredResult,
+  ToolRegistry,
+  textResult,
+  toolListEntry,
+  visibleToCaller,
+} from './registry';
 export type {
   FrameworkResourceProviders,
   McpPrompt,
@@ -164,6 +175,9 @@ export type { McpScopes } from './scopes';
 export { withScopes } from './scopes';
 export type { CreateMcpServerInput, McpWire } from './server';
 export { createMcpServer, McpServer } from './server';
+export type { McpInstructions, McpServerVoice } from './server-voice';
+export type { McpSurfaceBudget, McpSurfaceSize } from './surface-budget';
+export { assertMcpSurfaceBudget, measureMcpSurface } from './surface-budget';
 export type {
   McpHttpTransportInput,
   McpProtectedResource,

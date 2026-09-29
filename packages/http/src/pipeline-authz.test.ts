@@ -26,12 +26,14 @@ const routes: readonly Route[] = [
   },
 ];
 
-const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false });
-
-const pipelineWith = (decision?: AuthzDecision) =>
+/**
+ * `dev: true` by default here: the fix these tests pin is the DEVELOPER's, which a problem document
+ * carries in dev. Outside dev it carries the error's `callerFix` — the last test below.
+ */
+const pipelineWith = (decision?: AuthzDecision, dev = true) =>
   createPipeline({
     table: createRouter(routes),
-    config,
+    config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev }),
     limiter: createRateLimiter({
       config: {
         enabled: true,
@@ -67,6 +69,17 @@ describe('authz stage refusals', () => {
     expect(problem.code).toBe('X_FORBIDDEN');
     // `x policy explain /settings` exits `X_DECLARATION_UNKNOWN`: a pathname is not a subject.
     expect(problem.fix).toBe('x policy explain member:self --json   # shows which clause denied');
+  });
+
+  test("outside dev a caller is told what IT can do — the developer's command stays in the log", async () => {
+    const response = await pipelineWith({ allowed: false, reason: 'not the member' }, false).handle(
+      get('/settings'),
+      { role: 'web' },
+    );
+    const problem = await problemOf(response);
+    expect(problem.code).toBe('X_FORBIDDEN');
+    expect(problem.fix).not.toContain('x policy explain');
+    expect(problem.fix).toContain('ask the account owner or an administrator');
   });
 
   test('a policy with no authorizer wired names the policy too', async () => {

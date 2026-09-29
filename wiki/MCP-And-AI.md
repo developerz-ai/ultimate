@@ -71,8 +71,10 @@ That line is the entire integration. From the existing declaration:
 |---|---|
 | tool name | the action's export name, **verbatim** — `publishPost`, never `publish_post`. The one name `tools/call` accepts, `scopes:` is keyed on, and every published catalog spells. `As of 2026-08`: `openapi.json`'s `x-ultimate.mcpTool` and `describe().mcp.tool` published a snake_case name until then, and an agent that trusted either called a tool the server answers ToolNotFound for |
 | JSON Schema for input | the `input` schema (Standard Schema → JSON Schema, via `introspect()`) |
-| output schema | `output` |
+| output schema | `output` — published as the tool's `outputSchema` when its root is an object ([below](#what-a-client-is-told-beyond-the-schema)) |
 | description | `mcp.description` |
+| title | `mcp.title` — omitted, none is published |
+| annotations | derived from the kind, `mcp.annotations` overrides key by key ([below](#what-a-client-is-told-beyond-the-schema)) |
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical |
 | idempotency | `idempotent: true` adds one optional argument, `idempotencyKey` (string, 1–255), to the tool's `inputSchema`. `tools/call` removes it from the arguments and passes it to `invoke` as the key — the `Idempotency-Key` header's MCP twin, filed under action, caller and key — so a retry with the same key replays the first result and the same key with other arguments is `X_IDEMPOTENCY_CONFLICT`. The action's input never sees it. An argument, not `params._meta`: a model-driven client cannot set `_meta`, and the retry that needs the key is the agent's |
 | audit trail | the same OTel span and log line as an HTTP call |
@@ -82,6 +84,97 @@ The projected tool's `run` **is** `invoke` — the same entry point the HTTP rou
 No MCP-specific permission table, no service account with broad rights. Exposure is opt-in; silence exposes nothing.
 
 The user's own agents can therefore operate the user's product — refund an order, re-run an import, publish a post — with the exact permissions that user has in the UI. See [Admin dashboard](Admin-Dashboard) and [Actions](Actions).
+
+### What a client is told beyond the schema
+
+`As of 22.10`, MCP 2025-06-18. Every piece is optional for the app; the defaults come from the
+declaration already written.
+
+| Field | Where it comes from | Default |
+|---|---|---|
+| `initialize` → `instructions` | `defineAppMcp({ instructions })` — a string, or `(caller) => string \| undefined` for per-population advice (the same shape as `surface`) | none sent. A function that throws or answers blank sends none; the handshake still answers |
+| tool `title` | `mcp: { title }` on the action/query; `title` on a hand-written tool | none |
+| `annotations.readOnlyHint` | the kind | query `true`, action `false` |
+| `annotations.destructiveHint` | the kind | action `true` — the spec's own default made explicit: the framework cannot tell an insert from a delete. Declare `false` for an additive write |
+| `annotations.idempotentHint` | `idempotent: true` on the action | `false` |
+| `annotations.openWorldHint` | `mcp.annotations` only | not published (only the author knows a write sends mail) |
+| `outputSchema` | an action's `output` whose root is an object; a query's declared `rows` as `{ rows: [<row>] }` | none — text only |
+| `structuredContent` | every successful call of a tool that publishes `outputSchema`: the serialized answer read back (a `Date` is its string), a query's under `rows` | absent |
+
+```ts
+mcp: {
+  expose: true,
+  description: 'Tag a post. Adds, never removes.',
+  title: 'Tag post',
+  annotations: { destructiveHint: false },
+},
+```
+
+An `outputSchema` is **structure only** — `type`, `properties`, `required`, `items`, `enum`,
+`const`, `anyOf`. A client validates `structuredContent` against it and refuses the call on a
+miss, so a bound, a pattern or `additionalProperties: false` on rows read from the database would
+be a promise nothing enforces on the way out. The meta tools publish their own hints:
+`list_resources` / `describe_resource` read-only, `manage_resource` a write (it reaches every
+grouped tool); `manage_resource` answers the inner tool's `structuredContent` byte for byte.
+
+**What the model reads is compact.** A tool's text block is one-line JSON (the 2-space form until
+22.10 spent a third of a large answer on indentation). `list_resources` answers **plain text**, one
+line per action:
+
+```text
+2 resource(s). Run one with manage_resource({resource, action, params}); describe_resource({resources:["<name>"]}) has the full input schemas.
+
+posts — Blog posts
+  listPosts (query) {status_eq?: string, limit?: integer} — Posts, filtered
+  publishPost (action; confirms; scope posts:write) {postId: string} — Publish a draft post
+```
+
+The same catalog as data, for a test: `mcp.server.catalog(caller)`. `describe_resource` stays
+compact JSON — a schema is JSON.
+
+**Hold the standing surface to a number.** `tools/list` rides every step and `list_resources` sits
+in the transcript all session:
+
+```ts
+import { assertMcpSurfaceBudget } from '@ultimat3/mcp';
+
+test('the staff surface stays small', async () => {
+  // The derivation beside the number: the size measureMcpSurface reported, × a margin.
+  await assertMcpSurfaceBudget(mcp.server, staffCaller, { toolsList: 4_000, listResources: 12_000 });
+});
+```
+
+`measureMcpSurface(server, caller)` returns `{ toolsList, listResources, instructions }` in
+characters, off the wire; the assert refuses every surface over its ceiling in one
+`X_MCP_SURFACE_OVER_BUDGET`.
+
+**Refusals speak to the caller.** `defineAppMcp` renders an error's `callerFix` — what a remote
+agent can do — where the framework's own `fix` names a command only the app's developer can run:
+`X_FORBIDDEN` says to ask the account owner for the permission, not `x policy explain`; a missing
+scope says to ask for a token that carries it; an invalid argument says to correct the field
+against the published schema. The developer's `fix` stays in the log line, `--json`, and on
+`createMcpServer` (the dev server), whose default is `errorAudience: 'developer'`;
+`defineAppMcp({ errorAudience: 'developer' })` restores it for an app. An app's own error takes the
+same two fields, plus `docs`:
+
+```ts
+class RefundWindowError extends UltimateError {
+  constructor() {
+    super({
+      code: 'X_FORBIDDEN',
+      cause: 'the payment is 142 days old; refunds are limited to 90 days',
+      fix: 'x policy explain refund:create --json',
+      callerFix: 'issue a credit note instead',
+      docs: 'docs://recipes/issue-a-credit-note',
+    });
+  }
+}
+```
+
+A `docs` other than the framework's one Error-Codes page is a fourth line of the tool result —
+`  docs:  docs://recipes/issue-a-credit-note` — and is the `docs` member of the problem document
+over HTTP. A production problem document carries `callerFix` as its `fix`; a dev one keeps the
+developer's.
 
 ### The app's own endpoint is mounted by the web role
 
@@ -145,6 +238,7 @@ Role, scope and policy refuse in three distinguishable ways. The difference is t
 | The actor's role can never invoke the tool | absent from `tools/list`; a direct call answers ToolNotFound | JSON-RPC `-32601`, message `tool not found: <name> — call tools/list to read the catalog this caller may use`, no `data` at all. The hint is the same sentence on both branches — absent and hidden — so it instructs without saying which |
 | The role could invoke it, but the connection's scope does not include it | explicit refusal naming the missing scope | JSON-RPC `-32600`, `data: { code: 'X_MCP_SCOPE_DENIED', scope, fix }` |
 | The tool was invoked and the policy denied this input | `X_FORBIDDEN` with the denial reason | a normal `result` with `isError: true` — identical to the HTTP answer for the same call |
+| The caller may see and call it, and the arguments fail its published schema | `X_INPUT_INVALID`, each issue addressed by path | a normal `result` with `isError: true` (`As of 22.10`; a `-32602` until then, which clients hide from the model). `-32602` remains for a call that is not one — no `params`, a non-string `name` |
 
 Hidden means hidden: `Forbidden` on a hidden tool is an enumeration oracle — an agent, or an attacker driving one, walks a name list and reads the org's feature set, entity names and internal operations off the difference between "not found" and "forbidden". A scope refusal is the opposite case: a well-behaved client can legitimately fix it, so hiding it would only strand the caller.
 
@@ -312,7 +406,9 @@ $ x verify --json
 | Code | Cause | Fix |
 |---|---|---|
 | `X_MCP_TOOL_UNKNOWN` | no visible tool answers that name (role-hidden and absent are indistinguishable) | `tools/list` to read the catalog this caller may use |
-| `X_MCP_ARGS_INVALID` | arguments failed the tool's declared JSON Schema | re-read `inputSchema` from `tools/list` and resend |
+| `X_INPUT_INVALID` | arguments failed the tool's published `inputSchema` — an `isError` result naming each field (`As of 22.10`) | correct the named fields against `inputSchema` (`tools/list`, or `describe_resource` on the meta surface) and resend |
+| `X_MCP_ARGS_INVALID` | not raised on the wire since 22.10 — invalid arguments answer `X_INPUT_INVALID` as a tool result; `McpArgsInvalidError` stays exported | — |
+| `X_MCP_SURFACE_OVER_BUDGET` | `assertMcpSurfaceBudget` measured `tools/list`, `list_resources` or `instructions` over the budget declared for them | shorten what it names, group tools behind `surface: 'meta'`, or raise the budget with the measured size and the reason in the same diff |
 | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an `idempotent: true` action's input declares `idempotencyKey`, the tool argument reserved for the retry key — refused at boot | rename the action's input field |
 | `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | reconnect with a token whose scopes include the one `cause` names — the app's `resolveToken(token)` is what returns them — or drop that scope from `defineAppMcp({ scopes })`. Scopes are fixed for the life of a connection, so a grant takes effect on the next one. **Not** `x token grant`: that command is `PLANNED` and exits `X_NOT_IMPLEMENTED` |
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool the server does not project | spell the name as one of the tools the server actually projects, or drop it from that `scopes` entry |
@@ -322,7 +418,7 @@ $ x verify --json
 | `X_MCP_PROTOCOL` | malformed envelope, a JSON-RPC **batch** (an array — this server answers one request per message and never walks one), or an unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body, one request per `POST /mcp` (one per line over stdio); the `-32600` carries `data: { code, fix }` naming which |
 | `X_MCP_BODY_TOO_LARGE` | one message over `bodyLimitBytes` (HTTP, `413`) or `lineLimitBytes` (stdio) — on a JSON-RPC `-32600` with `data: { code, cause, fix, limit }` | send less in one message, or raise the cap where the route is built: `mcpHttpRoute({ bodyLimitBytes })` / `defineAppMcp({ bodyLimitBytes })` / `serveStdio({ lineLimitBytes })` |
 | `X_MCP_RATE_LIMITED` | this caller spent its per-minute allowance for the request's class ([above](#rate-limits-on-the-http-transport)) | wait out the `Retry-After`, or raise it where the route is built: `mcpHttpRoute({ rateLimits })` / `defineAppMcp({ rateLimits })`. Never `X_RATE_LIMITED`'s buckets — they do not govern this route |
-| `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | call `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
+| `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | over an app's MCP: the caller's fix — ask the account owner or an administrator for the permission; a retry is refused the same way. As the app's developer: `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |
 | `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action that is not MCP-exposed — refused at **declaration** | add `mcp: { expose: true, description }` to the action, or drop it from `tools` |
 | `X_AGENT_MAX_TURNS` | an `agent()` used every turn without answering | tell the template when to stop and answer through the respond tool, then bump its version |

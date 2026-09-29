@@ -195,7 +195,7 @@ describe('the admin MCP catalog is computed per caller', () => {
 
     expect(response?.error).toBeUndefined();
     expect(result?.isError).toBeUndefined();
-    expect(result?.content[0]?.text).toBe(JSON.stringify({ published: true }, null, 2));
+    expect(result?.content[0]?.text).toBe(JSON.stringify({ published: true }));
   });
 
   test('a visible read tool runs for the actor that may see it', async () => {

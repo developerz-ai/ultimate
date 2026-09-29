@@ -18,12 +18,12 @@ import {
 import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
-import { oneLineParams } from './meta-surface';
+import { oneLineParams, renderCatalog } from './meta-surface';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { jsonResult } from './registry';
 import { createMcpServer, type McpServer } from './server';
 import type { JsonRpcResponse } from './wire';
-import { INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, NO_ARGS } from './wire';
+import { INVALID_REQUEST, METHOD_NOT_FOUND, NO_ARGS } from './wire';
 
 const call = (name: string, args: Record<string, unknown> = {}) => ({
   jsonrpc: '2.0' as const,
@@ -48,6 +48,14 @@ const resultJson = (response: JsonRpcResponse | null): Record<string, unknown> =
     ?.text;
   return JSON.parse(text ?? 'null') as Record<string, unknown>;
 };
+
+const resultText = (response: JsonRpcResponse | null): string =>
+  (response?.result as { content?: { text: string }[] } | undefined)?.content?.[0]?.text ?? '';
+/** An argument refusal: a tool result the model reads, `X_INPUT_INVALID`, since 22.10. */
+const refusedArgs = (response: JsonRpcResponse | null): boolean =>
+  response?.error === undefined &&
+  (response?.result as { isError?: boolean } | undefined)?.isError === true &&
+  resultText(response).startsWith('X_INPUT_INVALID: ');
 
 const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
 
@@ -159,8 +167,10 @@ const appServer = (): McpServer =>
 describe('meta surface — refusals first', () => {
   test('a hidden resource is absent from list_resources, and manage_resource answers what an absent pair answers', async () => {
     const server = appServer();
-    const listed = resultJson(await server.handle(call('list_resources'), metaMember()));
-    expect((listed['resources'] as { name: string }[]).map((r) => r.name)).toEqual(['posts']);
+    expect(server.catalog(metaMember())?.map((r) => r.name)).toEqual(['posts']);
+    const listed = resultText(await server.handle(call('list_resources'), metaMember()));
+    expect(listed).toInclude('\nposts — ');
+    expect(listed).not.toInclude('org');
 
     const hidden = await server.handle(manage('org', 'transferOrg'), metaMember());
     const absent = await server.handle(manage('org', 'noSuchTool'), metaMember());
@@ -210,12 +220,12 @@ describe('meta surface — refusals first', () => {
     const response = await inRequest(() =>
       server.handle(manage('posts', 'listPosts', { status_in: ['draft'] }), metaOwner()),
     );
-    expect(response?.error?.code).toBe(INVALID_PARAMS);
-    expect(JSON.stringify(response)).toContain('status_in');
+    expect(refusedArgs(response)).toBe(true);
+    expect(resultText(response)).toContain('status_in');
     const badSort = await inRequest(() =>
       server.handle(manage('posts', 'listPosts', { sort: 'title' }), metaOwner()),
     );
-    expect(badSort?.error?.code).toBe(INVALID_PARAMS);
+    expect(refusedArgs(badSort)).toBe(true);
   });
 
   test('malformed manage_resource arguments are invalid-args, not a crash', async () => {
@@ -223,7 +233,8 @@ describe('meta surface — refusals first', () => {
       call('manage_resource', { resource: 1 }),
       metaOwner(),
     );
-    expect(response?.error?.code).toBe(INVALID_PARAMS);
+    expect(refusedArgs(response)).toBe(true);
+    expect(resultText(response)).toInclude('input for tool "manage_resource"');
   });
 
   test('boot refuses what would ship a silently wrong catalog', () => {
@@ -333,8 +344,16 @@ describe('meta surface — the constant catalog', () => {
       surface: 'meta',
       groups: GROUPS,
     });
-    const listed = resultJson(await server.handle(call('list_resources'), metaOwner()));
-    expect(listed['resources']).toEqual([
+    const text = resultText(await server.handle(call('list_resources'), metaOwner()));
+    // The wire form is plain text, one line per action; the same facts as data via `catalog`.
+    expect(text).toBe(renderCatalog(server.catalog(metaOwner()) ?? []));
+    expect(text).toInclude(
+      '\n  publishPost (action; confirms) {postId: string} — Publish a draft post',
+    );
+    expect(text).toInclude(
+      '\norg — The organisation\n  transferOrg (action) {} — Transfer the org',
+    );
+    expect(server.catalog(metaOwner())).toEqual([
       {
         name: 'org',
         description: 'The organisation',
@@ -460,7 +479,7 @@ describe('meta surface — manage_resource is the flat call, through another doo
       flatOwner(['posts:write']),
       metaOwner(['posts:write']),
     );
-    expect(response?.error?.code).toBe(INVALID_PARAMS);
+    expect(refusedArgs(response)).toBe(true);
   });
 
   test('manage_resource is metered as the tool it reaches', () => {

@@ -29,12 +29,24 @@ describe('loadSiteSettings', () => {
     expect(await loadSiteSettings(join(ROOT, 'app'))).toEqual({
       origin: 'https://notificado.co',
       disallow: ['/panel'],
+      sitemap: { extra: [], lastmod: 'none' },
+    });
+  });
+
+  test('reads seo.sitemap when the config carries it', async () => {
+    await Bun.write(
+      join(ROOT, 'sitemap', 'app.config.ts'),
+      "export const config = { site: { origin: null }, seo: { robots: { disallow: [] }, sitemap: { extra: ['/verificar'], lastmod: 'git' } } };\n",
+    );
+    expect((await loadSiteSettings(join(ROOT, 'sitemap'))).sitemap).toEqual({
+      extra: ['/verificar'],
+      lastmod: 'git',
     });
   });
 });
 
 describe('publicOrigin', () => {
-  const site = { origin: 'https://config.test', disallow: [] };
+  const site = { ...NO_SITE_SETTINGS, origin: 'https://config.test' };
 
   test('APP_URL, then SITE_ORIGIN, then site.origin, then nothing', () => {
     expect(

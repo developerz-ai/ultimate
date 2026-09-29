@@ -33,7 +33,7 @@ import {
 } from './errors';
 import type { ServerHooks } from './hooks';
 import { acceptsHtml } from './html-render';
-import { dropVary, localeFromPath, routeLocalePrefix } from './locale-prefix';
+import { acceptLanguageConsulted, dropVary, routeLocalePrefix } from './locale-prefix';
 import { compose, type Middleware } from './middleware';
 import { navigationGate, redirectForRouter } from './navigation';
 import { overlayResponse } from './overlay';
@@ -453,9 +453,10 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         if (name === 'vary') addVary(response, [value]);
         else response.headers.set(name, value);
       }
-      // After every contributor: a locale read off the URL makes the body a function of the URL,
-      // and a CDN keying it on `accept-language` too stores one copy per browser for nothing.
-      if (localeFromPath(ctx)) dropVary(response, 'accept-language');
+      // After every contributor: a locale read off the URL — or an app whose locale order never
+      // reads the header — makes `accept-language` a key nothing varies on, and a CDN keying on it
+      // stores one copy per browser for nothing.
+      if (!acceptLanguageConsulted(ctx)) dropVary(response, 'accept-language');
       for (const [name, value] of Object.entries(
         responseSecurityHeaders(config.security, ctx.https),
       )) {

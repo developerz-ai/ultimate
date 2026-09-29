@@ -5,7 +5,8 @@
 
 // why: Bun exposes no path-join primitive, and the config path is app-root-relative.
 import { join } from 'node:path';
-import type { AppConfig, Environment } from '@ultimat3/core';
+import type { AppConfig, Environment, SeoSitemapConfig, SitemapLastmod } from '@ultimat3/core';
+import { SITEMAP_LASTMOD_SOURCES } from '@ultimat3/core';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
 
@@ -14,9 +15,15 @@ export interface SiteSettings {
   readonly origin: string | null;
   /** `seo.robots.disallow` — the paths a production `robots.txt` keeps crawlers out of. */
   readonly disallow: readonly string[];
+  /** `seo.sitemap` — public `app/` pages to list, and where `<lastmod>` comes from. */
+  readonly sitemap: SeoSitemapConfig;
 }
 
-export const NO_SITE_SETTINGS: SiteSettings = { origin: null, disallow: [] };
+export const NO_SITE_SETTINGS: SiteSettings = {
+  origin: null,
+  disallow: [],
+  sitemap: { extra: [], lastmod: 'none' },
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -43,6 +50,26 @@ export async function loadSiteSettings(root: string): Promise<SiteSettings> {
   return {
     origin: typeof origin === 'string' && origin !== '' ? trimSlash(origin) : null,
     disallow: [...config.seo.robots.disallow],
+    sitemap: sitemapOf(config.seo),
+  };
+}
+
+/**
+ * Structural for `hasSiteSections`' reason: a config resolved through a core older than
+ * `seo.sitemap` has no such key, and that is the default, not a crash.
+ */
+function sitemapOf(seo: unknown): SeoSitemapConfig {
+  const declared = isRecord(seo) ? seo['sitemap'] : undefined;
+  if (!isRecord(declared)) return NO_SITE_SETTINGS.sitemap;
+  const extra = declared['extra'];
+  const lastmod = declared['lastmod'];
+  return {
+    extra: Array.isArray(extra)
+      ? extra.filter((path): path is string => typeof path === 'string')
+      : [],
+    lastmod: SITEMAP_LASTMOD_SOURCES.includes(lastmod as SitemapLastmod)
+      ? (lastmod as SitemapLastmod)
+      : 'none',
   };
 }
 

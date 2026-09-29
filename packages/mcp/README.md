@@ -111,6 +111,7 @@ export const mcp = defineAppMcp({
     },
   },
   scopes: { 'admin:seats': ['seatReport'] },   // scope name → tool NAMES, by string
+  instructions: 'Admin console. seatReport({}) answers seat questions; writes are audited.',
   resolveToken: (token) => sessions.resolveAgentToken(token),
 });
 
@@ -201,7 +202,7 @@ defineAppMcp({
 
 | Tool | Answers |
 |---|---|
-| `list_resources` | `{ resources: [{ name, description, actions: [{ name, kind: 'query'\|'action', description, params, confirms?, scope? }] }] }` — `params` is a one-line hint (`batchId: string, note?: string`) |
+| `list_resources` | PLAIN TEXT (`As of 22.10`; JSON until then): one line per resource, and under it one line per action — `  previewPayoutBatch (action; confirms; scope payouts:write) {batchId: string, note?: string} — <description>`. The same catalog as data: `server.catalog(caller)` (`MetaResource[]`, `undefined` for a flat caller); the renderer is `renderCatalog` |
 | `describe_resource` | `{ resources: string[] }` (batched) → each action's full `inputSchema` |
 | `manage_resource` | `{ resource, action, params }` → the flat tool's answer, byte for byte |
 
@@ -218,8 +219,38 @@ meta tool name taken by an app tool (`X_MCP_TOOL_DUPLICATE`).
 maxLimit: 100 } }`. Keys are FLAT — `status_eq`, `createdAt_gt`, `sort: '-createdAt'`, `fields`,
 `cursor` (opaque keyset), `limit` — because a query's input travels as a query string; the query's
 own `input` declares them and implements them. `describe_resource` publishes the whitelist and
-`manage_resource` refuses anything outside it (`X_MCP_ARGS_INVALID`) before the query runs; a
+`manage_resource` refuses anything outside it (an `isError` result carrying `X_INPUT_INVALID`) before the query runs; a
 whitelisted key the input does not declare is `X_MCP_LIST_PARAMS_INVALID` at boot.
+
+### What a client is told beyond the schema
+
+`As of 22.10`, MCP 2025-06-18. The projection derives each from the declaration; the primitive's
+`mcp` block overrides.
+
+| Field | Source | Default |
+|---|---|---|
+| `initialize.instructions` | `defineAppMcp({ instructions })` / `createMcpServer({ instructions })` — a string, or `(caller) => string \| undefined` | none; a function that throws or answers blank sends none |
+| `title` | `mcp: { title }` · hand-written `title` | none |
+| `annotations` | `deriveAnnotations(primitive)`, then `mcp: { annotations }` key by key | query `{ readOnlyHint: true }`; action `{ readOnlyHint: false, destructiveHint: true, idempotentHint: <idempotent> }`; `openWorldHint` only when declared |
+| `outputSchema` | an action's `output` with an object root; a query's `rows` as `{ rows: [<row>] }` — `toOutputSchema` / `toRowsOutputSchema`, structure only (no bounds, patterns or `additionalProperties`: a client refuses a result that misses its schema) | none |
+| `structuredContent` | `structuredResult(value, wrap?)`: the serialized answer read back, beside the text block | absent |
+
+A tool's text is **compact JSON** (`jsonResult`; the 2-space form until 22.10). The meta tools
+carry their own hints: `list_resources` and `describe_resource` read-only, `manage_resource` a
+write.
+
+**Budget test.** `measureMcpSurface(server, caller)` answers `{ toolsList, listResources,
+instructions }` in characters, as serialized on the wire; `assertMcpSurfaceBudget(server, caller,
+{ toolsList, listResources, instructions })` throws `X_MCP_SURFACE_OVER_BUDGET` naming every
+surface over its ceiling. Put the derivation beside the number.
+
+**Whose fix.** `errorAudience: 'caller'` (`defineAppMcp`'s default) renders an error's
+`callerFix` — `X_FORBIDDEN`: ask the account owner for the permission; `X_MCP_SCOPE_DENIED`: ask for
+a token with the scope; `X_INPUT_INVALID`: correct the named fields — where `fix` names something
+only the app's developer can run. `'developer'` (`createMcpServer`'s default, the dev server's)
+keeps `fix`. An error whose `docs` is not the framework's one Error-Codes page — an app's
+`docs://recipes/...` — renders a fourth `docs:` line. Byte-identical to
+`UltimateError.format({ audience, docs })`.
 
 ## Transports
 
@@ -287,6 +318,12 @@ implements the emitted subset (objects, arrays, enums, `required`, `additionalPr
 bounds, `default`) and applies declared defaults. Actions still re-parse authoritatively
 inside their own handler.
 
+A call that fails it is a **tool result** with `isError: true` — `X_INPUT_INVALID`, the code HTTP
+answers for the same input, each issue addressed by path (`input for tool "publishPost" failed
+validation: postId: required`) — `As of 22.10`. It was a JSON-RPC `-32602` until then, and clients
+surface a protocol error to the human and hide it from the model, which then retried blind.
+`-32602` remains for a call that is not one: no `params`, a non-string `name`.
+
 ## Idempotency over MCP
 
 An `idempotent: true` action's tool carries one reserved, optional argument,
@@ -301,7 +338,7 @@ key — so an agent retrying a timed-out call with the same key gets the first r
 ```
 
 The action's own input never sees the key. A non-idempotent tool does not advertise it and refuses
-it (`X_MCP_ARGS_INVALID`). An argument, not `params._meta`: `_meta` is for host metadata and a
+it (`X_INPUT_INVALID`, as an `isError` result). An argument, not `params._meta`: `_meta` is for host metadata and a
 model-driven client cannot set it. An idempotent action whose input already names `idempotencyKey`
 is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot.
 
@@ -313,7 +350,9 @@ is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot.
 | `X_MCP_SCOPE_DENIED` | visible, but the connection's token lacks the scope |
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool this server does not project |
 | `X_MCP_SCOPE_CONFLICT` | two scopes in `defineAppMcp`'s `scopes:` claim one tool |
-| `X_MCP_ARGS_INVALID` | arguments failed the declared schema |
+| `X_INPUT_INVALID` | arguments failed the published `inputSchema` — an `isError` result since 22.10 |
+| `X_MCP_ARGS_INVALID` | no longer raised on the wire (22.10); `McpArgsInvalidError` stays exported |
+| `X_MCP_SURFACE_OVER_BUDGET` | `assertMcpSurfaceBudget` measured a surface over its declared ceiling |
 | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an idempotent action's input declares `idempotencyKey`, the reserved retry-key argument |
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
 | `X_MCP_QUERY_REJECTED` | `db.query` given anything but one read-only statement |
@@ -347,6 +386,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpScopeConflictError` | `X_MCP_SCOPE_CONFLICT` | `src/errors.ts` |
 | `McpScopeDeniedError` | `X_MCP_SCOPE_DENIED` | `src/errors.ts` |
 | `McpScopeUnknownError` | `X_MCP_SCOPE_UNKNOWN` | `src/errors.ts` |
+| `McpSurfaceOverBudgetError` | `X_MCP_SURFACE_OVER_BUDGET` | `src/errors.ts` |
 | `McpToolDuplicateError` | `X_MCP_TOOL_DUPLICATE` | `src/errors.ts` |
 | `McpToolUndeclaredError` | `X_MCP_TOOL_UNDECLARED` | `src/errors.ts` |
 | `McpToolUnknownError` | `X_MCP_TOOL_UNKNOWN` | `src/errors.ts` |

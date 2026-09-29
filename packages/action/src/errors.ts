@@ -6,6 +6,7 @@
  */
 import {
   assertNever,
+  deniedCallerFix,
   ERROR_DOCS_URL,
   hasErrorCode,
   registerErrorCodes,
@@ -136,6 +137,7 @@ export class ActionDeniedError extends UltimateError {
       code,
       cause: `${action} denied: ${denialReason(denial)}`,
       fix: `x policy explain ${action} --json   # shows which clause decided and why`,
+      callerFix: deniedCallerFix(),
     });
     this.denial = denial;
   }
@@ -203,11 +205,25 @@ export class InputInvalidError extends UltimateError {
    * `formatIssues` here would pull that package's whole barrel into every browser bundle holding
    * the typed client.
    */
-  constructor(name: string, detail: string, issues?: readonly ValidationIssue[]) {
+  constructor(
+    name: string,
+    detail: string,
+    issues?: readonly ValidationIssue[],
+    /**
+     * What `name` names, in the cause: `'action'` (the default), or `'tool'` when `@ultimat3/mcp`
+     * refuses arguments against a tool's published schema — a query's or a meta tool's, not only an
+     * action's.
+     */
+    subject: 'action' | 'tool' = 'action',
+  ) {
     super({
       code: 'X_INPUT_INVALID',
-      cause: `input for action "${name}" failed validation: ${detail}`,
+      cause: `input for ${subject} "${name}" failed validation: ${detail}`,
       fix: `x actions describe ${name} --json  # prints the expected input schema`,
+      // A remote caller holds the published schema — the MCP `inputSchema`, the OpenAPI request
+      // body — and cannot run `x actions describe`.
+      callerFix:
+        'correct the fields named in cause to match the published input schema (the tool inputSchema, or the OpenAPI request body) and send again — the same input is refused the same way',
       ...(issues === undefined ? {} : { meta: { issues } }),
     });
     this.issues = issues;

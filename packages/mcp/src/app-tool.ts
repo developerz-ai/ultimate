@@ -21,7 +21,7 @@ import { asCallerContext } from './caller-context';
 import { McpToolUnsafeError } from './errors';
 import type { ProjectablePrimitive } from './from-action';
 import { toWireSchema } from './input-schema';
-import type { McpRole } from './registry';
+import type { McpRole, McpToolAnnotations } from './registry';
 
 export interface AppToolArgs<TInput extends StandardSchemaV1> {
   readonly input: InferOutput<TInput>;
@@ -43,6 +43,13 @@ export interface AppToolDefinition<TInput extends StandardSchemaV1 = StandardSch
    * rate-limit bucket, so forgetting the flag costs throughput rather than safety.
    */
   readonly destructive?: boolean;
+  /** Display name for a client's UI. Absent: none published. */
+  readonly title?: string;
+  /**
+   * Overrides of the derived hints — `readOnlyHint: !destructive`, and for a write
+   * `destructiveHint: true`, `idempotentHint: false`. See `McpToolAnnotations`.
+   */
+  readonly annotations?: McpToolAnnotations;
   // Method syntax (not a property) so a tool declared with narrower args stays assignable.
   handle(args: AppToolArgs<TInput>): unknown;
 }
@@ -54,6 +61,8 @@ export interface AnyAppToolDefinition {
   readonly policy: KnownPermission;
   readonly visibleTo?: readonly McpRole[];
   readonly destructive?: boolean;
+  readonly title?: string;
+  readonly annotations?: McpToolAnnotations;
   handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
 }
 
@@ -89,6 +98,8 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
       expose: true,
       description: def.description,
       ...(visibleTo !== undefined ? { visibleTo } : {}),
+      ...(def.title !== undefined ? { title: def.title } : {}),
+      ...(def.annotations !== undefined ? { annotations: def.annotations } : {}),
     },
     inputJsonSchema: toWireSchema(def.input),
     mutates: def.destructive ?? true,

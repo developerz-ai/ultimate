@@ -19,13 +19,36 @@ export interface SeoRobotsConfig {
   readonly disallow: readonly string[];
 }
 
+/**
+ * Where each sitemap `<lastmod>` comes from. `'none'` (the default): no `<lastmod>`, as before.
+ * `'git'`: the last commit that touched the route's source file, read with `git log` — and the
+ * file's mtime where the process has no work tree (a container image). `'mtime'`: the file's mtime.
+ * `'build'`: one timestamp for every URL, the moment the process built its sitemap.
+ */
+export type SitemapLastmod = 'none' | 'git' | 'mtime' | 'build';
+
+export const SITEMAP_LASTMOD_SOURCES: readonly SitemapLastmod[] = ['none', 'git', 'mtime', 'build'];
+
+export interface SeoSitemapConfig {
+  /**
+   * Public pages OUTSIDE `site/` to list — an `app/` route anyone may open, e.g. `['/verificar']`.
+   * Each must match a registered route that declares no policy (checked when the sitemap is built,
+   * `X_SITEMAP_EXTRA_INVALID`), and is listed per routed locale with hreflang alternates exactly
+   * as a `site/` page is.
+   */
+  readonly extra: readonly string[];
+  readonly lastmod: SitemapLastmod;
+}
+
 export interface SeoConfig {
   readonly robots: SeoRobotsConfig;
+  readonly sitemap: SeoSitemapConfig;
 }
 
 /** `robots` is NESTED for `AiConfigInput`'s reason: `section` applies a patch one level deep. */
 export interface SeoConfigInput {
   readonly robots?: Input<SeoRobotsConfig> | undefined;
+  readonly sitemap?: Input<SeoSitemapConfig> | undefined;
 }
 
 export interface SiteSections {
@@ -49,6 +72,10 @@ export function mergeSite(layers: readonly SiteSectionsInput[]): SiteSections {
       robots: layered<SeoRobotsConfig>(
         { disallow: [] },
         layers.map((layer) => layer.seo?.robots),
+      ),
+      sitemap: layered<SeoSitemapConfig>(
+        { extra: [], lastmod: 'none' },
+        layers.map((layer) => layer.seo?.sitemap),
       ),
     },
   };
@@ -83,5 +110,19 @@ export function siteIssues(config: SiteSections, issues: string[]): void {
   }
   for (const path of config.seo.robots.disallow) {
     if (!path.startsWith('/')) issues.push(`seo.robots.disallow entry "${path}" must start with /`);
+  }
+  for (const path of config.seo.sitemap.extra) {
+    // A PATH, never a URL: every `<loc>` is built against the one declared origin, and a query or
+    // a fragment names a variant of a page, which a sitemap lists by its canonical URL alone.
+    if (!path.startsWith('/') || path.startsWith('//') || /[?#]/.test(path)) {
+      issues.push(
+        `seo.sitemap.extra entry "${path}" must be a path starting with / — no origin, query or fragment`,
+      );
+    }
+  }
+  if (!SITEMAP_LASTMOD_SOURCES.includes(config.seo.sitemap.lastmod)) {
+    issues.push(
+      `seo.sitemap.lastmod "${String(config.seo.sitemap.lastmod)}" must be one of ${SITEMAP_LASTMOD_SOURCES.join(', ')}`,
+    );
   }
 }

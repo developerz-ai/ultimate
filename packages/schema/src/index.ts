@@ -25,8 +25,9 @@ export type { QuerySource } from './coerce';
 export { coerceInput, coerceNode, coerceQuery } from './coerce';
 export { describeValue, expected } from './describe-value';
 export { discriminatedUnionSchema } from './discriminated-union';
+export type { SchemaErrorCodeDeclaration } from './error-codes';
+export { SCHEMA_ERROR_CODES } from './error-codes';
 export type {
-  SchemaErrorCodeDeclaration,
   SchemaErrorInit,
   SchemaErrorJSON,
   ValidationIssue,
@@ -34,7 +35,6 @@ export type {
 export {
   DiscriminantInvalidError,
   isSchemaError,
-  SCHEMA_ERROR_CODES,
   SchemaError,
   SchemaUnsupportedError,
   ULTIMATE_ERROR_BRAND,

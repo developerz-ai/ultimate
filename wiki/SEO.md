@@ -90,5 +90,19 @@ takes the public `site/` routes (no `policy`), leaves out any page whose `meta` 
 | static export | the scaffolded `apps/web/prerender.ts` writes `siteSeo()`'s files into `.x/static`. A dynamic route lists exactly the pages the build emitted |
 | web role (`x dev`, `runRole`) | `GET /robots.txt` and `GET /sitemap.xml`, `public, max-age=3600`, built per request. Absolute against `APP_URL`, else `SITE_ORIGIN`, else the request's own origin. `As of 2026-09-25` (22.2.2) |
 
+**Beyond `site/`, and `<lastmod>`** (`As of 22.10`) — `seo.sitemap` in `app.config.ts`:
+
+```ts
+seo: { sitemap: { extra: ['/verificar', '/estado'], lastmod: 'git' } },
+```
+
+| Key | Does |
+|---|---|
+| `extra` | lists public `app/` pages beside the `site/` ones — each path must be answered by an `app/` route declaring no `policy`, and is listed per routed locale with the same hreflang cluster and `x-default`. A path no route answers, an `api/` route, a gated page or a `site/` page (listed already) is `X_SITEMAP_EXTRA_INVALID` — refused, never skipped |
+| `lastmod` | `'none'` (default, no `<lastmod>`), `'git'` (the route file's last commit; its mtime without a work tree), `'mtime'`, `'build'` (one timestamp) |
+
+The scaffolded `prerender.ts` passes `sitemap` and `root` from `loadSiteSettings(root)`; an app with
+its own `prerender.ts` adds `sitemap: settings.sitemap, root` to its `siteSeo({ … })` call.
+
 Past 50,000 URLs, `/sitemap.xml` is the index. The web role serves the index but not the
 `/sitemap-N.xml` parts, so a site that large serves its sitemap from the static export.

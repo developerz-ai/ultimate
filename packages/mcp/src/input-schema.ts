@@ -75,3 +75,66 @@ function narrowAdditional(value: boolean | RichJsonSchema | undefined): {
   if (value === undefined) return {};
   return { additionalProperties: typeof value === 'boolean' ? value : true };
 }
+
+/**
+ * A Standard Schema → the `outputSchema` a tool publishes, or `undefined` when its root is not an
+ * object (MCP's `structuredContent` is one) or it cannot be introspected.
+ *
+ * STRUCTURE ONLY — type, properties, required, items, enum, const, anyOf, title, description. A
+ * client validates `structuredContent` against this document and refuses the call on a miss, so
+ * every keyword here is a promise about a value the server produced: a bound, a pattern or
+ * `additionalProperties: false` on a query's rows (read from the database, never re-parsed) is a
+ * promise nothing enforces on the way out. Fewer constraints is the honest projection of an output.
+ */
+export function toOutputSchema(schema: unknown): JsonSchema | undefined {
+  let rich: RichJsonSchema;
+  try {
+    rich = toMcpInputSchema(schema);
+  } catch {
+    return undefined;
+  }
+  if (rich.type !== 'object') return undefined;
+  return shape(rich);
+}
+
+/** `{ rows: [<row>] }` — a query's answer as `structuredContent`. `undefined` when no row schema. */
+export function toRowsOutputSchema(rows: unknown): JsonSchema | undefined {
+  if (rows === undefined) return undefined;
+  const row = toOutputSchema(rows);
+  if (row === undefined) return undefined;
+  return {
+    type: 'object',
+    properties: { rows: { type: 'array', items: row } },
+    required: ['rows'],
+  };
+}
+
+function shape(source: RichJsonSchema): JsonSchema {
+  return {
+    ...(source.type === undefined ? {} : { type: source.type }),
+    ...(source.title === undefined ? {} : { title: source.title }),
+    ...(source.description === undefined ? {} : { description: source.description }),
+    ...(source.properties === undefined ? {} : { properties: shapeProperties(source.properties) }),
+    ...(source.required === undefined ? {} : { required: source.required }),
+    ...(source.items === undefined ? {} : { items: shape(source.items) }),
+    ...(source.enum === undefined ? {} : { enum: source.enum }),
+    ...(source.const === undefined ? {} : { const: source.const }),
+    ...(source.anyOf === undefined ? {} : { anyOf: source.anyOf.map(shape) }),
+  };
+}
+
+function shapeProperties(
+  properties: Readonly<Record<string, RichJsonSchema>>,
+): Readonly<Record<string, JsonSchema>> {
+  const out: Record<string, JsonSchema> = {};
+  for (const [key, child] of Object.entries(properties)) {
+    // `narrowProperties`' reason: `out['__proto__'] = …` re-prototypes instead of adding a key.
+    Object.defineProperty(out, key, {
+      value: shape(child),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return out;
+}

@@ -8,6 +8,7 @@
 // Deliberately one function: an app author should never have to know that `ToolRegistry`,
 // `frameworkResources` and `mcpHttpRoute` exist.
 
+import type { ErrorAudience } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AnyAppToolDefinition, AppTools } from './app-tool';
@@ -26,6 +27,7 @@ import type { McpScopes } from './scopes';
 import { withScopes } from './scopes';
 import type { CreateMcpServerInput } from './server';
 import { createMcpServer, type McpServer } from './server';
+import type { McpInstructions } from './server-voice';
 import type { McpRouteDescriptor, ResolvedToken } from './transport-http';
 import { mcpHttpRoute } from './transport-http';
 
@@ -96,6 +98,29 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * answers to is `X_MCP_GROUP_UNKNOWN`, a tool in two groups `X_MCP_GROUP_CONFLICT`.
    */
   readonly groups?: McpResourceGroups;
+  /**
+   * `initialize`'s `instructions` — the advice a client that honours it puts in the model's context:
+   * the entry-point call, the three or four goals most sessions are, the traps. A string, or a
+   * function of the caller for per-population advice (the same shape as `surface`):
+   *
+   * ```ts
+   * instructions: (caller) =>
+   *   caller.role?.startsWith('staff')
+   *     ? 'Staff console. Start with list_resources({}); writes are audited.'
+   *     : 'Start with docs({}) — recipes for sending a notification and reading its evidence.',
+   * ```
+   *
+   * An upgrade, never a dependency: many clients drop it, so the same advice belongs in the tool
+   * descriptions too.
+   */
+  readonly instructions?: McpInstructions;
+  /**
+   * Whose `fix:` line a refusal carries. Defaults to `'caller'`: this server answers remote agents,
+   * so an error that declares a `callerFix` (a denial, a missing scope, an invalid argument) renders
+   * it — "ask the account owner to grant post:publish" — instead of the developer's
+   * `x policy explain …`, which stays in the log line. `'developer'` restores the author's fix.
+   */
+  readonly errorAudience?: ErrorAudience;
   /** Bearer-token resolution. Omit to expose no HTTP route (stdio/embedded only). */
   resolveToken?(token: string): Promise<ResolvedToken | null> | ResolvedToken | null;
   /** Mount path. Defaults to `/mcp`. */
@@ -199,6 +224,8 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     serverInfo: { name: input.name ?? 'ultimate-app', version: input.version ?? '0.0.0' },
     ...(input.surface === undefined ? {} : { surface: input.surface }),
     ...(input.groups === undefined ? {} : { groups: input.groups }),
+    ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
+    errorAudience: input.errorAudience ?? 'caller',
   };
   const server = createMcpServer(config);
 

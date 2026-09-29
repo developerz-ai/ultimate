@@ -350,6 +350,8 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MCP_SCOPE_DENIED',
     'X_MCP_SCOPE_UNKNOWN',
     'X_MCP_SURFACE_INVALID',
+    // A test helper's refusal (`assertMcpSurfaceBudget`) — raised in a test run, never a request.
+    'X_MCP_SURFACE_OVER_BUDGET',
     'X_MCP_TOOL_DUPLICATE',
     'X_MCP_TOOL_UNDECLARED',
     'X_MCP_TOOL_UNKNOWN',

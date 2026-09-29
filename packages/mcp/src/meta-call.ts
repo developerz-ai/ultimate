@@ -5,9 +5,15 @@
 import { auditToolCall } from './audit';
 import { META_UNKNOWN_FIX } from './meta-errors';
 import type { MetaSurface } from './meta-surface';
-import { DESCRIBE_RESOURCE, LIST_RESOURCES, META_TOOL_ENTRIES, schemaOf } from './meta-surface';
+import {
+  DESCRIBE_RESOURCE,
+  LIST_RESOURCES,
+  META_TOOL_ENTRIES,
+  renderCatalog,
+  schemaOf,
+} from './meta-surface';
 import type { McpCaller, ToolRegistry, ToolResolution } from './registry';
-import { jsonResult } from './registry';
+import { jsonResult, textResult } from './registry';
 import { validateArgs } from './validate-args';
 import type { JsonRpcId, JsonRpcResponse } from './wire';
 import { errorResponse, METHOD_NOT_FOUND, resultResponse } from './wire';
@@ -48,7 +54,7 @@ export async function metaCall(
   }
   if (name === LIST_RESOURCES) {
     auditToolCall({ tool: name, outcome: 'ok', caller });
-    return resultResponse(id, jsonResult({ resources: meta.listResources(caller) }));
+    return resultResponse(id, textResult(renderCatalog(meta.listResources(caller))));
   }
   if (name === DESCRIBE_RESOURCE) {
     const described = meta.describe(args.value['resources'] as readonly string[], caller);

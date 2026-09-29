@@ -2,7 +2,15 @@
 // and its rendering, byte-identical to `UltimateError.format()`. Split from `server.ts`, whose two
 // dispatch paths (a flat `tools/call` and `manage_resource`) and resource reads all share it.
 
-import { FRAMEWORK_CODE, singleLine, stringField } from '@ultimat3/core';
+import type { ErrorAudience } from '@ultimat3/core';
+import {
+  ERROR_DOCS_URL,
+  FRAMEWORK_CODE,
+  fixFor,
+  isUltimateError,
+  singleLine,
+  stringField,
+} from '@ultimat3/core';
 
 export interface FrameworkError {
   readonly code: string;
@@ -10,6 +18,14 @@ export interface FrameworkError {
   readonly title: string;
   readonly cause: string;
   readonly fix: string;
+  /** The remote caller's fix, when the error declared one (`UltimateErrorInit.callerFix`). */
+  readonly callerFix?: string;
+  /**
+   * Where the reader goes next, ONLY when it is not the framework's one Error-Codes page — an app's
+   * `docs://recipes/...` guide. The default page is the same URL on every error and names nothing
+   * about this one, so it is not worth a line of an agent's context.
+   */
+  readonly docs?: string;
 }
 
 /**
@@ -29,6 +45,12 @@ export function asFrameworkError(error: unknown): FrameworkError | undefined {
   // `X_SCREAMING_SNAKE` and nothing else, so a value that is not one is not a framework error —
   // it takes the `-32603` branch, which leaks nothing of the throw.
   if (code === undefined || !FRAMEWORK_CODE.test(code)) return undefined;
+  // BRANDED only, for `@ultimat3/http`'s `factsOf` reason: `callerFix` and `docs` are lines an
+  // agent is told to act on, and an `UltimateError` built them in this process. A foreign object's
+  // are remote text.
+  const branded = isUltimateError(error);
+  const callerFix = branded ? stringField(error, 'callerFix') : undefined;
+  const docs = branded ? stringField(error, 'docs') : undefined;
   return {
     code,
     title: stringField(error, 'title') ?? '',
@@ -37,22 +59,37 @@ export function asFrameworkError(error: unknown): FrameworkError | undefined {
     // named no docs and no command; `code` is already narrowed to an `X_` string by the guard
     // above, so the substitute is the one command that explains exactly this code.
     fix: stringField(error, 'fix') ?? `x errors explain ${code}`,
+    ...(callerFix === undefined ? {} : { callerFix }),
+    ...(docs === undefined || docs === '' || docs === ERROR_DOCS_URL ? {} : { docs }),
   };
 }
 
 /**
- * The agent-readable form, BYTE-IDENTICAL to `UltimateError.format()` — one denial reads the
- * same over MCP as it does in the terminal, so an agent that learned the shape from `x` does
- * not have to learn a second one here. Dropping the title would be a second rendering of the
- * same contract, and the two would drift.
+ * The agent-readable form, BYTE-IDENTICAL to `UltimateError.format({ audience })` — plus
+ * `{ docs: true }` when the error names a page of its own — so one denial reads the same over MCP
+ * as it does in the terminal, and an agent that learned the shape from `x` does not have to learn a
+ * second one here. Dropping the title would be a second rendering of the same contract, and the two
+ * would drift.
+ *
+ * `audience` is the server's (`createMcpServer({ errorAudience })`): an app's server answers remote
+ * agents, who cannot run `x policy explain`, so it renders `callerFix` where the error has one.
  *
  * The bare-`code` head is the fallback for a foreign thrown object that carries `code`/`cause`
  * but no title; a real `UltimateError` always has one.
  */
-export function renderFrameworkError(error: FrameworkError): string {
+export function renderFrameworkError(
+  error: FrameworkError,
+  audience: ErrorAudience = 'developer',
+): string {
   const head =
     error.title === ''
       ? singleLine(error.code)
       : `${singleLine(error.code)}: ${singleLine(error.title)}`;
-  return `${head}\n  cause: ${singleLine(error.cause)}\n  fix:   ${singleLine(error.fix)}`;
+  const lines = [
+    head,
+    `  cause: ${singleLine(error.cause)}`,
+    `  fix:   ${singleLine(fixFor(error, audience))}`,
+  ];
+  if (error.docs !== undefined) lines.push(`  docs:  ${singleLine(error.docs)}`);
+  return lines.join('\n');
 }

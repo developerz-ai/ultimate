@@ -202,6 +202,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_VERIFY_SHARD_INVALID',
   'X_VERIFY_MERGE_INCOMPLETE',
   'X_VERIFY_MERGE_INPUT',
+  'X_SITEMAP_EXTRA_INVALID',
 ] as const;
 
 /**
@@ -353,6 +354,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_VERIFY_SHARD_INVALID: 'x verify --shard was given a spec or a step list it cannot split',
   X_VERIFY_MERGE_INCOMPLETE: 'x verify merge was handed parts that do not add up to the whole gate',
   X_VERIFY_MERGE_INPUT: 'a part handed to x verify merge is not an x verify --json document',
+  X_SITEMAP_EXTRA_INVALID: 'a seo.sitemap.extra path names no public page',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

@@ -4,7 +4,13 @@
 import { describe, expect, test } from 'bun:test';
 import { agentActor, isUltimateError } from '@ultimat3/core';
 import type { AnyMcpTool, McpCaller } from './registry';
-import { jsonResult, ToolRegistry, textResult, visibleToCaller } from './registry';
+import {
+  jsonResult,
+  structuredResult,
+  ToolRegistry,
+  textResult,
+  visibleToCaller,
+} from './registry';
 import type { JsonSchema } from './wire';
 
 const NO_ARGS: JsonSchema = { type: 'object', properties: {}, additionalProperties: false };
@@ -270,11 +276,35 @@ describe('textResult / jsonResult', () => {
     });
   });
 
-  test('jsonResult renders stable, diffable 2-space JSON', () => {
-    const result = jsonResult({ b: 1, a: 2 });
+  // Compact since 22.10: every byte of a result sits in the caller's context window for the rest
+  // of the session, and indentation was a third of a large answer.
+  test('jsonResult renders compact, one-line JSON', () => {
+    const result = jsonResult({ b: 1, a: { c: [1, 2] } });
+    expect(result.content).toEqual([{ type: 'text', text: '{"b":1,"a":{"c":[1,2]}}' }]);
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  test('structuredResult carries the serialized value as structuredContent beside the text', () => {
+    const when = new Date('2026-09-29T00:00:00.000Z');
+    const result = structuredResult({ id: 'p1', at: when });
     expect(result.content).toEqual([
-      { type: 'text', text: JSON.stringify({ b: 1, a: 2 }, null, 2) },
+      { type: 'text', text: '{"id":"p1","at":"2026-09-29T00:00:00.000Z"}' },
     ]);
+    // The JSON read back, never the value: a client validating against the schema gets a string.
+    expect(result.structuredContent).toEqual({ id: 'p1', at: '2026-09-29T00:00:00.000Z' });
+  });
+
+  test('structuredResult wraps an array answer under the key it is published at', () => {
+    const result = structuredResult([{ id: 'a' }], 'rows');
+    expect(result.structuredContent).toEqual({ rows: [{ id: 'a' }] });
+    expect(result.content[0]).toEqual({ type: 'text', text: '[{"id":"a"}]' });
+  });
+
+  test('structuredResult sends no structured copy for an answer that is not an object', () => {
+    expect(structuredResult('plain').structuredContent).toBeUndefined();
+    expect(structuredResult([1, 2]).structuredContent).toBeUndefined();
+    expect(structuredResult(undefined).content[0]).toEqual({ type: 'text', text: 'null' });
+    expect(structuredResult(1n).isError).toBe(true);
   });
 
   // The value is an ACTION's return value — `toolFromAction` hands `primitive.run`'s output

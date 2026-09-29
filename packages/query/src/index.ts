@@ -142,6 +142,7 @@ export type {
   QueryListFilterOp,
   QueryListParams,
   QueryMcp,
+  QueryMcpAnnotations,
   QueryOptions,
   QueryRateLimit,
   SourceOptions,

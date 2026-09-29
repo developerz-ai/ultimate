@@ -26,6 +26,18 @@ export interface UltimateErrorInit {
   readonly cause: string;
   /** The exact command or edit that fixes it. */
   readonly fix: string;
+  /**
+   * The fix for a REMOTE caller — an agent over MCP, a client reading a problem document — when
+   * `fix` names something only the app's developer can do (`x policy explain`, an edit to a
+   * declaration). Omitted, every surface reads `fix`. The developer's `fix` is never replaced: the
+   * terminal, the log line and `--json` keep it, and a dev-mode problem document does too.
+   */
+  readonly callerFix?: string | undefined;
+  /**
+   * Where the reader goes next. Defaults to the code's registered page. An app may point it at its
+   * own guide — `docs://recipes/refund-a-payment` — and `@ultimat3/mcp` then prints it as a fourth
+   * `docs:` line in the tool result, the moment the agent is stuck.
+   */
   readonly docs?: string | undefined;
   readonly meta?: Readonly<Record<string, unknown>> | undefined;
   /**
@@ -43,6 +55,8 @@ export interface UltimateErrorJSON {
   readonly title: string;
   readonly cause: string;
   readonly fix: string;
+  /** Present only when the error declared one. See `UltimateErrorInit.callerFix`. */
+  readonly callerFix?: string | undefined;
   readonly docs: string;
   /** Whether a client may try again. Always present — a client never has to infer it. */
   readonly retry: ErrorRetry;
@@ -50,9 +64,26 @@ export interface UltimateErrorJSON {
   readonly stack?: string | undefined;
 }
 
+/**
+ * Who reads a rendering. `'developer'` (the default) is the terminal, a log line, `--json`: the
+ * `fix` the author wrote. `'caller'` is a remote client that cannot run the app's CLI — an MCP
+ * tool result, a production problem document: `callerFix` when the error declared one, else `fix`.
+ */
+export type ErrorAudience = 'developer' | 'caller';
+
 export interface FormatErrorOptions {
   /** Append a 4th `docs:` line. Off by default — the contract's rendering is 3 lines. */
   readonly docs?: boolean | undefined;
+  /** Whose fix the `fix:` line carries. See `ErrorAudience`. */
+  readonly audience?: ErrorAudience | undefined;
+}
+
+/** The fix line a reader of `audience` is given: `callerFix` for a caller when one exists. */
+export function fixFor(
+  error: { readonly fix: string; readonly callerFix?: string | undefined },
+  audience: ErrorAudience | undefined,
+): string {
+  return audience === 'caller' && error.callerFix !== undefined ? error.callerFix : error.fix;
 }
 
 export class UltimateError extends Error {
@@ -63,6 +94,7 @@ export class UltimateError extends Error {
   /** Set by `Error`'s `cause` option; always a human-readable string in Ultimate. */
   declare readonly cause: string;
   readonly fix: string;
+  readonly callerFix: string | undefined;
   readonly docs: string;
   readonly retry: ErrorRetry;
   readonly meta: Readonly<Record<string, unknown>> | undefined;
@@ -90,6 +122,7 @@ export class UltimateError extends Error {
     this.code = code;
     this.title = title;
     this.fix = singleLine(init.fix);
+    this.callerFix = init.callerFix === undefined ? undefined : singleLine(init.callerFix);
     this.docs = singleLine(init.docs ?? described.docs);
     this.retry = init.retry ?? retryFor(init.code);
     this.meta = init.meta;
@@ -110,7 +143,8 @@ export class UltimateError extends Error {
     // would be a second place that has to be right — and the one that gets forgotten. This method
     // is line-oriented and stays exactly 3 lines (4 with `docs`) because the fields cannot carry
     // a line break, not because this joiner removes them.
-    const lines = [`${this.code}: ${this.title}`, `  cause: ${this.cause}`, `  fix:   ${this.fix}`];
+    const fix = fixFor(this, options?.audience);
+    const lines = [`${this.code}: ${this.title}`, `  cause: ${this.cause}`, `  fix:   ${fix}`];
     if (options?.docs === true) lines.push(`  docs:  ${this.docs}`);
     return lines.join('\n');
   }
@@ -128,6 +162,7 @@ export class UltimateError extends Error {
       title: this.title,
       cause: this.cause,
       fix: this.fix,
+      ...(this.callerFix === undefined ? {} : { callerFix: this.callerFix }),
       docs: this.docs,
       retry: this.retry,
       meta: renderMetaRecord(this.meta),
@@ -145,6 +180,21 @@ export function isUltimateError(value: unknown): value is UltimateError {
   } catch {
     return false;
   }
+}
+
+/**
+ * The `callerFix` of an authorization denial (`X_FORBIDDEN`), ONE sentence for the five packages
+ * that refuse one — policy, action, query, auth, http — so a remote caller reads the same
+ * instruction whichever layer said no. A permission is granted by whoever administers the account,
+ * never by retrying, and saying so is what stops an agent looping on a refusal. `permission`, when
+ * the denial names a bare `resource:verb`, is what to ask for.
+ */
+export function deniedCallerFix(permission?: string): string {
+  const ask =
+    permission === undefined
+      ? 'this caller is not permitted to do this: ask the account owner or an administrator for access'
+      : `this caller lacks the permission ${permission}: ask the account owner or an administrator to grant it`;
+  return `${ask}, or call with credentials that have it — retrying the same call is refused the same way`;
 }
 
 /** Init for a subclass that owns its code. */

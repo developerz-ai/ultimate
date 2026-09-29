@@ -62,6 +62,21 @@ export interface QueryMcp {
    * implements them; `manage_resource` refuses anything outside the whitelist before it runs.
    */
   readonly listParams?: QueryListParams;
+  /** The tool's display name in an MCP client. See `ActionMcp.title`. */
+  readonly title?: string;
+  /**
+   * MCP tool annotations, overriding the derived `readOnlyHint: true` key by key — `openWorldHint:
+   * true` for a read that reaches outside the app. See `ActionMcp.annotations`.
+   */
+  readonly annotations?: QueryMcpAnnotations;
+}
+
+/** Structural twin of `@ultimat3/action`'s `McpAnnotationHints` (siblings cannot import). */
+export interface QueryMcpAnnotations {
+  readonly readOnlyHint?: boolean;
+  readonly destructiveHint?: boolean;
+  readonly idempotentHint?: boolean;
+  readonly openWorldHint?: boolean;
 }
 
 /** One comparison a list filter accepts. A filter key is `<field><op>`: `status_eq`. */

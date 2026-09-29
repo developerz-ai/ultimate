@@ -4,6 +4,7 @@
 // every credential path must throw, and nothing else describes *why* a credential failed.
 
 import {
+  deniedCallerFix,
   registerErrorCodes,
   renderCauseValue,
   renderFixLiteral,
@@ -92,6 +93,8 @@ export class AuthError extends UltimateError {
     code: AuthThrowCode;
     cause: string;
     fix: string;
+    /** A remote caller's fix, when `fix` names something only the app's developer can run. */
+    callerFix?: string | undefined;
     meta?: Readonly<Record<string, unknown>> | undefined;
   }) {
     // No `docs:`: `UltimateError` fills it from `describeErrorCode(code).docs`. The
@@ -100,6 +103,7 @@ export class AuthError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
+      callerFix: init.callerFix,
       meta: init.meta,
     });
   }
@@ -123,6 +127,7 @@ export const forbidden = (surface: string, reason: string): AuthError =>
     code: 'X_FORBIDDEN',
     cause: `${surface} denied: ${reason}`,
     fix: 'x policy explain --json   # shows which grant the actor is missing',
+    callerFix: deniedCallerFix(),
   });
 
 /** `kind` names which clock ran out — the two expiries are evaluated independently. */

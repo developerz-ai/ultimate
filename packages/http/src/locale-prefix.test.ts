@@ -116,3 +116,27 @@ describe('locale prefix — routing', () => {
     expect(vary.toLowerCase()).toContain('cookie');
   });
 });
+
+describe('Vary: accept-language only when the header is consulted', () => {
+  const panelVary = async () =>
+    ((await get('/panel', { 'accept-language': 'en' })).headers.get('vary') ?? '').toLowerCase();
+
+  test('a request-locale route varies on it under the default order', async () => {
+    expect(await panelVary()).toContain('accept-language');
+  });
+
+  test('an app whose locale order leaves the header out does not — and still varies on cookie', async () => {
+    configureLocales({ order: ['query', 'cookie', 'user'] });
+    try {
+      const vary = await panelVary();
+      expect(vary).not.toContain('accept-language');
+      expect(vary).toContain('cookie');
+      // And the header truly decides nothing: the default locale answers an English browser.
+      expect((await body(await get('/panel', { 'accept-language': 'en' })))['locale']).toBe(
+        'es-co',
+      );
+    } finally {
+      configureLocales({ order: ['query', 'cookie', 'user', 'header'] });
+    }
+  });
+});

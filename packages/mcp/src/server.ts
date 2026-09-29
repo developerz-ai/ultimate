@@ -3,13 +3,14 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
-import { formatIssues } from '@ultimat3/schema';
+import type { ErrorAudience } from '@ultimat3/core';
+import { fixFor } from '@ultimat3/core';
 import { auditResourceRead, auditToolCall, outcomeForCode, outcomeForResult } from './audit';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
 import { asFrameworkError, renderFrameworkError } from './framework-error';
 import { metaCall } from './meta-call';
 import { META_UNKNOWN_FIX } from './meta-errors';
-import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
+import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
 import { MANAGE_RESOURCE, META_TOOL_ENTRIES, META_TOOL_NAMES, MetaSurface } from './meta-surface';
 import { promptListEntry, promptsGet } from './prompts-get';
 import type {
@@ -23,6 +24,8 @@ import type {
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { ResourceRegistry } from './resources';
+import type { McpInstructions, McpServerVoice } from './server-voice';
+import { instructionsFor, invalidArgsResult } from './server-voice';
 import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire';
 import {
   defaultServerInfo,
@@ -64,6 +67,20 @@ export interface CreateMcpServerInput {
   readonly surface?: McpSurfaceOption | undefined;
   /** The meta catalog's resources. Required with a surface that can be `'meta'`. */
   readonly groups?: McpResourceGroups | undefined;
+  /**
+   * `initialize`'s `instructions`: how to use this server, for a client that injects it into the
+   * model's context (Claude Code does; many clients do not — never load-bear on it). A function
+   * answers per caller population — a staff surface and a customer one read different advice —
+   * and a function that throws or answers anything but a non-empty string sends none.
+   */
+  readonly instructions?: McpInstructions | undefined;
+  /**
+   * Whose `fix:` line a refusal carries. `'developer'` (the default, and the dev server's): the
+   * fix the author wrote — `x policy explain …`, a declaration to edit. `'caller'`: the error's
+   * `callerFix` where it declares one — what a REMOTE agent can do about it. `defineAppMcp`
+   * serves `'caller'`.
+   */
+  readonly errorAudience?: ErrorAudience | undefined;
 }
 
 /** The set of JSON-RPC methods this server answers. Kept in sync with `classify`. */
@@ -92,6 +109,7 @@ export function createMcpServer(input: CreateMcpServerInput = {}): McpServer {
     input.prompts ?? [],
     input.serverInfo ?? defaultServerInfo(),
     meta,
+    { instructions: input.instructions, errorAudience: input.errorAudience ?? 'developer' },
   );
 }
 
@@ -102,6 +120,7 @@ export class McpServer {
   private readonly serverInfo: ServerInfo;
   /** `undefined` for a flat-only server — every existing app, byte for byte. */
   private readonly meta: MetaSurface | undefined;
+  private readonly voice: McpServerVoice;
 
   constructor(
     tools: ToolRegistry,
@@ -109,12 +128,14 @@ export class McpServer {
     prompts: readonly McpPrompt[],
     serverInfo: ServerInfo,
     meta?: MetaSurface,
+    voice: McpServerVoice = { errorAudience: 'developer' },
   ) {
     this.tools = tools;
     this.resources = resources;
     this.prompts = prompts;
     this.serverInfo = serverInfo;
     this.meta = meta;
+    this.voice = voice;
   }
 
   async handle(
@@ -151,7 +172,8 @@ export class McpServer {
     const id = body.id ?? null;
 
     switch (body.method) {
-      case 'initialize':
+      case 'initialize': {
+        const instructions = instructionsFor(this.voice.instructions, caller);
         return resultResponse(id, {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
@@ -160,7 +182,9 @@ export class McpServer {
             prompts: { listChanged: false },
           },
           serverInfo: this.serverInfo,
+          ...(instructions === undefined ? {} : { instructions }),
         });
+      }
       case 'tools/list':
         return resultResponse(id, { tools: this.list(caller) });
       case 'tools/call':
@@ -192,6 +216,14 @@ export class McpServer {
     return [...flat.filter((tool) => !meta.isGrouped(tool.name)), ...META_TOOL_ENTRIES].sort(
       (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
     );
+  }
+
+  /**
+   * The meta catalog THIS caller would read from `list_resources`, as data — `undefined` for a caller
+   * served the flat surface. For a test or a tool asserting on the catalog: the wire form is text.
+   */
+  catalog(caller: McpCaller): readonly MetaResource[] | undefined {
+    return this.metaFor(caller)?.listResources(caller);
   }
 
   /** The meta surface when THIS caller is served it, else `undefined`. */
@@ -272,6 +304,7 @@ export class McpServer {
     resolved: ToolResolution,
     caller: McpCaller,
   ): Promise<JsonRpcResponse> {
+    const audience = this.voice.errorAudience;
     // Three outcomes, deliberately different — and every one of them audited, including the
     // one that tells the caller nothing. See `audit.ts`.
     switch (resolved.kind) {
@@ -301,16 +334,15 @@ export class McpServer {
         return errorResponse(id, INVALID_REQUEST, `missing scope: ${resolved.scope}`, {
           code: denial.code,
           scope: resolved.scope,
-          fix: denial.fix,
+          fix: fixFor(denial, audience),
           docs: denial.docs,
         });
       }
-      case 'invalid-args':
-        auditToolCall({ tool: name, outcome: 'invalid-args', caller, code: 'X_MCP_ARGS_INVALID' });
-        return errorResponse(id, INVALID_PARAMS, `invalid arguments for ${name}`, {
-          code: 'X_MCP_ARGS_INVALID',
-          issues: formatIssues(resolved.issues),
-        });
+      case 'invalid-args': {
+        const invalid = invalidArgsResult(name, resolved.issues, audience);
+        auditToolCall({ tool: name, outcome: 'invalid-args', caller, code: invalid.code });
+        return resultResponse(id, invalid.result);
+      }
       case 'ok':
         break;
     }
@@ -332,7 +364,7 @@ export class McpServer {
           code: framework.code,
         });
         return resultResponse(id, {
-          content: [{ type: 'text', text: renderFrameworkError(framework) }],
+          content: [{ type: 'text', text: renderFrameworkError(framework, audience) }],
           isError: true,
         });
       }
@@ -351,6 +383,11 @@ export class McpServer {
     });
     // `code` is audit-only and never reaches the wire: it is already inside the rendered body.
     const payload: Record<string, unknown> = { content: result.content };
+    // Through `manage_resource` too, byte for byte: the meta door answers what the flat one does,
+    // and MCP allows `structuredContent` beside a tool (the dispatcher) that publishes no schema.
+    if (result.structuredContent !== undefined && result.isError !== true) {
+      payload['structuredContent'] = result.structuredContent;
+    }
     if (result.isError === true) payload['isError'] = true;
     return resultResponse(id, payload);
   }
@@ -399,7 +436,7 @@ export class McpServer {
         return errorResponse(id, INVALID_REQUEST, `missing scope: ${resolved.scope}`, {
           code: denial.code,
           scope: resolved.scope,
-          fix: denial.fix,
+          fix: fixFor(denial, this.voice.errorAudience),
           docs: denial.docs,
         });
       }
@@ -429,7 +466,8 @@ export class McpServer {
         return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`, {
           code: framework.code,
           cause: framework.cause,
-          fix: framework.fix,
+          fix: fixFor(framework, this.voice.errorAudience),
+          ...(framework.docs === undefined ? {} : { docs: framework.docs }),
         });
       }
       // No internals: a provider's own message names a path, a query or a host the caller has no

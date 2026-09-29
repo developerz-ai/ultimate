@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f34b443782842ca3e9b4f2dd70931004775e912a002ca1cd11d6531454b0a2f8",
+  "buildId": "73cc0dc2f8597b32e967822bfcdd6cfe6bf6ca07b04f8156d3926fd66509b0fd",
   "tiers": {
     "0": [
       "core",
@@ -2040,6 +2040,11 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_SURFACE_OVER_BUDGET",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_TOOL_DUPLICATE",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -2882,17 +2887,17 @@
     {
       "code": "X_SCHEMA_DEFAULT_UNSHAREABLE",
       "owner": "schema",
-      "at": "packages/schema/src/errors.ts"
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCHEMA_DISCRIMINANT_INVALID",
       "owner": "schema",
-      "at": "packages/schema/src/errors.ts"
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCHEMA_UNSUPPORTED",
       "owner": "schema",
-      "at": "packages/schema/src/errors.ts"
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCRAPE_AUTH_FAILED",
@@ -3263,6 +3268,11 @@
       "code": "X_SIDE_EFFECTS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/side-effects.ts"
+    },
+    {
+      "code": "X_SITEMAP_EXTRA_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SITEMAP_TOO_LARGE",
@@ -3867,7 +3877,7 @@
     {
       "code": "X_VALIDATION_FAILED",
       "owner": "schema",
-      "at": "packages/schema/src/errors.ts"
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_VECTOR_DIM_MISMATCH",

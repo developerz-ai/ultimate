@@ -54,6 +54,7 @@ export type {
   ActionRowArgs,
   AnyAction,
   InvokeOptions,
+  McpAnnotationHints,
   McpDescriptorMeta,
 } from './action';
 export { action, describeAction, isAction } from './action';

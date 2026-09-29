@@ -2,6 +2,7 @@
 // factory here so a code, a cause and an exact fix always travel together — the
 // terminal, the dev overlay and `--json` all render the same three strings.
 import {
+  deniedCallerFix,
   registerErrorCodes,
   registerErrorRetry,
   renderFixShellArg,
@@ -139,6 +140,8 @@ export class HttpError extends UltimateError {
     code: HttpErrorCode;
     cause: string;
     fix: string;
+    /** A remote caller's fix, when `fix` needs the app's CLI — `UltimateErrorInit.callerFix`. */
+    callerFix?: string;
     /**
      * Facts an operator needs and a CALLER must not be handed. `toProblem` renders code, cause,
      * fix and docs — never this — so the rate limiter's internal key rides here instead of in a
@@ -146,12 +149,7 @@ export class HttpError extends UltimateError {
      */
     meta?: Readonly<Record<string, unknown>>;
   }) {
-    super({
-      code: init.code,
-      cause: init.cause,
-      fix: init.fix,
-      ...(init.meta === undefined ? {} : { meta: init.meta }),
-    });
+    super({ ...init }); // an `UltimateErrorInit`: optional fields attached only when present
   }
 }
 
@@ -256,6 +254,9 @@ export const forbidden = (pathname: string, reason: string, policy?: string): Ht
       policy !== undefined && POLICY_SUBJECT.test(policy)
         ? `x policy explain ${policy} --json   # shows which clause denied`
         : `x routes --json   # find ${pathname}, then read the policy it declares`,
+    callerFix: deniedCallerFix(
+      policy !== undefined && POLICY_SUBJECT.test(policy) ? policy : undefined,
+    ),
   });
 
 export const buildSkew = (clientBuildId: string, serverBuildId: string): HttpError =>
