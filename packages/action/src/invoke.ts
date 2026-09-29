@@ -34,8 +34,8 @@ import { bustAfterCommit } from './cache-gate';
 import { ActionForeignError, ActionUnregisteredError } from './errors';
 import { getIdempotencyStore, withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
-import { actorOf, guard } from './policy-gate';
-import { validateInput, validateOutput } from './validate';
+import { actorOf, guard, guardBeforeInput } from './policy-gate';
+import { parsedOrNothing, validateInput, validateOutput } from './validate';
 
 /**
  * Private on purpose. `@ultimat3/action` exports no way to read this back, which
@@ -207,7 +207,7 @@ async function execute(
   });
 }
 
-/** The invocation itself, unwrapped: parse, load the row, guard, run, parse, bust. */
+/** The invocation itself, unwrapped: gate, parse, load the row, guard, run, parse, bust. */
 async function perform(
   def: AnyActionDef,
   name: string,
@@ -216,6 +216,18 @@ async function perform(
   options: InvokeOptions,
   trace: InvokeTrace,
 ): Promise<unknown> {
+  const surface = options.surface ?? 'server';
+  // Who is asking is decided before what they sent is read: a caller the policy refuses whatever
+  // the input is gets 403/401 here, not a 400 whose issues describe this action's input schema.
+  // Only the actor half runs — a predicate over `input` or `row` waits for `guard` below.
+  try {
+    guardBeforeInput(def.policy, { actor: actorOf(ctx), ctx, action: name }, surface);
+  } catch (denial) {
+    // The audit record still names what was attempted — the denial is already decided, so parsing
+    // now tells the CALLER nothing, and an unparseable payload is a record with no input.
+    if (def.audit === true) trace.input = await parsedOrNothing(def.input, raw);
+    throw denial;
+  }
   const input = await validateInput(def.input, raw, name);
   trace.input = input;
   // The one place a row-level rule gets its row. Once per invocation, never per row:
@@ -224,11 +236,7 @@ async function perform(
   // action with no loader hands the rule `null` — unchanged, and never a silent allow,
   // because a rule that reads `row` has to decide what `null` means.
   const row = def.row === undefined ? null : ((await def.row({ input, ctx })) ?? null);
-  guard(
-    def.policy,
-    { actor: actorOf(ctx), input, row, ctx, action: name },
-    options.surface ?? 'server',
-  );
+  guard(def.policy, { actor: actorOf(ctx), input, row, ctx, action: name }, surface);
 
   // Output parsing sits inside `run` so a replayed idempotent response is the parsed value too —
   // one shape on the wire, first call and every retry. No span of its own: `execute` above holds

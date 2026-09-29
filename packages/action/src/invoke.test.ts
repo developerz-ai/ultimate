@@ -380,3 +380,60 @@ describe('cache invalidation after the handler settles', () => {
     expect(busts.value).toBe(1);
   });
 });
+
+describe('the policy answers before the input is parsed', () => {
+  const staffOnly = () =>
+    action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishPost');
+
+  for (const surface of SURFACES) {
+    test(`${surface}: a caller without the permission gets X_FORBIDDEN, never the schema`, async () => {
+      const failure = await invoke(staffOnly(), { postId: 'nope' }, { actor: readerActor, surface })
+        .then(() => expect.unreachable('a reader ran a publish'))
+        .catch((error: unknown) => error as { code?: string; cause?: string });
+      expect(failure.code).toBe('X_FORBIDDEN');
+      expect(failure.cause).not.toContain('postId');
+    });
+  }
+
+  test('an anonymous caller with garbage is X_UNAUTHENTICATED through .as()', async () => {
+    const garbage = null as unknown as { postId: string };
+    const failure: unknown = await staffOnly()
+      .as(null, garbage)
+      .catch((error: unknown) => error);
+    expect((failure as { code?: string }).code).toBe('X_UNAUTHENTICATED');
+  });
+
+  test('a caller WITH the permission and a bad input still gets X_INPUT_INVALID with the path', async () => {
+    const failure = (await invoke(staffOnly(), { postId: 'nope' }, { ctx: editor }).catch(
+      (error: unknown) => error,
+    )) as { code?: string; cause?: string };
+    expect(failure.code).toBe('X_INPUT_INVALID');
+    expect(failure.cause).toContain('postId');
+  });
+
+  test('a predicate over the input still sees the parsed input, after the parse', async () => {
+    const seen: unknown[] = [];
+    const owner = action({
+      input: Input,
+      output: Output,
+      policy: can<Parsed>('post:publish', ({ input }) => {
+        seen.push(input);
+        return true;
+      }),
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishPost');
+    // Holding the permission, the caller reaches the parse: the predicate never saw `nope`.
+    const bad = (await invoke(owner, { postId: 'nope' }, { ctx: editor }).catch(
+      (error: unknown) => error,
+    )) as { code?: string };
+    expect(bad.code).toBe('X_INPUT_INVALID');
+    expect(seen).toEqual([]);
+    await invoke(owner, { postId: POST_ID }, { ctx: editor });
+    expect(seen).toEqual([{ postId: POST_ID }]);
+  });
+});

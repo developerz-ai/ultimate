@@ -8,7 +8,52 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **policy, action, query, mcp:** the policy's ACTOR half is decided before the input is parsed.
+  A caller the policy refuses whatever they send — no session, or a `can(p)` they lack — gets
+  `X_UNAUTHENTICATED`/`X_FORBIDDEN`, never `X_INPUT_INVALID` with an issue list describing the
+  input schema of an operation they may not call (a staff action's shape, told to any customer
+  who sent `{}`). Over HTTP, MCP (the `invalid-args` answer too), jobs and `.as()`/in-process
+  calls, for actions, queries (`runQuery`, `sourceFor`, live) and `defineAppMcp` app tools. A
+  caller WITH the permission and a bad input still gets `X_INPUT_INVALID` with the path; a
+  predicate over `input` or `row` still runs after the parse, on the parsed value. Exact, not a
+  heuristic: only clauses that read no input decide early (`can(p)` without a predicate,
+  `allow()`, `deny()`, their `and`/`or`/`not`, and `can(p, pred)` for an actor without `p`); a
+  hand-built `Policy` object is always left to the full evaluation. An audited action's denied
+  attempt still records the parsed input.
+- **action:** the generated contract assertion "input schema rejects garbage" asks the action's
+  own input parser instead of `invoke` — with the actor half first, an anonymous `invoke` of a
+  guarded action is refused 401 before the schema sees the garbage.
+- **cli:** `x shot` hides scrollbars (`Emulation.setScrollbarsHidden`), so a page is laid out at
+  exactly the declared width — `--matrix` captures were 1425 and 375 px wide, not 1440 and 390 — and
+  a full-page capture is never narrower than its viewport.
+- **cli:** `x shot --island` crops to the union of the island's box and every open popup in the
+  harness (`[role=listbox|menu|dialog|alertdialog|tooltip]`, `dialog[open]`, `:popover-open`), so
+  an `open` state photographs its listbox or menu instead of cutting it at the trigger.
+
+### Added
+
+- **policy:** `decideBeforeInput(policy, { actor, ctx })` and `enforceBeforeInput(surface, policy,
+  { actor, ctx })`, type `PreInputArgs`. **action, query:** `guardBeforeInput(policy, subject,
+  surface)` — the gate `invoke`/`sourceFor` open with. **mcp:** `McpTool.admit(caller)` and
+  `ProjectablePrimitive.admit(actor)`, asked before `invalid-args`; `ToolResolution`'s
+  `invalid-args` carries its `tool`.
+- **cli:** `x shot --cookie name=value[,name=value]` — cookies set for the app's origin before the
+  first navigation, on a route shot, every `--matrix` cell and every `--island` state
+  (`ShotSessionInit.cookies`).
+- **docs:** a route or admin mount answering 403/404 while rendering its own page is
+  `withStatus(status, data)` from `@ultimat3/render` (shipped earlier); the admin README shows the
+  `load` for a refused `guardedPage()`.
+
+### Fixed
+
+- **core:** a `beginWork()` finisher from before `resetLifecycle()` no longer counts down the next
+  lifetime. It drove the fresh in-flight count to -1, the drain's in-flight wait (idle only at
+  exactly 0) then waited its whole 25 s budget, and `packages/jobs`' "nothing is claimed or
+  published once the drain has resolved" timed out on CI.
+- **examples/dummy:** `orgs/repo.test.ts` counts ids in its own block — sharing `posts/repo.test.ts`'s
+  put that file's member in this file's first org whenever the two landed on one worker.
 
 ## 22.10.0 - 2026-09-29
 

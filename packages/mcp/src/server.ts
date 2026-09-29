@@ -5,9 +5,9 @@
 
 import type { ErrorAudience } from '@ultimat3/core';
 import { fixFor } from '@ultimat3/core';
-import { auditResourceRead, auditToolCall, outcomeForCode, outcomeForResult } from './audit';
+import { auditResourceRead, auditToolCall, outcomeForResult } from './audit';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
-import { asFrameworkError, renderFrameworkError } from './framework-error';
+import { asFrameworkError } from './framework-error';
 import { metaCall } from './meta-call';
 import { META_UNKNOWN_FIX } from './meta-errors';
 import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
@@ -26,6 +26,7 @@ import type { McpPrompt, McpResource } from './resources';
 import { ResourceRegistry } from './resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
 import { instructionsFor, invalidArgsResult } from './server-voice';
+import { admitted, thrownResponse } from './tool-thrown';
 import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire';
 import {
   defaultServerInfo,
@@ -339,6 +340,11 @@ export class McpServer {
         });
       }
       case 'invalid-args': {
+        // The policy's actor half outranks the argument check: a caller the tool refuses whatever
+        // they send gets the denial `handle` would give, never the issue list — which describes
+        // the arguments of a tool they may not call.
+        const refused = admitted(resolved.tool, caller);
+        if (refused !== undefined) return thrownResponse(id, name, refused, caller, audience);
         const invalid = invalidArgsResult(name, resolved.issues, audience);
         auditToolCall({ tool: name, outcome: 'invalid-args', caller, code: invalid.code });
         return resultResponse(id, invalid.result);
@@ -351,25 +357,7 @@ export class McpServer {
     try {
       result = await resolved.tool.handle(resolved.args, caller);
     } catch (error) {
-      // OUTCOME 3 arrives here: the tool ran its policy through `guard()` and the policy
-      // said no. An UltimateError is an EXPECTED outcome the model can act on, so it comes
-      // back as an `isError` result carrying code/cause/fix — the same three lines an HTTP
-      // caller gets for the same call — rather than an opaque transport failure.
-      const framework = asFrameworkError(error);
-      if (framework !== undefined) {
-        auditToolCall({
-          tool: name,
-          outcome: outcomeForCode(framework.code),
-          caller,
-          code: framework.code,
-        });
-        return resultResponse(id, {
-          content: [{ type: 'text', text: renderFrameworkError(framework, audience) }],
-          isError: true,
-        });
-      }
-      auditToolCall({ tool: name, outcome: 'failed', caller });
-      return errorResponse(id, INTERNAL_ERROR, `tool "${name}" failed unexpectedly`);
+      return thrownResponse(id, name, error, caller, audience);
     }
 
     // A tool may answer `isError` itself (admin renders its own denial). Outcome 3 unless it

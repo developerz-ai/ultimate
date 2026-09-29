@@ -426,3 +426,35 @@ describe('unit · the crop carries a margin, and the margin is clamped to the pa
     expect([clip.width, clip.height]).toEqual([400, 400]);
   });
 });
+
+/**
+ * The crop was the island's own box, so an OPEN popup — a combobox's listbox, a menu, a popover
+ * portalled to `<body>` — was cut at the trigger's bottom edge, and the state the file declared
+ * (`open`, `filtered`) photographed as a closed input. The frame is the union now.
+ */
+describe('unit · the crop covers the island AND its open popups', () => {
+  test('a listbox below the trigger is inside the frame', () => {
+    const clip = clipFor(
+      {
+        ...READY,
+        box: { x: 100, y: 100, width: 200, height: 40 },
+        frame: { x: 100, y: 100, width: 240, height: 300 },
+      },
+      ISLAND_CROP_MARGIN_PX,
+    );
+    expect(clip).toEqual({
+      x: 100 - ISLAND_CROP_MARGIN_PX,
+      y: 100 - ISLAND_CROP_MARGIN_PX,
+      width: 240 + 2 * ISLAND_CROP_MARGIN_PX,
+      height: 300 + 2 * ISLAND_CROP_MARGIN_PX,
+    });
+  });
+
+  test('the probe measures the popups the page shows, by role and by open popover', () => {
+    const probe = readinessProbe('[data-x-island]');
+    for (const popup of ['[role=listbox]', '[role=menu]', '[role=dialog]', ':popover-open']) {
+      expect(probe).toContain(popup);
+    }
+    expect(probe).toContain('frame:');
+  });
+});

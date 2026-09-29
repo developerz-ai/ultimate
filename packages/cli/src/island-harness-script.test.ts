@@ -139,6 +139,8 @@ describe('unit · a live socket must not fail every state of a live island', () 
     new WS('ws://127.0.0.1:8788/_x/sync');
     const document = {
       querySelector: () => null,
+      // The crop frame also looks for open popups (listbox, menu, dialog) to include.
+      querySelectorAll: () => [],
       documentElement: { scrollWidth: 0, scrollHeight: 0 },
     };
     const probe = new Function(

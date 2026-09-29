@@ -86,12 +86,40 @@ describe('the policy assertion', () => {
     expect(causeOf(failure)).toBe('publishPost ran for an actor of null');
   });
 
-  test('reaches the policy through the row loader, with the synthesized input', async () => {
+  test('a caller refused on the actor alone never reaches the row loader', async () => {
     const seen: unknown[] = [];
     const target = action({
       input: Input,
       output: Output,
       policy: can('post:publish'),
+      row: ({ input }) => {
+        seen.push(input);
+        return null;
+      },
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishWithRow');
+
+    await denial(contractTestsFor(target)).run();
+    expect(seen).toEqual([]);
+  });
+
+  test('reaches the policy through the row loader, with the synthesized input', async () => {
+    const seen: unknown[] = [];
+    // A rule the actor half cannot decide: it reads the row, so the parse and the loader run.
+    const rowRule: ActionPolicy = {
+      kind: 'permission',
+      label: 'own-row',
+      permissions: [],
+      children: [],
+      run: ({ row }) =>
+        row === null
+          ? { allowed: false, reason: 'no row', code: 'X_FORBIDDEN' }
+          : { allowed: true },
+    };
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: rowRule,
       row: ({ input }) => {
         seen.push(input);
         return null;
@@ -177,7 +205,9 @@ describe('the garbage assertion', () => {
     await garbage(publish(can('post:publish'))).run();
   });
 
-  test('pins X_INPUT_INVALID rather than any failure — a denial is not a rejected input', async () => {
+  test('asks the schema, not the policy — a guarded action is judged on its `input:`', async () => {
+    // An anonymous caller is refused before the parse now, so an `invoke` here would report
+    // X_UNAUTHENTICATED for every guarded action. The schema accepting a valid value is the drift.
     const contracts = publish(can('post:publish'), {
       garbage: { postId: '00000000-0000-4000-8000-000000000000' },
     });
@@ -185,7 +215,7 @@ describe('the garbage assertion', () => {
       .run()
       .catch((error: unknown) => error);
     expect(failure).toBeUltimateError('X_CONTRACT_DRIFT');
-    expect(causeOf(failure)).toContain('got X_UNAUTHENTICATED, expected X_INPUT_INVALID');
+    expect(causeOf(failure)).toBe('publishPost accepted the value this assertion sent as garbage');
   });
 
   /**
@@ -268,12 +298,13 @@ describe('policyTestStubFor', () => {
       }).named('publishPost'),
     );
 
-    const failure = await garbage(audited)
+    // The garbage assertion asks the schema alone, so it holds; the denial assertion invokes, and
+    // the refusal `invoke` raises before anything else keeps its own code and fix.
+    await garbage(audited).run();
+    const failure = await denial(audited)
       .run()
       .catch((error: unknown) => error);
 
-    // It is raised BEFORE the input parse, so "the schema accepted garbage" is a false statement
-    // about it and `tighten input:` is a fix that changes nothing. Same rule as assertion 2's.
     expect((failure as { code?: string }).code).toBe('X_AUDIT_SINK_MISSING');
     expect((failure as { fix?: string }).fix).toContain('setAuditSink');
   });

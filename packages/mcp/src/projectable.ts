@@ -4,10 +4,21 @@
 // primitive out is a different way to NAME a tool, never a second way to run one.
 
 import type { AnyAction } from '@ultimat3/action';
-import { actionName, invoke, isAction } from '@ultimat3/action';
-import { isMcpExposed } from '@ultimat3/core';
+import {
+  guardBeforeInput as actionGuardBeforeInput,
+  actionName,
+  actorOf,
+  invoke,
+  isAction,
+} from '@ultimat3/action';
+import { type Actor, isMcpExposed, useContext } from '@ultimat3/core';
 import type { AnyQuery } from '@ultimat3/query';
-import { isQuery, queryName, sourceFor } from '@ultimat3/query';
+import {
+  isQuery,
+  guardBeforeInput as queryGuardBeforeInput,
+  queryName,
+  sourceFor,
+} from '@ultimat3/query';
 import { asCallerContext } from './caller-context';
 import type { McpExposure, ProjectablePrimitive } from './from-action';
 import { takeIdempotencyKeyArg, withIdempotencyKeyArg } from './idempotency-arg';
@@ -58,6 +69,12 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
     ...(output === undefined ? {} : { outputJsonSchema: output }),
     mutates: true,
     idempotent: keyed,
+    // The same gate `invoke` opens with, asked by the server before it answers `invalid-args`.
+    admit: (actor: Actor) =>
+      asCallerContext(actor, () => {
+        const ctx = useContext();
+        actionGuardBeforeInput(target.policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
+      }),
     // The actor rides in on the options: `invoke` swaps it inside the one execution path.
     run: keyed
       ? ({ input: args, actor }) => {
@@ -74,13 +91,20 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
   // answers the rows as a list, so the structured copy is `{ rows }` — `structuredContent` is an
   // object by the spec.
   const output = toRowsOutputSchema(target.rows);
+  const name = queryName(target);
   return {
-    name: queryName(target),
+    name,
     ...(exposure === undefined ? {} : { mcp: exposure }),
     ...(exposure?.description === undefined ? {} : { description: exposure.description }),
     inputJsonSchema: toWireSchema(target.input),
     ...(output === undefined ? {} : { outputJsonSchema: output, outputWrap: 'rows' }),
     mutates: false,
+    // `sourceFor`'s opening gate, on the surface it runs on ('server'), asked before `invalid-args`.
+    admit: (actor: Actor) =>
+      asCallerContext(actor, () => {
+        const ctx = useContext();
+        queryGuardBeforeInput(target.policy, { actor: actorOf(ctx), ctx, query: name }, 'server');
+      }),
     run: ({ input, actor }) =>
       asCallerContext(actor, async () => {
         // `sourceFor` is the authorized front half of `runQuery` — validate, guard, build —

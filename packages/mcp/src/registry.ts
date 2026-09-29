@@ -147,6 +147,14 @@ export interface McpTool<A extends ToolArgs = ToolArgs> {
    * `list_resources` so an agent plans for the hand-off; it changes nothing about the call.
    */
   readonly confirms?: boolean;
+  /**
+   * The tool's policy, decided on the CALLER alone — throws the same denial `handle` would, or
+   * returns when the caller may call it (or when only the arguments can decide). The server asks
+   * it before answering `invalid-args`, so a caller who may never call this tool gets the 403,
+   * never an issue list describing its arguments. Projected actions and queries and app tools
+   * carry one; a hand-written tool without it answers `invalid-args` as before.
+   */
+  admit?(caller: McpCaller): void;
   // Method syntax (not a property) so a tool declared with narrower args stays assignable.
   handle(args: A, caller: McpCaller): Promise<McpToolResult>;
 }
@@ -222,7 +230,13 @@ export type ToolResolution =
   | { readonly kind: 'ok'; readonly tool: AnyMcpTool; readonly args: ToolArgs }
   | { readonly kind: 'not-found'; readonly name: string }
   | { readonly kind: 'scope-denied'; readonly name: string; readonly scope: string }
-  | { readonly kind: 'invalid-args'; readonly name: string; readonly issues: readonly ArgIssue[] };
+  | {
+      readonly kind: 'invalid-args';
+      readonly name: string;
+      readonly issues: readonly ArgIssue[];
+      /** The tool the arguments were refused for — asked to `admit` the caller first. */
+      readonly tool?: AnyMcpTool;
+    };
 
 export class ToolRegistry {
   readonly #tools = new Map<string, AnyMcpTool>();
@@ -268,7 +282,8 @@ export class ToolRegistry {
    * Both gates then validation, in the only order that is safe:
    *   1. visibility → not-found     (never reveals existence)
    *   2. scope      → scope-denied  (safe: the caller was already shown the tool)
-   *   3. args       → invalid-args
+   *   3. args       → invalid-args — unless the tool's `admit` refuses the caller first, which
+   *                    the server asks before answering (the policy's actor half, `dispatch`)
    *   4. policy     → inside `tool.handle`, which is why it is not here
    * Validating before the gates would leak a schema to a caller that may not see the tool;
    * running the policy before the scope gate would decide a refusal from attacker-supplied
@@ -283,7 +298,7 @@ export class ToolRegistry {
       return { kind: 'scope-denied', name, scope: tool.scope };
     }
     const validation = validateArgs(tool.inputSchema, rawArgs ?? {});
-    if (!validation.ok) return { kind: 'invalid-args', name, issues: validation.issues };
+    if (!validation.ok) return { kind: 'invalid-args', name, issues: validation.issues, tool };
     return { kind: 'ok', tool, args: validation.value };
   }
 

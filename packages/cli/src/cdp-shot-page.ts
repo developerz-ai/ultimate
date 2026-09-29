@@ -42,6 +42,8 @@ export interface CdpShotPageInput {
   readonly sessionId: string;
   readonly init: ShotSessionInit;
   readonly watch: PageWatch;
+  /** What the page is laid out in: a full-page capture is never narrower than it. */
+  readonly viewport?: { readonly width: number; readonly height: number } | undefined;
 }
 
 export function cdpShotPage(input: CdpShotPageInput): ShotPage {
@@ -164,7 +166,7 @@ export function cdpShotPage(input: CdpShotPageInput): ShotPage {
       ),
     query,
     evaluate,
-    screenshot: (options?: ShotCapture) => capture(send, options ?? {}),
+    screenshot: (options?: ShotCapture) => capture(send, options ?? {}, input.viewport?.width ?? 0),
     async colorScheme(scheme: ShotColorScheme) {
       // An EMPTY list is CDP's reset; an explicit `no-preference` would be an override.
       const features =
@@ -191,7 +193,7 @@ type Send = (
  * PNG bytes of the viewport, the whole document, or one clip — never both of the last two, which
  * CDP would resolve silently in favour of one. A clip is CSS pixels in page coordinates.
  */
-async function capture(send: Send, framing: ShotCapture): Promise<Uint8Array> {
+async function capture(send: Send, framing: ShotCapture, minWidth: number): Promise<Uint8Array> {
   const clip = framing.clip;
   assert(
     !(framing.fullPage === true && clip !== undefined),
@@ -212,7 +214,14 @@ async function capture(send: Send, framing: ShotCapture): Promise<Uint8Array> {
     const width = metrics?.['width'];
     const height = metrics?.['height'];
     if (typeof width === 'number' && typeof height === 'number') {
-      region = { x: 0, y: 0, width: Math.ceil(width), height: Math.ceil(height) };
+      // Floored at the viewport: the content size is the LAYOUT width, which a scrollbar (or a
+      // document narrower than the window) makes smaller than the picture that was asked for.
+      region = {
+        x: 0,
+        y: 0,
+        width: Math.max(minWidth, Math.ceil(width)),
+        height: Math.ceil(height),
+      };
     }
   }
   const answer = await send('Page.captureScreenshot', {

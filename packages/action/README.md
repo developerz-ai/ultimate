@@ -256,8 +256,8 @@ the manifest never carried a tool name and was never wrong about one.
 
 ## One invocation core
 
-`invoke()` is the only execution path: **parse input → evaluate policy → handle →
-parse output**. HTTP, MCP, jobs and direct server calls differ **only** in the
+`invoke()` is the only execution path: **policy's actor half → parse input → evaluate
+policy → handle → parse output**. HTTP, MCP, jobs and direct server calls differ **only** in the
 `surface` they hand to `enforce()` from `@ultimat3/policy`, which selects how a
 denial renders (problem+json / tool error / failed job) — never whether authz runs.
 
@@ -267,10 +267,19 @@ no `.def`. A second authz path cannot be written without deleting that store.
 
 | Stage | Failure |
 |---|---|
+| policy, actor half (`guardBeforeInput`) | `X_UNAUTHENTICATED` / `X_FORBIDDEN` for a caller the policy refuses whatever the input — never a 400 describing the schema of an operation they may not call |
 | parse input | `X_INPUT_INVALID` |
 | evaluate policy | the policy's own code — `X_UNAUTHENTICATED` (401), `X_FORBIDDEN` (403) |
 | handle | whatever the handler throws |
 | parse output | `X_OUTPUT_INVALID` — and fields the schema never declared are dropped |
+
+**Who before what (`As of 2026-09`).** The actor half is the part of the policy that reads no
+input: `can(p)` with no predicate, `allow()`, `deny()`, their combinators, and `can(p, pred)` for
+an actor without `p`. It is decided before the parse — `decideBeforeInput` in `@ultimat3/policy`,
+exact rather than a heuristic — so `can('refund:issue')` answers a customer's `{}` with 403, and a
+staff caller's `{}` with the 400 naming each missing field. A predicate over `input` or `row` still
+runs after the parse, on the parsed value. Same on HTTP, MCP (including the `invalid-args`
+path) and `.as()`/jobs. An audited action's denied attempt still records the parsed input.
 
 `cache: { invalidates }` fans out **after** the handler commits, so it never fails it: a
 fan-out that refuses — an undeclared tag, `X_CACHE_TAG_UNKNOWN` — is one

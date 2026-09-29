@@ -346,6 +346,10 @@ request, and a cached copy would answer later requests without running the loade
 declared `cache` gets that instead. `withStatus` still refuses a 3xx, because a rendered document
 has no `Location`.
 
+**A refused page is `withStatus(403, data)`.** The same call answers a denial rendered in the
+shell — an `@ultimat3/admin` mount whose `guardedPage()` returned `AdminPageDenied` asks the same
+`decideAll` in its `load` and returns `withStatus(403, data)` (the admin README shows the load).
+
 **Not a throw, deliberately.** Throwing is the other 404 and it is still there: a route the table
 does not have, or a loader that throws `X_NOT_FOUND`, gets the framework's error page —
 outside the app's shell, no sidebar, no session list. Measured in ai-maxxing on 2026-09-07,

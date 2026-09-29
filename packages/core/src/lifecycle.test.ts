@@ -110,6 +110,23 @@ describe('lifecycle', () => {
     expect(inflightCount()).toBe(0);
   });
 
+  // The jobs suite's flake: a worker from one test file finished its job AFTER the next file's
+  // `resetLifecycle()`, drove the fresh count to -1, and every later drain's in-flight wait — which
+  // idles only at exactly 0 — sat out the whole 25s budget. The finisher belongs to its lifetime.
+  test("a finisher from before resetLifecycle() never moves the next lifetime's count", async () => {
+    const stale = beginWork();
+    resetLifecycle();
+    stale();
+    expect(inflightCount()).toBe(0);
+
+    configureLifecycle({ deadlineMs: 5_000 });
+    markReady();
+    const started = performance.now();
+    await drain('SIGTERM');
+    // Idle at once: nothing in THIS lifetime is in flight.
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   test('a hung handler is abandoned at the deadline and logs X_SHUTDOWN_TIMEOUT', async () => {
     const lines: string[] = [];
     configureLifecycle({

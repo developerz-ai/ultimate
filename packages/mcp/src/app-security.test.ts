@@ -240,6 +240,28 @@ describe('the three outcomes over the blessed path — defineAppMcp', () => {
     expect(JSON.stringify(hidden)).not.toContain('scope');
   });
 
+  test('OUTCOME 3 outranks invalid-args — a caller the policy refuses never sees the arg issues', async () => {
+    const server = appServer();
+
+    // `postId` is required; a member may not publish whatever they send.
+    const refused = await inRequest(() =>
+      server.handle(call('publishPost', {}), asMember(['posts:write'])),
+    );
+    expect(toolResult(refused).isError).toBe(true);
+    const text = toolResult(refused).content?.[0]?.text ?? '';
+    expect(text).toContain('X_FORBIDDEN');
+    expect(text).not.toContain('postId');
+    expect(published).toBe(0);
+
+    // The owner may publish, so the same call is an argument problem, with the path named.
+    const invalid = await inRequest(() =>
+      server.handle(call('publishPost', {}), asOwner(['posts:write'])),
+    );
+    expect(toolResult(invalid).isError).toBe(true);
+    expect(toolResult(invalid).content?.[0]?.text ?? '').toContain('postId');
+    expect(toolResult(invalid).content?.[0]?.text ?? '').not.toContain('X_FORBIDDEN');
+  });
+
   test('a scope naming a tool the server does not project is refused at BOOT', () => {
     // `deleteEverything` is registered and never opted in, so it is not in the catalog. A
     // scope entry that covers nothing would leave the author believing it is gated.

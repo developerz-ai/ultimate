@@ -187,6 +187,37 @@ describe('runQuery — validate, authorize, then read, never out of order', () =
   });
 });
 
+describe('the policy answers before the input is parsed', () => {
+  const strangerCtx = createContext({ actor: userActor({ id: 'stranger' }) });
+
+  test('a reader without the permission gets X_FORBIDDEN for garbage, never the schema', async () => {
+    const { target } = defineCountedQuery(can('feed:read'));
+    const failure = await runQuery(target, { orgId: 'not-a-uuid' }, { ctx: strangerCtx }).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(QueryDeniedError);
+    expect((failure as QueryDeniedError).code).toBe('X_FORBIDDEN');
+    expect((failure as QueryDeniedError).cause).not.toContain('orgId');
+  });
+
+  test('an anonymous reader is X_UNAUTHENTICATED before the parse', async () => {
+    const { target } = defineCountedQuery(can('feed:read'));
+    const failure = await runQuery(target, null, { ctx: createContext({}) }).catch(
+      (error: unknown) => error,
+    );
+    expect((failure as { code?: string }).code).toBe('X_UNAUTHENTICATED');
+  });
+
+  test('a reader WITH the permission still gets X_INPUT_INVALID naming the field', async () => {
+    const { target } = defineCountedQuery(can('feed:read'));
+    const failure = await runQuery(target, { orgId: 'not-a-uuid' }, { ctx: allowedCtx }).catch(
+      (error: unknown) => error,
+    );
+    expect((failure as { code?: string }).code).toBe('X_INPUT_INVALID');
+    expect((failure as { cause?: string }).cause).toContain('orgId');
+  });
+});
+
 describe('sourceFor — authorized but not yet run', () => {
   test('returns the built SqlSource without executing it', async () => {
     const { target, counts } = defineCountedQuery();

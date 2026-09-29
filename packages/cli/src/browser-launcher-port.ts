@@ -152,6 +152,18 @@ export interface ShotSessionInit {
    * the locale asked for, never of whatever language the machine's Chrome happens to speak.
    */
   readonly headers?: Readonly<Record<string, string>> | undefined;
+  /**
+   * Set in the browser before the first navigation, each for `url`'s origin — `x shot --cookie`, so
+   * a page is photographed with its consent (or any other cookie-held choice) already decided.
+   */
+  readonly cookies?: readonly ShotCookie[] | undefined;
+}
+
+/** One cookie for a shot session: `url` scopes it to the app under test, never another host. */
+export interface ShotCookie {
+  readonly name: string;
+  readonly value: string;
+  readonly url: string;
 }
 
 export interface ShotSession {

@@ -12,10 +12,14 @@ import { createContext, runWithContext } from '@ultimat3/core';
 import { allDigestRecipients, digestRecipients } from './repo';
 
 let issued = 0;
-/** Distinct per call: the memory store is process-wide, so one test's rows must not answer another's. */
+/**
+ * Distinct per call: the memory store is process-wide, so one test's rows must not answer another's.
+ * Its own `-8001-` block, too: `posts/repo.test.ts` counts from the same `-8000-…001`, and when the
+ * two files shared a worker its member landed in this file's first org and the per-org read saw 2.
+ */
 const nextId = (): string => {
   issued += 1;
-  return `00000000-0000-4000-8000-${String(issued).padStart(12, '0')}`;
+  return `00000000-0000-4000-8001-${String(issued).padStart(12, '0')}`;
 };
 
 /** One opted-in member in a brand-new org, and the org id it landed in. */

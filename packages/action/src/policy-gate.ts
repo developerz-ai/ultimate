@@ -9,6 +9,7 @@ import { assertNever, isAnonymous } from '@ultimat3/core';
 import type { Policy, Surface as PolicySurface } from '@ultimat3/policy';
 import {
   enforce,
+  enforceBeforeInput,
   policyPermissions as flattenedPermissions,
   admitsAnonymous as policyAdmitsAnonymous,
 } from '@ultimat3/policy';
@@ -51,6 +52,25 @@ export function guard(policy: ActionPolicy, subject: PolicySubject, surface: Sur
     // `evaluate()` normalises a missing row to `null`, so an input-only rule and a
     // row rule reach the predicate through one shape rather than two.
     row: subject.row,
+    ctx: subject.ctx,
+  });
+  if (denial !== undefined) throw new ActionDeniedError(subject.action, denial);
+}
+
+/**
+ * The actor-only half of `guard`, run BEFORE the input is parsed: a caller the policy refuses
+ * whatever they send gets the 403 (or 401) here, and never the 400 whose issue list describes
+ * the input schema of an operation they may not call. Undecided — a predicate that reads the input
+ * or the row — passes, and `guard` decides after the parse exactly as before. Same denial class,
+ * same code, same surface rendering as `guard`'s.
+ */
+export function guardBeforeInput(
+  policy: ActionPolicy,
+  subject: Omit<PolicySubject, 'input' | 'row'>,
+  surface: Surface,
+): void {
+  const denial = enforceBeforeInput(policySurface(surface), policy, {
+    actor: subject.actor,
     ctx: subject.ctx,
   });
   if (denial !== undefined) throw new ActionDeniedError(subject.action, denial);
