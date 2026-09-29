@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.9.0 - 2026-09-29
+
 ### Added
 
 - **query:** `single: true` on a query declaration â€” a read of one object. Only the wire changes:
@@ -37,6 +41,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   between files (22.7's shared workers), the name-keyed snapshot merge dropped one of the two, or
   `task()` refused its own fresh name as `X_JOB_DUPLICATE` â€” order-dependent failures in whichever
   file ran next. The counters are now process-monotonic; a reset clears the registry only.
+
+### Commits
+
+- fix: refuse U+0000 in t.string and text()/url() columns; never reuse anonymous task names; query single: true answers 404 (#578)
+- docs(plans): 101 â€” audit sweep: bugs, gaps, drift (#577)
 
 ## 22.8.2 - 2026-09-28
 
