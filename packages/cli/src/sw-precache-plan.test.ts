@@ -32,6 +32,7 @@ const chunk = (file: string, url: string): IslandChunk => ({
   url,
   code: '',
   bytes: 1000,
+  imports: [],
 });
 
 const HERO = chunk('apps/web/site/hero.island.tsx', '/islands/hero-1.js');
@@ -71,12 +72,13 @@ const LOCALES = { routed: ['es-co', 'en'], fallback: 'es-co' };
 
 const build = (
   documents: ReadonlyMap<string, RenderedDocument> = new Map(),
+  islands = islandBundle([HERO, OFFLINE_RETRY, KYC, WIZARD, NAMED]),
 ): ServiceWorkerArtifacts => {
   const built = serviceWorkerArtifacts({
     pwa,
     buildId: 'build-1',
     routes: ROUTES,
-    islands: islandBundle([HERO, OFFLINE_RETRY, KYC, WIZARD, NAMED]),
+    islands,
     styles: styleBundleOf([]),
     documents,
     locales: LOCALES,
@@ -106,6 +108,27 @@ describe('the precache carries only the islands a precached page boots', () => {
     const urls = precachedUrls(build(documents));
     expect(urls).toContain(NAMED.url);
     expect(urls).not.toContain('/elsewhere.js');
+  });
+
+  // An entry imports its shared chunks by name: precaching the entry without them is an island
+  // that fails to boot offline on exactly the page that promised it would not.
+  test('a precached island brings its shared chunks; a runtime island`s stay out', () => {
+    const upload = { url: '/islands/chunk-aaaaaaaa.js', code: '', bytes: 500, importers: [] };
+    const wizardOnly = { url: '/islands/chunk-bbbbbbbb.js', code: '', bytes: 500, importers: [] };
+    const islands = islandBundle(
+      [
+        { ...HERO, imports: [upload.url] },
+        OFFLINE_RETRY,
+        KYC,
+        { ...WIZARD, imports: [wizardOnly.url] },
+        NAMED,
+      ],
+      [upload, wizardOnly],
+    );
+    const urls = precachedUrls(build(new Map(), islands));
+    expect(urls).toContain(HERO.url);
+    expect(urls).toContain(upload.url);
+    expect(urls).not.toContain(wizardOnly.url);
   });
 
   test('every other chunk is cached on first use, by the islands prefix rule', () => {

@@ -69,6 +69,7 @@ export const CONFIG_FILES = [
   'packages/core/src/config-site.ts',
   'packages/core/src/config-health.ts',
   'packages/core/src/config-navigation.ts',
+  'packages/core/src/config-islands.ts',
 ] as const;
 export const CONFIG_FILE = CONFIG_FILES[0];
 export const ROOT_INTERFACE = 'AppConfig';
@@ -172,6 +173,9 @@ export const SECTION_PACKAGE: Readonly<Record<string, string>> = {
   // why: `AppConfig.navigation` is the client router's opt-in; the CLI reads it to build and name
   // the router (`page-navigation.ts`), and no package is named `navigation`.
   navigation: 'cli',
+  // why: `AppConfig.islands` is the island bundler's opt-in (`island-bundle.ts`); no package is
+  // named `islands`.
+  islands: 'cli',
   theme: 'ui',
 };
 

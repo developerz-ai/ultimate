@@ -135,8 +135,14 @@ export function precacheAssets(input: PrecacheAssetInput): readonly PrecacheAsse
       }
     }
   }
+  // A wanted entry brings the shared chunks it imports: offline, an entry whose chunk was never
+  // cached is an island that fails to boot on the one page that promised to work without a network.
+  for (const chunk of input.islands.chunks) {
+    if (wanted.has(chunk.url)) for (const url of chunk.imports) wanted.add(url);
+  }
   return [
     ...input.islands.chunks.filter((chunk) => wanted.has(chunk.url)),
+    ...input.islands.shared.filter((chunk) => wanted.has(chunk.url)),
     ...input.styles.chunks,
     ...input.scripts,
   ]

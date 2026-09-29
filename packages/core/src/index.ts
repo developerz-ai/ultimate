@@ -113,6 +113,7 @@ export type {
 export { defineConfig, INBOX_RETENTION_KEYS } from './config';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
+export type { IslandsConfig, IslandsSection, IslandsSectionInput } from './config-islands';
 export type {
   NavigationConfig,
   NavigationSection,

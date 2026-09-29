@@ -1003,6 +1003,7 @@ Two sets override the table, in `failures.ts`:
 | `X_VERIFY_MERGE_INPUT` | a part handed to x verify merge is not an x verify --json document | the file is missing, empty, not JSON, or not the output of x verify --json | x verify --only <step> --json > part.json   # one document per part |
 | `X_SITEMAP_EXTRA_INVALID` | a seo.sitemap.extra path names no public page | the path matches no registered route, a route that declares a policy, an api/ route, or a site/ page the sitemap already lists | x routes --json   # then list in seo.sitemap.extra only a path a registered app/ route without a policy answers |
 | `X_DEV_RESTART_REQUIRED` | a save reached a module that defines a primitive; only a new process serves it | a slice service, a view under defineAdmin, or an action/query/entity/job file itself was saved, and the module that defines the primitive still holds the old code | restart x dev — the supervised x dev restarts itself; an embedded startDev() passes onRestart |
+| `X_DEV_ROOT_GONE` | the app root x dev serves was deleted or moved | the directory x dev was started in was removed or renamed while it ran (a test fixture torn down, a re-clone, mv of the checkout) | x dev   # from the app root, once it exists again (restored, re-cloned or moved back) |
 
 ## Reserved codes
 

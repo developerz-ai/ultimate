@@ -10,6 +10,8 @@ import { relative } from 'node:path';
 import { drain } from '@ultimat3/core';
 import type { StalePin } from './app-reload-graph';
 import { devSpec } from './cmd-dev-spec';
+import type { DevChildGone } from './dev-child-watch';
+import { DEV_SUPERVISOR_PID_ENV, startDevChildWatch, supervisorPid } from './dev-child-watch';
 import { devPortFor } from './dev-port';
 import { msg } from './messages';
 import type { Finding } from './output';
@@ -96,10 +98,16 @@ const spawnInherited = (
  * SIGINT and SIGTERM are forwarded — a terminal's Ctrl-C reaches the child on its own too, and its
  * drain is idempotent — and once one arrived no child is started again: a Ctrl-C during a restart
  * is a stop, never a respawn.
+ *
+ * Every other way out stops the child too: an uncaught error or a `process.exit` here reaches the
+ * `exit` listener, which SIGTERMs a child still running. The one way no listener sees is a SIGKILL
+ * of this process — the child's own watch (`dev-child-watch.ts`) answers that, from its side, off
+ * the pid this loop hands it.
  */
 export async function superviseDev(input: SuperviseDevInput): Promise<number> {
   const spawn = input.spawn ?? spawnInherited;
   let child: DevChild | undefined;
+  let running = false;
   let stopping = false;
   const forward = (signal: 'SIGINT' | 'SIGTERM') => (): void => {
     stopping = true;
@@ -107,20 +115,28 @@ export async function superviseDev(input: SuperviseDevInput): Promise<number> {
   };
   const onInt = forward('SIGINT');
   const onTerm = forward('SIGTERM');
+  const onExit = (): void => {
+    if (running) child?.kill('SIGTERM');
+  };
   process.on('SIGINT', onInt);
   process.on('SIGTERM', onTerm);
+  process.on('exit', onExit);
   try {
     for (;;) {
       child = spawn([process.execPath, input.bin, ...input.argv], {
         ...input.env,
         [DEV_CHILD_ENV]: '1',
+        [DEV_SUPERVISOR_PID_ENV]: String(process.pid),
       });
+      running = true;
       const code = await child.exited;
+      running = false;
       if (code !== DEV_RESTART_EXIT_CODE || stopping) return code;
     }
   } finally {
     process.off('SIGINT', onInt);
     process.off('SIGTERM', onTerm);
+    process.off('exit', onExit);
   }
 }
 
@@ -156,23 +172,36 @@ export interface ChildRestart {
  * Only a supervised child restarts: it says why on stderr (fd 1 may be `--json`'s one document),
  * starts core's drain — the hold then releases the lock, the port and the embedded database — and
  * exits `DEV_RESTART_EXIT_CODE` once released. Anything else keeps the finding on `/_x`.
+ *
+ * A child its supervisor named (`DEV_SUPERVISOR_PID_ENV`) also watches for that supervisor's death
+ * and its app root's, and stops on either — exit 1 for a root that is gone, which the supervisor,
+ * if it is still there, answers by stopping rather than respawning into nothing.
  */
 export function childRestart(
   root: string,
   env: Readonly<Record<string, string | undefined>>,
+  watch: typeof startDevChildWatch = startDevChildWatch,
 ): ChildRestart {
   if (env[DEV_CHILD_ENV] !== '1') return { options: {}, exit: () => undefined };
-  let restarting = false;
+  let leaving: 'restart' | DevChildGone | undefined;
+  const watched =
+    supervisorPid(env) === undefined
+      ? undefined
+      : watch(root, env, (why) => {
+          leaving ??= why;
+        });
   return {
     options: {
       onRestart: (pins) => {
         process.stderr.write(`${msg('cli.dev.restart', { reason: restartReason(root, pins) })}\n`);
-        restarting = true;
+        leaving ??= 'restart';
+        watched?.stopping(DEV_RESTART_EXIT_CODE);
         void drain('restart');
       },
     },
     exit: () => {
-      if (restarting) process.exit(DEV_RESTART_EXIT_CODE);
+      if (leaving === 'restart') process.exit(DEV_RESTART_EXIT_CODE);
+      if (leaving === 'root') process.exit(1);
     },
   };
 }

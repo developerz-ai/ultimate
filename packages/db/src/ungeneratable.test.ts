@@ -151,6 +151,11 @@ describe('unit · the generatable list is the generators own output', () => {
             generated: "coalesce(title, '')",
           },
           { name: 'plain', dataType: 'text', nullable: true, default: null, position: 5 },
+          // NOT NULL with a default, both of which move: `set default` and `drop not null` in
+          // `up`, `set default` and `set not null` in `down` (`column-alter.ts`).
+          { name: 'status', dataType: 'text', nullable: false, default: "'draft'", position: 6 },
+          // A default the entity no longer states: `drop default` in `up`.
+          { name: 'kind', dataType: 'text', nullable: true, default: "'post'", position: 7 },
         ],
         primaryKey: ['id'],
         indexes: [
@@ -210,6 +215,10 @@ describe('unit · the generatable list is the generators own output', () => {
       // NOT NULL with no default, so the `-- backfill …, then: … set not null;` note is emitted
       // above the next statement — a comment-only chunk that must be judged as no statement.
       column('title', { notNull: true }),
+      // The two in-place moves `alterColumnInPlace` writes — the forms this list once lacked, so
+      // `x db gen` wrote a migration its own rail then asked a `-- ungeneratable:` header for.
+      column('status', { hasDefault: true, default: { kind: 'value', value: 'live' } }),
+      column('kind'),
     ],
     indexes: [
       index('posts_moved_idx', ['id'], { unique: true }),
@@ -267,5 +276,29 @@ describe('unit · the generatable list is the generators own output', () => {
       (form) => !statements.some((statement) => form.pattern.test(statement)),
     ).map((form) => form.name);
     expect(unhit).toEqual([]);
+  });
+});
+
+describe('unit · an existing column moved in place, and its hand-written follow-up', () => {
+  test('a NOT NULL dropped and a default set, as x db gen writes them, owe no header', () => {
+    const up = [
+      'alter table "payouts" alter column "batch_id" drop not null;',
+      `alter table "payouts" alter column "status" set default 'awaiting_document';`,
+      'alter table "payouts" alter column "status" drop default;',
+      'alter table "payouts" alter column "status" set not null;',
+    ].join('\n');
+    expect(ungeneratableStatements(up)).toEqual([]);
+  });
+
+  test('the backfill the note asks for is counted; the set not null after it is not', () => {
+    // The follow-up an author writes for `-- backfill "period", then: … set not null;`: the
+    // UPDATE is data no declaration carries, the ALTER is a form the generator itself writes.
+    const up = [
+      `update "payouts" set "period" = '2026-09' where "period" is null;`,
+      'alter table "payouts" alter column "period" set not null;',
+    ].join('\n');
+    expect(ungeneratableStatements(up)).toEqual([
+      `update "payouts" set "period" = '2026-09' where "period" is null`,
+    ]);
   });
 });

@@ -11,6 +11,8 @@ import { countIssue } from './config-count';
 import { BASE_FIX, CACHE_TIER_FIX, TIMEZONE_FIX } from './config-fixes';
 import type { DrainConfig, HealthConfig } from './config-health';
 import { readinessModeIssue } from './config-health';
+import type { IslandsConfig, IslandsSectionInput } from './config-islands';
+import { islandsIssues, mergeIslands } from './config-islands';
 import { type Input, lastSaid, layered } from './config-merge';
 import type { NavigationConfig, NavigationSectionInput } from './config-navigation';
 import { mergeNavigation, navigationIssues } from './config-navigation';
@@ -46,10 +48,8 @@ export interface ThemeConfig {
  * every unauthenticated visitor to a 404. Null means the visitor gets the problem document — the
  * right answer for an agent, and what a browser got in production until this existed.
  *
- * `afterSignInPath` was removed 2026-08 for the reason `urlEnv`, `poolSize` and `schema` were
- * (below): accepted, defaulted and merged here, and read by NO file — `dummy/social-media-clone`
- * set `/dashboard` and got whatever its sign-in route did on its own. The landing path belongs to
- * the app's sign-in route, which is the only code that can honour it.
+ * `afterSignInPath` was removed 2026-08, like `database.urlEnv` (below): read by NO file. The
+ * landing path belongs to the app's sign-in route, the only code that can honour it.
  */
 export interface AuthConfig {
   readonly signInPath: string | null;
@@ -92,11 +92,8 @@ export const INBOX_RETENTION_KEYS = ['inboxReadRetentionMs', 'inboxUnreadRetenti
  * read them** — the only reader of any `config.database.*` field in the repo was this file's own
  * validator, and each of the three was unfixable where it sat:
  *
- * - `poolSize` — `@ultimat3/db`'s `baseClient()` layers `DATABASE_POOL_MAX` over the role profile,
- *   so the knob works; this was a second, non-functioning spelling of it.
- * - `urlEnv` — `client.ts` reads `process.env['DATABASE_URL']` as a hardcoded literal, so a
- *   different key here could not be honoured.
- * - `schema` — nothing emits `SET search_path`.
+ * `poolSize` was a dead second spelling of `DATABASE_POOL_MAX`; `client.ts` reads `DATABASE_URL`
+ * as a literal, so no `urlEnv` could be honoured; nothing emits `SET search_path` for `schema`.
  *
  * Wiring them instead would need a tier-0 → tier-1 read the tier table forbids. Deleting is axiom
  * 3 applied to configuration: a value that produces neither a build error nor a runtime effect is
@@ -154,15 +151,9 @@ export interface JobsConfig {
  * `max(1000, floor(ttlMs / 3))`). A second knob is a second number that can disagree with the one
  * it is a fraction of, and a knob nothing reads is a knob nothing enforces — axioms 1 and 3.
  *
- * No `tier` either, and no `RealtimeTier` — deleted 2026-08-23, the thirteenth instance of the
- * same defect and the dangerous shape of it. It accepted
- * `'channels' | 'live-queries' | 'local-first'`, defaulted to `'channels'`, was documented with
- * per-value semantics, was set by both tracked apps — and no file anywhere compared it, branched
- * on it or dereferenced it. `transport` and `urlEnv` are the only two fields of this section any
- * code reads. So `tier: 'local-first'` bought the durable client store that does not exist
- * (`createOpfsLocalStore` still throws `X_NOT_IMPLEMENTED`), exactly as `jobs: { driver: 'redis' }`
- * bought Postgres. Which realtime tier an app is on is decided by what it DECLARES — a `channel()`
- * topic, a `live: true` query, a local store — never by a config key.
+ * No `tier` either (deleted 2026-08-23): no file read it, so `tier: 'local-first'` bought nothing.
+ * An app's realtime tier is what it DECLARES — a `channel()` topic, a `live: true` query, a local
+ * store — never a config key; `transport` and `urlEnv` are the only fields any code reads.
  */
 export interface RealtimeConfig {
   readonly enabled: boolean;
@@ -208,6 +199,7 @@ export interface AppConfig {
   readonly site: SiteConfig;
   readonly seo: SeoConfig;
   readonly navigation: NavigationConfig;
+  readonly islands: IslandsConfig;
 }
 
 /** `mcp` is the only member, and it is NESTED — `Input<AiConfig>` would make it all-or-nothing. */
@@ -226,7 +218,10 @@ export interface PwaConfigInput extends Omit<Input<PwaConfig>, 'offline'> {
   readonly offline?: Input<PwaOfflineConfig> | undefined;
 }
 
-export interface AppConfigInput extends SiteSectionsInput, NavigationSectionInput {
+export interface AppConfigInput
+  extends SiteSectionsInput,
+    NavigationSectionInput,
+    IslandsSectionInput {
   readonly name: string;
   readonly locales?: readonly string[] | undefined;
   readonly defaultLocale?: string | undefined;
@@ -268,7 +263,8 @@ function isLocale(value: string): boolean {
   }
 }
 
-function defaults(name: string): Omit<AppConfig, 'name' | 'site' | 'seo' | 'navigation'> {
+type Sectioned = 'name' | 'site' | 'seo' | 'navigation' | 'islands';
+function defaults(name: string): Omit<AppConfig, Sectioned> {
   return {
     locales: ['en'],
     defaultLocale: 'en',
@@ -380,6 +376,7 @@ function validate(config: AppConfig): void {
   if (pwaIssues(config.pwa, issues)) pwaFix.push(PWA_FIX);
   siteIssues(config, issues);
   navigationIssues(config, issues);
+  islandsIssues(config, issues);
 
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
@@ -493,6 +490,7 @@ export function defineConfig(
     ),
     ...mergeSite(layers),
     ...mergeNavigation(layers),
+    ...mergeIslands(layers),
   };
 
   validate(config);

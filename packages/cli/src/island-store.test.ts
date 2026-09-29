@@ -10,6 +10,8 @@ import { buildIslands } from './island-bundle';
 import { ISLAND_STORE_DIR, readIslandStore, writeIslandStore } from './island-store';
 
 const ROOT = join(import.meta.dir, '..', '.island-fixture', 'store');
+/** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
+const SHARED = { sharedChunks: true } as const;
 const PLAIN = `export function mount(el: HTMLElement): void { el.textContent = 'plain'; }\n`;
 
 const write = (path: string, source: string): Promise<number> =>
@@ -65,6 +67,39 @@ describe('unit · the island store', () => {
     const index = (await Bun.file(path).json()) as Record<string, unknown>;
     await Bun.write(path, JSON.stringify({ ...index, bun: '0.0.1' }));
     expect((await readIslandStore(ROOT)).stale).toContain('on Bun 0.0.1');
+  });
+});
+
+describe('unit · the island store carries the shared chunks', () => {
+  const USING =
+    "import { help } from '../shared/helper';\n" +
+    'export function mount(el: HTMLElement): void { el.textContent = help(); }\n';
+
+  beforeEach(async () => {
+    await write('apps/web/shared/helper.ts', "export const help = (): string => 'shared';\n");
+    await write('apps/web/site/a.island.tsx', USING);
+    await write('apps/web/site/b.island.tsx', USING);
+  });
+
+  test('a written store reads back with every shared chunk, at the same URL', async () => {
+    const built = await buildIslands(ROOT, SHARED);
+    expect(built.shared).toHaveLength(1);
+    await writeIslandStore(ROOT, built);
+    const read = await readIslandStore(ROOT);
+    expect(read.stale).toBeUndefined();
+    expect(read.bundle?.shared.map((chunk) => [chunk.url, chunk.code])).toEqual(
+      built.shared.map((chunk) => [chunk.url, chunk.code]),
+    );
+    expect(read.bundle?.chunks.map((chunk) => chunk.imports)).toEqual(
+      built.chunks.map((chunk) => chunk.imports),
+    );
+  });
+
+  test('a shared chunk missing from the store is refused, never served as a 404 per pod', async () => {
+    const built = await buildIslands(ROOT, SHARED);
+    await writeIslandStore(ROOT, built);
+    await rm(join(ROOT, ISLAND_STORE_DIR, built.shared[0]?.url.split('/').at(-1) ?? ''));
+    expect((await readIslandStore(ROOT)).stale).toContain('does not match its recorded hash');
   });
 });
 

@@ -8,13 +8,20 @@ import { dirname, join } from 'node:path';
 import type { BunPlugin } from 'bun';
 import { firstInGraph } from './live-routes';
 
-/** What `Bun.build` is handed for a realtime island; resolved by `islandRealtimePlugin`. */
-export const REALTIME_ISLAND_ENTRY = 'ultimate:island-entry';
+/**
+ * What `Bun.build` is handed for a realtime island: this prefix plus the island's app-root-relative
+ * path, so ONE build can carry every realtime island's wrapper as its own entry point. Resolved by
+ * `islandRealtimePlugin`, and the prefix is what `island-bundle.ts` strips back off Bun's output path.
+ */
+export const REALTIME_ISLAND_ENTRY = 'ultimate:island-entry:';
+
+/** The entry point `Bun.build` is handed for a realtime island. */
+export const realtimeIslandEntry = (file: string): string => `${REALTIME_ISLAND_ENTRY}${file}`;
 
 const REALTIME = '@ultimat3/realtime';
 const NAMESPACE = 'ultimate-island';
 const INSTALL = 'ultimate:island-realtime';
-const MODULE = 'ultimate:island-module';
+const MODULE = 'ultimate:island-module:';
 
 /**
  * Whether the island's own graph value-imports realtime. Relative specifiers only, which is the
@@ -51,9 +58,11 @@ export function realtimeIslandFiles(): ReadonlySet<string> {
 /**
  * `export *` and never a named list: the hydration runtime reads `mount` off the module, and the
  * wrapper must not decide which of an island's names survive. The install is imported FIRST, so it
- * has run before the island's module body — and every hook the island calls — does.
+ * has run before the island's module body — and every hook the island calls — does. One install
+ * module for every realtime island of the build, so a page with two of them loads it once.
  */
-const ENTRY_SOURCE = `import '${INSTALL}';\nexport * from '${MODULE}';\n`;
+const entrySource = (file: string): string =>
+  `import '${INSTALL}';\nexport * from '${MODULE}${file}';\n`;
 
 /**
  * The install names `@ultimat3/realtime` BARE, and `islandRealtimePlugin` resolves it from the
@@ -68,29 +77,37 @@ const INSTALL_SOURCE =
   `import { createSignal } from 'solid-js';\n` +
   `installRealtime({ signal: createSignal });\n`;
 
+/**
+ * `file` is the island whose directory every bare `@ultimat3/realtime` resolves from — the first
+ * realtime island of the build. One directory for all of them, because one copy in the bundle is
+ * the requirement: the signal the install sets is only read by hooks from the same module instance.
+ */
 export function islandRealtimePlugin(root: string, file: string): BunPlugin {
   const island = join(root, file);
   return {
     name: 'ultimate-island-realtime',
     setup(build) {
-      build.onResolve({ filter: /^ultimate:island-entry$/ }, () => ({
-        path: 'entry',
+      build.onResolve({ filter: /^ultimate:island-entry:/ }, (args) => ({
+        path: `entry:${args.path.slice(REALTIME_ISLAND_ENTRY.length)}`,
         namespace: NAMESPACE,
       }));
       build.onResolve({ filter: /^ultimate:island-realtime$/ }, () => ({
         path: 'install',
         namespace: NAMESPACE,
       }));
-      build.onResolve({ filter: /^ultimate:island-module$/ }, () => ({ path: island }));
+      build.onResolve({ filter: /^ultimate:island-module:/ }, (args) => ({
+        path: join(root, args.path.slice(MODULE.length)),
+      }));
       // Every bare `@ultimat3/realtime` in this build, the virtual install's included — a virtual
       // module has no directory to resolve from. The island's directory for all of them, which is
-      // what the island itself would get, and one copy in the bundle is the requirement anyway:
-      // the signal the install sets is only read by hooks from the same module instance.
+      // what the island itself would get.
       build.onResolve({ filter: /^@ultimat3\/realtime$/ }, () => ({
         path: Bun.resolveSync(REALTIME, dirname(island)),
       }));
       build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({
-        contents: args.path === 'entry' ? ENTRY_SOURCE : INSTALL_SOURCE,
+        contents: args.path.startsWith('entry:')
+          ? entrySource(args.path.slice('entry:'.length))
+          : INSTALL_SOURCE,
         loader: 'js',
       }));
     },

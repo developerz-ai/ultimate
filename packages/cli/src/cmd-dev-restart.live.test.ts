@@ -4,11 +4,12 @@
 // boots an embedded Postgres, twice. Until 22.12 the process logged "reloaded" and kept serving the
 // first service until someone restarted it by hand (notificado.co, 2026-09-29).
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { allowHost } from '@ultimat3/testing';
+import { descendantsOf, leftovers, pump, reap, reapIn, waitFor } from './dev-live-fixture';
 
 /** Two boots of embedded Postgres, the queue and the HTTP role — explicit, and generous. */
 const TIMEOUT_MS = 120_000;
@@ -50,24 +51,6 @@ export function Page(props: { readonly data: readonly { readonly text: string }[
 `,
 };
 
-/** One pump per stream — see `cmd-dev.live.test.ts` for why a stream is never read twice. */
-function pump(stream: ReadableStream<Uint8Array>): { seen: () => string } {
-  const decoder = new TextDecoder();
-  let seen = '';
-  void (async () => {
-    for await (const chunk of stream) seen += decoder.decode(chunk, { stream: true });
-  })();
-  return { seen: () => seen };
-}
-
-async function waitFor(output: { seen: () => string }, marker: string): Promise<string> {
-  for (;;) {
-    const seen = output.seen();
-    if (seen.includes(marker)) return seen;
-    await Bun.sleep(25);
-  }
-}
-
 /** The page's body, or `''` while the port is between two children. */
 const body = async (url: string): Promise<string> => {
   try {
@@ -76,6 +59,11 @@ const body = async (url: string): Promise<string> => {
     return '';
   }
 };
+
+// A timed-out test never reaches its `finally`; this is what still reaps its children.
+afterEach(async () => {
+  await reapIn(ROOT);
+});
 
 describe('x dev restarts on a save it cannot serve in process', () => {
   test(
@@ -97,10 +85,14 @@ describe('x dev restarts on a save it cannot serve in process', () => {
       });
       const output = pump(child.stdout);
       const logs = pump(child.stderr);
+      let port: number | undefined;
+      const started = new Set<number>();
       try {
         const first = await waitFor(output, '"command":"dev"');
         const url = /"url":"([^"]+)"/.exec(first)?.[1];
         if (url === undefined) return expect.unreachable(`no url in ${first}`);
+        port = Number(new URL(url).port);
+        for (const pid of descendantsOf(child.pid)) started.add(pid);
         allowHost(new URL(url).host);
         expect(await body(`${url}/greet`)).toContain('greeting one');
 
@@ -112,14 +104,17 @@ describe('x dev restarts on a save it cannot serve in process', () => {
           served = await body(`${url}/greet`);
         }
         expect(served).toContain('greeting two');
+        for (const pid of descendantsOf(child.pid)) started.add(pid);
         // The supervisor is still the process the terminal holds, and a signal to it stops both.
         expect(child.exitCode).toBeNull();
         child.kill('SIGINT');
         expect(await child.exited).toBe(0);
       } finally {
-        child.kill('SIGKILL');
-        await child.exited;
+        // Every child the supervisor started, and the supervisor — the supervisor alone was what
+        // this SIGKILLed, and its children then ran for hours under init with this root deleted.
+        await reap([child.pid, ...started, ...descendantsOf(child.pid)]);
         await rm(ROOT, { recursive: true, force: true });
+        expect(await leftovers(ROOT, port)).toEqual({ pids: [], port: false });
       }
     },
     TIMEOUT_MS,

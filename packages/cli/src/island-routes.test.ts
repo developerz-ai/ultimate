@@ -15,6 +15,8 @@ import { islandRoutes } from './island-routes';
 import { appRoutes } from './runtime-render';
 
 const ROOT = join(import.meta.dir, '..', '.island-routes-fixture');
+/** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
+const SHARED = { sharedChunks: true } as const;
 const BUILD_ID = 'islands-under-test';
 
 const COUNTER = 'export function mount(el: HTMLElement): void { el.textContent = "hydrated"; }\n';
@@ -100,6 +102,28 @@ describe('islands over HTTP', () => {
     expect(fix).toMatch(/reload/i);
     // Still a fix the contract accepts — an instruction with no command is legal, advice is not.
     expect(fixProblem(fix)).toBeUndefined();
+  });
+
+  test('a shared chunk an entry imports is served beside it, under the same immutable rule', async () => {
+    await Bun.write(
+      join(ROOT, 'apps/web/shared/helper.ts'),
+      'export const help = (): string => "shared";\n',
+    );
+    const using =
+      'import { help } from "../shared/helper";\nexport function mount(el: HTMLElement): void { el.textContent = help(); }\n';
+    await Bun.write(join(ROOT, 'apps/web/site/a.island.tsx'), using);
+    await Bun.write(join(ROOT, 'apps/web/site/b.island.tsx'), using);
+    registerRoute({ file: 'apps/web/site/page.tsx', config, component: () => 'no island' });
+    const bundle = await buildIslands(ROOT, SHARED);
+    const [shared] = bundle.shared;
+    if (shared === undefined)
+      expect.unreachable('two islands importing one module built no shared chunk');
+
+    const response = await serve(bundle).fetch(new Request(`http://dev.test${shared.url}`));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('javascript');
+    expect(response.headers.get('cache-control')).toContain('immutable');
+    expect(await response.text()).toBe(shared.code);
   });
 
   test('a page with no island serves no runtime at all — the 0kb baseline is the default', async () => {

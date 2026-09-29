@@ -60,8 +60,9 @@ export interface BuildStats {
  * rule stops being read as a measurement. `.x/` survives across framework upgrades, and
  * `examples/dummy` was charged 250 B for `/x-sw-register.js` by a file written before
  * `FRAMEWORK_SCRIPTS` exempted it. `2`: that exemption and the page-boot decision (ledger #28).
+ * `3`: an island entry's imported chunks are charged, each once per document (shared chunks).
  */
-export const BUILD_STATS_RULES = 2;
+export const BUILD_STATS_RULES = 3;
 
 const chainOf = (stats: RouteStats): string =>
   stats.heaviestChain === undefined ? 'unknown import chain' : stats.heaviestChain.join(' -> ');
@@ -252,6 +253,31 @@ const carriesJson = (attrs: string): boolean => {
  */
 const ENTRY_ATTR = /\sdata-x-entry="(?<url>[^"]*)"/g;
 
+/**
+ * Static imports and `import()` both. A chunk reached by `import()` was INLINED into its island
+ * before islands were split, so charging it keeps a route's number what it was; and it is fetched
+ * the moment the island needs it, which is before the page does what it was loaded for.
+ */
+const LOADS: ReadonlySet<string> = new Set(['import-statement', 'dynamic-import']);
+
+/** Same-origin paths `code`, served at `url`, makes the browser load. Cross-origin and bare are not this build's. */
+function loadedBy(url: string, code: string): readonly string[] {
+  let imports: readonly { readonly path: string; readonly kind: string }[];
+  try {
+    imports = new Bun.Transpiler({ loader: 'js' }).scanImports(code);
+  } catch {
+    // A file that does not parse as JavaScript imports nothing this gate can name; its own bytes
+    // are already charged.
+    return [];
+  }
+  const base = new URL(url, 'https://artifact.invalid');
+  return imports
+    .filter((one) => LOADS.has(one.kind) && /^\.{0,2}\//.test(one.path))
+    .map((one) => new URL(one.path, base))
+    .filter((target) => target.origin === base.origin)
+    .map((target) => target.pathname);
+}
+
 /** One executable module the document names, and what it weighs on disk. */
 export interface MeasuredEntry {
   readonly url: string;
@@ -337,7 +363,8 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     if (!url.startsWith('/') || fetched.has(url)) return;
     fetched.add(url);
     const file = Bun.file(join(out, url.slice(1)));
-    const bytes = (await file.exists()) ? file.size : 0;
+    const exists = await file.exists();
+    const bytes = exists ? file.size : 0;
     // Counted and set aside, not skipped: the bytes are real and a reader is owed the number.
     // Kept out of `entries` as well as out of `jsBytes`, because `entries` is what a finding reads
     // to name the heaviest import — and on a fresh scaffold every route's `heaviestChain` was
@@ -348,6 +375,12 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     }
     entries.push({ url, bytes });
     jsBytes += bytes;
+    // And every file THAT one loads: an island entry imports its shared chunks (`island-link.ts`),
+    // and each is a fetch the browser makes before the island is whole. Through `weigh`, so a chunk
+    // two islands share is charged once and a cycle ends at the first repeat.
+    if (exists) {
+      for (const next of loadedBy(url, await file.text())) await weigh(next);
+    }
   };
 
   for (const match of html.matchAll(SCRIPT_TAG)) {

@@ -5,7 +5,7 @@
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { islandMountMissing, islandNotBuilt } from './errors';
 import { createIslandDocument, FakeElement, handlerFor, parseHtml } from './island-dom';
 import type { ResizeInput } from './island-observers';
@@ -16,12 +16,23 @@ import { deliverResize } from './island-observers';
 export interface IslandChunkLike {
   /** App-root-relative POSIX path of the client entry the chunk was built from. */
   readonly file: string;
-  /** The built JavaScript, self-contained: an island chunk imports nothing at runtime. */
+  /**
+   * The built JavaScript. It may import the bundle's shared chunks by a relative `./<name>`, which
+   * is why `shared` below is written beside it before it is imported.
+   */
+  readonly code: string;
+}
+
+/** A module two or more islands import, served beside them under its own name. */
+export interface SharedChunkLike {
+  readonly url: string;
   readonly code: string;
 }
 
 export interface IslandBundleLike {
   readonly chunks: readonly IslandChunkLike[];
+  /** Optional, so a builder of your own that splits nothing is still assignable. */
+  readonly shared?: readonly SharedChunkLike[];
 }
 
 /**
@@ -265,6 +276,12 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
   const { documentElement, globals, resizeObservers } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });
   try {
+    // Beside the entry, under the name its bytes import them by: the same relative resolution a
+    // browser does under `/islands/`. Named by their content-addressed URL, so a rewrite is the same
+    // bytes at the same name.
+    for (const shared of bundle.shared ?? []) {
+      await Bun.write(join(moduleDirPath(), basename(shared.url)), shared.code);
+    }
     const path = modulePathFor(chunk.code);
     await Bun.write(path, chunk.code);
     const entry = entryOf(await import(path), chunk.file);

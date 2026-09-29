@@ -304,6 +304,18 @@ navigation: { client: ['app'] },
 |---|---|---|---|
 | `navigation.client` | `('site' \| 'app')[]` | `[]` | **read** by `x dev`, the container and `x build --target static`: a listed surface's documents carry the router (`/_x/navigation/<hash>.js`, charged to each route's `budget.js`). `api`, `shared`, a duplicate or a non-list → `X_CONFIG_INVALID`. The last layer that lists surfaces wins |
 
+## `islands`
+
+How the build bundles the app's `*.island.tsx` client entries.
+
+```ts
+islands: { sharedChunks: true },
+```
+
+| field | type | default | notes |
+|---|---|---|---|
+| `islands.sharedChunks` | `boolean` | `false` | **read** by `x dev`, the container and `x build`: `true` builds every island in one split bundle, so a module two islands import is one `/islands/chunk-<hash>.js` a page fetches once and a browser caches across pages; each route's `budget.js` counts it once. `false` builds each island alone, self-contained. Off by default because tree shaking across one split build keeps what ANY importer uses: a small island importing a helper from a module other islands use heavily pays for all of it (`examples/dummy`'s update banner 712 → 16,288 B). Turn it on where pages render several islands over one graph, then weigh the routes with `x verify`. A non-boolean → `X_CONFIG_INVALID` |
+
 ## `http`
 
 **Not an `app.config.ts` block, and never was.** `AppConfigInput` has no `http` key. `@ultimat3/core` is tier 0 and cannot hold `@ultimat3/http`'s types, so an `http` block here would be a **second declaration** of `HttpConfigInput` in a package that can never check it against the real one. An app declares its half with `configureHttp()`, at module scope in a file under `apps/*/` — the same seam `configureAuthenticator()` and `defineStorage()` are, and for the same reason.

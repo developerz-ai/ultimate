@@ -26,7 +26,9 @@ export function islandRoutes(source: IslandSource): readonly Route[] {
       path: `${ISLAND_BASE_PATH}/*file`,
       meta: { name: 'assets.island', auth: 'public', tags: ['assets'] },
       handler: (request: UltimateRequest): Response => {
-        const chunk = source().chunkAt(request.pathname);
+        // An entry or a shared chunk: an entry's bytes import its chunks by a relative name, so both
+        // have to answer at the one base path, under the one cache rule.
+        const chunk = source().assetAt(request.pathname);
         if (chunk === undefined) {
           const missing = json(
             {

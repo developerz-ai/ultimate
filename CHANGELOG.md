@@ -8,7 +8,57 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **core, cli, testing:** `islands: { sharedChunks: true }` in `app.config.ts` — islands that share
+  chunks, opt-in. Every `*.island.tsx` is then built in ONE `Bun.build` with `splitting: true`, so a
+  module two islands import is one `/islands/chunk-<hash>.js` a page fetches once and a browser
+  caches across pages, instead of a copy inside each island. Entries import their chunks by
+  relative name and are served beside them under `/islands/` with the same `immutable` rule; a
+  static export, the container's island store and the service-worker precache carry them (a
+  precached page's entry brings its chunks). Chunk names are source identities like entry names —
+  never Bun's output hash, which flaps under `minify` — and an entry's name moves when a chunk it
+  imports does. Measured on a fixture of two islands sharing a 20 kB module: 41,926 → 21,996 B for
+  the page with both; a page with one of them 21,837 → 21,894 B. OFF by default, because tree
+  shaking across one split build keeps what any importer uses: on, `examples/dummy`'s plain-DOM
+  update banner goes 712 → 16,288 B and three of its routes exceed their budgets; notificado.co's
+  `/afiliados` goes 55,585 → 42,331 B with both uploads and 33,958 → 39,931 B with one. Module state
+  in a shared chunk is one instance per page. `IslandBundle` gains `shared` and `assetAt(url)`,
+  `IslandChunk` gains `imports`, `buildIslands` takes `sharedChunks`, and `mountIsland` writes a
+  builder's `shared` chunks beside the entry.
+
+### Changed
+
+- **cli:** a route's `budget.js` is the unique set of files its islands load: `measureDocumentJs`
+  follows an island entry into every chunk it imports (static and `import()`), each file counted
+  once per document. Unchanged for a self-contained island; `BUILD_STATS_RULES` is 3, so rebuild
+  with `x build --target static` before `x verify`.
+
+### Fixed
+
+- **cli:** a supervised `x dev` child no longer outlives what it serves. It watches its supervisor
+  (the pid the supervisor now hands it in `ULTIMATE_DEV_SUPERVISOR_PID`) and its app root once a
+  second: a supervisor that died without stopping it — a SIGKILL cannot be forwarded — makes it
+  drain and exit (`dev.supervisor.gone` on stderr), and a deleted or moved root makes it exit 1
+  with the new `X_DEV_ROOT_GONE`, which the supervisor answers by stopping rather than respawning.
+  Found as two children of `cmd-dev-restart.live.test.ts`, six hours old, ppid 1, cwd deleted, one
+  at 7 GB: with its root gone the jobs worker, outbox relay and scheduler poll an embedded database
+  with no directory. Every stop the child begins (SIGINT, SIGTERM, the watch, a restart) now also
+  carries a hard exit past the drain deadline plus the release floor (35 s by default), so a stop
+  that hangs still ends. The supervisor SIGTERMs a running child on every other way it exits (an
+  uncaught error, `process.exit`).
+- **cli (tests):** the `x dev` live tests (`cmd-dev.live`, `cmd-dev-restart.live`, the new
+  `cmd-dev-orphan.live`) reap the supervisor and every process it started on every path — an
+  `afterEach` reaps by fixture cwd too, because bun abandons a timed-out test without its `finally`
+  — and assert no process is left in the fixture directory or on its port. `cmd-dev.live` takes its
+  own metrics port, so a developer's running `x dev` on 9090 no longer fails it.
+- **db, cli:** `x verify`'s hand-written-SQL rail (`X_MIGRATION_UNGENERATABLE`) no longer counts
+  the in-place column moves `x db gen` writes itself — `alter column … set default` / `drop default`
+  and `set not null` / `drop not null`. They were missing from `GENERATABLE_FORMS`, so a generated
+  migration that moved a default or dropped a NOT NULL was refused until it carried a
+  `-- ungeneratable:` header. The backfill an author writes for the `-- backfill …, then: … set not
+  null;` note is still counted (the `update`); its `set not null` is not. A header that now
+  over-counts is not a finding.
 
 ## 22.12.0 - 2026-09-29
 

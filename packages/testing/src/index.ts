@@ -164,6 +164,7 @@ export type {
   IslandChunkLike,
   MountedIsland,
   MountIslandOptions,
+  SharedChunkLike,
 } from './fixture-island';
 export { mountIsland } from './fixture-island';
 export type { JobRunTrace, RunJobs, StepTally } from './fixture-jobs';

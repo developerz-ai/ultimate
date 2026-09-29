@@ -3,10 +3,11 @@
 // case that spawns a process and starts an embedded Postgres is a `live` test wherever it sits.
 // It was the slowest test in the unit suite by an order of magnitude while being typed as one.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { descendantsOf, leftovers, pump, reap, reapIn, waitFor } from './dev-live-fixture';
 
 /**
  * Booting embedded Postgres, the queue and the HTTP role is seconds of real work, and bun's
@@ -24,34 +25,10 @@ const BOOT_TIMEOUT_MS = 60_000;
 const HOLD_ROOT = join(import.meta.dir, '..', '.dev-hold-fixture');
 const BIN = join(import.meta.dir, 'bin.ts');
 
-/**
- * One pump per stream, into one buffer per stream. Reading a stream twice is what a naive version
- * does, and abandoning a `for await` closes the underlying reader — the second read then waits
- * forever on a stream nothing will ever write to again.
- *
- * TWO of them, because `--json` splits this process's output across both descriptors:
- * `dispatch.ts` calls `setLogStream('stderr')` when `args.json` is set, so fd 1 carries the
- * command's one JSON object and fd 2 carries every `{"msg":…}` line the boot and the drain write.
- * A single buffer over `child.stdout` waited out this file's whole 60s budget for a `stopped` line
- * that was never going to arrive on it.
- */
-function pump(stream: ReadableStream<Uint8Array>): { seen: () => string } {
-  const decoder = new TextDecoder();
-  let seen = '';
-  void (async () => {
-    for await (const chunk of stream) seen += decoder.decode(chunk, { stream: true });
-  })();
-  return { seen: () => seen };
-}
-
-/** Poll the buffer until `marker` shows up. The caller's own timeout is the deadline. */
-async function waitFor(output: { seen: () => string }, marker: string): Promise<string> {
-  for (;;) {
-    const seen = output.seen();
-    if (seen.includes(marker)) return seen;
-    await Bun.sleep(25);
-  }
-}
+// A timed-out test never reaches its `finally`; this is what still reaps its children.
+afterEach(async () => {
+  await reapIn(HOLD_ROOT);
+});
 
 describe('x dev stays up until it is signalled', () => {
   test(
@@ -71,15 +48,25 @@ describe('x dev stays up until it is signalled', () => {
         `import { defineConfig } from '@ultimat3/core';\nexport const config = defineConfig({ name: 'dev-hold-fixture' });\n`,
       );
 
+      // Its own scrape port: the default 9090 may be a developer's running `x dev`.
+      const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+      const metrics = String(probe.port);
+      probe.stop(true);
       const child = Bun.spawn(['bun', BIN, 'dev', '--port', '0', '--json'], {
         cwd: HOLD_ROOT,
+        env: { ...Bun.env, METRICS_PORT: metrics },
         stdout: 'pipe',
         stderr: 'pipe',
       });
       const output = pump(child.stdout);
       const logs = pump(child.stderr);
+      let port: number | undefined;
+      let started: readonly number[] = [];
       try {
-        expect(await waitFor(output, '"command":"dev"')).toContain('"ok":true');
+        const ready = await waitFor(output, '"command":"dev"');
+        expect(ready).toContain('"ok":true');
+        port = Number(/"url":"http:\/\/localhost:(\d+)"/.exec(ready)?.[1]);
+        started = descendantsOf(child.pid);
 
         // The regression: the process used to be gone by now, having exited on the code for the
         // line it had just printed.
@@ -98,9 +85,10 @@ describe('x dev stays up until it is signalled', () => {
         expect(output.seen()).not.toContain('"msg":');
         expect(code).toBe(0);
       } finally {
-        child.kill('SIGKILL');
-        await child.exited;
+        // The supervisor AND what it started: a SIGKILLed supervisor forwards nothing.
+        await reap([child.pid, ...started, ...descendantsOf(child.pid)]);
         await rm(HOLD_ROOT, { recursive: true, force: true });
+        expect(await leftovers(HOLD_ROOT, port)).toEqual({ pids: [], port: false });
       }
     },
     BOOT_TIMEOUT_MS,

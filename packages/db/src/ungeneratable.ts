@@ -59,6 +59,17 @@ export const GENERATABLE_FORMS: readonly GeneratableForm[] = [
     name: 'alter column drop expression',
     pattern: /^alter\s+table\s[\s\S]*?\balter\s+column\s[\s\S]*?\bdrop\s+expression\b/,
   },
+  // `alterColumnInPlace` (`column-alter.ts`) writes all four — a moved default in both halves,
+  // `drop not null` up with `set not null` down — and the list lacked them through 22.12.0, so
+  // `x db gen` wrote migrations its own rail asked a `-- ungeneratable:` header for.
+  {
+    name: 'alter column set/drop default',
+    pattern: /^alter\s+table\s[\s\S]*?\balter\s+column\s[\s\S]*?\b(?:set|drop)\s+default\b/,
+  },
+  {
+    name: 'alter column set/drop not null',
+    pattern: /^alter\s+table\s[\s\S]*?\balter\s+column\s[\s\S]*?\b(?:set|drop)\s+not\s+null\b/,
+  },
   // The form the doc block above calls "the statement that started this", finally on the list:
   // `GenerateOptions.replicaIdentityFull` emits it `As of 2026-08-26`, so without this entry the
   // rail reports SQL the generator itself just wrote. Covers `full` and `default` in one phrase —

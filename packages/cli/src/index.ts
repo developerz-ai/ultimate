@@ -107,7 +107,7 @@ export { ICON_BASE_PATH, ICON_SOURCE } from './icon-assets';
 // `@ultimat3/testing` takes this function as its `build` parameter (issue #260). `discoverIslands`,
 // `islandBundle`, `writeIslands`, `ISLAND_BASE_PATH` and `ISLAND_GLOB` stay internal: they are
 // `x build`'s and `x dev`'s wiring, and every name here is a semver promise forever.
-export type { IslandChunk } from './island-bundle';
+export type { IslandChunk, SharedChunk } from './island-bundle';
 export { buildIslands } from './island-bundle';
 export { JOB_STATES } from './jobs-report';
 export { renderJobTable } from './jobs-table';

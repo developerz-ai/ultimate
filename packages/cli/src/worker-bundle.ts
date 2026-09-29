@@ -9,7 +9,7 @@ import { dirname, join, relative } from 'node:path';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, json } from '@ultimat3/http';
 import { FrameworkScriptBuildFailedError, type FrameworkScriptKind } from './errors';
-import { describeBuildError, graphHash, stripDebugId } from './island-bundle';
+import { describeBuildError, graphHash, stripDebugId } from './island-identity';
 
 /** Under the dev namespace `/_x` — where the socket it opens (`/_x/sync`) already lives. */
 export const SYNC_WORKER_BASE_PATH = '/_x/sync-worker';

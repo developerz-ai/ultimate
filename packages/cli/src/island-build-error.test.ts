@@ -2,7 +2,7 @@
 // or an import can throw — no bundle, no disk. Split from `island-bundle.test.ts` at its ceiling.
 
 import { describe, expect, test } from 'bun:test';
-import { describeBuildError } from './island-bundle';
+import { describeBuildError } from './island-identity';
 
 describe('unit · the bundler diagnostic a cause is built from', () => {
   test('an ordinary Error keeps its message', () => {

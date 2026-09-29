@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "bbafe9afc7403c0ab4b21a19053efd443fdee5bd9dbb5e1c4fbfaaf39e30308d",
+  "buildId": "a80d3762fc65b6275ee02f867fdf9b52c1ccd02d6a28dd54bfdc134f1a6e976a",
   "tiers": {
     "0": [
       "core",
@@ -1061,6 +1061,11 @@
     },
     {
       "code": "X_DEV_RESTART_REQUIRED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEV_ROOT_GONE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

@@ -26,11 +26,14 @@ import { rm } from 'node:fs/promises';
 // why: Bun exposes no path API — nothing native joins a directory to a file.
 import { join } from 'node:path';
 import { clearStylesheets, contentHash } from '@ultimat3/render/server';
-import { buildIslands, clearIslandChunkCache } from './island-bundle';
+import { buildIslands } from './island-bundle';
+import { clearIslandChunkCache } from './island-identity';
 
 // `.island-fixture/determinism`, never `.island-fixture` itself — `island-bundle.test.ts` wipes
 // its own subdirectory of that parent, and owning the parent deletes a sibling suite mid-build.
 const ROOT = join(import.meta.dir, '..', '.island-fixture', 'determinism');
+/** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
+const SHARED = { sharedChunks: true } as const;
 const ISLAND = 'apps/web/app/graph.island.tsx';
 
 /** Enough builds that a one-in-ten race is all but certain to fire; ~25ms each on this fixture. */
@@ -134,4 +137,33 @@ describe('an island chunk URL', () => {
       await Bun.write(join(ROOT, 'apps/web/app/panel.module.scss'), '.panel{color:red}\n');
     }
   }, 60_000);
+});
+
+// The split half: two islands over the same third-party graph put Solid and realtime in SHARED
+// chunks, and an entry's bytes name those chunks. A shared chunk named by its output hash would
+// flap, and every entry importing it would flap with it — so the names are source identities
+// (`island-link.ts`), and they have to hold across the same race the single-island case does.
+describe('a shared chunk URL', () => {
+  const SECOND = 'apps/web/app/graph-twin.island.tsx';
+
+  test('neither the shared chunks nor the entries that import them move across many builds', async () => {
+    await Bun.write(join(ROOT, SECOND), SOURCE);
+    try {
+      const tables = new Set<string>();
+      for (let round = 0; round < ROUNDS; round += 1) {
+        clearIslandChunkCache();
+        const bundle = await buildIslands(ROOT, SHARED);
+        expect(bundle.shared.length).toBeGreaterThan(0);
+        tables.add(
+          JSON.stringify([
+            bundle.chunks.map((chunk) => [chunk.url, chunk.imports]),
+            bundle.shared.map((chunk) => chunk.url),
+          ]),
+        );
+      }
+      expect([...tables]).toHaveLength(1);
+    } finally {
+      await rm(join(ROOT, SECOND), { force: true });
+    }
+  }, 120_000);
 });
