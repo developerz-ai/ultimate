@@ -10,6 +10,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 Nothing yet.
 
+## 22.9.1 - 2026-09-29
+
+### Fixed
+
+- **release:** 22.9.0 did not reach the registry for `@ultimat3/money` and `@ultimat3/jobs` â€” a first, failed run left both versions *staged* on npm, and npm refuses to publish over a staged version (409). 22.9.1 is 22.9.0 re-published under a fresh version for every package; no code change.
+
+### Commits
+
+- release: 22.9.1
+
 ## 22.9.0 - 2026-09-29
 
 ### Added
