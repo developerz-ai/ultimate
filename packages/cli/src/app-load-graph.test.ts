@@ -16,7 +16,7 @@ import { describeActions } from '@ultimat3/action';
 import { clearRoutes, routeFor } from '@ultimat3/render';
 import { clearStylesheets, renderComponent, stylesFor } from '@ultimat3/render/server';
 import { loadApp, resetAppLoad } from './app-load';
-import { enableReloadTracking } from './app-reload-graph';
+import { enableReloadTracking, takeStalePins } from './app-reload-graph';
 import { resetRegistries } from './cmd-dev-fixture';
 
 // Under `packages/cli/` for the reason `.dev-fixture` is: the page imports `@ultimat3/render`,
@@ -164,14 +164,25 @@ describe('unit · a rescan re-evaluates what a page imports, not only the page',
   test('a module that defines a primitive is never re-evaluated — no duplicate, no finding', async () => {
     // `label.ts` is imported by the entity module and the action module as well as the page: a
     // save to it re-evaluates the page's chain and leaves both definitions registered once.
+    takeStalePins();
     await Bun.write(LABEL, label('third'));
     await rescan();
     expect(await rendered()).toContain('two third');
     expect(describeActions().filter((a) => a.name === 'greetGraph')).toHaveLength(1);
+    // …and the two definitions still hold the OLD `label`: the rescan says so, per pinned module,
+    // so `x dev` can restart instead of serving an action that answers the previous word.
+    expect(takeStalePins()).toEqual([
+      { changed: LABEL, pinned: ACTIONS },
+      { changed: LABEL, pinned: ENTITY },
+    ]);
+    // Read once: a rescan with no save names nothing.
+    await rescan();
+    expect(takeStalePins()).toEqual([]);
     // A save to the entity module itself is a restart, as before — never X_ENTITY_DUPLICATE.
     await Bun.write(ENTITY, `${ENTITY_SOURCE}// edited\n`);
     await rescan();
     expect(await rendered()).toContain('two third');
+    expect(takeStalePins()).toEqual([{ changed: ENTITY, pinned: ENTITY }]);
   });
 
   test('a component that will not parse is a finding, the last good page stays, the fix is served', async () => {

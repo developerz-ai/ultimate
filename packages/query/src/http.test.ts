@@ -316,6 +316,18 @@ describe('a paged read over the route', () => {
     expect(second.hasNextPage).toBe(false);
   });
 
+  test('the envelope also answers `nextCursor` and `hasMore` — aliases, same values', async () => {
+    const server = serve(feed({ count: 0 }), reader('u1'));
+    const body = (await (await read(server, `?orgId=${ORG}&_first=1`)).json()) as PageBody & {
+      readonly nextCursor: string | null;
+      readonly hasMore: boolean;
+    };
+    expect(body.nextCursor).toBeString();
+    expect(body.nextCursor).toBe(body.endCursor);
+    expect(body.hasMore).toBe(true);
+    expect(body.hasMore).toBe(body.hasNextPage);
+  });
+
   test('the wire cursor is the very string a direct `.page()` call signs', async () => {
     const target = feed({ count: 0 });
     const direct = await target.page({ orgId: ORG }, { first: 1, actor: reader('u1') });

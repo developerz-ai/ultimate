@@ -69,6 +69,11 @@ function routeIndex(routes: readonly Route[]): ReadonlyMap<string, Route> {
 
 interface Refusals {
   readonly scheme: string;
+  /**
+   * The security requirement's list: empty on the cookie document, the ONE scope a mounted
+   * operation needs on a bearer mount's (OpenAPI 3.1 allows role names for a non-OAuth scheme).
+   */
+  readonly scopes: readonly string[];
   /** The mount's own allowance applies to every operation, whatever the route declares. */
   readonly everyOpLimited: boolean;
   readonly unauthorizedHeaders?: Record<string, unknown>;
@@ -105,7 +110,7 @@ function completeOperation(operation: Operation, route: Route | undefined, refus
   return {
     ...operation,
     responses,
-    ...(authenticated ? { security: [{ [refusals.scheme]: [] }] } : {}),
+    ...(authenticated ? { security: [{ [refusals.scheme]: [...refusals.scopes] }] } : {}),
   };
 }
 
@@ -162,6 +167,7 @@ export function completeOpenApi(
   const paths = mapOperations(document.paths, (path, method, operation) =>
     completeOperation(operation, index.get(`${method} ${path}`), {
       scheme: COOKIE_SCHEME,
+      scopes: [],
       everyOpLimited: false,
     }),
   );
@@ -187,7 +193,8 @@ export function completeOpenApi(
 /**
  * A bearer mount's own document: only the operations its `scopes` name, re-keyed to the mounted
  * paths, each `bearer`-secured with 401, 404-when-hidden and 429, and only the schemas those
- * operations reference. `x-ultimate.scope` names the scope a token needs for each.
+ * operations reference. Each operation's `security` is `[{ bearer: ['<scope>'] }]` — the scope a
+ * token needs, also in `x-ultimate.scope` — and the scheme documents the whole scope map.
  */
 export function mountOpenApi(
   document: OpenApiDocument,
@@ -205,6 +212,9 @@ export function mountOpenApi(
   // A `Map`: the key is a route path, and a plain object keyed by one would read `__proto__`.
   const mountedItems = new Map<string, Record<string, unknown>>();
   const tags = new Set<string>();
+  // Scope → the operations in THIS document it unlocks: what the scheme documents, so it can never
+  // name an operation the document does not carry.
+  const unlocks = new Map<string, string[]>();
   const byRoute = [...input.routes].sort((a, b) =>
     `${a.path} ${a.method}` < `${b.path} ${b.method}` ? -1 : 1,
   );
@@ -222,6 +232,7 @@ export function mountOpenApi(
       { ...route, meta: { ...route.meta, auth: 'required' } },
       {
         scheme: BEARER_SCHEME,
+        scopes: [scope],
         everyOpLimited: mount.rateLimit !== undefined,
         unauthorizedHeaders: {
           'WWW-Authenticate': { description: 'Bearer', schema: { type: 'string' } },
@@ -234,6 +245,7 @@ export function mountOpenApi(
     };
     const extensions = (completed['x-ultimate'] as Record<string, unknown> | undefined) ?? {};
     for (const tag of (completed['tags'] as readonly string[] | undefined) ?? []) tags.add(tag);
+    unlocks.set(scope, [...(unlocks.get(scope) ?? []), route.meta.name]);
     const mounted = mountedPath(mount.prefix, route.path);
     mountedItems.set(mounted, {
       ...mountedItems.get(mounted),
@@ -249,9 +261,29 @@ export function mountOpenApi(
     paths,
     components: {
       schemas,
-      securitySchemes: { [BEARER_SCHEME]: BEARER_SECURITY_SCHEME },
+      securitySchemes: { [BEARER_SCHEME]: scopedBearerScheme(unlocks) },
     },
     tags: [...tags].sort().map((name) => ({ name })),
+  };
+}
+
+/**
+ * The mount's `bearer` scheme with its scopes stated. An `http` scheme has no `scopes` field (that
+ * is OAuth's `flows`), so they are in the description for a reader and in `x-ultimate.scopes` —
+ * scope → operation names, both sorted — for a generator; each operation's requirement names one.
+ */
+function scopedBearerScheme(unlocks: ReadonlyMap<string, readonly string[]>) {
+  const scopes = [...unlocks.keys()].sort();
+  const table = scopes.map((scope) => [scope, [...(unlocks.get(scope) ?? [])].sort()] as const);
+  const lines = table.map(([scope, names]) => `- \`${scope}\`: ${names.join(', ')}`);
+  return {
+    ...BEARER_SECURITY_SCHEME,
+    description: [
+      BEARER_SECURITY_SCHEME.description,
+      'Each operation lists the one scope a token needs in its security requirement; a token without it is answered 404.',
+      ...(lines.length === 0 ? [] : ['', 'Scopes:', ...lines]),
+    ].join('\n'),
+    'x-ultimate': { scopes: Object.fromEntries(table) },
   };
 }
 

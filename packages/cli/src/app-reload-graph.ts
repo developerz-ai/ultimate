@@ -16,7 +16,9 @@
 // A module that DEFINES a primitive is PINNED and never leaves the registry: its exports are held
 // by every importer and by a registry that refuses a second definition of one name (an entity is
 // `X_ENTITY_DUPLICATE`; a second action instance is a handler nobody routes to). The closure stops
-// at a pinned module, and an edit to one still needs a restart — exactly what it needed before.
+// at a pinned module — and RECORDS it (`takeStalePins`): a pinned module above a change still holds
+// the old instance of what changed (a slice's service under its query, an admin page's view under
+// `defineAdmin`), so only a new process serves the save. `x dev` restarts on it (`dev-supervisor.ts`).
 
 // why: Bun ships no path API; import specifiers resolve against the importing file's directory.
 import { dirname, resolve } from 'node:path';
@@ -37,6 +39,27 @@ const nodes = new Map<string, Node>();
 /** Reverse edges: file → the files that import it. */
 const importers = new Map<string, Set<string>>();
 const pinned = new Set<string>();
+
+/** A pinned module that still holds the old instance of `changed` — or IS `changed`. */
+export interface StalePin {
+  /** The saved file, absolute. */
+  readonly changed: string;
+  /** The module that defines a primitive and was not re-evaluated, absolute. */
+  readonly pinned: string;
+}
+
+/** What the last rescans' closures stopped at, until `takeStalePins` reads it. */
+let stale: StalePin[] = [];
+
+/**
+ * Every pinned module a rescan since the last call could not refresh, sorted by pinned path, and
+ * forgets them. Empty: everything the saves reached was re-evaluated and the process serves it.
+ */
+export function takeStalePins(): readonly StalePin[] {
+  const taken = stale;
+  stale = [];
+  return taken;
+}
 /**
  * Edges cost a transpile scan and a resolve per import (~300 ms over notificado.co's 1200 modules),
  * so only the one process that rescans pays it: `x dev` turns this on before its first scan. Off,
@@ -54,6 +77,7 @@ export function resetReloadGraph(): void {
   nodes.clear();
   importers.clear();
   pinned.clear();
+  stale = [];
 }
 
 /** Marks a module that defines a primitive: never evicted, and the closure stops at it. */
@@ -185,18 +209,36 @@ async function changedFiles(root: string): Promise<string[]> {
   return changed;
 }
 
-/** `changed` and everything above it, stopping at — and excluding — every pinned module. */
+/**
+ * `changed` and everything above it, stopping at — and excluding — every pinned module. Each
+ * pinned module a walk stopped at is recorded against the change that reached it, once.
+ */
 function closure(changed: readonly string[]): Set<string> {
   const dirty = new Set<string>();
-  const stack = changed.filter((path) => !pinned.has(path));
-  while (stack.length > 0) {
-    const path = stack.pop();
-    if (path === undefined || dirty.has(path)) continue;
-    dirty.add(path);
-    for (const importer of importers.get(path) ?? []) {
-      if (!pinned.has(importer)) stack.push(importer);
+  const reached = new Map<string, string>();
+  for (const origin of changed) {
+    if (pinned.has(origin)) {
+      if (!reached.has(origin)) reached.set(origin, origin);
+      continue;
+    }
+    const seen = new Set<string>();
+    const stack = [origin];
+    while (stack.length > 0) {
+      const path = stack.pop();
+      if (path === undefined || seen.has(path)) continue;
+      seen.add(path);
+      dirty.add(path);
+      for (const importer of importers.get(path) ?? []) {
+        if (!pinned.has(importer)) stack.push(importer);
+        else if (!reached.has(importer)) reached.set(importer, origin);
+      }
     }
   }
+  const held = new Set(stale.map((entry) => entry.pinned));
+  const found = [...reached]
+    .filter(([module]) => !held.has(module))
+    .map(([module, origin]) => ({ changed: origin, pinned: module }));
+  stale = [...stale, ...found].sort((a, b) => (a.pinned < b.pinned ? -1 : 1));
   return dirty;
 }
 

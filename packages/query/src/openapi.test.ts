@@ -68,7 +68,17 @@ describe('the read half of openapi.json', () => {
       oneOf: readonly Record<string, unknown>[];
     };
     expect(ok.oneOf).toHaveLength(2);
-    expect(ok.oneOf[1]?.['required']).toEqual(['rows', 'endCursor', 'hasNextPage']);
+    expect(ok.oneOf[1]?.['required']).toEqual([
+      'rows',
+      'nextCursor',
+      'hasMore',
+      'endCursor',
+      'hasNextPage',
+    ]);
+    const properties = ok.oneOf[1]?.['properties'] as Record<string, { description?: string }>;
+    expect(properties['nextCursor']?.description).toBeString();
+    expect(properties['endCursor']?.description).toContain('nextCursor');
+    expect(properties['hasNextPage']?.description).toContain('hasMore');
     expect(operation.responses['400']?.content['application/problem+json']?.schema).toEqual({
       $ref: '#/components/schemas/Problem',
     });

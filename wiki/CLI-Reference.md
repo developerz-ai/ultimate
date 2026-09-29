@@ -176,8 +176,17 @@ per save ([`app-reload-graph.ts`](https://github.com/developerz-ai/ultimate/blob
 
 A module that **defines a primitive** — it exports an entity, an action, a query, a mutator, a job
 or a task, or it is `apps/web/api/index.ts` — is pinned: never re-evaluated, and the invalidation
-stops at it. An edit there needs a restart: its exports are held by every importer and by a registry
-that refuses a second definition of one name. The route's guard (`policy`) is read by the HTTP
+stops at it: its exports are held by every importer and by a registry that refuses a second
+definition of one name. **A save that reaches one restarts `x dev`, `As of 22.12`** — the pinned
+module itself, or anything it imports: a slice's `service.ts` under its query, an admin page's view
+under `defineAdmin`. `x dev` is a supervisor and a child: the child prints
+`restarting: <saved file> under <pinned module> — …` on stderr, drains, releases the port, the lock
+and the embedded Postgres, and exits `75`; the supervisor boots a fresh child on the same port
+(`--port 0` is pinned to one free port before the first boot). Every other save stays the in-process
+reload above, and `Ctrl-C` stops both. `--once` and an embedded `startDev()` are unsupervised: there
+the save is `X_DEV_RESTART_REQUIRED` on `/_x` (or `startDev({ onRestart })` is called). With
+`--json`, each child prints its own ready document. Until 22.12 such a save logged `reloaded` and
+served the old code until a manual restart. The route's guard (`policy`) is read by the HTTP
 pipeline at boot, so adding one is a restart too, and so is an edited site asset under an unchanged
 stylesheet that names it with Sass `asset()`. Until 2026-09-27 only the edited route module itself
 was re-imported (`?x-reload=<hash>`), and every component it imported stayed the cached one: `x dev`

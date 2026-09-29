@@ -6,21 +6,83 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { isolateDeclaredTags } from '@ultimat3/cache';
 import { resetLifecycle } from '@ultimat3/core';
+import type { StalePin } from './app-reload-graph';
 import type { DevServer } from './cmd-dev';
 import { startDev } from './cmd-dev';
-import { DEV_FIXTURE_FILES as FILES, resetRegistries } from './cmd-dev-fixture';
+import { DEV_FIXTURE_FILES, resetRegistries } from './cmd-dev-fixture';
 import { CliNotImplementedError } from './errors';
 
 const ROOT = join(import.meta.dir, '..', '.dev-reload-fixture');
+
+/**
+ * The shared fixture, plus the two shapes a real app's save goes through that it does not have:
+ * a page whose markup is TWO imports away (page → view → ui leaf), and a slice whose service is
+ * imported only by a read the page `load`s — a module that defines a primitive, so pinned.
+ */
+const FILES: Readonly<Record<string, string>> = {
+  ...DEV_FIXTURE_FILES,
+  'apps/web/app/deep/ui-deep.tsx': `export function Deep() {
+  return <b>deep one</b>;
+}
+`,
+  'apps/web/app/deep/view.tsx': `import { Deep } from './ui-deep';
+export function View() {
+  return <section><Deep /></section>;
+}
+`,
+  'apps/web/app/deep/page.tsx': `import { defineRoute } from '@ultimat3/render';
+import { View } from './view';
+
+export const config = defineRoute({
+  render: 'ssr',
+  hydrate: 'never',
+  offline: 'runtime',
+  budget: { js: '0kb' },
+  meta: () => ({ title: 'Deep', description: 'A page whose markup is two imports away' }),
+});
+
+export function Page() {
+  return <main><View /></main>;
+}
+`,
+  'apps/web/app/greet/service.ts': `export const greeting = (): string => 'greeting one';
+`,
+  'apps/web/app/greet/queries.ts': `import { allow } from '@ultimat3/policy';
+import { from, query, t } from '@ultimat3/query';
+import { greeting } from './service';
+export const greetingRead = query({
+  input: t.object({}),
+  policy: allow('public'),
+  sql: () => from<{ id: string; text: string }>('greetings', () => [{ id: '1', text: greeting() }]).orderBy('id'),
+});
+`,
+  'apps/web/app/greet/page.tsx': `import { defineRoute } from '@ultimat3/render';
+import { greetingRead } from './queries';
+
+export const config = defineRoute({
+  render: 'ssr',
+  hydrate: 'never',
+  offline: 'runtime',
+  budget: { js: '0kb' },
+  load: () => greetingRead({}),
+  meta: () => ({ title: 'Greet', description: 'A page whose slice service is edited' }),
+});
+
+export function Page(props: { readonly data: readonly { readonly text: string }[] }) {
+  return <main><p>{props.data[0]?.text}</p></main>;
+}
+`,
+};
 /** Generous and explicit, for the reason `cmd-dev.test.ts` gives: a hang reports as a hang. */
 const BOOT_TIMEOUT_MS = 60_000;
 
 let server: DevServer;
 /** Rebound by each test that saves a file, so it can await the tick the watcher turned into. */
 let onReload: (file: string) => void = () => undefined;
+let onRestart: (pins: readonly StalePin[]) => void = () => undefined;
 const restoreTags = isolateDeclaredTags();
 
 beforeAll(async () => {
@@ -35,6 +97,7 @@ beforeAll(async () => {
     env: { BUILD_ID: 'stamped-7' },
     roles: ['web'],
     onReload: (file) => onReload(file),
+    onRestart: (pins) => onRestart(pins),
   });
 }, BOOT_TIMEOUT_MS);
 
@@ -94,6 +157,44 @@ describe('unit · x dev serves the save', () => {
       expect(await page('/news')).toContain('headline one');
       expect(await save(file, 'headline one', 'headline two')).toBe(file);
       expect(await page('/news')).toContain('headline two');
+    },
+    BOOT_TIMEOUT_MS,
+  );
+  test(
+    'an edited leaf two imports below the page is served fresh',
+    async () => {
+      const file = 'apps/web/app/deep/ui-deep.tsx';
+      expect(await page('/deep')).toContain('deep one');
+      expect(await save(file, 'deep one', 'deep two')).toBe(file);
+      expect(await page('/deep')).toContain('deep two');
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  // The half no re-import can serve (notificado.co, 2026-09-29: an admin page's `ui-*.tsx` under
+  // `defineAdmin`, a slice's service under its query): the read that imports the service DEFINES a
+  // primitive, so it keeps the first service. Until 22.12 this logged "reloaded" and served
+  // "greeting one" until a manual restart. Now it is a restart — `cmd-dev-restart.live.test.ts`
+  // proves the supervised process serves the save; this proves the in-process half asks for it.
+  test(
+    'an edited slice service under a read is a restart, never "reloaded" over the old read',
+    async () => {
+      const file = 'apps/web/app/greet/service.ts';
+      expect(await page('/greet')).toContain('greeting one');
+      const restarted = new Promise<readonly StalePin[]>((resolve) => {
+        onRestart = resolve;
+      });
+      let reloaded = false;
+      onReload = () => {
+        reloaded = true;
+      };
+      await Bun.write(join(ROOT, file), FILES[file]?.replace('greeting one', 'greeting two') ?? '');
+      const pins = await restarted;
+      expect(pins.map((pin) => relative(ROOT, pin.changed))).toEqual([file]);
+      expect(pins.map((pin) => relative(ROOT, pin.pinned))).toEqual([
+        'apps/web/app/greet/queries.ts',
+      ]);
+      expect(reloaded).toBe(false);
     },
     BOOT_TIMEOUT_MS,
   );

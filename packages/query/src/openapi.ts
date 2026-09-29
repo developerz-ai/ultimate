@@ -48,11 +48,18 @@ const ANSWERS: readonly Record<string, unknown>[] = [
   { type: 'array', items: {} },
   {
     type: 'object',
-    required: ['rows', 'endCursor', 'hasNextPage'],
+    // `nextCursor`/`hasMore` are the preferred names; the other two are the same values, kept as
+    // aliases — documented as such, not deprecated — so every client written against them reads on.
+    required: ['rows', 'nextCursor', 'hasMore', 'endCursor', 'hasNextPage'],
     properties: {
       rows: { type: 'array', items: {} },
-      endCursor: { type: ['string', 'null'] },
-      hasNextPage: { type: 'boolean' },
+      nextCursor: {
+        type: ['string', 'null'],
+        description: `the signed cursor that continues this listing — send it as ${PAGE_AFTER_KEY}; null on an empty page`,
+      },
+      hasMore: { type: 'boolean', description: 'whether another page follows' },
+      endCursor: { type: ['string', 'null'], description: 'alias of nextCursor — the same value' },
+      hasNextPage: { type: 'boolean', description: 'alias of hasMore — the same value' },
     },
   },
 ];
@@ -170,7 +177,7 @@ const PAGE_PARAMETERS: readonly Record<string, unknown>[] = [
     name: PAGE_AFTER_KEY,
     in: 'query',
     required: false,
-    description: `the endCursor a previous page answered; needs ${PAGE_FIRST_KEY}`,
+    description: `the nextCursor (alias endCursor) a previous page answered; needs ${PAGE_FIRST_KEY}`,
     schema: { type: 'string' },
   },
 ];

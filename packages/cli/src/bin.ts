@@ -33,6 +33,20 @@ if (local !== undefined) {
   process.exit(await child.exited);
 }
 
+// `x dev` supervises a child that serves (`dev-supervisor.ts`): a save that reaches a module which
+// defines a primitive is a restart, since no re-import in one process can serve it. After the
+// handoff above, so the supervisor and its children are the app's own CLI.
+// Imported only for `dev`: every other command's process must not load, or register, anything more.
+if (Bun.argv[2] === 'dev') {
+  const { devSupervision, freeDevPort, superviseDev } = await import('./dev-supervisor');
+  const supervision = devSupervision(Bun.argv.slice(2), Bun.env, freeDevPort);
+  if (supervision !== undefined) {
+    process.exit(
+      await superviseDev({ bin: import.meta.path, argv: supervision.argv, env: Bun.env }),
+    );
+  }
+}
+
 const code = await dispatch({
   argv: Bun.argv.slice(2),
   cwd: process.cwd(),

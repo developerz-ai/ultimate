@@ -336,16 +336,19 @@ not exported, because a page is the read's own answer rather than an imported he
 ### The same page over HTTP — `?_first=` and `?_after=`
 
 The route reads two controls off the search string BEFORE the schema sees it, and with either
-present answers the `Page` envelope `.page()` answers a server caller with — `{ rows, endCursor,
-hasNextPage }`, the same names, so a cursor read off the wire and one read off a direct call are
-one string in one field. Without a control the answer is the bare array it has always been, so a
+present answers the `Page` envelope `.page()` answers a server caller with — `{ rows, nextCursor,
+hasMore, endCursor, hasNextPage }`, the same names, so a cursor read off the wire and one read off a
+direct call are one string in one field. **`nextCursor` and `hasMore` are the preferred names**
+(`As of 22.12`); `endCursor` and `hasNextPage` carry the same two values, always, as aliases — not
+deprecated, so a client reading them keeps working. `openapi.json` lists all five as required, the
+aliases described as such. Without a control the answer is the bare array it has always been, so a
 client written before the controls existed keeps reading rows. `As of 2026-09`; until then the
 route had no envelope, and a query over a paged external source carried its page marker on a row
 (an `olderCursor` column on the oldest message), which is a cursor on the wrong side of the shape.
 
 ```
-GET /_x/query/live-feed?orgId=…&_first=20             → { rows, endCursor, hasNextPage }
-GET /_x/query/live-feed?orgId=…&_first=20&_after=<c>  → the next page
+GET /_x/query/live-feed?orgId=…&_first=20             → { rows, nextCursor, hasMore, endCursor, hasNextPage }
+GET /_x/query/live-feed?orgId=…&_first=20&_after=<c>  → the next page (<c> = nextCursor)
 GET /_x/query/live-feed?orgId=…                       → [ …rows ]   (unchanged)
 ```
 

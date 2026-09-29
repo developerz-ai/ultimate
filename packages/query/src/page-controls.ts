@@ -90,7 +90,7 @@ export function pageControlsOf(name: string, values: SearchValues): SplitSearch 
   if (cursor.length === 0) {
     throw new QueryInputInvalidError(
       name,
-      `${PAGE_AFTER_KEY} is empty — omit it for the first page, or send the endCursor the previous page answered`,
+      `${PAGE_AFTER_KEY} is empty — omit it for the first page, or send the nextCursor the previous page answered`,
     );
   }
   return { input, page: { first: Number(size), after: cursor } };

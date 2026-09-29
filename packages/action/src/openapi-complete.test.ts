@@ -111,7 +111,7 @@ describe('mountOpenApi', () => {
       declared: { title: 'Notificado API', version: '1.0.0' },
       mount: {
         prefix: '/v1',
-        scopes: { 'cases:write': ['createCase'] },
+        scopes: { 'cases:write': ['createCase'], 'ops:read': ['health'] },
         resolveToken: () => null,
         rateLimit: { limit: 60, windowMs: 60_000 },
       },
@@ -119,14 +119,14 @@ describe('mountOpenApi', () => {
     });
 
   test('holds only the cut, at the mounted paths', () => {
-    expect(Object.keys(mounted().paths)).toEqual(['/v1/create-case']);
+    expect(Object.keys(mounted().paths)).toEqual(['/v1/create-case', '/v1/health']);
   });
 
   test('bearer only, with 401, the hidden 404, a limited 429, and the scope it needs', () => {
     const doc = mounted();
     expect(Object.keys(doc.components.securitySchemes ?? {})).toEqual(['bearer']);
     const created = op(doc, '/v1/create-case');
-    expect(created.security).toEqual([{ bearer: [] }]);
+    expect(created.security).toEqual([{ bearer: ['cases:write'] }]);
     expect(Object.keys(created.responses).sort()).toEqual(
       ['200', '400', '401', '403', '404', '422', '429'].sort(),
     );
@@ -134,10 +134,32 @@ describe('mountOpenApi', () => {
     expect(Object.keys(created.responses['401']?.headers ?? {})).toEqual(['WWW-Authenticate']);
   });
 
+  test('each operation names ITS scope in the security requirement, never an empty list', () => {
+    // `health` is public on the plain API; mounted, it is still a bearer route behind `ops:read`.
+    expect(op(mounted(), '/v1/health').security).toEqual([{ bearer: ['ops:read'] }]);
+  });
+
+  test('the bearer scheme documents every scope and the operations it unlocks', () => {
+    const bearer = mounted().components.securitySchemes?.['bearer'] as {
+      readonly type: string;
+      readonly description: string;
+      readonly 'x-ultimate': { readonly scopes: Readonly<Record<string, readonly string[]>> };
+    };
+    expect(bearer.type).toBe('http');
+    expect(bearer['x-ultimate'].scopes).toEqual({
+      'cases:write': ['createCase'],
+      'ops:read': ['health'],
+    });
+    expect(bearer.description).toContain('`cases:write`');
+    expect(bearer.description).toContain('`ops:read`');
+  });
+
   test('carries only the schemas the cut references', () => {
     expect(Object.keys(mounted().components.schemas).sort()).toEqual([
       'CreateCaseInput',
       'CreateCaseOutput',
+      'HealthInput',
+      'HealthOutput',
       'Problem',
     ]);
   });

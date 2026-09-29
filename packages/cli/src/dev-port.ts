@@ -4,7 +4,7 @@
 
 import { PORT_RANGE, readIntFlag } from './flag-number';
 import type { ParsedArgs } from './parse';
-import { portFromEnv } from './serve';
+import { portFromEnv } from './serve-env';
 
 export const DEFAULT_DEV_PORT = 3000;
 

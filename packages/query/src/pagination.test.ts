@@ -101,6 +101,22 @@ describe('cursor pagination', () => {
     expect(second.hasNextPage).toBe(false);
   });
 
+  test('every page carries `nextCursor` and `hasMore`, the same values under the preferred names', async () => {
+    const feed = registerQuery('orgFeed', defineFeed());
+    const first = await paginate(feed, { orgId: ORG }, { first: 2, ctx });
+    expect(first.nextCursor).toBeString();
+    expect(first.nextCursor).toBe(first.endCursor);
+    expect(first.hasMore).toBe(true);
+    const last = await paginate(
+      feed,
+      { orgId: ORG },
+      { first: 2, ctx, after: first.nextCursor ?? '' },
+    );
+    expect(last.hasMore).toBe(false);
+    expect(last.hasMore).toBe(last.hasNextPage);
+    expect(last.nextCursor).toBe(last.endCursor);
+  });
+
   test('a cursor from another query cannot page this one', async () => {
     const feed = registerQuery('orgFeed', defineFeed());
     const foreign = encodeCursor({ scope: 'other:abc', key: [20], id: 'b' });

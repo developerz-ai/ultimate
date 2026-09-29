@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "49d22e449c4bd5c01dbd3f7348d7efbc1798564fbb6f81b8a0492c0559bb7b59",
+  "buildId": "2f2b6d89c397682176018c67d25eccd7f0cf0fab425f323baf398df10930f1ba",
   "tiers": {
     "0": [
       "core",
@@ -1056,6 +1056,11 @@
     },
     {
       "code": "X_DEV_LOCK_UNREADABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEV_RESTART_REQUIRED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
