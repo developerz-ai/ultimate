@@ -10,7 +10,7 @@
 import { join, relative, sep } from 'node:path'; // why: Bun ships no path-join primitive.
 import { frameworkVersion, logger } from '@ultimat3/core';
 import { contentHash, loadStylesheet } from '@ultimat3/render/server';
-import type { IslandBundle, IslandChunk } from './island-bundle';
+import type { IslandBundle, IslandChunk, SharedChunk } from './island-bundle';
 import { buildIslands, discoverIslands, islandBundle } from './island-bundle';
 import { islandStylesheets } from './island-styles';
 
@@ -23,12 +23,23 @@ interface StoredChunk {
   readonly moduleId: string;
   readonly url: string;
   readonly identity: string;
+  /** The shared chunk URLs the entry loads, transitively (`IslandChunk.imports`). */
+  readonly imports: readonly string[];
+}
+
+/** A shared chunk: no island of its own, verified by the same hash. */
+interface StoredShared {
+  readonly url: string;
+  readonly identity: string;
+  readonly importers: readonly string[];
 }
 
 interface StoreIndex {
   readonly framework: string;
   readonly bun: string;
   readonly chunks: readonly StoredChunk[];
+  /** Absent in a store written before islands were split: read as none. */
+  readonly shared: readonly StoredShared[];
   /**
    * The stylesheets the island build registered, app-relative and sorted. Registered again at boot
    * from the app's own sources, so a container serving these chunks joins the SAME surface
@@ -56,7 +67,14 @@ export async function writeIslandStore(
       moduleId: chunk.moduleId,
       url: chunk.url,
       identity: contentHash(chunk.code),
+      imports: chunk.imports,
     });
+  }
+  const shared: StoredShared[] = [];
+  for (const chunk of bundle.shared) {
+    await Bun.write(join(dir, chunkFile(chunk.url)), chunk.code);
+    written.push(`${ISLAND_STORE_DIR}/${chunkFile(chunk.url)}`);
+    shared.push({ url: chunk.url, identity: contentHash(chunk.code), importers: chunk.importers });
   }
   const stylesheets = islandStylesheets()
     .map((path) => relative(root, path).split(sep).join('/'))
@@ -66,6 +84,7 @@ export async function writeIslandStore(
     framework: frameworkVersion(),
     bun: Bun.version,
     chunks,
+    shared,
     stylesheets,
   };
   await Bun.write(join(dir, INDEX), `${JSON.stringify(index, null, 2)}\n`);
@@ -73,6 +92,9 @@ export async function writeIslandStore(
 }
 
 const isString = (value: unknown): value is string => typeof value === 'string';
+
+const stringsOf = (value: unknown): readonly string[] =>
+  Array.isArray(value) ? value.filter(isString) : [];
 
 /** The index, narrowed field by field — a file on disk is input, never a trusted shape. */
 function parseIndex(value: unknown): StoreIndex | undefined {
@@ -86,15 +108,28 @@ function parseIndex(value: unknown): StoreIndex | undefined {
   for (const entry of chunks) {
     if (typeof entry !== 'object' || entry === null) return undefined;
     const chunk = entry as Record<string, unknown>;
-    const { file, moduleId, url, identity } = chunk;
+    const { file, moduleId, url, identity, imports } = chunk;
     if (!isString(file) || !isString(moduleId) || !isString(url) || !isString(identity))
       return undefined;
-    parsed.push({ file, moduleId, url, identity });
+    parsed.push({ file, moduleId, url, identity, imports: stringsOf(imports) });
+  }
+  const shared: StoredShared[] = [];
+  for (const entry of Array.isArray(record['shared']) ? record['shared'] : []) {
+    if (typeof entry !== 'object' || entry === null) return undefined;
+    const { url, identity, importers } = entry as Record<string, unknown>;
+    if (!isString(url) || !isString(identity)) return undefined;
+    shared.push({ url, identity, importers: stringsOf(importers) });
   }
   const sheets = record['stylesheets'];
   // Absent in a 22.3.2 store: read as none, and the boot builds when it matters (see below).
   const stylesheets = Array.isArray(sheets) ? sheets.filter(isString) : [];
-  return { framework: record['framework'], bun: record['bun'], chunks: parsed, stylesheets };
+  return {
+    framework: record['framework'],
+    bun: record['bun'],
+    chunks: parsed,
+    shared,
+    stylesheets,
+  };
 }
 
 /** A verified store, or the one sentence saying why it cannot be served. */
@@ -118,11 +153,15 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
   if (stored.join('\n') !== present.join('\n')) {
     return { stale: 'the stored islands are not the islands this app has' };
   }
-  const chunks: IslandChunk[] = [];
-  for (const entry of index.chunks) {
+  const verified = async (entry: { readonly url: string; readonly identity: string }) => {
     const bytes = Bun.file(join(dir, chunkFile(entry.url)));
     const code = (await bytes.exists()) ? await bytes.text() : undefined;
-    if (code === undefined || contentHash(code) !== entry.identity) {
+    return code === undefined || contentHash(code) !== entry.identity ? undefined : code;
+  };
+  const chunks: IslandChunk[] = [];
+  for (const entry of index.chunks) {
+    const code = await verified(entry);
+    if (code === undefined) {
       return { stale: `${entry.url} is missing or does not match its recorded hash` };
     }
     chunks.push({
@@ -131,8 +170,26 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
       url: entry.url,
       code,
       bytes: new TextEncoder().encode(code).byteLength,
+      imports: entry.imports,
     });
   }
+  const shared: SharedChunk[] = [];
+  for (const entry of index.shared) {
+    const code = await verified(entry);
+    if (code === undefined) {
+      return { stale: `${entry.url} is missing or does not match its recorded hash` };
+    }
+    shared.push({
+      url: entry.url,
+      code,
+      bytes: new TextEncoder().encode(code).byteLength,
+      importers: entry.importers,
+    });
+  }
+  // An entry importing a chunk the store does not hold would boot to a 404 in every pod.
+  const held = new Set(shared.map((chunk) => chunk.url));
+  const orphan = chunks.flatMap((chunk) => chunk.imports).find((url) => !held.has(url));
+  if (orphan !== undefined) return { stale: `${orphan}, a shared chunk, is not in the store` };
   // In sorted order, as `island` sheets: `stylesFor` orders those by path, so this is the same
   // surface stylesheet the build that wrote the store joined.
   for (const sheet of index.stylesheets) {
@@ -140,7 +197,7 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
     if (!(await source.exists())) return { stale: `${sheet}, an island stylesheet, is missing` };
     loadStylesheet(join(root, sheet), await source.text(), 'island');
   }
-  return { bundle: islandBundle(chunks) };
+  return { bundle: islandBundle(chunks, shared) };
 }
 
 /**

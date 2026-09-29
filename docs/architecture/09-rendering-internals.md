@@ -73,7 +73,7 @@ Emits:
 | Props cross a boundary | must be structured-clone serializable. A function or class instance is `X_ISLAND_PROPS_INVALID` |
 | Props transport | inlined JSON for small payloads, a separate `p` fetch above the size cap |
 | Children | server-rendered HTML by default; a child needing its own timing becomes its own island, nested |
-| Chunking | one chunk per island, content-hashed. Two islands importing the same module share a sub-chunk **within the same graph** |
+| Chunking | one self-contained chunk per island, source-addressed. `islands: { sharedChunks: true }`: every island in one split build, so a module two islands import is one shared `/islands/chunk-<hash>.js` the entries import by relative name. A route's JS is the unique set of files its islands load |
 | Context | server context does not cross the boundary. An island reads `ctx` values passed as props, or the client-side locale/theme/tz signals |
 | Counting | islands and their bytes are attributed to the route in `.x/build-stats.json` (written by `x build`, read by `x verify`'s `budgets` step), so a new island shows up as a byte delta with a named cause |
 

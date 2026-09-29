@@ -8,6 +8,32 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **core, cli, testing:** `islands: { sharedChunks: true }` in `app.config.ts` — islands that share
+  chunks, opt-in. Every `*.island.tsx` is then built in ONE `Bun.build` with `splitting: true`, so a
+  module two islands import is one `/islands/chunk-<hash>.js` a page fetches once and a browser
+  caches across pages, instead of a copy inside each island. Entries import their chunks by
+  relative name and are served beside them under `/islands/` with the same `immutable` rule; a
+  static export, the container's island store and the service-worker precache carry them (a
+  precached page's entry brings its chunks). Chunk names are source identities like entry names —
+  never Bun's output hash, which flaps under `minify` — and an entry's name moves when a chunk it
+  imports does. Measured on a fixture of two islands sharing a 20 kB module: 41,926 → 21,996 B for
+  the page with both; a page with one of them 21,837 → 21,894 B. OFF by default, because tree
+  shaking across one split build keeps what any importer uses: on, `examples/dummy`'s plain-DOM
+  update banner goes 712 → 16,288 B and three of its routes exceed their budgets; notificado.co's
+  `/afiliados` goes 55,585 → 42,331 B with both uploads and 33,958 → 39,931 B with one. Module state
+  in a shared chunk is one instance per page. `IslandBundle` gains `shared` and `assetAt(url)`,
+  `IslandChunk` gains `imports`, `buildIslands` takes `sharedChunks`, and `mountIsland` writes a
+  builder's `shared` chunks beside the entry.
+
+### Changed
+
+- **cli:** a route's `budget.js` is the unique set of files its islands load: `measureDocumentJs`
+  follows an island entry into every chunk it imports (static and `import()`), each file counted
+  once per document. Unchanged for a self-contained island; `BUILD_STATS_RULES` is 3, so rebuild
+  with `x build --target static` before `x verify`.
+
 ### Fixed
 
 - **db, cli:** `x verify`'s hand-written-SQL rail (`X_MIGRATION_UNGENERATABLE`) no longer counts

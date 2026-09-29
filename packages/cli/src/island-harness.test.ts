@@ -169,6 +169,7 @@ describe('unit · the harness route serves one address and refuses only what it 
     url: '/islands/settings-abc.js',
     code: 'export function mount(){}',
     bytes: 25,
+    imports: [],
   };
   const routes = islandHarnessRoutes({
     islands: () => islandBundle([chunk]),

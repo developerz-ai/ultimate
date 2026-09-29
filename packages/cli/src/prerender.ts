@@ -141,7 +141,12 @@ function heaviestSource(
   );
   if (heaviest === undefined) return undefined;
   const chunk = bundle.chunkAt(heaviest.url);
-  return chunk === undefined ? [heaviest.url] : [chunk.file];
+  if (chunk !== undefined) return [chunk.file];
+  // A shared chunk has no file of its own: the chain is an island on THIS page that imports it.
+  const importer = bundle.chunks.find(
+    (one) => one.imports.includes(heaviest.url) && entries.some((entry) => entry.url === one.url),
+  );
+  return importer === undefined ? [heaviest.url] : [importer.file, heaviest.url];
 }
 
 export const DEFAULT_ORIGIN = 'https://localhost';

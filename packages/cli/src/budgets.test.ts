@@ -27,7 +27,7 @@ import { staticReportData } from './static-report';
 import { SW_REGISTER_PATH, serviceWorkerHead } from './sw-artifacts';
 
 /** What the rules were when `BUILD_STATS_RULES` was last set. Re-pin only together with a bump. */
-const RULES_PIN = { rules: 2, fingerprint: 'ceadfed6ac545548' } as const;
+const RULES_PIN = { rules: 3, fingerprint: '42a6458622f737b8' } as const;
 
 const manifestOf = (...routes: readonly RouteFact[]) =>
   buildManifest({ app: { name: 'fixture', version: '1.0.0' }, routes });
@@ -455,7 +455,13 @@ async function measurementRules(): Promise<string> {
     const measured = await measureDocumentJs(`<script${kind}>x</script>`, probe);
     if (measured.jsBytes > 0) charged.push(kind.trim() || '(none)');
   }
+  // Which imports of an island entry are followed into the files they load (rules v3).
+  await Bun.write(join(probe, 'islands/dep.js'), 'x');
+  await Bun.write(join(probe, 'islands/lazy.js'), 'x');
+  await Bun.write(join(probe, 'islands/e.js'), 'import"./dep.js";import("./lazy.js");');
+  const followed = await measureDocumentJs('<div data-x-entry="/islands/e.js"></div>', probe);
   return JSON.stringify({
+    followed: followed.entries.map((entry) => entry.url).sort(),
     scripts: [...FRAMEWORK_SCRIPTS].sort(),
     inline: [...FRAMEWORK_INLINE_SCRIPTS].map((body) => Bun.hash(body).toString(16)).sort(),
     charged,

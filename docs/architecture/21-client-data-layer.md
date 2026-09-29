@@ -262,13 +262,22 @@ workspace app, the reference app included, got neither a worker nor a boot. It r
 persisted records and opens the outbox once per page, so that work is not repeated in every island
 chunk. `X_BUILD_FAILED` names `page boot` or `sync worker` when one of them fails to bundle.
 
-## `splitting: false` stays
+## Shared chunks, opt-in
 
-Every island is still its own `Bun.build` with `splitting: false`
-(`packages/cli/src/island-bundle.ts:84`), because the budget compares one chunk's bytes and a shared
-chunk would make that number a graph walk. The page handle on `globalThis` makes **state** single
-even though **code** is duplicated per island. A shared runtime chunk is the next lever for bytes,
-with its own budget semantics — named here, not in 21.0.0.
+By default every island is still its own `Bun.build` with `splitting: false`: each chunk is
+self-contained and its size is the whole cost of booting it. `islands: { sharedChunks: true }`
+(As of 2026-09-29, `packages/cli/src/island-bundle.ts`, `buildAll`) builds every island in ONE
+split bundle instead: a module two islands import is one shared chunk, named by its source identity
+(`island-link.ts`), fetched once per page and cached across pages. A route's budget is the graph
+walk `measureDocumentJs` does off the emitted files, each file counted once. Module state in a
+shared chunk is one instance per PAGE, not per island; the page handle on `globalThis` was already
+single, so records and sockets do not change.
+
+Opt-in because tree shaking across one split build keeps what ANY importer uses. Measured: the
+update banner in `examples/dummy` 712 → 16,288 B (three reference-app routes over budget);
+notificado.co's `/afiliados` with both uploads 55,585 → 42,331 B, with one upload 33,958 → 39,931 B.
+The lever that would make it the default is splitting per ROUTE (the islands one document renders),
+not per app.
 
 ## Enforcement
 

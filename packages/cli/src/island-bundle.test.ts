@@ -10,14 +10,8 @@ import { dirname, join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import type { MountedIsland } from '@ultimat3/testing';
 import { mountIsland } from '@ultimat3/testing';
-import {
-  buildIslands,
-  clearIslandChunkCache,
-  discoverIslands,
-  ISLAND_BASE_PATH,
-  islandBundle,
-  stableChunk,
-} from './island-bundle';
+import { buildIslands, discoverIslands, ISLAND_BASE_PATH, islandBundle } from './island-bundle';
+import { clearIslandChunkCache, stableChunk } from './island-identity';
 import { transformIslandTsx } from './solid-loader';
 
 // `.island-fixture/bundle`, never `.island-fixture` itself. This suite wipes its root in both

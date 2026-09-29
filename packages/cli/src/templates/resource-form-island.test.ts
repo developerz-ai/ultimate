@@ -111,6 +111,7 @@ describe('unit · x g resource emits its form as a client entry', () => {
         url: '/islands/invoice-form-0.js',
         code: '',
         bytes: 0,
+        imports: [],
       },
     ]);
     expect(bundle.resolverFor(PAGE)(src)).toBe('/islands/invoice-form-0.js');
