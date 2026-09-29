@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.13.0 - 2026-09-29
+
 ### Added
 
 - **core, cli, testing:** `islands: { sharedChunks: true }` in `app.config.ts` â€” islands that share
@@ -59,6 +63,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `-- ungeneratable:` header. The backfill an author writes for the `-- backfill â€¦, then: â€¦ set not
   null;` note is still counted (the `update`); its `set not null` is not. A header that now
   over-counts is not a finding.
+
+### Commits
+
+- fix: x db gen column moves counted, x dev orphaned workers exit; feat: opt-in shared island chunks (#587)
 
 ## 22.12.0 - 2026-09-29
 
