@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.10.0 - 2026-09-29
+
 ### Added
 
 - **mcp:** `initialize` answers `instructions` when the app declares them â€”
@@ -81,6 +85,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   whose `configureLocales({ order })` leaves `'header'` out no longer varies on it â€” every SSR
   and ISR page added it whatever the order, so a CDN stored one copy per browser language of a
   page that could not differ by it. A path-locale route already dropped it.
+
+### Commits
+
+- feat(mcp): instructions, tool annotations + outputSchema, isError argument results, compact catalog + surface budget, caller-facing fixes; sitemap extra + lastmod; Vary only when read (#581)
 
 ## 22.9.1 - 2026-09-29
 
