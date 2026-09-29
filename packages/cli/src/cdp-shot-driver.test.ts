@@ -145,6 +145,8 @@ describe('unit · a session is one page, configured before it loads anything', (
       value: 'granted',
       url: 'http://localhost:4321/',
     });
+    expect(wire.methods()).toContain('Network.enable');
+    expect(wire.methods()).toContain('Network.setCookie');
     expect(wire.methods().indexOf('Network.setCookie')).toBeGreaterThan(
       wire.methods().indexOf('Network.enable'),
     );
