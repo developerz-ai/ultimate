@@ -8,7 +8,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **db, cli:** `x verify`'s hand-written-SQL rail (`X_MIGRATION_UNGENERATABLE`) no longer counts
+  the in-place column moves `x db gen` writes itself — `alter column … set default` / `drop default`
+  and `set not null` / `drop not null`. They were missing from `GENERATABLE_FORMS`, so a generated
+  migration that moved a default or dropped a NOT NULL was refused until it carried a
+  `-- ungeneratable:` header. The backfill an author writes for the `-- backfill …, then: … set not
+  null;` note is still counted (the `update`); its `set not null` is not. A header that now
+  over-counts is not a finding.
 
 ## 22.12.0 - 2026-09-29
 
