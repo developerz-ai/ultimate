@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.12.0 - 2026-09-29
+
 ### Added
 
 - **query:** the page envelope â€” `query.page()` and `GET /_x/query/<name>?_first=â€¦` â€” also answers
@@ -41,6 +45,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   in-process reload (unchanged speed). SIGINT/SIGTERM to the supervisor are forwarded and never
   answered with a respawn. `--once` is unsupervised; `startDev({ onRestart })` receives the pins
   instead of `onReload`.
+
+### Commits
+
+- feat: page envelope nextCursor/hasMore aliases; per-operation bearer scopes in mount OpenAPI; x dev restarts when a save reaches a pinned primitive module (#585)
 
 ## 22.11.0 - 2026-09-29
 
