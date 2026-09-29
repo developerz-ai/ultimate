@@ -13,7 +13,7 @@ import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
 import { createMcpServer } from './server';
 import type { JsonRpcResponse } from './wire';
-import { INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
+import { INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
 const NO_ARGS_SCHEMA = { type: 'object', properties: {}, additionalProperties: false } as const;
 
@@ -250,8 +250,12 @@ describe('outcome 2 — scope: named out loud, and decided before the policy', (
       call('orders.refund', { nope: 1 }),
       caller('member', ['orders:write']),
     );
-    expect(response?.error?.code).toBe(INVALID_PARAMS);
-    expect(errorData(response)['code']).toBe('X_MCP_ARGS_INVALID');
+    // A tool result the model reads (22.10) — and still never the scope refusal, and the tool
+    // never ran: validation sits before the handler.
+    expect(response?.error).toBeUndefined();
+    expect(toolResult(response).isError).toBe(true);
+    expect(toolResult(response).content?.[0]?.text).toStartWith('X_INPUT_INVALID: ');
+    expect(JSON.stringify(response)).not.toContain('X_MCP_SCOPE_DENIED');
   });
 });
 

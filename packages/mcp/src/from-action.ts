@@ -28,8 +28,15 @@ import type { Actor } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import { McpToolUndeclaredError } from './errors';
 import type { McpListParams } from './list-params';
-import type { AnyMcpTool, McpCaller, McpRole, McpToolResult, ToolArgs } from './registry';
-import { jsonResult } from './registry';
+import type {
+  AnyMcpTool,
+  McpCaller,
+  McpRole,
+  McpToolAnnotations,
+  McpToolResult,
+  ToolArgs,
+} from './registry';
+import { jsonResult, structuredResult } from './registry';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
@@ -50,6 +57,13 @@ export interface McpExposure {
   readonly visibleTo?: readonly McpRole[];
   /** Override the projected tool name. Defaults to the primitive's own name. */
   readonly name?: string;
+  /** Display name for a client's UI. Contract text, like `description`. Absent: none published. */
+  readonly title?: string;
+  /**
+   * Overrides of the derived hints, key by key — see `deriveAnnotations`. The one declaration an
+   * app writes for a write that destroys nothing: `annotations: { destructiveHint: false }`.
+   */
+  readonly annotations?: McpToolAnnotations;
   /** A list query's whitelist, carried to the tool for the meta surface. See `McpListParams`. */
   readonly listParams?: McpListParams;
 }
@@ -68,6 +82,18 @@ export interface ProjectablePrimitive {
   readonly inputJsonSchema?: JsonSchema;
   /** True for a mutation. Drives the rate-limit bucket; queries set it false. */
   readonly mutates?: boolean;
+  /** The action honours an idempotency key — a repeat is answered, not re-run. */
+  readonly idempotent?: boolean;
+  /**
+   * The `outputSchema` to publish, already narrowed (`toOutputSchema`) and with an OBJECT root.
+   * Absent: no `outputSchema`, no `structuredContent` — only the text block.
+   */
+  readonly outputJsonSchema?: JsonSchema;
+  /**
+   * The key an ARRAY answer is published under in `structuredContent` — `rows` for a query, whose
+   * answer is a list and whose `outputSchema` is `{ rows: [<row>] }`. Absent: the answer IS the object.
+   */
+  readonly outputWrap?: string;
   /** The one server-authoritative entry point. Runs policy, then the handler. */
   run(args: { input: unknown; actor: Actor }): Promise<unknown>;
 }
@@ -92,11 +118,17 @@ export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
   const mutates = primitive.mutates ?? true;
   const visibleTo = primitive.mcp?.visibleTo;
   const listParams = primitive.mcp?.listParams;
+  const title = primitive.mcp?.title;
+  const outputSchema = primitive.outputJsonSchema;
+  const wrap = primitive.outputWrap;
 
   return {
     name,
+    ...(title !== undefined ? { title } : {}),
     description,
     inputSchema: primitive.inputJsonSchema ?? NO_ARGS,
+    ...(outputSchema !== undefined ? { outputSchema } : {}),
+    annotations: deriveAnnotations(primitive),
     destructive: mutates,
     ...(visibleTo !== undefined ? { visibleTo } : {}),
     ...(listParams !== undefined ? { listParams } : {}),
@@ -106,8 +138,48 @@ export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
       // same `invoke` with an actor of kind 'user', MCP arrives with kind 'agent'. Same
       // policy, same decision.
       const output = await primitive.run({ input: args, actor: caller.actor });
-      return jsonResult(output);
+      return outputSchema === undefined ? jsonResult(output) : structuredResult(output, wrap);
     },
+  };
+}
+
+/**
+ * The MCP hints a primitive's KIND already answers, with the author's `mcp.annotations` laid over
+ * them key by key:
+ *
+ * | primitive | readOnlyHint | destructiveHint | idempotentHint |
+ * |---|---|---|---|
+ * | query (`mutates: false`) | `true` | — | — |
+ * | action | `false` | `true` | `idempotent: true` on the action |
+ *
+ * `destructiveHint: true` for every action is the spec's own default made explicit, and the only
+ * safe one: the framework cannot tell an insert from a delete. `openWorldHint` is never derived —
+ * only the author knows whether a write sends mail.
+ */
+export function deriveAnnotations(primitive: ProjectablePrimitive): McpToolAnnotations {
+  const derived: McpToolAnnotations =
+    (primitive.mutates ?? true)
+      ? {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: primitive.idempotent === true,
+        }
+      : { readOnlyHint: true };
+  return { ...derived, ...definedOnly(primitive.mcp?.annotations) };
+}
+
+/**
+ * The four hint keys, and only booleans: an override's explicit `undefined` must not erase a
+ * derived hint, and a key the spec does not define is not published on its behalf.
+ */
+function definedOnly(annotations: McpToolAnnotations | undefined): McpToolAnnotations {
+  if (annotations === undefined) return {};
+  const { readOnlyHint, destructiveHint, idempotentHint, openWorldHint } = annotations;
+  return {
+    ...(typeof readOnlyHint === 'boolean' ? { readOnlyHint } : {}),
+    ...(typeof destructiveHint === 'boolean' ? { destructiveHint } : {}),
+    ...(typeof idempotentHint === 'boolean' ? { idempotentHint } : {}),
+    ...(typeof openWorldHint === 'boolean' ? { openWorldHint } : {}),
   };
 }
 

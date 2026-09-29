@@ -68,6 +68,12 @@ export interface McpToolResult {
   readonly content: readonly ContentBlock[];
   readonly isError?: boolean;
   /**
+   * The same answer as a JSON object, for a client that consumes it programmatically (MCP
+   * 2025-06-18). Set by the projection only when the tool publishes an `outputSchema`, and then it
+   * conforms to it; the text block above still carries the serialized JSON for every other client.
+   */
+  readonly structuredContent?: Readonly<Record<string, unknown>>;
+  /**
    * The `X_*` code an `isError` result refused with. AUDIT ONLY — never written to the wire,
    * because the code is already in the rendered body the model reads.
    *
@@ -81,11 +87,45 @@ export interface McpToolResult {
 
 export type ToolArgs = Record<string, unknown>;
 
+/**
+ * MCP's tool annotations (2025-06-18), spelled as the spec spells them. HINTS for a client — which
+ * calls to confirm with a human, which to retry — never a security boundary: the policy, the scope
+ * and the visibility gate decide every call whatever these say.
+ *
+ * The projection derives them from the primitive (`from-action.ts`); an action or query overrides
+ * any of them in its `mcp: { annotations }` block.
+ */
+export interface McpToolAnnotations {
+  /** `true`: the tool changes nothing. A query's default. */
+  readonly readOnlyHint?: boolean;
+  /**
+   * Meaningful only when `readOnlyHint` is false. `true`: it may delete or overwrite. An action's
+   * default is `true` — the spec's own default and the safe one: the framework cannot tell an
+   * additive write from a destructive one, so a client is told to confirm until the author says
+   * otherwise (`annotations: { destructiveHint: false }`).
+   */
+  readonly destructiveHint?: boolean;
+  /** Meaningful only when `readOnlyHint` is false. `true`: a repeat with the same args is a no-op. */
+  readonly idempotentHint?: boolean;
+  /** `true`: it reaches entities outside this app (mail, a payment provider, the web). */
+  readonly openWorldHint?: boolean;
+}
+
 export interface McpTool<A extends ToolArgs = ToolArgs> {
   readonly name: string;
+  /** Display name for a client's UI (MCP 2025-06-18). Absent: the client shows `name`. */
+  readonly title?: string;
   readonly description: string;
   /** The only argument contract. Handed verbatim to the agent by `tools/list`. */
   readonly inputSchema: JsonSchema;
+  /**
+   * The shape of `structuredContent` (MCP 2025-06-18) — a JSON Schema whose root is an object.
+   * Published by `tools/list` only when present; a tool that declares it answers
+   * `structuredContent` conforming to it on every successful call.
+   */
+  readonly outputSchema?: JsonSchema;
+  /** See `McpToolAnnotations`. Published by `tools/list` when present. */
+  readonly annotations?: McpToolAnnotations;
   /** Required scope. Absent = no scope gate (the tool's own policy is the gate). */
   readonly scope?: string;
   /** Who may see and call this tool. Absent = everyone. See `McpVisibility`. */
@@ -116,8 +156,26 @@ export type AnyMcpTool = McpTool<ToolArgs>;
 /** One `tools/list` row — complete and standalone, no follow-up fetch required. */
 export interface ToolListEntry {
   readonly name: string;
+  readonly title?: string;
   readonly description: string;
   readonly inputSchema: JsonSchema;
+  readonly outputSchema?: JsonSchema;
+  readonly annotations?: McpToolAnnotations;
+}
+
+/**
+ * The `tools/list` row of one tool: every optional member attached only when the tool carries it,
+ * so a tool declaring none of them lists exactly the three keys it always did.
+ */
+export function toolListEntry(tool: AnyMcpTool): ToolListEntry {
+  return {
+    name: tool.name,
+    ...(tool.title === undefined ? {} : { title: tool.title }),
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    ...(tool.outputSchema === undefined ? {} : { outputSchema: tool.outputSchema }),
+    ...(tool.annotations === undefined ? {} : { annotations: tool.annotations }),
+  };
 }
 
 /** Rate-limit class of a call. Derived from `destructive`, never declared twice. */
@@ -198,7 +256,7 @@ export class ToolRegistry {
     const all = [...this.#tools.values()];
     const visible = caller === undefined ? all : all.filter((t) => visibleToCaller(t, caller));
     return visible
-      .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))
+      .map(toolListEntry)
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }
 
@@ -248,7 +306,10 @@ export function textResult(text: string, isError = false): McpToolResult {
 }
 
 /**
- * JSON payload as a text block — stable 2-space form so an agent can diff two calls.
+ * JSON payload as a text block — COMPACT, one line. Every byte of it lands in the caller's context
+ * window and stays there for the rest of the session; the 2-space form this printed until 22.10
+ * spent a third of a large answer on indentation (a staff catalog measured 32.5k characters).
+ * `JSON.stringify` is deterministic for one value, so two calls still diff.
  *
  * TOTAL, because the value is an app's: `toolFromAction` hands an action's own return value
  * straight here, and `JSON.stringify` answers `undefined` for a handler that returned nothing —
@@ -258,14 +319,44 @@ export function textResult(text: string, isError = false): McpToolResult {
  * three-line shape every other expected failure comes back as, and one an agent can act on.
  */
 export function jsonResult(value: unknown): McpToolResult {
-  let text: string | undefined;
-  try {
-    text = JSON.stringify(value, null, 2);
-  } catch {
-    return textResult(
-      'the tool ran, but its result is not JSON (a bigint, a cycle, or a toJSON that threw) — the tool has to return a JSON-serialisable value',
-      true,
-    );
+  const text = serialize(value);
+  return text === undefined ? UNSERIALIZABLE : textResult(text);
+}
+
+/**
+ * `jsonResult` plus `structuredContent`, for a tool that publishes an `outputSchema`. The structured
+ * copy is the SERIALIZED value read back — never the value itself — so a `Date` is the string the
+ * text block carries and a class instance is its JSON, exactly what a client validating against the
+ * schema is handed. `wrap` names the key an array answer is published under (`rows` for a query),
+ * because MCP's `structuredContent` is an object.
+ *
+ * An answer whose JSON is not an object (after `wrap`) gets no structured copy: the schema said
+ * object, and a structured copy that contradicts its schema is refused by a validating client.
+ */
+export function structuredResult(value: unknown, wrap?: string): McpToolResult {
+  const text = serialize(value);
+  if (text === undefined) return UNSERIALIZABLE;
+  const parsed: unknown = JSON.parse(text);
+  const structured = wrap === undefined ? parsed : { [wrap]: parsed };
+  if (typeof structured !== 'object' || structured === null || Array.isArray(structured)) {
+    return textResult(text);
   }
-  return textResult(text ?? 'null');
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent: structured as Record<string, unknown>,
+  };
+}
+
+const UNSERIALIZABLE: McpToolResult = textResult(
+  'the tool ran, but its result is not JSON (a bigint, a cycle, or a toJSON that threw) — the tool has to return a JSON-serialisable value',
+  true,
+);
+
+/** Compact JSON, `'null'` for a value with no JSON form, `undefined` when serializing threw. */
+function serialize(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value) ?? 'null';
+  } catch {
+    return undefined;
+  }
 }

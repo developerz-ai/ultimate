@@ -35,6 +35,7 @@ import. The CLI wires it.
 | `meta-surface.ts` | `surface: 'meta'` catalog: `list_resources` / `describe_resource`, `groups:` boot checks; dispatch stays in `server.ts` |
 | `list-params.ts` | `listParams` whitelist → the schema `manage_resource` enforces (flat keys: `status_eq`) |
 | `meta-errors.ts` · `framework-error.ts` | meta boot refusals · a thrown value read and rendered (split from `server.ts`) |
+| `server-voice.ts` · `surface-budget.ts` | `instructions`, `errorAudience`, the invalid-args RESULT · `tools/list`/`list_resources` size, measured and budgeted |
 
 ## Invariants
 
@@ -266,6 +267,10 @@ import. The CLI wires it.
   carrying a `fix`, then the rest of that line is DISCARDED to the next newline: what follows an
   over-long message on the same line is its tail, never a message of its own.
 - New mutating tool ⇒ set `destructive: true`, or it is metered as cheap read chatter.
+- **Invalid arguments are an `isError` RESULT (`X_INPUT_INVALID`), `As of 22.10`** — clients hide a
+  `-32602` from the model. Audit outcome stays `invalid-args`. `-32602` only for a call that is not
+  one. An app server renders `callerFix` (`errorAudience: 'caller'`); a `docs` other than
+  `ERROR_DOCS_URL` is a 4th line — branded errors only, `fix`'s trust rule.
 
 ## Commands
 

@@ -249,13 +249,18 @@ FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 
 ```ts
 site: { origin: 'https://www.example.com' },
-seo: { robots: { disallow: ['/panel', '/api'] } },
+seo: {
+  robots: { disallow: ['/panel', '/api'] },
+  sitemap: { extra: ['/verificar', '/estado'], lastmod: 'git' },
+},
 ```
 
 | field | type | default | notes |
 |---|---|---|---|
 | `site.origin` | `string \| null` | `null` | scheme + host (+ port) only; a path, query or fragment is `X_CONFIG_INVALID`. Canonical, `og:url`, hreflang and the sitemap are absolute against the first of `APP_URL`, `SITE_ORIGIN`, `site.origin`; with none, the request's own origin (served) or `https://localhost` (static build, which warns on stderr when `ULTIMATE_ENV=production`) |
 | `seo.robots.disallow` | `string[]` | `[]` | each starts with `/`. Added to the production `User-agent: *` group. Any other environment still emits `Disallow: /` alone |
+| `seo.sitemap.extra` | `string[]` | `[]` | public pages outside `site/` to list — a path (`/verificar`) answered by an `app/` route with no `policy`; listed per routed locale with hreflang alternates like a `site/` page. No origin, query or fragment (`X_CONFIG_INVALID`); a path no ungated `app/` route answers is `X_SITEMAP_EXTRA_INVALID` when the sitemap is built. `As of 22.10` |
+| `seo.sitemap.lastmod` | `'none' \| 'git' \| 'mtime' \| 'build'` | `'none'` | each `<lastmod>`: `'git'` the last commit touching the route's source file (its mtime where there is no work tree — a container image), `'mtime'` the file's mtime, `'build'` one timestamp for every URL. Read once per file per process. `As of 22.10` |
 
 ## `pwa`
 

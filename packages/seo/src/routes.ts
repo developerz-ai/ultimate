@@ -22,6 +22,11 @@ export interface RouteRecord {
   prerender?: () => readonly string[] | Promise<readonly string[]>;
   /** Keep out of the sitemap and emit `noindex`. */
   noindex?: boolean;
+  /**
+   * A public page OUTSIDE `site/` the app asked to list (`seo.sitemap.extra` in `app.config.ts`):
+   * indexable although its surface is `app`. The only way an `app/` page reaches a sitemap.
+   */
+  sitemap?: boolean;
   lastmod?: string;
   changefreq?: ChangeFreq;
   /** 0.0–1.0. Omit unless the site genuinely has a priority hierarchy. */
@@ -32,11 +37,13 @@ export function isDynamic(path: string): boolean {
   return path.includes(':') || path.includes('*');
 }
 
-/** Routes that should appear in a sitemap: public, indexable, not app-only. */
+/** Routes that should appear in a sitemap: public, indexable, `site/` or listed by the app. */
 export function indexableRoutes(routes: readonly RouteRecord[]): readonly RouteRecord[] {
   return routes.filter(
     (route) =>
-      route.surface === 'site' && route.noindex !== true && route.meta?.robots?.index !== false,
+      (route.surface === 'site' || route.sitemap === true) &&
+      route.noindex !== true &&
+      route.meta?.robots?.index !== false,
   );
 }
 

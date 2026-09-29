@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f34b443782842ca3e9b4f2dd70931004775e912a002ca1cd11d6531454b0a2f8",
+  "buildId": "b90d334b187c35c2bde3204fc06014e18d56309190c1b94df1bae3ae0e98da8a",
   "tiers": {
     "0": [
       "core",
@@ -2040,6 +2040,11 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_SURFACE_OVER_BUDGET",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_TOOL_DUPLICATE",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -3263,6 +3268,11 @@
       "code": "X_SIDE_EFFECTS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/side-effects.ts"
+    },
+    {
+      "code": "X_SITEMAP_EXTRA_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SITEMAP_TOO_LARGE",

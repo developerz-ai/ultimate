@@ -66,8 +66,13 @@ type ToolResponse = {
 } | null;
 const textOf = (response: unknown): string =>
   (response as ToolResponse)?.result?.content?.[0]?.text ?? '';
-/** Invalid arguments are a JSON-RPC `-32602`, carrying the code in `error.data`. */
-const argsRefused = (response: unknown): unknown => (response as ToolResponse)?.error?.data;
+/** The code an argument refusal names: a tool result carrying `X_INPUT_INVALID` since 22.10. */
+const argsRefused = (response: unknown): { code: string | undefined } => {
+  const result = (response as ToolResponse)?.result;
+  return {
+    code: result?.isError === true ? textOf(response).split(':')[0] : undefined,
+  };
+};
 
 const listedSchema = async (server: ReturnType<typeof defineAppMcp>['server']) => {
   const response = await server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, caller);
@@ -108,7 +113,7 @@ describe('tools/list advertises the key on idempotent actions only', () => {
     const response = await inRequest(() =>
       server.handle(call({ amount: 1, idempotencyKey: 'k1' }), caller),
     );
-    expect(argsRefused(response)).toMatchObject({ code: 'X_MCP_ARGS_INVALID' });
+    expect(argsRefused(response)).toMatchObject({ code: 'X_INPUT_INVALID' });
     expect(runs).toBe(0);
   });
 
@@ -171,7 +176,7 @@ describe('tools/call hands the key to invoke', () => {
     const response = await inRequest(() =>
       server.handle(call({ amount: 5, idempotencyKey: '' }), caller),
     );
-    expect(argsRefused(response)).toMatchObject({ code: 'X_MCP_ARGS_INVALID' });
+    expect(argsRefused(response)).toMatchObject({ code: 'X_INPUT_INVALID' });
     expect(runs).toBe(0);
   });
 });

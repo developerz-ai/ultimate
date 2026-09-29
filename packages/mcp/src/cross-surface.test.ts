@@ -252,6 +252,6 @@ describe('one declaration, ONE tool name', () => {
       | { isError?: boolean; content?: { text?: string }[] }
       | undefined;
     expect(result?.isError).toBeUndefined();
-    expect(result?.content?.[0]?.text ?? '').toContain('"ok": true');
+    expect(result?.content?.[0]?.text ?? '').toContain('"ok":true');
   });
 });

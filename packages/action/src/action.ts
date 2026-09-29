@@ -63,6 +63,33 @@ export interface ActionMcp {
    * actor's admin permissions) hands `@ultimat3/mcp` a predicate instead.
    */
   readonly visibleTo?: readonly string[];
+  /**
+   * The tool's display name in an MCP client's UI (`title`, MCP 2025-06-18). Contract text, like
+   * `description`. Omitted: none is published and the client shows the tool name.
+   */
+  readonly title?: string;
+  /**
+   * MCP tool annotations, overriding what `@ultimat3/mcp` derives key by key. An action derives
+   * `readOnlyHint: false`, `destructiveHint: true` and `idempotentHint` from `idempotent`. Hints for
+   * a client's confirmation UI — the policy decides every call whatever they say.
+   *
+   * ```ts
+   * mcp: { expose: true, annotations: { destructiveHint: false, openWorldHint: true } },
+   * ```
+   */
+  readonly annotations?: McpAnnotationHints;
+}
+
+/**
+ * MCP's four tool hints, as the spec spells them. Declared here (tier 3) and in `@ultimat3/query`
+ * because `@ultimat3/mcp` (tier 4) is the reader and cannot be imported; its `McpToolAnnotations`
+ * is the same shape.
+ */
+export interface McpAnnotationHints {
+  readonly readOnlyHint?: boolean;
+  readonly destructiveHint?: boolean;
+  readonly idempotentHint?: boolean;
+  readonly openWorldHint?: boolean;
 }
 
 export interface ActionRateLimit {

@@ -5,7 +5,7 @@ import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 import { textResult } from './registry';
 import { frameworkResources } from './resources';
 import { createMcpServer } from './server';
-import { INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
+import { INTERNAL_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
 const agent = { kind: 'agent', id: 'agent-1' } as unknown as Actor;
 
@@ -198,9 +198,14 @@ describe('dispatch', () => {
       call('tools/call', { name: 'scoped.tool', arguments: { limit: 0, nope: 1 } }),
       caller('member', ['db:read']),
     );
-    expect(bad?.error?.code).toBe(INVALID_PARAMS);
-    const badData = bad?.error?.data as { issues: string[] } | undefined;
-    expect(badData?.issues).toEqual(['nope: unknown property', 'limit: must be >= 1']);
+    // A tool RESULT the model reads, not a -32602 the client hides from it (22.10).
+    expect(bad?.error).toBeUndefined();
+    const badResult = bad?.result as { content: { text: string }[]; isError?: boolean };
+    expect(badResult.isError).toBe(true);
+    expect(badResult.content[0]?.text).toStartWith('X_INPUT_INVALID: ');
+    expect(badResult.content[0]?.text).toInclude(
+      'input for tool "scoped.tool" failed validation: nope: unknown property; limit: must be >= 1',
+    );
   });
 
   test('resources/read returns the manifest at its stable URI', async () => {

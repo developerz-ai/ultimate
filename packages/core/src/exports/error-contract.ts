@@ -46,14 +46,17 @@ export {
 } from '../error-retry';
 export type {
   CodedErrorInit,
+  ErrorAudience,
   FormatErrorOptions,
   UltimateErrorInit,
   UltimateErrorJSON,
 } from '../errors';
 export {
   ConfigInvalidError,
+  deniedCallerFix,
   EnvMissingError,
   errorRetry,
+  fixFor,
   formatError,
   InternalError,
   isUltimateError,

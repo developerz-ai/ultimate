@@ -10,8 +10,10 @@ import { ROBOTS_PATH, SITEMAP_PATH, siteSeo } from './site-seo';
 
 export interface SeoRoutesOptions {
   readonly env: Readonly<Record<string, string | undefined>>;
-  /** `site.origin` and `seo.robots.disallow` from `app.config.ts` (`loadSiteSettings`). */
+  /** `site.origin`, `seo.robots.disallow` and `seo.sitemap` from `app.config.ts` (`loadSiteSettings`). */
   readonly site?: SiteSettings;
+  /** The app root route files are relative to — `seo.sitemap.lastmod: 'git' | 'mtime'` reads them. */
+  readonly root?: string;
 }
 
 /**
@@ -37,6 +39,8 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
       baseUrl: originOf(options, request),
       environment,
       disallow: options.site?.disallow ?? [],
+      ...(options.site === undefined ? {} : { sitemap: options.site.sitemap }),
+      ...(options.root === undefined ? {} : { root: options.root }),
     });
 
   return [

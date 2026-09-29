@@ -198,7 +198,7 @@ async function webSurface(
     // filled, so this process serves exactly the CSS it renders against.
     ...styleRoutes(() => styleBundle()),
     // `robots.txt` and `sitemap.xml`, the same two files the static export writes (`site-seo.ts`).
-    ...seoRoutes({ env: options.env, site }),
+    ...seoRoutes({ env: options.env, site, root: options.root }),
     // The page's one socket: its worker script, served beside the islands for their reason.
     ...sync.routes,
     ...navigation.routes,

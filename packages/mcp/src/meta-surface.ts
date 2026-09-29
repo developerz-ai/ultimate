@@ -50,6 +50,7 @@ export const META_TOOL_NAMES: readonly string[] = [
 export const META_TOOL_ENTRIES: readonly ToolListEntry[] = [
   {
     name: DESCRIBE_RESOURCE,
+    title: 'Describe resources',
     description:
       "Full input schemas for the actions of one or more resources (batched). Call it before manage_resource when list_resources' one-line params are not enough. Read-only.",
     inputSchema: {
@@ -58,15 +59,19 @@ export const META_TOOL_ENTRIES: readonly ToolListEntry[] = [
       required: ['resources'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: LIST_RESOURCES,
+    title: 'List resources',
     description:
       'The catalog: every resource this caller may use, each with its actions (query or action), a one-line parameter hint and whether a write waits for a human to confirm. Read-only.',
     inputSchema: NO_ARGS,
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: MANAGE_RESOURCE,
+    title: 'Manage a resource',
     description:
       'Run one action of one resource: { resource, action, params }. Same policies, scopes and audit as calling the action directly. Writes may change state or send mail — read the action first.',
     inputSchema: {
@@ -79,6 +84,9 @@ export const META_TOOL_ENTRIES: readonly ToolListEntry[] = [
       required: ['resource', 'action'],
       additionalProperties: false,
     },
+    // The door to every grouped tool, reads and writes alike: a client has to assume the worst of
+    // it. `list_resources` says per action which is which.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
   },
 ];
 
@@ -253,6 +261,40 @@ export function schemaOf(tool: AnyMcpTool): JsonSchema {
     ? tool.inputSchema
     : listParamsSchema(tool.listParams, tool.inputSchema);
 }
+
+/**
+ * `list_resources` as the model reads it: PLAIN TEXT, one line per action under one line per
+ * resource. The JSON form it answered until 22.10 repeated every key on every action and escaped
+ * every quote — a staff catalog measured 32.5k characters — and `JSON.parse` was never its reader's
+ * job: the model's is. Same facts, same order; `describe_resource` stays JSON because a schema is.
+ *
+ * ```text
+ * cases — Court cases of the account.
+ *   listCases (query) {radicado?: string} — List the account's cases.
+ *   closeCase (action; confirms; scope cases:write) {id: string} — Close a case.
+ * ```
+ */
+export function renderCatalog(resources: readonly MetaResource[]): string {
+  if (resources.length === 0) return 'No resources are available to this caller.';
+  const lines = [
+    `${resources.length} resource(s). Run one with manage_resource({resource, action, params}); describe_resource({resources:["<name>"]}) has the full input schemas.`,
+  ];
+  for (const resource of resources) {
+    lines.push('', `${resource.name} — ${oneLine(resource.description)}`);
+    for (const action of resource.actions) {
+      const tags = [
+        action.kind,
+        ...(action.confirms === true ? ['confirms'] : []),
+        ...(action.scope === undefined ? [] : [`scope ${action.scope}`]),
+      ].join('; ');
+      lines.push(`  ${action.name} (${tags}) {${action.params}} — ${oneLine(action.description)}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/** A description authored across lines is still one catalog line. */
+const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 function headOf(tool: AnyMcpTool): Omit<MetaAction, 'params'> {
   return {

@@ -21,6 +21,11 @@ export interface ErrorFacts {
   readonly title: string;
   readonly cause: string;
   readonly fix: string;
+  /**
+   * The remote caller's fix (`UltimateErrorInit.callerFix`), branded errors only — `fix`'s trust
+   * rule. A production problem document carries it in place of `fix`; the terminal never does.
+   */
+  readonly callerFix: string | undefined;
   readonly docs: string;
   readonly status: number;
   /** Present only when the process is in dev mode; never sent to a client in prod. */
@@ -88,6 +93,7 @@ export const factsOf = (error: unknown): ErrorFacts => {
       (FRAMEWORK_CODE.test(code)
         ? `x errors explain ${code} --json   # then fix the throwing call site`
         : 'x errors list --json   # then fix the throwing call site'),
+    callerFix: isUltimateError(error) ? str(error, 'callerFix') : undefined,
     // Core's one constant, never a per-code URL: `wiki/` is the only public documentation surface
     // and a code lives there in a table row, which has no anchor. An `UltimateError` already
     // resolved this at construction, so the fallback only fires for a throwable the framework did
@@ -322,7 +328,10 @@ export const toProblem = (
     instance: meta.instance,
     code: facts.code,
     cause: hidden ? INTERNAL_CAUSE : facts.cause,
-    fix: facts.fix,
+    // The CALLER's fix outside dev: a production client cannot run `x policy explain`, and the
+    // developer's line stays in the log this request wrote. Dev keeps the developer's, because the
+    // reader of a dev response is the developer.
+    fix: meta.dev === true ? facts.fix : (facts.callerFix ?? facts.fix),
     docs: facts.docs,
     requestId: meta.requestId,
     ...(issues === undefined ? {} : { issues }),

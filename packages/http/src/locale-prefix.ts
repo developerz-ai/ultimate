@@ -57,6 +57,16 @@ export function requestLocale(ctx: RequestContext, sources: LocaleSources): stri
 export const localeFromPath = (ctx: RequestContext): boolean =>
   ctx.pathLocale !== undefined || ctx.route?.meta.localeSource === 'path';
 
+/**
+ * Whether `Accept-Language` can decide this response's locale — the one condition under which
+ * `Vary: accept-language` is true. Not when the URL names the locale (above), and not when the app's
+ * locale order leaves the header out (`configureLocales({ order: ['query', 'cookie', 'user'] })`):
+ * every renderer adds the dimension by default, and a CDN keying on a header nothing reads stores
+ * one copy of the page per browser language for nothing.
+ */
+export const acceptLanguageConsulted = (ctx: RequestContext): boolean =>
+  !localeFromPath(ctx) && localeConfig().order.includes('header');
+
 /** Removes one dimension from `Vary`, case-insensitively, deleting the header when none is left. */
 export const dropVary = (response: Response, name: string): Response => {
   const existing = response.headers.get('vary');

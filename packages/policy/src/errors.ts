@@ -4,6 +4,7 @@
 // declaration site that cannot express the requirement in a type — a config-driven route table,
 // a policy resolved by name — and `policyMissing()` is how such a site says it.
 import {
+  deniedCallerFix,
   type ErrorRetry,
   nearestName,
   registerErrorCodes,
@@ -75,11 +76,12 @@ registerErrorRetry(POLICY_ERROR_RETRY);
 export class PolicyError extends UltimateError {
   override readonly name = 'PolicyError';
 
-  constructor(init: { code: PolicyErrorCode; cause: string; fix: string }) {
+  constructor(init: { code: PolicyErrorCode; cause: string; fix: string; callerFix?: string }) {
     super({
       code: init.code,
       cause: init.cause,
       fix: init.fix,
+      ...(init.callerFix === undefined ? {} : { callerFix: init.callerFix }),
     });
   }
 }
@@ -105,6 +107,8 @@ export const forbidden = (label: string, reason: string): PolicyError =>
     fix: BARE_PERMISSION.test(label)
       ? `x policy explain ${label} --json   # shows which clause decided and why`
       : `x policy list --json   # then: x policy explain <permission> --json for the clause that decided`,
+    // The remote caller's half: it holds a credential, not the policy file.
+    callerFix: deniedCallerFix(BARE_PERMISSION.test(label) ? label : undefined),
   });
 
 export const policyMissing = (subject: string): PolicyError =>

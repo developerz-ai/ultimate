@@ -91,10 +91,15 @@ const origin = Bun.env.SITE_ORIGIN;
  * \`Disallow: /\` and advertises no sitemap — so a preview build cannot outrank the real site.
  */
 async function writeSeoFiles(report: PrerenderReport): Promise<readonly string[]> {
+  // The same disallow list and sitemap settings the running server answers with
+  // (app.config.ts seo.robots.disallow and seo.sitemap).
+  const settings = await loadSiteSettings(root);
   const seo = await siteSeo({
     // The origin the pages were built against, so the sitemap and every canonical agree.
     baseUrl: report.origin,
-    disallow: (await loadSiteSettings(root)).disallow,
+    disallow: settings.disallow,
+    sitemap: settings.sitemap,
+    root,
     pagesFor: (route) =>
       report.pages.filter((page) => page.route === route).map((page) => page.path),
   });

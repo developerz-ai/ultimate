@@ -1,5 +1,5 @@
 /** Every failure @ultimat3/query can produce, one subclass per stable code. */
-import { assertNever, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { assertNever, deniedCallerFix, registerErrorCodes, UltimateError } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 
 // No `docs:` on the classes below.
@@ -87,6 +87,7 @@ export class QueryDeniedError extends UltimateError {
       code,
       cause: `${query} denied: ${denialReason(denial)}`,
       fix: `x policy explain ${query} --json   # shows which clause decided and why`,
+      callerFix: deniedCallerFix(),
     });
     this.denial = denial;
   }

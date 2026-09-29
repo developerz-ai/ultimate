@@ -11,8 +11,9 @@ import { isQuery, queryName, sourceFor } from '@ultimat3/query';
 import { asCallerContext } from './caller-context';
 import type { McpExposure, ProjectablePrimitive } from './from-action';
 import { takeIdempotencyKeyArg, withIdempotencyKeyArg } from './idempotency-arg';
-import { toWireSchema } from './input-schema';
+import { toOutputSchema, toRowsOutputSchema, toWireSchema } from './input-schema';
 import type { McpListParams } from './list-params';
+import type { McpToolAnnotations } from './registry';
 
 /**
  * What `defineAppMcp`'s `actions:`/`queries:` accept.
@@ -48,12 +49,15 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
   // `idempotent: true` is honoured on this surface exactly as over HTTP: the caller's key reaches
   // `invoke`, which files it under the action, the caller and the key (`idempotencyKeyFor`).
   const keyed = target.describe().idempotent;
+  const output = toOutputSchema(target.output);
   return {
     name,
     ...(exposure === undefined ? {} : { mcp: exposure }),
     ...(exposure?.description === undefined ? {} : { description: exposure.description }),
     inputJsonSchema: keyed ? withIdempotencyKeyArg(name, wire) : wire,
+    ...(output === undefined ? {} : { outputJsonSchema: output }),
     mutates: true,
+    idempotent: keyed,
     // The actor rides in on the options: `invoke` swaps it inside the one execution path.
     run: keyed
       ? ({ input: args, actor }) => {
@@ -66,11 +70,16 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
 
 export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
   const exposure = exposureOf(target.mcp);
+  // Only a query that DECLARED its rows (`rows: Post.$schema`) has a known answer shape; the tool
+  // answers the rows as a list, so the structured copy is `{ rows }` — `structuredContent` is an
+  // object by the spec.
+  const output = toRowsOutputSchema(target.rows);
   return {
     name: queryName(target),
     ...(exposure === undefined ? {} : { mcp: exposure }),
     ...(exposure?.description === undefined ? {} : { description: exposure.description }),
     inputJsonSchema: toWireSchema(target.input),
+    ...(output === undefined ? {} : { outputJsonSchema: output, outputWrap: 'rows' }),
     mutates: false,
     run: ({ input, actor }) =>
       asCallerContext(actor, async () => {
@@ -103,6 +112,8 @@ function exposureOf(declared: DeclaredMcp | undefined): McpExposure | undefined 
     ...(declared.description === undefined ? {} : { description: declared.description }),
     ...(declared.visibleTo === undefined ? {} : { visibleTo: declared.visibleTo }),
     ...(declared.listParams === undefined ? {} : { listParams: declared.listParams }),
+    ...(declared.title === undefined ? {} : { title: declared.title }),
+    ...(declared.annotations === undefined ? {} : { annotations: declared.annotations }),
   };
 }
 
@@ -113,4 +124,6 @@ interface DeclaredMcp {
   readonly visibleTo?: readonly string[];
   /** `QueryMcp` only; an action has no list to compose. */
   readonly listParams?: McpListParams;
+  readonly title?: string;
+  readonly annotations?: McpToolAnnotations;
 }

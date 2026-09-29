@@ -25,6 +25,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_LIST_PARAMS_INVALID',
   'X_MCP_OAUTH_INVALID',
   'X_MCP_IDEMPOTENCY_KEY_SHADOWED',
+  'X_MCP_SURFACE_OVER_BUDGET',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -52,6 +53,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_OAUTH_INVALID: 'the MCP oauth block cannot be published as protected-resource metadata',
   X_MCP_IDEMPOTENCY_KEY_SHADOWED:
     "an idempotent action's input declares idempotencyKey, the MCP argument reserved for the idempotency key",
+  X_MCP_SURFACE_OVER_BUDGET: "an MCP surface an agent reads is larger than the app's budget for it",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -119,6 +121,8 @@ export class McpScopeDeniedError extends UltimateError {
         subject === 'tool'
           ? `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop "${input.scope}" from defineAppMcp({ scopes }); scopes are fixed for the life of a connection`
           : `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop scope: '${input.scope}' from the resource declaring "${input.name}"; scopes are fixed for the life of a connection`,
+      // The agent's half: it cannot edit `defineAppMcp`, and its token is what it can change.
+      callerFix: `this token was not granted scope "${input.scope}": ask the account owner for a token that includes it, then reconnect — scopes are fixed for the life of a connection, so retrying on this one is refused the same way`,
     });
     this.scope = input.scope;
   }
@@ -446,6 +450,27 @@ export class McpIdempotencyKeyShadowedError extends UltimateError {
       cause: `${input.name} is idempotent and its input declares "${input.argument}", the MCP argument reserved for the idempotency key`,
       fix: `rename ${input.name}'s "${input.argument}" input field — MCP clients send the Idempotency-Key as the reserved "${input.argument}" argument, and the action receives the rest`,
       meta: { action: input.name, argument: input.argument },
+    });
+  }
+}
+
+/**
+ * `assertMcpSurfaceBudget` measured a surface over the character budget the app declared for it.
+ * Every over-budget surface is named in one throw, so one edit closes all of them.
+ */
+export class McpSurfaceOverBudgetError extends UltimateError {
+  constructor(input: {
+    readonly over: readonly {
+      readonly surface: string;
+      readonly size: number;
+      readonly budget: number;
+    }[];
+  }) {
+    super({
+      code: 'X_MCP_SURFACE_OVER_BUDGET',
+      cause: `over budget: ${input.over.map((o) => `${o.surface} is ${o.size} characters, budget ${o.budget}`).join('; ')}`,
+      fix: "shorten the tool descriptions or instructions it names, group tools behind surface: 'meta', or raise the budget with the measured size and the reason in the same diff",
+      meta: { over: input.over },
     });
   }
 }

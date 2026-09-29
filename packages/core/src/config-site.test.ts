@@ -33,11 +33,41 @@ describe('site and seo — refusals', () => {
   });
 });
 
+describe('seo.sitemap — refusals', () => {
+  test('an extra that is not a bare path is refused', () => {
+    for (const bad of ['verificar', 'https://x.co/verificar', '//x.co/a', '/a?b=1', '/a#top']) {
+      expect(
+        causeOf(() => defineConfig({ name: 'app', seo: { sitemap: { extra: [bad] } } })),
+      ).toContain('seo.sitemap.extra');
+    }
+  });
+
+  test('an unknown lastmod source is refused', () => {
+    expect(
+      causeOf(() =>
+        defineConfig({ name: 'app', seo: { sitemap: { lastmod: 'weekly' as 'git' } } }),
+      ),
+    ).toContain('seo.sitemap.lastmod');
+  });
+});
+
 describe('site and seo', () => {
+  test('seo.sitemap merges beside robots, key by key', () => {
+    const config = defineConfig(
+      { name: 'app', seo: { sitemap: { extra: ['/verificar'] } } },
+      { seo: { sitemap: { lastmod: 'git' } } },
+    );
+    expect(config.seo.sitemap).toEqual({ extra: ['/verificar'], lastmod: 'git' });
+    expect(config.seo.robots.disallow).toEqual([]);
+  });
+
   test('defaults: no origin, nothing disallowed', () => {
     const config = defineConfig({ name: 'app' });
     expect(config.site).toEqual({ origin: null });
-    expect(config.seo).toEqual({ robots: { disallow: [] } });
+    expect(config.seo).toEqual({
+      robots: { disallow: [] },
+      sitemap: { extra: [], lastmod: 'none' },
+    });
   });
 
   test('an overlay patches one section without dropping the other', () => {

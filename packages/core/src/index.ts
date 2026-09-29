@@ -135,10 +135,13 @@ export type {
   SeoConfig,
   SeoConfigInput,
   SeoRobotsConfig,
+  SeoSitemapConfig,
   SiteConfig,
+  SitemapLastmod,
   SiteSections,
   SiteSectionsInput,
 } from './config-site';
+export { SITEMAP_LASTMOD_SOURCES } from './config-site';
 export type { ConflictPolicy, ResolveConflictOptions, Row } from './conflict-policy';
 export { resolveConflict } from './conflict-policy';
 export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
@@ -206,6 +209,7 @@ export {
 export type {
   CodedErrorInit,
   CoreErrorCode,
+  ErrorAudience,
   ErrorCodeDeclaration,
   ErrorCodeDescriptor,
   ErrorCodeEntry,
@@ -220,6 +224,7 @@ export {
   classifyThrown,
   DEFAULT_ERROR_RETRY,
   declaredErrorRetry,
+  deniedCallerFix,
   describeErrorCode,
   describeValue,
   EnvMissingError,
@@ -227,6 +232,7 @@ export {
   ERROR_RETRY_KINDS,
   errorCodeSnapshot,
   errorRetry,
+  fixFor,
   formatError,
   hasErrorCode,
   InternalError,

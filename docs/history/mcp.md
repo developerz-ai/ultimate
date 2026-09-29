@@ -130,3 +130,35 @@ install graph and made the edge readable.
   frame arrived as 1,388,672 bytes. The same failure `scripts/stdout-truncation.test.ts` pins for
   `--json`, and it needs a CHILD PROCESS to see: in-process it does not exist. Awaiting it is also
   the loop's only back-pressure.
+
+- **Invalid arguments are a tool RESULT, not `-32602`** (`As of 22.10`). A consumer measured it: an
+  agent that sent a mistyped argument got a protocol error its client showed the HUMAN and withheld
+  from the MODEL, so the model retried the same call blind. MCP's own guidance is that an error the
+  model can correct belongs in the result. The code is `X_INPUT_INVALID` — `@ultimat3/action`'s
+  `InputInvalidError`, the code HTTP answers for the same input and the one a hand-written tool's own
+  parse already threw — so one mistake reads one way on every surface. The audit outcome stays
+  `invalid-args`: what changed is the wire, not what the server decided.
+
+- **`callerFix` beside `fix`, never instead of it.** `X_FORBIDDEN`'s fix is `x policy explain …`: right
+  for the author, a dead end for a remote agent and a leak of how the app is operated. Replacing it
+  would take the command from the log line the developer reads; so the error carries both and the
+  RENDERER picks by audience — `defineAppMcp` and a production problem document the caller's, the
+  terminal, `--json`, dev mode and the dev server the developer's. One sentence
+  (`deniedCallerFix` in core) for the five packages that deny, so a caller reads the same instruction
+  whichever layer said no.
+
+- **`destructiveHint: true` is the derived default for every action.** The framework cannot tell an
+  insert from a delete, the spec's own default is `true`, and a client uses the hint to decide what
+  to confirm with a human — so `false` is a statement only the author can make
+  (`mcp: { annotations: { destructiveHint: false } }`). `openWorldHint` is never derived for the same
+  reason: whether a write sends mail is not in the declaration.
+
+- **`outputSchema` is structure only.** A client validates `structuredContent` against it and refuses
+  the call on a miss; a query's rows are read from the database and never re-parsed, so a bound, a
+  pattern or `additionalProperties: false` there is a promise about a value nothing checks on the way
+  out. Type, properties, required, items, enum, const and anyOf are what the answer's SHAPE is.
+
+- **Compact text, and `list_resources` as plain lines.** A staff catalog measured 32.5k characters as
+  2-space JSON; the model is its only reader and pays for every indent for the rest of the session.
+  `describe_resource` stays JSON because a schema is JSON. The budget is a test an app writes
+  (`assertMcpSurfaceBudget`), not a framework ceiling: the right number is the app's measurement.

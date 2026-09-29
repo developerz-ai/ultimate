@@ -251,6 +251,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x build --target static --json   # after adding prerender() with one real path to the route',
   X_ROUTE_ASYNC_PAGE:
     'x verify --only budgets --json   # after moving each await in Page into export const load',
+  X_SITEMAP_EXTRA_INVALID:
+    'x routes --json   # then list in seo.sitemap.extra only a path a registered app/ route without a policy answers',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
