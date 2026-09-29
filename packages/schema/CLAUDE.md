@@ -20,7 +20,8 @@ provider → t`. `char-count.ts` is imported by BOTH `validators.ts` (which reje
 `describe-value.ts` (which renders the length in the same message), because they disagreed: the
 rule counted code points and the message counted UTF-16 units, so `t.string.min(3)` refused `'👍a'`
 with "at least 3 chars, received a string of 3 characters".
-`standard.ts` and `errors.ts` depend on nothing but each other. `iso-date.ts` imports nothing and
+`standard.ts` and `errors.ts` depend on nothing but each other and `error-codes.ts`, a leaf of
+plain data that core imports ALONE so a browser graph never keeps the `SchemaError` classes. `iso-date.ts` imports nothing and
 is imported by `validators.ts` and `coerce.ts` — the two doors a `t.date` string comes through, so
 the rule that a clock time must carry an offset or `Z` has one copy, not one per door.
 

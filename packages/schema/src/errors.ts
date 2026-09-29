@@ -2,6 +2,7 @@
 // import `@ultimat3/core`, so `SchemaError` reproduces the `UltimateError` shape structurally
 // and carries the same `Symbol.for('ultimate.error')` brand — `isUltimateError()` still matches.
 
+import { SCHEMA_ERROR_CODES } from './error-codes';
 import { formatIssues } from './standard';
 
 /**
@@ -48,30 +49,9 @@ export const ULTIMATE_ERROR_BRAND: unique symbol = Symbol.for('ultimate.error');
  */
 const ERROR_DOCS_URL = 'https://github.com/developerz-ai/ultimate/wiki/Error-Codes';
 
-export interface SchemaErrorCodeDeclaration {
-  readonly title: string;
-  readonly docs?: string | undefined;
-}
-
 /**
- * Pass to `registerErrorCodes()` from a package that may import both tiers (the CLI does this
- * at boot) so the terminal and the dev overlay render these codes identically.
- */
-export const SCHEMA_ERROR_CODES: Readonly<Record<string, SchemaErrorCodeDeclaration>> =
-  Object.freeze({
-    X_VALIDATION_FAILED: { title: 'value did not match its schema' },
-    X_SCHEMA_UNSUPPORTED: { title: 'the active schema provider cannot do this' },
-    X_SCHEMA_DISCRIMINANT_INVALID: {
-      title: 'a discriminated union member can never be dispatched to',
-    },
-    X_SCHEMA_DEFAULT_UNSHAREABLE: {
-      title: 'a schema default cannot be copied per parse',
-    },
-  });
-
-/**
- * Derived, never re-typed: the declarations above are the single source, so a title edited there
- * cannot fall out of step with what `SchemaError` renders locally.
+ * Derived, never re-typed: the declarations in `error-codes.ts` are the single source, so a title
+ * edited there cannot fall out of step with what `SchemaError` renders locally.
  */
 const TITLES: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries(

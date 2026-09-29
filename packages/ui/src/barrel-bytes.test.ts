@@ -78,7 +78,8 @@ const SHAKEN_MODULE = resolve(import.meta.dir, '..', '..', 'core', 'src', 'schem
  *
  * A LIST, `As of 2026-08-27`, and it was one path. `schema-error-codes.ts` imports
  * `SCHEMA_ERROR_CODES` from `@ultimat3/schema` — the `core -> schema` edge declared 2026-08-26 —
- * so dropping it also drops `packages/schema/src/errors.ts`, which nothing else in a `useUi` graph
+ * so dropping it also drops `packages/schema/src/error-codes.ts` (until 2026-09-29 the declarations
+ * sat in `errors.ts`, beside `SchemaError`), which nothing else in a `useUi` graph
  * reaches. The difference is then TWO modules, and an assertion spelled `toEqual([SHAKEN_MODULE])`
  * failed on a flap it was written to allow: reproduced once in an eight-way `x test unit` shard,
  * green on the same file run alone and green on the rerun, which is this test's own documented
@@ -91,7 +92,7 @@ const SHAKEN_MODULE = resolve(import.meta.dir, '..', '..', 'core', 'src', 'schem
  */
 const SHAKEN_FOOTPRINT: readonly string[] = [
   SHAKEN_MODULE,
-  resolve(import.meta.dir, '..', '..', 'schema', 'src', 'errors.ts'),
+  resolve(import.meta.dir, '..', '..', 'schema', 'src', 'error-codes.ts'),
 ];
 const CORE_MANIFEST = resolve(import.meta.dir, '..', '..', 'core', 'package.json');
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b90d334b187c35c2bde3204fc06014e18d56309190c1b94df1bae3ae0e98da8a",
+  "buildId": "73cc0dc2f8597b32e967822bfcdd6cfe6bf6ca07b04f8156d3926fd66509b0fd",
   "tiers": {
     "0": [
       "core",
@@ -2887,17 +2887,17 @@
     {
       "code": "X_SCHEMA_DEFAULT_UNSHAREABLE",
       "owner": "schema",
-      "at": "packages/schema/src/errors.ts"
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCHEMA_DISCRIMINANT_INVALID",
       "owner": "schema",
-      "at": "packages/schema/src/errors.ts"
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCHEMA_UNSUPPORTED",
       "owner": "schema",
-      "at": "packages/schema/src/errors.ts"
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCRAPE_AUTH_FAILED",
@@ -3877,7 +3877,7 @@
     {
       "code": "X_VALIDATION_FAILED",
       "owner": "schema",
-      "at": "packages/schema/src/errors.ts"
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_VECTOR_DIM_MISMATCH",

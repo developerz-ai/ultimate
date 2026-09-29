@@ -86,6 +86,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 
+- **schema:** every browser bundle holding a typed client shed ~1 kB (`examples/dummy` `/pricing`
+  22,639 -> 21,594 B). `SCHEMA_ERROR_CODES` moved to a data-only leaf, `src/error-codes.ts`: declared
+  beside `SchemaError`, core's load-time registration of it kept the class and its subclasses in
+  every island, because a class with a computed member is never tree-shaken. Exports unchanged.
 - **release:** 22.9.0 did not reach the registry for `@ultimat3/money` and `@ultimat3/jobs` â€” a first, failed run left both versions *staged* on npm, and npm refuses to publish over a staged version (409). 22.9.1 is 22.9.0 re-published under a fresh version for every package; no code change.
 
 ### Commits
