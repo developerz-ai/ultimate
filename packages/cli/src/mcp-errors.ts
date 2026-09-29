@@ -255,6 +255,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x routes --json   # then list in seo.sitemap.extra only a path a registered app/ route without a policy answers',
   X_DEV_RESTART_REQUIRED:
     'x dev --json   # a fresh process; the supervised x dev restarts itself on such a save',
+  X_DEV_ROOT_GONE: 'x dev --json   # from the app root, once it exists again',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

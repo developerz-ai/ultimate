@@ -36,6 +36,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **cli:** a supervised `x dev` child no longer outlives what it serves. It watches its supervisor
+  (the pid the supervisor now hands it in `ULTIMATE_DEV_SUPERVISOR_PID`) and its app root once a
+  second: a supervisor that died without stopping it — a SIGKILL cannot be forwarded — makes it
+  drain and exit (`dev.supervisor.gone` on stderr), and a deleted or moved root makes it exit 1
+  with the new `X_DEV_ROOT_GONE`, which the supervisor answers by stopping rather than respawning.
+  Found as two children of `cmd-dev-restart.live.test.ts`, six hours old, ppid 1, cwd deleted, one
+  at 7 GB: with its root gone the jobs worker, outbox relay and scheduler poll an embedded database
+  with no directory. Every stop the child begins (SIGINT, SIGTERM, the watch, a restart) now also
+  carries a hard exit past the drain deadline plus the release floor (35 s by default), so a stop
+  that hangs still ends. The supervisor SIGTERMs a running child on every other way it exits (an
+  uncaught error, `process.exit`).
+- **cli (tests):** the `x dev` live tests (`cmd-dev.live`, `cmd-dev-restart.live`, the new
+  `cmd-dev-orphan.live`) reap the supervisor and every process it started on every path — an
+  `afterEach` reaps by fixture cwd too, because bun abandons a timed-out test without its `finally`
+  — and assert no process is left in the fixture directory or on its port. `cmd-dev.live` takes its
+  own metrics port, so a developer's running `x dev` on 9090 no longer fails it.
 - **db, cli:** `x verify`'s hand-written-SQL rail (`X_MIGRATION_UNGENERATABLE`) no longer counts
   the in-place column moves `x db gen` writes itself — `alter column … set default` / `drop default`
   and `set not null` / `drop not null`. They were missing from `GENERATABLE_FORMS`, so a generated

@@ -204,6 +204,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_VERIFY_MERGE_INPUT',
   'X_SITEMAP_EXTRA_INVALID',
   'X_DEV_RESTART_REQUIRED',
+  'X_DEV_ROOT_GONE',
 ] as const;
 
 /**
@@ -358,6 +359,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SITEMAP_EXTRA_INVALID: 'a seo.sitemap.extra path names no public page',
   X_DEV_RESTART_REQUIRED:
     'a save reached a module that defines a primitive; only a new process serves it',
+  X_DEV_ROOT_GONE: 'the app root x dev serves was deleted or moved',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws
