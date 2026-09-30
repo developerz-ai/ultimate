@@ -148,7 +148,8 @@ describe('several endpoints — refusals first', () => {
     expect(mount.paths).toEqual(['/mcp', '/mcp/afiliados']);
     expect(mount.warning?.code).toBe('X_MCP_APP_UNMOUNTED');
     expect(mount.warning?.reason).toBe('no-route');
-    expect(mount.warning?.cause).toContain('#1');
+    expect(mount.warning?.cause).toContain('mcp[1]');
+    expect(mount.warning?.fix).toContain('mcp[1]');
   });
 
   test('endpoint #0 mounts at ai.mcp.path, as a single export does; the others at their own', async () => {

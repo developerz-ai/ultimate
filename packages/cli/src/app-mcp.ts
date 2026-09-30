@@ -151,8 +151,9 @@ function mountEndpoints(
     if (route === undefined) {
       warning ??= new McpAppUnmountedError({
         reason: 'no-route',
-        path: index === 0 ? defaultPath : `<endpoint #${index}>`,
+        path: defaultPath,
         file,
+        ...(index === 0 ? {} : { endpoint: index }),
       });
       return;
     }

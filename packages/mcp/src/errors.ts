@@ -199,17 +199,26 @@ export class McpToolUndeclaredError extends UltimateError {
  */
 export class McpAppUnmountedError extends UltimateError {
   readonly reason: 'missing' | 'no-route';
-  constructor(input: { reason: 'missing' | 'no-route'; path: string; file: string }) {
+  constructor(input: {
+    reason: 'missing' | 'no-route';
+    path: string;
+    file: string;
+    /** Index in an `mcp` array export; absent for a single export or the first endpoint. */
+    endpoint?: number;
+  }) {
+    const where =
+      input.endpoint === undefined ? input.file : `${input.file} (mcp[${input.endpoint}])`;
+    const route = input.endpoint === undefined ? `POST ${input.path}` : 'its endpoint';
     super({
       code: 'X_MCP_APP_UNMOUNTED',
       cause:
         input.reason === 'missing'
           ? `ai.mcp.expose is true and no ${input.file} exports mcp, so POST ${input.path} answers 404`
-          : `${input.file} exports mcp with no route — defineAppMcp was given no resolveToken — so POST ${input.path} answers 404`,
+          : `${where} exports mcp with no route — defineAppMcp was given no resolveToken — so ${route} answers 404`,
       fix:
         input.reason === 'missing'
           ? `write ${input.file}: export const mcp = defineAppMcp({ include: 'exposed', resolveToken: (token) => resolveAgentToken(token) }) — or set ai: { mcp: { expose: false } } in app.config.ts`
-          : `add resolveToken: (token) => resolveAgentToken(token) to defineAppMcp({ ... }) in ${input.file} — the route is only built with one`,
+          : `add resolveToken: (token) => resolveAgentToken(token) to the defineAppMcp({ ... }) at ${where} — the route is only built with one`,
     });
     this.reason = input.reason;
   }
