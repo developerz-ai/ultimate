@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.14.0 - 2026-09-30
+
 ### Added
 
 - **mcp, cli:** several MCP endpoints per app, one per population. `apps/<app>/mcp.ts` may export
@@ -21,6 +25,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `paths`. A single `mcp` export mounts byte-identically to before.
 - **mcp:** `visibleTo` on `McpPrompt` â€” the tool/resource `McpVisibility`, fail-closed: a hidden
   prompt is absent from `prompts/list` and `prompts/get` answers it exactly as a missing one.
+
+### Commits
+
+- feat(mcp): several MCP endpoints per app, one per population; prompt visibleTo (#592)
 
 ## 22.13.0 - 2026-09-29
 
