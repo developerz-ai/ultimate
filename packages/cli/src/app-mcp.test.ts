@@ -135,12 +135,22 @@ describe('appMcpMount', () => {
       'app.config.ts': configWith("{ expose: false, path: '/mcp' }"),
       'apps/web/mcp.ts': MCP_WITH_ROUTE,
     });
-    expect(await appMcpMount(root)).toEqual({ routes: [], path: null, warning: undefined });
+    expect(await appMcpMount(root)).toEqual({
+      routes: [],
+      path: null,
+      paths: [],
+      warning: undefined,
+    });
   });
 
   test('a directory with no app.config.ts is not an app that exposes anything', async () => {
     const root = await fixture('no-config', { 'apps/web/mcp.ts': MCP_WITH_ROUTE });
-    expect(await appMcpMount(root)).toEqual({ routes: [], path: null, warning: undefined });
+    expect(await appMcpMount(root)).toEqual({
+      routes: [],
+      path: null,
+      paths: [],
+      warning: undefined,
+    });
   });
 
   test('an mcp.ts that exports no `mcp` is the missing case, and the instruction names that file', async () => {
@@ -172,6 +182,7 @@ describe('mountAppMcp', () => {
       }),
     );
     expect(mounted.path).toBe('/mcp');
+    expect(mounted.paths).toEqual(['/mcp']);
     expect(mounted.routes).toHaveLength(1);
     const warned = await mountAppMcp(
       await fixture('mount-warned', {

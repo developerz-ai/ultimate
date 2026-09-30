@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c034537c25ae0129757c551e38c813f8e70cd1d73cdab7120cb503751944ecd5",
+  "buildId": "e61991df2cb6b3c19cb69673c79f5a17a2c93a5bdeac0a4bc91a10b459978d7a",
   "tiers": {
     "0": [
       "core",
@@ -2006,6 +2006,11 @@
     },
     {
       "code": "X_MCP_OAUTH_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_PATH_DUPLICATE",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

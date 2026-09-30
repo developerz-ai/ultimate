@@ -3,7 +3,9 @@
 // `ai: { mcp: { expose: true, path: '/mcp' } }` by DEFAULT, and nothing between the two served it:
 // neither `x dev` nor `runRole` mounted the route, so `POST /mcp` answered `X_ROUTE_NOT_FOUND` in
 // every app ever scaffolded (measured 2026-09-05). The contract is one file: `apps/<app>/mcp.ts`
-// exports `mcp`, an `AppMcp`; this module finds it, and both boots mount what it carries.
+// exports `mcp` — one `AppMcp`, or an array of them, one per population (customers, staff,
+// affiliates) — this module finds it, and both boots mount what it carries: endpoint #0 at
+// `ai.mcp.path`, every other at its own `defineAppMcp({ path })`.
 
 // why: a directory's existence — `Bun.file().exists()` answers for files, and `apps/` is a directory.
 import { existsSync } from 'node:fs';
@@ -12,23 +14,38 @@ import { join } from 'node:path';
 import { logger } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { json, selfOrigin } from '@ultimat3/http';
-import { type AppMcp, McpAppUnmountedError } from '@ultimat3/mcp';
+import {
+  type AppMcp,
+  McpAppUnmountedError,
+  McpPathDuplicateError,
+  PROTECTED_RESOURCE_WELL_KNOWN,
+} from '@ultimat3/mcp';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
 
 /** The one file an app writes, per app directory. */
 export const APP_MCP_GLOB = 'apps/*/mcp.ts';
-/** The export that file makes — an `AppMcp`, the value `defineAppMcp` returns. */
+/**
+ * The export that file makes — an `AppMcp`, the value `defineAppMcp` returns, or a non-empty array
+ * of them. ONE export name either way: a second named export per endpoint would be a second way
+ * to say the same thing, and the array's order is the one fact the mount needs (#0 is the default).
+ */
 export const APP_MCP_EXPORT = 'mcp';
-/** What the boot line and `/_x` call the route. */
+/** What the boot line and `/_x` call endpoint #0's route; endpoint #n is `mcp:<its path>`. */
 export const APP_MCP_ROUTE_NAME = 'mcp';
 
 export interface AppMcpMount {
-  /** `[]` when `expose` is false, when nothing exports `mcp`, or when the export has no route. */
+  /** `[]` when `expose` is false, when nothing exports `mcp`, or when no endpoint has a route. */
   readonly routes: readonly Route[];
-  /** `POST <path>` when mounted, else `null` — the boot line prints it. */
+  /** Endpoint #0's `POST <path>` when mounted, else `null` — the default, at `ai.mcp.path`. */
   readonly path: string | null;
-  /** Set exactly when `expose` is true and `routes` is empty: the reason, as an instruction. */
+  /** Every mounted endpoint's `POST <path>`, in export order — the boot line prints one each. */
+  readonly paths: readonly string[];
+  /**
+   * Set when `expose` is true and an endpoint could not be mounted — nothing exports `mcp`, or the
+   * first endpoint built without `resolveToken`: the reason, as an instruction. The endpoints that
+   * could be mounted still are.
+   */
   readonly warning: McpAppUnmountedError | undefined;
 }
 
@@ -65,6 +82,13 @@ async function exposeDeclaration(root: string): Promise<ExposeDeclaration | unde
 const isAppMcp = (value: unknown): value is AppMcp =>
   isRecord(value) && 'server' in value && 'tools' in value && 'route' in value;
 
+/** The export as a list of endpoints, or `undefined` when it is not one (the "missing" case). */
+function endpointsOf(exported: unknown): readonly AppMcp[] | undefined {
+  if (isAppMcp(exported)) return [exported];
+  if (!Array.isArray(exported) || exported.length === 0) return undefined;
+  return exported.every(isAppMcp) ? (exported as readonly AppMcp[]) : undefined;
+}
+
 /** Every `apps/<app>/mcp.ts`, app-root-relative and sorted, so two apps answer in one order. */
 async function candidates(root: string): Promise<readonly string[]> {
   // A root with no `apps/` is an app with no MCP file, never a boot failure — the scan's ENOENT
@@ -75,8 +99,10 @@ async function candidates(root: string): Promise<readonly string[]> {
   return files.sort();
 }
 
+const NOTHING: AppMcpMount = { routes: [], path: null, paths: [], warning: undefined };
+
 /**
- * The route to mount, or the reason there is none. Pure over the filesystem it is pointed at;
+ * The routes to mount, or the reason there are none. Pure over the filesystem it is pointed at;
  * `mountAppMcp` below is the one place the warning becomes a log line.
  *
  * `meta.auth: 'public'` and `enforcedBy: 'handler'` — the http pipeline must not pre-judge:
@@ -87,78 +113,111 @@ async function candidates(root: string): Promise<readonly string[]> {
  */
 export async function appMcpMount(root: string): Promise<AppMcpMount> {
   const declared = await exposeDeclaration(root);
-  if (declared === undefined || !declared.expose)
-    return { routes: [], path: null, warning: undefined };
+  if (declared === undefined || !declared.expose) return NOTHING;
   const files = await candidates(root);
   const fallbackFile = 'apps/web/mcp.ts';
-  if (files.length === 0) {
-    return {
-      routes: [],
-      path: null,
-      warning: new McpAppUnmountedError({
-        reason: 'missing',
-        path: declared.path,
-        file: fallbackFile,
-      }),
-    };
-  }
   for (const file of files) {
     const module = (await import(join(root, file))) as Record<string, unknown>;
-    const exported = module[APP_MCP_EXPORT];
-    if (!isAppMcp(exported)) continue;
-    const route = exported.route;
-    if (route === undefined) {
-      return {
-        routes: [],
-        path: null,
-        warning: new McpAppUnmountedError({ reason: 'no-route', path: declared.path, file }),
-      };
-    }
-    // The PUBLIC origin, as the pipeline resolved it (`ctx.https` honours a trusted proxy's
-    // `x-forwarded-proto`): behind a TLS-terminating ingress the raw request URL is `http://` on
-    // an internal host, and a `resource_metadata` naming that is a URL no client can reach.
-    const resource = route.protectedResource;
-    return {
-      routes: [
-        {
-          method: 'POST',
-          path: declared.path,
-          handler: (request, ctx) =>
-            route.handle(request.raw, { origin: selfOrigin(ctx.url, ctx.https) }),
-          meta: { name: APP_MCP_ROUTE_NAME, auth: 'public', enforcedBy: 'handler' },
-        },
-        // RFC 9728 protected-resource metadata, when the app declared `oauth`: path-inserted and
-        // at the root, so a client probing either finds the authorization server.
-        ...(resource === undefined
-          ? []
-          : resource.paths.map(
-              (path): Route => ({
-                method: 'GET',
-                path,
-                handler: (_request, ctx) => {
-                  const response = json(resource.document(selfOrigin(ctx.url, ctx.https)));
-                  // A browser-hosted MCP client reads this cross-origin; it holds nothing secret.
-                  response.headers.set('access-control-allow-origin', '*');
-                  response.headers.set('cache-control', 'public, max-age=3600');
-                  return response;
-                },
-                meta: { name: `${APP_MCP_ROUTE_NAME}.oauth-protected-resource`, auth: 'public' },
-              }),
-            )),
-      ],
-      path: declared.path,
-      warning: undefined,
-    };
+    const endpoints = endpointsOf(module[APP_MCP_EXPORT]);
+    if (endpoints === undefined) continue;
+    return mountEndpoints(endpoints, declared.path, file);
   }
   return {
-    routes: [],
-    path: null,
+    ...NOTHING,
     warning: new McpAppUnmountedError({
       reason: 'missing',
       path: declared.path,
       file: files[0] ?? fallbackFile,
     }),
   };
+}
+
+/**
+ * One file's endpoints onto one route table. An endpoint built without `resolveToken` has no
+ * route: it is skipped and the FIRST such is the warning, so one unfinished population never takes
+ * the others down with it. Two endpoints on one route is thrown — see `McpPathDuplicateError`.
+ */
+function mountEndpoints(
+  endpoints: readonly AppMcp[],
+  defaultPath: string,
+  file: string,
+): AppMcpMount {
+  const routes: Route[] = [];
+  const paths: string[] = [];
+  const claimed = new Map<string, number>();
+  let warning: McpAppUnmountedError | undefined;
+  endpoints.forEach((endpoint, index) => {
+    const route = endpoint.route;
+    if (route === undefined) {
+      warning ??= new McpAppUnmountedError({
+        reason: 'no-route',
+        path: index === 0 ? defaultPath : `<endpoint #${index}>`,
+        file,
+      });
+      return;
+    }
+    const path = index === 0 ? defaultPath : route.path;
+    for (const mounted of endpointRoutes(route, path, index)) {
+      const key = `${mounted.method} ${mounted.path}`;
+      const first = claimed.get(key);
+      if (first !== undefined) {
+        throw new McpPathDuplicateError({
+          method: mounted.method,
+          path: mounted.path,
+          endpoints: [first, index],
+          file,
+        });
+      }
+      claimed.set(key, index);
+      routes.push(mounted);
+    }
+    paths.push(path);
+  });
+  const path = endpoints[0]?.route === undefined ? null : defaultPath;
+  return { routes, path, paths, warning };
+}
+
+type Descriptor = NonNullable<AppMcp['route']>;
+
+/** One endpoint's `POST` and, when it declared `oauth`, its RFC 9728 metadata `GET`s. */
+function endpointRoutes(route: Descriptor, path: string, index: number): readonly Route[] {
+  const name = index === 0 ? APP_MCP_ROUTE_NAME : `${APP_MCP_ROUTE_NAME}:${path}`;
+  const resource = route.protectedResource;
+  // The ROOT document belongs to endpoint #0 alone: a client that probes the bare well-known URL
+  // is asking about the default resource, and a second endpoint answering there would collide.
+  // Every endpoint keeps its path-inserted document (RFC 9728 §3.1), which its own 401 names.
+  const metadata: readonly Route[] =
+    resource === undefined
+      ? []
+      : resource.paths
+          .filter((metadataPath) => index === 0 || metadataPath !== PROTECTED_RESOURCE_WELL_KNOWN)
+          .map(
+            (metadataPath): Route => ({
+              method: 'GET',
+              path: metadataPath,
+              handler: (_request, ctx) => {
+                const response = json(resource.document(selfOrigin(ctx.url, ctx.https)));
+                // A browser-hosted MCP client reads this cross-origin; it holds nothing secret.
+                response.headers.set('access-control-allow-origin', '*');
+                response.headers.set('cache-control', 'public, max-age=3600');
+                return response;
+              },
+              meta: { name: `${name}.oauth-protected-resource`, auth: 'public' },
+            }),
+          );
+  return [
+    {
+      method: 'POST',
+      path,
+      // The PUBLIC origin, as the pipeline resolved it (`ctx.https` honours a trusted proxy's
+      // `x-forwarded-proto`): behind a TLS-terminating ingress the raw request URL is `http://`
+      // on an internal host, and a `resource_metadata` naming that is a URL no client can reach.
+      handler: (request, ctx) =>
+        route.handle(request.raw, { origin: selfOrigin(ctx.url, ctx.https) }),
+      meta: { name, auth: 'public', enforcedBy: 'handler' },
+    },
+    ...metadata,
+  ];
 }
 
 /**
@@ -171,6 +230,6 @@ export async function mountAppMcp(root: string): Promise<AppMcpMount> {
   if (mount.warning !== undefined) {
     logger.warn(`${mount.warning.code}: ${mount.warning.cause} — fix: ${mount.warning.fix}`);
   }
-  if (mount.path !== null) logger.info('app mcp mounted', { method: 'POST', path: mount.path });
+  for (const path of mount.paths) logger.info('app mcp mounted', { method: 'POST', path });
   return mount;
 }

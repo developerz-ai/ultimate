@@ -8,7 +8,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **mcp, cli:** several MCP endpoints per app, one per population. `apps/<app>/mcp.ts` may export
+  `mcp` as a non-empty array of `defineAppMcp` values; endpoint #0 mounts at `ai.mcp.path` exactly
+  as a single export does, every other at its own `defineAppMcp({ path })`, each with its own
+  catalog, instructions, groups, scopes and `oauth`. Each endpoint serves its own RFC 9728
+  path-inserted `/.well-known/oauth-protected-resource/<path>` document (its own `resource` and
+  `scopes_supported`) and its 401 names that document; the root document stays endpoint #0's. Two
+  endpoints on one route is `X_MCP_PATH_DUPLICATE`, thrown at boot. `x dev` prints one
+  `mcp POST <path>` line per endpoint, and its `--json` gains `mcpPaths`; `AppMcpMount` gains
+  `paths`. A single `mcp` export mounts byte-identically to before.
+- **mcp:** `visibleTo` on `McpPrompt` â€” the tool/resource `McpVisibility`, fail-closed: a hidden
+  prompt is absent from `prompts/list` and `prompts/get` answers it exactly as a missing one.
 
 ## 22.13.0 - 2026-09-29
 

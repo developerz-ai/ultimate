@@ -91,3 +91,47 @@ describe('prompts/get', () => {
     }
   });
 });
+
+describe('prompt visibleTo', () => {
+  const staff: McpCaller = { ...caller, role: 'staff' };
+  const gated = createMcpServer({
+    prompts: [
+      { name: 'open', description: 'anyone', read: () => 'open' },
+      { name: 'staff-only', description: 'staff', visibleTo: ['staff'], read: () => 'secret' },
+      {
+        name: 'throws',
+        description: 'a predicate that throws fails closed',
+        visibleTo: () => {
+          throw new TypeError('predicate bug');
+        },
+        read: () => 'never',
+      },
+    ],
+  });
+  const names = async (who: McpCaller): Promise<readonly string[]> => {
+    const response = await gated.handle(call('prompts/list'), who);
+    const result = response && 'result' in response ? response.result : undefined;
+    return (result as { prompts: { name: string }[] }).prompts.map((prompt) => prompt.name);
+  };
+
+  test('prompts/get refuses a hidden prompt exactly as a missing one — no existence oracle', async () => {
+    const hidden = await gated.handle(call('prompts/get', { name: 'staff-only' }), caller);
+    const missing = await gated.handle(call('prompts/get', { name: 'nope' }), caller);
+    expect(hidden).toMatchObject({ error: { code: INVALID_PARAMS } });
+    expect(JSON.stringify(hidden)).not.toContain('secret');
+    const message = (response: typeof hidden, name: string) =>
+      response && 'error' in response ? response.error?.message.replace(name, '<name>') : '';
+    expect(message(hidden, 'staff-only')).toBe(message(missing, 'nope'));
+  });
+
+  test('prompts/list omits a prompt the caller may not see, and a throwing predicate', async () => {
+    expect(await names(caller)).toEqual(['open']);
+    expect(await names(staff)).toEqual(['open', 'staff-only']);
+  });
+
+  test('the role the prompt names gets it', async () => {
+    const response = await gated.handle(call('prompts/get', { name: 'staff-only' }), staff);
+    const result = response && 'result' in response ? response.result : undefined;
+    expect(result).toMatchObject({ messages: [{ content: { text: 'secret' } }] });
+  });
+});

@@ -26,6 +26,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_OAUTH_INVALID',
   'X_MCP_IDEMPOTENCY_KEY_SHADOWED',
   'X_MCP_SURFACE_OVER_BUDGET',
+  'X_MCP_PATH_DUPLICATE',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -54,6 +55,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_IDEMPOTENCY_KEY_SHADOWED:
     "an idempotent action's input declares idempotencyKey, the MCP argument reserved for the idempotency key",
   X_MCP_SURFACE_OVER_BUDGET: "an MCP surface an agent reads is larger than the app's budget for it",
+  X_MCP_PATH_DUPLICATE: 'two MCP endpoints claim one path',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

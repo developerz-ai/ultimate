@@ -79,8 +79,10 @@ export interface DevServer {
   readonly runtime: RunningServices;
   /** Panel keys `/_x` mounted, in tab order. Reported so `--json` names what is reachable. */
   readonly panels: readonly string[];
-  /** `POST <path>` of the app's own MCP endpoint, or `null` when nothing was mounted. */
+  /** `POST <path>` of the app's default MCP endpoint, or `null` when nothing was mounted. */
   readonly mcp: string | null;
+  /** `POST <path>` of every mounted MCP endpoint, default first — `[]` when none was. */
+  readonly mcpPaths: readonly string[];
   stop(): Promise<void>;
 }
 
@@ -240,7 +242,7 @@ async function bootDev(
   // `x dev`'s own, so a reload can empty it: an `isr` page's first render was otherwise served for
   // its whole ttl after every save, whatever the modules behind it now said.
   const isr = createIsrController({ buildId });
-  const { routes, theme, errorStyles, mcpPath } = await devRouteTable({
+  const { routes, theme, errorStyles, mcpPath, mcpPaths } = await devRouteTable({
     isr,
     root: options.root,
     env: options.env,
@@ -328,6 +330,7 @@ async function bootDev(
     services,
     roles: running.roles,
     mcp: mcpPath,
+    mcpPaths,
     get buildId(): string {
       return stamped ?? state.manifest.buildId;
     },
@@ -447,6 +450,7 @@ export const devCommand: CliCommand = {
         introspect: `${server.url}/_x`,
         panels: [...server.panels],
         mcp: server.mcp,
+        mcpPaths: [...server.mcpPaths],
       },
       lines: [
         // A hard kill leaves the lock behind; clearing it is normal and worth one line, never a
@@ -458,7 +462,8 @@ export const devCommand: CliCommand = {
         msg('cli.dev.introspect', { url: `${server.url}/_x` }),
         // Only when something was mounted: the unmounted case has already said why, once, as a
         // warning with a fix, and a summary line reading `mcp none` would be a second copy of it.
-        ...(server.mcp === null ? [] : [msg('cli.dev.mcp', { path: server.mcp })]),
+        // One line per endpoint, so an app serving customers, staff and affiliates sees all three.
+        ...server.mcpPaths.map((path) => msg('cli.dev.mcp', { path })),
       ],
     };
     await writeLock(services.stateDir, {

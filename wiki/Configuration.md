@@ -497,7 +497,7 @@ Two fields, and `ai.mcp` is where the app's own MCP surface is configured — th
 | field | type | default | notes |
 |---|---|---|---|
 | `ai.mcp.expose` | `boolean` | `true` | the app's own MCP surface. Actions still opt in per action `mcp.expose` |
-| `ai.mcp.path` | `string` | `'/mcp'` | where the HTTP transport mounts. Never bound in `ROLE=web` |
+| `ai.mcp.path` | `string` | `'/mcp'` | where the HTTP transport mounts — endpoint #0's path when `apps/<app>/mcp.ts` exports several ([MCP and AI](MCP-And-AI)); the others mount at their own `defineAppMcp({ path })`. Never bound in `ROLE=web` |
 | ~~`ai.modelEnv`~~ | — | — | **Deleted in 8.0.0.** It named the env key holding the model id "so no model string is baked into the image", and its only reader was `defineConfig`'s own merge: `@ultimat3/ai` reads env for API keys only and the model is `request.model ?? DEFAULT_MODEL`, a compile-time constant. The one thing the key existed to prevent is what it delivered. Migration: delete the key and pass `model` on the request, reading your own env key if you want one |
 
 `ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: top-level `locales` and `defaultLocale` are the whole surface.

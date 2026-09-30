@@ -2,6 +2,8 @@
 // advertises the `prompts` capability, so a listed prompt that `prompts/get` cannot resolve is a
 // capability the server claims and does not have.
 
+import type { McpCaller } from './registry';
+import { visibleToCaller } from './registry';
 import type { McpPrompt } from './resources';
 import type { JsonRpcId, JsonRpcResponse } from './wire';
 import { errorResponse, INTERNAL_ERROR, INVALID_PARAMS, resultResponse } from './wire';
@@ -12,6 +14,15 @@ export const promptListEntry = (prompt: McpPrompt) => ({
   description: prompt.description,
   ...(prompt.arguments === undefined ? {} : { arguments: prompt.arguments }),
 });
+
+/**
+ * The prompts THIS caller may see — the one filter both methods read, so `prompts/list` and
+ * `prompts/get` cannot disagree about a prompt's existence.
+ */
+export const visiblePrompts = (
+  prompts: readonly McpPrompt[],
+  caller: McpCaller,
+): readonly McpPrompt[] => prompts.filter((prompt) => visibleToCaller(prompt, caller));
 
 /** Only string arguments: MCP types every prompt argument as a string. */
 const stringArguments = (raw: unknown): Readonly<Record<string, string>> => {
@@ -25,12 +36,15 @@ export async function promptsGet(
   prompts: readonly McpPrompt[],
   id: JsonRpcId,
   params: Readonly<Record<string, unknown>> | null,
+  caller: McpCaller,
 ): Promise<JsonRpcResponse> {
   const name = params?.['name'];
   if (typeof name !== 'string') {
     return errorResponse(id, INVALID_PARAMS, 'prompts/get params.name must be a string');
   }
-  const prompt = prompts.find((declared) => declared.name === name);
+  // An invisible prompt answers exactly as a missing one: a distinct refusal would tell a customer
+  // the staff prompt exists, which is the one fact `visibleTo` withholds.
+  const prompt = visiblePrompts(prompts, caller).find((declared) => declared.name === name);
   if (prompt === undefined) {
     return errorResponse(id, INVALID_PARAMS, `prompt not found: ${name} — read prompts/list`);
   }

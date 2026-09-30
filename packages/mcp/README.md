@@ -130,6 +130,13 @@ to mount — no file exports `mcp`, or the export was built without `resolveToke
 `route` — logs `X_MCP_APP_UNMOUNTED` once, with the file to write; `expose: false` mounts nothing
 and says nothing.
 
+**Several endpoints, one per population (Unreleased).** `mcp` may be a non-empty array of
+`defineAppMcp` values: endpoint #0 mounts at `config.ai.mcp.path` and owns the root well-known
+document; every other mounts at its own `defineAppMcp({ path })` and serves only its path-inserted
+metadata document. Each is its own server — catalog, instructions, groups, scopes, prompts. Two on
+one route throws `X_MCP_PATH_DUPLICATE` at boot. `McpPrompt.visibleTo` hides a prompt from
+`prompts/list` and `prompts/get` with the tool/resource `McpVisibility` semantics.
+
 `include: 'exposed'` reads the action and query registries instead of asking for
 `actions: [...]` / `queries: [...]` — the registries already know who opted in, and a
 second hand-maintained list is a thing that goes stale silently. The explicit arrays still

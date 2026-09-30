@@ -58,8 +58,10 @@ export interface DevRouteTable {
   readonly theme: ThemeBoot;
   /** The app's own error pages' inline styles, admitted the same way. */
   readonly errorStyles: readonly string[];
-  /** Where the app's MCP endpoint was mounted, or `undefined`. */
+  /** Where the app's default MCP endpoint was mounted, or `null`. */
   readonly mcpPath: string | null;
+  /** Every mounted MCP endpoint's path, default first — one per population the app serves. */
+  readonly mcpPaths: readonly string[];
 }
 
 export async function devRouteTable(input: DevRouteTableInput): Promise<DevRouteTable> {
@@ -156,5 +158,5 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     }),
   ];
 
-  return { routes, theme, errorStyles, mcpPath: mcpMount.path };
+  return { routes, theme, errorStyles, mcpPath: mcpMount.path, mcpPaths: mcpMount.paths };
 }

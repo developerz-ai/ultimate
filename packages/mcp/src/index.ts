@@ -117,6 +117,7 @@ export {
   oneLineParams,
   renderCatalog,
 } from './meta-surface';
+export { McpPathDuplicateError } from './mount-errors';
 export type { McpOAuth } from './oauth-metadata';
 export {
   metadataPaths,
