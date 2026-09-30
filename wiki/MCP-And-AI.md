@@ -191,6 +191,30 @@ container. The contract is one file:
 | auth | the route's own | `auth: 'public'`, `enforcedBy: 'handler'` on the http route — the bearer token is read by `resolveToken`, never pre-judged by the pipeline |
 | exposed and unmountable | `X_MCP_APP_UNMOUNTED`, logged once | no file exports `mcp`, or it was built without `resolveToken` (no `route`); the fix names the file to write |
 
+#### Several endpoints, one per population
+
+`As of Unreleased`. `mcp` may be a non-empty **array** of `defineAppMcp` values — one endpoint per
+population, each with its own catalog, `instructions`, `groups`, `scopes` and `oauth`. Same export
+name, same file; the order is the contract:
+
+```ts
+// apps/web/mcp.ts
+export const mcp = [
+  defineAppMcp({ name: 'notificado', include: 'exposed', scopes: CUSTOMER_SCOPES, resolveToken: customerToken, oauth }),
+  defineAppMcp({ name: 'notificado-admin', path: '/mcp/admin', tools: staffTools, surface: 'meta', groups, scopes: STAFF_SCOPES, resolveToken: staffToken, oauth }),
+  defineAppMcp({ name: 'notificado-afiliados', path: '/mcp/afiliados', tools: affiliateTools, scopes: AFFILIATE_SCOPES, resolveToken: affiliateToken, oauth }),
+];
+```
+
+| Rule | Detail |
+|---|---|
+| endpoint #0 | mounts at `ai.mcp.path`, exactly as a single export does, and owns the root `/.well-known/oauth-protected-resource` |
+| every other endpoint | mounts at its own `defineAppMcp({ path })` (default `/mcp`), route name `mcp:<path>` |
+| isolation | each endpoint is its own `McpServer`: a tool, resource or prompt of one is absent from another's `tools/list` and answers `-32601` there |
+| two endpoints on one route | `X_MCP_PATH_DUPLICATE`, **thrown** at boot — a second endpoint that forgot `path` collides with the default `/mcp` |
+| one endpoint without `resolveToken` | `X_MCP_APP_UNMOUNTED` names it; the others still mount |
+| boot report | one `app mcp mounted` log line and one `mcp POST <path>` summary line per endpoint; `x dev --json` carries `mcp` (endpoint #0) and `mcpPaths` (all) |
+
 The same discovery serves an app's `RuntimeOverrides`: `apps/<app>/runtime.ts` exporting `runtime`
 reaches `x dev` (its middleware, rate-limit store and plain `routes`) and `runRole` when
 `apps/web/server.ts` passes none — one middleware chain in development and in the container, not two.
@@ -222,6 +246,7 @@ export const mcp = defineAppMcp({
 | 401 (no token) | `WWW-Authenticate: Bearer realm="ultimate-mcp", resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"` |
 | 401 (token did not resolve) | the same plus `error="invalid_token"` |
 | `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` | `{ resource, authorization_servers, bearer_methods_supported: ['header'], scopes_supported, resource_name }`, public, `access-control-allow-origin: *` — mounted by both boots beside `POST /mcp` |
+| several endpoints | each serves its own path-inserted document (RFC 9728 §3.1) — `/.well-known/oauth-protected-resource/mcp/admin` for `POST /mcp/admin` — with its own `resource` and `scopes_supported`, and its 401 names that document; the root document stays endpoint #0's |
 | origin | `ctx.https` + host as the pipeline resolved them, so a TLS-terminating ingress yields `https://…` |
 
 The authorization server (`/.well-known/oauth-authorization-server`, `/oauth/authorize`,
@@ -259,6 +284,7 @@ Where the first two outcomes are declared:
 | Outcome | Declared | Property |
 |---|---|---|
 | Hidden (role) | `mcp: { visibleTo: [...] }`, on the action or query itself | `readonly string[]` — a role allowlist. A primitive declares the list form only: a declared fact stays static and serialisable. The predicate form of `McpVisibility` is for a surface that builds its catalog programmatically (`@ultimat3/admin` derives visibility from the actor's admin permissions) and hands `@ultimat3/mcp` a tool directly. Both are fail-closed: an unnamed role — including a caller carrying no role at all — gets ToolNotFound, never Forbidden. A catalog audience, not an authz rule; the primitive's `policy` still decides every call |
+| Hidden (prompt) | `visibleTo` on an `McpPrompt` passed to `defineAppMcp({ prompts })` | the same `McpVisibility`, the same fail-closed evaluation: absent from `prompts/list`, and `prompts/get` answers exactly as for a prompt that does not exist (`As of Unreleased`). Resources take the same field |
 | Scope | `scopes:` on `defineAppMcp` | `Readonly<Record<string, readonly string[]>>` — scope name → tool names. A capability of the connection's token, so it is declared once per app rather than beside every primitive. A name the catalog does not contain, or one claimed by two scope entries, refuses at boot: `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT` |
 
 Rationale for each: [`docs/architecture/11-ai-surface.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/11-ai-surface.md).

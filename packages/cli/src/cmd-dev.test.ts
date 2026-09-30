@@ -405,6 +405,7 @@ describe('unit · x dev boots the app', () => {
   test("the app's MCP endpoint is mounted, and the boot report names it", async () => {
     expect((await fetchDev('/mcp', { method: 'POST' })).status).not.toBe(404);
     expect(server.mcp).toBe('/mcp');
+    expect(server.mcpPaths).toEqual(['/mcp']);
   });
 
   // `x dev` passed no app middleware until 2026-09-05 and no app DISK until 22.4 (it built its own):

@@ -62,6 +62,12 @@ export interface McpPrompt {
   readonly description: string;
   readonly arguments?: readonly McpPromptArgument[];
   /**
+   * Who may see and get it — OUTCOME 1. Absent = everyone. Same `McpVisibility` as a tool's and a
+   * resource's, evaluated by the same fail-closed `visibleToCaller`: a prompt that names a staff
+   * workflow is part of the staff surface, and listing it to a customer leaks the workflow.
+   */
+  readonly visibleTo?: McpVisibility;
+  /**
    * The prompt's TEXT, for `prompts/get`, given the arguments the client passed. An injected thunk
    * — the `frameworkResources` pattern — so the server never learns where a prompt lives.
    * Absent, the prompt is listed and `prompts/get` refuses it (`-32602`) rather than inventing a body.

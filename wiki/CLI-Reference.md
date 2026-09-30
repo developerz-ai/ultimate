@@ -118,7 +118,8 @@ database (repository writes in this process reach subscribers — the bridge PGl
 walsender needed), `live=replication` with a real `DATABASE_URL` (the WAL decoder, `--role
 replicator` here or elsewhere), `live=none` without the `sync` role. `--json` carries it as
 `liveFeed`. The app's MCP endpoint, when `apps/<app>/mcp.ts` exports one, prints as `mcp POST /mcp`
-in the summary and `mcp` in `--json`.
+in the summary and `mcp` in `--json`; an app exporting several prints one line per endpoint, and
+`--json` lists them all in `mcpPaths`, endpoint #0 first.
 
 ```bash
 x dev [--port 3000] [--role web,worker] [--once] [--json]

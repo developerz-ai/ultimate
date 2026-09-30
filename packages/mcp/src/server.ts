@@ -12,7 +12,7 @@ import { metaCall } from './meta-call';
 import { META_UNKNOWN_FIX } from './meta-errors';
 import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
 import { MANAGE_RESOURCE, META_TOOL_ENTRIES, META_TOOL_NAMES, MetaSurface } from './meta-surface';
-import { promptListEntry, promptsGet } from './prompts-get';
+import { promptListEntry, promptsGet, visiblePrompts } from './prompts-get';
 import type {
   AnyMcpTool,
   McpCaller,
@@ -198,9 +198,11 @@ export class McpServer {
       case 'ping':
         return resultResponse(id, {});
       case 'prompts/list':
-        return resultResponse(id, { prompts: this.prompts.map(promptListEntry) });
+        return resultResponse(id, {
+          prompts: visiblePrompts(this.prompts, caller).map(promptListEntry),
+        });
       case 'prompts/get':
-        return promptsGet(this.prompts, id, paramsOf(body));
+        return promptsGet(this.prompts, id, paramsOf(body), caller);
       default:
         return errorResponse(id, METHOD_NOT_FOUND, `method not found: ${body.method}`, {
           supported: METHODS,

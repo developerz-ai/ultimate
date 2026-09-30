@@ -26,6 +26,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_OAUTH_INVALID',
   'X_MCP_IDEMPOTENCY_KEY_SHADOWED',
   'X_MCP_SURFACE_OVER_BUDGET',
+  'X_MCP_PATH_DUPLICATE',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -54,6 +55,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_IDEMPOTENCY_KEY_SHADOWED:
     "an idempotent action's input declares idempotencyKey, the MCP argument reserved for the idempotency key",
   X_MCP_SURFACE_OVER_BUDGET: "an MCP surface an agent reads is larger than the app's budget for it",
+  X_MCP_PATH_DUPLICATE: 'two MCP endpoints claim one path',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -197,17 +199,26 @@ export class McpToolUndeclaredError extends UltimateError {
  */
 export class McpAppUnmountedError extends UltimateError {
   readonly reason: 'missing' | 'no-route';
-  constructor(input: { reason: 'missing' | 'no-route'; path: string; file: string }) {
+  constructor(input: {
+    reason: 'missing' | 'no-route';
+    path: string;
+    file: string;
+    /** Index in an `mcp` array export; absent for a single export or the first endpoint. */
+    endpoint?: number;
+  }) {
+    const where =
+      input.endpoint === undefined ? input.file : `${input.file} (mcp[${input.endpoint}])`;
+    const route = input.endpoint === undefined ? `POST ${input.path}` : 'its endpoint';
     super({
       code: 'X_MCP_APP_UNMOUNTED',
       cause:
         input.reason === 'missing'
           ? `ai.mcp.expose is true and no ${input.file} exports mcp, so POST ${input.path} answers 404`
-          : `${input.file} exports mcp with no route — defineAppMcp was given no resolveToken — so POST ${input.path} answers 404`,
+          : `${where} exports mcp with no route — defineAppMcp was given no resolveToken — so ${route} answers 404`,
       fix:
         input.reason === 'missing'
           ? `write ${input.file}: export const mcp = defineAppMcp({ include: 'exposed', resolveToken: (token) => resolveAgentToken(token) }) — or set ai: { mcp: { expose: false } } in app.config.ts`
-          : `add resolveToken: (token) => resolveAgentToken(token) to defineAppMcp({ ... }) in ${input.file} — the route is only built with one`,
+          : `add resolveToken: (token) => resolveAgentToken(token) to the defineAppMcp({ ... }) at ${where} — the route is only built with one`,
     });
     this.reason = input.reason;
   }
