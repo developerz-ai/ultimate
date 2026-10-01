@@ -249,7 +249,7 @@ const budget = async (): Promise<TestBudget> => {
           const exempt = ${exempt};
           const size = (text) => new TextEncoder().encode(text).length;
           const inline = [...document.querySelectorAll('script:not([src])')]
-            .filter((el) => !/json/i.test(el.type) && !exempt.inline.includes(el.textContent ?? ''))
+            .filter((el) => !/json|^speculationrules$/i.test(el.type) && !exempt.inline.includes(el.textContent ?? ''))
             .reduce((sum, el) => sum + size(el.textContent ?? ''), 0);
           const fetched = new Map();
           for (const entry of performance.getEntriesByType('resource')) {
