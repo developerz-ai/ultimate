@@ -23,7 +23,11 @@ used an in-process semaphore per replica.
 
 ## Steps
 1. Shape: `{ key: (input: I) => string, limit: number, whenBusy?: 'wait' | 'fail' }`. `'wait'`
-   is the default and is today's behaviour per key: the run stays claimable.
+   is the default and is today's behaviour per key: the run stays claimable. This is Solid
+   Queue's `limits_concurrency to:, key:, on_conflict:` with one difference: its `duration:` —
+   the bound after which a stuck holder stops blocking the key — is not a new field here. The
+   lease TTL renewed by the heartbeat (`packages/jobs/src/leases.ts:1-5`) is that bound already,
+   and a second number that could disagree with it would be a second way.
 2. `whenBusy: 'fail'`: the run settles `failed` with `X_JOB_KEY_BUSY`, its body never runs, and
    it is not retried. Classify the code terminal (`registerErrorRetry`).
 3. An empty key string is `X_JOB_DECLARATION_INVALID` at the first enqueue — an empty key is one

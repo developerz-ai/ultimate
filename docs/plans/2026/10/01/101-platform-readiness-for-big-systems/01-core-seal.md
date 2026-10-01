@@ -26,10 +26,20 @@ AES call.
 5. Register both with `bun run new-error-code <CODE> --package core --title '…' --fix '…'`.
    Classify both terminal through `registerErrorRetry` (`packages/core/src/error-retry.ts:95`).
 6. `open()` returns `Uint8Array`; `openText()` is the string spelling. No JSON helper.
+7. **Key ring** (Active Record Encryption's `previous:`). `seal()` always writes under the current
+   key; `open()` selects by the `keyId` in the string, from the current key plus any retired keys
+   the app still declares. Rotation is then: add a key, keep the old one declared until a
+   `backfill()` has re-sealed, drop it. A `keyId` nobody declares is `X_SEAL_KEY_MISSING` naming
+   the id.
+8. **Deterministic mode** (`deterministic: true`): the IV is derived by HMAC from purpose and
+   plaintext, so equal values seal equal. It exists for slice 02's lookup columns only; state in
+   the doc comment that it reveals equality and must never be used for a low-entropy value.
 
 ## Tests
 - `packages/core/src/seal.test.ts`: round trip; wrong purpose refused; one flipped byte refused;
-  a missing key names the fix; two seals of one value differ (fresh IV).
+  a missing key names the fix; two seals of one value differ (fresh IV); a value sealed under a
+  retired key opens while that key is declared and refuses once it is not; deterministic seals of
+  one value are equal and of two values differ.
 - Command: `bun test packages/core/src/seal.test.ts`.
 
 ## Done when

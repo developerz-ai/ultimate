@@ -32,12 +32,22 @@ encrypts seven columns per connection through its ORM; `auth` stores `mfa_secret
    `examples/dummy/packages/db/src/client.ts:15-35` records.
 5. Sealed columns are excluded from `persist: true` records and from the record envelope: a sealed
    value never reaches a browser store.
-6. Register both codes; fix text for the predicate names the alternative — store a separate
-   `.unique()` digest column if lookup by value is required.
+6. `.sealed({ lookup: true })` uses slice 01's deterministic mode, as `encrypts …,
+   deterministic: true` does: equality in `where` and `.unique()` are then allowed, and nothing
+   else is — no ordering, no range, no `like`. Without `lookup`, every predicate is refused.
+7. Register both codes; the predicate's fix text names `.sealed({ lookup: true })` and says what
+   it costs (equal plaintexts become visibly equal).
+8. Legacy plaintext (`support_unencrypted_data` in Rails): `.sealed({ legacy: 'plaintext' })`
+   reads a value that is not in the sealed wire format as-is and seals it on the next write. It is
+   a migration aid with an end: the manifest lists every column still declaring it, and
+   `x doctor` reports them. This is the path for `auth`'s `mfa_secret`
+   (`packages/auth/CLAUDE.md:121-122`) if the owner takes it; see `overview.md` *Risks*.
 
 ## Tests
 - `packages/entity/src/sealed-column.test.ts`: insert then raw `select` shows no plaintext; read
-  returns it; `where({ password })` refused at type level and at runtime; a view naming it refused.
+  returns it; `where({ password })` refused at type level and at runtime; a view naming it refused;
+  a `lookup` column finds its row by equality and refuses `orderBy`; a `legacy` column reads a
+  plaintext row and stores it sealed after one update.
 - A `.contract.test.ts` beside it against Postgres, same assertions.
 - Command: `bun test packages/entity/src/sealed-column.test.ts`.
 

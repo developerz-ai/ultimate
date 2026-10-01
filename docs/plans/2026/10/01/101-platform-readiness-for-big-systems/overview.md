@@ -29,6 +29,20 @@ service itself is a later plan in its own repo; this plan is framework work only
 | per-session egress, browser provider, usage, sealed sessions | `scrape()` — a `job` factory (`packages/core/src/registrar.ts:71`) |
 | style rules, transport gate | guards on the `boundaries` step |
 
+- **The Rails lens.** Ultimate is Rails' philosophy on Bun; each slice has a Rails feature that
+  already proved the shape. Take the shape, keep Ultimate's axioms — a declared field and a build
+  error, never a macro and a runtime surprise.
+
+| Slice | Rails precedent | Taken | Differs here |
+|---|---|---|---|
+| 01, 02 | Active Record Encryption: `encrypts :field`, `deterministic: true`, `previous:` keys, `support_unencrypted_data` | a one-word column declaration; a deterministic mode for lookup; a key ring so rotation is not a rewrite; a bounded transitional read of legacy plaintext | the key is the one `x secrets` already manages; a sealed column in a view is a build error, not a filter list |
+| 04 | Solid Queue `limits_concurrency to:, key:, duration:, on_conflict:` | key from the arguments, a limit, a time bound, block-or-discard on conflict | fleet-wide by lease row; `X_JOB_CONCURRENCY_UNENFORCEABLE` when the driver cannot hold it |
+| 04 | Active Job `retry_on` / `discard_on` / `after_discard` | the last attempt is knowable in the body | classification already lives on the error code (`registerErrorRetry`) |
+| 06, 07 | RuboCop as the house style, run by `bin/ci` | rules ship with the scaffold and run in the one gate | a guard is a file the app owns; the transport rule is not deletable |
+| 08 | `rails g scaffold` — the generator is the documentation | generated code is the idiom, so an agent copying it copies the right thing | the output is the typed handle; no string SQL to copy |
+| 09 | Active Job Continuations (`step`), Active Storage signed URLs | resumable steps, artifacts by reference | already shipped (`step.run`, signed URLs); this slice only adds what a browser session needs |
+| 10 | Turbo Streams `broadcasts_to` + Action Cable | a row written on the server appears in every open page | a live `query` over one socket, policy-checked per subscriber |
+
 - Reference patterns:
   - keyed fleet lease — `packages/jobs/src/leases.ts:18-34`, taken at `packages/jobs/src/worker-fleet-slots.ts:69`.
   - AES-256-GCM envelope — `packages/core/src/secrets.ts:15-22,167`.
@@ -121,26 +135,27 @@ all; 11 last.
   "a page the code does not know". Shape if shipped: an `llm()` step bounded by steps, seconds
   and cost, with an action allowlist and one event per action.
 - **Existing plaintext.** `auth`'s `mfa_secret` is plaintext for lack of a seam
-  (`packages/auth/CLAUDE.md:121-122`). Slice 01 supplies the seam; migrating shipped rows is a
-  breaking data change and is not planned here.
+  (`packages/auth/CLAUDE.md:121-122`). Slices 01–02 supply the seam and a legacy-read mode that
+  seals on the next write. Turning it on for `auth`'s own table changes shipped data: owner's
+  call, not taken here.
 - **Overlap, do not repeat:**
   [`../../../09/22/102-downstream-app-gaps/overview.md`](../../../09/22/102-downstream-app-gaps/overview.md)
   owns raw `api/**/route.ts`, audited queries, Object Lock and append-only entities. Slice 10 uses
   `appendOnly` if 102 slice 04 has landed and a plain entity if not.
 - **Deferred, with the evidence that ranks them** (a later plan):
 
-| Gap | Evidence |
-|---|---|
-| `defineError({ code, status, cause, fix })` | 565 hand-written classes, 51 status registrations in one app |
-| a native form's refusal answer (`setRedirect` covers success, `packages/http/src/redirect.ts:16`) | 234 wrapper calls in 142 files |
-| route-group defaults | 111 routes × ~25 repeated lines |
-| a catalog subset for `t()` inside an island | 94 label types, 3,092 lines of label files |
-| server-first dialog, menu, combobox with a small enhancer | ~2,200 app-side LOC; 13 catalog components at 0 imports |
-| `QueryRef` derived from the declaration | `wiki/Queries-And-Live-Queries.md` "Not derived" row |
-| a test kit: `renderView`, automatic job-driver setup | 183 casts in 119 files, 165 `setJobDriver(` |
-| a `task` that runs without a companion job; a boot hook | 35 task/job pairs, 2 boot stand-ins |
-| a failure bundle an agent can act on | built by hand in two of the surveyed systems |
-| proxy inventory, captcha, OTP relay | product features of a scraping service — the app's |
+| Gap | Evidence | Rails precedent |
+|---|---|---|
+| `defineError({ code, status, cause, fix })` | 565 hand-written classes, 51 status registrations in one app | `rescue_from` + one status table |
+| a native form's refusal answer (`setRedirect` covers success, `packages/http/src/redirect.ts:16`) | 234 wrapper calls in 142 files | Turbo: 303 on success, 422 re-rendering the form with its errors; `flash` |
+| route-group defaults | 111 routes × ~25 repeated lines | layouts, `before_action`, controller inheritance |
+| a catalog subset for `t()` inside an island | 94 label types, 3,092 lines of label files | lazy lookup `t('.title')` scoped to the view |
+| server-first dialog, menu, combobox with a small enhancer | ~2,200 app-side LOC; 13 catalog components at 0 imports | Stimulus: HTML first, a small controller second |
+| `QueryRef` derived from the declaration | `wiki/Queries-And-Live-Queries.md` "Not derived" row | — |
+| a test kit: `renderView`, automatic job-driver setup | 183 casts in 119 files, 165 `setJobDriver(` | fixtures, `ActiveJob::TestHelper`, system tests |
+| a `task` that runs without a companion job; a boot hook | 35 task/job pairs, 2 boot stand-ins | recurring tasks that name a command; initializers |
+| a failure bundle an agent can act on | built by hand in two of the surveyed systems | the error page: trace, request, a console |
+| proxy inventory, captcha, OTP relay | product features of a scraping service — the app's | — |
 
 - New codes, each through `bun run new-error-code`: `X_SEAL_KEY_MISSING`, `X_SEAL_INVALID` (core);
   `X_ENTITY_SEALED_PREDICATE`, `X_ENTITY_SEALED_IN_VIEW` (entity); `X_JOB_KEY_BUSY` (jobs);
