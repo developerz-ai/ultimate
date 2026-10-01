@@ -83,10 +83,12 @@ The split is about what is knowable, not about strictness: everything decidable 
 | `ssr` | per-request full render | fresh SEO pages |
 | `stream` | static shell flushed instantly, holes streamed | **default for app pages** |
 
-**A served `static` page**, `As of 2026-09-30`: a matching `If-None-Match` is a bodiless `304`, and
+**A served `static` page**, `As of 2026-09`: a matching `If-None-Match` is a bodiless `304`, and
 the container renders each page once per locale and answers from memory after — no `load`, no
 render — for a page with no dynamic segment, asked for with no query string, that answered 200.
-`x dev` renders per request. No other mode is kept this way.
+`x dev` renders per request. No other mode is kept this way. What is kept is bounded twice —
+1,024 entries and 32 MiB of bodies (`STATIC_MEMO_MAX_BYTES`) — because the request origin is in the
+key when the app declares none; past either bound a page is rendered per request.
 
 | Surface | Default | Allowed |
 |---|---|---|
@@ -134,7 +136,7 @@ export const config = defineRoute({
 
 **An `isr` entry is keyed by the negotiated locale.** The store key is `isrKey(url, locale)` — pathname, the reserved `__x_locale` parameter, then the query with its params sorted. Without it, an app shipping two locales served visitor 2 the document rendered for visitor 1, for the whole TTL, and told the CDN to do the same. The time zone is deliberately **not** a dimension — a locale set is declared and bounded, a zone list is not — so a date on an `isr` page belongs in a zone the page itself names, or the page belongs in `ssr`.
 
-**A page with an island is admitted to its own CSP by hash.** The hydration runtime is an inline `<script type="module">`, and `script-src` admits it as one of the seven bodies `HYDRATE_RUNTIME_BODIES` enumerates, hashed at boot. Hashes and not a nonce because a `render: 'static'` page is a file on disk. The theme boot script is the second body the boot hashes, from `theme.defaultMode` (`As of 20.2.0`; an app writes neither the tag nor the hash). The speculation rules are the third (`As of 2026-09-30`, [Client navigation](Client-Navigation)). An app that adds its own inline script beyond those has to admit it the same way, at module scope in a file under `apps/*/`: `configureHttp({ security: { csp: { extend: { 'script-src': [cspHashSource(body)] } } } })`. The boot's own hashes are **merged per directive**, never replaced, so admitting a CDN source does not evict the hydration runtime's hash and lock every island out of the page.
+**A page with an island is admitted to its own CSP by hash.** The hydration runtime is an inline `<script type="module">`, and `script-src` admits it as one of the seven bodies `HYDRATE_RUNTIME_BODIES` enumerates, hashed at boot. Hashes and not a nonce because a `render: 'static'` page is a file on disk. The theme boot script is the second body the boot hashes, from `theme.defaultMode` (`As of 20.2.0`; an app writes neither the tag nor the hash). The speculation rules are the third (`As of 2026-09`, [Client navigation](Client-Navigation)). An app that adds its own inline script beyond those has to admit it the same way, at module scope in a file under `apps/*/`: `configureHttp({ security: { csp: { extend: { 'script-src': [cspHashSource(body)] } } } })`. The boot's own hashes are **merged per directive**, never replaced, so admitting a CDN source does not evict the hydration runtime's hash and lock every island out of the page.
 
 ## One declaration of the vocabulary, at tier 0
 

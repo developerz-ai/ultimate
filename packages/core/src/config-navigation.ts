@@ -6,6 +6,7 @@
 // were: shape, merge and screen are one subject.
 
 import { describeValue } from './error-render';
+import { ConfigInvalidError } from './errors';
 
 /**
  * The surfaces that render documents a browser navigates between. `api` answers JSON and `shared`
@@ -79,22 +80,40 @@ export function mergeNavigation(layers: readonly NavigationSectionInput[]): Navi
   let client: readonly NavigationSurface[] = [];
   let prefetch: SpeculationEagerness | false = DEFAULT_SPECULATION.prefetch;
   let exclude: readonly string[] = DEFAULT_SPECULATION.exclude;
+  // A layer that wrote something other than an object (`speculation: 'off'`, `null`, a list) has
+  // no key to merge. It is carried through AS WRITTEN so `navigationIssues` refuses it — dropped
+  // here, the app would run at the default it believed it had turned off.
+  let unmergeable: { readonly said: unknown } | undefined;
   for (const layer of layers) {
     const said = layer.navigation?.client;
     if (said !== undefined) client = said;
-    const speculation = layer.navigation?.speculation;
-    if (speculation?.prefetch !== undefined) prefetch = speculation.prefetch;
-    if (speculation?.exclude !== undefined) exclude = speculation.exclude;
+    const speculation: unknown = layer.navigation?.speculation;
+    if (speculation === undefined) continue;
+    if (!isSpeculationObject(speculation)) {
+      unmergeable ??= { said: speculation };
+      continue;
+    }
+    if (speculation.prefetch !== undefined) prefetch = speculation.prefetch;
+    if (speculation.exclude !== undefined) exclude = speculation.exclude;
   }
-  return { navigation: { client, speculation: { prefetch, exclude } } };
+  const speculation =
+    unmergeable === undefined ? { prefetch, exclude } : (unmergeable.said as SpeculationConfig);
+  return { navigation: { client, speculation } };
 }
+
+type SpeculationInput = NonNullable<
+  NonNullable<NavigationSectionInput['navigation']>['speculation']
+>;
+
+const isSpeculationObject = (value: unknown): value is SpeculationInput =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * A pattern is emitted inside a JSON string the browser parses as a URL pattern: it must be a
  * same-origin PATH, so anything not starting with `/` (a host, a scheme, `*`) is refused.
  */
 function speculationIssues(speculation: unknown, issues: string[]): void {
-  if (typeof speculation !== 'object' || speculation === null) {
+  if (!isSpeculationObject(speculation)) {
     issues.push(`navigation.speculation must be an object, not ${describeValue(speculation)}`);
     return;
   }
@@ -117,6 +136,29 @@ function speculationIssues(speculation: unknown, issues: string[]): void {
       );
     }
   }
+}
+
+/**
+ * `navigation.speculation` as some reader OUTSIDE `defineConfig` found it (`@ultimat3/cli` imports
+ * the app's config module structurally): the defaults for what it does not say, and the SAME
+ * refusal `defineConfig` gives for what it says wrongly. One validator — a second reader that
+ * coerced `'eager'` to `'moderate'` or dropped a bad pattern would serve rules the app never wrote.
+ */
+export function resolveSpeculation(said: unknown): SpeculationConfig {
+  if (said === undefined) return DEFAULT_SPECULATION;
+  const { speculation } = mergeNavigation([
+    { navigation: { speculation: said as SpeculationInput } },
+  ]).navigation;
+  const issues: string[] = [];
+  speculationIssues(speculation, issues);
+  if (issues.length > 0) {
+    throw new ConfigInvalidError({
+      cause: issues.join('; '),
+      fix: 'Correct navigation.speculation in app.config.ts: prefetch is "moderate", "conservative" or false, and exclude is a list of path patterns starting with "/"',
+      meta: { issues },
+    });
+  }
+  return speculation;
 }
 
 /** Appends every refusal the section earns to `issues`, `config.ts`' one list. */

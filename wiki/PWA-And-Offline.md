@@ -90,7 +90,7 @@ Shift+F5. `offline: 'precache'` still precaches the document: precache decides w
 offline, not what answers while the network does. A per-route `strategy` can still ask for
 `cache-first` or `stale-while-revalidate`.
 
-**Navigation preload**, `As of 2026-09-30`: on `activate` the worker enables
+**Navigation preload**, `As of 2026-09`: on `activate` the worker enables
 `registration.navigationPreload`, so the browser sends a navigation's request while the worker is
 still starting, and every strategy answers from `event.preloadResponse` before it would fetch. Worker
 start-up is off the critical path of every navigation; a browser without the API, or a preload that
@@ -98,7 +98,7 @@ resolves empty, is the worker's own fetch as before. The preload is the browser'
 carries no `X-Ultimate-Build`, so skew is read off the answer: another build's document posts
 `AppUpdateAvailable` and the worker stops stamping its id — what a `409` did, in one round trip.
 
-**The install fill is throttled**, `As of 2026-09-30`: `PRECACHE_CONCURRENCY` (4) entries in flight,
+**The install fill is throttled**, `As of 2026-09`: `PRECACHE_CONCURRENCY` (4) entries in flight,
 never every entry at once — the fill runs on the first visit, on the connection the first click needs.
 
 **A new worker takes over at once**, `As of 22.3.2`: the install block calls `self.skipWaiting()`, so

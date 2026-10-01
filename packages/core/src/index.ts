@@ -125,6 +125,7 @@ export type {
 export {
   DEFAULT_SPECULATION,
   NAVIGATION_SURFACES,
+  resolveSpeculation,
   SPECULATION_EAGERNESS,
 } from './config-navigation';
 export type {

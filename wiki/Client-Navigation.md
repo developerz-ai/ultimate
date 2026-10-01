@@ -199,7 +199,7 @@ link is not an intent — so a fast click sends exactly one request (`As of 22.8
 
 ## Without the router: the browser's own prefetch
 
-`As of 2026-09-30`. A document that carries **no** router — every page of a surface outside
+`As of 2026-09`. A document that carries **no** router — every page of a surface outside
 `navigation.client`, and every `navigation: 'document'` page — carries one
 `<script type="speculationrules">` instead: the browser fetches a link's document before the click,
 and the full-page load that follows paints from memory. No JavaScript ships for it; a `0kb` page
