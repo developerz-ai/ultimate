@@ -1,6 +1,6 @@
-# 11 — Docs: what shipped, and what agents did not find
+# 14 — Docs: what shipped, and what agents did not find
 
-> Part of [`overview.md`](overview.md). Depends on: 01–10. Tier: docs.
+> Part of [`overview.md`](overview.md). Depends on: 01–13. Tier: docs.
 
 Rule: a feature an agent cannot find is a feature that does not exist. Three shipped mechanisms
 were rebuilt by hand in a downstream app because the wiki never led to them.
@@ -12,6 +12,7 @@ were rebuilt by hand in a downstream app because the wiki never led to them.
 | `wiki/Theming.md:80` | the three breakpoint mixins, `rem()`, `fluid()`; a table of the layout mixins `row` / `column` (`packages/ui/src/tokens/_mixins.scss:225,234`) — 691 hand-written `display: flex` in one app |
 | `wiki/Scraping.md` | egress, the CDP resolver with a 20-line vendor wrapper as an app-side example, usage, sealed sessions, `eventPrompt` |
 | `wiki/Entities-And-Migrations.md` | `.sealed()`; the repo section shows the typed handle |
+| `wiki/Admin-Dashboard.md` | served screens with zero host code; filters, scopes, relation labels and pickers, row scoping; sections, related rows, form groups; `when` and `batch` on actions; the durable audit sink. Fix `:115`, whose "custom bulk operation" row describes a plain action |
 | `wiki/Client-Data.md:7` | stale: says 21.0.0 is "not released" |
 | `wiki/Client-Data.md:33-35` | the transport rule is a `boundaries` finding |
 | `wiki/Client-Data.md` | a row for the non-live read: `useQuery` with no `live` is one HTTP GET and needs no socket; when to set `islands: { sharedChunks: true }` (`packages/core/src/config-islands.ts:9-17`) |
@@ -29,7 +30,7 @@ were rebuilt by hand in a downstream app because the wiki never led to them.
    claim against the code.
 2. House style: lead with the rule, fragments, tables for ≥3 rows, date load-bearing claims
    `As of 2026-10`.
-3. `bun run scripts/guards-doc.ts --write` after slices 06–08.
+3. `bun run scripts/guards-doc.ts --write` after slices 06–08 and 10–12.
 4. Do not name any surveyed application, vendor or client in a committed file.
 
 ## Tests

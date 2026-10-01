@@ -16,8 +16,11 @@ slices:
   - {file: 07-cli-browser-transport-gate.md, tier: 5, status: not_started, percent: 0}
   - {file: 08-cli-typed-repo-generator.md, tier: 5, status: not_started, percent: 0}
   - {file: 09-scraping-sessions.md, tier: 5, status: not_started, percent: 0}
-  - {file: 10-apps-run-console.md, tier: 5, status: not_started, percent: 0}
-  - {file: 11-docs.md, tier: 5, status: not_started, percent: 0}
+  - {file: 10-admin-mounted-screens.md, tier: 5, status: not_started, percent: 0}
+  - {file: 11-admin-list.md, tier: 5, status: not_started, percent: 0}
+  - {file: 12-admin-detail-form-actions.md, tier: 5, status: not_started, percent: 0}
+  - {file: 13-apps-run-console.md, tier: 5, status: not_started, percent: 0}
+  - {file: 14-docs.md, tier: 5, status: not_started, percent: 0}
 evidence: []
-notes: "Source: five read-only surveys on 2026-10-01 (a production SPA, an existing scraping system, an earlier service attempt, a downstream app on 22.15.0, this tree at dad6e086). Six parts of the ask were already true in the tree; overview.md Risks lists each with the file:line. Proving case is a session-based scraping service; that service is a separate plan in its own repo. Slices 10 and 11 are apps and docs, tier recorded as 5 for ordering. Overlaps plan 2026/09/22/102 (append-only entities, raw routes, audited queries) and 2026/09/28/101 (recover: 'agent' owner decision)."
+notes: "Source: six read-only surveys on 2026-10-01 (a production SPA, a large admin-console app, an existing scraping system, an earlier service attempt, a downstream app on 22.15.0, this tree at dad6e086). Six parts of the ask were already true in the tree; overview.md Risks lists each with the file:line. Proving case is a session-based scraping service; that service is a separate plan in its own repo. Slices 13 and 14 are apps and docs, tier recorded as 5 for ordering. Overlaps plan 2026/09/22/102 (append-only entities, raw routes, audited queries) and 2026/09/28/101 (recover: 'agent' owner decision)."
 last_updated: 2026-10-01

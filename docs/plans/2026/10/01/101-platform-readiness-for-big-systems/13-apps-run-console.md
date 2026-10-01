@@ -1,10 +1,10 @@
-# 10 — Apps: a run console in the reference app
+# 13 — Apps: a run console in the reference app
 
-> Part of [`overview.md`](overview.md). Depends on: 01–09. Tier: apps.
+> Part of [`overview.md`](overview.md). Depends on: 01–12. Tier: apps.
 
 Rule: `examples/dummy` shows every primitive once, idiomatically — and today neither tracked app
 calls `scrape()`, so the package has no consumer in the tree. This slice is the proof that slices
-01–09 compose: a long run, watched live, answered mid-run, one per key.
+01–12 compose: a long run, watched live, answered mid-run, one per key.
 
 ## Files to change
 All under `examples/dummy/apps/web/app/runs/` (new feature slice):
@@ -18,6 +18,11 @@ All under `examples/dummy/apps/web/app/runs/` (new feature slice):
 | `live.ts` | `query` (`live: true`) | the run's events, ordered by `seq` |
 | `page.tsx`, `run-console.island.tsx` | `route` | `useQuery` live list in `AsyncRegion`, the prompt form, the usage block |
 | `run-console.module.scss` | — | tokens and the slice-05 helpers only |
+
+Plus the operator's view in `examples/dummy/apps/admin/`: `connection` and `run` as admin
+resources — scopes `running` / `failed` with counts, a `cancel` action with
+`when: (row) => row.status === 'running'` and `batch: true`, `runEvent` as related rows — with no
+page written by hand (slices 10–12).
 
 Plus `examples/dummy/apps/web/api/index.ts:51-60` (register the modules),
 `examples/dummy/packages/db/src/client.ts:44` (add both entities), the i18n catalog, and
