@@ -164,6 +164,39 @@ describe('createStaticMemo', () => {
     expect(memo.size).toBe(1);
   });
 
+  test('past its byte budget a new document is not kept, however few entries there are', () => {
+    const body = 'x'.repeat(100);
+    const memo = createStaticMemo(1024, 250);
+    memo.set('a', { status: 200, headers: {}, body });
+    memo.set('b', { status: 200, headers: {}, body });
+    memo.set('c', { status: 200, headers: {}, body });
+    expect(memo.get('c')).toBeUndefined();
+    expect(memo.size).toBe(2);
+    expect(memo.bytes).toBe(202);
+  });
+
+  test('bytes are UTF-8, not characters, and a replacement gives its old weight back', () => {
+    const memo = createStaticMemo(1024, 10);
+    memo.set('a', { status: 200, headers: {}, body: 'ñññ' });
+    expect(memo.bytes).toBe(7);
+    memo.set('a', { status: 200, headers: {}, body: 'xx' });
+    expect(memo.bytes).toBe(3);
+    // A replacement that no longer fits drops the stale document too.
+    memo.set('a', { status: 200, headers: {}, body: 'x'.repeat(50) });
+    expect(memo.get('a')).toBeUndefined();
+    expect(memo.bytes).toBe(0);
+  });
+
+  test('rotating origins cannot retain more than the budget', () => {
+    const body = 'x'.repeat(1000);
+    const memo = createStaticMemo(1024, 10_000);
+    for (let host = 0; host < 1024; host += 1) {
+      memo.set(`en\nhttp://h${host}.test/`, { status: 200, headers: {}, body });
+    }
+    expect(memo.bytes).toBeLessThanOrEqual(10_000);
+    expect(memo.size).toBeLessThan(10);
+  });
+
   test('only a 200 is kept', () => {
     const memo = createStaticMemo();
     memo.set('a', result(404));

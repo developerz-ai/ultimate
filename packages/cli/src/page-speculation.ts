@@ -9,7 +9,7 @@
 // necessity `theme-boot.ts` records.
 import { join } from 'node:path';
 import type { NavigationSurface, SpeculationConfig } from '@ultimat3/core';
-import { DEFAULT_SPECULATION, localeSegment, SPECULATION_EAGERNESS } from '@ultimat3/core';
+import { DEFAULT_SPECULATION, localeSegment, resolveSpeculation } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
 import { localeConfig, routedLocales } from '@ultimat3/i18n';
 import type { RouteDescriptor, RouteEntry } from '@ultimat3/render';
@@ -28,8 +28,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 /**
- * `navigation.speculation`, as `defineConfig` validated it — the default (on, `'moderate'`) when
- * the app says nothing or has no config file. Structural, for `loadThemeMode`'s reason.
+ * `navigation.speculation` — the default (on, `'moderate'`) when the app says nothing or has no
+ * config file. Structural, for `loadThemeMode`'s reason, and so possibly NOT what `defineConfig`
+ * validated: what it finds goes through core's `resolveSpeculation`, the one validator, which
+ * REFUSES (`X_CONFIG_INVALID`) a value `defineConfig` would refuse. Never coerced: an `'eager'`
+ * quietly served as `'moderate'` is a rule the app did not write.
  */
 export async function loadSpeculation(root: string): Promise<SpeculationConfig> {
   const configPath = join(root, APP_CONFIG_FILE);
@@ -37,18 +40,7 @@ export async function loadSpeculation(root: string): Promise<SpeculationConfig> 
   const module = (await import(configPath)) as Record<string, unknown>;
   const config = module[APP_CONFIG_EXPORT];
   const navigation = isRecord(config) ? config['navigation'] : undefined;
-  const speculation = isRecord(navigation) ? navigation['speculation'] : undefined;
-  if (!isRecord(speculation)) return DEFAULT_SPECULATION;
-  const said = speculation['prefetch'];
-  const prefetch =
-    said === false ? false : (SPECULATION_EAGERNESS.find((known) => known === said) ?? 'moderate');
-  const exclude = speculation['exclude'];
-  return {
-    prefetch,
-    exclude: Array.isArray(exclude)
-      ? exclude.filter((one): one is string => typeof one === 'string')
-      : [],
-  };
+  return resolveSpeculation(isRecord(navigation) ? navigation['speculation'] : undefined);
 }
 
 /**

@@ -44,6 +44,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `x dev` renders per request, as before. `ssr`, `isr`, `stream` and every `no-store` page are
   untouched.
 
+### Fixed
+
+- **cli:** the served `static` document memo is bounded by **bytes** as well as by entry count
+  (`STATIC_MEMO_MAX_BYTES`, 32 MiB of keys and bodies). The key carries the request origin when the
+  app declares none, so rotating `Host` headers could retain up to 1,024 whole documents; past
+  either bound a page is rendered per request, as before, never refused.
+- **core:** a `navigation.speculation` that is not an object (`speculation: 'off'`, `null`, a list)
+  is refused with `X_CONFIG_INVALID`. `mergeNavigation` dropped it silently, so the app ran at
+  `'moderate'` â€” the default it believed it had turned off.
+- **core, cli:** `loadSpeculation` validates through core's new `resolveSpeculation`, the same
+  validator `defineConfig` runs, and **refuses** what it used to coerce: an eagerness not offered
+  became `'moderate'`, a non-string `exclude` entry was dropped, a pattern not starting with `/`
+  was kept.
+- **wiki:** the markers on the pages 22.15.0 touched are month-level (`As of 2026-09`), the
+  repository's convention.
+
 ## 22.14.0 - 2026-09-30
 
 ### Added

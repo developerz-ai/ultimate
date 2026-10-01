@@ -18,23 +18,57 @@ export type StaticResult = RenderResult & { readonly body: string };
  */
 export const STATIC_MEMO_LIMIT = 1024;
 
+/**
+ * The BYTES one process keeps, the cache tiers' `maxBytes` idea: a count alone lets 1,024 rotated
+ * `Host` headers retain 1,024 whole documents, whatever each weighs. Past it, as past the count, a
+ * page is rendered per request.
+ */
+export const STATIC_MEMO_MAX_BYTES = 32 * 1024 * 1024;
+
 export interface StaticMemo {
   get(key: string): StaticResult | undefined;
   set(key: string, result: StaticResult): void;
   readonly size: number;
+  /** UTF-8 bytes of the kept keys and bodies. */
+  readonly bytes: number;
 }
 
-export function createStaticMemo(limit: number = STATIC_MEMO_LIMIT): StaticMemo {
-  const kept = new Map<string, StaticResult>();
+const encoder = new TextEncoder();
+const weigh = (key: string, result: StaticResult): number =>
+  encoder.encode(key).byteLength + encoder.encode(result.body).byteLength;
+
+export function createStaticMemo(
+  limit: number = STATIC_MEMO_LIMIT,
+  maxBytes: number = STATIC_MEMO_MAX_BYTES,
+): StaticMemo {
+  const kept = new Map<string, { readonly result: StaticResult; readonly weight: number }>();
+  let bytes = 0;
   return {
-    get: (key) => kept.get(key),
+    get: (key) => kept.get(key)?.result,
     set(key, result) {
       // Only a 200 is the page: a loader's 404 or 500 is an answer about one moment.
-      if (result.status !== 200 || (kept.size >= limit && !kept.has(key))) return;
-      kept.set(key, result);
+      if (result.status !== 200) return;
+      const held = kept.get(key);
+      if (held === undefined && kept.size >= limit) return;
+      const weight = weigh(key, result);
+      // A replacement gives its old weight back first; one that no longer fits is not kept, and
+      // neither is the stale document it would have replaced.
+      const after = bytes - (held?.weight ?? 0) + weight;
+      if (after > maxBytes) {
+        if (held !== undefined) {
+          kept.delete(key);
+          bytes -= held.weight;
+        }
+        return;
+      }
+      kept.set(key, { result, weight });
+      bytes = after;
     },
     get size() {
       return kept.size;
+    },
+    get bytes() {
+      return bytes;
     },
   };
 }

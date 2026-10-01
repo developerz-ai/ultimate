@@ -2,7 +2,8 @@
 import { describe, expect, test } from 'bun:test';
 import { defineConfig } from './config';
 import type { NavigationSurface } from './config-navigation';
-import { isUltimateError } from './errors';
+import { resolveSpeculation } from './config-navigation';
+import { ConfigInvalidError, isUltimateError } from './errors';
 
 const causeOf = (run: () => unknown): string => {
   try {
@@ -57,6 +58,29 @@ describe('navigation — default and merge', () => {
 });
 
 describe('navigation.speculation', () => {
+  test.each([
+    ['a string', 'off'],
+    ['null', null],
+    ['a list', ['/a/*']],
+    ['a boolean', false],
+  ])('%s in place of the object is refused, never run at the default', (_name, said) => {
+    const define = () =>
+      defineConfig({ name: 'app', navigation: { speculation: said as unknown as object } });
+    expect(causeOf(define)).toContain('navigation.speculation must be an object');
+    expect(define).toThrow(ConfigInvalidError);
+  });
+
+  test('a later valid layer does not hide an earlier non-object one', () => {
+    expect(
+      causeOf(() =>
+        defineConfig(
+          { name: 'app', navigation: { speculation: 'off' as unknown as object } },
+          { navigation: { speculation: { prefetch: false } } },
+        ),
+      ),
+    ).toContain('navigation.speculation must be an object');
+  });
+
   test('on by default, at moderate, with nothing excluded', () => {
     expect(defineConfig({ name: 'app' }).navigation.speculation).toEqual({
       prefetch: 'moderate',
@@ -92,5 +116,31 @@ describe('navigation.speculation', () => {
         }),
       ),
     ).toContain('navigation.speculation.exclude contains');
+  });
+});
+
+describe('resolveSpeculation — the validator a reader outside defineConfig shares', () => {
+  test.each([
+    ['an eagerness not offered', { prefetch: 'eager' }, 'navigation.speculation.prefetch must be'],
+    ['a non-string pattern', { exclude: ['/a/*', 7] }, 'navigation.speculation.exclude contains'],
+    [
+      'a pattern off the origin',
+      { exclude: ['blog/*'] },
+      'navigation.speculation.exclude contains',
+    ],
+    ['a non-list exclude', { exclude: '/a/*' }, 'navigation.speculation.exclude must be a list'],
+    ['a non-object', 'off', 'navigation.speculation must be an object'],
+  ])('%s is refused with X_CONFIG_INVALID, never coerced', (_name, said, cause) => {
+    expect(causeOf(() => resolveSpeculation(said))).toContain(cause);
+    expect(() => resolveSpeculation(said)).toThrow(ConfigInvalidError);
+  });
+
+  test('nothing said is the default; a partial object is filled, not refused', () => {
+    expect(resolveSpeculation(undefined)).toEqual({ prefetch: 'moderate', exclude: [] });
+    expect(resolveSpeculation({ prefetch: false })).toEqual({ prefetch: false, exclude: [] });
+    expect(resolveSpeculation({ prefetch: 'conservative', exclude: ['/a/*'] })).toEqual({
+      prefetch: 'conservative',
+      exclude: ['/a/*'],
+    });
   });
 });
