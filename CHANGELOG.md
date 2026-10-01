@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.15.0 - 2026-10-01
+
 ### Added
 
 - **core, render, cli:** Speculation Rules on every document that carries no client router â€”
@@ -59,6 +63,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   was kept.
 - **wiki:** the markers on the pages 22.15.0 touched are month-level (`As of 2026-09`), the
   repository's convention.
+
+### Commits
+
+- fix(core,cli): #594 review â€” static memo bounded by bytes, non-object speculation refused, loadSpeculation validates instead of coercing (#596)
+- feat(navigation,pwa): static pages prefetch each other, the worker preloads navigations, a static page answers 304 (#594)
 
 ## 22.14.0 - 2026-09-30
 
