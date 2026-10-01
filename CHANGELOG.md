@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 22.15.0 - 2026-10-01
+
 ### Added
 
 - **core, render, cli:** Speculation Rules on every document that carries no client router â€”
@@ -43,6 +47,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   dynamic segment, asked for with no query string, that answered 200 â€” at most 1,024 documents.
   `x dev` renders per request, as before. `ssr`, `isr`, `stream` and every `no-store` page are
   untouched.
+
+### Commits
+
+- feat(navigation,pwa): static pages prefetch each other, the worker preloads navigations, a static page answers 304 (#594)
 
 ## 22.14.0 - 2026-09-30
 
