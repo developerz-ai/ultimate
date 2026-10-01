@@ -10,7 +10,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
-import { formatBytes, parseByteBudget, themeScriptBody } from '@ultimat3/render';
+import {
+  formatBytes,
+  parseByteBudget,
+  SPECULATION_RULES_TYPE,
+  themeScriptBody,
+} from '@ultimat3/render';
 import type { Finding } from './output';
 import type { UnmeasuredRoute } from './static-report';
 import { SW_REGISTER_PATH } from './sw-artifacts';
@@ -242,7 +247,10 @@ const carriesJson = (attrs: string): boolean => {
   // `type="application/ld+json; charset=utf-8"`, which does not END with `json`, so the suffix
   // test alone charged an SEO structured-data block as executable JavaScript all over again.
   const [type = ''] = (TYPE_ATTR.exec(attrs)?.groups?.['type'] ?? '').split(';');
-  return type.trim().toLowerCase().endsWith('json');
+  const declared = type.trim().toLowerCase();
+  // Speculation rules are JSON under a type that does not say so: read by the browser's
+  // prefetcher, never executed — the one script a 0kb page may carry for free.
+  return declared.endsWith('json') || declared === SPECULATION_RULES_TYPE;
 };
 
 /**

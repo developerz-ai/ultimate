@@ -17,6 +17,8 @@ import { islandHarnessRoutes } from './island-harness-route';
 import { islandRoutes } from './island-routes';
 import { loadIslandStates } from './island-states-load';
 import { loadNavigation, pageNavigation } from './page-navigation';
+import type { PageSpeculation } from './page-speculation';
+import { loadSpeculation, pageSpeculation } from './page-speculation';
 import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { assetRoutes } from './runtime-assets';
@@ -56,6 +58,8 @@ export interface DevRouteTable {
   readonly routes: readonly Route[];
   /** The theme boot, whose `cspSource` the web role admits. */
   readonly theme: ThemeBoot;
+  /** The speculation rules, admitted the same way — `undefined` when no document carries any. */
+  readonly speculation: PageSpeculation | undefined;
   /** The app's own error pages' inline styles, admitted the same way. */
   readonly errorStyles: readonly string[];
   /** Where the app's default MCP endpoint was mounted, or `null`. */
@@ -75,11 +79,14 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   // The same call `serve.ts` makes, so the two boots cannot serve different sync targets.
   const sync = await pageSync(input.root, input.env, input.buildId, input.realtime);
   // The client router, when a surface opted in (`navigation.client`) — the same call in both boots.
-  const navigation = await pageNavigation(
-    input.root,
-    await loadNavigation(input.root),
-    input.buildId,
-  );
+  const declared = await loadNavigation(input.root);
+  const navigation = await pageNavigation(input.root, declared, input.buildId);
+  // The browser's own prefetch, from the table as it stands at boot: a page added by a later save
+  // joins the rules on the next `x dev` — its links are a full load until then, never a wrong one.
+  const speculation = pageSpeculation({
+    config: await loadSpeculation(input.root),
+    client: declared.surfaces,
+  });
   const errorStyles = await errorPageStyleSources(input.root);
   // Built once at boot and NOT rebuilt with the islands on a watcher tick: a service worker that
   // changes under a page it controls is the update path, and one per keystroke exercises it per save.
@@ -151,6 +158,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       persisted: sync.persisted,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       themeHead: theme.head,
+      ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
       ...(origin === undefined ? {} : { origin }),
       ...(pwa === undefined
         ? {}
@@ -158,5 +166,12 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     }),
   ];
 
-  return { routes, theme, errorStyles, mcpPath: mcpMount.path, mcpPaths: mcpMount.paths };
+  return {
+    routes,
+    theme,
+    speculation,
+    errorStyles,
+    mcpPath: mcpMount.path,
+    mcpPaths: mcpMount.paths,
+  };
 }

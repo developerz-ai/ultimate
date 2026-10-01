@@ -119,8 +119,14 @@ export type {
   NavigationSection,
   NavigationSectionInput,
   NavigationSurface,
+  SpeculationConfig,
+  SpeculationEagerness,
 } from './config-navigation';
-export { NAVIGATION_SURFACES } from './config-navigation';
+export {
+  DEFAULT_SPECULATION,
+  NAVIGATION_SURFACES,
+  SPECULATION_EAGERNESS,
+} from './config-navigation';
 export type {
   PwaColors,
   PwaConfig,

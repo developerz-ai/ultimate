@@ -84,6 +84,8 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `app-openapi.ts` | `openapi.json` (complete when `defineApi({ openapi })` is declared) and each bearer mount's own document; staleness for all of them |
 | `script-csp.ts` / `style-csp.ts` / `style-bundle.ts` / `page-sync.ts` / `worker-bundle.ts` | CSP hashes, the CSS file, the page's sync target and worker |
 | `page-navigation.ts` | the client router for `navigation.client` surfaces — built, routed and named ONCE for `x dev`, the container and the static export; none opted in builds nothing |
+| `page-speculation.ts` | Speculation Rules for documents WITHOUT the router (`navigation.speculation`): the allow-list of pure-read pages, the one tag, and its `script-src` hash — composed once for all three writers. An allow-list, never "every link but": a prefetch is a real GET with cookies |
+| `static-document.ts` | a served `static` page: `304` on a matching `If-None-Match`, and (container only, `memoStatic`) the document kept after its first render. Never `x dev` — a save moves the stylesheet URL the kept document names |
 | `island-bundle.ts` / `island-store.ts` / `island-realtime.ts` / `solid-loader.ts` | islands: one `Bun.build` each, source-addressed; `x build --target docker` writes a verified store the container loads |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, the watcher, the reload, the lock, the port |
 

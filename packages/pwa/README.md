@@ -19,7 +19,9 @@ const { source, precache, warnings } = generateServiceWorker(describeRoutes(), c
 
 Every rule is a document, so every mode is network-first (22.3.2): `static` was cache-first and
 `isr`/`stream` stale-while-revalidate, and an online visitor got the previous deploy's HTML until a
-hard reload. `offline: 'precache'` still precaches — for offline. The worker calls `skipWaiting()`
+hard reload. `offline: 'precache'` still precaches — for offline. The worker enables navigation
+preload on `activate` and answers a navigation from `event.preloadResponse`, and fills its precache
+`PRECACHE_CONCURRENCY` entries at a time. The worker calls `skipWaiting()`
 in `install`, so a deploy takes over without every tab closing; it never reloads a page.
 
 Overrides: `offline: 'network-only'` forces `network-only`; a per-route `strategy` wins over

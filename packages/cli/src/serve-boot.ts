@@ -19,6 +19,7 @@ import { loadOrBuildIslands } from './island-store';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
 import { loadNavigation, pageNavigation } from './page-navigation';
+import { loadSpeculation, pageSpeculation } from './page-speculation';
 import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { startRoles } from './role-start';
@@ -98,7 +99,7 @@ export async function bootRoles(boot: {
     // The enforced policy this process sends must admit the app's own error pages' `<style>` and
     // the theme boot the documents carry; `x dev` is report-only, so only here was it a blank page.
     inlineStyles: web === undefined ? [] : await errorPageStyleSources(options.root),
-    inlineScripts: web === undefined ? [] : [web.themeCsp],
+    inlineScripts: web === undefined ? [] : web.inlineScripts,
     // The app's own `apps/web/site/errors/<status>.html`, resolved inside `startWeb` so this
     // process and `x dev` cannot answer a browser differently.
     root: options.root,
@@ -134,7 +135,7 @@ async function webSurface(
   options: ServeOptions,
   runtime: RunningServices,
   buildId: string,
-): Promise<{ readonly routes: readonly Route[]; readonly themeCsp: string }> {
+): Promise<{ readonly routes: readonly Route[]; readonly inlineScripts: readonly string[] }> {
   // Read from the store `x build --target docker` wrote and VERIFIED against this app and this
   // runtime (`island-store.ts`); built here only when there is no store to trust, which is correct
   // and slower, and logged with its reason.
@@ -151,11 +152,13 @@ async function webSurface(
   // Before the service worker, which precaches those scripts.
   const sync = await pageSync(options.root, options.env, buildId, runtime.realtime);
   // The client router, when a surface opted in (`navigation.client`) — the same call in both boots.
-  const navigation = await pageNavigation(
-    options.root,
-    await loadNavigation(options.root),
-    buildId,
-  );
+  const declared = await loadNavigation(options.root);
+  const navigation = await pageNavigation(options.root, declared, buildId);
+  // The browser's own prefetch, for the documents that carry no router (`navigation.speculation`).
+  const speculation = pageSpeculation({
+    config: await loadSpeculation(options.root),
+    client: declared.surfaces,
+  });
   // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
   // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
   // route added here cannot be missing from the precache manifest.
@@ -211,6 +214,9 @@ async function webSurface(
       persisted: sync.persisted,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       themeHead: theme.head,
+      ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
+      // A `static` page is the same bytes for every request of this process: rendered once.
+      memoStatic: true,
       ...(origin === undefined ? {} : { origin }),
       ...(pwa === undefined
         ? {}
@@ -223,5 +229,9 @@ async function webSurface(
         : { isr: createIsrController({ buildId, store: options.runtime.isrStore }) }),
     }),
   ];
-  return { routes, themeCsp: theme.cspSource };
+  return {
+    routes,
+    // The theme boot and the speculation rules: the two inline bodies every document may carry.
+    inlineScripts: [theme.cspSource, ...(speculation === undefined ? [] : [speculation.cspSource])],
+  };
 }

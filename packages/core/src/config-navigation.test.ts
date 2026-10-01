@@ -43,7 +43,7 @@ describe('navigation — refusals', () => {
 
 describe('navigation — default and merge', () => {
   test('off by default: every navigation is a full document load', () => {
-    expect(defineConfig({ name: 'app' }).navigation).toEqual({ client: [] });
+    expect(defineConfig({ name: 'app' }).navigation.client).toEqual([]);
   });
 
   test('the last layer that listed surfaces wins; one that said nothing keeps it', () => {
@@ -53,5 +53,44 @@ describe('navigation — default and merge', () => {
       { navigation: {} },
     );
     expect(config.navigation.client).toEqual(['site', 'app']);
+  });
+});
+
+describe('navigation.speculation', () => {
+  test('on by default, at moderate, with nothing excluded', () => {
+    expect(defineConfig({ name: 'app' }).navigation.speculation).toEqual({
+      prefetch: 'moderate',
+      exclude: [],
+    });
+  });
+
+  test('each key is the last layer that set it; `false` turns it off', () => {
+    const config = defineConfig(
+      { name: 'app', navigation: { speculation: { prefetch: 'conservative', exclude: ['/a/*'] } } },
+      { navigation: { speculation: { prefetch: false } } },
+    );
+    expect(config.navigation.speculation).toEqual({ prefetch: false, exclude: ['/a/*'] });
+  });
+
+  test('an eagerness that fetches links nobody pointed at is refused', () => {
+    expect(
+      causeOf(() =>
+        defineConfig({
+          name: 'app',
+          navigation: { speculation: { prefetch: 'eager' as unknown as 'moderate' } },
+        }),
+      ),
+    ).toContain('navigation.speculation.prefetch must be moderate, conservative or false');
+  });
+
+  test('an exclusion that is not a same-origin path pattern is refused', () => {
+    expect(
+      causeOf(() =>
+        defineConfig({
+          name: 'app',
+          navigation: { speculation: { exclude: ['https://other.test/*'] } },
+        }),
+      ),
+    ).toContain('navigation.speculation.exclude contains');
   });
 });

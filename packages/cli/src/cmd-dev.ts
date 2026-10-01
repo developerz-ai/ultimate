@@ -242,7 +242,7 @@ async function bootDev(
   // `x dev`'s own, so a reload can empty it: an `isr` page's first render was otherwise served for
   // its whole ttl after every save, whatever the modules behind it now said.
   const isr = createIsrController({ buildId });
-  const { routes, theme, errorStyles, mcpPath, mcpPaths } = await devRouteTable({
+  const { routes, theme, speculation, errorStyles, mcpPath, mcpPaths } = await devRouteTable({
     isr,
     root: options.root,
     env: options.env,
@@ -278,7 +278,7 @@ async function bootDev(
     // The `/_x` shell, the harness's frame, and the app's own error pages — the inline bodies this
     // process serves; the app's surfaces are content-hashed files `'self'` admits.
     inlineStyles: [await devShellStyle(), FRAME_STYLE, ...errorStyles],
-    inlineScripts: [theme.cspSource],
+    inlineScripts: [theme.cspSource, ...(speculation === undefined ? [] : [speculation.cspSource])],
     // The overlay renders this request's own loops under the error it is already showing.
     // `serve.ts` boots through the same `startRoles` and passes nothing (axiom 6).
     devNotices: (ctx: RequestContext): readonly OverlayNotice[] =>

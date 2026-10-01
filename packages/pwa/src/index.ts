@@ -110,7 +110,7 @@ export {
 export type { RouteRule } from './route-rules';
 export { assetRules, routeRules } from './route-rules';
 export type { ServiceWorkerConfig, ServiceWorkerOutput } from './service-worker';
-export { assertScope, generateServiceWorker } from './service-worker';
+export { assertScope, generateServiceWorker, PRECACHE_CONCURRENCY } from './service-worker';
 export type {
   PwaRoute,
   StrategyCache,
@@ -120,6 +120,7 @@ export type {
 } from './strategies';
 export {
   cacheFirst,
+  fromNetwork,
   MODE_STRATEGY,
   networkFirst,
   networkOnly,

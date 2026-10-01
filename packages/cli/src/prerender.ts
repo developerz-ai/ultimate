@@ -28,6 +28,7 @@ import { measureDatabase } from './measure-database';
 import { measurePaths } from './measure-paths';
 import { measureScope, withAppUrl } from './measure-scope';
 import { loadNavigation, pageNavigation } from './page-navigation';
+import { loadSpeculation, pageSpeculation } from './page-speculation';
 import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
 import { loadPwaArtifacts, writePwaIcons } from './pwa-artifacts';
@@ -237,11 +238,13 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // The client router, for the surfaces that opted in: written BEFORE any document names it, for
   // the register's reason below — `measureDocumentJs` weighs it off disk, and it is charged to
   // the route (the interactivity the app asked for), so it must be there to be weighed.
-  const navigation = await pageNavigation(
-    options.root,
-    await loadNavigation(options.root),
-    buildId,
-  );
+  const declared = await loadNavigation(options.root);
+  const navigation = await pageNavigation(options.root, declared, buildId);
+  // The same rules the served process writes, so the exported file and the served document agree.
+  const speculation = pageSpeculation({
+    config: await loadSpeculation(options.root),
+    client: declared.surfaces,
+  });
   if (navigation.script !== undefined) {
     await Bun.write(join(options.out, navigation.script.url.slice(1)), navigation.script.code);
   }
@@ -305,6 +308,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     routeDocument(entry, data, {
       resolveIsland: (file: string) => islands.resolverFor(file),
       themeHead: theme.head,
+      ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
       origin,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       ...(pwa === undefined

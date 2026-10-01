@@ -18,6 +18,8 @@ export type SwListener = (event: SwEvent) => void;
 
 export interface SwEvent {
   readonly request?: Request;
+  /** A navigation's preload — the request the browser made while the worker booted. */
+  readonly preloadResponse?: Promise<Response | undefined>;
   /** What a `postMessage` from a window delivers — the payload, not a wrapper. */
   readonly data?: unknown;
   /** The window that posted a message, when a test wants its reply. */
@@ -103,6 +105,12 @@ export function swHarness() {
   const lateWaitUntil: string[] = [];
   /** How many times the worker called `self.skipWaiting()` — the install block must, once. */
   let skippedWaiting = 0;
+  /** How many times the worker enabled navigation preload — the activate block must, once. */
+  let preloadEnabled = 0;
+  /** Requests in flight right now, and the most there ever were — the install fill's throttle. */
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let slow = false;
   let offline = false;
   let respond: ((request: Request) => Response | undefined) | undefined;
   const fetcher = async (request: Request | string): Promise<Response> => {
@@ -112,6 +120,13 @@ export function swHarness() {
     const url = typeof request === 'string' ? new URL(request, SW_ORIGIN).href : request.url;
     fetched.push(url);
     stamps.push(typeof request === 'string' ? null : request.headers.get('x-ultimate-build'));
+    if (slow) {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      // A real turn of the event loop, so every request the worker started together overlaps.
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+    }
     if (offline) throw new TypeError('network down');
     if (respond !== undefined && typeof request !== 'string') {
       const scripted = respond(request);
@@ -154,6 +169,13 @@ export function swHarness() {
     },
     skipWaiting: async (): Promise<void> => {
       skippedWaiting += 1;
+    },
+    registration: {
+      navigationPreload: {
+        enable: async (): Promise<void> => {
+          preloadEnabled += 1;
+        },
+      },
     },
   };
 
@@ -202,8 +224,18 @@ export function swHarness() {
     },
     lateWaitUntil,
     skippedWaiting: (): number => skippedWaiting,
+    preloadEnabled: (): number => preloadEnabled,
+    /** Every fetch takes a turn of the event loop from here on, so concurrency is observable. */
+    slowNetwork: (): void => {
+      slow = true;
+    },
+    maxInFlight: (): number => maxInFlight,
     /** The response, as the page receives it — the cache copy is NOT awaited, see `settled`. */
-    async respond(path: string, navigate = false): Promise<Response> {
+    async respond(
+      path: string,
+      navigate = false,
+      preload?: Promise<Response | undefined>,
+    ): Promise<Response> {
       let answer: Promise<Response> | undefined;
       let finished = false;
       let pending = 0;
@@ -212,6 +244,7 @@ export function swHarness() {
       };
       listeners.get('fetch')?.({
         request: navigate ? new NavigationRequest(path) : new SwRequest(path),
+        ...(preload === undefined ? {} : { preloadResponse: preload }),
         waitUntil: (p) => {
           if (finished && pending === 0) {
             lateWaitUntil.push(path);
@@ -231,8 +264,11 @@ export function swHarness() {
       return response;
     },
     /** A top-level navigation, answered and settled — what the offline document is chosen for. */
-    async respondNavigate(path: string): Promise<Response> {
-      const answer = await this.respond(path, true);
+    async respondNavigate(
+      path: string,
+      preload?: Promise<Response | undefined>,
+    ): Promise<Response> {
+      const answer = await this.respond(path, true, preload);
       await this.settled();
       return answer;
     },

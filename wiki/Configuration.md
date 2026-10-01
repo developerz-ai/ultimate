@@ -294,15 +294,17 @@ pwa: {
 
 ## `navigation`
 
-Which surfaces move between their pages by client-side navigation over server-rendered documents — [Client navigation](Client-Navigation).
+Which surfaces move between their pages by client-side navigation over server-rendered documents, and what the browser may prefetch on the rest — [Client navigation](Client-Navigation).
 
 ```ts
-navigation: { client: ['app'] },
+navigation: { client: ['app'], speculation: { prefetch: 'moderate', exclude: [] } },
 ```
 
 | field | type | default | notes |
 |---|---|---|---|
 | `navigation.client` | `('site' \| 'app')[]` | `[]` | **read** by `x dev`, the container and `x build --target static`: a listed surface's documents carry the router (`/_x/navigation/<hash>.js`, charged to each route's `budget.js`). `api`, `shared`, a duplicate or a non-list → `X_CONFIG_INVALID`. The last layer that lists surfaces wins |
+| `navigation.speculation.prefetch` | `'moderate' \| 'conservative' \| false` | `'moderate'` | **read** by the same three: every document WITHOUT the router carries `<script type="speculationrules">` (prefetch only, admitted to the CSP by hash, 0 bytes against `budget.js`). `false` emits nothing. Any other value → `X_CONFIG_INVALID` |
+| `navigation.speculation.exclude` | `string[]` | `[]` | **read** — URL patterns subtracted from the candidates the route table yields. Each must start with `/`, else `X_CONFIG_INVALID`. The last layer that lists any wins |
 
 ## `islands`
 

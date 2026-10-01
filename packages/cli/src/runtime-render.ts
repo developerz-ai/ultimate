@@ -27,13 +27,7 @@ import type {
 } from '@ultimat3/http';
 import { asCtx, html, NO_STORE, redirect, stream, takeRedirect } from '@ultimat3/http';
 import { currentLocale, localeConfig } from '@ultimat3/i18n';
-import type {
-  ClientSyncHead,
-  IslandCollector,
-  RenderResult,
-  RouteData,
-  RouteEntry,
-} from '@ultimat3/render';
+import type { IslandCollector, RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
 import {
   clientBootTags,
   clientPersistTags,
@@ -65,6 +59,7 @@ import {
   staticHeaders,
   streamResult,
 } from '@ultimat3/render/server';
+import type { DocumentOptions } from './document-options';
 import { realtimeIslandFiles } from './island-realtime';
 import {
   type NavigationDocumentHead,
@@ -72,64 +67,21 @@ import {
   navigationTagsOf,
   principalRelocation,
 } from './page-navigation';
+import type { StaticResult } from './static-document';
+import { createStaticMemo, staticMemoKey, staticResponse } from './static-document';
 import { styleBundle } from './style-bundle';
 
-/**
- * Specifier → built chunk URL, bound to the route file the specifier is written relative to.
- * Supplied by whoever built the islands (`x dev`, the container, the static build); absent means
- * no island was built, and a page that renders one then fails by name rather than emitting a
- * `data-x-entry` nothing can import.
- */
-export type IslandResolver = (routeFile: string) => (src: string) => string;
-
-export interface DocumentOptions {
-  readonly resolveIsland?: IslandResolver;
-  /**
-   * `<link rel="manifest">`, both `theme-color` metas and the apple-touch links — `PwaArtifacts.head`
-   * from `pwa-artifacts.ts`, or absent when the app is not installable.
-   *
-   * A document-level string rather than something a route's `meta()` returns: it is the same three
-   * elements on every page of the app, an installable app is one whose EVERY page carries them
-   * (a browser offers the install on whichever page the visitor landed on), and `headFromMeta`
-   * projects per-route SEO. Passed through `DocumentOptions` for `resolveIsland`'s reason — the
-   * boot knows it, the renderer cannot ask.
-   */
-  readonly pwaHead?: string | ((locale: string) => string);
-  /**
-   * The no-flash theme `<script>` from `theme-boot.ts`, or absent for a caller that renders no
-   * documents a browser paints. Document-level for `pwaHead`'s reason — the same tag on every page,
-   * decided by `app.config.ts`, which the boot read and the renderer cannot.
-   */
-  readonly themeHead?: string;
-  /**
-   * The page's sync target — `pageSync(…).head` — rendered as render's `clientSyncTags` on every
-   * document this process serves. Principal-free, so a shareable document carries it too; absent
-   * for a caller that serves no socket at all (the static export).
-   */
-  readonly sync?: ClientSyncHead;
-  /**
-   * The record types the app persists (`entity(…, { persist: true })`), read per render. Rendered
-   * as `ultimate-persist` beside the scope tag only — persistence is per principal, so a document
-   * with no scope carries none.
-   */
-  readonly persisted?: () => readonly string[];
-  /**
-   * The public origin canonical, `og:url` and hreflang are absolute against — `publicOrigin()`
-   * from `site-config.ts`. Absent, the request's own origin: a relative canonical is one a crawler
-   * resolves against whatever host it happened to fetch from, a CDN's or a preview's.
-   */
-  readonly origin?: string;
-  /**
-   * The client router — `pageNavigation(…).head`. A document of a surface listed in
-   * `navigation.client` names it; every other document carries none of it.
-   */
-  readonly navigation?: NavigationDocumentHead;
-}
+export type { DocumentOptions, IslandResolver } from './document-options';
 
 export interface DevRenderOptions extends DocumentOptions {
   readonly buildId: string;
   /** Injected so a test can drive the ISR store without a timer. */
   readonly isr?: IsrController;
+  /**
+   * Keep each `static` document after its first render (`static-document.ts`). The container sets
+   * it; `x dev` never does — a save changes the page, its stylesheet's URL and its islands'.
+   */
+  readonly memoStatic?: boolean;
 }
 
 /** What a route's `meta(data)` is given. `url` is a string because that is what `ld.*` embeds. */
@@ -162,6 +114,7 @@ const headFor = async (
 ): Promise<string> => {
   const meta = metaContextFor(ctx, data);
   const url = new URL(ctx.url);
+  const router = navigationTagsOf(options.navigation, entry);
   return (
     renderHead(
       headFromMeta(
@@ -177,7 +130,7 @@ const headFor = async (
         }),
         [
           ...(options.sync === undefined ? [] : clientSyncTags(options.sync)),
-          ...navigationTagsOf(options.navigation, entry),
+          ...router,
           // The page boot rides the scope tag: its whole job — restoring a principal's persisted
           // records and replaying its queued writes — is per principal, and a shareable document
           // (no scope tag) has neither. Cheaper than walking the page's islands, and exact.
@@ -188,6 +141,8 @@ const headFor = async (
       ),
     ) +
     (options.themeHead ?? '') +
+    // One mechanism per document: the router prefetches for itself, the browser for the rest.
+    (router.length === 0 ? (options.speculationHead ?? '') : '') +
     // Per locale: each links its own locale's manifest (`PwaArtifacts.headFor`).
     (typeof options.pwaHead === 'function' ? options.pwaHead(meta.locale) : (options.pwaHead ?? ''))
   );
@@ -469,6 +424,7 @@ const metaOf = (entry: RouteEntry, head?: NavigationDocumentHead): HttpRouteMeta
  */
 export function appRoutes(options: DevRenderOptions): readonly Route[] {
   const isr = options.isr ?? createIsrController({ buildId: options.buildId });
+  const memo = createStaticMemo();
   return routeEntries().map((registered) => ({
     method: 'GET' as const,
     path: registered.path,
@@ -481,6 +437,13 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
       // A soft visit onto another principal's document is a real load — answered before `load`.
       const moved = principalRelocation(entry, request, asCtx(ctx), options.buildId);
       if (moved !== undefined) return moved;
+      // A static page already rendered by this process is answered without `load` or a render.
+      const key =
+        options.memoStatic === true
+          ? staticMemoKey(entry, request.url, asCtx(ctx).locale)
+          : undefined;
+      const kept = key === undefined ? undefined : memo.get(key);
+      if (kept !== undefined) return staticResponse(request, kept);
       const data: DevRouteData = { url: request.url.href, params: ctx.params };
       // ONCE per request, before the mode is chosen: every branch of `resultFor` reads this same
       // object, so a route's `load` runs exactly once however its mode splits head from body.
@@ -490,7 +453,14 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
       // 3xx because a rendered document has no `Location`; this is the path that has one.
       const to = takeRedirect(ctx);
       if (to !== undefined) return loadRedirect(entry, to);
-      return responseOf(await resultFor(entry, data, loaded, options, isr, asCtx(ctx)));
+      const result = await resultFor(entry, data, loaded, options, isr, asCtx(ctx));
+      if (entry.config.render !== 'static' || typeof result.body !== 'string') {
+        return responseOf(result);
+      }
+      const document: StaticResult = { ...result, body: result.body };
+      if (key !== undefined) memo.set(key, document);
+      // The ETag was only ever a header: a matching `If-None-Match` is a 304, not the page again.
+      return staticResponse(request, document);
     },
   }));
 }

@@ -29,7 +29,7 @@ import { pushSource } from './push';
 import type { RouteRule } from './route-rules';
 import { assetRules, routeRules } from './route-rules';
 import type { PwaRoute } from './strategies';
-import { STRATEGY_FN_NAMES, STRATEGY_SOURCE } from './strategies';
+import { NETWORK_SOURCE, STRATEGY_FN_NAMES, STRATEGY_SOURCE } from './strategies';
 import {
   APP_UPDATE_AVAILABLE,
   assertBuildId,
@@ -158,7 +158,7 @@ export function generateServiceWorker(
     constants(buildId, scope, retained, fallback.neverCache),
     `const PRECACHE_MANIFEST=${serializePrecacheManifest(precache)};`,
     `const ROUTE_RULES=${serializeRules(rules)};`,
-    usedStrategies.map((strategy) => STRATEGY_SOURCE[strategy]).join('\n'),
+    [NETWORK_SOURCE, ...usedStrategies.map((strategy) => STRATEGY_SOURCE[strategy])].join('\n'),
     offlineFallbackSource(fallback, config.localePrefixes ?? []),
     INSTALL_BLOCK,
     activateBlock(),
@@ -252,7 +252,14 @@ function serializeRules(rules: readonly RouteRule[]): string {
  * worker routes documents only (content-hashed chunks come from the network and the HTTP cache,
  * never from a cache it deletes on activate), and it never reloads a page — the tab's NEXT
  * navigation is answered network-first by the new worker.
+ *
+ * The fill is THROTTLED to `PRECACHE_CONCURRENCY` requests in flight: `Promise.all` over every
+ * entry opened them all at once (72 entries, 2.9 MB on notificado.co), on the visitor's first
+ * visit, against the same connection their first click needs. Nothing waits on the fill but the
+ * worker's own activation, so slower is free.
  */
+export const PRECACHE_CONCURRENCY = 4;
+
 const INSTALL_BLOCK = `
 self.addEventListener('install',(event)=>{
   // Take over as soon as the precache is in: a waiting worker otherwise waits for every tab to close.
@@ -264,12 +271,18 @@ self.addEventListener('install',(event)=>{
     // first worker that ever installed. A missing entry is fetched from the network when asked for.
     // Revision is a content hash: unchanged assets are not re-downloaded across deploys.
     // The separator is picked per entry: a precache URL may already carry a query.
-    await Promise.all(PRECACHE_MANIFEST.map(async(e)=>{
-      try{
-        const r=await fetch(new Request(e.url+(e.url.indexOf('?')<0?'?':'&')+'v='+e.revision,{cache:'reload'}));
-        if(r.ok)await cache.put(new Request(e.url),r);
-      }catch(err){}
-    }));
+    // ${PRECACHE_CONCURRENCY} AT A TIME: every entry at once competed with the visitor's first click for the connection.
+    let i=0;
+    const next=async()=>{
+      while(i<PRECACHE_MANIFEST.length){
+        const e=PRECACHE_MANIFEST[i++];
+        try{
+          const r=await fetch(new Request(e.url+(e.url.indexOf('?')<0?'?':'&')+'v='+e.revision,{cache:'reload'}));
+          if(r.ok)await cache.put(new Request(e.url),r);
+        }catch(err){}
+      }
+    };
+    await Promise.all(Array.from({length:${PRECACHE_CONCURRENCY}},next));
   })());
 });`.trim();
 
@@ -282,6 +295,9 @@ self.addEventListener('activate',(event)=>{
     await Promise.all(names.filter((n)=>n.startsWith('x-')&&RETAINED.indexOf(n)===-1)
       .map((n)=>caches.delete(n)));
     await self.clients.claim();
+    // Navigation preload: the browser sends a navigation's request WHILE this worker boots, and
+    // the fetch handler answers from it (net) — start-up is off every navigation's critical path.
+    try{if(self.registration&&self.registration.navigationPreload)await self.registration.navigationPreload.enable()}catch(e){}
     const cs=await self.clients.matchAll({type:'window'});
     for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_AVAILABLE)},to:BUILD_ID});
     // NOT part of this waitUntil: a fetch event waits for the worker to finish ACTIVATING, so a
@@ -365,8 +381,17 @@ self.addEventListener('fetch',(event)=>{
   // Every proxied DOCUMENT carries the client's build id so the server can detect skew. An asset
   // goes as the browser asked: a no-cors request's headers cannot be extended.
   const tagged=rule.a?req:new Request(req,{headers:withBuild(req.headers)});
-  event.respondWith(fn(tagged,cacheName(rule.c),fallbackFor(rule,req),(p)=>event.waitUntil(p)).then((res)=>healSkew(req,res)));
+  // A navigation's preload is the browser's own request, so it carries no build id: skew is read
+  // off the ANSWER instead (seenBuild), which is the new build's document in one round trip.
+  const pre=req.mode==='navigate'&&event.preloadResponse?Promise.resolve(event.preloadResponse).then((r)=>{if(r)seenBuild(r);return r}):undefined;
+  event.respondWith(fn(tagged,cacheName(rule.c),fallbackFor(rule,req),(p)=>event.waitUntil(p),pre).then((res)=>healSkew(req,res)));
 });
+function seenBuild(res){
+  const server=res.headers.get(BUILD_HEADER);
+  if(SKEWED||server===null||server===BUILD_ID)return;
+  SKEWED=true;
+  self.clients.matchAll({type:'window'}).then((cs)=>{for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_AVAILABLE)},to:server})}).catch(()=>{});
+}
 function withBuild(headers){
   const h=new Headers(headers);
   // Once the server has told this worker it is stale, stamping the id again only earns
