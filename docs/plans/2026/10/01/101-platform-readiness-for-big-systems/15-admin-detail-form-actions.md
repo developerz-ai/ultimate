@@ -1,6 +1,6 @@
-# 12 — Admin: detail, form, actions, audit
+# 15 — Admin: detail, form, actions, audit
 
-> Part of [`overview.md`](overview.md). Depends on: 10. Tier: 5.
+> Part of [`overview.md`](overview.md). Depends on: 13. Tier: 5.
 
 Rule: an admin action is an `action` with a button. Its input form, its confirmation, when it
 shows, and its audit row all come from the declaration.
@@ -37,7 +37,7 @@ actions were never authorized — the defect Ultimate's single gate
    No schema, no form: a confirm only.
 5. **Row state.** `when(row)` decides the button on the detail and on each list row. The server
    re-evaluates it before running: a hidden button is not an authorization. A `when` that fails
-   server-side is a refusal with its own code.
+   server-side is `X_ADMIN_ACTION_NOT_APPLICABLE`, naming the action and the row.
 6. **Batch.** `batch: true` puts the action in the list's batch bar. It runs once per selected
    row through the same gate (`packages/admin/src/action-gate.ts:122`), reports
    done / refused / failed counts honestly, and audits each row. Above a threshold it enqueues a

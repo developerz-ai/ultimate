@@ -1,12 +1,12 @@
-# 05 — UI: the missing ladder helpers, link pager, button-link
+# 07 — UI: the missing ladder helpers, link pager, button-link
 
 > Part of [`overview.md`](overview.md). Depends on: none. Tier: 4.
 
 Rule: every length, breakpoint and fluid size comes from `@ultimat3/ui/tokens`. An app that needs
 `max-width` does not write its own mixin.
 
-Evidence: the deployed demo wrote `rem()`, `fluid()` and `bp-down`
-(`dummy/social-media-clone/apps/web/shared/tokens.scss:24-60`). A downstream app wrote a link
+Evidence: the deployed demo wrote `rem()`, `fluid()`, `bp-down` and `bp-between`
+(`dummy/social-media-clone/apps/web/shared/tokens.scss:24-76`). A downstream app wrote a link
 pager (7 uses) and a link styled as a button (23 uses) because `Pagination` is callback-only
 (`packages/ui/src/components/Pagination.tsx:15`) and `Button` has no `href`
 (`packages/ui/src/components/Button.tsx:23`).
@@ -19,12 +19,14 @@ pager (7 uses) and a link styled as a button (23 uses) because `Pagination` is c
 - `packages/ui/src/components/Pagination.tsx` — `hrefFor?: (cursor, direction) => string`.
 - `packages/ui/src/components/Link.tsx:10` — `appearance?: 'link' | 'button'` reusing `Button`'s
   variant classes.
-- `dummy/social-media-clone/apps/web/shared/tokens.scss:24-60` — delete the three helpers; forward
-  the framework's.
+- `dummy/social-media-clone/apps/web/shared/tokens.scss:24-76` — delete all four helpers and
+  rename their call sites to the framework's names. Leaving `bp-between` beside
+  `respond-between` would be two ways. The file's `motion`, `lift`, `gradient-text` and `card`
+  mixins are the app's own look and stay.
 - `packages/ui/CATALOG.md`, `packages/ui/README.md`, `packages/ui/CLAUDE.md`.
 
 ## Steps
-1. Lift the demo's three helpers as written, including the 0.02px offset that keeps a `min` and a
+1. Lift the demo's four helpers as written, including the 0.02px offset that keeps a `min` and a
    `max` arm from both matching at the rung. Keep each `@error` in the `X_TOKEN_*` voice the file
    already uses.
 2. `respond-between` refuses `$from >= $to` with a Sass `@error` naming the fix.

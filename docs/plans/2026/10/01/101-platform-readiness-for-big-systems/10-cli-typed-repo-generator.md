@@ -1,11 +1,11 @@
-# 08 — CLI: the generator emits the typed repo
+# 10 — CLI: the generator emits the typed repo
 
-> Part of [`overview.md`](overview.md). Depends on: 02. Tier: 5.
+> Part of [`overview.md`](overview.md). Depends on: 03, 08. Tier: 5.
 
 Rule: `x g entity` writes a repo over the typed handle. A generated file contains no `sql`
 template literal, no `decodeRow` call and no hand-written tenant predicate.
 
-Evidence: the template emits `db().one<Physical>(sql\`select * from …\`)` and
+Evidence: the template emits ``db().one<Physical>(sql`select * from …`)`` and
 `where org_id = ${orgId}` (`packages/cli/src/templates/entity.ts:67-117`), while both tracked
 apps read through `database({ … })` (`examples/dummy/packages/db/src/client.ts:44`). An
 agent-written app followed the generator: 1,115 `sql` fragments in 104 files, 556 `decodeRow`
@@ -28,12 +28,12 @@ queries could not push a page into raw SQL.
 3. Registering the entity in `client.ts` is an edit to an existing file. Use the generator's
    existing "append to a list" mechanism if one exists (`x g resource` already edits the api
    index); otherwise emit the one line to add and fail loudly when the anchor is missing.
-4. Money and sealed columns need no code in the repo: the handle's codec owns both (slice 02).
+4. Money and sealed columns need no code in the repo: the handle's codec owns both (slice 03).
 5. Where raw SQL is still right — a `query`'s `sql`, a migration — nothing changes. The template
    comment says which is which.
 6. Add a guard template `repo-raw-sql`: a `sql` template literal in a `repo.ts` whose statement
    the handle can express (`select *` / `insert` / `update` / `delete` on one table) is a finding
-   naming the handle call. Ships through slice 06's `scaffold-guards.ts` list.
+   naming the handle call. Ships through slice 08's `scaffold-guards.ts` list.
 
 ## Tests
 - `packages/cli/src/cmd-generate.test.ts`: the generated repo has no `` sql` ``, typechecks against

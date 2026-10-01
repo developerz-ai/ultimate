@@ -1,8 +1,8 @@
-# 03 — Action / query: the typed client at 300 actions
+# 04 — Action / query: the typed client at 300 actions
 
 > Part of [`overview.md`](overview.md). Depends on: none. Tier: 3.
 
-Rule: the documented idiom `rpc<Api['actions']>()` typechecks at any app size, and the path style
+Rule: the documented idiom `rpc<Api['actions']>({ baseUrl })` typechecks at any app size, and the path style
 is stated once, on the server.
 
 Evidence: a downstream app with 252 actions and 107 queries hit TS2589 ("instantiation is
@@ -21,17 +21,22 @@ restated `pathStyle` in a hand-written module because the browser cannot read th
 
 ## Steps
 1. Reproduce first. Add a type fixture: 30 modules × 10 actions, each with a non-trivial input and
-   output schema, composed with `defineApi`. Assert `rpc<Api['actions']>` and one call typecheck.
+   output schema, plus 100 queries, composed with `defineApi`. Assert
+   `rpc<Api['actions']>({ baseUrl })`, `queryClient<Api['queries']>` and one call of each
+   typecheck — `QueryClient` is its own mapped type and regresses independently.
    Record `tsc --extendedDiagnostics` instantiation count before any change.
 2. Find the depth. Candidates, in the order to test: `defineApi` inferring a union over arrays of
    module namespaces; `Action<infer TIn, infer TOut>` distributing over that union; schema
    inference nested inside the mapped type.
 3. Fix the type, not the idiom. `rpc<Api['actions']>` stays the one spelling
    (`packages/action/src/client.ts:97-98`); a second, "lighter" client is a second path.
-4. `pathStyle`: carry it in the type `defineApi` returns and read it in `rpc`, or ship it to the
-   page with the build id the client already asserts (`assertSameBuild`, same file). Remove the
-   option from `ClientOptions` only if every caller can then omit it; otherwise keep it and make
-   a mismatch `X_CONTRACT_DRIFT`.
+4. `pathStyle` is a runtime value, and a type is erased, so it travels with the page: the server
+   stamps it into the boot data that already carries the build id, and the browser's `rpc` reads
+   it from there. In a browser there is then nothing to restate and no way to disagree. A
+   server-side caller (a script, another service) still passes `pathStyle` in `ClientOptions`;
+   for that caller the server answers a wrong-style path with `X_CONTRACT_DRIFT` naming the
+   style it serves, instead of today's bare `X_ROUTE_NOT_FOUND` — matching build ids prove
+   nothing about a hand-passed option.
 5. Scaffold `shared/browser-client.ts` from `examples/dummy/apps/web/shared/browser-client.ts:35-38`.
 
 ## Tests

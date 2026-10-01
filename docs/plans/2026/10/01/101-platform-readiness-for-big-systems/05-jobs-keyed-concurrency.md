@@ -1,4 +1,4 @@
-# 04 — Jobs: one run per key, and the final attempt
+# 05 — Jobs: one run per key, and the final attempt
 
 > Part of [`overview.md`](overview.md). Depends on: none. Tier: 3.
 
@@ -18,7 +18,7 @@ used an in-process semaphore per replica.
 - `packages/jobs/src/worker.ts:194` — what happens when no slot is granted.
 - `packages/jobs/src/job.ts` `JobRunArgs` — add `finalAttempt: boolean`.
 - `packages/jobs/src/errors.ts` — `X_JOB_KEY_BUSY`.
-- `packages/scraping/src/scrape.ts:103` — the `concurrency` type passes through (slice 09 uses it).
+- `packages/scraping/src/scrape.ts:103` — the `concurrency` type passes through (slice 12 uses it).
 - `packages/jobs/README.md`, `packages/jobs/CLAUDE.md`.
 
 ## Steps
@@ -30,8 +30,13 @@ used an in-process semaphore per replica.
    and a second number that could disagree with it would be a second way.
 2. `whenBusy: 'fail'`: the run settles `failed` with `X_JOB_KEY_BUSY`, its body never runs, and
    it is not retried. Classify the code terminal (`registerErrorRetry`).
-3. An empty key string is `X_JOB_DECLARATION_INVALID` at the first enqueue — an empty key is one
-   global lock nobody declared.
+3. Declaration checks, all the existing `X_JOB_DECLARATION_INVALID` (not a new code): `limit`
+   passes the positive-integer rule the plain number already has — zero, negative, fractional,
+   `NaN` and `Infinity` refused where the job is declared; a key function answering an empty
+   string is refused at that enqueue — an empty key is one global lock nobody declared.
+   `X_JOB_KEY_BUSY` states cause "job `<name>` key `<key>` already holds `<limit>` run(s)" and
+   fix `x jobs list --job <name> --state running` (confirm the flag names against
+   `packages/cli/src/cmd-jobs-spec.ts`).
 4. Keep the boot refusal: a driver with no `leases` and a keyed job is
    `X_JOB_CONCURRENCY_UNENFORCEABLE`, as for the plain number.
 5. `finalAttempt` is `attempt === retry.maxAttempts` as the runner computes it; read where the
@@ -43,9 +48,10 @@ used an in-process semaphore per replica.
 ## Tests
 - `packages/jobs/src/keyed-concurrency.test.ts` (memory lease store, two workers): same key never
   overlaps; different keys run together; `'fail'` settles without running the body;
-  `finalAttempt` is true exactly once.
+  `finalAttempt` is true exactly once; the holder's lease is left to expire (advance the injected
+  clock, no cleanup call) and a second worker then acquires the key; each bad `limit` is refused.
 - `packages/jobs/src/keyed-concurrency.job.test.ts`: the same against the pg driver.
-- Command: `bun test packages/jobs/src/keyed-concurrency.test.ts`.
+- Command: `bun test packages/jobs/src/keyed-concurrency.test.ts packages/jobs/src/keyed-concurrency.job.test.ts`.
 
 ## Done when
 - Both suites green; a kill of the holding worker frees the key by lease expiry, asserted.

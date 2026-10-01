@@ -1,6 +1,6 @@
-# 10 — Admin: the generated screens are served
+# 13 — Admin: the generated screens are served
 
-> Part of [`overview.md`](overview.md). Depends on: 08. Tier: 5.
+> Part of [`overview.md`](overview.md). Depends on: 10. Tier: 5.
 
 Rule: `defineAdmin({ entities: [posts] })` is a working list, detail and form at a URL. An app
 writes no page, no screen glue and no repo adapter to get them.
@@ -35,7 +35,7 @@ CRUD entirely (`entities: []`).
    Move the logic, do not rewrite it; their tests move with it.
 2. Tenancy and policy are the handle's and the admin gate's (`packages/admin/src/crud.ts:57`,
    `:175,282,333`). The adapter adds no predicate of its own
-   (`packages/admin/CLAUDE.md:10`); slice 11 adds declared row scoping.
+   (`packages/admin/CLAUDE.md:10`); slice 14 adds declared row scoping.
 3. Custom pages keep working unchanged (`packages/admin/src/pages.ts:27-36`). A resource that
    wants its own list still passes a component: the override, not a second path.
 4. The memory driver binds too, so the admin renders in `bun test` with no database.

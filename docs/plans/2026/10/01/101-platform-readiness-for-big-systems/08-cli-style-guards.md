@@ -1,6 +1,6 @@
-# 06 — CLI: stylesheet rules as shipped guards
+# 08 — CLI: stylesheet rules as shipped guards
 
-> Part of [`overview.md`](overview.md). Depends on: 05. Tier: 5.
+> Part of [`overview.md`](overview.md). Depends on: 07. Tier: 5.
 
 Rule: off-ladder values and unstyled classes are build errors in a scaffolded app. Today only raw
 colour is (`packages/cli/src/templates/guard-raw-colour.ts`), and Biome ignores stylesheets

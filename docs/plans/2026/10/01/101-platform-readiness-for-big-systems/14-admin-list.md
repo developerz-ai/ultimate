@@ -1,6 +1,6 @@
-# 11 — Admin: the list an operator works in
+# 14 — Admin: the list an operator works in
 
-> Part of [`overview.md`](overview.md). Depends on: 10. Tier: 5.
+> Part of [`overview.md`](overview.md). Depends on: 13. Tier: 5.
 
 Rule: everything on a list page is derived from the entity or declared once on the resource.
 A filter's options, a relation's label and a scope's count are never restated per screen.
@@ -24,8 +24,9 @@ audience seeing its own rows in its own language.
 1. **Filters.** One control per derived filter (`packages/admin/src/fields.ts:150`): text →
    contains, enum → select from the entity's own values, boolean, date range, reference → picker.
    State lives in the URL; the server parses it into `AdminFilter[]`
-   (`packages/admin/src/registry.ts:89-95`). An unknown field or operator in the URL is a refusal
-   with a code, never an ignored parameter.
+   (`packages/admin/src/registry.ts:89-95`). An unknown field or operator in the URL is
+   `X_ADMIN_FILTER_INVALID`, naming the field and the filters the resource does derive — never an
+   ignored parameter.
 2. **Scopes.** `scopes: { open: { where: [...] }, mine: { where: (actor) => [...] } }`, one
    `default`. Rendered as tabs; a count per tab only when the scope sets `count: true`, through
    `AdminRepo.count` (`packages/admin/src/registry.ts:138`), which nothing calls today. A count is
@@ -44,7 +45,7 @@ audience seeing its own rows in its own language.
    search, the detail read, the lookup and the MCP list tool. One declaration replaces the
    surveyed app's second namespace. Locale and time zone are already per actor
    (`packages/admin/src/authz.ts:12-27`).
-7. `Pagination` uses slice 05's `hrefFor`; the list needs no island for paging or filtering.
+7. `Pagination` uses slice 07's `hrefFor`; the list needs no island for paging or filtering.
 
 ## Tests
 - `packages/admin/src/list-request.test.ts`: URL → filters round trip; unknown field refused.

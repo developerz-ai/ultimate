@@ -1,6 +1,6 @@
-# 07 — CLI: the browser-transport rule in every app's gate
+# 09 — CLI: the browser-transport rule in every app's gate
 
-> Part of [`overview.md`](overview.md). Depends on: 03. Tier: 5.
+> Part of [`overview.md`](overview.md). Depends on: 04. Tier: 5.
 
 Rule: a raw `fetch(`, `new WebSocket(` or `XMLHttpRequest` in browser-reachable app code is
 `X_BROWSER_TRANSPORT_BYPASS` on `x verify`'s `boundaries` step — in every app, not only in this
@@ -36,8 +36,10 @@ raw `fetch(` in non-test source, 16 inside islands, across four request styles.
    `packages/storage/src/upload-client.ts:67`. No allowlist.
 
 ## Tests
-- `packages/cli/src/browser-transport.test.ts`: an island with `fetch(` is a finding; the same
-  call in a `route.ts` is not; a server barrel in an island closure is `X_BROWSER_SERVER_BARREL`.
+- `packages/cli/src/browser-transport.test.ts`, one failing island per transport — `fetch(`,
+  `new WebSocket(`, `new XMLHttpRequest(` — each a finding with its line; the same `fetch(` in a
+  `route.ts` is not; an island uploading through `@ultimat3/storage`'s upload client passes; a
+  server barrel in an island closure is `X_BROWSER_SERVER_BARREL`.
 - `scripts/browser-transport.test.ts:263` keeps passing over both tracked apps.
 - Command: `bun test packages/cli/src/browser-transport.test.ts`.
 
