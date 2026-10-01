@@ -197,6 +197,43 @@ browser, anything on `Save-Data` or a `2g`/`slow-2g` connection, and the page a 
 already fetching. A press or click cancels a pending hover's prefetch, and the focus a press gives a
 link is not an intent — so a fast click sends exactly one request (`As of 22.8.1`).
 
+## Without the router: the browser's own prefetch
+
+`As of 2026-09-30`. A document that carries **no** router — every page of a surface outside
+`navigation.client`, and every `navigation: 'document'` page — carries one
+`<script type="speculationrules">` instead: the browser fetches a link's document before the click,
+and the full-page load that follows paints from memory. No JavaScript ships for it; a `0kb` page
+stays `0kb` (`budgets.ts` reads the block as data). **Prefetch only, never prerender** — a prerender
+runs the next page's scripts for a page nobody opened.
+
+```ts
+navigation: { speculation: { prefetch: 'moderate', exclude: ['/blog/borrador-*'] } },
+```
+
+| `speculation.prefetch` | The browser fetches |
+|---|---|
+| `'moderate'` (default) | on pointer rest (~200 ms) or pointer down |
+| `'conservative'` | on pointer down only |
+| `false` | nothing: no tag, no CSP source |
+
+The rules are an **allow-list** from the route table — a prefetch is a real GET with the visitor's
+cookies, so only a page the table says is a pure read is a candidate:
+
+| A page is a candidate when | Why |
+|---|---|
+| its surface has no router, and it is `static` or `isr` with no policy | it was rendered at build time, for nobody |
+| its surface has the router, and it declared `navigation: 'prefetch'` | the app's own statement that its GET is a pure read |
+
+Never a candidate: a `navigation: 'document'` page, an `ssr` page of a surface without the router
+(it has no way to say its GET records nothing), an `offline: 'network-only'` page, an `api/` route,
+and anything that is not a page — `/_storage/*`, `/mcp*`, an app's plain routes. Each candidate is
+one URL pattern covering every routed locale (`{/en}?/precios`, `{/en}?/blog/:slug`);
+`speculation.exclude` subtracts more, as URL patterns starting with `/`.
+
+The body is the same string on every document of the app, sorted, and `script-src` admits it by
+sha256 hashed from that string (`page-speculation.ts`), so the enforced policy needs no
+`'unsafe-inline'`. Browsers without Speculation Rules ignore the block.
+
 ## Opting a link or form out
 
 | Want | Write |
@@ -229,6 +266,7 @@ The names, attributes and headers are exported from `@ultimat3/render` (`NAVIGAT
 |---|---|
 | every client rule, as pure functions | `packages/render/src/navigation-rules.test.ts`, `navigation-cache.test.ts`, `navigation-dom.test.ts`, `route-navigation.test.ts` |
 | the server gate and the redirect hand-over, counting handler runs | `packages/http/src/navigation.test.ts` |
+| speculation rules: which pages are candidates, the tag on a router-less document only, the CSP hash of the served bytes | `packages/cli/src/page-speculation.test.ts`, `packages/render/src/speculation-rules.test.ts` |
 | real pages: prefetch and `'document'` run no `load`, another principal or app is refused, a misplaced key refuses the boot | `packages/cli/src/page-navigation.test.ts` |
 | writes announced after they settle | `packages/core/src/client-writes.test.ts` |
 | in a real Chrome, through the real pipeline under an enforced CSP: every rule above, counted in route executions | `packages/cli/e2e/client-navigation-*.e2e.test.ts` |

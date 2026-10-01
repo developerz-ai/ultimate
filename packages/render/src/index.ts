@@ -200,6 +200,13 @@ export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';
 export { routeStatusOf, withStatus } from './route-status';
+export type { SpeculationRules } from './speculation-rules';
+export {
+  SPECULATION_RULES_TYPE,
+  speculationPattern,
+  speculationRulesBody,
+  speculationRulesTag,
+} from './speculation-rules';
 export { STREAM_REVEAL_BODIES } from './stream-scripts';
 export type {
   BoundaryRule,

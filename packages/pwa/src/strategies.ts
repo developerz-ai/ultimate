@@ -110,6 +110,32 @@ export interface StrategyOptions {
   readonly cacheName: string;
   /** Served when the network fails and the cache is empty. */
   readonly fallback?: () => Promise<Response>;
+  /**
+   * The fetch event's `preloadResponse`, for a navigation: the request the browser started while
+   * the worker was still booting. Used INSTEAD of a fetch when it resolves to a response.
+   */
+  readonly preload?: Promise<Response | undefined>;
+}
+
+/**
+ * The network's answer — the navigation preload when there is one, else a fetch. A preload that
+ * rejects or resolves empty (the feature is off, or the request was not a navigation) is not a
+ * network failure: the fetch decides that.
+ */
+export async function fromNetwork(
+  request: Request,
+  env: StrategyEnv,
+  options: Pick<StrategyOptions, 'preload'>,
+): Promise<Response> {
+  if (options.preload !== undefined) {
+    try {
+      const early = await options.preload;
+      if (early !== undefined) return early;
+    } catch {
+      // Falls through to the fetch, whose failure is the one the strategy handles.
+    }
+  }
+  return env.fetch(request);
 }
 
 export async function cacheFirst(
@@ -130,7 +156,7 @@ export async function networkFirst(
 ): Promise<Response> {
   const cache = await env.open(options.cacheName);
   try {
-    const response = await env.fetch(request);
+    const response = await fromNetwork(request, env, options);
     if (response.ok) await cache.put(request, response.clone());
     return response;
   } catch (error) {
@@ -149,8 +175,7 @@ export async function staleWhileRevalidate(
 ): Promise<Response> {
   const cache = await env.open(options.cacheName);
   const hit = await cache.match(request);
-  const refresh = env
-    .fetch(request)
+  const refresh = fromNetwork(request, env, options)
     .then(async (response) => {
       if (response.ok) await cache.put(request, response.clone());
       return response;
@@ -173,7 +198,7 @@ export async function networkOnly(
   options: StrategyOptions,
 ): Promise<Response> {
   try {
-    return await env.fetch(request);
+    return await fromNetwork(request, env, options);
   } catch (error) {
     if (options.fallback !== undefined) return options.fallback();
     throw error;
@@ -199,7 +224,7 @@ async function fetchAndStore(
   options: StrategyOptions,
 ): Promise<Response> {
   try {
-    const response = await env.fetch(request);
+    const response = await fromNetwork(request, env, options);
     if (response.ok) await cache.put(request, response.clone());
     return response;
   } catch (error) {
@@ -221,29 +246,40 @@ async function fallbackOrThrow(options: StrategyOptions): Promise<Response> {
  * partitions a per-member document by principal (`service-worker.ts`, `pagesCache`). And the cache
  * copy is NEVER awaited before answering: `Cache.put` reads the whole body, so awaiting it held a
  * streamed document away from the tab until it had ended. It goes to `later(wait, …)` instead —
- * the fetch event's `waitUntil`, which keeps the worker alive for the copy.
+ * the fetch event's `waitUntil`, which keeps the worker alive for the copy. The network is `net`
+ * (`NETWORK_SOURCE`), never a bare `fetch`: a navigation's preload answers first.
  */
 export const STRATEGY_SOURCE = Object.freeze<Record<StrategyName, string>>({
-  'cache-first': `async function cacheFirst(req,cn,fb,wait){
+  'cache-first': `async function cacheFirst(req,cn,fb,wait,pre){
   const c=await openCache(cn);const hit=await c.match(req);if(hit)return hit;
-  try{const r=await fetch(req);if(r.ok)later(wait,c.put(req,r.clone()));return r}catch(e){if(fb)return fb();throw e}
+  try{const r=await net(req,pre);if(r.ok)later(wait,c.put(req,r.clone()));return r}catch(e){if(fb)return fb();throw e}
 }`,
-  'network-first': `async function networkFirst(req,cn,fb,wait){
+  'network-first': `async function networkFirst(req,cn,fb,wait,pre){
   const c=await openCache(cn);
-  try{const r=await fetch(req);if(r.ok)later(wait,c.put(req,r.clone()));return r}
+  try{const r=await net(req,pre);if(r.ok)later(wait,c.put(req,r.clone()));return r}
   catch(e){const hit=await c.match(req);if(hit)return hit;if(fb)return fb();throw e}
 }`,
-  'stale-while-revalidate': `async function staleWhileRevalidate(req,cn,fb,wait){
+  'stale-while-revalidate': `async function staleWhileRevalidate(req,cn,fb,wait,pre){
   const c=await openCache(cn);const hit=await c.match(req);
-  const refresh=fetch(req).then((r)=>{if(r.ok)later(wait,c.put(req,r.clone()));return r})
+  const refresh=net(req,pre).then((r)=>{if(r.ok)later(wait,c.put(req,r.clone()));return r})
     .catch(()=>hit||(fb?fb():Response.error()));
   if(hit){later(wait,refresh);return hit}
   return refresh
 }`,
-  'network-only': `async function networkOnly(req,cn,fb,wait){
-  try{return await fetch(req)}catch(e){if(fb)return fb();throw e}
+  'network-only': `async function networkOnly(req,cn,fb,wait,pre){
+  try{return await net(req,pre)}catch(e){if(fb)return fb();throw e}
 }`,
 });
+
+/**
+ * The emitted `fromNetwork`: every strategy source above reaches the network through it. `pre` is
+ * the fetch event's `preloadResponse` for a navigation — the request the browser made in parallel
+ * with the worker's start-up — and `undefined` for everything else.
+ */
+export const NETWORK_SOURCE = `async function net(req,pre){
+  if(pre){try{const r=await pre;if(r)return r}catch(e){}}
+  return fetch(req)
+}`;
 
 export const STRATEGY_FN_NAMES = Object.freeze<Record<StrategyName, string>>({
   'cache-first': 'cacheFirst',

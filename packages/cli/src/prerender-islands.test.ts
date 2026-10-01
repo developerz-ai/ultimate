@@ -147,9 +147,13 @@ describe('x build --target static, with islands', () => {
     expect(html.indexOf('requestIdleCallback')).toBeLessThan(html.indexOf('</body>'));
 
     // Axiom 6: the static page beside it renders through the same assembler and pays nothing —
-    // the one script it carries is the framework's own theme boot, which every document has.
+    // the one script it EXECUTES is the framework's own theme boot, which every document has. The
+    // speculation rules beside it are data the browser's prefetcher reads, never code.
     const beside = await Bun.file(join(out, 'index.html')).text();
-    expect([...beside.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])).toEqual([
+    const scripts = [...beside.matchAll(/<script(?<attrs>[^>]*)>(?<body>[\s\S]*?)<\/script>/g)];
+    const rules = scripts.filter((m) => m.groups?.['attrs'] === ' type="speculationrules"');
+    expect(rules).toHaveLength(1);
+    expect(scripts.filter((m) => !rules.includes(m)).map((m) => m.groups?.['body'])).toEqual([
       themeScriptBody({ fallback: 'system' }),
     ]);
 

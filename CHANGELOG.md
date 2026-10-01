@@ -8,7 +8,41 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **core, render, cli:** Speculation Rules on every document that carries no client router —
+  `navigation.speculation: { prefetch: 'moderate' | 'conservative' | false, exclude?: string[] }`
+  in `app.config.ts`, **on by default** at `'moderate'`. Such a document carries one
+  `<script type="speculationrules">` and the browser fetches a link's document on pointer rest, so a
+  full-page navigation between prerendered pages paints from memory at 0kb of JavaScript. PREFETCH
+  only, never prerender. The rules are an allow-list built from the route table: a prerendered,
+  shareable page (`static`/`isr`, no policy) of a surface without the router, and a page that
+  declared `navigation: 'prefetch'` on a client-routed one — in every routed locale
+  (`{/en}?/precios`). Never a `navigation: 'document'` page, an `ssr` page of a surface without the
+  router, an `offline: 'network-only'` page, an `api/` route, or anything outside the route table
+  (`/_storage/*`, `/mcp*`, an app's plain routes). `exclude` subtracts URL patterns. The body is
+  admitted to `script-src` by its sha256, hashed from the string the document carries, and is
+  charged no bytes against `budget.js` (it is data, like `application/json`). `x dev`, the
+  container and `x build --target static` write the same tag.
+- **pwa:** navigation preload. The emitted worker enables `registration.navigationPreload` on
+  `activate` and every strategy answers a navigation from `event.preloadResponse` — the request the
+  browser made while the worker was starting — falling back to its own fetch when there is none.
+  A preloaded answer from another build posts `AppUpdateAvailable` and stops the worker stamping
+  its build id, as a 409 did. `fromNetwork` and `StrategyOptions.preload` are the same rule for the
+  exported strategy functions.
+
+### Changed
+
+- **pwa:** the install pre-cache is filled `PRECACHE_CONCURRENCY` (4) entries at a time. It was
+  `Promise.all` over every entry — 72 requests, 2.9 MB on notificado.co — on the first visit,
+  against the connection the visitor's first click needs. A failed entry still costs that entry only.
+- **cli:** a `render: 'static'` page answers a matching `If-None-Match` with a bodiless `304`. The
+  ETag was only ever a header: every revalidation got the whole document again.
+- **cli:** the container renders a `render: 'static'` page once per locale and answers later
+  requests from memory, without running `load` or the render (`static-document.ts`): a page with no
+  dynamic segment, asked for with no query string, that answered 200 — at most 1,024 documents.
+  `x dev` renders per request, as before. `ssr`, `isr`, `stream` and every `no-store` page are
+  untouched.
 
 ## 22.14.0 - 2026-09-30
 
