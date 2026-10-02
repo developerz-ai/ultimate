@@ -18,6 +18,11 @@ export interface CronExpression {
   /** Vixie semantics: when both day fields are restricted, either one matching is a hit. */
   dayOfMonthRestricted: boolean;
   dayOfWeekRestricted: boolean;
+  // The minute or the hour field is `*` or a stepped `*` — an INTERVAL, not a time of day. Vixie's
+  // test, and it decides one thing: whether the repeated hour of a fall-back night is run through
+  // (every five minutes) or fired once (02:30 daily). A fact about how the field was spelled,
+  // which the value lists cannot carry — `0-59` and `*` hold the same sixty numbers.
+  wildcardTime: boolean;
 }
 
 // A `Map`, not an object literal: the key is a caller's string, and `MACROS['constructor']` on a
@@ -50,6 +55,7 @@ const MONTH_NAMES = [
   'dec',
 ];
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const DAY_LABELS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 /** Parse 5 fields (`m h dom mon dow`) or 6 with a leading seconds field. */
 export function parseCron(expression: string): CronExpression {
@@ -69,10 +75,10 @@ export function parseCron(expression: string): CronExpression {
   const minutes = parseField(expression, minuteField ?? '*', 0, 59);
   const hours = parseField(expression, hourField ?? '*', 0, 23);
   const daysOfMonth = parseField(expression, domField ?? '*', 1, 31);
-  const months = parseField(expression, monthField ?? '*', 1, 12, MONTH_NAMES, 1);
+  const months = parseField(expression, monthField ?? '*', 1, 12, [MONTH_NAMES, MONTH_LABELS], 1);
   // Span 7, not `max - min + 1` = 8: the dow field accepts 0-7 because Sunday has two spellings,
   // so the modulus a wrap strides over is a week with a phantom day in it unless it is stated.
-  const rawDow = parseField(expression, dowField ?? '*', 0, 7, DAY_NAMES, 0, 7);
+  const rawDow = parseField(expression, dowField ?? '*', 0, 7, [DAY_NAMES, DAY_LABELS], 0, 7);
 
   // 0 and 7 are both Sunday in cron; ISO calls Sunday 7.
   const daysOfWeek = [...new Set(rawDow.map((day) => (day === 0 ? 7 : day)))].sort((a, b) => a - b);
@@ -87,6 +93,7 @@ export function parseCron(expression: string): CronExpression {
     daysOfWeek,
     dayOfMonthRestricted: isRestricted(domField ?? '*'),
     dayOfWeekRestricted: isRestricted(dowField ?? '*'),
+    wildcardTime: isWildcard(minuteField ?? '*') || isWildcard(hourField ?? '*'),
   };
   assertReachableDate(expression, parsed);
   return parsed;
@@ -164,7 +171,7 @@ function parseField(
   field: string,
   min: number,
   max: number,
-  names: readonly string[] = [],
+  names: readonly (readonly string[])[] = [],
   nameOffset = 0,
   /**
    * How many distinct values one full turn of this field has — `max - min + 1` for every field
@@ -177,8 +184,11 @@ function parseField(
   const values = new Set<number>();
   for (const part of field.split(',')) {
     if (part === '') throw cronInvalid(expression, `empty list item in "${field}"`);
-    const [rangePart, stepPart] = part.split('/');
-    if (rangePart === undefined || (part.includes('/') && stepPart === undefined)) {
+    // Destructuring the split read the first two pieces and dropped the rest, so `1/2/3` was
+    // `1/2` and `1-5-7` was `1-5`: a typo that validated and scheduled something else.
+    const stepParts = part.split('/');
+    const [rangePart, stepPart] = stepParts;
+    if (rangePart === undefined || stepParts.length > 2) {
       throw cronInvalid(expression, `malformed step in "${part}"`);
     }
     const step = stepPart === undefined ? 1 : parseInteger(stepPart);
@@ -192,7 +202,11 @@ function parseField(
       from = min;
       to = max;
     } else if (rangePart.includes('-')) {
-      const [left, right] = rangePart.split('-');
+      const ends = rangePart.split('-');
+      if (ends.length !== 2) {
+        throw cronInvalid(expression, `a range has two ends, got ${ends.length} in "${part}"`);
+      }
+      const [left, right] = ends;
       from = toNumber(expression, left, min, max, names, nameOffset);
       to = toNumber(expression, right, min, max, names, nameOffset);
     } else {
@@ -221,13 +235,13 @@ function toNumber(
   token: string | undefined,
   min: number,
   max: number,
-  names: readonly string[],
+  names: readonly (readonly string[])[],
   nameOffset: number,
 ): number {
   if (token === undefined || token === '') throw cronInvalid(expression, 'missing value');
-  // Names match on their first three letters, so `mon` and `monday` both work — but a token
-  // carrying anything that is not a letter is a typo, not a name, and falls through to digits.
-  const named = /^[a-z]+$/.test(token) ? names.indexOf(token.slice(0, 3)) : -1;
+  // A name is its three-letter form or its whole word — `mon` and `monday` — matched EXACTLY.
+  // Matching on the first three letters read `marzipan` as March and `monkey` as Monday.
+  const named = names.reduce((found, list) => (found === -1 ? list.indexOf(token) : found), -1);
   const value = named === -1 ? parseInteger(token) : named + nameOffset;
   if (value === undefined) {
     throw cronInvalid(expression, `"${token}" is not a number or a name`);

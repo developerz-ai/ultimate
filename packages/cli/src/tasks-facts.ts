@@ -5,37 +5,11 @@
 import type { TaskDescriptor, TaskHandle } from '@ultimat3/jobs';
 import { getTask, registeredTasks } from '@ultimat3/jobs';
 import type { CronPhrases } from '@ultimat3/time';
-import {
-  describeCron,
-  fromEpochMs,
-  nextCronOccurrenceMs,
-  offsetLabel,
-  toZoned,
-} from '@ultimat3/time';
+import { describeCron, fromEpochMs, isoInZone, nextCronOccurrenceMs } from '@ultimat3/time';
 import { BadFlagError } from './errors';
 
 const DEFAULT_COUNT = 5;
 const MAX_COUNT = 50;
-
-const pad2 = (value: number): string => String(value).padStart(2, '0');
-
-/**
- * ISO-8601 rendered with the ZONE's OWN offset (`2026-03-08T03:00:00-04:00`), never collapsed to
- * UTC `Z` — an ambient zone is exactly the bug a task's `tz` exists to prevent. No single
- * "instant in a zone, as ISO" export exists in `@ultimat3/time` to call instead: `toIso` is
- * UTC-`Z` only, `isoDateInZone` is date-only, and `formatWithOffset` renders locale prose, not
- * ISO. So this composes the package's own instant→zoned-wall-clock conversion (`toZoned`) and
- * zone-label helper (`offsetLabel`) rather than a fresh `Intl.DateTimeFormat` call here.
- *
- * Exported for `cmd-tasks.ts`'s `last` column: the occurrence a task last fired and the one it
- * fires next are one clock, so they are one function.
- */
-export function isoInZone(ms: number, zone: string): string {
-  const zoned = toZoned(fromEpochMs(ms), zone);
-  const date = `${String(zoned.year).padStart(4, '0')}-${pad2(zoned.month)}-${pad2(zoned.day)}`;
-  const time = `${pad2(zoned.hour)}:${pad2(zoned.minute)}:${pad2(zoned.second)}`;
-  return `${date}T${time}${offsetLabel(zoned.offsetMinutes)}`;
-}
 
 /** `x tasks list` row: the descriptor plus the next occurrence, ms and rendered alike. */
 export interface TaskFact extends TaskDescriptor {
@@ -46,7 +20,7 @@ export interface TaskFact extends TaskDescriptor {
 function toFact(handle: TaskHandle, nowMs: number): TaskFact {
   const descriptor = handle.describe();
   const nextMs = nextCronOccurrenceMs(descriptor.cron, descriptor.tz, nowMs);
-  return { ...descriptor, nextMs, next: isoInZone(nextMs, descriptor.tz) };
+  return { ...descriptor, nextMs, next: isoInZone(fromEpochMs(nextMs), descriptor.tz) };
 }
 
 export function listTaskFacts(nowMs: number): readonly TaskFact[] {
@@ -110,7 +84,7 @@ export function taskShowFacts(
   let cursor = nowMs;
   for (let i = 0; i < count; i += 1) {
     cursor = nextCronOccurrenceMs(descriptor.cron, descriptor.tz, cursor);
-    upcoming.push({ ms: cursor, at: isoInZone(cursor, descriptor.tz) });
+    upcoming.push({ ms: cursor, at: isoInZone(fromEpochMs(cursor), descriptor.tz) });
   }
   return { descriptor, describe: describeCron(descriptor.cron, 'en-US', phrases), upcoming };
 }

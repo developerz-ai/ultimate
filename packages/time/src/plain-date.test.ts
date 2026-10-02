@@ -20,6 +20,25 @@ import {
   plainDaysBetween,
 } from './plain-date';
 
+// Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so a
+// child that does not come back is a worker the test timeout cannot end.
+const spawned = async (
+  cmd: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
+  const child = Bun.spawn([...cmd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(env === undefined ? {} : { env }),
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+};
+
 describe('unit · plainDate', () => {
   test('takes an ISO calendar date and refuses everything that only looks like one', () => {
     expect(plainDate('2026-03-14')).toBe('2026-03-14' as PlainDate);
@@ -79,7 +98,7 @@ describe('unit · plainDate and instants', () => {
     );
   });
 
-  test('the UTC read holds in a zone that is not UTC — which bun test alone cannot show', () => {
+  test('the UTC read holds in a zone that is not UTC — which bun test alone cannot show', async () => {
     // `bun test` pins the process to UTC, so every assertion above passes whether this function
     // reads UTC components or local ones. The zone has to come from OUTSIDE the runner, which is
     // what makes this a subprocess: in America/Los_Angeles, midnight UTC on the 14th is the 13th
@@ -93,10 +112,11 @@ describe('unit · plainDate and instants', () => {
       '  answer: plainDateUtc(at),',
       '}));',
     ].join('\n');
-    const run = Bun.spawnSync(['bun', '-e', source], {
-      env: { ...process.env, TZ: 'America/Los_Angeles' },
+    const run = await spawned(['bun', '-e', source], {
+      ...process.env,
+      TZ: 'America/Los_Angeles',
     });
-    const out = new TextDecoder().decode(run.stdout).trim();
+    const out = run.stdout.trim();
     const seen = JSON.parse(out) as { zone: string; local: number; answer: string };
     // The control: the subprocess really is west of Greenwich, so a local read WOULD answer the 13th.
     expect(seen.zone).toBe('America/Los_Angeles');
@@ -189,5 +209,49 @@ describe('unit · plainDate and t.date agree on which days exist', () => {
         }
       }
     }
+  });
+});
+
+describe('unit · plainDate stays inside the four-digit years it can spell', () => {
+  const refused = (run: () => unknown): unknown => {
+    try {
+      run();
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  };
+
+  test('addPlainDays past 9999-12-31 is refused, never a five-digit year branded PlainDate', () => {
+    expect(refused(() => addPlainDays(plainDate('9999-12-31'), 1))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(refused(() => addPlainDays(plainDate('0000-01-01'), -1))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(addPlainDays(plainDate('9999-12-30'), 1)).toBe(plainDate('9999-12-31'));
+    expect(addPlainDays(plainDate('0000-01-02'), -1)).toBe(plainDate('0000-01-01'));
+  });
+
+  test('plainDateUtc refuses a Date outside them, so what it returns is always a PlainDate', () => {
+    expect(refused(() => plainDateUtc(new Date(Date.UTC(10000, 0, 1))))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(refused(() => plainDateUtc(new Date(Date.UTC(-1, 11, 31))))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(isPlainDate(plainDateUtc(new Date(Date.UTC(9999, 11, 31))))).toBe(true);
+  });
+
+  test('plainDateIn refuses an instant whose local date is outside them', () => {
+    // 9999-12-31T23:30Z is still 9999 in UTC and already year 10000 in Tokyo.
+    const edge = fromIso('9999-12-31T23:30:00Z');
+    expect(plainDateIn(edge, 'UTC')).toBe(plainDate('9999-12-31'));
+    expect(refused(() => plainDateIn(edge, 'Asia/Tokyo'))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(isPlainDate(plainDateIn(fromIso('2026-03-14T09:00:00Z'), 'America/Los_Angeles'))).toBe(
+      true,
+    );
   });
 });

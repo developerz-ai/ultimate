@@ -29,7 +29,7 @@ await withTransaction(async (tx) => {
 | `shellInertIdentifier()` | `As of 2026-08-26`: a quoted identifier that is also inert wherever a human PASTES it — or `null`. The one screen a catalog name goes through before it reaches a `fix:`. `identifier()` answers about SQL and **accepts** a backtick and a `$`, which are exactly what a shell substitutes inside double quotes, so a column called `$(id)` inside `x db gen "add $(id)"` runs `id` on paste |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
 | `DbTx.origin` | `As of 2026-08`: the client the transaction was **opened on** — `options.client` or `baseClient()`, never the reservation it runs statements through. `@ultimat3/entity` compares a pinned repository's client against it, so a pinned repo joins its own shard's transaction instead of being refused |
-| `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam. `{ retry: n }` (`As of 2026-08`) re-runs `fn` from the top on a `40001`/`40P01` and on nothing else — default 0, so `fn` must be idempotent before you ask for it. Each re-run **waits first**, `As of 2026-08-23`: exponential from 10ms, capped at 500ms, full jitter (`@ultimat3/core`'s `backoffDelay`). A budget of 0 waits not at all |
+| `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam. `{ retry: n }` (`As of 2026-08`) re-runs `fn` from the top on a `40001`/`40P01` and on nothing else — default 0, so `fn` must be idempotent before you ask for it. Each re-run **waits first**, `As of 2026-08-23`: exponential from 10ms, capped at 500ms, full jitter (`@ultimat3/core`'s `backoffDelay`). A budget of 0 waits not at all. **A transaction the server aborted is reported as one**, `As of 2026-10-02` → [Transactions that end badly](#transactions-that-end-badly) |
 | `sqlState()` / `sqlStateCode()` / `isRetryableState()` / `SQLSTATE` | `As of 2026-08`: the SQLSTATE a driver error carries, and the closed table from it to a code. `Bun.SQL` puts it on `errno`; PGlite puts it on `code`; **one** reader answers for both |
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
 | `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
@@ -75,12 +75,36 @@ String interpolation is how every SQL injection ships, and an agent writing SQL 
 trusted to remember the difference between a value and a fragment. So:
 
 - scalars (`string`, `number`, `boolean`, `bigint`, `Date`, `Uint8Array`, arrays, `null`) become
-  `$1..$n` and never touch `.text`;
+  `$1..$n` and never touch `.text`. A value that cannot be SENT — an Invalid Date, a ragged array —
+  is `X_INVARIANT` before the driver is called, never `X_DB_UNAVAILABLE`; a `Uint8Array` inside an
+  array is one `bytea` element. Both drivers refuse alike;
 - a nested fragment is spliced and its parameters are renumbered;
 - **anything else throws `X_SQL_UNSAFE`** — including an object shaped like a `SqlFragment` that
   `sql`/`raw` did not produce;
 - `raw(trusted)` is the one audited escape hatch, `identifier(name)` the safe way to interpolate
   a table or column, `literal(text)` for utility statements that reject bound parameters.
+
+## Transactions that end badly
+
+`As of 2026-10-02`. Postgres aborts the WHOLE transaction on any statement error and answers the
+`COMMIT` that follows with the tag `ROLLBACK` and no error. `withTransaction` used to resolve on
+that, fire `onCommit`, and store nothing.
+
+| Situation | What happens |
+|---|---|
+| the body catches a failed statement and returns | `X_DB_TRANSACTION_ABORTED`, cause = the first failing statement; `ROLLBACK`, `onRollback` undos run, `onCommit` never fires |
+| the fallible statement sits in a nested `withTransaction` and THAT is caught | only the savepoint rolls back; the outer scope commits. This is the fix the error names |
+| a nested body swallows a failed statement | the nested call rejects with `X_DB_TRANSACTION_ABORTED`; its savepoint is rolled back and the outer scope is usable again |
+| `ROLLBACK TO SAVEPOINT` itself fails | the nested call still rejects with the body's error; the root is marked aborted and its `COMMIT` is refused, never sent |
+| two nested scopes under `Promise.all` | run one after the other, per parent scope — savepoints are a stack, and interleaved ones destroyed each other |
+| a nested scope waits past `siblingWaitMs` (default `SIBLING_SCOPE_WAIT_MS`, 30 s; `0` = no deadline) for its sibling | `X_DB_SIBLING_SCOPE_TIMEOUT`, naming the parent and the savepoint holding the turn. The shape it exists for: a body awaiting a sibling started after it, which waits for itself — a permanent hang before the deadline. The waiter never opened and its place is handed on |
+| any `COMMIT` answered `ROLLBACK`, on either driver | `X_DB_TRANSACTION_ABORTED` from the statement funnel (`commit-tag.ts`) — covers an abort the scope never saw and a hand-written `COMMIT` |
+| `COMMIT` rejects with a SQLSTATE (a deferred constraint, `40001`) | rolled back: the server's error surfaces, undos run |
+| `COMMIT` rejects with NO SQLSTATE | `X_DB_COMMIT_UNKNOWN`: neither `onCommit` nor `onRollback` runs, and it is never retried |
+| a nested scope passes `isolation`, `readOnly: true`, `deferrable: true`, or a `client` other than the root's | `X_INVARIANT` — a savepoint can honour none of them; `retry` was already refused |
+
+Only a failure carrying a SQLSTATE marks the scope aborted: a refusal raised before the send left
+the transaction untouched.
 
 ## Read-only access for anything an LLM drives
 
@@ -230,6 +254,7 @@ X_DB_DRIFT: schema differs from migrations
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
 | index rebuilt differently | `index "I" on "T" covers (…)` / `is unique` / `is descending` / `is partial`, `not what migrations declare` | `x db migrate` |
 | foreign key, rule moved | `foreign key on "T" (C) to "R" is on delete cascade, not what migrations declare` | the `drop constraint` + `add constraint` pair, in a new migration |
+| primary key differs (`changed-primary-key`, `As of 2026-10-02`) | `table "T" has primary key (id), and migrations declare (slug)` — compared in column ORDER; `has no primary key` when the database holds none | `psql "$DATABASE_URL" -c '<drop constraint "<the live key>"; add constraint "T_pkey" primary key (…)>'` — one command, against the drifted database — then `x db migrate`. Nullability is skipped for the DECLARED key's columns only |
 
 `checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` renders
 them all as findings and exits non-zero; a `ROLE=migrate` container throws the first one
@@ -271,7 +296,10 @@ object kind, numbered in the order a database is built in, one file per named ob
 - A file over 500 lines (`SCHEMA_DUMP_MAX_LINES`, the `filesize` ceiling) is split `<name>.1.sql`, `<name>.2.sql`;
   `loadSchemaDump()` joins the parts in numeric order.
 - What cannot be spelled — partitions, inheritance, foreign tables, composite and range types,
-  aggregates, row-security policies, rules — is named in `unrendered.sql` as comments.
+  aggregates, row-security policies (and `force row level security`), rules, extended statistics,
+  a column's non-default `storage`, a materialized view created `with no data`, and a trigger on
+  a relation the dump does not create — is named in `unrendered.sql` as comments.
+- A generated column is spelled `stored` or `virtual` (Postgres 18), as `attgenerated` says.
 
 `loadSchemaDump()` runs kind by kind, the framework twin first, each file in a savepoint. A file
 refused with `42P01`, `42883` or `42704` — "not created yet" — is retried after the rest; a pass
@@ -495,6 +523,9 @@ job the moment Postgres fails over.
 | `X_DB_UNIQUE_VIOLATION` | `23505` — `fix:` names `upsertAll(rows, { onConflict: [...] })` and the constraint the server named |
 | `X_DB_FOREIGN_KEY_VIOLATION` | `23503` |
 | `X_DB_SERIALIZATION_FAILURE` | `40001` / `40P01`, and an exhausted `withTransaction(fn, { retry: n })` budget |
+| `X_DB_TRANSACTION_ABORTED` | a statement failed inside a transaction and its error was caught; the server rolled the unit of work back. Also any `COMMIT` answered with the tag `ROLLBACK` |
+| `X_DB_COMMIT_UNKNOWN` | `COMMIT` was sent and the connection failed before the answer: durable or rolled back, unknowable from here |
+| `X_DB_SIBLING_SCOPE_TIMEOUT` | a nested `withTransaction` waited past `siblingWaitMs` for a sibling scope that never finished |
 | `X_DB_STATEMENT_TIMEOUT` | `57014` — the statement ran past `statement_timeout` |
 | `X_DB_LOCK_TIMEOUT` | `55P03` — it waited past `lock_timeout` for a lock it never got |
 | `X_DB_POOL_EXHAUSTED` | `53300` / `53200`, or `reserve()` past `acquireTimeoutMs` |

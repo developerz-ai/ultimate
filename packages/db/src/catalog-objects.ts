@@ -148,6 +148,15 @@ export const triggerRows = (client: DbClient, schema: string): Promise<readonly 
  * What exists in the schema and the dump cannot spell. One query, one closed list — a kind added
  * here is a kind the dump admits it does not carry, and a kind rendered later leaves this list in
  * the same diff.
+ *
+ * The last four are facts ABOUT an object the dump does render, and each was absent from both the
+ * dump and this list: `create statistics`, `force row level security` (a second flag beside
+ * `relrowsecurity`), a column whose `set storage` departs from its type's own, and a materialized
+ * view created `with no data` — which the dump's `create materialized view` would populate. A
+ * load-equals-replay check cannot see any of them, because both sides are this same reading.
+ *
+ * A trigger on a relation the dump does not create is the one kind NOT read here: which relations
+ * are rendered is the fold's answer, so `introspectCatalog` names those itself.
  */
 export const unrenderedRows = (
   client: DbClient,
@@ -194,6 +203,26 @@ export const unrenderedRows = (
       from pg_rewrite r
       join pg_class c on c.oid = r.ev_class
       where r.rulename <> '_RETURN'
+      union all
+      select 'extended statistics', s.stxname, c.relname, s.stxnamespace
+      from pg_statistic_ext s
+      join pg_class c on c.oid = s.stxrelid
+      union all
+      select 'forced row security', c.relname, c.relname, c.relnamespace
+      from pg_class c
+      where c.relforcerowsecurity
+      union all
+      select 'column storage', a.attname, c.relname, c.relnamespace
+      from pg_attribute a
+      join pg_class c on c.oid = a.attrelid
+      join pg_type t on t.oid = a.atttypid
+      where c.relkind = 'r' and a.attnum > 0 and not a.attisdropped
+        and a.attstorage <> t.typstorage
+        and ${notExtensionOwned('pg_class', 'c.oid')}
+      union all
+      select 'unpopulated materialized view', c.relname, null::text, c.relnamespace
+      from pg_class c
+      where c.relkind = 'm' and not c.relispopulated
     ) objects
     join pg_namespace n on n.oid = objects.namespace
     where n.nspname = ${schema}

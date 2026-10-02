@@ -37,6 +37,11 @@ const probed = new Map<string, string | ''>();
  * `'CET'` and `'+01:00'` are not zones: an abbreviation is ambiguous and an offset has no rules.
  */
 export function canonicalTimeZone(zone: string): string | undefined {
+  // The type says `string`; a plain-JS caller, a JSON-driven call and an `as never` do not. Every
+  // zoned function in the package funnels through here, so this is the one place a non-string
+  // becomes "not a zone" — and so `X_TIMEZONE_INVALID` — rather than a bare `TypeError` out of
+  // `zone.toLowerCase()` several frames from the call that omitted it.
+  if (typeof zone !== 'string') return undefined;
   if (zone === '' || NUMERIC_OFFSET.test(zone)) return undefined;
   const known = listedZones().get(zone.toLowerCase());
   if (known !== undefined) return known;

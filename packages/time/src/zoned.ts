@@ -3,9 +3,16 @@
  * instant. `fromZoned` is the DST-correct one, and it is the reason this package exists.
  */
 
-import { dstAmbiguous, dstNonexistent } from './errors';
+import { dstAmbiguous, dstNonexistent, scheduleInvalid } from './errors';
 import { addMs, type Instant } from './instant';
-import { assertTimeZone, offsetAt, type TimeZone, utcEpoch, zonePartsAt } from './zones';
+import {
+  assertTimeZone,
+  offsetAt,
+  offsetLabel,
+  type TimeZone,
+  utcEpoch,
+  zonePartsAt,
+} from './zones';
 
 /** A local date and time with no zone attached — meaningless until paired with one. */
 export interface WallClock {
@@ -168,8 +175,15 @@ export function endOfDay(at: Instant, zone: TimeZone): Instant {
 /**
  * Add calendar days in a zone, keeping the wall-clock time. Adding one day is 23, 24 or
  * 25 hours depending on the transition — which is why this is not `+ 86_400_000`.
+ *
+ * A WHOLE number of days, checked as `addPlainDays` and `addBusinessDays` check theirs: `NaN`
+ * reached `Date.UTC` and came back out of `Intl` as a bare `RangeError`, and `0.5` was truncated
+ * there and moved nothing — a silent no-op that reads as an answer.
  */
 export function addDaysInZone(at: Instant, days: number, zone: TimeZone): Instant {
+  if (!Number.isSafeInteger(days)) {
+    throw scheduleInvalid('days', days, 'a whole number of days');
+  }
   const zoned = toZoned(at, zone);
   return fromZoned(
     {
@@ -190,6 +204,19 @@ export function addDaysInZone(at: Instant, days: number, zone: TimeZone): Instan
 export function isoDateInZone(at: Instant, zone: TimeZone): string {
   const zoned = toZoned(at, zone);
   return `${String(zoned.year).padStart(4, '0')}-${pad2(zoned.month)}-${pad2(zoned.day)}`;
+}
+
+/**
+ * `2026-03-08T03:00:00-04:00` — ISO-8601 with the ZONE's OWN offset, never collapsed to UTC `Z`
+ * (which is what `toIso` is for). The form a schedule is read in: the two passes of a fall-back
+ * hour are one wall time and two instants, and the offset is the only thing that tells them
+ * apart. Seconds precision; `fromIso` reads it back to the same second.
+ */
+export function isoInZone(at: Instant, zone: TimeZone): string {
+  const zoned = toZoned(at, zone);
+  const date = `${String(zoned.year).padStart(4, '0')}-${pad2(zoned.month)}-${pad2(zoned.day)}`;
+  const time = `${pad2(zoned.hour)}:${pad2(zoned.minute)}:${pad2(zoned.second)}`;
+  return `${date}T${time}${offsetLabel(zoned.offsetMinutes)}`;
 }
 
 /** True when both instants fall on the same local calendar day. */

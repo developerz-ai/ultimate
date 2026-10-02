@@ -400,11 +400,16 @@ describe('the process-wide logger, in a runtime with no process', () => {
     const root = await dir;
     const runner = join(root, 'runner.mjs');
     await Bun.write(runner, RUNNER);
-    const run = Bun.spawnSync(['bun', 'run', runner, file]);
-    return {
-      ok: run.exitCode === 0,
-      text: `${run.stdout.toString()}${run.stderr.toString()}`,
-    };
+    // Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so
+    // a child that does not come back is a worker the test timeout cannot end. Awaited, it is one
+    // red test.
+    const run = Bun.spawn(['bun', 'run', runner, file], { stdout: 'pipe', stderr: 'pipe' });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(run.stdout).text(),
+      new Response(run.stderr).text(),
+      run.exited,
+    ]);
+    return { ok: code === 0, text: `${stdout}${stderr}` };
   }
 
   const BARREL = JSON.stringify(join(import.meta.dir, 'index.ts'));

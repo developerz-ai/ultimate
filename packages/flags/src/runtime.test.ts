@@ -14,6 +14,7 @@ import {
 import {
   configureFlags,
   DEFAULT_REPORT_INTERVAL_MS,
+  flagsClock,
   reportOnce,
   resetFlagReporting,
 } from './runtime';
@@ -134,5 +135,46 @@ describe('unit · swapping the clock', () => {
     expect(reportOnce('a.flag', build)).toBe(true);
     configureFlags({ reportEveryMs: 5_000 });
     expect(reportOnce('a.flag', build)).toBe(false);
+  });
+});
+
+describe('unit · configureFlags screens reportEveryMs', () => {
+  const refusalOf = (run: () => unknown): { code?: string; message?: string } | undefined => {
+    try {
+      run();
+      return undefined;
+    } catch (error) {
+      return error as { code?: string; message?: string };
+    }
+  };
+
+  for (const reportEveryMs of [Number.NaN, Number.POSITIVE_INFINITY, -1, 0.5]) {
+    test(`${reportEveryMs} is refused, naming the option`, () => {
+      const refusal = refusalOf(() => configureFlags({ reportEveryMs }));
+      expect(refusal?.code).toBe('X_INVARIANT');
+      expect(refusal?.message).toContain('configureFlags reportEveryMs');
+    });
+  }
+
+  test('a refused interval leaves the one in force alone — NaN used to report on every call', () => {
+    const clock = frozenClock(0);
+    configureFlags({ clock, reportEveryMs: 1_000 });
+    expect(reportOnce('k', build)).toBe(true);
+    refusalOf(() => configureFlags({ reportEveryMs: Number.NaN }));
+    // `now - previous < NaN` is false, so with NaN stored this second call reported too.
+    expect(reportOnce('k', build)).toBe(false);
+  });
+
+  test('a refused interval does not swap the clock either', () => {
+    const first = frozenClock(0);
+    configureFlags({ clock: first, reportEveryMs: 1_000 });
+    refusalOf(() => configureFlags({ clock: frozenClock(0), reportEveryMs: -1 }));
+    expect(flagsClock()).toBe(first);
+  });
+
+  test('0 is every evaluation, and it is a decision the caller may make', () => {
+    configureFlags({ clock: frozenClock(0), reportEveryMs: 0 });
+    expect(reportOnce('k', build)).toBe(true);
+    expect(reportOnce('k', build)).toBe(true);
   });
 });

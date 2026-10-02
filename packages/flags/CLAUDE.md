@@ -102,11 +102,17 @@ what lets `policy` (tier 2) call it from inside a predicate.
   alone honoured the PROCESS's zone for a clock-time form: `'2026-12-01T00:00:00'` measured as
   1796083200000 in UTC, 1796101200000 in America/New_York and 1796050800000 in Asia/Tokyo — fourteen
   hours of spread across a fleet, so `X_FLAG_EXPIRED` started on a different DAY on different pods,
-  against a comment claiming the opposite. `flag.ts` carries a local `CLOCK_TIME`/`UTC_OFFSET` pair
-  mirroring `@ultimat3/time`'s `fromIso`, restated rather than imported because this package is tier
-  1 and may import `@ultimat3/core` only. `scripts/test-setup.ts` pins the runner to UTC, so the
+  against a comment claiming the opposite. `flag.ts` asks `@ultimat3/core`'s `isIsoDateTime` — the
+  one predicate `t.date` and `fromIso` ask — `As of 2026-10`. It carried a local
+  `CLOCK_TIME`/`UTC_OFFSET` pair until then, two of the predicate's three patterns: with no SHAPE
+  check, `'December 1, 2026'` and `'12/01/2026'` parsed at the host's local midnight and
+  `'2026-02-30'` rolled over to March 2nd. All are `X_FLAG_EXPIRY_INVALID` now. **Breaking.**
+  `scripts/test-setup.ts` pins the runner to UTC, so the
   failure is invisible in process by construction and `flag.test.ts` spawns a `TZ=` subprocess per
   zone — the same reason `packages/time/src/plain-date.test.ts` does.
+- **`configureFlags` screens `reportEveryMs` with `finiteCount`, before it touches anything.**
+  `now - previous < NaN` is false, so a `NaN` interval reported on every evaluation; `Infinity`
+  muted the flag for good. `0` is legal — a caller may choose it.
 - **`configureFlags` clears the report watermarks when it swaps the clock, and only then.** A
   monotonic reading is meaningful only against the clock that produced it: a process that reported
   at monotonic 10,000,000 and then took a clock starting at 0 computed `now - previous` as

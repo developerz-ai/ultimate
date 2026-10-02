@@ -7,6 +7,7 @@
 import { nearestName, systemClock } from '@ultimat3/core';
 import type { JobDriver, TaskFire, TaskHandle } from '@ultimat3/jobs';
 import type { CronPhrases } from '@ultimat3/time';
+import { fromEpochMs, isoInZone } from '@ultimat3/time';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { tasksSpec } from './cmd-tasks-spec';
@@ -19,7 +20,6 @@ import { flagString } from './parse';
 import { renderTable } from './table';
 import {
   findTaskHandle,
-  isoInZone,
   knownTaskNames,
   listTaskFacts,
   parseCountFlag,
@@ -58,7 +58,7 @@ const lastFireOf = (fires: ReadonlyMap<string, TaskFire>, name: string, tz: stri
   if (fire === undefined) return NEVER_FIRED;
   return {
     lastMs: fire.occurrenceMs,
-    last: isoInZone(fire.occurrenceMs, tz),
+    last: isoInZone(fromEpochMs(fire.occurrenceMs), tz),
     lastFiredAtMs: fire.firedAt,
   };
 };

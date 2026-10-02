@@ -11,9 +11,11 @@
 // re-running the migrator applies nothing a ledger row already claims. And a difference names the
 // declared side's own spelling, never the catalog's, because the catalog's is Postgres' rewriting.
 
+import { psqlCommand } from './dependent-view';
 import { onDeleteRule, rebuildForeignKey } from './foreign-key';
 import type { CheckDescription, ForeignKeyDescription } from './introspect';
 import type { Migration } from './migrate';
+import { addPrimaryKey, dropPrimaryKey } from './primary-key';
 import { shellInertIdentifier } from './sql';
 
 export type DriftKind =
@@ -25,6 +27,7 @@ export type DriftKind =
   | 'unknown-schema'
   | 'missing-index'
   | 'changed-index'
+  | 'changed-primary-key'
   | 'missing-check'
   | 'missing-foreign-key'
   | 'changed-foreign-key'
@@ -303,5 +306,60 @@ export function changedForeignKey(
       `${rule === null ? 'declares no on delete rule' : `is on delete ${rule}`}, not what ` +
       'migrations declare',
     fix: `${rebuildForeignKey(table, declared, held)}   # in a new migration`,
+  };
+}
+
+const PRIMARY_KEY_BY_HAND =
+  'psql "$DATABASE_URL"   # drop the primary key this database holds, add the one migrations ' +
+  'declare, \\q, then x db migrate — a table, column or constraint name in this difference ' +
+  'carries a backtick, a dollar sign, a quote, a backslash or whitespace, or is too long, so no ' +
+  'statement here can spell it';
+
+const keyText = (columns: readonly string[]): string =>
+  columns.length === 0 ? 'no primary key' : `primary key (${columns.join(', ')})`;
+
+/**
+ * The two sides key the table differently — a different column list, a different ORDER, or a key
+ * on one side only. Its own kind rather than `changed-index` on `<table>_pkey`: that finding's fix
+ * is `x db migrate`, and the migration declaring this key is already in the ledger, so re-running
+ * the migrator applies nothing.
+ *
+ * The fix is ONE command a shell runs — the pair as `psql`'s argument, the form
+ * `dependent-view.ts` writes and for its reason: bare DDL beside a `#` is run by nobody, since `#`
+ * is not a comment to Postgres and `alter` is not a program to a shell. Against THIS database,
+ * never "in a new migration": drift means this database left the migrations, and a migration
+ * would re-key every database that is already right.
+ *
+ * `held` is the constraint the DATABASE holds — the live primary index's name, which is the
+ * constraint's — because that is the one a `drop constraint` has to spell. The writers are asked
+ * whether they can write each statement and a refusal degrades the whole line to prose, the rule
+ * `rebuildForeignKey` states: every name on the live side is the catalog's.
+ */
+export function changedPrimaryKey(
+  table: string,
+  live: readonly string[],
+  held: string | undefined,
+  declared: readonly string[],
+): DriftDifference {
+  const statements = (): string => {
+    const names = [table, ...declared, ...(held === undefined ? [] : [held])];
+    if (names.some((name) => shellInertIdentifier(name) === null)) return PRIMARY_KEY_BY_HAND;
+    try {
+      const parts: string[] = [];
+      if (held !== undefined) parts.push(dropPrimaryKey(table, held, false));
+      if (declared.length > 0) parts.push(addPrimaryKey(table, declared));
+      return `${psqlCommand(parts.join(' '))}   # then x db migrate, which re-checks`;
+    } catch {
+      return PRIMARY_KEY_BY_HAND;
+    }
+  };
+  return {
+    kind: 'changed-primary-key',
+    table,
+    column: null,
+    cause:
+      `table "${table}" has ${keyText(live)}, and migrations declare ` +
+      (declared.length === 0 ? 'none' : `(${declared.join(', ')})`),
+    fix: statements(),
   };
 }

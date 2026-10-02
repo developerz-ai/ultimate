@@ -1,4 +1,5 @@
-// Single responsibility: `withTransaction(fn, { retry })` against a real serialization failure.
+// Single responsibility: `withTransaction` against a real server — a serialization failure
+// retried, and a transaction Postgres aborted reported as one rather than as committed.
 // A recording client can prove the loop counts; only Postgres can prove the thing it counts is a
 // `40001` the framework recognised, which is the whole of D2 — `serializable` was unusable because
 // nothing distinguished a lost race from a dead socket. Skips unless `TEST_DATABASE_URL` is set.
@@ -143,5 +144,102 @@ describe.skipIf(!hasPostgres)('live · postgres · serializable retry', () => {
       sql`select amount from x_live_ledger order by amount`,
     );
     expect(rows.map((row) => row.amount)).toEqual([1, 1, 20]);
+  }, 20_000);
+});
+
+describe.skipIf(!hasPostgres)('live · postgres · a transaction the server aborted', () => {
+  const clients: PostgresClient[] = [];
+  const freshClient = (): PostgresClient => {
+    const client = createPostgresClient({ url: url ?? '', role: 'web' });
+    clients.push(client);
+    return client;
+  };
+  const ids = async (): Promise<readonly number[]> =>
+    (await freshClient().query<{ id: number }>(sql`select id from x_live_abort order by id`)).map(
+      (row) => row.id,
+    );
+
+  beforeEach(async () => {
+    const setup = freshClient();
+    await setup.execute(raw('drop table if exists x_live_abort'));
+    await setup.execute(raw('create table x_live_abort (id int primary key)'));
+  });
+
+  afterEach(async () => {
+    await Promise.all(clients.splice(0).map((client) => client.close()));
+  });
+
+  test('a body that swallows a failed statement rejects, and onCommit never fires', async () => {
+    const fired: string[] = [];
+    const error = await withTransaction(
+      async (tx) => {
+        tx.onCommit(() => fired.push('commit'));
+        tx.onRollback(() => fired.push('rollback'));
+        await tx.execute(sql`insert into x_live_abort values (1)`);
+        await tx.execute(sql`insert into x_live_abort values (1)`).catch(() => undefined);
+      },
+      { client: freshClient() },
+    ).then(
+      () => undefined,
+      (reason: unknown) => reason as CaughtError & { readonly cause?: string },
+    );
+
+    expect(error?.code).toBe('X_DB_TRANSACTION_ABORTED');
+    expect(error?.cause).toContain('23505');
+    expect(fired).toEqual(['rollback']);
+    expect(await ids()).toEqual([]);
+  }, 20_000);
+
+  test('the fallible statement in a nested scope leaves the outer one committable', async () => {
+    await withTransaction(
+      async (tx) => {
+        await tx.execute(sql`insert into x_live_abort values (1)`);
+        await withTransaction(async (inner) => {
+          await inner.execute(sql`insert into x_live_abort values (1)`);
+        }).catch(() => undefined);
+        await tx.execute(sql`insert into x_live_abort values (2)`);
+      },
+      { client: freshClient() },
+    );
+    expect(await ids()).toEqual([1, 2]);
+  }, 20_000);
+
+  test('two nested scopes under Promise.all nest one after the other', async () => {
+    await withTransaction(
+      async (tx) => {
+        await tx.execute(sql`insert into x_live_abort values (1)`);
+        const [failed, kept] = await Promise.allSettled([
+          withTransaction(async (nested) => {
+            await nested.execute(sql`insert into x_live_abort values (2)`);
+            await nested.query(sql`select 1`);
+            throw new RangeError('the first scope failed');
+          }),
+          withTransaction(async (nested) => {
+            await nested.execute(sql`insert into x_live_abort values (3)`);
+            await nested.query(sql`select 1`);
+          }),
+        ]);
+        expect(failed.status).toBe('rejected');
+        expect(kept.status).toBe('fulfilled');
+      },
+      { client: freshClient() },
+    );
+    // Unserialised, `ROLLBACK TO x_sp_1` destroyed `x_sp_2` and took row 3 with it.
+    expect(await ids()).toEqual([1, 3]);
+  }, 20_000);
+
+  // The funnel's own check, with no scope above it to remember the failure: `Bun.SQL` resolves a
+  // COMMIT answered `ROLLBACK`, and the command tag is the only place the server says so.
+  test('a bare COMMIT answered ROLLBACK is refused by the funnel', async () => {
+    using pin = await freshClient().reserve();
+    await pin.execute(raw('BEGIN'));
+    await pin.execute(sql`insert into x_live_abort values (1)`);
+    await pin.execute(sql`insert into x_live_abort values (1)`).catch(() => undefined);
+    const error = await pin.execute(raw('COMMIT')).then(
+      () => undefined,
+      (reason: unknown) => reason as CaughtError,
+    );
+    expect(error?.code).toBe('X_DB_TRANSACTION_ABORTED');
+    expect(await ids()).toEqual([]);
   }, 20_000);
 });

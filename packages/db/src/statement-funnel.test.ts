@@ -120,3 +120,41 @@ describe('affectedBy answers the command tag only when it counted something', ()
     expect(rowsOf(undefined)).toEqual([]);
   });
 });
+
+// A value this package refuses to SEND was refused inside the driver's `try`, so the refusal came
+// back as `X_DB_UNAVAILABLE` — "set DATABASE_URL" — from a driver that was never called.
+describe('a parameter that cannot be encoded', () => {
+  const refused = async (values: readonly unknown[]) => {
+    let called = 0;
+    const driver = {
+      unsafe: async () => {
+        called += 1;
+        return [];
+      },
+    };
+    const error = await runOn(driver, { text: 'select $1', values }).then(
+      () => undefined,
+      (reason: unknown) => reason as { readonly code?: string },
+    );
+    return { error, called };
+  };
+
+  test('a ragged array is X_INVARIANT, and the driver is never reached', async () => {
+    const { error, called } = await refused([[['a', 'b'], ['c']]]);
+    expect(error?.code).toBe('X_INVARIANT');
+    expect(called).toBe(0);
+  });
+
+  test('an Invalid Date is X_INVARIANT, and the driver is never reached', async () => {
+    const { error, called } = await refused([new Date(Number.NaN)]);
+    expect(error?.code).toBe('X_INVARIANT');
+    expect(called).toBe(0);
+  });
+
+  test('the refusal is observed as a failed statement, exactly once', async () => {
+    const seen = collect();
+    await refused([new Date(Number.NaN)]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.error).toBeDefined();
+  });
+});

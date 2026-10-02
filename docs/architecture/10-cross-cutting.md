@@ -172,7 +172,8 @@ Cron follows the same policy, plus a firing guarantee:
 | Bug | Why it cannot happen |
 |---|---|
 | "Your 2am report" runs at 3am for half the year | the task declares `tz`, and gap/overlap policy is defined |
-| The nightly digest sends twice on the fall-back night | overlap fires once, and the idempotency key covers handover |
+| The nightly digest sends twice on the fall-back night | a fixed time (`0 2 * * *`) fires once, on the first pass, and the idempotency key covers handover |
+| The five-minute poller goes dark for the repeated hour | an interval — minute or hour field `*` or `*/n` — fires through **both** passes: the repeated hour is real elapsed time |
 | Dates render in the server's zone for a user in Auckland | formatting without `timeZone` does not compile |
 | A birthday off by one day | `PlainDate` has no instant to shift |
 | A tz bug that only reproduces in October | tests are deterministic under a frozen clock and a fixed zone |

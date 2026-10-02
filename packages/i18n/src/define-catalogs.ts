@@ -4,6 +4,7 @@
  * Boot-time only — nothing here runs per request.
  */
 
+import { assertLocale } from '@ultimat3/core';
 import { type Catalog, catalogKeys, loadCatalog, mergeCatalogs } from './catalog';
 import { configureLocales, registerCatalog } from './context';
 import { localeUnsupported } from './errors';
@@ -42,6 +43,10 @@ export function defineCatalogs<TLocales extends CatalogSources>(
 ): CatalogSet<TLocales> {
   const locales = Object.keys(input.locales) as (keyof TLocales & string)[];
   if (!locales.includes(input.default)) throw localeUnsupported(input.default, locales);
+  // Every tag, before anything is registered. `configureLocales` below runs the same screen, but
+  // after the register loop — so its `X_LOCALE_INVALID` arrived with the malformed tag already in
+  // `registeredLocales()` and the well-formed locales' strings already live.
+  for (const locale of locales) assertLocale(locale);
 
   // Load everything before registering anything: a malformed catalog must fail the boot
   // whole, not leave half the locales live and the other half missing.

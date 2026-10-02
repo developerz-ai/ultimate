@@ -60,7 +60,7 @@ describe('tableStatements', () => {
       table({
         columns: [
           column('title', { collation: 'C', default: "'x'::text", notNull: true }),
-          column('search', { generated: 'lower(title)' }),
+          column('search', { generated: { expression: 'lower(title)', storage: 'stored' } }),
           column('n', {
             type: 'integer',
             notNull: true,

@@ -5,8 +5,8 @@
 
 import { scheduleInvalid } from './errors';
 import type { Instant } from './instant';
-import { addDaysInZone, daysBetween, isoDateInZone, toZoned } from './zoned';
-import type { TimeZone } from './zones';
+import { daysBetween, fromZoned, isoDateInZone, toZoned, type ZonedDateTime } from './zoned';
+import { type TimeZone, utcEpoch } from './zones';
 
 /** ISO weekday numbers: 1 = Monday … 7 = Sunday. */
 export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -57,18 +57,56 @@ export function addBusinessDays(at: Instant, days: number, calendar: BusinessCal
   }
   if (days === 0) return at;
   const step = days > 0 ? 1 : -1;
+  const origin = toZoned(at, calendar.zone);
   let remaining = Math.abs(days);
-  let cursor = at;
+  let offset = 0;
   let guard = 0;
+  let landed = at;
 
   while (remaining > 0) {
-    cursor = addDaysInZone(cursor, step, calendar.zone);
-    if (isBusinessDay(cursor, calendar)) remaining -= 1;
+    offset += step;
+    const candidate = localDay(origin, offset, calendar.zone);
+    if (candidate !== null && isBusinessDay(candidate, calendar)) {
+      remaining -= 1;
+      landed = candidate;
+    }
     guard += 1;
     // A calendar with every day marked as a holiday would otherwise loop forever.
-    if (guard > Math.abs(days) * 7 + 3650) return cursor;
+    if (guard > Math.abs(days) * 7 + 3650) return localDay(origin, offset, calendar.zone) ?? landed;
   }
-  return cursor;
+  return landed;
+}
+
+/**
+ * The calendar date `offset` days from `origin`'s, at `origin`'s wall time — or `null` when the
+ * zone never had that date (Samoa's 2011-12-30).
+ *
+ * Built from the calendar date and the ORIGINAL wall time, never from the day before it. Chaining
+ * `addDaysInZone` a day at a time carried a DST repair forward: 02:30 through a spring-forward
+ * Sunday became 03:30 there and stayed 03:30 on Monday, where 02:30 exists. `fromZoned` normalizes
+ * the day overflow, so `day + offset` is the whole walk.
+ */
+function localDay(origin: ZonedDateTime, offset: number, zone: TimeZone): Instant | null {
+  const candidate = fromZoned(
+    {
+      year: origin.year,
+      month: origin.month,
+      day: origin.day + offset,
+      hour: origin.hour,
+      minute: origin.minute,
+      second: origin.second,
+      millisecond: origin.millisecond,
+    },
+    zone,
+    { gap: 'next' },
+  );
+  const wanted = new Date(utcEpoch(origin.year, origin.month, origin.day + offset));
+  const got = toZoned(candidate, zone);
+  const exists =
+    got.year === wanted.getUTCFullYear() &&
+    got.month === wanted.getUTCMonth() + 1 &&
+    got.day === wanted.getUTCDate();
+  return exists ? candidate : null;
 }
 
 /** The next business day at the same local time; today if it already qualifies. */
@@ -97,13 +135,14 @@ export function businessDaysBetween(
   const start = sign === 1 ? from : to;
   const end = sign === 1 ? to : from;
   // `daysBetween` is the day count of the same half-open interval, so it is also the exact number
-  // of iterations — the loop cannot run away on a calendar `addDaysInZone` handles oddly.
+  // of iterations. Each one is a calendar DATE counted from `start`'s — not the instant a day after
+  // the previous one, which steps over a date the zone skipped and so reaches past `to`.
   const days = daysBetween(start, end, calendar.zone);
-  let cursor = start;
+  const origin = toZoned(start, calendar.zone);
   let count = 0;
   for (let index = 0; index < days; index += 1) {
-    if (isBusinessDay(cursor, calendar)) count += 1;
-    cursor = addDaysInZone(cursor, 1, calendar.zone);
+    const day = localDay(origin, index, calendar.zone);
+    if (day !== null && isBusinessDay(day, calendar)) count += 1;
   }
   // Guarded rather than `sign * count`: an empty interval read backwards would otherwise answer
   // `-0`, which `Object.is`, a `Map` key and every `toBe` treat as a value distinct from `0`.

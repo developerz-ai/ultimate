@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "570c65e82cfb0a7dca3258e476b559e39f3a77d3a9e11a8ed9431d65934d3ff4",
+  "buildId": "266011ead7a23e10e5994a21fb33c4218a2e0dfdc4bffe406e8b7f8a40023b80",
   "tiers": {
     "0": [
       "core",
@@ -970,6 +970,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_DB_COMMIT_UNKNOWN",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_DB_DRAIN_TIMEOUT",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -1030,6 +1035,11 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_DB_SIBLING_SCOPE_TIMEOUT",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_DB_STATEMENT_FAILED",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -1043,6 +1053,11 @@
       "code": "X_DB_STUDIO_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DB_TRANSACTION_ABORTED",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
     },
     {
       "code": "X_DB_UNAVAILABLE",

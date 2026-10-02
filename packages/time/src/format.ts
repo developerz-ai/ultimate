@@ -6,7 +6,7 @@
 
 import { assertLocale, cachedFormatter } from '@ultimat3/core';
 import { differenceMs, type Instant } from './instant';
-import { isoDateInZone } from './zoned';
+import { daysBetween, isoDateInZone } from './zoned';
 import { assertTimeZone, type TimeZone } from './zones';
 
 export type DateTimeStyle = 'short' | 'medium' | 'long' | 'full';
@@ -27,9 +27,10 @@ export interface FormatDateTimeOptions extends FormatContext {
 
 /** `14 Mar 2026, 09:00` in `en-GB` / `Europe/Berlin`. */
 export function formatDateTime(at: Instant, options: FormatDateTimeOptions): string {
+  const zone = zoneOf(options);
   const style = options.style ?? 'medium';
   return formatterFor(options.locale, {
-    timeZone: assertTimeZone(options.zone),
+    timeZone: zone,
     dateStyle: options.dateStyle ?? style,
     timeStyle: options.timeStyle ?? (style === 'full' || style === 'long' ? 'medium' : style),
     ...(options.hour12 === undefined ? {} : { hour12: options.hour12 }),
@@ -40,8 +41,9 @@ export function formatDate(
   at: Instant,
   options: FormatContext & { style?: DateTimeStyle },
 ): string {
+  const zone = zoneOf(options);
   return formatterFor(options.locale, {
-    timeZone: assertTimeZone(options.zone),
+    timeZone: zone,
     dateStyle: options.style ?? 'medium',
   }).format(at);
 }
@@ -50,8 +52,9 @@ export function formatTime(
   at: Instant,
   options: FormatContext & { style?: DateTimeStyle; hour12?: boolean },
 ): string {
+  const zone = zoneOf(options);
   return formatterFor(options.locale, {
-    timeZone: assertTimeZone(options.zone),
+    timeZone: zone,
     timeStyle: options.style ?? 'short',
     ...(options.hour12 === undefined ? {} : { hour12: options.hour12 }),
   }).format(at);
@@ -63,11 +66,12 @@ export function formatTime(
  * in a fixed position instead of wherever the locale pattern happens to put it.
  */
 export function formatWithOffset(at: Instant, options: FormatDateTimeOptions): string {
+  const zone = zoneOf(options);
   const style = options.style ?? 'medium';
   // `timeZoneName` is a component option, and Intl forbids mixing those with dateStyle /
   // timeStyle — so the components are spelled out here instead.
   const parts = formatterFor(options.locale, {
-    timeZone: assertTimeZone(options.zone),
+    timeZone: zone,
     year: 'numeric',
     month: style === 'short' ? 'numeric' : style === 'medium' ? 'short' : 'long',
     day: 'numeric',
@@ -100,44 +104,66 @@ export function formatIsoDate(at: Instant, zone: TimeZone): string {
   return isoDateInZone(at, assertTimeZone(zone));
 }
 
-export interface FormatRelativeOptions extends Omit<FormatContext, 'zone'> {
+export interface FormatRelativeOptions extends FormatContext {
   /** The reference point. Pass `now(clock)` — never let this default to a live clock. */
   now: Instant;
   numeric?: 'always' | 'auto';
   style?: 'long' | 'short' | 'narrow';
 }
 
-const RELATIVE_UNITS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
-  ['year', 31_536_000_000],
-  ['month', 2_592_000_000],
-  ['week', 604_800_000],
-  ['day', 86_400_000],
+const DAY_MS = 86_400_000;
+
+/** Under a day apart: elapsed time, largest unit first. */
+const CLOCK_UNITS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
   ['hour', 3_600_000],
   ['minute', 60_000],
   ['second', 1000],
 ];
 
-/** `in 3 days` / `2 hours ago`, picking the largest unit that fits. */
+/** A day or more apart: calendar days in the zone, largest unit first. */
+const CALENDAR_UNITS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 365],
+  ['month', 30],
+  ['week', 7],
+  ['day', 1],
+];
+
+/**
+ * `in 3 days` / `2 hours ago`, picking the largest unit that fits.
+ *
+ * From a day apart, the number is CALENDAR days in `zone` — local midnights crossed, the count
+ * `daysBetween` gives — never elapsed milliseconds truncated. "Tomorrow" is a statement about the
+ * calendar: 47 hours ahead is two midnights away, and `trunc(47 / 24)` called it tomorrow. That is
+ * why this takes a zone like every other formatter here; which day an instant falls on has no
+ * answer without one.
+ */
 export function formatRelative(at: Instant, options: FormatRelativeOptions): string {
+  const zone = zoneOf(options);
   const delta = differenceMs(options.now, at);
   const formatter = new Intl.RelativeTimeFormat(assertLocale(options.locale), {
     numeric: options.numeric ?? 'auto',
     style: options.style ?? 'long',
   });
   const magnitude = Math.abs(delta);
-  for (const [unit, ms] of RELATIVE_UNITS) {
-    if (magnitude >= ms) {
-      return formatter.format(Math.trunc(delta / ms), unit);
-    }
+  // `days === 0` a full day apart is 24 real hours inside one 25-hour local day: no midnight was
+  // crossed, so it is hours — "today" would be the calendar's answer to a question about elapsed
+  // time.
+  const days = magnitude >= DAY_MS ? daysBetween(options.now, at, zone) : 0;
+  for (const [unit, size] of CALENDAR_UNITS) {
+    if (Math.abs(days) >= size) return formatter.format(Math.trunc(days / size), unit);
+  }
+  for (const [unit, ms] of CLOCK_UNITS) {
+    if (magnitude >= ms) return formatter.format(Math.trunc(delta / ms), unit);
   }
   return formatter.format(0, 'second');
 }
 
 /** `14–16 Mar 2026` — one call, so the locale decides how to collapse the range. */
 export function formatRange(from: Instant, to: Instant, options: FormatDateTimeOptions): string {
+  const zone = zoneOf(options);
   const style = options.style ?? 'medium';
   const formatter = formatterFor(options.locale, {
-    timeZone: assertTimeZone(options.zone),
+    timeZone: zone,
     dateStyle: options.dateStyle ?? style,
     ...(options.timeStyle === undefined ? {} : { timeStyle: options.timeStyle }),
   }) as Intl.DateTimeFormat & {
@@ -171,6 +197,16 @@ const ORDINAL_SUFFIX: Record<Intl.LDMLPluralRule, string> = {
 export function ordinal(value: number): string {
   const category = new Intl.PluralRules('en', { type: 'ordinal' }).select(value);
   return `${value}${ORDINAL_SUFFIX[category]}`;
+}
+
+/**
+ * The options' zone, canonical — read FIRST in every formatter, and through `?.`: a call from
+ * untyped code with the options object missing is the same mistake as one with `zone` missing, and
+ * both are `X_TIMEZONE_INVALID` rather than a bare `TypeError` on the first property read.
+ */
+function zoneOf(options: { readonly zone: TimeZone }): TimeZone {
+  const loose: { readonly zone?: unknown } | null | undefined = options;
+  return assertTimeZone(loose?.zone as TimeZone);
 }
 
 const cache = new Map<string, Intl.DateTimeFormat>();

@@ -15,6 +15,10 @@ permanent set is a product surface; the temporary set is forced to shrink.
 | `permanent` | a real product or ops switch — a plan capability, a kill switch, a rollout that became the product | none; it legitimately lives forever |
 | `temporary` | scaffolding around an in-progress change | `expiresAt` and `owner` are **required**; past the expiry every evaluation reports `X_FLAG_EXPIRED` |
 
+`expiresAt` is ISO-8601 — a date (`2026-12-01`, UTC) or a date-time with `Z` or an offset, naming
+a day its month has. `'December 1, 2026'`, `'12/01/2026'`, `'2026-02-30'` and a clock time with no
+zone are `X_FLAG_EXPIRY_INVALID`: each parses, at an instant that depends on the host.
+
 Omitting `expiresAt` on a `temporary` flag is a **type** error, not a lint rule —
 `FlagExpiryIsMandatory` in `src/flag.ts` is a compile-time assertion that fails `tsc` if the union
 is ever loosened. `toFlag()` re-checks it at runtime, because a store snapshot and a plain-JS
@@ -157,7 +161,9 @@ configureErrorReporting({ reporter: sentryErrorReporter({ dsn }) });
 What this package adds is the rate limit core has no opinion about: one report per flag per
 `DEFAULT_REPORT_INTERVAL_MS` (1 hour), on the **monotonic** clock, so a flag read on every request
 does not become the loudest thing in the monitor — which is how a report that fires per call ends
-up muted and the debt invisible again. `configureFlags({ clock, reportEveryMs })` tunes it.
+up muted and the debt invisible again. `configureFlags({ clock, reportEveryMs })` tunes it;
+`reportEveryMs` is a whole number of milliseconds, 0 or more — `NaN`, `Infinity`, a fraction or a
+negative is refused (`X_INVARIANT`) and changes nothing.
 
 ## Projection
 

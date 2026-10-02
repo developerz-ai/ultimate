@@ -8,7 +8,7 @@
 // caught failure, while a flag is evaluated on every request.
 
 import type { Clock, UltimateError } from '@ultimat3/core';
-import { reportError, systemClock } from '@ultimat3/core';
+import { finiteCount, reportError, systemClock } from '@ultimat3/core';
 
 /**
  * One hour. Small enough that an overdue flag shows up the same day, large enough that a flag read
@@ -37,13 +37,23 @@ const lastReportedAt = new Map<string, number>();
  *
  * Only the clock. An interval change re-reads the SAME clock, so clearing there would let a report
  * through on every configure call and turn the rate limit into a suggestion.
+ *
+ * `reportEveryMs` is screened, and BEFORE the clock is touched so a refused call changes nothing.
+ * `now - previous < NaN` is false, so a `NaN` interval — `Number(process.env.X)` on an unset
+ * variable — removed the rate limit entirely and an overdue flag reported on every evaluation;
+ * `Infinity` did the opposite and muted it for good. `0` stays legal: every evaluation reporting
+ * is a decision a caller can make on purpose.
  */
 export function configureFlags(options: FlagsRuntimeOptions): void {
+  const interval =
+    options.reportEveryMs === undefined
+      ? reportEveryMs
+      : finiteCount('configureFlags', 'reportEveryMs', options.reportEveryMs);
   if (options.clock !== undefined && options.clock !== clock) {
     clock = options.clock;
     lastReportedAt.clear();
   }
-  if (options.reportEveryMs !== undefined) reportEveryMs = options.reportEveryMs;
+  reportEveryMs = interval;
 }
 
 export const flagsClock = (): Clock => clock;

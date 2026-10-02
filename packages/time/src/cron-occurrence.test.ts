@@ -170,3 +170,92 @@ function errorOf(run: () => unknown): { code?: unknown; cause?: unknown } {
   }
   return { code: 'no-throw', cause: 'no-throw' };
 }
+
+describe('the repeated hour of a fall-back night', () => {
+  // Berlin, 2026-10-25: 03:00 CEST becomes 02:00 CET at 01:00Z, so 02:00–02:59 local happens twice
+  // — 00:00Z–00:59Z and again 01:00Z–01:59Z.
+  test('an interval schedule fires through BOTH passes — twelve times in 01:00Z–02:00Z', () => {
+    const times = nextCronOccurrences('*/5 * * * *', BERLIN, fromIso('2026-10-25T00:50:00Z'), 14);
+    expect(times.map(toIso)).toEqual([
+      '2026-10-25T00:55:00.000Z',
+      ...Array.from(
+        { length: 12 },
+        (_, index) => `2026-10-25T01:${String(index * 5).padStart(2, '0')}:00.000Z`,
+      ),
+      '2026-10-25T02:00:00.000Z',
+    ]);
+    const second = times.filter(
+      (at) => toIso(at) >= '2026-10-25T01:00:00.000Z' && toIso(at) < '2026-10-25T02:00:00.000Z',
+    );
+    expect(second).toHaveLength(12);
+    for (const at of times) expect(matchesCron('*/5 * * * *', at, BERLIN)).toBe(true);
+  });
+
+  test('every instant matchesCron accepts in that night is one the walk returns', () => {
+    const from = fromIso('2026-10-24T23:00:00Z').getTime();
+    const matched: string[] = [];
+    for (let ms = from + 60_000; ms <= from + 4 * 3_600_000; ms += 60_000) {
+      const at = fromIso(new Date(ms).toISOString());
+      if (matchesCron('*/5 * * * *', at, BERLIN)) matched.push(toIso(at));
+    }
+    const walked = nextCronOccurrences('*/5 * * * *', BERLIN, fromIso('2026-10-24T23:00:00Z'), 48);
+    expect(walked.map(toIso)).toEqual(matched);
+  });
+
+  test('asked from INSIDE the second pass, the answer is the next instant of that pass', () => {
+    const next = nextCronOccurrence('*/5 * * * *', BERLIN, fromIso('2026-10-25T01:32:00Z'));
+    expect(toIso(next)).toBe('2026-10-25T01:35:00.000Z');
+  });
+
+  test('an hourly schedule runs every real hour', () => {
+    const times = nextCronOccurrences('0 * * * *', BERLIN, fromIso('2026-10-24T22:30:00Z'), 4);
+    expect(times.map(toIso)).toEqual([
+      '2026-10-24T23:00:00.000Z',
+      '2026-10-25T00:00:00.000Z',
+      '2026-10-25T01:00:00.000Z',
+      '2026-10-25T02:00:00.000Z',
+    ]);
+  });
+
+  test('a fixed-time schedule still fires ONCE, whichever instant it is asked from', () => {
+    // `30 2 * * *` names one moment a day. The second 02:30 (01:30Z) is never an occurrence — not
+    // walking from the first, and not when asked from inside the second pass, which is what the
+    // scheduler's bisection does.
+    for (const from of ['2026-10-25T00:30:00Z', '2026-10-25T00:45:00Z', '2026-10-25T01:10:00Z']) {
+      const next = nextCronOccurrence('30 2 * * *', BERLIN, fromIso(from));
+      expect(toIso(next)).toBe('2026-10-26T01:30:00.000Z');
+    }
+  });
+
+  test('the answer never moves backwards as the instant asked from moves forwards', () => {
+    for (const cron of ['*/5 * * * *', '30 2 * * *', '*/20 2 * * *', '0 */2 * * *']) {
+      let previous = 0;
+      const start = fromIso('2026-10-24T23:30:00Z').getTime();
+      for (let ms = start; ms <= start + 4 * 3_600_000; ms += 7 * 60_000) {
+        const at = fromIso(new Date(ms).toISOString());
+        const next = nextCronOccurrence(cron, BERLIN, at).getTime();
+        expect(next).toBeGreaterThan(ms);
+        expect(next).toBeGreaterThanOrEqual(previous);
+        previous = next;
+      }
+    }
+  });
+
+  test('a half-hour fall-back repeats its half hour too', () => {
+    // Lord Howe falls back 30 minutes: 2026-04-05 02:00 LHDT (+11) becomes 01:30 LHST (+10:30) at
+    // 2026-04-04T15:00Z, so 01:30–01:59 local happens twice.
+    const times = nextCronOccurrences(
+      '*/10 * * * *',
+      'Australia/Lord_Howe',
+      fromIso('2026-04-04T14:45:00Z'),
+      5,
+    );
+    expect(times.map(toIso)).toEqual([
+      '2026-04-04T14:50:00.000Z',
+      '2026-04-04T15:00:00.000Z',
+      '2026-04-04T15:10:00.000Z',
+      '2026-04-04T15:20:00.000Z',
+      '2026-04-04T15:30:00.000Z',
+    ]);
+  });
+});

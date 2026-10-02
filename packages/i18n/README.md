@@ -54,6 +54,8 @@ t('pagination.showing', { from: 1, to: 20, total: 137 });
 t('pagination.result', { count: 1 });   // "1 result"
 t('pagination.result', { count: 9 });   // "9 results"
 t('nav.settings');                      // "⟦nav.settings⟧" — fix it or ship it broken, visibly
+t('pagination.result');                 // "⟦count⟧ result" — vars or none, the template is always
+                                        // interpolated; t.raw(key) is the template itself
 ```
 
 | Call | Returns | Use for |
@@ -114,6 +116,7 @@ X_CATALOG_MISSING_KEYS: catalog is incomplete
 | Code | When |
 |---|---|
 | `X_LOCALE_UNSUPPORTED` | a tag outside the supported set was asserted, or a `defineCatalogs` default that is not one of its locales |
+| `X_LOCALE_INVALID` | `defineCatalogs` or `configureLocales` was given a tag that is not well-formed BCP 47 (`en_US`). **`@ultimat3/core`'s code**, raised by its `assertLocale` — not an `I18nError` and not in `I18N_ERROR_CODES` |
 | `X_CATALOG_MISSING_KEYS` | a shipped locale lacks a key the source uses |
 | `X_CATALOG_INVALID` | non-string leaf, bad key segment, or a dotted/nested collision |
 

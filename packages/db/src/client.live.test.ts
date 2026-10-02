@@ -104,4 +104,14 @@ describe.skipIf(!hasPostgres)('live · postgres · pool settings on the wire', (
     await blocker.execute(sql`ROLLBACK`);
     await owner.execute(sql`drop table x_live_lock`);
   });
+
+  // A state made only of letters is legal (`errcode = 'ABCDE'`), and it is the SERVER speaking:
+  // a shape rule that demanded a digit reported it as a database nobody could reach.
+  test('a five-letter custom SQLSTATE is the server refusing the statement', async () => {
+    const caught = (await freshClient()
+      .execute(sql`do $$ begin raise exception 'custom' using errcode = 'ABCDE'; end $$`)
+      .catch((error: unknown) => error)) as DbError;
+    expect(caught.code).toBe('X_DB_STATEMENT_FAILED');
+    expect(caught.cause).toContain('SQLSTATE ABCDE');
+  });
 });

@@ -170,12 +170,21 @@ const runFixtures = async (
   const dir = await mkdtemp(join(tmpdir(), 'x-leak-guard-'));
   try {
     for (const [name, source] of Object.entries(files)) await Bun.write(join(dir, name), source);
-    const run = Bun.spawnSync({
+    // Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so
+    // a child that does not come back is a worker the test timeout cannot end.
+    const run = Bun.spawn({
       cmd: ['bun', 'test', '--preload', PRELOAD, '.'],
       cwd: dir,
       env: { ...process.env, ULTIMATE_TEST_ALLOW_NET: '1' },
+      stdout: 'pipe',
+      stderr: 'pipe',
     });
-    return { output: `${run.stdout.toString()}${run.stderr.toString()}`, exitCode: run.exitCode };
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(run.stdout).text(),
+      new Response(run.stderr).text(),
+      run.exited,
+    ]);
+    return { output: `${stdout}${stderr}`, exitCode };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

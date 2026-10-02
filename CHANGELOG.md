@@ -14,8 +14,8 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slice 01 has landed: `schema`,
-`core`, and the gate's step deadline in `cli`.
+a later slice appends its group below the last one. `As of 2026-10` slices 01 and 02 have landed: `schema`
+and `core` with the gate's step deadline in `cli`, then tier 1 — `i18n`, `time`, `db`, `flags`.
 
 ### Added
 
@@ -29,6 +29,24 @@ Tier 0 — schema, core.
   One definition: `@ultimat3/http`'s problem document reads it from core. `registerPublicCause` and
   `resetPublicCauses` are its write half and test seam; an app still declares a public cause
   through `registerProblemMeta({ CODE: { publicCause: true } })`.
+
+Tier 1 — time, db.
+
+- **time:** `isoInZone(at, zone)` — ISO-8601 with the zone's own offset
+  (`2026-03-08T03:00:00-04:00`), seconds precision. `x tasks` renders `next`, `last` and `upcoming`
+  through it; the CLI's private copy is deleted.
+- **db:** `X_DB_TRANSACTION_ABORTED`, `X_DB_COMMIT_UNKNOWN` and `X_DB_SIBLING_SCOPE_TIMEOUT`, all
+  HTTP 500, with their constructors `transactionAborted`, `commitUnknown` and
+  `siblingScopeTimeout`; `TransactionOptions.siblingWaitMs` and `SIBLING_SCOPE_WAIT_MS` — see
+  Changed.
+- **db:** `x db gen` writes a changed `primaryKey`: drop `<table>_pkey`, add the new key, around the
+  table's column statements, reversed in `down`. It wrote nothing for a key change before. A
+  declared-nullable column leaving the key gets `drop not null`, in `up` and `down`. When a key
+  column is dropped, `down` carries the old key as a `-- backfill …, then:` comment, not a
+  statement. Two refusals, both `X_MIGRATION_IRREVERSIBLE`: a key that a recorded foreign key
+  references, naming the constraints; and a new key over a column the same migration adds with no
+  default, or a `null` one — add and backfill the column first, the key in the next migration. A
+  `<table>_pkey` name over 63 bytes — a table name over 58 — is `X_INVARIANT`.
 
 Tier 5 — cli.
 
@@ -123,6 +141,84 @@ Tier 0 — core.
   `X_CURSOR_SECRET_DEV` anywhere else: `x secrets set ULTIMATE_CURSOR_SECRET`. Cursors signed
   under the empty key stop verifying.
 
+Tier 1 — i18n.
+
+- **BREAKING — `t(key)` always interpolates.** With no vars, a placeholder renders the
+  missing-value marker (`Hello ⟦name⟧`, was the raw `Hello {name}`) and `{{` / `}}` unescape to
+  `{` / `}`. `t('a')` and `t('a', {})` are one render. To read a template, placeholders intact:
+  `t.raw(key)`.
+
+Tier 1 — time.
+
+- **BREAKING — an interval cron runs through both passes of a fall-back hour.** A schedule whose
+  minute or hour field is `*` or `*/n` fires in the repeated hour's second pass too; it went dark
+  for that hour. A fixed time (`30 2 * * *`) still fires once, on the first pass. `CronExpression`
+  gains a required `wildcardTime: boolean`: a hand-built literal adds it, `parseCron` sets it.
+- **BREAKING — cron fields are read exactly.** A name is its three letters or its whole word:
+  `mon`, `monday`, `mar`, `march`. `mond`, `monkey` and `marzipan` matched on their first three
+  letters; they are `X_CRON_INVALID`. So are `1-5-7`, `1/2/3` and `*/2/3`, which were read as
+  `1-5`, `1/2` and `*/2`.
+- **BREAKING — `formatRelative` requires `zone`.** `FormatRelativeOptions` extends `FormatContext`
+  whole; omitting `zone` is a type error. From a day apart the number is calendar days in that
+  zone, not elapsed milliseconds truncated: 47 hours ahead across two midnights is "in 2 days".
+- **BREAKING — `@ultimat3/time` refuses a number or a date it cannot represent.**
+  `addDaysInZone` with a non-integer `days` is `X_SCHEDULE_INVALID` (`0.5` moved nothing, `NaN`
+  was a bare `RangeError`). `formatDuration` / `formatDurationIso` with `NaN` or `±Infinity` are
+  `X_INVARIANT` (rendered `NaN days` and `P0D`). `plainDateUtc`, `addPlainDays` and `plainDateIn`
+  outside years 0000–9999 are `X_SCHEDULE_INVALID` (branded a five-digit year `PlainDate`).
+
+Tier 1 — db.
+
+- **BREAKING — `withTransaction` rejects when a statement failed and the body caught the error.**
+  `X_DB_TRANSACTION_ABORTED`. Postgres had already rolled the unit of work back, so the call used
+  to resolve, fire `onCommit`, and store nothing. Wrap the fallible statement in a nested
+  `withTransaction` and catch that — `await withTransaction(() => fallible()).catch(fallback)` — or
+  rethrow. A nested scope whose body swallowed a failure rejects the same way and loses only its
+  own work; a nested scope opened on an aborted transaction is refused by name. Any `COMMIT` the
+  server answers with `ROLLBACK` is this code, on both drivers.
+- **BREAKING — a `COMMIT` that rejects with no SQLSTATE is `X_DB_COMMIT_UNKNOWN`**, not
+  `X_DB_UNAVAILABLE`. The transaction is durable or it is not, so neither `onCommit` nor
+  `onRollback` runs; `onRollback` used to. The `fix:` is a `psql "$DATABASE_URL"` session: select a
+  row the transaction wrote, and re-run only when it is absent.
+- **BREAKING — a nested `withTransaction` refuses options a savepoint cannot honour**
+  (`X_INVARIANT`): `isolation`, `readOnly: true`, `deferrable: true`, or a `client` other than the
+  root's. They were ignored — `{ readOnly: true }` wrapped writes that committed. State them on
+  the outermost call; open a second database in its own unit of work.
+- **BREAKING — sibling nested `withTransaction` scopes run one after the other.** Savepoints are
+  a stack, so two scopes opened under one parent — `Promise.all` included — no longer interleave;
+  the second waits for the first's `RELEASE` or `ROLLBACK TO`. One that waits more than
+  `siblingWaitMs` rejects with `X_DB_SIBLING_SCOPE_TIMEOUT` (HTTP 500). The field is new on
+  `TransactionOptions`: default `SIBLING_SCOPE_WAIT_MS`, 30 s; `0` waits without a deadline; a
+  value that is not a whole number of 0 or more is `X_INVARIANT`. This refuses a nested body that
+  awaits a sibling scope — a cycle — and a sibling whose predecessor holds its turn past the wait.
+  Await the scopes in sequence, or pass `{ siblingWaitMs }`.
+- **BREAKING — `DriftKind` gains `'changed-primary-key'`.** A table whose live key differs from
+  the declared one — columns, order, or a key on one side only — is reported; it read `ok: true`.
+  The finding's `fix:` is one `psql "$DATABASE_URL" -c '…'` command — the drop/add pair, run
+  against the drifted database; `x db migrate` then re-checks. An exhaustive `switch` needs the
+  case. Nullability is excused for the declared key's columns only.
+- **BREAKING — `introspect()` reports the type and the index keys the catalog holds.**
+  `ColumnDescription.dataType` is `format_type` output: `numeric(12,2)`, `text[]`, an enum's name —
+  was `numeric`, `ARRAY`, `USER-DEFINED`. `IndexDescription.columns` keeps an expression key in its
+  position as `(lower(title))`; it was dropped.
+- **BREAKING — `CatalogColumn.generated` is `{ expression, storage: 'stored' | 'virtual' } | null`**
+  on `@ultimat3/db/schema-dump`, was `string | null`. Read `.expression`. A virtual generated
+  column is dumped `virtual`; it was dumped `stored`.
+- **BREAKING — `unrendered.sql` names more objects**: extended statistics, forced row security, a
+  column whose storage departs from its type's, an unpopulated materialized view, and a trigger on
+  a relation the dump does not create (filed under `09_triggers/` before, which refused the load).
+  An app whose database holds one re-runs `x db gen` and commits `packages/db/schema/`.
+
+Tier 1 — flags.
+
+- **BREAKING — `expiresAt` must be ISO-8601 and name a real day.** `'December 1, 2026'`,
+  `'12/01/2026'` and `'2026-02-30'` are `X_FLAG_EXPIRY_INVALID` at declaration; the first two were
+  read at the host's local midnight, the third as March 2nd. Write `'2026-12-01'`, or a date-time
+  with `Z` or an offset.
+- **BREAKING — `configureFlags({ reportEveryMs })` refuses `NaN`, `Infinity`, a negative and a
+  fraction** (`X_INVARIANT`). `NaN` removed the rate limit; `Infinity` muted the report. `0` is
+  legal.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -160,6 +256,32 @@ Tier 0 — schema, core.
   `@ultimat3/jobs`, `mutator` is `@ultimat3/action`, `route` is `@ultimat3/render`.
 - **core:** `X_SECRETS_KEY_INVALID`'s `fix:` branches on where the key was read. Read from the key
   file, it names the file to edit; it used to re-read the bad file into the variable.
+
+Tier 1 — i18n, time, db.
+
+- **i18n:** `defineCatalogs` screens every locale tag before it registers any. `X_LOCALE_INVALID`
+  used to arrive with the malformed tag and the other locales' strings already registered.
+- **i18n:** a `q` in `Accept-Language` that is not a plain decimal (`q=abc`, `q=1e0`) is 0. It was
+  left at 1, so a malformed range outranked every well-formed one.
+- **time:** `addBusinessDays` keeps the original wall time across a DST day: 02:30 carried through
+  a spring-forward Sunday landed at 03:30 on Monday. `businessDaysBetween` walks calendar dates,
+  so it no longer counts past `to` across a date the zone skipped; a date the zone never had is
+  not a day in either.
+- **time:** a zone that is not a string — `undefined`, `null`, a number, an object — is
+  `X_TIMEZONE_INVALID` from every public zoned function, and so is a formatter called with no
+  options object. Each was a bare `TypeError`. `configureTime({ defaultZone: undefined })` no
+  longer overwrites the zone in force.
+- **db:** whether a five-character `code` is a SQLSTATE is decided by where the error came from,
+  not its shape. A syscall error (`syscall`, or a numeric `errno`) such as `EPIPE` or `E2BIG` is
+  `X_DB_UNAVAILABLE`; it was `X_DB_STATEMENT_FAILED`. A server error (it carries `severity`) with a
+  letters-only state such as `ABCDE` is still `X_DB_STATEMENT_FAILED`. With neither marker a code
+  counts only if it carries a digit.
+- **db:** a ragged array or an Invalid Date parameter is `X_INVARIANT`, by one shape rule on
+  Bun.SQL and PGlite alike; it was `X_DB_UNAVAILABLE`. A `Uint8Array` inside a bound array is one `bytea` element, not its bytes as
+  separate elements.
+- **db:** `refuseDependentViews` considers only tables visible on the search path.
+- **db:** a `ROLLBACK TO SAVEPOINT` that fails marks the root aborted, so its `COMMIT` is refused
+  rather than storing a scope its caller was told had rolled back.
 
 ## 23.0.0 - 2026-10-02
 

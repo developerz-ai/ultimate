@@ -79,6 +79,12 @@ export async function introspectCatalog(
   const unrendered = await unrenderedRows(client, schema);
   const known = new Set(tables.map((table) => table.name));
   const materialized = new Set(views.filter((view) => view.kind === 'm').map((view) => view.name));
+  // A trigger loads only onto a relation the dump creates: a plain table, or a view (`instead
+  // of`). One on a partitioned table or a partition was filed under `09_triggers/` for a table no
+  // file creates, and the load refused the whole dump with `X_SCHEMA_DUMP_DRIFT`.
+  const viewNames = new Set(views.map((view) => view.name));
+  const loadable = (trigger: { readonly table_name: string }): boolean =>
+    known.has(trigger.table_name) || viewNames.has(trigger.table_name);
 
   return {
     schema,
@@ -129,6 +135,7 @@ export async function introspectCatalog(
         ),
       ),
     triggers: triggers
+      .filter(loadable)
       .map((row) => ({
         table: row.table_name,
         name: row.name,
@@ -141,7 +148,17 @@ export async function introspectCatalog(
           (trigger) => trigger.name,
         ),
       ),
-    unrendered: unrendered
+    unrendered: [
+      ...unrendered,
+      // Named rather than dropped, the rule `CatalogUnrendered` states.
+      ...triggers
+        .filter((trigger) => !loadable(trigger))
+        .map((trigger) => ({
+          kind: 'trigger',
+          name: trigger.name,
+          table_name: trigger.table_name,
+        })),
+    ]
       .map((row) => ({ kind: row.kind, name: row.name, table: row.table_name }))
       .sort(
         by(

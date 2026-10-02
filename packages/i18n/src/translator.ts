@@ -72,7 +72,11 @@ export function createTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOCA
     const resolved = resolveKey(key, vars);
     const template = hasExact(resolved) ? catalog[resolved] : undefined;
     if (template === undefined) return `⟦${key}⟧`;
-    return vars === undefined ? template : interpolate(template, vars);
+    // Always, never only when `vars` was passed: skipping it made `t('a')` and `t('a', {})` two
+    // renders of one message — the first put the raw `Hello {name}` on the page where the second
+    // put the loud `⟦name⟧`, and left `{{` escaped. `interpolate` returns a brace-free template
+    // untouched, so the common case pays one `includes`.
+    return interpolate(template, vars);
   };
 
   return Object.assign(translate, {

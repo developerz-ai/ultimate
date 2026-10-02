@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no temp-dir or r
 import { tmpdir } from 'node:os'; // why: Bun exposes no temp-dir location.
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { exec } from './exec';
 import { lastmodOf, resetLastmodCache } from './sitemap-lastmod';
 
 const REPO = join(import.meta.dir, '..', '..', '..');
@@ -30,13 +31,16 @@ describe('lastmodOf — fallbacks', () => {
 });
 
 describe('lastmodOf', () => {
-  test("'git' is the last commit that touched the file, in UTC", () => {
-    const run = Bun.spawnSync(['git', 'log', '-1', '--format=%cI', '--', 'package.json'], {
+  test("'git' is the last commit that touched the file, in UTC", async () => {
+    // Awaited through the CLI's one subprocess boundary, never `Bun.spawnSync`: a synchronous wait
+    // holds the test worker's only thread, so a git that does not come back is a worker the test
+    // timeout cannot end.
+    const run = await exec(['git', 'log', '-1', '--format=%cI', '--', 'package.json'], {
       cwd: REPO,
     });
-    const committed = run.stdout.toString().trim();
+    const committed = run.stdout.trim();
     // A checkout without history (an exported tarball) has nothing to compare against.
-    if (run.exitCode !== 0 || committed === '') return;
+    if (!run.ok || committed === '') return;
     expect(lastmodOf('package.json', 'git', REPO)).toBe(new Date(committed).toISOString());
   });
 

@@ -57,7 +57,9 @@ unitTest('every label the island shows is a catalog string, in the request’s l
   expect(labels).toContain(t('app.runs.state.awaiting'));
   expect(labels).toContain(t('app.runs.kind.prompt'));
   expect(labels).toContain(t('app.runs.fault.start'));
-  expect(labels).toContain(t('app.runs.accounts_other'));
+  // The island interpolates `{count}` itself, so what it is handed is the TEMPLATE — `t.raw`,
+  // never `t()`, which renders the placeholder.
+  expect(labels).toContain(t.raw('app.runs.accounts_other') ?? '');
   expect(labels).toContain(t('app.runs.busy'));
   expect(labels).toContain(t('app.runs.usage.navigations'));
 });

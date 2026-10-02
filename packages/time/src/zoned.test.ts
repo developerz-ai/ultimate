@@ -6,6 +6,7 @@ import {
   endOfDay,
   fromZoned,
   fromZonedDetailed,
+  isoInZone,
   isSameLocalDay,
   startOfDay,
   toZoned,
@@ -311,5 +312,45 @@ describe('isSameLocalDay', () => {
   test('an unknown zone raises X_TIMEZONE_INVALID rather than answering false', () => {
     const at = fromIso('2026-03-14T00:30:00Z');
     expect(() => isSameLocalDay(at, at, 'Mars/Olympus')).toThrow(/X_TIMEZONE_INVALID/);
+  });
+});
+
+describe('addDaysInZone takes a whole number of days', () => {
+  const at = fromIso('2026-03-14T08:00:00Z');
+  for (const days of [Number.NaN, 0.5, Number.POSITIVE_INFINITY, 2 ** 60]) {
+    test(`${days} is X_SCHEDULE_INVALID, never a bare RangeError or a silent no-op`, () => {
+      let caught: unknown;
+      try {
+        addDaysInZone(at, days, BERLIN);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: 'X_SCHEDULE_INVALID' });
+    });
+  }
+
+  test('a whole count still moves', () => {
+    expect(toIso(addDaysInZone(at, -2, BERLIN))).toBe('2026-03-12T08:00:00.000Z');
+  });
+});
+
+describe('isoInZone', () => {
+  test("renders the zone's own offset, never UTC Z for a non-UTC zone", () => {
+    const winter = fromIso('2026-01-15T08:00:00Z');
+    const summer = fromIso('2026-07-15T07:00:00Z');
+    expect(isoInZone(winter, NEW_YORK)).toBe('2026-01-15T03:00:00-05:00');
+    expect(isoInZone(summer, NEW_YORK)).toBe('2026-07-15T03:00:00-04:00');
+    expect(isoInZone(winter, UTC)).toBe('2026-01-15T08:00:00Z');
+    expect(isoInZone(winter, KATHMANDU)).toBe('2026-01-15T13:45:00+05:45');
+  });
+
+  test('the two passes of a repeated hour read differently', () => {
+    expect(isoInZone(fromIso('2026-10-25T00:30:00Z'), BERLIN)).toBe('2026-10-25T02:30:00+02:00');
+    expect(isoInZone(fromIso('2026-10-25T01:30:00Z'), BERLIN)).toBe('2026-10-25T02:30:00+01:00');
+  });
+
+  test('round-trips through fromIso', () => {
+    const at = fromIso('2026-03-14T08:00:07Z');
+    expect(toIso(fromIso(isoInZone(at, ADELAIDE)))).toBe(toIso(at));
   });
 });

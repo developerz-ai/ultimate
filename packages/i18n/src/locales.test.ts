@@ -138,3 +138,24 @@ describe('a registered tag spelled with a region', () => {
     }
   });
 });
+
+describe('parseAcceptLanguage and a q that is not a number', () => {
+  test('a non-numeric q is 0 — the range is dropped, never promoted to full quality', () => {
+    // `q=abc` failed the digits-only pattern, so the default of 1 stood and a malformed range
+    // outranked every well-formed one after it.
+    expect(parseAcceptLanguage('de;q=abc,es;q=0.3')).toEqual([{ tag: 'es', quality: 0.3 }]);
+    expect(negotiateLocale('de;q=abc,es;q=0.3', supported)).toBe('es');
+    for (const q of ['', 'NaN', '1.5.2', '.', '0x1', '-1', 'Infinity', '1e0']) {
+      expect(parseAcceptLanguage(`de;q=${q},es;q=0.3`).map((range) => range.tag)).toEqual(['es']);
+    }
+  });
+
+  test('a numeric q still ranks, and an absent q is still 1', () => {
+    expect(parseAcceptLanguage('de;q=0.5, es;Q = 0.9 ,en').map((range) => range.tag)).toEqual([
+      'en',
+      'es',
+      'de',
+    ]);
+    expect(parseAcceptLanguage('de;q=1.000;x=y')).toEqual([{ tag: 'de', quality: 1 }]);
+  });
+});

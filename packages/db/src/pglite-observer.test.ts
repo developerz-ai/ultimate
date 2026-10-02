@@ -178,4 +178,36 @@ describe('the statement observer', () => {
     expect(observer.seen[0]?.attribution).toEqual({ entity: 'members', op: 'findMany' });
     expect(observer.seen[0]?.expected).toBe('one lookup per id');
   });
+
+  // The embedded driver must answer as `sendOn` does: its own serializer throws a bare
+  // `RangeError` for an Invalid Date, and `driverError` read that as an unreachable database.
+  test('an Invalid Date is refused with X_INVARIANT before the driver is reached', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+    const error = await failure(() => client.query(sql`select ${new Date(Number.NaN)}`));
+    expect(error.code).toBe('X_INVARIANT');
+    expect(driver.calls).toEqual([]);
+  });
+
+  test('a ragged array is refused with X_INVARIANT before the driver, as the pooled funnel does', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+    const ragged = { text: 'select $1::text[][]', values: [[['a', 'b'], ['c']]] };
+    const error = await failure(() => client.query(ragged));
+    expect(error.code).toBe('X_INVARIANT');
+    expect(driver.calls).toEqual([]);
+  });
+
+  test('a rectangular array still reaches the driver untouched: PGlite encodes its own', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+    const values = [
+      [
+        ['a', 'b'],
+        ['c', 'd'],
+      ],
+    ];
+    await client.query({ text: 'select $1::text[][]', values });
+    expect(driver.calls[0]?.values).toBe(values);
+  });
 });

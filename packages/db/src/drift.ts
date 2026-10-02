@@ -9,6 +9,7 @@ import {
   changedColumn,
   changedForeignKey,
   changedIndex,
+  changedPrimaryKey,
   missingCheck,
   missingColumn,
   missingForeignKey,
@@ -23,6 +24,7 @@ import { foreignKeyTarget, onDeleteRule } from './foreign-key';
 import { indexMethodOf } from './index-method';
 import { findTable, introspect, type SchemaDescription, type TableDescription } from './introspect';
 import { type LedgerRow, type Migration, readLedger } from './migrate';
+import { sameColumns } from './primary-key';
 
 // Re-exported explicitly, never `export *`: `src/index.ts` publishes both from `'./drift'`, so the
 // split is invisible to `@ultimat3/db`'s public surface and no consumer moves with it.
@@ -179,22 +181,25 @@ function compareChecks(live: TableDescription, expected: TableDescription): Drif
 }
 
 /**
- * A primary key column is `NOT NULL` in the catalog whether or not anything declared it — Postgres
- * adds the constraint with the key. Both sides are therefore read through the union of the two
- * primary keys, or a table whose snapshot spells its key column nullable reports a difference
- * against a database that is exactly right and cannot be anything else. The union, not one side:
- * a key present on only one of them is a difference the *key* comparison owns, and reporting it
- * again as a nullability change would be one fault with two findings.
+ * The two key lists, compared in ORDER. The comment that used to stand here said a key on one side
+ * only "is a difference the key comparison owns" — and no key comparison existed, so a table
+ * re-keyed by hand, or one whose key no migration ever produced, read `ok: true`.
  */
-function keyColumnsOf(live: TableDescription, expected: TableDescription): ReadonlySet<string> {
-  return new Set([...live.primaryKey, ...expected.primaryKey]);
+function comparePrimaryKey(live: TableDescription, expected: TableDescription): DriftDifference[] {
+  if (sameColumns(live.primaryKey, expected.primaryKey)) return [];
+  const held = live.indexes.find((index) => index.primary)?.name;
+  return [changedPrimaryKey(live.name, live.primaryKey, held, expected.primaryKey)];
 }
 
 function compareTable(live: TableDescription, expected: TableDescription): DriftDifference[] {
   const differences: DriftDifference[] = [];
   const expectedColumns = new Map(expected.columns.map((column) => [column.name, column]));
   const liveColumns = new Map(live.columns.map((column) => [column.name, column]));
-  const keyColumns = keyColumnsOf(live, expected);
+  // A primary key column is `NOT NULL` in the catalog whether or not anything declared it —
+  // Postgres adds the constraint with the key — so a snapshot spelling its key column nullable is
+  // not drift. The DECLARED key only: a column the database alone keys stays NOT NULL after the
+  // stray constraint is dropped, which is a second fault and reported as one.
+  const keyColumns = new Set(expected.primaryKey);
   for (const column of live.columns) {
     if (expectedColumns.has(column.name)) continue;
     differences.push(unexpectedColumn(live.name, column.name));
@@ -213,6 +218,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
       differences.push(changedColumn(live.name, column.name, counterpart.nullable));
     }
   }
+  differences.push(...comparePrimaryKey(live, expected));
   differences.push(...compareIndexes(live, expected));
   differences.push(...compareChecks(live, expected));
   differences.push(...compareForeignKeys(live, expected));

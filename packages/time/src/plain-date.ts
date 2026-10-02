@@ -91,10 +91,20 @@ export function plainDateParts(date: PlainDate): PlainDateParts {
 /**
  * The calendar date an instant falls on **in a named zone** — the one conversion between the two,
  * and it takes a zone because there is no other honest way to make it. 09:00 UTC on the 14th is
- * still the 13th in Los Angeles.
+ * still the 13th in Los Angeles. A local date outside years 0000-9999 is refused, as `plainDateUtc`
+ * refuses one.
  */
-export const plainDateIn = (at: Instant, zone: TimeZone): PlainDate =>
-  isoDateInZone(at, zone) as PlainDate;
+export function plainDateIn(at: Instant, zone: TimeZone): PlainDate {
+  const local = isoDateInZone(at, zone);
+  // Checked, not cast: an instant late on 9999-12-31 is already year 10000 east of Greenwich, and
+  // `isoDateInZone` spells that with five digits — a string `isPlainDate` rejects. `isoDateInZone`
+  // itself stays total: it returns a plain string, and `isSameLocalDay` compares two of them for
+  // instants in any year a `Date` can hold.
+  if (!isPlainDate(local)) {
+    throw scheduleInvalid('date', local, 'a calendar date in years 0000-9999');
+  }
+  return local;
+}
 
 /**
  * The calendar date a `Date` holds when read as UTC. For ONE caller: a Postgres driver hands a
@@ -104,7 +114,14 @@ export const plainDateIn = (at: Instant, zone: TimeZone): PlainDate =>
  */
 export function plainDateUtc(at: Date): PlainDate {
   const checked = instant(at);
-  return `${pad(checked.getUTCFullYear(), 4)}-${pad(checked.getUTCMonth() + 1, 2)}-${pad(
+  const year = checked.getUTCFullYear();
+  // The form has four year digits and no sign. A `Date` reaches 275760 and -271821, and padding
+  // those gave `10000-01-01` branded `PlainDate` — a value `isPlainDate` rejects and a Postgres
+  // `date` parameter reads as something else. Refused, so the brand is never a lie.
+  if (year < 0 || year > 9999) {
+    throw scheduleInvalid('date', checked.toISOString(), 'a calendar date in years 0000-9999');
+  }
+  return `${pad(year, 4)}-${pad(checked.getUTCMonth() + 1, 2)}-${pad(
     checked.getUTCDate(),
     2,
   )}` as PlainDate;
@@ -120,7 +137,10 @@ export const comparePlainDates = (left: PlainDate, right: PlainDate): number =>
 
 const DAY_MS = 86_400_000;
 
-/** Whole days added, over UTC midnights, so no DST rule and no zone can shorten a day here. */
+/**
+ * Whole days added, over UTC midnights, so no DST rule and no zone can shorten a day here. A
+ * result outside years 0000-9999 is refused by `plainDateUtc` rather than branded.
+ */
 export function addPlainDays(date: PlainDate, days: number): PlainDate {
   if (!Number.isSafeInteger(days)) {
     throw scheduleInvalid('days', days, 'a whole number of days');

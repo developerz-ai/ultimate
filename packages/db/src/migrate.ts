@@ -13,7 +13,7 @@ import { poolProfileFor } from './pool-profile';
 import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 import { statementsOf } from './statement-split';
-import { type DbTx, withTransaction } from './transaction';
+import { withTransaction } from './transaction';
 
 export const LEDGER_TABLE = 'x_migrations';
 
@@ -312,7 +312,7 @@ async function withAdvisoryLock<T>(
  * migration loop, and nesting here would replace that reason with a narrower one for no gain. An
  * empty script sends nothing at all, which is how a no-op migration reaches its ledger row.
  */
-async function applyScript(tx: DbTx, script: string): Promise<void> {
+async function applyScript(tx: DbClient, script: string): Promise<void> {
   for (const statement of statementsOf(script)) await tx.execute(raw(statement));
 }
 
@@ -331,7 +331,7 @@ async function applyScript(tx: DbTx, script: string): Promise<void> {
  * it, exactly like `statementTimeoutMs`. The failure it produces is `55P03`, typed as
  * `X_DB_LOCK_TIMEOUT` by `driverError` with the `pg_stat_activity` read as its fix.
  */
-async function setLockTimeout(tx: DbTx, lockTimeoutMs: number): Promise<void> {
+async function setLockTimeout(tx: DbClient, lockTimeoutMs: number): Promise<void> {
   if (lockTimeoutMs <= 0) return;
   // `SET LOCAL` takes no parameter placeholder, and the value is a validated integer of ours.
   await tx.execute(raw(`SET LOCAL lock_timeout = ${Math.round(lockTimeoutMs)}`));

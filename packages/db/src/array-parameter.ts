@@ -28,16 +28,43 @@ import { assert } from '@ultimat3/core';
  * backslash, or leading/trailing whitespace the parser would strip — plus the empty string, which
  * unquoted is not an element at all.
  */
+const hexOf = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+/**
+ * A `Date` as the instant Postgres reads, or `X_INVARIANT` for one that holds no instant.
+ * `toISOString()` on an Invalid Date is a bare `RangeError`, and inside the funnel that became
+ * "cannot reach the database". `position` names the parameter when the caller knows it.
+ */
+export function instantText(value: Date, position?: number): string {
+  assert(
+    !Number.isNaN(value.getTime()),
+    `${position === undefined ? 'an array element' : `parameter $${position}`} is an Invalid Date, which names no instant Postgres could store`,
+    'new Date(input) answers Invalid Date for text it cannot parse — parse it with t.date first, or bind null: Number.isNaN(value.getTime()) ? null : value',
+  );
+  return value.toISOString();
+}
+
 function element(value: unknown): string {
   if (value === null || value === undefined) return 'NULL';
   // A Date is ALWAYS quoted, even though an ISO-8601 instant carries no character the grammar
   // reads as structure. A timestamp element is conventionally quoted, and the alternative is a
   // rule that holds only while nothing ever renders a timestamp with a space in it.
-  if (value instanceof Date) return `"${value.toISOString()}"`;
+  if (value instanceof Date) return `"${instantText(value)}"`;
+  // BYTEA's hex form, never `String(bytes)` — that is `1,2,3`, three elements where one was bound,
+  // and no error anywhere. The backslash is doubled because a quoted element reads `\\` as one.
+  if (value instanceof Uint8Array) return `"\\\\x${hexOf(value)}"`;
   const text = String(value);
   const structural = /[{},"\\\s]/.test(text) || text.length === 0 || text.toUpperCase() === 'NULL';
   if (!structural) return text;
   return `"${text.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+/** The extents along a value's FIRST path, `2x3` for two rows of three — `''` for a scalar. */
+function extentsOf(value: unknown): string {
+  if (!Array.isArray(value)) return '';
+  const inner = extentsOf(value[0]);
+  return inner === '' ? String(value.length) : `${value.length}x${inner}`;
 }
 
 /**
@@ -70,6 +97,16 @@ export function pgArrayLiteral(values: readonly unknown[]): string {
     nested.every((row) => row.length === width),
     `a nested array parameter is ragged — its rows are ${nested.map((row) => row.length).join(', ')} long, and Postgres has no jagged array`,
     'give every row the same length, or bind one array per row',
+  );
+  // Every extent, not only this level's: `[[['a']], [['b', 'c']]]` is two rows of one element each,
+  // each rectangular on its own, and `{{{a}},{{b,c}}}` is the same 22P02 — measured on 17. Each
+  // row is checked against itself by the recursion below, so comparing one path's extents per row
+  // is comparing all of them.
+  const depth = extentsOf(nested[0]);
+  assert(
+    nested.every((row) => extentsOf(row) === depth),
+    `a nested array parameter is ragged below its first level — its rows have the extents ${nested.map((row) => extentsOf(row)).join(' | ')}, and Postgres has no jagged array`,
+    'give every branch the same length at every depth, or bind one array per row',
   );
   return `{${values.map((value) => (Array.isArray(value) ? pgArrayLiteral(value) : element(value))).join(',')}}`;
 }

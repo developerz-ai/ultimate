@@ -185,6 +185,7 @@ export { BREAKER_COOLDOWN_MS, BREAKER_FAILURES, replicatedClient } from './repli
 export { type DbNode, isPlainRead } from './replica-route';
 export type { ReplicaScope } from './replica-scope';
 export { markScopeWrote, replicaScope, withReplicaReads } from './replica-scope';
+export { SIBLING_SCOPE_WAIT_MS } from './sibling-turn';
 export { snapshotJson } from './snapshot-json';
 export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';
@@ -203,8 +204,10 @@ export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState, sqlStateCode }
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { STATEMENT_ATTRIBUTE } from './statement-span';
 export { statementsOf } from './statement-split';
-export type { DbTx, IsolationLevel, TransactionOptions } from './transaction';
-export { beginStatement, currentTx, withTransaction } from './transaction';
+export { currentTx, withTransaction } from './transaction';
+export { commitUnknown, siblingScopeTimeout, transactionAborted } from './transaction-errors';
+export type { DbTx, IsolationLevel, TransactionOptions } from './transaction-options';
+export { beginStatement } from './transaction-options';
 export type { GeneratableForm } from './ungeneratable';
 export { GENERATABLE_FORMS, ungeneratableStatements } from './ungeneratable';
 export type { UnrenderedDeclaration } from './unrendered';

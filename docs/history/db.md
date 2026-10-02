@@ -1496,3 +1496,106 @@ survives the round trip whole.
 - `ALTER DEFAULT PRIVILEGES` is scoped to an object's creator, so layer 1 covers future tables
   only for the roles in `creators` (default: the connected user). Migrations running as another
   DB user must name it, or tables created later are not selectable by `ultimate_readonly`.
+
+## Moved out on 2026-10-02 (plan 101, deep-dive slice 02)
+
+`packages/db/CLAUDE.md` gained the transaction-end, primary-key and dump-fidelity rules and was at
+its 24,576 B ceiling, so the bullets below were shortened there. This is their wording before the
+cut — verbatim, and a record: where a bullet is marked **superseded**, the rule itself changed in
+the same slice and the current one is in that file.
+
+### Connections and transactions
+
+- **The third rule is both drivers'**: `client.ts`'s pinned handle also runs direct only while held.
+  `release()` is idempotent on both; `DbConnection` and `Turn` are `Disposable` (`[Symbol.dispose]` is
+  `release()`).
+- **`sqlstate.ts`**: `errno` first, `code` second, both shape-tested (`^[0-9A-Z]{5}$`).
+  **Superseded**: the shape now also requires a digit (`^(?=.*[0-9])[0-9A-Z]{5}$`) — five uppercase
+  letters is what a socket errno looks like, and `EPIPE` read as a SQLSTATE became
+  `X_DB_STATEMENT_FAILED`, "fix the SQL", for a dead socket. **Superseded again, same PR**: the
+  digit rule rejected a legal server state (`raise … using errcode = 'ABCDE'`) and let `E2BIG`
+  through, so the reading is by provenance (`isState`): `severity` marks a server ErrorResponse on
+  both drivers, `syscall` or a numeric `errno` marks the socket layer, and only an object marked
+  as neither falls back to "carries a digit".
+- **`withTransaction(fn, { retry })` re-runs `fn` only on `40001`/`40P01`**, default 0; each attempt
+  its own pin, `BEGIN` and undo list (`runRoot`); a nested `retry` is `X_INVARIANT`. A re-run waits
+  (`transaction-backoff.ts`: core's `backoffDelay`, 10 ms → 500 ms, full jitter; `{ sleep, random }`
+  are injection seams); nothing waits at retry 0 or after the last attempt.
+- **Four codes are classified `retryable`** (`DB_ERROR_RETRY`: `X_DB_SERIALIZATION_FAILURE`,
+  `X_DB_LOCK_TIMEOUT`, `X_DB_POOL_EXHAUSTED`, `X_MIGRATE_CONCURRENT`); terminal ones are deliberately
+  unclassified (`errors-retry.test.ts` asserts the absence). Core's `retry()` executor is NOT adopted.
+- Transaction control: `ROLLBACK` / `ROLLBACK TO SAVEPOINT` are best-effort; `SAVEPOINT` and
+  `RELEASE SAVEPOINT` are deliberately uncaught. **Superseded**: a `ROLLBACK TO SAVEPOINT` that
+  fails is no longer forgotten — the nested call still rejects with the body's error, and the root
+  is marked aborted so its `COMMIT` is refused. The root's own `ROLLBACK` is still best-effort, and
+  `SAVEPOINT` / `RELEASE SAVEPOINT` are still uncaught. Why: the swallowed failure left a scope's
+  writes in a transaction whose caller had been told they were rolled back, and the `COMMIT` that
+  followed either stored them or was answered `ROLLBACK` with no error and reported as committed.
+- **`close()` is BOUNDED by the driver's own `{ timeout }` in SECONDS** (`drainTimeoutMs / 1000`);
+  `drainTimeoutMs: 0` sends no option; the verdict is elapsed time on `performance.now()`
+  (`X_DB_DRAIN_TIMEOUT`). `pool-drain.test.ts`, `pool-drain.live.test.ts`. `close()` clears the cached
+  driver before awaiting the teardown.
+- **`pool-gauge.ts` derives `db_pool_max` / `db_pool_in_use` / `db_pool_waiting` from DEMAND** —
+  `Bun.SQL` publishes no occupancy. `client.ts` is the one counter: `run()` from send to settle, a
+  pin from the ask to its (idempotent) release; a statement ON a pin is not counted again. Declared
+  on the first tracked pool, never at import. `pool-gauge.test.ts`.
+- **`libpq-options.ts` merges the framework's `options` into the operator's**: the framework wins on
+  the names it sets, the operator keeps every other flag; the bound is emitted for all six roles.
+- **`DATABASE_URL`'s scheme is screened at boot** (`POSTGRES_SCHEMES`: `postgres:`, `postgresql:`); the
+  received scheme is never echoed (it may be a host or a credential). `connection-url.test.ts`.
+
+### Observation
+
+- **`observe.ts`: one process-wide `StatementObserver`** (`setStatementObserver()` /
+  `statementObserver()`). Guard at the call site; one observer, not a list; the seam swallows nothing;
+  `onStatement` is synchronous and must not issue SQL. Only `runOn` (`statement-funnel.ts`) and
+  `statement()` (`pglite.ts`) invoke it; both observe success and failure, and notify outside the
+  statement's own `try`.
+- **`statement-span.ts`**: `withStatementSpan` wraps the send alone — `db.<verb>`, attribute
+  `STATEMENT_ATTRIBUTE` (exported; `@ultimat3/cli`'s `dev-traces.ts` imports it), OTel kind `client`,
+  opened only when an observer is installed.
+- **`expected-loop.ts` is the ONLY suppression**: `expectedQueryLoop(reason, fn)`, innermost reason,
+  blank is `X_INVARIANT`; the funnel stamps `expected`; it suppresses a verdict, never a statement. The
+  framework's own loops declare themselves (`migrate()`, `rollback()`, `@ultimat3/admin`'s
+  `search.ts`).
+
+### Migrations and generation
+
+- **`refuseDependentViews(tx, script)`** (`dependent-view.ts`) runs before each migration's first
+  statement: a word scan over `sql-scan.ts` finds retyped columns, one catalog round trip, the pair
+  filtered in JS, and `X_MIGRATION_VIEW_DEPENDS` carries the `drop view` / `create view` from
+  `pg_get_viewdef` (built through `identifier()` inside a `try`).
+- A generated column's tests: `generate-generated-column.live.test.ts`,
+  `generate-generated-rebuild.live.test.ts`.
+- **`REPLICA IDENTITY FULL` is emitted by a PARAMETER** (`GenerateOptions.replicaIdentityFull`, passed
+  by `@ultimat3/cli`'s `db-generate.ts` from `describeQueries()`' `subscribes:`), in
+  `replica-identity.ts`: recorded as `replicaIdentityFull: true` or absent; the snapshot records the
+  union; dead last in `up`; never destructive; a name no entity declares is skipped; never reverted;
+  `down` is `replica identity default` except on a table this migration creates.
+- **`declaredSchema()` answers the NEWEST migration's snapshot or `undefined`**; `checkDrift` turns
+  that into `unknown-schema`, and `x db gen` refuses with `X_MIGRATION_SNAPSHOT_MISSING`. Both lead with
+  the same two remedies in the same order: restore the sidecar (`git checkout --`), or delete the
+  migration's files FIRST and only then run `x db gen`. `snapshotSiblings` / `migrationNameOf` build
+  the second command from the caller's path; both commands are screened (`unknownSchema` through
+  `shellInertIdentifier`, `migrationSnapshotMissing` through `renderFixShellArg`), degrading the whole
+  line to prose.
+
+### Drift, the schema dump, branches
+
+- `compareTable` compares existence and **nullability** (primary-key columns excluded by the union of
+  both sides' keys); the type is not compared. The `fix:` is the `alter table … set not null` itself.
+  **Superseded**: only the DECLARED key's columns are excluded, and the two key lists are compared
+  in column order (`changed-primary-key`). The union was justified by "a key on one side only is a
+  difference the key comparison owns", and no key comparison existed — a re-keyed table read
+  `ok: true`. A column only the database keys stays `NOT NULL` after the stray constraint is
+  dropped, so it is a second fault and reported as one.
+- **`pglite-snapshot.ts`**: `snapshotDir` makes a `memory://` boot a restore. Key = PGlite version
+  (read off its `package.json`; unreadable = no cache), never the extension set. One file, checksum in its
+  header; unsound or unopenable → deleted and rebuilt; unreadable → a miss. Temp name + `rename`. Uncompressed by
+  measurement: gzip taxes the boot that writes, and a CI checkout always writes.
+- **One embedded boot** serves every database-backed dump test: `schema-dump.test.ts`.
+  **Superseded**: `schema-dump-fidelity.test.ts` boots a second, because the first file is at the
+  file-size ceiling.
+- **`reapBranches` sweeps branches of THIS database**: the marker is `ultimate:branch:<base>:<iso>`
+  (`BranchInfo.base`), split on the ISO tail; an older one-segment marker is skipped, never dropped; an
+  unparseable `createdAt` is skipped. `@ultimat3/cli`'s `ls`/`drop` scope by name prefix.

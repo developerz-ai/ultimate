@@ -87,13 +87,16 @@ describe('tableOf', () => {
       [
         column('plain', 1, { expression: '0' }),
         column('stored', 2, { expression: 'lower(title)', generated: 's' }),
+        column('virtual', 3, { expression: 'upper(title)', generated: 'v' }),
       ],
       [],
       [],
     );
     expect(described.columns.map((each) => [each.default, each.generated])).toEqual([
       ['0', null],
-      [null, 'lower(title)'],
+      [null, { expression: 'lower(title)', storage: 'stored' }],
+      // Postgres 18's `attgenerated = 'v'`: read as `stored`, it loaded back as a different column.
+      [null, { expression: 'upper(title)', storage: 'virtual' }],
     ]);
   });
 

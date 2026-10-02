@@ -23,6 +23,7 @@ import {
 } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
 import { migrationIrreversible } from './migration-errors';
+import { addChangedKey, dropChangedKey } from './primary-key';
 import type { ReplicaIdentityInput } from './replica-identity';
 import { replicaIdentityFullAfter, replicaIdentityPlan } from './replica-identity';
 import type { MovedAside } from './retype-dependents';
@@ -324,6 +325,9 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
       created.add(entity.table);
       continue;
     }
+    // The key first and last, around every column statement of the table (`primary-key.ts`): the
+    // snapshot below records `entity.primaryKey`, and until this arm existed nothing produced it.
+    dropChangedKey(entity, live, current, plan, options.name);
     diffTable(entity, live, plan, retypedIn(retyped, entity.table));
     const kept = new Set(entity.columns.map((column) => column.column));
     for (const column of live.columns) {
@@ -343,6 +347,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
           ' -- data is not restored',
       );
     }
+    addChangedKey(entity, live, plan, options.name);
   }
 
   const order = dropOrder(current.tables.filter((table) => !wanted.has(table.name)));

@@ -13,7 +13,9 @@ afterEach(() => {
 
 describe('the mail catalog', () => {
   test('resolves in a process that called nothing at all', () => {
-    expect(translatorFor(MAIL_CATALOG_LOCALE)('mail.welcome.subject')).toBe('Welcome to {appName}');
+    expect(translatorFor(MAIL_CATALOG_LOCALE)('mail.welcome.subject', { appName: 'Acme' })).toBe(
+      'Welcome to Acme',
+    );
     expect(translatorFor(MAIL_CATALOG_LOCALE)('mail.footer.unsubscribe')).toBe('Unsubscribe');
   });
 
@@ -32,6 +34,8 @@ describe('the mail catalog', () => {
     // The base layer merges UNDER what is registered, so the one key this app cared enough to
     // translate cannot be reverted by anything that installs later.
     expect(translatorFor(MAIL_CATALOG_LOCALE)('mail.footer.unsubscribe')).toBe('Désabonnement');
-    expect(translatorFor(MAIL_CATALOG_LOCALE)('mail.welcome.subject')).toBe('Welcome to {appName}');
+    expect(translatorFor(MAIL_CATALOG_LOCALE)('mail.welcome.subject', { appName: 'Acme' })).toBe(
+      'Welcome to Acme',
+    );
   });
 });

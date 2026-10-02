@@ -152,7 +152,9 @@ export function formatDuration(
   // Screened once, here, rather than at each of the three `Intl` constructions below — and before
   // any of them, so a malformed tag is one refusal and never a partially built string.
   const tag = assertLocale(locale);
-  let remaining = Math.abs(Math.round(ms));
+  // `NaN` rendered as "NaN days, NaN hr" — every `Math.floor` below propagates it and `Intl`
+  // formats it. `finiteOption`, as `toMs`: a duration is legitimately negative and fractional.
+  let remaining = Math.abs(Math.round(finiteOption('formatDuration', 'ms', ms)));
   const pieces: string[] = [];
 
   for (const [unit, scale] of FORMAT_UNITS) {
@@ -179,7 +181,9 @@ export function formatDuration(
 
 /** `PT2H30M` — for OpenAPI schemas and cron metadata. */
 export function formatDurationIso(ms: number): string {
-  const total = Math.abs(Math.round(ms));
+  // Screened for the reason `formatDuration` is: `NaN` fails every `> 0` below and came out as
+  // `P0D`, a well-formed zero for a duration nobody computed.
+  const total = Math.abs(Math.round(finiteOption('formatDurationIso', 'ms', ms)));
   const days = Math.floor(total / DAY);
   const hours = Math.floor((total % DAY) / HOUR);
   const minutes = Math.floor((total % HOUR) / MINUTE);

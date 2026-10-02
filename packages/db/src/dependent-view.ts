@@ -139,6 +139,7 @@ async function dependentViews(
       join pg_attribute a on a.attrelid = c.oid and a.attnum = d.refobjsubid
      where v.relkind in ('v', 'm') and v.oid <> c.oid
        and c.relname in (${tables}) and a.attname in (${columns})
+       and pg_table_is_visible(c.oid)
      order by v.relname
   `);
 }
@@ -155,7 +156,8 @@ async function dependentViews(
 const shellArg = (statement: string): string => `'${statement.replaceAll("'", `'\\''`)}'`;
 
 /** The invocation `migrationConflict` already writes, with the statement as its own argv word. */
-const psql = (statement: string): string => `psql "$DATABASE_URL" -c ${shellArg(statement)}`;
+export const psqlCommand = (statement: string): string =>
+  `psql "$DATABASE_URL" -c ${shellArg(statement)}`;
 
 /**
  * The two statements that unblock the deploy, as one line an operator pastes.
@@ -192,8 +194,8 @@ function restoreView(view: string, definition: string, relkind: string): string 
   try {
     const name = identifier(view).text;
     return (
-      `${psql(`drop ${kind} ${name}`)}   # then x db migrate, then: ` +
-      `${psql(`create ${kind} ${name} as ${body}`)}${note}`
+      `${psqlCommand(`drop ${kind} ${name}`)}   # then x db migrate, then: ` +
+      `${psqlCommand(`create ${kind} ${name} as ${body}`)}${note}`
     );
   } catch {
     return (

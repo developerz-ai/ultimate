@@ -118,4 +118,31 @@ describeLive('live · postgres · an array bound as a statement parameter', () =
     ]);
     expect(rows).toHaveLength(0);
   });
+
+  // The element `pgArrayLiteral` writes for a `Uint8Array`, read by the server it is written for:
+  // `String(bytes)` sent `1,2,255` — three elements, and `22P02` against `bytea[]`.
+  test('a Uint8Array element arrives as one BYTEA', async () => {
+    const rows = await run<{ n: number; hex: string }>(
+      "select array_length($1::bytea[], 1) as n, encode(($1::bytea[])[1], 'hex') as hex",
+      [[new Uint8Array([1, 2, 255]), new Uint8Array([])]],
+    );
+    expect(rows[0]).toEqual({ n: 2, hex: '0102ff' });
+  });
+
+  // The deeper refusal, checked against the server: branches rectangular on their own and
+  // different from each other are one malformed literal, and the 3-dimensional rectangle parses.
+  test('a literal whose branches differ one level down is one Postgres refuses to read', async () => {
+    await expect(on('select $1::text[] as a', ['{{{a}},{{b,c}}}'])).rejects.toThrow(
+      /malformed array literal|matching dimensions/,
+    );
+    const rows = await run<{ n: number }>('select array_ndims($1::text[]) as n', [
+      [[['a', 'b']], [['c', 'd']]],
+    ]);
+    expect(rows[0]?.n).toBe(3);
+  });
+
+  test('the empty nest this module renders is one Postgres reads', async () => {
+    const rows = await run<{ n: number | null }>('select cardinality($1::text[]) as n', [[[], []]]);
+    expect(rows[0]?.n).toBe(0);
+  });
 });

@@ -5,6 +5,25 @@
 import { describe, expect, test } from 'bun:test';
 import { toFlag, withTargeting } from './flag';
 
+// Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so a
+// child that does not come back is a worker the test timeout cannot end.
+const spawned = async (
+  cmd: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
+  const child = Bun.spawn([...cmd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(env === undefined ? {} : { env }),
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+};
+
 const caught = (run: () => unknown): unknown => {
   try {
     run();
@@ -155,7 +174,7 @@ describe('unit · toFlag refuses an expiry that has no zone in it', () => {
     );
   });
 
-  test('every accepted form answers the SAME instant in three process zones', () => {
+  test('every accepted form answers the SAME instant in three process zones', async () => {
     // `scripts/test-setup.ts` pins this process to UTC, so the whole failure is invisible in
     // process by construction — the zone has to come from outside the runner, exactly as
     // `packages/time/src/plain-date.test.ts` spawns one for the same reason.
@@ -171,17 +190,16 @@ describe('unit · toFlag refuses an expiry that has no zone in it', () => {
       '}',
       'console.log(JSON.stringify({ zone: Intl.DateTimeFormat().resolvedOptions().timeZone, answers }));',
     ].join('\n');
-    const readIn = (zone: string): { zone: string; answers: Record<string, unknown> } => {
-      const run = Bun.spawnSync(['bun', '-e', source], { env: { ...process.env, TZ: zone } });
-      return JSON.parse(new TextDecoder().decode(run.stdout).trim()) as {
-        zone: string;
-        answers: Record<string, unknown>;
-      };
+    const readIn = async (
+      zone: string,
+    ): Promise<{ zone: string; answers: Record<string, unknown> }> => {
+      const run = await spawned(['bun', '-e', source], { ...process.env, TZ: zone });
+      return JSON.parse(run.stdout.trim()) as { zone: string; answers: Record<string, unknown> };
     };
 
-    const utc = readIn('UTC');
-    const newYork = readIn('America/New_York');
-    const tokyo = readIn('Asia/Tokyo');
+    const utc = await readIn('UTC');
+    const newYork = await readIn('America/New_York');
+    const tokyo = await readIn('Asia/Tokyo');
 
     // The control: the subprocesses really do carry different zones, so a zone-sensitive parse
     // WOULD answer three different instants.
@@ -189,5 +207,47 @@ describe('unit · toFlag refuses an expiry that has no zone in it', () => {
     expect(newYork.answers).toEqual(utc.answers);
     expect(tokyo.answers).toEqual(utc.answers);
     expect(utc.answers['2026-12-01T00:00:00']).toBe('refused');
+  });
+});
+
+describe('unit · toFlag takes an ISO-8601 expiry and nothing Date.parse merely tolerates', () => {
+  const temporary = (expiresAt: string) => ({
+    kind: 'temporary' as const,
+    key: 'checkout.v2',
+    description: 'd',
+    owner: 'o',
+    expiresAt,
+    targeting: { default: false },
+  });
+  const codeOf = (run: () => unknown): string | undefined => {
+    try {
+      run();
+      return undefined;
+    } catch (error) {
+      return (error as { code?: string }).code;
+    }
+  };
+
+  // Each of these PARSES. `December 1, 2026` and `12/01/2026` do so at the host's local midnight,
+  // so the deadline moved with the pod's `TZ`; `2026-02-30` rolls over to March 2nd.
+  for (const expiresAt of [
+    'December 1, 2026',
+    '12/01/2026',
+    '2026',
+    '2026-12',
+    '2026-02-30',
+    '2026-13-01',
+    '2025-02-29T00:00:00Z',
+  ]) {
+    test(`"${expiresAt}" is X_FLAG_EXPIRY_INVALID`, () => {
+      expect(codeOf(() => toFlag(temporary(expiresAt)))).toBe('X_FLAG_EXPIRY_INVALID');
+    });
+  }
+
+  test('a real ISO date still declares, leap day included', () => {
+    expect(toFlag(temporary('2028-02-29')).expiresAtMs).toBe(Date.UTC(2028, 1, 29));
+    expect(toFlag(temporary('2026-12-01T09:30:00-05:00')).expiresAtMs).toBe(
+      Date.UTC(2026, 11, 1, 14, 30),
+    );
   });
 });

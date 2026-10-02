@@ -58,6 +58,11 @@ formatWithOffset(at, { locale: 'en-GB', zone: 'America/New_York' });
 nextLocalSlot({ zone: 'Asia/Kathmandu', hour: 9 }, now(clock)); // 09:00 local, +05:45 handled
 ```
 
+`formatRelative(at, { locale, zone, now })` — `in 3 days`, `2 hours ago`. `zone` is required: from
+a day apart the number is **calendar days in that zone** (`daysBetween`), so 47 hours ahead across
+two midnights is `in 2 days`, never `tomorrow`. Under a day apart it is elapsed hours, minutes or
+seconds.
+
 ## DST is a policy, not a guess
 
 `fromZoned(wall, zone, { gap, overlap })` is the function everything else is built on.
@@ -84,9 +89,10 @@ one of these takes the zone explicitly, and none of them has a default.
 | Function | Answers |
 |---|---|
 | `startOfDay(at, zone)` / `endOfDay(at, zone)` | local midnight; the last millisecond of the day |
-| `addDaysInZone(at, days, zone)` | the same wall-clock time, `days` calendar days away |
+| `addDaysInZone(at, days, zone)` | the same wall-clock time, `days` calendar days away. `days` is a whole number — `NaN` and `0.5` are `X_SCHEDULE_INVALID` |
 | `daysBetween(from, to, zone)` | local day boundaries crossed — signed, always integral |
 | `isoDateInZone(at, zone)` | `2026-03-14` |
+| `isoInZone(at, zone)` | `2026-03-08T03:00:00-04:00` — ISO-8601 with the zone's own offset, never `Z` for a non-UTC zone. `toIso` is the UTC form |
 | `isSameLocalDay(left, right, zone)` | whether two instants share a local date |
 
 `daysBetween` counts boundaries, not milliseconds: 23 real hours across spring forward is `1`,
@@ -109,7 +115,7 @@ half the planet.
 | `plainDateIn(at, zone)` | the calendar date an **instant** falls on, in a named zone. It takes the zone because there is no other honest way to make this conversion |
 | `plainDateUtc(at)` | the date a `Date` holds read as UTC — for the one caller that needs it: a Postgres driver returns a `date` column as midnight UTC |
 | `plainDateToUtcInstant(date)` | midnight UTC of the date. The inverse of `plainDateUtc`, and never of `plainDateIn` |
-| `addPlainDays(date, days)` / `plainDaysBetween(from, to)` | calendar arithmetic with no zone in it: a DST day is one day, because there is no zone to shorten |
+| `addPlainDays(date, days)` / `plainDaysBetween(from, to)` | calendar arithmetic with no zone in it: a DST day is one day, because there is no zone to shorten. A result outside years `0000`-`9999` is `X_SCHEDULE_INVALID` |
 | `comparePlainDates(a, b)` | `-1` / `0` / `1` |
 
 It is a branded **string**, and both halves are load-bearing. Not a `Date`: a `Date` is an instant,
@@ -126,7 +132,18 @@ through `JSON.stringify` as itself, and is the literal Postgres accepts and retu
 macros, and Vixie's dom/dow OR rule. `nextCronOccurrence(expr, zone, after)` iterates the
 zone's **wall clock**, so `0 3 * * *` in `Europe/Berlin` stays at 03:00 local across a DST
 change, and a job scheduled inside the gap runs at the first existing local time instead of
-being skipped. `describeCron(expr, locale, phrases)` renders the dashboard summary — month and
+being skipped. A name is its three letters or its whole word (`mon`, `monday`) — never a prefix
+match — and a range has two ends, a step one: `marzipan`, `1-5-7` and `1/2/3` are `X_CRON_INVALID`.
+
+On a fall-back night the repeated hour is decided by what the expression names
+(`CronExpression.wildcardTime`, Vixie's rule):
+
+| Expression | In the repeated hour |
+|---|---|
+| a fixed time — `30 2 * * *` | fires **once**, on the first pass, whichever instant it is asked from |
+| an interval — minute or hour field `*` or `*/n`: `*/5 * * * *`, `0 * * * *` | runs through **both** passes; no hour of the night is skipped |
+
+`describeCron(expr, locale, phrases)` renders the dashboard summary — month and
 weekday names from `Intl`, every connective word **required** from the caller's `t('time.cron.*')`,
 because tier 1 cannot reach `t()` and a built-in default would ship English to every locale. A
 long clock-time list is capped and the remainder counted with `andMore`, never silently cut. A
@@ -138,6 +155,10 @@ ten-second step used to render as "every minute".
 
 The weekend is configuration. `WEEKEND_SAT_SUN`, `WEEKEND_FRI_SAT` (much of the Gulf),
 `WEEKEND_SUN_ONLY`, plus a holiday list of local `YYYY-MM-DD` dates.
+
+`addBusinessDays(at, days, calendar)` keeps the **original** wall-clock time: every candidate is the
+calendar date plus the time the caller started with, so a spring-forward day on the way does not
+shift the days after it.
 
 `businessDaysBetween(from, to, calendar)` counts `[from, to)` — half-open, on **local calendar
 days**, the same interval `daysBetween` measures. `from`'s own day counts, `to`'s does not, and

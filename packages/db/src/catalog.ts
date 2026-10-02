@@ -56,8 +56,16 @@ export interface CatalogColumn {
   readonly notNull: boolean;
   /** `pg_get_expr` of the default; `null` when there is none or the column is generated. */
   readonly default: string | null;
-  /** The stored generation expression, when `attgenerated` says the column has one. */
-  readonly generated: string | null;
+  /**
+   * The generation expression and HOW it is kept, when `attgenerated` says the column has one:
+   * `s` is `stored`, `v` (Postgres 18) is `virtual` — computed on read, nothing on disk. Both
+   * halves, because a dump that spelled every one `stored` loaded a virtual column as a stored
+   * one and round-tripped "equal": both sides of that comparison were this reading.
+   */
+  readonly generated: {
+    readonly expression: string;
+    readonly storage: 'stored' | 'virtual';
+  } | null;
   /** `always` / `by default`, with the identity sequence's own options. */
   readonly identity: {
     readonly mode: 'always' | 'by default';

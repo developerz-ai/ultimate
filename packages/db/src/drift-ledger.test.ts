@@ -81,7 +81,20 @@ const liveDatabase = (
 ) =>
   createRecordingClient()
     .on('from x_migrations', { rows: ledger })
-    .on('information_schema.columns', { rows: columns });
+    .on('information_schema.columns', { rows: columns })
+    // The key every snapshot here declares. A real catalog always answers this read, and a live
+    // side with no primary index is itself a difference (`changed-primary-key`).
+    .on('pg_index', {
+      rows: [...new Set(columns.map((row) => row.table_name))].map((name) => ({
+        table_name: name,
+        index_name: `${name}_pkey`,
+        is_unique: true,
+        is_primary: true,
+        columns: ['id'],
+        predicate: null,
+        descending: false,
+      })),
+    });
 
 describe('checkDrift is the post-migrate verification', () => {
   const applied = [migration('0001_a', schema(table('posts', ['id', 'title'])))];

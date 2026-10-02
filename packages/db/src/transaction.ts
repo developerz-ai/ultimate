@@ -3,82 +3,17 @@
 // the transactional outbox is only atomic because `currentTx()` finds this store. Nesting maps
 // to SAVEPOINTs, so an inner failure never silently aborts the outer unit of work.
 
-import type { Random } from '@ultimat3/core';
-import { assert, asyncContext, nanoid } from '@ultimat3/core';
+import { assert, asyncContext, finiteCount, nanoid } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
-import { isolationLevelInvalid, serializationExhausted } from './errors';
+import { DbError, serializationExhausted } from './errors';
+import { createTurnQueue, type TurnQueue } from './pglite-turns';
 import { markScopeWrote } from './replica-scope';
+import { SIBLING_SCOPE_WAIT_MS, siblingTurn } from './sibling-turn';
 import { raw, type SqlFragment } from './sql';
-import { isRetryableState } from './sqlstate';
+import { isRetryableState, sqlState } from './sqlstate';
 import { serializationRetryDelayMs } from './transaction-backoff';
-
-export interface DbTx extends DbClient {
-  readonly id: string;
-  /**
-   * The client this transaction was **opened on** — `options.client`, or `baseClient()`. Not the
-   * reservation the statements run on: what a caller needs to know is which database and which
-   * pool this scope belongs to, and the pin is an implementation detail of that.
-   *
-   * It exists because the answer was unanswerable from above. `@ultimat3/entity`'s repositories
-   * can be pinned to a specific client (`database(shard)`), and a pinned repository inside
-   * `withTransaction` sends its statements to *its own pool* while the `BEGIN` sits on a
-   * connection this scope reserved — so the write commits immediately and survives the rollback,
-   * and reads inside the transaction cannot see it. `withTransaction(fn, { client: shard })` does
-   * not fix it either: the transaction runs on a *reservation* of the shard and the repository
-   * still sends to the pool. With nothing to compare against, tier 2's only honest answer was to
-   * refuse (`X_REPO_CLIENT_PINNED`). `tx.origin === thePinnedClient` turns that refusal into the
-   * case working — the repository joins its own shard's transaction — and leaves the refusal for
-   * what it should always have been: a genuine mix of two databases in one scope.
-   *
-   * A nested scope reports the root's, because a SAVEPOINT belongs to the transaction that opened.
-   */
-  readonly origin: DbClient;
-  /** Fired in reverse registration order when this scope rolls back. Never on commit. */
-  onRollback(undo: () => void): void;
-  /**
-   * Fired in registration order once the ROOT transaction has COMMITTED — never on rollback. A
-   * nested scope's effects are handed to its parent on `RELEASE` and dropped on `ROLLBACK TO`, so
-   * nothing fires for a write that is not durable. What a change feed, a cache purge or a dev row
-   * observer needs: reporting a write before COMMIT reports rows a rollback then erases. An effect
-   * that throws is swallowed — the transaction already committed, and nothing can un-commit it.
-   */
-  onCommit(effect: () => void): void;
-}
-
-export type IsolationLevel = 'read committed' | 'repeatable read' | 'serializable';
-
-export interface TransactionOptions {
-  readonly isolation?: IsolationLevel | undefined;
-  readonly readOnly?: boolean | undefined;
-  /** Only meaningful with `serializable` + `readOnly`; lets Postgres wait instead of retrying. */
-  readonly deferrable?: boolean | undefined;
-  /** Override the ambient pool — tests and `x db branch` run against a specific client. */
-  readonly client?: DbClient | undefined;
-  /**
-   * Extra attempts after a `40001`/`40P01`, and **only** after one. Default 0, so adding the option
-   * changed no existing transaction's behaviour (axiom 1) — a retry that ran without being asked
-   * for would silently double every non-idempotent handler in the framework.
-   *
-   * Opt in wherever `isolation: 'serializable'` is set: under SERIALIZABLE a serialization failure
-   * is normal traffic, not an exception, and until this existed a payments team choosing it for
-   * ledger correctness got ~3% of transactions surfacing to the user as "cannot reach the
-   * database" with no way to write their own retry, because nothing distinguished `40001` from a
-   * dead socket.
-   *
-   * **`fn` re-runs from the top, so it must be idempotent** — the same contract `job.handle` has.
-   * `onRollback` undos fire before each retry, in reverse registration order.
-   *
-   * Each re-run waits first (`transaction-backoff.ts`). A budget of 0 waits not at all.
-   */
-  readonly retry?: number | undefined;
-  /**
-   * The wait between attempts, and the roll behind its jitter. Injected for one reason — a schedule
-   * provable only by waiting for it is a schedule no test pins — and production passes neither.
-   * They are only ever read when `retry` is 1 or more.
-   */
-  readonly sleep?: ((ms: number) => Promise<void>) | undefined;
-  readonly random?: Random | undefined;
-}
+import { commitUnknown, siblingScopeTimeout, transactionAborted } from './transaction-errors';
+import { beginStatement, type DbTx, type TransactionOptions } from './transaction-options';
 
 interface TxState {
   readonly tx: DbTx;
@@ -100,6 +35,37 @@ interface TxState {
    * transaction believes a dead one is live.
    */
   readonly live: { value: boolean };
+  /** Whether the SERVER has aborted the transaction — shared by reference, like `live`. */
+  readonly abort: TxAbort;
+  /**
+   * One CHILD scope at a time, per scope. Savepoints are a stack on the server: two siblings opened
+   * under `Promise.all` interleaved `SAVEPOINT x_sp_1, SAVEPOINT x_sp_2`, and `RELEASE x_sp_1`
+   * destroyed `x_sp_2` with it — the second scope's work released into the first's, its own
+   * `RELEASE` answered `3B001`, and a `ROLLBACK TO x_sp_1` undid a sibling that had reported
+   * success. Each scope owns its own queue, so a child of the scope holding the turn never waits
+   * behind its parent, and the open savepoints are always one chain.
+   */
+  readonly children: TurnQueue;
+  /** The savepoint of the child holding that turn — what a sibling that gave up waiting names. */
+  readonly holder: { value: string | undefined };
+}
+
+/**
+ * The first statement the server refused inside the transaction, kept until a `ROLLBACK TO
+ * SAVEPOINT` undoes it. Postgres aborts the whole transaction on ANY statement error; every later
+ * statement answers `25P02`, and `COMMIT` answers `ROLLBACK` with no error at all.
+ */
+type TxAbort = { value: boolean; first: unknown };
+
+/**
+ * Only a failure that carries a SQLSTATE: that is the server refusing a statement it READ, which is
+ * what aborts. A refusal raised before the send (a ragged array parameter) left the transaction
+ * untouched, and a dead socket is reported by the COMMIT that follows it.
+ */
+function noteFailure(abort: TxAbort, error: unknown): void {
+  if (abort.value || sqlState(error) === undefined) return;
+  abort.value = true;
+  abort.first = error;
 }
 
 // Core's one lazy seam, never a construction here: a module-scope `new` threw at EVALUATION in a
@@ -132,46 +98,21 @@ export function liveTxConnection(): DbClient | undefined {
 }
 
 /**
- * The SQL for one isolation level, RE-DERIVED from the closed set rather than built out of the
- * value — the same rule `pg-sql.ts` follows for `asc|desc`, and for the same reason: `BEGIN` takes
- * no parameters, so this is one of the two statements here built as text, and a level spliced into
- * it is whatever the caller passed. `isolation` is typed, and a type is not a runtime guard: the
- * value reaches `withTransaction` from an app's config, a JSON body or a CLI flag —
- * `{ isolation: 'read committed; drop table x; --' }` became exactly that statement, and a
- * non-string became an uncoded `TypeError` inside a template literal.
- *
- * The `default` arm is `never`, so a fourth member added to `IsolationLevel` with no SQL beside it
- * is a type error here rather than a refusal at runtime.
- */
-const isolationMode = (declared: IsolationLevel): string => {
-  switch (declared) {
-    case 'read committed':
-      return 'ISOLATION LEVEL READ COMMITTED';
-    case 'repeatable read':
-      return 'ISOLATION LEVEL REPEATABLE READ';
-    case 'serializable':
-      return 'ISOLATION LEVEL SERIALIZABLE';
-    default: {
-      const unhandled: never = declared;
-      throw isolationLevelInvalid(unhandled);
-    }
-  }
-};
-
-export function beginStatement(options: TransactionOptions): string {
-  const modes: string[] = [];
-  if (options.isolation !== undefined) modes.push(isolationMode(options.isolation));
-  if (options.readOnly === true) modes.push('READ ONLY');
-  if (options.deferrable === true) modes.push('DEFERRABLE');
-  return modes.length === 0 ? 'BEGIN' : `BEGIN ${modes.join(' ')}`;
-}
-
-/**
  * How the ROOT transaction ended, shared by every nested scope. An effect registered by a straggler
  * — a promise chain `fn` forgot to await, still inside the store after the scope closed — runs at
  * once after a COMMIT and is dropped after a ROLLBACK, rather than waiting on a list nobody reads.
  */
-type TxOutcome = { value: 'open' | 'committed' | 'rolled-back' };
+type TxOutcome = { value: 'open' | 'committed' | 'rolled-back' | 'unknown' };
+
+/** One statement on the scope's connection, its refusal remembered before the caller can drop it. */
+async function watched<T>(abort: TxAbort, sent: Promise<T>): Promise<T> {
+  try {
+    return await sent;
+  } catch (error) {
+    noteFailure(abort, error);
+    throw error;
+  }
+}
 
 function makeTx(
   id: string,
@@ -180,13 +121,14 @@ function makeTx(
   commits: (() => void)[],
   origin: DbClient,
   outcome: TxOutcome,
+  abort: TxAbort,
 ): DbTx {
   return {
     id,
     origin,
-    query: <T>(fragment: SqlFragment) => connection.query<T>(fragment),
-    one: <T>(fragment: SqlFragment) => connection.one<T>(fragment),
-    execute: (fragment: SqlFragment) => connection.execute(fragment),
+    query: <T>(fragment: SqlFragment) => watched(abort, connection.query<T>(fragment)),
+    one: <T>(fragment: SqlFragment) => watched(abort, connection.one<T>(fragment)),
+    execute: (fragment: SqlFragment) => watched(abort, connection.execute(fragment)),
     onRollback: (undo: () => void) => {
       undos.push(undo);
     },
@@ -196,6 +138,9 @@ function makeTx(
     },
   };
 }
+
+const isAborted = (error: unknown): boolean =>
+  error instanceof DbError && error.code === 'X_DB_TRANSACTION_ABORTED';
 
 /** Commit effects are best-effort too: the transaction is durable, and one throwing must not undo that. */
 function runCommits(commits: readonly (() => void)[]): void {
@@ -219,9 +164,24 @@ function runUndos(undos: readonly (() => void)[]): void {
   }
 }
 
-async function runNested<T>(outer: TxState, fn: (tx: DbTx) => Promise<T>): Promise<T> {
+async function runNested<T>(
+  outer: TxState,
+  fn: (tx: DbTx) => Promise<T>,
+  waitMs: number,
+): Promise<T> {
+  // Held to the end of this function, on every exit: the next sibling's SAVEPOINT is sent only
+  // after this scope's RELEASE or ROLLBACK TO has been answered. Under a deadline, because a body
+  // awaiting a sibling queued behind it is a cycle (`sibling-turn.ts`).
+  using _turn = await siblingTurn(outer.children, waitMs, () =>
+    siblingScopeTimeout(outer.tx.id, outer.holder.value, waitMs),
+  );
+  const { abort } = outer;
+  // Named, rather than left to the SAVEPOINT below to fail with `25P02`: the statement that broke
+  // the transaction is the one the caller caught, and it is the only one worth reading.
+  if (abort.value) throw transactionAborted(abort.first);
   outer.savepoints.value += 1;
   const name = `x_sp_${outer.savepoints.value}`;
+  outer.holder.value = name;
   const undos: (() => void)[] = [];
   const commits: (() => void)[] = [];
   const tx = makeTx(
@@ -231,15 +191,21 @@ async function runNested<T>(outer: TxState, fn: (tx: DbTx) => Promise<T>): Promi
     commits,
     outer.tx.origin,
     outer.outcome,
+    abort,
   );
   // `SAVEPOINT` and `RELEASE` are deliberately uncaught: a savepoint that was never taken means
   // this scope never opened, and a release that failed means its work is not durable in the outer
   // one. Both are the caller's failure to see — swallowing either would run the rest of the unit
   // of work against a transaction that is not the one it thinks it is in.
-  await outer.connection.execute(raw(`SAVEPOINT ${name}`));
+  await watched(abort, outer.connection.execute(raw(`SAVEPOINT ${name}`)));
   try {
-    const result = await storage.run({ ...outer, tx, undos, commits }, () => fn(tx));
-    await outer.connection.execute(raw(`RELEASE SAVEPOINT ${name}`));
+    const children = createTurnQueue();
+    const scope: TxState = { ...outer, tx, undos, commits, children, holder: { value: undefined } };
+    const result = await storage.run(scope, () => fn(tx));
+    // The body swallowed a failed statement. RELEASE would answer `25P02`; the scope is rolled
+    // back below instead, which is the one thing that makes the OUTER transaction usable again.
+    if (abort.value) throw transactionAborted(abort.first);
+    await watched(abort, outer.connection.execute(raw(`RELEASE SAVEPOINT ${name}`)));
     // The nested scope committed into an outer one that can still roll back, so its undos
     // must survive: hand them to the parent rather than dropping them. Its commit effects wait
     // for the ROOT's COMMIT the same way — a released savepoint is not yet durable.
@@ -247,10 +213,20 @@ async function runNested<T>(outer: TxState, fn: (tx: DbTx) => Promise<T>): Promi
     outer.commits.push(...commits);
     return result;
   } catch (error) {
-    // Best-effort, exactly like the root's ROLLBACK: the savepoint is already gone when the
-    // failure was the connection itself, and the caller needs the error that caused the rollback,
-    // never the rollback's own.
-    await outer.connection.execute(raw(`ROLLBACK TO SAVEPOINT ${name}`)).catch(() => undefined);
+    // The caller still needs the error that caused the rollback, never the rollback's own — but a
+    // `ROLLBACK TO` that failed is no longer forgotten. The scope's work was NOT undone, so the
+    // root is marked aborted and its COMMIT refuses: committing would store the writes of a scope
+    // that just told its caller they were rolled back.
+    try {
+      await outer.connection.execute(raw(`ROLLBACK TO SAVEPOINT ${name}`));
+      // Whatever broke the transaction happened after this savepoint — the SAVEPOINT itself was
+      // accepted — so the server has undone it and statements are accepted again.
+      abort.value = false;
+      abort.first = undefined;
+    } catch (rollbackError) {
+      if (!abort.value) abort.first = rollbackError;
+      abort.value = true;
+    }
     runUndos(undos);
     throw error;
   }
@@ -281,7 +257,8 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
   const undos: (() => void)[] = [];
   const commits: (() => void)[] = [];
   const outcome: TxOutcome = { value: 'open' };
-  const tx = makeTx(`tx_${nanoid(12)}`, connection, undos, commits, client, outcome);
+  const abort: TxAbort = { value: false, first: undefined };
+  const tx = makeTx(`tx_${nanoid(12)}`, connection, undos, commits, client, outcome, abort);
   // Each attempt gets its own state, and therefore its own `live` — a retry re-runs `fn` against a
   // transaction that is genuinely new, so the abandoned attempt's stragglers must read as closed.
   const state: TxState = {
@@ -292,12 +269,20 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
     outcome,
     savepoints: { value: 0 },
     live: { value: true },
+    abort,
+    children: createTurnQueue(),
+    holder: { value: undefined },
   };
 
   let committed = false;
+  let commitSent = false;
   try {
     await connection.execute(raw(beginStatement(options)));
     const result = await storage.run(state, () => fn(tx));
+    // Refused before the COMMIT is sent: the server would answer it `ROLLBACK` with no error. The
+    // funnels read that tag too (`commit-tag.ts`), for an abort this scope's handle never saw.
+    if (abort.value) throw transactionAborted(abort.first);
+    commitSent = true;
     await connection.execute(raw('COMMIT'));
     // After COMMIT answered, and outside the `catch` below: a failing effect must never be read as
     // a failed transaction and trigger a ROLLBACK of work the server already made durable.
@@ -310,6 +295,12 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
     // Best-effort: the caller needs the original failure, never the rollback's. A BEGIN that
     // itself failed opened nothing, so this ROLLBACK is a no-op the server answers with a notice.
     await connection.execute(raw('ROLLBACK')).catch(() => undefined);
+    // A COMMIT rejected with no SQLSTATE and no ROLLBACK tag never got its answer, so the unit of
+    // work may be durable. Neither list runs: see `commitUnknown`.
+    if (commitSent && sqlState(error) === undefined && !isAborted(error)) {
+      outcome.value = 'unknown';
+      throw commitUnknown(error);
+    }
     outcome.value = 'rolled-back';
     runUndos(undos);
     throw error;
@@ -336,6 +327,11 @@ export async function withTransaction<T>(
     `withTransaction({ retry }) needs a whole number of extra attempts, 0 or more; a budget that is not one opens nothing and runs fn zero times`,
     "pass an integer — withTransaction(fn, { retry: 3, isolation: 'serializable' }) — and parse it before you pass it: Number(process.env.DB_RETRY) is NaN when the variable is unset",
   );
+  const siblingWaitMs = finiteCount(
+    'withTransaction',
+    'siblingWaitMs',
+    options.siblingWaitMs ?? SIBLING_SCOPE_WAIT_MS,
+  );
   const outer = storage.get();
   if (outer !== undefined) {
     // A nested scope is a SAVEPOINT, and a savepoint cannot survive the thing `retry` exists for:
@@ -350,7 +346,21 @@ export async function withTransaction<T>(
       'withTransaction({ retry }) inside another transaction: a nested scope is a SAVEPOINT, and a serialization failure aborts the whole transaction, so there is nothing left to retry into',
       "move the retry to the OUTERMOST withTransaction — withTransaction(fn, { retry: 3, isolation: 'serializable' }) — and drop it here",
     );
-    return runNested(outer, fn);
+    // The same argument for everything else a SAVEPOINT cannot honour. The isolation level and the
+    // access mode were fixed by the root's BEGIN, and a savepoint lives on the root's connection:
+    // `{ client: shard }` in here recorded a savepoint on the OUTER database and nothing on the
+    // shard, and `{ readOnly: true }` wrapped writes that then committed.
+    assert(
+      options.isolation === undefined && options.readOnly !== true && options.deferrable !== true,
+      'withTransaction({ isolation, readOnly, deferrable }) inside another transaction: a nested scope is a SAVEPOINT in the transaction the outermost BEGIN opened, and its isolation level and access mode cannot change after that',
+      "state them on the OUTERMOST withTransaction — withTransaction(fn, { isolation: 'serializable', readOnly: true }) — and drop them here",
+    );
+    assert(
+      options.client === undefined || options.client === outer.tx.origin,
+      'withTransaction({ client }) inside a transaction opened on a different client: a nested scope is a SAVEPOINT on the outer connection, so nothing would run on the client named here',
+      'open the second database in its own unit of work, outside this one — await withTransaction(fn, { client }) after the outer scope returns — or drop { client } to join the outer transaction',
+    );
+    return runNested(outer, fn, siblingWaitMs);
   }
 
   const attempts = (options.retry ?? 0) + 1;
