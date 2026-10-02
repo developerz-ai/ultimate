@@ -77,14 +77,19 @@ export class SecretsKeyInvalidError extends UltimateError {
   constructor(input: { at: string; found: number; expected: number }) {
     super({
       code: 'X_SECRETS_KEY_INVALID',
-      cause: `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters`,
+      // The lost-key sentence is CAUSE, not fix: a `fix:` is one command, and no command restores
+      // a key file — so the file branch says what cannot be done here and the fix measures it.
+      cause:
+        input.at === 'ULTIMATE_SECRETS_KEY'
+          ? `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters`
+          : `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters — the key FILE is what is wrong, so re-exporting it changes nothing: restore it from wherever the team keeps the key, because a lost key cannot be recovered or regenerated`,
       // Branches on WHERE the bad key was read. From the variable, re-reading the file repairs
       // it. From the FILE, that same line reads the truncated file into the variable and is
-      // refused again — the repair is the file, and no command can regenerate a lost key.
+      // refused again, so the command is the measurement that says when the restore worked.
       fix:
         input.at === 'ULTIMATE_SECRETS_KEY'
           ? `export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"   # the key file holds the ${input.expected} characters on one line`
-          : `edit ${renderFixShellArg(input.at, '<the key file the cause names>')} so it holds the ${input.expected} lowercase hex characters of the master key and nothing else — copy it again from wherever the team keeps it; a lost key cannot be recovered, and x secrets init starts over only in a repo with no sealed secrets`,
+          : `wc -c ${renderFixShellArg(input.at, '<the key file the cause names>')}   # ${input.expected + 1} is a whole key and its newline; any other count is the truncated or padded file to restore`,
       meta: { at: input.at },
     });
   }
@@ -105,7 +110,7 @@ export class SecretsRingKeyInvalidError extends UltimateError {
     super({
       code: 'X_SECRETS_KEY_INVALID',
       cause: `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters`,
-      fix: `x secrets edit   # ${variable} holds ${input.expected}-character lowercase hex keys separated by commas: correct or remove the entry the cause names`,
+      fix: `x secrets edit   # ${variable} holds ${input.expected}-character lowercase hex keys separated by commas: correct or remove the entry the cause names — the variable is a line of secrets.enc.json, and a platform that ALSO sets it wins, so correct it there too`,
       meta: { at: input.at },
     });
   }

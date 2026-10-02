@@ -51,8 +51,9 @@ Tier 0 — schema.
   strings. Correct the date where it is written.
 - **BREAKING — `t.url` refuses a string the URL parser would have cut.** A leading or trailing
   space or C0 control, and a tab, CR or LF anywhere. `' https://a.b'` validated and was stored
-  untrimmed. Call `.trim()` before validating. A space inside the path and an upper-case host are
-  unchanged.
+  untrimmed. Call `.trim()` before validating; an interior tab, CR or LF is not whitespace
+  `.trim()` removes — strip or percent-encode it at the source. A space inside the path and an
+  upper-case host are unchanged.
 - **BREAKING — `t.object`, `t.record` and `t.money` take plain objects only.** A value whose
   prototype is neither `Object.prototype` nor `null` — a `Map`, a `Date`, a class instance — is
   `expected an object`. `t.record(t.number)` parsed a `Map` to `{}`. HTTP coercion no longer
@@ -92,8 +93,13 @@ Tier 0 — core.
 - **BREAKING — compound credential names are redacted.** `currentPassword`, `mfaSecret`,
   `resetToken`, `recoveryCode`, `webhookSecret`, `passwordHash`, `tokenHash`, `keyHash` and the
   rest `isRedactedKey` now matches are `[redacted]` in a log line, an audit row and the error
-  monitor's envelope; they were written in clear. `idempotencyToken`, `continuationToken`,
-  `maxTokens`, `code` and `clientSecretEnv` stay readable. A test or a log query that read one of
+  monitor's envelope; they were written in clear. A name ending in `token` is redacted unless its
+  qualifier says it is no bearer (`idempotency`, `page`, `continuation`, `cursor`, `sync`) — so
+  `NPM_TOKEN`, `AWS_SESSION_TOKEN` and `confirmationToken` are; key material is matched by
+  qualifier (`privateKey`, `signingKey`, `AWS_ACCESS_KEY_ID`); and so is a value that embeds a
+  credential (`connectionString`, `dsn`, `databaseUrl`, `REDIS_URL`). `idempotencyToken`,
+  `continuationToken`, `maxTokens`, `cacheKey`, `signingKeyId`, `code` and `clientSecretEnv` stay
+  readable. A test or a log query that read one of
   the values reads the marker.
 - **BREAKING — the Sentry envelope carries an error's `meta` under `extra.meta`.** It was spread
   into `extra`, so `meta: { fix, stack }` replaced the framework's own. Both `meta` and
@@ -119,11 +125,12 @@ Tier 0 — core.
 
 Tier 5 — cli.
 
-- **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. Its `cause` lists the test file(s)
-  `bun test` had not finished, `at` is the first, and its `fix:` runs that file alone. `meta`
-  carries `step`, `deadlineMs`, `killed` (each process's `pid` and command line) and `inFlight`
-  (per `bun test` run: `command`, `files`, `workers`, `unreported`, `named`). The step's output is
-  what the killed runs last printed. Code and meaning unchanged.
+- **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
+  killed first, so `bun test` itself reports the file each one held; the `cause` lists those
+  files, `at` is the first, and the `fix:` runs that file alone. `meta` carries `step`,
+  `deadlineMs`, `killed` (each process's `pid` and command line) and `inFlight` (per `bun test`
+  run: `command`, `files`, `workers`, `stuck`). The step's output is what the killed runs last
+  printed. Code and meaning unchanged.
 
 ### Fixed
 

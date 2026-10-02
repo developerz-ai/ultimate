@@ -229,8 +229,9 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
       );
     },
     default(fallback: Out): Schema<In | undefined, Out> {
-      const fresh = defaultFactory(fallback);
+      // Rule before copy: a refused fallback has to be replaced, so its clone problem is moot.
       assertDefaultValid(check, fallback);
+      const fresh = defaultFactory(fallback);
       return makeSchema<In | undefined, Out>(
         // The node keeps the DECLARATION, never a copy: `node.default` is what OpenAPI, the MCP
         // tool schema and the typed client publish, and they describe what was written.

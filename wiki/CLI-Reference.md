@@ -646,7 +646,7 @@ $ x verify --json
 A finding is `code`, `cause`, `fix`, and optionally `docs`, `at` (a file, route or table) and
 `meta` — structured facts behind `cause`, never the only home of one. `X_VERIFY_STEP_TIMEOUT`
 carries `meta.step`, `meta.deadlineMs`, `meta.killed: [{pid, command}]` and
-`meta.inFlight: [{command, files, workers, unreported, named}]`; `at` is the stuck test file when
+`meta.inFlight: [{command, files, workers, stuck}]`; `at` is the stuck test file when
 one could be named, and the failed step's `output` is the tail of what the killed run had printed.
 
 Errors: `X_VERIFY_FAILED` (with the failing step names), plus each step's own code.

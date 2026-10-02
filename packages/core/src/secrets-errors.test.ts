@@ -114,14 +114,18 @@ describe('X_SECRETS_KEY_INVALID', () => {
     // variable, the same 63 characters were refused again, and the line had been followed exactly.
     const error = new SecretsKeyInvalidError({ ...shape, at: '/srv/app/.secrets.key' });
     expect(error.fix).not.toContain('$(cat');
-    expect(error.fix).toStartWith('edit /srv/app/.secrets.key ');
-    expect(error.fix).toContain('64 lowercase hex');
+    // ONE runnable command: the measurement that says whether the restored file is whole.
+    expect(error.fix).toBe(
+      'wc -c /srv/app/.secrets.key   # 65 is a whole key and its newline; any other count is the truncated or padded file to restore',
+    );
+    // What no command can do is said in the cause, not the fix.
+    expect(error.cause).toContain('a lost key cannot be recovered');
   });
 
   test('a key-file path a shell would read is named by placeholder, never spliced', () => {
     const error = new SecretsKeyInvalidError({ ...shape, at: '/srv/$(rm -rf ~)/.secrets.key' });
     expect(error.fix).not.toContain('rm -rf');
-    expect(error.fix).toStartWith('edit <the key file the cause names> ');
+    expect(error.fix).toStartWith('wc -c <the key file the cause names>   # ');
   });
 
   test('a key read from a ring variable gets a fix that edits THAT variable', () => {
@@ -133,6 +137,9 @@ describe('X_SECRETS_KEY_INVALID', () => {
     expect(error.code).toBe('X_SECRETS_KEY_INVALID');
     expect(error.fix).toStartWith('x secrets edit   # ULTIMATE_SECRETS_RETIRED_KEYS holds');
     expect(error.fix).not.toContain('export');
+    // The ring is a line of the sealed file, so `x secrets edit` is where it is corrected — and
+    // the real environment wins over that file, which the fix says rather than leaves to be found.
+    expect(error.fix).toContain('a platform that ALSO sets it wins');
     expect(error.cause).toContain('ULTIMATE_SECRETS_RETIRED_KEYS (entry 2)');
   });
 

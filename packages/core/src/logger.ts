@@ -98,19 +98,33 @@ const redactedKeys = new Set<string>([
  * - `password` / `passphrase` anywhere — no ordinary field carries the word.
  * - `secret` as the LAST word (`mfaSecret`, `webhookSecret`, `appSecrets`, `secretAccessKey`), so
  *   `clientSecretEnv` and `secretsPath` — a variable name and a path — stay readable.
- * - `token` only behind a word that makes it a bearer (`resetToken`, `csrfToken`). A bare `token`
- *   suffix would take `idempotencyToken` and `continuationToken`, which are dedupe and paging
- *   keys an operator greps for, and `maxTokens` is a count on every `@ultimat3/ai` usage line.
+ * - a `token` is a bearer UNLESS its qualifier says it is not: fail closed, with the exceptions
+ *   named. `idempotencyToken`, `pageToken`, `continuationToken`, `cursorToken`, `syncToken` are
+ *   dedupe and paging keys an operator greps for; everything else ending in `token` — `resetToken`,
+ *   `githubToken`, `NPM_TOKEN` — is redacted without a provider list to keep current. The PLURAL
+ *   is the reverse: `maxTokens` / `inputTokens` are counts on every `@ultimat3/ai` usage line, so
+ *   `tokens` is redacted only behind a bearer qualifier (`accessTokens`).
+ * - key MATERIAL by its qualifier (`apiKey`, `privateKey`, `signingKey`, `encryptionKey`,
+ *   `masterKey`, `hmacKey`, `secretsKey`, `accessKey`, `retiredKeys`) and the id half of a key
+ *   pair (`accessKeyId`). A LOOKUP key — `cacheKey`, `primaryKey`, `idempotencyKey` — and a key's
+ *   own id (`signingKeyId`) carry no qualifier on this list and stay readable.
+ * - a value that EMBEDS a credential: `connectionString`, `dsn`, a registry `authConfig`, and the
+ *   service URLs that carry `user:password@` (`databaseUrl`, `REDIS_URL`). A bare `url` does not.
  * - the one-time codes by name. Never a `code` suffix: that is the error contract's own field.
  * - a stored hash of any of them: it is what an offline guess runs against.
+ *
+ * Built from constant alternatives with no nested quantifier, so there is no input it backtracks on.
  */
 const CREDENTIAL_NAME = new RegExp(
   [
     'passw(?:or)?d|passphrase',
-    'secrets?$|secret(?:access)?key$',
-    '(?:api|private)keys?$',
+    'secrets?$',
+    '(?:api|private|signing|encryption|master|hmac|secrets?|access|retired)keys?$|accesskeyid$',
     '(?:token|key)hash(?:es)?$',
-    '(?:access|refresh|id|session|reset|bearer|auth|api|csrf|xsrf|captcha|card|verification|invite|magic|magiclink|device|push|workload|oauth)tokens?$',
+    '(?<!idempotency|page|continuation|cursor|sync)token$',
+    '(?:access|refresh|id|session|reset|bearer|auth|api|csrf|xsrf|captcha|card|verification|invite|magic|magiclink|device|push|workload|oauth)tokens$',
+    'authconfig$|connectionstring$|dsn$',
+    '(?:database|db|redis|replication|nats|smtp|amqp|mongo)ur[li]s?$',
     '^totp$|totpcode$|otp$|otpcode$',
     '(?:recovery|backup|mfa)codes?(?:hash(?:es)?)?$',
   ].join('|'),

@@ -93,15 +93,23 @@ export interface InFlightRun {
 export interface StepExpiry {
   readonly killed: readonly KilledProcess[];
   readonly inFlight: readonly InFlightRun[];
-  /** Bun's reporter prints nothing for a passing file under these: the output cannot name one. */
-  readonly quietReporter: boolean;
 }
-
-/** Any one set makes `bun test` print failures only (probed on 1.4.0, each alone). */
-export const QUIET_REPORTER_ENV = ['CLAUDECODE', 'AGENT', 'REPL_ID'] as const;
 
 /** A killed child's pipes close with it; this is only the bound on a runner that is not `exec`. */
 const SETTLE_MS = 2_000;
+
+/**
+ * How a `bun test --parallel` worker is told from its coordinator: the flag bun starts each with
+ * (probed on 1.4.0). Killing the WORKERS first is what names the stuck file — the coordinator
+ * outlives them just long enough to print `✗ <file> (worker crashed: SIGKILL)` for whatever each
+ * was holding, in every reporter mode: plain, GitHub Actions' `::group::`, and the failures-only
+ * one an agent's shell switches on. A file's own header line cannot do it — bun prints that as
+ * results stream, so a file stuck in its third test has one.
+ */
+const isTestWorker = (command: string): boolean => command.includes(' --test-worker');
+
+/** How long a coordinator gets to say what its workers were holding before it is killed too. */
+const CRASH_REPORT_MS = 1_500;
 
 export interface StepGuard {
   /** `runner`, with every child tagged — and refusing to start one once the step has expired. */
@@ -155,9 +163,14 @@ export function guardStep(
       expired = true;
       // Before the kill: a killed child settles its runner call, which takes it off the map.
       const waiting = [...inFlight];
-      const killed = await killTagged(tag);
+      const workers = await killTagged(tag, undefined, isTestWorker);
+      if (workers.length > 0) {
+        await raceDeadline(Promise.allSettled(waiting.map(([run]) => run)), CRASH_REPORT_MS);
+      }
+      const rest = await killTagged(tag);
+      const killed = [...workers, ...rest.filter((one) => workers.every((w) => w.pid !== one.pid))];
       // After it: the kill closed the child's pipes, so its call now resolves with everything it
-      // had printed — for `bun test`, a line per finished file, which is how the stuck one is named.
+      // had printed — for `bun test`, the crash line of each file a worker was holding.
       const settled = await Promise.all(
         waiting.map(async ([run, command]): Promise<InFlightRun> => {
           const raced = await raceDeadline(run.then(execOutput), SETTLE_MS).catch(() => undefined);
@@ -166,11 +179,7 @@ export function guardStep(
             : { command, output: raced.value };
         }),
       );
-      return {
-        killed,
-        inFlight: settled,
-        quietReporter: QUIET_REPORTER_ENV.some((name) => (env[name] ?? '') !== ''),
-      };
+      return { killed, inFlight: settled };
     },
   };
 }
@@ -274,17 +283,23 @@ export async function killTagged(
   /** The process table. Absent is this platform's: procfs where there is one, `ps` otherwise. */
   list: () => Promise<readonly ProcessEnviron[]> = async () =>
     (await procfsProcesses()) ?? (await psProcesses()),
+  /** Kill only the processes whose command line this accepts. Absent kills every tagged one. */
+  only?: (command: string) => boolean,
 ): Promise<readonly KilledProcess[]> {
   const killed = new Map<number, KilledProcess>();
+  // Read once per pid and BEFORE the first signal: a worker exits on its own the moment its
+  // coordinator dies, and one read between two kills would find it already gone.
+  const commands = new Map<number, string>();
   for (let sweep = 0; sweep < SWEEPS; sweep += 1) {
     const processes = await list();
-    const found = taggedPids(processes, tag).filter((pid) => pid !== process.pid);
+    const tagged = taggedPids(processes, tag).filter((pid) => pid !== process.pid);
+    for (const pid of tagged) {
+      if (!commands.has(pid)) commands.set(pid, await commandOf(pid));
+    }
+    const found =
+      only === undefined ? tagged : tagged.filter((pid) => only(commands.get(pid) ?? ''));
     const fresh = found.filter((pid) => !killed.has(pid));
     if (found.length === 0) break;
-    // Every command line BEFORE the first signal: a worker exits on its own the moment its
-    // coordinator dies, and one read between two kills would find it already gone.
-    const commands = new Map<number, string>();
-    for (const pid of fresh) commands.set(pid, await commandOf(pid));
     for (const pid of found) {
       try {
         process.kill(pid, 'SIGKILL');

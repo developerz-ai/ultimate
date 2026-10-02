@@ -326,8 +326,10 @@ connect(revealSecret(dsn));          // the one greppable way out
 `isRedactedKey(key)` is the one answer to "is this field a credential?" — the log line, the error
 monitor's envelope and `@ultimat3/action`'s audit row all ask it. It matches the exact names
 `redactKeys()` holds (`defineEnv` adds every `secret: true` variable) **and** a credential-bearing
-name it was never told about: `password` / `passphrase` anywhere, `secret` as the last word, a
-bearer token by its qualifier (`resetToken`, `csrfToken`, `accessToken`), the one-time codes
+name it was never told about: `password` / `passphrase` anywhere, `secret` as the last word, any
+`…token` that is not a dedupe or paging key (`resetToken`, `githubToken`, `NPM_TOKEN`), key
+material by its qualifier (`signingKey`, `masterKey`, `accessKeyId`), a value that embeds a
+credential (`connectionString`, `dsn`, `databaseUrl`), the one-time codes
 (`totpCode`, `recoveryCode`) and a stored hash of any of them (`passwordHash`, `tokenHash`,
 `keyHash`). It deliberately leaves `idempotencyToken`, a paging token, `maxTokens` and an error
 `code` readable — a redacted field is one an operator cannot correlate on.

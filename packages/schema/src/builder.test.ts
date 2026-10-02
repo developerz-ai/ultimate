@@ -307,6 +307,14 @@ describe('.default() runs its fallback through the schema where it is declared',
     }
   });
 
+  test('a fallback that is both refused and uncopyable reports the RULE first', () => {
+    // The value has to change to satisfy the rule anyway, so naming the clone problem first sends
+    // the author to fix a copy of something they are about to replace.
+    const refused = { onMiss: (): number => 1 };
+    const declare = (): unknown => atLeastFive().default(refused as unknown as number);
+    expect(declare).toThrow(/X_SCHEMA_DEFAULT_INVALID/);
+  });
+
   test('a fallback the schema accepts still declares and still parses', () => {
     const schema = atLeastFive().default(7);
     expect(schema.parse(undefined)).toBe(7);
