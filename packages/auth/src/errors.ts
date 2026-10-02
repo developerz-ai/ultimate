@@ -29,6 +29,7 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_AUTH_WRITE_FAILED',
   'X_AUTH_LIMITER_NOT_SHARED',
   'X_AUTH_LIMITER_POLICY_MISMATCH',
+  'X_MFA_SECRET_UNSEALED',
 ] as const;
 
 /**
@@ -74,6 +75,7 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_AUTH_WRITE_FAILED: 'an adapter write returned no row, so it cannot be confirmed',
   X_AUTH_LIMITER_NOT_SHARED: 'the lockout is declared fleet-wide and the limiter is per-process',
   X_AUTH_LIMITER_POLICY_MISMATCH: 'the limiter in use enforces other numbers than the app declared',
+  X_MFA_SECRET_UNSEALED: 'a stored totp secret is not sealed, so it is never read as one',
 };
 
 // Registered unconditionally, in one call: a second package claiming a code auth owns has to fail
@@ -162,23 +164,41 @@ export const kdfOverloaded = (active: number, queued: number): AuthError =>
   });
 
 /**
- * The second leg is the APP's, and this line says so — it named `POST /auth/mfa/verify` for a
- * release while no such route, no `completeMfa()` and no pending-MFA credential existed anywhere,
- * the same dead-`fix:` defect `oauth-paths.ts` exists to stop. Shipping that route from here would
- * be worse than saying nothing: the only correlation value this error carries is a user id, so the
- * route would be unauthenticated by construction and MFA would become the ONLY factor. The design
- * constraint for the real second leg is in `packages/auth/CLAUDE.md`.
+ * The second leg is `completeMfa(auth, challenge, code)` (`mfa-challenge.ts`), and the only thing
+ * that correlates it with a passed first leg is `meta.challenge`: a sealed, short-lived value the
+ * sign-in handler carries to the caller and back. It replaces a bare user id, which made any
+ * second leg built on it unauthenticated by construction.
  *
- * `userId` is `meta`, never `cause`: both surfaces that render this code to an anonymous caller
- * (`oauth-route.ts`'s `publicBody`, `@ultimat3/http`'s problem document) publish `cause` and drop
- * `meta`, and a user id handed to whoever typed the URL is what feeds the attack above.
+ * The challenge is `meta`, never `cause`: both surfaces that render this code to an anonymous
+ * caller (`oauth-route.ts`'s `publicBody`, `@ultimat3/http`'s problem document) publish `cause`
+ * and drop `meta`, so the handler decides where it travels — a cookie or its own response body.
  */
-export const mfaRequired = (userId: string): AuthError =>
+export const mfaRequired = (challenge: string): AuthError =>
   new AuthError({
     code: 'X_MFA_REQUIRED',
     cause: 'this account has TOTP enrolled and the second factor has not been satisfied',
-    fix: 'no second-factor route ships yet — catch X_MFA_REQUIRED in your sign-in handler, check the code with verifyTotp({ secret: user.mfaSecret, code, at }), then mint the session with createSession(auth.sessions, { userId, mfaSatisfied: true })',
-    meta: { userId },
+    fix: 'catch X_MFA_REQUIRED in your sign-in handler, hand error.meta.challenge to the caller, and finish with: await completeMfa(auth, challenge, code)',
+    meta: { challenge },
+  });
+
+/**
+ * A challenge `completeMfa` will not act on: not one this app sealed, past its expiry, or naming
+ * an account that can no longer finish (deleted, disabled, or no longer enrolled). One refusal
+ * for all of them — which it was is not the caller's to learn.
+ */
+export const mfaChallengeInvalid = (): AuthError =>
+  new AuthError({
+    code: 'X_UNAUTHENTICATED',
+    cause: 'the second-factor challenge is not one this app issued, or it is no longer usable',
+    fix: 'sign in again for a fresh challenge: await login(auth, { email, password })',
+  });
+
+/** A wrong or already-spent code. The attempt it cost stays counted against the account. */
+export const mfaCodeRejected = (): AuthError =>
+  new AuthError({
+    code: 'X_UNAUTHENTICATED',
+    cause: 'the second-factor code did not match, or it was already used',
+    fix: 'read the current code from the authenticator app and retry: await completeMfa(auth, challenge, code)',
   });
 
 /**
@@ -199,6 +219,19 @@ export const mfaSecretInvalid = (surface: string): AuthError =>
     code: 'X_MFA_SECRET_INVALID',
     cause: `${surface} was given a totp secret that is not RFC 4648 base32, so it decodes to zero bytes`,
     fix: 'issue a fresh one and store it: const { secret } = enrolTotp(auth, { account: user.email }) — an imported secret must be base32 (A-Z and 2-7, padding, spaces and dashes ignored) and decode to at least one byte',
+  });
+
+/**
+ * A stored secret that is not sealed. It is refused rather than read: the plaintext path is the
+ * thing sealing removes, and a reader that fell back to it would keep it alive for good. The fix
+ * is the one-shot that seals every such row; `x doctor` reports the count before a user does.
+ */
+export const mfaSecretUnsealed = (): AuthError =>
+  new AuthError({
+    code: 'X_MFA_SECRET_UNSEALED',
+    cause:
+      'x_users.mfa_secret holds a value that is not sealed — written before second-factor secrets were sealed at rest, or written past saveTotpSecret — and a plaintext secret is never read as one',
+    fix: 'x auth seal-mfa --json',
   });
 
 /**
@@ -247,22 +280,9 @@ export const authPolicyNumberInvalid = (
   });
 
 /**
- * An explicit key for `clientScopeOf` under the floor `SESSION_SECRET` is held to. The env path
- * already refused a short secret; the option skipped the screen, so `{ secret: 'x' }` keyed every
- * page's scope id with one character. `X_CONFIG_INVALID`, borrowed like the two above.
- */
-export const clientScopeSecretShort = (length: number, minLength: number): AuthError =>
-  new AuthError({
-    code: 'X_CONFIG_INVALID',
-    cause: `clientScopeOf({ secret }) was passed a key of ${String(length)} characters and at least ${String(minLength)} are required, so the scope id would be keyed by a guessable secret`,
-    fix: 'omit secret so clientScopeOf reads SESSION_SECRET, or pass one generated with: openssl rand -hex 32',
-    meta: { option: 'secret', minLength },
-  });
-
-/**
  * An api key `env` the parser cannot read back. `parseApiKey` splits `ult_<env>_<id>_<secret>` on
  * `_`, so `issueApiKey({ env: 'live_eu' })` minted a key its own verifier refused. Refused at
- * issue — `X_CONFIG_INVALID`, borrowed like the three above — never at first use.
+ * issue — `X_CONFIG_INVALID`, borrowed like the two above — never at first use.
  */
 export const apiKeyEnvInvalid = (env: string): AuthError =>
   new AuthError({
@@ -274,6 +294,19 @@ export const apiKeyEnvInvalid = (env: string): AuthError =>
     meta: { option: 'env' },
   });
 
+/**
+ * A wildcard scope on an api key. `*` and `<resource>:*` are how a ROLE is granted everything; on
+ * a key they are a credential that silently grows with every permission the app adds later.
+ * Refused at issue — `X_CONFIG_INVALID`, borrowed like the ones above.
+ */
+export const apiKeyScopeWildcard = (scope: string): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause: `api key scope ${renderCauseValue(scope)} is a wildcard, and a key carries exactly the permissions it names`,
+    fix: "pass each permission by name to issueApiKey({ scopes }) — e.g. scopes: ['post:read', 'post:publish']",
+    meta: { option: 'scopes' },
+  });
+
 export const passwordWeak = (reasons: readonly string[]): AuthError =>
   new AuthError({
     code: 'X_PASSWORD_WEAK',
@@ -281,28 +314,35 @@ export const passwordWeak = (reasons: readonly string[]): AuthError =>
     fix: 'choose a longer, uncommon password — or relax defineAuth({ password: { minLength } })',
   });
 
+/** The tenant bucket's key prefix. Declared here because the refusal below must recognise it. */
+export const ORG_KEY_PREFIX = 'org:';
+
 /**
  * The escape is `recordSuccess(key)`, which is what a successful login already calls: it deletes
  * the bucket, so it clears exactly this one key and nothing else. `reset()` exists too and is the
  * wrong reach — it drops every bucket in the table, including the spray this lockout is holding.
  *
- * `key` carries an address or an email the caller chose, so it goes through `renderFixLiteral`:
- * a fix line has to still parse after a hostile value lands in it.
+ * An `ip:` or `account:` key is the caller's own input, so it is echoed (escaped). A tenant key is
+ * NOT: the org id was looked up from the address the caller typed, and naming it — or even saying
+ * "an organisation" — confirms to an anonymous caller that the address belongs to a member.
  */
-export const accountLocked = (key: string, retryAfterSeconds: number): AuthError =>
-  new AuthError({
+export const accountLocked = (key: string, retryAfterSeconds: number): AuthError => {
+  const tenant = key.startsWith(ORG_KEY_PREFIX);
+  return new AuthError({
     code: 'X_ACCOUNT_LOCKED',
-    // `renderCauseValue`, matching `oauthDenied`: `ipKey(ip)` builds this key from whatever address
-    // string its caller passed, so a newline in it writes a second log line an operator reads as
-    // genuine. The value is `string` by type — the static scan only sees `unknown`/`any`, so this
-    // one was never going to be caught for us — and rendering it as a JSON string literal is
-    // escaping, not throw-safety.
-    cause: `${renderCauseValue(key)} is locked out for another ${retryAfterSeconds}s after repeated failures`,
-    fix: `wait ${retryAfterSeconds}s — or clear this one bucket: auth.limiter.recordSuccess(${renderFixLiteral(key, '<key>')}), auth.orgLimiter for an org: key — or raise defineAuth({ rateLimit })`,
+    // `renderCauseValue`: `ipKey(ip)` builds the key from whatever address string its caller
+    // passed, so a newline in it would write a second log line an operator reads as genuine.
+    cause: tenant
+      ? `sign-in is locked out for another ${retryAfterSeconds}s after repeated failures`
+      : `${renderCauseValue(key)} is locked out for another ${retryAfterSeconds}s after repeated failures`,
+    fix: tenant
+      ? `wait ${retryAfterSeconds}s — or clear the one bucket that is holding: await auth.orgLimiter.recordSuccess(orgKey(user.orgId)) — or raise defineAuth({ rateLimit })`
+      : `wait ${retryAfterSeconds}s — or clear this one bucket: await auth.limiter.recordSuccess(${renderFixLiteral(key, '<key>')}) — or raise defineAuth({ rateLimit })`,
     // `kdfOverloaded`'s shape: `@ultimat3/http`'s `retryAfterOf` reads exactly this field. `key`
     // stays out — `cause`/`fix` escape it on purpose and `meta` is read by surfaces that do not.
     meta: { retryAfterSeconds },
   });
+};
 
 /** One shape for every api-key rejection: unknown, revoked, expired and wrong all look alike. */
 export const apiKeyInvalid = (): AuthError =>
@@ -375,12 +415,4 @@ export const authLimiterPolicyMismatch = (
     cause: `defineAuth declares rateLimit.${field} = ${declared} but the limiter passed to it enforces ${enforced}; if ${enforced} is the number this deployment means to enforce, then the declaration is the half that is wrong`,
     fix: `construct the limiter with ${field}: ${declared} — defineAuth({ rateLimit, limiter }) compares the two, and the declaration is what Auth.rateLimit reports`,
     meta: { field, declared, enforced },
-  });
-
-/** For a custom `AuthAdapter` that implements part of the seam. Nothing shipped throws it. */
-export const authNotImplemented = (feature: string, fix: string): AuthError =>
-  new AuthError({
-    code: 'X_NOT_IMPLEMENTED',
-    cause: `${feature} is not implemented by the built-in driver`,
-    fix,
   });

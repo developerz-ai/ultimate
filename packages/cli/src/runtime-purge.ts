@@ -1,8 +1,8 @@
 // The retention sweep this boot owns: the framework tables that grow with traffic, the `purge()`
 // job that empties them and the `task` that fires it hourly.
 //
-// FIVE TARGETS over six tables, `As of 2026-08-27` — `x_idempotency`, `x_rate_limit`, the two
-// `x_auth` tables under one target, `x_notify_deliveries` and `x_notify_inbox`. Counted nowhere in
+// FIVE TARGETS over five tables, `As of 2026-10-02` — `x_idempotency`, `x_rate_limit`, the
+// `x_auth` limiter's table, `x_notify_deliveries` and `x_notify_inbox`. Counted nowhere in
 // prose but here: this header said "three" for two releases after the notify tables joined the
 // boot's DDL, which is how `x_notify_inbox` became the one framework table nothing swept.
 //
@@ -94,14 +94,13 @@ let installed: readonly PurgeTarget[] = [];
 let sweep: JobHandle<PurgeInput> | undefined;
 
 /**
- * `x_auth_failures` and `x_auth_lockouts` together, under the prefix they share: one target,
- * because `purgeAuthLimits()` clears both in one statement and two targets under one pair of
- * tables would be a second delete that removes nothing.
+ * `x_auth_lockouts` — every credential bucket, one row per key. The target keeps the `x_auth`
+ * name it has always reported under: it is what a dashboard and `PurgeReport.swept` already key on.
  */
 const authTarget: PurgeTarget = {
   name: 'x_auth',
   // No `nowMs`: a limiter built through the seam holds the clock its host handed it, which is the
-  // clock every `at_ms` in those tables was written from.
+  // clock every instant in that table was written from.
   purgeExpired: () => purgeAuthLimits(),
 };
 

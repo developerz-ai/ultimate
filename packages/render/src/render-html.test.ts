@@ -57,7 +57,7 @@ describe('renderToHtml', () => {
 
   test('a component that renders itself fails with a cause, not a stack overflow', async () => {
     const Loop = (): unknown => h(Loop, null);
-    expect(renderToHtml(h(Loop, null))).rejects.toThrow(/renders itself/);
+    await expect(renderToHtml(h(Loop, null))).rejects.toThrow(/renders itself/);
   });
 
   // The bound was on `renderNode` alone, so it only held for the ELEMENT path. `unwrap` recurses
@@ -107,7 +107,7 @@ describe('renderComponent', () => {
     const Broken = (): unknown => {
       throw new TypeError('boom');
     };
-    expect(renderComponent(Broken, {}, 'apps/web/site/page.tsx')).rejects.toThrow(
+    await expect(renderComponent(Broken, {}, 'apps/web/site/page.tsx')).rejects.toThrow(
       /apps\/web\/site\/page\.tsx threw: TypeError: boom/,
     );
   });

@@ -7,8 +7,11 @@ import { type Clock, systemClock, uuid } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import type { AuthAdapter, AuthSession, AuthUser } from './adapter';
 import { normaliseEmail } from './email';
-import { mfaRequired, mfaRequiredUnenforceable, sessionUnknown } from './errors';
+import { mfaRequiredUnenforceable, sessionUnknown } from './errors';
 import { installedAuthLimiter } from './limiter-install';
+import { openLoginAttempt } from './login-attempt';
+import { createTotpReplayGuard, type TotpReplayGuard } from './mfa';
+import { mfaChallengeRequired } from './mfa-challenge';
 import type { OAuthProviderId } from './oauth';
 import {
   checkPasswordStrength,
@@ -26,9 +29,7 @@ import {
   assertAuthLimiterPolicy,
   createAuthLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
-  ipKey,
   loginFailed,
-  orgKey,
   orgRateLimit,
 } from './rate-limit';
 import {
@@ -148,6 +149,12 @@ export interface AuthConfigInput {
   readonly orgLimiter?: AuthLimiter | undefined;
   readonly mfa?: Partial<AuthMfaPolicy> | undefined;
   /**
+   * Which TOTP steps have been spent, read and written by `completeMfa`. Omitted means
+   * `createTotpReplayGuard()` — one process' worth of memory, so a code is single-use per replica;
+   * a fleet that needs it single-use everywhere passes a shared guard with the same two methods.
+   */
+  readonly totpReplay?: TotpReplayGuard | undefined;
+  /**
    * The OAuth providers this app serves login routes for. Defaults to `[]` — an empty list is
    * "no OAuth", and every `/auth/oauth/<id>` answers `X_OAUTH_PROVIDER_UNKNOWN`. Never the live
    * registry, which a dependency can write into.
@@ -168,6 +175,7 @@ export interface Auth {
   readonly orgRateLimit: AuthRateLimitPolicy;
   readonly orgLimiter: AuthLimiter;
   readonly mfa: AuthMfaPolicy;
+  readonly totpReplay: TotpReplayGuard;
   readonly providers: readonly OAuthProviderId[];
   readonly link: OAuthLinkPolicy;
 }
@@ -224,6 +232,7 @@ export function defineAuth(config: AuthConfigInput): Auth {
     orgRateLimit: orgLimiter.policy,
     orgLimiter,
     mfa,
+    totpReplay: config.totpReplay ?? createTotpReplayGuard(),
     // BREAKING (majors only): the default is `[]`, never the live registry.
     //
     // It was `oauthProviderIds()`, so `defineAuth({ providers })`'s own documented purpose — the
@@ -278,50 +287,46 @@ export interface LoginResult {
  * Every failure path here throws `loginFailed()` — unknown address, wrong password and
  * disabled account are indistinguishable in both message and duration. The only paths that
  * throw something else are lockout (before any work) and MFA (after the password is proven).
+ *
+ * The attempt is RESERVED against every bucket before the KDF and settled after it: a burst of
+ * concurrent guesses spends the allowance as it arrives, so at most `maxAttempts` of them ever
+ * reach the hash. A failure leaves its reservations standing — they are the recorded failure.
  */
 export async function login(auth: Auth, input: LoginInput): Promise<LoginResult> {
-  const account = accountKey(input.email);
   const ip = input.ip ?? null;
-  await auth.limiter.assertAllowed(account);
-  if (ip !== null) await auth.limiter.assertAllowed(ipKey(ip));
+  const attempt = await openLoginAttempt(auth, accountKey(input.email), ip);
 
-  const user = await auth.adapter.findUserByEmail(normaliseEmail(input.email));
-  // The tenant bucket can only be consulted once the address resolves to an org, which is still
-  // before the KDF runs — the expensive half of this function — so it costs one map lookup and
-  // caps a spray that per-IP and per-account buckets both let through.
-  const org = user?.orgId ?? null;
-  if (org !== null) await auth.orgLimiter.assertAllowed(orgKey(org));
-
-  const usable = user !== null && user.disabledAt === null;
-  const verification = await verifyPassword({
-    hash: usable ? user.passwordHash : null,
-    password: input.password,
-    params: auth.password.params,
-  });
-
-  if (!verification.ok || user === null) {
-    await auth.limiter.recordFailure(account);
-    if (ip !== null) await auth.limiter.recordFailure(ipKey(ip));
-    if (org !== null) await auth.orgLimiter.recordFailure(orgKey(org));
-    throw loginFailed();
+  let user: AuthUser | null;
+  let verification: Awaited<ReturnType<typeof verifyPassword>>;
+  try {
+    user = await auth.adapter.findUserByEmail(normaliseEmail(input.email));
+    // The tenant bucket can only be joined once the address resolves to an org, which is still
+    // before the KDF runs — the expensive half of this function — and it caps a spray that
+    // per-IP and per-account buckets both let through.
+    await attempt.reserveOrg(user?.orgId ?? null);
+    verification = await verifyPassword({
+      hash: user !== null && user.disabledAt === null ? user.passwordHash : null,
+      password: input.password,
+      params: auth.password.params,
+    });
+  } catch (thrown) {
+    // No verdict — a shed KDF, a store that is down, a tenant cap — is not a failed guess.
+    await attempt.release();
+    throw thrown;
   }
 
-  await auth.limiter.recordSuccess(account);
-  // ONLY the account bucket is cleared. The ACCOUNT window belongs to one person, so a success
-  // proves the typos before it were theirs and clearing it is what stops a typo costing a lockout.
+  if (!verification.ok || user === null) throw loginFailed();
+
+  // ONLY the account bucket is cleared, and only once nothing more is owed. The ACCOUNT window
+  // belongs to one person, so a success proves the typos before it were theirs. The address and
+  // the tenant count traffic from a SHARED source, so a success is not evidence the failures
+  // beside it were benign — clearing the address bucket made it inert against stuffing (`4 wrong
+  // guesses + 1 login to an account the attacker owns, repeat` never locked).
   //
-  // Neither the IP nor the tenant bucket is cleared, and it is the same argument for both: they
-  // count traffic from a SHARED source, so a success is not evidence the failures beside it were
-  // benign. `recordSuccess(ipKey(ip))` used to run here and deleted the whole address bucket —
-  // which made it inert against the attack it exists for. A credential-stuffing run never spends
-  // `maxAttempts` guesses on one account, so the per-account bucket never fires; the address
-  // bucket is the only one that sees the pattern, and `4 wrong guesses + 1 login to an account
-  // the attacker owns, repeat` wiped it every fifth request. Measured: 5 guesses to
-  // `X_ACCOUNT_LOCKED` without the reset, 160 and never locked with it.
-  //
-  // The cost is a shared NAT accumulating failures from unrelated people, which is exactly what
-  // `windowMs` bounds — and `X_ACCOUNT_LOCKED`'s `fix:` already names `recordSuccess(<key>)` as
-  // the deliberate manual escape for that case.
+  // With a second factor still owed NOTHING is cleared: a caller holding the password would
+  // otherwise wipe the count of wrong codes with every repeat of this first leg.
+  if (user.mfaSecret === null) await attempt.succeed();
+  else await attempt.release();
 
   // Parameters were raised since this hash was written: upgrade it now, while we hold the
   // plaintext. This is the only moment it is possible without asking the user for anything.
@@ -331,11 +336,9 @@ export async function login(auth: Auth, input: LoginInput): Promise<LoginResult>
     });
   }
 
-  // Password proven, second factor not. No half-authenticated session is written here and nothing
-  // is persisted to correlate the two legs — finishing MFA is the app's, and `X_MFA_REQUIRED`'s
-  // `fix:` is the instruction. The framework's own second leg is blocked on a sealed pending-MFA
-  // credential; the constraint is written down in `packages/auth/CLAUDE.md`.
-  if (user.mfaSecret !== null) throw mfaRequired(user.id);
+  // Password proven, second factor not. No half-authenticated session is written: the sealed
+  // challenge in the error is the only thing that carries the first leg to `completeMfa`.
+  if (user.mfaSecret !== null) throw await mfaChallengeRequired(auth, user.id);
 
   const issued = await createSession(auth.sessions, {
     userId: user.id,

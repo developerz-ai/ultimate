@@ -176,6 +176,44 @@ describe('cdpE2eSession', () => {
     expect(sources(OFFLINE_FIRST_SCRIPT)).toEqual(['tab-session']);
   });
 
+  // The refusal used to be swallowed AND the page dropped from the set: every later offline() then
+  // skipped that tab's `navigator.onLine`, and the test after it read an online page as proof.
+  test('a page whose restore is refused surfaces it, and is still switched the next time', async () => {
+    const { connection, calls } = fake();
+    let refuse = true;
+    const flaky: CdpConnection = {
+      ...connection,
+      send(method, params, sessionId) {
+        if (refuse && method === 'Page.removeScriptToEvaluateOnNewDocument') {
+          return Promise.reject(new Error('Script not found'));
+        }
+        if (method === 'Page.addScriptToEvaluateOnNewDocument') {
+          void connection.send(method, params, sessionId);
+          return Promise.resolve({ result: { identifier: '1' } });
+        }
+        return connection.send(method, params, sessionId);
+      },
+    };
+    const session = await cdpE2eSession({ connection: flaky, loadTimeoutMs: 500 });
+    await session.newTab();
+    await session.offline(true);
+
+    const thrown: unknown = await session.offline(false).then(
+      () => expect.unreachable('the refused restore vanished'),
+      (error: unknown) => error,
+    );
+    expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
+    const restores = (): number =>
+      calls.filter((call) => call.method === 'Runtime.evaluate' && call.sessionId === 'tab-session')
+        .length;
+    expect(restores()).toBe(1);
+
+    refuse = false;
+    await session.offline(true);
+    await session.offline(false);
+    expect(restores()).toBe(2);
+  });
+
   test('every WebSocket and request the browser reports is logged, in order', async () => {
     const { connection, emit } = fake();
     const session = await cdpE2eSession({ connection, loadTimeoutMs: 500 });

@@ -7,7 +7,8 @@ import { ConfigInvalidError, logger, uuid } from '@ultimat3/core';
 import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
 import { normaliseEmail } from './email';
-import { authWriteFailed, mfaRequired } from './errors';
+import { authWriteFailed } from './errors';
+import { mfaChallengeRequired } from './mfa-challenge';
 import type { OAuthCallback, OAuthHandshake } from './oauth';
 import {
   emailVerifiedNotStored,
@@ -244,7 +245,7 @@ export async function signInWithOAuth(auth: Auth, input: OAuthSignInInput): Prom
     linked === null ? account : { ...account, id: linked.id, createdAt: linked.createdAt },
   );
 
-  if (user.mfaSecret !== null) throw mfaRequired(user.id);
+  if (user.mfaSecret !== null) throw await mfaChallengeRequired(auth, user.id);
 
   const issued = await createSession(auth.sessions, {
     userId: user.id,

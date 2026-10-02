@@ -117,8 +117,9 @@ await withReplicaReads(async () => {
 | `session` | `Partial<SessionPolicy>` | `absoluteTtlMs` 30d, `idleTtlMs` 7d, `cookieName` **`'__Host-x_session'`**, `rotateOnPrivilegeChange` true. The `__Host-` prefix is a browser-enforced contract — Secure, `Path=/`, no `Domain` — so a subdomain (or an XSS on one) cannot overwrite it |
 | `password` | `Partial<PasswordPolicy>` | |
 | `rateLimit` | `Partial<AuthRateLimitPolicy>` | `scope: 'shared'` must be matched by a `limiter` that says the same, or `defineAuth` refuses at boot rather than at 3am on the first spray |
-| `limiter` / `orgLimiter` | `AuthLimiter` | omitted means one process' worth of state, i.e. `maxAttempts × N` for N replicas |
+| `limiter` / `orgLimiter` | `AuthLimiter` | omitted means one process' worth of state, i.e. `maxAttempts × N` for N replicas. An attempt is reserved before the KDF (`reserve` / `refund`), never checked and recorded after it |
 | `mfa` | `Partial<AuthMfaPolicy>` | `required` is typed `false` and cannot be set true: both credential paths branch on `user.mfaSecret`, so a user who never enrolled would be locked out for good |
+| `totpReplay` | `TotpReplayGuard` | which TOTP steps are spent, read by `completeMfa`. Omitted means `createTotpReplayGuard()`: in-process, so a code is single-use per replica |
 | `providers` | `OAuthProviderId[]` | **defaults to `[]`**, `As of 2026-08-23` — an empty list is "no OAuth", and every `/auth/oauth/<id>` answers `X_OAUTH_PROVIDER_UNKNOWN`. Never the live registry: that would let any dependency that calls `registerOAuthProvider` turn on a login route this app never enabled |
 | `link` | `OAuthLinkPolicy` | defaults to `'verified-email'` |
 

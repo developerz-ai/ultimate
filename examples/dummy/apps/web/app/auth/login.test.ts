@@ -5,10 +5,10 @@
  * refusal names against the path the declaration mounts, never against a string this file repeats.
  */
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { OAuthFetch, OAuthLoginOptions } from '@ultimat3/auth';
 import { authenticate, MemoryAdapter, readSessionCookie } from '@ultimat3/auth';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, setLogSink } from '@ultimat3/core';
 import { AFTER_SIGN_IN, postlyAuth, postlyLogin } from './login';
 
 const NOW = new Date('2026-08-15T12:00:00.000Z');
@@ -51,10 +51,22 @@ let adapter: MemoryAdapter;
 let auth: ReturnType<typeof postlyAuth>;
 let login: ReturnType<typeof postlyLogin>;
 
+/** What the server logged: a refusal's authored cause and fix go here, never to the caller. */
+let logged: string[];
+let previousSink: ReturnType<typeof setLogSink>;
+
 beforeEach(() => {
   adapter = new MemoryAdapter();
   auth = postlyAuth({ adapter, clock: frozenClock(NOW) });
   login = postlyLogin(auth, SEAMS);
+  logged = [];
+  previousSink = setLogSink((line) => {
+    logged.push(line);
+  });
+});
+
+afterEach(() => {
+  setLogSink(previousSink);
 });
 
 /** `/auth/oauth/:provider` → the URL a browser is actually sent to. The mount, filled in. */
@@ -137,7 +149,7 @@ describe('log in with GitHub', () => {
     expect(sealed[0]).toContain('HttpOnly');
   });
 
-  test('a forged state is refused, and its fix names a path this app mounts', async () => {
+  test('a forged state is refused by code, and the logged fix names a path this app mounts', async () => {
     const start = await login.start.handle(startRequest('github'));
 
     const done = await login.callback.handle(
@@ -150,11 +162,16 @@ describe('log in with GitHub', () => {
     const body = await bodyOf(done);
     expect(body['code']).toBe('X_OAUTH_STATE_INVALID');
 
-    // Axiom 4, checked as a round trip: the path the fix line tells the caller to restart at has
-    // to be one this app's own start descriptor claims. A literal here would pass while the mount
-    // moved out from under it, which is exactly how three fix lines outlived their route.
-    const named = /GET (\/\S+)/.exec(String(body['fix']))?.[1] ?? '';
-    expect(named).toBe(mounted(login.start.path, 'github'));
+    // What a client gets is the code and one fixed line: it BRANCHES ON `code`, and it restarts
+    // at the start descriptor's own path, which it already holds — never at text parsed out of
+    // a failure body.
+    expect(body['fix']).toBe('x errors explain X_OAUTH_STATE_INVALID --json');
+    expect(JSON.stringify(body)).not.toContain('/auth/oauth/');
+
+    // Axiom 4, checked as a round trip, where the authored fix now lives: the `auth.oauth.refused`
+    // log line. The path it tells the developer to restart at has to be the one this app mounts.
+    const refused = logged.find((line) => line.includes('auth.oauth.refused')) ?? '';
+    expect(/GET (\/[^\s"\\]+)/.exec(refused)?.[1] ?? '').toBe(mounted(login.start.path, 'github'));
 
     // The code the handshake authorised is spent whether or not the callback succeeded.
     expect(done.headers.getSetCookie().some((c) => c.includes('=;'))).toBe(true);

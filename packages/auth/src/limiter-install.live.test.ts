@@ -89,7 +89,6 @@ beforeAll(async () => {
 afterAll(async () => {
   if (url === undefined) return;
   resetAuthLimiters();
-  await sql.unsafe('delete from x_auth_failures', []);
   await sql.unsafe('delete from x_auth_lockouts', []);
   await sql.end();
 });
@@ -97,7 +96,6 @@ afterAll(async () => {
 beforeEach(async () => {
   if (url === undefined) return;
   clock.set(START_MS);
-  await sql.unsafe('delete from x_auth_failures', []);
   await sql.unsafe('delete from x_auth_lockouts', []);
   // What a host boot does once, before it imports a single app module.
   configureAuthLimiters((policy) =>
@@ -148,8 +146,8 @@ describeLive('live · postgres · the installed auth limiter', () => {
     expect(await purgeAuthLimits()).toBe(0);
 
     clock.advance(300_001);
-    // Three failures plus one lockout row.
-    expect(await purgeAuthLimits()).toBe(4);
+    // One row: the account's bucket, holding its three attempts and its lockout.
+    expect(await purgeAuthLimits()).toBe(1);
     expect(await codeOf(login(podA, { email: EMAIL, password: PASSWORD }))).toBe('did-not-throw');
   });
 
@@ -172,8 +170,8 @@ describeLive('live · postgres · the installed auth limiter', () => {
       await login(podA, { email: EMAIL, password: 'wrong-password-here' }).catch(() => undefined);
     }
     clock.advance(300_001);
-    // Four sweepable rows exist right now — the test above answers 4 in exactly this state — so a
-    // `resetAuthLimiters` that kept `built` sweeps them and this reads 4. Without the arrangement
+    // One sweepable row exists right now — the test above answers 1 in exactly this state — so a
+    // `resetAuthLimiters` that kept `built` sweeps it and this reads 1. Without the arrangement
     // the assertion held whether or not the pool was released.
     resetAuthLimiters();
     expect(await purgeAuthLimits()).toBe(0);

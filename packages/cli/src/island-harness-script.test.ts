@@ -76,10 +76,10 @@ describe('unit · a live socket must not fail every state of a live island', () 
     expect(() => socket.close()).not.toThrow();
   });
 
-  test('a real unstubbed HTTP request is still refused — the refusal is not weakened', () => {
+  test('a real unstubbed HTTP request is still refused — the refusal is not weakened', async () => {
     const { window } = runHarness();
     const fetchFn = window['fetch'] as (url: string) => Promise<unknown>;
-    expect(fetchFn('/api/nope')).rejects.toThrow(/no stub answers/);
+    await expect(fetchFn('/api/nope')).rejects.toThrow(/no stub answers/);
   });
 
   // A component whose mount() awaits the socket's own `open` before rendering anything would

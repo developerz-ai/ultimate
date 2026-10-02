@@ -34,6 +34,7 @@ x version              # CLI version
 | `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
+| `x auth seal-mfa` | one-shot: seal every second-factor secret still stored in the clear | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
@@ -865,6 +866,33 @@ STRIPE_KEY      [redacted]  32 chars   no
 
 Errors: `X_SECRETS_KEY_MISSING`, `X_SECRETS_KEY_INVALID`, `X_SECRETS_KEY_MISMATCH`, `X_SECRETS_FILE_MISSING`, `X_SECRETS_FILE_INVALID`, `X_SECRETS_TAMPERED`, `X_SECRETS_PLAINTEXT_INVALID`, `X_SECRETS_EDITOR_MISSING`, `X_SECRETS_EDIT_FAILED`, `X_GENERATE_CONFLICT` (`init` over an existing file), `X_CLI_BAD_FLAG` (`--drop` naming an id the ring does not hold).
 
+## x auth
+
+```bash
+x auth seal-mfa [--json]
+```
+
+One subcommand, and no default: a bare `x auth` is refused (`X_CLI_BAD_FLAG` names the subcommand), as `x db`, `x mcp` and `x pr` are — the one subcommand rewrites credential rows, and the read-only answer (how many are unsealed) is `x doctor`'s. `seal-mfa` seals every `x_users.mfa_secret` still stored
+in the clear, in place, under the app's master key (`As of 2026-10`). It is the one-shot an upgrade
+onto sealed second-factor secrets owes — `completeMfa` refuses a plaintext value with
+`X_MFA_SECRET_UNSEALED`, whose fix is this command, and `x doctor` reports how many rows are left.
+
+| | |
+|---|---|
+| Opens | the app's database, as every other command does (`DATABASE_URL`, or the embedded one) — the framework's tables are applied first |
+| Needs | the master key: `ULTIMATE_SECRETS_KEY` or `.secrets.key`. With neither it is `X_SEAL_KEY_MISSING` and no row is written |
+| Idempotent | a sealed value is counted and never rewritten, so an interrupted run is finished by running it again |
+| Safe under traffic | each write is a compare-and-set on the value read: a user who re-enrolled mid-run keeps the new secret, and the row is counted `skipped` |
+| Reaches | `BuiltinAdapter`'s `x_users`. An app on its own `AuthAdapter` calls `sealMfaSecrets({ adapter })` from `@ultimat3/auth` |
+
+```bash
+$ x auth seal-mfa --json
+{"ok":true,"command":"auth","summary":"sealed 2 second-factor secret(s); 0 already sealed, 0 changed mid-run and left alone",
+  "data":{"sealed":2,"alreadySealed":0,"skipped":0}}
+```
+
+Errors: `X_SEAL_KEY_MISSING`, `X_NOT_IN_APP`, `X_DB_UNAVAILABLE`, `X_AUTH_WRITE_FAILED`.
+
 ## x manifest
 
 ```bash
@@ -975,6 +1003,14 @@ two conditions; an app with none is never judged.
 
 The ring is read as a booted process would see it — the real environment first, then the
 committed `secrets.enc.json`.
+
+**What an upgrade left in the auth tables** (`As of 2026-10`). Asked of an external
+`DATABASE_URL` only — the embedded database is never opened by a diagnostic.
+
+| Finding | Condition | Fix |
+|---|---|---|
+| `X_MFA_SECRET_UNSEALED` | `x_users` rows hold a second-factor secret that is not sealed; each is refused at the second factor until it is | `x auth seal-mfa --json` |
+| `X_FRAMEWORK_TABLE_ORPHANED` | `x_auth_failures` is still present: no release reads it, and the boot does not drop a table a replica on the previous release may still be using | `psql "$DATABASE_URL" -c 'drop table if exists x_auth_failures'`, once every replica runs this release |
 
 The output is a `CommandResult` like every other command's: `findings`, not a `checks` array.
 

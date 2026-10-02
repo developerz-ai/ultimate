@@ -18,7 +18,7 @@ import { driver as appDriver } from '@postly/db';
 import { type Actor, assert, userActor } from '@ultimat3/core';
 import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
 import { seedId } from '@ultimat3/entity';
-import type { SignIn, TestBudget, TestNetwork } from '@ultimat3/testing';
+import type { E2eSession, SignIn, TestBudget, TestNetwork } from '@ultimat3/testing';
 import {
   createTestNetwork,
   defineFixtures,
@@ -278,11 +278,17 @@ const budget = async (): Promise<TestBudget> => {
  * `offline()` / `drop()` / `online()` switch every tab and worker (`session.offline`) as well; the
  * returned promise is awaited by the test (`await network.offline()`), so the next line already
  * sees the browser offline. Outside a browser run it is the framework's, untouched.
+ *
+ * Teardown is ASYNC, and the fixture runner awaits it (`runWithFixtures` prefers
+ * `Symbol.asyncDispose`). Putting the cable back is a round trip per tab and per worker, and a
+ * synchronous disposer could only fire it and return: traced 2026-10-02, the next test's
+ * `Page.navigate` went out between those round trips, with three workers still cut and the
+ * `navigator.onLine` override still registered — a document that then boots believing it is offline.
  */
-const network = async (): Promise<TestNetwork> => {
-  const own = createTestNetwork();
-  if (e2eBaseUrl() === undefined) return own;
-  const session = e2eBrowser().session;
+export const browserNetwork = (
+  own: TestNetwork,
+  session: Pick<E2eSession, 'offline'>,
+): TestNetwork & AsyncDisposable => {
   let cut = false;
   const cable = (offline: boolean): Promise<void> => {
     cut = offline;
@@ -293,11 +299,22 @@ const network = async (): Promise<TestNetwork> => {
     drop: () => cable(true),
     online: () => cable(false),
     state: () => (cut ? 'offline' : 'online'),
+    // What a `using` gets, because `TestNetwork` is `Disposable`: it cannot wait, so the restore is
+    // started and its refusal left to the next call on the session. The runner never takes this one.
     [Symbol.dispose]: (): void => {
       own[Symbol.dispose]();
-      if (cut) void session.offline(false);
+      if (cut) void cable(false).catch(() => undefined);
+    },
+    [Symbol.asyncDispose]: async (): Promise<void> => {
+      own[Symbol.dispose]();
+      if (cut) await cable(false);
     },
   };
+};
+
+const network = async (): Promise<TestNetwork> => {
+  const own = createTestNetwork();
+  return e2eBaseUrl() === undefined ? own : browserNetwork(own, e2eBrowser().session);
 };
 
 /**

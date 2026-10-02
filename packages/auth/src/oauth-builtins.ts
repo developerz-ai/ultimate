@@ -39,6 +39,12 @@ export const GOOGLE_PROVIDER: OAuthProvider = {
   clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
 };
 
+/**
+ * UNPROVEN: this flow has never completed a sign-in against Apple, in a test or anywhere else.
+ * Apple answers a request that asks for a scope with `response_mode=form_post` — a POST to the
+ * callback — and both route descriptors in `oauth-route.ts` are GET and read the query string.
+ * Whether this entry ships or is removed is an open owner decision; do not rely on it.
+ */
 export const APPLE_PROVIDER: OAuthProvider = {
   id: 'apple',
   authorizeUrl: 'https://appleid.apple.com/auth/authorize',

@@ -11,7 +11,8 @@
 import './test-setup';
 import { db } from '@postly/db';
 import { createContext, runWithContext } from '@ultimat3/core';
-import { expect, test } from '@ultimat3/testing';
+import { createTestNetwork, expect, test } from '@ultimat3/testing';
+import { browserNetwork } from './test-setup';
 
 test('a seeded row is visible through the handle the app reads', async ({ seed, actorFor }) => {
   const { acme, draft, ada } = await seed('dev').pick({
@@ -72,4 +73,34 @@ test('each seed call starts from an empty graph rather than the last one', async
   await seed('dev').pick({ acme: 'org:acme' });
 
   expect(await asAda(() => db.posts.where({ orgId: acme.id, id: stray.id }).one())).toBeNull();
+});
+
+test('a browser cable a test pulled is back in before its teardown is over', async () => {
+  const seen: string[] = [];
+  let restore = (): void => expect.unreachable('the cable was never asked to go back in');
+  // A browser's switch is a round trip per tab and per worker: `offline(false)` resolves LATER.
+  const session = {
+    offline: (enabled: boolean): Promise<void> => {
+      seen.push(enabled ? 'cut' : 'restore asked');
+      if (enabled) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        restore = (): void => {
+          seen.push('restored');
+          resolve();
+        };
+      });
+    },
+  };
+  const network = browserNetwork(createTestNetwork(), session);
+  await network.offline();
+
+  // The disposer the fixture runner takes (`runWithFixtures`): the async one, awaited.
+  const teardown = network[Symbol.asyncDispose]().then(() => seen.push('teardown over'));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  // Still open: the NEXT test's first navigation must not start under a half-restored browser.
+  expect(seen).toEqual(['cut', 'restore asked']);
+
+  restore();
+  await teardown;
+  expect(seen).toEqual(['cut', 'restore asked', 'restored', 'teardown over']);
 });

@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 23.x → 24.0.0 | **57** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, a malformed policy decision that denies; then `ctx.peer` behind its own switch, anonymous browser writes held to same-origin, failed sign-ins metered to a 429, health bodies trimmed for strangers, a `max-age` treated as a shared-cache offer, a body refused without a `content-type`, and an awaited browser `close()` | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 23.x → 24.0.0 | **68** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, a malformed policy decision that denies; then `ctx.peer` behind its own switch, anonymous browser writes held to same-origin, failed sign-ins metered to a 429, health bodies trimmed for strangers, a `max-age` treated as a shared-cache offer, a body refused without a `content-type`, an awaited browser `close()`; then auth — **a sealed MFA secret that needs `x auth seal-mfa` run once**, a retired `x_auth_failures` table, a reservation-shaped `AuthLimiter`, API keys bound to their owner and its grants, `X_MFA_REQUIRED` carrying a challenge, eight more required `AuthAdapter` members, `oauthLogin` requiring `APP_URL`, and an e2e `offline()` that rejects when a page refuses the switch | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
@@ -72,11 +72,12 @@ Each entry changes a surface the table below covers.
 
 ## 23.x → 24.0.0, entry by entry — **unreleased**
 
-**Fifty-seven entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+**Sixty-eight entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
 `[Unreleased]` entries in their order: grouped by package, lowest tier first. No legacy path, no
 codemod, no compatibility shim — every break is a build error or an `X_*` error naming the rewrite.
-`As of 2026-10` slices 01–04 have landed: `@ultimat3/schema` and `@ultimat3/core`; tier 1 —
-`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry; then slice 04, complete — tier 2's `entity`, `policy` and `http`, with one `testing` entry. A later slice appends
+`As of 2026-10` slices 01–05 have landed: `@ultimat3/schema` and `@ultimat3/core`; tier 1 —
+`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry; then slice 04, complete — tier 2's `entity`, `policy` and `http`, with one `testing` entry; then slice 05, `auth`. **A deployment with MFA-enrolled users has an
+operator step: entry 58, upgrade steps 18–20.** A later slice appends
 its rows below the last one and never renumbers.
 
 ### The upgrade, top to bottom
@@ -100,7 +101,12 @@ its rows below the last one and never renumbers.
 | 15 | `x verify --only unit,contract,policy` and fix the tests it fails; read every `catch` around `assertAllowed` and every policy predicate's return | `X_UNAUTHENTICATED` and a 401 where a test expected `X_FORBIDDEN` and 403; a denial where a malformed decision allowed; `X_INVARIANT_VIOLATED` from a preload over 10,000 rows | 46–49 |
 | 16 | set the http config the deploy needs: `trustClientCertHeader: true` where `ctx.peer` is read behind a proxy that strips the header, `healthDetailPeers` for an off-box health reader, `cors.origins` for a cross-origin browser form, `hostname` for an embedder | `ctx.peer` is `null`; a health body of three fields; `X_CSRF_BLOCKED` on an anonymous form post | 50, 51, 53, 56 |
 | 17 | `x verify --only unit,contract,e2e` and fix the tests it fails: `await` every browser `close()`, send `content-type` with every body, write `private, max-age=N` where a handler meant a per-user lifetime | `X_BODY_INVALID`; a rewritten `cache-control`; 429 after repeated 401s; a leaked Chrome | 52, 54, 55, 57 |
-| 18 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+| 18 | **before the deploy, where any user has MFA:** `x secrets init`, or set `ULTIMATE_SECRETS_KEY` in the deploy | `X_SEAL_KEY_MISSING` at `login()` for an enrolled user | 58 |
+| 19 | `bun run typecheck` for auth: a custom `AuthLimiter` implements `reserve` / `refund`; a custom `AuthAdapter` implements the eight members; callers of `verifyApiKey` read `.record`; delete imports of `redeemRecoveryCode`, `mfaRequired`, `authNotImplemented`; enrolment writes through `saveTotpSecret`; set `APP_URL` | TS2741 / TS2305 / TS2339 at each site; `X_ENV_MISSING` from `oauthLogin` | 60, 61, 64, 65, 67 |
+| 20 | **deploy, then `x auth seal-mfa --json` once** | `X_MFA_SECRET_UNSEALED` (500) at the second factor for every enrolled user | 58 |
+| 21 | `x verify --only unit,contract,e2e`; move the second-factor client to `meta.challenge` and `completeMfa`; list each API key's scopes and pass `grantsOf` where users hold roles | a key that resolves with fewer scopes or 401; a client still reading `meta.userId`; `X_AUTH_WRITE_FAILED` where a test matched `X_DB_UNIQUE_VIOLATION`; `X_CDP_CALL_FAILED` from an `offline()` a page refused | 61–63, 66, 68 |
+| 22 | once every replica runs this release: `x doctor --json`, then `psql "$DATABASE_URL" -c 'drop table if exists x_auth_failures'` | `X_FRAMEWORK_TABLE_ORPHANED` from `x doctor` | 59 |
+| 23 | `x verify` | green, or a finding whose `fix:` is the edit | — |
 
 ### Entry by entry
 
@@ -108,7 +114,8 @@ Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@u
 `@ultimat3/time` (18–21), `@ultimat3/db` (22–29), `@ultimat3/flags` (30–31), `@ultimat3/cache`
 (32–33), `@ultimat3/seo` (34), `@ultimat3/storage` (35–42). Tier 4 — `@ultimat3/render` (43).
 Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49), `@ultimat3/http` (50–56). Tier 5 —
-`@ultimat3/testing` (57).
+`@ultimat3/testing` (57). Tier 2 — `@ultimat3/auth` (58–67). Tier 5 —
+`@ultimat3/testing` again (68).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
@@ -169,6 +176,29 @@ Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49), `@ultimat
 | 55 | request bodies | a client sends a non-empty body with no `content-type`. `X_BODY_INVALID` (422). Send `content-type: application/json`; a handler that wants raw bytes reads `bodyBytes()` |
 | 56 | `defineHttpConfig` | an embedder relied on `HOSTNAME` to choose the bind address: pass `hostname`. A config with `buildId: null` and `BUILD_ID` set now runs with skew detection off |
 | 57 | `E2eBrowser.close()`, `LaunchedBrowser.close()`, `CdpLaunchFailedError` | a test or script calls `close()` without `await`, or reads `closed`: `await browser.close()`. A hand-built `CdpLaunchFailedError` passes `{ executable, attempts }` |
+| 58 | **operator action** — `x_users.mfa_secret` | any user has MFA enrolled. Do the three steps under the table, in order. Until `x auth seal-mfa` has run, each enrolled user gets `X_MFA_SECRET_UNSEALED` (500) at the second factor. App code that writes the secret calls `saveTotpSecret(auth, userId, secret)` |
+| 59 | `x_auth_failures`, `x_auth_lockouts` | always, after the rollout completes: `x doctor` reports `X_FRAMEWORK_TABLE_ORPHANED`; run `psql "$DATABASE_URL" -c 'drop table if exists x_auth_failures'`. The new `x_auth_lockouts` columns are added at boot. Failure counts restart; live lockouts carry over |
+| 60 | a custom `AuthLimiter` | you implement one: replace `assertAllowed` / `recordFailure` with `reserve(key)` and `refund(reservation)` (TS2741). A caller of either removed method calls `reserve` before the check and `refund` on success |
+| 61 | `verifyApiKey`, `apiKeyActor` | you call either: read `.record` off the result and pass a store with `findUserById`. A key whose owner is disabled or gone stops working. A key issued with a `userId` that is not an `x_users` id: reissue it without `userId` |
+| 62 | API key scopes | a key holds `*` or `<res>:*`, or more than its owner is granted: the extra scopes are dropped. `issueApiKey` with a wildcard is `X_CONFIG_INVALID` — list the scopes. Where users hold roles, pass `apiKeyResolver(store, { grantsOf })` or their keys resolve with no scopes |
+| 63 | `X_MFA_REQUIRED` | a client or handler reads `meta.userId` to run the second factor. Read `meta.challenge` and call `completeMfa(auth, challenge, code)` within 5 minutes |
+| 64 | `redeemRecoveryCode`, `mfaRequired`, `authNotImplemented` | you import any (TS2305). A recovery code goes to `completeMfa`; throw the challenge with `mfaChallengeRequired(auth, userId)` |
+| 65 | a custom `AuthAdapter` | you ship one: implement the eight members TS2741 names. `BuiltinAdapter` and `MemoryAdapter` are the references |
+| 66 | `BuiltinAdapter` write errors | you match `X_DB_UNIQUE_VIOLATION` on a user write. Match `X_AUTH_WRITE_FAILED` and read `meta.column` (`email`, `external_id`, `id`) |
+| 67 | `oauthLogin` | neither `baseUrl` nor `APP_URL` is set. `X_ENV_MISSING` at the start leg: set `APP_URL` to the app's public origin |
+| 68 | `E2eSession.offline()` | an e2e test toggles offline while a page refuses the script — a page mid-navigation, a crashed tab. `X_CDP_CALL_FAILED` where the call used to resolve and leave that page online. Wait for the page to settle, or close it, before `offline()` |
+
+Entry 58, **the one step an operator must not skip.** A deployment with MFA-enrolled users:
+
+| Order | Do | Until it is done |
+|---|---|---|
+| 1 | make the master key exist: `x secrets init`, or set `ULTIMATE_SECRETS_KEY` in the deploy | `X_SEAL_KEY_MISSING` at `login()` for an enrolled user |
+| 2 | deploy this release | — |
+| 3 | `x auth seal-mfa --json`, once | `X_MFA_SECRET_UNSEALED` (500) at the second factor for every enrolled user; `x doctor` reports the count |
+
+Step 3 answers `{ sealed, alreadySealed, skipped }`. It is idempotent, and `skipped` counts rows
+that changed while it ran — run it again and they are `alreadySealed`. A custom adapter calls
+`sealMfaSecrets({ adapter })`. A deployment with no MFA users needs none of this.
 
 Entry 39, the orphaned variants. These commands were **not run against a real disk or bucket** for
 this page — list first, read the list, then delete. The pattern matches a variant of either shape,
@@ -217,6 +247,12 @@ aws s3 ls s3://<bucket> --recursive | grep -E '@(full|[whq][0-9]+|cover|contain)
 | redirects | a non-http(s) target is never handed to the client router; the locale-prefix redirect stays on this origin |
 | `Set-Cookie` | two set in one request both reach the wire |
 | `X_CDP_LAUNCH_FAILED` | Chrome gets a 60 s launch deadline and one retry; the error lists each attempt in `cause` and `meta.attempts` |
+| `disableUser` | also revokes the user's live API keys; the result gains `apiKeysRevoked` |
+| `updatePrivileges` with a `passwordHash` | ends the user's other sessions; the result gains `sessionsRevoked` |
+| OAuth route failures | the body carries one fixed `cause` and `x errors explain <CODE> --json`; the detail is the `auth.oauth.refused` log line |
+| OAuth discovery and JWKS | a document answering for another issuer is refused; a key set with no importable key keeps the cached keys |
+| `x doctor` | two auth probes: unsealed second-factor secrets, and an orphaned framework table |
+| `X_CDP_TIMEOUT` | `meta.reading` says `target-gone`, `lost-in-transport` or `no-answer`, with the frames seen since the call |
 | a zone that is not a string | `X_TIMEZONE_INVALID` from every zoned function in `@ultimat3/time`, was a bare `TypeError` |
 
 ### Where the sites are
@@ -231,6 +267,7 @@ grep -rnE "formatRelative\(|addDaysInZone\(|formatDuration(Iso)?\(|cron: |expire
 grep -rnE "promoteAttachment\(|\.lastModified|implements StorageDriver|: StorageDriver = |canonicalRequest\(|signConstraints\(|variantKey\(|fitDimensions\(|\.get\(|allowedContentTypes|responsiveImage\(|usableWidths\(|declareTags\(|revalidate:" apps packages --include=*.ts --include=*.tsx
 grep -rnE "assertAllowed\(|X_FORBIDDEN|definePolicy\(|status: 403|\.preload\(|dbDrift|ENTITY_ERROR_CODES|: Driver = |implements Driver" apps packages --include=*.ts --include=*.tsx
 grep -rnE "ctx\.peer|trustProxy|cache-control|defineHttpConfig\(|healthz|readyz|\.close\(\)|\.closed\b|CdpLaunchFailedError" apps packages docker .github --include=*.ts --include=*.tsx --include=*.yml --include=*.yaml
+grep -rnE "mfaSecret|redeemRecoveryCode|mfaRequired|authNotImplemented|verifyApiKey\(|apiKeyActor\(|actorFromApiKey\(|issueApiKey\(|apiKeyResolver\(|assertAllowed\(|recordFailure\(|implements AuthAdapter|: AuthAdapter = |: AuthLimiter = |X_DB_UNIQUE_VIOLATION|oauthLogin\(|meta\.userId" apps packages --include=*.ts --include=*.tsx
 ```
 
 Tier 0: the `typecheck` step finds none of 1–16 — every entry is a value, not a type. A typed
@@ -256,6 +293,11 @@ Slice 04, http and testing: the `typecheck` step finds a read of `closed` and a
 `CdpLaunchFailedError` built with `detail` (57). It finds none of 50–56 and no unawaited
 `close()` — run the unit, contract and e2e suites, and read the deploy's proxy, probe and monitor
 configuration for 50, 52 and 53.
+
+Slice 05, auth: the `typecheck` step finds 60, 64, 65 and the changed shapes of 61. `x doctor`
+finds 58 (the count of unsealed rows) and 59. Nothing finds 62, 63, 66 or a missing `APP_URL` (67)
+before a request does — run the unit, contract and e2e suites and sign in once with an MFA user
+after step 20. The e2e suite finds 68.
 
 ## 22.x → 23.0.0, entry by entry
 

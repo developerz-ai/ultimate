@@ -3,5 +3,7 @@
 create table "x_auth_lockouts" (
   "key" text not null,
   "locked_until_ms" bigint not null,
+  "attempts_ms" bigint[] default '{}'::bigint[] not null,
+  "admitted" boolean default true not null,
   constraint "x_auth_lockouts_pkey" PRIMARY KEY (key)
 );

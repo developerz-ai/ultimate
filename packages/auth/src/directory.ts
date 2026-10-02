@@ -6,7 +6,6 @@
 
 import type { AuthUser, UserQuery } from './adapter';
 import type { Auth } from './auth';
-import { authNotImplemented } from './errors';
 
 /** Safe to render in an admin page, return from an MCP tool, or paste into a review ticket. */
 export interface AuthUserSummary {
@@ -45,21 +44,13 @@ export function describeUser(user: AuthUser): AuthUserSummary {
   };
 }
 
-const unsupported = (method: string, adapterName: string) =>
-  authNotImplemented(
-    `${adapterName}.${method}()`,
-    `implement ${method}() on your AuthAdapter — BuiltinAdapter (Postgres) and MemoryAdapter are the two reference implementations, in packages/auth/src`,
-  );
-
 /** Every member of one org, as summaries. `query.role` narrows it to one role's holders. */
 export async function listOrgUsers(
   auth: Auth,
   orgId: string,
   query?: UserQuery,
 ): Promise<readonly AuthUserSummary[]> {
-  const list = auth.adapter.listUsersByOrg?.bind(auth.adapter);
-  if (list === undefined) throw unsupported('listUsersByOrg', auth.adapter.name);
-  return (await list(orgId, query)).map(describeUser);
+  return (await auth.adapter.listUsersByOrg(orgId, query)).map(describeUser);
 }
 
 /**
@@ -71,7 +62,5 @@ export async function findUserByExternalId(
   auth: Auth,
   externalId: string,
 ): Promise<AuthUser | null> {
-  const find = auth.adapter.findUserByExternalId?.bind(auth.adapter);
-  if (find === undefined) throw unsupported('findUserByExternalId', auth.adapter.name);
-  return await find(externalId);
+  return await auth.adapter.findUserByExternalId(externalId);
 }

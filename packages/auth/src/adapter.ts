@@ -22,7 +22,10 @@ export interface AuthUser {
    * the operator's identity away. Empty for almost every account.
    */
   readonly scopes: readonly string[];
-  /** Base32 TOTP secret, or `null` when MFA is not enrolled. */
+  /**
+   * The TOTP secret AS STORED — sealed (`mfa-secret.ts`), never base32 — or `null` when MFA is
+   * not enrolled. Only `openTotpSecret` turns it into something a code can be checked against.
+   */
   readonly mfaSecret: string | null;
   readonly recoveryCodeHashes: readonly string[];
   /**
@@ -71,14 +74,40 @@ export interface UserStore {
   createUser(input: CreateUserInput): Promise<AuthUser>;
   updateUser(id: string, patch: UserPatch): Promise<AuthUser | null>;
   /**
-   * Optional so an adapter written against 1.2's seam still compiles; both shipped adapters
-   * implement it, and `directory.ts` answers `X_NOT_IMPLEMENTED` with the method name when one
-   * does not. The alternative was a required member, which is a breaking change to every
-   * third-party `AuthAdapter` for a capability most of them will never be asked for.
+   * Required, like every member of the seam: an adapter that lacks one is a compile error at the
+   * `defineAuth({ adapter })` it is handed to, never an `X_NOT_IMPLEMENTED` at the first SCIM
+   * lookup in production. Exact match on the stored string, `null` when nobody carries it.
    */
-  findUserByExternalId?(externalId: string): Promise<AuthUser | null>;
-  /** Enumeration, which nothing in the seam could do — a quarterly access review needs it. */
-  listUsersByOrg?(orgId: string, query?: UserQuery): Promise<readonly AuthUser[]>;
+  findUserByExternalId(externalId: string): Promise<AuthUser | null>;
+  /**
+   * Enumeration — a quarterly access review needs it. Ordered by email ascending; disabled members
+   * are left out unless `query.includeDisabled` is `true`.
+   */
+  listUsersByOrg(orgId: string, query?: UserQuery): Promise<readonly AuthUser[]>;
+  /**
+   * Every user holding a second-factor secret, with the value exactly as stored, ordered by id.
+   * The one enumeration `sealMfaSecrets` needs: it cannot seal what it cannot find, and whether a
+   * stored value is sealed is core's `isSealed` to say — never a `like` in an adapter.
+   */
+  listUsersWithMfaSecret(): Promise<readonly StoredMfaSecret[]>;
+  /**
+   * Compare-and-set on one user's stored secret: write `next` only while the row still holds
+   * `expected`, in ONE atomic step, and answer whether it did. What `sealMfaSecrets` writes
+   * through — a user who re-enrolled since the value was read must keep the NEW secret, and a
+   * plain write would put the old one back, sealed.
+   */
+  replaceMfaSecret(userId: string, expected: string, next: string): Promise<boolean>;
+  /**
+   * Remove one recovery-code hash from one user, and answer whether it was there — in ONE atomic
+   * step. Single-use is a storage guarantee, exactly as `takeVerification`'s is: two concurrent
+   * redemptions of one code must not both find it, which a read followed by a write lets happen.
+   */
+  consumeRecoveryCode(userId: string, codeHash: string): Promise<boolean>;
+}
+
+export interface StoredMfaSecret {
+  readonly userId: string;
+  readonly mfaSecret: string;
 }
 
 export interface AuthSession {
@@ -115,17 +144,15 @@ export interface SessionStore {
   /**
    * Every session this user holds, including the caller's own. `deleteOtherSessions` cannot
    * express it — there is no session id to keep — and a password change or a disable has to.
-   *
-   * Optional for the reason `findUserByExternalId` is: adding a required member to a shipped
-   * seam breaks every third-party adapter. `revocation.ts` refuses with `X_NOT_IMPLEMENTED` and
-   * names the method when an adapter has not got it.
+   * Returns how many were killed.
    */
-  deleteSessionsForUser?(userId: string): Promise<number>;
+  deleteSessionsForUser(userId: string): Promise<number>;
   /**
    * Everything issued before an instant. The credential-compromise sweep: rotate the secret,
-   * then kill everything minted under the old one, without enumerating users.
+   * then kill everything minted under the old one, without enumerating users. Strictly before:
+   * a session created AT the instant survives.
    */
-  deleteSessionsCreatedBefore?(before: Date): Promise<number>;
+  deleteSessionsCreatedBefore(before: Date): Promise<number>;
 }
 
 export interface AuthAccount {
@@ -218,5 +245,5 @@ export interface AuthAdapter
    * exactly the sessions it was run for. So it joins through `x_users`, which is why it sits on
    * the full adapter rather than on `SessionStore`.
    */
-  deleteSessionsForOrg?(orgId: string): Promise<number>;
+  deleteSessionsForOrg(orgId: string): Promise<number>;
 }

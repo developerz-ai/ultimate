@@ -9,7 +9,7 @@ import {
   DEFAULT_MAX_TOTP_SUBJECTS,
   enrolTotp,
   generateRecoveryCodes,
-  redeemRecoveryCode,
+  recoveryCodeHash,
   TOTP_DRIFT_STEPS,
   TOTP_STEP_SECONDS,
   totpCode,
@@ -270,7 +270,7 @@ describe('the replay guard table', () => {
 });
 
 describe('recovery codes', () => {
-  test('a code works once and is dead the second time', () => {
+  test('a set is hashed at rest, and each code hashes to its own entry', () => {
     const set = generateRecoveryCodes(3);
     expect(set.codes).toHaveLength(3);
     expect(set.hashes).toHaveLength(3);
@@ -278,43 +278,41 @@ describe('recovery codes', () => {
     // Hashed at rest: the plaintext never appears in what is persisted.
     expect(set.hashes.join(',')).not.toContain(code.replaceAll('-', ''));
 
-    const remaining = redeemRecoveryCode(code, set.hashes);
-    expect(remaining).toHaveLength(2);
-    expect(redeemRecoveryCode(code, remaining ?? [])).toBeNull();
+    expect(set.hashes).toContain(recoveryCodeHash(code));
   });
 
   test('formatting is ignored and an unknown code never matches', () => {
     const set = generateRecoveryCodes(2);
     const code = set.codes[0] as string;
-    expect(redeemRecoveryCode(code.replaceAll('-', '').toLowerCase(), set.hashes)).toHaveLength(1);
-    expect(redeemRecoveryCode('ZZZZ-ZZZZ-ZZZZ-ZZZZ', set.hashes)).toBeNull();
+    expect(recoveryCodeHash(code.replaceAll('-', ' ').toLowerCase())).toBe(recoveryCodeHash(code));
+    expect(set.hashes).not.toContain(recoveryCodeHash('ZZZZ-ZZZZ-ZZZZ-ZZZZ'));
   });
 });
 
 /**
- * The error is the ONLY thing the framework hands an app author when a password is proven and a
- * second factor is not — there is no completion route, no `completeMfa()` and no pending-MFA
- * credential (`packages/auth/CLAUDE.md` carries the design constraint for the follow-up). So the
- * `fix:` has to name things that exist, and the cause must not publish an internal user id: both
- * `X_MFA_REQUIRED` surfaces (`oauth-route.ts`'s `publicBody`, http's problem document) serialise
- * `cause` to an anonymous caller and neither serialises `meta`.
+ * The error is what carries a proven first leg to the second. Its `fix:` has to name the call
+ * that finishes — it once named a route nothing mounted — and nothing an anonymous caller is
+ * shown may identify the account: both `X_MFA_REQUIRED` surfaces (`oauth-route.ts`'s
+ * `publicBody`, http's problem document) serialise `cause` and neither serialises `meta`.
  */
 describe('X_MFA_REQUIRED', () => {
   test('the fix names no route this package does not mount', () => {
-    expect(mfaRequired('user-42').fix).not.toContain('/auth/mfa');
+    expect(mfaRequired('sealed-challenge').fix).not.toContain('/auth/mfa');
   });
 
-  test('the fix names the exports that actually finish the second factor', () => {
-    const fix = mfaRequired('user-42').fix;
-    expect(fix).toContain('verifyTotp');
-    expect(fix).toContain('createSession');
-    expect(fix).toContain('mfaSatisfied');
+  test('the fix names the export that finishes the second factor', () => {
+    const fix = mfaRequired('sealed-challenge').fix;
+    expect(fix).toContain('completeMfa(auth, challenge, code)');
+    // The hand-rolled completion it used to describe had no limiter around it.
+    expect(fix).not.toContain('verifyTotp');
+    expect(fix).not.toContain('createSession');
   });
 
-  test('the user id is meta, never the cause an anonymous caller reads back', () => {
-    const error = mfaRequired('user-42');
-    expect(error.cause).not.toContain('user-42');
-    expect(error.meta?.['userId']).toBe('user-42');
+  test('the challenge is meta, never the cause an anonymous caller reads back', () => {
+    const error = mfaRequired('sealed-challenge');
+    expect(error.cause).not.toContain('sealed-challenge');
+    expect(error.fix).not.toContain('sealed-challenge');
+    expect(error.meta).toEqual({ challenge: 'sealed-challenge' });
   });
 });
 

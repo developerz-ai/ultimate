@@ -33,7 +33,7 @@ export interface PurgeTarget {
   /**
    * What this sweep is called in its durable step, its log line and its report. A table name is
    * the natural spelling (`x_rate_limit`); a target that clears a SET of tables names their common
-   * prefix (`x_auth`, for `x_auth_failures` and `x_auth_lockouts`). Unique within one definition —
+   * prefix (`x_auth`, for `x_auth_lockouts`). Unique within one definition —
    * the name is the step key, and two steps under one name is `X_STEP_DUPLICATE` mid-run.
    */
   readonly name: string;

@@ -1,10 +1,10 @@
-// The shared credential limiter: two Postgres tables, so N replicas count one spray once and a
+// The shared credential limiter: one Postgres table, so N replicas count one spray once and a
 // lockout one pod established is visible to the rest. Without it `rateLimit.scope: 'shared'` is a
 // declaration nothing can satisfy, while `x new` scaffolds `replicas: 2` — which is
 // `maxAttempts × 2` guesses per account.
 import type { Clock } from '@ultimat3/core';
-import { accountLocked } from './errors';
-import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
+import { accountLocked, authWriteFailed } from './errors';
+import type { AuthLimiter, AuthRateLimitPolicy, AuthReservation } from './rate-limit';
 
 /**
  * The one thing this limiter needs from the DB layer, declared structurally rather than imported.
@@ -25,80 +25,95 @@ export interface PgExecutor {
  * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, so
  * `x dev`, the container's `web` role and `ROLE=migrate` all install it.
  *
- * A row per FAILURE rather than a counter per key, because the window this package enforces is a
- * SLIDING one: a counter plus a window end is a fixed window, which admits `maxAttempts` at the
- * end of one window and `maxAttempts` again at the start of the next — twice the declared
- * allowance, under the same declared numbers, on the credential path.
+ * ONE row per key, holding every attempt still inside the window. The window this package enforces
+ * is a SLIDING one, so the instants are kept (a counter plus a window end is a fixed window, which
+ * admits `maxAttempts` at the end of one and `maxAttempts` again at the start of the next). They
+ * are kept IN the row because the row is what a concurrent take waits on: a count over a second
+ * table reads its statement's snapshot, and that snapshot predates the wait.
+ *
+ * The two `add column` lines are the upgrade of a table made before the reservation, on the rule
+ * `x_users` follows: additive, defaulted, idempotent, applied at every boot. The name and the
+ * first two columns are unchanged on purpose — a replica still running the previous release reads
+ * and writes this table as it always did, so a lockout holds on both sides of a rolling deploy.
  */
 export const SQL_AUTH_LIMIT_TABLES = `
-create table if not exists x_auth_failures (
-  key   text   not null,
-  at_ms bigint not null
-);
-
-create index if not exists x_auth_failures_key_idx on x_auth_failures (key, at_ms);
-
 create table if not exists x_auth_lockouts (
-  key             text   primary key,
-  locked_until_ms bigint not null
+  key             text     primary key,
+  locked_until_ms bigint   not null,
+  attempts_ms     bigint[] not null default '{}',
+  admitted        boolean  not null default true
 );
+
+alter table x_auth_lockouts add column if not exists attempts_ms bigint[] not null default '{}';
+alter table x_auth_lockouts add column if not exists admitted boolean not null default true;
 
 create index if not exists x_auth_lockouts_until_idx on x_auth_lockouts (locked_until_ms);
 `;
 
 /**
- * The per-key serializer, spelled from documented functions only: `md5` and a hex bit-string cast,
- * never `hashtext`, which is an internal with no compatibility promise.
+ * The attempts still inside the window, read off the row as it is AFTER its lock is taken. It is
+ * repeated in the statement below rather than computed once in a CTE, and the repetition is
+ * required: only a direct `x_auth_lockouts.<column>` reference inside `on conflict do update` sees
+ * what a concurrent take just committed. `$2` nowMs, `$3` windowMs.
  */
-export const SQL_AUTH_KEY_LOCK = "pg_advisory_xact_lock(('x' || md5($1))::bit(64)::bigint)";
+const LIVE =
+  'array(select at_ms from unnest(x_auth_lockouts.attempts_ms) as at_ms ' +
+  'where at_ms > $2::bigint - $3::bigint)';
+
+const LOCKED = 'x_auth_lockouts.locked_until_ms > $2::bigint';
 
 /**
- * `$1` key, `$2` nowMs — and a **transaction-scoped advisory lock on the key**, taken in the same
- * statement, before the row lands.
+ * `$1` key, `$2` nowMs, `$3` windowMs, `$4` lockoutMs, `$5` maxAttempts — the reservation, in ONE
+ * statement: decide and count together, so N concurrent takes are admitted one at a time.
  *
- * `PgExecutor` accepts a transaction handle (see its doc comment), and the insert and the count
- * below are two statements. Without this lock two OUTER transactions recording a failure for one
- * account each counted only what had COMMITTED plus their own row: with `maxAttempts: 3` and one
- * failure already committed, both read two, neither locked, and both committed — three failures
- * and an open account. The lock makes the second transaction wait at the insert until the first
- * commits, so its count is taken against a snapshot that already holds the first's row.
+ * A locked key is left untouched and answers `admitted = false`. Otherwise the attempt joins the
+ * window and, if it fills it, starts the lockout. `admitted` is persisted because `returning`
+ * cannot see the row as it was: the verdict has to be a column the statement wrote.
  *
- * Autocommit is unaffected: the lock is taken and released inside the statement's own implicit
- * transaction, which is one extra no-op per failure and no extra round trip. The guarantee is
- * READ COMMITTED, which is what `withTransaction` opens with no `isolation:` — a caller that opts
- * into `'repeatable read'` or `'serializable'` pins the count's snapshot at transaction start, and
- * no lock can make a statement see a commit its own snapshot precedes.
- *
- * `recordFailure` always locks account → ip → org (`auth.ts`), one fixed order, so two concurrent
- * sign-ins cannot take two of these locks in opposite orders and deadlock.
+ * A live lockout is never rewritten, so nothing arriving during one can shorten it. Inside a
+ * caller's own transaction the row lock is held to that commit, which is what serialises two outer
+ * transactions; `auth.ts` takes account → ip → org in that fixed order, so two sign-ins cannot
+ * hold two of these rows in opposite orders.
  */
-export const SQL_AUTH_RECORD_FAILURE = `
-with locked as (select ${SQL_AUTH_KEY_LOCK})
-insert into x_auth_failures (key, at_ms)
-select $1, $2::bigint from locked
+export const SQL_AUTH_TAKE = `
+insert into x_auth_lockouts (key, attempts_ms, locked_until_ms, admitted)
+values (
+  $1,
+  array[$2::bigint],
+  case when 1 >= $5::bigint then $2::bigint + $4::bigint else 0 end,
+  true
+)
+on conflict (key) do update
+   set attempts_ms = case when ${LOCKED} then x_auth_lockouts.attempts_ms
+                          else ${LIVE} || $2::bigint end,
+       locked_until_ms = case
+         when ${LOCKED} then x_auth_lockouts.locked_until_ms
+         when cardinality(${LIVE}) + 1 >= $5::bigint then $2::bigint + $4::bigint
+         else 0 end,
+       admitted = not (${LOCKED})
+returning admitted, locked_until_ms
 `;
 
+/** The window with the first entry equal to `$2` taken out — one reservation, never every equal one. */
+const WITHOUT =
+  '(attempts_ms[:array_position(attempts_ms, $2::bigint) - 1] || ' +
+  'attempts_ms[array_position(attempts_ms, $2::bigint) + 1:])';
+
 /**
- * `$1` key, `$2` nowMs, `$3` windowMs, `$4` lockoutMs, `$5` maxAttempts.
+ * `$1` key, `$2` the reservation's `atMs`, `$3` nowMs, `$4` windowMs, `$5` maxAttempts.
  *
- * A SECOND statement, deliberately, and not a CTE beside the insert above: every CTE in one
- * statement reads that statement's snapshot, so a `count(*)` sharing it cannot see the failure
- * being inserted beside it and the lock would fire one attempt late. Run afterwards, the count
- * sees this caller's own row and every other replica's that has committed — and, because the
- * insert holds `SQL_AUTH_KEY_LOCK`, every row a concurrent transaction on this key committed too.
- *
- * `greatest` on conflict EXTENDS a live lockout and never shortens one — a spray arriving during
- * a lockout must not be able to reset it to a nearer deadline.
+ * Gives ONE attempt back, and lifts the lockout when what is left no longer fills the window — a
+ * lockout the refunded attempt itself completed. A reservation that is no longer in the row (the
+ * key was cleared, or purged) matches nothing and changes nothing.
  */
-export const SQL_AUTH_LOCK = `
-insert into x_auth_lockouts (key, locked_until_ms)
-select $1, $2::bigint + $4::bigint
-  from x_auth_failures
- where key = $1 and at_ms > $2::bigint - $3::bigint
-having count(*) >= $5::bigint
-on conflict (key) do update
-   set locked_until_ms = greatest(x_auth_lockouts.locked_until_ms, excluded.locked_until_ms)
-returning locked_until_ms
+export const SQL_AUTH_REFUND = `
+update x_auth_lockouts
+   set attempts_ms = ${WITHOUT},
+       locked_until_ms = case
+         when (select count(*) from unnest(${WITHOUT}) as at_ms
+                where at_ms > $3::bigint - $4::bigint) < $5::bigint then 0
+         else locked_until_ms end
+ where key = $1 and array_position(attempts_ms, $2::bigint) is not null
 `;
 
 /** `$2` is the caller's clock: an expired lockout answers exactly as a missing one. */
@@ -106,30 +121,27 @@ export const SQL_AUTH_LOCKED_UNTIL = `
 select locked_until_ms from x_auth_lockouts where key = $1 and locked_until_ms > $2::bigint
 `;
 
-/** A success clears the window AND the lockout: one round trip, because both must go together. */
-export const SQL_AUTH_FORGET_KEY = `
-with cleared as (delete from x_auth_failures where key = $1 returning key)
-delete from x_auth_lockouts where key = $1
-`;
+/** A success clears the window AND the lockout: they are one row, so they go together. */
+export const SQL_AUTH_FORGET_KEY = 'delete from x_auth_lockouts where key = $1';
 
-export const SQL_AUTH_RESET = `
-with cleared as (delete from x_auth_failures returning key)
-delete from x_auth_lockouts
-`;
+export const SQL_AUTH_RESET = 'delete from x_auth_lockouts';
 
 /**
- * `$1` nowMs, `$2` windowMs — the CALLER's clock, never `now()`. Every instant in these tables is
+ * `$1` nowMs, `$2` windowMs — the CALLER's clock, never `now()`. Every instant in this table is
  * written from the caller's clock, so a purge measuring against the SERVER's would delete rows by
- * the offset between the two: failures that are still inside the window, and lockouts that are
+ * the offset between the two: attempts that are still inside the window, and lockouts that are
  * still live. The second one hands a sprayer its account back.
  */
 export const SQL_AUTH_PURGE = `
-with dropped_failures as (
-  delete from x_auth_failures where at_ms <= $1::bigint - $2::bigint returning key
-), dropped_lockouts as (
-  delete from x_auth_lockouts where locked_until_ms <= $1::bigint returning key
+with dropped as (
+  delete from x_auth_lockouts
+   where locked_until_ms <= $1::bigint
+     and not exists (
+       select 1 from unnest(attempts_ms) as at_ms where at_ms > $1::bigint - $2::bigint
+     )
+  returning key
 )
-select (select count(*) from dropped_failures) + (select count(*) from dropped_lockouts) as removed
+select count(*) as removed from dropped
 `;
 
 export interface PostgresAuthLimiterOptions {
@@ -146,9 +158,9 @@ export interface PostgresAuthLimiterOptions {
 
 export interface PostgresAuthLimiter extends AuthLimiter {
   /**
-   * Drop every failure past the window and every expired lockout, and answer how many rows went.
-   * Neither table bounds itself — `ipKey` mints one key per source address, so a spray from an
-   * IPv6 /64 is a row per attempt — and Postgres forgets nothing on its own. An app runs this
+   * Drop every key whose window has emptied and whose lockout has expired, and answer how many
+   * rows went. The table does not bound itself — `ipKey` mints one key per source address, so a
+   * spray from an IPv6 /64 is a row per attempt — and Postgres forgets nothing on its own. An app runs this
    * from a `task`; a row this deletes answers exactly as a missing one, so it changes no decision.
    */
   purgeExpired(): Promise<number>;
@@ -157,6 +169,10 @@ export interface PostgresAuthLimiter extends AuthLimiter {
 interface LockRow {
   /** `bigint`, which every Postgres client hands back as a string. */
   readonly locked_until_ms: number | string;
+}
+
+interface TakeRow extends LockRow {
+  readonly admitted: boolean;
 }
 
 /**
@@ -192,20 +208,31 @@ export function postgresAuthLimiter(options: PostgresAuthLimiterOptions): Postgr
     // bound this limiter does not enforce is the thing `assertAuthLimiterPolicy` exists to catch.
     policy: { ...policy, maxKeys: undefined, scope: 'shared' },
 
-    async assertAllowed(key): Promise<void> {
-      const until = await lockedUntilMs(key);
-      if (until === null) return;
-      throw accountLocked(key, Math.ceil((until - nowMs()) / 1000));
-    },
-
-    async recordFailure(key): Promise<void> {
+    async reserve(key): Promise<AuthReservation> {
       const at = nowMs();
-      await exec.query(SQL_AUTH_RECORD_FAILURE, [key, at]);
-      await exec.query(SQL_AUTH_LOCK, [
+      const rows = await exec.query<TakeRow>(SQL_AUTH_TAKE, [
         key,
         at,
         policy.windowMs,
         policy.lockoutMs,
+        policy.maxAttempts,
+      ]);
+      const row = rows[0];
+      // No row is no verdict, and no verdict is not an admission: an executor that answered
+      // nothing must not be read as "allowed" on the credential path.
+      if (row === undefined) throw authWriteFailed('reserve', 'x_auth_lockouts');
+      if (row.admitted !== true) {
+        throw accountLocked(key, Math.ceil((Number(row.locked_until_ms) - at) / 1000));
+      }
+      return { key, atMs: at };
+    },
+
+    async refund(reservation): Promise<void> {
+      await exec.query(SQL_AUTH_REFUND, [
+        reservation.key,
+        reservation.atMs,
+        nowMs(),
+        policy.windowMs,
         policy.maxAttempts,
       ]);
     },

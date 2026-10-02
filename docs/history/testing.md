@@ -269,3 +269,32 @@ that settles when the reap has finished; the synchronous `close()` and the optio
 beside it are gone. Every caller was already in an async hook, and the synchronous one was the
 leak: it removed the profile before the processes writing to it were gone. `x shot` awaits it too
 (`cdp-shot-driver.ts`), because the process exits after the last picture.
+
+## The unanswered call that names its cause, and the cable put back — `As of 2026-10-02`
+
+Run 37025330024, attempt 1: `offline-feed.e2e.test.ts`'s stale-build test failed `X_CDP_TIMEOUT` —
+one `Runtime.evaluate` unanswered for 30 s, right after the app restarted. Not reproduced: 0 of 30
+plain runs, 0 of 25 on two starved cores. The error said "did not answer" and nothing else, so the
+cause is still unknown. What changed is what the NEXT one says, and three things found on the way.
+
+| What | Before | Now |
+|---|---|---|
+| `X_CDP_TIMEOUT` | the method and the deadline | `meta.reading`: `target-gone` · `lost-in-transport` · `no-answer`, with the frames that arrived since the call (count, last 8), the frames dropped as unparseable, the transport's state, the target's fate, the navigations since (`cdp-wire-watch.ts`) |
+| an unparseable frame | dropped in silence | dropped and COUNTED — the call whose reply it was says so at its deadline |
+| the dummy's `network` fixture | sync `[Symbol.dispose]`, `void session.offline(false)` | `[Symbol.asyncDispose]`, awaited by `runWithFixtures` |
+| a refused init-script removal | skipped the restore, dropped the page from the set | restore still attempted, page kept, `X_CDP_CALL_FAILED` surfaced |
+| the e2e app's port | whatever the OS handed out | never one Chromium refuses (`free-port.ts`) |
+| the stale-build assertion | `toBeVisible()`, 5 s of looks | the banner's insertion awaited in the page |
+
+**The cable.** Traced: the next test's `Page.navigate` went out between the restore's round trips —
+three worker sessions still cut, the `navigator.onLine` override still registered, its removal then
+answered `Script not found`. The stale-build document read `navigator.onLine === false` in 9 of 15
+runs; 0 of 25 with the awaited teardown.
+
+**The port.** A box whose ephemeral range starts at 1024 was handed 4045; all six tests of that
+run failed `net::ERR_UNSAFE_PORT` (1 of 25). CI's default range starts above every refused port.
+
+**The budget.** After a restart the banner waits on the sync socket's reconnect backoff: up to
+3.3 s of the 5 s budget after a 3.5 s restart, and the next gap is 6.4 s. The test now awaits the
+banner as an event, bounded only by the per-call deadline — which now explains itself.
+

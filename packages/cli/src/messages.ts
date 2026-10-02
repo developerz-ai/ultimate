@@ -197,6 +197,8 @@ const CATALOG = {
   'cli.registry.described': '{kind} {name}',
   'cli.routes.count': '{count} routes',
   'cli.routes.empty': 'no routes in the manifest — run `x manifest` first',
+  'cli.auth.sealed':
+    'sealed {sealed} second-factor secret(s); {already} already sealed, {skipped} changed mid-run and left alone',
   'cli.tasks.count': '{count} task(s)',
   'cli.tasks.shown': '{name} — {cron} ({tz}), next {next}',
   'cli.affected.count':

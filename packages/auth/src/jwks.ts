@@ -207,6 +207,17 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
         .catch(() => null);
       if (key !== null) next.set(`${kid}:${alg}`, key);
     }
+    // A 200 with nothing importable in it is a failed fetch, not a rotation to zero keys. Adopted,
+    // it replaced a working cache with an empty one stamped fresh for a whole TTL.
+    if (next.size === 0) {
+      throw oauthExchangeFailed({
+        provider: options.provider,
+        stage: 'jwks',
+        detail: 'the key set held no key this runtime can import, so the cached keys were kept',
+        status: response.status,
+        fix: readTheKeySet(''),
+      });
+    }
     if (fence.generation() === issued) {
       keys = next;
       fetchedAtMs = clock.now().getTime();

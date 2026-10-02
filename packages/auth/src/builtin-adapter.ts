@@ -3,6 +3,7 @@
 // drive it without a database. Rows arrive as `unknown` and are read through the small typed
 // readers below — no `any`, and a column rename fails loudly instead of producing `undefined`.
 
+import { type Clock, systemClock } from '@ultimat3/core';
 import { type DbClient, db, sql } from '@ultimat3/db';
 import type {
   AuthAccount,
@@ -13,9 +14,11 @@ import type {
   AuthVerification,
   CreateUserInput,
   SessionPatch,
+  StoredMfaSecret,
   UserPatch,
   UserQuery,
 } from './adapter';
+import { usersUniqueViolation } from './builtin-adapter-violation';
 import { authWriteFailed } from './errors';
 
 type Row = Readonly<Record<string, unknown>>;
@@ -117,9 +120,24 @@ const toApiKey = (row: Row): AuthApiKeyRecord => ({
 export class BuiltinAdapter implements AuthAdapter {
   readonly name = 'builtin-postgres';
   readonly #db: DbClient;
+  readonly #clock: Clock;
 
-  constructor(client: DbClient = db()) {
+  /**
+   * `clock` is the one `MemoryAdapter` takes, for the same stamp: hand over the clock
+   * `defineAuth` was given, so a redemption is dated by the clock that judged its expiry.
+   */
+  constructor(client: DbClient = db(), clock: Clock = systemClock) {
     this.#db = client;
+    this.#clock = clock;
+  }
+
+  /** A write to `x_users`, with the table's own unique violations answered as this package's. */
+  async #writeUser(operation: string, statement: Parameters<DbClient['one']>[0]) {
+    try {
+      return await this.#db.one<Row>(statement);
+    } catch (error) {
+      throw usersUniqueViolation(operation, error) ?? error;
+    }
   }
 
   async findUserByEmail(email: string): Promise<AuthUser | null> {
@@ -133,13 +151,16 @@ export class BuiltinAdapter implements AuthAdapter {
   }
 
   async createUser(input: CreateUserInput): Promise<AuthUser> {
-    const row = await this.#db.one<Row>(sql`
+    const row = await this.#writeUser(
+      'createUser',
+      sql`
       insert into x_users (id, email, password_hash, org_id, roles, scopes, external_id,
                            created_at)
       values (${input.id}, ${input.email}, ${input.passwordHash}, ${input.orgId},
               ${[...input.roles]}, ${[...(input.scopes ?? [])]}, ${input.externalId ?? null},
               ${input.createdAt})
-      returning *`);
+      returning *`,
+    );
     // An empty `returning` means no row landed. A user fabricated from `{}` would travel back
     // out of `register()` as a successful registration with no identity in it.
     if (row === null) throw authWriteFailed('createUser', 'x_users');
@@ -147,7 +168,9 @@ export class BuiltinAdapter implements AuthAdapter {
   }
 
   async updateUser(id: string, patch: UserPatch): Promise<AuthUser | null> {
-    const row = await this.#db.one<Row>(sql`
+    const row = await this.#writeUser(
+      'updateUser',
+      sql`
       update x_users set
         password_hash = case when ${patch.passwordHash !== undefined}
           then ${patch.passwordHash ?? null} else password_hash end,
@@ -170,8 +193,37 @@ export class BuiltinAdapter implements AuthAdapter {
         external_id = case when ${patch.externalId !== undefined}
           then ${patch.externalId ?? null} else external_id end
       where id = ${id}
-      returning *`);
+      returning *`,
+    );
     return row === null ? null : toUser(row);
+  }
+
+  async listUsersWithMfaSecret(): Promise<readonly StoredMfaSecret[]> {
+    const rows = await this.#db.query<Row>(
+      sql`select id, mfa_secret from x_users where mfa_secret is not null order by id`,
+    );
+    return rows.map((row) => ({ userId: text(row, 'id'), mfaSecret: text(row, 'mfa_secret') }));
+  }
+
+  async replaceMfaSecret(userId: string, expected: string, next: string): Promise<boolean> {
+    const row = await this.#db.one<Row>(sql`
+      update x_users set mfa_secret = ${next}
+       where id = ${userId} and mfa_secret = ${expected}
+      returning id`);
+    return row !== null;
+  }
+
+  /**
+   * One conditional UPDATE: the row is locked, and the `where` is re-checked against the version
+   * a concurrent redemption just committed, so the second of two finds the hash already gone.
+   */
+  async consumeRecoveryCode(userId: string, codeHash: string): Promise<boolean> {
+    const row = await this.#db.one<Row>(sql`
+      update x_users
+         set recovery_code_hashes = array_remove(recovery_code_hashes, ${codeHash})
+       where id = ${userId} and ${codeHash} = any(recovery_code_hashes)
+      returning id`);
+    return row !== null;
   }
 
   async findUserByExternalId(externalId: string): Promise<AuthUser | null> {
@@ -308,6 +360,9 @@ export class BuiltinAdapter implements AuthAdapter {
   }
 
   /**
+   * `consumed_at` is the injected clock's instant, bound — never the server's `now()`, which made
+   * the stamp the one instant in this package no test could move and no `Clock` agreed with.
+   *
    * One conditional UPDATE, and every part of the predicate is load-bearing. `consumed_at is null`
    * on the UPDATE itself is what makes redemption single-use under concurrency — inside the
    * subselect alone, two racing redemptions both pick the row and both consume it. `token_hash`
@@ -324,7 +379,7 @@ export class BuiltinAdapter implements AuthAdapter {
     tokenHash: string,
   ): Promise<AuthVerification | null> {
     const row = await this.#db.one<Row>(sql`
-      update x_verifications set consumed_at = now()
+      update x_verifications set consumed_at = ${this.#clock.now()}
       where consumed_at is null and id = (
         select id from x_verifications
         where purpose = ${purpose} and identifier = ${identifier}

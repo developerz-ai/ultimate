@@ -1,7 +1,8 @@
 // Single responsibility: TOTP (RFC 6238) and recovery codes. The drift window is explicit and
 // small, and every accepted step is remembered: without replay rejection a code shouted over a
 // phishing page stays valid for the rest of its 30 seconds. Recovery codes are hashed at rest
-// and single-use, so a database dump is not a permanent MFA bypass.
+// and single-use, so a database dump is not a permanent MFA bypass; consuming one is the
+// adapter's (`consumeRecoveryCode`), because single-use has to be one atomic step.
 
 import { finiteCount } from '@ultimat3/core';
 import type { Auth } from './auth';
@@ -309,6 +310,12 @@ const normaliseRecoveryCode = (code: string): string =>
   code.replaceAll('-', '').replaceAll(' ', '').toUpperCase();
 
 /**
+ * What a recovery code is stored and looked up as: SHA-256 of the code with the dashes and spaces
+ * a person types taken out. `AuthAdapter.consumeRecoveryCode` takes this, never the code.
+ */
+export const recoveryCodeHash = (code: string): string => sha256Hex(normaliseRecoveryCode(code));
+
+/**
  * `count` is a LOOP BOUND, so it fails in both directions and neither is a smaller set of codes.
  * `NaN` — what `Number(process.env.RECOVERY_CODES)` answers for an unset variable, and not nullish,
  * so the default never sees it — makes `index < count` false at once and enrols a user with ZERO
@@ -326,26 +333,5 @@ export function generateRecoveryCodes(count = 10): RecoveryCodeSet {
     const raw = base32Encode(randomBytes(10)).slice(0, 16);
     codes.push(`${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}`);
   }
-  return { codes, hashes: codes.map((code) => sha256Hex(normaliseRecoveryCode(code))) };
-}
-
-/**
- * Returns the remaining hashes with the redeemed one removed, or `null` if nothing matched.
- * The caller persists the result — that write is what makes a code single-use.
- */
-export function redeemRecoveryCode(
-  code: string,
-  hashes: readonly string[],
-): readonly string[] | null {
-  const candidate = sha256Hex(normaliseRecoveryCode(code));
-  let matched = false;
-  const remaining: string[] = [];
-  for (const hash of hashes) {
-    if (!matched && timingSafeEqual(hash, candidate)) {
-      matched = true;
-      continue;
-    }
-    remaining.push(hash);
-  }
-  return matched ? remaining : null;
+  return { codes, hashes: codes.map(recoveryCodeHash) };
 }

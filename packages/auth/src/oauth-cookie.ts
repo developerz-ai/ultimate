@@ -67,7 +67,8 @@ export function handshakeSecret(
       cause:
         secret === ''
           ? 'SESSION_SECRET is not set, so an oauth handshake cannot be signed'
-          : `SESSION_SECRET is ${secret.length} characters and at least ${MIN_SECRET_LENGTH} are required`,
+          : // Never its length: how long the configured secret is narrows a guess at it.
+            `SESSION_SECRET is shorter than the ${MIN_SECRET_LENGTH} characters required`,
       fix: 'export SESSION_SECRET="$(openssl rand -hex 32)"',
       meta: { key: 'SESSION_SECRET', minLength: MIN_SECRET_LENGTH },
     });

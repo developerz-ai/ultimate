@@ -11,7 +11,9 @@
 // `delete` away. A document Chrome DID tell (it saw `offline`) gets Chrome's own `online` event on
 // restore; one it never told gets one from `RESTORE_ONLINE`, so a page reconnects exactly once.
 
+import { stringField } from '@ultimat3/core';
 import type { CdpResult } from './cdp-connection';
+import { CdpCallFailedError } from './cdp-errors';
 
 type Send = (
   method: string,
@@ -68,9 +70,37 @@ export function offlineScripts(send: Send): OfflineScripts {
     async remove(session) {
       const identifier = held.get(session);
       if (identifier === undefined) return undefined;
-      held.delete(session);
-      await send('Page.removeScriptToEvaluateOnNewDocument', { identifier }, session);
-      return send('Runtime.evaluate', { expression: RESTORE_ONLINE }, session);
+      // Both halves are ATTEMPTED whatever the first answers, and a refusal of either surfaces.
+      // Traced 2026-10-02: a navigation in flight made the removal answer `Script not found`, the
+      // throw skipped the restore, and the open document kept reading `navigator.onLine === false`.
+      const refused: string[] = [];
+      const attempt = async (step: string, call: () => Promise<CdpResult>): Promise<boolean> => {
+        try {
+          await call();
+          return true;
+        } catch (error) {
+          refused.push(
+            `${step}: ${stringField(error, 'cause') ?? stringField(error, 'message') ?? 'refused'}`,
+          );
+          return false;
+        }
+      };
+      const removed = await attempt('removing the first-script override', () =>
+        send('Page.removeScriptToEvaluateOnNewDocument', { identifier }, session),
+      );
+      // Kept while the browser may still hold it: the next `remove` asks again, and `add` cannot
+      // register a second copy beside one that is still there.
+      if (removed) held.delete(session);
+      await attempt('restoring the open document', () =>
+        send('Runtime.evaluate', { expression: RESTORE_ONLINE }, session),
+      );
+      if (refused.length > 0) {
+        throw new CdpCallFailedError({
+          method: `putting navigator.onLine back on session ${session}`,
+          detail: refused.join(' · '),
+        });
+      }
+      return undefined;
     },
   };
 }

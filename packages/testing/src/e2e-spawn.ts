@@ -10,6 +10,7 @@ import { get } from 'node:http';
 import { dirname, join } from 'node:path';
 import { assert } from '@ultimat3/core';
 import { E2eAppFailedError } from './e2e-errors';
+import { freePort } from './free-port';
 
 /** `x dev` (sync included), or the production entry `apps/web/server.ts` under `ROLE=web`. */
 export type E2eAppMode = 'dev' | 'serve';
@@ -63,14 +64,6 @@ export interface SpawnE2eAppOptions {
   /** `xBin(root)`, when the caller already resolved it; resolved here otherwise, in `dev` mode only. */
   readonly bin?: string | undefined;
 }
-
-/** A port nothing holds right now, asked of the OS and handed to the child. */
-const freePort = (): number => {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response() });
-  const port = probe.port ?? 0;
-  probe.stop(true);
-  return port;
-};
 
 /**
  * This process's environment minus what makes the child a TEST process. Spawned from `bun test`,

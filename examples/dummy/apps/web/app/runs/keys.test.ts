@@ -19,7 +19,7 @@ unitTest('the scope map names the three run actions and the live query', () => {
 });
 
 unitTest('an issued key carries both scopes, belongs to its org and resolves', async () => {
-  const issued = await issueRunKeyFor({ orgId: ORG, userId: 'ada', clock });
+  const issued = await issueRunKeyFor({ orgId: ORG, clock });
   expect(issued.key.startsWith('ult_dev_')).toBe(true);
   expect(await runKeyOwner(issued.id)).toEqual({ orgId: ORG });
   expect(await runKeyOwner('nobody')).toBeNull();
@@ -31,7 +31,7 @@ unitTest('an issued key carries both scopes, belongs to its org and resolves', a
 unitTest(
   'every bad token is the same null: malformed, unknown, wrong secret, revoked',
   async () => {
-    const issued = await issueRunKeyFor({ orgId: ORG, userId: 'ada', clock });
+    const issued = await issueRunKeyFor({ orgId: ORG, clock });
     expect(await resolveRunKey('not a key')).toBeNull();
     expect(await resolveRunKey('ult_dev_0000000000000000_secret')).toBeNull();
     expect(await resolveRunKey(`${issued.prefix}_wrong`)).toBeNull();

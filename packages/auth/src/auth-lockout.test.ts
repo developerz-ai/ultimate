@@ -46,7 +46,31 @@ describe('the tenant bucket', () => {
       login(auth, { email: 'a@corp.test', password: PASSWORD, ip: '203.0.113.99' }),
     );
     expect(locked?.code).toBe('X_ACCOUNT_LOCKED');
-    expect(locked?.cause).toContain('org:org-1');
+    // The org id was looked up from the address the caller typed. Echoing it — in the cause or
+    // in the fix — would tell an anonymous caller which tenant that address belongs to.
+    expect(locked?.cause).not.toContain('org-1');
+    expect(locked?.fix).not.toContain('org-1');
+    expect(locked?.format()).not.toContain('org-1');
+  });
+
+  test('an attempt the tenant cap turns away is not also counted against the account or address', async () => {
+    const auth = tenantAuth({ maxAttempts: 2 });
+    for (const [index, name] of ['a', 'b', 'c'].entries()) {
+      await member(auth, `${name}@corp.test`);
+      await caught(() =>
+        login(auth, { email: `${name}@corp.test`, password: 'no', ip: `198.51.100.${index}` }),
+      );
+    }
+    // org-1 is at its cap of 3, and `a` holds one failure against an allowance of two. These
+    // never test a credential, so they spend nothing else.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const refused = await caught(() =>
+        login(auth, { email: 'a@corp.test', password: 'no', ip: '198.51.100.77' }),
+      );
+      expect(refused?.code).toBe('X_ACCOUNT_LOCKED');
+    }
+    expect(await auth.limiter.lockedUntil('account:a@corp.test')).toBeNull();
+    expect(await auth.limiter.lockedUntil('ip:198.51.100.77')).toBeNull();
   });
 
   test('another tenant is unaffected by the first tenant being locked out', async () => {
@@ -155,6 +179,28 @@ describe('a success does not clear the address that produced the failures', () =
     expect(locked?.cause).toContain(IP);
   });
 
+  test('an attempt the address bucket turns away is not counted against the account it named', async () => {
+    const auth = sprayAuth();
+    await register(auth, { email: 'ada@corp.test', password: PASSWORD });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await caught(() => login(auth, { email: `v${attempt}@corp.test`, password: 'no', ip: IP }));
+    }
+    // The address is locked. Naming a victim from it must not lock the victim out as well.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const refused = await caught(() =>
+        login(auth, { email: 'ada@corp.test', password: 'no', ip: IP }),
+      );
+      expect(refused?.code).toBe('X_ACCOUNT_LOCKED');
+    }
+    expect(await auth.limiter.lockedUntil('account:ada@corp.test')).toBeNull();
+    const ok = await login(auth, {
+      email: 'ada@corp.test',
+      password: PASSWORD,
+      ip: '198.51.100.1',
+    });
+    expect(ok.session.mfaSatisfied).toBe(true);
+  });
+
   test('the ACCOUNT window is still cleared by a success — a typo must not cost a lockout', async () => {
     const auth = sprayAuth();
     await register(auth, { email: 'ada@corp.test', password: PASSWORD });
@@ -169,5 +215,79 @@ describe('a success does not clear the address that produced the failures', () =
         (await caught(() => login(auth, { email: 'ada@corp.test', password: 'typo' })))?.code,
       ).toBe('X_UNAUTHENTICATED');
     }
+  });
+});
+
+/**
+ * The failure case first: `login` asked the limiter a question, ran the KDF, and recorded the
+ * failure afterwards. Forty guesses sent together all asked before any had been recorded, so all
+ * forty reached the hash — measured against `maxAttempts: 5`.
+ */
+describe('a concurrent burst spends the allowance before the KDF, not after it', () => {
+  const burstAuth = (): { auth: Auth; lookups: () => number } => {
+    const adapter = new MemoryAdapter();
+    let lookups = 0;
+    const find = adapter.findUserByEmail.bind(adapter);
+    // The lookup sits between the reservation and the KDF: a call here is an attempt admitted.
+    adapter.findUserByEmail = async (email) => {
+      lookups += 1;
+      return await find(email);
+    };
+    const auth = defineAuth({
+      adapter,
+      clock: frozenClock(1_700_000_000_000),
+      password: { minLength: 12, params: FAST_PARAMS },
+      rateLimit: { maxAttempts: 5, orgMaxAttempts: 10_000 },
+    });
+    return { auth, lookups: () => lookups };
+  };
+
+  test('40 wrong guesses at one account: at most maxAttempts reach the KDF', async () => {
+    const { auth, lookups } = burstAuth();
+    await register(auth, { email: 'ada@corp.test', password: PASSWORD });
+    const burst = await Promise.all(
+      Array.from({ length: 40 }, () =>
+        caught(() => login(auth, { email: 'ada@corp.test', password: 'wrong-password-entirely' })),
+      ),
+    );
+    const codes = burst.map((error) => error?.code);
+    expect(codes.filter((code) => code === 'X_UNAUTHENTICATED')).toHaveLength(5);
+    expect(codes.filter((code) => code === 'X_ACCOUNT_LOCKED')).toHaveLength(35);
+    expect(lookups()).toBe(5);
+  });
+
+  test('40 wrong guesses from one address, each at a different account, lock at maxAttempts too', async () => {
+    const { auth, lookups } = burstAuth();
+    const burst = await Promise.all(
+      Array.from({ length: 40 }, (_, index) =>
+        caught(() =>
+          login(auth, {
+            email: `victim-${index}@corp.test`,
+            password: 'wrong-password-entirely',
+            ip: '203.0.113.7',
+          }),
+        ),
+      ),
+    );
+    expect(burst.filter((error) => error?.code === 'X_UNAUTHENTICATED')).toHaveLength(5);
+    expect(lookups()).toBe(5);
+  });
+
+  test('a login that reaches no verdict gives its reservation back', async () => {
+    const { auth } = burstAuth();
+    await register(auth, { email: 'ada@corp.test', password: PASSWORD });
+    const down = new TypeError('connection refused');
+    const find = auth.adapter.findUserByEmail.bind(auth.adapter);
+    auth.adapter.findUserByEmail = () => Promise.reject(down);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const thrown = await login(auth, { email: 'ada@corp.test', password: PASSWORD }).catch(
+        (error: unknown) => error,
+      );
+      expect(thrown).toBe(down);
+    }
+    // Ten outages are not ten wrong passwords: the account is not locked when the store returns.
+    auth.adapter.findUserByEmail = find;
+    const ok = await login(auth, { email: 'ada@corp.test', password: PASSWORD });
+    expect(ok.session.mfaSatisfied).toBe(true);
   });
 });

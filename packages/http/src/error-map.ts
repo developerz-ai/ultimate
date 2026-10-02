@@ -491,6 +491,8 @@ export const ERROR_STATUS = {
   X_STORAGE_PUT_FAILED: 500,
   // @ultimat3/storage — the object could not be read
   X_STORAGE_READ_FAILED: 500,
+  // @ultimat3/auth — a stored totp secret is not sealed, so it is never read as one
+  X_MFA_SECRET_UNSEALED: 500,
   // The keys are LITERAL — deliberately not `Readonly<Record<string, number>>`, which is what the
   // annotation used to say. This table is the closed one, so `ERROR_STATUS.X_QUERY_NOT_PAGABLE`
   // has to be a compile error rather than an `undefined` a test then asserts `toBeNumber()` on.

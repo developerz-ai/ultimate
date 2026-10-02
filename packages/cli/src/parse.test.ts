@@ -66,11 +66,13 @@ describe('unit · parseArgs', () => {
   // — `resolve` closes a thread and `reply` posts a comment under your name — and neither is
   // undoable by re-running the command. A default of `review` would read as the safe choice and is
   // not the point: the point is that a mistyped word must not reach a subcommand at all.
+  // `x auth` joined them with its first subcommand: `seal-mfa` rewrites credential rows in place,
+  // and it has no read-only sibling to default to — the count it would report is `x doctor`'s.
   test('exactly the commands whose bare form is dangerous refuse it', () => {
     const refusing = SPECS_SHIPPED.filter(
       (spec) => (spec.subcommands ?? []).length > 0 && spec.defaultSubcommand === undefined,
     ).map((spec) => spec.name);
-    expect(refusing.sort()).toEqual(['db', 'mcp', 'pr']);
+    expect(refusing.sort()).toEqual(['auth', 'db', 'mcp', 'pr']);
   });
 
   test('accepts --json on every command and exposes it as a boolean', () => {

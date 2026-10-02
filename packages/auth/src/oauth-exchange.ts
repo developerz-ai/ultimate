@@ -124,6 +124,13 @@ const OPAQUE_BODY =
   'the endpoint answered with a body that is not a coded OAuth error, and this leg does not quote ' +
   'one back because its request carries the client secret';
 
+/**
+ * The one way a remote endpoint's own words reach a cause: cut, then rendered. Every branch that
+ * quotes the other end goes through it — a branch that skipped it published 5 KB verbatim.
+ */
+const remoteText = (text: string): string =>
+  renderCauseValue(text.length > MAX_DETAIL_LENGTH ? `${text.slice(0, MAX_DETAIL_LENGTH)}…` : text);
+
 export async function providerDetail(
   response: Response,
   echo: DetailEcho = 'raw',
@@ -140,17 +147,13 @@ export async function providerDetail(
         parsed['error_description'] ??
         parsed['error'] ??
         (echo === 'coded-only' ? undefined : parsed['message']);
-      if (typeof description === 'string' && description !== '') {
-        return renderCauseValue(description);
-      }
+      if (typeof description === 'string' && description !== '') return remoteText(description);
     }
   } catch {
     // Not JSON — fall through to the truncated raw text below.
   }
   if (echo === 'coded-only') return OPAQUE_BODY;
-  return renderCauseValue(
-    text.length > MAX_DETAIL_LENGTH ? `${text.slice(0, MAX_DETAIL_LENGTH)}…` : text,
-  );
+  return remoteText(text);
 }
 
 function fixForStatus(provider: OAuthProviderId, status: number): string {
@@ -257,7 +260,10 @@ async function postForm(
     throw oauthExchangeFailed({
       provider,
       stage: 'token',
-      detail: typeof description === 'string' && description !== '' ? description : error,
+      // Remote text on a 200, so it is cut and rendered exactly as a non-2xx body is.
+      detail: remoteText(
+        typeof description === 'string' && description !== '' ? description : error,
+      ),
       fix:
         error === 'bad_verification_code' || error === 'invalid_grant'
           ? `${restartAt(provider)} — an authorization code is single-use and short-lived`

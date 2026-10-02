@@ -5,7 +5,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | Rule | |
 |---|---|
 | Deps | `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/db`. No external deps. |
-| Never import | `@ultimat3/policy`, `@ultimat3/http` (tier 2 consumers), `@ultimat3/mail` (sideways) |
+| Never import | `@ultimat3/policy`, `@ultimat3/http` (tier 2 consumers), `@ultimat3/mail` (tier 4, upward) |
 | Policy seam | `PolicyActorFields` in `policy-bridge.ts` mirrors policy's shape structurally |
 | Http seam | `RequestLike` / `CookieJar` in `session.ts` and `AuthRouteDescriptor` in `oauth-route.ts`; http binds to them, not the reverse |
 | Mail seam | injected `MailSender` port in `verify.ts`; the app wires `@ultimat3/mail`'s `send` |
@@ -41,16 +41,25 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - **The limiter's table is bounded, and the eviction order is the guarantee.** Every bucket carries
   `forgetAtMs`; `policy.maxKeys` (`DEFAULT_MAX_AUTH_LIMIT_KEYS`) is the backstop, and a **live
   lockout outranks its own deadline** in the comparator. Never reduce that sort to recency.
-- **`AuthLimiter` is async on every member and declares the policy it enforces.**
-  `assertAuthLimiterPolicy` (once, in `defineAuth`) refuses a per-process limiter under
-  `scope: 'shared'` (`X_AUTH_LIMITER_NOT_SHARED`) and different `maxAttempts`/`windowMs`/
-  `lockoutMs` (`X_AUTH_LIMITER_POLICY_MISMATCH`). `maxKeys` is not compared. Nothing here reads the
-  environment to guess a replica count.
-- **`postgresAuthLimiter` is the shared limiter, a row per FAILURE** (sliding window: the count is
-  `at_ms > now - windowMs`). The insert and the count are two statements, never one CTE, and the
-  insert takes `pg_advisory_xact_lock` on the key so two outer transactions cannot both read one
-  short (guarantee is READ COMMITTED). `auth.ts` records account → ip → org in that fixed order.
-  `greatest` on the lockout upsert only extends. `PgExecutor` is structural: the pool is the host's.
+- **`AuthLimiter` is async on every member, declares the policy it enforces, and is a
+  RESERVATION.** `reserve(key)` counts the attempt in the step that admits it (refused, counting
+  nothing, while locked); `refund(reservation)` gives ONE back and lifts a lockout the window no
+  longer justifies; `recordSuccess(key)` clears the key. There is no check-then-record pair: N
+  concurrent guesses all passed the check. `assertAuthLimiterPolicy` (once, in `defineAuth`)
+  refuses a per-process limiter under `scope: 'shared'` (`X_AUTH_LIMITER_NOT_SHARED`) and different
+  `maxAttempts`/`windowMs`/`lockoutMs` (`X_AUTH_LIMITER_POLICY_MISMATCH`). `maxKeys` is not
+  compared. Nothing here reads the environment to guess a replica count.
+- **Every credential check runs through `openLoginAttempt`** (`login-attempt.ts`): account → ip →
+  org reserved in that fixed order BEFORE the KDF or the TOTP compare. A failure calls nothing (the
+  reservations are the record); `release()` for no verdict (a shed KDF, a store that is down, a
+  bucket that refused) or a factor proven with another still owed; `succeed()` clears the account
+  and refunds the shared two.
+- **`postgresAuthLimiter` is the shared limiter: ONE row per key in `x_auth_lockouts`, holding the
+  instants still inside the window** (`attempts_ms bigint[]` — a sliding window). The take is one
+  `insert … on conflict do update` reading the window off `x_auth_lockouts.<column>`, never a CTE
+  and never a second table: only the row the statement locks is re-read after a wait. `admitted`
+  is a column because `returning` cannot see the old row; no row back is never an admission. A
+  live lockout is never rewritten. `PgExecutor` is structural: the pool is the host's.
 - **`configureAuthLimiters` is the HOST's install point and takes a FACTORY**, called with the
   RESOLVED policy once per bucket; the comparison still runs on what comes back. Precedence:
   `config.limiter` → the installed factory → `createAuthLimiter`. `installedAuthLimiter` and
@@ -90,9 +99,11 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - `takeVerification(purpose, identifier, tokenHash)` consumes **only on a hash match**, in one
   conditional statement (`consumed_at is null` on the UPDATE and its subselect,
   `order by created_at desc limit 1`); `consumeVerification` still compares in constant time.
+  `consumed_at` is the adapter's `Clock`, bound, never `now()`.
 - **Foreign text in a `cause:` goes through `renderCauseValue`, in a `fix:` through
   `renderFixLiteral`, and in a shell `fix:` through `renderFixShellArg`.** Foreign here:
-  `providerDetail()`'s return, `claims.iss`, `accountLocked`'s `key`, and every OAuth endpoint URL
+  `providerDetail()`'s return, `claims.iss`, `accountLocked`'s `key` (an `org:` key is never
+  rendered at all — it was looked up from the caller's address), and every OAuth endpoint URL
   in a command position (`jwks.ts`, `oauth-profile.ts`, `oauth-exchange.ts`,
   `oauth-discovery.ts`) — the registry is filled by an issuer's own discovery document. A LINE
   that would not run degrades to prose: `jwks.ts`'s `readTheKeySet(tail)` decides with core's
@@ -105,7 +116,9 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - **The OAuth route paths are not configurable.** `oauth-paths.ts` imports nothing and is read by
   both `oauth-errors.ts` and `oauth-route.ts`; every "start over" fix is `restartAt(provider)`.
 - The routes are **descriptors** (`AuthRouteDescriptor`), never mounted handlers.
-- The callback answers failure as **coded JSON**, and success redirects to a fixed `successPath` —
+- The callback answers failure as **coded JSON** — a fixed body per code (`code`, `title`, `docs`,
+  one `cause`, `fix: x errors explain <CODE> --json`); the authored cause and fix are the
+  `auth.oauth.refused` log line — and success redirects to a fixed `successPath` —
   never `?next=` (`nextAfterSignIn` in `@ultimat3/http` is the one open-redirect check).
 - The handshake cookie is cleared on **every** callback outcome.
 - Refresh is **not implemented**, so the framework **stores no provider token**: `accountFor`
@@ -118,40 +131,58 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   an uncoded adapter throw logs `auth.oauth.uncoded_failure`, a rejecting `OAuthFetch` logs
   `auth.oauth.token_fetch_failed`, and the `POST /token` body is read as
   `providerDetail(response, 'coded-only')` (that request carries `client_secret`).
-- **`x_users.mfa_secret` is a PLAINTEXT secret** and `tables.ts` says so; encrypting it needs a
-  key-management seam this package does not have. Deferred deliberately.
+- **`x_users.mfa_secret` is SEALED** (`mfa-secret.ts`, purpose `auth:x_users.mfa_secret`):
+  `saveTotpSecret` writes, `openTotpSecret` reads and REFUSES a value core's `isSealed` does not
+  recognise (`X_MFA_SECRET_UNSEALED`, fix `x auth seal-mfa --json`). No plaintext fallback, ever —
+  `sealMfaSecrets` is the one-shot — each write a compare-and-set (`replaceMfaSecret`), a row that
+  changed underneath is `skipped` — and `x doctor` counts what is left. Whether a value is sealed is
+  `isSealed`'s to say, never a `like` in an adapter (`listUsersWithMfaSecret` returns them all).
 - **`providerJwks` memoises only the DEFAULT client**; a caller supplying options gets its own.
 - **A JWKS refresh is single-flighted through core's `createSingleFlight` with
   `deadlineMs = timeoutMs * 2`**; eviction frees the key, never the work, and a `createFence`
   generation check (read, never `guard`) stops a superseded refresh overwriting the cache.
   `schedule` is injectable.
 - **A success clears the ACCOUNT bucket and nothing else** — clearing the address bucket made the
-  limiter inert against stuffing.
-- **`MemoryAdapter.createUser` enforces `x_users.email` and `x_users.external_id` uniqueness**
-  (`authUniqueViolation`, `X_AUTH_WRITE_FAILED`), NULLS DISTINCT like Postgres.
+  limiter inert against stuffing. A password proven with a second factor still owed clears
+  NOTHING: `completeMfa` is what clears, or a repeat of the first leg wipes the wrong codes.
+- **`MemoryAdapter.createUser` and `updateUser` enforce `x_users.id`, `email` and `external_id`
+  uniqueness** (`authUniqueViolation`, `X_AUTH_WRITE_FAILED`), NULLS DISTINCT like Postgres;
+  `BuiltinAdapter` answers the same code through `builtin-adapter-violation.ts`.
   **`MemoryAdapter` takes a `Clock`** (default `systemClock`) and stamps every instant from it.
   `adapter-parity.test.ts` pins both.
-- The newer `AuthAdapter` members are OPTIONAL (`findUserByExternalId`, `listUsersByOrg`,
-  `deleteSessionsForUser`, `deleteSessionsForOrg`, `deleteSessionsCreatedBefore`); callers throw
-  `X_NOT_IMPLEMENTED` naming the method.
-- An api key's scopes are the agent actor's scopes. Never union them with the owner's roles.
+- Every `AuthAdapter` member is REQUIRED — a missing one is a compile error at `defineAuth`, and
+  no caller in this package refuses at runtime with `X_NOT_IMPLEMENTED`.
+- **An api key is its owner's credential.** `verifyApiKey` re-reads the owner (after the secret
+  matched, never before) and refuses a missing or disabled one as the same `X_API_KEY_INVALID`; a
+  key with `userId === null` has no owner and is unchanged. `disableUser` revokes the user's live
+  keys beside their sessions, and logs before its first write.
+- **A key's scopes only ever shrink** (`apiKeyScopes`, `policy-bridge.ts`): `*` and `<res>:*` are
+  refused at `issueApiKey` (`X_CONFIG_INVALID`) and dropped from a stored row; an OWNED key keeps
+  only what its owner's grants cover. Roles are policy's to expand, so the default grants are the
+  row's `permissions` + `scopes` (`directGrants`) and a role-based app passes
+  `apiKeyResolver(store, { grantsOf })`. Never union a key with the owner's roles.
 - **`apiKeyResolver(() => store)` is the ONE token → caller mapping** (`api-key-resolver.ts`):
   `verifyApiKey` → `apiKeyActor`, `X_API_KEY_INVALID` → `null`, everything else rethrown. Its
   `ApiKeyCaller` is structurally http's `BearerCaller` and mcp's `ResolvedToken` — declared here
   because tier 2 imports neither. The store is a thunk (a mount is declared before boot installs
   the database client). No second in-memory key store: `MemoryAdapter` IS an `ApiKeyStore`.
 - Rotate the session id on any privilege change (`rotateSession`, called by `updatePrivileges` in
-  `privileges.ts`), never patch the row.
+  `privileges.ts`), never patch the row. A `passwordHash` change also ends every OTHER session of
+  that user (`deleteOtherSessions`), or all of them when the caller passed no session of theirs.
 - **Every argon2 call goes through `kdfGate()`** — width 8, queue 64, `X_OVERLOADED` past it
   (borrowed from http, in `AUTH_BORROWED_ERROR_CODES`). The pool is core's `createFlightGate`, the
   refusal auth's own through core's `overflow:` seam. `configureKdfGate()` is the ONE install point
   and deliberately not a `defineAuth` key.
-- **MFA has a first leg and no second one, and the second is not a route you can just add.**
-  `login()` / `completeOAuthLogin()` throw `X_MFA_REQUIRED` before any session exists. A
-  `POST /auth/mfa/verify { userId, code }` would be unauthenticated by construction. The follow-up
-  needs three things together: a **sealed pending-MFA credential** built like `sealHandshake`, the
-  completion as an `AuthRouteDescriptor` with its path in `oauth-paths.ts`'s style, and
-  `auth.limiter` around `verifyTotp`. `TotpReplayGuard` is the completion's.
+- **MFA's second leg is `completeMfa(auth, challenge, code)`** (`mfa-challenge.ts`). `login()`
+  ends in `X_MFA_REQUIRED` whose `meta.challenge` is a `seal()` value (purpose
+  `auth:mfa-challenge`: user id, nonce, expiry on the server's clock, `MFA_CHALLENGE_TTL_MS`) —
+  `meta`, never `cause`, and never a bare user id: a second leg keyed by one is unauthenticated by
+  construction. The code is reserved against the same three buckets before it is compared, and a
+  spent step is refused through `auth.totpReplay` (checked and remembered with no `await`
+  between). It needs the app's master key (`X_SEAL_KEY_MISSING`). No route ships: the handler
+  decides how the challenge travels. Anything that is not six digits is a RECOVERY CODE: hashed
+  (`recoveryCodeHash`) and consumed by `adapter.consumeRecoveryCode` — one conditional UPDATE, so
+  single-use is storage's guarantee. There is no read-then-write redemption helper.
 - **`mfa.required` is the literal `false`, and `defineAuth` refuses a `true`** (`X_CONFIG_INVALID`):
   enforcing it would lock out every un-enrolled user. `mfa.issuer` is read by
   `enrolTotp(auth, { account })`.
@@ -173,8 +204,10 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
-| `rate-limit.ts` | per-ip, per-account and per-org buckets, lockout, scope check, `loginFailed()` |
-| `rate-limit-postgres.ts` | the SHARED limiter: two tables, a row per failure, over a structural `PgExecutor` |
+| `builtin-adapter-violation.ts` | a Postgres unique violation on an auth table → `authUniqueViolation` |
+| `rate-limit.ts` | per-ip, per-account and per-org buckets as reservations, lockout, scope check, `loginFailed()` |
+| `login-attempt.ts` | one attempt's reservations across the three buckets, taken before the check and settled after it |
+| `rate-limit-postgres.ts` | the SHARED limiter: one table, one row per key, a one-statement take, over a structural `PgExecutor` |
 | `limiter-install.ts` | the host's one install point for that limiter — the factory, what it built, and the purge over it |
 | `oauth.ts` | `OAuthProvider`, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
 | `oauth-builtins.ts` | the three shipped IdPs, as data. Imports only the type, so no cycle |
@@ -182,9 +215,11 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-discovery.ts` | `/.well-known/openid-configuration` → an `OAuthProvider`. One `fetch` |
 | `jwks.ts` | `crypto.subtle` signature verification, cached by `kid`, one shared in-flight refresh. No dependency |
 | `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity` |
-| `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` |
+| `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys) |
+| `mfa-challenge.ts` | the sealed challenge `X_MFA_REQUIRED` carries, and `completeMfa` |
+| `mfa-secret.ts` | the TOTP secret at rest: seal on write, open on read, the one-shot that seals older rows |
 | `directory.ts` | `describeUser` (allow-list projection), `listOrgUsers`, external-id lookup |
-| `privileges.ts` | `updatePrivileges` — the grant, and the rotation it requires |
+| `privileges.ts` | `updatePrivileges` — the grant, the rotation it requires, and the sessions a changed password ends |
 | `oauth-cookie.ts` | the handshake's home between the two legs: seal, open, the cookie |
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
 | `id-token.ts` | id token → claims this handshake may believe |
@@ -215,7 +250,8 @@ Gotchas:
   this package **owns**, unconditionally, and lists the borrowed two in `AUTH_BORROWED_ERROR_CODES`
   without a title. A `hasErrorCode()` guard would suppress the `X_ERROR_CODE_DUPLICATE` that is
   supposed to fire when two packages claim one code.
-- Tests run against `MemoryAdapter`; no ADAPTER test needs a database. The two exceptions are
+- Tests run against `MemoryAdapter`; the one ADAPTER test that boots a database is
+  `adapter-parity-identity.test.ts` (PGlite). The two other exceptions are
   `postgresAuthLimiter`'s, and they are exceptions in the shape the repo already has: the
   scripted-executor twin (`rate-limit-postgres.test.ts`) proves the protocol with no server,
   and `rate-limit-postgres.live.test.ts` is `describe.skip` without `TEST_DATABASE_URL` — the

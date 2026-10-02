@@ -10,6 +10,7 @@ import {
   accountLocked,
   authLimiterNotShared,
   authLimiterPolicyMismatch,
+  ORG_KEY_PREFIX,
 } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
 
@@ -65,11 +66,22 @@ export const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimitPolicy = Object.freeze({
   scope: 'process',
 });
 
+/** One counted attempt, as `reserve` took it — what `refund` gives back, and nothing else. */
+export interface AuthReservation {
+  readonly key: string;
+  /** The limiter's own clock at the take. It identifies the entry inside the window. */
+  readonly atMs: number;
+}
+
 /**
  * Async on every member, so a shared implementation can exist at all: a lockout that holds across
  * replicas is a network round trip, and a synchronous signature has no way to wait for one. The
  * in-memory limiter below answers immediately — the cost is one already-settled promise per call,
  * on a path that is about to run a KDF.
+ *
+ * The allowance is RESERVED, never checked: `reserve` counts the attempt in the same step that
+ * decides whether it may run, so N concurrent guesses spend N of the allowance before any of them
+ * reaches the KDF. A check followed later by a record let every one of them pass the check.
  */
 export interface AuthLimiter {
   /**
@@ -79,9 +91,18 @@ export interface AuthLimiter {
    * operator reads and nothing enforces.
    */
   readonly policy: AuthRateLimitPolicy;
-  /** Rejects with `X_ACCOUNT_LOCKED` if the key is inside a lockout. Call before any KDF work. */
-  assertAllowed(key: string): Promise<void>;
-  recordFailure(key: string): Promise<void>;
+  /**
+   * Count one attempt against the key, atomically, BEFORE any KDF work. Rejects with
+   * `X_ACCOUNT_LOCKED` — counting nothing — while the key is inside a lockout; the attempt that
+   * fills the window is admitted and starts the lockout. A failed attempt needs no further call:
+   * the reservation IS the recorded failure.
+   */
+  reserve(key: string): Promise<AuthReservation>;
+  /**
+   * Give one reservation back — the attempt succeeded, or never reached a verdict. Removes that
+   * one entry and lifts a lockout the window no longer justifies. Never clears the key.
+   */
+  refund(reservation: AuthReservation): Promise<void>;
   /** A success clears the window: a legitimate user is not punished for a typo yesterday. */
   recordSuccess(key: string): Promise<void>;
   lockedUntil(key: string): Promise<Date | null>;
@@ -113,7 +134,7 @@ export const ipKey = (ip: string): string => `ip:${ip}`;
  * in `@ultimat3/http` and `@ultimat3/jobs`: three limiters that spell one tenant three ways cannot
  * be read together during an incident.
  */
-export const orgKey = (orgId: string): string => `org:${orgId}`;
+export const orgKey = (orgId: string): string => `${ORG_KEY_PREFIX}${orgId}`;
 
 /**
  * The policy the tenant limiter enforces — the same window and lockout, a wider allowance. One
@@ -204,25 +225,38 @@ export function createAuthLimiter(
     get size() {
       return buckets.size;
     },
-    async assertAllowed(key) {
-      const bucket = buckets.get(key);
-      if (bucket === undefined) return;
+    // No `await` anywhere in the body: the check and the count are one synchronous step, which
+    // is the whole guarantee — concurrent callers are admitted one at a time, in order.
+    async reserve(key) {
       const nowMs = clock.now().getTime();
-      if (bucket.lockedUntilMs <= nowMs) return;
-      throw accountLocked(key, Math.ceil((bucket.lockedUntilMs - nowMs) / 1000));
-    },
-    async recordFailure(key) {
-      const nowMs = clock.now().getTime();
+      const existing = buckets.get(key);
+      if (existing !== undefined && existing.lockedUntilMs > nowMs) {
+        throw accountLocked(key, Math.ceil((existing.lockedUntilMs - nowMs) / 1000));
+      }
       const bucket = bucketFor(key);
       bucket.failures = bucket.failures.filter((at) => at > nowMs - policy.windowMs);
       bucket.failures.push(nowMs);
       if (bucket.failures.length >= policy.maxAttempts) {
         bucket.lockedUntilMs = nowMs + policy.lockoutMs;
       }
-      // The newest failure leaves the window last, so that is the earliest this entry is free —
+      // The newest attempt leaves the window last, so that is the earliest this entry is free —
       // unless a lockout outlives it. Recorded here because this is the only growth path.
       bucket.forgetAtMs = Math.max(bucket.lockedUntilMs, nowMs + policy.windowMs);
       if (buckets.size > maxKeys || nowMs - lastSweepMs >= SWEEP_EVERY_MS) sweep(nowMs);
+      return { key, atMs: nowMs };
+    },
+    async refund(reservation) {
+      const bucket = buckets.get(reservation.key);
+      if (bucket === undefined) return;
+      const index = bucket.failures.indexOf(reservation.atMs);
+      if (index < 0) return;
+      bucket.failures.splice(index, 1);
+      const nowMs = clock.now().getTime();
+      const live = bucket.failures.filter((at) => at > nowMs - policy.windowMs).length;
+      // A lockout this reservation completed is not one the remaining failures justify.
+      if (live < policy.maxAttempts) bucket.lockedUntilMs = 0;
+      if (bucket.failures.length === 0 && bucket.lockedUntilMs === 0)
+        buckets.delete(reservation.key);
     },
     async recordSuccess(key) {
       buckets.delete(key);

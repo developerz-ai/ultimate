@@ -1,4 +1,4 @@
-// The optional `AuthAdapter` members and the two revocation sweeps. Split out of
+// The directory reads and the revocation sweeps of `AuthAdapter`. Split out of
 // `builtin-adapter.test.ts` to stay under the 500-line ceiling `x verify`'s `filesize` step
 // enforces; the same `createRecordingClient()` stands in for Postgres, so no database is needed.
 

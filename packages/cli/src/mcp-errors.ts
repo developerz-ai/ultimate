@@ -284,6 +284,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'edit docker/Dockerfile: add RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target prebuilt after COPY . . in the runtime stage, then rebuild the image',
   X_ADMIN_UNSCANNED:
     'git mv apps/admin/src/index.ts apps/admin/app/admin/admin.ts   # then repoint its relative imports and x verify --only manifest --json',
+  X_FRAMEWORK_TABLE_ORPHANED: 'x doctor --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

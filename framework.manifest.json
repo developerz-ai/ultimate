@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "89819ac593f8960a0fc7055e1afb779c98de4c9d28768faf4197f71808e2f1a6",
+  "buildId": "7e81469fd5e5116ae1e4a819447d5471f4902f5751e9246990c670027f0cf8b4",
   "tiers": {
     "0": [
       "core",
@@ -1585,6 +1585,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_FRAMEWORK_TABLE_ORPHANED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_FRAMEWORK_TABLE_UNAPPLIED",
       "owner": "scripts",
       "at": "scripts/framework-tables.ts"
@@ -2216,6 +2221,11 @@
     },
     {
       "code": "X_MFA_SECRET_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_MFA_SECRET_UNSEALED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },

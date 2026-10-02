@@ -9,16 +9,15 @@
 // |---|---|
 // | `x_users.password_hash` | an argon2id digest, never the password |
 // | `x_users.recovery_code_hashes` | SHA-256 digests, never the codes (`mfa.ts`) |
-// | `x_users.mfa_secret` | **the base32 TOTP seed, in the clear** — see below |
+// | `x_users.mfa_secret` | the TOTP seed SEALED under the app's master key (`mfa-secret.ts`) |
 // | `x_accounts.access_token` / `refresh_token` | **nothing.** The framework writes `null` |
 // | `x_sessions.*`, `x_verifications.token_hash` | digests and metadata, never a token |
 //
-// `mfa_secret` is the one plaintext secret this schema still holds, and it is stated here rather
-// than glossed: a TOTP seed is symmetric, so verifying a code requires the seed itself and a
-// digest cannot replace it. Encrypting it needs a key-management seam this package does not have,
-// which is a design change and not a patch — DEFERRED, deliberately, and written down so nobody
-// reads the header above as covering it. `mfa.ts`'s "a database dump is not a permanent MFA
-// bypass" is true of the recovery CODES and not of the seed.
+// `mfa_secret` cannot be a digest: a TOTP seed is symmetric, so verifying a code needs the seed
+// itself. It is sealed with `purpose: 'auth:x_users.mfa_secret'`, written by `saveTotpSecret` and
+// opened by `openTotpSecret`, which REFUSES a value that is not sealed (`X_MFA_SECRET_UNSEALED`).
+// The column type is unchanged, so there is no DDL to upgrade — a row written before sealing is
+// sealed in place by `x auth seal-mfa`, once.
 //
 // The two `x_accounts` token columns are kept in the DDL and written `null`: they held live
 // provider credentials in the clear and nothing in this package ever read them back
@@ -36,8 +35,7 @@ export const X_USERS_TABLE = `create table if not exists x_users (
   permissions           text[] not null default '{}',
   scopes                text[] not null default '{}',
   external_id           text unique,
-  -- The base32 TOTP seed, in the clear. A seed is symmetric: a digest cannot verify a code.
-  -- Encryption at rest is deferred and needs a key-management seam - see the header.
+  -- The TOTP seed, sealed (x1.<keyId>.<iv>.<ciphertext>). Never base32 in the clear.
   mfa_secret            text,
   recovery_code_hashes  text[] not null default '{}',
   disabled_at           timestamptz,

@@ -28,7 +28,12 @@ export interface ServiceIdentity {
 /** The four `ActorKind`s, as the four things that can be holding a credential. */
 export type AuthIdentity =
   | { readonly kind: 'user'; readonly user: AuthUser; readonly session: AuthSession }
-  | { readonly kind: 'agent'; readonly apiKey: AuthApiKeyRecord }
+  | {
+      readonly kind: 'agent';
+      readonly apiKey: AuthApiKeyRecord;
+      /** What the key's owner may do — `null` for a key no user owns. See `actorFromApiKey`. */
+      readonly ownerGrants: readonly string[] | null;
+    }
   | { readonly kind: 'service'; readonly service: ServiceIdentity }
   | { readonly kind: 'anonymous' };
 
@@ -64,20 +69,58 @@ export function actorFromUser(user: AuthUser, session: AuthSession): PolicyActor
   );
 }
 
+/** `*` and `<resource>:*` — the two spellings a role uses to be granted everything. */
+export const isWildcardScope = (scope: string): boolean => scope === '*' || scope.endsWith(':*');
+
+// `@ultimat3/policy`'s own reading of a grant's resource, mirrored: same tier, so not imported.
+const resourceOf = (grant: string): string => grant.split(':')[0] ?? grant;
+
+/** Whether one of the owner's grants reaches a named permission. A grant MAY be a wildcard. */
+const covers = (grant: string, wanted: string): boolean =>
+  grant === '*' ||
+  grant === wanted ||
+  (grant.endsWith(':*') && resourceOf(grant) === resourceOf(wanted));
+
 /**
- * An MCP/LLM caller. The actor's scopes are **exactly** the key's scopes — never the owning
- * user's roles, never a default set. An agent that can do more than its key says is the whole
- * failure mode this bridge exists to prevent.
+ * What a key may carry of what it names. Two cuts, and both only ever remove:
+ *
+ * - a wildcard scope is dropped. `issueApiKey` refuses to mint one, and a row written before that
+ *   refusal (or by hand) must not keep the reach the refusal exists to deny;
+ * - a key a user OWNS keeps only the scopes that owner could exercise themselves. A key was
+ *   minted with whatever list its issuer typed, so without this a member could hold a key
+ *   reaching further than their own account — and it kept that reach after a demotion.
+ *
+ * `ownerGrants` is `null` for a key no user owns: there is nobody to be narrower than.
  */
-export function actorFromApiKey(key: AuthApiKeyRecord): PolicyActor {
+export function apiKeyScopes(
+  scopes: readonly string[],
+  ownerGrants: readonly string[] | null,
+): readonly string[] {
+  return scopes.filter(
+    (scope) =>
+      !isWildcardScope(scope) &&
+      (ownerGrants === null || ownerGrants.some((grant) => covers(grant, scope))),
+  );
+}
+
+/**
+ * An MCP/LLM caller. The actor's scopes are the key's scopes cut by `apiKeyScopes` — never the
+ * owning user's roles, never a default set. An agent that can do more than its key says, or more
+ * than its owner can, is the whole failure mode this bridge exists to prevent.
+ */
+export function actorFromApiKey(
+  key: AuthApiKeyRecord,
+  ownerGrants: readonly string[] | null,
+): PolicyActor {
+  const scopes = apiKeyScopes(key.scopes, ownerGrants);
   return withPermissions(
     agentActor({
       id: key.id,
       orgId: key.orgId ?? undefined,
       roles: [],
-      scopes: key.scopes,
+      scopes,
     }),
-    key.scopes,
+    scopes,
   );
 }
 
@@ -100,7 +143,7 @@ export function resolveActor(identity: AuthIdentity): PolicyActor {
     case 'user':
       return actorFromUser(identity.user, identity.session);
     case 'agent':
-      return actorFromApiKey(identity.apiKey);
+      return actorFromApiKey(identity.apiKey, identity.ownerGrants);
     case 'service':
       return actorFromService(identity.service);
     case 'anonymous':

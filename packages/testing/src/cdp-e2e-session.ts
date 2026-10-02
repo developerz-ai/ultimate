@@ -155,10 +155,19 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
     }
     // And `navigator.onLine` from a new document's first script (`cdp-offline-script.ts`) — the
     // network condition alone reaches a reloaded page only after its scripts have run.
+    // A page that is still THERE and refuses is kept and reported once every page has been asked:
+    // dropping it meant every later `offline()` skipped that tab in silence. Only a session the
+    // loop above just found gone is dropped — a closed tab refuses every call.
+    const refused: unknown[] = [];
     for (const session of [...pageSessions]) {
+      if (!sessions.has(session)) {
+        pageSessions.delete(session);
+        continue;
+      }
       const toggled = enabled ? onLineScripts.add(session) : onLineScripts.remove(session);
-      await toggled.catch(() => pageSessions.delete(session));
+      await toggled.catch((error: unknown) => refused.push(error));
     }
+    if (refused.length > 0) throw refused[0];
   };
 
   const attached = async (targetId: string): Promise<string> => {

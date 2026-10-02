@@ -8,6 +8,7 @@ import {
   actorFromApiKey,
   actorFromService,
   actorFromUser,
+  apiKeyScopes,
   resolveActor,
   type ServiceIdentity,
 } from './policy-bridge';
@@ -99,12 +100,47 @@ describe('actorFromUser', () => {
 
 describe('actorFromApiKey', () => {
   test('scopes are exactly the key scopes, never the owner role set', () => {
-    const actor = actorFromApiKey(API_KEY);
+    const actor = actorFromApiKey(API_KEY, ['posts:write', 'posts:read']);
     expect(actor.kind).toBe('agent');
     expect(actor.id).toBe('key-1');
     expect(actor.orgId).toBe('org-1');
     expect(actor.scopes).toEqual(['posts:write']);
     expect(actor.roles).toEqual([]);
+    expect(actor.permissions).toEqual(['posts:write']);
+  });
+
+  // A key was minted with whatever list its issuer typed, so a member could hold a key reaching
+  // further than their own account — and it kept that reach after a demotion.
+  test('a key a user owns keeps only what that owner may do', () => {
+    const key = { ...API_KEY, scopes: ['posts:write', 'billing:refund', 'posts:read'] };
+    const actor = actorFromApiKey(key, ['posts:write', 'posts:read']);
+    expect(actor.scopes).toEqual(['posts:write', 'posts:read']);
+    expect(actor.permissions).toEqual(['posts:write', 'posts:read']);
+    // An owner with nothing has a key with nothing — on both fields a policy reads.
+    expect(actorFromApiKey(key, []).scopes).toEqual([]);
+    expect(actorFromApiKey(key, []).permissions).toEqual([]);
+  });
+
+  test("the owner's wildcard grants cover, exactly as a role's do", () => {
+    const scopes = ['posts:write', 'billing:refund'];
+    expect(apiKeyScopes(scopes, ['posts:*'])).toEqual(['posts:write']);
+    expect(apiKeyScopes(scopes, ['*'])).toEqual(scopes);
+    // A resource is matched whole: `post` is not `posts`.
+    expect(apiKeyScopes(scopes, ['post:*', 'billing'])).toEqual([]);
+  });
+
+  test('a key no user owns is not narrowed', () => {
+    const key = { ...API_KEY, userId: null, scopes: ['posts:write', 'billing:refund'] };
+    expect(actorFromApiKey(key, null).scopes).toEqual(['posts:write', 'billing:refund']);
+  });
+
+  test.each([
+    ['owned', ['*', 'posts:*']],
+    ['unowned', null],
+  ] as const)('a wildcard scope on a stored key is never honoured (%s)', (_, grants) => {
+    const key = { ...API_KEY, scopes: ['*', 'posts:*', 'posts:write'] };
+    const actor = actorFromApiKey(key, grants);
+    expect(actor.scopes).toEqual(['posts:write']);
     expect(actor.permissions).toEqual(['posts:write']);
   });
 });
@@ -129,9 +165,11 @@ describe('resolveActor', () => {
   });
 
   test('dispatches "agent" to actorFromApiKey', () => {
-    const actor = resolveActor({ kind: 'agent', apiKey: API_KEY });
+    const actor = resolveActor({ kind: 'agent', apiKey: API_KEY, ownerGrants: [] });
     expect(actor.kind).toBe('agent');
     expect(actor.id).toBe('key-1');
+    // The grants travel through the funnel: nothing the owner cannot do survives it.
+    expect(actor.scopes).toEqual([]);
   });
 
   test('dispatches "service" to actorFromService', () => {

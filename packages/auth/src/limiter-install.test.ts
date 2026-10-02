@@ -24,8 +24,8 @@ function tableLimiter(
   return {
     policy: { ...policy, maxKeys: undefined, scope: 'shared' },
     sweeps: () => sweeps,
-    assertAllowed: async (): Promise<void> => undefined,
-    recordFailure: async (): Promise<void> => undefined,
+    reserve: async (key) => ({ key, atMs: 0 }),
+    refund: async (): Promise<void> => undefined,
     recordSuccess: async (): Promise<void> => undefined,
     lockedUntil: async (): Promise<Date | null> => null,
     reset: async (): Promise<void> => undefined,

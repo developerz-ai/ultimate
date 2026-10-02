@@ -105,3 +105,80 @@ describe('updatePrivileges', () => {
     expect(String(thrown)).toContain('X_AUTH_WRITE_FAILED');
   });
 });
+
+/**
+ * The failure case first: a password change rotated the ONE session passed in and left every
+ * other session of that user live — so the cookie somebody lifted last week survived the very
+ * change made to get rid of them.
+ */
+describe('a changed password ends the sessions issued under the old one', () => {
+  const devices = async (auth: Auth, userId: string, count: number): Promise<void> => {
+    for (let index = 0; index < count; index += 1) {
+      await createSession(auth.sessions, { userId, mfaSatisfied: true });
+    }
+  };
+
+  test("with the caller's own session: that one survives, rotated, and it is the only one", async () => {
+    const { auth, adapter, issued } = await setup();
+    await devices(auth, 'alice', 3);
+    const result = await updatePrivileges(
+      auth,
+      'alice',
+      { passwordHash: 'new-hash' },
+      issued.session,
+    );
+    expect(result.sessionsRevoked).toBe(3);
+    const live = await adapter.listSessions('alice');
+    expect(live.map((session) => session.id)).toEqual([result.session?.session.id ?? '']);
+    expect(await adapter.getSession(issued.session.id)).toBeNull();
+  });
+
+  test('with rotation off, the session passed in is the one kept', async () => {
+    const { auth, adapter, issued } = await setup({ rotateOnPrivilegeChange: false });
+    await devices(auth, 'alice', 2);
+    const result = await updatePrivileges(
+      auth,
+      'alice',
+      { passwordHash: 'new-hash' },
+      issued.session,
+    );
+    expect(result.session).toBeUndefined();
+    expect(result.sessionsRevoked).toBe(2);
+    expect((await adapter.listSessions('alice')).map((session) => session.id)).toEqual([
+      issued.session.id,
+    ]);
+  });
+
+  test('with no session — a reset — none survives', async () => {
+    const { auth, adapter } = await setup();
+    await devices(auth, 'alice', 2);
+    const result = await updatePrivileges(auth, 'alice', { passwordHash: 'new-hash' });
+    expect(result.sessionsRevoked).toBe(3);
+    expect(await adapter.listSessions('alice')).toHaveLength(0);
+  });
+
+  test("an operator changing somebody else's password ends theirs and keeps the operator's", async () => {
+    const { auth, adapter, issued } = await setup();
+    await adapter.createUser({
+      id: 'bob',
+      email: 'bob@corp.test',
+      passwordHash: 'old',
+      orgId: 'org-1',
+      roles: [],
+      createdAt: new Date(START),
+    });
+    await devices(auth, 'bob', 2);
+    const result = await updatePrivileges(auth, 'bob', { passwordHash: 'new' }, issued.session);
+    expect(result.sessionsRevoked).toBe(2);
+    expect(await adapter.listSessions('bob')).toHaveLength(0);
+    expect(await adapter.getSession(issued.session.id)).not.toBeNull();
+  });
+
+  test('a role change still ends nothing but the rotated id', async () => {
+    const { auth, adapter, issued } = await setup();
+    await devices(auth, 'alice', 2);
+    const result = await updatePrivileges(auth, 'alice', { roles: ['admin'] }, issued.session);
+    expect(result.sessionsRevoked).toBe(0);
+    expect(await adapter.listSessions('alice')).toHaveLength(3);
+  });
+});

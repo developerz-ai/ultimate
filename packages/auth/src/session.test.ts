@@ -165,6 +165,8 @@ describe('the idle window slides, it does not grind', () => {
       deleteSession: (id) => base.deleteSession(id),
       deleteOtherSessions: (userId, keep) => base.deleteOtherSessions(userId, keep),
       listSessions: (userId) => base.listSessions(userId),
+      deleteSessionsForUser: (userId) => base.deleteSessionsForUser(userId),
+      deleteSessionsCreatedBefore: (before) => base.deleteSessionsCreatedBefore(before),
     };
     return { store, writes: () => writes };
   };

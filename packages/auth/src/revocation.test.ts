@@ -5,8 +5,8 @@
 // meant thirty days, which is `absoluteTtlMs`.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
-import type { AuthAdapter } from './adapter';
+import { frozenClock, setLogSink } from '@ultimat3/core';
+import { issueApiKey, verifyApiKey } from './api-keys';
 import { type Auth, defineAuth } from './auth';
 import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
@@ -87,6 +87,7 @@ describe('revocation', () => {
     const result = await disableUser(auth, 'alice', 'offboarded');
     expect(result.user.disabledAt).toEqual(new Date(START));
     expect(result.sessionsRevoked).toBe(2);
+    expect(result.apiKeysRevoked).toBe(0);
     expect(await liveFor(adapter, 'alice')).toBe(0);
 
     // Re-enabling restores the account and deliberately not the sessions.
@@ -95,21 +96,50 @@ describe('revocation', () => {
     expect(await liveFor(adapter, 'alice')).toBe(0);
   });
 
-  test('an adapter that has not implemented the sweep says so, with the method named', async () => {
-    const adapter = new MemoryAdapter();
-    // A 1.2-era adapter: the seam's new members are optional, so this still satisfies the type.
-    const legacy = new Proxy(adapter, {
-      get(target, prop) {
-        if (prop === 'deleteSessionsForOrg') return undefined;
-        const value = Reflect.get(target, prop);
-        return typeof value === 'function' ? value.bind(target) : value;
-      },
-    }) as AuthAdapter;
-    const auth = defineAuth({ adapter: legacy, clock: frozenClock(START) });
-    const thrown = await revokeOrgSessions(auth, 'org-1', 'why').catch((error: unknown) => error);
-    const error = thrown instanceof AuthError ? thrown : null;
-    expect(error?.code).toBe('X_NOT_IMPLEMENTED');
-    expect(error?.cause).toContain('deleteSessionsForOrg');
-    expect(error?.fix).toContain('BuiltinAdapter');
+  // The failure case first: a disabled user's sessions died and their api keys did not, so every
+  // bearer mount and MCP endpoint went on answering for someone who had been offboarded.
+  test('disableUser revokes the live keys the user owns, and only those', async () => {
+    const { auth, adapter } = await setup();
+    const clock = frozenClock(START);
+    const mine = issueApiKey({ env: 'prod', scopes: ['post:read'], userId: 'alice', clock });
+    const spent = issueApiKey({ env: 'prod', scopes: ['post:read'], userId: 'alice', clock });
+    const theirs = issueApiKey({ env: 'prod', scopes: ['post:read'], userId: 'bob', clock });
+    for (const issued of [mine, spent, theirs]) await adapter.putApiKey(issued.record);
+    await adapter.revokeApiKey(spent.record.id, new Date(START - 1_000));
+
+    const result = await disableUser(auth, 'alice', 'offboarded');
+    // One, not two: a key already revoked is not revoked again, and its instant is not moved.
+    expect(result.apiKeysRevoked).toBe(1);
+    expect((await adapter.findApiKeyById(mine.record.id))?.revokedAt).toEqual(new Date(START));
+    expect((await adapter.findApiKeyById(spent.record.id))?.revokedAt).toEqual(
+      new Date(START - 1_000),
+    );
+    expect((await adapter.findApiKeyById(theirs.record.id))?.revokedAt).toBeNull();
+
+    // Re-enabling restores the account and deliberately not the key.
+    await enableUser(auth, 'alice');
+    const refused = await verifyApiKey(adapter, mine.plaintext, clock).catch((e: unknown) => e);
+    expect(refused instanceof AuthError ? refused.code : 'verified').toBe('X_API_KEY_INVALID');
+  });
+
+  // `disableUser` wrote first and logged second, so a failed write left no line saying who asked
+  // for the account to be disabled, or why.
+  test('disableUser logs before its first write', async () => {
+    const { auth, adapter } = await setup();
+    const order: string[] = [];
+    const update = adapter.updateUser.bind(adapter);
+    adapter.updateUser = async (id, patch) => {
+      order.push('write');
+      return await update(id, patch);
+    };
+    const previous = setLogSink((line) => {
+      if (line.includes('auth.revocation') && line.includes('offboarded')) order.push('log');
+    });
+    try {
+      await disableUser(auth, 'alice', 'offboarded');
+    } finally {
+      setLogSink(previous);
+    }
+    expect(order).toEqual(['log', 'write']);
   });
 });

@@ -40,6 +40,9 @@ const { start, callback } = oauthLogin(auth);
 - The lockout counts attempts against one identity, so it has to be **one** count. `AuthLimiter`
   is async on every member and declares the policy it enforces; `defineAuth` refuses a limiter
   that disagrees with the app's declaration.
+- An attempt is **reserved** before the KDF, never checked and recorded after it: `reserve(key)`
+  counts the guess in the step that admits it, so a concurrent burst spends the allowance as it
+  arrives. `refund(reservation)` gives one back on success; a failure calls nothing.
 
 ## The lockout across replicas
 
@@ -70,8 +73,10 @@ refuses any pairing that would make it a lie:
 `account:<email>` and `ip:<addr>` were the only key shapes, so one tenant's misconfigured
 integration hammering login from 400 addresses was capped by neither — each IP bucket allowed its
 own quota, the account buckets protected individuals, and the shared limiter saturated behind
-them. `orgKey(orgId)` is the third shape, checked in `login()` once the address resolves to an org
-and still before the KDF runs.
+them. `orgKey(orgId)` is the third shape, reserved in `login()` once the address resolves to an org
+and still before the KDF runs. A locked tenant answers `X_ACCOUNT_LOCKED` with no org id in it —
+the id was looked up from the address the caller typed — and an attempt the tenant cap turns away
+is not counted against the account or the address.
 
 `rateLimit.orgMaxAttempts` is its own number, defaulting to `maxAttempts * 20`: a whole tenant
 sharing five attempts is a denial of service against that tenant. A success on one member's
@@ -111,8 +116,10 @@ proxy's `x-forwarded-for` is not a promise that it strips a certificate header t
 does **not** own its own configuration: the policy stays the app's single statement of the limits,
 and the boot check is what keeps it true.
 
-**A shared limiter ships, `As of 2026-08`** — `postgresAuthLimiter({ executor, clock, policy })`,
-two tables, a row per failure so the window still SLIDES across replicas. Until it landed,
+**A shared limiter ships, `As of 2026-10`** — `postgresAuthLimiter({ executor, clock, policy })`,
+one table (`x_auth_lockouts`), one row per key holding the instants still inside the window, so
+the window still SLIDES across replicas and a take is ONE statement: forty concurrent guesses
+against `maxAttempts: 5` are admitted five times. Until it landed,
 `scope: 'shared'` was a declaration nothing in the framework could satisfy while `x new` scaffolded
 `replicas: 2` — `maxAttempts × 2` guesses per account. `executor` is a `PgExecutor`, anything
 speaking `query(text, values)`; **never `Bun.sql`**, whose `.query` is `undefined`.
@@ -154,7 +161,17 @@ defineAuth({
 Both limiters share one table: the keys are prefixed (`account:`, `ip:`, `org:`) and every limit
 travels as a statement parameter, so the tenant bucket's wider allowance cannot leak into the
 account bucket's. It reports `maxKeys: undefined` — there is no in-process table to bound — and
-neither table forgets on its own.
+the table does not forget on its own.
+
+A limiter of your own implements the same five members:
+
+| Member | Contract |
+|---|---|
+| `reserve(key)` | count one attempt atomically; `X_ACCOUNT_LOCKED`, counting nothing, while the key is locked; the attempt that fills the window is admitted and starts the lockout. Answers `{ key, atMs }` |
+| `refund(reservation)` | remove that ONE attempt, and lift a lockout the window no longer justifies |
+| `recordSuccess(key)` | clear the key — its window and its lockout |
+| `lockedUntil(key)` / `reset()` | the live deadline or `null`; drop everything |
+| `purgeExpired?()` | only for a limiter backed by a table |
 
 **An app does not have to write any of that, `As of 2026-08-22`.** The boot fills a seam and every
 `defineAuth` in the process picks it up:
@@ -180,10 +197,10 @@ Precedence is `defineAuth({ limiter })` → the installed factory → `createAut
 `resetAuthLimiters()` puts the per-process default back. `@ultimat3/cli`'s `startServices` calls it
 on every boot, so a scaffolded app gets a fleet-wide lockout with nothing to remember.
 
-Neither table forgets on its own, and `purgeAuthLimits()` is the framework's reader for that:
-it drops failures past the window and lockouts that have expired, measured against the clock the
-host handed the limiter, and it sweeps only the WIDEST window installed — a sweep on a narrower
-one deletes failures another limiter is still counting, which hands a sprayer its attempts back.
+The table does not forget on its own, and `purgeAuthLimits()` is the framework's reader for that:
+it drops every key whose window has emptied and whose lockout has expired, measured against the
+clock the host handed the limiter, and it sweeps only the WIDEST window installed — a sweep on a
+narrower one deletes attempts another limiter is still counting, which hands a sprayer them back.
 `@ultimat3/jobs`' `purge()` job is what calls it hourly; `x dev` and every role container declare
 that sweep at boot.
 
@@ -224,12 +241,13 @@ registerOAuthProvider(await discoverOAuthProvider({ id: 'bigco-sso', issuer: 'ht
 | `registerOAuthProvider(provider)` | the frozen provider; `X_OAUTH_PROVIDER_DUPLICATE` on a second claim of one id |
 | `providerFor(id)` | the provider, or throws `X_OAUTH_PROVIDER_UNKNOWN` — never `undefined` |
 | `hasOAuthProvider(id)` | whether the id is registered |
-| `BUILTIN_OAUTH_PROVIDER_IDS` | the three shipped ids — the only list an **anonymous** refusal names |
+| `BUILTIN_OAUTH_PROVIDER_IDS` | the three shipped ids — the only list an **anonymous** refusal is built from, and it is named in the `auth.oauth.refused` log line, never in the response body |
 | `oauthProviderIds()` | every registered id, live. **NOT** what `defineAuth({ providers })` defaults to — that is `[]`, so an app names what it enabled |
 
 `discoverOAuthProvider` refuses a document with no `jwks_uri`: without a key set there is nothing
 to check an id token's signature against, and the token-endpoint TLS exemption below is a thing a
-caller declares, not one a provider inherits by omission.
+caller declares, not one a provider inherits by omission. It refuses a document whose `issuer` is
+not the one asked for, too (OIDC Discovery §4.3).
 
 **SAML is out of scope and will stay out of scope.** XML-DSig canonicalisation has no Bun native
 and implementing it would mean a real dependency in the primitive vocabulary, which
@@ -286,33 +304,36 @@ rather than never. A seam that returns the stored answer writes nothing.
 
 ## MFA — TOTP and recovery codes
 
-Pure functions over a secret and a clock. This package mints, checks and de-duplicates a code;
-**it persists nothing** — the secret, the recovery-code hashes and the spent steps are the app's
-rows, because `AuthAdapter` has no MFA member and adding one would break every third-party
-adapter.
+TOTP is pure functions over a secret and a clock; what is STORED goes through two writers and one
+reader, `As of 2026-10`: the secret is sealed at rest, and a recovery code is consumed atomically.
 
 ```ts
 import type { Auth } from '@ultimat3/auth';
-import { createTotpReplayGuard, enrolTotp, generateRecoveryCodes, verifyTotp } from '@ultimat3/auth';
-import { systemClock } from '@ultimat3/core';
+import { enrolTotp, generateRecoveryCodes, saveTotpSecret } from '@ultimat3/auth';
 
 declare const auth: Auth;   // the `defineAuth` at the top — `enrolTotp` reads `auth.mfa.issuer`
+declare const userId: string;
 
 const enrolment = enrolTotp(auth, { account: 'ada@example.com' });   // issuer: auth.mfa.issuer
-// enrolment.uri  -> otpauth://…  the QR code
-// enrolment.secret -> base32, store it against the user
+// enrolment.uri    -> otpauth://…  the QR code
+await saveTotpSecret(auth, userId, enrolment.secret);                // sealed, onto x_users
 
-const recovery = generateRecoveryCodes();   // { codes, hashes } — show `codes` ONCE, store `hashes`
-const guard = createTotpReplayGuard();
-
-export function secondFactorHolds(userId: string, secret: string, code: string): boolean {
-  const at = systemClock.now();
-  const { ok, step } = verifyTotp({ secret, code, at });
-  if (!ok || step === null || guard.isUsed(userId, step)) return false;
-  guard.remember(userId, step, at);
-  return true;
-}
+const recovery = generateRecoveryCodes();   // { codes, hashes } — show `codes` ONCE
+await auth.adapter.updateUser(userId, { recoveryCodeHashes: recovery.hashes });
 ```
+
+Checking a code at sign-in is `completeMfa` (below) — it opens the secret, meters the guess and
+refuses a spent code; an app does not call `verifyTotp` on a stored secret itself.
+
+**The secret at rest is sealed** under the app's master key (`purpose: 'auth:x_users.mfa_secret'`).
+A TOTP seed is symmetric, so it cannot be a digest — and in the clear, a dump of `x_users` was
+every enrolled user's second factor.
+
+| | |
+|---|---|
+| write | `saveTotpSecret(auth, userId, secret)` — refuses a secret nothing can derive a code from (`X_MFA_SECRET_INVALID`), needs the master key (`X_SEAL_KEY_MISSING`) |
+| read | `openTotpSecret(stored)` — **refuses a value that is not sealed** (`X_MFA_SECRET_UNSEALED`, fix `x auth seal-mfa --json`). There is no plaintext fallback, by decision: a fallback kept "for now" is a plaintext column forever |
+| rows from before sealing | `x auth seal-mfa` once, or `sealMfaSecrets({ adapter })` on an adapter of your own — idempotent, answers `{ sealed, alreadySealed, skipped }`; each write is a compare-and-set (`adapter.replaceMfaSecret`), so a re-enrolment mid-run is `skipped`, never overwritten. `x doctor` reports how many are left |
 
 | Call | Answers |
 |---|---|
@@ -320,7 +341,7 @@ export function secondFactorHolds(userId: string, secret: string, code: string):
 | `verifyTotp({ secret, code, at, drift?, usedSteps? })` | `{ ok, step }`. `step` is the window the code belonged to, `null` on no match |
 | `createTotpReplayGuard(drift?, maxSubjects?)` | the in-process `{ isUsed, remember, size }`; a fleet passes a Redis-backed pair of the same two methods |
 | `generateRecoveryCodes(count = 10)` | `{ codes, hashes }`. `codes` is shown once and is never re-derivable |
-| `redeemRecoveryCode(code, hashes)` | the **remaining** hashes, or `null`. Persisting that array is what makes a code single-use |
+| `recoveryCodeHash(code)` | what a code is stored and looked up as — dashes, spaces and case removed first. `auth.adapter.consumeRecoveryCode(userId, hash)` removes it in ONE statement and answers whether it was there, so two requests carrying one code cannot both redeem it |
 | `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code. `totpCode` throws `X_MFA_SECRET_INVALID` on a secret that decodes to zero bytes |
 
 **A secret the decoder cannot read verifies nothing, `As of 2026-08`.** `base32Decode` answers
@@ -362,11 +383,49 @@ at `login()` instead is a lockout — `actorFromUser` degrades only a user who H
 package ships no enrolment route to send the rest to. Gate it in your own sign-in handler —
 `if (user.mfaSecret === null)` send them to `enrolTotp` before you call `createSession`.
 
-**The second leg of login is the app's, `As of 2026-08`.** `login()` and `completeOAuthLogin()`
-throw `X_MFA_REQUIRED` before any session exists; finishing the flow is `verifyTotp` followed by
-`createSession({ mfaSatisfied: true })` in the app's own route. The framework ships no
-`POST /auth/mfa/verify`, deliberately — see [`CLAUDE.md`](CLAUDE.md) for the three things that
-would have to land together, and why fewer is worse than none.
+**The second leg of login is `completeMfa`, `As of 2026-10`.** `login()` and
+`completeOAuthLogin()` throw `X_MFA_REQUIRED` before any session exists, and the error's
+`meta.challenge` is what carries the proven first leg to the second: a value sealed under the
+app's master key (`x secrets init`; `X_SEAL_KEY_MISSING` without one), naming the user, good for
+`MFA_CHALLENGE_TTL_MS` (five minutes) on the server's clock. It is `meta`, never `cause` — the
+problem document publishes `cause` — so the sign-in handler decides how it travels.
+
+```ts
+import { type Auth, completeMfa, login } from '@ultimat3/auth';
+import { isUltimateError } from '@ultimat3/core';
+
+declare const auth: Auth;
+
+export async function signIn(email: string, password: string, ip: string) {
+  try {
+    return { session: await login(auth, { email, password, ip }) };
+  } catch (error) {
+    if (!isUltimateError(error) || error.code !== 'X_MFA_REQUIRED') throw error;
+    return { challenge: String(error.meta?.['challenge']) };   // a cookie, or your own body
+  }
+}
+
+export const secondFactor = (challenge: string, code: string, ip: string) =>
+  completeMfa(auth, challenge, code, { ip });   // what `login()` answers: actor, session, cookie
+```
+
+| `completeMfa` is given | Answer |
+|---|---|
+| a live challenge and the current code, or an unused recovery code | `{ actor, session, token, cookie }`, `mfaSatisfied: true` |
+| a wrong code, or one already spent | `X_UNAUTHENTICATED`; the guess stays counted |
+| a value this app did not seal, an expired one, or one for an account now disabled or un-enrolled | `X_UNAUTHENTICATED`, one refusal for all of them |
+| a guess past `rateLimit.maxAttempts` | `X_ACCOUNT_LOCKED` — the same account, address and tenant buckets a password guess spends |
+
+A code guess is reserved before it is compared, so six digits are worth `maxAttempts` tries per
+window. Repeating the first leg does not buy them back: a proven password with a second factor
+still owed clears nothing — `completeMfa` is what clears the account's window. A spent step is
+refused through `auth.totpReplay` (`defineAuth({ totpReplay })`, in-process by default). No route
+ships.
+
+`code` is either the six digits or a **recovery code**: anything that is not six digits is hashed
+and consumed through the adapter, metered exactly as a wrong digit string is, and gone after one
+use. A stored secret that is not sealed is `X_MFA_SECRET_UNSEALED` (HTTP 500) before any guess is
+counted — the deployment's fault, never the caller's.
 
 ## Email verification and password reset
 
@@ -424,9 +483,9 @@ unauthenticated POST with any token cannot kill the victim's live link.
 | `revokeUserSessions(auth, userId, reason)` | one person, their current session included |
 | `revokeOrgSessions(auth, orgId, reason)` | one tenant, at 03:00, without touching another |
 | `revokeSessionsCreatedBefore(auth, at, reason)` | everything minted under a rotated secret |
-| `disableUser(auth, userId, reason)` | stamps `disabledAt` **and** kills the sessions |
+| `disableUser(auth, userId, reason)` | stamps `disabledAt`, kills the sessions **and** revokes the user's live api keys — `{ user, sessionsRevoked, apiKeysRevoked }`. Re-enabling restores neither |
 | `listOrgUsers(auth, orgId, { role })` | the quarterly access review, as safe summaries |
-| `updatePrivileges(auth, userId, patch, session?)` | the grant, plus the session rotation it requires |
+| `updatePrivileges(auth, userId, patch, session?)` | the grant, plus the session rotation it requires. A `passwordHash` change ends every OTHER session of that user (`sessionsRevoked`) — all of them when no session of theirs was passed, as in a reset |
 
 `reason` is a required argument on every revocation, for the reason `crossTenant()` requires one:
 an incident review asks who killed these sessions and why, and a `delete` with no line answers
@@ -446,7 +505,7 @@ an adapter implementation, not a dependency of this package.
 
 | Driver | Use |
 |---|---|
-| `BuiltinAdapter` | Postgres via `@ultimat3/db`; takes an injected `DbClient` |
+| `BuiltinAdapter` | Postgres via `@ultimat3/db`. `new BuiltinAdapter(client?, clock?)` — the process client and `systemClock` by default; the clock stamps `x_verifications.consumed_at` |
 | `MemoryAdapter` | `x new` before a database exists, and every test in this package. `new MemoryAdapter(clock)` — `systemClock` by default — stamps every instant it writes |
 | your own | implement `AuthAdapter`; DDL in `tables.ts` shows what the columns mean |
 
@@ -456,10 +515,8 @@ would not. Normalisation happens once, above the seam, in `normaliseEmail` (`ema
 lowercase, nothing else. Call it before `findUserByEmail`/`createUser` in any login route of your
 own, and key any bucket of your own with it — `accountKey` does.
 
-The seam's newer members — `findUserByExternalId`, `listUsersByOrg`, `deleteSessionsForUser`,
-`deleteSessionsForOrg`, `deleteSessionsCreatedBefore` — are **optional**, so a 1.2-era adapter
-still satisfies the interface. Calling one an adapter has not implemented is `X_NOT_IMPLEMENTED`
-with the method named, not a silent no-op.
+Every member of the seam is required: an adapter missing one is a compile error, never a runtime
+refusal.
 
 `x_users` gained two columns in 1.3.0 — `scopes text[]` and `external_id text unique` — plus an
 `org_id` index.
@@ -555,7 +612,7 @@ Bun.serve({
 |---|---|---|
 | path | `/auth/oauth/:provider` | `/auth/oauth/:provider/callback` |
 | success | `302` to the provider, `Set-Cookie: __Host-x_oauth_<provider>` | `303` to `successPath`, `Set-Cookie: __Host-x_session` **and** the handshake cleared |
-| failure | the coded JSON body, status per code | the same, handshake cleared either way |
+| failure | coded JSON, status per code: `code` + `title` + `docs`, one fixed `cause`, `fix: x errors explain <CODE> --json` | the same, handshake cleared either way |
 
 A **descriptor**, never a mounted handler — the same category as `mcpHttpRoute()`. `@ultimat3/http`
 is tier 2 like this package, so auth may not import it, and `defineRoute` is tier 4 and describes
@@ -579,8 +636,12 @@ mounting API to call today; do not write one, and do not read this section as pr
 at `GET /auth/oauth/<provider>`; it now quotes `oauthStartPath()`, the same declaration the mount
 reads. A movable base path is that sentence going stale again.
 
-**Failure is JSON, not a redirect carrying `?error=`.** The callback is the one request whose
-failure a developer must read, and there is no `?next=` on the success hop either: an
+`oauthLogin` needs an origin to build the provider's `redirect_uri` from: `baseUrl`, or `APP_URL`.
+With neither, the start leg refuses with `X_ENV_MISSING` rather than trust a request header.
+
+**Failure is JSON, not a redirect carrying `?error=`.** The body is the same for every refusal of
+one code; the authored cause and fix are the `auth.oauth.refused` log line, where only an operator
+reads them. The callback is the one request whose failure a developer must read, and there is no `?next=` on the success hop either: an
 attacker-supplied return target on the endpoint that hands out a session is the classic open
 redirect, and `nextAfterSignIn` in `@ultimat3/http` is the one implementation of that check.
 
@@ -658,12 +719,44 @@ JWT signed with the `.p8` key, which Apple expires every six months.
 looked up by the non-secret id.
 
 ```ts
+import { type Auth, apiKeyActor, issueApiKey, verifyApiKey } from '@ultimat3/auth';
+
+declare const auth: Auth;
+declare const orgId: string;
+
 const { plaintext, record } = issueApiKey({ env: 'prod', scopes: ['post:publish'], orgId });
 await auth.adapter.putApiKey(record);
-const actor = apiKeyActor(await verifyApiKey(auth.adapter, plaintext));  // kind: 'agent'
+export const actor = apiKeyActor(await verifyApiKey(auth.adapter, plaintext));  // kind: 'agent'
 ```
 
-An api key's scopes become **exactly** the agent actor's scopes — never the owning user's roles.
+`verifyApiKey` answers `{ record, owner }`. A key is its owner's credential, `As of 2026-10`:
+
+| The key | What verification does |
+|---|---|
+| names no `userId` | nothing more — a key no user owns is cut by its scopes and its org alone |
+| names a `userId` | re-reads that user from the store. Missing or disabled is the same `X_API_KEY_INVALID` every other rejection is, on the very next use; `disableUser` also revokes the key outright |
+
+A key's scopes only ever shrink on the way to the actor — never the owning user's roles, never a
+default set:
+
+- `*` and `<resource>:*` are refused at `issueApiKey` (`X_CONFIG_INVALID`), and dropped from a row
+  that already holds one.
+- A key a user owns keeps only the scopes that owner's grants cover. This package can read the
+  row's `permissions` and `scopes` (`directGrants`) and cannot expand a role — that is
+  `@ultimat3/policy`'s — so an app whose users hold roles says what they grant:
+
+```ts
+import { type ApiKeyVerifyStore, apiKeyResolver, directGrants } from '@ultimat3/auth';
+import { expandRoles } from '@ultimat3/policy';
+
+declare const keys: ApiKeyVerifyStore;
+
+export const resolveKey = apiKeyResolver(() => keys, {
+  grantsOf: (owner) => [...directGrants(owner), ...expandRoles(owner.roles)],
+});
+```
+
+Without `grantsOf`, a key owned by a user who holds only roles resolves with no scopes at all.
 
 ### The resolver a mount takes
 
@@ -672,10 +765,10 @@ An api key's scopes become **exactly** the agent actor's scopes — never the ow
 for both doors.
 
 ```ts
-import type { ApiKeyStore } from '@ultimat3/auth';
+import type { ApiKeyVerifyStore } from '@ultimat3/auth';
 import { apiKeyResolver, BuiltinAdapter } from '@ultimat3/auth';
 
-let keys: ApiKeyStore | undefined;
+let keys: ApiKeyVerifyStore | undefined;
 
 /** `resolveToken: resolveKey` — on the mount, and on `defineAppMcp()`. */
 export const resolveKey = apiKeyResolver(() => {
@@ -686,13 +779,14 @@ export const resolveKey = apiKeyResolver(() => {
 
 | Presented | Answer |
 |---|---|
-| a live key | `{ actor, scopes }` — the agent actor for the key's org, and its scopes as a `Set` |
-| malformed, unknown, wrong secret, revoked, expired | `null`, all five alike: the mount answers one indistinguishable 401 |
+| a live key | `{ actor, scopes }` — the agent actor for the key's org, and the scopes that actor carries as a `Set` |
+| malformed, unknown, wrong secret, revoked, expired, or owned by a user who is gone or disabled | `null`, all alike: the mount answers one indistinguishable 401 |
 | a store that FAILS | the throw, untouched — a database that is down is not a wrong key |
 
 The store is a THUNK, read when a token is presented: a mount is declared when its module is
 evaluated, and `new BuiltinAdapter()` takes the process's database client, which boot installs
-later. In a test the store is `new MemoryAdapter()` — every `AuthAdapter` is an `ApiKeyStore`.
+later. In a test the store is `new MemoryAdapter()` — every `AuthAdapter` is an
+`ApiKeyVerifyStore` (an `ApiKeyStore` that can also `findUserById`).
 
 ## Errors
 
@@ -701,6 +795,7 @@ later. In a test the store is `new MemoryAdapter()` — every `AuthAdapter` is a
 | `X_UNAUTHENTICATED` | no actor, unknown session, or any failed credential path |
 | `X_SESSION_EXPIRED` | idle or absolute expiry, named in `cause` |
 | `X_MFA_REQUIRED` | password proven, second factor outstanding |
+| `X_MFA_SECRET_UNSEALED` | a stored `mfa_secret` is not sealed; it is refused, never read. `x auth seal-mfa --json` |
 | `X_OAUTH_STATE_INVALID` | state, nonce or PKCE verifier did not match |
 | `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange, or returned no usable identity |
 | `X_OAUTH_TOKEN_INVALID` | the id token failed its signature, issuer, audience or expiry check, or no key in the published set matched its `kid` |
@@ -708,10 +803,10 @@ later. In a test the store is `new MemoryAdapter()` — every `AuthAdapter` is a
 | `X_OAUTH_PROVIDER_DUPLICATE` | two `registerOAuthProvider` calls claimed one id — at boot, never at a login |
 | `X_OAUTH_DENIED` | the user pressed Cancel, or the provider declined — `403`, never a `502` |
 | `X_PASSWORD_WEAK` | strength check rejected the password |
-| `X_ACCOUNT_LOCKED` | the per-ip, per-account or per-org bucket is inside its lockout |
-| `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong |
+| `X_ACCOUNT_LOCKED` | the per-ip, per-account or per-org bucket is inside its lockout. The cause names the caller's own address or email, never an org |
+| `X_API_KEY_INVALID` | key unknown, revoked, expired, wrong, or owned by a user who is gone or disabled |
 | `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
-| `X_NOT_IMPLEMENTED` | an `AuthAdapter` has not implemented an optional seam member (`revokeOrgSessions`, `listOrgUsers`, …), or lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
+| `X_NOT_IMPLEMENTED` | an `AuthAdapter` lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
 
 ```bash
 bun test packages/auth

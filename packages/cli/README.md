@@ -24,6 +24,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x jobs ls\|show\|retry\|cancel\|drain` | the queue | depth, dead letters, step traces, `retry --from-step`, `cancel --reason`, `drain --to` |
 | `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
 | `x env check\|example` | the typed environment `envSchema` declares | and the `.env.example` rendered from it |
+| `x auth seal-mfa` | one-shot auth maintenance | seals every `x_users.mfa_secret` still in the clear; idempotent, `{ sealed, alreadySealed, skipped }` |
 | `x secrets show\|init\|edit\|set\|rotate` | the committed encrypted secrets | decrypted into the `envSchema` variables of the same names |
 | `x policy list\|explain <subject>` | which clause decided a permission, and why | five packages print `x policy explain` as a denial's `fix:` |
 | `x i18n check\|add\|sync` | catalogs: gaps, a new locale, key sync | all three of i18n's own error fixes name it |
