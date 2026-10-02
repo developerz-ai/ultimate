@@ -162,6 +162,32 @@ partitions when it stores one, and keeps nothing for a private document with no 
 the cache was keyed by URL alone, and one member's `/feed` answered the next on a shared browser.
 That was affected since 19.0.0, and is fixed in 21.0.0.
 
+## The typed client at scale
+
+`rpc<Api['actions']>()` and `queryClient<Api['queries']>()` read one type, `Api`, which
+`defineApi` builds from every module the app lists (`packages/action/src/define-api.ts`). `Merge`
+reads that list as a union and intersects it in one step; it used to recurse over the tuple, which
+cost one instantiation level per **module** and answered TS2589 at the 48th entry of one list,
+whatever each module exported ([#534](https://github.com/developerz-ai/ultimate/issues/534)).
+
+| Fixture (`tsc --extendedDiagnostics`, real `action()` / `query()` modules, 2026-10-01) | Instantiations | Errors |
+|---|---|---|
+| 100 modules × 3 actions, 50 × 2 queries | 850,546 | 0 — TS2589 on both clients before |
+| 200 × 3 actions, 100 × 2 queries | 1,649,594 | 0 |
+| 300 × 5 actions, 100 × 3 queries (1,500 actions) | 3,782,244 | 0 |
+
+Held twice: `packages/action/src/client-scale-pins.ts` and `packages/query/src/client-scale-pins.ts`
+inside `tsc -b`, and `client-scale.contract.test.ts`, which compiles generated modules in a sandbox.
+
+**`pathStyle` is stated once, by the server.** A document served under a non-default style
+carries `<meta name="ultimate-path-style">` (`CLIENT_PATH_STYLE_META`, written by
+`packages/cli/src/runtime-render.ts`); `actionPath(name)` in `packages/core/src/client-paths.ts`
+reads it when the caller names no style. So `rpc`, `useMutation` and the outbox replay post where
+the server listens with nothing in island code. A POST to the other style's path is answered
+`X_CONTRACT_DRIFT` (404) naming the style served (`explainActionPathMiss`,
+`ServerHooks.explainMiss`). `x new` writes `apps/web/shared/browser-client.ts` with both halves —
+`browserClient` and `browserQueries` — and no `pathStyle` in it.
+
 ## The record store
 
 `packages/realtime/src/record-store.ts`, shipped in 21.0.0. One per tab, on
@@ -182,8 +208,8 @@ the first realtime hook. Records answered earlier wait in core's pending buffer.
 | a new principal | `rescope()` clears every record |
 
 **`@ultimat3/query/client` is a second import path, deliberately.** It is the browser entry of
-`queryClient`, like `@ultimat3/entity/record`: 16,458 B against 23,611 B through the barrel
-(`bun build --target=browser --minify`, per `packages/query/CLAUDE.md`). The barrel's extra cost
+`queryClient`, like `@ultimat3/entity/record`: 10,899 B against 23,997 B through the barrel
+(`As of 2026-10-01`, `bun build --target=browser --minify`, per `packages/query/CLAUDE.md`). The barrel's extra cost
 is its anchored registry, which a browser never needs. `browser-transport` refuses the barrel in
 browser code (`X_BROWSER_SERVER_BARREL`), so the second path is enforced, not optional.
 
@@ -283,7 +309,7 @@ not per app.
 
 | Rule | Enforced by | Status |
 |---|---|---|
-| a browser `fetch(` call, `new WebSocket(`, `new XMLHttpRequest(`, `new EventSource(` outside its one seam file | `scripts/browser-transport.ts` (`scripts/browser-transport.test.ts`, on the gate's `unit` step): `X_BROWSER_TRANSPORT_BYPASS`, with `X_BROWSER_TRANSPORT_UNSCANNED` when the seam moved | enforced, pinned at **zero**. Standalone: `bun run browser-transport` |
+| a browser `fetch(` call, `new WebSocket(`, `new XMLHttpRequest(`, `new EventSource(` outside its one seam file | `packages/cli/src/browser-transport.ts`, one rule with two callers: `x verify`'s `boundaries` step in every app (`app-transport.ts`, `As of 2026-10`) and `scripts/browser-transport.ts` over this repository (on the gate's `unit` step): `X_BROWSER_TRANSPORT_BYPASS`, with `X_BROWSER_TRANSPORT_UNSCANNED` when a seam file moved | enforced, pinned at **zero**, no allowlist. Standalone here: `bun run browser-transport` |
 | a channel spelled as a string literal or a concatenation | `scripts/channel-literals.ts` (`scripts/channel-literals.test.ts`, on the gate's `unit` step): `X_CHANNEL_LITERAL`, with `X_CHANNEL_LITERAL_UNSCANNED` when the seam moved | enforced, pinned at **zero**. Standalone: `bun run channel-literals` |
 | two island bundles resolve one page handle | `packages/core/src/record-sink.test.ts` | in tree |
 | `AsyncState`'s status union has one declaration | `packages/core/src/async-state.test.ts` (a second union with two or more of its `status` arms in any `packages/*/src` file), and `scripts/render-modes.ts` (a union sharing three statuses with it, read off `async-state.ts`) | enforced |

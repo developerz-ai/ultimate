@@ -20,8 +20,11 @@ The mechanisms are of three shapes, and knowing which one you hit tells you wher
 | a **guard** in your app's `guards/` | `x verify`'s `boundaries` step | `guards/focus-visible.ts` |
 | a **test** in the framework | `x verify`'s `unit` step | `packages/ui/src/tokens/contrast.test.ts` |
 
-Guards are yours: `x new` writes nine, the directory is the registration, and deleting a file
-deletes the rule. Add one with `x g guard <name>`. Each raises an app-owned `X_*` code derived from
+Guards are yours: `x new` writes every name in `SHIPPED_GUARD_NAMES`
+(`packages/cli/src/templates/scaffold-guards.ts`), the directory is the registration, and deleting
+a file deletes the rule. Add one with `x g guard <name>` — a name the framework ships a guard under writes
+that guard, any other name writes a blank one — and `x doctor` lists the shipped ones an app does
+not hold. Each raises an app-owned `X_*` code derived from
 its own filename — `guards/focus-visible.ts` raises `X_FOCUS_VISIBLE` — so a finding says which
 convention broke, not which framework subsystem noticed.
 
@@ -203,6 +206,51 @@ An island with no states file has never been seen with a refused save, an empty 
 three times as long in the next locale — not by a reviewer and not by a model. How to photograph
 them: [Testing](Testing#seeing-what-you-built).
 
+## Stylesheets
+
+Biome does not read `.scss`. These seven guards are the only thing that does. `As of 2026-10`.
+
+| Rule | Refused by | The `fix:` it names |
+|---|---|---|
+| A length is a token or `rem()`. `1px` hairlines and `0` are not lengths anyone scales | `guards/raw-length.ts` — a `px` in a declaration, an `@include` argument or an inline `style` | the declaration to write: `padding: tokens.space(3)`, `font-size: tokens.rem(14px)`, `border: tokens.stroke(thick) solid …` |
+| A viewport query names a rung of the one ladder | `guards/raw-breakpoint.ts` — `@media` with a `width` feature | `@include tokens.respond-to(md)` / `respond-down(md)` / `respond-between(md, lg)` |
+| A layer is a name | `guards/raw-z-index.ts` — a number in `z-index` | `z-index: tokens.z(dropdown)`; behind its own stacking context, `calc(-1 * #{tokens.z(raised)})` |
+| Elevation comes off the themed shadow scale | `guards/raw-shadow.ts` — a hand-written length in `box-shadow`, `text-shadow` or `drop-shadow()` | `box-shadow: tokens.shadow('sm')`, or `@include tokens.surface` |
+| One tempo | `guards/raw-motion.ts` — a duration or `cubic-bezier()` literal in `transition*` / `animation*` | `transition: opacity tokens.duration(fast) tokens.easing(out)` |
+| A class a component reads is a class its sheet compiles | `guards/undefined-style-class.ts` — `styles.x` / `styles['x-y']` against the COMPILED `.module.scss` | the nearest class the sheet declares, or the rule to add |
+| A custom property a sheet reads is one the app declares | `guards/undeclared-custom-property.ts` — `var(--x)` in the compiled CSS with no declaration anywhere and no fallback | the steps the scale really has: `tokens.space(7)` → `0 \| 1 \| 2 \| …` |
+
+| Not a finding | Why |
+|---|---|
+| `$gutter: 12px`, a map entry, a parameter default | a definition names a value in one place — which is what a token is. A use is reported |
+| `tokens.rem(340px)`, `tokens.fluid(16px, 32px)` | the sanctioned spelling of an off-scale length |
+| `@media (prefers-reduced-motion: …)`, `print`, `(hover: hover)`, `@container` | not a viewport width |
+| `inset 0 0 0 1px …` | a hairline ring is not elevation |
+| `linear`, `ease`, `0s`, `calc(#{tokens.duration(slower)} * 2)` | a keyword, a zero, a multiple of a token |
+| `styles[name]` | a computed key is only known when the component runs |
+| `var(--x, fallback)`; a property a `.ts`/`.tsx` file names | it declares its own answer; an inline `style` sets it |
+| a sheet that does not compile | the build's refusal (`X_PRERENDER_FAILED`), not a guard's |
+
+## Data access
+
+One shipped guard is not about the interface. Same contract — a file in `guards/`, a finding with
+a `fix:` — documented where its subject is: [Entities and migrations](Entities-And-Migrations#the-repo).
+`As of 2026-10`.
+
+| Rule | Refused by | The `fix:` it names |
+|---|---|---|
+| A `repo.ts` reads through the typed handle | `guards/repo-raw-sql.ts` — a `sql` literal the handle can express: `select *`, `insert`, `update` or `delete` on one table, plain comparisons | the handle call: `db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()` |
+
+| Not a finding | Why |
+|---|---|
+| a join, an aggregate, a CTE, a window, an `or`, a function call | the handle has no word for it; raw SQL in the repo is the answer |
+| a statement composed from another `sql` fragment | composition, not one statement |
+| `sql` in a `query`'s source, a migration, a comment or a string | only a tagged template in a `repo.ts` is read |
+
+A sheet that defines its own `@function rem` / `fluid` or `@mixin respond-*` is refused by
+`raw-length` and `raw-breakpoint`: Sass lets a module that forwards the tokens redefine one with no
+error, and the local copy silently wins.
+
 ## Anti-patterns to flag
 
 Read as a review checklist. Each one is a defect on sight.
@@ -238,12 +286,13 @@ Read as a review checklist. Each one is a defect on sight.
 |---|---|
 | the four-state union | `packages/ui/src/components/async-branch.ts` |
 | the motion scales | `packages/ui/src/tokens/_motion.scss` |
+| the space, stroke, breakpoint, z and shadow scales | `packages/ui/src/tokens/_space.scss`, `_stroke.scss`, `_breakpoints.scss`, `_z.scss`, `_shadow.scss` |
 | the global reduced-motion guard, and the default focus ring | `packages/ui/src/tokens/reset.scss` |
 | `focus-ring`, `control`, `transition`, `visually-hidden` | `packages/ui/src/tokens/_mixins.scss` |
 | contrast, as a failing test | `packages/ui/src/tokens/contrast.test.ts` |
 | live regions and the focus trap | `packages/ui/src/a11y.ts` |
 | the toast queue's rules | `packages/ui/src/toast/toast-state.ts` |
-| your app's nine guards | `guards/` in the app root — `x new` writes them, `x g guard <name>` adds one |
+| your app's guards | `guards/` in the app root — `x new` writes every name in `SHIPPED_GUARD_NAMES`, `x g guard <name>` adds one, `x doctor` lists the shipped ones missing |
 
 Components, props and token vocabulary: [UI components](UI-Components). Colour roles and the
 contrast table: [Theming](Theming). Seeing a component in a state you cannot click to:

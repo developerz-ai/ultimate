@@ -175,6 +175,67 @@ Removing the key is a real option, not a hedge: inference (steps 2–4) still ap
 | Live queries | the tenant predicate is part of the matcher, not a post-filter |
 | Vector search | tenant + policy filters applied **in SQL**, so similarity search cannot leak across tenants |
 
+## The repo
+
+A feature's `repo.ts` is the only module that touches the database, and every statement in it goes
+through the typed handle. `As of 2026-10`.
+
+```ts
+// apps/web/app/widget/repo.ts — as `x g entity widget` writes it
+import { db } from '@myapp/db';
+import type { Widget } from './entity';
+
+export async function byId(id: string): Promise<Widget | undefined> {
+  return (await db.widgets.where({ id }).one()) ?? undefined;
+}
+
+export async function list(limit = 50): Promise<readonly Widget[]> {
+  return db.widgets.orderBy('createdAt', 'desc').limit(limit).all();
+}
+
+export async function insert(row: Omit<Widget, 'id' | 'createdAt'>): Promise<Widget> {
+  return db.widgets.insert(row);
+}
+```
+
+```ts
+// packages/db/src/client.ts — the handle. `x g entity` adds the import and the line.
+const entities = {
+  posts: post,
+  widgets: widget,
+};
+
+export const db = database(entities, { driver });
+```
+
+| The handle owns | So the repo never writes |
+|---|---|
+| tenancy — every read runs under the actor's org | an org parameter, a `.where({ orgId })`, an `org_id = …` in SQL. No function in a generated repo takes or names an org. A read with no actor is `X_TENANCY_UNSCOPED`; an actor with no org is `X_TENANCY_ACTOR_ORG_REQUIRED`; a row written for another org is `X_TENANCY_ACTOR_MISMATCH` |
+| codecs — money, timestamps, [sealed columns](#sealed-columns) | row decoding, a column list, money's three columns |
+| paging — `.limit(n)`, then `.after(cursor).page()` | an offset, or a paging module |
+| the transaction — inside `withTransaction` the handle is the transaction | a client argument |
+
+| Raw `sql` | Where |
+|---|---|
+| belongs | a `query`'s source, built with `from()`; a migration |
+| is the exception | a `repo.ts`, for what the handle cannot say: a join, an aggregate, a CTE, a window |
+| is refused | a `repo.ts`, for `select *` / `insert` / `update` / `delete` on one table |
+
+| Enforced by | What fails |
+|---|---|
+| `tsc` | `db.widgets` exists only when `widget` is in the set; a renamed column is an error in the repo |
+| `guards/repo-raw-sql.ts` — `X_REPO_RAW_SQL`, `boundaries` step | a `sql` literal in a `repo.ts` the handle can express; the `fix:` is the handle call |
+| `X_DB_HANDLE_UNREGISTERED` — `x g entity`, `x g resource` | a `client.ts` with no `const <set> = { … }` passed to `database()`, or an `index.ts` that does not export the handle; the `fix:` is the lines to add |
+
+The generated `repo.test.ts` runs all three functions against the in-memory driver, inside
+`runWithContext` — the actor is what scopes the read, so a test names one, and asserts that an
+actor in another org reads nothing with no org named in any call. Row equality is
+`expect(row).toEqualRow(other)`: a sealed column is a non-enumerable property, which `toEqual` skips.
+
+After `x g entity <name>`: `bunx x db gen "create <table>"`, then `bunx x db migrate`. The generator
+prints both, with `bun install` first when it added a workspace dependency
+([CLI reference](CLI-Reference)).
+
 ## Point lookups batch themselves
 
 `findById` called several times in one microtask of one request is **one** statement, `As of 2026-08`:
@@ -439,7 +500,8 @@ memory driver no longer stores what production answers `X_DB_STATEMENT_FAILED` f
 refuses it at the wire first, as a 400. `As of 2026-09-29`.
 
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
-`.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)`.
+`.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)` ·
+`.sealed()` on `text()` — [Sealed columns](#sealed-columns).
 
 **A date is not an instant.** `effective_on` is the date a rate applies, not a moment; stored as a
 `timestamptz` it is a different date on either side of midnight for half the planet. `PlainDate`
@@ -447,6 +509,140 @@ Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.def
 lexicographically, round-trips through JSON as itself, and is the literal Postgres accepts. The
 framework's "never a date without an IANA zone" rule is about instants: a calendar date needs no
 zone because it names no instant.
+
+## Sealed columns
+
+A credential column is `text().sealed()`. The row reads `string`; the database holds ciphertext.
+
+```ts
+export const connections = entity('connections', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    password: text({ max: 200 }).sealed(),               // opaque
+    email: text().sealed({ lookup: true }).unique(),     // equality only
+  },
+});
+
+const row = await db.connections.where({ email }).one();  // found by the stored string
+row?.password;                                            // the plaintext, on the server
+```
+
+| Fact | |
+|---|---|
+| Builder | `text()` only; `.sealed()` reads the same before or after `.nullable()`, `.unique()`, `.column()` |
+| Stored | `x1.<keyId>.<iv>.<ciphertext+tag>` in a plain `text` column — no new SQL type, and `x db gen` writes no migration for sealing a `text()` with no `max`. A `max` is checked against the plaintext and its CHECK is dropped |
+| Key | the master key `x secrets` manages; purpose `entity:<table>.<column>`, derived |
+| Drivers | memory and Postgres both seal |
+| Manifest | `x.manifest.json` lists the column as `"sealed": "opaque"` or `"lookup"` |
+
+**A sealed property is server-only.** On every row a repository answers it is an own, readable,
+writable property that is **not enumerable**: `row.password` is the plaintext, and nothing that
+walks the row sees it. `As of 2026-10`.
+
+| Reads it | Does not |
+|---|---|
+| `row.password`, `const { password } = row`, `'password' in row` | `JSON.stringify(row)`, `{ ...row }`, `Object.keys` / `entries` / `assign`, `structuredClone(row)` |
+| `update(id, row)` — the row passed back whole | the logger, an error's `meta`, an island's props, a cache tier, a job's stored input and step output |
+| `console.log(row)` / `Bun.inspect(row)` — Bun prints own properties, enumerable or not | — log through `logger`, never `console`, on a path that holds one |
+
+| Leaves the server through | Sealed column |
+|---|---|
+| `entity.$schema` as an `output` — HTTP, the typed client, MCP, a job result | absent, in the schema and the value |
+| an `output` that is not the entity's schema (`t.record(…)`, a hand-written Standard Schema) | absent — the row enumerates none |
+| a `query`'s rows — HTTP list, `Page`, `single: true`, the record envelope's `data`, the MCP read, a `cache:` entry | absent — a query has no output parse, so this is the row's own doing |
+| a live query's snapshot | absent |
+| a live query's change, on the socket and on the bus | absent — the row decoded off the write-ahead log drops the stored string |
+| `entity.$view([...])` | `X_ENTITY_SEALED_IN_VIEW` |
+| a record, the record envelope, a `persist: true` browser store | absent |
+| an island's props, a log line, an error's `meta` | absent |
+| a job's input and a `step.run()` output holding the row | absent from the stored JSON — pass the id and re-read |
+| `{ token: row.token }` — the secret named by hand | **leaves.** Naming it is the one read there is; a serialised copy is the author's statement |
+
+| It costs | What happens | Write instead |
+|---|---|---|
+| a spread patch | `update(id, { ...row, label })` leaves the stored secret alone — an absent property is not a write | nothing |
+| a spread insert or upsert, required column | `X_INVARIANT_VIOLATED` — `is required, sealed, and missing from the row to insert`, with the rewrite as its `fix:` | `insert({ ...row, password: row.password })` |
+| a spread insert, **nullable** column | stored NULL, silently — an absent nullable column is a legal insert | `insert({ ...row, token: row.token })` |
+| equality in a test | `expect(row).toEqual({ …, password })` fails with an empty diff; `toEqual(otherRow)` cannot see a wrong secret | `expect(row).toEqualRow({ …, password })` |
+| a row out of a shared `cache:` tier or a replayed `step.run()` | came back through JSON, so the property is gone | read the secret from the repository, by id |
+
+`insert(row)` and `update(id, row)` with the row passed whole write what it holds; `select({
+password: true })` and `preload()` keep the property, still server-only.
+
+**Testing a sealed row.** `toEqual` walks enumerable properties. Write one of:
+
+```ts
+expect(row).toEqualRow({ id, label: 'primary', password: 'hunter2' }); // every own property
+expect(row.password).toBe('hunter2');
+expect(row).toMatchObject({ password: 'hunter2' });
+```
+
+`toEqualRow` ([Testing](Testing#matchers)) names what differs — a sealed property by name, never
+by value. A test needs no key: the testing preload installs a throwaway one.
+
+A live read may not filter or order on a sealed column — no change row carries one
+(`X_MATCHER_UNSUPPORTED` at subscribe).
+
+| The database may | `.sealed()` | `.sealed({ lookup: true })` |
+|---|---|---|
+| test for NULL (`is-null`, `is-not-null`) | yes — `null` is stored as NULL, never sealed | yes |
+| match by `eq` / `in` | no — a compile error, and `X_ENTITY_SEALED_PREDICATE` | yes |
+| order, range, `like`, group, aggregate | no | no |
+| hold `.unique()` or an index | no | yes |
+| run an invariant over it | no | only `unique` |
+
+`lookup` reveals equality: equal values store equal strings. Never for a low-entropy value.
+
+**Rotation.** `x secrets rotate` keeps the old key in the ring. Until the rows are rewritten a
+lookup column matches through `in (…)` over every key, `.unique()` holds per key, and `x doctor`
+reports `X_SEAL_RESEAL_PENDING`. Re-seal with a `backfill()` (`update(id, { col: row.col })`), then
+`x secrets rotate --drop <keyId>`.
+
+### Sealing a column that already holds data
+
+There is no reading of an unsealed value: a stored string that is not sealed is `X_SEAL_INVALID`.
+A column with existing plaintext is migrated — expand, backfill, contract.
+
+| # | Step | Command or edit |
+|---|---|---|
+| 1 | expand: a NEW nullable sealed column beside the old one | `passwordSealed: text().nullable().sealed()` · `x db gen "add sealed password"` · `x db migrate` |
+| 2 | write both: every writer sets `passwordSealed` as well as `password` | deploy |
+| 3 | backfill the rows written before step 2 | the declaration below · `x db backfill seal-connection-passwords --write` |
+| 4 | switch readers to `passwordSealed`; stop writing `password` | deploy |
+| 5 | contract: drop the plaintext, take the name back | delete `password`; `password: text().sealed().column('password_sealed')` · `x db gen "drop plaintext password"` · `x db migrate` |
+
+```ts
+// packages/db/src/backfills.ts
+import { backfill } from '@ultimat3/jobs';
+
+export const sealConnectionPasswords = backfill({
+  name: 'seal-connection-passwords',
+  tenant: 'none',                       // every tenant; the pass opens the cross-tenant scope
+  requires: '20261001120000_add_sealed_password',
+  // Only the rows still to seal: a NULL test is the one predicate an opaque column answers.
+  // The second filter is for a NULLABLE old column — a row whose `password` is NULL has nothing to
+  // seal and would never leave the set. Delete that line when `password` is NOT NULL.
+  source: () =>
+    db.connections.andWhere('passwordSealed', 'is-null').andWhere('password', 'is-not-null'),
+  count: () =>
+    db.connections.andWhere('passwordSealed', 'is-null').andWhere('password', 'is-not-null').count(),
+  handle: async ({ rows, signal }) => {
+    for (const row of rows) {
+      signal.throwIfAborted();
+      // Reads the old column, writes the sealed one. Idempotent: a replayed page seals again.
+      await db.connections.update(row.id, { passwordSealed: row.password });
+    }
+  },
+});
+```
+
+| Why | |
+|---|---|
+| a new column, not `.sealed()` on the old one | reads of the old rows would be `X_SEAL_INVALID` from the first request to the last row of the backfill |
+| step 5 needs no re-seal | the purpose follows the PHYSICAL column (`password_sealed`), and `.column()` pins it |
+| `count` | the same predicate, counted: the pass has converged when it answers 0, and `X_BACKFILL_STALLED` says so if it has not. `source` and `count` must filter alike — the `password` `is-not-null` line goes in both or neither |
+| a `lookup` column | same recipe; add `.unique()` in step 5, once every row holds a sealed value |
 
 ## Adopting an existing database
 
@@ -542,10 +738,18 @@ X_DB_DRIFT: schema differs from migrations
 | Neither declares anything | not drift. Zero entities against zero migrations is agreement, which is what keeps a scaffold with no `entity()` green until its first one | — |
 
 One code, two detectors, because one check cannot be both. `x verify`'s `drift` step reads the
-entity source and the `.hash` a migration recorded — no database, which is what lets the gate run
-in CI. `x db migrate` diffs the live catalog against the `x_migrations` ledger on the connection it
+entity source and the `.hash` a migration recorded — no database of yours, which is what lets the
+gate run in CI (it boots a scratch embedded one for the schema dump, below). `x db migrate` diffs the live catalog against the `x_migrations` ledger on the connection it
 just migrated over — the only place a hand-edited column is visible at all. A pending migration is
 not drift, and neither is a table in the framework's `x_` namespace.
+
+**The schema dump.** `packages/db/schema/` is the schema as committed SQL — one file per table, the
+framework's `x_` tables under `framework/` — written by `x db gen` and `x db migrate`, never by hand.
+From the first migration on it is owed: `x verify`'s `drift` step replays the migrations on a
+scratch database, compares bytes, and loads the dump back. A missing, stale or hand-edited dump is
+`X_SCHEMA_DUMP_DRIFT`, `fix: x db gen`. The `.snapshot.json` sidecar is a different thing: the
+generator's diff base in the entity's vocabulary. Layout, the engine rule and limits:
+[Migrations and backfills → The schema dump](Migrations-And-Backfills#the-schema-dump). `As of 2026-10`.
 
 ### What the catalog diff compares
 
@@ -639,5 +843,7 @@ The same clone mechanism powers test parallelism: each worker gets its own `ulti
 | `X_INVARIANT_VIOLATED` | a write broke a named invariant | fix the caller, or change the invariant and generate a migration |
 | `X_TENANCY_UNSCOPED` | a query without a tenant predicate | go through the repo |
 | `X_PRELOAD_UNKNOWN_RELATION` | `preload('<name>')` named a relation no `references()` produces | pick one of the relation names the error lists, or add the `.references()` call that creates it |
+| `X_ENTITY_SEALED_PREDICATE` | a `.sealed()` column named in a filter, an order, a group, an index or an invariant | find the row by another column, or declare `text().sealed({ lookup: true })` for equality |
+| `X_ENTITY_SEALED_IN_VIEW` | a `.sealed()` column listed in `$view([...])` | remove it from the list |
 
 Full list with `--json` shapes: [Error codes](Error-Codes). Source: [`docs/idea/02-primitives.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/02-primitives.md), [`docs/idea/10-testing.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/10-testing.md).

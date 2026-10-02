@@ -306,6 +306,8 @@ stage 14 post-commit
 | Drift in the database | `X_DB_DRIFT` from `checkDrift`, naming the table, column or index the live catalog disagrees on — `x db migrate` and `ROLE=migrate` |
 | Irreversible migrations | `x db gen` refuses to **generate** a drop whose `down` cannot restore the rows: `X_MIGRATION_IRREVERSIBLE`, whose `fix:` is the same command plus `--allow-destructive` |
 | Concurrent versions | `ROLE=migrate` takes the advisory lock by a bounded `pg_try_advisory_lock` poll — 500ms apart, 60s budget — so a second version in flight waits, then applies. A lock still held at the budget is `X_MIGRATE_CONCURRENT` and a non-zero exit |
+| The schema is committed as SQL, `As of 2026-10` | `packages/db/schema/` — one file per object, the framework's `x_` tables under `framework/` — written by `x db gen` and `x db migrate` from a scratch replay of the migrations, never by hand. `x verify`'s `drift` step replays again, compares bytes, and loads the dump back: `X_SCHEMA_DUMP_DRIFT`, `fix: x db gen`. Layout and limits: [Migrations and backfills → The schema dump](../../wiki/Migrations-And-Backfills.md#the-schema-dump) |
+| An object no migration creates | `x db migrate` reports a trigger, function, view, type or sequence the dev database holds and a replay does not produce: `X_DB_DRIFT`, kind `unexpected-object` |
 | Destructive statements | a committed `up` that drops, truncates or retypes must carry the `-- destructive: true` line, or `x verify`'s `drift` step refuses to **ship** it: `X_MIGRATION_DESTRUCTIVE`, one finding per file. `@ultimat3/db`'s `destructive.ts` owns the classifier both the generator and the gate read, so they cannot disagree about one file |
 
 ```

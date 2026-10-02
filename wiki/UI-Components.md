@@ -91,6 +91,30 @@ A `level` outside 1–6 throws `X_UI_INVALID_VALUE` rather than emitting an `<h7
 
 `label` is required because `role="toolbar"` with no accessible name is an unnamed group. Arrow keys move through the focusable children via a roving tabindex, horizontal, direction-aware, **not** looping.
 
+## A control that navigates is a `Link`
+
+`Button` has no `href`. A link that looks like a button is `<Link appearance="button">`; a pager on a server-rendered list is `<Pagination hrefFor>`. Neither needs an island.
+
+```tsx
+<Link appearance="button" variant="secondary" size="sm" href="/posts/new">{t('posts.new')}</Link>
+
+<Pagination
+  prevCursor={page.prevCursor}
+  nextCursor={page.nextCursor}
+  hrefFor={(cursor, direction) => `/posts?${direction === 'next' ? 'after' : 'before'}=${cursor}`}
+/>
+```
+
+| Component | Mode | Props | Renders |
+|---|---|---|---|
+| `Link` | text (default) | `underline`, `tone: 'accent' \| 'inherit'` | `<a>` with the link classes |
+| `Link` | `appearance="button"` | `variant`, `tone` (any `Tone`), `size`, `fullWidth`, `iconStart`, `iconEnd` | `<a>` with `Button`'s classes — one set of button styles, two elements |
+| `Pagination` | callbacks | `onCursor`, or `page` + `totalPages` + `onPage` | two `<button>`s; needs an island |
+| `Pagination` | links | `hrefFor(cursor, direction)` | `<a rel="prev">` / `<a rel="next">`; a side with no cursor is a disabled button |
+| `DataTable` | callbacks / links | `onCursor`, or `hrefFor(cursor, direction)` | its pager, in that mode — the prop is handed straight to `Pagination` |
+
+One mode per use, and the type holds it: `hrefFor` beside `onCursor`, `onPage`, `page` or `totalPages` does not compile, and neither does `underline` on a button-link or `variant` on a text link. Link mode pages by cursor only. `Link` also takes `rel?: 'next' | 'prev'`, which joins the `noopener noreferrer` an external link always carries.
+
 ## Rules an agent must not break
 
 - **SCSS modules only.** `Foo.tsx` + `Foo.module.scss`, always paired. The only inline `style` allowed is a CSS custom property.

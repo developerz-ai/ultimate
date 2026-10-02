@@ -16,7 +16,7 @@ x version              # CLI version
 | Errors | always `code` + `cause` + `fix`. See [Error codes](Error-Codes) |
 | App detection | most commands walk up for `app.config.ts` and fail with `X_NOT_IN_APP` if there is none. The exceptions: `new`, `test`, `doctor`, `errors`, `docs`, `affected`, `ci`, `pr`, `help`, `version` |
 | Flags | long form only, `--flag value` or `--flag=value`. Booleans negate as `--no-<flag>` |
-| Global flags | `--json` / `-j`, `--help` / `-h`, `--cwd <dir>`, `--verbose` — accepted by every command |
+| Global flags | `--json` / `-j`, `--help` / `-h`, `--cwd <dir>`, `--verbose` — accepted by every command. `--verbose` carries each step's captured output on a green run too, in the terminal and under `--json` alike (`steps[].output`); without it a step's output appears only when it fails. `As of 2026-10` |
 | Subcommands | when a command has them, its default is **declared**, never positional: `x actions` is `x actions list` because that command sets `defaultSubcommand: 'list'`. A command with no defensible default declares none and refuses the bare form with `X_CLI_BAD_FLAG` — exactly `db` and `mcp`, pinned by `parse.test.ts`. `--help` is read before the subcommand, so `x db --help` and `x mcp --help` print usage like `x help db`. The parser answered `subcommands[0]` until 1.2.0, which is why `x db` used to run the migration **generator** |
 | Passthrough | a bare `--` sends everything after it to the underlying tool untouched |
 | `--json` shape | `{ ok, command, summary, steps?, findings?, data? }`. Findings are `{ code, cause, fix, docs?, at? }` |
@@ -42,7 +42,7 @@ x version              # CLI version
 | `x doctor` | environment, versions, drift, the newest migration's snapshot sidecar, ports, PWA prerequisites — each with a fix | shipped |
 | `x help` / `x version` | catalogue and version | shipped |
 | `x actions` / `x queries` / `x entities` | introspect the declaration registries | shipped |
-| `x jobs` | list, show, retry, drain the queue | shipped |
+| `x jobs` | list, show, retry, cancel, remove and promote jobs; pause and resume a queue; drain | shipped |
 | `x tasks` | cron tasks, their timezone and their next run | shipped |
 | `x policy` | which clause decided a permission, and why | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
@@ -267,6 +267,8 @@ x g admin:page <name> --permission <perm> [--at <dir>]   # a custom admin screen
 x g guard <name>                            # a convention this app enforces, as a build error
 ```
 
+`x g guard <name>` writes `guards/<name>.ts` and its test. A name the framework ships a guard under — `raw-length`, `raw-breakpoint`, `raw-z-index`, `raw-shadow`, `raw-motion`, `undefined-style-class`, `undeclared-custom-property`, `repo-raw-sql` and every other name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) — writes THAT guard, which is how an app adopts one it does not hold; any other name writes the blank template. `x doctor` lists the shipped ones missing ([Interface rules](Interface-Rules#stylesheets)).
+
 Alias: `x generate`.
 
 `<name>` is one directory segment for every generator but `route`, whose name is its URL:
@@ -276,15 +278,35 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
-| `--feature` | string | derived from the name | feature slice to write into |
+| `--feature` | string | derived from the name | feature slice to write into. Not for `resource`: its name IS the slice (`app/<name>/`, page at `app/<names>/`), and a `--feature` naming anything else is `X_CLI_BAD_FLAG` |
 | `--surface` | string | `app` | `site` or `app` |
-| `--live` | boolean | `false` | for `query`: make it subscribable |
-| `--admin` | boolean | `false` | `resource` only: also emit the per-entity admin override |
-| `--locales` | string | `en` | comma-separated locales; lands each generator's catalog entry in every one, and for `resource` extends `packages/i18n/catalogs/` on disk |
+| `--live` | boolean | `false` | `query` only: make it subscribable. On any other generator it is `X_CLI_BAD_FLAG` naming the `x g query … --live` to run instead |
+| `--admin` | boolean | `false` | `resource` only: also emit the per-entity admin override **and list it** under `resources:` in `apps/admin/app/admin/admin.ts`. The screen itself needs no flag — an entity in the handle is an admin screen |
+| `--locales` | string | every locale with a catalog in `packages/i18n/catalogs/`, else `en` | comma-separated locales; lands each generator's catalog entry in every one, and for `resource` extends `packages/i18n/catalogs/` on disk |
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **29 files** (31 with `--admin`; `--live` adds nothing, a resource already ships a live query), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **33 files** (35 with `--admin`; `--live` is refused — a resource already ships a live query, and the flag belongs to `x g query`: `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>`, then `x db gen "create <table>"`, then `x db migrate`, then `x build --target static && x verify --only budgets` — the four commands the run prints, in that order (`data.next` under `--json`). **The plural route is reachable as written**, `As of 2026-10-01`: its `load` reads the list through the slice's query as the request's actor (no org in the URL), `AsyncRegion` renders ready, empty and refused, the form island is mounted, and the route declares `policy: { permission: '<name>:read' }`. Its `budget.js` is MEASURED on `x new`'s app (58,522 B, Bun 1.4.0) and carries the `measured:` / `why:` comment `bun run budget-raises` reads; an app that charges more to every document — `navigation: { client: [...] }` adds its router — is over it on the printed build, and the raise is that edit. The page sits in `apps/web/shared/shell.tsx` when the app has one. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`, `X_DB_HANDLE_UNREGISTERED`.
+
+**`entity` and `resource` write a repo over the typed handle, and register the entity in it**, `As of 2026-10`. The generated `repo.ts` holds no `sql` literal, no row decoding and no tenant predicate of any kind — `byId(id)`, `list(limit)` and `insert(row)` read `db.<table>`, and the handle scopes each to the actor's org ([Entities and migrations](Entities-And-Migrations#the-repo)) — and a table is on the handle only when its entity is in the set `packages/db/src/client.ts` passes to `database()`. The generator makes that edit, and four more:
+
+| Edited | What lands | When it cannot |
+|---|---|---|
+| `packages/db/src/client.ts` | the entity's import, and `<table>: <entity>,` in `const entities = { … }`, in key order. Created whole in an app that has none | `X_DB_HANDLE_UNREGISTERED`, exit 1, the two lines in the `fix:` — the files are written, the handle is not |
+| `packages/db/src/index.ts` | nothing — it is checked: it must export from `./client` | `X_DB_HANDLE_UNREGISTERED` naming the export line |
+| `packages/db/package.json`, `apps/web/package.json` | the workspace dependency each new import needs: `@<app>/db` in the app, and `@<app>/web` in the db package only when the handle this run leaves imports an entity from it. Planned with the handle edit and written together — a handle that refuses the entry leaves both manifests untouched | left to `package-shape` (`X_WORKSPACE_DEP_UNDECLARED`), whose `fix:` is the same line |
+| `packages/i18n/catalogs/<locale>.json` | the labels the admin reads for the new screen — `admin.<table>.title` and one `admin.<table>.field.<column>` per column — merged in the file's OWN key order (a sorted level stays sorted, a hand-ordered one gains its keys at the end), in every locale the run writes to | — |
+| `apps/web/shared/roles.ts` | a written `policy.ts`'s grants (`<feature>:read` to `member`, `<feature>:write` to `admin`) and the admin's three per-table permissions, declared and granted | `X_PERMISSION_UNGRANTED`, exit 1, naming each role and the permissions its `grants` owes — an app whose role map lives elsewhere is told, not skipped |
+| `apps/web/api/index.ts` | every action, query, job and task module the run wrote, imported and listed under `actions` / `queries` / `jobs` / `tasks` — the lists `Api`, the typed client's shape, is read from | left alone when the file is not `defineApi({ actions: [...] })`; `X_JOB_UNREGISTERED` on the `manifest` step names a job nothing lists |
+| `apps/admin/app/admin/admin.ts` (`--admin` only) | the override's import, and `<table>: <name>AdminResource,` under `resources:` — the block is created, last in the call, when there is none | `X_ADMIN_RESOURCE_UNWIRED`, exit 1, the two lines in the `fix:` |
+
+The summary line ends with what the new table owes, as commands that run as printed, and `--json` carries them as `data.next`:
+
+```
+✓ wrote 7 file(s) for entity widget — next: bunx x db gen "create widgets" && bunx x db migrate
+```
+
+`bun install` leads the list when a manifest gained a dependency. `--dry-run` lists the generator's own files only, never the edits above.
 
 **`x g admin:page` DECLARES the permission it requires**, `As of 2026-09`. It emitted
 `permissions: ['ops:read']` and nothing anywhere declared `ops:read`, so `assertPermission` threw
@@ -295,24 +317,26 @@ and no actor could open, under a green gate: the `policy` step reads `roleDefini
 `AdminCustomPage`, and its emitted test fails if either is dropped. Registration is a side effect
 of import and `pages:` already imports that module, which is why the declaration is in the page and
 not in a `policy.ts` beside it. **Still not enough on its own**: an admin whose `policyAuthz()` is
-built from a fixed list has to name the permission too, and the generated header says so.
+built from a fixed list has to name the permission too, and the generated header says so. The page
+lands in `apps/admin/app/admin/pages/` without `--at` — beside the declaration, inside the app scan
+(`DEFAULT_ADMIN_PAGE_DIR`); `apps/admin/src/pages`, the old default, was never imported.
 
 **A narrower generator plants the slice modules its own source imports**, `As of 2026-08` — they used to be `x g resource`'s alone, so `x g job` into a hand-written slice emitted `import * as repo from '../repo'` against a file nobody had written. Which modules differ per generator, on purpose: a job has no request behind it and evaluates no policy, so `x g job` plants no `policy.ts`.
 
 | Generator | Files into a **bare** slice | Its own | Slice modules it plants |
 |---|---|---|---|
-| `x g action` · `x g mutator` | 9 | 3 — the declaration, a unit test and a `.contract.test.ts` | `entity.ts` + `entity.test.ts` + `repo.ts`, `policy.ts` + `policy.test.ts`, `errors.ts` |
-| `x g query` (± `--live`) | 7 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts`, `policy.ts` + `policy.test.ts` |
-| `x g job` | 5 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` |
-| `x g backfill` | 5 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` |
-| `x g task` | 7 | 4 — the task **and** the job it enqueues | `entity.ts` + `entity.test.ts` + `repo.ts` |
-| `x g entity` · `x g policy` | 3 · 2 | all of them | it *is* the slice module |
+| `x g action` · `x g mutator` | 5 | 3 — the declaration, a unit test and a `.contract.test.ts` | `policy.ts` + `policy.test.ts`; `errors.ts` only into a slice that has an entity |
+| `x g query` (± `--live`) | 8 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` + `repo.test.ts`, `policy.ts` + `policy.test.ts` |
+| `x g job` | 2 | 2 | none — a slice with no entity gets the neutral body, never an invented table |
+| `x g backfill` | 6 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` + `repo.test.ts` |
+| `x g task` | 4 | 4 — the task **and** the job it enqueues | none |
+| `x g entity` · `x g policy` | 5 · 2 | all of them — `x g entity` counts the catalog it merges its admin labels into | it *is* the slice module |
 
-`repo.ts` is never planted alone: it imports `./entity` for its row type, so the pair goes in together or the unresolved import has only moved.
+`repo.ts` is never planted alone: it imports `./entity` for its row type, so the pair goes in together or the unresolved import has only moved — and `repo.test.ts` rides with it, running the repo against the in-memory driver. An entity planted this way is registered in the handle exactly as `x g entity`'s is. Counts re-derive with `--dry-run --json` (`data.files`), `As of 2026-10`.
 
 **A module the slice already has is skipped — never a conflict, never overwritten, `--force` included.** A foundation module belongs to the slice, not to the generator that needed it, and `--force` is about the primitive you named: clobbering `policy.ts` to regenerate one action would delete every rule in it. Regenerating a slice module is its own generator — `x g entity`, `x g policy`. So a second `x g action` into a finished slice writes exactly its own 3 files, and one into a half-built slice writes only what is missing.
 
-**Every generated entity is tenant-scoped, and there is no `--no-tenant` flag**, `As of 2026-09-05` — decided rather than omitted. `orgId` is not one generator's: `x g action`, `x g query`, `x g policy` and `x g job` all decide on it too, so a flag on `x g entity` alone would leave `x g resource` emitting an action over a column its entity no longer has. A single-tenant app makes the edit per slice, and the emitted `entity.ts` names it in the comment above `tenant: 'orgId'`: delete that line and the `orgId: uuid()` column, drop `'orgId'` from `indexes`, turn the repo's `listByOrg(orgId, limit)` into `list(limit)` with no `org_id` in the predicate or the insert, and let `entity.test.ts` expect `$tenantColumn` null and `orgScoped` false.
+**Every generated entity is tenant-scoped, and there is no `--no-tenant` flag**, `As of 2026-09-05` — decided rather than omitted. `orgId` is not one generator's: `x g action`, `x g query`, `x g policy` and `x g job` all decide on it too, so a flag on `x g entity` alone would leave `x g resource` emitting an action over a column its entity no longer has. A single-tenant app makes the edit per slice, and the emitted `entity.ts` names it in the comment above `tenant: 'orgId'`: delete that line and the `orgId: uuid()` column, drop `'orgId'` from `indexes`, let `entity.test.ts` expect `$tenantColumn` null and `orgScoped` false, and drop `orgId` from `repo.test.ts`'s draft along with its last two tests. `repo.ts` needs no edit: it names no org.
 
 **The filename carries the test's type**, `As of 2026-08-19` — `x verify` selects a suite by it, so a generated test that landed in a plain `*.test.ts` ran under `unit` and `x test contract` answered `X_TEST_NO_FILES`:
 
@@ -340,8 +364,8 @@ x db gen "add publish_at" | migrate | reset | studio
 
 | Subcommand | Does | Notes |
 |---|---|---|
-| `gen "<name>"` | diff the app's entities against what the migrations declare, write the next migration | the message is required and becomes the id's slug. **Opens no database** — the previous migration's snapshot is what it diffs against |
-| `migrate` | apply pending migrations, then verify the result | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit |
+| `gen ["<name>"]` | diff the app's entities against what the migrations declare, write the next migration, then rewrite the schema dump | the message becomes the id's slug; left out it is `change`. **Opens no database of yours** — the diff reads the previous migration's snapshot, and the dump is replayed on a scratch database it boots and discards: the embedded one, restored from a snapshot under `.x/cache` after its first boot, or a real Postgres when a migration creates an extension PGlite cannot link ([the engine rule](Migrations-And-Backfills#extensions-and-the-scratch-database)). **Exit 1 with a migration written** is possible: the dump failed after the migration was generated, the summary and the finding both say so, and the next move is a bare `x db gen`, never the same message again. A bare `x db gen` with nothing to generate rewrites `packages/db/schema/` alone, which makes it `X_SCHEMA_DUMP_DRIFT`'s whole fix. When the app does not load, nothing is compared and the summary says so — *nothing was compared — the app did not load (N finding(s)); fix them, then run x db gen again* — never "no migration needed". `--json`: `data.schemaDump` = `{ directory, status, files, written, removed }`, `status` one of `written`, `unchanged`, `skipped` (no migration yet), `failed` |
+| `migrate` | apply pending migrations, verify the result, then rewrite the schema dump | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit. Then, `x db migrate` only: the dump is regenerated as `gen` does, and the database is reopened to report any trigger, function, view, type or sequence no migration creates (`unexpected-object`, also `X_DB_DRIFT`). `--json` carries the same `data.schemaDump` |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `seed [<name>]` | apply the app's seeds — every one this environment takes, or the one named | **replayable**: a second run writes nothing and raises nothing, on Postgres as well as in memory. One transaction per seed, so one bad fixture graph cannot roll back the seeds that already landed. `--dry-run` reports what each would write and writes nothing |
 | `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
@@ -437,6 +461,8 @@ either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDrive
 | `packages/db/migrations/<id>.snapshot.json` | the schema this migration leaves behind — what the *next* `x db gen` diffs against |
 | `packages/db/migrations/<id>.hash` | the hash of the loaded entity **registry** that `x verify`'s `drift` step checks — the entity SOURCE text was what it hashed until 8.0.0, which could not see a change in what `describe()` means by that text |
 
+**Plus the schema dump** — `packages/db/schema/`, the whole schema as SQL, one file per table, rewritten on every `x db gen` and `x db migrate` and held by the `drift` step (`X_SCHEMA_DUMP_DRIFT`). Layout, limits and what it is not: [Migrations and backfills → The schema dump](Migrations-And-Backfills#the-schema-dump).
+
 **And `x db gen` is that directory's only writer**, `As of 2026-08`. `x new` scaffolds no migration:
 a hand-written first file carried no `.snapshot.json` — the one artifact only the generator produces
 — so the app's first `x db migrate` and first `x db gen` refused each other. A pristine scaffold's
@@ -456,13 +482,15 @@ and could not see an entity declared under `apps/` at all. `x db migrate` diffs
 the live catalog against the `x_migrations` ledger — a database, so it runs only where one is open,
 and it catches "someone changed the schema by hand". A table in the `x_` namespace is framework
 bookkeeping (the ledger, the queue, the outbox, the auth tables) and is never counted as drift.
+The `drift` step's dump rail is the one part of it that boots a database — a scratch embedded one,
+its own — so CI still needs nothing listening.
 
 A separate `<id>.down.sql` is not a migration and is never applied — that was a hand-written
 pre-1.2.0 layout, and reading it as one would drop every table the pair exists to reverse.
 
 Errors, seed: `X_DECLARATION_UNKNOWN` (no seed of that name — the cause lists the ones there are), `X_CLI_BAD_FLAG` (an unknown `--tier`, one name declared twice, or a `dev` seed reached under `production` with no consent), and whatever the seed itself threw, reported per seed with the file it came from.
 
-Errors, schema: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATION_VIEW_DEPENDS`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
+Errors, schema: `X_DB_DRIFT`, `X_SCHEMA_DUMP_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATION_VIEW_DEPENDS`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
 
 Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is not a refusal — the sweep simply has not run), `X_BACKFILL_UNKNOWN`, `X_BACKFILL_ENVIRONMENT`, `X_BACKFILL_MIGRATION_PENDING`, `X_BACKFILL_APPLIED`, `X_BACKFILL_RUNNING`. All six are `@ultimat3/jobs`', carry a one-line runnable `fix:`, and are what a non-zero exit from these shapes means — full wording in [Error codes → Backfills](Error-Codes#backfills). `X_BACKFILL_STALLED` is the seventh and never reaches this command: it is raised by the pass, on a worker, so it surfaces through `x jobs show <id>`.
 
@@ -482,6 +510,17 @@ runs one CI job's deterministic slice, and `x verify merge` folds every job's `-
 into the gate verdict (`X_VERIFY_SHARD_INVALID`, `X_VERIFY_MERGE_INCOMPLETE`,
 `X_VERIFY_MERGE_INPUT`) → [CI: the gate across parallel jobs](CI-Parallel-Gate). The paragraphs
 below on `--workers` and batching describe 22.6 and earlier where they differ.
+
+| `x.verify.json` key | What it sets |
+|---|---|
+| `steps` | steps this repo may never report as skipped (`X_VERIFY_SUITE_VANISHED`) |
+| `coverage` | `{ "lines", "funcs", "why"?, "exclude"?: [{ "glob", "why" }] }` — the floor the `unit` step holds an app's whole source tree to (`X_COVERAGE_BELOW_FLOOR`, `X_COVERAGE_FLOOR_UNSTATED`, `X_COVERAGE_FLOOR_STALE`) → [Testing](Testing#coverage). `x doctor` prints every `exclude` |
+| `stepTimeoutMs` | `{ "<step>": milliseconds }` — a step's own deadline. Default 8 minutes for the six suites, 5 for every other step; past it the step is `X_VERIFY_STEP_TIMEOUT` and its processes are killed |
+| `isolate` · `typecheckBin` · `agentsMdMaxBytes` | a fresh global per test file · the `tsc`-compatible binary · the `AGENTS.md` byte budget |
+
+`--json` prints one line per finished step on **stderr** — `{"step":"lint","ok":true,"ms":21987}` —
+as each finishes; stdout stays the single document. A cancelled job's log ends on the last step
+that finished.
 
 The single gate. Green means shippable; CI runs exactly this. One step list, in cost order, shared
 with the framework repo's own `bun run verify` — and **the gate is this command with no flag**,
@@ -609,12 +648,12 @@ Errors: `X_VERIFY_FAILED` (with the failing step names), plus each step's own co
 ## x build
 
 ```bash
-x build --target docker|binary|static [--tag name] [--out path] [--no-preflight] [--json]
+x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--no-preflight] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
-| `--target` | string | `docker` | `docker` (one image, all roles), `binary` (`bun build --compile`), `static` (prerendered `site/`) |
+| `--target` | string | `docker` | `docker` (one image, all roles), `binary` (`bun build --compile`), `static` (prerendered `site/`), `prebuilt` (the island store and compiled stylesheets, written to `node_modules/.cache/ultimate` — the app image's own `RUN` line; no gate, no subprocess, refuses `--tag` and `--out`). The list is `BUILD_TARGETS` in `packages/cli/src/cmd-build.ts` |
 | `--tag` | string | `ultimate-app:dev` | image tag, docker target |
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets |
 | `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as `bin/check` does. `As of 22.7` |
@@ -755,7 +794,7 @@ and health-checks `/readyz`.
 ## x secrets
 
 ```bash
-x secrets [show|init|edit|set <NAME>|rotate] [--json]
+x secrets [show|init|edit|set <NAME>|rotate [--drop <keyId>]] [--json]
 ```
 
 Two files, one committed and one never:
@@ -782,11 +821,27 @@ One declaration, one row in `.env.example`, one mask (`maskedEnvValues`), one re
 
 | Subcommand | Does |
 |---|---|
-| `show` (default) | names, lengths, and whether `envSchema` declares each one. **Never a value**, in either renderer |
+| `show` (default) | names, lengths, and whether `envSchema` declares each one; retired master keys by id (`retiredKeyIds`). **Never a value**, in either renderer |
 | `init` | a fresh master key, the `.gitignore` rule, and an empty sealed file. Refuses to overwrite either file |
 | `edit` | decrypt into a temp buffer outside the repo, open `$VISUAL`/`$EDITOR`, reseal on save. The buffer is deleted in a `finally` and by a `SIGINT`/`SIGTERM` handler; an unchanged buffer writes nothing |
 | `set <NAME>` | one value, read from **stdin** — never argv, which lands in shell history and in `ps` |
-| `rotate` | reseal the same values under a new master key. The committed file is written first and the key last: only the committed one can be restored from git |
+| `rotate` | reseal the same values under a new master key. The committed file is written first and the key last: only the committed one can be restored from git. The key it replaces joins the ring — see below |
+| `rotate --drop <keyId>` | remove one retired key from the ring, by id. Generates no new key and leaves `.secrets.key` alone |
+
+**The key ring.** `seal()` writes under the current key; `open()` picks the key a value names. So a
+rotation must keep the old key readable until every sealed value is re-sealed:
+
+| Step | Command | State |
+|---|---|---|
+| 1 | `x secrets rotate` | new key live; the old one is in `secrets.enc.json` as `ULTIMATE_SECRETS_RETIRED_KEYS`, sealed under the new key. A deploy is still handed one key |
+| 2 | the app's re-seal `backfill()` | every value whose `sealedKeyId()` is a retired id is opened and sealed again |
+| 3 | `x secrets rotate --drop <keyId>` | the retired key is gone; a value still naming it is `X_SEAL_KEY_UNKNOWN` |
+
+`ULTIMATE_SECRETS_RETIRED_KEYS` is comma-separated, 64 hex characters each, and reaches the
+process through `installSecrets()` like any secret — the real environment wins. It is kept by
+default and never behind a flag: `rotate` overwrites the only copy of the old key on disk, so
+dropping it then would leave every sealed value unreadable. `show` reports it by key id, not as
+an app secret.
 
 ```bash
 $ x secrets init --json
@@ -802,7 +857,7 @@ STRIPE_KEY      [redacted]  32 chars   no
 
 `--json` carries exactly what the terminal does, which is why no subcommand has a `--reveal` flag: the one way to see a value is `x secrets edit`, and the one way to read one is the app reading `env.<NAME>`.
 
-Errors: `X_SECRETS_KEY_MISSING`, `X_SECRETS_KEY_INVALID`, `X_SECRETS_KEY_MISMATCH`, `X_SECRETS_FILE_MISSING`, `X_SECRETS_FILE_INVALID`, `X_SECRETS_TAMPERED`, `X_SECRETS_PLAINTEXT_INVALID`, `X_SECRETS_EDITOR_MISSING`, `X_SECRETS_EDIT_FAILED`, `X_GENERATE_CONFLICT` (`init` over an existing file).
+Errors: `X_SECRETS_KEY_MISSING`, `X_SECRETS_KEY_INVALID`, `X_SECRETS_KEY_MISMATCH`, `X_SECRETS_FILE_MISSING`, `X_SECRETS_FILE_INVALID`, `X_SECRETS_TAMPERED`, `X_SECRETS_PLAINTEXT_INVALID`, `X_SECRETS_EDITOR_MISSING`, `X_SECRETS_EDIT_FAILED`, `X_GENERATE_CONFLICT` (`init` over an existing file), `X_CLI_BAD_FLAG` (`--drop` naming an id the ring does not hold).
 
 ## x manifest
 
@@ -828,6 +883,11 @@ $ x routes --surface site --json
 {"ok":true,"routes":[{"path":"/","surface":"site","render":"static","hydrate":"never",
   "offline":"precache","budget":{"js":"0kb"},"meta":{"title":true,"description":true}}]}
 ```
+
+A route a package mounts — every screen `defineAdmin()` serves — has no `page.tsx`. Its row names
+the call and the permissions that gate it instead of a file (`defineAdmin() · admin:read + widgets:read`
+in the table), and its `--json` row carries `mount: { by, permissions }`; a file route has no
+`mount` key at all. `As of 2026-10`.
 
 Errors: `X_ROUTE_CONFLICT`, `X_ROUTE_META_MISSING`.
 
@@ -888,6 +948,8 @@ x doctor [--port 3000] [--json]
 
 Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability, PWA prerequisites and **embedded-Postgres readiness** — each failing check carries its own fix command.
 
+It also lists the shipped guards the app's `guards/` does not hold, one `x g guard <name>` line each and `data.guards.missing` under `--json`. A listing, never a finding: deleting a guard is how an app drops a rule, so the verdict does not move.
+
 The embedded half is the bare-VM case: the external-database probe answers nothing the moment `DATABASE_URL` is unset, and that silence *is* the configuration a fresh box has. So `x doctor` also asks whether `@electric-sql/pglite` resolves from the app root — a resolve, never an import, because loading it boots the WASM build and takes the single-writer lock the next command needs. Red only where both hold: `DATABASE_URL` unset **and** the peer unresolvable, reported as `X_DB_UNAVAILABLE` with `@ultimat3/db`'s own sentence and its own runnable fix ([Bare VM](Bare-VM)). The snapshot half is `As of 2026-08` and separate from drift on purpose: they are two questions with two remedies, and `x db gen`'s own `X_MIGRATION_SNAPSHOT_MISSING` was a condition this diagnostic could not see at all, so `x doctor --json` — the `fix:` of the `X_CLI_UNEXPECTED` an author reaches it through — ran clean over a broken app.
 
 **It probes BOTH ports `x dev` binds** — `PORT` for the web role and `PORT + 1` for the sync node —
@@ -896,6 +958,17 @@ never `3001`, which is the port it has just reported as taken (`As of 2026-09`; 
 `X_PORT_IN_USE`'s own `fix:` took in `x dev`). A `--port` at the top of the range has no room for
 the sync node at all, so it reports the boot's own `X_PORT_INVALID` rather than probing a port
 below it that `x dev` would never bind.
+
+**Sealed columns against the key ring.** An app that declares `.sealed()` columns is checked for
+two conditions; an app with none is never judged.
+
+| Finding | Condition | Fix |
+|---|---|---|
+| `X_SEAL_KEY_MISSING` | sealed columns, and no usable master key in this environment | `x secrets init`, or export `ULTIMATE_SECRETS_KEY` |
+| `X_SEAL_RESEAL_PENDING` | sealed columns, and a retired key still in `ULTIMATE_SECRETS_RETIRED_KEYS` — a rotation whose re-seal is not finished | a `backfill()` rewriting each row, then `x secrets rotate --drop <keyId>` |
+
+The ring is read as a booted process would see it — the real environment first, then the
+committed `secrets.enc.json`.
 
 The output is a `CommandResult` like every other command's: `findings`, not a `checks` array.
 
@@ -933,32 +1006,38 @@ A name nothing registered is `X_DECLARATION_UNKNOWN`, whose `fix` names the near
 ## x jobs
 
 ```bash
-x jobs [ls|show <id>|retry <id>|cancel <id>|drain --to <driver>] [--queue q] [--state s]
-       [--limit n] [--name n] [--from-step name] [--reason text] [--to driver]
-       [--dry-run] [--json]
+x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|resume <queue>
+       |drain --to <driver>] [--queue q] [--state s] [--name n] [--limit n] [--after cursor]
+       [--from-step name] [--reason text] [--to driver] [--dry-run] [--json]
 ```
 
 | Subcommand | Does |
 |---|---|
-| `ls` | queue depth, the matching rows, the dead-letter list — a dead job is never filtered out of view — and the `backfill()` passes **in flight**, with rows so far and cursor |
-| `show <id>` | state, attempt, every step's result, the remaining retry delays, and the `x_backfills` row for this run when the job is a backfill (`backfill: null` for every other job) |
+| `ls` | queue depth (with a `failed` bucket), ONE page of matching rows, the dead-letter list — a dead job is never filtered out of view — the `backfill()` passes **in flight**, the paused queues and the live workers. `--limit` is 1 to 200 (default 100); a full page prints `next`, the cursor `--after` takes for the page that follows, and `next: null` is the last page |
+| `show <id>` | state, attempt, every step's result, the payload (`input`, with every key the app declared secret redacted), the failure's `stack`, the last `progress` the body reported, the remaining retry delays, the concurrency key the run counts under (`concurrencyKey` — `concurrency.key(input)`, `null` unless the job declares a keyed cap), and the `x_backfills` row for this run when the job is a backfill (`backfill: null` for every other job) |
 | `retry <id>` | re-queue a job that has FINISHED; a job still `ready`, `delayed` or running is refused with `X_JOB_NOT_REQUEUEABLE`. `--from-step <name>` drops that step and every step that started after it, so they re-execute while everything before it replays from storage |
 | `cancel <id>` | stop a job that has not finished — the way to end a runaway `backfill()` sweep. `--reason <text>` is recorded on the job. Re-reads the row after cancelling, so **exit 0 means it is genuinely stopped**: a job that already finished, an id no queue holds, and a driver with no `introspect.cancel` (the redis and nats stubs) all raise `X_JOB_NOT_CANCELLABLE` rather than reporting success |
+| `rm <id>` | delete one job and its step records. An unknown id is `X_JOB_UNKNOWN`; a **running** job is refused with `X_JOB_NOT_REMOVABLE`, whose fix is `x jobs cancel <id> --json` — deleting the row under a body does not stop the body |
+| `promote <id>` | make a job waiting on its run time — delayed at enqueue, or backing off before a retry — due now. Anything else (due, running, finished, suspended in a `step.sleep`) is `X_JOB_NOT_PROMOTABLE`, naming the state |
+| `pause <queue>` | no worker claims from the queue; enqueues still land. A row every worker's next claim reads, so it holds **fleet-wide within one poll interval**. Idempotent. Answers the paused list as the queue now holds it |
+| `resume <queue>` | undo it |
 | `drain --to redis\|nats` | move every `ready`/`delayed`/`suspended` job onto another **durable** driver; `--dry-run` reports the plan and moves nothing. `--to memory` is refused by name (`X_CLI_BAD_FLAG`), `As of 2026-09`: it built a `Map` inside the command's own process, enqueued every job into it and acked the durable rows — the queue emptied, the copy died at exit, and the command reported `ok: true` |
 
-`retry` and `cancel` each take **one id positional** — there is no bulk form and no time filter. `--queue`, `--state`, `--limit` and `--name` narrow `ls` only.
+`show`, `retry`, `cancel`, `rm` and `promote` each take **one id positional**; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `ls` only.
 
 ```bash
 x jobs cancel 019ff1c5-0000-7000-8000-000000000001 --reason "wrong tenant" --json
 ```
 
-Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it. That ordering is only a guarantee while the target OUTLIVES the command, which is why the target set holds durable drivers only.
+Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `show`, `retry` and `cancel` load the app first, `As of 2026-10`: a trace is the row read through the job's own declaration, so unloaded every run showed `concurrencyKey: null` and no retry delays. An app that half-loads still answers, with those two fields degraded. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it. That ordering is only a guarantee while the target OUTLIVES the command, which is why the target set holds durable drivers only.
 
 `ls` reports only the sweeps still **running**, because it is a live view of the queue; the whole
 ledger, finished passes included, is `x db backfill --list`. A driver that ships no backfill ledger
 answers with no passes rather than failing the command — the queue is still the question here.
 
-Errors: `X_JOB_UNKNOWN`, `X_JOB_NOT_CANCELLABLE`, `X_CLI_BAD_FLAG`, and `X_NOT_IMPLEMENTED` from a driver with no introspection.
+Errors: `X_JOB_UNKNOWN`, `X_JOB_NOT_CANCELLABLE`, `X_JOB_NOT_REMOVABLE`, `X_JOB_NOT_PROMOTABLE`, `X_CLI_BAD_FLAG` (a `--limit` over 200 names the walk), and `X_NOT_IMPLEMENTED` from a driver with no introspection.
+
+A run refused by its concurrency key reads `state: failed` with `X_JOB_KEY_BUSY` in `lastError`; the fix it carries is `x jobs ls --name <job> --state running --json` — the runs holding the key.
 
 ## x tasks
 
@@ -968,8 +1047,20 @@ x tasks [list|show <name>] [--count n] [--json]
 
 | Subcommand | Does |
 |---|---|
-| `list` | every registered `task`: cron, timezone, catch-up policy, the jobs it enqueues, and its next occurrence |
+| `list` | every registered `task`: cron, timezone, catch-up policy, the jobs it enqueues, the occurrence it **last** fired and its next one |
 | `show <name>` | the same plus the cron in words and the next `--count` occurrences (default 5, max 50) |
+
+| `--json` field | Is |
+|---|---|
+| `nextMs` · `next` | the next occurrence: epoch ms, and ISO-8601 in the task's zone |
+| `lastMs` · `last` | the occurrence the scheduler last **dispatched** — what it was scheduled for, same two renderings. `null` (`-` in the table) for a task that has never fired |
+| `lastFiredAtMs` | when that dispatch happened, on the queue's clock. `lastFiredAtMs - lastMs` is the scheduler's lag |
+
+The last fire is read from the app's queue (`JobIntrospection.taskFires()`), so `x tasks` opens it
+the way `x jobs ls` does: the running one inside `x dev`, the app's own otherwise — about 0.6 s on
+an embedded database already initialised, and nothing in an app that declares no task. It is the last
+occurrence that enqueued, never the scheduler's watermark — arming and skipping move that.
+`As of 2026-10`.
 
 Every instant is rendered in the task's **own** `tz`, never a machine-local default: a `0 3 * * *` in `America/New_York` reads `2026-03-06T03:00:00-05:00` before the spring-forward and `2026-03-09T03:00:00-04:00` after it. Same wall clock, different instant — the ambiguity the required `tz` exists to remove.
 

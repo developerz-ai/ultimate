@@ -68,6 +68,7 @@ Most scales carry a typed mirror in `tokens.ts` as well, for consumers that cann
 | colour | `--color-accent` | `t.role('accent', $alpha)` | the 24 roles above, as RGB channels |
 | space | `--space-4` | `t.space(4)` | `0 1 2 3 4 5 6 8 10 12 16` → `0` … `4rem` |
 | radius | `--radius-md` | `t.radius(md)` | `none sm md lg xl pill full` |
+| stroke | `--stroke-thick` | `t.stroke(thick)` | `hairline 1px`, `thick 2px`, `heavy 3px` — a border, an outline, a focus ring. px on purpose: a line weight does not grow with text size |
 | z-index | `--z-dialog` | `t.z(dialog)` | `base raised sticky dropdown drawer dialog popover tooltip toast skip-nav` |
 | duration | `--duration-fast` | `t.duration(fast)` | `instant 0ms`, `fast 120ms`, `base 220ms`, `slow 400ms`, `slower 640ms` |
 | easing | `--easing-out` | `t.easing(out)` | `out in in-out spring` |
@@ -77,7 +78,50 @@ Most scales carry a typed mirror in `tokens.ts` as well, for consumers that cann
 | font weight | `--weight-semibold` | `t.weight(semibold)` | `normal medium semibold bold` |
 | line height | `--leading-normal` | `t.leading(normal)` | `tight snug normal loose` |
 | letter spacing | `--tracking-tight` | `t.tracking(tight)` | `tight normal wide` — SCSS only, no TS mirror |
-| breakpoint | **none** | `@include t.respond-to(md)` | `sm 480px` … `2xl 1536px`; never emitted as a custom property, because a media query cannot read one |
+| breakpoint | **none** | `@include t.respond-to(md)` · `t.respond-down(md)` · `t.respond-between(md, lg)` | `sm 480px` … `2xl 1536px`; never emitted as a custom property, because a media query cannot read one |
+
+### Breakpoints and computed lengths
+
+Every length, breakpoint and fluid size comes from `@ultimat3/ui/tokens`. An app that needs `max-width` does not write its own mixin.
+
+| Helper | Emits | Notes |
+|---|---|---|
+| `@include t.respond-to(md)` | `@media (min-width: 768px)` | the rung and wider |
+| `@include t.respond-down(md)` | `@media (max-width: 767.98px)` | narrower than the rung. 0.02px under it: `max-width: 768px` and `min-width: 768px` both match at exactly 768px |
+| `@include t.respond-between(md, lg)` | `@media (min-width: 768px) and (max-width: 1023.98px)` | `$from` up to, not including, `$to` |
+| `t.rem(24px)` | `1.5rem` | px, rem or a unitless px count; `t.rem(20px, 10px)` states another root |
+| `t.fluid(1rem, 2rem, 20rem, 80rem)` | `clamp(1rem, 0.6666666667rem + 1.6666666667vw, 2rem)` | first size at the `$from` viewport, second at `$to`, linear between; the range defaults to `20rem`–`80rem`; px accepted |
+
+A rung is quoted or bare — `'2xl'` and `2xl` are the same rung. Prefer a container query (`t.container`, `t.container-query`) to all three mixins: reach for the viewport only when the layout depends on it.
+
+Each refusal is a Sass `@error` — the stylesheet does not compile — in the same shape as every other error: code, cause, `fix:`.
+
+| Failure | Code | `fix:` |
+|---|---|---|
+| a rung not in `$breakpoints` | `X_TOKEN_UNKNOWN` | `use one of sm, md, lg, xl, 2xl` |
+| `respond-between(lg, md)` | `X_UI_INVALID_VALUE` | `write respond-between("md", "lg")` |
+| `respond-between(md, md)` | `X_UI_INVALID_VALUE` | `write respond-to("md"), or name a higher rung as $to` |
+| `t.rem(2em)`, `t.fluid(1vw, 2rem)` | `X_UI_INVALID_VALUE` | `pass a px length, e.g. rem(24px)` |
+| `t.fluid(1rem, 2rem, 80rem, 20rem)` | `X_UI_INVALID_VALUE` | `pass the narrower viewport first, e.g. fluid(1rem, 2rem, 20rem, 80rem)` |
+
+### Layout mixins
+
+**A flex row or column is `@include t.row(…)` / `@include t.column(…)`, never a hand-written
+`display: flex` block.** Defined in [`packages/ui/src/tokens/_mixins.scss`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/src/tokens/_mixins.scss); every gap default is a spacing token.
+
+| Write | Emits | Use for |
+|---|---|---|
+| `@include t.row` | `display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: var(--space-3)` | a toolbar, a header, an icon beside a label |
+| `@include t.row(t.space(2), baseline, space-between)` | the same, with your `$gap`, `$align`, `$justify` | a row whose items spread |
+| `@include t.column` | `display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3)` | a stack of fields, a card body |
+| `@include t.column(t.space(5), flex-start)` | the same, with your `$gap`, `$align` | a stack whose items keep their own width |
+| `@include t.container(<name>)` + `@include t.container-query(<name>, 30rem)` | a query container and a rule under it | layout that depends on the box, not the viewport |
+| `@include t.margin-inline(…)`, `t.padding-block(…)`, `t.inset-inline(…)` | the logical property pair | spacing that flips correctly under RTL |
+| `@include t.truncate` / `t.line-clamp(2)` | one-line ellipsis / a clamped block | a cell, a card title |
+
+Measured on one downstream app, `As of 2026-10`: 691 hand-written `display: flex` blocks restated
+these two mixins across 211 stylesheet modules. No guard refuses a hand-written flex block yet —
+`row` and `column` are the convention, not a build error.
 
 Note the naming: font size is `--text-*`, weight is `--weight-*`, line height is `--leading-*`, tracking is `--tracking-*` — not `--font-size-*`.
 
@@ -223,8 +267,8 @@ The manifest is generated. Hand-editing a colour there drifts from the tokens an
 
 ```scss
 :focus-visible {
-  outline: 2px solid rgb(var(--color-accent));
-  outline-offset: 2px;
+  outline: var(--stroke-thick) solid rgb(var(--color-accent));
+  outline-offset: var(--stroke-thick);
 }
 
 ::selection {

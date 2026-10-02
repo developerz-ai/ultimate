@@ -68,7 +68,7 @@ got, `live=in-process` under the embedded database and `live=replication` under 
 is invisible to it, which holds by construction under `x dev`, where every role is this one process
 ([Realtime](Realtime)).
 
-Reach for the dev compose file only when you want parity against real Postgres, NATS and MinIO
+Reach for the dev compose file only when you want parity against a real Postgres, NATS and S3
 ([Deployment](Deployment)). Nothing on this page uses it.
 
 ## Wall time
