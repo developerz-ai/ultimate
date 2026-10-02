@@ -1,20 +1,19 @@
-// What `/healthz` and `/readyz` say, and to whom. Both answer outside the pipeline — no auth, no
-// rate limit — so the body is a stranger's to read: everyone gets the verdict, and the build id,
-// the in-flight count and the readiness check names go only to a peer `healthDetailPeers` lists.
+// Who `/healthz` and `/readyz` tell the detail to on the WEB role: the `healthDetailPeers` config
+// key, its screen, and the trusted-proxy half. The body rule and the peer-list match are core's
+// (`health-disclosure.ts` there), shared with the sync role's own listener — one rule, two callers.
 
 import {
   type AddressClass,
   classifyAddress,
-  type HealthReport,
-  type Role,
+  healthPeerListed,
   renderCauseValue,
 } from '@ultimat3/core';
 import type { HttpConfig } from './config';
 import { HttpError } from './errors';
 import { forwardedClientAddress } from './forwarded';
 
-/** The box itself: `kubectl exec`, a port-forward, a compose healthcheck, a sidecar scraper. */
-export const DEFAULT_HEALTH_DETAIL_PEERS: readonly string[] = ['loopback'];
+/** Core's, named here for the config that defaults to it — never a second copy of the list. */
+export { DEFAULT_HEALTH_DETAIL_PEERS } from '@ultimat3/core';
 
 /** Every class an entry may name. A `Record` so a class core adds is a build error here. */
 const ADDRESS_CLASSES = Object.freeze<Record<AddressClass, true>>({
@@ -52,15 +51,6 @@ export const assertHealthDetailPeers = (peers: readonly string[]): readonly stri
   return [...(declared as readonly string[])];
 };
 
-const listed = (peers: readonly string[], address: string | null): boolean => {
-  if (address === null) return false;
-  const kind = classifyAddress(address);
-  // Not an address literal: nothing can vouch for it, whatever the list says.
-  if (kind === undefined) return false;
-  const literal = address.trim().toLowerCase();
-  return peers.some((entry) => entry === kind || entry.trim().toLowerCase() === literal);
-};
-
 /**
  * Whether this caller is told the detail. The SOCKET must be listed — and, when a declared proxy
  * named a caller, that caller too: a proxy on this box makes every socket loopback, and a direct
@@ -73,21 +63,7 @@ export const disclosesHealthDetail = (input: {
   readonly socketAddress: string | null;
 }): boolean => {
   const peers = input.config.healthDetailPeers;
-  if (!listed(peers, input.socketAddress)) return false;
+  if (!healthPeerListed(peers, input.socketAddress)) return false;
   const forwarded = forwardedClientAddress(input.headers, input.config);
-  return forwarded === undefined || listed(peers, forwarded);
+  return forwarded === undefined || healthPeerListed(peers, forwarded);
 };
-
-/** The verdict a stranger gets. An allow-list, so a field core adds later is withheld by default. */
-export interface PublicHealthBody {
-  readonly state: HealthReport['state'];
-  readonly ready: boolean;
-  readonly role: Role;
-}
-
-export const healthBody = (
-  report: HealthReport,
-  role: Role,
-  detailed: boolean,
-): PublicHealthBody | (HealthReport & { readonly role: Role }) =>
-  detailed ? { ...report, role } : { state: report.state, ready: report.ready, role };

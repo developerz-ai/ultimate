@@ -3,6 +3,7 @@
 // a `ROLE=replicator` container starts; the only difference is that this process also runs the
 // roles reading the other end of that transport.
 
+import { registerReadinessCheck } from '@ultimat3/core';
 import { describeEntities } from '@ultimat3/entity';
 import { ReplicatorSlotHeldError } from '@ultimat3/realtime';
 import type { Replicator, Transport } from '@ultimat3/realtime/server';
@@ -72,6 +73,18 @@ const noEntitiesRefusal = (): BadFlagError =>
     fix: 'x g entity Post title:text — then x dev --role replicator',
   });
 
+/** The name `/readyz` reports the replicator under. */
+export const REPLICATOR_READINESS_CHECK = 'replicator';
+
+/**
+ * Ready means REPLICATING. A stream that ends is restarted by the replicator itself, and until it
+ * is back `running` is `false`: this process holds no slot and publishes nothing, so it must not be
+ * counted as the database's replicator. Returns the unregister.
+ */
+export function watchReplicatorReadiness(replicator: Pick<Replicator, 'running'>): () => void {
+  return registerReadinessCheck(REPLICATOR_READINESS_CHECK, () => replicator.running);
+}
+
 /**
  * Lock first, feed second. A replicator that opened its slot before losing the lock race would
  * have already consumed WAL the holder is responsible for, and `pg_try_advisory_lock` is the only
@@ -95,11 +108,14 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
   if (!(await replicator.start())) {
     throw new ReplicatorSlotHeldError({ key: replicatorLockKey(slot) });
   }
+  const unregister = watchReplicatorReadiness(replicator);
   return {
     replicator,
     slot,
     detail: selection.detail,
     async stop() {
+      // First: a replicator being stopped on purpose is not a failing one.
+      unregister();
       await replicator.stop();
     },
   };

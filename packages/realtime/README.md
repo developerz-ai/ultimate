@@ -281,6 +281,7 @@ wire.
 | outbound bytes buffered on one socket | 1 MiB | `createSyncNode({ maxBufferedBytes })` | the frame is dropped and `send` answers `false` |
 | dropped frames before that socket is closed | 32 | `createSyncNode({ maxDroppedFrames })` | close `1013` (`overloaded`), reason `backpressure` |
 | time one socket may route no frame | 120s | `createSyncNode({ idleTimeoutMs })` | close `4001` (`idle`), reason `idle timeout` |
+| time one grant's `refresh()` may hold the re-auth pass | 10s (10 000 ms) | `createSyncNode({ grantRefreshDeadlineMs })` | reported and skipped: the grant stays expired and is asked again next pass |
 | retained patch bytes per node | 64 MiB | `new RingChangeBuffer({ maxBytes, maxBytesPerQuery })` | eviction, then a re-snapshot on resume |
 | array lengths and `input` nesting in a frame | `FRAME_LIMITS` | none — a hard ceiling | `X_PROTOCOL_VERSION` |
 
@@ -353,15 +354,32 @@ credential drained the bucket and every signed-in reconnect behind it was shed. 
 behind an ingress every dial has the ingress's address, and a forwarded header is the caller's own
 claim.
 
-**A socket from a foreign page is refused** — `403 X_SOCKET_ORIGIN_REFUSED`, before `authenticate`
+**A socket from another origin is refused** — `403 X_SOCKET_ORIGIN_REFUSED`, before `authenticate`
 and before the budget. A websocket carries the session cookie and no CORS applies to it, so a page on
 a sibling host (same-site, which `SameSite=Lax` does not stop) could open one as its visitor. The
-rule is `@ultimat3/core`'s `proveSameOrigin`, the one `@ultimat3/http`'s CSRF check asks, with two
-admissions of the node's own (`sync-origin.ts`): no `Origin` header (RFC 6455 has every browser send
-one, so its absence is not a browser), and the node's own host name at any port or scheme (cookies
-are not port-isolated, and the Compose rung serves the page on `:3000` and the node on `:3001`). A
-page on another host is admitted by `createSyncNode({ allowedOrigins })` — the CLI passes
-`APP_URL`'s origin.
+rule is `@ultimat3/core`'s `proveSameOrigin`, the one `@ultimat3/http`'s CSRF check asks, and what
+is admitted is decided in `sync-origin.ts`:
+
+| Admitted | When |
+|---|---|
+| no `Origin` header | always — RFC 6455 has every browser send one, so its absence is not a browser |
+| `createSyncNode({ allowedOrigins })`, compared exactly (scheme, host, port) | when any is declared. The declaration is the WHOLE list (24.0.0): the origin the node was reached on is no longer admitted beside it, because that origin is read off the `Host` header and a sibling subdomain pointed at the node would be "its own" |
+| the origin the node was reached on | only when nothing is declared. A node reached over plain `http` also admits the `https` spelling of that host and port: TLS ended at a proxy, the scheme is not knowable there, and a browser sends no `sec-fetch-site` on a websocket handshake |
+
+The CLI passes `APP_URL`'s origin, which the Compose rung (`:3000` / `:3001`) requires on `sync`
+and the Helm chart sets from `ingress.host`. Under `x dev` it also adds the web role's own origin
+and its `localhost`, `127.0.0.1` and `[::1]` spellings to a declared list, so `x dev --port 4000`
+beside an `.env` naming `:3000` still connects, and passes `admitReachedOrigin: true`, which keeps
+the origin the node was reached on beside the list (a Codespace, a tunnel: `x dev` binds loopback,
+so a `Host` reaches it only through a forward its own user set up); a container adds nothing, and a wrong `APP_URL`
+there refuses. The refusal's cause names the origin that asked and every origin the node admits;
+its fix is the `export APP_URL=…` that admits the asker.
+
+**The node's `/healthz` and `/readyz` tell the detail to a listed peer only**
+(`createSyncNode({ healthDetailPeers })`, default the box itself). A request carrying `Forwarded`,
+`X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Real-IP` or `Via` is told the
+verdict only. A proxy that adds none of them is indistinguishable from a direct peer: a
+header-less proxy must not route the health paths.
 
 The client dials itself back. A closed socket arms one timer — the node's delay when a `reconnect`
 frame assigned one, otherwise `@ultimat3/core`'s `backoffDelay()` on the client's `BackoffPolicy` — and that timer calls `connect()`, which re-subscribes
@@ -387,7 +405,7 @@ below (`heartbeatMs` on the internal `LiveClient`; `0` disables the pass).
 
 | Property | Behaviour |
 |---|---|
-| Default | `DEFAULT_HEARTBEAT_MS`, 15s. The client's own number and the only one: `realtime.heartbeatMs` in `app.config.ts` was deleted 2026-08-19 because nothing read it |
+| Default | `DEFAULT_HEARTBEAT_MS`, 10s — a third of the default presence ttl, until the node names its own on its `hello` reply (`hello.heartbeatMs` = `min(ttl / 3, idle / 4)`, floored at 1 s): the client follows that for the life of the socket, and the SharedWorker engine reaps a tab on the longer of the two. The client's own number: `realtime.heartbeatMs` in `app.config.ts` was deleted 2026-08-19 because nothing read it |
 | One beat | a `hello` — which carries no cursors at all; `HelloFrame` has no resume list, so a beat and an opening frame are byte-identical — plus one subscribe frame per topic held |
 | Why the topics | on the node, repeating the subscribe frame **is** the presence heartbeat; presence has no frame of its own in either direction |
 | Not a deploy check | `update-available` answers a skew between the build the client claims — the `hello`'s `buildId`, or `?build=` on the dial; every hello is read and the latest one is the record — and the node's own. A client says the same build on every beat and the node's never moves while the socket is open, so every `hello` on one socket answers the same forever. A client hears about a deploy on the socket it opens against the **new** node |
@@ -416,6 +434,10 @@ wire twice by a reconnect that raced an ack.
 | The store is handed **snapshots, by key**, never the live entries or the whole queue | `QueueStore.write` is a durable write and may await before it reads; given an entry itself it persists a status that was never true when it was called. By key, because two tabs of one user share the store and a whole-queue save let the last tab erase the other's write |
 | One tab drains at a time, and drains what every tab queued | the outbox's replay runs under the Web Lock `ultimate-outbox:<principal>` and re-reads the queue first, so a write another tab queued is sent, in order, and a stored `inflight` from a closed page goes back to `pending` |
 
+`createOutbox({ warn })` — where a disk that refused the queue is said
+(`X_LOCAL_STORE_UNAVAILABLE`, default `console.warn`); the outbox then queues in memory for that
+principal.
+
 ### Limits, stated plainly
 
 - **The change window is per node, and a `qid` window can only be.** A client that reconnects to a
@@ -424,8 +446,15 @@ wire twice by a reconnect that raced an ack.
   matcher and no window, so it cannot produce one. What the snapshot path costs is one **shared**
   read per (query, node), not one per client. A cross-node delta needs an *entity*-keyed window each
   node fills from the change stream it already subscribes to, which is a `ResumeSource` shape change.
+- **A ring is complete from its floor, and never from the start of time** (24.0.0). A
+  `RingChangeBuffer` ring is born with one: the lsn of its first patch, or the lsn its window was
+  read at (`floorAt(qid, lsn)`, which only ever raises it and drops what a re-read superseded). A
+  cursor below the floor re-snapshots. A ring used to be born with none, so a cursor minted on
+  another node resumed as a delta over changes this node never retained.
 - **Fanout is at-most-once, and a gap is detected rather than assumed away.** The replicator stamps
-  every published change with `producer` + `seq`; a `sync` node that sees a skipped sequence
+  every published change with `producer` + `seq`; a `sync` node that sees a skipped sequence —
+  or, since 24.0.0, a new `producer` after one it already read: the run before it died, and the
+  tail of a dead stream has no later sequence to be missed against —
   invalidates every window it holds and desyncs every subscriber, so the next change to each query
   re-reads and re-snapshots. Both fields are optional on the bus, so a publisher that does not
   sequence simply detects nothing. Durable replay (JetStream) is a separate decision — retention,
@@ -488,9 +517,11 @@ wire twice by a reconnect that raced an ack.
   the new node never held, so the resume falls back correctly rather than silently; the `qidOf`
   removal itself costs nothing, because every qid a node computes comes from a decoded frame and
   `JSON.parse` produces none of the values the two spellings disagreed about.
-- **A topic guard that *fails* keeps the topic.** On the re-auth pass, only a denial
-  (`X_TOPIC_FORBIDDEN`, or a policy denial) unsubscribes; anything else increments `hub.guardFailures`
-  and logs `channel.guard_failed`. `catch { unsubscribe }` reported a store that timed out as a
+- **A topic guard that *fails* suspends the topic.** On the re-auth pass, only a denial
+  (`X_TOPIC_FORBIDDEN`, or a policy denial) unsubscribes; anything else increments `hub.guardFailures`,
+  logs `channel.guard_failed` and SUSPENDS the seat — kept, and sent nothing, until a pass
+  succeeds. Two answers are denials before any rule runs: a `null` actor on a channel with a `row`
+  loader, and a loader the tenant guard refused. `catch { unsubscribe }` reported a store that timed out as a
   revoked grant — every topic on every re-authenticated socket, silently, with the client never told
   to resubscribe. The initial `subscribe` is deliberately not split that way: there is no
   subscription to keep, so a guard that raises refuses that subscribe and the client hears about it.
@@ -519,7 +550,8 @@ wire twice by a reconnect that raced an ack.
 - **A full presence frame is capped** at `maxMembers` (256) and carries `total`, so a 5,000-person
   room renders "and 4,744 others" instead of shipping 5,000 members to every joiner. The set itself
   is never capped — the sweep differences it — and one node per topic runs that sweep, elected
-  through the shared store, rather than every node re-reading every room it has ever seen.
+  through the shared store, rather than every node re-reading every room it has ever seen; the
+  leader's lease carries its roster, so a takeover announces a dead leader's members.
 - **Deliveries are serialized per query id, not per node.** A change is fanned out inside that
   query's own FIFO lane, so two changes off the bus cannot interleave: the window one of them
   writes is the window every subscriber's gate reads, and patch frames leave in lsn order. Every
@@ -560,7 +592,29 @@ wire twice by a reconnect that raced an ack.
   it gains the entity tables it lacks (`ALTER PUBLICATION … ADD TABLE`) and loses none. `FOR TABLE`
   because a table's owner may publish it without a superuser; a role that may not is refused with
   `X_REPLICATION_FAILED` and the statement to run as one that may. `InMemoryChangeFeed` + `InProcessTransport` remain the
-  defaults for `x dev` and every test.
+  defaults for `x dev` and every test. `START_REPLICATION` asks `messages 'true'`, which needs
+  **Postgres ≥ 14**.
+- **A replication stream that ends is restarted** (24.0.0). `ChangeFeed.start` takes
+  `onEnd(reason)`, called when the pump dies on its own — the walsender ended the copy, a decode
+  failed, the handler rejected — and never for a `stop()`. `createReplicator` answers it: `running`
+  goes `false`, the feed is stopped, the advisory lock is released so a standby may take the slot,
+  and the same process redials on `retryDelayMs(attempt)` (through `ReplicatorOptions.schedule`)
+  until it holds the stream again or `stop()` is called. The restart resumes from the last lsn this
+  process published, so one rejected `transport.publish` costs a redial and loses nothing.
+  `stats()` carries `restarts` and `failure`; **`replicator.running` is what a readiness check
+  reads**. Until 24.0.0 the death was recorded in `stats().failure`, which nothing read.
+- **A row crosses the bus as the row it was** (`replicator-row.ts`, 24.0.0). The bus carries text;
+  `parseEnvelope` revives each value through the column its entity declared (`entityForTable` +
+  `$parse`) — a `timestamp()` is a `Date` again, `bytes()` (sent as base64) a `Uint8Array` — and
+  decides by that declaration, never by what a value looks like. A table with no entity on the
+  node, and a value its column refuses, cross as they arrived. Until 24.0.0 a `Date` reached the
+  matcher as an ISO string and every window ordered by a timestamp mis-sorted on any deployment
+  with a bus.
+- **`ChangeEvent.omitted` names what an update could not carry** (24.0.0). Postgres logs no bytes
+  for an out-of-line (TOAST) value an `UPDATE` did not touch. Under `REPLICA IDENTITY FULL` the
+  value is copied from the old tuple and `after` is whole; under any other identity `after` lacks
+  the property and `omitted` lists it (entity property names), so a consumer re-reads the row
+  rather than adopting a partial one.
 - **`selectChangeFeed(env, { entities })` decides which feed a boot installs** — same law
   `selectMailDriver` follows: an unset variable means the embedded default. It returns `{ feed,
   mode, detail, slot, lock }`: `mode` is `'embedded' | 'external'`, `detail` is the env key that
@@ -583,6 +637,14 @@ wire twice by a reconnect that raced an ack.
   `X_REPLICATION_TLS` naming the check. Until 22.1.0 `prefer` verified — every private-CA server
   (CNPG) failed as a refused write — and the raw socket kept feeding ciphertext to the reader
   after the upgrade, so a trusted CA still hung the stream.
+- **A password the network could use is sent only when the mode allows it** (24.0.0): a
+  cleartext or md5 request is answered under `require`, `verify-ca`, `verify-full` (the session is
+  guaranteed encrypted) or `disable` (the operator said it is not), and refused with
+  `X_REPLICATION_FAILED` under `prefer` — the default — and `allow`, where a stripped upgrade falls
+  back to cleartext without a word. SCRAM is answered under every mode. `require` encrypts to
+  whoever answered and verifies no certificate: it protects the password from a passive listener
+  only. An attacker on the path needs `verify-ca` or `verify-full` to be stopped; `require`
+  answers a cleartext or md5 request for libpq parity, not because it is safe against one.
 - **`REPLICATION` is a cluster-wide grant.** A `replication=database` session may also run
   `BASE_BACKUP` and `START_REPLICATION PHYSICAL` with no database check, so on a shared Postgres
   cluster the role could copy every database, `pg_authid` included, drop other slots and exhaust
@@ -591,6 +653,21 @@ wire twice by a reconnect that raced an ack.
   `REPLICATION` to an app role on a shared cluster. Every fix line that hands the grant over says
   so (`REPLICATION_GRANT_WARNING`, `pg-wire.ts`) and links
   [`docs/ops/01-kubernetes.md`](../../docs/ops/01-kubernetes.md#replication-is-a-cluster-wide-grant).
+- **A lock that is lost ends the stream** (24.0.0). The lock is a session, and a session can die
+  while the replication stream stays up — Postgres then grants the lock to the next process that
+  asks, and a holder that kept streaming would be one of two replicators. `AdvisoryLock.onLost(
+  listener)` (required) reports it: `PgAdvisoryLock` watches its idle session through
+  `PgConnection.watchIdle` (EOF, a read error or a server `FATAL`; no polling), and
+  `createReplicator` answers exactly as it does a dead stream — `running` false, feed stopped,
+  back into the takeover loop to compete for the lock again.
+- **A recovery asks nothing, and a stop waits a bounded time** (24.0.0). A dead stream or a lost
+  lock calls `ChangeFeed.abandon()` and then `AdvisoryLock.abandon()` (both required, both
+  synchronous): the sockets are closed outright with no goodbye written, the feed first so it is
+  silent before the lock is given up. `stop()` asks politely and gives each goodbye
+  `STOP_DEADLINE_MS` (5 s) before abandoning it. The restart delay resets only once a change has
+  been published, so a change the bus refuses every time backs off to `maxMs` instead of
+  redialling at the base; `stats().failure` names its entity and lsn, and `running` stays `false`
+  until it goes out.
 - **`PgAdvisoryLock` is the production `AdvisoryLock`** — `SELECT
   pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` on its own session. Session-scoped, so a
   crashed replicator releases it automatically: no lease renewal, no fencing token, no split brain.
@@ -617,7 +694,10 @@ wire twice by a reconnect that raced an ack.
   the library's own KV abstraction expresses neither a per-message TTL nor a batch direct get.
   Reconnect and re-subscription are the library's: a lost connection is re-established underneath
   the caller, which is what makes `sync` stateless, and the jitter that spreads a restart herd is
-  handed to it as its reconnect delay rather than re-implemented above it. The bucket needs
+  handed to it as its reconnect delay rather than re-implemented above it.
+  `transport.onReconnect(listener)` — a required member of `Transport` since 24.0.0 — announces
+  each recovery and returns the unsubscribe: fanout is at-most-once, so whatever was published
+  during the drop never arrived. `InProcessTransport` has no connection to lose and never calls it. The bucket needs
   nats-server ≥ 2.11 (batch direct get, per-message TTL); an older one is `X_TRANSPORT_PROTOCOL` on
   the first dial, never a retry loop, because no amount of reconnecting makes a server newer.
 - **The lsn is `<commit position><row position in the transaction>`, 24 hex characters.** Neither
@@ -625,7 +705,14 @@ wire twice by a reconnect that raced an ack.
   *transactions* in commit order, so per-record WAL positions are not monotonic across them. The
   pair sorts in delivery order and is byte-identical on replay, which is what turns at-least-once
   redelivery into a drop instead of a duplicate.
-- **A keyed table does not need `REPLICA IDENTITY FULL`; a table with NO identity is warned**
+- **A channel with params needs `REPLICA IDENTITY FULL` on its `records` tables** (24.0.0). It
+  holds no window: a DELETE is routed to the topic the OLD row's params name, and under the default
+  identity that image is the key alone — no topic, no `remove`, and members keep the deleted
+  record. Preflight asks the catalog about exactly those tables (`paramsChannelTables()`, or
+  `PgLogicalReplicationOptions.fullIdentityTables`) and logs `replication.channel_identity_partial`
+  with the fix `x db gen "replica identity full"`: `x db gen` grants FULL to those tables beside
+  the live queries' `subscribes:` ones, so an app that declares a params channel owes one migration.
+- **For a live query, a keyed table does not need `REPLICA IDENTITY FULL`; a table with NO identity is warned**
   (`As of 2026-09-23`). Under DEFAULT an update carries no old tuple and a delete only the key, and
   neither decides a live query: the shared window holds the whole row, so a row leaving the result
   set is decided from the window and a delete by `holds(id)` — proved on real WAL by
@@ -689,6 +776,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `LiveQueryUnknownError` (extends `RealtimeError`) | `X_LIVE_QUERY_UNKNOWN` | `src/errors.ts` |
 | `LiveRowUnidentifiedError` (extends `RealtimeError`) | `X_LIVE_ROW_UNIDENTIFIED` | `src/errors.ts` |
 | `NotImplementedError` (extends `RealtimeError`) | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
+| `OfflineQueueAbandonedError` (extends `RealtimeError`) | `X_OFFLINE_QUEUE_ABANDONED` | `src/page-errors.ts` |
 | `ProtocolVersionError` (extends `RealtimeError`) | `X_PROTOCOL_VERSION` | `src/page-errors.ts` |
 | `RealtimeError` | any `RealtimeErrorCode` — `REALTIME_ERROR_CODES`; the base of every other class here, thrown directly for a code none of them covers | `src/realtime-error.ts` |
 | `RealtimeUninstalledError` (extends `RealtimeError`) | `X_REALTIME_UNINSTALLED` | `src/page-errors.ts` |

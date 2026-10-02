@@ -26,7 +26,7 @@ const scripted = (script: Script) => {
           new ReplicationFailedError({
             stage: 'query',
             detail: '42501 — must be owner of table posts',
-            fix: 'x doctor db',
+            fix: 'x doctor --json',
           }),
         );
       }

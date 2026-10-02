@@ -348,3 +348,58 @@ describe('SubscriberGate — an insert index is re-based on what this subscriber
     expect(kept.map((patch) => patch.index)).toEqual([0, 1]);
   });
 });
+
+// An update carries the changed columns only. A subscriber who was never sent the row — denied at
+// its snapshot, then admitted by this very change — folded those columns onto nothing, and the
+// server never recorded the id as held, so the row's later delete was withheld from them.
+describe('SubscriberGate — an update that makes a row visible to a subscriber who lacks it', () => {
+  const window: readonly Row[] = [
+    { id: 'p1', ownerId: 'alice', title: 'mine', published: true },
+    { id: 'p2', ownerId: 'bob', title: 'theirs', published: true },
+  ];
+  const published: RowPatch = {
+    op: 'update',
+    id: 'p2',
+    row: { id: 'p2', published: true },
+    lsn: '2',
+    index: 1,
+  };
+  const visible = ({ row }: { row: Row }): boolean => row['published'] === true;
+
+  test('arrives as an insert carrying the whole window row', async () => {
+    const gate = new SubscriberGate({});
+
+    const out = await gate.patch(targetFor(visible, window), who, published, false);
+
+    expect(out).toEqual({
+      op: 'insert',
+      id: 'p2',
+      row: { id: 'p2', ownerId: 'bob', title: 'theirs', published: true },
+      lsn: '2',
+      index: 1,
+    });
+  });
+
+  test('is then HELD: the delete that follows in the same list is delivered', async () => {
+    const gate = new SubscriberGate({});
+
+    const out = await gate.filterPatches(
+      targetFor(visible, window),
+      who,
+      [published, { op: 'delete', id: 'p2', row: null, lsn: '3' }],
+      new Set(['p1']),
+    );
+
+    expect(out.map((patch) => patch.op)).toEqual(['insert', 'delete']);
+    // Re-based on what alice holds ahead of it: p1 only.
+    expect(out[0]?.index).toBe(1);
+  });
+
+  test('a subscriber who already holds the row still gets the partial update', async () => {
+    const gate = new SubscriberGate({});
+
+    const out = await gate.patch(targetFor(visible, window), who, published, true);
+
+    expect(out).toBe(published);
+  });
+});

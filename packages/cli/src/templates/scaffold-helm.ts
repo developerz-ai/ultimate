@@ -31,6 +31,13 @@ image:
 
 # Non-secret configuration. Secrets come from an existing Secret, never from this file:
 #   kubectl create secret generic ${app.kebab}-secrets --from-literal=DATABASE_URL=...
+#
+# APP_URL — the pages' public origin — is what the sync node admits a websocket from. With the
+# ingress below enabled the chart SETS it on the sync role from ingress.host (https when
+# ingress.tls), because an undeclared node behind a TLS ingress also admits the plain-http page.
+# Set it here when the pages are served from another host or port than that (a CDN domain, a
+# SYNC_URL of its own): this value wins, and without it every websocket from those pages is
+# 403 X_SOCKET_ORIGIN_REFUSED.
 env:
   NODE_ENV: production
 

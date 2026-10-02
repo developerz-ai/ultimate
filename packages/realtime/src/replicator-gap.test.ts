@@ -5,17 +5,12 @@
 // a WAL position is a byte offset, so every legitimate next change is already an arbitrary jump.
 
 import { describe, expect, test } from 'bun:test';
+import { InMemoryAdvisoryLock } from './advisory-lock';
 import type { ChangeEvent } from './changefeed';
 import { formatLsn, InMemoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
-import {
-  CHANGE_SUBJECT_PREFIX,
-  createReplicator,
-  InMemoryAdvisoryLock,
-  parseChange,
-  parseEnvelope,
-  SeqGapDetector,
-} from './replicator';
+import { CHANGE_SUBJECT_PREFIX, createReplicator } from './replicator';
+import { parseChange, parseEnvelope, SeqGapDetector } from './replicator-envelope';
 
 const envelope = (
   producer: string | null,
@@ -51,13 +46,23 @@ describe('SeqGapDetector', () => {
     expect(gaps.observe(envelope('r1', 9_001))).toBe(false);
   });
 
-  /** A replicator that took the lock back publishes from its persisted lsn, at seq 1 again. */
-  test('a new producer restarts the count rather than reading as a gap', () => {
+  // The run before it DIED, and the tail of a dead stream has no later seq to be missed against:
+  // whatever it published last may never have reached this node, and nothing else would say so.
+  test('a new producer after a known one is a gap, once', () => {
     const gaps = new SeqGapDetector();
     gaps.observe(envelope('r1', 1));
     gaps.observe(envelope('r1', 2));
-    expect(gaps.observe(envelope('r2', 1))).toBe(false);
+    expect(gaps.observe(envelope('r2', 1))).toBe(true);
     expect(gaps.observe(envelope('r2', 2))).toBe(false);
+    // A straggler from the old run is neither a new producer nor a skipped sequence.
+    expect(gaps.observe(envelope('r1', 3))).toBe(false);
+  });
+
+  test('forget() makes the next producer a first one again', () => {
+    const gaps = new SeqGapDetector();
+    gaps.observe(envelope('r1', 1));
+    gaps.forget();
+    expect(gaps.observe(envelope('r2', 1))).toBe(false);
   });
 
   test('a redelivery is not a gap, and does not turn the next message into one', () => {

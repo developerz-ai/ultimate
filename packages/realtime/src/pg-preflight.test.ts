@@ -1,9 +1,10 @@
-// The four questions asked of a database before `START_REPLICATION`: `wal_level`, the publication
-// (ensured, not merely asked), every entity's replica identity and the slot — in that order, because the identity check is
-// worthless once the slot exists. Split from `pg-replication.test.ts` at the 500-line ceiling.
+// The questions asked of a database before `START_REPLICATION`: `wal_level`, the publication
+// (ensured, not merely asked), the replica identities and the slot — in that order, because an
+// identity check is worthless once the slot exists. Split from `pg-replication.test.ts`.
 import { describe, expect, spyOn, test } from 'bun:test';
 import { logger } from '@ultimat3/core';
 import { PgLogicalReplicationFeed } from './changefeed';
+import { CHANNEL_IDENTITY_EVENT } from './pg-preflight';
 import { start } from './pg-replication-fixture';
 
 describe('PgLogicalReplicationFeed', () => {
@@ -129,6 +130,47 @@ describe('PgLogicalReplicationFeed', () => {
     await feed.stop();
 
     expect(line).toBeUndefined();
+  });
+
+  // A channel with params routes a DELETE by columns of the OLD row. Under the default identity
+  // that image is the key alone: it names no topic, no `remove` is sent, members keep the record.
+  test('a params-channel table that is not FULL is named, with the command that grants it', async () => {
+    const warn = spyOn(logger, 'warn');
+    const { feed, server } = await start({
+      fullIdentityTables: ['posts', 'not_decoded_here'],
+      script: { notFullIdentity: ['posts'] },
+    });
+    const line = warn.mock.calls.find((call) => call[0] === CHANNEL_IDENTITY_EVENT);
+    warn.mockRestore();
+    await feed.stop();
+
+    expect(line?.[1]).toMatchObject({
+      tables: ['posts'],
+      fix: 'x db gen "replica identity full"',
+    });
+    expect(String(line?.[1]?.['cause'])).toContain('channel declared with params');
+    // Asked as "not FULL" — the other question is "no identity at all" — and only about tables
+    // this feed decodes: the other name never reached the statement.
+    const question = server.queries.find((sql) => sql.includes("relreplident <> 'f'")) ?? '';
+    expect(question).toContain("IN ('posts')");
+    expect(question).not.toContain('not_decoded_here');
+    const asked = server.queries.indexOf(question);
+    const slot = server.queries.findIndex((sql) => sql.includes('pg_replication_slots'));
+    expect(asked).toBeLessThan(slot);
+  });
+
+  test('a params-channel table that IS full, and an app with no such channel, warn nothing', async () => {
+    const warn = spyOn(logger, 'warn');
+    const full = await start({ fullIdentityTables: ['posts'] });
+    const none = await start({ fullIdentityTables: [] });
+    const line = warn.mock.calls.find((call) => call[0] === CHANNEL_IDENTITY_EVENT);
+    warn.mockRestore();
+    await full.feed.stop();
+    await none.feed.stop();
+
+    expect(line).toBeUndefined();
+    // No channel needs it, so the catalog is not asked at all.
+    expect(none.server.queries.some((sql) => sql.includes("relreplident <> 'f'"))).toBe(false);
   });
 
   test('an identifier outside [a-z_][a-z0-9_]* never reaches a replication command', async () => {

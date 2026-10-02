@@ -11,3 +11,5 @@ create table "notifications" (
   constraint "notifications_pkey" PRIMARY KEY (id),
   constraint "notifications_kind_check" CHECK ((kind = ANY (ARRAY['friend-request'::text, 'friend-accepted'::text, 'post-liked'::text, 'post-commented'::text, 'message'::text])))
 );
+
+alter table "notifications" replica identity full;

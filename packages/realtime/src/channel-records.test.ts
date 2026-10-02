@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import type { ChangeEvent } from './changefeed';
 import { channel } from './channel-decl';
-import { updatesFor } from './channel-records';
+import { skippedRemovals, updatesFor } from './channel-records';
 import { clearChannels } from './channel-registry';
 import { OPEN_POLICY } from './policy-fake';
 
@@ -89,5 +89,36 @@ describe('updatesFor()', () => {
 
   test('a table no channel lists is nobody’s', () => {
     expect(updatesFor([feed], change({ entity: 'other', after: row('o1') }))).toEqual([]);
+  });
+});
+
+// Under the default replica identity a DELETE's old image is the key alone, so a channel with
+// params cannot name the topic the row left. The removal is lost — and was lost silently.
+describe('a removal the old image cannot route', () => {
+  test('is counted; a whole old image routes it and counts nothing', () => {
+    const before = skippedRemovals();
+
+    const routed = updatesFor([feed], change({ op: 'delete', before: row('o1') }));
+    expect(routed.map((update) => update.remove.length)).toEqual([1]);
+    expect(skippedRemovals()).toBe(before);
+
+    const lost = updatesFor([feed], change({ op: 'delete', before: { id: 'a1' } }));
+    expect(lost).toEqual([]);
+    expect(skippedRemovals()).toBe(before + 1);
+  });
+
+  test('a channel with no params routes every delete, so nothing is skipped', () => {
+    const everyone = channel('accounts-all', {
+      params: [],
+      catchUp: { name: 'accountsAll' },
+      policy: OPEN_POLICY,
+      records: [accounts],
+    });
+    const before = skippedRemovals();
+
+    const routed = updatesFor([everyone], change({ op: 'delete', before: { id: 'a1' } }));
+
+    expect(routed).toHaveLength(1);
+    expect(skippedRemovals()).toBe(before);
   });
 });

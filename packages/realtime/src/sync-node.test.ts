@@ -96,3 +96,27 @@ describe('listenSyncNode reports the address it bound', () => {
     await sync.stop();
   });
 });
+
+// The one test of the health paths over a REAL socket: the address the rule decides on is the
+// one `Bun.serve` reports, which no stub can stand in for.
+describe('the listener answers health to the peer it actually sees', () => {
+  test('loopback is told the detail; a forwarded request is told the verdict only', async () => {
+    const sync = node();
+    await sync.start();
+    const listener = listenSyncNode(sync, { port: 0, hostname: '127.0.0.1' });
+    const base = listener.url.replace('ws://', 'http://');
+    try {
+      const direct = (await (await fetch(`${base}/readyz`)).json()) as Record<string, unknown>;
+      expect(direct).toMatchObject({ role: 'sync', inflight: 0 });
+      expect(direct).toHaveProperty('buildId');
+
+      const proxied = (await (
+        await fetch(`${base}/readyz`, { headers: { 'x-forwarded-for': '203.0.113.9' } })
+      ).json()) as Record<string, unknown>;
+      expect(Object.keys(proxied).sort()).toEqual(['ready', 'role', 'state']);
+    } finally {
+      listener.stop();
+      await sync.stop();
+    }
+  });
+});

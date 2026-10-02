@@ -39,18 +39,38 @@ export interface ChangeEvent<R extends Row = Row> {
    * channel stamps it on the `records` frame so the writing page recognises its own echo.
    */
   readonly write?: string;
+  /**
+   * Row properties `after` does NOT carry because Postgres did not log them: an UPDATE that left
+   * an out-of-line (TOAST) value untouched sends no bytes for it, and under any replica identity
+   * but FULL there is no old image to read it from. Absent when `after` is the whole row. A
+   * consumer must not adopt `after` as the row while this is set — it re-reads instead.
+   */
+  readonly omitted?: readonly string[];
 }
 
 export interface ChangeFeedStartOptions {
   /** Resume position. Omitted means "from now". */
   readonly from?: string;
   readonly onChange: (event: ChangeEvent) => void | Promise<void>;
+  /**
+   * The feed stopped delivering ON ITS OWN — the walsender ended the copy, a decode failed, the
+   * handler rejected — and will not resume until `start()` is called again. Never called for a
+   * `stop()`. This is the only way out a pump has: nothing awaits its read loop, so a death that
+   * was only recorded was a death nobody saw.
+   */
+  readonly onEnd?: (reason: string) => void;
 }
 
 export interface ChangeFeed {
   readonly source: string;
   start(options: ChangeFeedStartOptions): Promise<void>;
   stop(): Promise<void>;
+  /**
+   * Go silent NOW, without asking: synchronous, nothing written, nothing awaited. For a stream
+   * that may already be dead — `stop()` says goodbye first, and a goodbye to a black-holed socket
+   * is never answered. After it returns no further change is delivered and `onEnd` is not called.
+   */
+  abandon(): void;
   /** Highest lsn delivered to the handler; the replicator persists this to survive a restart. */
   lastLsn(): string | null;
 }
@@ -101,6 +121,10 @@ export class InMemoryChangeFeed implements ChangeFeed {
   async stop(): Promise<void> {
     this.#handler = null;
     await this.#tail;
+  }
+
+  abandon(): void {
+    this.#handler = null;
   }
 
   lastLsn(): string | null {
@@ -175,6 +199,12 @@ export interface PgLogicalReplicationOptions {
   readonly rng?: Rng | undefined;
   /** The byte pipe, injected. Defaults to `Bun.connect`; a test drives a scripted server instead. */
   readonly stream?: ((target: PgTarget) => Promise<PgStream>) | undefined;
+  /**
+   * Tables whose DELETE must carry the whole old row — a channel with params routes a removal by
+   * columns only `REPLICA IDENTITY FULL` logs. Preflight warns for each that is not FULL. Defaults
+   * to what the declared channels need (`pg-identity-tables.ts`).
+   */
+  readonly fullIdentityTables?: readonly string[] | undefined;
 }
 
 /**
@@ -199,11 +229,19 @@ export class PgLogicalReplicationFeed implements ChangeFeed {
   }
 
   async start(options: ChangeFeedStartOptions): Promise<void> {
-    await this.#stream.start({ from: options.from, onChange: options.onChange });
+    await this.#stream.start({
+      from: options.from,
+      onChange: options.onChange,
+      onEnd: options.onEnd,
+    });
   }
 
   async stop(): Promise<void> {
     await this.#stream.stop();
+  }
+
+  abandon(): void {
+    this.#stream.abandon();
   }
 
   lastLsn(): string | null {

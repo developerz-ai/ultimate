@@ -129,7 +129,10 @@ export class ByteWriter {
   }
 
   uint8(value: number): this {
-    this.#bytes[this.#room(1)] = value & 0xff;
+    // The offset FIRST: `#room` may replace `#bytes`, and `this.#bytes[this.#room(1)]` reads the
+    // old buffer before it does — the byte that caused a growth was written into the discard.
+    const at = this.#room(1);
+    this.#bytes[at] = value & 0xff;
     return this;
   }
 

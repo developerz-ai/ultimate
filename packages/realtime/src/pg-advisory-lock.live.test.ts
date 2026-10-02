@@ -127,4 +127,43 @@ describeLive('live · pg advisory lock', () => {
       await selection.lock.release();
     }
   });
+
+  // The split-brain path. The lock is a session, and a session an operator (or a failover) ends
+  // is a lock Postgres gives to the next process that asks. The holder used to learn nothing: an
+  // idle connection has no reader. Only a real server proves the death is observable.
+  test('a lock whose backend is terminated says so, and another process can take it', async () => {
+    const key = 'x:replicator:x_live_lost_slot';
+    const first = lock(key);
+    const lost: string[] = [];
+    first.onLost((reason) => lost.push(reason));
+    expect(await first.tryAcquire()).toBe(true);
+
+    const target = parsePgUrl(url ?? '');
+    const admin = await PgConnection.open({
+      stream: await bunPgStream(target),
+      user: target.user,
+      password: target.password,
+      database: target.database,
+      applicationName: 'ultimate-lock-audit',
+    });
+    try {
+      const killed = await admin.query(
+        'SELECT pg_terminate_backend(pid) FROM pg_stat_activity ' +
+          `WHERE application_name = 'ultimate-replicator-lock:${key}'`,
+      );
+      expect(killed.map((row) => row[0])).toEqual(['t']);
+      // Polled, not slept: the preload freezes the clock, and the FATAL arrives when it arrives.
+      for (let poll = 0; poll < 200 && lost.length === 0; poll += 1) await Bun.sleep(25);
+    } finally {
+      await admin.close();
+    }
+
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toContain('terminating connection');
+    // Postgres released it with the session: a second process is granted the same key...
+    const second = lock(key);
+    expect(await second.tryAcquire()).toBe(true);
+    // ...and the first no longer answers `true` from memory. It asks, and is told no.
+    expect(await first.tryAcquire()).toBe(false);
+  }, 30_000);
 });

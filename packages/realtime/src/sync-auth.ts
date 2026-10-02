@@ -3,6 +3,16 @@
 // holds it, and the pass that re-decides one whose window has closed.
 
 import type { Actor, Clock } from '@ultimat3/core';
+import { finiteOption } from '@ultimat3/core';
+import { GrantRefreshTimeoutError } from './errors';
+import { type Scheduler, timeoutScheduler } from './thundering-herd';
+
+/**
+ * How long one grant's `refresh()` may hold the re-auth pass. The pass is serial and one at a
+ * time, so a single call that never settles stopped every later grant on the node from being
+ * renewed OR revoked. On by default with no "off": a non-positive value takes the default.
+ */
+export const DEFAULT_GRANT_REFRESH_DEADLINE_MS = 10_000;
 
 /**
  * One connection's identity. A grant, not an `Actor`, because a websocket outlives every credential
@@ -76,8 +86,12 @@ export interface GrantSweepDeps {
   onActor: (socketId: string, actor: Actor) => Promise<void>;
   /** Nobody may hold this socket any longer. The caller closes it. */
   onRevoked: (socketId: string) => void;
-  /** `refresh` raised instead of deciding. The grant is kept and retried on the next pass. */
+  /** `refresh` raised, or did not answer in time. The grant is kept and retried on the next pass. */
   onRefreshFailed?: (socketId: string, error: unknown) => void;
+  /** See `DEFAULT_GRANT_REFRESH_DEADLINE_MS`. */
+  readonly refreshDeadlineMs?: number | undefined;
+  /** Injected so that deadline is provable without waiting for one. Production uses `setTimeout`. */
+  readonly schedule?: Scheduler | undefined;
 }
 
 export interface GrantSweepResult {
@@ -98,18 +112,29 @@ export interface GrantSweepResult {
  */
 export async function sweepGrants(deps: GrantSweepDeps): Promise<GrantSweepResult> {
   const now = deps.clock.now().getTime();
+  const declared = finiteOption(
+    'sweepGrants',
+    'refreshDeadlineMs',
+    deps.refreshDeadlineMs ?? DEFAULT_GRANT_REFRESH_DEADLINE_MS,
+  );
+  const deadlineMs = declared > 0 ? declared : DEFAULT_GRANT_REFRESH_DEADLINE_MS;
+  const schedule = deps.schedule ?? timeoutScheduler;
   let refreshed = 0;
   let revoked = 0;
   let failed = 0;
   for (const [socketId, grant] of deps.grants.expired(now)) {
     let next: SyncGrant | null;
     try {
-      next = grant.refresh ? await grant.refresh() : null;
+      next = grant.refresh ? await within(grant.refresh(), socketId, deadlineMs, schedule) : null;
     } catch (error) {
       failed += 1;
       deps.onRefreshFailed?.(socketId, error);
       continue;
     }
+    // Asked again, because `refresh` is the app's and awaiting it is awaiting a token service: the
+    // socket may have closed meanwhile (its grant deleted) or been re-granted. Written back
+    // regardless, a closed socket's grant stayed in the book and was refreshed forever.
+    if (deps.grants.get(socketId) !== grant) continue;
     if (next === null) {
       deps.grants.delete(socketId);
       deps.onRevoked(socketId);
@@ -121,4 +146,24 @@ export async function sweepGrants(deps: GrantSweepDeps): Promise<GrantSweepResul
     refreshed += 1;
   }
   return { refreshed, revoked, failed };
+}
+
+/**
+ * `refresh()`, or a coded timeout. The call itself cannot be cancelled and this does not pretend
+ * to: it runs on with nobody listening, and `Promise.race` keeps its late rejection handled.
+ */
+function within(
+  refreshing: Promise<SyncGrant | null>,
+  socketId: string,
+  afterMs: number,
+  schedule: Scheduler,
+): Promise<SyncGrant | null> {
+  let disarm: () => void = () => undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    disarm = schedule(() => reject(new GrantRefreshTimeoutError({ socketId, afterMs })), afterMs);
+  });
+  const settled = Promise.race([refreshing, deadline]);
+  // An armed timer per answered refresh is a leak, and keeps a draining process alive.
+  void settled.then(disarm, disarm);
+  return settled;
 }

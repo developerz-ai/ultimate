@@ -35,7 +35,7 @@ docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -
 x deploy --image postly:dev --dry-run --json           # the same plan, printed
 ```
 
-`--env-file .env.production` is not optional: Compose fills `${SYNC_URL:?…}` from the shell and
+`--env-file .env.production` is not optional: Compose fills `${SYNC_URL:?…}` and `${APP_URL:?…}` from the shell and
 `--env-file` only, never from `env_file:`, so without it a value set in `.env.production` reads as
 missing and the parse fails. `x deploy` passes it on every step.
 

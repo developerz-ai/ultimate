@@ -3,11 +3,11 @@
 // is scoped to this connection's Postgres *session*, so acquiring means keeping the connection
 // open and releasing means closing it: no lease, no renewal, no fencing token, ever.
 
+import type { AdvisoryLock } from './advisory-lock';
 import { ReplicationFailedError } from './errors';
 import { PgConnection, type PgRows } from './pg-connection';
 import { bunPgStream, type PgTarget, parsePgUrl } from './pg-socket';
 import type { PgStream } from './pg-wire';
-import type { AdvisoryLock } from './replicator';
 import type { Rng } from './thundering-herd';
 
 /** A key reaches a simple query unparameterised, so its charset is the injection boundary. */
@@ -45,6 +45,7 @@ export class PgAdvisoryLock implements AdvisoryLock {
    * the process dies. A standby then never takes over a slot whose owner has already stopped.
    */
   #acquiring: Promise<boolean> | null = null;
+  readonly #lostListeners = new Set<(reason: string) => void>();
 
   constructor(options: PgAdvisoryLockOptions) {
     if (!KEY_PATTERN.test(options.key)) {
@@ -91,6 +92,7 @@ export class PgAdvisoryLock implements AdvisoryLock {
       database: target.database,
       applicationName: `ultimate-replicator-lock:${this.key}`,
       rng: this.#options.rng,
+      ssl: target.ssl,
     });
     let rows: PgRows;
     try {
@@ -110,7 +112,49 @@ export class PgAdvisoryLock implements AdvisoryLock {
     // `release()` — which is exactly what lets a crashed replicator free the slot with nothing
     // left to clean up.
     this.#connection = connection;
+    // The session is idle from here on, and an idle session has no reader: without this a server
+    // that ended it was never noticed, and `tryAcquire()` went on answering `true` from memory
+    // for a lock Postgres had already handed to another process.
+    connection.watchIdle((reason) => this.#lost(connection, reason));
     return true;
+  }
+
+  /**
+   * Drop the session without the unlock statement. The socket is closed outright — no goodbye is
+   * written, because a write to a black-holed socket is one more thing that never settles — and
+   * Postgres releases the lock when the session ends. An acquisition still in flight is dropped
+   * the moment it lands.
+   */
+  abandon(): void {
+    const acquiring = this.#acquiring;
+    if (acquiring !== null) {
+      // Voided: its own caller has the outcome; this only makes sure nothing stays held after it.
+      void acquiring.then(
+        () => this.abandon(),
+        () => undefined,
+      );
+      return;
+    }
+    const connection = this.#connection;
+    if (connection === null) return;
+    this.#connection = null;
+    connection.destroy();
+  }
+
+  onLost(listener: (reason: string) => void): () => void {
+    this.#lostListeners.add(listener);
+    return () => {
+      this.#lostListeners.delete(listener);
+    };
+  }
+
+  /** The session ended underneath the lock. A release that got there first owns the goodbye. */
+  #lost(connection: PgConnection, reason: string): void {
+    if (this.#connection !== connection) return;
+    this.#connection = null;
+    // The socket is already gone: nothing is said to it, and the listeners hear first.
+    connection.destroy();
+    for (const listener of [...this.#lostListeners]) listener(reason);
   }
 
   async release(): Promise<void> {

@@ -321,6 +321,7 @@ export class LiveClient {
       // against a re-snapshot, so the frame path reads the same clock every other path does.
       now: () => this.#clock.now().getTime(),
       setUpdate: (buildId) => this.#setStatus({ update: buildId }),
+      followHeartbeat: (intervalMs) => this.#heartbeat.follow(intervalMs),
       scheduleReconnect: (afterMs) => this.#scheduleReconnect(afterMs),
       closeSocket: (code, reason) => this.#socket?.close(code, reason),
       report: (error) => this.#onError(error),

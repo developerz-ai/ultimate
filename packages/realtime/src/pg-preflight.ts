@@ -1,7 +1,7 @@
-// Single responsibility: the four questions asked of a database BEFORE `START_REPLICATION`. Two
-// refuse the boot with the exact statement that fixes them, one — the publication — is answered by
-// ensuring it (`pg-publication.ts`), and the fourth warns, because refusing it would stop every app
-// on the default replica identity from starting.
+// Single responsibility: the questions asked of a database BEFORE `START_REPLICATION`. Two refuse
+// the boot with the exact statement that fixes them, one — the publication — is answered by
+// ensuring it (`pg-publication.ts`), and the replica-identity ones warn, because refusing would
+// stop every app on the default replica identity from starting.
 
 import { logger } from '@ultimat3/core';
 import { ReplicaIdentityError, ReplicationFailedError } from './errors';
@@ -22,6 +22,7 @@ export async function preflight(
   slot: string,
   publication: string,
   entities: ReadonlySet<string>,
+  fullIdentity: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   assertIdentifier('slot', slot);
   assertIdentifier('publication', publication);
@@ -37,6 +38,7 @@ export async function preflight(
   }
   await ensurePublication(connection, publication, entities);
   await warnPartialIdentity(connection, entities);
+  await warnChannelIdentity(connection, entities, fullIdentity);
   const [existing] = await connection.query(
     `SELECT plugin FROM pg_replication_slots WHERE slot_name = '${slot}'`,
   );
@@ -101,4 +103,48 @@ async function warnPartialIdentity(
   // FIELDS, never interpolation, and the message is the CODE alone — the same rule
   // `@ultimat3/http`'s error-map stage follows, so a log index can be alerted on by code.
   logger.warn(warning.code, { cause: warning.cause, fix: warning.fix, tables });
+}
+
+/** The log event a params channel's table without FULL identity is reported under. */
+export const CHANNEL_IDENTITY_EVENT = 'replication.channel_identity_partial';
+
+const CHANNEL_IDENTITY_FIX = 'x db gen "replica identity full"';
+
+/**
+ * The tables a channel with params carries that are not `REPLICA IDENTITY FULL`. Their DELETE logs
+ * the key alone, the channel reads its topic off columns the key does not include, and the removal
+ * is sent to nobody: members keep a record that no longer exists, and nothing else says so.
+ *
+ * WARNED, like its neighbour, and for the same reason. Only names that are also in the entity list
+ * are asked about — that list has been through `assertIdentifier`, which is what makes the
+ * interpolation safe; a declared table the feed does not decode is not this stream's to judge.
+ */
+async function warnChannelIdentity(
+  connection: PgConnection,
+  entities: ReadonlySet<string>,
+  fullIdentity: ReadonlySet<string>,
+): Promise<void> {
+  const asked = [...fullIdentity].filter((name) => entities.has(name)).sort();
+  if (asked.length === 0) return;
+  const names = asked.map((name) => `'${name}'`).join(', ');
+  const rows = await connection.query(
+    `SELECT c.relname FROM pg_class c WHERE c.relkind = 'r' AND c.relname IN (${names}) ` +
+      `AND c.relreplident <> 'f'`,
+  );
+  const tables = [
+    ...new Set(
+      rows
+        .map((row) => row[0])
+        .filter((name): name is string => typeof name === 'string' && asked.includes(name)),
+    ),
+  ].sort();
+  if (tables.length === 0) return;
+  logger.warn(CHANNEL_IDENTITY_EVENT, {
+    cause:
+      `${tables.join(', ')} carry a channel declared with params but are not REPLICA IDENTITY ` +
+      'FULL, so a DELETE names no topic and its members keep the deleted record',
+    // `x db gen` reads the same declarations this warning does and writes the ALTER per table.
+    fix: CHANNEL_IDENTITY_FIX,
+    tables,
+  });
 }

@@ -149,4 +149,42 @@ describe('ByteWriter.length', () => {
     expect(writer.length).toBe(10);
     expect(writer.finish().length).toBe(10);
   });
+
+  // `this.#bytes[this.#room(1)] = v` reads `#bytes` BEFORE `#room` replaces it, so the byte that
+  // triggered a growth was written into the buffer being thrown away. Every other writer takes its
+  // offset first; this pins all of them at the boundary, one byte before it and one after.
+  test('a write that triggers a growth lands in the grown buffer, for every writer', () => {
+    expect([...new ByteWriter(2).uint8(1).uint8(2).uint8(0x77).uint8(4).finish()]).toEqual([
+      1, 2, 0x77, 4,
+    ]);
+    for (const lead of [0, 1, 2, 3]) {
+      const fill = new Array<number>(lead).fill(0xee);
+      const start = (): ByteWriter => {
+        const writer = new ByteWriter(lead);
+        for (const byte of fill) writer.uint8(byte);
+        return writer;
+      };
+      expect([...start().uint8(0x7f).finish()]).toEqual([...fill, 0x7f]);
+      expect([...start().int16(0x0102).finish()]).toEqual([...fill, 1, 2]);
+      expect([...start().int32(0x01020304).finish()]).toEqual([...fill, 1, 2, 3, 4]);
+      expect([...start().int64(0x0102030405060708n).finish()]).toEqual([
+        ...fill,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+      ]);
+      expect([
+        ...start()
+          .raw(new Uint8Array([9, 8]))
+          .finish(),
+      ]).toEqual([...fill, 9, 8]);
+      expect([...start().utf8('ab').finish()]).toEqual([...fill, 0x61, 0x62]);
+      expect([...start().cstring('a').uint8(0x55).finish()]).toEqual([...fill, 0x61, 0, 0x55]);
+    }
+  });
 });

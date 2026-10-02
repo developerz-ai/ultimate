@@ -81,6 +81,8 @@ export interface NatsClientOptions {
 export type NatsConnect = (options: NatsClientOptions) => Promise<NatsClient>;
 
 export const DEFAULT_NATS_PORT = 4222;
+
+const NATS_URL_FIX = 'export NATS_URL=nats://user:password@host:4222';
 export const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 
 /**
@@ -92,9 +94,12 @@ export function parseNatsUrl(url: string): NatsTarget {
   try {
     parsed = new URL(url);
   } catch {
+    // The variable, never its value: a bus URL carries the credential, and an error is the one
+    // thing that reaches a log, `--json`, an agent transcript and a ticket. `parsePgUrl`'s rule.
     throw new TransportUnavailableError({
       transport: 'nats',
-      reason: `"${url}" is not a connection URL`,
+      reason: 'NATS_URL is not a connection URL',
+      fix: NATS_URL_FIX,
     });
   }
   if (parsed.protocol !== 'nats:' && parsed.protocol !== 'tls:') {
@@ -104,7 +109,11 @@ export function parseNatsUrl(url: string): NatsTarget {
     });
   }
   if (parsed.hostname === '') {
-    throw new TransportUnavailableError({ transport: 'nats', reason: `"${url}" has no host` });
+    throw new TransportUnavailableError({
+      transport: 'nats',
+      reason: 'NATS_URL has no host',
+      fix: NATS_URL_FIX,
+    });
   }
   const hasUser = parsed.username !== '';
   const hasPass = parsed.password !== '';

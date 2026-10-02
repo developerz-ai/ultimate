@@ -55,6 +55,23 @@ describe('unit · the tables a live query declares it is patched from', () => {
     ).toEqual(['comments', 'posts']);
   });
 
+  // A channel declared with params routes a DELETE by columns of the OLD row, which only FULL
+  // identity logs — and no `subscribes:` names its tables, so the grant never reached them.
+  test('the records tables of a params channel are granted FULL beside the subscribed ones', () => {
+    const tables = new Set(['comments', 'notifications', 'posts']);
+    expect(
+      replicaIdentityTables([declared('liveFeed', ['posts'])], tables, ['notifications', 'posts']),
+    ).toEqual(['notifications', 'posts']);
+    // With no live read at all, the channel alone is enough to ask.
+    expect(replicaIdentityTables([], tables, ['notifications'])).toEqual(['notifications']);
+  });
+
+  test('a channel table no entity declares is not handed to the generator', () => {
+    // A projection's table is always an entity's; one that is not here belongs to an entity whose
+    // module did not load, and the generator would emit an ALTER for a table it never creates.
+    expect(replicaIdentityTables([], new Set(['posts']), ['ghosts'])).toEqual([]);
+  });
+
   test('an app whose reads declare none asks for no ALTER at all', () => {
     expect(replicaIdentityTables([declared('publicPosts', null)], new Set(['posts']))).toEqual([]);
   });

@@ -178,6 +178,8 @@ export async function createLiveNode(options: LiveNodeOptions = {}): Promise<Liv
           data = upgradeOptions.data;
           return true;
         },
+        // No socket behind this harness, so no peer address: a health path answers the verdict.
+        requestIP: () => null,
       };
       // `/_x/sync` is `SyncNodeOptions.path`'s default and `handleUpgrade` answers 404 to
       // anything else. The `c` parameter is this connection's actor key — see `ACTORS` above.

@@ -122,9 +122,14 @@ export class PortRouter {
     }
     if (held.ports.has(attached.id)) return;
     held.ports.add(attached.id);
-    // The node never hears this add, so it cannot answer it with the `replay-gap` a fresh seat
-    // gets; the engine does. With no epoch yet, the node's own answer is still on its way and now
-    // reaches this port too.
+    // Forwarded as a BEAT (no `since`): to the node it is the seat it already holds, repeated, and
+    // what a seated socket is answered with is the room's roster — the only frame an events-only
+    // channel ever gets, so unforwarded this tab read `joining` until the next beat, and with no
+    // presence on the node, until the first app event.
+    this.#deps.send(withoutSince(held.add));
+    // A beat is never answered with the `replay-gap` a fresh seat gets, so the engine says it.
+    // With no epoch yet, the node's own answer to the first add is on its way and reaches this
+    // port too.
     if (held.epoch === null) return;
     const gap: Frame = {
       type: 'replay-gap',

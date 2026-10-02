@@ -10,3 +10,5 @@ create table "messages" (
   constraint "messages_body_check" CHECK ((char_length(body) <= 5000)),
   constraint "messages_message_body_present_check" CHECK ((char_length(btrim(body)) >= 1))
 );
+
+alter table "messages" replica identity full;

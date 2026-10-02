@@ -327,6 +327,8 @@ describe('a delta resume decides about whole rows', () => {
     const qid = windowId(queryHash('liveFeed', input), 'o1');
     // The retained window holds pre-policy patches, and an update patch is the changed column plus
     // the id — never the whole row. Nothing has read this entry, so the shared window is empty.
+    // A ring is complete only from where it was born, so the cursor's own position is its floor.
+    source.floorAt(qid, formatLsn(1));
     source.append(qid, { op: 'update', id: 'p2', row: { id: 'p2', likes: 1 }, lsn: formatLsn(2) });
     const bob = socketFor('s-bob', actor('bob'));
 

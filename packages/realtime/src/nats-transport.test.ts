@@ -229,6 +229,53 @@ describe('NatsTransport', () => {
     await transport.close();
   });
 
+  // Fanout is core NATS — at most once — so whatever was published while the connection was down
+  // never reached this node, and with no later write no sequence number is ever skipped either.
+  // The library reconnected and told nobody; the node had nothing to invalidate its windows on.
+  test('a reconnect is announced to every listener, and to none after it unsubscribes', async () => {
+    const harness = bus();
+    const transport = harness.transport();
+    const heard: string[] = [];
+    const stopFirst = transport.onReconnect(() => heard.push('first'));
+    transport.onReconnect(() => heard.push('second'));
+    await transport.connect();
+    expect(heard).toEqual([]);
+
+    harness.broker.drop();
+    expect(heard).toEqual([]);
+    harness.broker.restore();
+    await settle();
+    expect(heard).toEqual(['first', 'second']);
+
+    stopFirst();
+    harness.broker.drop();
+    harness.broker.restore();
+    await settle();
+    expect(heard).toEqual(['first', 'second', 'second']);
+    await transport.close();
+  });
+
+  test('a listener that throws is reported, and costs the others nothing', async () => {
+    const harness = bus();
+    const transport = harness.transport();
+    const heard: string[] = [];
+    transport.onReconnect(() => {
+      throw new TypeError('listener blew up');
+    });
+    transport.onReconnect(() => heard.push('after'));
+    await transport.connect();
+
+    harness.broker.drop();
+    harness.broker.restore();
+    await settle();
+
+    expect(heard).toEqual(['after']);
+    expect(harness.reported.some((error) => String(error).includes('listener blew up'))).toBe(true);
+    // And the bucket was still re-asserted: the listeners ride the recovery, they do not replace it.
+    expect(harness.broker.streams).toEqual(['KV_x-test']);
+    await transport.close();
+  });
+
   test('the reconnect delay is our jitter policy, not the library default', async () => {
     const harness = bus();
     const transport = harness.transport();

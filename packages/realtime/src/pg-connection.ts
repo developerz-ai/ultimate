@@ -2,7 +2,7 @@
 // queries, and the CopyBoth switch that a replication stream lives inside. It speaks only in
 // messages, never in bytes on a socket, so the whole handshake is driven by hand in the tests.
 
-import { logger } from '@ultimat3/core';
+import { logger, renderThrowable } from '@ultimat3/core';
 import { ReplicationFailedError, ReplicationProtocolError } from './errors';
 import {
   chooseMechanism,
@@ -12,6 +12,7 @@ import {
   scramSession,
 } from './pg-auth';
 import { ByteReader } from './pg-bytes';
+import { answersWeakAuth, type SslMode } from './pg-tls';
 import {
   copyDoneMessage,
   frame,
@@ -42,6 +43,11 @@ export interface PgConnectionOptions {
   readonly applicationName?: string | undefined;
   /** Injected so the SCRAM nonce is deterministic under a seeded test. */
   readonly rng?: Rng | undefined;
+  /**
+   * The `sslmode` the stream was dialled under — what decides whether a cleartext or md5 password
+   * request is answered (`answersWeakAuth`). Unstated is `prefer`, which refuses both.
+   */
+  readonly ssl?: SslMode | undefined;
 }
 
 /** A result set as text, exactly as the wire carries it. `null` is SQL NULL, never `''`. */
@@ -61,12 +67,30 @@ const needPassword = (method: string): ReplicationFailedError =>
     fix: 'put the credentials in the URL: postgres://user:password@host:5432/db',
   });
 
+/**
+ * The server asked for the password in a form the network can use, on a session nothing
+ * guarantees is encrypted. Refused before a byte of it is written.
+ */
+const weakAuthRefused = (method: string, ssl: SslMode | undefined): ReplicationFailedError =>
+  new ReplicationFailedError({
+    stage: 'auth',
+    detail:
+      `the server asked for ${method} and sslmode=${ssl ?? 'prefer'} does not guarantee an ` +
+      'encrypted session — connect with ?sslmode=require (or verify-full), move the role to ' +
+      'scram-sha-256, or state ?sslmode=disable to accept a cleartext session',
+    fix: 'x doctor --json',
+  });
+
 export class PgConnection {
   readonly #stream: PgStream;
   readonly #reader: MessageReader;
   readonly #parameters = new Map<string, string>();
   #copyBoth = false;
   #closed = false;
+  /** The read parked on an idle session, if one is — see `watchIdle`. A query takes it over. */
+  #idle: Promise<PgMessage | undefined> | undefined;
+  #onIdleEnd: ((reason: string) => void) | undefined;
+  #querying = false;
 
   private constructor(stream: PgStream) {
     this.#stream = stream;
@@ -123,24 +147,80 @@ export class PgConnection {
 
   /** One simple query. Returns the rows as text; a `CommandComplete` with no rows returns `[]`. */
   async query(sql: string): Promise<PgRows> {
-    await this.#stream.write(queryMessage(sql));
-    const rows: (readonly (string | null)[])[] = [];
-    for (;;) {
-      const message = await this.#expect('query');
-      switch (message.tag) {
-        case 'D':
-          rows.push(dataRow(message.body));
-          break;
-        case 'E':
-          // Drain to `ReadyForQuery` first: leaving the session mid-result desynchronises reuse.
-          await this.#drainToReady();
-          throw serverError('query', message.body);
-        case 'Z':
-          return rows;
-        default:
-          this.#note(message);
+    this.#querying = true;
+    try {
+      await this.#stream.write(queryMessage(sql));
+      const rows: (readonly (string | null)[])[] = [];
+      for (;;) {
+        const message = await this.#expect('query');
+        switch (message.tag) {
+          case 'D':
+            rows.push(dataRow(message.body));
+            break;
+          case 'E':
+            // Drain to `ReadyForQuery` first: leaving the session mid-result desynchronises reuse.
+            await this.#drainToReady();
+            throw serverError('query', message.body);
+          case 'Z':
+            return rows;
+          default:
+            this.#note(message);
+        }
       }
+    } finally {
+      this.#querying = false;
+      this.#park();
     }
+  }
+
+  /**
+   * Watch a session that is doing NOTHING. An idle connection has no reader, so a server that
+   * ended it — a failover, `pg_terminate_backend`, a dropped socket — was noticed by the next
+   * statement, which for a session held only for its advisory lock is never. This parks one read
+   * between queries: EOF, a read error or an ErrorResponse calls `onEnd` once, with why.
+   *
+   * Never for `close()`. A `query()` takes the parked read over rather than racing it — the stream
+   * allows one reader — and the watch resumes when the query is done.
+   */
+  watchIdle(onEnd: (reason: string) => void): void {
+    this.#onIdleEnd = onEnd;
+    this.#park();
+  }
+
+  #park(): void {
+    if (this.#closed || this.#querying || this.#copyBoth) return;
+    if (this.#onIdleEnd === undefined || this.#idle !== undefined) return;
+    const parked = this.#reader.next();
+    this.#idle = parked;
+    const ended = (reason: string): void => {
+      const onEnd = this.#onIdleEnd;
+      this.#onIdleEnd = undefined;
+      if (!this.#closed) onEnd?.(reason);
+    };
+    parked.then(
+      (message) => {
+        // A query took this read over: the message is its answer, not this watch's.
+        if (this.#idle !== parked) return;
+        this.#idle = undefined;
+        if (message === undefined) return ended('the server closed the connection');
+        if (message.tag === 'E') return ended(renderThrowable(serverError('idle', message.body)));
+        this.#note(message);
+        this.#park();
+      },
+      (failure: unknown) => {
+        if (this.#idle !== parked) return;
+        this.#idle = undefined;
+        ended(renderThrowable(failure));
+      },
+    );
+  }
+
+  /** The next message: the read an idle watch already parked, when there is one. */
+  #next(): Promise<PgMessage | undefined> {
+    const parked = this.#idle;
+    if (parked === undefined) return this.#reader.next();
+    this.#idle = undefined;
+    return parked;
   }
 
   /**
@@ -205,6 +285,18 @@ export class PgConnection {
     this.#stream.close();
   }
 
+  /**
+   * Close the socket and say nothing — no `Terminate`, nothing awaited. For a session that may
+   * already be dead: `close()` writes a goodbye first, and a write to a black-holed socket is a
+   * promise nothing settles. The server ends the session when the socket goes, which releases
+   * whatever the session held. Never reported to an idle watch.
+   */
+  destroy(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    closeQuietly(this.#stream);
+  }
+
   async #authenticate(options: PgConnectionOptions): Promise<void> {
     let scram: ScramSession | undefined;
     for (;;) {
@@ -222,12 +314,16 @@ export class PgConnection {
         case AUTH_CLEARTEXT: {
           const password = options.password ?? '';
           if (password === '') throw needPassword('a cleartext password');
+          if (!answersWeakAuth(options.ssl)) {
+            throw weakAuthRefused('a cleartext password', options.ssl);
+          }
           await this.#stream.write(passwordMessage(password));
           break;
         }
         case AUTH_MD5: {
           const password = options.password ?? '';
           if (password === '') throw needPassword('an md5 password');
+          if (!answersWeakAuth(options.ssl)) throw weakAuthRefused('an md5 password', options.ssl);
           const salt = reader.take(4);
           await this.#stream.write(
             passwordMessage(md5Password({ user: options.user, password, salt })),
@@ -276,13 +372,13 @@ export class PgConnection {
 
   async #drainToReady(): Promise<void> {
     for (;;) {
-      const message = await this.#reader.next();
+      const message = await this.#next();
       if (message === undefined || message.tag === 'Z') return;
     }
   }
 
   async #expect(stage: string): Promise<PgMessage> {
-    const message = await this.#reader.next();
+    const message = await this.#next();
     if (message !== undefined) return message;
     throw new ReplicationFailedError({
       stage,
@@ -315,8 +411,10 @@ export class PgConnection {
 const outOfOrder = (what: string): ReplicationProtocolError =>
   new ReplicationProtocolError({
     stage: 'auth',
-    detail: `the server sent ${what} before it offered a SASL mechanism`,
-    fix: 'x doctor db — the SASL exchange arrived out of order; check for a pooler or proxy between this client and postgres',
+    detail:
+      `the server sent ${what} before it offered a SASL mechanism — the exchange arrived out of ` +
+      'order; check for a pooler or proxy between this client and postgres',
+    fix: 'x doctor --json',
   });
 
 /** A `close()` that throws must not replace the handshake failure that is worth reporting. */

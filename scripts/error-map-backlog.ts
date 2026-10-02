@@ -292,6 +292,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_TOPIC_FORBIDDEN',
     'X_TRANSPORT_PROTOCOL',
     'X_TRANSPORT_UNAVAILABLE',
+    'X_OFFLINE_QUEUE_ABANDONED',
   ],
   // tier 4 — model-call and eval faults. An `llm()` IS an action and several of these are
   // caller-visible through it; the statuses are a judgement nobody has made yet, and this is the

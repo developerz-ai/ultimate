@@ -94,6 +94,23 @@ export class LocalStoreUnavailableError extends RealtimeError {
 }
 
 /**
+ * A write reached a queue whose principal is gone: the page signed out, or in as someone else,
+ * while the write was being queued. It is not stored and never sent — a write issued under one
+ * session must not leave under the next — and it is RAISED, because a user's write dropped in
+ * silence is a loss nobody is told about. `name` is the mutator's registered name; the write's
+ * idempotency key is deliberately not rendered.
+ */
+export class OfflineQueueAbandonedError extends RealtimeError {
+  constructor(args: { name: string }) {
+    super({
+      code: 'X_OFFLINE_QUEUE_ABANDONED',
+      cause: `the write "${args.name}" was queued after its page changed principal, so it was not stored and will not be sent — call the mutation again under the current session`,
+      fix: 'x errors explain X_OFFLINE_QUEUE_ABANDONED --json',
+    });
+  }
+}
+
+/**
  * Something that can only mean "talk to the socket" ran on the server client — a mutation, a
  * publish, a topic subscription, a dial. There is no socket during a server render and there never
  * will be one: the document is built and sent, and the browser opens the connection.

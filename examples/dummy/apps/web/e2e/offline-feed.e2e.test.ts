@@ -29,6 +29,61 @@ const TENANCY = 'Tenancy is a column, not a convention';
 // seconds late, which is the bug the test exists to catch: it would hide a race rather than prove
 // there is not one. So they stay point-in-time, deliberately.
 
+/**
+ * The status of every write the page's outbox holds, read from IndexedDB itself — the durable
+ * queue `@ultimat3/realtime`'s boot keeps, never a signal the page derives from it. One look.
+ * (Both readers are self-contained: `page.evaluate` sends a closure's source, never its scope.)
+ */
+const outboxNow = (): Promise<string[]> =>
+  new Promise((resolve, reject) => {
+    const open = indexedDB.open('ultimate-client');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const read = open.result.transaction('outbox').objectStore('outbox').getAll();
+      read.onerror = () => reject(read.error);
+      read.onsuccess = () => {
+        const stored: readonly unknown[] = read.result;
+        open.result.close();
+        // A queued write is an object; the store's other record is the sequence floor, a number.
+        resolve(
+          stored
+            .filter((value) => typeof value === 'object' && value !== null)
+            .map((value) => String(Reflect.get(value as object, 'status'))),
+        );
+      };
+    };
+  });
+
+/**
+ * The same read, answered only once nothing is left to SEND: `[]` when the server took every
+ * write, the `failed` entries when it refused one. An event with no budget of looks — a queue that
+ * never drains is this test's timeout, which is the failure it would be.
+ */
+const outboxDrained = (): Promise<string[]> =>
+  new Promise((resolve, reject) => {
+    const open = indexedDB.open('ultimate-client');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const look = (): void => {
+        const read = open.result.transaction('outbox').objectStore('outbox').getAll();
+        read.onerror = () => reject(read.error);
+        read.onsuccess = () => {
+          const stored: readonly unknown[] = read.result;
+          const statuses = stored
+            .filter((value) => typeof value === 'object' && value !== null)
+            .map((value) => String(Reflect.get(value as object, 'status')));
+          if (statuses.some((one) => one === 'pending' || one === 'inflight')) {
+            setTimeout(look, 25);
+            return;
+          }
+          open.result.close();
+          resolve(statuses);
+        };
+      };
+      look();
+    };
+  });
+
 test('the landing page ships zero JavaScript', async ({ page, budget }) => {
   await page.goto('/');
 
@@ -83,10 +138,18 @@ test('a like taken offline is queued, shown, and reconciled on reconnect', async
   ).toBeVisible();
   expect(await page.evaluate(() => navigator.onLine)).toBe(false);
 
+  // On DISK, not only on screen: one write, still to send.
+  expect(await page.evaluate(outboxNow)).toEqual(['pending']);
+
   await network.online();
-  // Retries: `network.online()` resolves when the socket is back, not when the queue has drained
-  // and the server has confirmed the like. 2 seeded + 1 queued.
-  await expect(page.getByText('3 likes')).toBeVisible();
+  // '3 likes' proves nothing here — the optimistic twin has shown it since the click, offline. What
+  // the server CONFIRMED is the outbox: an entry leaves the disk only when its ack is written, and
+  // an ack follows a 2xx alone (a refusal stays, as `failed`). `network.online()` resolves when the
+  // socket is back, not when the queue has drained, so the drain is awaited as the event it is —
+  // no budget of looks — and it also means no POST is in flight when the next test navigates.
+  expect(await page.evaluate(outboxDrained)).toEqual([]);
+  // One look: the wait is over. 2 seeded + 1 confirmed.
+  expect(await page.getByText('3 likes').isVisible()).toBe(true);
 });
 
 test('a cold navigation while offline lands on the fallback, not the dinosaur', async ({

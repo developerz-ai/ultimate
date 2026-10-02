@@ -73,7 +73,11 @@ services:
 
   sync:
     <<: *image
-    environment: [ROLE=sync]
+    # The page is :3000 and this socket :3001 — two origins — and the node admits an upgrade from
+    # APP_URL's origin and no other once declared (scheme, host and port, exactly); undeclared, from
+    # the origin it was reached on. Unset, every websocket is 403 X_SOCKET_ORIGIN_REFUSED, so it is
+    # required: the same value web builds its links from.
+    environment: [ROLE=sync, 'APP_URL=${APP_URL:?set APP_URL=http://<host>:3000 — the origin the pages are served on, see wiki/Deployment.md}']
     depends_on:
       migrate: { condition: service_completed_successfully }
     deploy: { replicas: 1 } # scales on concurrent WS, no sticky sessions — pinned by the published port

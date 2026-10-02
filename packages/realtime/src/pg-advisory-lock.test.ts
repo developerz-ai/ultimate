@@ -255,3 +255,90 @@ describe('acquire, release, acquire', () => {
     expect(calls).toBe(2);
   });
 });
+
+// The lock IS a session. When the database goes away — a failover, a restart — the session and the
+// lock go with it, but this object still held its reference: `tryAcquire()` answered `true` from
+// memory for a lock Postgres had already given to nobody. The replicator's restart releases first.
+describe('release over a session that already died', () => {
+  test('drops the reference, so the next tryAcquire dials again and asks the database', async () => {
+    const first = new FakeStream();
+    scriptHandshake(first);
+    scriptLockReply(first, 't');
+    const second = new FakeStream();
+    scriptHandshake(second);
+    scriptLockReply(second, 'f');
+    const streams = [first, second];
+    let dials = 0;
+    const lock = new PgAdvisoryLock({
+      url: FAKE_URL,
+      key: KEY,
+      stream: () => {
+        const stream = streams[dials];
+        dials += 1;
+        if (stream === undefined) return expect.unreachable('a third dial');
+        return Promise.resolve(stream);
+      },
+    });
+    expect(await lock.tryAcquire()).toBe(true);
+
+    // The server is gone: the unlock has nobody to answer it.
+    first.end();
+    const failure = await lock.release().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect((failure as { code?: string } | undefined)?.code).toBe('X_REPLICATION_FAILED');
+    expect(first.closed).toBe(true);
+
+    // Another process took the lock meanwhile, and this one is told so — by the database.
+    expect(await lock.tryAcquire()).toBe(false);
+    expect(dials).toBe(2);
+  });
+});
+
+// `release()` asks the session to unlock. A session that may be dead cannot be asked: the statement
+// is never answered, and whatever awaited it — a recovery, a SIGTERM — never finishes.
+describe('abandon', () => {
+  test('closes the socket outright: no unlock statement, no goodbye, nothing to await', async () => {
+    const stream = new FakeStream();
+    scriptHandshake(stream);
+    scriptLockReply(stream, 't');
+    const lock = lockOver(stream);
+    const lost: string[] = [];
+    lock.onLost((reason) => lost.push(reason));
+    expect(await lock.tryAcquire()).toBe(true);
+    const written = stream.writes.length;
+
+    lock.abandon();
+
+    expect(stream.closed).toBe(true);
+    expect(stream.writes).toHaveLength(written);
+    // Letting go on purpose is not a loss.
+    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+    expect(lost).toEqual([]);
+    // And a second one, or a release after it, finds nothing held and does nothing.
+    lock.abandon();
+    await lock.release();
+    expect(stream.writes).toHaveLength(written);
+  });
+
+  test('during an acquisition, drops the session the moment it lands', async () => {
+    const stream = new FakeStream();
+    const lock = lockOver(stream);
+    const acquiring = lock.tryAcquire();
+    lock.abandon();
+    scriptHandshake(stream);
+    scriptLockReply(stream, 't');
+
+    expect(await acquiring).toBe(true);
+    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+    expect(stream.closed).toBe(true);
+  });
+
+  test('before any acquire is a no-op', () => {
+    const stream = new FakeStream();
+    lockOver(stream).abandon();
+    expect(stream.closed).toBe(false);
+    expect(stream.writes).toHaveLength(0);
+  });
+});

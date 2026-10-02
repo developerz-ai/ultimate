@@ -25,6 +25,13 @@ export const PRESENCE_SWEEP_PREFIX = 'presence.sweep';
  */
 export const DEFAULT_MAX_PRESENCE_MEMBERS = 256;
 
+/**
+ * Member ids the sweep leader ships on its lease, for the other nodes to record. Bounded because
+ * the lease is one bus message: past it, a member is known to the leader alone, as every member
+ * was before the lease carried a roster.
+ */
+export const PRESENCE_LEASE_ROSTER_LIMIT = 4_096;
+
 export interface PresenceOptions {
   readonly transport: Transport;
   /** Optional: without a hub, presence is queryable but silent (no join/leave frames). */
@@ -65,6 +72,10 @@ export class PresenceRegistry {
   readonly #nodeId: string;
   /** Diffing cache only — the truth is always `transport.shared`. Safe to lose. */
   readonly #seen = new Map<string, Set<string>>();
+  /** Per topic this node LEADS: the roster on its lease, as written. */
+  readonly #shipped = new Map<string, string>();
+  /** Per topic this node FOLLOWS: the ids the leader's lease last named. */
+  readonly #heard = new Map<string, ReadonlySet<string>>();
 
   constructor(options: PresenceOptions) {
     this.#transport = options.transport;
@@ -100,7 +111,10 @@ export class PresenceRegistry {
     return await this.roster(name);
   }
 
-  /** `false` means the member had already expired: the caller must `join` again, not `heartbeat`. */
+  /**
+   * A member's beat: its TTL renewed, nothing announced and nothing read. `false` means the member
+   * had already expired: the caller must `join` again, not `heartbeat`.
+   */
   async heartbeat(name: Topic, id: string): Promise<boolean> {
     const alive = await this.#transport.shared.touch(this.#key(name), id, this.#ttlMs);
     if (!alive) this.#track(name).delete(id);
@@ -190,12 +204,18 @@ export class PresenceRegistry {
       // A room nobody is in is not a room. Without this the cache keeps one entry per topic ever
       // subscribed to, for the life of the process, and the sweep walks all of them forever.
       if ((this.#seen.get(name)?.size ?? 0) === 0) {
-        this.#seen.delete(name);
+        this.#forget(name);
         continue;
       }
-      if (!(await this.#claimSweep(name))) continue;
+      const lease = await this.#claimSweep(name);
+      if (!lease.leads) {
+        this.#record(name, lease.roster);
+        continue;
+      }
+      this.#heard.delete(name);
       gone.push(...(await this.sweep(name)));
-      if ((this.#seen.get(name)?.size ?? 0) === 0) this.#seen.delete(name);
+      await this.#ship(name);
+      if ((this.#seen.get(name)?.size ?? 0) === 0) this.#forget(name);
     }
     return gone;
   }
@@ -211,14 +231,59 @@ export class PresenceRegistry {
    * different views is a duplicate `leave` for a member who has already gone — which is what a
    * `leave` frame means anyway. What it never produces is nobody sweeping: a claim is re-put every
    * pass, and a dead leader's expires within one TTL.
+   *
+   * The leader's claim CARRIES the ids it last saw live, and every follower reads it in the read
+   * the election already makes. That is what a takeover diffs against: a leader that dies takes
+   * its own members with it, and a successor that had skipped every sweep held nothing but its own
+   * — so their leaves were never announced, to anyone, until each client reconnected.
    */
-  async #claimSweep(name: Topic): Promise<boolean> {
+  async #claimSweep(
+    name: Topic,
+  ): Promise<{ readonly leads: boolean; readonly roster: readonly string[] | null }> {
     const key = `${PRESENCE_SWEEP_PREFIX}.${name}`;
-    await this.#transport.shared.put(key, this.#nodeId, '', this.#ttlMs);
+    await this.#transport.shared.put(key, this.#nodeId, this.#shipped.get(name) ?? '', this.#ttlMs);
     const claimants = await this.#transport.shared.entries(key);
     let leader = this.#nodeId;
-    for (const claimant of claimants) if (claimant.member < leader) leader = claimant.member;
-    return leader === this.#nodeId;
+    let roster: readonly string[] | null = null;
+    for (const claimant of claimants) {
+      if (claimant.member > leader) continue;
+      leader = claimant.member;
+      roster = parseRoster(claimant.value);
+    }
+    return { leads: leader === this.#nodeId, roster };
+  }
+
+  /** A follower's pass: what the leader said is live is recorded, what it stopped saying is not. */
+  #record(name: Topic, roster: readonly string[] | null): void {
+    this.#shipped.delete(name);
+    // A leader that has not swept yet has said nothing: nothing is learned and nothing forgotten.
+    if (roster === null) return;
+    const tracked = this.#track(name);
+    const now = new Set(roster);
+    // Dropped by the leader while it is alive means the leader announced it.
+    for (const id of this.#heard.get(name) ?? []) if (!now.has(id)) tracked.delete(id);
+    for (const id of now) tracked.add(id);
+    this.#heard.set(name, now);
+  }
+
+  /** The leader's roster, written onto its lease when it changed. */
+  async #ship(name: Topic): Promise<void> {
+    const ids = [...(this.#seen.get(name) ?? [])].sort().slice(0, PRESENCE_LEASE_ROSTER_LIMIT);
+    const value = JSON.stringify(ids);
+    if (this.#shipped.get(name) === value) return;
+    this.#shipped.set(name, value);
+    await this.#transport.shared.put(
+      `${PRESENCE_SWEEP_PREFIX}.${name}`,
+      this.#nodeId,
+      value,
+      this.#ttlMs,
+    );
+  }
+
+  #forget(name: Topic): void {
+    this.#seen.delete(name);
+    this.#shipped.delete(name);
+    this.#heard.delete(name);
   }
 
   /** Full-set frame for a client that just (re)connected — presence has no delta protocol. */
@@ -281,6 +346,18 @@ export function presenceFrame(
     channel: name,
     event: presenceEvent(op, members, total),
   };
+}
+
+/** A lease value as the leader wrote it: a JSON list of member ids, or nothing yet. */
+function parseRoster(value: string): readonly string[] | null {
+  if (value === '') return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((id): id is string => typeof id === 'string');
+  } catch {
+    return null;
+  }
 }
 
 function parseMember(id: string, value: string): PresenceMember | null {

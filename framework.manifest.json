@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2da263d694f415abfc7ba0a76c4a42a76c9ac937478673f9b2996c9ff4bfdb66",
+  "buildId": "932d156399b94d0297e231a76629543c0924fd1bc14110cd3f403e0c31ff67db",
   "tiers": {
     "0": [
       "core",
@@ -2418,6 +2418,11 @@
       "code": "X_OAUTH_TOKEN_INVALID",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_OFFLINE_QUEUE_ABANDONED",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
     },
     {
       "code": "X_OPENAPI_CONFIG_INVALID",

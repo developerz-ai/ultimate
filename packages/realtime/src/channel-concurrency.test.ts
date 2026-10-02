@@ -1,5 +1,5 @@
-// What the hub owes when two sockets reach one topic at once, and what it owes a guard that could
-// not decide. Both were read-then-act across an await: the bridge was looked up before the
+// What the hub owes when two sockets reach one topic at once (a guard that could not decide is
+// `channel-reauth.test.ts`). It was read-then-act across an await: the bridge was looked up before the
 // transport subscription and written after it, so one topic opened two — the first orphaned, every
 // message on it delivered twice, and unreachable by `#release`, `close()` or a socket dying.
 
@@ -77,6 +77,10 @@ class SlowTransport implements Transport {
         inner.unsubscribe();
       },
     };
+  }
+
+  onReconnect(): () => void {
+    return this.#inner.onReconnect();
   }
 
   async close(): Promise<void> {
@@ -351,68 +355,23 @@ describe('a batch of topic subscribes cannot outrun a cap', () => {
   });
 });
 
-class PoolTimeout extends Error {
-  readonly code = 'X_DB_TIMEOUT';
-}
-
-describe('a re-auth tells a denial from a guard that could not decide', () => {
-  const rig = (
-    guard: (who: Actor | null) => boolean,
-  ): { hub: ChannelHub; sockets: SocketRegistry } => {
+describe('a socket that closes while its subscribe is parked', () => {
+  test('is never seated: no member, no bridge left pinned', async () => {
+    const transport = new SlowTransport();
     const sockets = new SocketRegistry();
-    const hub = new ChannelHub({ transport: new InProcessTransport(), sockets });
-    decide = guard;
-    return { hub, sockets };
-  };
-
-  test('a denial drops the topic', async () => {
-    const { hub, sockets } = rig((who) => who?.id === 'alice');
+    const hub = new ChannelHub({ transport, sockets });
     const alice = connect(sockets, actor('alice'));
     const name = topic('o1', 'cursors');
-    await subscribe(hub, alice.socket, name);
 
-    const dropped = await hub.onActorChange(alice.socket, actor('mallory'));
+    const pending = subscribe(hub, alice.socket, name);
+    // The node's teardown: it walks the topics the socket holds NOW, which is none yet.
+    alice.socket.close(1000, 'gone');
+    for (const held of hub.topicsOf(alice.socket)) hub.unsubscribe(alice.socket, held);
+    transport.gate.resolve();
+    await pending;
 
-    expect(dropped).toEqual([name]);
     expect(alice.socket.topics.size).toBe(0);
-    expect(hub.guardFailures).toBe(0);
-  });
-
-  test('a guard that RAISED keeps the topic, and is counted as a failure', async () => {
-    let broken = false;
-    const { hub, sockets } = rig((who) => {
-      if (broken) throw new PoolTimeout('connection pool exhausted');
-      return who !== null;
-    });
-    const alice = connect(sockets, actor('alice'));
-    const name = topic('o1', 'cursors');
-    await subscribe(hub, alice.socket, name);
-
-    broken = true;
-    const dropped = await hub.onActorChange(alice.socket, actor('alice-again'));
-
-    // A guard is app code and may reach a database. Read as a denial, a re-auth pass during an
-    // outage silently drops every topic on every re-authenticated socket on the node.
-    expect(dropped).toEqual([]);
-    expect(alice.socket.topics.has(name)).toBe(true);
-    expect(hub.guardFailures).toBe(1);
-  });
-
-  test('the surviving topic still delivers once the store is back', async () => {
-    let broken = false;
-    const { hub, sockets } = rig(() => {
-      if (broken) throw new PoolTimeout('connection pool exhausted');
-      return true;
-    });
-    const alice = connect(sockets, actor('alice'));
-    const name: Topic = topic('o1', 'cursors');
-    await subscribe(hub, alice.socket, name);
-    broken = true;
-    await hub.onActorChange(alice.socket, actor('alice'));
-    broken = false;
-
-    await publish(hub, name, { x: 1, y: 1 });
-
-    expect(alice.ws.frames).toHaveLength(1);
+    expect(hub.subscriberCount(name)).toBe(0);
+    expect(hub.topicCount).toBe(0);
   });
 });

@@ -242,7 +242,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only, plus `readCookie`. It negotiates nothing |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 | `rate-limit-stage.ts` | what the pipeline spends and when: the `rate-limit` stage's list of keys, and the address-keyed allowance the `auth` stage spends for a failed credential |
-| `health-disclosure.ts` | what `/healthz` and `/readyz` say and to whom: the verdict for everyone, the detail for a `healthDetailPeers` peer, and the screen that list gets |
+| `health-disclosure.ts` | WHO the web role's `/healthz` and `/readyz` tell the detail to: the `healthDetailPeers` config key, its screen, and the trusted-proxy half. The body rule and the peer match are core's (`health-disclosure.ts` there), shared with the sync node |
 | `bearer-mount.ts` | a second door onto existing routes: `Authorization: Bearer` on a prefix, the scope cut, the per-token allowance |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
 

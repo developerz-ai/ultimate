@@ -8,6 +8,7 @@ import { cursorsChannel, decodeSid, feed, harness } from './client-harness-fixtu
 import { DEFAULT_HEARTBEAT_MS } from './client-heartbeat';
 import type { Row } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
+import { DEFAULT_PRESENCE_TTL_MS } from './transport-env';
 
 const beating = (): ReturnType<typeof harness> => harness({ heartbeatMs: DEFAULT_HEARTBEAT_MS });
 
@@ -134,5 +135,78 @@ describe('the client heartbeat', () => {
 
     expect(timers.pending).toBeNull();
     expect(timers.delays).toEqual([]);
+  });
+});
+
+// The node forgets a presence member after `ttlMs` and says a client beats at a third of it. At
+// 15 s against the default 30 s the client beat at HALF: one lost beat left the next landing on
+// the expiry itself — a member swept out of a room it never left.
+describe('the default beat against the default presence ttl', () => {
+  test('is a third of it, so one lost beat is never a false leave', () => {
+    expect(DEFAULT_HEARTBEAT_MS).toBe(Math.floor(DEFAULT_PRESENCE_TTL_MS / 3));
+    expect(DEFAULT_HEARTBEAT_MS * 2).toBeLessThan(DEFAULT_PRESENCE_TTL_MS);
+  });
+});
+
+// The node knows its real presence ttl and idle budget; a browser cannot read either. So the node
+// NAMES the beat on its `hello` reply, and the client follows it for as long as that socket lives.
+describe('the beat the node names (hello.heartbeatMs)', () => {
+  const hello = (heartbeatMs?: number) =>
+    ({
+      type: 'hello',
+      v: PROTOCOL_VERSION,
+      buildId: 'b',
+      sessionId: 's1',
+      actorId: null,
+      ...(heartbeatMs === undefined ? {} : { heartbeatMs }),
+    }) as const;
+
+  test('a node advertising 3 000 makes the client beat at 3 000', () => {
+    const { client, timers, sockets } = beating();
+    client.connect();
+    sockets[0]?.open();
+    expect(timers.pending).toBe(DEFAULT_HEARTBEAT_MS);
+    sockets[0]?.deliver(hello(3_000));
+    expect(timers.pending).toBe(3_000);
+    timers.fire();
+    expect(sockets[0]?.frames().map((frame) => frame.type)).toEqual(['hello', 'hello']);
+    expect(timers.pending).toBe(3_000);
+  });
+
+  test('a node that names none leaves the client on its default', () => {
+    const { client, timers, sockets } = beating();
+    client.connect();
+    sockets[0]?.open();
+    sockets[0]?.deliver(hello());
+    expect(timers.pending).toBe(DEFAULT_HEARTBEAT_MS);
+  });
+
+  test('the next socket starts on the default again until ITS node speaks', () => {
+    const { client, timers, sockets } = beating();
+    client.connect();
+    sockets[0]?.open();
+    sockets[0]?.deliver(hello(3_000));
+    sockets[0]?.disconnect();
+    timers.fire(); // the reconnect
+    sockets[1]?.open();
+    expect(timers.pending).toBe(DEFAULT_HEARTBEAT_MS);
+  });
+
+  test('a beat below the node floor of 1 s is not followed', () => {
+    const { client, timers, sockets } = beating();
+    client.connect();
+    sockets[0]?.open();
+    sockets[0]?.deliver(hello(5));
+    sockets[0]?.deliver(hello(0));
+    sockets[0]?.deliver(hello(-3_000));
+    expect(timers.pending).toBe(DEFAULT_HEARTBEAT_MS);
+  });
+
+  test('a client whose pass is OFF (heartbeatMs 0) stays off whatever the node says', () => {
+    const { client, timers, sockets } = harness({ heartbeatMs: 0 });
+    client.connect();
+    sockets[0]?.open();
+    sockets[0]?.deliver(hello(3_000));
+    expect(timers.pending).toBeNull();
   });
 });

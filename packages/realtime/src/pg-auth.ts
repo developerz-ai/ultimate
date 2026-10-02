@@ -63,8 +63,10 @@ class ScramSha256Session implements ScramSession {
     if (!serverNonce.startsWith(this.#clientNonce)) {
       throw new ReplicationProtocolError({
         stage: 'auth',
-        detail: `server nonce "${serverNonce}" does not extend client nonce "${this.#clientNonce}"`,
-        fix: 'x doctor db — the server did not echo the client nonce; check for a proxy on the replication URL',
+        detail:
+          `server nonce "${serverNonce}" does not extend client nonce "${this.#clientNonce}" — ` +
+          'the server did not echo the client nonce; check for a proxy on the replication URL',
+        fix: 'x doctor --json',
       });
     }
 
@@ -216,8 +218,11 @@ function parseServerFirst(text: string): ServerFirst {
   if (iterations > MAX_SCRAM_ITERATIONS) {
     throw new ReplicationProtocolError({
       stage: 'auth',
-      detail: `server-first-message asked for ${iterationsText} PBKDF2 iterations, above the ${MAX_SCRAM_ITERATIONS} ceiling`,
-      fix: 'x doctor db — point the replication URL at postgres itself; a real server asks for 4096',
+      detail:
+        `server-first-message asked for ${iterationsText} PBKDF2 iterations, above the ` +
+        `${MAX_SCRAM_ITERATIONS} ceiling — a real server asks for 4096, so point the replication ` +
+        'URL at postgres itself',
+      fix: 'x doctor --json',
     });
   }
   const salt = decodeBase64('salt', saltB64);

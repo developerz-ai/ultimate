@@ -190,7 +190,7 @@ bunx x deploy --image myapp:dev --dry-run
 
 Migrate to completion, then the serving roles, then the one-shot `backfill`. `--dry-run` prints the plan and runs nothing. `…` is the app root, printed absolute.
 
-**`--env-file` is what fills the `${VAR:?…}` guards.** Compose interpolates `SYNC_URL` and `POSTGRES_PASSWORD` from the shell and `--env-file` only, never from a service's `env_file:`. So both go in `.env.production`, and every step reads that file. A variable set in the shell still wins over it.
+**`--env-file` is what fills the `${VAR:?…}` guards.** Compose interpolates `SYNC_URL`, `APP_URL` and `POSTGRES_PASSWORD` from the shell and `--env-file` only, never from a service's `env_file:`. So all three go in `.env.production` — `APP_URL=http://<host>:3000` is the origin your pages are served on, and the only one besides its own that `sync` admits a socket from, and every step reads that file. A variable set in the shell still wins over it.
 
 **One replica each for `web` and `sync`, and the file says so** `As of 2026-08`. Both publish a host port, one host port has exactly one binder, so both are `replicas: 1`. Leave them there — this tutorial's rung is one box. `worker` publishes no port and scales freely, so `deploy: { replicas: 4 }` on it is the knob you actually have here.
 

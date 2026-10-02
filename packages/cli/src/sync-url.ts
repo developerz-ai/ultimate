@@ -43,8 +43,8 @@ export function syncConnectSources(env: Readonly<Record<string, string | undefin
 }
 
 /**
- * The page origins a sync node admits besides its own host name: `APP_URL`'s, when set. Only a
- * deployment that serves the page on another host than the node needs it; an unparsable value is
+ * The page origins a sync node admits besides its own origin: `APP_URL`'s, when set. A deployment
+ * that serves the page on another port or host than the node sees needs it; an unparsable value is
  * refused rather than read as "no page origin", which would refuse every socket in silence.
  */
 export function syncOriginsFrom(env: Readonly<Record<string, string | undefined>>): string[] {

@@ -6,7 +6,9 @@
  * inactivity budget and not Bun's transport one: Bun's `idleTimeout` is renewed by its own
  * ping/pong, so a client whose TCP stack still answers pings while its frame loop is wedged holds
  * its grant, its subscriptions and its topic membership forever. A beating client sends a `hello`
- * every `DEFAULT_HEARTBEAT_MS` (15s), so this is eight missed beats.
+ * every `DEFAULT_HEARTBEAT_MS` (10s), so this is twelve missed beats — and it stays a multiple of
+ * the beat whatever either is set to: the node TELLS the client its beat (`hello.heartbeatMs`),
+ * never slower than a quarter of this budget (`clientHeartbeatMs`, `sync-node-bounds.ts`).
  */
 export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 

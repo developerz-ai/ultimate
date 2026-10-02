@@ -61,6 +61,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
 | what the process itself costs: `process_resident_memory_bytes`, `process_heap_used_bytes`, `process_heap_total_bytes`, `process_external_memory_bytes`, `process_cpu_seconds_total`, `process_event_loop_lag_seconds`, `process_start_time_seconds`, `process_info{role}` — **server-only**, never on `@ultimat3/core/page` | `process-metrics.ts` (`startProcessMetrics`, `readProcess`) |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
+| what a health endpoint tells whom — `healthBody(report, role, detailed)`, `healthPeerListed(peers, address)`, `DEFAULT_HEALTH_DETAIL_PEERS`; the one rule `@ultimat3/http` and the sync node's own listener both call | `health-disclosure.ts` |
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
 | SIGTERM/SIGINT → the one drain | `lifecycle-signals.ts` |
 | which network an IP literal belongs to — `classifyAddress`, for SSRF screens | `address-class.ts` |

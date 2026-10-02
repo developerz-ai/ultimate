@@ -3,7 +3,7 @@
 // and a listener of its own — and because that file is the boot's index, not its detail.
 
 import { createContext, logger, UltimateError } from '@ultimat3/core';
-import type { WebSocketMount } from '@ultimat3/http';
+import { configuredHttp, type WebSocketMount } from '@ultimat3/http';
 import { listQueries } from '@ultimat3/query';
 import type { SyncNode, SyncWs } from '@ultimat3/realtime/server';
 import {
@@ -120,7 +120,8 @@ export interface PreparedSync {
   readonly mount: WebSocketMount<SyncWs>;
   /**
    * Bind `PORT + 1`, and answer with the same object `startSync` always did. `appUrl` is the web
-   * role's own origin when one runs here, for the line below that names both doors.
+   * role's own origin when one runs here: named in the boot line beside the node's, and — under
+   * `x dev` with an `APP_URL` declared — admitted as a page origin (`devOrigins`).
    */
   listen(appUrl: string | null): Promise<RunningSync>;
   /** Release the node when nothing ever bound it — a `web` role that threw after it was built. */
@@ -176,6 +177,35 @@ export function registerLiveQueries(options: StartRolesOptions): LiveQueryRegist
   return registry;
 }
 
+const healthDetailPeersOf = (
+  peers: readonly string[] | undefined,
+): { readonly healthDetailPeers?: readonly string[] } =>
+  peers === undefined ? {} : { healthDetailPeers: peers };
+
+/**
+ * What `x dev` adds to a DECLARED list: the origin its own web role is serving pages on, under
+ * each loopback spelling a browser may have been pointed at. A declaration is the whole list, and
+ * the scaffold's `.env` declares `APP_URL=http://localhost:3000` — so `x dev --port 4000`, or dev
+ * opened as `127.0.0.1`, was a page on an origin nothing named and every socket was refused.
+ *
+ * Nothing is added to an EMPTY list: an undeclared node admits the origin it was reached on, which
+ * already covers these and a forwarded host besides — and one entry would end that rule. Nothing
+ * is added outside dev either: in a container the declaration is the operator's, and a wrong one
+ * must refuse rather than be papered over by whatever address the process bound.
+ */
+function devOrigins(
+  options: StartRolesOptions,
+  declared: readonly string[],
+  appUrl: string | null,
+): string[] {
+  if (!(options.http ?? DEV_BINDING).dev || appUrl === null || declared.length === 0) return [];
+  const own = new URL(appUrl);
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].map(
+    (host) => `${own.protocol}//${host}:${own.port}`,
+  );
+  return [own.origin, ...loopback].filter((origin) => !declared.includes(origin));
+}
+
 /**
  * The node itself: its hub, its registry, its authenticator and its change subscription. Nothing
  * bound — `listen()` and the `web` role's mount are the two doors, and this is what is behind both.
@@ -195,6 +225,7 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
   // `exp`), or resolves identity from a header the adapter deliberately does not retain.
   const authenticate = options.overrides?.syncAuthenticate ?? syncAuthenticator(options.buildId);
   const registry = registerLiveQueries(options);
+  const origins = syncOriginsFrom(options.env);
   const node = createSyncNode({
     hub,
     registry,
@@ -202,9 +233,17 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
     buildId: options.buildId,
     sockets,
     ...(authenticate === undefined ? {} : { authenticate }),
-    // The page's origin when it is served on another host than this node; the node's own host is
-    // admitted without it. Anything else is refused before `authenticate` (X_SOCKET_ORIGIN_REFUSED).
-    allowedOrigins: syncOriginsFrom(options.env),
+    // `APP_URL`'s origin, and when one is declared it is the WHOLE list: the origin this node was
+    // reached on is no longer admitted beside it. Undeclared, that origin (and its https spelling
+    // when TLS ended at a proxy) is what is admitted; anything else is refused before
+    // `authenticate` (X_SOCKET_ORIGIN_REFUSED). Held by reference: `listen` adds `x dev`'s own.
+    allowedOrigins: origins,
+    // Dev may keep the reached-on origin beside a declaration and a container may not: `x dev`
+    // binds loopback, so a `Host` reaches it only through a forward its own user set up.
+    ...((options.http ?? DEV_BINDING).dev ? { admitReachedOrigin: true } : {}),
+    // Who this node's OWN `/healthz` and `/readyz` tell the detail to: the app's one declaration,
+    // the same list the web role reads. Unset, the node keeps its default (the box itself).
+    ...healthDetailPeersOf(configuredHttp()?.healthDetailPeers),
     // Tier 1 is presence, and without a registry the node answers a topic subscribe with no member
     // list at all — the KV bucket the transport just created would hold nothing and every `sync`
     // container would run a presence-less protocol. It reads and writes `transport.shared`, so it
@@ -223,7 +262,10 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
     // second copy of `/_x/sync` here is the copy that stays behind when it moves.
     mount: { path: node.path, fetch: node.fetch, websocket: node.websocket },
     stop: () => node.stop(),
-    listen: async (appUrl) => await listen(options, node, { registry, hub }, appUrl),
+    listen: async (appUrl) => {
+      origins.push(...devOrigins(options, origins, appUrl));
+      return await listen(options, node, { registry, hub }, appUrl);
+    },
   };
 }
 

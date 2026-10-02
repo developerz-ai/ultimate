@@ -19,6 +19,7 @@ import { describe, expect, test } from 'bun:test';
 import { type Actor, frozenClock, UltimateError, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { ChannelHub } from './channel';
+import { DEFAULT_HEARTBEAT_MS } from './client-heartbeat';
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry, type WsLike } from './socket';
@@ -31,6 +32,7 @@ import {
   type UpgradeTarget,
   type WsData,
 } from './sync-node';
+import { clientHeartbeatMs } from './sync-node-bounds';
 import { handleUpgrade, type UpgradeDeps } from './sync-upgrade';
 import { AcceptBudget } from './thundering-herd';
 
@@ -86,6 +88,7 @@ function upgradeTarget(node: SyncNode): UpgradeTarget {
       node.websocket.open(ws as unknown as SyncWs);
       return true;
     },
+    requestIP: () => null,
   };
 }
 
@@ -142,6 +145,7 @@ describe('a grant on an upgrade that never opens a socket', () => {
       ready: () => true,
       socketCount: () => 0,
       newSocketId: () => `s${grants.size}`,
+      healthDetailPeers: ['loopback'],
       authenticate,
       onGranted: (socketId, grant) => grants.set(socketId, grant),
       onUngranted: (socketId) => grants.delete(socketId),
@@ -161,6 +165,7 @@ describe('a grant on an upgrade that never opens a socket', () => {
           fix: 'pass a finite ceiling to createSyncNode',
         });
       },
+      requestIP: () => null,
     };
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await expect(
@@ -173,16 +178,37 @@ describe('a grant on an upgrade that never opens a socket', () => {
   test('an upgrade that answers false still gives the grant back, and one that takes keeps it', async () => {
     const grants = new GrantBook();
     const deps = depsFor(grants, async () => ({ actor: alice }));
-    const refuses: UpgradeTarget = { upgrade: () => false };
+    const refuses: UpgradeTarget = { upgrade: () => false, requestIP: () => null };
     expect(
       (await handleUpgrade(deps, new Request('http://localhost/_x/sync'), refuses))?.status,
     ).toBe(426);
     expect(grants.size).toBe(0);
 
-    const takes: UpgradeTarget = { upgrade: () => true };
+    const takes: UpgradeTarget = { upgrade: () => true, requestIP: () => null };
     expect(
       await handleUpgrade(deps, new Request('http://localhost/_x/sync'), takes),
     ).toBeUndefined();
     expect(grants.size).toBe(1);
+  });
+});
+
+// The beat a client is told. A client cannot read the node's presence ttl or its idle budget, so
+// the node derives the one number that serves both and says it on the `hello` reply.
+describe('clientHeartbeatMs', () => {
+  test('is a third of the presence ttl the node really runs', () => {
+    expect(clientHeartbeatMs(10_000, 120_000)).toBe(10_000);
+    // A 6 s ttl beats every 2 s: on the client's 10 s default every member was a false leave.
+    expect(clientHeartbeatMs(2_000, 120_000)).toBe(2_000);
+  });
+
+  test('is never slower than a quarter of the idle budget', () => {
+    // A 10-minute ttl would beat every 200 s, and the node evicts a socket silent for 120 s.
+    expect(clientHeartbeatMs(200_000, 120_000)).toBe(30_000);
+    expect(clientHeartbeatMs(10_000, 8_000)).toBe(2_000);
+  });
+
+  test('with no presence, the client default stands unless the idle budget needs a faster one', () => {
+    expect(clientHeartbeatMs(undefined, 120_000)).toBe(DEFAULT_HEARTBEAT_MS);
+    expect(clientHeartbeatMs(undefined, 20_000)).toBe(5_000);
   });
 });

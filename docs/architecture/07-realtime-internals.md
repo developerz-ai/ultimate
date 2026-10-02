@@ -228,10 +228,15 @@ undeclared name is `X_TOPIC_FORBIDDEN`. The declaration's `policy` runs with the
 params are the scope, so a channel that must hide rows is declared narrower. A denial is latched per
 (socket, topic) until the session changes.
 
-**A policy that fails is not a policy that denied.** On re-authorization (`ChannelHub.onActorChange`)
-only a denial unsubscribes the topic. Anything else keeps the subscription, increments
-`hub.guardFailures` and logs `channel.guard_failed`: a store that timed out is an outage, not a
-revoked grant. The **initial** subscribe is deliberately not split this way: there is no
+**A policy that fails is not a policy that denied — and it is not a pass.** On re-authorization
+(`ChannelHub.onActorChange`) a denial unsubscribes the topic and the node refuses it under its sid.
+Anything else increments `hub.guardFailures`, logs `channel.guard_failed` and SUSPENDS the seat: it
+is kept (a store that timed out is an outage, not a revoked grant) and nothing is delivered on it
+until a pass succeeds — the next re-auth, or the client's own beat — after which a records channel
+is told `replay-gap`. Two answers are denials before any rule runs: a `null` actor on a channel
+that declares a `row` loader (the loader is not run), and a loader the tenant guard refused
+(`X_TENANCY_ACTOR_ORG_REQUIRED`, `_ACTOR_MISMATCH`, `_CROSS_DENIED`) — a member who left the org is
+not an outage. The **initial** subscribe is deliberately not split this way: there is no
 subscription to keep, so a policy that raises rejects the subscribe and the client is told.
 
 ### Local fanout

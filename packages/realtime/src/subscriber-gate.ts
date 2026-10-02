@@ -7,6 +7,7 @@ import type { Actor } from '@ultimat3/core';
 import { isPolicyDenial } from './errors';
 import type { JsonValue, Row, RowPatch } from './json';
 import type { LiveQueryDefinition } from './live-contract';
+import { narrowRow, projectionOf } from './matcher-bridge';
 
 /**
  * Who a decision is being made for. Every policy call in the live pipeline takes one, which is the
@@ -219,7 +220,16 @@ export class SubscriberGate {
     // subscriber is not entitled to keep, and one that holds it is told so.
     if (full === undefined) return holds ? withdrawn(patch) : null;
     const row: Row = { ...full, ...patch.row, id: patch.id };
-    if (await this.#visible(target, who, row, 'patch')) return patch;
+    if (await this.#visible(target, who, row, 'patch')) {
+      // An update carries the changed columns only. A subscriber who was never sent this row —
+      // denied at its snapshot, admitted by this change — would fold them onto nothing, and its
+      // cursor would never record the id, so the row's later delete was withheld from it. It gets
+      // the whole row as an insert, which is also what makes `Holding` and `advance` count it.
+      if (patch.op === 'update' && !holds) {
+        return { ...patch, op: 'insert', row: narrowRow(row, projectionOf(target.rows)) };
+      }
+      return patch;
+    }
     this.#denied(target.qid, who, patch.id);
     return holds ? withdrawn(patch) : null;
   }

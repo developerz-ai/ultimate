@@ -74,6 +74,11 @@ export class ChannelLogs {
     for (const update of updates) {
       const open = this.#byTopic.get(update.topic);
       if (open === undefined) continue;
+      // The change could not carry the whole row (`channel-records.ts`): members re-read it.
+      if (update.gap === true) {
+        frames += this.#reopen(update.topic, open.target);
+        continue;
+      }
       const entry = open.ring.append(update.adopt, update.remove, change.write);
       const frame = renderRecords(update.topic, open.ring.epoch, entry);
       frames += this.#sockets.deliverRecords(update.topic, open.ring.epoch, frame);
@@ -91,11 +96,31 @@ export class ChannelLogs {
     let announced = 0;
     for (const [topic, open] of [...this.#byTopic]) {
       if (!carriesTable(open.target.channel, table)) continue;
-      this.#byTopic.delete(topic);
-      const ring = this.open(topic, open.target);
-      announced += this.#sockets.announceGap(topic, ring.epoch);
+      announced += this.#reopen(topic, open.target);
     }
     return announced;
+  }
+
+  /**
+   * This node may have missed a change (the bus dropped, or skipped a sequence). Seq is minted
+   * HERE from the changes this node sees, so the hole is invisible to the ring: the next change
+   * would be appended as the next seq and a `since` replayed across it as complete history. Every
+   * open topic that carries records therefore starts a new epoch and tells its members.
+   */
+  invalidate(): number {
+    let announced = 0;
+    for (const [topic, open] of [...this.#byTopic]) {
+      if (open.target.channel.records.length === 0) continue;
+      announced += this.#reopen(topic, open.target);
+    }
+    return announced;
+  }
+
+  /** A new epoch for one topic — nothing in the old ring may be replayed — and a gap to each member. */
+  #reopen(topic: string, target: ChannelTopic): number {
+    this.#byTopic.delete(topic);
+    const ring = this.open(topic, target);
+    return this.#sockets.announceGap(topic, ring.epoch);
   }
 
   /**
@@ -107,6 +132,10 @@ export class ChannelLogs {
    * reached nobody — and nothing the client holds can name it. The seat is the one point after
    * which every commit is a frame, so the re-read is told to start from here. A repeated `add` on
    * a socket already seated (the presence beat), or a channel with no records, is sent nothing.
+   *
+   * A `since` that is already CURRENT is answered too: the frame AT its cursor, carrying nothing.
+   * Sent nothing, the client had no frame to leave `joining` on — a channel that was up to date
+   * read as never joined. The seq is one it already holds, so its cursor does not move.
    */
   resume(socket: SyncSocket, topic: string, since: ChannelSince | undefined, fresh: boolean): void {
     const open = this.#byTopic.get(topic);
@@ -124,7 +153,8 @@ export class ChannelLogs {
       if (!socket.send(frame)) socket.gaps.set(topic, open.ring.epoch);
       return;
     }
-    for (const entry of entries) {
+    const answer = entries.length > 0 ? entries : [{ seq: open.ring.seq, adopt: [], remove: [] }];
+    for (const entry of answer) {
       if (!socket.send(renderRecords(topic, open.ring.epoch, entry))) {
         socket.gaps.set(topic, open.ring.epoch);
         return;

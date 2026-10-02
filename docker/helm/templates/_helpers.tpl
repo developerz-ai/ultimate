@@ -81,6 +81,16 @@ in values.yaml, where the two numbers would drift.
     - name: METRICS_PORT
       value: {{ $root.Values.metricsPort | quote }}
     {{- end }}
+    {{- /*
+    The sync node's page origin, from the one place this chart already knows it. Undeclared, a node
+    reached over plain http behind this Ingress admits BOTH spellings of its host — the plain-http
+    page included. env.APP_URL wins when set; an APP_URL kept in the Secret is shadowed for this
+    role, so pages served from another host than the Ingress's must say so in env.
+    */}}
+    {{- if and (eq $role "sync") $root.Values.ingress.enabled (not (hasKey $root.Values.env "APP_URL")) }}
+    - name: APP_URL
+      value: {{ printf "%s://%s" (ternary "https" "http" $root.Values.ingress.tls) $root.Values.ingress.host | quote }}
+    {{- end }}
     {{- range $key, $value := $root.Values.env }}
     - name: {{ $key }}
       value: {{ $value | quote }}

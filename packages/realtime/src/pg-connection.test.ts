@@ -130,7 +130,7 @@ describe('open — authentication', () => {
   test('cleartext auth sends the password as a cstring, then completes', async () => {
     const stream = new FakeStream();
     stream.push(authCleartext(), authOk(), readyForQuery());
-    await PgConnection.open(opts(stream, { password: 'sekret' }));
+    await PgConnection.open(opts(stream, { password: 'sekret', ssl: 'require' }));
     const sent = decodeFrame(writeAt(stream, 1));
     expect(sent.tag).toBe('p');
     expect(new ByteReader(sent.body).cstring()).toBe('sekret');
@@ -156,7 +156,9 @@ describe('open — authentication', () => {
     const stream = new FakeStream();
     const salt = new Uint8Array([0x9a, 0x3c, 0x1e, 0x77]);
     stream.push(authMd5(salt), authOk(), readyForQuery());
-    await PgConnection.open(opts(stream, { user: 'repluser', password: 'hunter2' }));
+    await PgConnection.open(
+      opts(stream, { user: 'repluser', password: 'hunter2', ssl: 'require' }),
+    );
     const sent = decodeFrame(writeAt(stream, 1));
     expect(sent.tag).toBe('p');
     expect(new ByteReader(sent.body).cstring()).toBe(
@@ -231,10 +233,8 @@ describe('open — authentication', () => {
       (caught: unknown) => caught,
     );
     expect(error).toBeInstanceOf(ReplicationProtocolError);
-    expect((error as { fix?: string }).fix).toBe(
-      'x doctor db — the SASL exchange arrived out of order; ' +
-        'check for a pooler or proxy between this client and postgres',
-    );
+    expect((error as { fix?: string }).fix).toBe('x doctor --json');
+    expect((error as { cause?: string }).cause).toContain('check for a pooler or proxy');
   });
 });
 

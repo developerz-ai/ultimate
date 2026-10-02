@@ -69,8 +69,10 @@ export class MessageReader {
         if (held === 0) return undefined;
         throw new ReplicationProtocolError({
           stage: 'read',
-          detail: `the connection closed with ${held} bytes of a partial message`,
-          fix: 'x doctor db — the backend was terminated mid-message; the server log names the reason',
+          detail:
+            `the connection closed with ${held} bytes of a partial message — the backend was ` +
+            'terminated mid-message, and the server log names the reason',
+          fix: 'x doctor --json',
         });
       }
       this.#append(chunk);
@@ -245,7 +247,7 @@ export const FIXES: Readonly<Record<string, string>> = {
 };
 
 /** What a SQLSTATE this table has no entry for is answered with. */
-const GENERIC_FIX = 'x doctor db — the postgres message above names the object to change';
+const GENERIC_FIX = 'x doctor --json';
 
 /**
  * An `ErrorResponse` becomes the one error class whose `fix` names the command to run.

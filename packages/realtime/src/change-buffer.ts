@@ -36,11 +36,41 @@ export interface ChangeBufferOptions {
 export const DEFAULT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_MAX_BUFFER_BYTES_PER_QUERY = 1024 * 1024;
 
+/**
+ * THE FLOOR RULE, stated once. A ring answers a resume only for a cursor it can PROVE it holds
+ * every later change for; anything else is `null`, and the caller takes one bounded snapshot.
+ *
+ * | The floor is set by | to | a cursor AT the floor |
+ * |---|---|---|
+ * | the ring's first patch (no read floored it) | that patch's lsn | resumes — it has that patch |
+ * | an eviction | the evicted patch's lsn | resumes — everything after it is retained |
+ * | a window's FIRST read, on a node that holds a position | the read's lsn | resumes — the cursor may be that read's own |
+ * | a window's FIRST read with NO position behind it (`sole`) | the read's own mark | resumes, and it is the ONLY cursor below the first patch that does |
+ * | a FORCED re-read (the window missed a change), a truncate, a partial row | the read's lsn, EXCLUSIVE | is refused |
+ *
+ * Why `sole`: a node that has received no change holds no position, so its read is marked with
+ * the node's own origin (`LiveQueryRegistry`), which sorts below every real lsn. A plain floor
+ * there admits every foreign cursor — each is "above" it — for a history this node never held. So
+ * the ring answers that one mark, and otherwise only a cursor at or after its FIRST patch.
+ *
+ * Why the last row is exclusive: a re-read's lsn is the node's last SEEN position, which does not
+ * move for the changes it missed — so "the window at L before the gap" and "the window re-read at
+ * L with the missed rows in it" carry the same cursor, and only refusing L tells them apart.
+ *
+ * What never moves the floor: a read served out of a window that is already filled. The retained
+ * patches are still its true history, and flooring it evicts every other subscriber's resume.
+ */
 interface Ring {
   patches: RowPatch[];
   bytes: number;
-  /** Highest lsn already dropped. A cursor at or after this is still resumable. */
-  evictedThrough: string | null;
+  /** The lsn this ring is complete from. Set at birth and only ever raised. */
+  evictedThrough: string;
+  /** Whether a cursor exactly AT the floor is refused — see the rule above. */
+  exclusive: boolean;
+  /** The one cursor a position-less birth vouches for, until an eviction or a re-read ends it. */
+  sole: string | null;
+  /** The first patch appended after a `sole` birth: where foreign cursors become answerable. */
+  anchor: string | null;
 }
 
 const encoder = new TextEncoder();
@@ -52,12 +82,6 @@ function patchBytes(patch: RowPatch): number {
 
 export class RingChangeBuffer implements ResumeSource {
   readonly #rings = new Map<string, Ring>();
-  /**
-   * Query hashes whose ring was dropped, so the ring the NEXT change builds knows it does not
-   * carry the history before it. A `Set` of ids and not a `Map` of lsns: what the next ring is
-   * complete from is its own first patch, which only that patch can name.
-   */
-  readonly #forgotten = new Set<string>();
   readonly #capacity: number;
   readonly #maxQueries: number;
   readonly #maxBytesPerQuery: number;
@@ -86,17 +110,20 @@ export class RingChangeBuffer implements ResumeSource {
 
   append(qid: string, patch: RowPatch): void {
     const existing = this.#rings.get(qid);
-    // A ring RE-CREATED after a `forget` is complete only from this patch onward: everything before
-    // it went with the ring, and — on the `unsubscribe` path — the entry went too, so the changes
-    // in between were never appended at all. `evictedThrough` at its own first lsn is what makes
-    // `since` refuse a cursor from before that, which it could not do while the field came back
-    // `null` and every earlier cursor read as in-window on a ring that had held none of it.
-    const reborn = this.#forgotten.delete(qid);
+    // A ring is complete only from where it was born. Born HERE, from a patch, that is the patch
+    // itself: this node held no entry for whatever came before, so nothing before it was ever
+    // appended. It used to be born with no floor at all, and a cursor minted on another node —
+    // the rolling-deploy shape — read as in-window on a ring that had held none of its history.
+    // `floorAt` is the earlier, cheaper birth: the lsn the window was read at.
     const ring: Ring = existing ?? {
       patches: [],
       bytes: 0,
-      evictedThrough: reborn ? patch.lsn : null,
+      evictedThrough: patch.lsn,
+      exclusive: false,
+      sole: null,
+      anchor: null,
     };
+    if (ring.sole !== null && ring.anchor === null) ring.anchor = patch.lsn;
     ring.patches.push(patch);
     const cost = patchBytes(patch);
     ring.bytes += cost;
@@ -106,8 +133,48 @@ export class RingChangeBuffer implements ResumeSource {
     while (ring.patches.length > this.#capacity || ring.bytes > this.#maxBytesPerQuery) {
       if (!this.#shift(ring)) break;
     }
-    // Re-insert to move this qid to the tail of the LRU order.
-    if (existing) this.#rings.delete(qid);
+    this.#touch(qid, ring);
+  }
+
+  /**
+   * The window behind `qid` was read at `lsn`: the ring is complete from there, and from nowhere
+   * earlier. The caller decides WHEN (a read that landed, never one served from a filled window)
+   * and whether the floor is `exclusive` (a forced re-read) — the rule is on `Ring`.
+   *
+   * Only ever raises the floor, or tightens it at the same lsn. `''` is no position and says nothing.
+   */
+  floorAt(
+    qid: string,
+    lsn: string,
+    options: { readonly exclusive?: boolean; readonly sole?: boolean } = {},
+  ): void {
+    if (lsn === '') return;
+    const exclusive = options.exclusive === true;
+    const existing = this.#rings.get(qid);
+    const ring: Ring = existing ?? {
+      patches: [],
+      bytes: 0,
+      evictedThrough: lsn,
+      exclusive,
+      sole: options.sole === true ? lsn : null,
+      anchor: null,
+    };
+    if (lsn > ring.evictedThrough || (lsn === ring.evictedThrough && exclusive)) {
+      // Superseded, not evicted: what the read replaced is history with a gap in it.
+      for (let first = ring.patches[0]; first !== undefined && first.lsn <= lsn; ) {
+        this.#shift(ring);
+        first = ring.patches[0];
+      }
+      ring.evictedThrough = lsn;
+      ring.exclusive = exclusive;
+      ring.sole = null;
+    }
+    this.#touch(qid, ring);
+  }
+
+  /** Move `qid` to the tail of the LRU order, then hold both node-wide ceilings. */
+  #touch(qid: string, ring: Ring): void {
+    this.#rings.delete(qid);
     this.#rings.set(qid, ring);
     while (this.#rings.size > this.#maxQueries || this.#bytes > this.#maxBytes) {
       const oldest = this.#rings.keys().next();
@@ -126,13 +193,19 @@ export class RingChangeBuffer implements ResumeSource {
     ring.bytes -= cost;
     this.#bytes -= cost;
     ring.evictedThrough = dropped.lsn;
+    ring.exclusive = false;
+    ring.sole = null;
     return true;
   }
 
   since(qid: string, lsn: string): RowPatch[] | null {
     const ring = this.#rings.get(qid);
     if (!ring) return null;
-    if (ring.evictedThrough !== null && lsn < ring.evictedThrough) return null;
+    if (lsn < ring.evictedThrough) return null;
+    if (ring.exclusive && lsn === ring.evictedThrough) return null;
+    if (ring.sole !== null && lsn !== ring.sole && (ring.anchor === null || lsn < ring.anchor)) {
+      return null;
+    }
     return ring.patches.filter((patch) => patch.lsn > lsn);
   }
 
@@ -149,29 +222,11 @@ export class RingChangeBuffer implements ResumeSource {
    */
   forget(qid: string): void {
     const ring = this.#rings.get(qid);
-    if (ring !== undefined) {
-      this.#bytes -= ring.bytes;
-      this.#rings.delete(qid);
-    }
-    // The qid is remembered, the patches are not — and unconditionally, because the ring being
-    // absent is not the history being intact. Both callers lose history here and neither could say
-    // so: `LiveQueryRegistry.unsubscribe` drops the ENTRY, so every change until the next
-    // subscriber is never appended at all, and the LRU fires on a query that still has LIVE
-    // subscribers. Either way the next `append` was building a ring that reported itself complete
-    // from the beginning of time, so a client reconnecting inside `maxLagMs` folded a partial patch
-    // list onto a stale window with `shouldResnapshot` answering `in-window` and nothing marked
-    // desynced — permanently divergent on a healthy socket. What the tombstone costs in exchange is
-    // a resume that could have been a delta taking the snapshot path; that is one bounded read, and
-    // it is the direction this package errs in everywhere else.
-    this.#forgotten.add(qid);
-    // Bounded like everything else here: insertion-ordered, so the oldest tombstone goes first.
-    // Losing one costs a resume that could have been a delta; keeping them unbounded costs memory
-    // a client-chosen input mints at will.
-    while (this.#forgotten.size > this.#maxQueries) {
-      const oldest = this.#forgotten.values().next();
-      if (oldest.done === true) break;
-      this.#forgotten.delete(oldest.value);
-    }
+    if (ring === undefined) return;
+    this.#bytes -= ring.bytes;
+    this.#rings.delete(qid);
+    // Nothing is remembered about it: the next ring for this qid is born with its own floor, so
+    // it cannot claim the history that went with this one.
   }
 
   get queryCount(): number {

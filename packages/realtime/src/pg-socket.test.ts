@@ -420,7 +420,9 @@ describe('a socket error ends the stream for everyone on it', () => {
     expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
     // The refusal has to name the peer an operator would open a route to, not just "socket error".
     expect(isUltimateError(error) ? error.cause : '').toContain('ECONNRESET');
-    expect(isUltimateError(error) ? error.fix : '').toContain(`${TARGET_HOST}:5432`);
+    // In the CAUSE: the fix is one runnable command, and a host is not something to paste at it.
+    expect(isUltimateError(error) ? error.cause : '').toContain(`${TARGET_HOST}:5432`);
+    expect(isUltimateError(error) ? error.fix : '').toBe('x doctor --json');
   });
 
   test('a reader already parked when the error lands is rejected rather than resolved with EOF', async () => {

@@ -1,20 +1,9 @@
-// `/healthz` and `/readyz` answer outside the pipeline — no auth, no rate limit — so their body is
-// what an unauthenticated stranger reads. The verdict is everyone's; the build id, the in-flight
-// count and the names of the dependencies behind readiness are for a peer the app listed.
+// Who the web role tells the health detail to: the socket must be a listed peer and, behind a
+// declared proxy, so must the caller it names. The body rule and the list match are core's
+// (`packages/core/src/health-disclosure.test.ts`); this is the config key and the proxy half.
 import { describe, expect, test } from 'bun:test';
-import type { HealthReport } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfigInput } from './config';
-import { disclosesHealthDetail, healthBody } from './health-disclosure';
-
-const report: HealthReport = {
-  state: 'ready',
-  ready: true,
-  uptimeMs: 1234,
-  inflight: 7,
-  buildId: 'build-9',
-  checks: { database: 'ok', redis: 'failing' },
-  registered: 2,
-};
+import { disclosesHealthDetail } from './health-disclosure';
 
 const asks = (
   socketAddress: string | null,
@@ -26,21 +15,6 @@ const asks = (
     headers: new Headers(headers),
     socketAddress,
   });
-
-describe('healthBody', () => {
-  test('a stranger gets the verdict and nothing that describes the deployment', () => {
-    const body = healthBody(report, 'web', false);
-    expect(body).toEqual({ state: 'ready', ready: true, role: 'web' });
-    const wire = JSON.stringify(body);
-    for (const withheld of ['build-9', 'inflight', 'database', 'redis', 'uptimeMs', 'registered']) {
-      expect(wire).not.toContain(withheld);
-    }
-  });
-
-  test('an allow-listed peer gets the whole report', () => {
-    expect(healthBody(report, 'web', true)).toEqual({ ...report, role: 'web' });
-  });
-});
 
 describe('disclosesHealthDetail', () => {
   test('by default only the box itself is told', () => {

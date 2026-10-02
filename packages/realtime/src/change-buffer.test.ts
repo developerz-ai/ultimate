@@ -15,6 +15,8 @@ function patchOf(lsn: number, size: number): RowPatch {
   };
 }
 
+const lsnOf = (position: number): string => String(position).padStart(16, '0');
+
 describe('the retained change window', () => {
   test('a single query is bounded by bytes, not by a patch count', () => {
     const buffer = new RingChangeBuffer({ maxBytesPerQuery: 4_000 });
@@ -34,8 +36,8 @@ describe('the retained change window', () => {
     expect(buffer.bytes).toBeLessThanOrEqual(20_000);
     expect(buffer.queryCount).toBeLessThanOrEqual(10);
     // The most recent write survives; the first one is long gone.
-    expect(buffer.since('q49', '0'.repeat(16))).not.toBeNull();
-    expect(buffer.since('q0', '0'.repeat(16))).toBeNull();
+    expect(buffer.since('q49', lsnOf(50))).not.toBeNull();
+    expect(buffer.since('q0', lsnOf(1))).toBeNull();
   });
 
   test('forget releases the bytes as well as the ring', () => {
@@ -78,27 +80,64 @@ describe('the retained change window', () => {
     expect(buffer.since('q1', String(7).padStart(16, '0'))).toEqual([]);
   });
 
-  test('a query that was never forgotten still resumes from a cold ring', () => {
-    // The other half of the rule, and the one a restart storm depends on: a subscriber's cursor is
-    // minted by a snapshot BEFORE the first change, so a cold ring must serve it as a delta.
+  test('a ring born from a patch is complete from that patch, never from the start of time', () => {
+    // The rolling-deploy shape: a client held this query on ANOTHER node at lsn 1, that node
+    // drained, changes 2..4 happened where this node had no entry, and the first change this node
+    // retains is 5. `since` answered `[5]` — a delta onto a window missing three changes.
     const buffer = new RingChangeBuffer();
     buffer.append('q1', patchOf(5, 10));
-    const delta = buffer.since('q1', String(1).padStart(16, '0')) ?? [];
-    expect(delta.map((patch) => patch.id)).toEqual(['row-5']);
+    expect(buffer.since('q1', lsnOf(1))).toBeNull();
+    expect(buffer.since('q1', lsnOf(4))).toBeNull();
+    expect(buffer.since('q1', lsnOf(5))).toEqual([]);
+    buffer.append('q1', patchOf(6, 10));
+    expect((buffer.since('q1', lsnOf(5)) ?? []).map((patch) => patch.id)).toEqual(['row-6']);
   });
 
-  test('the tombstone table is bounded by the same query ceiling the rings are', () => {
+  test('a ring floored at the window read serves every cursor minted from that read', () => {
+    // What a cold subscriber on THIS node holds: a cursor at the lsn its snapshot was read at,
+    // which is before the first change. The floor is that lsn, so it resumes as a delta — and a
+    // cursor from before the read still does not.
+    const buffer = new RingChangeBuffer();
+    buffer.floorAt('q1', lsnOf(3));
+    expect(buffer.since('q1', lsnOf(3))).toEqual([]);
+    expect(buffer.since('q1', lsnOf(2))).toBeNull();
+    buffer.append('q1', patchOf(5, 10));
+    expect((buffer.since('q1', lsnOf(3)) ?? []).map((patch) => patch.id)).toEqual(['row-5']);
+    expect(buffer.since('q1', lsnOf(2))).toBeNull();
+  });
+
+  test('a re-read raises the floor and drops what it superseded', () => {
+    // A window marked stale was re-read at lsn 9 BECAUSE changes were missed: the ring's patches
+    // up to there are a history with a hole in it, and must not be served as one without.
+    const buffer = new RingChangeBuffer();
+    buffer.floorAt('q1', lsnOf(1));
+    buffer.append('q1', patchOf(2, 10));
+    buffer.append('q1', patchOf(3, 10));
+    const before = buffer.bytes;
+    buffer.floorAt('q1', lsnOf(9));
+    expect(buffer.bytes).toBeLessThan(before);
+    expect(buffer.since('q1', lsnOf(2))).toBeNull();
+    expect(buffer.since('q1', lsnOf(9))).toEqual([]);
+    // Never lowered: an older read landing late claims nothing back.
+    buffer.floorAt('q1', lsnOf(4));
+    expect(buffer.since('q1', lsnOf(5))).toBeNull();
+  });
+
+  test('a window with no position yet floors nothing', () => {
+    const buffer = new RingChangeBuffer();
+    buffer.floorAt('q1', '');
+    expect(buffer.queryCount).toBe(0);
+    buffer.append('q1', patchOf(5, 10));
+    expect(buffer.since('q1', lsnOf(1))).toBeNull();
+  });
+
+  test('a floored ring with no patches is still bounded by the query ceiling', () => {
     const buffer = new RingChangeBuffer({ maxQueries: 2 });
-    for (let q = 0; q < 50; q += 1) {
-      buffer.append(`q${q}`, patchOf(q + 1, 10));
-      buffer.forget(`q${q}`);
-    }
-    // The oldest tombstones went, so the oldest qids read as cold again — one delta that could
-    // have been a snapshot, never a snapshot that should have been a delta.
-    buffer.append('q0', patchOf(90, 10));
-    expect(buffer.since('q0', String(1).padStart(16, '0'))).not.toBeNull();
-    buffer.append('q49', patchOf(91, 10));
-    expect(buffer.since('q49', String(1).padStart(16, '0'))).toBeNull();
+    for (let q = 0; q < 50; q += 1) buffer.floorAt(`q${q}`, lsnOf(q + 1));
+    expect(buffer.queryCount).toBeLessThanOrEqual(2);
+    // The evicted one reads as unknown, which is a snapshot — never a delta it cannot back.
+    expect(buffer.since('q0', lsnOf(1))).toBeNull();
+    expect(buffer.since('q49', lsnOf(50))).toEqual([]);
   });
 
   test('the default node budget is a real memory ceiling, not a patch count', () => {

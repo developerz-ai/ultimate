@@ -27,8 +27,10 @@ export interface LiveDefinitionOptions {
    */
   readonly ctx: Ctx;
   /**
-   * Where the shared window sits in the change stream, asked at snapshot time. Without a feed
-   * position a reconnect can only re-snapshot, so a node with a replicator should pass its lsn.
+   * Where the shared window sits in the change stream, asked at snapshot time — the node's newest
+   * received change (`registry.lastLsn`). Omitted, or answering `''` before the first change, the
+   * snapshot claims no position and the retained ring is floored by its first patch instead: a
+   * cursor minted before that patch re-snapshots, one that received it resumes as a delta.
    */
   readonly lsn?: () => string;
   /** Pins the reconnect epoch in tests; the server derives it from the build. */
@@ -165,6 +167,9 @@ export function liveQueryDefinition(
       // The position is taken BEFORE the rows: the rows are then at least that new, so the claim
       // is true. Taken after, a commit landing mid-read was claimed and missing — and every change
       // up to it is dropped downstream as already folded.
+      // `''` when the node holds no position — no `lsn` option, or no change received yet. Never
+      // a made-up one: a position the node never held becomes a ring floor every foreign cursor
+      // is "inside", and the client that resumed there kept rows this node never patched.
       const lsn = options.lsn?.() ?? '';
       return { rows: await readFor(options.ctx, tenant, () => window.read()), lsn };
     },
@@ -191,15 +196,25 @@ function evictOldest(windows: Map<string, SharedWindow>, max: number): void {
 }
 
 /**
- * Rows crossing the wire are addressed by `id` — patches, cursors and the local store all key on
- * it. A projection without one is refused here rather than delivered as a row nobody can patch:
- * the alternative is a subscription that appears to work until the first update.
+ * Rows crossing the wire are addressed by a TEXT `id` — patches, cursors and the local store all
+ * key on it. A safe-integer id is stringified, the one normalisation the change feed applies to the
+ * same row (`pg-replication.ts`'s `toRow`), so a snapshot row and its later patch name one identity.
+ * Anything else is refused here rather than delivered as a row nobody can patch.
  */
 function rowsOf(query: string, rows: readonly object[]): readonly Row[] {
   const out: Row[] = [];
   for (const row of rows) {
-    if (!isRow(row)) throw new LiveRowUnidentifiedError({ query, keys: Object.keys(row) });
-    out.push(row);
+    const id: unknown = (row as { id?: unknown }).id;
+    const candidate =
+      typeof id === 'number' && Number.isSafeInteger(id) ? { ...row, id: String(id) } : row;
+    if (!isRow(candidate)) {
+      throw new LiveRowUnidentifiedError({
+        query,
+        keys: Object.keys(row),
+        ...(id === undefined || id === null ? {} : { idType: typeof id }),
+      });
+    }
+    out.push(candidate);
   }
   return out;
 }

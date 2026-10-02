@@ -5,11 +5,17 @@
 import { type Actor, type Ctx, createContext, runWithContext } from '@ultimat3/core';
 import { guard, QueryDeniedError } from '@ultimat3/query';
 import type { Channel } from './channel-decl';
-import { TopicForbiddenError } from './errors';
+import { isTenancyDenial, TopicForbiddenError } from './errors';
 
 /**
  * A denial is `X_TOPIC_FORBIDDEN`. A loader or a rule that RAISED is not a denial and leaves as it
- * came, so the caller can tell an outage from a decision — `onActorChange` keeps the topic on one.
+ * came, so the caller can tell an outage from a decision — `onActorChange` suspends the topic on one.
+ *
+ * Two answers are denials before any rule runs, because neither is an outage:
+ * - **nobody, on a channel that decides on a row.** A loader runs AS the subscriber; with no actor
+ *   it would run as the node, and a row is not something nobody is entitled to.
+ * - **a loader the tenant guard refused** (`TENANCY_DENIAL_CODES`): the actor has no org, or names
+ *   another one. That is the verdict about a removed member, not a store that could not answer.
  */
 export async function authorizeChannel(
   channel: Channel,
@@ -18,17 +24,42 @@ export async function authorizeChannel(
   topic: string,
   params: Readonly<Record<string, string>>,
 ): Promise<void> {
-  // The loader and the rule run AS the subscriber, never as the node. Under the node's context — no
-  // actor, no tenant — a repository read inside the loader was scoped by nothing but what the
-  // loader happened to name, and `@ultimat3/entity`'s tenancy seam had no actor to hold it to.
-  // Services are rebuilt for this actor by `createContext`, the rule `withChildContext` follows.
-  const scoped = actor === null ? ctx : subscriberContext(ctx, actor);
-  const row =
-    channel.row === undefined
-      ? null
-      : await runWithContext(scoped, async () => await channel.row?.({ params, ctx: scoped }));
+  const loader = channel.row;
+  if (loader === undefined) return decide(channel, ctx, actor, topic, params, null);
+  if (actor === null) {
+    throw new TopicForbiddenError({
+      topic,
+      actorId: null,
+      reason: `channel "${channel.name}" decides on a row, and an anonymous socket has no actor to load one as`,
+    });
+  }
+  // The loader and the rule run AS the subscriber, never as the node. Services are rebuilt for
+  // this actor by `createContext`, the rule `withChildContext` follows.
+  const scoped = subscriberContext(ctx, actor);
+  let row: unknown;
   try {
-    guard(channel.policy, { actor, input: params, row, ctx: scoped, query: channel.name }, 'live');
+    row = await runWithContext(scoped, async () => await loader({ params, ctx: scoped }));
+  } catch (error) {
+    if (!isTenancyDenial(error)) throw error;
+    throw new TopicForbiddenError({
+      topic,
+      actorId: actor.id,
+      reason: `channel "${channel.name}" reads a row outside this actor's tenant`,
+    });
+  }
+  decide(channel, scoped, actor, topic, params, row);
+}
+
+function decide(
+  channel: Channel,
+  ctx: Ctx,
+  actor: Actor | null,
+  topic: string,
+  params: Readonly<Record<string, string>>,
+  row: unknown,
+): void {
+  try {
+    guard(channel.policy, { actor, input: params, row, ctx, query: channel.name }, 'live');
   } catch (error) {
     if (!(error instanceof QueryDeniedError)) throw error;
     throw new TopicForbiddenError({

@@ -55,6 +55,7 @@ export class NatsTransport implements Transport {
   #dialing: Promise<NatsClient> | undefined;
   #retries = 0;
   #closed = false;
+  readonly #reconnectListeners = new Set<() => void>();
 
   constructor(options: NatsTransportOptions) {
     // Parsed here rather than at the first publish: a malformed NATS_URL is a boot-time fault, and
@@ -114,6 +115,19 @@ export class NatsTransport implements Transport {
       }),
     );
     return { subject, unsubscribe: () => live.unsubscribe() };
+  }
+
+  /**
+   * Told every time the client comes back from a drop. Fanout is at-most-once, so the gap between
+   * the drop and this call is changes the subscriber never saw — and with no later message there
+   * is no sequence number to notice it by. A `sync` node invalidates its windows on it. Returns
+   * the unsubscribe.
+   */
+  onReconnect(listener: () => void): () => void {
+    this.#reconnectListeners.add(listener);
+    return () => {
+      this.#reconnectListeners.delete(listener);
+    };
   }
 
   async close(): Promise<void> {
@@ -200,7 +214,15 @@ export class NatsTransport implements Transport {
     this.#retries = 0;
     const client = this.#client;
     if (client === undefined) return;
+    // Not awaited: the library calls this from its status loop. The failure has one place to go.
     void this.#ensureBucket(client).catch((error: unknown) => this.#report(error, this.name));
+    for (const listener of [...this.#reconnectListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        this.#report(error, this.name);
+      }
+    }
   }
 
   /**

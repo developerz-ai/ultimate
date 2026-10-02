@@ -93,7 +93,7 @@ function subscribe(sid: string): Frame {
 }
 
 function upgradeTarget(): UpgradeTarget {
-  return { upgrade: () => true };
+  return { upgrade: () => true, requestIP: () => null };
 }
 
 function node(

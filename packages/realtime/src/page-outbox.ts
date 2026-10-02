@@ -1,13 +1,10 @@
 /**
- * The page's ONE outbox: writes a page could not send are queued in `OfflineQueue`, persisted in
- * the page's durable store under the current principal, and replayed IN ORDER over HTTP — each to
- * `actionPath(name)` through core's `clientTransport`, each with its own idempotency key, so a
- * replay after a lost response is answered from the action's idempotency store and never applied
- * twice. Replayed on open, on `online`, and on the service worker's `OUTBOX_DRAIN_MESSAGE`.
- * A principal change wipes the previous principal's queue: its writes are never sent as the next.
+ * The page's ONE outbox: writes a page could not send, persisted under the current principal and
+ * replayed IN ORDER over HTTP, each under its own idempotency key. AT LEAST once — an entry leaves
+ * the disk when its ack is written. A principal change abandons the pass and wipes the queue.
  */
 
-import type { ClientScope } from '@ultimat3/core/page';
+import type { ClientScope, UltimateError } from '@ultimat3/core/page';
 import {
   actionPath,
   classifyThrown,
@@ -15,12 +12,14 @@ import {
   OUTBOX_DRAIN_MESSAGE,
   onRescope,
   pageClient,
+  renderThrowable,
 } from '@ultimat3/core/page';
 import type { LocalStore } from './local-store-idb';
 import { pageLocalStore, scopeKey } from './local-store-idb';
 import type { DrainReport, QueuedMutation, QueueState, QueueStore } from './offline-queue';
 import { MemoryQueueStore, OfflineQueue, toQueueError } from './offline-queue';
 import { OUTBOX_KEY, type OutboxEntry, type OutboxHandle, type OutboxHost } from './outbox-slot';
+import { LocalStoreUnavailableError, OfflineQueueAbandonedError } from './page-errors';
 import { peekPageRealtime } from './page-store';
 import { carriedBy } from './record-store';
 
@@ -63,9 +62,17 @@ export interface OutboxOptions {
    * the write queued and the post it liked missing, and showed the old count.
    */
   readonly beforeEnqueue?: (() => Promise<void>) | undefined;
+  /** Where a disk that refused the queue is said, by code. Default `console.warn`. */
+  readonly warn?: ((error: UltimateError) => void) | undefined;
 }
 
 const EMPTY: DrainReport = { sent: 0, collapsed: 0, remaining: 0, stoppedAt: null };
+
+/** One principal's open queue, and the scope the drain lock is named after. */
+interface Held {
+  readonly queue: OfflineQueue;
+  readonly scope: string | undefined;
+}
 
 export function createOutbox(options: OutboxOptions): PageOutbox {
   const principal =
@@ -73,60 +80,124 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
   const send = options.send ?? sendOverHttp;
   const overlays =
     options.overlays ?? ((): OutboxOverlays | undefined => peekPageRealtime()?.store);
-  let queue: OfflineQueue | undefined;
-  /** The scope the open queue belongs to — what the drain lock is named after. */
-  let scope: string | undefined;
+  /**
+   * The open queue AND the scope it belongs to, as one value: a pass captures both when it starts,
+   * so nothing it does later can be read off a principal that arrived since.
+   */
+  let held: Held | undefined;
+  /**
+   * Bumped by every principal change, SYNCHRONOUSLY. Anything here that resolves a queue after an
+   * await compares it first: the answer to "whose queue" must be the one from before the await.
+   */
+  let epoch = 0;
+  const warn = options.warn ?? ((error: UltimateError): void => console.warn(error));
+  const unavailable = (what: string, error: unknown): void =>
+    warn(new LocalStoreUnavailableError({ reason: `${what}: ${renderThrowable(error)}` }));
 
+  /** Never rejects: a queue the disk would not open is a memory queue, said once by code. */
   const open = async (): Promise<void> => {
-    scope = scopeKey(principal());
-    queue = await OfflineQueue.open(queueStore(await options.local, scope));
+    const at = epoch;
+    const scope = scopeKey(principal());
+    let queue: OfflineQueue;
+    try {
+      queue = await OfflineQueue.open(queueStore(await options.local, scope));
+    } catch (error) {
+      unavailable('the outbox could not be opened', error);
+      queue = await OfflineQueue.open(new MemoryQueueStore());
+    }
+    // The principal left while the disk was being read: this queue is the one that left with it,
+    // and the handler that saw the change has already chained the next open.
+    if (at !== epoch) {
+      queue.abandon();
+      return;
+    }
+    held?.queue.abandon();
+    held = { queue, scope };
   };
   let ready = open();
+  /** The current principal's queue: `ready` is re-made by a rescope, so it is re-read until still. */
+  const current = async (): Promise<Held | undefined> => {
+    for (;;) {
+      const opening = ready;
+      await opening;
+      if (opening === ready) return held;
+    }
+  };
   let running: Promise<DrainReport> | undefined;
   /** A trigger landed while a pass ran: one more pass follows it, never one per trigger. */
   let again = false;
 
-  const deliver = async (mutation: QueuedMutation): Promise<void> => {
-    const current = queue;
-    const carried = new Set<string>();
-    try {
-      await send({ key: mutation.key, name: mutation.name, input: mutation.input }, carried);
-    } catch (error) {
-      const kind = classifyThrown(error);
-      // The network, or a server asking to be asked again: stays queued, and the pass stops so
-      // nothing behind it overtakes it.
-      if (kind === 'retryable' || kind === 'retry-after') throw error;
-      // Anything else is the server's decision about this write — kept for the UI, never resent.
-      await current?.fail(mutation.key, toQueueError(error));
-      overlays()?.drop(mutation.key);
-      return;
-    }
-    await current?.ack(mutation.key);
-    const store = overlays();
-    try {
-      // Exactly as a live write settles: a row the answer did not carry keeps its overlay until
-      // the server's row for it arrives.
-      store?.settle(mutation.key, carried);
-    } catch {
-      // A custom merge that answered no row: the server's truth stands.
-      store?.drop(mutation.key);
-    }
-  };
+  const deliver =
+    (queue: OfflineQueue) =>
+    async (mutation: QueuedMutation): Promise<void> => {
+      const carried = new Set<string>();
+      try {
+        await send({ key: mutation.key, name: mutation.name, input: mutation.input }, carried);
+      } catch (error) {
+        const kind = classifyThrown(error);
+        // The network, or a server asking to be asked again: stays queued, and the pass stops so
+        // nothing behind it overtakes it. So does a queue whose principal left mid-send.
+        if (kind === 'retryable' || kind === 'retry-after' || queue.abandoned) throw error;
+        // Anything else is the server's decision about this write — kept for the UI, never resent.
+        await queue.fail(mutation.key, toQueueError(error));
+        overlays()?.drop(mutation.key);
+        return;
+      }
+      // The principal changed while this was on the wire: its store and its twins are already
+      // gone, and what is on the page now is somebody else's.
+      if (queue.abandoned) return;
+      await queue.ack(mutation.key);
+      const store = overlays();
+      try {
+        // Exactly as a live write settles: a row the answer did not carry keeps its overlay until
+        // the server's row for it arrives.
+        store?.settle(mutation.key, carried);
+      } catch {
+        // A custom merge that answered no row: the server's truth stands.
+        store?.drop(mutation.key);
+      }
+    };
 
   onRescope((_next, prev) => {
     const gone = scopeKey(prev.principal);
+    // SYNCHRONOUSLY, before anything is awaited: a pass parked inside `send` resumes into the next
+    // principal's session, and the wipe below reaches the disk but never the pass. Abandoned, it
+    // sends nothing more and writes nothing back.
+    held?.queue.abandon();
+    held = undefined;
+    epoch += 1;
+    // The single-flight slot is the principal's too: left set, the next principal's trigger JOINED
+    // the abandoned pass — handed its report, another principal's key in it — and its own queue
+    // was not drained until some later trigger. `settled` only clears a slot that is still its own.
+    running = undefined;
+    again = false;
     ready = ready.then(async () => {
-      if (gone !== undefined) await (await options.local).wipe(gone);
+      try {
+        if (gone !== undefined) await (await options.local).wipe(gone);
+      } catch (error) {
+        // Still on disk, under the scope that left: unreachable from this principal, and the next
+        // boot's `wipeOthers` takes it. Said, never thrown — a rejection here used to poison the
+        // chain, so every later enqueue, replay and rescope on this tab failed with it.
+        unavailable("the previous principal's outbox could not be wiped", error);
+      }
       await open();
     });
   });
 
   const self: PageOutbox = {
     enqueue: async (entry) => {
+      // WHOSE queue is decided now, before anything is awaited: resolved after the flush below,
+      // a write issued under one principal and parked there was queued — and sent — as the next.
+      // A queue still opening is waited for, and belongs to this call only if nobody left since.
+      const at = epoch;
+      const mine = held ?? (await current());
+      if (mine === undefined || at !== epoch) {
+        throw new OfflineQueueAbandonedError({ name: entry.name });
+      }
       // A disk that refused the rows must not also cost the write: the intent still goes on disk.
       await options.beforeEnqueue?.().catch(() => undefined);
-      await ready;
-      await queue?.enqueue(entry);
+      // Abandoned meanwhile, it refuses by the same code.
+      await mine.queue.enqueue(entry);
     },
     replay: () => {
       // Single flight: a trigger that lands while a replay is running JOINS it. Open, `online`,
@@ -140,20 +211,19 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
         return running;
       }
       const pass = (async (): Promise<DrainReport> => {
-        await ready;
-        if (queue === undefined) return EMPTY;
+        const now = await current();
+        if (now === undefined) return EMPTY;
         // Checked when the pass STARTS, whoever asked (the socket's reconnect asks too): an
         // attempt the browser already knows cannot leave is a failed request on the wire and
         // nothing more. `online` asks again.
-        if (knownOffline()) return { ...EMPTY, remaining: queue.pending().length };
-        const draining = queue;
+        if (knownOffline()) return { ...EMPTY, remaining: now.queue.pending().length };
         // One tab drains a principal's outbox at a time, and it drains what EVERY tab queued: the
         // queue is re-read under the lock, so a write another tab made since this one opened is
         // sent too, and an `inflight` entry — which only a pass holding this lock could have put
         // on the wire, and it is over — goes back to `pending`.
-        return await exclusive(`ultimate-outbox:${scope ?? 'memory'}`, async () => {
-          await draining.reload();
-          return await draining.drain(deliver);
+        return await exclusive(`ultimate-outbox:${now.scope ?? 'memory'}`, async () => {
+          await now.queue.reload();
+          return await now.queue.drain(deliver(now.queue));
         });
       })();
       const settled = (report?: DrainReport): void => {
@@ -172,9 +242,10 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
       return pass;
     },
     get size(): number {
-      return queue?.pending().length ?? 0;
+      return held?.queue.pending().length ?? 0;
     },
-    pending: () => (queue?.pending() ?? []).map(({ key, name, input }) => ({ key, name, input })),
+    pending: () =>
+      (held?.queue.pending() ?? []).map(({ key, name, input }) => ({ key, name, input })),
     get ready(): Promise<void> {
       return ready;
     },

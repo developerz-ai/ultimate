@@ -128,7 +128,7 @@ describe('a read that never answered does not clear the staleness it was sent to
     await expect(fillWindow(entry)).rejects.toThrow(PoolTimeout);
     // Still stale, so this one forces its own read rather than being served the window the
     // failure left behind.
-    await expect(fillWindow(entry)).resolves.toEqual({ rows, lsn: formatLsn(4) });
+    await expect(fillWindow(entry)).resolves.toMatchObject({ rows, lsn: formatLsn(4) });
 
     expect(reads).toBe(2);
     expect(entry.stale).toBe(false);
@@ -252,11 +252,11 @@ describe('an older read never lands on a window a newer one already replaced', (
 
     // T3 — P2 answers with the post-gap rows, which is the repair.
     answer(1, fresh);
-    await expect(second).resolves.toEqual({ rows: fresh, lsn: '' });
+    await expect(second).resolves.toMatchObject({ rows: fresh, lsn: '' });
     // T4 — the OLDER read finally answers.
     answer(0, preGap);
 
-    await expect(first).resolves.toEqual({ rows: fresh, lsn: '' });
+    await expect(first).resolves.toMatchObject({ rows: fresh, lsn: '' });
     expect(entry.rows).toEqual(fresh);
   });
 
@@ -269,7 +269,7 @@ describe('an older read never lands on a window a newer one already replaced', (
     await expect(repair).resolves.toBeUndefined();
     answer(0, preGap);
 
-    await expect(joining).resolves.toEqual({ rows: fresh, lsn: '' });
+    await expect(joining).resolves.toMatchObject({ rows: fresh, lsn: '' });
     expect(entry.rows).toEqual(fresh);
   });
 
@@ -282,10 +282,10 @@ describe('an older read never lands on a window a newer one already replaced', (
 
     // The older one answers FIRST this time, so the forced read is still the newest to land.
     answer(0, preGap);
-    await expect(first).resolves.toEqual({ rows: preGap, lsn: '' });
+    await expect(first).resolves.toMatchObject({ rows: preGap, lsn: '' });
     answer(1, fresh);
 
-    await expect(second).resolves.toEqual({ rows: fresh, lsn: '' });
+    await expect(second).resolves.toMatchObject({ rows: fresh, lsn: '' });
     expect(entry.rows).toEqual(fresh);
   });
 });
@@ -314,7 +314,7 @@ describe('a shared read that never answers does not pin the window forever', () 
     // one — which is the whole of the fix.
     expect(entry.reading).toBeNull();
     answer = { rows, lsn: formatLsn(4) };
-    await expect(fillWindow(entry)).resolves.toEqual({ rows, lsn: formatLsn(4) });
+    await expect(fillWindow(entry)).resolves.toMatchObject({ rows, lsn: formatLsn(4) });
   }, 1_000);
 
   test('the window it was sent to fill is left STALE, exactly as a rejecting read leaves it', async () => {
@@ -366,7 +366,7 @@ describe('a shared read that never answers does not pin the window forever', () 
       schedule: clock.schedule,
     });
 
-    await expect(fillWindow(entry)).resolves.toEqual({ rows, lsn: formatLsn(4) });
+    await expect(fillWindow(entry)).resolves.toMatchObject({ rows, lsn: formatLsn(4) });
     // An armed timer per completed read is a leak that keeps the process alive.
     expect(clock.armed()).toBe(false);
     expect(entry.reading).toBeNull();

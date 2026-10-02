@@ -4,18 +4,33 @@
 // client may reconnect to any node and resume from its cursor, which is why drain is allowed to
 // redistribute connections at all.
 
-import { logger, markReady, reportError, systemClock, uuid } from '@ultimat3/core';
+import {
+  DEFAULT_HEALTH_DETAIL_PEERS,
+  logger,
+  markReady,
+  reportError,
+  systemClock,
+  uuid,
+} from '@ultimat3/core';
 import type { Topic } from './channel';
+import { ChannelSids } from './channel-sids';
 import { detach } from './detach';
 import { evictInChunks } from './drain-evictions';
-import { isClientFault } from './errors';
+import { isClientFault, TopicForbiddenError } from './errors';
 import type { TransportSubscription } from './fanout';
-import { CHANGE_SUBJECT_ALL, parseEnvelope, SeqGapDetector } from './replicator';
+import { refuseSubscription } from './live-refusal';
+import { CHANGE_SUBJECT_ALL } from './replicator';
+import { parseEnvelope, SeqGapDetector } from './replicator-envelope';
 import { CLOSE, DEFAULT_MAX_BUFFERED_BYTES, SocketRegistry, SyncSocket } from './socket';
 import { idleSweepPeriodMs } from './socket-idle';
 import { GrantBook, sweepGrants } from './sync-auth';
 import { ackRefOf, createFrameRouter } from './sync-frames';
-import { drainGraceMs, socketCeilings, syncNodeBounds } from './sync-node-bounds';
+import {
+  clientHeartbeatMs,
+  drainGraceMs,
+  socketCeilings,
+  syncNodeBounds,
+} from './sync-node-bounds';
 import type { SyncNode, SyncNodeOptions, SyncWs } from './sync-node-contract';
 import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
 import { handleUpgrade, type UpgradeTarget } from './sync-upgrade';
@@ -52,6 +67,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const presence = options.presence;
   const grants = new GrantBook();
   const gaps = new SeqGapDetector();
+  const channelSids = new ChannelSids();
+  let reconnects: (() => void) | null = null;
+  /** The re-auth pass in flight, shared by every tick that lands while it runs. */
+  let reauthPass: Promise<void> | null = null;
   let ready = false;
   /** Resolved by `teardown` when the last socket leaves, for a drain that is waiting its grace. */
   let lastSocketLeft: (() => void) | null = null;
@@ -71,6 +90,8 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const release = (): void => {
     changes?.unsubscribe();
     changes = null;
+    reconnects?.();
+    reconnects = null;
     if (sweeping !== null) clearInterval(sweeping);
     sweeping = null;
     if (reauthing !== null) clearInterval(reauthing);
@@ -91,7 +112,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
    */
   const teardown = (socket: SyncSocket): readonly Promise<unknown>[] => {
     options.registry.unsubscribeSocket(socket.id);
-    const topics = [...socket.topics] as Topic[];
+    // Suspended seats included, and the presence rooms read BEFORE the seats are given back: the
+    // hub forgets a topic's declaration with its last member.
+    const topics = options.hub.topicsOf(socket);
+    const rooms = topics.filter(hasRoster);
     for (const name of topics) options.hub.unsubscribe(socket, name);
     sockets.remove(socket.id);
     grants.delete(socket.id);
@@ -101,7 +125,9 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     // bus and the close callback is synchronous, so it cannot be awaited here.
     const leaves: Promise<unknown>[] = [];
     if (presence) {
-      for (const name of topics) {
+      // Only a channel declared `events: true` has a roster: a leave on any other was a KV read,
+      // a KV write and a presence event on a channel that never carried one.
+      for (const name of rooms) {
         const leave = presence.leave(name, socket.id);
         // Detached as well as returned: `detach` attaches the reporting catch, so a caller that
         // awaits this later is awaiting a promise whose rejection is already handled.
@@ -130,6 +156,11 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       lastSocketLeft = done;
     });
 
+  /** Whether this topic's channel carries presence — asked while the hub still knows the topic. */
+  function hasRoster(name: Topic): boolean {
+    return options.hub.channelOf(name)?.channel.events === true;
+  }
+
   const evict = (socket: SyncSocket, code: number, reason: string): readonly Promise<unknown>[] => {
     socket.close(code, reason);
     return teardown(socket);
@@ -141,17 +172,47 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
    * was authorized for as long as it stayed open — and an active client's socket never idles out,
    * because every inbound frame touches it.
    */
-  const reauthenticate = async (): Promise<void> => {
+  const reauthenticate = (): Promise<void> => {
+    // One pass at a time. The interval does not wait for the pass it started: after a deploy every
+    // grant expires in one window, a pass over them can outlast the interval, and each overlapping
+    // tick then refreshed the same grants again and re-snapshotted the same subscriptions.
+    reauthPass ??= reauthPassOnce().finally(() => {
+      reauthPass = null;
+    });
+    return reauthPass;
+  };
+
+  const reauthPassOnce = async (): Promise<void> => {
     await sweepGrants({
       grants,
       clock,
+      refreshDeadlineMs: options.grantRefreshDeadlineMs,
       onActor: async (socketId, actor) => {
         const socket = sockets.get(socketId);
         if (!socket) return;
+        const rooms = new Set(options.hub.topicsOf(socket).filter(hasRoster));
         // The hub sets `socket.actor` and drops the topics this actor may no longer read; the
-        // registry re-decides every live subscription and desyncs the survivors, so the next
-        // delivery re-snapshots them under the new authority rather than the old window.
-        await options.hub.onActorChange(socket, actor);
+        // registry re-decides every live subscription (refusing each one it drops under its sid)
+        // and desyncs the survivors, so the next delivery re-snapshots them under the new
+        // authority rather than the old window.
+        for (const name of await options.hub.onActorChange(socket, actor)) {
+          // A dropped seat is SAID: unsaid, the client kept rendering the channel as live.
+          const sid = channelSids.sidOf(socket, name);
+          channelSids.delete(socket, name);
+          if (sid !== undefined) {
+            refuseSubscription(
+              socket,
+              sid,
+              new TopicForbiddenError({
+                topic: name,
+                actorId: socket.actorId,
+                reason: 'the session changed and the channel policy no longer admits it',
+              }),
+            );
+          }
+          if (presence && rooms.has(name))
+            detach(presence.leave(name, socket.id), 'presence.leave', name);
+        }
         await options.registry.reauthorize(socket);
       },
       onRevoked: (socketId) => {
@@ -180,6 +241,8 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     registry: options.registry,
     buildId: options.buildId,
     presence,
+    channelSids,
+    heartbeatMs: clientHeartbeatMs(presence?.heartbeatMs, sockets.idleTimeoutMs),
   });
 
   return {
@@ -200,7 +263,14 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         // subscribers are re-served on the next change to each query.
         if (gaps.observe(envelope)) {
           const marked = options.registry.invalidate();
-          logger.warn('live.change_gap', { entity: envelope.change.entity, desynced: marked });
+          // Channels too: their seq is minted from what this node sees, so the hole is invisible
+          // to a ring that would otherwise replay across it as complete history.
+          const channelGaps = options.hub.invalidate();
+          logger.warn('live.change_gap', {
+            entity: envelope.change.entity,
+            desynced: marked,
+            channelGaps,
+          });
         }
         // Not awaited: the bus handler must return before the next change, and ordering is the
         // registry's — one serial lane per query id. What this call site owes is the failure. An
@@ -209,6 +279,15 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         // The same stream feeds the declared channels: a write names no channel (axiom 2), and the
         // hub turns this change into `records` frames on every channel it touches.
         options.hub.deliverChange(envelope.change);
+      });
+      // A bus that reconnected is changes this node never saw, and the gap detector only notices
+      // on the NEXT message: with no later write, every window and cursor here stayed behind and
+      // every new subscriber joined the stale window. Said by the transport, repaired now.
+      reconnects = options.transport.onReconnect(() => {
+        gaps.forget();
+        const marked = options.registry.invalidate();
+        const channelGaps = options.hub.invalidate();
+        logger.warn('live.bus_reconnected', { desynced: marked, channelGaps });
       });
       // One pass per heartbeat window: a member is swept only once it has actually missed its
       // window, and the interval never holds the process open — shutdown is the drain's job.
@@ -270,6 +349,8 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           newSocketId: () => uuid(),
           authenticate: options.authenticate,
           allowedOrigins: options.allowedOrigins,
+          admitReachedOrigin: options.admitReachedOrigin,
+          healthDetailPeers: options.healthDetailPeers ?? DEFAULT_HEALTH_DETAIL_PEERS,
           onGranted: (socketId, grant) => grants.set(socketId, grant),
           // The other half of recording the grant before the upgrade: an upgrade that never took
           // gets no `close` callback, so this is the only thing that can free its entry.
@@ -403,9 +484,3 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     },
   };
 }
-
-/**
- * An upgrade refused before a socket exists, rendered as the error contract rather than as a word.
- * There is no frame to carry it — the client never got a connection — so the body is the only
- * channel, and `--json` on every error means this one too.
- */

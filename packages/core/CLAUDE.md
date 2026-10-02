@@ -194,6 +194,8 @@ is the bug:
   WHOLE drain's; `DEFAULT_DEADLINE_MS` (25 s) always applies; it is real monotonic time
   (`systemClock`), never the injected `clock`. `drainDeadlineMs()` is the one decision point.
   `settleWithin` attaches a rejection handler unconditionally.
+- **Who a health endpoint tells what is ONE rule, here** (`health-disclosure.ts`): `healthBody` +
+  `healthPeerListed`, called by http and by realtime's sync listener. Never a second copy.
 - **A readiness grace runs before the `accept` phase** (`lifecycle-grace.ts`): `/readyz` answers 503
   with the socket still open for `drain.readinessGraceMs`, ADDED to `deadlineMs` (a chart's
   `terminationGracePeriodSeconds` must exceed the sum — 5 s + 25 s by default). Unset: 0 in

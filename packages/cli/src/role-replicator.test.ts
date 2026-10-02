@@ -3,10 +3,16 @@
 // Postgres feed at all — it was unreachable, and the class of bug is a driver nothing constructs.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { readinessChecks } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import type { Transport } from '@ultimat3/realtime/server';
 import { InProcessTransport } from '@ultimat3/realtime/server';
-import { replicatedRelations, startReplicator } from './role-replicator';
+import {
+  REPLICATOR_READINESS_CHECK,
+  replicatedRelations,
+  startReplicator,
+  watchReplicatorReadiness,
+} from './role-replicator';
 import type { DevServices } from './runtime-bindings';
 
 const embedded: DevServices = {
@@ -157,5 +163,27 @@ describe('x dev --role replicator', () => {
     // Proven through the refusal path rather than a live connection: with entities registered the
     // role gets past its own preflight and fails only on the database that is not there.
     await expect(startReplicator({ services: external, env: ENV, transport })).rejects.toThrow();
+  });
+});
+
+// A replication stream that ends is restarted by the replicator itself, and for as long as that
+// takes this process replicates nothing. `/readyz` used to read only the transport, so a pod whose
+// stream was dead stayed in rotation as the database's one replicator.
+describe('the replicator readiness check', () => {
+  test('follows `running`: failing while the stream is down, ok once it is back', () => {
+    const replicator = { running: true };
+    const unregister = watchReplicatorReadiness(replicator);
+    try {
+      expect(readinessChecks()[REPLICATOR_READINESS_CHECK]).toBe('ok');
+      // The stream ended on its own; the takeover loop has not brought it back yet.
+      replicator.running = false;
+      expect(readinessChecks()[REPLICATOR_READINESS_CHECK]).toBe('failing');
+      replicator.running = true;
+      expect(readinessChecks()[REPLICATOR_READINESS_CHECK]).toBe('ok');
+    } finally {
+      unregister();
+    }
+    // Unregistered with the role: a stopped replicator must not hold a pod's readiness red.
+    expect(Object.hasOwn(readinessChecks(), REPLICATOR_READINESS_CHECK)).toBe(false);
   });
 });

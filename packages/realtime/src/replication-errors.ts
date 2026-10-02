@@ -17,10 +17,14 @@ export class ReplicationProtocolError extends RealtimeError {
   constructor(args: { stage: string; detail: string; fix?: string }) {
     super({
       code: 'X_REPLICATION_PROTOCOL',
-      cause: `postgres replication ${args.stage}: ${args.detail}`,
-      fix:
-        args.fix ??
-        'x doctor db — the server must be postgres >= 14 with a pgoutput publication and wal_level=logical',
+      // The requirement rides the cause when the caller names no fix of its own: a `fix:` is one
+      // command, and `x doctor` has no `db` subcommand for the old line to have been one.
+      cause:
+        `postgres replication ${args.stage}: ${args.detail}` +
+        (args.fix === undefined
+          ? ' — the server must be postgres >= 14 with a pgoutput publication and wal_level=logical'
+          : ''),
+      fix: args.fix ?? 'x doctor --json',
     });
   }
 }

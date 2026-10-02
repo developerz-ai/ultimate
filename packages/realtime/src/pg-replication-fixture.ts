@@ -54,10 +54,15 @@ export const relation = (
   return writer.finish();
 };
 
-export const tuple = (writer: ByteWriter, values: readonly (string | null)[]): ByteWriter => {
+/** `'u'` in a tuple: an out-of-line (TOAST) value the UPDATE left alone, sent as no bytes at all. */
+export const UNCHANGED_TOAST: unique symbol = Symbol('unchanged-toast');
+export type TupleValue = string | null | typeof UNCHANGED_TOAST;
+
+export const tuple = (writer: ByteWriter, values: readonly TupleValue[]): ByteWriter => {
   writer.int16(values.length);
   for (const value of values) {
     if (value === null) writer.uint8(0x6e);
+    else if (value === UNCHANGED_TOAST) writer.uint8(0x75);
     else writer.uint8(0x74).int32(value.length).utf8(value);
   }
   return writer;
@@ -75,7 +80,7 @@ export const insert = (oid: number, values: readonly (string | null)[]): Uint8Ar
 export const update = (
   oid: number,
   before: readonly (string | null)[] | null,
-  after: readonly (string | null)[],
+  after: readonly TupleValue[],
 ): Uint8Array => {
   const writer = new ByteWriter().uint8(0x55).int32(oid);
   if (before !== null) tuple(writer.uint8(0x4f), before);
@@ -158,6 +163,8 @@ export interface ServerScript {
   readonly slotPlugin?: string | null;
   /** Table names `pg_class` reports with `relreplident <> 'f'`. Empty is the healthy answer. */
   readonly partialIdentity?: readonly string[];
+  /** Table names `pg_class` reports as not FULL when asked on behalf of a params channel. */
+  readonly notFullIdentity?: readonly string[];
 }
 
 /**
@@ -249,6 +256,11 @@ export class FakeWalsender implements PgStream {
       this.push(joined(dataRow(['replicator']), complete(), ready()));
       return;
     }
+    if (sql.includes("relreplident <> 'f'")) {
+      const rows = (this.#script.notFullIdentity ?? []).map((name) => dataRow([name]));
+      this.push(joined(...rows, complete(), ready()));
+      return;
+    }
     if (sql.includes('relreplident')) {
       const rows = (this.#script.partialIdentity ?? []).map((name) => dataRow([name]));
       this.push(joined(...rows, complete(), ready()));
@@ -320,6 +332,8 @@ export class UncloseableWalsender extends FakeWalsender {
 export interface FeedOptions {
   readonly entities?: readonly string[];
   readonly statusIntervalMs?: number;
+  /** Tables a params channel carries; absent means "whatever the channel registry declares". */
+  readonly fullIdentityTables?: readonly string[];
 }
 
 /** The feed every test in this package builds — one set of options, over whatever it dials. */
@@ -337,6 +351,9 @@ export const feedOver = (
     ...(options.statusIntervalMs === undefined
       ? {}
       : { statusIntervalMs: options.statusIntervalMs }),
+    ...(options.fullIdentityTables === undefined
+      ? {}
+      : { fullIdentityTables: options.fullIdentityTables }),
   });
 
 export const POST_COLUMNS: readonly FixtureColumn[] = [
@@ -381,7 +398,9 @@ export const start = async (
   ensurePostsEntity();
   const server = new FakeWalsender(options.script);
   const events: ChangeEvent[] = [];
-  const feed = feedOver(() => Promise.resolve(server), options);
+  // No params channel unless a case says so: the default reads the process-wide channel registry,
+  // and what another suite declared there must not decide which statements this one sees.
+  const feed = feedOver(() => Promise.resolve(server), { fullIdentityTables: [], ...options });
   await feed.start(
     options.from === undefined
       ? { onChange: (event) => void events.push(event) }

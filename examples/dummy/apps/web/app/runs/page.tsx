@@ -43,20 +43,22 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   /**
-   * measured: 130,686 B (2026-10-02; `x build --target static`'s `.x/build-stats.json`), against
-   * 132,096 (`129kb`) — the island chunk + the update banner + the client router, the page boot and
-   * the `idle` runtime every live `app/` document carries. Was 128,889 against `127.5kb`: the
-   * +1,797 B is the usage block (`run-usage.tsx`, its locale-formatted units) and the refused run
-   * said in words.
+   * measured: 132,330 B (2026-10-02; `x build --target static`'s `.x/build-stats.json`), against
+   * 133,632 (`130.5kb`) — the island chunk + the update banner + the client router, the page boot
+   * and the `idle` runtime every live `app/` document carries. Was 130,686 against `129kb`: of the
+   * +1,644 B, 915 were already on main when plan 101's slice 08 began (131,601 measured before
+   * its first edit) and 729 are that slice's client: the beat the node names
+   * (`hello.heartbeatMs`), a channel that leaves `joining` on the node's answer, null-prototype
+   * frame maps, and a queued write the outbox refuses taken back off the screen.
    * why: the console is a live read over the page's one socket (`useQuery(liveRunEvents)` — the
    * record store and the socket host in the island, as on `/feed`), `@ultimat3/ui`'s `AsyncRegion`
    * for the read's own states with its `Button`, `Input` and `DateTime`, the typed action client
    * for the four writes a run takes (connect, start, answer, cancel), and what an ended run used.
-   * The 1,410 B over the measurement is Bun's tree-shaker flap (`island-bytes.test.ts`): a chunk is
+   * The 1,302 B over the measurement is Bun's tree-shaker flap (`island-bytes.test.ts`): a chunk is
    * up to 1,124 B larger on a run that keeps `schema-error-codes.ts`. It comes DOWN with the shared
    * island runtime (#505), as `/feed` does.
    */
-  budget: { js: '129kb', lcp: 2000 },
+  budget: { js: '130.5kb', lcp: 2000 },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

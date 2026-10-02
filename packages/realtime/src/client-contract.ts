@@ -63,7 +63,10 @@ export interface LiveClientOptions {
   readonly clock?: Clock;
   /** How a pending reconnect is armed. Defaults to `setTimeout`; tests fire theirs by hand. */
   readonly scheduler?: Scheduler;
-  /** How often a live socket re-announces itself, in ms. `0` disables it. Default 15s. */
+  /**
+   * How often a live socket re-announces itself, in ms, until the node names its own beat on its
+   * `hello` (`hello.heartbeatMs`). `0` disables the pass, whatever the node says. Default 10s.
+   */
   readonly heartbeatMs?: number;
   /** Where a failure nobody awaits is reported. Defaults to `console.error`. */
   readonly onError?: (error: unknown) => void;

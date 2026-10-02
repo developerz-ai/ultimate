@@ -273,6 +273,7 @@ describe('presence over the bus', () => {
             publish: async () => undefined,
             subscribe: async () => ({ subject: '', unsubscribe: () => undefined }),
             close: async () => undefined,
+            onReconnect: () => () => undefined,
             shared: new NatsKvSet({ client: async () => client, bucket: BUCKET, clock }),
           },
           clock,

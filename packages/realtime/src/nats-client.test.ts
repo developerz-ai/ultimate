@@ -91,3 +91,21 @@ describe('parseNatsUrl', () => {
     expect(causeOf(error)).not.toContain('s3cret');
   });
 });
+
+// A bus URL carries the credential, and an error is the one thing that reaches a log, `--json`, an
+// agent transcript and a ticket. `parsePgUrl` already names the variable instead of the value.
+describe('a URL that cannot be parsed is never echoed', () => {
+  const SECRET = 's3cr3t-bus-password';
+
+  for (const [what, url] of [
+    ['an unparseable URL', `nats://ops:${SECRET}@[::bad`],
+    ['a URL with no host', `nats:${SECRET}`],
+  ] as const) {
+    test(`${what} names the variable, not the value`, () => {
+      const failure = thrown(() => parseNatsUrl(url));
+      expect(codeOf(failure)).toBe('X_TRANSPORT_UNAVAILABLE');
+      expect(causeOf(failure)).toContain('NATS_URL');
+      expect(`${causeOf(failure)} ${String(failure)}`).not.toContain(SECRET);
+    });
+  }
+});

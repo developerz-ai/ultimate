@@ -111,9 +111,9 @@ Opt-in per entity, and shipped in 21.0.0 (`CHANGELOG.md`). The 20.x shape (`stor
 | boot | the rows are restored **before** the socket connects, as provisional records; the first server row for a key wins outright |
 | an answer that did not carry every row the overlay wrote | the overlay stays for those rows until a server row for them arrives, capped at 10 s (`DEFAULT_AWAIT_SERVER_MS`), after which server truth stands |
 | a write with no response | only `X_CLIENT_TRANSPORT_FAILED` with `meta.failure: 'network'`: `useMutation` queues it in the page's one outbox under its idempotency key, keeps its overlay on screen, and resolves `undefined`. `'status'` rejects and drops the overlay; `'body'` (a 2xx that was not JSON, which may have landed) rejects and keeps the overlay until the next server row |
-| replay | in order, over HTTP, each write with its original idempotency key: whenever the page socket (re)connects, on `online`, and on the service worker's `OUTBOX_DRAIN_MESSAGE` ([PWA and offline](PWA-And-Offline)). A retryable failure stops the pass; a refusal is final and rolls back its overlay |
+| replay | in order, over HTTP, each write with its original idempotency key: whenever the page socket (re)connects, on `online`, and on the service worker's `OUTBOX_DRAIN_MESSAGE` ([PWA and offline](PWA-And-Offline)). A retryable failure stops the pass; a refusal is final and rolls back its overlay. **At least once**: an entry leaves the disk when its ack is written, so a 2xx that reached a document already being replaced is sent again by the next one, under the same key — answered from the action's idempotency store (a `mutator()` is `idempotent: true` or it does not declare), never applied twice. A `409 X_IDEMPOTENCY_CONFLICT` for a first attempt still running stays queued and is asked again |
 | a write queued offline | flushes the persisted records it touched first, so a reload inside the 250 ms persist debounce keeps the row the write changed. No replay runs while `navigator.onLine` is `false` (`page-outbox.ts`) |
-| a principal change | **within one page** (`rescope()`): the previous principal's rows and queue are wiped, and writes still queued are lost, deliberately. **A sign-out that navigates** to a new document (the reference app's idiom: the `endSession` action at `POST /api/sessions/end`, posted by a native form) clears the browser first: its response carries `signOutHeaders()` from `@ultimat3/auth`, whose `Clear-Site-Data: "cache", "storage"` drops IndexedDB, local storage, the service worker and its cache, in a secure context. The next boot is the second line: it wipes every stored scope except the current principal's before restoring anything (`packages/realtime/src/boot.ts`, `wipeOthers`). An unscoped page wipes nothing |
+| a principal change | **within one page** (`rescope()`): the previous principal's rows and queue are wiped, and writes still queued are lost, deliberately. A replay on the wire at that moment is abandoned before its next write: nothing queued by one principal is sent under the next one's session. A write being queued at that moment is refused — `mutate` rejects with `X_OFFLINE_QUEUE_ABANDONED` and its optimistic twin is taken back. **A sign-out that navigates** to a new document (the reference app's idiom: the `endSession` action at `POST /api/sessions/end`, posted by a native form) clears the browser first: its response carries `signOutHeaders()` from `@ultimat3/auth`, whose `Clear-Site-Data: "cache", "storage"` drops IndexedDB, local storage, the service worker and its cache, in a secure context. The next boot is the second line: it wipes every stored scope except the current principal's before restoring anything (`packages/realtime/src/boot.ts`, `wipeOthers`). An unscoped page wipes nothing |
 | blocked storage | memory, plus one `X_LOCAL_STORE_UNAVAILABLE` warning; nothing survives a reload |
 
 The boot runs as **one deferred classic script per page** (`/_x/page-boot/<hash>.js`, from
@@ -223,7 +223,7 @@ Solid signal patch — fine-grained, no re-render of the list
 
 | Stage | Owned by | Guarantee |
 |---|---|---|
-| WAL decode | `replicator` (1 per DB) | ordered by LSN, at-least-once |
+| WAL decode | `replicator` (1 per DB) | ordered by LSN, at-least-once. A stream that ends is restarted by the same process from the last LSN it published, on a jittered backoff; `replicator.running` is `false` until it is back |
 | matcher | `replicator` | a change touching no registered query costs one predicate check |
 | fanout | NATS | subject = hash(query, params, tenant); no per-socket state on the bus |
 | socket | `sync` (stateless, no sticky sessions) | client re-subscribes anywhere; scales on connection count |
@@ -316,8 +316,9 @@ plan-101 DX ledger #21.
 |---|---|
 | a policy subject | `row: ({ params, ctx }) => …` loads what the policy decides about, the way an action's `row:` does |
 | registration | `channel()` registers itself in the process's channel table. `new ChannelHub({ transport, sockets })` serves every declared channel |
-| subscribe | by declared name + params. An undeclared name is `X_TOPIC_FORBIDDEN`, and so is a policy denial, latched per (socket, topic) until the session changes |
-| the first join | a join with no cursor on a channel that carries records is answered with **one** `replay-gap`, so the client runs one catch-up read. Rows written between a page's render and its join are otherwise never seen. A resubscribe with `since` replays from the ring, or gets `replay-gap` when `since` fell out of it (`channel-logs.ts`, `resume`) |
+| subscribe | by declared name + params. An undeclared name is `X_TOPIC_FORBIDDEN`, and so is a policy denial, latched per (socket, topic) until the session changes. Two more are denials before the policy runs: an anonymous socket on a channel that declares `row`, and a `row` loader the tenant guard refused |
+| re-authorization | when a socket's grant is renewed every seat is decided again. Denied: dropped, and refused to the client under its sid. Undecided (the policy or loader raised): kept but **suspended** — nothing is delivered until a later pass succeeds, then a records channel is told `replay-gap` |
+| the first join | a join with no cursor on a channel that carries records is answered with **one** `replay-gap`, so the client runs one catch-up read. Rows written between a page's render and its join are otherwise never seen. A resubscribe with `since` replays from the ring, or gets `replay-gap` when `since` fell out of it (`channel-logs.ts`, `resume`). A `since` that is already current is answered too — the `records` frame at that cursor, carrying nothing — so `useChannel()` leaves `joining`; an `events`-only channel leaves it on its first `events` frame, which is its presence roster |
 | records | rows of the listed entities travel as `records` frames, carrying `seq` and `epoch`, into the record store |
 | events | `hub.publishEvent(decl, params, event)` on a channel declared with `events: true`; otherwise `X_CHANNEL_DECLARATION_INVALID` |
 | presence | a roster arrives as an `events` frame `{ presence: op, members, total? }`. Read it with `readPresence(frame.event)` in the channel's events handler. There is no separate presence frame |
@@ -331,7 +332,7 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 | Property | Behavior |
 |---|---|
 | Cursor | the highest LSN the client has applied, per subscription. It advances on **every patch**, not only on a snapshot — a cursor whose `at` freezes at the last snapshot fails the lag check, and every client connected longer than `maxLagMs` re-snapshots instead of resuming |
-| Reconnect inside the change buffer window | delta replay from the `replicator`'s ring buffer — zero DB work |
+| Reconnect inside the change buffer window | delta replay from the `sync` node's ring buffer — zero DB work. A ring is complete only from its floor (its first retained change, or the read its window was filled by): a cursor older than that, such as one minted on another node, takes the snapshot |
 | Reconnect outside the window | one bounded snapshot query at a current LSN. Never WAL history traversal |
 | Cursor unusable and no snapshot path supplied | `X_CURSOR_STALE` |
 | Ordering | LSN is monotonic per DB, so a client can never apply an older change over a newer one |
@@ -355,7 +356,8 @@ A dead TCP connection that was never closed fires no `close` event. Only the cli
 
 | Property | Behaviour |
 |---|---|
-| Interval | **15s**, fixed for the page's one socket. The client option that set it went with `LiveClient` in 21.0.0 |
+| Interval | **the node's**: its `hello` reply names the beat (`heartbeatMs` — a third of its presence ttl, never slower than a quarter of its idle budget, floored at 1 s) and the page's one socket follows it. **10s** until it speaks, a third of the default ttl (30 s), so one lost beat is never a false leave. The client option that set it went with `LiveClient` in 21.0.0 |
+| The node names it | the node's `hello` reply carries `heartbeatMs`: a third of the presence ttl that node really runs, never slower than a quarter of its idle budget (`clientHeartbeatMs`). Optional and additive — no protocol bump; a reply without it leaves the default above |
 | One beat | a `hello`, plus one subscribe frame per topic held. A beat and an opening frame are **byte-identical** — `hello` carries no cursors — so a beat asks for nothing and resumes nothing |
 | Silence | nothing received for **two** intervals ⇒ the socket is closed with code `4000` and the reconnect timer arms |
 | Why re-sending topics | on the node, subscribing to a topic **is** joining its presence set, and repeating the frame is the presence heartbeat |

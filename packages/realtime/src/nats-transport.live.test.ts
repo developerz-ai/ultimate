@@ -8,6 +8,7 @@
 //   TEST_NATS_URL=nats://localhost:4222 bun test packages/realtime/src/nats-transport.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { parseNatsUrl } from './nats-client';
 import { kvGet } from './nats-jetstream';
 import { encodeToken } from './nats-kv';
 import { openNatsClient } from './nats-lib-client';
@@ -31,6 +32,72 @@ const transport = (): NatsTransport => {
 afterAll(async () => {
   for (const created of started) await created.close();
 });
+
+interface Leg {
+  /** The far side of this connection, once it is open. */
+  peer: { write(bytes: Uint8Array): number; end(): void } | undefined;
+  /** Bytes that arrived before the far side opened. */
+  readonly early: Uint8Array[];
+}
+
+/**
+ * A TCP relay in front of the real server, so a test can cut a connection without touching the
+ * server: the container is shared, and stopping it is not this file's to do. `cut()` ends every
+ * relayed connection the way a network partition does — both halves, no goodbye.
+ */
+async function relayTo(
+  host: string,
+  port: number,
+): Promise<{ port: number; cut(): void; stop(): void }> {
+  const clients = new Set<{ end(): void }>();
+  const listener = Bun.listen<Leg>({
+    hostname: '127.0.0.1',
+    port: 0,
+    socket: {
+      open(client) {
+        client.data = { peer: undefined, early: [] };
+        clients.add(client);
+        // Not awaited: `open` is synchronous, and the server speaks first (INFO) once this lands.
+        void Bun.connect<Leg>({
+          hostname: host,
+          port,
+          socket: {
+            open(upstream) {
+              upstream.data = { peer: client, early: [] };
+              client.data.peer = upstream;
+              for (const bytes of client.data.early.splice(0)) upstream.write(bytes);
+            },
+            data(_upstream, bytes) {
+              client.write(bytes);
+            },
+            close() {
+              client.end();
+            },
+            error() {
+              client.end();
+            },
+          },
+        }).catch(() => client.end());
+      },
+      data(client, bytes) {
+        // Copied: the runtime reuses the chunk's buffer once this handler returns.
+        if (client.data.peer === undefined) client.data.early.push(Uint8Array.from(bytes));
+        else client.data.peer.write(bytes);
+      },
+      close(client) {
+        clients.delete(client);
+        client.data.peer?.end();
+      },
+    },
+  });
+  return {
+    port: listener.port,
+    cut: () => {
+      for (const client of [...clients]) client.end();
+    },
+    stop: () => listener.stop(true),
+  };
+}
 
 describe.skipIf(url === undefined)('NatsTransport against a real nats-server', () => {
   test('connects, and creates the KV bucket when the cluster has none', async () => {
@@ -112,4 +179,51 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
     expect(await kvGet(client, BUCKET, kvKey)).toBeUndefined();
     await client.close();
   }, 20_000);
+
+  // Nothing in a unit test proves the LIBRARY tells the port it reconnected: the fake bus calls the
+  // option by hand. Here the connection is really cut and really re-established.
+  test('a connection the library re-establishes is announced, and its subscriptions survive', async () => {
+    const target = parseNatsUrl(url ?? '');
+    const relay = await relayTo(target.host, target.port);
+    const credentials =
+      target.token !== undefined
+        ? `${encodeURIComponent(target.token)}@`
+        : target.user !== undefined && target.pass !== undefined
+          ? `${encodeURIComponent(target.user)}:${encodeURIComponent(target.pass)}@`
+          : '';
+    const bus = new NatsTransport({
+      url: `nats://${credentials}127.0.0.1:${relay.port}`,
+      bucket: BUCKET,
+      // Zero, and it has to be: the library redials a server once `lastConnect + wait <= Date.now()`,
+      // and the test preload freezes `Date.now()` — any positive wait is never reached.
+      backoff: { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' },
+      onError: () => undefined,
+    });
+    started.push(bus);
+    let reconnects = 0;
+    bus.onReconnect(() => {
+      reconnects += 1;
+    });
+    const seen: string[] = [];
+    const subject = `x.change.reconnect.${Bun.randomUUIDv7()}`;
+    try {
+      await bus.subscribe(subject, (payload) => seen.push(payload));
+      await bus.publish(subject, 'before');
+      await waitFor(() => seen.length === 1);
+      expect(reconnects).toBe(0);
+
+      relay.cut();
+      await waitFor(() => reconnects > 0);
+      expect(reconnects).toBeGreaterThanOrEqual(1);
+
+      // The subscription came back with the connection: nobody re-subscribed.
+      await waitFor(() => bus.connected);
+      await bus.publish(subject, 'after');
+      await waitFor(() => seen.length === 2);
+      expect(seen).toEqual(['before', 'after']);
+    } finally {
+      await bus.close();
+      relay.stop();
+    }
+  }, 30_000);
 });

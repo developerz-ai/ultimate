@@ -36,6 +36,8 @@ export interface ClientFrameTarget {
   now(): number;
   /** A newer build is live; the app decides when to reload. */
   setUpdate(buildId: string | null): void;
+  /** The node named the beat this socket must keep (`hello.heartbeatMs`). */
+  followHeartbeat(intervalMs: number): void;
   /** The node assigned this socket its own delay before closing it. */
   scheduleReconnect(afterMs: number | null): void;
   closeSocket(code: number, reason: string): void;
@@ -135,8 +137,12 @@ export function applyFrame(frame: Frame, target: ClientFrameTarget): void {
       target.channels.gap(frame);
       return;
     case 'hello':
+      // The node's reply. It carries one instruction — how often to beat — and a node that names
+      // none (an older build) leaves the client on its own default.
+      if (frame.heartbeatMs !== undefined) target.followHeartbeat(frame.heartbeatMs);
+      return;
     case 'subscribe':
-      // Client-authored frames: never received. Ignored rather than thrown, so a future
+      // A client-authored frame: never received. Ignored rather than thrown, so a future
       // bidirectional use of the same kind cannot break an old client.
       return;
   }

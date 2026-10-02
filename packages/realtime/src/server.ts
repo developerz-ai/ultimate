@@ -4,6 +4,7 @@
 // island realtime promises unbuildable. Every name here has exactly one home; the shared
 // vocabulary (the wire, the errors, `Row`, the backoff) stays on `@ultimat3/realtime`.
 
+export { type AdvisoryLock, InMemoryAdvisoryLock } from './advisory-lock';
 // ---- the retained change window one node fans out from ------------------------------------------
 export {
   type ChangeBufferOptions,
@@ -116,12 +117,15 @@ export { NatsTransport, type NatsTransportOptions } from './nats-transport';
 export { PgAdvisoryLock, type PgAdvisoryLockOptions } from './pg-advisory-lock';
 // ---- the postgres replication path ------------------------------------------------------------
 export { entityRow } from './pg-entity-row';
+export { paramsChannelTables } from './pg-identity-tables';
+export { CHANNEL_IDENTITY_EVENT } from './pg-preflight';
 export {
   changeLsn,
   commitPositionOf,
   type ReplicationStreamStats,
 } from './pg-replication';
 export { bunPgStream, type PgTarget, parsePgUrl, type SslMode } from './pg-socket';
+export { answersWeakAuth } from './pg-tls';
 // The value domain a WAL tuple lands in. Public because it is `PgOutputMessage`'s and
 // `entityRow`'s: a caller naming either type has to be able to name what is inside one.
 export { decodeValue, type PhysicalRow, type PhysicalValue } from './pg-values';
@@ -154,20 +158,20 @@ export {
   refillWindowInLane,
 } from './query-window';
 export {
-  type AdvisoryLock,
   CHANGE_SUBJECT_PREFIX,
-  type ChangeEnvelope,
   changeSubject,
   createReplicator,
-  InMemoryAdvisoryLock,
   normalize,
-  parseChange,
-  parseEnvelope,
   type Replicator,
   type ReplicatorOptions,
   type ReplicatorStats,
-  SeqGapDetector,
 } from './replicator';
+export {
+  type ChangeEnvelope,
+  parseChange,
+  parseEnvelope,
+  SeqGapDetector,
+} from './replicator-envelope';
 export {
   actorIdOf,
   CLOSE,

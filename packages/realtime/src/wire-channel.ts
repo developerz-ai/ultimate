@@ -65,7 +65,7 @@ export function channelTarget(value: JsonObject): ChannelSubscribeTarget {
       `channel params carry ${entries.length}, over the limit of ${FRAME_LIMITS.channelParams}`,
     );
   }
-  const params: Record<string, string> = {};
+  const params = bare<string>();
   for (const [key, param] of entries) {
     if (typeof param !== 'string') throw fail(`channel param "${key}" must be a string`);
     params[key] = param;
@@ -87,10 +87,10 @@ function sinceOf(value: unknown): ChannelSince {
 function adoptOf(value: unknown): ChannelAdopt {
   if (!isJsonObject(value)) throw fail('records.adopt must be an object');
   let total = 0;
-  const out: Record<string, Readonly<Record<string, Row>>> = {};
+  const out = bare<Readonly<Record<string, Row>>>();
   for (const [type, keyed] of Object.entries(value)) {
     if (!isJsonObject(keyed)) throw fail(`records.adopt.${type} must be an object`);
-    const rows: Record<string, Row> = {};
+    const rows = bare<Row>();
     for (const [key, row] of Object.entries(keyed)) {
       total += 1;
       if (total > FRAME_LIMITS.rows) {
@@ -105,7 +105,7 @@ function adoptOf(value: unknown): ChannelAdopt {
 
 function removeOf(value: unknown): ChannelRemove {
   if (!isJsonObject(value)) throw fail('records.remove must be an object');
-  const out: Record<string, readonly string[]> = {};
+  const out = bare<readonly string[]>();
   for (const type of Object.keys(value)) {
     out[type] = list(value, type, FRAME_LIMITS.rows, `records.remove.${type}`).map((key) => {
       if (typeof key !== 'string') throw fail(`records.remove.${type} must hold strings`);
@@ -113,4 +113,13 @@ function removeOf(value: unknown): ChannelRemove {
     });
   }
   return out;
+}
+
+/**
+ * A map keyed by WIRE data — a record type, a record key, a channel param. Null-prototype, as the
+ * encoder's are (`channel-render.ts`): on a plain object `out['__proto__'] = rows` sets the map's
+ * prototype instead of a key, so that entry was dropped and every other read went through it.
+ */
+function bare<V>(): Record<string, V> {
+  return Object.create(null) as Record<string, V>;
 }

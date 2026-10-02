@@ -375,3 +375,98 @@ describe('a truncate empties the window it reads from', () => {
     expect(entry.rows).toEqual(seated);
   });
 });
+
+// Postgres logs no bytes for an out-of-line (TOAST) value an UPDATE left untouched, so the change
+// names the columns it could not carry (`ChangeEvent.omitted`). A row ENTERING a window from such
+// a change would be adopted without them — by the window, by every later snapshot, by the ring.
+describe('an add patch lacking a column the change omitted', () => {
+  const windowRows: readonly Row[] = [{ id: 'p1', orgId: 'o1', likes: 0, body: 'long text' }];
+  const entering: BridgeResult = {
+    patches: [
+      { op: 'insert', id: 'p9', row: { id: 'p9', orgId: 'o1', likes: 3 }, lsn: '1', index: 0 },
+    ],
+    refill: false,
+  };
+  const omitting = (lsn: string, omitted: readonly string[]): ChangeEvent => ({
+    ...change(lsn),
+    after: { id: 'p9', orgId: 'o1', likes: 3 },
+    omitted,
+  });
+
+  test('is never delivered or retained: the window is stale and every subscriber re-reads', async () => {
+    const { entry, deps } = rig(() => entering);
+    entry.rows = windowRows;
+    const alice = connect();
+    subscribe(entry, alice.socket, 's1');
+
+    const result = await fanoutChange(deps, entry, omitting('1', ['body']));
+
+    expect(result.sent).toBe(0);
+    expect(alice.ws.frames).toHaveLength(0);
+    expect(entry.stale).toBe(true);
+    expect(alice.socket.desynced.has('s1')).toBe(true);
+    // A resume must not replay the partial row either.
+    expect(deps.source.since(entry.qid, '') ?? []).toEqual([]);
+  });
+
+  test('raises the ring floor at once: a resume before the re-read is not a delta lacking the row', async () => {
+    let answer: BridgeResult = patched;
+    const { entry, deps } = rig(() => answer);
+    entry.rows = windowRows;
+    subscribe(entry, connect().socket, 's1');
+    await fanoutChange(deps, entry, change('1'));
+    expect(deps.source.since(entry.qid, '1')).toEqual([]);
+
+    answer = { ...entering, patches: entering.patches.map((patch) => ({ ...patch, lsn: '2' })) };
+    await fanoutChange(deps, entry, omitting('2', ['body']));
+
+    // A subscriber at lsn 1 — or at 2, had anyone been sent it — must re-read.
+    expect(deps.source.since(entry.qid, '1')).toBeNull();
+    expect(deps.source.since(entry.qid, '2')).toBeNull();
+  });
+
+  test('the next change re-reads the window and serves the whole row', async () => {
+    let answer: BridgeResult = entering;
+    const whole: readonly Row[] = [
+      { id: 'p9', orgId: 'o1', likes: 3, body: 'kept' },
+      ...windowRows,
+    ];
+    const { entry, deps, reads } = rig(() => answer, whole);
+    entry.rows = windowRows;
+    const alice = connect();
+    subscribe(entry, alice.socket, 's1');
+    await fanoutChange(deps, entry, omitting('1', ['body']));
+    answer = { patches: [], refill: false };
+
+    await fanoutChange(deps, entry, change('2'));
+
+    expect(reads()).toBe(1);
+    const frame = alice.ws.frames.at(-1);
+    expect(frame?.type === 'snapshot' && frame.rows[0]).toEqual(whole[0]);
+  });
+
+  test('an omitted column the result set does not project changes nothing', async () => {
+    const { entry, deps } = rig(() => entering);
+    entry.rows = windowRows;
+    const alice = connect();
+    subscribe(entry, alice.socket, 's1');
+
+    const result = await fanoutChange(deps, entry, omitting('1', ['attachment']));
+
+    expect(result.sent).toBe(1);
+    expect(entry.stale).toBe(false);
+  });
+
+  test('an update patch is not an add: the window row keeps the column it already holds', async () => {
+    const { entry, deps } = rig(() => patched);
+    entry.rows = windowRows;
+    const alice = connect();
+    subscribe(entry, alice.socket, 's1');
+
+    const result = await fanoutChange(deps, entry, { ...change('1'), omitted: ['body'] });
+
+    expect(result.sent).toBe(1);
+    expect(entry.stale).toBe(false);
+    expect(entry.rows[0]?.['body']).toBe('long text');
+  });
+});

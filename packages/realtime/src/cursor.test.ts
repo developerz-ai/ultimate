@@ -25,6 +25,8 @@ const snapshot = async () => ({ rows: snapshotRows, lsn: formatLsn(500) });
 describe('cursor resume', () => {
   test('a small gap resumes as a delta — no DB work', async () => {
     const buffer = new RingChangeBuffer();
+    // The window this cursor was minted from was read here, at lsn 0: the ring is complete from it.
+    buffer.floorAt(QID, formatLsn(0));
     fill(buffer, 3);
     const cursor = makeCursor(QID, formatLsn(0), [], 1_000);
 

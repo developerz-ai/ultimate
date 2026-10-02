@@ -131,9 +131,8 @@ export function createEntry(
  * had already been fanned out would rewind every later subscriber to rows the window has moved
  * past, so a stale read is discarded and its caller is served from the newer window instead.
  */
-export async function fillWindow(
-  entry: QueryEntry,
-): Promise<{ rows: readonly Row[]; lsn: string }> {
+export async function fillWindow(entry: QueryEntry): Promise<FilledWindow> {
+  let landed: FilledWindow['landed'] = null;
   for (let attempt = 0; ; attempt += 1) {
     // Read before `startRead` clears it: a second caller arriving during the read joins it and is
     // not the one that forced it, which is what keeps one forced read from becoming N.
@@ -155,13 +154,26 @@ export async function fillWindow(
       const first = entry.applied === 0;
       if (isNewestRead(entry, pending) && (forced || first || result.lsn >= entry.lsn)) {
         applyRead(entry, pending, result);
+        // A forced read outranks a first one: what it replaced was known to be wrong.
+        landed = forced || landed === 'forced' ? 'forced' : first ? 'first' : landed;
       }
       // A change reached this window while its first read was in flight and could not be folded,
       // so what just landed may predate it: read once more before serving anyone a partial window.
       return first && entry.stale && attempt < COLD_REREADS;
     });
-    if (!again) return { rows: entry.rows, lsn: entry.lsn };
+    if (!again) return { rows: entry.rows, lsn: entry.lsn, landed };
   }
+}
+
+/**
+ * The window a caller is served from, and whether THIS call put a read into it. `landed` is what
+ * decides the retained ring's floor (`change-buffer.ts`): `null` is a window that was already
+ * filled — its patch history is still true, and flooring it would evict every other subscriber's.
+ */
+export interface FilledWindow {
+  readonly rows: readonly Row[];
+  readonly lsn: string;
+  readonly landed: 'first' | 'forced' | null;
 }
 
 /**

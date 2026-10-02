@@ -5,14 +5,14 @@
 
 import type { Clock } from '@ultimat3/core';
 import { ConfigInvalidError } from '@ultimat3/core';
+import type { AdvisoryLock } from './advisory-lock';
+import { InMemoryAdvisoryLock } from './advisory-lock';
 import type { ChangeFeed } from './changefeed';
 import { InMemoryChangeFeed, PgLogicalReplicationFeed } from './changefeed';
 import { PgAdvisoryLock } from './pg-advisory-lock';
 import type { PgTarget } from './pg-socket';
 import { parsePgUrl } from './pg-socket';
 import type { PgStream } from './pg-wire';
-import type { AdvisoryLock } from './replicator';
-import { InMemoryAdvisoryLock } from './replicator';
 import type { Rng } from './thundering-herd';
 
 /** The keys read here, and nothing else. Named once so docs and tests cannot drift from the code. */

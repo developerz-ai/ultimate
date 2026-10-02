@@ -7,6 +7,7 @@ import {
   beginWork,
   configureLifecycle,
   drain,
+  healthBody,
   healthzPayload,
   lifecycleState,
   logger,
@@ -18,7 +19,7 @@ import {
 import type { Server } from 'bun';
 import { defineHttpConfig, type HttpConfig } from './config';
 import { HttpError, serverNotStarted } from './errors';
-import { disclosesHealthDetail, healthBody } from './health-disclosure';
+import { disclosesHealthDetail } from './health-disclosure';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { createPipeline, type Pipeline } from './pipeline';
@@ -99,6 +100,8 @@ export interface ServerOptions {
  */
 export interface UpgradeTarget {
   upgrade(request: Request, options: { data: unknown }): boolean;
+  /** The peer's socket address — a mount that answers its own health paths decides detail by it. */
+  requestIP(request: Request): { readonly address: string } | null;
 }
 
 /**
