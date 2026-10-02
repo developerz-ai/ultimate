@@ -21,7 +21,13 @@ import { clearRegistry, describeEntities, entity, text, uuid } from '@ultimat3/e
 import type { JobDescriptor } from '@ultimat3/jobs';
 import { describeJobs, job, resetJobs, t } from '@ultimat3/jobs';
 import type { RouteDescriptor } from '@ultimat3/render';
-import { clearRoutes, defineRoute, describeRoutes, registerRoute } from '@ultimat3/render';
+import {
+  clearRoutes,
+  defineRoute,
+  describeRoutes,
+  registerMountedRoutes,
+  registerRoute,
+} from '@ultimat3/render';
 
 const ROUTE_READS = [
   'path',
@@ -40,6 +46,8 @@ const JOB_READS = [
   'steps',
   'retry',
   'idempotent',
+  'concurrency',
+  'onSettled',
 ] as const satisfies readonly (keyof JobDescriptor)[];
 
 const JOB_RETRY_READS = [
@@ -74,6 +82,22 @@ beforeAll(() => {
       meta: () => ({ title: 'Published keys' }),
     }),
   });
+  registerMountedRoutes(
+    { key: '/published-keys', by: 'defineAdmin', file: '@ultimat3/admin', surface: 'app' },
+    [
+      {
+        path: '/published-keys/mounted',
+        config: defineRoute({
+          render: 'ssr',
+          offline: 'network-only',
+          hydrate: 'never',
+          policy: { permission: 'admin:read' },
+          meta: () => ({ title: 'Mounted' }),
+        }),
+        permissions: ['admin:read', 'published_keys_widget:read'],
+      },
+    ],
+  );
   entity('published_keys_widget', {
     columns: { id: uuid().primaryKey(), label: text({ max: 40 }) },
   });
@@ -113,6 +137,17 @@ describe('every key /_x reads is a key the registry publishes', () => {
     expect(descriptor.budgetJs).toBe('12kb');
     expect(descriptor.budgetLcp).toBe(2_000);
     expect(descriptor.revalidateTags.length).toBeGreaterThan(0);
+  });
+
+  test('a mounted route publishes `mount` with the two fields the panel copies, and a file route none', () => {
+    const routes = describeRoutes();
+    const mounted = routes.find((route) => route.path === '/published-keys/mounted');
+    expect(mounted?.mount).toEqual({
+      by: 'defineAdmin',
+      permissions: ['admin:read', 'published_keys_widget:read'],
+    });
+    const file = routes.find((route) => route.file === 'apps/web/app/published-keys/page.tsx');
+    expect(file !== undefined && Object.hasOwn(file, 'mount')).toBe(false);
   });
 
   test('the job registry publishes every field the jobs panel is built from, retry included', () => {

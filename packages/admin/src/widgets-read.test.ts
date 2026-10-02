@@ -29,6 +29,8 @@ registerCatalog('en', {
   'admin.value.empty': 'EMPTY(probe)',
   'admin.value.true': 'YES(probe)',
   'admin.value.false': 'NO(probe)',
+  'admin.invoice.field.total.option.live': 'LIVE(probe)',
+  'shop.state.option.live': 'SHOP-LIVE(probe)',
 });
 
 beforeAll(installFactory);
@@ -137,8 +139,8 @@ describe('checkbox', () => {
 describe('select', () => {
   test('the option label is keyed under the FIELD, so two enums never share a translation', () => {
     const out = html({ widget: 'select', type: 'enum', values: ['draft', 'live'] }, 'live');
-    expect(out).toContain('admin.invoice.field.total.option.live');
-    expect(out).not.toContain('option.draft');
+    expect(out).toContain('LIVE(probe)');
+    expect(out).not.toContain('SHOP-LIVE(probe)');
   });
 
   test('an overridden labelKey is the namespace the read view asks under', () => {
@@ -146,7 +148,20 @@ describe('select', () => {
       { widget: 'select', type: 'enum', labelKey: 'shop.state', values: ['live'] },
       'live',
     );
-    expect(out).toContain('shop.state.option.live');
+    expect(out).toContain('SHOP-LIVE(probe)');
+  });
+
+  test('a value with no label in the catalog reads as ITSELF — never as a ⟦missing key⟧', () => {
+    const out = html({ widget: 'select', type: 'enum', values: ['draft', 'live'] }, 'draft');
+    expect(out).toContain('>draft</span>');
+    expect(out).not.toContain('⟦');
+  });
+
+  test('an enum value is a BADGE — a state reads as one; a locale or a zone stays text', () => {
+    const state = nodesOf(read({ widget: 'select', type: 'enum', values: ['draft'] }, 'draft'));
+    expect(byComponent(state, 'Badge')).toHaveLength(1);
+    const zone = nodesOf(read({ widget: 'timezone-picker', type: 'timezone' }, 'Europe/Paris'));
+    expect(byComponent(zone, 'Badge')).toHaveLength(0);
   });
 });
 
@@ -184,6 +199,23 @@ describe('reference', () => {
       },
     });
     expect(seen).toEqual(['customer']);
+  });
+
+  test('the label the page read of the target is the text; the id stays the address', () => {
+    const nodes = nodesOf(
+      read(relation as Partial<AdminField>, 'c_9', {
+        hrefFor: (entity, id) => `/back-office/${entity}/${id}`,
+        labelFor: (entity, id) => (entity === 'customer' && id === 'c_9' ? 'Acme' : undefined),
+      }),
+    );
+    const link = one(byTag(nodes, 'a'), '<a>');
+    expect(link.props['href']).toBe('/back-office/customer/c_9');
+    expect(link.props['children']).toBe('Acme');
+    // A row the page read no label for — one this actor may not see — keeps its id.
+    const other = nodesOf(
+      read(relation as Partial<AdminField>, 'c_1', { labelFor: () => undefined }),
+    );
+    expect(renderHtml(other)).toContain('c_1');
   });
 
   test('without a route table it is plain text — a wrong link is worse than no link', () => {

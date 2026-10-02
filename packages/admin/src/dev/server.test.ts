@@ -13,6 +13,7 @@ const sources = staticDevSources({
       handler: 'site/posts/[slug].tsx',
       budget: { js: '80kb' },
       revalidateTags: ['post'],
+      mount: null,
     },
     {
       path: '/app',
@@ -22,6 +23,7 @@ const sources = staticDevSources({
       handler: 'app/index.tsx',
       budget: { js: '30kb' },
       revalidateTags: [],
+      mount: null,
     },
   ],
 });
@@ -188,5 +190,30 @@ describe('/_x in an app whose locale is not en', () => {
     } finally {
       resetLocaleConfig();
     }
+  });
+});
+
+describe('a panel that draws itself', () => {
+  const drawn = {
+    key: 'drawn',
+    titleKey: 'dev.panel.jobs.title',
+    questionKey: 'dev.panel.jobs.question',
+    data: async () => ({ answer: 42 }),
+    html: async (_params: URLSearchParams, tabPath: string) => `<p id="drawn">${tabPath}</p>`,
+  };
+  const failing = {
+    ...drawn,
+    key: 'failing',
+    data: () => Promise.reject(new TypeError('unwired')),
+  };
+
+  test('renders its own body, its payload folded under it — and only once its data answered', async () => {
+    const dashboard = devDashboard({ env: 'development', panels: [drawn, failing], sources });
+    const html = await (await dashboard.handle(new Request('http://x/_x/drawn')))?.text();
+    expect(html).toContain('<p id="drawn">/_x/drawn</p>');
+    expect(html).toContain('<details><summary>--json</summary>');
+    const refused = await (await dashboard.handle(new Request('http://x/_x/failing')))?.text();
+    expect(refused).not.toContain('id="drawn"');
+    expect(refused).toContain('X_NOT_IMPLEMENTED');
   });
 });
