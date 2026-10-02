@@ -24,6 +24,30 @@ describe('unit · --shard refusals', () => {
     expect(thrownBy(() => parseShard('5/4')).fix).toContain('--shard 4/4');
   });
 
+  test('every refusal is spelled for the entry that raised it', () => {
+    // The codes are shipped; only the command the fix names follows the caller.
+    const root = 'bun run verify';
+    expect(thrownBy(() => parseShard('x', root)).fix).toBe(
+      'bun run verify --only unit --shard 1/4 --json',
+    );
+    expect(thrownBy(() => parseShard('x', root)).cause).toStartWith('bun run verify --shard: ');
+    expect(thrownBy(() => parseShard('5/4', root)).fix).toBe(
+      'bun run verify --only unit --shard 4/4 --json',
+    );
+    expect(thrownBy(() => assertShardable(undefined, root)).fix).toBe(
+      'bun run verify --only unit --shard 1/4 --json',
+    );
+    expect(thrownBy(() => assertShardable(['unit', 'live'], root)).fix).toBe(
+      'bun run verify --only unit --shard 1/4 --json',
+    );
+    expect(thrownBy(() => assertShardable(['live'], root)).fix).toBe(
+      'bun run verify --only live --json',
+    );
+    // And an app, which passes nothing, still reads `x verify`.
+    expect(thrownBy(() => parseShard('x')).fix).toBe('x verify --only unit --shard 1/4 --json');
+    expect(thrownBy(() => assertShardable(['live'])).fix).toBe('x verify --only live --json');
+  });
+
   test('a shard without --only, or over a serial step, is refused naming the step', () => {
     expect(thrownBy(() => assertShardable(undefined)).code).toBe('X_VERIFY_SHARD_INVALID');
     const serial = thrownBy(() => assertShardable(['unit', 'live']));

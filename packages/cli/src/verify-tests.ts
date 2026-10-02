@@ -14,6 +14,8 @@ import type { TestType } from '@ultimat3/testing';
 import { TEST_TYPES } from '@ultimat3/testing';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { APP_CONFIG_FILE } from './app-root';
+import { judgeCoverage } from './coverage-floor';
+import { msg } from './messages';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
@@ -21,7 +23,9 @@ import { discoverTests } from './test-select';
 import { machineLease } from './test-slots';
 import type { WorkerPlan } from './test-workers';
 import { availableCpus, SERIAL_TYPES, totalMemory, workerPlan } from './test-workers';
+import { runCovered } from './verify-coverage-run';
 import { withE2eApp } from './verify-e2e';
+import { readVerifyFloor } from './verify-floor';
 import { shardFiles } from './verify-shard';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
@@ -240,6 +244,21 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
     ctx.workers === undefined ? workerPlan(availableCpus(), totalMemory(), env) : undefined;
   const workers = ctx.workers ?? (plan as WorkerPlan).workers;
   const lease = plan === undefined ? undefined : machineLease(plan.workers, env);
+  const widthReason =
+    plan === undefined
+      ? `${String(Math.min(workers, files.length))} workers (--workers)`
+      : files.length < plan.workers
+        ? `${String(files.length)} of ${plan.reason}`
+        : plan.reason;
+  if (type === 'unit' && isApp(ctx.root)) {
+    return coveredUnit(ctx, {
+      files: files.map((file) => file.path),
+      workers,
+      widthReason,
+      shard,
+      lease,
+    });
+  }
   const outcome = await runParallel({
     root: ctx.root,
     runner: ctx.runner,
@@ -247,16 +266,69 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
     workers,
     type,
     isolate: ctx.isolate === true,
-    widthReason:
-      plan === undefined
-        ? `${String(Math.min(workers, files.length))} workers (--workers)`
-        : files.length < plan.workers
-          ? `${String(files.length)} of ${plan.reason}`
-          : plan.reason,
+    widthReason,
     ...(lease === undefined ? {} : { lease }),
     ...(ctx.env === undefined ? {} : { env: ctx.env }),
   });
   return shard === undefined ? outcome : { ...outcome, shard };
+};
+
+/**
+ * An APP's unit step: the suite, and what it covered of the app's own source held to the floor in
+ * `x.verify.json` (`coverage-floor.ts`). Only the unit suite counts — it is the one every run
+ * executes, and an opt-in suite cannot hold a floor a default run must meet. Only an app: the
+ * framework's packages are held to the same bar one process each, by `scripts/coverage-gate.ts`,
+ * because one run over a monorepo reads every package diluted by the ones it imports.
+ *
+ * A red suite is not judged — a slice that died wrote no lcov, and a coverage finding beside
+ * `X_TEST_FAILED` would send the reader to the wrong fix. A `--shard` slice is not judged either:
+ * it hands its facts to `x verify merge`, which folds every shard and judges once.
+ */
+const coveredUnit = async (
+  ctx: VerifyContext,
+  run: {
+    readonly files: readonly string[];
+    readonly workers: number;
+    readonly widthReason: string;
+    readonly shard: ReturnType<typeof shardFiles> | undefined;
+    readonly lease: ReturnType<typeof machineLease> | undefined;
+  },
+): Promise<StepOutcome> => {
+  const { coverage, ...outcome } = await runCovered({
+    root: ctx.root,
+    runner: ctx.runner,
+    files: run.files,
+    workers: run.workers,
+    isolate: ctx.isolate === true,
+    widthReason: run.widthReason,
+    ...(run.lease === undefined ? {} : { lease: run.lease }),
+    ...(ctx.env === undefined ? {} : { env: ctx.env }),
+  });
+  if (!outcome.ok) return run.shard === undefined ? outcome : { ...outcome, shard: run.shard };
+  if (run.shard !== undefined) {
+    return {
+      ...outcome,
+      shard: run.shard,
+      coverage,
+      output: msg('cli.verify.coverageDeferred'),
+    };
+  }
+  const verdict = await judgeCoverage(
+    ctx.root,
+    coverage,
+    (await readVerifyFloor(ctx.root))?.coverage,
+  );
+  return {
+    ...outcome,
+    ok: verdict.findings.length === 0,
+    findings: verdict.findings,
+    output: verdict.output,
+    measured: {
+      lines: verdict.measure.lines,
+      funcs: verdict.measure.funcs,
+      files: verdict.measure.files,
+    },
+  };
 };
 
 const isApp = (root: string): boolean => existsSync(join(root, APP_CONFIG_FILE));

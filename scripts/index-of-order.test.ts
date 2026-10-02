@@ -125,6 +125,19 @@ describe('what counts as a guard', () => {
     expect(sites).toHaveLength(1);
     expect(sites[0]?.guarded).toBe(false);
   });
+
+  // `@ultimat3/testing`'s typed openers (`unitTest`, `liveTest`, …) are how an APP writes a test.
+  // Read as no test at all, the body was empty and a guarded site in `examples/dummy` reported.
+  test('a typed opener from @ultimat3/testing is a test body too', () => {
+    for (const opener of ['unitTest', 'contractTest', 'liveTest', 'jobTest']) {
+      const typed = `${opener}('t', async () => {
+  expect(up).toContain('drop x');
+  expect(up.indexOf('drop x')).toBeLessThan(n);
+});
+`;
+      expect(orderingSites(FILE, typed).map((site) => site.guarded)).toEqual([true]);
+    }
+  });
 });
 
 describe('the ratchet', () => {
@@ -142,6 +155,18 @@ describe('the ratchet', () => {
     expect(findings[0]?.code).toBe(UNGUARDED);
     expect(findings[0]?.at).toBe(`${FILE}:9`);
     expect(findings[0]?.cause).toContain('less-than RECEIVER');
+  });
+
+  test('a package over its pin lists every unguarded site, never only the first', () => {
+    const pins = [{ pkg: 'a', count: 1, reason: 'measured' }];
+    const sites = [site(FILE), { ...site('packages/a/src/y.test.ts'), line: 20 }];
+    const [finding] = checkOrdering({ sites, pins, scanned: true });
+    expect(finding?.cause).toContain(`${FILE}:9, packages/a/src/y.test.ts:20`);
+    expect(finding?.fix).toContain('1 of the 2 sites the cause lists');
+    // A guarded site is not one of them.
+    const guarded = { ...site('packages/a/src/z.test.ts'), guarded: true };
+    const [same] = checkOrdering({ sites: [...sites, guarded], pins, scanned: true });
+    expect(same?.cause).not.toContain('z.test.ts');
   });
 
   test('a pin absorbs it, and a count that DROPS is stale', () => {

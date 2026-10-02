@@ -12,6 +12,7 @@ export {
 export type {
   AuthContext,
   PromptHandler,
+  PromptInit,
   PromptRequest,
   ScrapeAuth,
 } from './auth';
@@ -29,11 +30,21 @@ export type {
   CdpScreenshotOptions,
   CdpSessionLike,
 } from './cdp-port';
+export type { CdpResolution, CdpResolver, CdpResolverRequest } from './cdp-resolver';
 export { snapshotExpression } from './cdp-snapshot';
 export type { CdpTargetInit } from './cdp-target';
 export { CDP_DRIVER, cdpTarget } from './cdp-target';
 export type { Deadline, ScrapeClock, TestScrapeClock } from './clock';
-export { deadline, systemScrapeClock, testClock, throwIfAborted } from './clock';
+export {
+  deadline,
+  noWaitClock,
+  resetScrapeClock,
+  scrapeClock,
+  setScrapeClock,
+  systemScrapeClock,
+  testClock,
+  throwIfAborted,
+} from './clock';
 export type { ColorScheme } from './color-scheme';
 export { COLOR_SCHEMES, isColorScheme } from './color-scheme';
 export { cookieHeaderFor } from './cookie-scope';
@@ -43,14 +54,15 @@ export type { BrowserOptions, LocalBrowserOptions, RemoteBrowserOptions } from '
 export { localBrowser, remoteBrowser } from './driver-cdp';
 export type { FakeBrowserOptions, FakePageOptions, FakePages } from './driver-fake';
 export { FAKE_DRIVER, FAKE_PAGE_URL, fakeBrowser, fakePage, recordingsOf } from './driver-fake';
-export type { FixtureBrowserOptions } from './driver-fixture';
-export { FIXTURE_DRIVER, fixtureBrowser } from './driver-fixture';
+export type { FixtureBrowserOptions } from './driver-recorded';
+export { FIXTURE_DRIVER, fixtureBrowser } from './driver-recorded';
 export {
   authFailed,
   blocked,
   bodyTooLarge,
   browserUnreachable,
   cdpAttachFailed,
+  cdpResolveFailed,
   downloadTimeout,
   driverUnknown,
   fixtureMissing,
@@ -75,6 +87,12 @@ export {
   wedged,
   yieldCollapsed,
 } from './error-throws';
+export {
+  egressInPayload,
+  egressUnsupported,
+  promptAnswerInvalid,
+  promptTimedOut,
+} from './error-throws-session';
 export type { ScrapeErrorCode, ScrapeErrorInit, ScrapeOwnedErrorCode } from './errors';
 export {
   isRetryableScrapeError,
@@ -86,6 +104,14 @@ export {
   SCRAPE_OWNED_ERROR_CODES,
   ScrapeError,
 } from './errors';
+export type { AnswerPromptInput, EventPromptOptions } from './event-prompt';
+export {
+  answerPrompt,
+  DEFAULT_PROMPT_ANSWER_TTL_MS,
+  DEFAULT_PROMPT_POLL_MS,
+  eventPrompt,
+  promptEventName,
+} from './event-prompt';
 export type { ScrapeEventFields, StepEvent } from './events';
 export type { YieldCheck, YieldExpectation, YieldGuardInput, YieldHistory } from './expect';
 export {
@@ -164,6 +190,7 @@ export type {
   ScrapeDefinition,
   ScrapeReport,
   ScrapeRunArgs,
+  ScrapeSettled,
 } from './scrape';
 export { scrape } from './scrape';
 export { DEFAULT_PAGE_TIMEOUT_MS, runScrape } from './scrape-run';
@@ -177,10 +204,16 @@ export {
   safeNetwork,
   safePageErrors,
 } from './secrets';
-export type { ScrapeSessionStore, SessionSnapshot, SessionState } from './session-state';
+export type {
+  ScrapeSessionStore,
+  SessionSnapshot,
+  SessionState,
+  StorageSessionStoreOptions,
+} from './session-state';
 export {
   memorySessionStore,
   parseSessionState,
+  SESSION_SEAL_PURPOSE,
   sessionDigest,
   sessionKeyFor,
   storageSessionStore,
@@ -196,5 +229,8 @@ export type {
   ScrapeDownloadFile,
   ScrapeTarget,
 } from './target';
+export { endpointLabel, urlSecretValues } from './url-secrets';
+export type { RunUsageMeter, ScrapeUsage, UsageMeter } from './usage';
+export { createUsageMeter } from './usage';
 export type { WedgeGuard, WedgeGuardInit } from './watchdog';
 export { DEFAULT_GRACE_MS } from './watchdog';

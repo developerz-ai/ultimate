@@ -5,12 +5,19 @@ import type { CommandSpec } from './parse';
 
 export const buildSpec: CommandSpec = {
   name: 'build',
-  summary: 'build a container image, a single binary, or a prerendered static site',
+  summary:
+    'build a container image, a single binary, a prerendered static site, or the store an image boots from',
   usage:
-    'x build --target docker|binary|static [--tag name] [--out path] [--no-preflight] [--json]',
+    'x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--no-preflight] [--json]',
   requiresApp: true,
   flags: [
-    { name: 'target', type: 'string', summary: 'docker | binary | static', default: 'docker' },
+    {
+      name: 'target',
+      type: 'string',
+      summary:
+        'docker | binary | static | prebuilt — prebuilt is the line a Dockerfile runs inside the image build',
+      default: 'docker',
+    },
     { name: 'tag', type: 'string', summary: 'image tag (docker target)' },
     { name: 'out', type: 'string', summary: 'output path (binary and static targets)' },
     {

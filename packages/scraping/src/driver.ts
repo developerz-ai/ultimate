@@ -5,6 +5,8 @@
 // Two methods. `open` hands back a session; `close` ends it. Everything else a scraper does goes
 // through `ScrapePage`, which is driver-blind by construction.
 
+import type { Logger } from '@ultimat3/core';
+import type { MoneyValue } from '@ultimat3/schema';
 import type { ScrapeClock } from './clock';
 import type { ScrapeHttp } from './http';
 import type { InterceptRules } from './intercept';
@@ -12,12 +14,20 @@ import type { ScrapePage } from './page';
 import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
 import type { SessionSnapshot } from './session-state';
+import type { UsageMeter } from './usage';
 
 export interface SessionInit {
   /** The scrape's name — every error cause raised inside the session carries it. */
   readonly name: string;
   readonly rules: InterceptRules;
   readonly clock: ScrapeClock;
+  /**
+   * The run's logger — `scrapeLogger()`'s child, so every line carries the scrape and the run.
+   * Required, because `close()` never throws: a teardown that failed (a rented browser its
+   * provider would not take back) has no other way to be seen, and a session with nowhere to say
+   * so is how that bill went unattributed. Fields stay inside `ScrapeEventFields`.
+   */
+  readonly logger: Logger;
   /** Per-operation default, in ms. A `waitFor` with its own `timeout` overrides it. */
   readonly timeoutMs: number;
   readonly secrets?: ScrapeSecrets | undefined;
@@ -26,8 +36,17 @@ export interface SessionInit {
   readonly signal?: AbortSignal | undefined;
   /** A previously captured session, put back before the first navigation. */
   readonly restore?: SessionSnapshot | undefined;
-  /** BOTH transports dial through it. A different exit IP mid-session is a different client. */
+  /**
+   * The exit THIS run asked for — `egress(input)` on the definition. It wins over a driver's own
+   * `proxy` option, BOTH transports dial through it, and a driver that cannot is required to
+   * refuse with `X_SCRAPE_EGRESS_UNSUPPORTED` rather than dial another: a different exit IP
+   * mid-session is a different client. May carry credentials; never print it.
+   */
   readonly proxy?: string | undefined;
+  /** The job run this session belongs to. A `CdpResolver` tags the browser it rents with it. */
+  readonly runId?: string | undefined;
+  /** The run's usage meter. Pass it to `pageOverTarget` and the HTTP transport; see `usage.ts`. */
+  readonly usage?: UsageMeter | undefined;
   /** Awaited before every navigation AND every HTTP request — one budget across both legs. */
   readonly pace?: ((signal?: AbortSignal) => Promise<void>) | undefined;
   /** Called on every operation on either transport. The wedge watchdog measures the gaps. */
@@ -51,6 +70,11 @@ export interface ScrapeSession {
    * as allow-everything. A driver that omits it is asked for its rules directly, as before.
    */
   readonly proxy?: string | undefined;
+  /**
+   * What the browser behind this session cost, when the driver rented it and the provider said
+   * so at acquire time. `Money`, never a float. It reaches `ScrapeReport.usage.browserCost`.
+   */
+  readonly browserCost?: MoneyValue | undefined;
   readonly page: ScrapePage;
   /**
    * The second transport, bound to the SAME session as the page: the browser's cookies, headers

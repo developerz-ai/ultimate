@@ -4,15 +4,22 @@
 
 @use 'sass:list';
 @use 'sass:map';
+@use 'sass:string';
 @use 'breakpoints';
 @use 'colors';
 @use 'motion';
 @use 'radius';
 @use 'space';
+@use 'stroke';
 @use 'typography';
+@use 'units';
 
 /// Keyboard-only focus, drawn from the accent role so it themes automatically.
-@mixin focus-ring($role: 'accent', $width: 2px, $offset: 2px) {
+@mixin focus-ring(
+  $role: 'accent',
+  $width: stroke.stroke(thick),
+  $offset: stroke.stroke(thick)
+) {
   &:focus-visible {
     outline: $width solid colors.role($role);
     outline-offset: $offset;
@@ -81,13 +88,54 @@
   container-name: $name;
 }
 
-/// Viewport breakpoint, min-width only. Named rungs, never a raw px value.
+// --- Viewport breakpoints ----------------------------------------------------
+// Three intents over ONE map, so a rung is defined in one place: at and above (`respond-to`),
+// below (`respond-down`), and from one rung up to the next (`respond-between`). Prefer a container
+// query to any of them — reach here only when the layout depends on the viewport itself.
+
+/// What a max-width arm stops short of its rung by. `max-width: 768px` and `min-width: 768px` both
+/// match at exactly 768px, which is how one rule ends up applying in two ranges at once; 0.02px is
+/// below any width a browser reports and above the rounding that would collapse it.
+$-under: 0.02px;
+
+/// A rung's width. Compared as TEXT as well as by value: `2xl` in a map is the number 2 with the
+/// unit `xl`, so the string `'2xl'` every stylesheet writes is a different key to `map.get`.
+@function -rung($bp, $mixin) {
+  @each $name, $width in breakpoints.$breakpoints {
+    @if '#{$name}' == '#{$bp}' {
+      @return $width;
+    }
+  }
+  @error string.unquote('X_TOKEN_UNKNOWN: #{$mixin}("#{$bp}") — that breakpoint is not in $breakpoints. fix: use one of #{map.keys(breakpoints.$breakpoints)}');
+}
+
+/// At a rung and wider. Named rungs, never a raw px value.
 @mixin respond-to($bp) {
-  @if not map.has-key(breakpoints.$breakpoints, $bp) {
-    @error 'X_TOKEN_UNKNOWN: breakpoint "#{$bp}" is not in $breakpoints. fix: add it to src/tokens/_breakpoints.scss';
+  @media (min-width: -rung($bp, 'respond-to')) {
+    @content;
+  }
+}
+
+/// Narrower than a rung — the complement of `respond-to` on the same rung, with no shared pixel.
+@mixin respond-down($bp) {
+  @media (max-width: (-rung($bp, 'respond-down') - $-under)) {
+    @content;
+  }
+}
+
+/// From `$from` up to, and not including, `$to`.
+@mixin respond-between($from, $to) {
+  $min: -rung($from, 'respond-between');
+  $max: -rung($to, 'respond-between');
+
+  @if $min == $max {
+    @error string.unquote('X_UI_INVALID_VALUE: respond-between("#{$from}", "#{$to}") is an empty range — both ends are #{$min}. fix: write respond-to("#{$from}"), or name a higher rung as $to');
+  }
+  @if $min > $max {
+    @error string.unquote('X_UI_INVALID_VALUE: respond-between("#{$from}", "#{$to}") is reversed — #{$min} is not below #{$max}. fix: write respond-between("#{$to}", "#{$from}")');
   }
 
-  @media (min-width: map.get(breakpoints.$breakpoints, $bp)) {
+  @media (min-width: $min) and (max-width: ($max - $-under)) {
     @content;
   }
 }
@@ -156,8 +204,8 @@
   scrollbar-color: colors.role($thumb) colors.role($track);
 
   &::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: units.rem(10px);
+    height: units.rem(10px);
   }
 
   &::-webkit-scrollbar-track {
@@ -165,7 +213,7 @@
   }
 
   &::-webkit-scrollbar-thumb {
-    border: 2px solid transparent;
+    border: stroke.stroke(thick) solid transparent;
     border-radius: radius.radius(pill);
     background: colors.role($thumb);
     background-clip: content-box;

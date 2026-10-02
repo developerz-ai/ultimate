@@ -33,6 +33,7 @@
   "files": [
     "src",
     "!src/**/*.test.ts",
+    "!src/**/*-fixture.ts",
     "CATALOG.md",
     "CLAUDE.md",
     "README.md",

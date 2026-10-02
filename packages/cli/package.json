@@ -23,6 +23,7 @@
   "files": [
     "src",
     "!src/**/*.test.ts",
+    "!src/**/*-fixture.ts",
     "types",
     "CLAUDE.md",
     "README.md",

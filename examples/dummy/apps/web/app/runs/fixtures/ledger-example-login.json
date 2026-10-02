@@ -1,0 +1,4 @@
+{
+  "url": "https://ledger.example/login",
+  "html": "<form><input id=\"user\"><input id=\"pass\" type=\"password\"><input id=\"otp\"><button id=\"go\">Sign in</button></form>"
+}

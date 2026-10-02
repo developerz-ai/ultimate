@@ -21,3 +21,16 @@ export function linkTarget(href: string, declaredExternal?: boolean | undefined)
   if (safe === null) return { href: undefined, external: false };
   return { href: safe, external: declaredExternal === true || /^https?:\/\//.test(safe) };
 }
+
+/**
+ * The `rel` an anchor carries. A relation is ADDED to the external hardening, never traded for
+ * it — which is why `<Link>` takes the relation as a closed pair and not a free `rel` string a
+ * caller could use to write the hardening away.
+ */
+export function linkRel(
+  external: boolean,
+  relation?: 'next' | 'prev' | undefined,
+): string | undefined {
+  if (!external) return relation;
+  return relation === undefined ? 'noopener noreferrer' : `${relation} noopener noreferrer`;
+}

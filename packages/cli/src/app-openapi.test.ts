@@ -3,12 +3,12 @@
 // 2026-09 the file had only the actions, and every `GET /_x/query/<name>` the server mounted was
 // a route the spec had never heard of.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove.
 import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
 import { action, defineApi, resetRegistry as resetActions } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
+import { can, clearPermissions } from '@ultimat3/policy';
 import { from, query, registerQuery, resetRegistry } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { openApiArtifacts, openApiJson, openApiStaleness } from './app-openapi';
@@ -16,6 +16,12 @@ import { openApiArtifacts, openApiJson, openApiStaleness } from './app-openapi';
 const manifest = {
   app: { name: 'fixture', version: '1.2.3' },
 } as Parameters<typeof openApiJson>[0];
+
+// Every `can()` here names a permission no `definePermissions()` declares, which is legal only
+// while the set is EMPTY. A file that ran first in this process may have imported
+// `@ultimat3/admin`, whose module scope declares `admin:*` for good — so this file empties the set
+// itself; the file boundary (`registry-leak-guard.ts`) puts it back after.
+beforeAll(clearPermissions);
 
 describe('openApiJson', () => {
   afterEach(() => resetRegistry());

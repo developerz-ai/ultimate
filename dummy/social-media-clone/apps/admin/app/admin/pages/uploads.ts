@@ -3,9 +3,25 @@
 // asserted through a `.tsx` loader, and the property worth pinning is that the COUNT IS NEVER
 // TAKEN — not that its digits are absent from the HTML.
 
+import { db, schema } from '@social-media-clone/db';
 import type { AdminDecision, CrudCtx } from '@ultimat3/admin';
-import { decideAll, permissionsForOperation } from '@ultimat3/admin';
-import { mediaStateCounts } from '../repo';
+import { adminRepoFor, decideAll, permissionsForOperation } from '@ultimat3/admin';
+
+/**
+ * The uploads breakdown, counted through the same adapter the media list reads through.
+ *
+ * UNGATED, deliberately and only here: the decision is `uploadsFor`'s, one function down, and it
+ * is the only caller. A second caller must carry the same gate; there is no repo-level refusal to
+ * fall back on.
+ */
+const mediaStateCounts = async (): Promise<Readonly<Record<string, number>>> => {
+  const media = adminRepoFor(schema.media, db.media);
+  const counts: Record<string, number> = {};
+  for (const state of ['pending', 'attached', 'orphan'] as const) {
+    counts[state] = (await media.count?.([{ field: 'state', op: 'eq', value: state }])) ?? 0;
+  }
+  return counts;
+};
 
 export interface Uploads {
   readonly decision: AdminDecision;

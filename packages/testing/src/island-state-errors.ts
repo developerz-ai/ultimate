@@ -234,3 +234,22 @@ export class IslandStatesAmbiguousError extends UltimateError {
     });
   }
 }
+
+/**
+ * A state id the manifest does not declare — a test naming `idel`, or a state renamed in the
+ * manifest and not in the test beside it. Listing the declared ids is the whole value, for the
+ * reason `IslandStatesUnknownError` lists names: a typo and a rename are one symptom.
+ */
+export class IslandStateUnknownError extends UltimateError {
+  constructor(input: {
+    readonly island: string;
+    readonly id: string;
+    readonly known: readonly string[];
+  }) {
+    super({
+      code: 'X_TEST_ISLAND_STATE_UNKNOWN',
+      cause: `${renderCauseValue(input.island)} declares no state ${renderCauseValue(input.id)}; declared: ${input.known.join(', ')}`,
+      fix: `name one of them instead: ${input.known[0] ?? ''} — or declare the state in ${at(input.island)}`,
+    });
+  }
+}

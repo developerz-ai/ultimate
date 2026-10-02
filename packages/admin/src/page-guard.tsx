@@ -1,13 +1,14 @@
-// The wrapper that makes a custom page's authz unskippable. `routes.ts` never hands the router
-// the author's component — it hands this one, which asks the SAME `decideAll` every CRUD call
-// and every nav item asks, audits the refusal, and only then calls the author's code.
+// What a refused screen renders and the audit entry it leaves. The wrapper that DECIDES is
+// `guardedScreen()` in `screen-frame.tsx`: `routes.ts` never hands a host the author's component
+// — it hands that screen, which asks the SAME `decideAll` every CRUD call and every nav item
+// asks, audits the refusal through this file, and only then calls the author's code.
 
 import { t } from '@ultimat3/i18n';
 import type { JSX } from 'solid-js';
-import type { AdminRoute } from './admin';
+import styles from './admin.module.scss';
 import { deniedDraft } from './audit';
-import { type AdminDecision, decideAll } from './authz';
-import type { AdminPageComponent, AdminPageProps } from './pages';
+import type { AdminDecision } from './authz';
+import type { CrudCtx } from './crud';
 
 /**
  * The refusal, rendered as the page. Not a redirect and not a 404: an operator who is missing a
@@ -21,7 +22,7 @@ export function AdminPageDenied(props: {
   return (
     <section class="x-admin-denied" role="alert">
       <h1>{t(props.titleKey)}</h1>
-      <p>
+      <p class={styles['refusal']}>
         {t('admin.denied.body', {
           permission: props.decision.permission,
           reason: props.decision.reason,
@@ -32,27 +33,23 @@ export function AdminPageDenied(props: {
 }
 
 /**
- * Wrap once, at route-table build time. The author's component is never reachable from
- * `adminRoutes()`, so "the page that forgot its policy line" has nowhere left to exist.
+ * The audit entry of a refused SCREEN. The page is the subject, so its path is what the row
+ * names — there is no entity and no row id to key a refused screen by. One writer, so a custom
+ * page and a generated form's GET leave the same entry.
  */
-export function guardedPage(route: AdminRoute, component: AdminPageComponent): AdminPageComponent {
-  return async (props: AdminPageProps): Promise<JSX.Element> => {
-    const decision = decideAll(props.ctx.authz, route.permissions, props.ctx.actor);
-    if (!decision.allowed) {
-      // The page IS the subject here, so its path is what the audit row names — there is no
-      // entity and no row id to key a refused screen by.
-      await props.ctx.audit.append(
-        deniedDraft({
-          requestId: props.ctx.requestId,
-          actor: props.ctx.actor,
-          operation: 'page',
-          kind: 'operation',
-          entity: route.path,
-          decision,
-        }),
-      );
-      return <AdminPageDenied titleKey={route.titleKey} decision={decision} />;
-    }
-    return component(props);
-  };
+export async function auditRefusal(
+  ctx: CrudCtx,
+  path: string,
+  decision: AdminDecision,
+): Promise<void> {
+  await ctx.audit.append(
+    deniedDraft({
+      requestId: ctx.requestId,
+      actor: ctx.actor,
+      operation: 'page',
+      kind: 'operation',
+      entity: path,
+      decision,
+    }),
+  );
 }

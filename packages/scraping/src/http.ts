@@ -25,6 +25,7 @@ import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
 import { redactSecrets } from './secrets';
 import type { SessionSnapshot } from './session-state';
+import type { UsageMeter } from './usage';
 
 /**
  * Just the call. `typeof fetch` also carries `preconnect`, which no test double and no app wrapper
@@ -110,6 +111,8 @@ export interface HttpTransportInit {
    * until 2026-08-24, so nothing on this leg COULD redact.
    */
   readonly secrets?: ScrapeSecrets | undefined;
+  /** The run's meter: one `httpRequest` per hop on the wire, with the body bytes read for it. */
+  readonly usage?: UsageMeter | undefined;
   readonly fetch?: ScrapeFetch | undefined;
 }
 
@@ -213,8 +216,11 @@ const readResponse = async (
   response: Response,
   maxBytes: number,
   secrets: ScrapeSecrets | undefined,
+  usage: UsageMeter | undefined,
 ): Promise<ScrapeResponse> => {
   const capped = await readWithinLimit(response.body, maxBytes);
+  // Counted on BOTH branches: the bytes a refused body cost were read before the refusal.
+  usage?.httpRequest('over' in capped ? capped.over : capped.bytes.length);
   if ('over' in capped) throw bodyTooLarge(url, capped.over, maxBytes);
   const body = new TextDecoder().decode(capped.bytes);
   return responseOver(
@@ -345,7 +351,9 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
             hop.body,
           );
           if (next === undefined)
-            return await readResponse(hop.url, response, maxBytes, init.secrets);
+            return await readResponse(hop.url, response, maxBytes, init.secrets, init.usage);
+          // A followed hop was a request on the wire too; its body is discarded unread.
+          init.usage?.httpRequest(0);
           // Discarded BEFORE the refusal, not after it: a throw over an unread stream holds that
           // hop's socket until the collector reaches it, and the refusal path is exactly the one a
           // hostile chain drives ten times per request.

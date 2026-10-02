@@ -25,6 +25,10 @@ export const ADMIN_OWNED_ERROR_CODES = [
   // default label key, and `callAdminTool`'s lookup. Two actions sharing it is refused where the
   // admin is DECLARED, so an app that never wires MCP still cannot ship the ambiguity.
   'X_ADMIN_ACTION_DUPLICATE',
+  'X_ADMIN_REPO_UNBOUND',
+  'X_ADMIN_FILTER_INVALID',
+  'X_ADMIN_ACTION_NOT_APPLICABLE',
+  'X_ADMIN_MOUNT_MISSING',
 ] as const;
 
 /**
@@ -53,6 +57,11 @@ export const ADMIN_ERROR_TITLES: Readonly<Record<AdminOwnedErrorCode, string>> =
   X_ADMIN_PAGE_UNGUARDED: 'a custom admin page declared no permissions',
   X_ADMIN_PAGE_PATH_INVALID: 'a custom admin page has an unusable or already-taken path',
   X_ADMIN_ACTION_DUPLICATE: 'two admin actions share one name',
+  X_ADMIN_REPO_UNBOUND: 'an admin resource has no database handle to read rows through',
+  X_ADMIN_FILTER_INVALID:
+    'an admin list was asked for a filter, sort or scope its resource does not derive',
+  X_ADMIN_ACTION_NOT_APPLICABLE: 'an admin action was run on a row its when() rule excludes',
+  X_ADMIN_MOUNT_MISSING: 'an admin batch job ran in a process that never declared its admin',
 };
 
 // One unconditional call, so a second package claiming one of admin's codes throws
@@ -131,6 +140,80 @@ export class AdminPolicyMissingError extends UltimateError {
       code: 'X_ADMIN_POLICY_MISSING',
       cause: `${input.kind} "${input.subject}" is exposed in the admin with no policy`,
       fix: `add \`policy: can('<resource>:<verb>')\` to the ${input.kind} "${input.subject}" — a permission your definePermissions() call declares, never the ${input.kind}'s own name`,
+    });
+  }
+}
+
+/**
+ * A resource with nothing to read rows through. Refused where the admin is DECLARED: the routes
+ * of a repo-less resource would mount, render their chrome, and fail on the first row they ask for.
+ */
+export class AdminRepoUnboundError extends UltimateError {
+  constructor(input: { entity: string; handles: readonly string[] }) {
+    const carried = input.handles.length > 0 ? input.handles.join(', ') : 'none';
+    super({
+      code: 'X_ADMIN_REPO_UNBOUND',
+      cause: `the admin resource "${input.entity}" has no repo: defineAdmin() was given no db handle that carries it (tables in the handle: ${carried}) and no resources.${input.entity}.repo`,
+      fix: `pass the app's handle once: defineAdmin({ entities, db })   # with "${input.entity}" in the database() call that built db`,
+    });
+  }
+}
+
+/**
+ * A list was asked for something its resource does not derive: a filter on a field that is not
+ * one, an operator the field's shape has no meaning for, a value that is not the column's type, a
+ * sort on an unsortable column, a scope nobody declared. Raised for a URL, an MCP call and a
+ * `scopes:` / `rows:` declaration alike — an ignored parameter is a list that silently shows
+ * every row to someone who asked for some of them.
+ */
+export class AdminFilterInvalidError extends UltimateError {
+  constructor(input: {
+    entity: string;
+    /** What was asked for, as the caller spelled it: `f.colour`, `sort=body:asc`, `scope=mine`. */
+    asked: string;
+    cause: string;
+    /** What the resource DOES answer, in the caller's own spelling. */
+    known: readonly string[];
+  }) {
+    const known = input.known.length > 0 ? input.known.join(', ') : 'none';
+    super({
+      code: 'X_ADMIN_FILTER_INVALID',
+      cause: `${input.entity}: "${input.asked}" ${input.cause} (this list answers: ${known})`,
+      // The manifest records every resource's filters, sorts and scopes, so the command prints the
+      // list this error names — for the resource, and for every other one.
+      fix: `x manifest --json   # admin[].resources lists the filters, sorts and scopes of "${input.entity}"`,
+    });
+  }
+}
+
+/**
+ * An action was run on a row its `when()` excludes. The button was never rendered for that row —
+ * so this is a stale page (the row changed state since it was drawn) or a forged call — and the
+ * gate answers it rather than the handler: a hidden button is not an authorization.
+ */
+export class AdminActionNotApplicableError extends UltimateError {
+  constructor(input: { action: string; entity: string; id: string | null }) {
+    const row = input.id === null ? 'no row at all' : `the row "${input.id}"`;
+    super({
+      code: 'X_ADMIN_ACTION_NOT_APPLICABLE',
+      cause: `the admin action "${input.action}" does not apply to ${row} of "${input.entity}": its when() rule answered false for the row as it is now`,
+      fix: `x manifest --json   # admin[].resources lists "${input.action}" with when: true — re-read the row (the detail page, or the admin.${input.entity}.read tool) and run it only while that rule holds`,
+    });
+  }
+}
+
+/**
+ * A queued batch chunk was claimed by a process that declared no admin at the path the batch was
+ * queued from. The worker role imports the API index and not the document graph, so an admin
+ * declared only from a page module does not exist there — and neither do its actions.
+ */
+export class AdminMountMissingError extends UltimateError {
+  constructor(input: { basePath: string; mounted: readonly string[] }) {
+    const mounted = input.mounted.length > 0 ? input.mounted.join(', ') : 'none';
+    super({
+      code: 'X_ADMIN_MOUNT_MISSING',
+      cause: `an admin.batch job was claimed by a process with no admin declared at "${input.basePath}" (admins declared here: ${mounted}), so the action it names has no handler to run`,
+      fix: 'import the module that calls defineAdmin() from apps/web/api/index.ts, so the worker role loads it; then x verify --only manifest',
     });
   }
 }

@@ -67,8 +67,8 @@
 }
 
 .input:focus-visible + .dot {
-  outline: 2px solid t.role('accent');
-  outline-offset: 2px;
+  outline: t.stroke(thick) solid t.role('accent');
+  outline-offset: t.stroke(thick);
 }
 
 .text {

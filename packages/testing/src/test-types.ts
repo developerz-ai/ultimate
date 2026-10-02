@@ -4,6 +4,8 @@
 
 import { test } from 'bun:test';
 import { TestEvalThresholdError } from './errors';
+import type { FixtureBody } from './fixtures';
+import { runWithFixtures } from './fixtures';
 
 export const TEST_TYPES = ['unit', 'contract', 'live', 'job', 'e2e', 'eval'] as const;
 
@@ -13,27 +15,39 @@ export const SEPARATOR = ' · ';
 
 export const testName = (type: TestType, name: string): string => `${type}${SEPARATOR}${name}`;
 
-export type TestBody = () => void | Promise<void>;
+/**
+ * What a typed test may say about itself beyond its body. One key today: a deliberately heavy
+ * test (48 PDF renders) used to have to drop to `test(testName('unit', …), body, 30_000)` to
+ * outlive Bun's 5 s default, which is the one-way rule broken for a number (#589).
+ */
+export interface TestOptions {
+  /** This test's own deadline in milliseconds, handed to `bun:test`. Absent is Bun's default. */
+  readonly timeoutMs?: number;
+}
+
+/**
+ * One typed registrar. The body is `test`'s own (`FixtureBody`): it is handed the fixture bag and
+ * only what it destructures is built, so `unitTest('…', async ({ runJobs }) => …)` is a job body
+ * under the `unit` step with no `describe(testName('unit', …))` around a bare `test`. A body that
+ * destructures nothing builds nothing — the wrapper costs it one resolved promise.
+ */
+const typed =
+  (type: TestType) =>
+  (name: string, body: FixtureBody, options?: TestOptions): void => {
+    test(testName(type, name), () => runWithFixtures(body), options?.timeoutMs);
+  };
 
 /** Pure logic: no database, no clock, no network. The cheapest test that can fail for real. */
-export const unitTest = (name: string, body: TestBody): void => {
-  test(testName('unit', name), body);
-};
+export const unitTest = typed('unit');
 
 /** The published surface: OpenAPI diff against the committed spec, MCP exposure, error codes. */
-export const contractTest = (name: string, body: TestBody): void => {
-  test(testName('contract', name), body);
-};
+export const contractTest = typed('contract');
 
 /** Live queries: assert exactly what each subscriber receives, snapshot then incremental patch. */
-export const liveTest = (name: string, body: TestBody): void => {
-  test(testName('live', name), body);
-};
+export const liveTest = typed('live');
 
 /** Jobs: step sequence, retries, idempotency. Never wall-clock sleeps — advance the frozen clock. */
-export const jobTest = (name: string, body: TestBody): void => {
-  test(testName('job', name), body);
-};
+export const jobTest = typed('job');
 
 /** One element selection, resolved when it is used rather than when it is built. */
 export interface LocatorLike {
@@ -90,7 +104,10 @@ export interface E2eFixtures {
 
 export type E2eBody = (fixtures: E2eFixtures) => Promise<void>;
 
-let e2eDriver: ((name: string, body: E2eBody) => void) | undefined;
+/** What registers one e2e test with a browser behind it. `options` is the test's own (`timeoutMs`). */
+export type E2eDriver = (name: string, body: E2eBody, options?: TestOptions) => void;
+
+let e2eDriver: E2eDriver | undefined;
 
 /**
  * Register the browser-backed driver. Without one, `e2eTest` skips loudly — the skipped test's own
@@ -105,7 +122,7 @@ let e2eDriver: ((name: string, body: E2eBody) => void) | undefined;
  * `As of 2026-08` there are zero registered drivers, so every `e2eTest` in the tree is a skip; the
  * framework's own `e2e` suites use plain `bun:test`.
  */
-export function useE2eDriver(driver: (name: string, body: E2eBody) => void): void {
+export function useE2eDriver(driver: E2eDriver): void {
   e2eDriver = driver;
 }
 
@@ -123,7 +140,7 @@ export const resetE2eDriver = (): void => {
   e2eDriver = undefined;
 };
 
-export const e2eTest = (name: string, body: E2eBody): void => {
+export const e2eTest = (name: string, body: E2eBody, options?: TestOptions): void => {
   if (e2eDriver === undefined) {
     test.skip(
       testName('e2e', `${name} (no browser driver: x build --target static && x e2e)`),
@@ -131,7 +148,7 @@ export const e2eTest = (name: string, body: E2eBody): void => {
     );
     return;
   }
-  e2eDriver(testName('e2e', name), body);
+  e2eDriver(testName('e2e', name), body, options);
 };
 
 export interface EvalCase<TInput, TOutput> {
@@ -141,7 +158,7 @@ export interface EvalCase<TInput, TOutput> {
   score(output: TOutput): number | Promise<number>;
 }
 
-export interface EvalOptions<TInput, TOutput> {
+export interface EvalOptions<TInput, TOutput> extends TestOptions {
   readonly threshold: number;
   readonly cases: readonly EvalCase<TInput, TOutput>[];
   run(input: TInput): Promise<TOutput>;
@@ -155,18 +172,24 @@ export function evalTest<TInput, TOutput>(
   name: string,
   options: EvalOptions<TInput, TOutput>,
 ): void {
-  test(testName('eval', name), async () => {
-    const scores: { readonly name: string; readonly score: number }[] = [];
-    for (const testCase of options.cases) {
-      const output = await options.run(testCase.input);
-      scores.push({ name: testCase.name, score: await testCase.score(output) });
-    }
-    const failures = scores.filter((entry) => entry.score < options.threshold);
-    if (failures.length > 0) {
-      const detail = failures.map((entry) => `${entry.name}=${entry.score.toFixed(2)}`).join(', ');
-      throw new TestEvalThresholdError({ name, threshold: options.threshold, detail });
-    }
-  });
+  test(
+    testName('eval', name),
+    async () => {
+      const scores: { readonly name: string; readonly score: number }[] = [];
+      for (const testCase of options.cases) {
+        const output = await options.run(testCase.input);
+        scores.push({ name: testCase.name, score: await testCase.score(output) });
+      }
+      const failures = scores.filter((entry) => entry.score < options.threshold);
+      if (failures.length > 0) {
+        const detail = failures
+          .map((entry) => `${entry.name}=${entry.score.toFixed(2)}`)
+          .join(', ');
+        throw new TestEvalThresholdError({ name, threshold: options.threshold, detail });
+      }
+    },
+    options.timeoutMs,
+  );
 }
 
 export interface OpenApiOperationLike {

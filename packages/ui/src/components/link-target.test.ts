@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { linkTarget } from './link-target';
+import { linkRel, linkTarget } from './link-target';
 
 describe('linkTarget', () => {
   test('a javascript: href emits no href and is not external', () => {
@@ -32,5 +32,22 @@ describe('linkTarget', () => {
       href: 'mailto:ada@app.test',
       external: false,
     });
+  });
+});
+
+describe('linkRel', () => {
+  test('an internal link with no relation carries no rel at all', () => {
+    expect(linkRel(false)).toBeUndefined();
+  });
+
+  test('a pager relation is emitted as written', () => {
+    expect(linkRel(false, 'next')).toBe('next');
+    expect(linkRel(false, 'prev')).toBe('prev');
+  });
+
+  // The hardening is not the caller's to drop: a relation is ADDED to it, never traded for it.
+  test('an external link keeps its hardening beside a relation', () => {
+    expect(linkRel(true)).toBe('noopener noreferrer');
+    expect(linkRel(true, 'next')).toBe('next noopener noreferrer');
   });
 });

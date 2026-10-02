@@ -21,7 +21,8 @@ export interface ArtifactWriter {
 }
 
 export interface ArtifactWriterInit {
-  readonly storage: StorageDriver | undefined;
+  /** A thunk, read per save: the app's disk exists only after boot (`storageSessionStore`). */
+  readonly storage: (() => StorageDriver) | undefined;
   readonly scrape: string;
   readonly runId: string;
   /** Optional prefix, so an app can keep scrape artifacts out of its user-upload namespace. */
@@ -69,7 +70,7 @@ export function createArtifactWriter(init: ArtifactWriterInit): ArtifactWriter {
         contentType: contentType ?? contentTypeFor(name),
       };
       if (init.storage !== undefined) {
-        await init.storage.put(ref.key, bytes, { contentType: ref.contentType });
+        await init.storage().put(ref.key, bytes, { contentType: ref.contentType });
       }
       saved.push(ref);
       return ref;

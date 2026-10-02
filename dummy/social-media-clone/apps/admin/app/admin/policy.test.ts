@@ -144,7 +144,11 @@ test('the button an actor cannot press never renders, and the call is refused by
     requestId: 'test-invoke',
   });
   expect(invoked.ok).toBe(false);
-  assert(!invoked.ok, 'the read-only actor invoked a write action', FIX_WRITE);
+  assert(
+    !invoked.ok && invoked.kind === 'denied',
+    'the read-only actor invoked a write action',
+    FIX_WRITE,
+  );
   expect(invoked.decision.permission).toBe('admin:write');
   expect((await users.repo?.find(MARA))?.suspended).toBe(false);
 });
@@ -156,7 +160,7 @@ test('every denial is on the audit log, keyed by the request that caused it', as
   expect(result.audit.requestId).toBe('test-admin');
   // Readable back off the log the whole dashboard shares — a denial nobody can find afterwards
   // is a denial nobody can review.
-  const logged = admin.audit.entries({ entity: 'users', limit: 5 });
+  const logged = await admin.audit.entries({ entity: 'users', limit: 5 });
   expect(logged.some((entry) => entry.id === result.audit.id)).toBe(true);
 });
 

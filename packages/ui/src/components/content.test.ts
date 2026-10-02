@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { byTag, fire, one, type ProbeNode, probe, renderNodes, unprobe } from '../jsx-probe';
 import { Accordion } from './Accordion';
-import { Link } from './Link';
+import { Link, type LinkProps } from './Link';
 
 describe('the content components', () => {
   beforeAll(probe);
@@ -74,6 +74,83 @@ describe('the content components', () => {
       });
       expect(byTag(internal, 'span')).toEqual([]);
     });
+  });
+
+  describe('Link appearance="button"', () => {
+    const look = { appearance: 'button', variant: 'secondary', size: 'sm' };
+
+    test('is an anchor with the href, never a button element', () => {
+      const nodes = renderNodes(Link, { ...look, href: '/posts/new', children: 'New post' });
+      expect(one(byTag(nodes, 'a'), 'link').props['href']).toBe('/posts/new');
+      expect(byTag(nodes, 'button')).toEqual([]);
+    });
+
+    test('navigates on its own: no handler unless the caller passed one', () => {
+      const node = one(byTag(renderNodes(Link, { ...look, href: '/x', children: 'Go' }), 'a'), 'a');
+      expect(node.props['onClick']).toBeUndefined();
+    });
+
+    // Button wraps its label so a long one truncates inside the padding, with the icons outside
+    // the truncated run. The same look on an anchor needs the same three children.
+    test('wraps its label and places the icons exactly as Button does', () => {
+      const nodes = renderNodes(Link, {
+        ...look,
+        href: '/x',
+        iconStart: 'S',
+        iconEnd: 'E',
+        children: 'Label',
+      });
+      const anchor = one(byTag(nodes, 'a'), 'link');
+      const label = one(byTag(nodes, 'span'), 'label');
+      expect(label.props['children']).toBe('Label');
+      expect(anchor.props['children']).toEqual([['S', label, 'E'], null]);
+    });
+
+    test('a refused scheme is still refused: the look does not buy an href', () => {
+      const nodes = renderNodes(Link, { ...look, href: 'javascript:alert(1)', children: 'Go' });
+      expect(one(byTag(nodes, 'a'), 'link').props['href']).toBeUndefined();
+    });
+
+    test('an external button-link is hardened and announced like any other', () => {
+      const nodes = renderNodes(Link, {
+        ...look,
+        href: 'https://lucide.dev',
+        externalHint: 'opens in a new tab',
+        children: 'Lucide',
+      });
+      const anchor = one(byTag(nodes, 'a'), 'link');
+      expect(anchor.props['target']).toBe('_blank');
+      expect(anchor.props['rel']).toBe('noopener noreferrer');
+      expect(byTag(nodes, 'span').map((node) => node.props['children'])).toEqual([
+        'Lucide',
+        'opens in a new tab',
+      ]);
+    });
+  });
+
+  /**
+   * Two looks, two prop sets, held by the type: each directive is red the day `LinkProps` stops
+   * refusing the pairing beneath it (`scripts/test-typecheck-gate.ts` compiles this file).
+   */
+  test("a look takes its own props and refuses the other look's", () => {
+    const to = { href: '/', children: 'x' } as const;
+    // @ts-expect-error `variant` is a button-link prop; a text link has no variant
+    const textWithVariant: LinkProps = { ...to, variant: 'ghost' };
+    // @ts-expect-error `underline` is a text-link prop; a button-link is never underlined by it
+    const buttonUnderlined: LinkProps = { ...to, appearance: 'button', underline: 'always' };
+    // @ts-expect-error `inherit` is a text-link tone; a button-link takes a `Tone`
+    const buttonInherit: LinkProps = { ...to, appearance: 'button', tone: 'inherit' };
+    const text: LinkProps = { ...to, tone: 'inherit', underline: 'none' };
+    const button: LinkProps = { ...to, appearance: 'button', tone: 'danger' };
+    expect([textWithVariant, buttonUnderlined, buttonInherit, text, button]).toHaveLength(5);
+  });
+
+  test('a text link carries a pager relation when it is given one', () => {
+    const node = one(
+      byTag(renderNodes(Link, { href: '/p/2', rel: 'next', children: '2' }), 'a'),
+      'a',
+    );
+    expect(node.props['rel']).toBe('next');
   });
 
   describe('Accordion', () => {

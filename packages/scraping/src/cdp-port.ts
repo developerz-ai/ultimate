@@ -143,6 +143,16 @@ export interface CdpPageLike {
    * reason, and refused by name when absent.
    */
   createCDPSession?(): Promise<CdpSessionLike>;
+  /**
+   * `page.authenticate(credentials)`: answers the PROXY's own auth challenge. It is the only way a
+   * launched browser dials a credentialed exit — `--proxy-server` takes no userinfo, and one
+   * written there would sit in the process list. OPTIONAL for `keyboard`'s reason; a credentialed
+   * exit on a launcher without it is `X_SCRAPE_EGRESS_UNSUPPORTED`, never a direct connection.
+   */
+  authenticate?(credentials: {
+    readonly username: string;
+    readonly password: string;
+  }): Promise<void>;
   frames(): readonly CdpFrameLike[];
   close(): Promise<void>;
 }

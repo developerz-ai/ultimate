@@ -34,8 +34,8 @@
     inset-block-start: 0.1rem;
     inline-size: 0.3rem;
     block-size: 0.55rem;
-    border-inline-end: 2px solid t.role('accent-fg');
-    border-block-end: 2px solid t.role('accent-fg');
+    border-inline-end: t.stroke(thick) solid t.role('accent-fg');
+    border-block-end: t.stroke(thick) solid t.role('accent-fg');
     transform: rotate(40deg) scale(0);
     transform-origin: center;
     content: '';
@@ -66,8 +66,8 @@
 }
 
 .input:focus-visible + .box {
-  outline: 2px solid t.role('accent');
-  outline-offset: 2px;
+  outline: t.stroke(thick) solid t.role('accent');
+  outline-offset: t.stroke(thick);
 }
 
 .input[aria-invalid='true'] + .box {

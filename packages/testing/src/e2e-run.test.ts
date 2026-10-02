@@ -7,6 +7,7 @@ import type { E2eApp } from './e2e-app';
 import { e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
 import type { E2eDriverOptions } from './e2e-driver';
 import { startE2eRun } from './e2e-run';
+import { withFailureContext } from './failure-context';
 
 afterEach(() => {
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.e2e.run'));
@@ -48,6 +49,7 @@ function harness(browsers: ReturnType<typeof fakeBrowser>[]) {
   const app: E2eApp = {
     base: 'http://localhost:4000',
     stateDir: '/tmp/state',
+    log: () => 'GET /feed 500 X_LIVE_QUERY_UNKNOWN',
     stop: async () => {
       stopped += 1;
     },
@@ -143,6 +145,16 @@ describe('unit · one e2e run', () => {
     await second.hooks.before?.();
     expect(hung.closedCount()).toBe(1);
     expect(e2eBrowser()).toBe(fresh.browser);
+  });
+
+  test('while the run lasts, a failing test carries the app’s log tail; after it, none', async () => {
+    const run = harness([fakeBrowser('only')]);
+    await startE2eRun(run.deps);
+    const during = withFailureContext(new TypeError('the row never arrived')) as Error;
+    expect(during.message).toContain('GET /feed 500 X_LIVE_QUERY_UNKNOWN');
+    await run.hooks.after?.();
+    const after = withFailureContext(new TypeError('later')) as Error;
+    expect(after.message).toBe('later');
   });
 
   test('after the last test it uninstalls, closes the browser and stops the app', async () => {

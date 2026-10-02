@@ -22,6 +22,12 @@ export interface RouteFact {
   readonly handler: string;
   readonly budget: { readonly js?: string; readonly lcp?: number };
   readonly revalidateTags: readonly string[];
+  /**
+   * `RouteDescriptor.mount` — who mounted a route no surface file declares (`defineAdmin`), and
+   * every permission that gates it. `null` for a file route: nobody mounted it, and `handler` is
+   * then a path an editor can open rather than a package name.
+   */
+  readonly mount: { readonly by: string; readonly permissions: readonly string[] } | null;
 }
 
 /**
@@ -104,6 +110,17 @@ export interface JobDefFact {
    * the app unsafe to retry.
    */
   readonly idempotent: boolean;
+  /**
+   * `JobDescriptor.concurrency` — the declared fleet-wide cap, `null` for none. `keyed` says the
+   * limit holds per `concurrency.key(input)`; the key itself is a RUN's fact (`JobRunFact`).
+   */
+  readonly concurrency: {
+    readonly limit: number;
+    readonly keyed: boolean;
+    readonly whenBusy: 'wait' | 'fail' | null;
+  } | null;
+  /** Whether the job declares an `onSettled` hook — what is told how each run ended. */
+  readonly onSettled: boolean;
 }
 
 export interface QueueFact {
@@ -112,6 +129,8 @@ export interface QueueFact {
   readonly running: number;
   readonly failed: number;
   readonly deadLetter: number;
+  /** A paused queue is claimed by no worker; its depth is work waiting on an operator. */
+  readonly paused: boolean;
 }
 
 export interface JobStepFact {
@@ -128,6 +147,14 @@ export interface JobRunFact {
   readonly queue: string;
   readonly status: 'ok' | 'running' | 'failed' | 'dead';
   readonly attempt: number;
+  /** The concurrency key this run counts under — `null` unless its job declares a keyed cap. */
+  readonly concurrencyKey: string | null;
+  /** What the body last reported through `progress()`; `null` until it reports. */
+  readonly progress: {
+    readonly done: number;
+    readonly total: number;
+    readonly note: string | null;
+  } | null;
   readonly steps: readonly JobStepFact[];
 }
 

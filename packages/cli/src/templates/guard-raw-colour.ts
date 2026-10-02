@@ -153,17 +153,10 @@ export function rawColours(files: readonly StyleFile[]): readonly Finding[] {
 
 export const guard: Guard = {
   summary: 'a stylesheet names a semantic token, never a colour',
-  async check(root) {
-    const files: StyleFile[] = [];
-    for await (const entry of new Bun.Glob('{apps,packages}/**/*.scss').scan({
-      cwd: root,
-      absolute: false,
-    })) {
-      const path = entry.split('\\\\').join('/');
-      if (path.includes('node_modules/')) continue;
-      files.push({ path, scss: await Bun.file(\`\${root}/\${path}\`).text() });
-    }
-    return rawColours(files);
+  async check(_root, sources) {
+    // The run's ONE read of the stylesheets: every guard asking for this glob shares the walk.
+    const sheets = await sources.files('{apps,packages}/**/*.scss');
+    return rawColours(sheets.map((file) => ({ path: file.path, scss: file.text })));
   },
 };
 `;

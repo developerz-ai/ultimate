@@ -10,13 +10,14 @@
 
 import { test as bunTest } from 'bun:test';
 import { fixtureUnknown } from './errors';
+import { withFailureContext } from './failure-context';
 import type { TestClock } from './fixture-clock';
 import type { SignIn, Subscribe, TestBudget, TestDeploy } from './fixture-drivers';
 import type { RunJobs } from './fixture-jobs';
 import type { TestMail } from './fixture-mail';
 import type { TestNetwork } from './fixture-network';
 import type { TestStatements } from './fixture-statements';
-import type { PageLike } from './test-types';
+import type { PageLike, TestOptions } from './test-types';
 
 /** Built once per test, on first use. */
 export type FixtureFactory<T = unknown> = () => T | Promise<T>;
@@ -222,7 +223,8 @@ export async function runWithFixtures(body: FixtureRunBody): Promise<void> {
     }
     await body(bag as FixtureBag);
   } catch (error) {
-    failure = { error };
+    // The body's own failure, with the e2e app's log tail when one is running (`failure-context.ts`).
+    failure = { error: withFailureContext(error) };
   }
 
   // Every disposer runs even when an earlier one throws: a fixture that cannot clean up must
@@ -244,7 +246,10 @@ export async function runWithFixtures(body: FixtureRunBody): Promise<void> {
  *
  * Teardown runs in reverse build order whether the body passed or threw: a failing assertion
  * must not be the reason the next file inherits a queue.
+ *
+ * `options.timeoutMs` is the test's own deadline, the same key the six typed helpers take: a
+ * fixture that builds something slow (an island, a browser) is the test that needs one.
  */
-export function fixtureTest(name: string, body: FixtureBody): void {
-  bunTest(name, () => runWithFixtures(body));
+export function fixtureTest(name: string, body: FixtureBody, options?: TestOptions): void {
+  bunTest(name, () => runWithFixtures(body), options?.timeoutMs);
 }

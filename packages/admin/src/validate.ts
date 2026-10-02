@@ -4,7 +4,10 @@
 
 export interface ValidationIssue {
   readonly path: string;
+  /** The schema's own words, or the literal an agent reads for an issue the admin raised. */
   readonly message: string;
+  /** Set only on an issue the ADMIN raised: the i18n key a screen renders instead of `message`. */
+  readonly messageKey?: string;
 }
 
 interface StandardResult {

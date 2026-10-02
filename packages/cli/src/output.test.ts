@@ -6,6 +6,7 @@ import {
   exitCodeFor,
   findingFrom,
   isUltimateErrorShape,
+  render,
   renderFinding,
   renderHuman,
   renderJson,
@@ -62,6 +63,31 @@ describe('unit · output', () => {
     expect(payload.ok).toBe(false);
     expect(payload.steps.map((step) => step.name)).toEqual(['typecheck', 'drift']);
     expect(payload.steps[1]?.findings[0]?.fix).toBe('x db gen "add publish_at"');
+  });
+
+  // One rule for a step's captured output, in both renderers: a failed step always, a green one
+  // under `--verbose`. A fact a green step must report by default belongs in `data`.
+  test('a green step`s output is carried exactly when the human render shows it', () => {
+    const green: CommandResult = {
+      ok: true,
+      command: 'verify',
+      summary: 'ok',
+      steps: [
+        { name: 'unit', ok: true, durationMs: 1, findings: [], output: 'coverage: 97% of lines' },
+        { name: 'lint', ok: false, durationMs: 1, findings: [], output: 'lint said why' },
+        { name: 'drift', ok: true, durationMs: 1, findings: [], output: '' },
+      ],
+    };
+    const outputs = (verbose: boolean): (string | undefined)[] =>
+      (JSON.parse(render(green, true, verbose)) as { steps: { output?: string }[] }).steps.map(
+        (step) => step.output,
+      );
+    expect(outputs(false)).toEqual([undefined, 'lint said why', undefined]);
+    expect(outputs(true)).toEqual(['coverage: 97% of lines', 'lint said why', undefined]);
+    // The same two answers the terminal gives.
+    expect(render(green, false, false)).not.toContain('coverage: 97% of lines');
+    expect(render(green, false, true)).toContain('| coverage: 97% of lines');
+    expect(render(green, false, false)).toContain('| lint said why');
   });
 
   // `runVerify` sets `skipped` only on a step that does not apply, so an executed step reaches

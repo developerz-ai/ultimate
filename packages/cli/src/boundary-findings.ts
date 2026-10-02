@@ -3,7 +3,9 @@
 // was another command to run for the real one (plan 101 slice 11 j). The planner is the same one
 // `x fix boundary` prints from, so the gate and the command cannot disagree about the cut.
 
+import type { SourceFile } from './app-boundaries';
 import { appImportGraph, checkImportRules, readAppSources } from './app-boundaries';
+import { appTransportFindings } from './app-transport';
 import { planBoundaryCuts } from './boundary-cuts';
 import type { Finding } from './output';
 
@@ -29,8 +31,18 @@ export function withCutEdits(
   });
 }
 
-/** Read the app's sources once, check them, and hand back findings whose fix is the edit. */
-export async function appBoundaryFindings(root: string): Promise<readonly Finding[]> {
-  const files = await readAppSources(root);
-  return withCutEdits(checkImportRules(files), appImportGraph(files));
+/**
+ * Read the app's sources once, check them, and hand back findings whose fix is the edit. The
+ * browser-transport findings come from the same read and already carry their own edit.
+ */
+export async function appBoundaryFindings(
+  root: string,
+  /** The app's sources when the caller has already read them — the gate step reads them once. */
+  read?: readonly SourceFile[],
+): Promise<readonly Finding[]> {
+  const files = read ?? (await readAppSources(root));
+  return [
+    ...withCutEdits(checkImportRules(files), appImportGraph(files)),
+    ...(await appTransportFindings(root, files)),
+  ];
 }

@@ -4,25 +4,33 @@
 // field, but the zero-config result is the one the generator emits and the one the docs show.
 
 import { finiteCount } from '@ultimat3/core';
-import { type AdminColumnFacts, adminColumnsOf } from './entity-columns';
+import { type AdminColumnFacts, adminColumnsOf, adminSealedColumnsOf } from './entity-columns';
 import {
   AdminEntityUnknownError,
   AdminFieldUnsupportedError,
   AdminPolicyMissingError,
+  AdminRepoUnboundError,
 } from './errors';
-import {
-  type AdminField,
-  type AdminFieldType,
-  type AdminWidget,
-  fieldTypeFromColumn,
-  filterable,
-  listable,
-  searchable,
-  sortable,
-  widgetFor,
-} from './fields';
+import type { AdminField } from './fields';
 import { ADMIN_OPERATIONS, type AdminOperation } from './permissions';
 import type { AdminAction, AdminEntity, AdminRepo, AdminRow, AdminSort } from './registry';
+import { type AdminFieldOverride, deriveField, secretField } from './resource-fields';
+import {
+  type AdminFormGroupOptions,
+  type AdminSection,
+  type AdminSectionOptions,
+  layoutOf,
+} from './resource-layout';
+import {
+  type AdminComputedColumn,
+  type AdminComputedColumnOptions,
+  type AdminRowScope,
+  type AdminScope,
+  type AdminScopeOptions,
+  computedColumnsOf,
+  rowScopeOf,
+  scopesOf,
+} from './resource-list';
 
 /** Six columns is what fits a laptop viewport without horizontal scroll. */
 const MAX_LIST_FIELDS = 6;
@@ -30,27 +38,15 @@ const DEFAULT_PAGE_SIZE = 25;
 const LABEL_CANDIDATES = ['name', 'title', 'slug', 'label', 'email'] as const;
 const SORT_CANDIDATES = ['createdAt', 'created_at', 'updatedAt', 'updated_at'] as const;
 
-export interface AdminFieldOverride {
-  readonly type?: AdminFieldType;
-  readonly widget?: AdminWidget;
-  readonly labelKey?: string;
-  /** Out of every surface: list, detail, form, MCP schema. */
-  readonly hidden?: boolean;
-  readonly inList?: boolean;
-  readonly readOnly?: boolean;
-  readonly required?: boolean;
-  readonly sensitive?: boolean;
-  readonly filterable?: boolean;
-  readonly sortable?: boolean;
-  readonly searchable?: boolean;
-  readonly currency?: string;
-  readonly values?: readonly string[];
-  readonly relation?: { readonly entity: string; readonly labelField?: string };
-}
-
 export interface AdminResourceOptions<Row extends AdminRow = AdminRow> {
   readonly repo?: AdminRepo<Row>;
   readonly path?: string;
+  /**
+   * The noun this resource's permissions are named after — `<permission>:read|write|delete`.
+   * Default: the entity's name. Several resources that are one subject to an operator share one
+   * (the jobs screens are all `job:read`), so a role map grants a subject once, not per table.
+   */
+  readonly permission?: string;
   readonly titleKey?: string;
   readonly group?: string;
   /**
@@ -62,6 +58,35 @@ export interface AdminResourceOptions<Row extends AdminRow = AdminRow> {
   readonly fields?: Readonly<Record<string, AdminFieldOverride>>;
   /** Explicit list columns, in order. Omit to let the derivation pick. */
   readonly listFields?: readonly string[];
+  /**
+   * Computed list columns, drawn after `listFields` in declaration order:
+   * `age: { value: (row) => row.createdAt, render: 'relative-time' }`. `render` is one of the six
+   * built-in renderers or a component. A name that is also an entity column is refused.
+   */
+  readonly columns?: Readonly<Record<string, AdminComputedColumnOptions<Row>>>;
+  /**
+   * Named predicates, drawn as tabs: `open: { where: [...] }`, `mine: { where: (actor) => [...] }`.
+   * At most one `default: true`; `count: true` is one extra query per tab that asks for it.
+   */
+  readonly scopes?: Readonly<Record<string, AdminScopeOptions>>;
+  /**
+   * The rows this ACTOR may see at all. Applied to every read of the resource — list, search,
+   * detail, lookup, labels, MCP — so it is the one place a second audience is declared.
+   */
+  readonly rows?: AdminRowScope;
+  /**
+   * The detail page, as titled groups of fields. A field named in none falls into a default
+   * section drawn last, so a column added to the entity is never hidden by this list.
+   */
+  readonly sections?: readonly AdminSectionOptions[];
+  /** The same arrangement for the create and edit form. Independent of `sections`. */
+  readonly formGroups?: readonly AdminFormGroupOptions[];
+  /**
+   * `hasMany` relations of the entity, by name — `['comments']` — drawn on the detail page as the
+   * RELATED resource's own list (its columns, its row scope, its policy) filtered to this row.
+   * The names are `@ultimat3/entity`'s: the one a preload names.
+   */
+  readonly related?: readonly string[];
   readonly defaultSort?: AdminSort;
   readonly pageSize?: number;
   readonly operations?: readonly AdminOperation[];
@@ -81,6 +106,8 @@ export interface AdminResource<Row extends AdminRow = AdminRow> {
    * the framework can own (axiom 8) — `path:` is how an app spells its own.
    */
   readonly path: string;
+  /** The permission noun — `<permission>:read` lists it. The entity's name unless declared. */
+  readonly permission: string;
   readonly titleKey: string;
   readonly group: string;
   readonly idField: string;
@@ -90,56 +117,37 @@ export interface AdminResource<Row extends AdminRow = AdminRow> {
   readonly fields: readonly AdminField[];
   readonly listFields: readonly AdminField[];
   readonly formFields: readonly AdminField[];
+  /**
+   * The entity's `.sealed()` columns, as WRITE-ONLY inputs: a form posts them, nothing reads them.
+   * Deliberately a list of its own and in none of the others — `fields`, `listFields`,
+   * `formFields`, `filters` and `searchFields` are all read back by column name somewhere, and a
+   * sealed property answers that read with its plaintext.
+   */
+  readonly secretFields: readonly AdminField[];
+  /**
+   * The label field first — a list's search box is its `contains` filter — then every field the
+   * derivation offers. What a URL's `f.<field>` may name, and nothing else.
+   */
   readonly filters: readonly AdminField[];
   readonly searchFields: readonly AdminField[];
+  /** Computed list columns, in declaration order. */
+  readonly columns: readonly AdminComputedColumn[];
+  /** Declared scopes, in tab order. Empty for a resource that declares none. */
+  readonly scopes: readonly AdminScope[];
+  /** `rows`, validated per call. Absent for a resource every permitted actor sees whole. */
+  readonly rowScope?: AdminRowScope;
+  /** The detail page's groups. Always at least one: undeclared fields have a default section. */
+  readonly sections: readonly AdminSection[];
+  /** The form's groups, over `formFields` and `secretFields` both. */
+  readonly formGroups: readonly AdminSection[];
+  /** Declared `related` relation names, in order. `related.ts` resolves each against the admin. */
+  readonly related: readonly string[];
   readonly defaultSort: AdminSort;
   readonly pageSize: number;
   readonly operations: readonly AdminOperation[];
   readonly actions: readonly AdminAction[];
   readonly repo?: AdminRepo<Row>;
   field(name: string): AdminField;
-}
-
-function deriveField(
-  entity: AdminEntity,
-  column: AdminColumnFacts,
-  override: AdminFieldOverride | undefined,
-): AdminField {
-  const name = column.name;
-  const type = override?.type ?? fieldTypeFromColumn(entity.$name, name, column);
-  const widget = override?.widget ?? widgetFor(type);
-  const generated = column.generated || column.primaryKey;
-  // An entity has no notion of a secret column, and a currency belongs to the value rather
-  // than the column, so both are admin-side declarations or they are absent. Never guessed.
-  const sensitive = override?.sensitive ?? false;
-  const currency = override?.currency;
-  const values = override?.values ?? column.values;
-  const relation =
-    override?.relation ??
-    // The FK's value IS the target column's value, so that column is the honest default label.
-    (column.references === undefined
-      ? undefined
-      : { entity: column.references.entity, labelField: column.references.column });
-
-  return {
-    entity: entity.$name,
-    name,
-    type,
-    widget,
-    labelKey: override?.labelKey ?? `admin.${entity.$name}.field.${name}`,
-    required: override?.required ?? (!column.nullable && !generated),
-    readOnly: override?.readOnly ?? generated,
-    sensitive,
-    inList: override?.inList ?? (listable(type) && !sensitive),
-    filterable: override?.filterable ?? filterable(type, column),
-    sortable: override?.sortable ?? sortable(type, column),
-    // Generated columns are excluded from search: an id is found by exact lookup, and a
-    // `contains` over a uuid column is a scan that returns nothing useful.
-    searchable: override?.searchable ?? (searchable(type, column) && !sensitive && !generated),
-    ...(values === undefined ? {} : { values }),
-    ...(currency === undefined ? {} : { currency }),
-    ...(relation === undefined ? {} : { relation }),
-  };
 }
 
 /**
@@ -230,6 +238,18 @@ function pickListFields(
   return [...label, ...rest].slice(0, MAX_LIST_FIELDS);
 }
 
+/**
+ * The label first, whether or not it is indexed: a list's search box IS the label's `contains`
+ * filter, and a list an operator cannot search by name is the one they leave for a SQL console.
+ * Only a text label qualifies — a `contains` over a uuid is a database error, not an empty result.
+ */
+function filtersOf(fields: readonly AdminField[], labelField: string): readonly AdminField[] {
+  const label = fields.filter(
+    (field) => field.name === labelField && field.filterKind === 'text' && !field.sensitive,
+  );
+  return [...label, ...fields.filter((field) => field.filterable && !label.includes(field))];
+}
+
 function assertActionsHavePolicies(actions: readonly AdminAction[]): void {
   for (const action of actions) {
     // Widened because the registry is JSON at the boundary: a hand-written action object
@@ -264,10 +284,18 @@ export function adminResource<Row extends AdminRow = AdminRow>(
   const labelField = labelFieldOf(entity, fields, idField, opts.labelField);
   const actions = opts.actions ?? [];
   assertActionsHavePolicies(actions);
+  const declared = { name: entity.$name, entity };
+  const rowScope = rowScopeOf(declared, opts.rows);
+
+  const formFields = fields.filter((field) => !field.readOnly && !field.sensitive);
+  const secretFields = adminSealedColumnsOf(entity)
+    .filter((column) => overrides[column.name]?.hidden !== true)
+    .map((column) => secretField(entity, column, overrides[column.name]));
 
   const resource: AdminResource<Row> = {
     name: entity.$name,
     path: opts.path ?? `/${entity.$name}`,
+    permission: opts.permission ?? entity.$name,
     titleKey: opts.titleKey ?? `admin.${entity.$name}.title`,
     group: opts.group ?? 'admin.group.data',
     idField,
@@ -275,9 +303,35 @@ export function adminResource<Row extends AdminRow = AdminRow>(
     entity,
     fields,
     listFields: pickListFields(fields, labelField, opts.listFields, entity.$name),
-    formFields: fields.filter((field) => !field.readOnly && !field.sensitive),
-    filters: fields.filter((field) => field.filterable),
+    formFields,
+    secretFields,
+    filters: filtersOf(fields, labelField),
     searchFields: fields.filter((field) => field.searchable),
+    columns: computedColumnsOf(declared, opts.columns),
+    scopes: scopesOf(declared, opts.scopes, opts.repo),
+    ...(rowScope === undefined ? {} : { rowScope }),
+    sections: layoutOf(
+      {
+        entity: entity.$name,
+        option: 'sections',
+        // What the detail page draws: every field but a `sensitive` one. A sealed column is in no
+        // list a reader iterates, so it cannot be named here either.
+        fields: fields.filter((field) => !field.sensitive),
+        excluded:
+          'is not a field the detail page draws (hidden, sensitive, sealed, or not a column)',
+      },
+      opts.sections,
+    ),
+    formGroups: layoutOf(
+      {
+        entity: entity.$name,
+        option: 'formGroups',
+        fields: [...formFields, ...secretFields],
+        excluded: 'is not a form input (read-only, generated, sensitive, hidden, or not a column)',
+      },
+      opts.formGroups,
+    ),
+    related: opts.related ?? [],
     defaultSort: opts.defaultSort ?? defaultSortOf(fields, idField),
     // Refused here rather than at the first listing, because `pagination.ts` clamps with
     // `Math.max(1, Math.min(x, 200))` and neither of those validates: a `NaN` survives both, so
@@ -306,11 +360,7 @@ export function adminResource<Row extends AdminRow = AdminRow>(
 /** The bound repo, or the one error that says which resource forgot it. */
 export function repoOf<Row extends AdminRow>(resource: AdminResource<Row>): AdminRepo<Row> {
   if (resource.repo === undefined) {
-    throw new AdminEntityUnknownError({
-      entity: resource.name,
-      known: [],
-      cause: `resource "${resource.name}" has no repo bound, so the admin cannot read or write rows`,
-    });
+    throw new AdminRepoUnboundError({ entity: resource.name, handles: [] });
   }
   return resource.repo;
 }

@@ -39,6 +39,8 @@ const runArgs = (): JobRunArgs<{ page: number }> => ({
   step: passThroughStep(),
   ctx: createContext({ logger: createLogger({ writer: () => undefined }) }),
   attempt: 1,
+  finalAttempt: false,
+  progress: () => undefined,
   jobId: 'job-1',
   runId: 'run-1',
 });

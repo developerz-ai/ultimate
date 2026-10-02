@@ -4,15 +4,27 @@
 // table and `guardedPage()` is the one thing that decides it. A scaffold that wrote a route
 // declaration here would hand back the unguarded second way in that seam exists to close.
 
+import { ADMIN_FILE } from '../admin-registration';
 import { catalogJson } from './catalog-json';
 import { sortedImports } from './imports';
 import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile } from './naming';
 import { camel, kebab, pascal } from './naming';
-import { LINE_WIDTH } from './wrap';
+import { LINE_WIDTH, wrapImport } from './wrap';
 
-/** Where an admin lives when the caller does not say. `x new` scaffolds this layout. */
-export const DEFAULT_ADMIN_PAGE_DIR = 'apps/admin/src/pages';
+/** The directory `defineAdmin` is declared in — the admin's one home, inside the app scan. */
+const ADMIN_HOME = ADMIN_FILE.slice(0, ADMIN_FILE.lastIndexOf('/'));
+
+/**
+ * Where a page lands when the caller does not say: beside the declaration `x new` writes, under the
+ * directory the app scan imports. `apps/admin/src/pages` was outside it, and an admin kept there was
+ * never mounted (`X_ADMIN_UNSCANNED`).
+ */
+export const DEFAULT_ADMIN_PAGE_DIR = `${ADMIN_HOME}/pages`;
+
+/** The import a `defineAdmin` in `ADMIN_FILE` writes for a page in `dir`, when one can be derived. */
+const specifierFor = (dir: string, name: string): string =>
+  dir.startsWith(`${ADMIN_HOME}/`) ? `./${dir.slice(ADMIN_HOME.length + 1)}/${name}` : `./${name}`;
 
 export interface AdminPageOptions {
   /** The permission the page's own work needs. `admin:read` is composed in front of it. */
@@ -115,8 +127,8 @@ const pageSource = (
 // so a route declaration in this file would be a second, unguarded way in.
 //
 // Wire it in once, and add \`navGroup\` to link it in the sidebar — this file is ${dir}/${name}.tsx,
-// so the specifier is relative to wherever \`defineAdmin\` lives:
-//   import { ${declaration}Page } from './${name}';
+// so the specifier is relative to wherever \`defineAdmin\` lives (${ADMIN_FILE} in a scaffolded app):
+//   import { ${declaration}Page } from '${specifierFor(dir, name)}';
 //   defineAdmin({ …, pages: […, ${declaration}Page] })
 //
 // The permission below is declared here AND has to be decided: an authz map built from a fixed
@@ -146,11 +158,27 @@ export const ${declaration}Page: AdminCustomPage = {
 
 const pageTest = (name: string, permission: string): string => {
   const declaration = camel(name);
+  const Name = pascal(name);
+  const url = `http://localhost/admin/${name}`;
   return `// The ${name} admin page is guarded and owns no route of its own — the two facts that separate an
-// admin screen from a page, and the two an edit here is most likely to break.
+// admin screen from a page, and the two an edit here is most likely to break — and it renders
+// from the request it is handed.
+import { adminTestCtx } from '@ultimat3/admin';
 import { knownPermissions } from '@ultimat3/policy';
-import { expect, unitTest } from '@ultimat3/testing';
-import { ${declaration}Page } from './${name}';
+import { expect, renderView, unitTest } from '@ultimat3/testing';
+${wrapImport([`${Name}Page`, `${declaration}Page`], `./${name}`)}
+
+// The component, called the way the admin's frame calls it once the guard has passed: a ctx for
+// an actor holding the page's own permission, the route params, and the request URL.
+unitTest('the ${name} admin page renders', async () => {
+  const view = await renderView(${Name}Page, {
+    ctx: adminTestCtx({ granted: ['admin:read', '${permission}'] }),
+    params: {},
+    url: '${url}',
+  });
+  expect(view.html).toContain('<h1>');
+  expect(view.text).toContain('${url}');
+});
 
 // Both facts the frame reads off the declaration, so both are decidable without a request: a path
 // that is not rooted is X_ADMIN_PAGE_PATH_INVALID, and no permission at all is

@@ -9,11 +9,19 @@ export const SECRETS_SUBCOMMANDS = ['show', 'init', 'edit', 'set', 'rotate'] as 
 export const secretsSpec: CommandSpec = {
   name: 'secrets',
   summary: `the committed encrypted secrets, decrypted into the ${ENV_SCHEMA_EXPORT} variables of the same names`,
-  usage: 'x secrets [show|init|edit|set <NAME>|rotate] [--json]',
+  usage: 'x secrets [show|init|edit|set <NAME>|rotate [--drop <keyId>]] [--json]',
   requiresApp: true,
   subcommands: [...SECRETS_SUBCOMMANDS],
   // The bare `x secrets` answers without a key ever leaving the file. Declared, not inherited
   // from the array's order — `init`, `edit`, `set` and `rotate` all write.
   defaultSubcommand: 'show',
-  flags: [],
+  flags: [
+    {
+      name: 'drop',
+      type: 'string',
+      summary:
+        'rotate: remove one retired master key by id once every value sealed under it is re-sealed; generates no new key',
+      subcommands: ['rotate'],
+    },
+  ],
 };

@@ -9,22 +9,53 @@ const indexOf = (example: boolean): string =>
   String(apiFiles(example).find((file) => file.path === 'apps/web/api/index.ts')?.contents ?? '');
 
 describe('unit · which written files are listed', () => {
-  test('a job and a task are, their tests and everything else are not', () => {
+  test('an action, a query, a job and a task are; their tests and everything else are not', () => {
     expect(
       apiEntriesFor([
         'apps/web/app/ping/jobs/ping.ts',
         'apps/web/app/ping/jobs/ping.job.test.ts',
         'apps/web/app/nightly/tasks/nightly.ts',
         'apps/web/app/post/actions/create-post.ts',
+        'apps/web/app/post/actions/create-post.contract.test.ts',
+        'apps/web/app/post/live/post-list.ts',
+        'apps/web/app/post/live/post-list.live.test.ts',
+        'apps/web/app/post/queries/post-search.ts',
+        'apps/web/app/post/entity.ts',
+        'apps/web/app/post/ui/post-card.tsx',
       ]),
     ).toEqual([
       { key: 'jobs', binding: 'ping', specifier: '../app/ping/jobs/ping' },
       { key: 'tasks', binding: 'nightly', specifier: '../app/nightly/tasks/nightly' },
+      { key: 'actions', binding: 'createPost', specifier: '../app/post/actions/create-post' },
+      { key: 'queries', binding: 'postList', specifier: '../app/post/live/post-list' },
+      { key: 'queries', binding: 'postSearch', specifier: '../app/post/queries/post-search' },
     ]);
   });
 });
 
 describe('unit · inserting into the scaffolded index', () => {
+  // A resource wrote two actions, a live query and a job, and only the job reached the index: the
+  // scan registers the others at boot, but `Api` — the type the browser client is shaped from —
+  // is `typeof defineApi({...})`, so the page had no typed call for what the run had just written.
+  test('everything a resource writes lands in its own list', () => {
+    const entries = apiEntriesFor([
+      'apps/web/app/run/actions/create-run.ts',
+      'apps/web/app/run/actions/archive-run.ts',
+      'apps/web/app/run/live/run-list.ts',
+      'apps/web/app/run/jobs/reindex-run.ts',
+    ]);
+    const { source, skipped } = insertApiEntries(indexOf(false), entries);
+    expect(skipped).toEqual([]);
+    // In the order `x new` writes them, whatever order the run wrote its files in.
+    expect(source).toContain(
+      '  actions: [health, createRun, archiveRun],\n  queries: [runList],\n  jobs: [reindexRun],\n});',
+    );
+    expect(source).toContain("import * as createRun from '../app/run/actions/create-run';");
+    expect(source).toContain("import * as runList from '../app/run/live/run-list';");
+    // And twice is once.
+    expect(insertApiEntries(source, entries).source).toBe(source);
+  });
+
   test('an index with no jobs list gains one after actions, and the import', () => {
     const entries = apiEntriesFor(['apps/web/app/ping/jobs/ping.ts']);
     const { source, skipped } = insertApiEntries(indexOf(false), entries);

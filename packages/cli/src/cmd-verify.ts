@@ -23,12 +23,14 @@ import { VERIFY_STEPS } from './verify-checks';
 import { VerifyMergeInputError, VerifyShardInvalidError } from './verify-errors';
 import { readVerifyFloor } from './verify-floor';
 import type { VerifyPart } from './verify-merge';
-import { mergeParts, parsePart } from './verify-merge';
+import { coverageRiders, mergeParts, parsePart } from './verify-merge';
+import { stepStream } from './verify-progress';
 import { runVerify } from './verify-run';
 import type { ShardSpec, Timings } from './verify-shard';
 import { assertShardable, parseShard, readTimings } from './verify-shard';
 import type { VerifyStepName } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
+import { writeErrorLine } from './write-line';
 
 // One import path for the gate, unchanged by the split: `index.ts`, `x build` and the MCP host all
 // reach the list and the runner through this module, and a second path to either would be the
@@ -55,6 +57,9 @@ export const verifyCommand: CliCommand = {
       ...(only === undefined ? {} : { only }),
       ...(shard === undefined ? {} : { shard }),
       ...(isolate === undefined ? {} : { isolate }),
+      // `--json` prints one document when the run ends; a line per finished step on stderr is
+      // what a cancelled CI job's log ends on (#589). stdout stays the single document.
+      ...stepStream(ctx.args.json, writeErrorLine),
     });
     return shard === undefined ? result : withShardData(result, shard);
   },
@@ -119,7 +124,10 @@ async function mergeCommand(
     }
     parts.push(parsePart(file, await handle.text()));
   }
-  return mergeParts(parts, await readVerifyFloor(root));
+  const floor = await readVerifyFloor(root);
+  return mergeParts(parts, floor, VERIFY_STEP_NAMES, {
+    riders: await coverageRiders(parts, root, floor),
+  });
 }
 
 /**

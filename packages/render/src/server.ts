@@ -26,6 +26,7 @@ export {
 // ---- the two Bun loaders: `.tsx` → the server JSX factory, `.scss` → css + a class map ----------
 export type { Stylesheet } from './module-loader';
 export {
+  claimStylesheets,
   clearStylesheets,
   installRenderLoader,
   loadStylesheet,
@@ -76,3 +77,5 @@ export {
   revealChunk,
   streamResult,
 } from './render-stream';
+// ---- the Sass compile cache: where it lives, and how often this process ran Sass instead --------
+export { sassCompilations, setSassCacheDir } from './sass-cache';

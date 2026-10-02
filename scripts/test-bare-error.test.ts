@@ -104,6 +104,26 @@ describe('the ratchet', () => {
     expect(finding.fix).toInclude('expect.unreachable');
   });
 
+  test('the finding lists EVERY throw, never only the first — the pin already allows that one', () => {
+    const gaps = checkBareErrors({ files: overOne, pins: { x: 1 } });
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.cause).toContain('packages/x/src/a.test.ts:1, packages/x/src/a.test.ts:2');
+    expect(finding.fix).toContain('1 of the 2 sites the cause lists');
+    // Told which one is new, it says so and points there.
+    const [old, added] = gaps[0]?.sites ?? [];
+    if (old === undefined || added === undefined) expect.unreachable('two sites were scanned');
+    const known = bareErrorFindingFor({
+      ...(gaps[0] as BareErrorGap),
+      sites: [added, old],
+      fresh: 1,
+    });
+    expect(known.at).toBe('packages/x/src/a.test.ts:2');
+    expect(known.cause).toContain(
+      'new since origin/main: packages/x/src/a.test.ts:2; already there',
+    );
+    expect(known.fix).toContain('the throw at packages/x/src/a.test.ts:2');
+  });
+
   test('a package at its pin is clean', () => {
     expect(checkBareErrors({ files: overOne, pins: { x: 2 } })).toEqual([]);
   });

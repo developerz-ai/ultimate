@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { BAR_CHART, barRects, GRID_STEPS, gridY, maxOf } from './bar-chart-view';
+import { BAR_CHART, barRects, GRID_STEPS, gridY, maxOf, secondaryRects } from './bar-chart-view';
 
 const points = (...values: number[]) => values.map((value, i) => ({ key: `d${i}`, value }));
 
@@ -42,5 +42,25 @@ describe('barRects', () => {
 
   test('no points is no bars', () => {
     expect(barRects([])).toEqual([]);
+  });
+});
+
+describe('a second series', () => {
+  const stacked = (...pairs: [number, number][]) =>
+    pairs.map(([value, secondary], i) => ({ key: `d${i}`, value, secondary }));
+
+  test('scales by the stacked total, so the tallest stack fills the plot', () => {
+    expect(maxOf(stacked([3, 1], [2, 6]))).toBe(8);
+    const rects = barRects(stacked([3, 1], [2, 6]));
+    const tops = secondaryRects(stacked([3, 1], [2, 6]));
+    expect((rects[1]?.height ?? 0) + (tops[1]?.height ?? 0)).toBeCloseTo(BAR_CHART.plot);
+    // Stacked ON the primary bar: its bottom is the primary's top.
+    expect((tops[1]?.y ?? 0) + (tops[1]?.height ?? 0)).toBeCloseTo(rects[1]?.y ?? -1);
+  });
+
+  test('a zero or absent secondary draws nothing, and the primary alone is unchanged', () => {
+    expect(secondaryRects(stacked([4, 0]))[0]).toBeNull();
+    expect(secondaryRects(points(4))[0]).toBeNull();
+    expect(barRects(points(1, 4, 2))).toEqual(barRects(stacked([1, 0], [4, 0], [2, 0])));
   });
 });

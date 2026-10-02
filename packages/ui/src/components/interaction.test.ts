@@ -176,6 +176,21 @@ describe('component keyboard and form wiring', () => {
     expect(mixed.props['aria-checked']).toBe('mixed');
   });
 
+  test('Checkbox joins a form it does not sit in through `form`, and names none by default', () => {
+    // A row checkbox in a table submits with a batch form elsewhere on the page — no script.
+    const joined = one(
+      byTag(
+        renderNodes(Checkbox, { label: 'Row 1', name: 'ids', value: 'r1', form: 'batch' }),
+        'input',
+      ),
+      'input',
+    );
+    expect(joined.props['form']).toBe('batch');
+    expect(joined.props['value']).toBe('r1');
+    const plain = one(byTag(renderNodes(Checkbox, { label: 'A' }), 'input'), 'input');
+    expect(plain.props['form']).toBeUndefined();
+  });
+
   test('Switch writes no aria-checked at all: role="switch" reads the native checkedness', () => {
     const input = one(byTag(renderNodes(Switch, { label: 'A', checked: true }), 'input'), 'input');
     expect(input.props['aria-checked']).toBeUndefined();

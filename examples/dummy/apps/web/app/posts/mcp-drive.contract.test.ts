@@ -33,9 +33,9 @@ interface Member {
  * actor below carries, `kind: 'agent'` instead of `'user'`. `memberOf()` in `@postly/core`
  * reads those three fields structurally, so this is authz-equivalent to `actorFor()` in
  * `scripts/test-setup.ts`; it differs only in the one axis a real policy is allowed to see —
- * this call came from an agent, not a browser session. Mirrors `apps/admin/src/mcp.ts`'s
- * `resolveToken`, which is what a real bearer-token resolution for `mcp.route` will build once
- * Postly issues agent tokens (tracked separately — `mcp.ts` has no `resolveToken` yet).
+ * this call came from an agent, not a browser session. It is what a real bearer-token resolution
+ * for `mcp.route` will build once Postly issues agent tokens (tracked separately —
+ * `packages/mcp/src/tools.ts` declares no `resolveToken` yet).
  *
  * Structurally typed against `McpCaller` (`@ultimat3/mcp`) rather than importing it: `@postly/mcp`
  * — the one package this app boundary allows a test outside `packages/mcp` to reach — does not

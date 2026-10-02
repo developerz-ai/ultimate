@@ -16,6 +16,7 @@ import type { CommandCatalog } from '@ultimat3/cli';
 import { citationFault, fixCitations, fixProblem, loadCommandCatalog } from '@ultimat3/cli';
 import { docConfigKeyFindings } from './doc-config-keys';
 import { parseScriptArgs } from './lib/args';
+import { sameSentence } from './lib/error-code-plan';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -33,6 +34,49 @@ export interface FixCell {
   readonly fix: string;
 }
 
+interface TableRow {
+  readonly line: number;
+  /** The table's header cells, trimmed and lower-cased. */
+  readonly header: readonly string[];
+  readonly cells: readonly string[];
+}
+
+/**
+ * Every body row of every table on the page, with its table's header. Fenced blocks are skipped:
+ * a table inside one is an example, not a row the page documents.
+ */
+function tableRows(markdown: string): readonly TableRow[] {
+  const lines = markdown.split('\n');
+  const rows: TableRow[] = [];
+  let header: readonly string[] | undefined;
+  let fenced = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    if (/^\s*(?:```|~~~)/.test(line)) {
+      fenced = !fenced;
+      header = undefined;
+      continue;
+    }
+    if (fenced) continue;
+    if (!line.trim().startsWith('|')) {
+      header = undefined;
+      continue;
+    }
+    const cells = splitRow(line);
+    if (header === undefined) {
+      if (!isDelimiterRow(lines[index + 1] ?? '')) continue;
+      header = cells.map((cell) => cell.trim().toLowerCase());
+      index += 1;
+      continue;
+    }
+    rows.push({ line: index + 1, header, cells });
+  }
+  return rows;
+}
+
+const codeOf = (row: TableRow): string =>
+  /`(X_[A-Z0-9_]+)`/.exec(row.cells[0] ?? '')?.[1] ?? (row.cells[0] ?? '').trim();
+
 /**
  * Every `Fix` cell on the page, with the code its row documents. Pure over the markdown.
  *
@@ -41,47 +85,47 @@ export interface FixCell {
  * a `fix` on the first table that gained a column.
  */
 export function readFixCells(markdown: string): readonly FixCell[] {
-  const lines = markdown.split('\n');
-  const cells: FixCell[] = [];
-  let column: number | undefined;
-  let fenced = false;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    if (/^\s*(?:```|~~~)/.test(line)) {
-      fenced = !fenced;
-      column = undefined;
-      continue;
-    }
-    if (fenced) continue;
-    if (!line.trim().startsWith('|')) {
-      column = undefined;
-      continue;
-    }
-    const row = splitRow(line);
-    if (column === undefined) {
-      if (!isDelimiterRow(lines[index + 1] ?? '')) continue;
-      const found = row.findIndex((cell) => cell.trim().toLowerCase() === FIX_HEADER);
-      column = found === -1 ? undefined : found;
-      index += 1;
-      continue;
-    }
-    const fix = (row[column] ?? '').trim();
-    if (fix === '') continue;
-    cells.push({
-      line: index + 1,
-      code: /`(X_[A-Z0-9_]+)`/.exec(row[0] ?? '')?.[1] ?? (row[0] ?? '').trim(),
-      fix,
-    });
-  }
-  return cells;
+  return tableRows(markdown).flatMap((row) => {
+    const column = row.header.indexOf(FIX_HEADER);
+    const fix = column === -1 ? '' : (row.cells[column] ?? '').trim();
+    return fix === '' ? [] : [{ line: row.line, code: codeOf(row), fix }];
+  });
+}
+
+/** The two header cells a code row states what failed and why in. */
+export const MEANS_HEADER = 'means';
+export const CAUSE_HEADER = 'typical cause';
+
+/**
+ * Rows whose cause cell says what its title cell already said. `bun run new-error-code` wrote the
+ * title into both cells when no cause was given, so the page read one sentence twice and the cause
+ * not at all — the half of a row an agent reads to know what to look for.
+ */
+function causeEchoes(markdown: string): readonly DocFixGap[] {
+  return tableRows(markdown).flatMap((row) => {
+    const means = row.header.indexOf(MEANS_HEADER);
+    const cause = row.header.indexOf(CAUSE_HEADER);
+    if (means === -1 || cause === -1) return [];
+    const title = (row.cells[means] ?? '').trim();
+    if (title === '' || !sameSentence(title, row.cells[cause] ?? '')) return [];
+    return [
+      {
+        kind: 'echoed' as const,
+        line: row.line,
+        code: codeOf(row),
+        problem: `its Typical cause cell repeats its Means cell ("${title}")`,
+      },
+    ];
+  });
 }
 
 /**
  * `unrunnable` is the hazard. `advice` is the other half of the same contract — a fix that says
  * "check the connection" and names nothing. `vacuous` is the false green: a page with no `Fix`
  * header anywhere is a page this rule read and had no opinion about, which reads as agreement.
+ * `echoed` is a row whose cause cell is its title again, so the row never says why.
  */
-export type DocFixGapKind = 'unrunnable' | 'advice' | 'vacuous';
+export type DocFixGapKind = 'unrunnable' | 'advice' | 'vacuous' | 'echoed';
 
 export interface DocFixGap {
   readonly kind: DocFixGapKind;
@@ -130,7 +174,7 @@ export function checkDocFixes(input: DocFixInput): readonly DocFixGap[] {
       break;
     }
   }
-  return gaps;
+  return [...gaps, ...causeEchoes(input.markdown)];
 }
 
 const where = (gap: DocFixGap): string => `${FIX_REFERENCE}:${gap.line}`;
@@ -156,10 +200,18 @@ const vacuousFinding = (gap: DocFixGap): Finding => ({
   at: FIX_REFERENCE,
 });
 
+const echoedFinding = (gap: DocFixGap): Finding => ({
+  code: 'X_DOC_CAUSE_ECHOES_TITLE',
+  cause: `${where(gap)} is ${gap.code}'s row and ${gap.problem} — the row states what failed twice and why it fails never`,
+  fix: `edit ${gap.code}'s Typical cause cell at ${where(gap)} to name what usually makes it happen; a new code takes it as bun run new-error-code … --cause '…'`,
+  at: where(gap),
+});
+
 const FINDINGS: Readonly<Record<DocFixGapKind, (gap: DocFixGap) => Finding>> = {
   unrunnable: unrunnableFinding,
   advice: adviceFinding,
   vacuous: vacuousFinding,
+  echoed: echoedFinding,
 };
 
 export const docFixFindingFor = (gap: DocFixGap): Finding => FINDINGS[gap.kind](gap);

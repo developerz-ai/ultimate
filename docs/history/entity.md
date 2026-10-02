@@ -1221,6 +1221,69 @@ a current fact: the rules that still hold are in that file, and where the two di
   registers on import and imports no seam. Never put it back in the teardown.
 
 
+## A grouped count — the argument for each rule (moved from `packages/entity/CLAUDE.md`, 2026-10-01)
+
+- **A grouped count means one thing in both drivers, and `count-by.ts` is where that one thing is
+  written.** `countBy(column)` is the aggregate a `count()` per row is the N+1 of, so both drivers
+  call `groupColumnOf` before their statement exists and `countsFrom` after their rows are in — a
+  rule added to `pg-driver.ts` or to `memory-repo.ts` alone is exactly the drift that file exists
+  to prevent. **Groupable kinds are a closed set**: `uuid`, `text`, `char`, `boolean`, `integer`,
+  `bigint`. A `timestamptz` is a `Date`, a `jsonb` is an object and `money` is two physical columns
+  — a `Map` compares a non-primitive key by identity, so any of those would file rows under a key
+  no caller can look up again and the result would be a map that only ever answers `undefined`. The
+  refusal is `X_INVARIANT_VIOLATED` naming a column of *this* entity that is groupable, never
+  an `explain` of the entity: what repairs it is one edit to the call, and the entity is the only place the
+  replacement column lives. **The bound is a refusal, not a truncation.** The statement asks for
+  `MAX_GROUPS + 1` groups — the trick a page already uses when it reads one row past its limit — and
+  that extra group is what says the answer was never going to fit, so `countsFrom` throws with the
+  `andWhere(…, 'in', <values>)` that bounds it. Truncating would hand back a map that reads exactly
+  like a complete one, and a caller recounting from it would write the wrong number to every row it
+  missed. **Absent is not `0`**: a value nothing matched has no entry, because that is what
+  `group by` returns and it is the only way a caller can tell "none" from "never asked" — the
+  `?? 0` is theirs to write, and inventing it here would answer for keys the table has never seen.
+  **NULL is one group**, keyed `null`: the memory driver reads the property as `?? null` so it lands
+  where Postgres puts its NULL rows, while `0`, `''` and `false` stay the values they are. **The
+  order is applied after the rows are in, never in SQL** — a hash aggregate returns groups in
+  whatever order it built them and a `Map` filled row by row returns insertion order, so an
+  `order by` in the statement would let the two drivers disagree about a result they agree on;
+  sorting groups (never rows) costs nothing at this size and is what puts the largest bucket at the
+  front. **Both output names are fixed aliases** — `group_value` and `group_count` in
+  `countByStatement` (`pg-sql.ts`) — because an entity is free to declare a column called `count`,
+  and the un-aliased form would then return two outputs of one name; the grouped value is re-parsed
+  by the column that declared it, since `int8` arrives as a string and would otherwise key the map
+  by text where memory keys it by a `bigint`. **Nothing new to declare**: no `groupBy()` builder and
+  no error code of its own — it is a terminal on the chain that already exists, over exactly the
+  rows `count()` counts.
+
+## A sealed property is server-only (2026-10-01)
+
+A repository row carried a `.sealed()` column's plaintext as an ordinary enumerable property. An
+`action` with `output: entity.$schema` dropped it at the output parse, and that was the whole of
+"nothing sealed leaves": a `query` has no output parse, so `GET /_x/query/<name>`, a `Page`, a
+`single: true` read, the record envelope's `data`, the MCP read, a live snapshot and a `cache:` entry
+in a shared tier all carried the plaintext — eight red tests in
+`packages/query/src/sealed-egress.test.ts` before the change. So did a loose action output
+(`t.record(t.string)`), a log line, an error's `meta`, an island's props and a job's stored input.
+
+One mechanism rather than a strip per path: `openRow` answers the property NOT ENUMERABLE
+(`serverOnly`). Stripping at the query seam would have closed four paths of about twelve and left
+the next one to be remembered. Measured on Bun 1.4.0: `JSON.stringify`, a spread, `Object.keys` /
+`entries` / `assign` and `structuredClone` omit it; `Bun.inspect` / `console.log` print it.
+
+What it cost, and what was done about each:
+
+| Cost | Answer |
+|---|---|
+| `{ ...row }` above the seam drops it (`preload.ts`, `select()`, `touch()`) | `copyRow` / `pickRow` copy descriptors |
+| a spread insert of a required sealed column | `sealedMissing` — `X_INVARIANT_VIOLATED` naming the spread and `{ ...row, col: row.col }` |
+| a spread insert of a NULLABLE sealed column | stores NULL. Still silent: an absent nullable column is a legal insert, and nothing tells a spread from an omission |
+| `expect(row).toEqual({ …, secret })` fails with an empty diff | `toEqualRow` in `@ultimat3/testing` |
+| a row read back out of JSON (a shared cache tier, a replayed step) has no secret | documented: re-read by id |
+
+The write-ahead log is the one row source that never passes the seam: `@ultimat3/realtime`'s
+`entityRow` deletes the sealed properties, so a change carries neither the plaintext nor the stored
+string (a `lookup` column's is equal for equal values).
+
 ## Files
 
 | File | Job |

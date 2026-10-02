@@ -19,5 +19,10 @@
     "policy",
     "manifest",
     "seo"
-  ]
+  ],
+  "coverage": {
+    "lines": 71,
+    "funcs": 65,
+    "why": "Measured 2026-10-02: 71.5% of lines and 65.0% of functions over 138 source files, every one loaded by some unit test — up from 68.0% / 60.6% when the run console's workarounds (hand-built workers, the in-memory key store, the usage log line) were deleted for the framework's own seams. What raised it: apps/web/app/orgs/service.ts got the test beside it it never had (every member-only call refused for a non-member, the seat limit, what an invite inherits), and the runs slice's status projection, usage block and refused-run states each arrived with theirs. What is not run: page renders (app/posts/[id]/page.tsx, site/pricing/page.tsx, site/blog/[slug]/page.tsx), the event handlers and mount() of every island (a unit test drives them through the built chunk, never this source), posts/service.ts past its first branch, and digest/jobs.ts, which the job suite runs and the unit suite does not. Each slice that adds a unit test raises this floor in the same commit."
+  }
 }

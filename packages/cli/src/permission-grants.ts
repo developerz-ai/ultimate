@@ -1,5 +1,5 @@
-// The `policy` step's second question: every permission an action, a query or a route REQUIRES is
-// one some role GRANTS. `x g resource customer` declared `customer:read`/`customer:write`, the
+// The `policy` step's second question: every permission an action, a query, a route or a MOUNTED
+// screen (the admin's) REQUIRES is one some role GRANTS. `x g resource customer` declared `customer:read`/`customer:write`, the
 // actions required them, no role held them, and `x verify` was green over an app whose every
 // generated endpoint answered 403 to the dev actor (plan 101 slice 11 a).
 
@@ -7,14 +7,14 @@ import { listActions } from '@ultimat3/action';
 import type { Policy } from '@ultimat3/policy';
 import { roleDefinitions, rolesGranting } from '@ultimat3/policy';
 import { listQueries } from '@ultimat3/query';
-import { routeEntries } from '@ultimat3/render';
+import { describeRoutes, routeEntries } from '@ultimat3/render';
 import type { Finding } from './output';
 import { quoteArg } from './shell-quote';
 
 /** One rule that cannot pass for any actor the role map mints. */
 export interface UngrantedRequirement {
   readonly permission: string;
-  /** `action createCustomer`, `query customerList`, or the route file. */
+  /** `action createCustomer`, `query customerList`, the route file, or a mounted route's URL. */
   readonly by: string;
 }
 
@@ -42,6 +42,28 @@ export function requirements(): readonly UngrantedRequirement[] {
   for (const entry of routeEntries()) {
     const permission = entry.config.policy?.permission;
     if (permission !== undefined) rules.push({ permission, by: entry.file });
+  }
+  // A route a package MOUNTED — the admin's — is in no file and so in no `routeEntries()` row. Its
+  // screen decides on every permission of the mount, not only the coarse gate its route config
+  // carries, so each one is a requirement: a hand-written entity nobody granted `<table>:read`
+  // for was a green gate and a 403 on its first open. `describeRoutes()` is memoized by the
+  // registry, so this loop reads a list every other step already built.
+  // One requirement per permission per mount, naming the first route that asks it: `posts:write`
+  // gates the create form and the edit form, and one missing grant is one finding.
+  const asked = new Map<string, { permission: string; by: string; first: string; more: number }>();
+  for (const route of describeRoutes()) {
+    if (route.mount === undefined) continue;
+    for (const permission of route.mount.permissions) {
+      const key = `${route.mount.by} ${permission}`;
+      const held = asked.get(key);
+      if (held === undefined) {
+        asked.set(key, { permission, by: route.mount.by, first: route.path, more: 0 });
+      } else held.more += 1;
+    }
+  }
+  for (const { permission, by, first, more } of asked.values()) {
+    const rest = more === 0 ? '' : `, and ${String(more)} more of its routes`;
+    rules.push({ permission, by: `${first} (mounted by ${by}${rest})` });
   }
   return rules;
 }
@@ -73,14 +95,24 @@ export function ungrantedRequirements(
     );
 }
 
-/** Where the scaffold keeps the role map — the file `x g policy` and `x g resource` edit. */
+/**
+ * Where the SCAFFOLD keeps the role map — the file `x g policy` and `x g resource` edit. Never what
+ * a finding names: an app may declare its roles anywhere (the reference app's are in
+ * `shared/policies.ts`), so `ungrantedFinding` takes the file the role map was declared in.
+ */
 export const ROLES_FILE = 'apps/web/shared/roles.ts';
 
-export function ungrantedFinding(rule: UngrantedRequirement): Finding {
-  return {
+/**
+ * `rolesAt` is the app-relative file `defineRoles` ran in (`app-permissions.ts`'s `roleMapFile`),
+ * or `undefined` when no site under the app root can be read — then the fix names the call, not a
+ * path this function would have to guess.
+ */
+export function ungrantedFinding(rule: UngrantedRequirement, rolesAt: string | undefined): Finding {
+  const where = rolesAt ?? 'the module that calls defineRoles({ ... })';
+  const finding: Finding = {
     code: 'X_PERMISSION_UNGRANTED',
     cause: `${rule.by} requires ${quoteArg(rule.permission)}, and no role in the app's role map grants it — no actor a role mints can ever pass`,
-    fix: `add '${rule.permission}' to the grants of a role in ${ROLES_FILE}, then x verify --only policy`,
-    at: ROLES_FILE,
+    fix: `add '${rule.permission}' to the grants of a role in ${where}, then x verify --only policy`,
   };
+  return rolesAt === undefined ? finding : { ...finding, at: rolesAt };
 }

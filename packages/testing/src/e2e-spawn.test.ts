@@ -21,6 +21,7 @@ if (process.env.CRASH === '1') { console.error('boom: the fixture refused to sta
 Bun.serve({ port, fetch(req) {
   const path = new URL(req.url).pathname;
   if (path === '/readyz') return new Response('ok');
+  if (path === '/shout') { console.error('X_FIXTURE_LOUD: what the server said'); return new Response('ok'); }
   if (path === '/env') return Response.json({
     node: process.env.NODE_ENV ?? null, env: process.env.ULTIMATE_ENV ?? null,
     app: process.env.APP_URL ?? null, role: process.env.ROLE ?? null,
@@ -86,6 +87,28 @@ describe('spawnE2eApp', () => {
     } finally {
       await app.stop();
       // Idempotent: a second stop is a no-op, not a throw.
+      await app.stop();
+    }
+  }, 30_000);
+
+  // A live-path bug fails a browser assertion; the server's side of it was visible only by
+  // re-running the app by hand. The spawned app's log is kept, bounded, for a failing test to carry.
+  test('log() answers what the app printed while it ran', async () => {
+    const app = await spawnE2eApp({ root, mode: 'serve', env: {}, readyTimeoutMs: 20_000 });
+    try {
+      await readJson(`${app.base}/env`);
+      await new Promise<void>((resolve) => {
+        get(`${app.base}/shout`, (response) => {
+          response.resume();
+          response.on('end', resolve);
+        });
+      });
+      // The pipe is drained in the background: give it the turns it needs, never a wall-clock wait.
+      for (let turn = 0; turn < 200 && !app.log().includes('X_FIXTURE_LOUD'); turn += 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(app.log()).toContain('X_FIXTURE_LOUD: what the server said');
+    } finally {
       await app.stop();
     }
   }, 30_000);

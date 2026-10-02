@@ -33,7 +33,7 @@ ${themeIsland}
 
 ${routeConfig('')}
 
-export function DashboardPage() {
+export function Page() {
   const t = useT();
   const locale = currentLocale();
   // Read at render, not at import: the registries are filled by the boot scan, after this module.
@@ -174,9 +174,71 @@ unitTest('formatCount follows the locale', () => {
 });
 `;
 
-/** The bare dashboard's page, view module and view test. */
+const barePageTest = (
+  app: NameSet,
+): string => `// The dashboard, rendered as a request renders it. Its facts are the framework's registries, so
+// the test registers the one route it renders — the boot scan's job in a running app — and reads
+// the tiles and the route table back off the markup.
+${sortedImports([
+  `import { catalogs, useT } from '@${app.kebab}/i18n';`,
+  "import { frameworkVersion } from '@ultimat3/core';",
+  "import { clearRoutes, registerRoute } from '@ultimat3/render';",
+  "import { afterAll, beforeAll, expect, renderRoute, unitTest } from '@ultimat3/testing';",
+])}
+import { roles } from '../../shared/roles';
+import * as page from './page';
+
+const url = 'https://example.test/dashboard';
+
+/** The figure a tile shows, read off the markup by the \`stat\` the page gave it. */
+const stat = (html: string, name: string): string | undefined =>
+  html.match(new RegExp(\`data-stat="\${name}">([^<]*)<\`))?.[1];
+
+// The route table is process-global and a test process starts with none: this file registers the
+// page it renders, and takes it back out so no later file inherits a route it never declared.
+beforeAll(() => {
+  registerRoute({ file: 'apps/web/app/dashboard/page.tsx', config: page.config });
+});
+afterAll(clearRoutes);
+
+unitTest('the dashboard is gated, renders per request, and hydrates one island', async () => {
+  const view = await renderRoute(page, { url });
+  expect(page.config.render).toBe('ssr');
+  expect(page.config.policy?.permission).toBe('dashboard:read');
+  expect(page.config.offline).toBe('runtime');
+  expect(page.config.budget.js).toBe('60kb');
+  // What the render emitted, beside what the config declares: the theme toggle, and only it.
+  expect(view.islands.map((island) => [island.moduleId, island.strategy])).toEqual([
+    ['shared-theme-toggle', 'visible'],
+  ]);
+});
+
+unitTest('the tiles are the framework registries, counted', async () => {
+  const view = await renderRoute(page, { url });
+  expect(stat(view.html, 'routes')).toBe('1');
+  expect(stat(view.html, 'locales')).toBe(String(catalogs.locales.length));
+  expect(stat(view.html, 'roles')).toBe(String(Object.keys(roles).length));
+  expect(stat(view.html, 'version')).toBe(frameworkVersion());
+});
+
+unitTest('the table is the route table: path, surface and render mode per route', async () => {
+  const t = useT();
+  const view = await renderRoute(page, { url });
+  expect(view.html.match(/<tr data-row=/g)).toHaveLength(1);
+  expect(view.html).toMatch(
+    /<tr data-row="\\/dashboard"><td>\\/dashboard<\\/td><td>app<\\/td><td>ssr<\\/td>/,
+  );
+  expect(view.text).toContain(t('app.dashboard.routesCaption'));
+  expect(view.meta.title).toBe(t('app.dashboard.title'));
+  // The sidebar knows where it is.
+  expect(view.html).toMatch(/<a href="\\/dashboard" aria-current="page"/);
+});
+`;
+
+/** The bare dashboard's page, view module and the tests beside both. */
 export const bareDashboardFiles = (app: NameSet): readonly GeneratedFile[] => [
   { path: `${DASHBOARD_DIR}/page.tsx`, contents: barePage(app) },
   { path: `${DASHBOARD_DIR}/dashboard-view.ts`, contents: bareView() },
   { path: `${DASHBOARD_DIR}/dashboard-view.test.ts`, contents: bareViewTest() },
+  { path: `${DASHBOARD_DIR}/page.test.ts`, contents: barePageTest(app) },
 ];

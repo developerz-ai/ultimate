@@ -32,6 +32,25 @@ describe('BarChart', () => {
     expect(texts.map((t) => t.props['children'])).toEqual([9, '2026-09-17', '2026-09-19']);
   });
 
+  test('a second series stacks one data-series rect per non-zero point, titled by its label', () => {
+    const nodes = renderNodes(BarChart, {
+      label: 'Runs',
+      points: [
+        { key: 'a', value: 3, secondary: 1 },
+        { key: 'b', value: 2, secondary: 0 },
+      ],
+      seriesLabels: { primary: 'done', secondary: 'failed' },
+    });
+    expect(withAttr(nodes, 'data-bar', 'true')).toHaveLength(2);
+    const stacked = withAttr(nodes, 'data-series', 'secondary');
+    expect(stacked).toHaveLength(1);
+    const titles = byTag(nodes, 'title').map((t) => [t.props['children']].flat().join(''));
+    expect(titles).toContain('a: failed 1');
+    expect(titles).toContain('a: done 3');
+    // The busiest STACK is the axis figure, not the busiest primary value.
+    expect(byTag(nodes, 'text')[0]?.props['children']).toBe(4);
+  });
+
   test('no points draws no bars and no date labels', () => {
     const nodes = renderNodes(BarChart, { label: 'x', points: [] });
     expect(withAttr(nodes, 'data-bar')).toHaveLength(0);

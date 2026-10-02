@@ -24,7 +24,7 @@
       t.role('bg-soft') 63%
     )
     0 0 / 200% 100%;
-  animation: ultimate-shimmer 1.4s linear infinite;
+  animation: ultimate-shimmer calc(#{t.duration(slower)} * 2) linear infinite;
 }
 
 .shape-text {

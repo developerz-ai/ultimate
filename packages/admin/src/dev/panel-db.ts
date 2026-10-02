@@ -8,8 +8,31 @@ import { DevSourceUnavailableError } from '../errors';
 import type { DriftFact, SqlResult, TableFact } from './facts';
 import type { DevPanel } from './panel';
 
+/**
+ * Where the whole schema can be READ, as SQL: the dump `x db gen` writes from the migrations, one
+ * file per table, with the framework's own tables under `framework/`. The table list above it is
+ * what THIS database holds; the dump is what the migrations say every database holds, and the
+ * gate keeps it true (`X_SCHEMA_DUMP_DRIFT`).
+ *
+ * A path and a command, not a URL: `/_x` serves no files, and the panel's job is to say where to
+ * look. The directory is `@ultimat3/cli`'s `SCHEMA_DUMP_DIR` repeated — this package sits below
+ * the CLI and cannot import it — and `packages/cli/src/db-schema-dump.test.ts` holds the two equal.
+ */
+export interface SchemaDumpLink {
+  /** App-root-relative, POSIX. */
+  readonly directory: string;
+  /** The one command that rewrites it. */
+  readonly regenerate: string;
+}
+
+const SCHEMA_DUMP: SchemaDumpLink = Object.freeze({
+  directory: 'packages/db/schema',
+  regenerate: 'x db gen',
+});
+
 export interface DbPanelData {
   readonly tables: readonly TableFact[];
+  readonly schemaDump: SchemaDumpLink;
   /**
    * `null` when no host wired the check — NOT `[]`. Drift is the entities against the database,
    * so it needs the connection this process may not have, and an empty list reads as "the schema
@@ -58,7 +81,7 @@ function sanitize(sql: string): string {
 /**
  * Read-only is enforced here, not just in the UI: /_x runs with the developer's own DB
  * credentials, so "the textarea only sends SELECTs" would be the whole safety story.
- * `x db psql --write` is the deliberate way out.
+ * The developer's own client (`psql "$DATABASE_URL"`) is the deliberate way out.
  *
  * ONE implementation of "is this a read", and it is `@ultimat3/mcp`'s. That guard refuses four
  * things this file's own keyword scan never did — a batch of statements, a call into the
@@ -106,11 +129,11 @@ export function assertReadOnly(sql: string): ReadOnlyVerdict {
     if (!isUltimateError(error)) throw error;
     // Two classes arrive through one code, and the panel cannot tell them apart without reading
     // another package's prose — so the way out is phrased to be true for both. It used to assert
-    // `Run it with: x db psql --write`, which is the wrong instruction for a missing quote: that
-    // flag grants writes, it does not close a delimiter.
+    // `Run it with: x db psql --write`, which is the wrong instruction for a missing quote — and
+    // named a command `x db` never had. The way out for a write is the developer's own client.
     return {
       kind: 'refused',
-      refused: `refused: ${error.cause}. Fix the statement, or — if it is meant to write — run it with: x db psql --write`,
+      refused: `refused: ${error.cause}. Fix the statement, or — if it is meant to write — run it in your own client: psql "$DATABASE_URL"`,
     };
   }
 }
@@ -132,7 +155,15 @@ export const dbPanel: DevPanel<DbPanelData> = {
     ]);
     const sql = params.get('sql');
     if (sql === null || sql.trim() === '') {
-      return { tables, drift, sql: null, result: null, refused: null, readOnly: true };
+      return {
+        tables,
+        schemaDump: SCHEMA_DUMP,
+        drift,
+        sql: null,
+        result: null,
+        refused: null,
+        readOnly: true,
+      };
     }
 
     // `verdict.sql`, never `sql`: what the guard proved read-only is what runs. `sql` below is
@@ -140,6 +171,7 @@ export const dbPanel: DevPanel<DbPanelData> = {
     const verdict = assertReadOnly(sql);
     return {
       tables,
+      schemaDump: SCHEMA_DUMP,
       drift,
       sql,
       result: verdict.kind === 'runnable' ? await sources.runSql(verdict.sql) : null,

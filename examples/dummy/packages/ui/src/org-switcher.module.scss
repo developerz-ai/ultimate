@@ -22,8 +22,8 @@
   padding-inline: var(--space-2);
 
   &:focus-visible {
-    outline: 2px solid rgb(var(--color-accent));
-    outline-offset: 2px;
+    outline: var(--stroke-thick) solid rgb(var(--color-accent));
+    outline-offset: var(--stroke-thick);
   }
 }
 

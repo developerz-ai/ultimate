@@ -43,9 +43,11 @@ import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { packageOf, ratchetGaps, ratchetMain } from './lib/ratchet';
+import { leadSite, siteList, siteTarget } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'catch-render';
+const EXPLAIN = 'bun run scripts/catch-render.ts --explain --json lists every one';
 
 /** How a caught value reached the text. Four mechanisms, each measured to throw on a real value. */
 export type CatchRenderKind = 'instanceof' | 'conversion' | 'stringify' | 'interpolation';
@@ -316,12 +318,22 @@ const CAUSE: Readonly<Record<CatchRenderKind, string>> = {
 const at = (site: CatchRenderSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
-const overFinding = (gap: CatchRenderGap): Finding => ({
-  code: 'X_CATCH_RENDER_UNSAFE',
-  cause: `${gap.pkg} renders a caught value into ${String(gap.found)} refusal(s) unsafely and is pinned at ${String(gap.pinned)} — ${at(gap.first)} builds its ${gap.first?.field ?? 'cause'}: from "${gap.first?.binding ?? ''}", ${CAUSE[gap.first?.kind ?? 'conversion']}`,
-  fix: `replace the render at ${at(gap.first)} with renderThrowable(${gap.first?.binding ?? 'error'}) from @ultimat3/core`,
-  at: at(gap.first),
-});
+/** Own keys only: a `kind` is typed, and a computed read of a `Record` still walks the prototype. */
+const why = (kind: CatchRenderKind): string => (Object.hasOwn(CAUSE, kind) ? CAUSE[kind] : kind);
+
+/** Every unsafe render of the package, each with its field and binding, then why each kind throws. */
+const overFinding = (gap: CatchRenderGap): Finding => {
+  const sites = gap.sites ?? (gap.first === undefined ? [] : [gap.first]);
+  const kinds = [...new Set(sites.map((site) => site.kind))];
+  const said = (site: CatchRenderSite): string =>
+    `${at(site)} builds its ${site.field}: from "${site.binding}" (${site.kind})`;
+  return {
+    code: 'X_CATCH_RENDER_UNSAFE',
+    cause: `${gap.pkg} renders a caught value into ${String(gap.found)} refusal(s) unsafely and is pinned at ${String(gap.pinned)} — ${siteList(gap, said, EXPLAIN)} — ${kinds.map((kind) => `${kind}: ${why(kind)}`).join('; ')}`,
+    fix: `replace the render at ${siteTarget(gap, at)} with renderThrowable(${leadSite(gap)?.binding ?? 'error'}) from @ultimat3/core`,
+    at: at(leadSite(gap)),
+  };
+};
 
 const staleFinding = (gap: CatchRenderGap): Finding => ({
   code: 'X_CATCH_RENDER_PIN_STALE',

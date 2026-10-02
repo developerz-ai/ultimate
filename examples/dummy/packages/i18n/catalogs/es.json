@@ -82,7 +82,8 @@
     "nav": {
       "feed": "Feed",
       "settings": "Ajustes",
-      "org": "Organización"
+      "org": "Organización",
+      "runs": "Ejecuciones"
     },
     "feed": {
       "metaTitle": "Feed",
@@ -122,6 +123,58 @@
       "themeDark": "Oscuro",
       "digestLabel": "Resumen diario",
       "digestHelp": "Un correo a las 09:00 de tu hora con lo que publicó tu organización."
+    },
+    "runs": {
+      "metaTitle": "Ejecuciones",
+      "heading": "Consola de ejecuciones",
+      "intro": "Inicia una sincronización de un sitio conectado y síguela aquí, en directo. Cuando el sitio pida un código, lo respondes en esta página.",
+      "connection": "Conexión",
+      "start": "Iniciar ejecución",
+      "cancel": "Cancelar ejecución",
+      "idle": "Aún no hay ninguna ejecución. Inicia una para seguirla aquí.",
+      "events": "Eventos de la ejecución",
+      "accounts_one": "{count} cuenta leída",
+      "accounts_other": "{count} cuentas leídas",
+      "busy": "Ya hay otra ejecución en curso en esta conexión. Vuelve a iniciar esta cuando termine.",
+      "usage": {
+        "heading": "Lo que ha usado la ejecución",
+        "browser": "Tiempo de navegador",
+        "navigations": "Páginas abiertas",
+        "requests": "Peticiones",
+        "bytes": "Datos leídos",
+        "prompts": "Códigos respondidos"
+      },
+      "state": {
+        "pending": "Esperando a que empiece la ejecución",
+        "streaming": "En curso",
+        "awaiting": "Esperando tu código",
+        "failed": "La ejecución ha fallado",
+        "done": "Terminada"
+      },
+      "kind": {
+        "prompt": "El sitio ha pedido un código",
+        "answered": "Código recibido",
+        "navigated": "Página de cuentas abierta",
+        "extracted": "Cuentas leídas",
+        "done": "Terminada",
+        "failed": "Detenida"
+      },
+      "connect": {
+        "heading": "Conectar un sitio",
+        "name": "Nombre",
+        "credential": "Contraseña",
+        "submit": "Conectar"
+      },
+      "prompt": {
+        "label": "Código de un solo uso",
+        "submit": "Enviar código"
+      },
+      "fault": {
+        "connect": "No se ha podido conectar el sitio. Inténtalo de nuevo.",
+        "start": "No se ha podido iniciar la ejecución. Inténtalo de nuevo.",
+        "answer": "No se ha podido enviar el código. Inténtalo de nuevo.",
+        "cancel": "No se ha podido cancelar la ejecución. Inténtalo de nuevo."
+      }
     }
   },
   "posts": {
@@ -218,6 +271,265 @@
     "updateAction": "Recargar"
   },
   "admin": {
-    "title": "Administración de Postly"
+    "title": "Administración de Postly",
+    "orgs": {
+      "title": "Organizaciones",
+      "field": {
+        "id": "ID",
+        "slug": "Identificador",
+        "name": "Nombre",
+        "planCode": "Plan",
+        "billingCurrency": "Moneda de facturación",
+        "createdAt": "Creada el",
+        "updatedAt": "Actualizada el"
+      }
+    },
+    "members": {
+      "title": "Miembros",
+      "field": {
+        "id": "ID",
+        "orgId": "ID de la organización",
+        "userId": "ID de usuario",
+        "email": "Correo",
+        "name": "Nombre",
+        "role": "Rol",
+        "tz": "Zona horaria",
+        "locale": "Idioma",
+        "theme": "Tema",
+        "digestOptIn": "Resumen nocturno",
+        "createdAt": "Se unió el"
+      }
+    },
+    "posts": {
+      "title": "Publicaciones",
+      "field": {
+        "id": "ID",
+        "orgId": "ID de la organización",
+        "authorId": "Autor",
+        "slug": "Identificador",
+        "title": "Título",
+        "excerpt": "Extracto",
+        "body": "Texto",
+        "coverUrl": "Imagen de portada",
+        "status": "Estado",
+        "likeCount": "Me gusta",
+        "publishedAt": "Publicada el",
+        "createdAt": "Creada el",
+        "updatedAt": "Actualizada el"
+      }
+    },
+    "comments": {
+      "title": "Comentarios",
+      "field": {
+        "id": "ID",
+        "orgId": "ID de la organización",
+        "postId": "Publicación",
+        "authorId": "Autor",
+        "body": "Comentario",
+        "createdAt": "Escrito el"
+      }
+    },
+    "connections": {
+      "title": "Conexiones",
+      "field": {
+        "id": "ID",
+        "orgId": "ID de la organización",
+        "label": "Etiqueta",
+        "credential": "Credencial",
+        "exit": "Salida",
+        "createdAt": "Creada el"
+      }
+    },
+    "run_events": {
+      "title": "Eventos de ejecución",
+      "field": {
+        "id": "ID",
+        "orgId": "ID de la organización",
+        "runId": "ID de la ejecución",
+        "seq": "Secuencia",
+        "kind": "Tipo",
+        "at": "Momento",
+        "message": "Mensaje",
+        "prompt": "Pregunta",
+        "usage": "Uso"
+      }
+    },
+    "runs": {
+      "title": "Ejecuciones",
+      "field": {
+        "id": "ID de la ejecución",
+        "orgId": "ID de la organización",
+        "connectionId": "Conexión",
+        "jobId": "ID del trabajo",
+        "status": "Estado",
+        "code": "Código",
+        "startedAt": "Iniciada el"
+      },
+      "scope": {
+        "running": "En curso",
+        "failed": "Fallidas"
+      }
+    },
+    "group": {
+      "data": "Datos",
+      "jobs": "Trabajos"
+    },
+    "dashboard": {
+      "title": "Panel"
+    },
+    "search": {
+      "title": "Buscar"
+    },
+    "audit": {
+      "title": "Registro de auditoría"
+    },
+    "section": {
+      "other": "Otros"
+    },
+    "jobs": {
+      "title": "Trabajos",
+      "scope": {
+        "all": "Todos",
+        "ready": "Listos",
+        "delayed": "Aplazados",
+        "running": "En curso",
+        "suspended": "Suspendidos",
+        "done": "Terminados",
+        "failed": "Fallidos",
+        "dead": "Muertos",
+        "cancelled": "Cancelados"
+      },
+      "section": {
+        "run": "Ejecución",
+        "failure": "Fallo",
+        "work": "Entrada, progreso y pasos",
+        "trace": "Inquilino y traza"
+      },
+      "hint": {
+        "id": "Pega los primeros caracteres del ID de un trabajo."
+      }
+    },
+    "x_jobs": {
+      "title": "Ejecuciones de trabajos",
+      "field": {
+        "id": "ID",
+        "name": "Trabajo",
+        "queue": "Cola",
+        "state": "Estado",
+        "attempt": "Intento",
+        "maxAttempts": "Intentos máximos",
+        "runAt": "Se ejecuta el",
+        "createdAt": "En cola desde",
+        "updatedAt": "Actualizado",
+        "tenantId": "Inquilino",
+        "lastError": "Último error",
+        "lastErrorStack": "Pila",
+        "progress": "Progreso",
+        "input": "Entrada",
+        "steps": "Pasos",
+        "traceparent": "Traza",
+        "enqueuedBy": "Encolado por",
+        "claimedBy": "Reclamado por"
+      },
+      "column": {
+        "completed": "Progreso",
+        "error": "Último error"
+      }
+    },
+    "x_job_queues": {
+      "title": "Colas",
+      "field": {
+        "name": "Cola",
+        "ready": "Listos",
+        "delayed": "Aplazados",
+        "running": "En curso",
+        "suspended": "Suspendidos",
+        "failed": "Fallidos",
+        "dead": "Muertos",
+        "oldestReadyMs": "Listo más antiguo (ms)",
+        "paused": "En pausa",
+        "pausedAt": "En pausa desde"
+      },
+      "column": {
+        "oldest": "Listo más antiguo",
+        "jobs": "Trabajos"
+      }
+    },
+    "x_job_tasks": {
+      "title": "Tareas programadas",
+      "field": {
+        "name": "Tarea",
+        "cron": "Programación",
+        "tz": "Zona horaria",
+        "catchUp": "Recuperación",
+        "enqueues": "Colas",
+        "lastFireAt": "Último disparo",
+        "nextFireAt": "Próximo disparo",
+        "paused": "En pausa"
+      }
+    },
+    "x_job_workers": {
+      "title": "Procesos de trabajo",
+      "field": {
+        "id": "Proceso",
+        "host": "Host",
+        "queues": "Colas",
+        "concurrency": "Huecos",
+        "inFlight": "En curso",
+        "startedAt": "Iniciado",
+        "heartbeatAt": "Latido"
+      },
+      "column": {
+        "heartbeat": "Último latido",
+        "running": "Trabajos en curso"
+      }
+    },
+    "action": {
+      "run": {
+        "cancel": "Cancelar ejecución"
+      },
+      "job": {
+        "retry": "Reintentar",
+        "retry-from-step": "Reintentar desde un paso",
+        "run-now": "Ejecutar ahora",
+        "cancel": "Cancelar",
+        "remove": "Eliminar",
+        "queue": {
+          "pause": "Pausar la cola",
+          "resume": "Reanudar la cola"
+        },
+        "task": {
+          "pause": "Pausar la tarea",
+          "resume": "Reanudar la tarea",
+          "run-now": "Ejecutar ahora"
+        }
+      },
+      "publishPost": "Publicar artículo",
+      "inviteMember": "Invitar a un miembro",
+      "upgradePlan": "Cambiar de plan"
+    },
+    "input": {
+      "publishPost": {
+        "postId": "Publicación",
+        "orgId": "ID de la organización",
+        "notify": "Avisar a los lectores"
+      },
+      "inviteMember": {
+        "email": "Correo",
+        "role": "Rol",
+        "tz": "Zona horaria",
+        "locale": "Idioma",
+        "orgId": "ID de la organización"
+      },
+      "upgradePlan": {
+        "orgId": "ID de la organización",
+        "plan": "Plan"
+      },
+      "job": {
+        "retry-from-step": {
+          "step": "Paso"
+        }
+      }
+    }
   }
 }

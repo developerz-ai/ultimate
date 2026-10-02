@@ -16,6 +16,7 @@ import {
   radiusTokens,
   shadowTokens,
   spaceTokens,
+  strokeTokens,
   zTokens,
 } from './tokens';
 
@@ -65,6 +66,7 @@ describe('SCSS <-> TS token parity', () => {
   test('scale maps match their SCSS partials', async () => {
     expect(parseScssMap(await scss('_space.scss'), 'space')).toEqual(mirror(spaceTokens));
     expect(parseScssMap(await scss('_radius.scss'), 'radius')).toEqual(mirror(radiusTokens));
+    expect(parseScssMap(await scss('_stroke.scss'), 'stroke')).toEqual(mirror(strokeTokens));
     expect(parseScssMap(await scss('_z.scss'), 'z')).toEqual(mirror(zTokens));
     expect(parseScssMap(await scss('_motion.scss'), 'duration')).toEqual(mirror(durationTokens));
     expect(parseScssMap(await scss('_breakpoints.scss'), 'breakpoints')).toEqual(
@@ -170,6 +172,7 @@ describe('every emitted scale has an accessor', () => {
     ['_typography.scss', ['font', 'text', 'weight', 'leading', 'tracking']],
     ['_space.scss', ['space']],
     ['_radius.scss', ['radius']],
+    ['_stroke.scss', ['stroke']],
     ['_motion.scss', ['duration', 'easing']],
     ['_z.scss', ['z']],
   ];

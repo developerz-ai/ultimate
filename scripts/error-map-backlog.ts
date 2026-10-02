@@ -103,6 +103,9 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MIGRATION_IRREVERSIBLE',
     'X_MIGRATION_SNAPSHOT_MISSING',
     'X_MIGRATION_VIEW_DEPENDS',
+    // A finding of `x verify`'s `drift` step and of `x db gen` / `x db migrate`: it is about files
+    // under `packages/db/schema/`, and nothing in a request reads them.
+    'X_SCHEMA_DUMP_DRIFT',
     'X_SQL_UNSAFE',
   ],
   // tier 1 — flag declaration and evaluation faults, raised at registration or at an evaluation
@@ -205,7 +208,6 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_ACTION_UNREGISTERED',
     'X_AUDIT_SINK_FAILED',
     'X_AUDIT_SINK_MISSING',
-    'X_CONTRACT_DRIFT',
     'X_IDEMPOTENCY_NOT_SHARED',
     'X_OUTPUT_INVALID',
     'X_RPC_FAILED',
@@ -234,6 +236,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_JOB_CLAIM_QUEUES_EMPTY',
     'X_JOB_CONCURRENCY_UNENFORCEABLE',
     'X_JOB_DUPLICATE',
+    'X_JOB_KEY_BUSY',
     'X_JOB_LEASE_LOST',
     'X_JOB_MAX_ATTEMPTS',
     'X_JOB_NOT_CANCELLABLE',
@@ -242,6 +245,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_JOB_TIMEOUT',
     'X_OUTBOX_NO_TX',
     'X_STEP_DUPLICATE',
+    'X_JOB_ON_SETTLED_FAILED',
   ],
   // tier 3 — query declaration faults, raised where a query is DEFINED. `X_QUERY_NOT_PAGEABLE` is
   // unpinned: a caller asking for page 2 of an unpageable query is a caller's mistake.

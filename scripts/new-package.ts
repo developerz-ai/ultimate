@@ -53,7 +53,7 @@ export function packageTemplates(name: string, tier: number, description: string
   },
   "publishConfig": { "access": "public", "provenance": true },
   "exports": { ".": "./src/index.ts" },
-  "files": ["src", "!src/**/*.test.ts", "README.md", "LICENSE"],
+  "files": ["src", "!src/**/*.test.ts", "!src/**/*-fixture.ts", "README.md", "LICENSE"],
   "engines": { "bun": ">=1.3.0" },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

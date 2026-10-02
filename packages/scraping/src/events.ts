@@ -33,6 +33,12 @@ export interface ScrapeEventFields {
   readonly refused?: number | undefined;
   readonly reused?: boolean | undefined;
   readonly burned?: boolean | undefined;
+  /** `ScrapeUsage`'s counts — numbers only, so a failed run still says what it spent. */
+  readonly browserMs?: number | undefined;
+  readonly navigations?: number | undefined;
+  readonly httpRequests?: number | undefined;
+  readonly bytesIn?: number | undefined;
+  readonly promptsAnswered?: number | undefined;
 }
 
 /** One child logger per run, so every line downstream carries the run's identity unasked. */

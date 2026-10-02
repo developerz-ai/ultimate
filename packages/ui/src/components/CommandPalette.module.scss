@@ -21,7 +21,7 @@
   z-index: t.z(dialog);
 
   // Transform-only translate keeps the 50% inline offset from fighting `margin-inline`.
-  transform: translateX(-50%) translateY(-4px) scale(0.98);
+  transform: translateX(-50%) translateY(calc(-1 * #{t.space(1)})) scale(0.98);
   opacity: 0;
   visibility: hidden;
   transition:
