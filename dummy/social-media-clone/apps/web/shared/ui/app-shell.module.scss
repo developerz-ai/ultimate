@@ -33,8 +33,8 @@
 
   &:focus-visible {
     translate: 0 0;
-    outline: 2px solid t.role('fg-strong');
-    outline-offset: 2px;
+    outline: t.stroke(thick) solid t.role('fg-strong');
+    outline-offset: t.stroke(thick);
   }
 }
 
@@ -44,8 +44,11 @@
   // viewport, and the whole document scrolls sideways.
   min-inline-size: 0;
 
+  // The skip link lands here, and a keyboard user has to see that it did. The reset draws the
+  // ring; it is pulled INSIDE the box because `main` spans the viewport, which would clip one
+  // drawn outside it.
   &:focus-visible {
-    outline: none;
+    outline-offset: calc(-1 * #{t.stroke(thick)});
   }
 }
 

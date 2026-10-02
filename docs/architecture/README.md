@@ -20,12 +20,12 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`13-topology-runtime.md`](./13-topology-runtime.md) | One image, six roles. Drain sequencing, `/healthz` vs `/readyz`, version skew. |
 | [`14-testing-internals.md`](./14-testing-internals.md) | Template-DB cloning, frozen clock, sealed network, and the exact order of `x verify`. |
 | [`15-adding-a-feature.md`](./15-adding-a-feature.md) | The end-to-end walkthrough with the exact command per step. Read this one most. |
-| [`16-build-pipeline.md`](./16-build-pipeline.md) | SCSS modules → scoped CSS, the server render path, and what the budgets gate now measures. There is still no client bundle — the page says why. |
+| [`16-build-pipeline.md`](./16-build-pipeline.md) | SCSS modules → scoped CSS, the server render path, and what the budgets gate now measures. Islands are the only browser bundle — one entry per `*.island.tsx`; a page is never bundled. |
 | [`17-uploads.md`](./17-uploads.md) | Signed direct upload: who signs, who verifies, where bytes land, and what sweeps the orphans. |
 | [`18-observer-seam.md`](./18-observer-seam.md) | The two funnels every statement passes through, attribution, and why an uninstalled diagnostic costs production one branch. |
 | [`19-cutting-a-major.md`](./19-cutting-a-major.md) | One `wiki/Upgrading.md` section per major, written when the first breaking change lands. What `CHANGELOG.md` owns, what the wiki owns, and which of the three rules nothing enforces. |
 | [`20-flight-control.md`](./20-flight-control.md) | One backoff curve, one retry executor, one gate, one single-flight, one fence — tier 0. The four engines they replaced, what changed on purpose, and the four adoptions that were refused. |
-| [`21-client-data-layer.md`](./21-client-data-layer.md) | One record store per tab, one HTTP seam, one socket per origin — the client projection of `entity`. Decided for 21.0.0; a status column per row says what has landed. |
+| [`21-client-data-layer.md`](./21-client-data-layer.md) | One record store per tab, one HTTP seam, one socket per origin — the client projection of `entity`. Shipped in 21.0.0; a status column per row says what has landed. |
 
 ## Start here
 

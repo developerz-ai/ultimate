@@ -138,6 +138,14 @@ describe('unit · every fix in the table is a line a shell can run', () => {
     expect(fix).not.toContain('tsc -b');
   });
 
+  test('the ungranted-permission fix names no role-map file: only the finding knows the app’s', () => {
+    // The `policy` step reads where `defineRoles` was called; a static line naming the scaffold's
+    // `apps/web/shared/roles.ts` sends an app whose roles live elsewhere to a file it lacks.
+    const fix = explainErrorCode('X_PERMISSION_UNGRANTED')?.fix ?? '';
+    expect(xCommands(fix)).toEqual(['x verify --only policy --json']);
+    expect(fix).not.toMatch(/roles\.ts|apps\//);
+  });
+
   test('the new storage-secret code explains itself with the command that sets the key', () => {
     expect(explainErrorCode('X_STORAGE_SECRET_DEV')?.fix).toBe(
       'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',

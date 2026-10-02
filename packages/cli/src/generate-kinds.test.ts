@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  assertLiveSupported,
   assertSurfaceSupported,
   GENERATORS,
   readKind,
@@ -130,6 +131,29 @@ describe('assertSurfaceSupported', () => {
     }).not.toThrow();
     expect(() => {
       assertSurfaceSupported('route', 'site', 'pricing');
+    }).not.toThrow();
+  });
+});
+
+describe('assertLiveSupported', () => {
+  test('--live on a resource is refused, naming the query generator that does subscribe', () => {
+    const thrown = thrownBy(() => {
+      assertLiveSupported('resource', true, 'post');
+    });
+    expect(thrown.code).toBe('X_CLI_BAD_FLAG');
+    expect(thrown.fix).toBe('x g query post-feed --feature post --live');
+  });
+
+  test('--live on any other non-query generator is refused too', () => {
+    expect(thrownBy(() => assertLiveSupported('route', true, 'post')).code).toBe('X_CLI_BAD_FLAG');
+  });
+
+  test('a query may be live, and no generator is refused without the flag', () => {
+    expect(() => {
+      assertLiveSupported('query', true, 'post');
+    }).not.toThrow();
+    expect(() => {
+      assertLiveSupported('resource', false, 'post');
     }).not.toThrow();
   });
 });

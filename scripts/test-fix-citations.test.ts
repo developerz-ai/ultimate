@@ -5,7 +5,12 @@ import { describe, expect, test } from 'bun:test';
 import type { CommandCatalog } from '@ultimat3/cli';
 import { packageOf } from './lib/ratchet';
 import { sourceStrings } from './lib/source-strings';
-import { checkTestFixes, scanTestFixes, type TestFixGap } from './test-fix-citations';
+import {
+  checkTestFixes,
+  scanTestFixes,
+  type TestFixGap,
+  testFixFindingFor,
+} from './test-fix-citations';
 
 /** One command, one subcommand — enough for `citedCommandProblem` to answer, and no more. */
 const CATALOG: CommandCatalog = {
@@ -81,6 +86,17 @@ describe('the ratchet', () => {
     expect(gap?.kind).toBe('over');
     expect(gap?.pkg).toBe('db');
     expect(gap?.first?.at).toBe('packages/db/src/a.test.ts:1');
+  });
+
+  test('the finding lists every unrunnable citation, never only the first', () => {
+    const [gap] = gaps("const a = { fix: 'x db nope' };\nconst b = { fix: 'x db nada' };", {
+      db: 1,
+    });
+    if (gap === undefined) expect.unreachable('two citations against a pin of one is over');
+    const finding = testFixFindingFor(gap);
+    expect(finding.cause).toContain('packages/db/src/a.test.ts:1 ("x db nope"');
+    expect(finding.cause).toContain('packages/db/src/a.test.ts:2 ("x db nada"');
+    expect(finding.fix).toContain('1 of the 2 sites the cause lists');
   });
 
   test('a package at its pin is silent, and one under it is stale', () => {

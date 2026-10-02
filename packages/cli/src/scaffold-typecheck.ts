@@ -151,6 +151,7 @@ const overlay = (root: string, app: string): string =>
           // name, and `cli/serve` as `packages/cli/serve`. Longest prefix wins, so these are
           // consulted first. `@ultimat3/cli/serve` is what `x new`'s `apps/web/server.ts` imports.
           '@ultimat3/ui/icons/*': [`${root}/packages/ui/src/icons/glyphs/*`],
+          '@ultimat3/query/client': [`${root}/packages/query/src/client`],
           '@ultimat3/render/server': [`${root}/packages/render/src/server`],
           '@ultimat3/cli/serve': [`${root}/packages/cli/src/serve-entry`],
           '@ultimat3/testing/test-types': [`${root}/packages/testing/src/test-types`],

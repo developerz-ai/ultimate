@@ -4,7 +4,7 @@
 // no control that needs a script, because an admin screen never hydrates.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { registerCatalog } from '@ultimat3/i18n';
+import { registerCatalog, resetCatalogs } from '@ultimat3/i18n';
 import type { AdminApp } from './admin';
 import {
   byComponent,
@@ -36,7 +36,11 @@ registerCatalog('en', {
 });
 
 beforeAll(installFactory);
-afterAll(restoreFactory);
+afterAll(() => {
+  restoreFactory();
+  // The probes above overwrite framework keys (`admin.actor.anonymous`); a later file reads those.
+  resetCatalogs();
+});
 
 const NAV: readonly NavGroup[] = [
   {

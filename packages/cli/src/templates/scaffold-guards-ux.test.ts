@@ -71,7 +71,7 @@ describe('unit · x new · the interface guards refuse the mistake they name', (
         '  outline: none;',
         '',
         '  &:focus-visible {',
-        "    box-shadow: 0 0 0 2px tokens.role('accent');",
+        "    box-shadow: 0 0 0 tokens.stroke(thick) tokens.role('accent');",
         '  }',
         '}',
         '',
@@ -99,7 +99,8 @@ describe('unit · x new · the interface guards refuse the mistake they name', (
 
   test('a transition on a layout property is X_ANIMATED_LAYOUT_PROPERTY', async () => {
     const findings = await findingsWith({
-      'apps/web/app/post/panel.module.scss': '.panel {\n  transition: width 200ms ease;\n}\n',
+      'apps/web/app/post/panel.module.scss':
+        '.panel {\n  transition: width tokens.duration(base) ease;\n}\n',
     });
     expect(codes(findings)).toEqual(['X_ANIMATED_LAYOUT_PROPERTY']);
     expect(findings[0]?.fix).toContain('scaleX');
@@ -107,7 +108,8 @@ describe('unit · x new · the interface guards refuse the mistake they name', (
 
   test('the compositor-only pair the fix names is silent', async () => {
     const findings = await findingsWith({
-      'apps/web/app/post/panel.module.scss': '.panel {\n  transition: transform 200ms ease;\n}\n',
+      'apps/web/app/post/panel.module.scss':
+        '.panel {\n  transition: transform tokens.duration(base) ease;\n}\n',
     });
     expect(findings).toEqual([]);
   }, 30_000);

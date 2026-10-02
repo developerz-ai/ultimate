@@ -34,11 +34,38 @@ describe('unit · a dynamic segment stays dynamic', () => {
   test('the generated test is handed the params the URL actually declares', () => {
     const source = contentsOf('posts/[slug]', 'page.test.ts');
     // `params: {}` with a literal `[slug]` in the URL was a context no render ever produces.
-    expect(source).toContain("const ctx = { params: { slug: 'slug-1' }, url:");
-    expect(source).toContain("url: 'https://example.test/posts/slug-1' }");
-    expect(contentsOf('pricing', 'page.test.ts')).toContain(
-      "const ctx = { params: {}, url: 'https://example.test/pricing' };",
+    expect(source).toContain("  url: 'https://example.test/posts/slug-1',\n");
+    expect(source).toContain("  params: { slug: 'slug-1' },\n");
+    const flat = contentsOf('pricing', 'page.test.ts');
+    expect(flat).toContain("  url: 'https://example.test/pricing',\n  params: {},\n");
+    // One object, handed to `renderRoute` whole: the page and `meta` see the same request.
+    expect(flat).toContain('renderRoute(page, request)');
+  });
+});
+
+describe('unit · the generated page test asserts on what the page renders', () => {
+  test('every case renders the route, and none reads the config alone', () => {
+    const source = contentsOf('pricing', 'page.test.ts');
+    const cases = source.match(/^unitTest\(/gm) ?? [];
+    expect(cases.length).toBe(3);
+    // One render per case: a case that only read `config` is the test this template used to
+    // write, and it left the page component — every line of it — uncovered and unasserted.
+    expect(source.match(/await renderRoute\(page, request\)/g)).toHaveLength(cases.length);
+    expect(source).toContain("expect(view.text).toBe(t('app.pricing.title'));");
+    expect(source).toContain("expect(view.meta.description).toBe(t('app.pricing.description'));");
+    expect(source).toContain('expect(view.islands).toEqual([]);');
+  });
+
+  test('the translator is the app catalog module when there is one, and bound per case', () => {
+    const file = routeFiles('pricing', { surface: 'app', catalogModule: '@acme/i18n' }).find(
+      (entry) => entry.path.endsWith('page.test.ts'),
     );
+    const source = String(file?.contents);
+    expect(source).toContain("import { useT } from '@acme/i18n';");
+    expect(source.match(/^ {2}const t = useT\(\);$/gm)).toHaveLength(2);
+    // With no catalog module the framework's `t` is imported, and nothing is bound in a case.
+    expect(contentsOf('pricing', 'page.test.ts')).toContain("import { t } from '@ultimat3/i18n';");
+    expect(contentsOf('pricing', 'page.test.ts')).not.toContain('useT');
   });
 });
 

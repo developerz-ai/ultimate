@@ -210,6 +210,52 @@ describe('unit · the first commands a scaffold tells its author to run exist on
     expect(majorOf(pinned ?? '')).toBe(majorOf(ours ?? ''));
   });
 
+  test('the scaffold lints with the Biome this repository itself runs', async () => {
+    // Exact, where the TypeScript pin above compares majors: a formatter is a build input, and a
+    // patch apart is already visible — the repo sat on 2.5.5 under a `^2.4.15` range while the
+    // scaffold pinned 2.5.8, so every lint of a scaffolded app from inside this repo printed a
+    // schema-mismatch block, and `emitted-contract.test.ts` held templates to a formatter one
+    // patch away from the one their app installs.
+    const scaffold = repoFiles(names('ledger-demo'), '1.0.0', true);
+    const textOf = (path: string): string => {
+      const contents = scaffold.find((file) => file.path === path)?.contents;
+      return typeof contents === 'string' ? contents : '';
+    };
+    const pinned = (
+      JSON.parse(textOf('package.json')) as { devDependencies?: Record<string, string> }
+    ).devDependencies?.['@biomejs/biome'];
+    expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
+
+    const rootFile = (name: string): Promise<unknown> =>
+      Bun.file(new URL(`../../../../${name}`, import.meta.url).pathname).json();
+    const root = (await rootFile('package.json')) as { devDependencies?: Record<string, string> };
+    expect(root.devDependencies?.['@biomejs/biome']).toBe(pinned ?? '');
+
+    // And each `$schema` names the version beside it — the mismatch Biome itself reports.
+    const schemaOf = (config: unknown): string =>
+      String((config as { $schema?: unknown }).$schema ?? '');
+    const expected = `https://biomejs.dev/schemas/${pinned ?? ''}/schema.json`;
+    expect(schemaOf(await rootFile('biome.json'))).toBe(expected);
+    expect(schemaOf(JSON.parse(textOf('biome.json')))).toBe(expected);
+
+    // The two tracked apps are workspaces of this repository, so a range one of them declares is
+    // one more answer to "which Biome lints this tree" — `dummy/social-media-clone` said `^2.4.15`
+    // beside the root's exact pin. An app that declares none, or carries no `biome.json` of its
+    // own, inherits the root's: it has no second answer to hold.
+    for (const app of ['examples/dummy', 'dummy/social-media-clone']) {
+      const manifest = (await rootFile(`${app}/package.json`)) as {
+        devDependencies?: Record<string, string>;
+      };
+      const declared = manifest.devDependencies?.['@biomejs/biome'];
+      expect({ app, declared: declared ?? pinned }).toEqual({ app, declared: pinned });
+      const config = new URL(`../../../../${app}/biome.json`, import.meta.url).pathname;
+      const schema = (await Bun.file(config).exists())
+        ? schemaOf(await Bun.file(config).json())
+        : expected;
+      expect({ app, schema }).toEqual({ app, schema: expected });
+    }
+  });
+
   test('the line `x new` prints last names a command the author can run', () => {
     const done = msg('cli.new.done', { name: 'ledger-demo' });
     expect(done).toContain('bin/setup');

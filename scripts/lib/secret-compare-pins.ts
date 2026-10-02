@@ -45,9 +45,9 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       '`idempotency.ts:201` compares a stored `requestHash` with a recomputed one to decide REPLAY vs conflict. Both sides are hashes this process computed from a body it already holds; the answer is not an authentication decision.',
   },
   admin: {
-    count: 6,
+    count: 2,
     reason:
-      '`routes.ts`, `mcp.ts`, `nav.ts` and `resource.ts` match a `candidate` ROUTE PATH, TOOL NAME, NAV ENTRY or FIELD NAME against the registry. `candidate` is in the vocabulary because `mfa.ts` uses the word for a recovery code; here it is a registered identifier.',
+      '`resource.ts:225,235` walk `LABEL_CANDIDATES` / `SORT_CANDIDATES` — two literal lists of FIELD NAMES in that file — and match each `candidate` against the resource’s declared fields. `candidate` is in the vocabulary because `mfa.ts` uses the word for a recovery code; here it is a loop variable over a constant, not a predicate’s own parameter, so the rule still reads it.',
   },
   ai: {
     count: 1,
@@ -56,30 +56,30 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
   },
   cli: {
     // why: `site-asset-routes.ts:95` compares a content hash that is already the public asset URL — no secret.
-    count: 16,
+    count: 12,
     reason:
-      '`app-load.ts` compares a route module’s source `hash` with the one it registered under, to decide whether the file changed since — a content digest of the app’s own source, computed here. build and CLI plumbing: a `candidate` EXECUTABLE PATH, OUTPUT PATH, COMMAND NAME or CI JOB NAME; a parsed CLI `token` and its aliases; a `review.state` from the GitHub API; and a content `hash` compared to decide whether a bundle or a migration changed. None is a credential check. The twelfth arrived 2026-09-06 with `startsWith`: `fix-path.ts:102` asks whether a path-shaped CITATION on a `fix:` line sits under a gitignored directory — `token` there is a file path off a doc line. The fourteenth and fifteenth are `island-shot-index.ts:29,32`, which group a screenshot verdict by island STATE ID — the slug a `.island.states.ts` declares, which is already the screenshot filename stem on disk and is read back off a path. A value the filesystem publishes is not a secret, and renaming the field to dodge the NAME heuristic would trade a real domain word for a lint. The sixteenth is `site-asset-routes.ts:95`, which compares a hashed site asset’s content `hash` with the one spelled in the requested URL — the hash IS the public URL, printed into every page that names the asset.',
+      '`app-load.ts` compares a route module’s source `hash` with the one it registered under, to decide whether the file changed since — a content digest of the app’s own source, computed here. build and CLI plumbing: a parsed CLI `token` and its aliases; a `review.state` from the GitHub API; and a content `hash` compared to decide whether a bundle or a migration changed. None is a credential check. The twelfth arrived 2026-09-06 with `startsWith`: `fix-path.ts:102` asks whether a path-shaped CITATION on a `fix:` line sits under a gitignored directory — `token` there is a file path off a doc line. The fourteenth and fifteenth are `island-shot-index.ts:29,32`, which group a screenshot verdict by island STATE ID — the slug a `.island.states.ts` declares, which is already the screenshot filename stem on disk and is read back off a path. A value the filesystem publishes is not a secret, and renaming the field to dodge the NAME heuristic would trade a real domain word for a lint. The sixteenth is `site-asset-routes.ts:95`, which compares a hashed site asset’s content `hash` with the one spelled in the requested URL — the hash IS the public URL, printed into every page that names the asset. Four `candidate` sites left this count on 2026-10-01, when a predicate’s own parameter stopped being read as a secret name — the ordinals above count from before that.',
   },
   core: {
-    // why: `locale-path.ts:35` matches a configured locale code against a URL segment — no secret.
-    count: 5,
+    count: 2,
     reason:
-      '`lifecycle.ts:250,289` compare a `candidate` REGISTRATION and WAITER by object identity while removing one from a list. `cursor.ts:71` compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_SECRET` is a literal in that file, so there is nothing an attacker does not already have. `image/png-pixels.ts:86` compares one byte of a decoded file against `PNG_SIGNATURE`, the eight-byte magic number every PNG in the world opens with. `locale-path.ts:35` matches a `candidate` configured LOCALE against the first URL segment — a locale code the site prints in every prefixed path.',
+      '`cursor.ts:79` compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_SECRET` is a literal in that file, so there is nothing an attacker does not already have. `image/png-pixels.ts:86` compares one byte of a decoded file against `PNG_SIGNATURE`, the eight-byte magic number every PNG in the world opens with.',
   },
   db: {
-    count: 3,
+    count: 2,
     reason:
-      '`sqlstate.ts:106` compares a Postgres SQLSTATE `state` against `40001`/`40P01` to decide whether to retry, and `introspect.ts:212` matches a `candidate` TABLE NAME. A SQLSTATE is a five-character code the server prints in its own error text.',
+      '`sqlstate.ts:121` compares a Postgres SQLSTATE `state` against `40001` and against `40P01` to decide whether to retry. A SQLSTATE is a five-character code the server prints in its own error text.',
   },
   i18n: {
     count: 1,
     reason:
       '`context.ts:207` compares a `translatorKey` — the catalog lookup name a registered translator answers to.',
   },
+  // why: `driver-memory-operator.ts` matches a job row's lifecycle `state` against the state a bulk filter names — no secret.
   jobs: {
     count: 5,
     reason:
-      '`driver-memory.ts`, `job.ts`, `events.ts` and `backfill-pending.ts` compare a job lifecycle `state` (`queued`/`running`/`failed`), an `idempotencyKey` used to deduplicate an enqueue, a `correlationKey` on an event, and a `candidate` JOB NAME. A job state is not an OAuth state.',
+      '`driver-memory.ts`, `events.ts` and `backfill-pending.ts` compare a job lifecycle `state` (`queued`/`running`/`failed`), an `idempotencyKey` used to deduplicate an enqueue, and a `correlationKey` on an event. A job state is not an OAuth state. The sixth, 2026-10-01: `driver-memory-operator.ts` matches a row`s lifecycle `state` against a bulk filter`s (`requeueMany` / `removeMany`) — the same job state, compared to the one an operator named.',
   },
   manifest: {
     count: 13,
@@ -98,19 +98,14 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       '`sass-cache.ts` compares the sha256 `digest` of a stylesheet the compiler read against the one stored beside a cached compile, to decide whether the entry is still valid. Both sides are hashes of source files in the checkout — nothing a caller supplies and nothing secret.',
   },
   realtime: {
-    count: 7,
+    count: 3,
     reason:
-      '`offline-queue.ts`, `rebase.ts`, `presence.ts` and `sync-protocol.ts` compare a `candidate` QUEUED MUTATION, PRESENCE MEMBER or protocol VALUE, by the client-side key a write is deduplicated on. `fanout.ts:50` walks a topic pattern one segment at a time, where `token` is a topic segment. The seventh is `pg-auth.ts:63` — `serverNonce.startsWith(this.#clientNonce)`, the RFC 5802 check that the SCRAM server echoed our own nonce back. A nonce is public by construction (it travels in clear in `client-first`) and the branch decides whether the exchange is well-formed, not whether a credential is right; the credential comparison in that file is the client proof, which is computed and never compared here.',
+      '`page-store.ts:80` reads `host[BOOT_RELEASE_KEY]` — `…_KEY` there is the NAME of the global property a page’s boot parks its release function under, compared by identity against this module’s own. `fanout.ts:50` walks a topic pattern one segment at a time, where `token` is a topic segment. The third is `pg-auth.ts:63` — `serverNonce.startsWith(this.#clientNonce)`, the RFC 5802 check that the SCRAM server echoed our own nonce back. A nonce is public by construction (it travels in clear in `client-first`) and the branch decides whether the exchange is well-formed, not whether a credential is right; the credential comparison in that file is the client proof, which is computed and never compared here.',
   },
   schema: {
     count: 1,
     reason:
-      "`validators.ts:242` compares a `candidate` against an enum member — the `in` validator's membership test over a declared list.",
-  },
-  scripts: {
-    count: 1,
-    reason:
-      '`reference-app-gate.ts:364` matches a `candidate` APP DIRECTORY against the one `--unpin` named.',
+      '`validators.ts:268` compares a `candidate` VALUE against the one literal a `literalSchema` was declared with — the value being validated, named for its role in the parse.',
   },
   storage: {
     count: 2,

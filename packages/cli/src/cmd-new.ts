@@ -110,7 +110,21 @@ export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
     ...appFiles(app, options.example),
   ];
   if (options.example) {
-    files.push(...resourceFiles('post', { surfaceDir: 'apps/web/app', feature: 'post' }));
+    files.push(
+      ...resourceFiles('post', {
+        surfaceDir: 'apps/web/app',
+        feature: 'post',
+        // The package `repoFiles` just named: the slice's `repo.ts` imports the typed handle from it.
+        dbModule: `@${app.kebab}/db`,
+        // And the catalog package beside it: every component the slice writes reads its strings
+        // through `useT()` from the module that registers them — the idiom `x g resource` writes
+        // into this same app, so the scaffold shows one way and not two (issue #249).
+        catalogModule: `@${app.kebab}/i18n`,
+        // `appFiles` above writes `apps/web/shared/shell.tsx`, so the page sits in the app frame —
+        // the same answer `x g resource` reads off the disk of this app afterwards.
+        shell: true,
+      }),
+    );
   }
   // `repoFiles`' own catalog entry and the example resource's both target the same flat catalog
   // file, so this has to be the merge-aware dedupe — the one `cmd-generate.ts` uses for `x g` —

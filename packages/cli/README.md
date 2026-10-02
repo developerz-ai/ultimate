@@ -11,6 +11,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |
 | `x dev` | every role in one process | embedded Postgres/events/storage, `/_x` mounted |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
+| `x build --target prebuilt` | the store a container boots from: island chunks, compiled stylesheets | a `RUN` line in the image build, never run by hand |
 | `x verify` | **the gate** | 20 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
@@ -91,11 +92,30 @@ than a skip.
 "Nothing" is both ways a suite disappears — no files at all, and every test in the files it found
 skipping itself, which is read back out of `bun test`'s own summary. `x new` writes one.
 
+The same file states the app's **coverage floor**: `"coverage": { "lines": 95, "funcs": 95 }`,
+held by the `unit` step over every `.ts`/`.tsx` under `apps/` and `packages/`, a file no unit test
+loads counted at 0%. No `coverage` is `X_COVERAGE_FLOOR_UNSTATED` (the finding carries the line to
+add, with the measured numbers), under it is `X_COVERAGE_BELOW_FLOOR` naming the ten files losing
+the most lines, and a floor under 95 the tree has left 1.5 points behind is
+`X_COVERAGE_FLOOR_STALE` — the floor only rises. An `exclude` entry names code a unit test cannot
+execute and carries its `why`; `x doctor` prints them. A `--shard` slice hands its facts to
+`x verify merge`, which judges the fold. `x new` writes 95 / 95.
+
+A step has a **deadline** — 8 minutes for the six suites, 5 for every other step,
+`"stepTimeoutMs": { "<step>": ms }` in `x.verify.json` to change one. Past it the step fails by
+name with `X_VERIFY_STEP_TIMEOUT` and every process it started is killed. Under `--json` each
+finished step is one line on stderr (`{"step":"lint","ok":true,"ms":21987}`); stdout stays the
+single document.
+
 An app extends the gate with its own conventions, never with its own step: a file in `guards/`
-exports a `guard` whose `check(root)` returns `Finding[]`, and the `boundaries` step runs every one
-of them. Nothing registers a guard — the directory is the registration — and what a guard returns
+exports a `guard` whose `check(root, sources)` returns `Finding[]`, and the `boundaries` step runs
+every one of them. `sources` is the run's ONE read of the app (`GuardSources`): `files(glob)` is
+walked and read once however many guards ask, and `compiled(path)` is a stylesheet as the build
+compiles it. Nothing registers a guard — the directory is the registration — and what a guard returns
 is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUARD_FAILED`,
-`X_GUARD_FINDING_INVALID`). `x g guard <name>` scaffolds one with its test.
+`X_GUARD_FINDING_INVALID`). `x g guard <name>` scaffolds one with its test — the shipped guard of
+that name where there is one (`x new` writes all seventeen), the blank template otherwise — and
+`x doctor` lists the shipped ones an app does not hold.
 
 ## Layout
 
@@ -111,6 +131,7 @@ is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUAR
 | `registry.ts` | the one command list |
 | `generate-kinds.ts` | which generators exist, and how a command line names one |
 | `guards.ts` | the app's own conventions: `guards/` discovered, run, and held to the error contract |
+| `guard-sources.ts` | one walk, one read and one Sass compile per file per gate run, shared by every guard |
 | `cmd-*.ts` | one command group each |
 | `templates/` | scaffolding as typed string modules, not copied fixtures |
 | `app-load.ts` | import an app's modules so the framework registries hold it |
@@ -122,10 +143,12 @@ is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUAR
 | `app-manifest.ts` | `x.manifest.json`, projected by `@ultimat3/manifest` |
 | `app-openapi.ts` | `openapi.json`, projected by `@ultimat3/action` |
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
+| `app-transport.ts` / `browser-transport.ts` | one browser transport, on `boundaries` in every app: a raw `fetch(`, `new WebSocket(` or `new XMLHttpRequest(` in an island's closure is `X_BROWSER_TRANSPORT_BYPASS`; a server barrel there is `X_BROWSER_SERVER_BARREL` |
 | `app-agents-md.ts` | `AGENTS.md` exists and stays short, over `@ultimat3/manifest`'s check |
 | `serve.ts` | **what a container starts** — `runRole(options)`, the same boot `x dev` runs minus the watcher, `/_x` and `dev: true`. `x new`'s `apps/web/server.ts` is three lines that call it. `ROLE`, `PORT` and `HOST` are read from `env`; `role`, `port` and `hostname` on `ServeOptions` override each |
 | `prerender.ts` | `x build --target static`: which `site/` routes qualify, and where the bytes land |
-| `metrics-endpoint.ts` | the `METRICS_PATH` scrape listener every role opens, on `METRICS_PORT` |
+| `metrics-endpoint.ts` | the `METRICS_PATH` scrape listener every role opens, on `METRICS_PORT`; opening it starts the `process_*` series, labelled by `startMetricsEndpoint({ role })` |
+| `role-load.ts` / `document-graph.ts` / `serve-web.ts` | what each container role imports: `web`, `sync` and `replicator` every app module; `worker` and `scheduler` the API index plus every module that reaches no component or stylesheet |
 | `otlp-export.ts` | the exporters `OTEL_EXPORTER_OTLP_ENDPOINT` switches on, and their drain hooks |
 | `dev-*.ts` | what `x dev` boots: services, runtime, routes, hooks, roles, the `/_x` mount |
 | `island-bundle.ts` | every `*.island.tsx` built as its own entry point, content-hashed |
@@ -150,7 +173,7 @@ apps/web/app/<feature>/{entity,repo,service,policy,errors,ui}.ts
 apps/web/app/<feature>/{actions,queries,live,jobs,tasks}/<name>.ts
 apps/web/{site,app}/<path>/page.tsx
 apps/web/{site,app}/<path>/<name>.island.tsx     # x g island <name> --at <dir>
-apps/admin/src/pages/<name>.tsx                  # x g admin:page <name> --permission p
+apps/admin/app/admin/pages/<name>.tsx            # x g admin:page <name> --permission p
 guards/<name>.ts                                 # x g guard <name>
 ```
 

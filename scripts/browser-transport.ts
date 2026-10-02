@@ -1,36 +1,32 @@
 #!/usr/bin/env bun
-// Enforce, as a build error, that browser code has ONE HTTP function and ONE socket. Plan 101 put
-// every page request through `@ultimat3/core`'s `clientTransport` — credentials, the idempotency
-// header, the record envelope, the principal fence — and a raw `fetch(` in an island skips all four:
-// its rows never reach the page's store and it keeps running for the previous principal after a
-// sign-out. The same holds for a socket the page opens itself beside the framework's one.
+// This repository's run of the browser-transport rule: ONE HTTP function and ONE socket in browser
+// code. The rule itself is `@ultimat3/cli`'s (`packages/cli/src/browser-transport.ts`) — the same
+// function every app's `x verify` runs on its `boundaries` step — so this file only says what is
+// different HERE: the tree is the framework's own packages plus the tracked apps, and the three
+// seams are files in it rather than functions behind `node_modules`.
 //
-// BROWSER-REACHABLE is derived, never listed: every `*.island.tsx` in a tracked app or a package,
-// every framework module that calls the client seam itself (`clientTransport` / `pageClient` —
-// browser code by its own statement, whether or not an island imports it yet), and the import
-// closure of each, followed NAME BY NAME through barrels (`lib/import-closure.ts`).
-// A server-only module — `auth/oauth-*`, `mail/driver-resend.ts`, `jobs/webhook.ts` — is out of
-// scope because no island reaches it, not because a pin says so.
-//
-// It also refuses a SERVER BARREL in that closure: `@ultimat3/entity` where the package publishes
-// `@ultimat3/entity/record` for a browser (`lib/server-barrels.ts`, derived from `exports`).
-//
-// WHAT IT CANNOT SEE: a browser module that neither is an island, nor names the seam, nor is
-// imported by either; a fetch reached through a computed member (`globalThis['fetch']`); and a
-// bare `fetch(` in a file that also binds a local `fetch` (see `bindsFetch`). A floor, not a proof.
+// Browser-reachable, the server-barrel half and what the rule cannot see are stated once, in that
+// module's header.
 //
 //   bun run scripts/browser-transport.ts [--json]
 
-import { isJsonObject, maskLiterals } from '@ultimat3/core';
+import { isJsonObject } from '@ultimat3/core';
+import type { Bypass, FindingContext, ServerBarrel } from '../packages/cli/src/browser-transport';
+import {
+  browserEntries,
+  checkBrowserTransport as checkTransport,
+  barrelFinding as cliBarrelFinding,
+  bypassFinding as cliBypassFinding,
+} from '../packages/cli/src/browser-transport';
+import type { ClosureHost } from '../packages/cli/src/import-closure';
+import { serverBarrels } from '../packages/cli/src/server-barrels';
+import type { TransportShape } from '../packages/cli/src/transport-calls';
+import { transportCalls } from '../packages/cli/src/transport-calls';
 import { APP_ROOTS } from './boundaries';
 import { parseScriptArgs } from './lib/args';
-import { type ClosureHost, importClosure } from './lib/import-closure';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { type BarrelImport, barrelImports, serverBarrels } from './lib/server-barrels';
-import { isTestPath } from './lib/source-scan';
-import { type TransportCall, type TransportShape, transportCalls } from './lib/transport-calls';
 
 const SCRIPT = 'browser-transport';
 
@@ -47,14 +43,6 @@ export const SERVICE_WORKER_FILES: ReadonlySet<string> = new Set([
   'packages/pwa/src/strategies.ts',
 ]);
 
-export interface Bypass extends TransportCall {
-  readonly file: string;
-}
-
-export interface ServerBarrel extends BarrelImport {
-  readonly file: string;
-}
-
 export interface TransportTree {
   /** Repo-relative POSIX path → source, for every file a closure may read. */
   readonly files: ReadonlyMap<string, string>;
@@ -62,24 +50,6 @@ export interface TransportTree {
   readonly aliases: ReadonlyMap<string, string>;
   /** `@postly/web/*` style prefixes: specifier prefix → path prefix. */
   readonly prefixes: ReadonlyMap<string, string>;
-}
-
-export const isIsland = (path: string): boolean => path.endsWith('.island.tsx');
-
-/** A framework module naming the page's client seam is browser code by its own statement. */
-const NAMES_SEAM = /\b(?:clientTransport|pageClient)\s*[(<]/;
-
-/** Where the closure starts: islands, plus framework modules that call the seam themselves. */
-export function browserEntries(files: ReadonlyMap<string, string>): readonly string[] {
-  return [...files.entries()]
-    .filter(([path, source]) => {
-      if (isTestPath(path)) return false;
-      if (isIsland(path)) return true;
-      // Masked: a scaffold template that EMITS `clientTransport(` into an app is not browser code.
-      return path.startsWith('packages/') && NAMES_SEAM.test(maskLiterals(source));
-    })
-    .map(([path]) => path)
-    .sort();
 }
 
 function hostFor(tree: TransportTree): ClosureHost {
@@ -100,66 +70,37 @@ function hostFor(tree: TransportTree): ClosureHost {
   };
 }
 
-/** The whole rule over a tree, pure. */
+/** The rule over this repository's tree: the CLI's function, handed the repo's seams. */
 export function checkBrowserTransport(tree: TransportTree): {
   readonly entries: readonly string[];
   readonly reachable: readonly string[];
   readonly bypasses: readonly Bypass[];
   readonly barrels: readonly ServerBarrel[];
 } {
-  const entries = browserEntries(tree.files);
-  const reachable = importClosure(hostFor(tree), entries);
-  const bypasses: Bypass[] = [];
-  const barrels: ServerBarrel[] = [];
-  const serverOnly = serverBarrels(tree.aliases.keys());
-  for (const file of reachable) {
-    if (isTestPath(file) || SERVICE_WORKER_FILES.has(file)) continue;
-    const source = tree.files.get(file) ?? '';
-    for (const call of transportCalls(source)) {
-      if (TRANSPORT_SEAMS.get(call.shape) === file) continue;
-      bypasses.push({ ...call, file });
-    }
-    // A package's own modules may import its own barrel's neighbours; only a FOREIGN import of
-    // the barrel is the island paying for the server half.
-    for (const found of barrelImports(source, serverOnly)) {
-      if (tree.aliases.get(found.barrel)?.split('/src/')[0] === file.split('/src/')[0]) continue;
-      barrels.push({ ...found, file });
-    }
-  }
-  return { entries, reachable, bypasses, barrels };
+  // A FRAMEWORK module naming the client seam is browser code by its own statement; an app's is
+  // reached through its islands, exactly as the app's own gate reaches it.
+  const entries = browserEntries(tree.files, (path) => path.startsWith('packages/'));
+  const checked = checkTransport({
+    entries,
+    host: hostFor(tree),
+    seams: TRANSPORT_SEAMS,
+    exempt: SERVICE_WORKER_FILES,
+    barrels: serverBarrels(tree.aliases.keys()),
+    // A package's own modules may import its own barrel's neighbours.
+    ownsBarrel: (file, barrel) =>
+      tree.aliases.get(barrel)?.split('/src/')[0] === file.split('/src/')[0],
+  });
+  return { entries, ...checked };
 }
 
-const REPLACEMENT: ReadonlyMap<TransportShape, string> = new Map([
-  [
-    'fetch',
-    "use useQuery() / useMutation() / <action>.client() / useChannel(), or clientTransport from '@ultimat3/core'",
-  ],
-  ['websocket', "use useQuery() / useChannel() — the page's one socket is @ultimat3/realtime's"],
-  [
-    'xhr',
-    "use clientTransport from '@ultimat3/core'; upload progress is uploadFile() from '@ultimat3/storage'",
-  ],
-  ['eventsource', 'use useQuery() / useChannel() — realtime frames arrive on the page socket'],
-]);
+const CONTEXT: FindingContext = {
+  holder: (shape) => TRANSPORT_SEAMS.get(shape),
+  rerun: 'bun run browser-transport --json',
+};
 
-export function bypassFinding(bypass: Bypass): Finding {
-  const seam = TRANSPORT_SEAMS.get(bypass.shape);
-  return {
-    code: 'X_BROWSER_TRANSPORT_BYPASS',
-    at: `${bypass.file}:${bypass.line}`,
-    cause: `${bypass.file}:${bypass.line} calls ${bypass.spelled} in browser-reachable code; ${seam === undefined ? 'no module may' : `only ${seam} may`}, so this request skips the page's record store, idempotency header and principal fence`,
-    fix: `edit ${bypass.file}:${bypass.line} — ${REPLACEMENT.get(bypass.shape) ?? ''}; re-read the tree with: bun run browser-transport --json`,
-  };
-}
+export const bypassFinding = (bypass: Bypass): Finding => cliBypassFinding(bypass, CONTEXT);
 
-export function barrelFinding(site: ServerBarrel): Finding {
-  return {
-    code: 'X_BROWSER_SERVER_BARREL',
-    at: `${site.file}:${site.line}`,
-    cause: `${site.file}:${site.line} imports ${site.barrel} in browser-reachable code; that barrel is the package's server half, and ${site.entry} is the entry it publishes for a browser`,
-    fix: `edit ${site.file}:${site.line} — import from '${site.entry}' instead of '${site.barrel}'; re-read the tree with: bun run browser-transport --json`,
-  };
-}
+export const barrelFinding = (site: ServerBarrel): Finding => cliBarrelFinding(site, CONTEXT);
 
 /** The seam must still HOLD the call it is exempt for, or a moved seam reads as a clean tree. */
 export function seamFindings(tree: TransportTree): readonly Finding[] {

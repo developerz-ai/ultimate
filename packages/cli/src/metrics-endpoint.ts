@@ -1,6 +1,7 @@
 // Single responsibility: the scrape listener every role opens. `@ultimat3/core` declares the
 // series and renders the body; this is the one place a process answers `METRICS_PATH` with it, so
-// `docker/helm`'s HPAs read a number instead of `<unknown>`.
+// `docker/helm`'s HPAs read a number instead of `<unknown>`. Opening it starts the process's own
+// series (`process_*`): a role that can be scraped reports what it costs.
 
 import {
   finiteCount,
@@ -9,6 +10,7 @@ import {
   METRICS_PATH,
   markListening,
   metricsText,
+  startProcessMetrics,
   stringField,
   UltimateError,
 } from '@ultimat3/core';
@@ -64,6 +66,55 @@ export interface MetricsEndpointOptions {
   readonly port?: number;
   /** A container must bind every interface; a laptop must not. Same decision as the web role. */
   readonly hostname?: string;
+  /**
+   * The `process_info{role}` label: `ROLE` in a container, the roles `x dev` runs joined by `+`.
+   * A host that opens the listener itself and names none is labelled `unknown`.
+   */
+  readonly role?: string;
+  /**
+   * What a taken port means. `refuse` (the default, and every container's): `X_PORT_IN_USE` —
+   * Prometheus is configured against the declared port, so listening anywhere else is a scrape
+   * that silently finds nothing. `free`: bind whichever port the kernel hands out and say which —
+   * `x dev` with no `METRICS_PORT`, where two apps on one laptop both default to 9090.
+   */
+  readonly whenTaken?: 'refuse' | 'free';
+}
+
+/**
+ * Which answer a boot gives. A laptop that named no port takes a free one when 9090 is another
+ * app's; a declared `METRICS_PORT` — and every container — is the port a scraper was told, so it
+ * refuses rather than listen where nothing will look.
+ */
+export const whenMetricsPortTaken = (
+  dev: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+): 'refuse' | 'free' => {
+  const declared = env['METRICS_PORT'];
+  return dev && (declared === undefined || declared.trim().length === 0) ? 'free' : 'refuse';
+};
+
+/**
+ * The bind and its one retry. `bind` is `Bun.serve` behind a seam: whether a kernel refuses a
+ * second bind is the OS's answer, and the rule here is testable without racing a socket for it.
+ * Port 0 is never retried — the kernel chose it, so a refusal there is not a collision.
+ */
+export function bindScrapePort<T>(
+  port: number,
+  whenTaken: 'refuse' | 'free',
+  bind: (port: number) => T,
+): T {
+  try {
+    return bind(port);
+  } catch (error) {
+    if (!isAddressInUse(error)) throw error;
+    if (whenTaken === 'refuse' || port === 0) throw new MetricsPortInUseError({ port });
+    logger.warn('ultimate metrics port taken', {
+      port,
+      cause: `the metrics port ${String(port)} is already bound — another x dev, or a Prometheus — so this process listens on a free one`,
+      fix: `METRICS_PORT=${String(neighbouringPort(port))} x dev --json`,
+    });
+    return bind(0);
+  }
 }
 
 export interface MetricsEndpoint {
@@ -86,29 +137,24 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
   const port = finiteCount('startMetricsEndpoint', 'port', options.port ?? DEFAULT_METRICS_PORT);
   // `startRoles` opens this FIRST, before any role, so `Bun.serve`'s own bare `Error` was what a
   // second `x dev` on one machine reported: no code, no fix, at the boot path this package owns.
-  // The return type is inferred, keeping `Bun.serve`'s own shape stated once.
-  function listen() {
-    try {
-      return Bun.serve({
-        port,
-        hostname: options.hostname ?? 'localhost',
-        fetch(request: Request): Response {
-          if (new URL(request.url).pathname !== METRICS_PATH) {
-            return new Response('not found', { status: 404 });
-          }
-          // `collectMetrics()` is cumulative and never reset by a read, so two scrapers cannot
-          // steal each other's samples — but a cache would hand the second one a stale window.
-          return new Response(metricsText(), {
-            headers: { 'content-type': METRICS_CONTENT_TYPE, 'cache-control': 'no-store' },
-          });
-        },
-      });
-    } catch (error) {
-      if (!isAddressInUse(error)) throw error;
-      throw new MetricsPortInUseError({ port });
-    }
-  }
-  const server = listen();
+  const server = bindScrapePort(port, options.whenTaken ?? 'refuse', (candidate) =>
+    Bun.serve({
+      port: candidate,
+      hostname: options.hostname ?? 'localhost',
+      fetch(request: Request): Response {
+        if (new URL(request.url).pathname !== METRICS_PATH) {
+          return new Response('not found', { status: 404 });
+        }
+        // `collectMetrics()` is cumulative and never reset by a read, so two scrapers cannot
+        // steal each other's samples — but a cache would hand the second one a stale window.
+        return new Response(metricsText(), {
+          headers: { 'content-type': METRICS_CONTENT_TYPE, 'cache-control': 'no-store' },
+        });
+      },
+    }),
+  );
+  // After the bind: a port that was taken starts no sampler nobody would stop.
+  const stopProcessMetrics = startProcessMetrics({ role: options.role ?? 'unknown' });
   // Same rule as every other socket the framework opens: announce it, so a request back to it is
   // recognisably this process calling itself rather than egress the test seal must refuse.
   const stopListening = markListening(server.url.origin);
@@ -118,6 +164,7 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
     stop(): void {
       server.stop(true);
       stopListening();
+      stopProcessMetrics();
     },
   };
 }

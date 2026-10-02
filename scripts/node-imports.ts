@@ -36,9 +36,12 @@ import type { Finding } from './lib/log';
 import { NODE_IMPORT_PINS, NODE_PINS_FILE } from './lib/node-import-pins';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import type { SiteProbe } from './lib/ratchet-sites';
+import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
 import { isCode, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'node-imports';
+const EXPLAIN = 'bun run scripts/node-imports.ts --explain --json lists every one';
 
 /**
  * Every spelling that reaches a builtin: a static `from 'node:x'`, a side-effect `import 'node:x'`,
@@ -56,20 +59,47 @@ export interface NodeImportSite {
   readonly specifier: string;
 }
 
+/** A line that ENDS a static `node:` import and carries nothing after it — no trailing comment. */
+const NODE_IMPORT_END =
+  /^(?:import\b.*|\}\s*)from\s*['"]node:[\w./-]+['"];?$|^import\s*['"]node:[\w./-]+['"];?$/;
+
+/** The line a wrapped import opens on: `} from 'node:x'` closes a statement begun by `import {`. */
+const importStart = (lines: readonly string[], index: number): number => {
+  if (!(lines[index] ?? '').trimStart().startsWith('}')) return index;
+  for (let above = index - 1; above >= 0; above -= 1) {
+    if (/^\s*import\b/.test(lines[above] ?? '')) return above;
+  }
+  return index;
+};
+
 /**
- * Whether a `why:` sits on the import's own line or in the comment block directly above it.
+ * Whether a `why:` sits on the import's own line, in the comment block directly above it, or
+ * above the contiguous block of `node:` imports it belongs to.
  *
- * "Directly above" walks back over comment and blank lines only, so a `why:` written for the import
- * three lines up does not silently cover this one — and a doc comment spanning ten lines does count,
- * because that is where the framework already writes these sentences.
+ * ONE SENTENCE PER BLOCK. `mkdtemp` and `tmpdir` are reached for together and one `why:` above the
+ * pair says so; the second import used to count as unexplained, which made authors repeat the
+ * sentence. What ends a block is anything that is not a `node:` import: a blank line, a statement,
+ * an import of anything else — so a `why:` three statements up still covers nothing. A `why:`
+ * trailing one import is that import's alone. A doc comment spanning ten lines does count, because
+ * that is where the framework already writes these sentences.
  */
 export function hasWhy(lines: readonly string[], index: number): boolean {
   if (WHY.test(lines[index] ?? '')) return true;
-  for (let above = index - 1; above >= 0; above -= 1) {
+  // A blank line may sit between a comment and the import it explains, never between two imports
+  // of one block: seen on the way up, it ends the walk at the next import.
+  let blank = false;
+  for (let above = importStart(lines, index) - 1; above >= 0; above -= 1) {
     const line = (lines[above] ?? '').trim();
-    if (line === '') continue;
-    if (!(line.startsWith('//') || line.startsWith('*') || line.startsWith('/*'))) return false;
-    if (WHY.test(line)) return true;
+    if (line === '') {
+      blank = true;
+      continue;
+    }
+    if (line.startsWith('//') || line.startsWith('*') || line.startsWith('/*')) {
+      if (WHY.test(line)) return true;
+      continue;
+    }
+    if (blank || !NODE_IMPORT_END.test(line)) return false;
+    above = importStart(lines, above);
   }
   return false;
 }
@@ -122,11 +152,12 @@ export const checkNodeImports = (input: NodeImportInput): readonly NodeImportGap
 const at = (site: NodeImportSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
+/** Every site, new ones first — the package's first is usually one its pin already allows. */
 const overFinding = (gap: NodeImportGap): Finding => ({
   code: 'X_NODE_IMPORT_UNEXPLAINED',
-  cause: `${gap.pkg} imports a node: builtin without saying why in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${at(gap.first)} imports ${gap.first?.specifier ?? 'node:'} and no comment says which Bun native was missing, so nobody can tell whether it is still unavoidable`,
-  fix: `add a comment above ${at(gap.first)} beginning "why:" and naming the Bun API that does not exist — e.g. // why: Bun has no synchronous stdout write, and process.stdout.write drops its queue on exit`,
-  at: at(gap.first),
+  cause: `${gap.pkg} imports a node: builtin without saying why in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${siteList(gap, (site) => `${at(site)} (${site.specifier})`, EXPLAIN)} — and no comment says which Bun native was missing, so nobody can tell whether it is still unavoidable`,
+  fix: `add a comment above ${siteTarget(gap, at)} beginning "why:" and naming the Bun API that does not exist — e.g. // why: Bun has no synchronous stdout write, and process.stdout.write drops its queue on exit`,
+  at: at(leadSite(gap)),
 });
 
 const staleFinding = (gap: NodeImportGap): Finding => ({
@@ -157,8 +188,13 @@ export const nodeImportFindingFor = (gap: NodeImportGap): Finding =>
       ? staleFinding(gap)
       : unscannedFinding();
 
+const PROBE: SiteProbe<NodeImportSite> = {
+  rescan: (path, source) => scanNodeImports(path, source),
+  line: (site) => site.line,
+};
+
 export const nodeImportGaps = async (root: string): Promise<readonly NodeImportGap[]> =>
-  ratchetGaps(await nodeImportSites(root), NODE_IMPORT_PINS, true);
+  newSitesFirst(root, ratchetGaps(await nodeImportSites(root), NODE_IMPORT_PINS, true), PROBE);
 
 /** What this rule contributes to `x verify`'s `unit` step, through `node-imports.test.ts`. */
 export const nodeImportFindings = async (root: string): Promise<readonly Finding[]> =>
@@ -171,6 +207,7 @@ if (import.meta.main) {
     pins: NODE_IMPORT_PINS,
     sites: nodeImportSites,
     findingFor: nodeImportFindingFor,
+    probe: PROBE,
     clean: 'every node: import above its pin says why it is unavoidable',
   });
 }

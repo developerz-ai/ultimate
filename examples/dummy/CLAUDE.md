@@ -35,7 +35,7 @@ apps/web/site/                 static/isr, 0kb JS baseline, SEO-critical
 apps/web/app/                  auth'd, stream/spa, realtime, feature-sliced
 apps/web/api/                  actions + tasks only, no rendering
 apps/web/shared/               tokens, policies, entity types — leaf
-apps/admin/                    defineAdmin dashboard, MCP on
+apps/admin/                    defineAdmin dashboard, mounted at /admin, MCP on
 apps/mobile/ apps/desktop/     placeholders — the packages are already reusable
 packages/domain                pure types + constants, no I/O
 packages/db                    entity() + migrations + seeds, no business logic
@@ -175,6 +175,28 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   `SettingsProps.status` exists for this and only this: `saved` and `failed` are signal states a
   reviewer cannot reach without a server that really fails, so the prop makes them addressable and
   the page passes nothing.
+- **A `query`'s source names no tenant.** A sync node reads a live source for its subscriber's
+  org, in a context that carries it, as a request does — `app/runs/repo.ts`'s `eventsOf(runId,
+  limit)` names no org, and `app/runs/live.live.test.ts` holds it with two orgs through the real
+  `subscribe` fixture.
+- **A run is its events** (`app/runs/`). `run_events` is keyed by the JOB's run id — the one
+  identity the prompt handler, the body and the console's answer all hold — and the console's
+  state is its last PHASE event (`run-state.ts`). `runs.status` is the operator's projection of
+  that same event, written by the one writer of both (`repo.appendEvent`), never set anywhere
+  else. `startRun` enqueues inside the request's transaction and writes the run's row beside it:
+  both ids are allocated when the job is staged. How a run ENDED — failed, dead-lettered, refused
+  for a busy connection (`X_JOB_KEY_BUSY`, said in words) — and what it used is `onSettled`'s to
+  write; a cancel is the canceller's.
+- **`repo.appendEvent` updates the run by id**, one row by primary key. A filtered write
+  (`updateWhere`) re-reads every live window over that entity on the next change; the framework
+  defect that left that change undelivered is fixed in 23.0.0, and a by-id update needs no re-read.
+- **The admin is mounted** — `apps/admin/app/admin/admin.ts`, the path `x dev` and the container
+  scan — and the owner's grants for it are in `shared/policies.ts`: a permission the dashboard
+  asks for and no role grants is `X_PERMISSION_UNGRANTED` in the `policy` step.
+- **`x dev` needs a master key once the app seals anything**: `connections.credential` and
+  `.exit` are `.sealed()`, the stored scrape session and a prompt's answer are sealed too, and with
+  no `.secrets.key` each refuses with `X_SEAL_KEY_MISSING` — `x secrets init`. `bun test` and the
+  e2e harness install a throwaway key themselves.
 - Every prompt carries `<name>.evals.ts` (the cases) and `<name>.vN.baseline.json` (the recorded
   scores). A prompt with no eval fails `x verify` with `X_EVAL_MISSING`, and an eval with no
   committed baseline fails it with `X_EVAL_BASELINE_MISSING`; the gate is the drop from the
@@ -197,10 +219,9 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
 
 `guards/*.ts` is discovered by `x verify` (never registered) and every guard runs inside the
 `boundaries` step: the directory IS the registration, so delete a file to drop its rule and write
-`x g guard <name>` to add one. **All nine `x new` ships run here, `As of 2026-09-08`** —
-`animated-layout-property`, `bare-error`, `focus-visible`, `image-dimensions`,
-`island-without-states`, `raw-colour`, `semantic-interactive`, `untranslated-string`,
-`unzoned-date` — each with its own `.test.ts` beside it, which the `unit` step runs and the gate
+`x g guard <name>` to add one. **Every guard `x new` ships runs here, `As of 2026-10`** — the
+list is `SHIPPED_GUARD_NAMES` in `packages/cli/src/templates/scaffold-guards.ts`, and
+`x doctor --json` names any this app lacks (`data.guards.missing`) — each with its own `.test.ts` beside it, which the `unit` step runs and the gate
 does not import. Their codes are APP codes derived from the guard's name, so none of them is in
 `wiki/Error-Codes.md` or in any manifest. Every file here is byte-identical to
 `scaffoldGuardFiles()`'s output (`packages/cli/src/templates/scaffold-guards.ts`) — a guard edited
@@ -213,10 +234,8 @@ here was a false positive, which is the failure this repo names outright: noise 
 switched off. Both are fixed in `packages/cli/src/templates/` and both now report **zero** against
 this app.
 
-| Guard | Was measured here | The defect, and its repair |
-|---|---|---|
-| `raw-colour` | **87 findings, 87 of them `rgb(`** | `CHANNEL_FUNCTION` matched `rgb(` unconditionally, and `rgb(var(--color-surface))` is what `@ultimat3/ui`'s own `tokens.role()` COMPILES to (`packages/ui/src/tokens/_colors.scss:98`, `tokens.ts` returns `rgb(var(--color-bg) / 1)`) — so the finding's own cause, "a value no theme can restate", was false of every one. The rule now reads the BALANCED argument list: a channel function whose slots are all `var(--…)` references or `#{…}` interpolations, with at most a trailing numeric alpha after `/` or `,`, is the token form. `rgb(1 2 3)` and `rgb(var(--x) 2 3)` are still refused, and the cause now names the whole call instead of the bare `rgb(` |
-| `untranslated-string` | **12 findings, 12 of them `t()` calls** | its `EXPRESSION` mask was `/\{[^{}]*\}/g`, which does not nest: `{t('app.feed.heading', { org: actor.org.name })}` had its INNER brace group masked first, leaving `{t('app.feed.heading',  )}` unmatched, and the leftover read as typed prose — so every `t()` call carrying an interpolation object or a template-literal key was reported, the exact opposite of the rule. It is a brace-DEPTH scan now (`withoutExpressions`), so a nested child is removed whole and prose typed beside one is still refused |
+The two guards measured here, and their repairs, are recorded in
+[`docs/history/reference-app.md`](../../docs/history/reference-app.md).
 
 ## Boundaries (build errors, not lint warnings)
 

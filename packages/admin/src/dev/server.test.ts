@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { staticDevSources } from './data';
-import { assertDevOnly, DEV_PANELS, devDashboard, devShellStyle } from './server';
+
+// `./server` reaches the panels' `.tsx`: loaded after `@ultimat3/render/server` installs its loader,
+// never statically — a static import compiles them to the classic factory, and every screen a later
+// file in this process renders through them dies with `React is not defined`.
+await import('@ultimat3/render/server');
+const { assertDevOnly, DEV_PANELS, devDashboard, devShellStyle } = await import('./server');
 
 const sources = staticDevSources({
   routes: async () => [

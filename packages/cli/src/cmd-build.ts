@@ -1,5 +1,6 @@
-// `x build --target docker|binary|static` — three targets, no platform primitives. Deploy anywhere
-// means "anywhere that runs a container or a binary"; nothing here knows the name of a cloud.
+// `x build --target docker|binary|static|prebuilt` — no platform primitives. Deploy anywhere means
+// "anywhere that runs a container or a binary"; nothing here knows the name of a cloud. `prebuilt`
+// is the docker target's other half: the line the Dockerfile runs INSIDE the image build.
 
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -9,13 +10,13 @@ import { buildSpec } from './cmd-build-spec';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
 import { externalArgs } from './compile-externals';
-import { BuildEntryMissingError, UnknownCommandError } from './errors';
+import { BadFlagError, BuildEntryMissingError, UnknownCommandError } from './errors';
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
-import { prepareImage } from './image-prepare';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
+import { PREBUILT_DIR } from './serve-prebuilt-paths';
 import type { StaticReport } from './static-report';
 import {
   readStaticReport,
@@ -24,9 +25,12 @@ import {
   staticReportData,
 } from './static-report';
 
-export const BUILD_TARGETS = ['docker', 'binary', 'static'] as const;
+export const BUILD_TARGETS = ['docker', 'binary', 'static', 'prebuilt'] as const;
 
 export type BuildTarget = (typeof BUILD_TARGETS)[number];
+
+/** The targets whose builder is a subprocess. `prebuilt` is this process, inside `docker build`. */
+export type SpawnedTarget = Exclude<BuildTarget, 'prebuilt'>;
 
 export function readTarget(raw: string | undefined): BuildTarget {
   const targets: readonly string[] = BUILD_TARGETS;
@@ -48,6 +52,8 @@ export const BUILD_ENTRY: Readonly<Record<BuildTarget, string>> = {
   docker: 'docker/Dockerfile',
   binary: 'apps/web/server.ts',
   static: 'apps/web/prerender.ts',
+  // What boots from the store: an image with no server entry has nothing to prebuild for.
+  prebuilt: 'apps/web/server.ts',
 };
 
 /** Absolute path of the target's entry, or the error that names the file and what writes it. */
@@ -109,7 +115,7 @@ export function staticArgs(root: string, out: string): readonly string[] {
 }
 
 export function argsFor(
-  target: BuildTarget,
+  target: SpawnedTarget,
   paths: {
     readonly root: string;
     readonly tag: string;
@@ -184,6 +190,45 @@ export function buildResult(input: {
   };
 }
 
+/**
+ * `x build --target prebuilt`: the island chunks and compiled stylesheets, written by the process
+ * `docker build` runs after the source is copied in. No gate and no subprocess — the image holds
+ * no devDependencies to typecheck with, and `x verify` ran before `docker build` was called.
+ *
+ * A module that would not import fails the image build rather than warning into a build log
+ * nobody reads: its stylesheets are missing from the store, and every pod would compile them.
+ */
+async function buildPrebuilt(ctx: CommandContext, root: string): Promise<CommandResult> {
+  // The boot reads ONE place; a flag that seemed to move it would write a store no pod opens.
+  for (const flag of ['tag', 'out']) {
+    if (flagString(ctx.args, flag) === undefined) continue;
+    throw new BadFlagError({
+      flag,
+      command: 'build',
+      reason: `the prebuilt target writes ${PREBUILT_DIR}, the one place a container boots from, and takes no --${flag}`,
+      fix: 'x build --target prebuilt',
+    });
+  }
+  const started = Bun.nanoseconds();
+  const { prebuildImage } = await import('./image-prepare');
+  const built = await prebuildImage(root);
+  const ok = built.findings.length === 0;
+  return {
+    ok,
+    command: 'build',
+    summary: msg(ok ? 'cli.build.done' : 'cli.build.failed', { target: 'prebuilt' }),
+    findings: built.findings,
+    data: {
+      target: 'prebuilt',
+      artifact: built.dir,
+      durationMs: Math.round((Bun.nanoseconds() - started) / 1e6),
+      islands: built.islands,
+      stylesheets: built.stylesheets,
+    },
+    lines: [],
+  };
+}
+
 /** The static steps `x build` runs before it builds, and `--no-preflight` leaves to the gate. */
 export const PREFLIGHT_STEPS: readonly string[] = [
   'typecheck',
@@ -203,6 +248,7 @@ export const buildCommand: CliCommand = {
     // typecheck, and eight seconds of `tsc` ahead of "that file does not exist" is eight seconds
     // an agent spends on the wrong question.
     requireEntry(root, target);
+    if (target === 'prebuilt') return buildPrebuilt(ctx, root);
 
     // Run static verify steps before building — unless the caller is a gate that runs the same
     // six steps itself right after (`bin/check`: `x build --no-preflight && x verify`), where the
@@ -227,9 +273,10 @@ export const buildCommand: CliCommand = {
         ? join(root, '.x', target === 'static' ? 'static' : 'app')
         : resolve(ctx.cwd, outFlag);
     const tag = flagString(ctx.args, 'tag') ?? 'ultimate-app:dev';
-    // The docker target stamps the manifest's build id into the image, and writes the island
-    // chunks the image serves, so a container boot neither re-derives the one nor rebuilds the other.
-    const buildId = target === 'docker' ? await prepareImage(root) : undefined;
+    // The docker target stamps the manifest's build id into the image, so no role derives one at
+    // boot. The island chunks and stylesheets are the image build's own (`--target prebuilt`).
+    const buildId =
+      target === 'docker' ? await (await import('./image-prepare')).imageBuildId(root) : undefined;
     const command = argsFor(target, {
       root,
       tag,

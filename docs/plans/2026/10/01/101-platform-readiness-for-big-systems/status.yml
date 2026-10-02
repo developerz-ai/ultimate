@@ -1,30 +1,61 @@
 plan: 101-platform-readiness-for-big-systems
 title: Platform readiness for big systems
-status: not_started
+status: in_progress
 created_by: sebi
-worked_by: ""
+worked_by: "coordinator + workers, 2026-10-01 (one checkout, uncommitted)"
 owner: sebi
-percent: 0
-current_focus: "owner rules on semver for slices 09 and 11 (overview.md Risks); then {01, 02, 04, 05, 07} in parallel"
+percent: 95
+current_focus: "every slice done; left: the whole-repo gate, the PRs and the 23.0.0 release (the 5% this plan does not mark done until they land)"
 slices:
-  - {file: 01-core-seal.md, tier: 0, status: not_started, percent: 0}
-  - {file: 02-db-schema-dump.md, tier: 1, status: not_started, percent: 0}
-  - {file: 03-entity-sealed-column.md, tier: 2, status: not_started, percent: 0}
-  - {file: 04-action-client-at-scale.md, tier: 3, status: not_started, percent: 0}
-  - {file: 05-jobs-keyed-concurrency.md, tier: 3, status: not_started, percent: 0}
-  - {file: 06-jobs-operator-surface.md, tier: 3, status: not_started, percent: 0}
-  - {file: 07-ui-ladder-and-links.md, tier: 4, status: not_started, percent: 0}
-  - {file: 08-cli-style-guards.md, tier: 5, status: not_started, percent: 0}
-  - {file: 09-cli-browser-transport-gate.md, tier: 5, status: not_started, percent: 0}
-  - {file: 10-cli-typed-repo-generator.md, tier: 5, status: not_started, percent: 0}
-  - {file: 11-cli-coverage-bar.md, tier: 5, status: not_started, percent: 0}
-  - {file: 12-scraping-sessions.md, tier: 5, status: not_started, percent: 0}
-  - {file: 13-admin-mounted-screens.md, tier: 5, status: not_started, percent: 0}
-  - {file: 14-admin-list.md, tier: 5, status: not_started, percent: 0}
-  - {file: 15-admin-detail-form-actions.md, tier: 5, status: not_started, percent: 0}
-  - {file: 16-admin-jobs-dashboard.md, tier: 5, status: not_started, percent: 0}
-  - {file: 17-apps-run-console.md, tier: 5, status: not_started, percent: 0}
-  - {file: 18-docs.md, tier: 5, status: not_started, percent: 0}
+  - {file: 01-core-seal.md, tier: 0, status: done, percent: 100, evidence: "packages/core/src/seal.test.ts — 22 tests incl. a known-answer vector; x secrets rotate --drop in packages/cli/src/cmd-secrets.test.ts"}
+  - {file: 02-db-schema-dump.md, tier: 1, status: done, percent: 100, evidence: "packages/db/src/schema-dump.test.ts, schema-load.contract.test.ts; bun run schema-dumps --check over both tracked apps"}
+  - {file: 03-entity-sealed-column.md, tier: 2, status: done, percent: 100, evidence: "packages/entity/src/sealed-column.test.ts, sealed-repo.test.ts, sealed-egress.test.ts (memory + PGlite); pg-sealed.live.test.ts 6/6 on Postgres 17"}
+  - {file: 04-action-client-at-scale.md, tier: 3, status: done, percent: 100, evidence: "packages/action/src/client-scale.contract.test.ts + client-scale-pins.ts in action and query (closes #534)"}
+  - {file: 05-jobs-keyed-concurrency.md, tier: 3, status: done, percent: 100, evidence: "packages/jobs/src/keyed-concurrency.test.ts + keyed-concurrency.job.test.ts, memory and embedded Postgres"}
+  - {file: 06-jobs-operator-surface.md, tier: 3, status: done, percent: 100, evidence: "packages/jobs/src/operator-surface.test.ts + operator-surface.job.test.ts; packages/cli/src/cmd-jobs-operator.test.ts"}
+  - {file: 07-ui-ladder-and-links.md, tier: 4, status: done, percent: 100, evidence: "packages/ui/src/tokens/mixins.test.ts (compiles each helper), components/Pagination.test.ts, link-classes.test.ts"}
+  - {file: 08-cli-style-guards.md, tier: 5, status: done, percent: 100, evidence: "packages/cli/src/templates/scaffold-guards-style.test.ts and one guard-<name>.test.ts per rule; both tracked apps hold every SHIPPED_GUARD_NAMES file"}
+  - {file: 09-cli-browser-transport-gate.md, tier: 5, status: done, percent: 100, evidence: "packages/cli/src/app-transport.test.ts, browser-transport.test.ts; templates/scaffold-browser-client.contract.test.ts"}
+  - {file: 10-cli-typed-repo-generator.md, tier: 5, status: done, percent: 100, evidence: "packages/cli/src/templates/entity.test.ts, cmd-generate-entity.test.ts, templates/guard-repo-raw-sql.test.ts"}
+  - {file: 11-cli-coverage-bar.md, tier: 5, status: done, percent: 100, evidence: "packages/cli/src/coverage-floor.test.ts, verify-tests-coverage.test.ts, templates/scaffold-coverage-floor.test.ts"}
+  - {file: 12-scraping-sessions.md, tier: 5, status: done, percent: 100, evidence: "packages/scraping/src/egress.test.ts, cdp-resolver.test.ts, usage.test.ts, session-seal.test.ts, event-prompt.test.ts"}
+  - {file: 13-admin-mounted-screens.md, tier: 5, status: done, percent: 100, evidence: "packages/admin/src/mounted-screens.test.ts; scripts/scaffold-admin.ts 8/8 live steps; demo app's hand-written admin (1,781 lines) deleted"}
+  - {file: 14-admin-list.md, tier: 5, status: done, percent: 100, evidence: "packages/admin/src/mounted-list.test.ts, list-scopes.test.ts, list-relations.test.ts (4 statements per page asserted at the driver), row-scope.test.ts"}
+  - {file: 15-admin-detail-form-actions.md, tier: 5, status: done, percent: 100, evidence: "packages/admin/src/detail-sections.test.ts, related-rows.test.ts (4 statements asserted at the driver), action-when.test.ts, batch-action.test.ts, row-scope-write.test.ts, audit-pg.contract.test.ts"}
+  - {file: 16-admin-jobs-dashboard.md, tier: 5, status: done, percent: 100, evidence: "packages/admin/src/jobs/screens.test.ts, permissions.test.ts, mcp.test.ts; packages/admin/e2e/jobs.e2e.test.ts posts each native form over a real socket; jobs parity fixture on memory and Postgres"}
+  - {file: 17-apps-run-console.md, tier: 5, status: done, percent: 100, evidence: "examples/dummy/apps/web/app/runs/ — 119 unit tests; apps/web/e2e/runs.e2e.test.ts 3 pass in Chrome; apps/admin/app/admin/admin.test.ts 12 pass (the operator view, mounted)"}
+  - {file: 18-docs.md, tier: 5, status: done, percent: 100, evidence: "CHANGELOG [Unreleased] 66 BREAKING entries = wiki/Upgrading.md 22.x → 23.0.0 (bun run changelog-check); wiki/Admin-Dashboard.md, Tutorial-03, Known-Gaps; generator-counts green"}
 evidence: []
-notes: "Source: eight read-only surveys on 2026-10-01 (a production SPA, a large admin-console app, an existing scraping system, an earlier service attempt, a downstream app on 22.15.0, a Sidekiq-compatible job system, a schema-dump tool, this tree at dad6e086). Six parts of the ask were already true in the tree; overview.md Risks lists each with the file:line. Proving case is a session-based scraping service; that service is a separate plan in its own repo. Slices 17 and 18 are apps and docs, tier recorded as 5 for ordering. Open owner decisions: semver for 09 and 11; a BullMQ-backed job driver (recorded verdict is BUILD); recover: 'agent'. Overlaps plan 2026/09/22/102 (append-only entities, raw routes, audited queries) and 2026/09/28/101 (jobs defects, stub drivers, promised MCP job tools)."
+notes: >-
+  Source: eight read-only surveys on 2026-10-01 (a production SPA, a large admin-console app, an
+  existing scraping system, an earlier service attempt, a downstream app on 22.15.0, a
+  job system compatible with an established Ruby one, a schema-dump tool, this tree at dad6e086). Owner decisions taken:
+  09 and 11 ship as BREAKING in the 23.0.0 major, no opt-out; no legacy shims. Still open: a
+  job driver over an established Redis queue library (recorded verdict BUILD); recover: 'agent'.
+  Slice 02 step 7 (x db reset and the test preload load the dump) is NOT shipped, by measurement:
+  loading the dump saved 53–85 ms against a second embedded boot costing 177–224 ms; replay stays
+  the one way to build a database, and loadSchemaDump ships for the drift step only.
+  Slice 06's onDead was reshaped the same day into ONE onSettled (completed, dead-lettered,
+  dropped, refused; at most once); onDead never shipped (docs/history/jobs.md).
+  Slice 17: runEvent is a plain entity — no appendOnly exists in this tree (plan 2026/09/22/102
+  slice 04 has not landed). The /v1 bearer mount first needed a 107-line app-side keys.ts (a memory
+  ApiKeyStore, store selection, the resolver); @ultimat3/auth now ships apiKeyResolver(() => store)
+  and the file is 69 lines.
+  Slice 15/16: no island ships in the admin — row checkboxes join the batch form by their `form`
+  attribute, "all matching" is a radio meaning the list URL, an action's input is its own page,
+  confirmation is a server round trip; admin JS stays 0 B. The durable audit log is an AuditLog
+  (it must be read for the history card), not a write-only AuditSink. The jobs dashboard is four
+  ordinary admin resources plus one overview screen, not one file per screen; permissions are
+  job:read / job:manage (the spec's job:list dropped: the admin already read job:read); tabs carry
+  no counts, because stats() spans every tenant.
+  Slice 17: the reference app keeps a `runs` table whose `status` is a projection of the run's last
+  phase event, written only by repo.appendEvent, so the operator view's tabs and `when` read a
+  column; `cancel` applies to queued or running. onSettled (not onDead) records how a run ended and
+  what it used. browserCost is not stored: the recorded site rents no browser.
+  Coverage floors measured 2026-10-01: examples/dummy 71 / 65 after slice 17 (68 / 62 before it, 59.87 / 44.78 at the start), the demo app
+  68 / 72, scripts/ 80 / 88; a scaffold measures 100 / 100 (default and --no-example), 99.84 /
+  99.39 after all thirteen generators.
+  Typed client instantiations (tsc --extendedDiagnostics, 2026-10-01): 100 modules x 3 actions +
+  50 x 2 queries 850,546, 0 errors (TS2589 before); 300 x 5 + 100 x 3 3,782,244, 0 errors; the
+  committed pins move a narrow action+query tsc from 96,767 to 152,321.
 last_updated: 2026-10-01

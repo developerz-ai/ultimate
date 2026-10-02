@@ -159,6 +159,55 @@ describe('unit · reading a part', () => {
     );
   });
 
+  test('a refusal and a gap are spelled for the entry that raised them', () => {
+    // `x verify` answers X_NOT_IN_APP at the framework root, so its own entry passes its spelling.
+    expect(thrownBy(() => parsePart('a.json', '')).fix).toStartWith('x verify --only unit --json');
+    const atRoot = thrownBy(() => parsePart('a.json', '', 'bun run verify'));
+    expect(atRoot.code).toBe('X_VERIFY_MERGE_INPUT');
+    expect(atRoot.fix).toStartWith('bun run verify --only unit --json > part.json');
+    expect(atRoot.cause).toStartWith('bun run verify merge: a.json');
+    const merged = mergeParts([part('a.json', [whole('lint')])], undefined, DECLARED, {
+      command: 'bun run verify',
+    });
+    const gaps = merged.steps?.flatMap((step) => step.findings) ?? [];
+    expect(gaps.length).toBeGreaterThan(0);
+    for (const gap of gaps) expect(gap.fix).toStartWith('bun run verify merge parts/*.json');
+    const inApp = mergeParts([part('a.json', [whole('lint')])], undefined, DECLARED);
+    expect(inApp.steps?.[1]?.findings[0]?.fix).toStartWith('x verify merge parts/*.json');
+  });
+
+  test('coverage a part carries is decoded, and anything that is not a map is refused', () => {
+    const doc = (coverage: unknown): string =>
+      JSON.stringify({ command: 'verify', steps: [], data: { coverage } });
+    const read = parsePart(
+      'p.json',
+      doc({ unit: { facts: { 'a.ts': { h: '1-2', m: '4', f: [2, 1] } } } }),
+    );
+    expect(read.coverage).toEqual({
+      unit: { 'a.ts': { hit: [1, 2], miss: [4], funcsFound: 2, funcsHit: 1 } },
+    });
+    expect(parsePart('p.json', doc(undefined)).coverage).toBeUndefined();
+    // A part that judged its own floor carries its numbers — nothing to fold, nothing refused.
+    expect(parsePart('p.json', doc({ unit: { lines: 96, funcs: 95, files: 3 } })).coverage).toBe(
+      undefined,
+    );
+    const bad = thrownBy(() => parsePart('p.json', doc({ unit: { facts: { 'a.ts': 7 } } })));
+    expect(bad.code).toBe('X_VERIFY_MERGE_INPUT');
+    expect(bad.cause).toContain('carries coverage for "unit"');
+  });
+
+  test('errors outside any test are summed across shards with the counts', () => {
+    const shard = (index: number, errors?: number) => ({
+      ...unitShard(index, 2, 3),
+      tests: { ran: 3, skipped: 0, ...(errors === undefined ? {} : { errors }) },
+    });
+    const sum = (a?: number, b?: number) =>
+      mergeParts([part('a', [shard(1, a)]), part('b', [shard(2, b)])], undefined, ['unit'])
+        .steps?.[0]?.tests;
+    expect(sum(1, 2)).toEqual({ ran: 6, skipped: 0, errors: 3 });
+    expect(sum()).toEqual({ ran: 6, skipped: 0 });
+  });
+
   test('the LAST line is the document — bin/check --json prints the build first', () => {
     const doc = renderJson({
       ok: true,

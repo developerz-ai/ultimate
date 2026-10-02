@@ -42,7 +42,7 @@
   background: t.role('bg-soft');
   // The tone carries the meaning: a pending upload is neutral, an orphan is the one the sweep
   // collected. Selected by data attribute so the component never picks a colour.
-  border-inline-start: 3px solid t.role('line');
+  border-inline-start: t.stroke(heavy) solid t.role('line');
 
   dt {
     font-size: t.text('xs');
@@ -67,49 +67,6 @@
   }
 }
 
-.schedule {
-  display: grid;
-  gap: t.space(3);
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.entry {
-  display: grid;
-  grid-template-columns: minmax(8rem, auto) auto auto;
-  align-items: baseline;
-  gap: t.space(2) t.space(3);
-  padding-block-end: t.space(3);
-  border-block-end: 1px solid t.role('line');
-}
-
-.entryName {
-  font-weight: t.weight('semibold');
-  color: t.role('fg-strong');
-}
-
-.cron {
-  font-family: var(--font-mono);
-  font-size: t.text('sm');
-  padding: t.space(1) t.space(2);
-  border-radius: t.radius('sm');
-  background: t.role('bg-soft');
-  color: t.role('fg');
-}
-
-.zone {
-  font-size: t.text('sm');
-  font-weight: t.weight('medium');
-  color: t.role('accent');
-}
-
-.enqueues {
-  grid-column: 1 / -1;
-  font-size: t.text('sm');
-  color: t.role('fg-muted');
-}
-
 .hint {
   margin: 0;
   font-size: t.text('sm');
@@ -124,7 +81,7 @@
 
   margin: 0;
   font-size: t.text('sm');
-  border-inline-start: 3px solid t.role('danger');
+  border-inline-start: t.stroke(heavy) solid t.role('danger');
   border-radius: t.radius('md');
   background: t.role('bg-soft');
   color: t.role('fg');

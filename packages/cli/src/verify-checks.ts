@@ -15,6 +15,7 @@ import {
 import type { MetaIssue } from '@ultimat3/seo';
 import { validateMeta } from '@ultimat3/seo';
 import { checkAgentsMd } from './app-agents-md';
+import { readAppSources } from './app-boundaries';
 import { envExampleFindings } from './app-env';
 import { appManifest, readAppManifest } from './app-manifest';
 import { OPENAPI_FILE, openApiStaleness } from './app-openapi';
@@ -36,10 +37,12 @@ import { msg } from './messages';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { checkMigrationDrift } from './schema-drift';
+import { checkSchemaDump } from './schema-dump-drift';
 import { scanSiteMeta } from './seo-meta';
 import { quoteArg } from './shell-quote';
 import { readStaticReport } from './static-report';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
+import { roleLoadFindings } from './verify-role-load';
 import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
@@ -90,7 +93,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'boundaries',
-    summary: "surface, layer and package-tier imports, and the app's own guards",
+    summary:
+      "surface, layer and package-tier imports, one browser transport, and the app's own guards",
     // An app's `guards/` rides here rather than becoming a step of its own, for the reason the
     // seam already states: a host adds findings to a step, it can never add, remove, reorder or
     // skip one — so "green" keeps meaning exactly what it meant. This is the step whose host slot
@@ -101,12 +105,18 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // Discovered, not registered: `guardFindings` reads the directory. A guard that had to
     // announce itself is a guard an app can forget to announce, which is the coupling axiom 8's
     // extension model rejects.
-    run: async (ctx) =>
-      fromFindings([
-        ...(await appBoundaryFindings(ctx.root)),
-        ...(await guardFindings(ctx.root)),
+    //
+    // ONE read of the app's surface files for the whole step: the import rules, the transport
+    // rule and every guard are handed the same text. The guards used to walk and read the tree a
+    // second time (`guard-sources.ts`).
+    async run(ctx) {
+      const sources = await readAppSources(ctx.root);
+      return fromFindings([
+        ...(await appBoundaryFindings(ctx.root, sources)),
+        ...(await guardFindings(ctx.root, sources)),
         ...(await hostFindings(ctx, 'boundaries')),
-      ]),
+      ]);
+    },
   },
   {
     name: 'filesize',
@@ -161,7 +171,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'drift',
     summary:
-      'entity declarations vs migrations, every destructive statement declared, and every statement no declaration carries',
+      'entity declarations vs migrations, every destructive statement declared, every statement no declaration carries, and the committed schema dump',
     // Only an app owns migrations; a package monorepo's `packages/db` is the driver, not a schema.
     // Source, not database: the gate runs in CI with nothing listening, and the database half is
     // the post-migrate verification `runMigrations` performs where a connection is already open.
@@ -179,6 +189,10 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         // a squash silently drops. Same directory, same reader, no database — this step's own
         // question, which is why it is not a step of its own.
         ...(await checkUngeneratableMigrations(ctx.root)),
+        // The fourth, and the only one that opens a database — a scratch embedded one it boots
+        // itself, so CI still needs nothing listening: the committed `packages/db/schema/` against
+        // what replaying the migrations produces, and that dump loaded back (`X_SCHEMA_DUMP_DRIFT`).
+        ...(await checkSchemaDump(ctx.root, ctx.env ?? Bun.env)),
       ]),
   },
   {
@@ -328,6 +342,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       const agents = await checkAgentsMd(ctx.root, floor?.agentsMdMaxBytes);
       // The app's load failures, once, here — every other step that loaded it points at this one.
       const app = existsSync(join(ctx.root, APP_CONFIG_FILE));
+      // Started first and awaited last: it is a child process, and it runs beside the rest.
+      const roleLoad = app ? roleLoadFindings(ctx.root, ctx.runner) : Promise.resolve([]);
       const drift = await driftFindings(ctx.root);
       const findings = [
         ...manifestMissingFindings(ctx.root),
@@ -336,6 +352,9 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         ...(existsSync(join(ctx.root, APP_CONFIG_FILE))
           ? await unregisteredJobFindings(ctx.root)
           : []),
+        // What a worker never registers: a declaration beside a component the API index does not
+        // import (`verify-role-load.ts`). The boot checks jobs and tasks only, and only at boot.
+        ...(await roleLoad),
         ...(await envExampleFindings(ctx.root)),
         ...floorProblemFindings(floor),
         ...agents.findings,

@@ -4,61 +4,23 @@
 
 import { actionFiles } from './action';
 import { adminFiles } from './admin';
+import { adminCatalogEntries } from './admin-catalog';
 import { catalogJson } from './catalog-json';
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
+import { sortedImports } from './imports';
 import { jobFiles } from './job';
 import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile, NameSet } from './naming';
-import { names, pascal } from './naming';
+import { names } from './naming';
 import { policyFiles } from './policy';
 import { queryFiles } from './query';
 import { resourceCreateFiles } from './resource-create';
 import { formIslandFiles } from './resource-form-island';
+import { resourcePageFiles } from './resource-page';
+import { serviceFiles } from './resource-service';
 import { routeDir, routeFiles } from './route';
-
-const serviceSource = (
-  feature: NameSet,
-): string => `// Business logic for ${feature.pluralKebab}. Knows nothing about HTTP or requests, so a job and an
-// action can both call it. Takes values, not a request.
-
-import type { ${feature.pascal} } from './entity';
-import { ${feature.pascal}NotFoundError } from './errors';
-import * as repo from './repo';
-
-/** Derived from the row, never restated: a new column reaches this input without an edit here. */
-export type Create${feature.pascal}Input = Omit<${feature.pascal}, 'id' | 'createdAt'>;
-
-/** The row, aliased once, so every signature below reads at one width whatever the feature is
- * called — a generated file the app's own formatter rewrites is a red \`lint\` over code nobody
- * typed. */
-type Row = ${feature.pascal};
-
-export async function create(input: Create${feature.pascal}Input): Promise<Row> {
-  return repo.insert(input);
-}
-
-export async function require${feature.pascal}(id: string): Promise<Row> {
-  const row = await repo.byId(id);
-  if (row === undefined) throw new ${feature.pascal}NotFoundError({ id });
-  return row;
-}
-`;
-
-const serviceTest = (
-  feature: NameSet,
-): string => `// The ${feature.kebab} feature's failure, pinned: a code an agent can match on, a cause naming
-// the row, and a fix that is an instruction. A bare Error would satisfy none of the three.
-import { expect, unitTest } from '@ultimat3/testing';
-import { ${feature.pascal}NotFoundError } from './errors';
-
-unitTest('${feature.pascal}NotFoundError carries a code, a cause and a fix', () => {
-  const error = new ${feature.pascal}NotFoundError({ id: 'missing' });
-  expect(error).toBeUltimateError('X_${feature.kebab.toUpperCase().split('-').join('_')}_NOT_FOUND');
-  expect(error.cause).toContain('missing');
-  expect(error.fix.length).toBeGreaterThan(0);
-});
-`;
+import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
 
 /**
  * The generated component reaches strings through the APP's catalog module — the one that calls
@@ -144,18 +106,58 @@ export function ${feature.pascal}Card(props: ${feature.pascal}CardProps) {${tran
 }
 `;
 
-// `admin.<feature>.title` is always here, `--admin` or not: `defineAdmin()` resolves that key the
-// moment anyone writes the override, and a missing key renders ⟦key⟧ and fails the i18n gate,
-// while an unused key is only ever reported (`auditCatalogs` fails on `missing`, never `unused`).
-const catalogSource = (feature: NameSet): string =>
+const uiTest = (
+  feature: NameSet,
+  module: string | undefined,
+): string => `// The ${feature.kebab} list and card, rendered the way a page renders them. What a typecheck
+// cannot see is which branch a prop picks, and whether the words on screen are the catalog's.
+${sortedImports([catalogImport(module), "import { expect, renderView, unitTest } from '@ultimat3/testing';"])}
+import type { ${feature.pascal} } from './entity';
+import { ${feature.pascal}List } from './ui';
+import { ${feature.pascal}Card } from './ui/${feature.kebab}-card';
+
+const titled = (title: string): ${feature.pascal} => ({
+  id: '00000000-0000-4000-8000-000000000001',
+  orgId: '00000000-0000-4000-8000-000000000002',
+  title,
+  price: { minor: 1200, currency: 'USD' },
+  createdAt: new Date(0),
+});
+
+unitTest('the list renders one item per row, in the order it was given', async () => {
+  const rows = [titled('first'), titled('second')];
+  const view = await renderView(${feature.pascal}List, { rows });
+  expect(view.html.match(/<li\\b/g)).toHaveLength(2);
+  expect(view.text).toBe('first second');
+});
+
+unitTest('with no rows the list says so, in one item', async () => {${module === undefined ? '' : '\n  const t = useT();'}
+  const view = await renderView(${feature.pascal}List, { rows: [] });
+  expect(view.html.match(/<li\\b/g)).toHaveLength(1);
+  expect(view.text).toBe(t('app.${feature.kebab}.empty'));
+});
+
+unitTest('the card renders the row it is given, under its own heading', async () => {${module === undefined ? '' : '\n  const t = useT();'}
+  const view = await renderView(${feature.pascal}Card, { row: titled('on a card') });
+  expect(view.html).toContain('<h3>on a card</h3>');
+  expect(view.text).toContain(t('app.${feature.kebab}.updated'));
+});
+`;
+
+// The admin's keys are always here, `--admin` or not: the entity is an admin screen the moment it
+// joins the handle, and that screen reads `admin.<table>.title` and a label per column
+// (`admin-catalog.ts`). A missing key renders ⟦key⟧ in the list's own header.
+const catalogSource = (feature: NameSet, admin: Readonly<Record<string, string>>): string =>
   catalogJson({
     [`app.${feature.kebab}.empty`]: `No ${feature.pluralKebab} yet.`,
     [`app.${feature.kebab}.updated`]: 'Last updated',
     [`app.${feature.kebab}.titleLabel`]: 'Title',
+    [`app.${feature.kebab}.priceLabel`]: 'Price',
+    [`app.${feature.kebab}.new`]: `New ${feature.kebab.replaceAll('-', ' ')}`,
     [`app.${feature.kebab}.submit`]: 'Save',
     [`app.${feature.kebab}.saved`]: 'Saved',
     [`app.${feature.kebab}.retry`]: 'Try again',
-    [`admin.${feature.kebab}.title`]: pascal(feature.plural),
+    ...admin,
   });
 
 export interface ResourceOptions extends FeatureTarget {
@@ -168,15 +170,28 @@ export interface ResourceOptions extends FeatureTarget {
    * `resolveCatalogModule`. Absent only for an app that ships no such package.
    */
   readonly catalogModule?: string;
+  /**
+   * The app has `apps/web/shared/shell.tsx`, the frame `x new` writes, for the page to sit in —
+   * read off the disk by `x g`. Absent is no: a generation imports only what it writes or what the
+   * caller said is there (`slice-foundation.test.ts`), and the page is then its own `<main>`.
+   */
+  readonly shell?: boolean;
 }
 
 export function resourceFiles(rawName: string, target: ResourceOptions): readonly GeneratedFile[] {
   const feature = names(rawName);
-  const slice: FeatureTarget = { surfaceDir: target.surfaceDir, feature: feature.kebab };
+  // `dbModule` travels with the slice: every generator composed below may write the slice's
+  // `repo.ts`, and one that lost the app's name would import the handle from a placeholder.
+  const slice: FeatureTarget = {
+    surfaceDir: target.surfaceDir,
+    feature: feature.kebab,
+    ...(target.dbModule === undefined ? {} : { dbModule: target.dbModule }),
+  };
   const dir = `${slice.surfaceDir}/${slice.feature}`;
   // The page this same call writes, from the function that decides where a route goes — the island
   // specifier is resolved against it, so re-deriving the path here would be two answers to one
   // question and only one of them reaches `routeFiles`.
+  const dbModule = target.dbModule ?? PLACEHOLDER_DB_MODULE;
   const pageDir = routeDir('app', feature.pluralKebab);
   const locales = resolveLocales(target.locales);
   const entity = entityFiles(rawName, slice);
@@ -187,13 +202,18 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
     ...entity,
     ...policyFiles(rawName, slice),
     // Not `x g action`'s body: a resource's create INSERTS (`resource-create.ts`).
-    ...resourceCreateFiles(rawName, dir),
+    ...resourceCreateFiles(rawName, dir, dbModule),
+    // `sliceEntity` is this run's own, so the action's test stores a row and runs its handler
+    // against the repo beside it.
     ...actionFiles(`archive-${feature.kebab}`, { ...slice, sliceEntity }),
-    ...queryFiles(`${feature.camel}List`, { ...slice, live: true }),
+    // And the read's test stores rows through that same repo, then reads them back in order.
+    ...queryFiles(`${feature.camel}List`, { ...slice, live: true, sliceEntity }),
     ...jobFiles(`reindex-${feature.kebab}`, { ...slice, sliceEntity }),
-    { path: `${dir}/service.ts`, contents: serviceSource(feature) },
-    { path: `${dir}/service.test.ts`, contents: serviceTest(feature) },
+    ...serviceFiles(feature, dir, dbModule),
     { path: `${dir}/ui.tsx`, contents: uiSource(feature, target.catalogModule) },
+    // Beside the two components it renders: a generated module with no test is uncovered source
+    // in an app whose gate holds a coverage floor.
+    { path: `${dir}/ui.test.ts`, contents: uiTest(feature, target.catalogModule) },
     { path: `${dir}/ui.module.scss`, contents: uiStyle() },
     {
       path: `${dir}/ui/${feature.kebab}-card.tsx`,
@@ -202,19 +222,24 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
     ...formIslandFiles(feature, dir, pageDir),
     ...locales.map((locale) => ({
       path: catalogPath(locale),
-      contents: catalogSource(feature),
+      contents: catalogSource(feature, adminCatalogEntries(rawName, slice)),
       merge: 'json' as const,
     })),
     // Always an app route: a slice ships a live query, a form island and actions, and `generate()`
-    // refuses `--surface site` for a resource rather than emit them behind a 0kb budget.
-    //
-    // `catalogModule` travels with it. It did not, so the page a RESOURCE writes imported `t` from
-    // `@ultimat3/i18n` while the components beside it imported `useT` from the app's own catalog
-    // module — one command, two idioms, and the framework-import one is issue #249's: it renders
-    // strings while depending on nothing that registers them.
+    // refuses `--surface site` for a resource. The stylesheet, the offline e2e test and the
+    // title/description keys are `x g route`'s; the page and its unit test are the resource's
+    // own (`resource-page.ts`) — they read the rows and mount the form, which a route cannot.
     ...routeFiles(feature.pluralKebab, {
       surface: 'app',
       locales,
+      ...(target.catalogModule === undefined ? {} : { catalogModule: target.catalogModule }),
+    }).filter((file) => !/\/page\.(tsx|test\.ts)$/.test(file.path)),
+    ...resourcePageFiles({
+      feature,
+      dir,
+      pageDir,
+      shell: target.shell === true,
+      dbModule,
       ...(target.catalogModule === undefined ? {} : { catalogModule: target.catalogModule }),
     }),
     ...(target.admin === true ? adminFiles(rawName, slice) : []),

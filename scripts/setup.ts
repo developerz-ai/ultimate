@@ -87,6 +87,17 @@ if (findings.length === 0) {
   lines.push(hooks.ok ? '  git hooks installed' : '  git hooks skipped (lefthook not available)');
 }
 
+// Not started here: nothing in the default run needs a server, and a setup that boots five
+// containers is one nobody re-runs after a pull. Named, so the live suites are one paste away
+// instead of a skip nobody notices.
+if (findings.length === 0) {
+  lines.push(
+    '  live suites skip without services — to run them, in RAM:',
+    '    docker compose -f docker/docker-compose.test.yml up -d --wait',
+    '    set -a; . docker/test-services.env; set +a',
+  );
+}
+
 report(
   {
     ok: findings.length === 0,

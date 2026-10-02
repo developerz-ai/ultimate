@@ -1,6 +1,6 @@
 # @postly/db
 
-Six entities, their migrations, the cache-tag graph, and the deterministic dev seed.
+Eight entities, their migrations, the cache-tag graph, and the deterministic dev seed.
 
 **Schema only.** No business logic, no policy decisions, no HTTP. An entity declares columns,
 indexes, and invariants; anything that decides *whether* something may happen lives in
@@ -17,15 +17,19 @@ indexes, and invariants; anything that decides *whether* something may happen li
 | `comments` | `orgId()` | cascades with its post |
 | `likes` | `orgId()` | composite key `(postId, memberId)` — the uniqueness *is* the idempotency of `likePost` |
 | `plans` | none (catalog) | `money()` price, one row per `(code, currency)` |
+| `connections` | `orgId()` | `credential` and `exit` are `.sealed()`: ciphertext at rest, not enumerable on a row, never in a view |
+| `runs` | `orgId()` | one row per run, keyed by the job's run id; `status` is projected from its last phase event, `code` is a failed run's `X_*` |
+| `run_events` | `orgId()` | one row per phase of a run, referencing `runs`; `seq` from 1 (a CHECK), `(runId, seq)` unique; `usage` (`json(RunUsage)`) on `usage` rows only |
 
 ## Public API
 
 | Export | Purpose |
 |---|---|
 | `db` | the typed handle a `repo.ts` or a `query`'s `sql` uses |
-| `orgs` `members` `posts` `comments` `likes` `plans` | entity declarations |
+| `orgs` `members` `posts` `comments` `likes` `plans` `connections` `runs` `runEvents` | entity declarations |
+| `RUN_STATUSES` `LIVE_RUN_STATUSES` `RUN_EVENT_KINDS` `RunUsage` | a run's vocabulary: its statuses, the two a cancel applies to, its event kinds, the usage schema |
 | `tag` | the cache-tag graph: `tag.post`, `tag.post.id(x)`, `tag.feed` |
-| `type Org` `Member` `Post` `Comment` `Like` `PlanRow` | inferred row types |
+| `type Org` `Member` `Post` `Comment` `Like` `PlanRow` `Connection` `Run` `RunEvent` | inferred row types |
 | `dev` (from `@postly/db/seeds/dev`) | the deterministic dev fixture graph |
 
 ## Invariants are one declaration

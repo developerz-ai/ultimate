@@ -43,17 +43,27 @@ import * as postQueries from '../app/posts/live';
 // declaration instead of living in a parallel registry with a parallel authz path.
 import * as postMutators from '../app/posts/mutator';
 import '../app/posts/service';
+import * as runActions from '../app/runs/actions';
+// `scrape()` is a job factory, so the sync registers in the `jobs` list like any other job. It
+// names itself (`runs.sync`): a scrape's name is a durable queue key, never an export name.
+import * as runJobs from '../app/runs/jobs';
+import { RUN_KEY_SCOPES, resolveRunKey } from '../app/runs/keys';
+import * as runQueries from '../app/runs/live';
+import '../app/runs/service';
 import * as settingsActions from '../app/settings/actions';
 // A mutator IS an action, exactly like `postMutators` above.
 import * as settingsMutators from '../app/settings/mutator';
 import * as scheduledTasks from './tasks';
 
 export const api = defineApi({
-  actions: [postActions, orgActions, settingsActions, contactActions, authActions],
+  actions: [postActions, orgActions, settingsActions, contactActions, authActions, runActions],
   mutators: [postMutators, settingsMutators],
-  queries: [postQueries],
-  jobs: [postJobs, postBackfills, orgJobs, digestJobs, contactJobs],
+  queries: [postQueries, runQueries],
+  jobs: [postJobs, postBackfills, orgJobs, digestJobs, contactJobs, runJobs],
   tasks: [scheduledTasks],
+  // A second door for machine callers, onto the run actions a browser already calls: same
+  // handler, same policy, a bearer key instead of a session. `/api/runs/start` is `/v1/runs/start`.
+  http: { mounts: [{ prefix: '/v1', scopes: RUN_KEY_SCOPES, resolveToken: resolveRunKey }] },
 });
 
 /** What the typed client is shaped from — imported as a TYPE only by `shared/client.ts`. */

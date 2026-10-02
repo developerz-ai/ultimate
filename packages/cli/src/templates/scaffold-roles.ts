@@ -6,17 +6,33 @@
 import type { GeneratedFile } from './naming';
 import { wrapList } from './wrap';
 
-/**
- * A role's grants as Biome prints them. The example slice's \`post:read\`/\`post:write\` ride along
- * with it: \`x g resource post\` would have granted them, and the scaffold writes that result.
- */
-const grants = (base: string, example: string | undefined): string =>
+/** A role's grants as Biome prints them: one line when it fits, one grant per line when not. */
+const grants = (list: readonly string[]): string =>
   wrapList(
     '    ',
     'grants: [',
-    [base, ...(example === undefined ? [] : [example])].map((grant) => `'${grant}'`),
+    list.map((grant) => `'${grant}'`),
     '],',
   );
+
+/** The three gates `@ultimat3/admin` asks before any per-table one — `ADMIN_OPERATION_RULES`. */
+const ADMIN_GATES = ['admin:read', 'admin:write', 'admin:destroy'] as const;
+
+/**
+ * What the two built-in screens with no table behind them ask beside `admin:read`: `/admin/jobs`
+ * and `/admin/audit`. Held by the role that runs the admin, or both links are a 403.
+ */
+const ADMIN_SCREENS = ['job:read', 'audit:read'] as const;
+
+/**
+ * What the admin asks for one table on the handle: `<table>:read|write|delete`. The example slice
+ * adds `posts`, so the scaffold writes the grants `x g resource post` would have — the same three
+ * `generate-grants.ts` adds for every entity generated later.
+ */
+const tableGrants = (table: string): readonly string[] =>
+  ['read', 'write', 'delete'].map((verb) => `${table}:${verb}`);
+
+const EXAMPLE_TABLE = 'posts';
 
 const rolesSource = (
   example: boolean,
@@ -33,6 +49,12 @@ const rolesSource = (
 // \`x g policy <feature>\` declares \`<feature>:read\` and \`<feature>:write\` and grants them below —
 // read to member, write to admin. A permission no role holds is one no actor can ever exercise,
 // and \`x verify\`'s policy step refuses it (X_PERMISSION_UNGRANTED).
+//
+// The admin at /admin asks TWO permissions per operation: its own gate (\`admin:read\` to look,
+// \`admin:write\` to create or edit, \`admin:destroy\` to delete) and the table's
+// (\`<table>:read|write|delete\`); its jobs and audit screens ask \`job:read\` and \`audit:read\`. \`x g entity\` and \`x g resource\` declare and grant a new table's
+// three to \`admin\` here. A view-only operator is a role holding \`admin:read\` and each
+// \`<table>:read\` and nothing else: every write is refused by the same decision that hid its button.
 
 import { definePermissions, defineRoles } from '@ultimat3/policy';
 
@@ -42,16 +64,30 @@ import { definePermissions, defineRoles } from '@ultimat3/policy';
 // in silence while nothing declared it, so every scaffolded app answered HTTP 500 on /dashboard
 // and /admin from its first \`x dev\`, under a green gate. A permission a role grants and a
 // permission a route requires both belong here.
-export const appPermissions = definePermissions(['admin:read', 'dashboard:read']);
+${wrapList(
+  '',
+  'export const appPermissions = definePermissions([',
+  [
+    ...ADMIN_GATES,
+    ...ADMIN_SCREENS,
+    'dashboard:read',
+    ...(example ? tableGrants(EXAMPLE_TABLE) : []),
+  ].map((permission) => `'${permission}'`),
+  ']);',
+)}
 
 export const roles = defineRoles({
   member: {
     description: 'Signed in. Reads the app surface.',
-${grants('dashboard:read', example ? 'post:read' : undefined)}
+${grants(['dashboard:read', ...(example ? ['post:read'] : [])])}
   },
   admin: {
     description: 'Runs the app: the /admin surface, plus everything a member may do.',
-${grants('admin:read', example ? 'post:write' : undefined)}
+${grants([
+  ...ADMIN_GATES,
+  ...ADMIN_SCREENS,
+  ...(example ? ['post:write', ...tableGrants(EXAMPLE_TABLE)] : []),
+])}
     inherits: ['member'],
   },
 });
@@ -83,6 +119,17 @@ unitTest('admin inherits every member grant and adds its own', () => {
   expect(member).not.toContain('admin:read');
   expect(admin).toContain('admin:read');
   for (const permission of member) expect(admin).toContain(permission);
+});
+
+// \`admin:read\` alone looks; a write needs \`admin:write\` and a delete \`admin:destroy\`. The admin
+// role holds all three, and a member none — so "view-only" is a role, never a mode.
+unitTest('the admin role holds all three admin gates, and a member none of them', () => {
+  const admin = expandRoles(['admin'], roles);
+  const member = expandRoles(['member'], roles);
+  for (const gate of ['admin:read', 'admin:write', 'admin:destroy']) {
+    expect(admin).toContain(gate);
+    expect(member).not.toContain(gate);
+  }
 });
 
 unitTest('a role nobody declared grants nothing', () => {

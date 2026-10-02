@@ -80,6 +80,28 @@ describe('unit · a permission a role grants must be one the app declared', () =
     defineRoles({ member: { grants: ['dashboard:read'] } });
     expect(permissionFindings(ROOT)).toEqual([]);
   });
+
+  // A grant is matched by `grantMatches`, which honours `<resource>:*` and `*` — so a wildcard is
+  // a real grant whenever it covers a declared permission, and a typo'd resource is still caught.
+  test('a wildcard over a declared resource is a grant, as `can()` reads it', () => {
+    definePermissions(['orgs:read', 'orgs:write', 'posts:read']);
+    defineRoles({ owner: { grants: ['orgs:*'] }, root: { grants: ['*'] } });
+    expect(permissionFindings(ROOT)).toEqual([]);
+  });
+
+  test('a wildcard over a resource nothing declares is X_PERMISSION_UNKNOWN', () => {
+    definePermissions(['orgs:read']);
+    defineRoles({ owner: { grants: ['org:*'] } });
+    const findings = permissionFindings(ROOT);
+    expect(codesOf(findings)).toEqual(['X_PERMISSION_UNKNOWN']);
+    expect(findings[0]?.cause).toContain('org:*');
+  });
+
+  test('a REQUIRED wildcard is still refused: can() asserts the exact name', () => {
+    definePermissions(['orgs:read']);
+    registerRoute({ file: 'apps/web/app/orgs/page.tsx', config: routeConfig('orgs:*') });
+    expect(codesOf(permissionFindings(ROOT))).toEqual(['X_PERMISSION_UNKNOWN']);
+  });
 });
 
 describe('unit · a permission a route requires must be one the app declared', () => {
@@ -137,6 +159,31 @@ describe('unit · the step reports one finding per place, and carries the load',
     });
     const findings = await policyFindings(ROOT, async () => ({ findings: [] }));
     expect(findings).toHaveLength(2);
+  });
+
+  test('an ungranted requirement names the file the role map is DECLARED in, wherever that is', async () => {
+    definePermissions(['posts:read', 'posts:write']);
+    // The reference app's layout, not the scaffold's: its roles live in `shared/policies.ts`.
+    restoreRoles(
+      { member: { grants: ['posts:read'] } },
+      { member: `at defineRoles (${ROOT}/shared/policies.ts:12:3)` },
+    );
+    registerRoute({ file: 'apps/web/app/posts/new/page.tsx', config: routeConfig('posts:write') });
+    const [finding] = await policyFindings(ROOT, async () => ({ findings: [] }));
+    expect(finding?.code).toBe('X_PERMISSION_UNGRANTED');
+    expect(finding?.at).toBe('shared/policies.ts');
+    expect(finding?.fix).toContain(
+      "add 'posts:write' to the grants of a role in shared/policies.ts",
+    );
+  });
+
+  test('a role map declared where no file can be named is not guessed at', async () => {
+    definePermissions(['posts:read', 'posts:write']);
+    restoreRoles({ member: { grants: ['posts:read'] } }, {});
+    registerRoute({ file: 'apps/web/app/posts/new/page.tsx', config: routeConfig('posts:write') });
+    const [finding] = await policyFindings(ROOT, async () => ({ findings: [] }));
+    expect(finding?.at).toBeUndefined();
+    expect(finding?.fix).toContain('the module that calls defineRoles');
   });
 
   test("the loader's own findings ride along only when something is unknown", async () => {
