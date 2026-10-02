@@ -33,15 +33,20 @@ development key in `development` and `test` only. `objects()` hands back a COPY 
 object's bytes by key, for the assertion a test makes about the bucket itself.
 
 ```ts
+import { afterEach, beforeEach } from 'bun:test';
 import { defineStorage, disk, memoryDriver, resetStorage } from '@ultimat3/storage';
 
-const sessions = memoryDriver();
-defineStorage({ disks: { sessions } });
+// A fresh driver per test: `resetStorage()` forgets the REGISTRY, never a driver's objects, so a
+// driver held across tests carries every earlier test's writes.
+let sessions = memoryDriver();
+beforeEach(() => {
+  sessions = memoryDriver();
+  defineStorage({ disks: { sessions } });
+});
+afterEach(() => resetStorage());
 
 await disk('sessions').put('org/o1/session.json', new TextEncoder().encode('{"sealed":"x1.…"}'));
 const stored = [...sessions.objects().values()].map((bytes) => new TextDecoder().decode(bytes));
-
-resetStorage(); // afterEach
 ```
 
 Server-side only, like both other drivers: nothing an island imports reaches it.

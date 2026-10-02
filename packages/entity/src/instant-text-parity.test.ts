@@ -58,6 +58,59 @@ describe('a timestamptz compared against ISO text, as Postgres parses it', () =>
     expect(instantMicros('2026-01-01T00:00:03.5Z')).toBe(micros + 500_000n);
   });
 
+  // Every expectation below is what Postgres 17 answered for `'<text>'::timestamptz`, 2026-10-01.
+  test('a fraction past six digits is ROUNDED to the microsecond, carrying into the second', () => {
+    const micros = BigInt(at(3).getTime()) * 1000n;
+    expect(instantMicros('2026-01-01T00:00:03.0000009Z')).toBe(micros + 1n);
+    expect(instantMicros('2026-01-01T00:00:03.0000015Z')).toBe(micros + 2n);
+    // Postgres rounds the DOUBLE `strtod` reads, and 0.0000005 is a hair under the half.
+    expect(instantMicros('2026-01-01T00:00:03.0000005Z')).toBe(micros);
+    expect(instantMicros('2026-01-01T00:00:02.9999996Z')).toBe(micros);
+    expect(instantMicros('2026-12-31T23:59:59.9999995Z')).toBe(
+      BigInt(Date.UTC(2027, 0, 1)) * 1000n,
+    );
+  });
+
+  test('an offset of sixteen hours or more, or of sixty minutes, is no instant', () => {
+    const midnight = BigInt(Date.UTC(2026, 0, 1)) * 1000n;
+    expect(instantMicros('2026-01-01T00:00:00+15:59')).toBe(midnight - 959n * 60_000_000n);
+    expect(instantMicros('2026-01-01T00:00:00-15:59')).toBe(midnight + 959n * 60_000_000n);
+    expect(instantMicros('2026-01-01T00:00:00+16:00')).toBeUndefined();
+    expect(instantMicros('2026-01-01T00:00:00-16')).toBeUndefined();
+    expect(instantMicros('2026-01-01T00:00:00+00:60')).toBeUndefined();
+    expect(instantMicros('2026-01-01T00:00:00+0260')).toBeUndefined();
+  });
+
+  test('24:00:00 is the next midnight and :60 the next minute; nothing past the day is', () => {
+    const day = (d: number): bigint => BigInt(Date.UTC(2026, 0, d)) * 1000n;
+    expect(instantMicros('2026-01-01T24:00:00Z')).toBe(day(2));
+    expect(instantMicros('2026-01-01T24:00:00.0000004Z')).toBe(day(2));
+    expect(instantMicros('2026-01-01T23:59:60Z')).toBe(day(2));
+    expect(instantMicros('2026-02-28T24:00:00Z')).toBe(BigInt(Date.UTC(2026, 2, 1)) * 1000n);
+    expect(instantMicros('2026-12-31T24:00:00+02:00')).toBe(
+      BigInt(Date.UTC(2026, 11, 31, 22)) * 1000n,
+    );
+    expect(instantMicros('2026-01-01T12:30:60.5Z')).toBe(
+      BigInt(Date.UTC(2026, 0, 1, 12, 31)) * 1000n + 500_000n,
+    );
+    expect(instantMicros('2026-01-01T00:00:60.9999996Z')).toBe(
+      BigInt(Date.UTC(2026, 0, 1, 0, 1, 1)) * 1000n,
+    );
+    for (const past of [
+      '2026-01-01T24:00:00.000001Z',
+      '2026-01-01T24:00:01Z',
+      '2026-01-01T24:00:60Z',
+      '2026-01-01T23:59:60.5Z',
+      '2026-01-01T23:59:60.9999996Z',
+      '2026-01-01T23:60:00Z',
+      '2026-01-01T25:00:00Z',
+      '2026-01-01T12:00:61Z',
+      '2026-02-29T00:00:00Z',
+    ]) {
+      expect(instantMicros(past)).toBeUndefined();
+    }
+  });
+
   test('a text with no zone, or that is no instant, is not guessed at', () => {
     // Postgres reads a zoneless text in the SESSION's zone, which this process cannot know.
     expect(instantMicros('2026-01-01T00:00:03')).toBeUndefined();

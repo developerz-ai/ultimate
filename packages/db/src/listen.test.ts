@@ -69,7 +69,8 @@ describe('unit · the LISTEN seam', () => {
     const client = createPostgresClient({ url: 'postgres://app@127.0.0.1:5432/t' });
     for (const channel of ['', 'X_Jobs', 'x-jobs', 'x jobs', '"x"; drop table x', 'a'.repeat(64)]) {
       const error = await caught(client.listen(channel, () => undefined));
-      expect(error.code).toBe('X_DB_UNAVAILABLE');
+      // The caller's argument, spliced unquoted into `LISTEN`: never "the database is down".
+      expect(error.code).toBe('X_SQL_UNSAFE');
       expect(error.fix).toContain('client.listen(');
     }
     expect(fake.channels).toEqual([]);

@@ -2,9 +2,14 @@
 // resolves to, that the name cannot leave `contrib/`, and that a boot naming none is unchanged.
 
 import { describe, expect, test } from 'bun:test';
+import { DbError } from './errors';
 import { loadPgliteDriver, type PgliteDriver } from './pglite';
 import { linkPgliteExtensions, pgliteExtensionExport } from './pglite-extensions';
 import { PGLITE_PACKAGE } from './pglite-package';
+
+/** What Bun's `import()` rejects with for a path nothing ships — input, not a verdict. */
+const notShipped = (): Promise<never> =>
+  Promise.reject(Object.assign(new Error('Cannot find module'), { code: 'ERR_MODULE_NOT_FOUND' }));
 
 const driver: PgliteDriver = {
   query: async () => ({ rows: [] }),
@@ -66,7 +71,7 @@ describe('loadPgliteDriver · extensions', () => {
     await loadPgliteDriver({
       load: async () => recordingModule(seen),
       extensions: ['postgis', '../../evil'],
-      loadExtension: () => Promise.reject(new Error('Cannot find module')),
+      loadExtension: notShipped,
     });
     expect(seen[0]).not.toHaveProperty('extensions');
   });
@@ -93,10 +98,7 @@ describe('linkPgliteExtensions', () => {
     const asked: string[] = [];
     const load = (specifier: string): Promise<unknown> => {
       asked.push(specifier);
-      // A rejection, as `import()` of a path nothing ships answers — input, not a verdict.
-      return Object.hasOwn(bundles, specifier)
-        ? Promise.resolve(bundles[specifier])
-        : Promise.reject(new Error('Cannot find module'));
+      return Object.hasOwn(bundles, specifier) ? Promise.resolve(bundles[specifier]) : notShipped();
     };
     return { asked, load };
   };
@@ -119,6 +121,21 @@ describe('linkPgliteExtensions', () => {
       missing: [],
     });
     expect(asked).toEqual([`${PGLITE_PACKAGE}/contrib/vector`, `${PGLITE_PACKAGE}/vector`]);
+  });
+
+  test('an installed bundle that fails to evaluate is that failure, never `missing`', async () => {
+    const broken = (): Promise<never> =>
+      Promise.reject(new SyntaxError('Unexpected token in contrib/citext.js'));
+    const refusal = await linkPgliteExtensions(['citext'], broken).then(
+      () => expect.unreachable('a bundle that throws must not read as absent'),
+      (error: unknown) => error,
+    );
+    expect(refusal).toBeInstanceOf(DbError);
+    const error = refusal as DbError;
+    expect(error.code).toBe('X_DB_UNAVAILABLE');
+    expect(error.cause).toContain('citext');
+    expect(error.cause).toContain('Unexpected token in contrib/citext.js');
+    expect(error.fix).toStartWith('bun install --force');
   });
 
   test('plpgsql is compiled in: never loaded, never missing', async () => {

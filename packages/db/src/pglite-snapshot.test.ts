@@ -4,8 +4,8 @@
 // so no test here pays for the `initdb` the cache exists to skip.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-// why: Bun has no temp-directory API, no directory listing and no recursive remove.
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+// why: Bun has no temp-directory API, no directory listing, no recursive remove and no chmod.
+import { chmodSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir().
 import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
@@ -78,6 +78,16 @@ describe('readSnapshot / writeSnapshot', () => {
       // Deleted, so the next boot rebuilds it instead of re-reading a file that never verifies.
       expect(await Bun.file(file).exists()).toBe(false);
     }
+  });
+
+  test('a file that exists and cannot be read is a miss, never a failed boot', async () => {
+    const key = keyFor('1.0.0');
+    const file = snapshotFile(dir, key);
+    await writeSnapshot(file, key, blobOf('tarball bytes'));
+    forgetSnapshot(key);
+    // `exists()` and the read are two calls: what lands between them is any read failure.
+    chmodSync(file, 0o000);
+    expect(await readSnapshot(file, key)).toBeUndefined();
   });
 
   test('two writers racing leave one whole, verifiable file and no temp file', async () => {
