@@ -272,24 +272,31 @@ select holder from x_job_leases
 `.trim();
 
 /**
- * Both instants are the DATABASE's: `published_at` is `now()` and the expiry is counted from it.
+ * Both instants are the DATABASE's: `published_at` is `statement_timestamp()` and the expiry is
+ * counted from it.
  * They were bound from the publisher's process clock, and every reader compares them with
  * something else — `now()` in `SQL_EVENT_FIND`, a consumer's "after" — so a pod whose clock was
  * off wrote an event that had expired before it was inserted, or that came "before" a question
  * asked a minute earlier. `floor`, never a rounding cast: a stamp is never later than the row.
  *
+ * The STATEMENT's time, never `now()`, in every event statement: `now()` is when the transaction
+ * began, so a bus handed a long transaction's connection stamped an event at its start — expired
+ * on commit, or "before" a question asked while the transaction was open
+ * (`events-pg.live.test.ts`). Outside a transaction the two are the same instant.
+ *
  * $1 id, $2 name, $3 payload, $4 correlation key, $5 ttl (ms).
  */
 export const SQL_EVENT_PUBLISH = `
 insert into x_job_events (id, name, payload, correlation_key, published_at, expires_at)
-values ($1, $2, $3::jsonb, $4, now(), now() + ($5::bigint * interval '1 millisecond'))
+values ($1, $2, $3::jsonb, $4, statement_timestamp(),
+        statement_timestamp() + ($5::bigint * interval '1 millisecond'))
 returning floor(extract(epoch from published_at) * 1000)::bigint as published_at,
           floor(extract(epoch from expires_at)   * 1000)::bigint as expires_at
 `.trim();
 
 /** The bus's clock — the instant a publish issued now would be stamped with. */
 export const SQL_EVENT_NOW = `
-select floor(extract(epoch from now()) * 1000)::bigint as now
+select floor(extract(epoch from statement_timestamp()) * 1000)::bigint as now
 `.trim();
 
 /**
@@ -300,7 +307,7 @@ export const SQL_EVENT_FIND = `
 select payload, (extract(epoch from published_at) * 1000)::bigint as published_at
   from x_job_events
  where name = $1
-   and expires_at > now()
+   and expires_at > statement_timestamp()
    and published_at >= to_timestamp($3 / 1000.0)
    and ($2::text is null or correlation_key = $2)
  order by published_at
@@ -317,7 +324,7 @@ select id, name, payload, correlation_key,
  limit $2
 `.trim();
 
-export const SQL_EVENT_PURGE = `delete from x_job_events where expires_at <= now()`;
+export const SQL_EVENT_PURGE = `delete from x_job_events where expires_at <= statement_timestamp()`;
 
 export const SQL_STEP_GET = `
 select run_id, name, status, output, attempts, error,
