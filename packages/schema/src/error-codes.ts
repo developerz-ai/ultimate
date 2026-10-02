@@ -26,4 +26,5 @@ export const SCHEMA_ERROR_CODES: Readonly<Record<string, SchemaErrorCodeDeclarat
     X_SCHEMA_DEFAULT_UNSHAREABLE: {
       title: 'a schema default cannot be copied per parse',
     },
+    X_SCHEMA_DEFAULT_INVALID: { title: 'a schema default fails its own schema' },
   });

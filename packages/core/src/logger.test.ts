@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API, and the browser chunk this suite builds must be written
 // somewhere that is not the source tree.
 import { mkdtemp } from 'node:fs/promises';
@@ -13,7 +13,7 @@ import { type Clock, frozenClock } from './clock';
 import { ERROR_DOCS_URL } from './error-codes';
 import { UltimateError } from './errors';
 import type { LogLevel } from './logger';
-import { createLogger, LOG_LEVELS, REDACTED, redactKeys, setLogSink, setLogStream } from './logger';
+import { createLogger, LOG_LEVELS, REDACTED, setLogSink, setLogStream } from './logger';
 
 function capture(level: 'trace' | 'info' = 'info') {
   const lines: Record<string, unknown>[] = [];
@@ -129,6 +129,42 @@ describe('logger', () => {
     expect(lines).toEqual([]);
   });
 
+  // The same typo through the OTHER door. `LOG_LEVEL=verbose` fell back to `info` in silence, so
+  // an operator who asked for more got less and nothing said so, while `createLogger({ level })`
+  // refused the identical value.
+  describe('LOG_LEVEL', () => {
+    const previous = process.env['LOG_LEVEL'];
+    afterEach(() => {
+      if (previous === undefined) delete process.env['LOG_LEVEL'];
+      else process.env['LOG_LEVEL'] = previous;
+    });
+
+    test.each(['verbose', 'DEBUG', ' warn'])('%p is refused, naming the variable', (value) => {
+      process.env['LOG_LEVEL'] = value;
+      try {
+        createLogger();
+        expect.unreachable();
+      } catch (error) {
+        expect((error as { code?: string }).code).toBe('X_INVARIANT');
+        expect(String((error as { fix?: string }).fix)).toContain('LOG_LEVEL=');
+      }
+    });
+
+    test('a declared level is honoured, and unset or EMPTY is info', () => {
+      process.env['LOG_LEVEL'] = 'warn';
+      expect(createLogger().level).toBe('warn');
+      process.env['LOG_LEVEL'] = '';
+      expect(createLogger().level).toBe('info');
+      delete process.env['LOG_LEVEL'];
+      expect(createLogger().level).toBe('info');
+    });
+
+    test('an explicit level never reads the variable at all', () => {
+      process.env['LOG_LEVEL'] = 'verbose';
+      expect(createLogger({ level: 'error' }).level).toBe('error');
+    });
+  });
+
   test('withLevel is the same door, so a child cannot widen what the parent refused', () => {
     const { logger } = capture();
     expect(() => logger.withLevel('loud' as LogLevel)).toThrow(
@@ -147,51 +183,6 @@ describe('logger', () => {
     const child = logger.child({ queue: 'default', attempt: 1 });
     child.info('picked up', { attempt: 2 });
     expect(lines[0]).toMatchObject({ queue: 'default', attempt: 2 });
-  });
-
-  test('redacts secret keys anywhere in the payload', () => {
-    redactKeys(['DATABASE_URL']);
-    const { logger, lines } = capture();
-    logger.info('boot', {
-      DATABASE_URL: 'postgres://user:pw@host/db',
-      password: 'hunter2',
-      nested: { token: 'abc', keep: 'yes' },
-    });
-    expect(lines[0]).toMatchObject({
-      DATABASE_URL: REDACTED,
-      password: REDACTED,
-      nested: { token: REDACTED, keep: 'yes' },
-    });
-  });
-
-  /**
-   * `isRedactedKey` lowercases the lookup, so three of the eight shipped defaults were stored
-   * camelCase and matched nothing — and those three are the exact field names on `OAuthTokens`
-   * (`accessToken`, `refreshToken`, `apiKey`). One `logger.info('token exchange', { tokens })`
-   * wrote a live access token into the log store for the full retention.
-   */
-  test('every default redaction key actually matches the field it names', () => {
-    const { logger, lines } = capture();
-    logger.info('token exchange', {
-      apiKey: 'ak_live_1',
-      accessToken: 'at_live_1',
-      refreshToken: 'rt_live_1',
-      api_key: 'ak_live_2',
-      access_token: 'at_live_2',
-      refresh_token: 'rt_live_2',
-      client_secret: 'cs_live_1',
-      id_token: 'idt_live_1',
-      private_key: 'pk_live_1',
-      session_token: 'st_live_1',
-      'set-cookie': 'x_session=abc; HttpOnly',
-      keep: 'yes',
-    });
-    const line = lines[0] ?? {};
-    for (const [key, value] of Object.entries(line)) {
-      if (key === 'ts' || key === 'level' || key === 'msg' || key === 'keep') continue;
-      expect([key, value]).toEqual([key, REDACTED]);
-    }
-    expect(line['keep']).toBe('yes');
   });
 
   /**

@@ -96,6 +96,53 @@ describe('a new code, registered and documented in one edit', () => {
   });
 });
 
+describe('a registry kept as frozen declarations, not titles', () => {
+  // `@ultimat3/schema` is tier 0 and cannot call `registerErrorCodes()`, so its codes are DATA core
+  // reads: `Object.freeze({ X_A: { title } })` in `error-codes.ts`. The planner refused that shape,
+  // so the one package with it had a second, hand-written way to add a code.
+  const withSchema = async (): Promise<string> => {
+    const dir = await fixtureRoot();
+    await mkdir(`${dir}/packages/schema/src`, { recursive: true });
+    await Bun.write(
+      `${dir}/packages/schema/src/error-codes.ts`,
+      Bun.file(`${ROOT}/packages/schema/src/error-codes.ts`),
+    );
+    return dir;
+  };
+  const args = (title: string): string[] => [
+    'X_SCHEMA_PROBE',
+    '--package',
+    'schema',
+    '--title',
+    title,
+    '--cause',
+    'what usually makes it happen',
+    '--fix',
+    'edit the schema the cause names',
+    '--off-socket',
+  ];
+
+  test('schema: the declaration joins the frozen object, the row and the pin land with it', async () => {
+    const dir = await withSchema();
+    await newErrorCode(dir, args('a probe'));
+    const codes = await read(dir, 'packages/schema/src/error-codes.ts');
+    expect(codes).toContain("    X_SCHEMA_PROBE: { title: 'a probe' },\n  });");
+    expect(transpiles(codes)).toBe(true);
+    expect(await read(dir, WIKI_PAGE)).toContain('| `X_SCHEMA_PROBE` | a probe |');
+    expect(await read(dir, STATUS_BACKLOG)).toContain("    'X_SCHEMA_PROBE',\n  ],");
+  });
+
+  test('a title past 100 columns wraps the way Biome writes the entry', async () => {
+    const dir = await withSchema();
+    const title =
+      'a probe whose title is long enough that the one-line entry would not fit the column';
+    await newErrorCode(dir, args(title));
+    expect(await read(dir, 'packages/schema/src/error-codes.ts')).toContain(
+      `    X_SCHEMA_PROBE: {\n      title: '${title}',\n    },\n  });`,
+    );
+  });
+});
+
 describe('a package whose titles are not in the first file the planner looks at', () => {
   // `@ultimat3/core` keeps its REGISTRY in `error-codes.ts` and its titles in
   // `core-error-codes.ts`, closed by `} as const;`. The planner stopped at the registry and

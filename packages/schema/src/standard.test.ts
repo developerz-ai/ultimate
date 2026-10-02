@@ -220,3 +220,26 @@ describe('isStandardSchema', () => {
     );
   });
 });
+
+describe('validate / a thenable is async whatever built it', () => {
+  // A library's own promise class, a cross-realm Promise, a polyfill: none is `instanceof Promise`.
+  const thenable = {
+    // biome-ignore lint/suspicious/noThenProperty: a non-native thenable is the input under test.
+    then: (resolve: (value: StandardResult<number>) => void) => resolve({ value: 1 }),
+  };
+  const schema = {
+    '~standard': { version: 1, vendor: 'fake-async', validate: () => thenable },
+  } as unknown as StandardSchemaV1<number, number>;
+
+  test('validate refuses it instead of answering a result with no value', () => {
+    expect(() => validate(schema, 1)).toThrow(SchemaUnsupportedError);
+  });
+
+  test('parse refuses it instead of returning undefined', () => {
+    expect(() => parse(schema, 1)).toThrow(/X_SCHEMA_UNSUPPORTED/);
+  });
+
+  test('validateAsync still awaits it', async () => {
+    expect(await validateAsync(schema, 1)).toEqual({ value: 1 });
+  });
+});

@@ -27,6 +27,23 @@ export const PRIMITIVE_KINDS = [
 
 export type PrimitiveKind = (typeof PRIMITIVE_KINDS)[number];
 
+/**
+ * The package that ANNOUNCES each kind's registrar — a kind is not a package name. Both `fix:`
+ * lines below spliced `@ultimat3/${kind}`, so a missing `task` registrar told its reader to
+ * `bun add @ultimat3/task`, a package the registry has never had. A `Record` over the union, so a
+ * ninth kind fails to compile here before it can ship a fix that 404s.
+ */
+export const PRIMITIVE_PACKAGES = Object.freeze<Record<PrimitiveKind, string>>({
+  action: '@ultimat3/action',
+  entity: '@ultimat3/entity',
+  job: '@ultimat3/jobs',
+  mutator: '@ultimat3/action',
+  policy: '@ultimat3/policy',
+  query: '@ultimat3/query',
+  route: '@ultimat3/render',
+  task: '@ultimat3/jobs',
+});
+
 /** One factory over one primitive: the export's name, the package that ships it, what it returns. */
 export interface PrimitiveFactory {
   readonly factory: string;
@@ -103,9 +120,9 @@ export function registerPrimitiveRegistrar(kind: PrimitiveKind, registrar: Modul
       code: 'X_REGISTRAR_CONFLICT',
       cause: `two different ${kind} registrars are loaded, so ${kind} primitives would split across two registries`,
       // One command, because a `fix:` is pasted verbatim: collapsing every range on the package
-      // to one resolved version is the repair. `bun pm why @ultimat3/<kind>` names the dependents
-      // when a range genuinely disagrees and the update cannot converge on its own.
-      fix: `bun update @ultimat3/${kind}`,
+      // to one resolved version is the repair. `bun pm why <package>` names the dependents when
+      // a range genuinely disagrees and the update cannot converge on its own.
+      fix: `bun update ${PRIMITIVE_PACKAGES[kind]}`,
       meta: { kind },
     });
   }
@@ -127,7 +144,7 @@ export function primitiveRegistrar(kind: PrimitiveKind): ModuleRegistrar {
     throw new UltimateError({
       code: 'X_REGISTRAR_MISSING',
       cause: `no ${kind} registrar is loaded, so ${kind} primitives cannot be registered`,
-      fix: `bun add @ultimat3/${kind}`,
+      fix: `bun add ${PRIMITIVE_PACKAGES[kind]}`,
       meta: { kind },
     });
   }

@@ -58,8 +58,10 @@ describe('assertPixelBudget', () => {
     ['NaN', Number.NaN, 10],
     ['Infinity', Number.POSITIVE_INFINITY, 10],
   ])('a %s dimension is not a size', (_label, width, height) => {
+    // A header that declares no size is INCONSISTENT bytes, not too many of them: it answered
+    // X_IMAGE_TOO_LARGE, whose fix is to downscale an image that has no pixels to scale.
     const failure = thrown(() => assertPixelBudget(width, height, 'png'));
-    expect(failure.code).toBe('X_IMAGE_TOO_LARGE');
+    expect(failure.code).toBe('X_IMAGE_DECODE_FAILED');
     expect(failure.cause).toContain('not a size');
   });
 });

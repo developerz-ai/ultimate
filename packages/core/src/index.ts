@@ -616,6 +616,7 @@ export {
 } from './page-meta';
 export type { ProcessMetricsOptions, ProcessReading } from './process-metrics';
 export { readProcess, resetProcessMetrics, startProcessMetrics } from './process-metrics';
+export { hasPublicCause, registerPublicCause, resetPublicCauses } from './public-cause';
 export { type CappedBody, readWithinLimit } from './read-capped';
 export type { RecordEnvelope, RecordRows } from './record-envelope';
 export { decodeRecordEnvelope, encodeRecordEnvelope, RECORDS_HEADER } from './record-envelope';

@@ -40,3 +40,20 @@ describe('unit · nearestName', () => {
     expect(nearestName('cat', ['mat', 'hat', 'bat'])).toBe('mat');
   });
 });
+
+describe('unit · the cutoff scales with length', () => {
+  // Three edits is a typo in `migrate` and a different word in `db`: at a fixed cutoff every one-
+  // and two-letter input was "near" every short command, since replacing all of it costs ≤ 3.
+  test('a suggestion that shares nothing with the input is not a suggestion', () => {
+    expect(nearestName('a', ['db', 'gen'])).toBeUndefined();
+    expect(nearestName('zz', ['db'])).toBeUndefined();
+    expect(nearestName('zzz', ['gen'])).toBeUndefined();
+    expect(nearestName('', ['db', 'gen'])).toBeUndefined();
+  });
+
+  test('a short name one edit away still resolves', () => {
+    expect(nearestName('d', ['db', 'gen'])).toBe('db');
+    expect(nearestName('dbb', ['db', 'gen'])).toBe('db');
+    expect(nearestName('gem', ['db', 'gen'])).toBe('gen');
+  });
+});

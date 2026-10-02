@@ -110,3 +110,47 @@ describe('decodeImage', () => {
     expect(failure.cause).toContain('inflates to');
   });
 });
+
+describe('decodeImage · the header is believed BEFORE the stream is inflated', () => {
+  const u32 = (value: number): Uint8Array => {
+    const out = new Uint8Array(4);
+    new DataView(out.buffer).setUint32(0, value);
+    return out;
+  };
+  const chunkOf = (type: string, data: Uint8Array): Uint8Array =>
+    Uint8Array.from([...u32(data.length), ...new TextEncoder().encode(type), ...data, 0, 0, 0, 0]);
+
+  /** A PNG whose header says `width`x`height` and whose IDAT inflates to `inflated` zero bytes. */
+  const pngDeclaring = (width: number, height: number, inflated: number): Uint8Array => {
+    const honest = encodeImage(createRaster(1, 1, 'test'));
+    const ihdr = Uint8Array.from([...u32(width), ...u32(height), ...honest.subarray(24, 29)]);
+    const deflated = Bun.deflateSync(new Uint8Array(inflated), { windowBits: -15 });
+    const idat = Uint8Array.from([0x78, 0x9c, ...deflated, 0, 0, 0, 0]);
+    return Uint8Array.from([
+      ...honest.subarray(0, 8),
+      ...chunkOf('IHDR', ihdr),
+      ...chunkOf('IDAT', idat),
+      ...chunkOf('IEND', new Uint8Array(0)),
+    ]);
+  };
+
+  test('a stream that inflates past what the header needs stops at the header, not at 8 MB', () => {
+    // A 1x1 RGBA image is 5 inflated bytes. The whole stream used to be inflated first and
+    // measured afterwards — a few hundred kilobytes of zeros became hundreds of megabytes.
+    const bomb = pngDeclaring(1, 1, 8_000_000);
+    expect(bomb.length).toBeLessThan(20_000);
+    const failure = thrown(() => decodeImage(bomb));
+    expect(failure.code).toBe('X_IMAGE_DECODE_FAILED');
+    expect(failure.cause).toContain('more than the 5 bytes');
+    expect(failure.cause).not.toContain('8000000');
+  });
+
+  test('a header over the pixel ceiling is refused before a byte is inflated', () => {
+    const failure = thrown(() => decodeImage(pngDeclaring(30_000, 30_000, 16)));
+    expect(failure.code).toContain('X_IMAGE_TOO_LARGE');
+  });
+
+  test('a header declaring no pixels is malformed, with nothing inflated either', () => {
+    expect(thrown(() => decodeImage(pngDeclaring(0, 4, 16))).cause).toContain('not a size');
+  });
+});

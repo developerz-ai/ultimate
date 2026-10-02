@@ -2,10 +2,9 @@
 // tag every process a step starts carries, and the kill that leaves none of them behind. A hung
 // step used to eat the whole CI job timeout and report nothing (#589); now it fails by name.
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { TEST_TYPES } from '@ultimat3/testing';
 import type { ExecResult, Runner } from './exec';
-import type { Finding } from './output';
+import { execOutput } from './exec';
 import type { VerifyStepName } from './verify-step';
 
 /** The `x.verify.json` key: `{ "stepTimeoutMs": { "unit": 900000 } }`. */
@@ -76,11 +75,39 @@ export const STEP_TAG_ENV = 'ULTIMATE_VERIFY_STEP';
 /** `bun test`-style "the command was stopped" exit, as `timeout(1)` reports it. */
 const EXPIRED_EXIT = 124;
 
+/** A process the kill found, as it was the moment before it died. */
+export interface KilledProcess {
+  readonly pid: number;
+  /** Its argv, clipped — a `bun test` coordinator's names every file of its batch. */
+  readonly command: string;
+}
+
+/** A child the step was still waiting on when it expired. */
+export interface InFlightRun {
+  readonly command: readonly string[];
+  /** Everything it had printed before the kill; absent when it did not settle after it. */
+  readonly output?: string;
+}
+
+/** What a step was doing when its deadline passed — `verify-stalled.ts` turns it into the finding. */
+export interface StepExpiry {
+  readonly killed: readonly KilledProcess[];
+  readonly inFlight: readonly InFlightRun[];
+  /** Bun's reporter prints nothing for a passing file under these: the output cannot name one. */
+  readonly quietReporter: boolean;
+}
+
+/** Any one set makes `bun test` print failures only (probed on 1.4.0, each alone). */
+export const QUIET_REPORTER_ENV = ['CLAUDECODE', 'AGENT', 'REPL_ID'] as const;
+
+/** A killed child's pipes close with it; this is only the bound on a runner that is not `exec`. */
+const SETTLE_MS = 2_000;
+
 export interface StepGuard {
   /** `runner`, with every child tagged — and refusing to start one once the step has expired. */
   readonly runner: Runner;
-  /** Stop the step: no further child starts, and every tagged process is killed. Returns how many. */
-  expire(): Promise<number>;
+  /** Stop the step: no further child starts, every tagged process is killed, and what was in flight is told. */
+  expire(): Promise<StepExpiry>;
 }
 
 /**
@@ -98,6 +125,8 @@ export function guardStep(
   env: Readonly<Record<string, string | undefined>> = Bun.env,
 ): StepGuard {
   let expired = false;
+  // Keyed by the promise itself: two batches of one step may run the very same argv.
+  const inFlight = new Map<Promise<ExecResult>, readonly string[]>();
   const inherited = env[STEP_TAG_ENV];
   const value = inherited === undefined || inherited === '' ? tag : `${inherited} ${tag}`;
   return {
@@ -114,11 +143,34 @@ export function guardStep(
           durationMs: 0,
         };
       }
-      return runner(command, { ...options, env: { ...options.env, [STEP_TAG_ENV]: value } });
+      const run = runner(command, { ...options, env: { ...options.env, [STEP_TAG_ENV]: value } });
+      inFlight.set(run, command);
+      try {
+        return await run;
+      } finally {
+        inFlight.delete(run);
+      }
     },
-    async expire(): Promise<number> {
+    async expire(): Promise<StepExpiry> {
       expired = true;
-      return killTagged(tag);
+      // Before the kill: a killed child settles its runner call, which takes it off the map.
+      const waiting = [...inFlight];
+      const killed = await killTagged(tag);
+      // After it: the kill closed the child's pipes, so its call now resolves with everything it
+      // had printed — for `bun test`, a line per finished file, which is how the stuck one is named.
+      const settled = await Promise.all(
+        waiting.map(async ([run, command]): Promise<InFlightRun> => {
+          const raced = await raceDeadline(run.then(execOutput), SETTLE_MS).catch(() => undefined);
+          return raced === undefined || raced.timedOut
+            ? { command }
+            : { command, output: raced.value };
+        }),
+      );
+      return {
+        killed,
+        inFlight: settled,
+        quietReporter: QUIET_REPORTER_ENV.some((name) => (env[name] ?? '') !== ''),
+      };
     },
   };
 }
@@ -186,26 +238,57 @@ export async function psProcesses(): Promise<readonly ProcessEnviron[]> {
 
 const SWEEPS = 5;
 
+const COMMAND_CHARS = 240;
+
+/**
+ * A process's argv, read BEFORE it is killed — afterwards there is nothing to read. procfs where
+ * there is one, `ps` otherwise; a process that is already gone is named by its pid alone.
+ */
+async function commandOf(pid: number): Promise<string> {
+  let text = await Bun.file(`/proc/${String(pid)}/cmdline`)
+    .text()
+    .catch(() => '');
+  if (text === '') {
+    try {
+      const ps = Bun.spawn(['ps', '-ww', '-o', 'command=', '-p', String(pid)], {
+        stdout: 'pipe',
+        stderr: 'ignore',
+      });
+      text = await new Response(ps.stdout).text();
+      await ps.exited;
+    } catch {
+      text = '';
+    }
+  }
+  const line = text.split('\0').join(' ').trim();
+  return line.length > COMMAND_CHARS ? `${line.slice(0, COMMAND_CHARS)}…` : line;
+}
+
 /**
  * SIGKILL every process carrying `tag`, and sweep again until a pass finds none: a worker can fork
  * between the listing and its own death. Never this process — a nested gate carries the outer tag.
+ * Returns the processes it killed, each with the command line it was running.
  */
 export async function killTagged(
   tag: string,
   /** The process table. Absent is this platform's: procfs where there is one, `ps` otherwise. */
   list: () => Promise<readonly ProcessEnviron[]> = async () =>
     (await procfsProcesses()) ?? (await psProcesses()),
-): Promise<number> {
-  const killed = new Set<number>();
+): Promise<readonly KilledProcess[]> {
+  const killed = new Map<number, KilledProcess>();
   for (let sweep = 0; sweep < SWEEPS; sweep += 1) {
     const processes = await list();
     const found = taggedPids(processes, tag).filter((pid) => pid !== process.pid);
     const fresh = found.filter((pid) => !killed.has(pid));
     if (found.length === 0) break;
+    // Every command line BEFORE the first signal: a worker exits on its own the moment its
+    // coordinator dies, and one read between two kills would find it already gone.
+    const commands = new Map<number, string>();
+    for (const pid of fresh) commands.set(pid, await commandOf(pid));
     for (const pid of found) {
       try {
         process.kill(pid, 'SIGKILL');
-        killed.add(pid);
+        if (!killed.has(pid)) killed.set(pid, { pid, command: commands.get(pid) ?? '' });
       } catch {
         // Already gone between the listing and the signal — which is the outcome wanted.
       }
@@ -214,25 +297,8 @@ export async function killTagged(
     if (fresh.length === 0) break;
     await Bun.sleep(20);
   }
-  return killed.size;
+  return [...killed.values()];
 }
-
-/**
- * A step that ran past its deadline, on that step's own line. `command` is the gate as it was
- * invoked here (`x verify`, or `bun run verify` at the framework root), so the fix runs where the
- * finding was raised.
- */
-export const stepTimeoutFinding = (
-  step: VerifyStepName,
-  ms: number,
-  killed: number,
-  command: string,
-): Finding => ({
-  code: 'X_VERIFY_STEP_TIMEOUT',
-  cause: `step "${step}" did not finish within its ${String(ms)} ms deadline, so it was stopped and ${String(killed)} process(es) it had started were killed`,
-  fix: `${command} --only ${step} --json   # reproduce it alone; if it legitimately needs longer, edit x.verify.json — add "${STEP_TIMEOUT_FIELD}": { "${step}": <milliseconds> }`,
-  docs: ERROR_DOCS_URL,
-});
 
 /** `work`, or `{ timedOut: true }` once `ms` passes. The abandoned promise is never unhandled. */
 export async function raceDeadline<T>(

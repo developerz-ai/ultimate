@@ -8,11 +8,155 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+**24.0.0 in progress: deep dive — gaps, problems, bugs**
+([`docs/plans/2026/10/02/101-deep-dive-gaps-bugs/`](docs/plans/2026/10/02/101-deep-dive-gaps-bugs/overview.md)).
+Every breaking entry below has a manual edit in the
+[Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
+the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
+error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
+a later slice appends its group below the last one. `As of 2026-10` slice 01 has landed: `schema`,
+`core`, and the gate's step deadline in `cli`.
+
+### Added
+
+Tier 0 — schema, core.
+
+- **schema:** `X_SCHEMA_DEFAULT_INVALID` (`DefaultInvalidError`) — see Changed.
+- **schema:** `SchemaError#retry` is `'terminal'` on every instance and in `toJSON()`
+  (`SchemaErrorJSON.retry`), as on `UltimateErrorJSON`. `SchemaError#format({ docs: true })` appends
+  the `docs:` line (`SchemaFormatOptions`).
+- **core:** `hasPublicCause(code)` — whether a 5xx document may carry the error's authored `cause`.
+  One definition: `@ultimat3/http`'s problem document reads it from core. `registerPublicCause` and
+  `resetPublicCauses` are its write half and test seam; an app still declares a public cause
+  through `registerProblemMeta({ CODE: { publicCause: true } })`.
+
+Tier 5 — cli.
+
+- **cli:** `Finding` carries an optional `meta` — the structured facts behind `cause`, for a
+  `--json` reader.
+
+Repository scripts.
+
+- **scripts:** `bun run new-error-code <CODE> --package schema` registers a code in
+  `@ultimat3/schema`'s frozen declarations (`SCHEMA_ERROR_CODES`). It refused that package before.
+
+### Changed
+
+Tier 0 — schema.
+
+- **BREAKING — `t.date` refuses a day its month does not have.** `'2026-02-30'`, `'2026-04-31'`, a
+  month `00` or `13`, a day `00` or `32`. It validated and stored the rolled-over instant —
+  `2026-02-30` became March 2nd. The rule is `isIsoDateTime`, so `fromIso`, an entity
+  `timestamp()` column, `@ultimat3/seo` feed dates and `@ultimat3/ui`'s `DateTime` refuse the same
+  strings. Correct the date where it is written.
+- **BREAKING — `t.url` refuses a string the URL parser would have cut.** A leading or trailing
+  space or C0 control, and a tab, CR or LF anywhere. `' https://a.b'` validated and was stored
+  untrimmed. Call `.trim()` before validating. A space inside the path and an upper-case host are
+  unchanged.
+- **BREAKING — `t.object`, `t.record` and `t.money` take plain objects only.** A value whose
+  prototype is neither `Object.prototype` nor `null` — a `Map`, a `Date`, a class instance — is
+  `expected an object`. `t.record(t.number)` parsed a `Map` to `{}`. HTTP coercion no longer
+  spreads an array or a `Date` into an object either. Pass a plain object: `{ ...instance }` or
+  `Object.fromEntries(map)`.
+- **BREAKING — `.default(v)` throws `X_SCHEMA_DEFAULT_INVALID` when the schema refuses `v`.** At
+  declaration, so at the first import of the file. `t.number.min(5).default(1)` parsed an omitted
+  field to 1 and published `minimum: 5, default: 1`. Edit the default or the rule the cause quotes.
+- **BREAKING — HTTP coercion reads decimal numerals only.** `?page=0x10`, `0b11` and `0o17` stay
+  strings and fail validation as `expected a number`; they arrived as 16, 3 and 15. Send decimal.
+
+Tier 0 — core.
+
+- **BREAKING — `defineConfig` refuses more of an invalid `app.config.ts`**, each as
+  `X_CONFIG_INVALID` naming the key: an unknown `roles` entry, `jobs.backoff`, `database.driver` or
+  `theme.defaultMode`; a non-boolean `database.ssl`, `realtime.enabled` or `ai.mcp.expose` (the
+  string `'false'` read as on); an `auth.signInPath` or `ai.mcp.path` with no leading `/`; an empty
+  `cache.tiers`; an empty or non-string `jobs.queues` entry; one locale spelled twice
+  (`['EN', 'en']`). A section written as `null` or as the wrong shape, a list written as a string,
+  and a non-string `seo.robots.disallow` / `seo.sitemap.extra` entry are `X_CONFIG_INVALID` too;
+  those were a native `TypeError` out of the validator.
+- **BREAKING — an unknown `LOG_LEVEL` fails at import** (`X_INVARIANT`). `LOG_LEVEL=verbose` and
+  the upper-case `LOG_LEVEL=DEBUG` meant `info` in silence. Set one of `trace`, `debug`,
+  `info`, `warn`, `error`, `fatal`, `silent`, lower-case, or unset it. Unset and empty are still `info`.
+- **BREAKING — `retry()` and `retryDecision()` refuse a policy that cannot stop the loop**
+  (`X_INVARIANT`), before the first try: `attempts` that is `NaN`, infinite, negative or a
+  fraction, and a `timeBudgetMs` that is `NaN` or infinite. `attempts: 0` still runs once; a
+  negative or fractional budget is still legal.
+- **BREAKING — `createFlightGate` refuses a limit that is not a count** (`X_INVARIANT`), at
+  construction: `maxConcurrent` or `maxQueued` that is `NaN`, infinite, negative or a fraction.
+  `maxConcurrent: 0` now refuses every caller (`X_FLIGHT_GATE_OVERLOADED`, or the gate's own
+  `overflow` error); it queued them for a slot that never came.
+- **BREAKING — `withChildContext({ signal })` aborts when the parent aborts.** The patched signal
+  is composed with the parent's, not swapped for it, so a client disconnect or a request timeout
+  reaches the child. Work that must outlive the request does not belong in a child context:
+  enqueue a job.
+- **BREAKING — compound credential names are redacted.** `currentPassword`, `mfaSecret`,
+  `resetToken`, `recoveryCode`, `webhookSecret`, `passwordHash`, `tokenHash`, `keyHash` and the
+  rest `isRedactedKey` now matches are `[redacted]` in a log line, an audit row and the error
+  monitor's envelope; they were written in clear. `idempotencyToken`, `continuationToken`,
+  `maxTokens`, `code` and `clientSecretEnv` stay readable. A test or a log query that read one of
+  the values reads the marker.
+- **BREAKING — the Sentry envelope carries an error's `meta` under `extra.meta`.** It was spread
+  into `extra`, so `meta: { fix, stack }` replaced the framework's own. Both `meta` and
+  `scope.extra` are redacted, and `scope.extra` can no longer overwrite `fix`, `docs`, `stack`,
+  `requestId` or `actorId`. A monitor rule or saved search on `extra.<key>` reads
+  `extra.meta.<key>`. A `bigint` or a cycle in `meta` no longer drops the report.
+- **BREAKING — `OTEL_EXPORTER_OTLP_TRACES_HEADERS` and `OTEL_EXPORTER_OTLP_METRICS_HEADERS` are
+  read**, and each replaces `OTEL_EXPORTER_OTLP_HEADERS` for its signal. Only the generic variable
+  was read. A deploy that sets both sends the per-signal one alone on that signal: put every header
+  that signal needs in it, or unset it.
+- **BREAKING — `OTEL_TRACES_SAMPLER=parentbased_always_on` ignores `OTEL_TRACES_SAMPLER_ARG`.** A
+  leftover `ARG=0.1` thinned its roots to 10%; every root is sampled now. For a ratio, set
+  `OTEL_TRACES_SAMPLER=parentbased_traceidratio`.
+- **BREAKING — a wildcard host rule no longer admits an address inside the network.**
+  `hostDecision` under `'*'` or `'*.suffix'` refuses a loopback, private, link-local or metadata
+  address literal (`127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `[::1]`). Opt in with an exact rule:
+  `allowHosts: ['*', '127.0.0.1']`. A hostname that resolves inward is still admitted — this
+  function has no resolver; pinning the resolved address is the connecting driver's job.
+- **BREAKING — an empty `ULTIMATE_CURSOR_SECRET=` counts as unset.** It keyed the cursor HMAC with
+  the empty string and passed the boot check. Now it is the development key locally and
+  `X_CURSOR_SECRET_DEV` anywhere else: `x secrets set ULTIMATE_CURSOR_SECRET`. Cursors signed
+  under the empty key stop verifying.
+
+Tier 5 — cli.
+
+- **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. Its `cause` lists the test file(s)
+  `bun test` had not finished, `at` is the first, and its `fix:` runs that file alone. `meta`
+  carries `step`, `deadlineMs`, `killed` (each process's `pid` and command line) and `inFlight`
+  (per `bun test` run: `command`, `files`, `workers`, `unreported`, `named`). The step's output is
+  what the killed runs last printed. Code and meaning unchanged.
+
+### Fixed
+
+Tier 0 — schema, core.
+
+- **schema:** HTTP coercion tries every member of a union. `t.union(t.literal('auto'), t.number)`
+  left `'12'` a string and failed validation; a union of objects coerced every value by its first
+  branch. A string that some member accepts as a string is never converted: under
+  `t.union(t.number, t.string)`, `'01234'` stays `'01234'`.
+- **schema:** a thenable that is not a `Promise` instance — another realm's, a polyfill's — is
+  refused as async (`X_SCHEMA_UNSUPPORTED`). It was read as a successful result with `value`
+  undefined.
+- **schema:** `SchemaError#toJSON()` no longer throws on a `bigint` or a cycle in `meta`.
+- **core:** an OTLP endpoint with a query string joins the signal path on the path:
+  `http://collector:4318?tenant=a` is `http://collector:4318/v1/traces?tenant=a`. A `NaN` or
+  infinite attribute value is dropped instead of sent as `{"doubleValue":null}`, which cost the
+  whole batch on a validating collector. An integer beyond 2^53 is sent as a double.
+- **core:** images. A header declaring a zero, negative, fractional or `NaN` size is
+  `X_IMAGE_DECODE_FAILED`, not `X_IMAGE_TOO_LARGE`. A PNG whose stream inflates past what its
+  header's size needs is refused at that bound, and one over the pixel ceiling before a byte is
+  inflated. A file whose only brand is `mif1` — a HEIC — is no longer sniffed as AVIF.
+  `X_IMAGE_TOO_LARGE`'s `fix:` no longer names `MAX_IMAGE_PIXELS` as a setting.
+- **core:** `nearestName` suggests nothing that shares nothing with the input. The cutoff scales
+  with length: `nearestName('a', ['db', 'gen'])` answered `db`.
+- **core:** `X_REGISTRAR_MISSING` and `X_REGISTRAR_CONFLICT` name the package that owns the kind.
+  `bun add @ultimat3/task` named a package that does not exist; `task` and `job` are
+  `@ultimat3/jobs`, `mutator` is `@ultimat3/action`, `route` is `@ultimat3/render`.
+- **core:** `X_SECRETS_KEY_INVALID`'s `fix:` branches on where the key was read. Read from the key
+  file, it names the file to edit; it used to re-read the bad file into the variable.
 
 ## 23.0.0 - 2026-10-02
 
-**23.0.0 in progress: platform readiness for big systems**
+**23.0.0: platform readiness for big systems**
 ([`docs/plans/2026/10/01/101-platform-readiness-for-big-systems/`](docs/plans/2026/10/01/101-platform-readiness-for-big-systems/overview.md)).
 Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `22.x → 23.0.0` section, in

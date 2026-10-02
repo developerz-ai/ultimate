@@ -20,7 +20,28 @@ const UTC_OFFSET = /(?:z|[+-]\d{2}:?\d{2})$/i;
  * because RFC 3339 §5.6 permits a lowercase `t` and `z`.
  */
 const ISO_SHAPE =
-  /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/i;
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/i;
+
+/**
+ * Days per month, January first, in a common year. **Twin: `daysInMonth` in
+ * `packages/time/src/plain-date.ts`** — this package is tier 0 and cannot import `@ultimat3/time`,
+ * so the Gregorian table is restated rather than shared. The two are held equal by the parity
+ * table in `iso-date.test.ts` and `packages/time/src/plain-date.test.ts`; edit both or neither.
+ */
+const DAYS_IN_MONTH: readonly number[] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+const isLeapYear = (year: number): boolean =>
+  (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+/**
+ * The half a regex cannot hold. `new Date('2026-02-30')` does not refuse — it answers March 2nd —
+ * so a typo validated, and the instant that was stored is one the caller never wrote.
+ */
+function isCalendarDay(year: number, month: number, day: number): boolean {
+  const days = DAYS_IN_MONTH[month - 1];
+  if (days === undefined) return false;
+  return day >= 1 && day <= (month === 2 && isLeapYear(year) ? 29 : days);
+}
 
 /** What a `t.date` string must not be: a clock time with no offset and no `Z`. */
 export function isZonelessDateTime(value: string): boolean {
@@ -28,9 +49,12 @@ export function isZonelessDateTime(value: string): boolean {
 }
 
 /**
- * True when `value` is an ISO-8601 date, or date-time carrying `Z` or an offset: the only strings
- * whose instant is the same on every host. Check it before `new Date(value)`, every time.
+ * True when `value` is an ISO-8601 date, or date-time carrying `Z` or an offset, naming a day its
+ * month has: the only strings whose instant is the same on every host and is the one written.
+ * Check it before `new Date(value)`, every time.
  */
 export function isIsoDateTime(value: string): boolean {
-  return ISO_SHAPE.test(value) && !isZonelessDateTime(value);
+  const match = ISO_SHAPE.exec(value);
+  if (match === null || isZonelessDateTime(value)) return false;
+  return isCalendarDay(Number(match[1]), Number(match[2]), Number(match[3]));
 }

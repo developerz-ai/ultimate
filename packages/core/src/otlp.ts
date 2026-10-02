@@ -96,7 +96,10 @@ function parseEndpoint(signal: OtlpSignal, raw: string, perSignal: boolean, env:
   // The spec's own asymmetry, not ours: a per-signal endpoint is the full URL an operator chose,
   // while the generic one is a base the signal path is appended to.
   if (perSignal) return url.toString();
-  return `${url.toString().replace(/\/+$/, '')}/v1/${signal}`;
+  // On the PATH, never on the string: `http://collector:4318?tenant=a` concatenated to
+  // `…/?tenant=a/v1/traces`, a request to `/` whose query merely ends in the receiver's path.
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/v1/${signal}`;
+  return url.toString();
 }
 
 /** The endpoint an operator configured, or `undefined` when they configured none. */
@@ -157,32 +160,43 @@ export function otlpEndpoint(
  * and no fix. Refused instead, naming the variable and the header KEY: the value is the
  * collector's credential and a `cause:` is folded into a log line.
  */
-function decodeHeaderValue(key: string, raw: string): string {
+function decodeHeaderValue(variable: string, key: string, raw: string): string {
   try {
     return decodeURIComponent(raw);
   } catch {
     throw new OtlpHeadersInvalidError({
-      cause: `${OTLP_HEADERS_KEY} carries a malformed percent-escape in the "${key}" value, so the header cannot be decoded`,
-      fix: `set ${OTLP_HEADERS_KEY}=${key}=<encoded>, where <encoded> is what bun -e 'console.log(encodeURIComponent(process.argv[1]))' <value> prints — or drop the stray % from the "${key}" value if it was meant literally`,
+      cause: `${variable} carries a malformed percent-escape in the "${key}" value, so the header cannot be decoded`,
+      fix: `set ${variable}=${key}=<encoded>, where <encoded> is what bun -e 'console.log(encodeURIComponent(process.argv[1]))' <value> prints — or drop the stray % from the "${key}" value if it was meant literally`,
       meta: { header: key },
     });
   }
 }
 
-/** `key=value,key2=value2`, percent-decoded — the spec's format for collector auth headers. */
+/**
+ * `key=value,key2=value2`, percent-decoded — the spec's format for collector auth headers.
+ *
+ * With a `signal`, `OTEL_EXPORTER_OTLP_<SIGNAL>_HEADERS` REPLACES the generic variable for that
+ * signal, which is the spec's rule and the one `ENDPOINT` and `PROTOCOL` already followed here:
+ * only the generic one was read, so a collector that authenticates traces and metrics with
+ * different keys got the same key on both and rejected one of them.
+ */
 export function otlpHeaders(
   explicit?: Readonly<Record<string, string>> | undefined,
   env: OtlpEnv = process.env,
+  signal?: OtlpSignal | undefined,
 ): Record<string, string> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
-  const raw = env[OTLP_HEADERS_KEY];
+  const specific = signal === undefined ? undefined : signalKey(signal, 'HEADERS');
+  const variable =
+    specific !== undefined && (env[specific] ?? '').trim() !== '' ? specific : OTLP_HEADERS_KEY;
+  const raw = env[variable];
   if (raw !== undefined) {
     for (const pair of raw.split(',')) {
       const index = pair.indexOf('=');
       if (index <= 0) continue;
       const key = pair.slice(0, index).trim().toLowerCase();
       if (key === '') continue;
-      headers[key] = decodeHeaderValue(key, pair.slice(index + 1).trim());
+      headers[key] = decodeHeaderValue(variable, key, pair.slice(index + 1).trim());
     }
   }
   for (const [key, value] of Object.entries(explicit ?? {})) headers[key.toLowerCase()] = value;
@@ -202,22 +216,39 @@ export interface OtlpKeyValue {
   readonly value: OtlpAnyValue;
 }
 
-function anyValue(value: AttributeValue): OtlpAnyValue {
+/**
+ * `undefined` for a number the wire cannot spell. `NaN` and `±Infinity` serialise as
+ * `{"doubleValue":null}`, and a validating collector rejects the WHOLE batch for it — `postOtlp`
+ * only warns, so one bad gauge silently cost every span beside it. Dropped, as a missing
+ * attribute is the honest reading of "not a number".
+ */
+function anyValue(value: AttributeValue): OtlpAnyValue | undefined {
   if (typeof value === 'string') return { stringValue: value };
   if (typeof value === 'boolean') return { boolValue: value };
   if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return undefined;
     // `intValue` is a 64-bit field, so the JSON encoding spells it as a string. A float that
-    // happens to be integral is still a double to whoever queries it; `Number.isInteger` is the
-    // only signal available and matches what every other OTLP/JSON encoder does.
-    return Number.isInteger(value) ? { intValue: String(value) } : { doubleValue: value };
+    // happens to be integral is still a double to whoever queries it; SAFE-integer is the signal,
+    // because past 2^53 `String(value)` is `"1e+21"` — exponent notation is not an int64.
+    return Number.isSafeInteger(value) ? { intValue: String(value) } : { doubleValue: value };
   }
-  return { arrayValue: { values: value.map((item) => anyValue(item)) } };
+  const values: OtlpAnyValue[] = [];
+  for (const item of value) {
+    const encoded = anyValue(item);
+    if (encoded !== undefined) values.push(encoded);
+  }
+  return { arrayValue: { values } };
 }
 
 export function otlpAttributes(
   attributes: Readonly<Record<string, AttributeValue>>,
 ): readonly OtlpKeyValue[] {
-  return Object.entries(attributes).map(([key, value]) => ({ key, value: anyValue(value) }));
+  const out: OtlpKeyValue[] = [];
+  for (const [key, raw] of Object.entries(attributes)) {
+    const value = anyValue(raw);
+    if (value !== undefined) out.push({ key, value });
+  }
+  return out;
 }
 
 /** Epoch ms -> the string of nanoseconds OTLP/JSON wants, without losing precision to a float. */

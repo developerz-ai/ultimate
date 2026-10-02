@@ -12,6 +12,7 @@ import {
   sentryErrorReporter,
 } from './error-reporter-sentry';
 import { UltimateError } from './errors';
+import { REDACTED } from './logger';
 
 afterEach(() => {
   resetErrorReporting();
@@ -114,6 +115,68 @@ describe('sentryEnvelope', () => {
         },
       ],
     });
+  });
+});
+
+describe("sentryEnvelope · meta is the caller's, so it is rendered, nested and scrubbed", () => {
+  const envelopeOf = (
+    meta: Record<string, unknown>,
+    extra?: Record<string, unknown>,
+  ): Record<string, unknown> => {
+    configureErrorReporting({ clock: frozenClock(new Date('2026-08-11T00:00:00Z')) });
+    const built = errorReport(
+      new UltimateError({ code: 'X_ENVELOPE_FIXTURE', cause: 'c', fix: 'the real fix', meta }),
+      { source: 'http', scope: { requestId: 'req-1', ...(extra === undefined ? {} : { extra }) } },
+    );
+    const envelope = sentryEnvelope(built, {
+      dsn: 'https://k@h.example/1',
+      eventId: 'f'.repeat(32),
+    });
+    const payload = JSON.parse(envelope.split('\n')[2] as string) as Record<string, unknown>;
+    return payload['extra'] as Record<string, unknown>;
+  };
+
+  test('a bigint or a cycle in meta still produces an envelope — the error is reported', () => {
+    // `JSON.stringify` raises on both, so the one error whose meta held an id as a bigint was the
+    // one error the monitor never heard about.
+    const cycle: Record<string, unknown> = { name: 'loop' };
+    cycle['self'] = cycle;
+    const extra = envelopeOf({ rowId: 10n ** 20n, cycle });
+    expect((extra['meta'] as Record<string, unknown>)['rowId']).toBe('100000000000000000000n');
+    expect(extra['fix']).toBe('the real fix');
+  });
+
+  test("meta cannot overwrite the framework's own keys: it lives under extra.meta", () => {
+    const extra = envelopeOf({
+      fix: 'rm -rf /',
+      stack: 'forged',
+      requestId: 'forged',
+      table: 'posts',
+    });
+    expect(extra['fix']).toBe('the real fix');
+    expect(extra['requestId']).toBe('req-1');
+    expect(extra['stack']).not.toBe('forged');
+    expect(extra['table']).toBeUndefined();
+    expect((extra['meta'] as Record<string, unknown>)['table']).toBe('posts');
+  });
+
+  test('scope.extra stays beside the contract and still cannot replace it', () => {
+    const extra = envelopeOf({}, { fix: 'forged', tenant: 'org-3', big: 5n });
+    expect(extra['fix']).toBe('the real fix');
+    expect(extra['tenant']).toBe('org-3');
+    expect(extra['big']).toBe('5n');
+  });
+
+  test('a credential under a redacted key never reaches the monitor', () => {
+    const extra = envelopeOf(
+      { password: 'hunter2', nested: { resetToken: 'tok_live' } },
+      { authorization: 'Bearer abc' },
+    );
+    const text = JSON.stringify(extra);
+    expect(text).not.toContain('hunter2');
+    expect(text).not.toContain('tok_live');
+    expect(text).not.toContain('Bearer abc');
+    expect((extra['meta'] as Record<string, unknown>)['password']).toBe(REDACTED);
   });
 });
 

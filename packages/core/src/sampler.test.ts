@@ -139,3 +139,25 @@ describe('ratioSampler is deterministic per trace id', () => {
     );
   });
 });
+
+describe('samplerFromEnv · parentbased_always_on is its own sampler', () => {
+  test('a leftover ratio arg does not thin a sampler that takes no arg', () => {
+    // It shared the ratio branch, so `OTEL_TRACES_SAMPLER_ARG=0.1` left over from an earlier
+    // `traceidratio` rollout sampled ~10% of roots under a setting that says ALWAYS.
+    const sampler = samplerFromEnv({
+      [OTEL_SAMPLER_KEY]: 'parentbased_always_on',
+      [OTEL_SAMPLER_ARG_KEY]: '0',
+    });
+    expect(sampler.shouldSample('root', undefined, {}, TRACE_A)).toBe(true);
+    // Still parent-based: an upstream's do-not-sample is honoured.
+    expect(sampler.shouldSample('child', parent(0), {}, TRACE_A)).toBe(false);
+  });
+
+  test('parentbased_traceidratio still reads the arg', () => {
+    const sampler = samplerFromEnv({
+      [OTEL_SAMPLER_KEY]: 'parentbased_traceidratio',
+      [OTEL_SAMPLER_ARG_KEY]: '0',
+    });
+    expect(sampler.shouldSample('root', undefined, {}, TRACE_A)).toBe(false);
+  });
+});

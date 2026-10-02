@@ -7,14 +7,22 @@ import type { CoverageMap } from './coverage-lcov';
 import { encodeCoverage } from './coverage-lcov';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
-import { guardStep, raceDeadline, stepTimeoutFinding, stepTimeoutMs } from './verify-deadline';
+import type { StepGuard } from './verify-deadline';
+import { guardStep, raceDeadline, stepTimeoutMs } from './verify-deadline';
 import {
   floorRequires,
   readVerifyFloor,
   skippedSuiteFinding,
   vanishedSuiteFinding,
 } from './verify-floor';
-import type { CoverageNumbers, StepOutcome, VerifyContext, VerifyStep } from './verify-step';
+import { stalledOutput, stepTimeoutFinding } from './verify-stalled';
+import type {
+  CoverageNumbers,
+  StepOutcome,
+  VerifyContext,
+  VerifyStep,
+  VerifyStepName,
+} from './verify-step';
 import { GATE_COMMAND } from './verify-step';
 
 /**
@@ -243,10 +251,7 @@ async function runStep(
     limit,
   );
   const outcome: StepOutcome = raced.timedOut
-    ? {
-        ok: false,
-        findings: [stepTimeoutFinding(step.name, limit, await guard.expire(), command)],
-      }
+    ? await expired(step.name, limit, guard, command)
     : raced.value;
   // A suite that executed nothing did not run, whatever its exit code says: `bun test` exits 0
   // over an all-skipped file, so the counts are the only channel that can tell the two apart.
@@ -279,6 +284,22 @@ async function runStep(
     },
     ...(outcome.coverage === undefined ? {} : { coverage: outcome.coverage }),
     ...(outcome.measured === undefined ? {} : { measured: outcome.measured }),
+  };
+}
+
+/** The timed-out step's outcome: the finding naming what was in flight, over what it last printed. */
+async function expired(
+  step: VerifyStepName,
+  limit: number,
+  guard: StepGuard,
+  command: string,
+): Promise<StepOutcome> {
+  const expiry = await guard.expire();
+  const output = stalledOutput(expiry);
+  return {
+    ok: false,
+    findings: [stepTimeoutFinding(step, limit, expiry, command)],
+    ...(output === undefined ? {} : { output }),
   };
 }
 

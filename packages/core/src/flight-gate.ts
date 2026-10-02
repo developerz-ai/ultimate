@@ -8,6 +8,7 @@
 // memory fault and answers it minutes late.
 
 import { UltimateError } from './errors';
+import { finiteCount } from './finite-option';
 
 export interface FlightGateLimits {
   /** Work running at once. */
@@ -53,23 +54,34 @@ export function createFlightGate(
   options?: FlightGateOptions,
 ): FlightGate {
   const subject = options?.subject ?? 'in-flight work';
+  // Refused at CONSTRUCTION, because this pair wedges rather than fails: `active < NaN` and
+  // `waiters.length >= NaN` are both false, so every caller parks in a queue with no bound. Zero
+  // is a real value at both — "never wait" and, at the width, "refuse everything".
+  const maxConcurrent = finiteCount(
+    `createFlightGate (${subject})`,
+    'maxConcurrent',
+    limits.maxConcurrent,
+  );
+  const maxQueued = finiteCount(`createFlightGate (${subject})`, 'maxQueued', limits.maxQueued);
   const waiters: Array<() => void> = [];
   let active = 0;
 
   const state = (): FlightGateState => ({
-    maxConcurrent: limits.maxConcurrent,
-    maxQueued: limits.maxQueued,
+    maxConcurrent,
+    maxQueued,
     active,
     queued: waiters.length,
     subject,
   });
 
   const acquire = async (): Promise<void> => {
-    if (active < limits.maxConcurrent) {
+    if (active < maxConcurrent) {
       active += 1;
       return;
     }
-    if (waiters.length >= limits.maxQueued) {
+    // A width of zero has no slot to hand over, so a waiter would never be resumed: the queue is
+    // for work that WILL run, and here none will.
+    if (maxConcurrent === 0 || waiters.length >= maxQueued) {
       const current = state();
       throw options?.overflow?.(current) ?? gateOverloaded(current);
     }

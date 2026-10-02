@@ -158,3 +158,38 @@ describe('createFlightGate', () => {
     await first;
   });
 });
+
+describe('unit · a gate limit that is not a count is refused at construction', () => {
+  test.each([
+    ['maxConcurrent', { maxConcurrent: Number.NaN, maxQueued: 1 }],
+    ['maxConcurrent', { maxConcurrent: 1.5, maxQueued: 1 }],
+    ['maxConcurrent', { maxConcurrent: -1, maxQueued: 1 }],
+    ['maxQueued', { maxConcurrent: 1, maxQueued: Number.NaN }],
+    ['maxQueued', { maxConcurrent: 1, maxQueued: Number.POSITIVE_INFINITY }],
+  ])('%s out of range: %p', (option, limits) => {
+    // `active < NaN` and `waiters.length >= NaN` are both false, so every caller parked in a queue
+    // with no bound and nothing to release it.
+    try {
+      createFlightGate(limits);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as UltimateError).code).toBe('X_INVARIANT');
+      expect((error as UltimateError).cause).toContain(option);
+    }
+  });
+
+  test('a gate with no slot refuses instead of queueing for one that never frees', async () => {
+    const gate = createFlightGate({ maxConcurrent: 0, maxQueued: 4 });
+    let ran = false;
+    try {
+      await gate.run(async () => {
+        ran = true;
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as UltimateError).code).toBe('X_FLIGHT_GATE_OVERLOADED');
+    }
+    expect(ran).toBe(false);
+    expect(gate.queued).toBe(0);
+  });
+});

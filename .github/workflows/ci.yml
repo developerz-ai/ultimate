@@ -181,7 +181,8 @@ jobs:
           jq -r '
             (.steps // [])[]
             | "\(if .skipped then "-" elif .ok then "✓" else "✗" end) \(.name)  \(.durationMs)ms\(if .tests then "  \(.tests.ran) ran, \(.tests.skipped) skipped\(if .tests.errors then ", \(.tests.errors) errored" else "" end)" else "" end)",
-              (.findings[]? | "    \(.code)\(if .at then " (\(.at))" else "" end)\n      cause: \(.cause)\n      fix:   \(.fix)")
+              (.findings[]? | "    \(.code)\(if .at then " (\(.at))" else "" end)\n      cause: \(.cause)\n      fix:   \(.fix)"),
+              (select(.ok | not) | .output // empty | "    output (last lines):\n\(split("\n")[-40:] | map("      " + .) | join("\n"))")
           ' "$parts/${PART}.json" || true
           exit "$status"
       # Uploaded when the part is RED too: the verdict is the merge's, and a part that failed

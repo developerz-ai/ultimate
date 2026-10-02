@@ -40,6 +40,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the key ring those work under: the current key plus retired ones | `seal-keys.ts` |
 | `defineConfig()` for `app.config.ts` | `config.ts` |
 | how overlays layer onto it — per section, key by key | `config-merge.ts` |
+| what each key is when no layer says | `config-defaults.ts` |
+| the shape screens that run before any rule reads a value — section, list, boolean, closed set, path, locale list | `config-shape.ts` |
 | the `pwa` block — what an install needs, and the boot refusal when it is not there | `config-pwa.ts` |
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
@@ -51,6 +53,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | OTLP/HTTP JSON: endpoint, headers, value encoding | `otlp.ts` |
 | `SpanExporter` on the wire, batched | `otlp-span-exporter.ts` |
 | `MetricExporter` on the wire | `otlp-metric-exporter.ts` |
+| may a caller read this 5xx code's `cause`? `hasPublicCause(code)` — one predicate for the HTTP problem document, MCP error data and an agent `tool_result` | `public-cause.ts` |
 | `reportError` + the `ErrorReporter` seam, no-op by default | `error-reporter.ts` |
 | that seam on the wire, Sentry's envelope and DSN | `error-reporter-sentry.ts` |
 | OTel-shaped counter / gauge / histogram, same seam | `metrics.ts` |
@@ -320,7 +323,19 @@ logger.info('boot', { dsn });        // {"dsn":"[redacted]"}
 connect(revealSecret(dsn));          // the one greppable way out
 ```
 
-`redactKeys()` catches a secret travelling under a name someone remembered to list. A `Secret`
+`isRedactedKey(key)` is the one answer to "is this field a credential?" — the log line, the error
+monitor's envelope and `@ultimat3/action`'s audit row all ask it. It matches the exact names
+`redactKeys()` holds (`defineEnv` adds every `secret: true` variable) **and** a credential-bearing
+name it was never told about: `password` / `passphrase` anywhere, `secret` as the last word, a
+bearer token by its qualifier (`resetToken`, `csrfToken`, `accessToken`), the one-time codes
+(`totpCode`, `recoveryCode`) and a stored hash of any of them (`passwordHash`, `tokenHash`,
+`keyHash`). It deliberately leaves `idempotencyToken`, a paging token, `maxTokens` and an error
+`code` readable — a redacted field is one an operator cannot correlate on.
+
+`LOG_LEVEL` is refused when it is not one of `LOG_LEVELS` (lowercase), exactly as
+`createLogger({ level })` refuses it; unset or empty is `info`.
+
+A `Secret`
 box catches the other case: `String()`, template literals, `+`, `JSON.stringify`, `console.log`,
 the logger and an error's `meta` all render `[redacted]`, whatever key it sits under. It is
 frozen and everything but `label` is non-enumerable, so `{ ...dsn }` cannot spread the value back
@@ -554,7 +569,7 @@ never a silently wrong page.
 | | |
 |---|---|
 | Signature | truncated HMAC-SHA256, compared in constant time |
-| Secret | `configureCursorSigning()` at boot, else `ULTIMATE_CURSOR_SECRET`. **Read when a cursor is signed, never at import** — an app whose `openSecrets()` sets the variable during boot would otherwise sign every cursor with the dev key. Rotating it invalidates every open cursor |
+| Secret | `configureCursorSigning()` at boot, else `ULTIMATE_CURSOR_SECRET`. An EMPTY value is unset — never an empty HMAC key — so `usesDevCursorSecret()` reports it and the boot refuses it outside a local environment. **Read when a cursor is signed, never at import** — an app whose `openSecrets()` sets the variable during boot would otherwise sign every cursor with the dev key. Rotating it invalidates every open cursor |
 | Also keys | `keyedFingerprint(value, purpose)` — `h1:<key id>:<HMAC>` over `canonicalJson`, under a per-purpose key derived from this secret; the fingerprint to PERSIST (`@ultimat3/action`'s idempotency `requestHash`). `compareFingerprint` answers `match` / `mismatch` / `unverifiable` (other key), and still checks a legacy bare `fingerprint()` exactly. Rotating the secret makes in-window stored fingerprints `unverifiable` |
 | Signed, not encrypted | the client already has these rows; what it must not do is *invent* a position |
 | `usesDevCursorSecret()` | true while the shipped dev key is in use |
@@ -649,7 +664,7 @@ nothing consulted it before deciding to try again. `As of 2026-08-23`.
 |---|---|---|
 | `backoffDelay({ attempt, base, max, factor?, curve?, jitter?, random? })` | one curve — `exponential \| linear \| fixed`, `full \| equal \| none` — 1-based `attempt`, clamped to `max` **before** jitter, rounded, and `0` rather than `NaN` | how long to wait. `random` is injectable, so a schedule is a unit test rather than a range |
 | `createSingleFlight({ deadlineMs?, schedule? })` → `run(key, work, join?)`, `size` | N callers on one key are ONE run | who pays for a miss. Eviction is identity-checked, so a load that settles late never drops the load that replaced it; `deadlineMs` frees the KEY a wedged load would hold forever — it never cancels the work and never rejects a joiner |
-| `createFlightGate({ maxConcurrent, maxQueued }, { subject?, overflow? })` | one bound, one queue, one refusal | how many at once. Past the queue the answer is `X_FLIGHT_GATE_OVERLOADED` (503) and never a longer queue; the slot is HANDED to a waiter, never released and re-acquired |
+| `createFlightGate({ maxConcurrent, maxQueued }, { subject?, overflow? })` | one bound, one queue, one refusal | how many at once. Past the queue the answer is `X_FLIGHT_GATE_OVERLOADED` (503) and never a longer queue; the slot is HANDED to a waiter, never released and re-acquired. Both limits are screened at construction (`finiteCount`, 0 allowed); a width of 0 refuses every caller rather than queueing for a slot that never frees |
 | `createFence(subject)` → `generation()`, `bump()`, `guard(issued)` | whether an answer still applies | `X_SUPERSEDED` (499) and `isSuperseded(error)` — the piece nothing in the tree had. `guard` compares `!==`, never `<` |
 | `isRetryableStatus(status)`, `RETRYABLE_STATUSES` | `>= 500`, plus 408, 409, 425, 429 | which HTTP answers are worth repeating |
 | `retry(work, policy, { sleep, now?, random? })`, `retryDecision(policy, attempt, error, random?)` | the executor and the pure decision behind the classification | whether to try again at all. `createClientFlight` is its one caller in the framework; `jobs`, `ai` and `db` each keep their own loop and delegate only the arithmetic and the classification |

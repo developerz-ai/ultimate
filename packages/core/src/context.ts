@@ -273,6 +273,18 @@ function screenDeadline(value: number | null | undefined): number | null {
 }
 
 /**
+ * A patched signal is ADDED to the parent's, never swapped for it — the deadline's own rule, one
+ * field over. `patch ?? parent` made a step that brought its own signal blind to the request it
+ * runs inside: the client disconnected, the request timed out, and `ctx.signal.aborted` stayed
+ * false in the child. The shared never-aborting default is skipped rather than composed, so a
+ * context with no request behind it does not grow a listener per child.
+ */
+function composeSignal(parent: AbortSignal, patch: AbortSignal | undefined): AbortSignal {
+  if (patch === undefined || patch === parent) return parent;
+  return parent === neverAborted ? patch : AbortSignal.any([parent, patch]);
+}
+
+/**
  * Derive a narrowed context — impersonation, a locale switch, a per-step abort signal.
  * `requestId` is deliberately not patchable: one request, one id.
  */
@@ -301,7 +313,7 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
     // that and did not do it — a patched hour replaced a parent's second outright, and
     // `remainingBudgetMs` then put the hour on `x-request-timeout-ms` for the next hop.
     deadlineAt: earliest(screenDeadline(patch.deadlineAt) ?? undefined, parent.deadlineAt),
-    signal: patch.signal ?? parent.signal,
+    signal: composeSignal(parent.signal, patch.signal),
     services: { ...carried, ...(patch.services ?? {}) },
   });
   return requestContext.run(child, fn);

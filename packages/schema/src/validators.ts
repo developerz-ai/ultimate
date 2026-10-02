@@ -2,6 +2,7 @@
 // ArkType or Zod replace them wholesale via `configureSchemaProvider()` — neither ships; the IR and the
 // Standard Schema surface are what the rest of the framework actually depends on.
 
+import { isAbsoluteUrl } from './absolute-url';
 import {
   type AnySchema,
   type Check,
@@ -453,9 +454,7 @@ export const builtinT: TNamespace = Object.freeze({
   email: makeStringSchema({ kind: 'string', format: 'email' }, 'an email address', (value) =>
     EMAIL_RE.test(value),
   ),
-  url: makeStringSchema({ kind: 'string', format: 'uri' }, 'an absolute URL', (value) =>
-    URL.canParse(value),
-  ),
+  url: makeStringSchema({ kind: 'string', format: 'uri' }, 'an absolute URL', isAbsoluteUrl),
   date: dateSchema,
   money: moneySchema,
   timezone: makeStringSchema(

@@ -8,6 +8,7 @@ import { CURRENCY_CODE_PATTERN } from '@ultimat3/schema';
 // drift into two vocabularies with no map between them (issue #293).
 import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 import { countIssue } from './config-count';
+import { configDefaults } from './config-defaults';
 import { BASE_FIX, CACHE_TIER_FIX, TIMEZONE_FIX } from './config-fixes';
 import type { DrainConfig, HealthConfig } from './config-health';
 import { readinessModeIssue } from './config-health';
@@ -18,15 +19,24 @@ import type { NavigationConfig, NavigationSectionInput } from './config-navigati
 import { mergeNavigation, navigationIssues } from './config-navigation';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, pwaIssues } from './config-pwa';
+import {
+  booleanIssue,
+  localeIssues,
+  nameListIssues,
+  oneOfIssue,
+  routePathIssue,
+  shapeIssues,
+} from './config-shape';
 import type { SeoConfig, SiteConfig, SiteSectionsInput } from './config-site';
 import { mergeSite, siteIssues } from './config-site';
 import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
-import { defaultReadinessGraceMs, readinessGraceIssue } from './lifecycle-grace';
+import { readinessGraceIssue } from './lifecycle-grace';
 import { ROLES, type Role } from './roles';
 import { isIanaZoneName } from './time-zone-name';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export const THEME_MODES = ['light', 'dark', 'system'] as const;
+export type ThemeMode = (typeof THEME_MODES)[number];
 /**
  * The buses `@ultimat3/realtime`'s `selectTransport` builds, and nothing else. `'redis'` was in
  * this union until 22.0.0 with no Redis transport anywhere: it booted whatever `NATS_URL` chose.
@@ -99,8 +109,10 @@ export const INBOX_RETENTION_KEYS = ['inboxReadRetentionMs', 'inboxUnreadRetenti
  * 3 applied to configuration: a value that produces neither a build error nor a runtime effect is
  * worse than no field, because an SRE sets `poolSize: 3`, redeploys, and nothing changes.
  */
+const DATABASE_DRIVERS = ['postgres'] as const;
+
 export interface DatabaseConfig {
-  readonly driver: 'postgres';
+  readonly driver: (typeof DATABASE_DRIVERS)[number];
   readonly ssl: boolean;
 }
 
@@ -125,6 +137,8 @@ export interface CacheConfig {
   readonly tiers: readonly CacheTierName[];
 }
 
+const JOB_BACKOFFS = ['exponential', 'fixed'] as const;
+
 export interface JobsConfig {
   /**
    * No `driver`. It accepted `'postgres' | 'redis' | 'nats'`, was read by NOTHING, and boot always
@@ -140,7 +154,7 @@ export interface JobsConfig {
   readonly queues: readonly string[];
   readonly concurrency: number;
   readonly maxAttempts: number;
-  readonly backoff: 'exponential' | 'fixed';
+  readonly backoff: (typeof JOB_BACKOFFS)[number];
   readonly visibilityTimeoutMs: number;
 }
 
@@ -255,52 +269,6 @@ const NAME_RE = /^[a-z][a-z0-9-]{1,63}$/;
  */
 const CURRENCY_RE = new RegExp(CURRENCY_CODE_PATTERN);
 
-function isLocale(value: string): boolean {
-  try {
-    return Intl.getCanonicalLocales(value).length === 1;
-  } catch {
-    return false;
-  }
-}
-
-type Sectioned = 'name' | 'site' | 'seo' | 'navigation' | 'islands';
-function defaults(name: string): Omit<AppConfig, Sectioned> {
-  return {
-    locales: ['en'],
-    defaultLocale: 'en',
-    defaultTimeZone: 'UTC',
-    defaultCurrency: 'USD',
-    theme: { defaultMode: 'system', tokens: {} },
-    auth: { signInPath: null },
-    pwa: {
-      enabled: false,
-      offline: { fallback: null, image: null, font: null, neverCache: [], personalPages: 'never' },
-      backgroundSync: false,
-      push: false,
-      name: '',
-      colors: undefined,
-    },
-    roles: [...ROLES],
-    database: { driver: 'postgres', ssl: false },
-    cache: { defaultTtlMs: 60_000, tiers: ['request-memo', 'lru'] },
-    jobs: {
-      queues: [`${name}-default`],
-      concurrency: 8,
-      maxAttempts: 5,
-      backoff: 'exponential',
-      visibilityTimeoutMs: 30_000,
-    },
-    // ON by default since 22.0.0, when the boot began obeying the key: an app with no section
-    // keeps the `sync` node it always got, and `enabled: false` is the explicit opt-out.
-    realtime: { enabled: true, transport: 'memory', urlEnv: undefined },
-    notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
-    ai: { mcp: { expose: true, path: '/mcp' } },
-    // Read from the process env when the config is DEFINED — the same env the drain will run in.
-    drain: { readinessGraceMs: defaultReadinessGraceMs() },
-    health: { readiness: 'dependencies' },
-  };
-}
-
 function validate(config: AppConfig): void {
   const issues: string[] = [];
   // Zero or one entry: the zone's own remedy, carried only when the zone is what failed.
@@ -314,13 +282,7 @@ function validate(config: AppConfig): void {
   if (!NAME_RE.test(config.name)) {
     issues.push(`name "${config.name}" must match ${String(NAME_RE)}`);
   }
-  if (config.locales.length === 0) issues.push('locales must list at least one locale');
-  for (const locale of config.locales) {
-    if (!isLocale(locale)) issues.push(`locales contains "${locale}", not a BCP-47 tag`);
-  }
-  if (!config.locales.includes(config.defaultLocale)) {
-    issues.push(`defaultLocale "${config.defaultLocale}" is not in locales`);
-  }
+  localeIssues(config.locales, config.defaultLocale, issues);
   // `@ultimat3/time`'s rule, restated because tier 0 cannot import tier 1 — see
   // `time-zone-name.ts`. One validator means a zone `app.config.ts` accepts is a zone every
   // `format` call, `task()` and `toZoned` below it can then do arithmetic in.
@@ -334,25 +296,33 @@ function validate(config: AppConfig): void {
     issues.push(`defaultCurrency "${config.defaultCurrency}" is not a 3-letter ISO 4217 code`);
   }
   if (config.roles.length === 0) issues.push('roles must list at least one runtime role');
-  // A domain per numeric key, never a bare `< 1`: every comparison with `NaN` is false, so the old
-  // `concurrency < 1` passed `NaN`, `2.5` and `Infinity`, and nothing screened the other three.
-  const counts: readonly (string | undefined)[] = [
+  // ONE check per key, each against the key's own domain. A number is never a bare `< 1` — every
+  // comparison with `NaN` is false, so `concurrency < 1` passed `NaN`, `2.5` and `Infinity` — and
+  // a switch is never read for truthiness: `ssl: 'false'` and `enabled: 'false'` were both ON.
+  const perKey: readonly (string | undefined)[] = [
+    ...config.roles.map((role) => oneOfIssue('roles', role, ROLES)),
     countIssue('jobs.concurrency', config.jobs.concurrency, 1),
     countIssue('jobs.maxAttempts', config.jobs.maxAttempts, 1),
     countIssue('jobs.visibilityTimeoutMs', config.jobs.visibilityTimeoutMs, 1),
+    oneOfIssue('jobs.backoff', config.jobs.backoff, JOB_BACKOFFS),
     countIssue('cache.defaultTtlMs', config.cache.defaultTtlMs, 0),
+    oneOfIssue('database.driver', config.database.driver, DATABASE_DRIVERS),
+    booleanIssue('database.ssl', config.database.ssl),
+    oneOfIssue('theme.defaultMode', config.theme.defaultMode, THEME_MODES),
+    // `null` is the documented "no redirect"; a path that is said must be one a browser can follow.
+    config.auth.signInPath === null
+      ? undefined
+      : routePathIssue('auth.signInPath', config.auth.signInPath),
+    booleanIssue('ai.mcp.expose', config.ai.mcp.expose),
+    routePathIssue('ai.mcp.path', config.ai.mcp.path),
+    booleanIssue('realtime.enabled', config.realtime.enabled),
+    oneOfIssue('realtime.transport', config.realtime.transport, REALTIME_TRANSPORTS),
     readinessGraceIssue(config.drain.readinessGraceMs),
     readinessModeIssue(config.health.readiness),
   ];
-  for (const issue of counts) if (issue !== undefined) issues.push(issue);
-  if (config.jobs.queues.length === 0) issues.push('jobs.queues must list at least one queue');
-  // An untyped config reaches here with whatever it wrote: a string is a name worth echoing, and
-  // anything else goes through `describeValue` rather than `${…}`.
-  const transport: unknown = config.realtime.transport;
-  if (!REALTIME_TRANSPORTS.some((known) => known === transport)) {
-    const said = typeof transport === 'string' ? `"${transport}"` : describeValue(transport);
-    issues.push(`realtime.transport ${said} is not one of ${REALTIME_TRANSPORTS.join(', ')}`);
-  } else if (transport === 'nats' && config.realtime.urlEnv === undefined) {
+  for (const issue of perKey) if (issue !== undefined) issues.push(issue);
+  nameListIssues('jobs.queues', config.jobs.queues, 'queue', issues);
+  if (config.realtime.transport === 'nats' && config.realtime.urlEnv === undefined) {
     issues.push(`realtime.transport "nats" requires realtime.urlEnv`);
   }
   // BOTH RETENTION WINDOWS OR NEITHER — `undefined` is a real value here (never swept) and the
@@ -381,6 +351,9 @@ function validate(config: AppConfig): void {
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
   // So an unknown tier is refused at boot rather than silently ignored or silently placed first.
+  // An EMPTY ladder is refused with the unknown rung: it builds no tier at all, so every read
+  // misses and nothing says the cache was configured away.
+  if (config.cache.tiers.length === 0) issues.push('cache.tiers must list at least one tier');
   for (const tier of config.cache.tiers) {
     if (CACHE_TIERS.includes(tier)) continue;
     issues.push(`cache.tiers contains "${tier}", which is not one of ${CACHE_TIERS.join(', ')}`);
@@ -399,20 +372,14 @@ function validate(config: AppConfig): void {
 }
 
 /**
- * The single config entry point. Later overlays win, so `config/jobs.ts` can own jobs without
- * touching `app.config.ts`.
+ * Every layer, in order, merged per section and KEY BY KEY — see `layered`. `name` comes from the
+ * input alone because it identifies the app: an overlay may not rename it. No layer at all is the
+ * defaults, which is the reference `shapeIssues` compares each layer against.
  */
-export function defineConfig(
-  input: AppConfigInput,
-  ...overlays: readonly AppConfigOverlay[]
-): AppConfig {
-  const base = defaults(input.name);
-  // Every layer, in order, merged per section and KEY BY KEY — see `layered`. `name` comes from
-  // the input alone because it identifies the app: an overlay may not rename it.
-  const layers: readonly AppConfigOverlay[] = [input, ...overlays];
-
-  const config: AppConfig = {
-    name: input.name,
+function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
+  const base = configDefaults(name);
+  return {
+    name,
     locales: lastSaid(
       base.locales,
       layers.map((layer) => layer.locales),
@@ -492,7 +459,28 @@ export function defineConfig(
     ...mergeNavigation(layers),
     ...mergeIslands(layers),
   };
+}
 
+/**
+ * The single config entry point. Later overlays win, so `config/jobs.ts` can own jobs without
+ * touching `app.config.ts`.
+ */
+export function defineConfig(
+  input: AppConfigInput,
+  ...overlays: readonly AppConfigOverlay[]
+): AppConfig {
+  const layers: readonly AppConfigOverlay[] = [input, ...overlays];
+  // Structure FIRST, per layer and before the merge: a section written as `null` or a list
+  // written as a string is what `Object.entries` and `.length` raised a native `TypeError` on.
+  const issues: string[] = [];
+  // `navigation` is left out: `config-navigation.ts` carries a wrong shape through AS WRITTEN and
+  // refuses it in its own words, with the surfaces it accepts.
+  const reference = { ...merge(input.name, []), navigation: undefined };
+  for (const layer of layers) shapeIssues(reference, layer, issues);
+  if (issues.length > 0) {
+    throw new ConfigInvalidError({ cause: issues.join('; '), fix: BASE_FIX, meta: { issues } });
+  }
+  const config = merge(input.name, layers);
   validate(config);
   return Object.freeze(config);
 }

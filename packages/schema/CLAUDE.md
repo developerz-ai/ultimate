@@ -5,7 +5,7 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | Rule | |
 |---|---|
 | Deps | none (`bun-types` only) |
-| Errors | `SchemaError` mirrors `UltimateError` field-for-field **and message-for-message** (`code: title — cause`); keep `Symbol.for('ultimate.error')` |
+| Errors | `SchemaError` mirrors `UltimateError` field-for-field **and message-for-message** (`code: title — cause`), `format({ docs })`, `retry` (always `'terminal'`) and a `toJSON().meta` that cannot throw (`render-meta.ts`, core's `renderMetaRecord` restated); keep `Symbol.for('ultimate.error')` |
 | New validator | add to `validators.ts` **and** `TNamespace` **and** `t.ts` **and** `json-schema.ts` |
 | IR | every schema carries `.node: SchemaNode`; generators read that, never the closure |
 | **Issue messages** | the shape of the rejected value, **never its content** — see `describe-value.ts` |
@@ -20,7 +20,8 @@ provider → t`. `char-count.ts` is imported by BOTH `validators.ts` (which reje
 `describe-value.ts` (which renders the length in the same message), because they disagreed: the
 rule counted code points and the message counted UTF-16 units, so `t.string.min(3)` refused `'👍a'`
 with "at least 3 chars, received a string of 3 characters".
-`standard.ts` and `errors.ts` depend on nothing but each other and `error-codes.ts`, a leaf of
+`standard.ts` and `errors.ts` depend on nothing but each other, `render-meta.ts` (which reaches
+`describe-value`) and `error-codes.ts`, a leaf of
 plain data that core imports ALONE so a browser graph never keeps the `SchemaError` classes. `iso-date.ts` imports nothing and
 is imported by `validators.ts` and `coerce.ts` — the two doors a `t.date` string comes through, so
 the rule that a clock time must carry an offset or `Z` has one copy, not one per door.
@@ -144,7 +145,25 @@ Gotchas:
   22.0.0): `'March 14, 2026'`, `'3/14/2026'` and `'12'` all parsed at the host's LOCAL midnight.
   `iso-date.test.ts` runs the refusal set under two `TZ` values in subprocesses and requires one
   answer. A number (epoch ms) still passes — it names an instant on every host.
-- Adding a `SchemaKind` means updating `json-schema.ts` and `coerce.ts` in the same commit.
+- **`isIsoDateTime` checks the day against the month** (`As of 2026-10`): `new Date('2026-02-30')`
+  answers March 2nd. `DAYS_IN_MONTH` restates `daysInMonth` in `packages/time/src/plain-date.ts`
+  (tier 0 cannot import `time`); the `CALENDAR_PARITY` table in `iso-date.test.ts` and its twin in
+  `packages/time/src/plain-date.test.ts` hold them equal — the `time` copy asks BOTH predicates.
+- **`t.url` is `isAbsoluteUrl` (`absolute-url.ts`), not bare `URL.canParse`**: input the parser
+  would strip (edge spaces / C0 controls, any tab or newline) is refused, since the validator
+  returns the string as written. Not `href === value` — that refuses `https://example.com`.
+  Non-http schemes still pass; narrowing them is an owner call nobody has made.
+- **`isPlainObject` is a PROTOTYPE test** (`Object.prototype` or `null`). A `Map`, a `Date` and a
+  class instance parsed to `{}`. Cost: an object from another realm is refused too.
+- **`.default(v)` runs `v` through the schema at declaration** — `X_SCHEMA_DEFAULT_INVALID`, the
+  sibling of `X_SCHEMA_DEFAULT_UNSHAREABLE`, whose title (cannot be copied) does not state this.
+- **Async is "has a callable `then`"** (`isThenable` in `standard.ts`), never `instanceof Promise`:
+  a non-native thenable read as a result has no `issues`, so it was a success with no value.
+- **`coerceNode` on a union tries every member** and takes the first whose result `fits`
+  (`node-fits.ts`, one level deep, never validation). A string some member takes as a string is
+  returned untouched first, so `number | string` never turns `01234` into 1234. Numerics are
+  decimal only (`DECIMAL`); `Number()` also reads `0x10`.
+- Adding a `SchemaKind` means updating `json-schema.ts`, `coerce.ts` and `node-fits.ts` in the same commit.
 - **`ToJsonSchemaOptions.dialect` is a closed vocabulary read with `Object.hasOwn`** (`As of
   2026-09-06`). `DIALECTS[dialect]` on an object literal answered the `Object` FUNCTION for
   `dialect: 'constructor'` — measured: `$schema` held it, `JSON.stringify` dropped the key in

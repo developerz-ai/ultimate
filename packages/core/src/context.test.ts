@@ -327,3 +327,42 @@ describe('a child scope inherits the deadline and can only shorten it', () => {
     expect(remainingBudgetMs(createContext({}))).toBeUndefined();
   });
 });
+
+describe("a child scope's signal composes the parent's", () => {
+  test('a patched signal still sees the parent abort — client disconnect and the request timeout', () => {
+    // The deadline one line above is merged with `earliest()`; the signal was `patch ?? parent`,
+    // so a step that brought its own stopped seeing the request it runs inside end.
+    const request = new AbortController();
+    const step = new AbortController();
+    runWithContext(createContext({ signal: request.signal }), () => {
+      withChildContext({ signal: step.signal }, () => {
+        const child = useContext();
+        expect(child.signal.aborted).toBe(false);
+        request.abort();
+        expect(child.signal.aborted).toBe(true);
+        expect(() => throwIfAborted(child)).toThrow(/X_ABORTED/);
+      });
+    });
+  });
+
+  test("the patch's own abort still ends the child, and never the parent", () => {
+    const request = new AbortController();
+    const step = new AbortController();
+    runWithContext(createContext({ signal: request.signal }), () => {
+      withChildContext({ signal: step.signal }, () => {
+        step.abort();
+        expect(useContext().signal.aborted).toBe(true);
+      });
+      expect(useContext().signal.aborted).toBe(false);
+    });
+  });
+
+  test('a child that patches no signal keeps the very same one', () => {
+    const request = new AbortController();
+    runWithContext(createContext({ signal: request.signal }), () => {
+      withChildContext({ locale: 'de' }, () => {
+        expect(useContext().signal).toBe(request.signal);
+      });
+    });
+  });
+});

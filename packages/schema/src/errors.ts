@@ -3,6 +3,7 @@
 // and carries the same `Symbol.for('ultimate.error')` brand — `isUltimateError()` still matches.
 
 import { SCHEMA_ERROR_CODES } from './error-codes';
+import { renderMetaRecord } from './render-meta';
 import { formatIssues } from './standard';
 
 /**
@@ -78,7 +79,14 @@ export interface SchemaErrorJSON {
   readonly cause: string;
   readonly fix: string;
   readonly docs: string;
+  /** Always present, as on `UltimateErrorJSON` — a client never has to infer it. */
+  readonly retry: 'terminal';
   readonly meta?: Readonly<Record<string, unknown>> | undefined;
+}
+
+export interface SchemaFormatOptions {
+  /** Append a 4th `docs:` line. Off by default, as `UltimateError.format()` has it. */
+  readonly docs?: boolean | undefined;
 }
 
 export class SchemaError extends Error {
@@ -89,6 +97,12 @@ export class SchemaError extends Error {
   declare readonly cause: string;
   readonly fix: string;
   readonly docs: string;
+  /**
+   * `terminal` on every instance: a value that does not match its schema does not match it on
+   * attempt five. Carried HERE as well as in core's retry registry because `errorRetryOf` reads
+   * the field off the error, and a process that never imported core has no registry to ask.
+   */
+  readonly retry = 'terminal' as const;
   readonly meta: Readonly<Record<string, unknown>> | undefined;
 
   constructor(init: SchemaErrorInit) {
@@ -119,10 +133,10 @@ export class SchemaError extends Error {
   }
 
   /** The same 3-line rendering as `UltimateError.format()`, escaped in the same place: neither. */
-  format(): string {
-    return [`${this.code}: ${this.title}`, `  cause: ${this.cause}`, `  fix:   ${this.fix}`].join(
-      '\n',
-    );
+  format(options?: SchemaFormatOptions): string {
+    const lines = [`${this.code}: ${this.title}`, `  cause: ${this.cause}`, `  fix:   ${this.fix}`];
+    if (options?.docs === true) lines.push(`  docs:  ${this.docs}`);
+    return lines.join('\n');
   }
 
   toJSON(): SchemaErrorJSON {
@@ -132,7 +146,10 @@ export class SchemaError extends Error {
       cause: this.cause,
       fix: this.fix,
       docs: this.docs,
-      meta: this.meta,
+      retry: this.retry,
+      // A schema error's `meta` can hold what the caller sent; a `bigint` or a cycle in it threw
+      // here, at `--json` render time, one layer past a constructor that had already succeeded.
+      meta: renderMetaRecord(this.meta),
     };
   }
 }
@@ -182,6 +199,16 @@ export class DiscriminantInvalidError extends SchemaError {
 
   constructor(init: Omit<SchemaErrorInit, 'code'>) {
     super({ ...init, code: DiscriminantInvalidError.code });
+  }
+}
+
+/** Thrown where `.default()` is WRITTEN: a fallback the schema itself refuses is wrong for every parse. */
+export class DefaultInvalidError extends SchemaError {
+  static readonly code = 'X_SCHEMA_DEFAULT_INVALID';
+  override readonly name = 'DefaultInvalidError';
+
+  constructor(init: Omit<SchemaErrorInit, 'code'>) {
+    super({ ...init, code: DefaultInvalidError.code });
   }
 }
 

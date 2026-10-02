@@ -12,6 +12,7 @@ import { exec } from './exec';
 import type { StepResult } from './output';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 import { runVerify } from './verify-run';
+import type { StepTimeoutMeta } from './verify-stalled';
 import type { VerifyStep } from './verify-step';
 
 const MARK = 'ULTIMATE_DEADLINE_TEST_MARK';
@@ -84,6 +85,66 @@ describe('a step past its deadline', () => {
     expect(after).toEqual(['not started: the step is past its deadline']);
     expect(await marked(mark)).toEqual([]);
   });
+
+  test('a stuck test file is NAMED: the cause says which, the fix runs it, --json carries it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-verify-stuck-'));
+    try {
+      const passing =
+        "import { expect, test } from 'bun:test';\ntest('ok', () => expect(1).toBe(1));\n";
+      for (const name of ['a', 'b', 'c']) await Bun.write(join(root, `${name}.test.ts`), passing);
+      // Synchronous, so bun's own per-test timeout never fires: the hang only the step deadline ends.
+      await Bun.write(
+        join(root, 'stuck.test.ts'),
+        "import { test } from 'bun:test';\ntest('spins', () => {\n  for (;;) {}\n});\n",
+      );
+      const files = ['a.test.ts', 'b.test.ts', 'c.test.ts', 'stuck.test.ts'];
+      const suite: VerifyStep = {
+        name: 'unit',
+        summary: 'one file never finishes',
+        run: async (ctx) => {
+          await ctx.runner(['bun', 'test', '--parallel=2', ...files], {
+            cwd: root,
+            // An agent's shell sets these, and bun then prints no line for a passing file.
+            env: { CLAUDECODE: undefined, AGENT: undefined, REPL_ID: undefined },
+          });
+          return { ok: true, findings: [] };
+        },
+      };
+      const result = await runVerify([suite], {
+        root,
+        runner: exec,
+        stepTimeoutMs: { unit: 4_000 },
+        command: 'bun run verify',
+      });
+      const step = result.steps?.[0];
+      const [finding] = step?.findings ?? [];
+      expect(finding?.code).toBe('X_VERIFY_STEP_TIMEOUT');
+      expect(finding?.cause).toContain(
+        'still running when it was stopped: stuck.test.ts (bun test',
+      );
+      expect(finding?.fix).toStartWith('bun test stuck.test.ts   # ');
+      expect(finding?.at).toBe('stuck.test.ts');
+      // The finding's `meta` is a JSON record on the wire; this code's is `StepTimeoutMeta`.
+      const meta = finding?.meta as StepTimeoutMeta | undefined;
+      expect(meta?.inFlight).toEqual([
+        {
+          command: 'bun test --parallel=2',
+          files: 4,
+          workers: 2,
+          unreported: ['stuck.test.ts'],
+          named: true,
+        },
+      ]);
+      // The coordinator and the one worker still holding a file — what CI reported as a bare "2".
+      const killed = JSON.stringify(meta?.killed);
+      expect(killed).toContain('bun test --parallel=2 a.test.ts');
+      expect(killed).toContain('--test-worker');
+      // What the run had printed rides on the step, so a red gate shows the files that DID finish.
+      expect(step?.output).toContain('a.test.ts:');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   test('a step that hangs in this process is failed the same way, with nothing to kill', async () => {
     const never: VerifyStep = {

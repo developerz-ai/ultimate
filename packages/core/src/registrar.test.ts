@@ -8,6 +8,7 @@ import {
   type ModuleRegistrar,
   PRIMITIVE_FACTORIES,
   PRIMITIVE_KINDS,
+  PRIMITIVE_PACKAGES,
   primitiveRegistrar,
   type RegisteredPrimitive,
   registerPrimitiveRegistrar,
@@ -166,5 +167,37 @@ describe('primitiveRegistrar', () => {
     }
     expect(thrown?.code).toBe('X_REGISTRAR_MISSING');
     expect(thrown?.fix).toBe('bun add @ultimat3/query');
+  });
+
+  // `@ultimat3/${kind}` named packages that do not exist for half the kinds: a primitive's kind
+  // is not its package, and a pasted `bun add @ultimat3/task` is a 404 from the registry.
+  test.each([
+    ['task', '@ultimat3/jobs'],
+    ['job', '@ultimat3/jobs'],
+    ['mutator', '@ultimat3/action'],
+    ['route', '@ultimat3/render'],
+    ['entity', '@ultimat3/entity'],
+  ] as const)('the fix for a missing %s registrar names %s', (kind, pkg) => {
+    try {
+      primitiveRegistrar(kind);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as { fix: string }).fix).toBe(`bun add ${pkg}`);
+    }
+    registerPrimitiveRegistrar(kind, () => []);
+    try {
+      registerPrimitiveRegistrar(kind, () => []);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as { fix: string }).fix).toBe(`bun update ${pkg}`);
+    }
+  });
+
+  test('every kind maps to a real workspace package', async () => {
+    for (const kind of PRIMITIVE_KINDS) {
+      const name = PRIMITIVE_PACKAGES[kind].replace('@ultimat3/', '');
+      const manifest = Bun.file(new URL(`../../${name}/package.json`, import.meta.url));
+      expect([kind, await manifest.exists()]).toEqual([kind, true]);
+    }
   });
 });

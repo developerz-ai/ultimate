@@ -29,6 +29,12 @@ export interface Finding {
    * and must never be run as this CLI's own instruction.
    */
   readonly source?: 'ci-log';
+  /**
+   * Structured facts behind `cause`, for a `--json` reader that would otherwise parse the sentence:
+   * `X_VERIFY_STEP_TIMEOUT` carries the processes it killed and the files still in flight. Never
+   * the only home of a fact — the human render prints `cause` and `fix`, and both already say it.
+   */
+  readonly meta?: { readonly [key: string]: JsonValue };
 }
 
 export interface StepResult {

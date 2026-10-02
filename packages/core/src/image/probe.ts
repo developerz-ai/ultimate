@@ -66,8 +66,13 @@ function requireBytes(bytes: Uint8Array, needed: number, format: string, missing
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
 
-/** `mif1` is the generic HEIF brand AVIF files carry; `avis` is an image sequence. */
-const AVIF_BRANDS: ReadonlySet<string> = new Set(['avif', 'avis', 'mif1']);
+/**
+ * `avif` is a still, `avis` an image sequence. NOT `mif1`: that is the generic HEIF brand, which
+ * an AVIF file lists as a COMPATIBLE brand and a HEIC file lists too — counting it sniffed every
+ * iPhone photo as AVIF, and the probe then read (or failed to read) it as one. An AVIF whose major
+ * brand is `mif1` still names `avif` among its compatible brands, which the scan below reads.
+ */
+const AVIF_BRANDS: ReadonlySet<string> = new Set(['avif', 'avis']);
 
 function isAvif(bytes: Uint8Array): boolean {
   if (!ascii(bytes, 4, 'ftyp')) return false;

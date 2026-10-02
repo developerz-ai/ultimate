@@ -289,3 +289,62 @@ describe('retryDecision', () => {
     expect(retryDecision(policy, 1, coded('X_NOT_IMPLEMENTED')).stoppedBy).toBe('terminal');
   });
 });
+
+describe('unit · a retry bound that is not a number is refused, never looped on', () => {
+  const policy = { attempts: 3, base: 10, max: 100, jitter: 'none' as const };
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 2.5])(
+    'attempts: %p refuses before the first try',
+    async (attempts) => {
+      // `attempt >= NaN` is false forever, so the loop this guards never ended. A CALL CAP and not
+      // a timeout: an unscreened loop spins on microtasks and a timer would never get to fire.
+      let calls = 0;
+      const { sleep } = recorder();
+      const work = async (): Promise<never> => {
+        calls += 1;
+        if (calls > 20) throw coded('X_NOT_IMPLEMENTED', { retry: 'terminal' });
+        throw coded('X_DRAINING', { retry: 'retryable' });
+      };
+      try {
+        await retry(work, { ...policy, attempts }, { sleep });
+        expect.unreachable();
+      } catch (error) {
+        expect((error as UltimateError).code).toBe('X_INVARIANT');
+      }
+      expect(calls).toBe(0);
+    },
+  );
+
+  test('retryDecision refuses the same bound, so a hand-written loop cannot spin either', () => {
+    expect(() => retryDecision({ ...policy, attempts: Number.NaN }, 1, new TypeError('x'))).toThrow(
+      /attempts is NaN/,
+    );
+  });
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY])(
+    'timeBudgetMs: %p refuses — `elapsed > NaN` is false, so the budget would not exist',
+    async (timeBudgetMs) => {
+      let calls = 0;
+      const { sleep } = recorder();
+      try {
+        await retry(
+          async () => {
+            calls += 1;
+            throw coded('X_DRAINING', { retry: 'retryable' });
+          },
+          { ...policy, timeBudgetMs },
+          { sleep, now: () => 0 },
+        );
+        expect.unreachable();
+      } catch (error) {
+        expect((error as UltimateError).code).toBe('X_INVARIANT');
+      }
+      expect(calls).toBe(0);
+    },
+  );
+
+  test('a whole budget and a whole attempt count still run', async () => {
+    const { sleep } = recorder();
+    expect(await retry(async () => 'ok', { ...policy, timeBudgetMs: 0 }, { sleep })).toBe('ok');
+  });
+});

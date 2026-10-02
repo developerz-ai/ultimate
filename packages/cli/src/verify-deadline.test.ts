@@ -9,7 +9,6 @@ import {
   readStepTimeouts,
   STEP_TAG_ENV,
   SUITE_STEP_TIMEOUT_MS,
-  stepTimeoutFinding,
   stepTimeoutMs,
   taggedPids,
 } from './verify-deadline';
@@ -61,16 +60,6 @@ describe('the deadline a step runs under', () => {
     expect(bad.problems).toHaveLength(4);
     expect(bad.problems.join('\n')).toContain('names units, which x verify does not run');
     expect(readStepTimeouts({ stepTimeoutMs: 5 }, VERIFY_STEP_NAMES).problems).toHaveLength(1);
-  });
-
-  test('the finding names the step, its number and a fix that runs where it was raised', () => {
-    const finding = stepTimeoutFinding('unit', 480_000, 3, 'bun run verify');
-    expect(finding.code).toBe('X_VERIFY_STEP_TIMEOUT');
-    expect(finding.cause).toContain('step "unit"');
-    expect(finding.cause).toContain('480000 ms');
-    expect(finding.cause).toContain('3 process(es)');
-    expect(finding.fix.startsWith('bun run verify --only unit --json')).toBe(true);
-    expect(finding.fix).toContain('"stepTimeoutMs": { "unit": <milliseconds> }');
   });
 });
 
@@ -125,8 +114,16 @@ describe('guardStep', () => {
       listed = await tagged(tag);
     }
     expect(listed.length).toBeGreaterThanOrEqual(3);
-    const killed = await guard.expire();
-    expect(killed).toBeGreaterThanOrEqual(3);
+    const expiry = await guard.expire();
+    expect(expiry.killed.length).toBeGreaterThanOrEqual(3);
+    // Read before the kill, so each is still its own argv and not an empty zombie.
+    const commands = expiry.killed.map((one) => one.command);
+    expect(commands.filter((command) => command === 'sleep 300')).toHaveLength(2);
+    expect(commands.some((command) => command.startsWith('sh -c sleep 300 &'))).toBe(true);
+    // The call the step was waiting on, with what the child had printed before it died.
+    expect(expiry.inFlight).toHaveLength(1);
+    expect(expiry.inFlight[0]?.command[0]).toBe('sh');
+    expect(expiry.inFlight[0]?.output?.split('\n')).toHaveLength(2);
     const result = await running;
     expect(result.ok).toBe(false);
     expect(await goneSoon(listed)).toBe(true);
@@ -147,7 +144,7 @@ describe('guardStep', () => {
       listed = await tagged(outer);
     }
     expect(listed).toHaveLength(1);
-    expect(await killTagged(outer)).toBe(1);
+    expect(await killTagged(outer)).toEqual([{ pid: listed[0] as number, command: 'sleep 300' }]);
     expect((await running).ok).toBe(false);
   });
 });
@@ -163,13 +160,13 @@ describe('where there is no procfs', () => {
       found = taggedPids(await psProcesses(), tag);
     }
     expect(found).toHaveLength(1);
-    expect(await killTagged(tag, psProcesses)).toBe(1);
+    expect(await killTagged(tag, psProcesses)).toHaveLength(1);
     expect((await running).ok).toBe(false);
     expect(await goneSoon(found)).toBe(true);
   });
 
   test('a process table that cannot be read kills nothing and does not throw', async () => {
-    expect(await killTagged('nothing@carries-this', async () => [])).toBe(0);
+    expect(await killTagged('nothing@carries-this', async () => [])).toEqual([]);
   });
 });
 

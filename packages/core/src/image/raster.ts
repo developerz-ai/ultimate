@@ -25,7 +25,9 @@ export const MAX_IMAGE_PIXELS = 64_000_000;
 /** Checked from the header before a single byte is allocated. */
 export function assertPixelBudget(width: number, height: number, source: string): void {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
-    throw imageTooLarge(`${source} declares a ${width}x${height} image, which is not a size`, {
+    // Decode-failed, not too-large: a header declaring zero, a fraction or `NaN` pixels is
+    // inconsistent bytes, and the too-large fix — downscale it — has nothing to act on.
+    throw imageDecodeFailed(`${source} declares a ${width}x${height} image, which is not a size`, {
       width,
       height,
       source,

@@ -113,6 +113,29 @@ describe('sniffImageFormat', () => {
     });
   }
 
+  /** An `ftyp` box: major brand, minor version 0, then the compatible brands. */
+  const ftyp = (major: string, compatible: readonly string[]): Uint8Array => {
+    const box = new Uint8Array(16 + compatible.length * 4);
+    new DataView(box.buffer).setUint32(0, box.length);
+    box.set(encode(`ftyp${major}`), 4);
+    compatible.forEach((brand, i) => {
+      box.set(encode(brand), 16 + i * 4);
+    });
+    return box;
+  };
+
+  test('`mif1` alone is not AVIF — it is the generic HEIF brand a HEIC file carries too', () => {
+    expect(sniffImageFormat(ftyp('mif1', ['mif1', 'heic']))).toBeNull();
+    expect(sniffImageFormat(ftyp('heic', ['mif1', 'heic']))).toBeNull();
+    expect(sniffImageFormat(ftyp('mif1', []))).toBeNull();
+  });
+
+  test('an AVIF brand anywhere in the ftyp box still sniffs, major or compatible', () => {
+    expect(sniffImageFormat(ftyp('avif', ['mif1', 'miaf']))).toBe('avif');
+    expect(sniffImageFormat(ftyp('mif1', ['mif1', 'avif']))).toBe('avif');
+    expect(sniffImageFormat(ftyp('avis', ['msf1']))).toBe('avif');
+  });
+
   test('returns null rather than guessing, for anything it does not recognise', () => {
     expect(sniffImageFormat(new Uint8Array(0))).toBeNull();
     expect(sniffImageFormat(Uint8Array.from([1, 2, 3]))).toBeNull();
@@ -249,8 +272,8 @@ describe('probeImage / pixel budget', () => {
     expect(thrownCode(() => probeImage(pngHeader(30_000, 30_000)))).toBe('X_IMAGE_TOO_LARGE');
   });
 
-  test('a header claiming zero pixels is refused too', () => {
-    expect(thrownCode(() => probeImage(pngHeader(0, 0)))).toBe('X_IMAGE_TOO_LARGE');
+  test('a header claiming zero pixels is refused too — as malformed, not as too large', () => {
+    expect(thrownCode(() => probeImage(pngHeader(0, 0)))).toBe('X_IMAGE_DECODE_FAILED');
   });
 
   test('a large but legal header still passes', () => {

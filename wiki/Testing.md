@@ -724,7 +724,7 @@ $ x verify
 
 | Step | Deadline | Past it |
 |---|---|---|
-| `unit` `contract` `live` `job` `e2e` `eval` | 8 minutes | `X_VERIFY_STEP_TIMEOUT` on that step; every process it started is killed; the steps after it still run |
+| `unit` `contract` `live` `job` `e2e` `eval` | 8 minutes | `X_VERIFY_STEP_TIMEOUT` on that step; every process it started is killed and the test file still running is named; the steps after it still run |
 | every other step | 5 minutes | the same |
 | one you name | `"stepTimeoutMs": { "unit": 900000 }` in `x.verify.json` | the same |
 
@@ -746,7 +746,7 @@ finished. stdout stays the one document.
 | `X_COVERAGE_BELOW_FLOOR` | the unit suite covers less of the app than `x.verify.json` states | `x verify --only unit --json` names the ten worst files; cover the first with a test beside it |
 | `X_COVERAGE_FLOOR_UNSTATED` | no `coverage` in `x.verify.json`, or one under 95 with no `why` | the finding carries the line to add |
 | `X_COVERAGE_FLOOR_STALE` | a floor under 95 the tree has left 1.5 points behind | raise `coverage` to the numbers the finding carries |
-| `X_VERIFY_STEP_TIMEOUT` | a gate step ran past its deadline | `x verify --only unit --json` reproduces the step alone |
+| `X_VERIFY_STEP_TIMEOUT` | a gate step ran past its deadline | `bun test <file>` when the finding names the stuck file; otherwise `x verify --only unit --json` reproduces the step alone |
 
 Full list: [Error codes](Error-Codes).
 

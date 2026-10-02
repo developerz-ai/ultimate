@@ -1,0 +1,46 @@
+// Single responsibility: the value every `app.config.ts` key has when no layer says otherwise.
+// Split from `config.ts`, which sits at its 500-line ceiling; literals only, so it reads no key.
+
+import type { AppConfig } from './config';
+import { defaultReadinessGraceMs } from './lifecycle-grace';
+import { ROLES } from './roles';
+
+/** The keys `config-site.ts`, `config-navigation.ts` and `config-islands.ts` default themselves. */
+type Sectioned = 'name' | 'site' | 'seo' | 'navigation' | 'islands';
+
+export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
+  return {
+    locales: ['en'],
+    defaultLocale: 'en',
+    defaultTimeZone: 'UTC',
+    defaultCurrency: 'USD',
+    theme: { defaultMode: 'system', tokens: {} },
+    auth: { signInPath: null },
+    pwa: {
+      enabled: false,
+      offline: { fallback: null, image: null, font: null, neverCache: [], personalPages: 'never' },
+      backgroundSync: false,
+      push: false,
+      name: '',
+      colors: undefined,
+    },
+    roles: [...ROLES],
+    database: { driver: 'postgres', ssl: false },
+    cache: { defaultTtlMs: 60_000, tiers: ['request-memo', 'lru'] },
+    jobs: {
+      queues: [`${name}-default`],
+      concurrency: 8,
+      maxAttempts: 5,
+      backoff: 'exponential',
+      visibilityTimeoutMs: 30_000,
+    },
+    // ON by default since 22.0.0, when the boot began obeying the key: an app with no section
+    // keeps the `sync` node it always got, and `enabled: false` is the explicit opt-out.
+    realtime: { enabled: true, transport: 'memory', urlEnv: undefined },
+    notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
+    ai: { mcp: { expose: true, path: '/mcp' } },
+    // Read from the process env when the config is DEFINED — the same env the drain will run in.
+    drain: { readinessGraceMs: defaultReadinessGraceMs() },
+    health: { readiness: 'dependencies' },
+  };
+}

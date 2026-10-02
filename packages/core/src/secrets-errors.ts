@@ -78,7 +78,13 @@ export class SecretsKeyInvalidError extends UltimateError {
     super({
       code: 'X_SECRETS_KEY_INVALID',
       cause: `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters`,
-      fix: `export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"   # the key file holds the ${input.expected} characters verbatim, no newline of its own`,
+      // Branches on WHERE the bad key was read. From the variable, re-reading the file repairs
+      // it. From the FILE, that same line reads the truncated file into the variable and is
+      // refused again — the repair is the file, and no command can regenerate a lost key.
+      fix:
+        input.at === 'ULTIMATE_SECRETS_KEY'
+          ? `export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"   # the key file holds the ${input.expected} characters on one line`
+          : `edit ${renderFixShellArg(input.at, '<the key file the cause names>')} so it holds the ${input.expected} lowercase hex characters of the master key and nothing else — copy it again from wherever the team keeps it; a lost key cannot be recovered, and x secrets init starts over only in a repo with no sealed secrets`,
       meta: { at: input.at },
     });
   }

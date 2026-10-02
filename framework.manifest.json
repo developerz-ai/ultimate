@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "6ad74982d4df1c799166fae2af300c4a8aabacfd7893127679e1f97c61b8f4e0",
+  "buildId": "570c65e82cfb0a7dca3258e476b559e39f3a77d3a9e11a8ed9431d65934d3ff4",
   "tiers": {
     "0": [
       "core",
@@ -2998,6 +2998,11 @@
       "code": "X_SCHEDULE_INVALID",
       "owner": "time",
       "at": "packages/time/src/errors.ts"
+    },
+    {
+      "code": "X_SCHEMA_DEFAULT_INVALID",
+      "owner": "schema",
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCHEMA_DEFAULT_UNSHAREABLE",
