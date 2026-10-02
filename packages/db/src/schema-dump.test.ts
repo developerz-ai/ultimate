@@ -360,6 +360,8 @@ describe('the schema dump · the real embedded database', () => {
       create rule quiet as on delete to b_table do instead nothing;
       create table ext_owned (id int primary key);
       create function ext_fn() returns int language sql as $$ select 1 $$;
+      create function ext_trg() returns trigger language plpgsql as $$ begin return new; end $$;
+      create trigger ext_touch before insert on ext_owned for each row execute function ext_trg();
       create unique index b_note_key on b_table (note);
       alter table b_table replica identity using index b_note_key;
       `);
@@ -373,6 +375,11 @@ describe('the schema dump · the real embedded database', () => {
       await client.execute(sql`
       insert into pg_depend (classid, objid, objsubid, refclassid, refobjid, refobjsubid, deptype)
       select 'pg_proc'::regclass, 'ext_fn'::regproc, 0, 'pg_extension'::regclass, e.oid, 0, 'e'
+      from pg_extension e where e.extname = 'plpgsql'
+      `);
+      await client.execute(sql`
+      insert into pg_depend (classid, objid, objsubid, refclassid, refobjid, refobjsubid, deptype)
+      select 'pg_proc'::regclass, 'ext_trg'::regproc, 0, 'pg_extension'::regclass, e.oid, 0, 'e'
       from pg_extension e where e.extname = 'plpgsql'
       `);
     }, PGLITE_BOOT_MS);
@@ -405,6 +412,8 @@ describe('the schema dump · the real embedded database', () => {
       const catalog = await introspectCatalog({ client });
       expect(catalog.tables.map((table) => table.name)).not.toContain('ext_owned');
       expect(catalog.functions).toEqual([]);
+      // A trigger on a table the dump never creates would be a `09_triggers/` file that cannot load.
+      expect(catalog.triggers).toEqual([]);
       // `plpgsql` itself is left out: every database has it.
       expect(catalog.extensions).toEqual([]);
     });

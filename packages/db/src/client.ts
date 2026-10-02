@@ -23,7 +23,7 @@ import {
   type ListeningClient,
   listenUnsupported,
 } from './listen';
-import { trackPool } from './pool-gauge';
+import { type PoolDemand, trackPool } from './pool-gauge';
 import { assertPoolProfile, type PoolProfile, poolProfileFor } from './pool-profile';
 import { reserveWithin } from './pool-reserve';
 import { type SqlFragment, sql } from './sql';
@@ -75,22 +75,25 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     ...poolProfileFor(role),
     ...(options.profile ?? {}),
   });
-  let driver: BunSqlDriver | undefined;
-  // What `db_pool_in_use` and `db_pool_waiting` are derived from (`pool-gauge.ts`).
-  const demand = trackPool(profile.max);
+  // The driver and what `db_pool_in_use` / `db_pool_waiting` are derived from (`pool-gauge.ts`),
+  // as ONE value: a pool still draining after `close()` settles its own work against its own
+  // counter, never against the pool that replaced it. Built only once the driver exists, so a
+  // connection string that cannot be built registers no pool in `db_pool_max`.
+  let driver: { readonly pool: BunSqlDriver; readonly demand: PoolDemand } | undefined;
 
-  function connect(): BunSqlDriver {
+  function connect(): { readonly pool: BunSqlDriver; readonly demand: PoolDemand } {
     if (driver !== undefined) return driver;
     const url = connectionUrl(options, profile);
     const Factory = bunSqlFactory();
-    driver = new Factory(url, bunSqlPoolOptions(profile));
+    driver = { pool: new Factory(url, bunSqlPoolOptions(profile)), demand: trackPool(profile.max) };
     return driver;
   }
 
   async function run(fragment: SqlFragment): Promise<unknown> {
+    const { pool, demand } = connect();
     demand.enter();
     try {
-      return await runOn(connect(), fragment);
+      return await runOn(pool, fragment);
     } finally {
       demand.leave();
     }
@@ -113,7 +116,7 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       // (`ERR_POSTGRES_UNSAFE_TRANSACTION`), and a BEGIN that landed on a different connection
       // than the statement after it would not be a transaction at all — which is exactly what
       // `withTransaction` and `readOnlyQuery` depend on being true.
-      const pool = connect();
+      const { pool, demand } = connect();
       let reserved: BunSqlReserved;
       // Counted from the ASK: a pin queued behind a full pool is exactly what `waiting` reports.
       demand.enter();
@@ -157,7 +160,7 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     },
     async listen(channel, onNotify, onListening): Promise<DbSubscription> {
       assertListenChannel(channel);
-      const pool = connect();
+      const { pool } = connect();
       if (pool.listen === undefined) throw listenUnsupported('this Bun.SQL');
       let held: { unlisten(): Promise<void> };
       try {
@@ -188,10 +191,12 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       // after it would fail for a reason no caller can see. Clearing first also means a
       // `connect()` racing the await opens a fresh pool instead of joining the one draining. The
       // rejection still reaches the caller — a shutdown that could not drain wants to know.
-      const pool = driver;
+      const closing = driver;
       driver = undefined;
-      demand.close();
-      if (pool === undefined) return;
+      if (closing === undefined) return;
+      // Only THIS pool's counter leaves the totals; its in-flight work settles against it.
+      closing.demand.close();
+      const { pool } = closing;
       // BOUNDED, `As of 2026-08-27`, and through the driver's OWN option rather than a race here.
       // This was a bare `await pool.close()`, and `Bun.SQL`'s `end()` waits on an outstanding
       // reserved connection without ever giving up — measured three runs per case on Bun 1.3.14

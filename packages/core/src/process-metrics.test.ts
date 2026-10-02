@@ -158,6 +158,35 @@ describe('unit · process metrics', () => {
     expect(seriesValue('process_resident_memory_bytes')).toBe(5);
   });
 
+  test('a start that replaces a live one stops its sampler, and the old stop leaves the new alone', () => {
+    const first = manualTimer();
+    const second = manualTimer();
+    // Both on the DEFAULT reader: ownership is the start, never the reader's identity.
+    const stopFirst = startProcessMetrics({ role: 'web', every: first.every });
+    stop = startProcessMetrics({ role: 'web', every: second.every });
+    expect(first.stopped).toBe(true);
+    expect(second.stopped).toBe(false);
+    stopFirst();
+    expect(second.stopped).toBe(false);
+    expect(seriesValue('process_resident_memory_bytes')).toBeGreaterThan(0);
+  });
+
+  test('a new role retires the previous one: process_info is 1 for exactly one role', () => {
+    const stopFirst = startProcessMetrics({
+      role: 'web',
+      read: () => reading(),
+      every: manualTimer().every,
+    });
+    stopFirst();
+    stop = startProcessMetrics({
+      role: 'worker',
+      read: () => reading(),
+      every: manualTimer().every,
+    });
+    expect(seriesValue('process_info', 'worker')).toBe(1);
+    expect(seriesValue('process_info', 'web')).toBe(0);
+  });
+
   test('a sample interval that is not a positive whole number is refused', () => {
     expect(() =>
       startProcessMetrics({ role: 'web', read: () => reading(), sampleMs: Number.NaN }),
