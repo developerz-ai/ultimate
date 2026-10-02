@@ -85,8 +85,11 @@ afterAll(() => {
 describe('the admin permission registration', () => {
   test('importing the bridge declares nothing — an empty set stays permissive', async () => {
     clearPermissions();
-    await import('./policy-bridge');
-    await import('./index');
+    // A FRESH evaluation, by a specifier no earlier file can have loaded: a module evaluates once
+    // per process, so a plain `import('./policy-bridge')` after another suite imported it runs no
+    // module scope at all and this test could not fail.
+    const fresh: string = `./policy-bridge.ts?fresh=${String(Date.now())}`;
+    await import(fresh);
 
     expect(knownPermissions()).toEqual([]);
   });

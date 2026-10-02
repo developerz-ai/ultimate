@@ -297,6 +297,8 @@ export interface Query<
    * so it lives here and not on the schema-erased `AnyQuery` view.
    */
   client(options: QueryClientOptions): QueryClientMethodOf<TInput, TRow, TSingle>;
+  /** Narrowed by the declaration: a list read's tool answers rows, a single read's one row. */
+  tool(): QueryToolDescriptor<TSingle>;
 }
 
 /** The fluent half of a query: lifted declaration plus one method per projection. */

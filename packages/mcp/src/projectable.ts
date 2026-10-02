@@ -15,9 +15,9 @@ import { type Actor, isMcpExposed, useContext } from '@ultimat3/core';
 import type { AnyQuery } from '@ultimat3/query';
 import {
   isQuery,
-  QueryRowNotFoundError,
   guardBeforeInput as queryGuardBeforeInput,
   queryName,
+  readAnswer,
   sourceFor,
 } from '@ultimat3/query';
 import { asCallerContext } from './caller-context';
@@ -118,11 +118,8 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
         // cache tiers on purpose: an agent diffing two tool calls must be reading the rows,
         // not a TTL.
         const source = await sourceFor(target, input);
-        const rows = await source.execute();
-        if (!single) return rows;
-        const [row] = rows;
-        if (row === undefined) throw new QueryRowNotFoundError(name);
-        return row;
+        // `@ultimat3/query`'s one rule for what a read answers: rows, or a single read's row.
+        return readAnswer(target, await source.execute());
       }),
   };
 }

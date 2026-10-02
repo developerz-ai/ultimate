@@ -110,7 +110,9 @@ Tier 2 — entity. Tier 3 — query (slice 06).
 
 - **entity:** `compareByKind` and `sameValueOfKind` — how Postgres compares two values of one
   column, by the column's declared kind.
-- **query:** `kindsOf(entity)` and the `KindOf` type — see Changed.
+- **query:** `kindsOf(entity)` and the `KindOf` type — see Changed. `readAnswer` and the
+  `QueryToolAnswer` type — the one "first row or `X_NOT_FOUND`" rule the route, the tool and the
+  served MCP tool share.
 
 Tier 5 — cli.
 
@@ -508,7 +510,9 @@ Tier 3 — query. Tier 4 — mcp.
 
 - **BREAKING — a `single: true` read answers one row through its MCP tool**, or `X_NOT_FOUND` —
   from `tool().read()` and from the served `tools/call`. Its `outputSchema` is the row, was
-  `{ rows }`. An agent or client that read `.rows[0]` reads the object.
+  `{ rows }`. An agent or client that read `.rows[0]` reads the object. `tool().read()` is typed by
+  the declaration: a list read still answers `readonly object[]`, and only a single read's type
+  changed.
 
 Tier 5 — admin.
 

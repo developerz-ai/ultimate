@@ -99,7 +99,7 @@ declaration already written.
 | `annotations.idempotentHint` | `idempotent: true` on the action | `false` |
 | `annotations.openWorldHint` | `mcp.annotations` only | not published (only the author knows a write sends mail) |
 | `outputSchema` | an action's `output` whose root is an object; a query's declared `rows` as `{ rows: [<row>] }` — or the row itself for a `single: true` read, which answers one row or `X_NOT_FOUND` as its route does (`As of 2026-10`) | none — text only |
-| `structuredContent` | every successful call of a tool that publishes `outputSchema`: the serialized answer read back (a `Date` is its string), a query's under `rows` | absent |
+| `structuredContent` | every successful call of a tool that publishes `outputSchema`: the serialized answer read back (a `Date` is its string). A LIST query's rows sit under `rows`; a `single: true` query's answer is the row object itself, with no wrapper | absent |
 
 ```ts
 mcp: {

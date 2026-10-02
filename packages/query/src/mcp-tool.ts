@@ -8,11 +8,11 @@ import type { Actor, Ctx } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import type { JsonSchema } from '@ultimat3/schema';
 import { toMcpInputSchema } from '@ultimat3/schema';
-import { QueryRowNotFoundError } from './errors';
 import type { QueryPolicy } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, sourceFor } from './read';
 import { listQueries } from './registry';
+import { readAnswer } from './single-answer';
 
 export interface QueryToolReadOptions {
   readonly ctx?: Ctx;
@@ -20,7 +20,18 @@ export interface QueryToolReadOptions {
   readonly actor?: Actor | null;
 }
 
-export interface QueryToolDescriptor {
+/**
+ * What `read()` resolves to, decided by the declaration: a list read's rows, a `single: true`
+ * read's one row. Only a schema-erased query (`AnyQuery`, a mixed registry) answers the union —
+ * a KNOWN list read typed as "rows or a row" made `.map` on its own answer a compile error.
+ */
+export type QueryToolAnswer<TSingle extends boolean> = [TSingle] extends [true]
+  ? object
+  : [TSingle] extends [false]
+    ? readonly object[]
+    : readonly object[] | object;
+
+export interface QueryToolDescriptor<TSingle extends boolean = boolean> {
   /**
    * The export name VERBATIM, and identical to `query` below. `@ultimat3/mcp` serves a read
    * under `queryName(target)` and answers `tools/call` for nothing else, so a snake_cased
@@ -43,10 +54,12 @@ export interface QueryToolDescriptor {
    * none. The route's answer on both counts: an agent handed `[]` for a missing id reads "found,
    * and empty" where the same read over HTTP said 404.
    */
-  read(input: unknown, options?: QueryToolReadOptions): Promise<readonly object[] | object>;
+  read(input: unknown, options?: QueryToolReadOptions): Promise<QueryToolAnswer<TSingle>>;
 }
 
-export function toQueryTool(target: AnyQuery): QueryToolDescriptor {
+export function toQueryTool<TSingle extends boolean = boolean>(
+  target: AnyQuery & { readonly single?: TSingle },
+): QueryToolDescriptor<TSingle> {
   const name = queryName(target);
   return {
     name,
@@ -62,11 +75,8 @@ export function toQueryTool(target: AnyQuery): QueryToolDescriptor {
         ...(options.ctx === undefined ? {} : { ctx: options.ctx }),
         ...(options.actor === undefined ? {} : { actor: options.actor }),
       });
-      const rows = await source.execute();
-      if (target.single !== true) return rows;
-      const [row] = rows;
-      if (row === undefined) throw new QueryRowNotFoundError(name);
-      return row;
+      // The declaration decides the shape, and `TSingle` is that declaration as a type.
+      return readAnswer(target, await source.execute()) as QueryToolAnswer<TSingle>;
     },
   };
 }

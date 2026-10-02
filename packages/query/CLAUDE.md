@@ -73,7 +73,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   instant and nothing for `[]`; `absentArraysOf` (`input-shape.ts`) reads a REQUIRED array nobody
   sent as `[]`. Never for an optional or defaulted one — absence there is the schema's answer.
   `http-round-trip.test.ts` pins both ends against each other.
-- **`tool().read()` answers a `single: true` read as the route does**: the row, or `X_NOT_FOUND`.
+- **A `single: true` read answers the row or `X_NOT_FOUND` by ONE rule** (`single-answer.ts`:
+  `oneRowOf`, `readAnswer`) — the route, `tool().read()` and `@ultimat3/mcp`'s served tool all call
+  it. `QueryToolDescriptor<TSingle>` types the answer: rows for a list read, the row for a single.
 - **`rateLimit:` is declarable; `toQueryRoute` sets both `meta.rateLimit` and
   `meta.rateLimitBucket`**, via `@ultimat3/http`'s `toBucket` — never a local copy.
 - **`deprecated:` is a compat WINDOW**: `Deprecation` / `Sunset` / `rel="successor-version"` on every

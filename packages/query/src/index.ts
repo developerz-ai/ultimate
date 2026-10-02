@@ -101,7 +101,7 @@ export type { LiveCursor, LiveQuery, ResumeMode, ResumePlan, ToLiveOptions } fro
 export { planResume, seekOf, toLiveQuery } from './live';
 export type { ChangeEvent, ChangeOp, Patch } from './matcher';
 export { assertMatchable, match, positionFor } from './matcher';
-export type { QueryToolDescriptor, QueryToolReadOptions } from './mcp-tool';
+export type { QueryToolAnswer, QueryToolDescriptor, QueryToolReadOptions } from './mcp-tool';
 export { isExposed, toQueryTool, toQueryTools } from './mcp-tool';
 /**
  * Path derivation only. There is no `toToolName`: an MCP tool is served under the export name
@@ -178,6 +178,8 @@ export {
   seekKeyOf,
   totalOrder,
 } from './shape';
+/** What a `single: true` read answers — one rule, also `@ultimat3/mcp`'s served tool's. */
+export { readAnswer } from './single-answer';
 export type { RowProvider, SqlSource, SqlText } from './source';
 /** `isAfterKey` is the one definition of "after this position" — both seek paths use it. */
 export { Builder, from, isAfterKey } from './source';
