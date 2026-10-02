@@ -34,6 +34,9 @@ describe('apiKeyResolver', () => {
 
     expect(caller?.actor.kind).toBe('agent');
     expect(caller?.actor.orgId).toBe(ORG);
+    // The identity is the KEY, not its owning user — and the actor carries the key's scopes too.
+    expect(caller?.actor.id).toBe(issued.record.id);
+    expect([...(caller?.actor.scopes ?? [])].sort()).toEqual([...issued.record.scopes].sort());
     expect([...(caller?.scopes ?? [])].sort()).toEqual(['run:read', 'run:write']);
     // A verified use is recorded, as `verifyApiKey` does for every caller.
     expect((await store.findApiKeyById(issued.record.id))?.lastUsedAt).toEqual(clock.now());
