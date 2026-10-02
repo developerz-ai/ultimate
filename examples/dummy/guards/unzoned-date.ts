@@ -56,10 +56,17 @@ export function unzonedDates(files: readonly SourceFile[]): readonly Finding[] {
       const open = match.index + match[0].length - 1;
       if (argumentsOf(text, open).includes('timeZone')) continue;
       const line = lineOf(text, match.index);
+      // The bare `.toLocaleString(` is ALSO `Number.prototype.toLocaleString`, and a regex cannot
+      // tell a count from a date. The match stands — a date formatted this way is the defect this
+      // guard exists for — but the fix names the number exit too, because `{ timeZone }` is not
+      // one: a number ignores it, and an author following the fix verbatim would ship a lie.
+      const bare = match[0].trim() === '.toLocaleString(';
       findings.push({
         code: CODE,
         cause: `${file.path}:${line} calls ${match[0].trim()}) with no timeZone — it formats in whatever zone the process happens to run in, so one row reads as two different days across two containers`,
-        fix: `pass an explicit IANA zone in ${file.path} — toLocaleDateString(locale, { timeZone: 'UTC' }) — then: x verify`,
+        fix: bare
+          ? `in ${file.path}: a Date → pass an explicit IANA zone, at.toLocaleString(locale, { timeZone: 'UTC' }); a NUMBER → new Intl.NumberFormat(locale).format(n) instead — then: x verify`
+          : `pass an explicit IANA zone in ${file.path} — toLocaleDateString(locale, { timeZone: 'UTC' }) — then: x verify`,
         at: file.path,
       });
     }
@@ -69,18 +76,14 @@ export function unzonedDates(files: readonly SourceFile[]): readonly Finding[] {
 
 export const guard: Guard = {
   summary: 'a date is never formatted without an explicit IANA time zone',
-  async check(root) {
-    const files: SourceFile[] = [];
-    for await (const entry of new Bun.Glob('{apps,packages}/**/*.{ts,tsx}').scan({
-      cwd: root,
-      absolute: false,
-    })) {
-      const path = entry.split('\\').join('/');
-      // A test's subject is often the wrong shape on purpose, and `node_modules` is not this
-      // app's source. Neither exclusion hides a rendered date from a user.
-      if (path.includes('node_modules/') || /\.(?:test|d)\.tsx?$/.test(path)) continue;
-      files.push({ path, source: await Bun.file(`${root}/${path}`).text() });
-    }
-    return unzonedDates(files);
+  async check(_root, sources) {
+    // A test's subject is often the wrong shape on purpose; excluding it hides no rendered date
+    // from a user. The run's ONE read of the source: every guard asking for this glob shares it.
+    const code = await sources.files('{apps,packages}/**/*.{ts,tsx}');
+    return unzonedDates(
+      code
+        .filter((file) => !/\.(?:test|d)\.tsx?$/.test(file.path))
+        .map((file) => ({ path: file.path, source: file.text })),
+    );
   },
 };

@@ -143,16 +143,9 @@ export function unreplacedFocusRings(files: readonly StyleFile[]): readonly Find
 
 export const guard: Guard = {
   summary: 'a stylesheet replaces the focus ring, never only removes it',
-  async check(root) {
-    const files: StyleFile[] = [];
-    for await (const entry of new Bun.Glob('{apps,packages}/**/*.scss').scan({
-      cwd: root,
-      absolute: false,
-    })) {
-      const path = entry.split('\\').join('/');
-      if (path.includes('node_modules/')) continue;
-      files.push({ path, scss: await Bun.file(`${root}/${path}`).text() });
-    }
-    return unreplacedFocusRings(files);
+  async check(_root, sources) {
+    // The run's ONE read of the stylesheets: every guard asking for this glob shares the walk.
+    const sheets = await sources.files('{apps,packages}/**/*.scss');
+    return unreplacedFocusRings(sheets.map((file) => ({ path: file.path, scss: file.text })));
   },
 };

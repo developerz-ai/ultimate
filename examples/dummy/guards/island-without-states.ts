@@ -46,7 +46,7 @@ export function islandsWithoutStates(
 
 export const guard: Guard = {
   summary: 'an island declares the states it can be photographed in',
-  async check(root) {
+  async check(_root, sources) {
     const islands: string[] = [];
     const states: string[] = [];
     // Two patterns, one per root. These two CAN fold — `{apps,packages}/**/*.island.*` matches the
@@ -55,9 +55,7 @@ export const guard: Guard = {
     // `examples/dummy` where `apps/*/{site,app}/**/*.tsx` matches 17, which is why the guards
     // scanning `site`/`app` keep the loop — and this one keeps its shape to match them.
     for (const pattern of ['apps/**/*.island.*', 'packages/**/*.island.*']) {
-      for await (const entry of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
-        const path = entry.split('\\').join('/');
-        if (path.includes('node_modules/') || path.includes('/dist/')) continue;
+      for (const { path } of await sources.files(pattern)) {
         if (path.endsWith(ISLAND_SUFFIX)) islands.push(path);
         else if (path.endsWith(STATES_SUFFIX)) states.push(path);
       }

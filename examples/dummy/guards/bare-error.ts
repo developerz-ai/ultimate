@@ -49,18 +49,14 @@ export function bareThrows(files: readonly SourceFile[]): readonly Finding[] {
 
 export const guard: Guard = {
   summary: 'a failure carries a code, a cause and an executable fix — never a bare Error',
-  async check(root) {
-    const files: SourceFile[] = [];
-    for await (const entry of new Bun.Glob('{apps,packages}/**/*.{ts,tsx}').scan({
-      cwd: root,
-      absolute: false,
-    })) {
-      const path = entry.split('\\').join('/');
-      // A test states its verdict with `expect.unreachable()`, which the suite reports on its own
-      // terms; `node_modules` is not this app's source.
-      if (path.includes('node_modules/') || /\.(?:test|d)\.tsx?$/.test(path)) continue;
-      files.push({ path, source: await Bun.file(`${root}/${path}`).text() });
-    }
-    return bareThrows(files);
+  async check(_root, sources) {
+    // A test states its verdict with `expect.unreachable()`, which the suite reports on its own
+    // terms. The run's ONE read of the source: every guard asking for this glob shares the walk.
+    const code = await sources.files('{apps,packages}/**/*.{ts,tsx}');
+    return bareThrows(
+      code
+        .filter((file) => !/\.(?:test|d)\.tsx?$/.test(file.path))
+        .map((file) => ({ path: file.path, source: file.text })),
+    );
   },
 };
