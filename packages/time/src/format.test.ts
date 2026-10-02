@@ -46,15 +46,73 @@ describe('formatDate', () => {
 });
 
 describe('formatRelative', () => {
+  const zone = 'UTC';
+
   test('picks the largest unit that fits, relative to an injected now', () => {
     const now = fromIso('2026-03-14T08:00:00Z');
-    expect(formatRelative(fromIso('2026-03-17T08:00:00Z'), { locale: 'en', now })).toBe(
+    expect(formatRelative(fromIso('2026-03-17T08:00:00Z'), { locale: 'en', zone, now })).toBe(
       'in 3 days',
     );
-    expect(formatRelative(fromIso('2026-03-14T06:00:00Z'), { locale: 'en', now })).toBe(
+    expect(formatRelative(fromIso('2026-03-14T06:00:00Z'), { locale: 'en', zone, now })).toBe(
       '2 hours ago',
     );
-    expect(formatRelative(fromIso('2026-03-14T08:00:00Z'), { locale: 'en', now })).toBe('now');
+    expect(formatRelative(fromIso('2026-03-14T08:00:00Z'), { locale: 'en', zone, now })).toBe(
+      'now',
+    );
+  });
+
+  test('days are CALENDAR days in the zone, never elapsed hours truncated', () => {
+    // 47 hours ahead is two midnights away. Truncating 47/24 said "tomorrow".
+    const now = fromIso('2026-03-14T23:30:00Z');
+    const at = fromIso('2026-03-16T22:30:00Z');
+    expect(formatRelative(at, { locale: 'en', zone, now })).toBe('in 2 days');
+    expect(formatRelative(now, { locale: 'en', zone, now: at })).toBe('2 days ago');
+    // 25 hours ahead and one midnight away IS tomorrow…
+    expect(
+      formatRelative(fromIso('2026-03-15T09:00:00Z'), {
+        locale: 'en',
+        zone,
+        now: fromIso('2026-03-14T08:00:00Z'),
+      }),
+    ).toBe('tomorrow');
+    // …and the same two instants are two calendar days apart in Tokyo, where 08:00Z is 17:00 on
+    // the 14th and 23:30Z the next day is 08:30 on the 16th.
+    const from = fromIso('2026-03-14T08:00:00Z');
+    const to = fromIso('2026-03-15T23:30:00Z');
+    expect(formatRelative(to, { locale: 'en', zone, now: from })).toBe('tomorrow');
+    expect(formatRelative(to, { locale: 'en', zone: 'Asia/Tokyo', now: from })).toBe('in 2 days');
+  });
+
+  test('under a day apart is hours, even across a midnight', () => {
+    const now = fromIso('2026-03-14T23:00:00Z');
+    expect(formatRelative(fromIso('2026-03-15T01:00:00Z'), { locale: 'en', zone, now })).toBe(
+      'in 2 hours',
+    );
+  });
+
+  test('24 elapsed hours inside one 25-hour local day is hours, not "today"', () => {
+    // Berlin, 2026-10-25: 00:00 local to 23:00 local is 24 real hours and no midnight.
+    const now = fromIso('2026-10-24T22:00:00Z');
+    const at = fromIso('2026-10-25T22:00:00Z');
+    expect(formatRelative(at, { locale: 'en', zone: 'Europe/Berlin', now })).toBe('in 24 hours');
+  });
+
+  test('weeks, months and years count calendar days too', () => {
+    const now = fromIso('2026-03-14T08:00:00Z');
+    const opts = { locale: 'en', zone, now };
+    expect(formatRelative(fromIso('2026-03-28T08:00:00Z'), opts)).toBe('in 2 weeks');
+    expect(formatRelative(fromIso('2026-05-20T08:00:00Z'), opts)).toBe('in 2 months');
+    expect(formatRelative(fromIso('2024-03-01T08:00:00Z'), opts)).toBe('2 years ago');
+  });
+
+  test('refuses a zone that is not one', () => {
+    let caught: unknown;
+    try {
+      formatRelative(at, { locale: 'en', zone: 'CET', now: at });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: 'X_TIMEZONE_INVALID' });
   });
 });
 
@@ -255,7 +313,7 @@ describe('a malformed locale tag', () => {
     ['formatTime', () => formatTime(at, { locale: 'en_US', zone })],
     ['formatWithOffset', () => formatWithOffset(at, { locale: 'en_US', zone })],
     ['formatRange', () => formatRange(at, at, { locale: 'en_US', zone })],
-    ['formatRelative', () => formatRelative(at, { locale: 'en_US', now: at })],
+    ['formatRelative', () => formatRelative(at, { locale: 'en_US', zone, now: at })],
   ];
 
   for (const [name, run] of refusals) {
@@ -278,7 +336,7 @@ describe('a malformed locale tag', () => {
     // The refusal is about a tag that is not a tag. `zz` is one; refusing it would break every
     // app whose users carry a locale this runtime has no data for.
     expect(() => formatDateTime(at, { locale: 'zz', zone })).not.toThrow();
-    expect(() => formatRelative(at, { locale: 'zz', now: at })).not.toThrow();
+    expect(() => formatRelative(at, { locale: 'zz', zone, now: at })).not.toThrow();
   });
 
   test('a canonical spelling is what reaches Intl, so EN-us and en-US are one formatter', () => {

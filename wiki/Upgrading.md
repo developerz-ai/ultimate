@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 23.x → 24.0.0 | **16** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, and an empty cursor secret counted as unset | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 23.x → 24.0.0 | **31** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, and flag expiries that must be ISO | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
@@ -72,10 +72,11 @@ Each entry changes a surface the table below covers.
 
 ## 23.x → 24.0.0, entry by entry — **unreleased**
 
-**Sixteen entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+**Thirty-one entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
 `[Unreleased]` entries in their order: grouped by package, lowest tier first. No legacy path, no
 codemod, no compatibility shim — every break is a build error or an `X_*` error naming the rewrite.
-`As of 2026-10` slice 01 has landed: `@ultimat3/schema` and `@ultimat3/core`. A later slice appends
+`As of 2026-10` slices 01 and 02 have landed: `@ultimat3/schema` and `@ultimat3/core`, then tier 1 —
+`i18n`, `time`, `db`, `flags`. A later slice appends
 its rows below the last one and never renumbers.
 
 ### The upgrade, top to bottom
@@ -87,11 +88,16 @@ its rows below the last one and never renumbers.
 | 3 | read the deploy environment: `LOG_LEVEL`, `ULTIMATE_CURSOR_SECRET`, `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, `OTEL_EXPORTER_OTLP_METRICS_HEADERS`, `OTEL_TRACES_SAMPLER` | a boot that exits on `X_INVARIANT` or `X_CURSOR_SECRET_DEV`; a collector that rejects one signal; every root trace sampled where a leftover ratio thinned them | 7, 13, 14, 16 |
 | 4 | `x verify --only unit,contract,e2e` and fix the tests it fails | a date, URL, object or query number that validated and is now refused; a redacted field a test read | 1–3, 5, 8–11 |
 | 5 | repoint error-monitor rules from `extra.<key>` to `extra.meta.<key>`; add an exact host rule for each internal address a wildcard used to admit | a saved search that matches nothing; a refused request to `127.0.0.1` | 12, 15 |
-| 6 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+| 6 | `bun run typecheck` again for the tier-1 types: add `zone` to each `formatRelative` call, `wildcardTime` to a hand-built `CronExpression`, `case 'changed-primary-key':` to a `DriftKind` switch, `.expression` to a `CatalogColumn.generated` read | TS2741 / TS2339 at each site | 18, 20, 26, 28 |
+| 7 | load the app once (`x verify --only unit`) and fix each cron and flag declaration it refuses | `X_CRON_INVALID`, `X_FLAG_EXPIRY_INVALID` at the first import of the declaring file | 19, 30 |
+| 8 | `x db gen` where the database holds an object entry 29 lists; commit `packages/db/schema/` | a dump that no longer matches the one the gate regenerates | 29 |
+| 9 | `x verify --only unit,contract,job,live` and fix the tests it fails; read every `catch` and every `Promise.all` inside a `withTransaction` body | `X_DB_TRANSACTION_ABORTED` where a call used to resolve; `X_DB_SIBLING_SCOPE_TIMEOUT` after a 30 s wait; `⟦name⟧` in a rendered string; a relative date counted in calendar days | 17, 20–25, 27, 31 |
+| 10 | `x verify` | green, or a finding whose `fix:` is the edit | — |
 
 ### Entry by entry
 
-Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16).
+Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@ultimat3/i18n` (17),
+`@ultimat3/time` (18–21), `@ultimat3/db` (22–29), `@ultimat3/flags` (30–31).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
@@ -111,6 +117,21 @@ Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16).
 | 14 | `OTEL_TRACES_SAMPLER=parentbased_always_on` | `OTEL_TRACES_SAMPLER_ARG` is also set. The ratio is ignored and every root is sampled. For a ratio: `OTEL_TRACES_SAMPLER=parentbased_traceidratio` |
 | 15 | `hostDecision`, every `allowHosts` list | a `'*'` or `'*.suffix'` rule was how a request reached a loopback, private, link-local or metadata address literal. Add the exact rule: `allowHosts: ['*', '127.0.0.1']`. Hostnames are unaffected, including one that resolves inward |
 | 16 | `ULTIMATE_CURSOR_SECRET` | a compose file or chart sets it to the empty string. Outside local development the boot is `X_CURSOR_SECRET_DEV`: `x secrets set ULTIMATE_CURSOR_SECRET`. Cursors issued under the empty key stop verifying — clients restart from page one |
+| 17 | `t(key)` with no vars | a caller relied on the template coming back raw: a key whose message holds `{name}` or `{{`. It renders `⟦name⟧` and `{`. Pass the vars, or read the template with `t.raw(key)` |
+| 18 | interval crons, `CronExpression` | a task with `*` or `*/n` in its minute or hour field must not run twice in a fall-back hour — make the body idempotent for that hour, or give it a fixed time. A hand-built `CronExpression` adds `wildcardTime` (TS2741) |
+| 19 | cron expressions | one spells a name loosely (`mond`, `thurs`, `sept`) or has an extra `-` or `/` part (`1-5-7`, `1/2/3`). `X_CRON_INVALID` where the task is declared. Write `mon` or `monday`; write one range, one step |
+| 20 | `formatRelative` | always: add `zone` (TS2741). A test that asserted on "tomorrow" / "in N days" re-reads its expectation — the count is midnights crossed in that zone |
+| 21 | `addDaysInZone`, `formatDuration`, `formatDurationIso`, `plainDateUtc`, `addPlainDays`, `plainDateIn` | a computed argument can be a fraction, `NaN`, infinite, or a date outside years 0000–9999. `X_SCHEDULE_INVALID` or `X_INVARIANT` at the call. Round or default the number before passing it |
+| 22 | `withTransaction` | a body catches a statement error and carries on. `X_DB_TRANSACTION_ABORTED`; it used to resolve with nothing stored. `await withTransaction(() => fallible()).catch(fallback)` around the statement, or rethrow |
+| 23 | `X_DB_COMMIT_UNKNOWN`, `onRollback` | you retry on `X_DB_UNAVAILABLE` from a commit, or an `onRollback` undo had to run when the socket died mid-`COMMIT`. Neither list runs now. Check for a row the transaction wrote, then re-run or not |
+| 24 | a nested `withTransaction(fn, options)` | it passes `isolation`, `readOnly: true`, `deferrable: true` or another `client` (`X_INVARIANT`). Move the first three to the outermost call; run the other client's work after the outer scope returns |
+| 25 | sibling nested `withTransaction` scopes | a nested body awaits another scope under the same parent (`X_DB_SIBLING_SCOPE_TIMEOUT` after 30 s — it is a cycle), code relied on two siblings interleaving under `Promise.all`, or the first sibling runs longer than 30 s. Await them in sequence: `await withTransaction(first); await withTransaction(second)`. For a long first sibling pass `{ siblingWaitMs }`; `0` removes the deadline |
+| 26 | `DriftKind`, the drift check | you `switch` over `DriftKind` exhaustively: add `case 'changed-primary-key':`. A table re-keyed by hand now fails the check; the finding's `fix:` is the statements for a new migration |
+| 27 | `introspect()` | you compare `ColumnDescription.dataType` to `'numeric'`, `'ARRAY'` or `'USER-DEFINED'`, or assume every `IndexDescription.columns` entry is a column name. Compare to `numeric(12,2)`, `text[]`, the enum's name; skip entries in parentheses |
+| 28 | `CatalogColumn.generated` from `@ultimat3/db/schema-dump` | you read it as a string. Read `generated.expression`; `generated.storage` says `stored` or `virtual` |
+| 29 | `packages/db/schema/unrendered.sql` | the database holds extended statistics, forced row security, non-default column storage, an unpopulated materialized view, or a trigger on a partitioned table. `x db gen`, commit the directory |
+| 30 | a temporary flag's `expiresAt` | it is not ISO-8601 (`'December 1, 2026'`, `'12/01/2026'`) or names a day its month lacks. `X_FLAG_EXPIRY_INVALID` at declaration. Write `'2026-12-01'` |
+| 31 | `configureFlags({ reportEveryMs })` | the value can be `NaN`, infinite, negative or a fraction — `Number(process.env.X)` unset. `X_INVARIANT`. Parse and default it first; `0` is legal |
 
 ### Not breaking, but you will see it
 
@@ -122,6 +143,12 @@ Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16).
 | OTLP export | an endpoint with a query string keeps it after the signal path; a `NaN` or infinite attribute is dropped |
 | `X_VERIFY_STEP_TIMEOUT` | names the test file still running and its `fix:` runs it; `--json` findings gain `meta` |
 | `fix:` lines | `X_REGISTRAR_MISSING` / `X_REGISTRAR_CONFLICT` name the owning package; `X_SECRETS_KEY_INVALID` names the key file when the file is what is wrong |
+| `x db gen` and a changed `primaryKey` | the migration is written — drop `<table>_pkey`, add the new key. A key another table's foreign key references is `X_MIGRATION_IRREVERSIBLE` naming the constraints |
+| `x tasks` | `next`, `last` and `upcoming` are unchanged in form; they come from `isoInZone` in `@ultimat3/time` |
+| db error codes | a dead socket (`EPIPE`) is `X_DB_UNAVAILABLE`, was `X_DB_STATEMENT_FAILED`; a ragged array or Invalid Date parameter is `X_INVARIANT`, was `X_DB_UNAVAILABLE` |
+| `addBusinessDays`, `businessDaysBetween` | the wall time survives a DST day; a date the zone skipped is not counted |
+| `Accept-Language` | a `q` that is not a plain decimal ranks 0, not 1 |
+| a zone that is not a string | `X_TIMEZONE_INVALID` from every zoned function in `@ultimat3/time`, was a bare `TypeError` |
 
 ### Where the sites are
 
@@ -130,13 +157,20 @@ grep -rnE "\.default\(" apps packages --include=*.ts --include=*.tsx
 grep -rnE "retry\(|retryDecision\(|createFlightGate\(|withChildContext\(|allowHosts" apps packages --include=*.ts --include=*.tsx
 grep -rnE "LOG_LEVEL|ULTIMATE_CURSOR_SECRET|OTEL_(EXPORTER_OTLP_(TRACES|METRICS)_HEADERS|TRACES_SAMPLER)" docker .github apps packages
 grep -rnE "(ssl|enabled|expose): *process\.env" apps packages --include=*.ts
+grep -rnE "withTransaction\(" -A12 apps packages --include=*.ts | grep -E "catch|Promise\.all|isolation|readOnly|deferrable|client:"
+grep -rnE "formatRelative\(|addDaysInZone\(|formatDuration(Iso)?\(|cron: |expiresAt|reportEveryMs|introspect\(|\.generated\b|DriftKind" apps packages --include=*.ts --include=*.tsx
 ```
 
-The `typecheck` step finds none of these — every entry is a value, not a type. A typed
+Tier 0: the `typecheck` step finds none of 1–16 — every entry is a value, not a type. A typed
 `app.config.ts` already refused most of entry 6 at compile time; the ones it did not are
 `'/'`-less paths, empty lists and a locale spelled twice. Entries 4 and 6 throw at the first import;
 7 and 16 at boot; 8 and 9 where the call is made. Entries 1–3, 5, 10 and 11 need the unit,
 contract and e2e suites; 12–15 need a read of the deploy environment and the monitor.
+
+Tier 1: the `typecheck` step finds 20, and 18, 26 and 28 where a literal, a `switch` or a string
+read exists. Entries 19 and 30 throw at the first import of the declaring file; 24 and 31 at the
+call. It finds none of 17, 21–23, 25, 27 or 29 — run the unit, contract, job and live suites, and
+read every `catch` and every `Promise.all` inside a `withTransaction` body.
 
 ## 22.x → 23.0.0, entry by entry
 

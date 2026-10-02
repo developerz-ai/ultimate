@@ -186,3 +186,35 @@ describe('formatDuration locale', () => {
     expect(() => formatDuration(9_000_000, 'zz')).not.toThrow();
   });
 });
+
+describe('formatDuration and formatDurationIso refuse a non-number', () => {
+  for (const ms of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    test(`formatDuration(${ms}) is a coded refusal, never "NaN days NaN hr"`, () => {
+      let caught: unknown;
+      try {
+        formatDuration(ms, 'en');
+      } catch (error) {
+        caught = error;
+      }
+      expect(isUltimateError(caught)).toBe(true);
+      expect((caught as UltimateError).code).toBe('X_INVARIANT');
+      expect((caught as UltimateError).message).toContain('formatDuration');
+    });
+
+    test(`formatDurationIso(${ms}) is a coded refusal, never P0D`, () => {
+      let caught: unknown;
+      try {
+        formatDurationIso(ms);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isUltimateError(caught)).toBe(true);
+      expect((caught as UltimateError).message).toContain('formatDurationIso');
+    });
+  }
+
+  test('a fractional or negative duration is still a duration', () => {
+    expect(formatDuration(1500.4, 'en')).toBe('1 sec 500 ms');
+    expect(formatDurationIso(-90_000)).toBe('-PT1M30S');
+  });
+});

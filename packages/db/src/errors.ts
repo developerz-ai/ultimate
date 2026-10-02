@@ -38,6 +38,9 @@ export const DB_OWNED_ERROR_CODES = [
   'X_SQL_UNSAFE',
   'X_BRANCH_EXISTS',
   'X_SCHEMA_DUMP_DRIFT',
+  'X_DB_TRANSACTION_ABORTED',
+  'X_DB_COMMIT_UNKNOWN',
+  'X_DB_SIBLING_SCOPE_TIMEOUT',
 ] as const;
 
 /**
@@ -83,6 +86,9 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_SQL_UNSAFE: 'SQL was built by string interpolation',
   X_BRANCH_EXISTS: 'that branch database already exists',
   X_SCHEMA_DUMP_DRIFT: 'the committed schema dump is not what the migrations produce',
+  X_DB_TRANSACTION_ABORTED: 'the server rolled the transaction back',
+  X_DB_COMMIT_UNKNOWN: 'the connection was lost while COMMIT was in flight',
+  X_DB_SIBLING_SCOPE_TIMEOUT: 'a nested transaction scope waited too long for its sibling',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails

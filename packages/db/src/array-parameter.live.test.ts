@@ -118,4 +118,14 @@ describeLive('live · postgres · an array bound as a statement parameter', () =
     ]);
     expect(rows).toHaveLength(0);
   });
+
+  // The element `pgArrayLiteral` writes for a `Uint8Array`, read by the server it is written for:
+  // `String(bytes)` sent `1,2,255` — three elements, and `22P02` against `bytea[]`.
+  test('a Uint8Array element arrives as one BYTEA', async () => {
+    const rows = await run<{ n: number; hex: string }>(
+      "select array_length($1::bytea[], 1) as n, encode(($1::bytea[])[1], 'hex') as hex",
+      [[new Uint8Array([1, 2, 255]), new Uint8Array([])]],
+    );
+    expect(rows[0]).toEqual({ n: 2, hex: '0102ff' });
+  });
 });

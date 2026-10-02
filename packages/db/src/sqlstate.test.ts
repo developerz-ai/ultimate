@@ -110,6 +110,20 @@ describe('sqlStateCode', () => {
   });
 });
 
+describe('the SQLSTATE shape', () => {
+  // Five uppercase LETTERS is what a socket errno looks like, and every SQLSTATE carries a digit.
+  // Read as a state, `EPIPE` became `X_DB_STATEMENT_FAILED` — "fix the SQL" — for a dead socket,
+  // and the replica fallback, which keys on unavailability, never ran.
+  test.each(['EPIPE', 'EINTR', 'EPERM', 'ENXIO'])('%s is an errno, never a SQLSTATE', (errno) => {
+    expect(sqlState({ code: errno })).toBeUndefined();
+    expect(sqlState({ errno })).toBeUndefined();
+  });
+
+  test.each(['42P01', 'XX000', 'P0001', 'HV00A', '0A000'])('%s is still read', (state) => {
+    expect(sqlState({ code: state })).toBe(state);
+  });
+});
+
 describe('isRetryableState', () => {
   test('a unique violation is not retryable — re-running it fails identically', () => {
     expect(isRetryableState(bunSqlError('23505'))).toBe(false);

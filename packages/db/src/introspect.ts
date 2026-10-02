@@ -27,7 +27,11 @@ export interface ColumnDescription {
 
 export interface IndexDescription {
   readonly name: string;
-  /** Physical columns in **index key order** — the order the planner sorts by, never `attnum`. */
+  /**
+   * Key columns in **index key order** — the order the planner sorts by, never `attnum`. An
+   * EXPRESSION key read from the catalog is its definition in parentheses (`(lower(title))`), in
+   * its own position: marked, so it can never be taken for a column, and never dropped.
+   */
   readonly columns: readonly string[];
   readonly unique: boolean;
   readonly primary: boolean;
@@ -188,17 +192,45 @@ export async function introspect(options: IntrospectOptions = {}): Promise<Schem
     ...(await nonAppRelations(client, schema)),
   ];
 
+  // The type is `format_type`, as `catalog-relations.ts` reads it: `information_schema.data_type`
+  // answers `numeric` for `numeric(12,2)`, `ARRAY` for `text[]` and `USER-DEFINED` for an enum, and
+  // `ColumnDescription.dataType` has always been documented as the first of each pair. Still FROM
+  // the view, which decides which columns this role may see.
   const columns = await client.query<ColumnRow>(sql`
-    select table_name, column_name, data_type, is_nullable, column_default, ordinal_position
-    from information_schema.columns
-    where table_schema = ${schema}
-    order by table_name, ordinal_position
+    select
+      c.table_name,
+      c.column_name,
+      coalesce(
+        (
+          select format_type(a.atttypid, a.atttypmod)
+          from pg_attribute a
+          join pg_class r on r.oid = a.attrelid
+          join pg_namespace n on n.oid = r.relnamespace
+          where n.nspname = c.table_schema
+            and r.relname = c.table_name
+            and a.attname = c.column_name
+            and a.attnum > 0
+            and not a.attisdropped
+        ),
+        c.data_type
+      ) as data_type,
+      c.is_nullable,
+      c.column_default,
+      c.ordinal_position
+    from information_schema.columns c
+    where c.table_schema = ${schema}
+    order by c.table_name, c.ordinal_position
   `);
 
   // Ordered by the index's own key position, never by `attnum`: `indkey` IS the order the planner
   // sorts by, and a composite index on `(created_at, org_id)` whose columns were declared the
   // other way round came back reversed — a description that reads correct and compares wrong.
   // `indnkeyatts` drops INCLUDE payload columns, which are stored, not keyed.
+  //
+  // A LEFT join on `pg_attribute`: an expression key has `attnum = 0` and no attribute row, so an
+  // inner join dropped it and `(id, lower(title))` read back as `(id)` — an index rebuilt by hand
+  // with an extra expression key compared equal to the declared one. It is kept in its position
+  // and MARKED by its parentheses, which no declared column name carries.
   const indexes = await client.query<IndexRow>(sql`
     select
       t.relname as table_name,
@@ -207,7 +239,10 @@ export async function introspect(options: IntrospectOptions = {}): Promise<Schem
       ix.indisprimary as is_primary,
       pg_get_expr(ix.indpred, ix.indrelid) as predicate,
       am.amname as method,
-      array_agg(a.attname order by k.ord) as columns,
+      array_agg(
+        coalesce(a.attname::text, '(' || pg_get_indexdef(ix.indexrelid, k.ord::int, false) || ')')
+        order by k.ord
+      ) as columns,
       bool_and((ix.indoption[k.ord - 1] & 1) = 1) as descending
     from pg_class t
     join pg_namespace n on n.oid = t.relnamespace
@@ -215,9 +250,11 @@ export async function introspect(options: IntrospectOptions = {}): Promise<Schem
     join pg_class i on i.oid = ix.indexrelid
     join pg_am am on am.oid = i.relam
     cross join lateral unnest(ix.indkey::smallint[]) with ordinality as k(attnum, ord)
-    join pg_attribute a on a.attrelid = t.oid and a.attnum = k.attnum
+    left join pg_attribute a on a.attrelid = t.oid and a.attnum = k.attnum and k.attnum > 0
     where n.nspname = ${schema} and t.relkind = 'r' and k.ord <= ix.indnkeyatts
-    group by t.relname, i.relname, ix.indisunique, ix.indisprimary, ix.indpred, ix.indrelid, am.amname
+    group by
+      t.relname, i.relname, ix.indisunique, ix.indisprimary, ix.indpred, ix.indrelid,
+      ix.indexrelid, am.amname
     order by t.relname, i.relname
   `);
 

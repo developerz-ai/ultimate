@@ -57,11 +57,12 @@ let config: TimeConfig = { defaultZone: UTC, order: DEFAULT_ORDER };
  * request, but a default nothing can fall back to is a boot-time mistake with no second answer.
  */
 export function configureTime(partial: Partial<TimeConfig>): TimeConfig {
-  const defaultZone =
-    partial.defaultZone === undefined ? undefined : assertTimeZone(partial.defaultZone);
+  // `defaultZone: undefined` means "not given" and must not be spread over the zone in force.
+  const { defaultZone: given, ...rest } = partial;
+  const defaultZone = given === undefined ? undefined : assertTimeZone(given);
   config = {
     ...config,
-    ...partial,
+    ...rest,
     ...(defaultZone === undefined ? {} : { defaultZone }),
   };
   return config;

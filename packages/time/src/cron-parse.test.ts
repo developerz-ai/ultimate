@@ -167,6 +167,35 @@ describe('parseCron refuses a day that no selected month has', () => {
   });
 });
 
+describe('parseCron refuses what it used to read part of', () => {
+  test('a range has two ends and a step has one', () => {
+    for (const cron of ['0 0 1-5-7 * *', '0 0 1/2/3 * *', '0 0 */2/3 * *', '0 0 1-5/2/3 * *']) {
+      expect(isValidCron(cron)).toBe(false);
+      expect(errorOf(() => parseCron(cron))).toMatchObject({ code: 'X_CRON_INVALID' });
+    }
+  });
+
+  test('a name is its three letters or its whole word, never a prefix match', () => {
+    for (const cron of ['0 0 * marzipan *', '0 0 * * monkey', '0 0 * * sund', '0 0 * janu *']) {
+      expect(isValidCron(cron)).toBe(false);
+      expect(errorOf(() => parseCron(cron))).toMatchObject({ code: 'X_CRON_INVALID' });
+    }
+    expect(parseCron('0 0 * mar mon').months).toEqual([3]);
+    expect(parseCron('0 0 * March Monday').months).toEqual([3]);
+    expect(parseCron('0 0 * March Monday').daysOfWeek).toEqual([1]);
+    expect(parseCron('0 0 * sep-december sunday').months).toEqual([9, 10, 11, 12]);
+  });
+
+  test('wildcardTime is how the minute or hour field was spelled', () => {
+    expect(parseCron('*/5 * * * *').wildcardTime).toBe(true);
+    expect(parseCron('0 * * * *').wildcardTime).toBe(true);
+    expect(parseCron('*/20 2 * * *').wildcardTime).toBe(true);
+    expect(parseCron('30 2 * * *').wildcardTime).toBe(false);
+    expect(parseCron('0-59 0-23 * * *').wildcardTime).toBe(false);
+    expect(parseCron('* 30 2 * * *').wildcardTime).toBe(false);
+  });
+});
+
 function errorOf(run: () => unknown): { cause?: unknown } {
   try {
     run();

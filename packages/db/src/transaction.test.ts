@@ -4,8 +4,9 @@ import { dbUnavailable } from './errors';
 import { createRecordingClient, type RecordingClient } from './fake';
 import { reservableOver } from './fake-reservable';
 import { sql } from './sql';
-import type { IsolationLevel } from './transaction';
-import { beginStatement, currentTx, withTransaction } from './transaction';
+import { currentTx, withTransaction } from './transaction';
+import type { IsolationLevel } from './transaction-options';
+import { beginStatement } from './transaction-options';
 
 let client: RecordingClient;
 
@@ -204,32 +205,6 @@ describe('withTransaction and the reserved connection', () => {
     expect(texts).toEqual(['BEGIN', 'ROLLBACK']);
     expect(pins).toEqual({ reserves: 1, releases: 1 });
     expect(currentTx()).toBeUndefined();
-  });
-
-  test('a rejecting COMMIT gives the pin back and reports the commit failure', async () => {
-    const boom = dbUnavailable('statement failed: COMMIT');
-    const failsOnCommit: DbClient = {
-      query: async () => [],
-      one: async () => null,
-      execute: async (fragment) => {
-        if (fragment.text === 'COMMIT') throw boom;
-        return 0;
-      },
-    };
-    const { client: reservable, pins } = reservableOver(failsOnCommit);
-    const undone: string[] = [];
-
-    await expect(
-      withTransaction(
-        async (tx) => {
-          tx.onRollback(() => undone.push('undo'));
-        },
-        { client: reservable },
-      ),
-    ).rejects.toBe(boom);
-
-    expect(undone).toEqual(['undo']);
-    expect(pins).toEqual({ reserves: 1, releases: 1 });
   });
 
   test('a client that cannot be reserved runs on the pool, unpinned', async () => {

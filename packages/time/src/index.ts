@@ -138,6 +138,7 @@ export {
   fromZonedDetailed,
   type GapPolicy,
   isoDateInZone,
+  isoInZone,
   isSameLocalDay,
   type OverlapPolicy,
   startOfDay,

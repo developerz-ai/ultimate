@@ -35,47 +35,48 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   only while its turn is held. `pglite-embedded.test.ts`, `pglite.test.ts`,
   `pglite-two-clients.test.ts`, `pglite-observer.test.ts`.
 - **The third rule is both drivers'**: `client.ts`'s pinned handle also runs direct only while held.
-  `release()` is idempotent on both; `DbConnection` and `Turn` are `Disposable` (`[Symbol.dispose]` is
-  `release()`).
+  `release()` is idempotent on both; `DbConnection` and `Turn` are `Disposable`.
 - **A pin is held by `using`, never a hand-rolled `try/finally`** (`withTransaction`,
   `readOnlyQuery`); `BEGIN` lives inside the guarded scope.
-- **`sqlstate.ts`**: `errno` first, `code` second, both shape-tested (`^[0-9A-Z]{5}$`).
-  `DB_SQLSTATE_CODES` is closed; `driverError()` is its one consumer, `sendOn` its one caller.
+- **`sqlstate.ts`**: `errno` first, `code` second, both shape-tested (five of `[0-9A-Z]`, one a
+  digit: `EPIPE` is an errno). `DB_SQLSTATE_CODES` is closed; `driverError()` is its one consumer, `sendOn` its one caller.
 - **`DbTx.origin` is the client the scope was opened on**, never the pin (entity's pinned-repository
   check reads it); a nested scope reports the root's.
 - **`withTransaction(fn, { retry })` re-runs `fn` only on `40001`/`40P01`**, default 0; each attempt
   its own pin, `BEGIN` and undo list (`runRoot`); a nested `retry` is `X_INVARIANT`. A re-run waits
-  (`transaction-backoff.ts`: core's `backoffDelay`, 10 ms → 500 ms, full jitter; `{ sleep, random }`
-  are injection seams); nothing waits at retry 0 or after the last attempt.
-- **Four codes are classified `retryable`** (`DB_ERROR_RETRY`: `X_DB_SERIALIZATION_FAILURE`,
-  `X_DB_LOCK_TIMEOUT`, `X_DB_POOL_EXHAUSTED`, `X_MIGRATE_CONCURRENT`); terminal ones are deliberately
-  unclassified (`errors-retry.test.ts` asserts the absence). Core's `retry()` executor is NOT adopted.
-- **`BEGIN` re-derives its isolation level from the closed set** (`isolationMode` switch with a `never`
-  default; anything else `X_SQL_UNSAFE`).
-- Transaction control: `ROLLBACK` / `ROLLBACK TO SAVEPOINT` are best-effort; `SAVEPOINT` and
-  `RELEASE SAVEPOINT` are deliberately uncaught.
-- **`close()` is BOUNDED by the driver's own `{ timeout }` in SECONDS** (`drainTimeoutMs / 1000`);
-  `drainTimeoutMs: 0` sends no option; the verdict is elapsed time on `performance.now()`
-  (`X_DB_DRAIN_TIMEOUT`). `pool-drain.test.ts`, `pool-drain.live.test.ts`. `close()` clears the cached
-  driver before awaiting the teardown.
+  (`transaction-backoff.ts`: 10 ms → 500 ms, full jitter; `{ sleep, random }` are seams).
+- **Four codes are `retryable`** (`DB_ERROR_RETRY`); terminal ones stay unclassified
+  (`errors-retry.test.ts`). Core's `retry()` executor is NOT adopted.
+- **`BEGIN` re-derives its isolation level from the closed set** (`isolationMode`; else `X_SQL_UNSAFE`).
+- **An aborted transaction is reported** (`X_DB_TRANSACTION_ABORTED`; README "Transactions that end
+  badly"): a failure carrying a SQLSTATE marks the root's `abort`, only a successful `ROLLBACK TO`
+  clears it (a failed one sets it), and `COMMIT` is then refused unsent. `commit-tag.ts` reads the
+  COMMIT tag in BOTH funnels. `COMMIT` rejecting with no SQLSTATE is `X_DB_COMMIT_UNKNOWN`: neither
+  list runs. `transaction-errors.ts`; `transaction-options.ts` holds `DbTx`, options, `BEGIN` text.
+- **Sibling nested scopes take turns** (`TxState.children`; savepoints are a stack) under a deadline
+  (`sibling-turn.ts`, `siblingWaitMs`, `X_DB_SIBLING_SCOPE_TIMEOUT`). A nested
+  `isolation`/`readOnly`/`deferrable`/foreign `client` is `X_INVARIANT`.
+- **`close()` is BOUNDED by the driver's own `{ timeout }` in SECONDS** (`drainTimeoutMs / 1000`; `0`
+  sends none); the verdict is elapsed `performance.now()` (`X_DB_DRAIN_TIMEOUT`). It clears the
+  cached driver before awaiting the teardown. `pool-drain.test.ts`, `pool-drain.live.test.ts`.
 - **`client.listen` is ONE session beside the pool** (`listen.ts`; `Bun.SQL.listen`, PGlite's
   `listen` under a turn), never a reserved pin. `onListening` fires on every re-dial; a channel is
   refused unless it is a plain identifier. `listen.test.ts`, `listen.live.test.ts`.
 - `execute()` trusts the command tag only when `> 0`, in both drivers (`rowsOf`, `affectedBy`).
-- **`pool-gauge.ts` derives `db_pool_max` / `db_pool_in_use` / `db_pool_waiting` from DEMAND** —
-  `Bun.SQL` publishes no occupancy. `client.ts` is the one counter: `run()` from send to settle, a
-  pin from the ask to its (idempotent) release; a statement ON a pin is not counted again. Declared
-  on the first tracked pool, never at import. `pool-gauge.test.ts`.
+- **`pool-gauge.ts` derives `db_pool_max` / `db_pool_in_use` / `db_pool_waiting` from DEMAND**
+  (`Bun.SQL` publishes no occupancy). `client.ts` is the one counter: `run()` from send to settle, a
+  pin from ask to release; a statement ON a pin is not counted again. Declared on the first pool.
 - **`client.ts` connects, holds the client and the ambient `db()`**, and opens no socket at import;
   `pool-profile.ts`, `connection-url.ts`, `bun-sql.ts`, `pool-reserve.ts`, `db-health.ts` (`checkDb`)
   and `statement-funnel.ts` (`sendOn`/`runOn`) hold the rest.
-- **`libpq-options.ts` merges the framework's `options` into the operator's**: the framework wins on
-  the names it sets, the operator keeps every other flag; the bound is emitted for all six roles.
+- **`libpq-options.ts` merges the framework's `options` into the operator's**: the framework wins
+  on the names it sets, the operator keeps the rest; emitted for all six roles.
 - **`DATABASE_URL`'s scheme is screened at boot** (`POSTGRES_SCHEMES`: `postgres:`, `postgresql:`); the
-  received scheme is never echoed (it may be a host or a credential). `connection-url.test.ts`.
+  received scheme is never echoed (it may be a credential).
 - **A JS array bound as a parameter is rendered here** (`array-parameter.ts`, `bound-parameters.ts`,
   called only by `sendOn`) — `Bun.SQL` joins elements with commas. `NULL` bare vs `"NULL"`; quoting by
-  content; a `Uint8Array` is BYTEA; a ragged nest is refused. `array-parameter.live.test.ts`;
+  content; a `Uint8Array` is BYTEA, in an array too; a ragged nest and an Invalid Date are refused
+  (`X_INVARIANT`), ABOVE the driver's `try` in both funnels. `array-parameter.live.test.ts`;
   `packages/cli/src/pg-array.live.test.ts` is the composition test.
 - **Every numeric option is screened** through core's `finiteCount` (`replicaClient`'s breaker,
   `migrate`'s `lockWaitMs`, `readonlyQuery`'s `timeoutMs` — only an explicit `0` disables it — the pool
@@ -83,11 +84,10 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 
 ## Observation
 
-- **`observe.ts`: one process-wide `StatementObserver`** (`setStatementObserver()` /
-  `statementObserver()`). Guard at the call site; one observer, not a list; the seam swallows nothing;
-  `onStatement` is synchronous and must not issue SQL. Only `runOn` (`statement-funnel.ts`) and
-  `statement()` (`pglite.ts`) invoke it; both observe success and failure, and notify outside the
-  statement's own `try`.
+- **`observe.ts`: one process-wide `StatementObserver`** (`setStatementObserver()`). Guard at the
+  call site; one observer, not a list; the seam swallows nothing; `onStatement` is synchronous and
+  must not issue SQL. Only `runOn` (`statement-funnel.ts`) and `statement()` (`pglite.ts`) invoke
+  it; both observe success and failure, and notify outside the statement's own `try`.
 - **`attribution.ts`**: `withStatementAttribution(entity, op, fn)` — guard first (two strings, no
   allocation), a scope not a parameter, innermost pair wins; the funnels stamp it on both settle paths.
   `@ultimat3/entity`'s `postgresRepo` is the one producer.
@@ -95,12 +95,11 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   text) and `statementKind(text)` off `statementVerb(text)`. Read by `x dev`'s ledger and
   `@ultimat3/testing`'s `statements` fixture. It counts nothing.
 - **`statement-span.ts`**: `withStatementSpan` wraps the send alone — `db.<verb>`, attribute
-  `STATEMENT_ATTRIBUTE` (exported; `@ultimat3/cli`'s `dev-traces.ts` imports it), OTel kind `client`,
-  opened only when an observer is installed.
+  `STATEMENT_ATTRIBUTE` (`@ultimat3/cli`'s `dev-traces.ts` imports it), OTel kind `client`, opened
+  only when an observer is installed.
 - **`expected-loop.ts` is the ONLY suppression**: `expectedQueryLoop(reason, fn)`, innermost reason,
-  blank is `X_INVARIANT`; the funnel stamps `expected`; it suppresses a verdict, never a statement. The
-  framework's own loops declare themselves (`migrate()`, `rollback()`, `@ultimat3/admin`'s
-  `search.ts`).
+  blank is `X_INVARIANT`; the funnel stamps `expected`; it suppresses a verdict, never a statement.
+  The framework's own loops declare themselves (`migrate()`, `rollback()`, admin's `search.ts`).
 - `@ultimat3/jobs` never imports this package; its statements pass the observer only because
   `packages/cli/src/dev-queue.ts` wraps a real client for its `PgExecutor`, unattributed.
 
@@ -130,8 +129,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   (`rollbackStepsInvalid`, `X_INVARIANT`).
 - **`refuseDependentViews(tx, script)`** (`dependent-view.ts`) runs before each migration's first
   statement: a word scan over `sql-scan.ts` finds retyped columns, one catalog round trip, the pair
-  filtered in JS, and `X_MIGRATION_VIEW_DEPENDS` carries the `drop view` / `create view` from
-  `pg_get_viewdef` (built through `identifier()` inside a `try`).
+  filtered in JS (visible tables only), and `X_MIGRATION_VIEW_DEPENDS` carries the `drop view` /
+  `create view` from `pg_get_viewdef` (built through `identifier()` inside a `try`).
 - `runningAppVersion()` delegates to core's `appVersion()`.
 
 ## Generation (`x db gen`)
@@ -175,11 +174,10 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   NULL add is one statement; generated → plain is `drop expression`; plain → generated rebuilds the
   column (`regenerate` answers `rebuilt`) and moves its dependents aside; a generated column's own type
   change deliberately does not. `introspect` never reads `generation_expression` back.
-  `generate-generated-column.live.test.ts`, `generate-generated-rebuild.live.test.ts`.
-- **`REPLICA IDENTITY FULL` is emitted by a PARAMETER** (`GenerateOptions.replicaIdentityFull`, passed
-  by `@ultimat3/cli`'s `db-generate.ts` from `describeQueries()`' `subscribes:`), in
-  `replica-identity.ts`: recorded as `replicaIdentityFull: true` or absent; the snapshot records the
-  union; dead last in `up`; never destructive; a name no entity declares is skipped; never reverted;
+  `generate-generated-{column,rebuild}.live.test.ts`.
+- **`REPLICA IDENTITY FULL` is emitted by a PARAMETER** (`GenerateOptions.replicaIdentityFull`, from
+  `@ultimat3/cli`'s `db-generate.ts`), in `replica-identity.ts`: recorded `true` or absent; the
+  snapshot records the union; dead last in `up`; never destructive; an undeclared name is skipped;
   `down` is `replica identity default` except on a table this migration creates.
 - **A foreign key is `alter table … add constraint`**, collected into a bucket merged after every table
   statement (`foreign-key-plan.ts`); **dropping a table has its own bucket emitted BEFORE the table
@@ -191,20 +189,19 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`snapshot-json.ts` writes bytes that are a fixed point of Biome** (arrays collapse when they fit at
   `<= 100` counting the trailing comma); `snapshot-json.test.ts` runs the repo's own `biome format`.
 - **`declaredSchema()` answers the NEWEST migration's snapshot or `undefined`**; `checkDrift` turns
-  that into `unknown-schema`, and `x db gen` refuses with `X_MIGRATION_SNAPSHOT_MISSING`. Both lead with
-  the same two remedies in the same order: restore the sidecar (`git checkout --`), or delete the
-  migration's files FIRST and only then run `x db gen`. `snapshotSiblings` / `migrationNameOf` build
-  the second command from the caller's path; both commands are screened (`unknownSchema` through
-  `shellInertIdentifier`, `migrationSnapshotMissing` through `renderFixShellArg`), degrading the whole
-  line to prose.
+  that into `unknown-schema`, and `x db gen` refuses with `X_MIGRATION_SNAPSHOT_MISSING`. Both lead
+  with the same two remedies in order: restore the sidecar (`git checkout --`), or delete the
+  migration's files FIRST and then run `x db gen`. Both commands are screened (`shellInertIdentifier`
+  / `renderFixShellArg`), degrading the whole line to prose.
 
 ## Drift and introspection
 
 - **`checkDrift()` is the post-migrate verification** (live catalog vs the ledger just written, asked
   by `@ultimat3/cli`'s `runMigrations`), returned never thrown. The OTHER `X_DB_DRIFT` is the CLI's
   `checkSourceDrift`. Neither grows the other's half.
-- `compareTable` compares existence and **nullability** (primary-key columns excluded by the union of
-  both sides' keys); the type is not compared. The `fix:` is the `alter table … set not null` itself.
+- `compareTable` compares existence, **nullability** (the DECLARED key's columns excluded) and the
+  **primary key** in column order (`changed-primary-key`, fix = the drop/add pair; `primary-key.ts`
+  also holds `x db gen`'s arm and its inbound-foreign-key refusal). The type is not compared.
 - **A missing CHECK is drift, compared by NAME**: `TableDescription.checks` (declared: name and
   expression) vs `TableDescription.checkNames` (catalog: `conname` for `contype = 'c'`, always written
   by `introspect()`, `[]` included). Only the declared side is judged; no `changed-check`, ever.
@@ -239,8 +236,9 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`renderSchemaDump()` is pure**; `schema-dump-table.ts` spells one table. `quoted()` escapes any
   catalog name — `identifier()` refuses whitespace and `"`, which a migration may have created.
 - **`x_` owner → `framework/` twin** (`FRAMEWORK_TABLE_PREFIX`). No list is handed in.
-- **What cannot be rendered is named** (`unrenderedRows`, a closed list → `unrendered.sql`). A kind
-  rendered later leaves that list in the same diff. Never render a partition as a plain table.
+- **What cannot be rendered is named** (`unrenderedRows`, a closed list → `unrendered.sql`; a trigger
+  on an unrendered relation is named by the fold). A kind rendered later leaves that list in the
+  same diff. Never render a partition as a plain table. `generated` carries `stored`/`virtual`.
 - **`loadSchemaDump()`**: one transaction, `check_function_bodies` off, a savepoint per file, and
   only `42P01`/`42883`/`42704` are retried. Its refusal is `X_SCHEMA_DUMP_DRIFT` (`dump-drift.ts`).
 - **`object-drift.ts`**: `unexpectedObjects(live, expected)` compares IDENTITY (kind, table, name,
@@ -253,16 +251,15 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   by `pgliteExtensionExport` before it reaches a specifier; `plpgsql` is built in, never missing.
   Only a not-found import is `missing`; a bundle that throws is `X_DB_UNAVAILABLE`.
 - **`pglite-snapshot.ts`**: `snapshotDir` makes a `memory://` boot a restore. Key = PGlite version
-  (read off its `package.json`; unreadable = no cache), never the extension set. One file, checksum in its
-  header; unsound or unopenable → deleted and rebuilt; unreadable → a miss. Temp name + `rename`. Uncompressed by
-  measurement: gzip taxes the boot that writes, and a CI checkout always writes.
-- **One embedded boot** serves every database-backed dump test: `schema-dump.test.ts`.
+  (unreadable = no cache), never the extension set. One file, checksum in its header; unsound or
+  unopenable → deleted and rebuilt; unreadable → a miss. Temp name + `rename`. Uncompressed.
+- **Embedded boots for dump tests**: `schema-dump.test.ts` and `schema-dump-fidelity.test.ts`.
 
 ## Branches, replicas, read-only
 
-- **`reapBranches` sweeps branches of THIS database**: the marker is `ultimate:branch:<base>:<iso>`
-  (`BranchInfo.base`), split on the ISO tail; an older one-segment marker is skipped, never dropped; an
-  unparseable `createdAt` is skipped. `@ultimat3/cli`'s `ls`/`drop` scope by name prefix.
+- **`reapBranches` sweeps branches of THIS database**: the marker is `ultimate:branch:<base>:<iso>`,
+  split on the ISO tail; an older one-segment marker or an unparseable `createdAt` is skipped, never
+  dropped. `@ultimat3/cli`'s `ls`/`drop` scope by name prefix.
 - **Read replicas are opt-in twice**: a pool when `DATABASE_REPLICA_URL` names one
   (`default-client.ts`), and a read offered only inside `withReplicaReads(fn)` (`replica-scope.ts`);
   read-your-writes is `ReplicaScope.wrote`, never a request-id map. **`withTransaction` is on the

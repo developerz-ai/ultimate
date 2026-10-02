@@ -139,6 +139,7 @@ async function dependentViews(
       join pg_attribute a on a.attrelid = c.oid and a.attnum = d.refobjsubid
      where v.relkind in ('v', 'm') and v.oid <> c.oid
        and c.relname in (${tables}) and a.attname in (${columns})
+       and pg_table_is_visible(c.oid)
      order by v.relname
   `);
 }

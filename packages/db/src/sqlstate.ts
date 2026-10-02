@@ -31,8 +31,13 @@ export const SQLSTATE = Object.freeze({
   outOfMemory: '53200',
 } as const);
 
-/** Five characters, digits and uppercase letters — `42P01`, never `ERR_POSTGRES_SERVER_ERROR`. */
-const SQLSTATE_SHAPE = /^[0-9A-Z]{5}$/;
+/**
+ * Five characters, digits and uppercase letters, AT LEAST ONE A DIGIT — `42P01`, never
+ * `ERR_POSTGRES_SERVER_ERROR`, and never `EPIPE`. Five uppercase letters is what a socket errno
+ * looks like, and every SQLSTATE the standard or Postgres defines carries a digit; without the
+ * lookahead a dead socket was "the database refused the statement", fix: "fix the SQL".
+ */
+const SQLSTATE_SHAPE = /^(?=.*[0-9])[0-9A-Z]{5}$/;
 
 /** How deep a wrap may nest before we stop looking. `DbError` adds exactly one level. */
 const MAX_WRAPS = 4;

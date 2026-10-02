@@ -191,3 +191,47 @@ describe('unit · plainDate and t.date agree on which days exist', () => {
     }
   });
 });
+
+describe('unit · plainDate stays inside the four-digit years it can spell', () => {
+  const refused = (run: () => unknown): unknown => {
+    try {
+      run();
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  };
+
+  test('addPlainDays past 9999-12-31 is refused, never a five-digit year branded PlainDate', () => {
+    expect(refused(() => addPlainDays(plainDate('9999-12-31'), 1))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(refused(() => addPlainDays(plainDate('0000-01-01'), -1))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(addPlainDays(plainDate('9999-12-30'), 1)).toBe(plainDate('9999-12-31'));
+    expect(addPlainDays(plainDate('0000-01-02'), -1)).toBe(plainDate('0000-01-01'));
+  });
+
+  test('plainDateUtc refuses a Date outside them, so what it returns is always a PlainDate', () => {
+    expect(refused(() => plainDateUtc(new Date(Date.UTC(10000, 0, 1))))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(refused(() => plainDateUtc(new Date(Date.UTC(-1, 11, 31))))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(isPlainDate(plainDateUtc(new Date(Date.UTC(9999, 11, 31))))).toBe(true);
+  });
+
+  test('plainDateIn refuses an instant whose local date is outside them', () => {
+    // 9999-12-31T23:30Z is still 9999 in UTC and already year 10000 in Tokyo.
+    const edge = fromIso('9999-12-31T23:30:00Z');
+    expect(plainDateIn(edge, 'UTC')).toBe(plainDate('9999-12-31'));
+    expect(refused(() => plainDateIn(edge, 'Asia/Tokyo'))).toMatchObject({
+      code: 'X_SCHEDULE_INVALID',
+    });
+    expect(isPlainDate(plainDateIn(fromIso('2026-03-14T09:00:00Z'), 'America/Los_Angeles'))).toBe(
+      true,
+    );
+  });
+});

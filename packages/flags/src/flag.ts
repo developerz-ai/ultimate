@@ -7,6 +7,7 @@
 // reports it (see `evaluate.ts`). The state space stays bounded because the temporary half is
 // forced to shrink.
 
+import { isIsoDateTime } from '@ultimat3/core';
 import { flagExpiryInvalid } from './errors';
 import type { FlagTargeting } from './targeting';
 import { assertTargeting } from './targeting-assert';
@@ -106,22 +107,21 @@ export function withTargeting(flag: Flag, targeting: FlagTargeting): Flag {
 }
 
 /**
- * A time of day, and the zone it is stated in. `2026-12-01T00:00:00` without one is resolved by
- * `Date.parse` through the PROCESS's zone: measured, that one string is 1796083200000 in UTC,
- * 1796101200000 in America/New_York and 1796050800000 in Asia/Tokyo — fourteen hours of spread
- * across a fleet, so `X_FLAG_EXPIRED` starts on a different DAY on different pods. A date-only
- * form carries no clock time and is UTC by specification, so it passes.
+ * `isIsoDateTime` is the framework's one rule for "a string whose instant is the same on every
+ * host and is the one written" — `t.date`, the HTTP coercion and `@ultimat3/time`'s `fromIso` all
+ * ask it. This file used to restate two of its three patterns, and the missing one was the shape:
+ * `'December 1, 2026'` and `'12/01/2026'` carry no clock time, so they passed the zone screen and
+ * `Date.parse` read them at the HOST's local midnight — the deadline moved with the pod's `TZ` —
+ * and `'2026-02-30'` rolled over to March 2nd. A clock time with no `Z` or offset is refused by
+ * the same predicate: `2026-12-01T00:00:00` measured fourteen hours apart between
+ * America/New_York and Asia/Tokyo. A date-only form is UTC by specification, so it passes.
  *
- * The same two patterns as `@ultimat3/time`'s `fromIso`, restated rather than imported: this
- * package is tier 1 and may import `@ultimat3/core` only — a deadline is one date, and one date is
- * not worth a tier edge. `flag.test.ts` spawns a `TZ=` subprocess per zone, because
- * `scripts/test-setup.ts` pins the runner to UTC and the failure is invisible in process.
+ * `typeof` first: a snapshot pushed from a store, or a plain-JS caller, has no types to be checked
+ * by. `flag.test.ts` spawns a `TZ=` subprocess per zone, because `scripts/test-setup.ts` pins the
+ * runner to UTC and the failure is invisible in process.
  */
-const CLOCK_TIME = /[t ]\d{1,2}:\d{2}/i;
-const UTC_OFFSET = /(?:z|[+-]\d{2}:?\d{2})$/i;
-
 function expiryMsOf(key: string, expiresAt: string): number {
-  if (CLOCK_TIME.test(expiresAt) && !UTC_OFFSET.test(expiresAt)) {
+  if (typeof expiresAt !== 'string' || !isIsoDateTime(expiresAt)) {
     throw flagExpiryInvalid(key, expiresAt);
   }
   const ms = Date.parse(expiresAt);

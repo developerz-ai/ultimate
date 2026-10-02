@@ -21,4 +21,18 @@ describe('unit · encodeBoundParameters', () => {
   test('an array is still the Postgres array literal', () => {
     expect(encodeBoundParameters([['a', 'b'], 1])).toEqual(['{a,b}', 1]);
   });
+
+  // `toISOString()` on one is a bare `RangeError`, which the funnel then reported as a database
+  // nobody could reach.
+  test('an Invalid Date is refused with a code, never thrown as a RangeError', () => {
+    let thrown: { code?: string; cause?: string } | undefined;
+    try {
+      encodeBoundParameters(['a', new Date(Number.NaN)]);
+      expect.unreachable('an Invalid Date was encoded');
+    } catch (error) {
+      thrown = error as typeof thrown;
+    }
+    expect(thrown?.code).toBe('X_INVARIANT');
+    expect(thrown?.cause).toContain('parameter $2');
+  });
 });

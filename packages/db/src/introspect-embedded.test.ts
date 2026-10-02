@@ -130,4 +130,52 @@ describe('introspect · the real embedded database', () => {
     },
     PGLITE_BOOT_MS,
   );
+
+  test(
+    'an expression key is kept in its place and marked, never dropped from the column list',
+    async () => {
+      await client.execute(sql`drop table if exists introspect_exprs`);
+      await client.execute(sql`create table introspect_exprs (id int primary key, title text)`);
+      await client.execute(
+        sql`create index introspect_exprs_idx on introspect_exprs (id, lower(title))`,
+      );
+      const table = findTable(await introspect({ client }), 'introspect_exprs');
+      const index = table?.indexes.find((entry) => entry.name === 'introspect_exprs_idx');
+      // The inner join on `pg_attribute` answered `['id']`: an index rebuilt by hand with an extra
+      // expression key compared equal to the one migrations declare.
+      expect(index?.columns).toEqual(['id', '(lower(title))']);
+      await client.execute(sql`drop table introspect_exprs`);
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  test(
+    'a column type is format_type — the modifier, the element and the user type, by name',
+    async () => {
+      await client.execute(sql`drop table if exists introspect_types`);
+      await client.execute(sql`drop type if exists introspect_mood`);
+      await client.execute(sql`create type introspect_mood as enum ('ok')`);
+      await client.execute(sql`
+        create table introspect_types (
+          price numeric(12, 2),
+          name varchar(120),
+          tags text[],
+          mood introspect_mood,
+          at timestamptz
+        )
+      `);
+      const table = findTable(await introspect({ client }), 'introspect_types');
+      // `information_schema.data_type` answered numeric, character varying, ARRAY, USER-DEFINED.
+      expect(Object.fromEntries(table?.columns.map((c) => [c.name, c.dataType]) ?? [])).toEqual({
+        at: 'timestamp with time zone',
+        mood: 'introspect_mood',
+        name: 'character varying(120)',
+        price: 'numeric(12,2)',
+        tags: 'text[]',
+      });
+      await client.execute(sql`drop table introspect_types`);
+      await client.execute(sql`drop type introspect_mood`);
+    },
+    PGLITE_BOOT_MS,
+  );
 });

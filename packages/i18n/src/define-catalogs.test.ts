@@ -142,3 +142,31 @@ describe('defineCatalogs', () => {
     expect(translatorFor('es')('files.n', { count: 4 })).toBe('4 archivos');
   });
 });
+
+describe('defineCatalogs screens every locale tag before it registers one', () => {
+  const localeCode = (run: () => unknown): string | undefined => {
+    try {
+      run();
+      return undefined;
+    } catch (error) {
+      return (error as { code?: string }).code;
+    }
+  };
+
+  test('a malformed tag is X_LOCALE_INVALID and leaves the registry as it found it', () => {
+    // `configureLocales` validates, but it ran AFTER the register loop: the throw arrived with
+    // `en_US` already a registered locale and `en`'s app keys already live.
+    const before = registeredLocales();
+    const code = localeCode(() => defineCatalogs({ default: 'en', locales: { en, en_US: es } }));
+
+    expect(code).toBe('X_LOCALE_INVALID');
+    expect(registeredLocales()).toEqual(before);
+    expect(catalogFor('en')['nav.home']).toBeUndefined();
+    expect(localeConfig()).toEqual(initialConfig);
+  });
+
+  test('a well-formed set still registers', () => {
+    defineCatalogs({ default: 'en', locales: { en, 'es-MX': es } });
+    expect(registeredLocales()).toContain('es-MX');
+  });
+});

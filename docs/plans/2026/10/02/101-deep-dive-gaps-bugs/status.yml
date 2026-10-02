@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 7
-current_focus: "PR 1 — 01-core-schema.md (branch fix/101-01-core-schema)"
+percent: 17
+current_focus: "PR 3 — cache, seo, storage, money (03-tier1-services.md, second half)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -14,12 +14,14 @@ slices:
     evidence: "PR 1 (fix/101-01-core-schema): every row fixed behind a failing-first test, none dropped. bun run verify green (14 of 14 root steps), reference-app-gate 20/20 on both apps with no pin. Not done here and carried forward: the DNS-resolution half of s2-sec L1 (a wildcard allowHosts still admits a hostname that resolves inward) belongs to scraping/cli connection code, slices 11-12; core's registerPublicCause can be called by an app for a framework code, bypassing http's refusal - closing it needs an owner per registered code."
   - file: 02-db.md
     tier: 1
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    evidence: "PR 2 (fix/101-02-tier1): every row fixed, none dropped, together with the 2026-09-28 plan's slice 02 (a rolled-back transaction reported committed; savepoints not LIFO) and the ambiguous-COMMIT row. Three codes: X_DB_TRANSACTION_ABORTED, X_DB_COMMIT_UNKNOWN, X_DB_SIBLING_SCOPE_TIMEOUT. 1160 db tests on PGlite and Postgres 17."
   - file: 03-tier1-services.md
     tier: 1
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 45
+    evidence: "PR 2 landed the time, i18n and flags rows (none dropped; the cron row follows Vixie's wildcard rule because the plan's literal fix cannot satisfy its own step-1 proof). cache, seo, storage and the 2026-09-28 money/storage rows are PR 3."
   - file: 04-entity-policy-http.md
     tier: 2
     status: not_started
@@ -90,6 +92,9 @@ notes: >-
   occurrences (runs 36970672608, 36961194579, 36959562383) each left exactly two processes. The
   timeout now names the file still running, so the next occurrence identifies it. Unverified lead,
   not changed: packages/cli/src/write-line.ts and scripts/lib/log.ts retry writeSync on EAGAIN in
-  an unbounded busy loop. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  an unbounded busy loop.
+  PR 1 merged as #616 (43a80b4f). Tier 1 is two PRs to stay under the cap. Local live suites run
+  against Postgres 17 and NATS only: ports 6379, 5433 and 9000 on the build machine belong to other
+  projects, so the Redis, logical-replication and S3 live suites are proven in CI alone. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02

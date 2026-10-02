@@ -160,6 +160,34 @@ const sample = {
   greeting: 'Hi {name}',
 };
 
+describe('t() interpolates whether or not vars were passed', () => {
+  const t = createTranslator(
+    flattenCatalog({
+      hello: 'Hello {name}',
+      braces: 'Use {{name}} as the placeholder',
+      plain: 'No braces here',
+    }),
+    'en',
+  );
+
+  test('an omitted vars object is the same render as an empty one', () => {
+    // `t('hello')` used to return the raw template — `Hello {name}` on a page — while
+    // `t('hello', {})` rendered the loud `⟦name⟧`. One message, one answer.
+    expect(t('hello')).toBe('Hello ⟦name⟧');
+    expect(t('hello')).toBe(t('hello', {}));
+  });
+
+  test('an escaped brace is unescaped without vars too', () => {
+    expect(t('braces')).toBe('Use {name} as the placeholder');
+    expect(t('braces')).toBe(t('braces', {}));
+  });
+
+  test('a message with no braces is untouched, and raw() still hands back the template', () => {
+    expect(t('plain')).toBe('No braces here');
+    expect(t.raw('hello')).toBe('Hello {name}');
+  });
+});
+
 describe('TranslationKey', () => {
   test('admits nested dot-paths, leaves and plural stems', () => {
     const nested: TranslationKey<typeof sample> = 'nav.settings.profile';

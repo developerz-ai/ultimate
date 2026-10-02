@@ -107,6 +107,9 @@ export interface LanguageRange {
   quality: number;
 }
 
+/** A plain non-negative decimal — `0.8`, `1`, `.5`. No sign, no exponent, one point. */
+const Q_VALUE = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
+
 /**
  * Parse `Accept-Language: en-GB,en;q=0.9,fr-CH;q=0.8,*;q=0.5` into ranges sorted by
  * quality descending, ties resolved by header order (stable sort).
@@ -120,10 +123,13 @@ export function parseAcceptLanguage(header?: string | null): LanguageRange[] {
     if (!tag) continue;
     let quality = 1;
     for (const param of params) {
-      const match = /^\s*q\s*=\s*([0-9.]+)\s*$/i.exec(param);
+      // The value is captured WHATEVER it is and judged after. Capturing digits only meant
+      // `q=abc` did not match at all, so the default of 1 stood: a malformed range outranked
+      // every well-formed one. A `q` that is not a plain decimal is a range nobody can rank — 0.
+      const match = /^\s*q\s*=(.*)$/i.exec(param);
       if (match?.[1] !== undefined) {
-        const parsed = Number.parseFloat(match[1]);
-        quality = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 1) : 0;
+        const value = match[1].trim();
+        quality = Q_VALUE.test(value) ? Math.min(Number.parseFloat(value), 1) : 0;
       }
     }
     if (quality > 0) ranges.push({ tag: tag.toLowerCase(), quality });

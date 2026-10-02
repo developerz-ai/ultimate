@@ -75,7 +75,7 @@ Nothing else. There is no `timeout`, no `retry`, no `concurrency` on a task — 
 | Server-local time | the schedule silently moves when the container's `TZ` changes or a region differs |
 | Fixed offset (`+02:00`) | drifts by an hour twice a year against "3am local" |
 | DST spring-forward gap | a `2:30` local tick has no instant — the framework fires it at the zone's next valid instant |
-| DST fall-back overlap | a `1:30` local tick occurs twice — the framework fires it **once**, on the first occurrence |
+| DST fall-back overlap | a `1:30` local tick occurs twice — a fixed time (`30 1 * * *`) fires **once**, on the first occurrence; an interval (`*/5 * * * *`, `0 * * * *` — minute or hour field `*` or `*/n`) runs through both passes, because the repeated hour is real elapsed time |
 
 **`tz` is checked against the runtime's own IANA database, not merely for non-emptiness** `As of 2026-08`. The declaration asks `Intl.DateTimeFormat` to resolve the zone, and `Intl` carries the runtime's copy of the tz database — the only check that can tell `America/Bogota` from `Bogota`. So a non-empty string is not a timezone:
 

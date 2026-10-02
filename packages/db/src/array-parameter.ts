@@ -28,12 +28,32 @@ import { assert } from '@ultimat3/core';
  * backslash, or leading/trailing whitespace the parser would strip — plus the empty string, which
  * unquoted is not an element at all.
  */
+const hexOf = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+/**
+ * A `Date` as the instant Postgres reads, or `X_INVARIANT` for one that holds no instant.
+ * `toISOString()` on an Invalid Date is a bare `RangeError`, and inside the funnel that became
+ * "cannot reach the database". `position` names the parameter when the caller knows it.
+ */
+export function instantText(value: Date, position?: number): string {
+  assert(
+    !Number.isNaN(value.getTime()),
+    `${position === undefined ? 'an array element' : `parameter $${position}`} is an Invalid Date, which names no instant Postgres could store`,
+    'new Date(input) answers Invalid Date for text it cannot parse — parse it with t.date first, or bind null: Number.isNaN(value.getTime()) ? null : value',
+  );
+  return value.toISOString();
+}
+
 function element(value: unknown): string {
   if (value === null || value === undefined) return 'NULL';
   // A Date is ALWAYS quoted, even though an ISO-8601 instant carries no character the grammar
   // reads as structure. A timestamp element is conventionally quoted, and the alternative is a
   // rule that holds only while nothing ever renders a timestamp with a space in it.
-  if (value instanceof Date) return `"${value.toISOString()}"`;
+  if (value instanceof Date) return `"${instantText(value)}"`;
+  // BYTEA's hex form, never `String(bytes)` — that is `1,2,3`, three elements where one was bound,
+  // and no error anywhere. The backslash is doubled because a quoted element reads `\\` as one.
+  if (value instanceof Uint8Array) return `"\\\\x${hexOf(value)}"`;
   const text = String(value);
   const structural = /[{},"\\\s]/.test(text) || text.length === 0 || text.toUpperCase() === 'NULL';
   if (!structural) return text;

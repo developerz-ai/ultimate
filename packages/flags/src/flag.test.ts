@@ -191,3 +191,45 @@ describe('unit · toFlag refuses an expiry that has no zone in it', () => {
     expect(utc.answers['2026-12-01T00:00:00']).toBe('refused');
   });
 });
+
+describe('unit · toFlag takes an ISO-8601 expiry and nothing Date.parse merely tolerates', () => {
+  const temporary = (expiresAt: string) => ({
+    kind: 'temporary' as const,
+    key: 'checkout.v2',
+    description: 'd',
+    owner: 'o',
+    expiresAt,
+    targeting: { default: false },
+  });
+  const codeOf = (run: () => unknown): string | undefined => {
+    try {
+      run();
+      return undefined;
+    } catch (error) {
+      return (error as { code?: string }).code;
+    }
+  };
+
+  // Each of these PARSES. `December 1, 2026` and `12/01/2026` do so at the host's local midnight,
+  // so the deadline moved with the pod's `TZ`; `2026-02-30` rolls over to March 2nd.
+  for (const expiresAt of [
+    'December 1, 2026',
+    '12/01/2026',
+    '2026',
+    '2026-12',
+    '2026-02-30',
+    '2026-13-01',
+    '2025-02-29T00:00:00Z',
+  ]) {
+    test(`"${expiresAt}" is X_FLAG_EXPIRY_INVALID`, () => {
+      expect(codeOf(() => toFlag(temporary(expiresAt)))).toBe('X_FLAG_EXPIRY_INVALID');
+    });
+  }
+
+  test('a real ISO date still declares, leap day included', () => {
+    expect(toFlag(temporary('2028-02-29')).expiresAtMs).toBe(Date.UTC(2028, 1, 29));
+    expect(toFlag(temporary('2026-12-01T09:30:00-05:00')).expiresAtMs).toBe(
+      Date.UTC(2026, 11, 1, 14, 30),
+    );
+  });
+});

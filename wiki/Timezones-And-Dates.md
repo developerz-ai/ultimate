@@ -38,7 +38,7 @@ The zone rides the ALS request context alongside the locale, so `format*` helper
 | `formatDate(instant)` | `2026-07-26` in the actor's zone + locale | `Intl.DateTimeFormat`, `dateStyle: 'medium'` by default |
 | `formatTime(instant)` | `14:30` | 12/24h from the locale, never hardcoded |
 | `formatDateTime(instant)` | date + time | one formatter, cached per (locale, zone, style) |
-| `formatRelative(instant)` | `3 days ago` | `Intl.RelativeTimeFormat`; computed against the frozen clock in tests |
+| `formatRelative(instant)` | `3 days ago` | `Intl.RelativeTimeFormat`; computed against the frozen clock in tests. From a day apart the number is **calendar days in the zone** — 47 hours ahead across two midnights is `in 2 days`, never `tomorrow` — so it takes `zone` like every other formatter |
 | `formatRange(a, b)` | `Jul 24 – 26, 2026` | `formatRange` on the native formatter, so the collapse rules are CLDR's |
 | `formatZone(zone)` | `Central European Summer Time` | `timeZoneName: 'long'` |
 | `zonedParts(instant, zone)` | `{ year, month, day, hour, … }` | for arithmetic that must respect civil calendars |
@@ -100,8 +100,9 @@ See [Scheduled tasks](Scheduled-Tasks).
 
 | Case | Behavior |
 |---|---|
-| Spring forward, `0 2 * * *` in a zone that skips 02:00 | the occurrence does not exist; it is skipped for that day and logged |
-| Fall back, `0 2 * * *` in a zone that repeats 02:00 | fires **once**, on the first pass. Deduped by the occurrence's civil timestamp |
+| Spring forward, `0 2 * * *` in a zone that skips 02:00 | fires at the zone's next valid instant that day (03:00) — shifted, never skipped |
+| Fall back, `0 2 * * *` in a zone that repeats 02:00 | a fixed time fires **once**, on the first pass |
+| Fall back, `*/5 * * * *` or `0 * * * *` — the minute or hour field is `*` or `*/n` | an interval runs through **both** passes of the repeated hour: it is real elapsed time, and no hour of the night is dark |
 | `step.sleep('1d')` across a transition | sleeps 24h of elapsed time, not one calendar day. For calendar semantics, compute the next instant in the zone and `step.sleepUntil` |
 | Monthly on the 31st | months without a 31st are skipped, not clamped to the 30th. Use `'0 3 28 * *'` if you need every month |
 

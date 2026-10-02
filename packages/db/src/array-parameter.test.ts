@@ -66,4 +66,22 @@ describe('unit · pgArrayLiteral', () => {
       '{"2026-08-27T02:00:00.000Z"}',
     );
   });
+
+  // `String(bytes)` is `1,2,3`: three array elements where one BYTEA was bound, with no error.
+  test('a Uint8Array element is one BYTEA in hex, never its comma-joined bytes', () => {
+    expect(pgArrayLiteral([new Uint8Array([1, 2, 255]), new Uint8Array([])])).toBe(
+      '{"\\\\x0102ff","\\\\x"}',
+    );
+  });
+
+  test('an Invalid Date element is refused by name, not thrown as a RangeError', () => {
+    let thrown: { code?: string } | undefined;
+    try {
+      pgArrayLiteral([new Date(Number.NaN)]);
+      expect.unreachable('an Invalid Date was rendered');
+    } catch (error) {
+      thrown = error as typeof thrown;
+    }
+    expect(thrown?.code).toBe('X_INVARIANT');
+  });
 });

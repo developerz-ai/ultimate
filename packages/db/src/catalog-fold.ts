@@ -51,7 +51,10 @@ function columnOf(row: ColumnRow, sequences: readonly SequenceRow[]): CatalogCol
     type: row.type,
     notNull: row.not_null,
     default: generated ? null : row.expression,
-    generated: generated ? row.expression : null,
+    generated:
+      generated && row.expression !== null
+        ? { expression: row.expression, storage: row.generated === 'v' ? 'virtual' : 'stored' }
+        : null,
     identity:
       identity === undefined
         ? null

@@ -53,6 +53,15 @@ Imported by every package that renders a string.
   and `x verify`'s `i18n` step is what asks it of an app. An app reads strings through its OWN
   module (`useT()` from `packages/i18n/src/index.ts`), never `t` from `@ultimat3/i18n`, so that
   registration is a consequence of rendering rather than something a boot has to remember.
+- **`t()` ALWAYS interpolates, `As of 2026-10`.** It skipped `interpolate` when `vars` was omitted,
+  so `t('a')` on `Hello {name}` put the raw placeholder on the page where `t('a', {})` put the loud
+  `⟦name⟧`, and `{{` stayed escaped. One message, one render. A caller that wants the TEMPLATE
+  (plural forms for a client island) calls `t.raw(key)`. **Breaking.**
+- **`defineCatalogs` runs `assertLocale` over every tag BEFORE the register loop.**
+  `configureLocales` validated them after it, so `X_LOCALE_INVALID` arrived with the bad tag
+  already in `registeredLocales()`.
+- **A `q` that is not a plain decimal is 0**, so the range is dropped. A digits-only capture meant
+  `en;q=abc` never matched and kept the default quality of 1.
 - Only an **own** property of `vars` is a variable — `interpolate` guards with `Object.hasOwn`.
   A plain object inherits `constructor`, `toString`, `valueOf` and `__proto__`, so a bare
   `vars[name]` rendered a function's source into the page for a template nobody wrote a variable

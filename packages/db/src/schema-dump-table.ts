@@ -34,7 +34,10 @@ function columnClause(column: CatalogColumn): string {
   const parts = [quoted(column.name), column.type];
   if (column.collation !== null) parts.push(`collate ${quoted(column.collation)}`);
   if (column.default !== null) parts.push(`default ${column.default}`);
-  if (column.generated !== null) parts.push(`generated always as (${column.generated}) stored`);
+  if (column.generated !== null) {
+    const { expression, storage } = column.generated;
+    parts.push(`generated always as (${expression}) ${storage}`);
+  }
   if (column.identity !== null) {
     const { mode, sequence } = column.identity;
     parts.push(

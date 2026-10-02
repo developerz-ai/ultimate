@@ -194,3 +194,46 @@ describe('nextBusinessDay', () => {
     expect(toZoned(shifted, DUBAI).day).toBe(15);
   });
 });
+
+describe('addBusinessDays keeps the ORIGINAL wall time across a spring-forward day', () => {
+  test('a skipped Sunday does not shift Monday by an hour', () => {
+    // Berlin skips 02:00–03:00 on Sunday 2026-03-29. Stepping an instant a day at a time landed
+    // Sunday on 03:30 and carried that to Monday; the candidate is the calendar date plus the
+    // wall time the caller started with.
+    const friday = fromIso('2026-03-27T01:30:00Z'); // 02:30 CET
+    const monday = addBusinessDays(friday, 1, { zone: BERLIN });
+    expect(toZoned(monday, BERLIN)).toMatchObject({ month: 3, day: 30, hour: 2, minute: 30 });
+    expect(monday.toISOString()).toBe('2026-03-30T00:30:00.000Z');
+  });
+
+  test('and backwards across the same day', () => {
+    const monday = fromIso('2026-03-30T00:30:00Z'); // 02:30 CEST
+    const friday = addBusinessDays(monday, -1, { zone: BERLIN });
+    expect(friday.toISOString()).toBe('2026-03-27T01:30:00.000Z');
+  });
+
+  test('a destination inside the gap itself takes the next valid instant, that day', () => {
+    // Sunday is a work day on a Fri/Sat weekend, and its 02:30 does not exist.
+    const thursday = fromIso('2026-03-26T01:30:00Z');
+    const sunday = addBusinessDays(thursday, 1, { zone: BERLIN, weekendDays: WEEKEND_FRI_SAT });
+    expect(toZoned(sunday, BERLIN)).toMatchObject({ day: 29, hour: 3, minute: 30 });
+    // …and the day after it is back on the wall time that was asked for.
+    const monday = addBusinessDays(thursday, 2, { zone: BERLIN, weekendDays: WEEKEND_FRI_SAT });
+    expect(toZoned(monday, BERLIN)).toMatchObject({ day: 30, hour: 2, minute: 30 });
+  });
+});
+
+describe('businessDaysBetween walks calendar dates, not a chain of instants', () => {
+  test('a day the zone skipped entirely does not push the walk past `to`', () => {
+    // Samoa crossed the date line and had no 2011-12-30. Thu 29th → Mon 2 Jan is [29, 30, 31, 1]:
+    // Thursday, a date that never happened, Saturday, Sunday — one business day. Chaining an
+    // instant a day at a time stepped 29 → 31 → 1 → 2 and counted the Monday `to` excludes.
+    const APIA = 'Pacific/Apia';
+    const thursday = fromIso('2011-12-29T22:00:00Z'); // 12:00 on the 29th, UTC-10
+    const monday = fromIso('2012-01-01T22:00:00Z'); // 12:00 on 2 Jan, UTC+14
+    expect(toZoned(thursday, APIA)).toMatchObject({ day: 29, weekday: 4 });
+    expect(toZoned(monday, APIA)).toMatchObject({ day: 2, weekday: 1 });
+    expect(businessDaysBetween(thursday, monday, { zone: APIA })).toBe(1);
+    expect(businessDaysBetween(monday, thursday, { zone: APIA })).toBe(-1);
+  });
+});

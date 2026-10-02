@@ -258,6 +258,62 @@ it is serving. `max: 500` because this loop holds a connection on a request's cr
 minute-long ceiling belongs to a queue, where nobody is waiting on the other end. `sleep` and
 `random` are injectable and production passes neither.
 
+## How a transaction ends
+
+`As of 2026-10-02`. Source: [`transaction.ts`](../../packages/db/src/transaction.ts),
+[`commit-tag.ts`](../../packages/db/src/commit-tag.ts),
+[`sibling-turn.ts`](../../packages/db/src/sibling-turn.ts),
+[`transaction-errors.ts`](../../packages/db/src/transaction-errors.ts).
+
+Rule: `withTransaction` resolves only when the server answered `COMMIT` with `COMMIT`. Postgres
+aborts the whole transaction on any statement error and answers the next `COMMIT` with the tag
+`ROLLBACK` and **no error** — so a body that caught a failed statement used to resolve, fire
+`onCommit`, and store nothing.
+
+| Situation | Outcome | Hooks |
+|---|---|---|
+| body returns, nothing failed | `COMMIT`; resolves | `onCommit`, registration order |
+| body throws | `ROLLBACK`; the body's error | `onRollback`, reverse order |
+| body **catches** a failed statement and returns | `X_DB_TRANSACTION_ABORTED`, cause = the first failing statement; `COMMIT` is never sent, `ROLLBACK` is | `onRollback` |
+| `COMMIT` answered `ROLLBACK` (an abort the scope did not see) | `X_DB_TRANSACTION_ABORTED` | `onRollback` |
+| `COMMIT` rejects with a SQLSTATE — a deferred constraint, `40001` | the server's error; rolled back | `onRollback` |
+| `COMMIT` rejects with **no** SQLSTATE — the socket went first | `X_DB_COMMIT_UNKNOWN`; durable or not, unknowable here; never retried | **neither** — an undo would revert a write the database may have kept, an effect would announce rows it may not have |
+
+**Two detectors, one code.**
+
+| Detector | Where | Sees |
+|---|---|---|
+| the abort flag | `DbTx.query`/`one`/`execute` and the scope's own `SAVEPOINT`/`RELEASE` | a rejection **carrying a SQLSTATE** — the server refusing a statement it read. Set once, with that error as the cause |
+| the COMMIT tag | both statement funnels (`sendOn`, PGlite's `send`) | any `COMMIT`/`END` whose command tag is `ROLLBACK` — every COMMIT in the process, a hand-written one on a reserved connection included |
+
+- A rejection with no SQLSTATE does **not** set the flag: a refusal raised before the send
+  (`X_INVARIANT` for an Invalid Date) left the transaction untouched.
+- The flag is cleared by exactly one thing: a `ROLLBACK TO SAVEPOINT` the server accepted.
+- The tag check is not redundant. On PGlite a statement sent on the *client* inside its own live
+  transaction joins the session without passing the scope's handle; only the tag reports its abort.
+- The first failure is rendered into `cause` and **not** chained as `sourceError`: `sqlState()`
+  unwraps that chain, and "was this a unique violation" must not be answered yes by an error that
+  means the whole unit of work is gone.
+
+### Nested scopes
+
+A nested `withTransaction` is a `SAVEPOINT`.
+
+| Situation | Outcome |
+|---|---|
+| nested body throws | `ROLLBACK TO SAVEPOINT`; the body's error; the outer scope continues. **This is the way to make one statement fallible** |
+| nested body catches a failed statement and returns | the nested call rejects `X_DB_TRANSACTION_ABORTED`; its savepoint is rolled back, the flag clears, the outer scope continues |
+| nested scope opened on an already-aborted transaction | `X_DB_TRANSACTION_ABORTED` naming the first failure; no `SAVEPOINT` is sent |
+| `ROLLBACK TO SAVEPOINT` fails | the nested call still rejects with the body's error; the root is marked aborted, so its `COMMIT` is refused — committing would store work the scope reported rolled back |
+| `isolation`, `readOnly: true`, `deferrable: true`, or a `client` other than the root's `tx.origin` | `X_INVARIANT`, before any statement — the outermost `BEGIN` fixed them, and a savepoint lives on the root's connection. `retry` is refused the same way |
+| two sibling scopes under one parent (`Promise.all`) | run **one after the other**, per parent. Savepoints are a stack: interleaved, `RELEASE x_sp_1` destroyed `x_sp_2` |
+| a sibling waits longer than `siblingWaitMs` (default 30 s, `0` = no deadline) | `X_DB_SIBLING_SCOPE_TIMEOUT` naming the parent and the savepoint holding the turn. The waiter never opened; its place in the queue is handed on |
+
+The deadline exists for one shape: a body that awaits a sibling started **after** it waits for
+itself. Nothing else bounded that wait — `statement_timeout` covers a statement in flight, and a
+scope waiting for its turn has sent none — so it was a permanent hang. The cycle cannot be detected
+(whether a body is awaiting a given promise is not observable); a bound can be kept.
+
 ## Transactional outbox
 
 `<job>.enqueue` writes the job row **in the same transaction as the business write**.
@@ -341,6 +397,9 @@ The short version of why not transaction-rollback isolation: the outbox commits,
 | `X_MIGRATION_IRREVERSIBLE` | generating this plan would drop rows the `down` cannot restore | `x db gen "<name>" --allow-destructive` |
 | `X_MIGRATION_DESTRUCTIVE` | a committed `up` destroys data and does not say so | add `-- destructive: true` to the migration file |
 | `X_DB_SERIALIZATION_FAILURE` | the transaction lost its serialization race, and either nobody asked for a retry or the budget ran out | `raise the retry budget — withTransaction(fn, { retry: 8 })` — or cut the contention: narrow what the transaction reads, or drop to `isolation: 'repeatable read'` |
+| `X_DB_TRANSACTION_ABORTED` | a statement failed inside a transaction and its error was caught, so the server rolled the unit of work back — or a `COMMIT` was answered `ROLLBACK` | `await withTransaction(() => fallible()).catch(fallback)` — a nested scope is a savepoint — or rethrow |
+| `X_DB_COMMIT_UNKNOWN` | the connection failed while `COMMIT` was in flight; durable or rolled back, unknowable here | `psql "$DATABASE_URL" -c "<select a row this transaction wrote>"` — present: do not re-run; absent: re-run |
+| `X_DB_SIBLING_SCOPE_TIMEOUT` | a nested scope waited past `siblingWaitMs` for a sibling that never finished | `await withTransaction(first); await withTransaction(second)` — one after the other |
 | `X_MIGRATE_CONCURRENT` | another migrator holds the advisory lock | `psql "$DATABASE_URL" -c "select pid, state from pg_stat_activity join pg_locks using (pid) where locktype = 'advisory'"` — terminate the wedged backend, then `x db migrate` |
 | `X_TENANCY_ACTOR_MISMATCH` | a predicate, row or patch named a tenant other than the actor's | drop the `orgId` argument, or `crossTenant('<why>', fn)` |
 | `X_TENANCY_UNSCOPED` | a tenant-scoped plan has no org predicate | `scopedPlan('<entity>', tenantColumn, '<op>', plan)` |

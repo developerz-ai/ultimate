@@ -4,7 +4,9 @@
 // that only ever talks to a managed Postgres must not carry 26 MB of WASM it will never load.
 
 import { statementAttribution } from './attribution';
+import { refuseUnsendable } from './bound-parameters';
 import type { DbClient, DbConnection, ReservableClient } from './client';
+import { refuseRolledBackCommit } from './commit-tag';
 import { DbError, driverError } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
 import {
@@ -36,6 +38,8 @@ export interface PgliteResult {
   readonly rows: readonly unknown[];
   /** Postgres' command-tag count — the only truthful answer for INSERT/UPDATE/DELETE. */
   readonly affectedRows?: number | undefined;
+  /** The command tag's verb. `ROLLBACK` in answer to a `COMMIT` is how an aborted one reads. */
+  readonly command?: string | undefined;
 }
 
 /** The slice of PGlite we need. Declared structurally — this package has no dependencies. */
@@ -266,8 +270,12 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
 
   /** The send itself: one statement on the session, every driver failure typed on the way out. */
   async function send(driver: PgliteDriver, fragment: SqlFragment): Promise<PgliteResult> {
+    // Above the `try`, as `sendOn` encodes above its own: a value this package refuses to send is
+    // not a driver failure.
+    refuseUnsendable(fragment.values);
+    let result: PgliteResult;
     try {
-      return await driver.query(fragment.text, fragment.values);
+      result = await driver.query(fragment.text, fragment.values);
     } catch (error) {
       // `driverError`, as `statement-funnel.ts` already does for Bun's driver: this site passed
       // every failure to `dbUnavailable`, so under `x dev` — which IS this driver when no
@@ -276,6 +284,10 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
       // answering fine (measured 2026-09-05). PGlite carries the SQLSTATE on `code`.
       throw driverError(statementExcerpt(fragment.text), error);
     }
+    // Outside the `try`, as `sendOn` does it: a COMMIT the server answered with ROLLBACK is a
+    // refusal of its own, and `driverError` would re-wrap it as unavailability.
+    refuseRolledBackCommit(fragment.text, result);
+    return result;
   }
 
   /**

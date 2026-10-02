@@ -479,6 +479,12 @@ export const ERROR_STATUS = {
   X_JOB_NOT_PROMOTABLE: 409,
   // @ultimat3/jobs — a job list page was asked for outside its bounds
   X_JOB_PAGE_INVALID: 400,
+  // @ultimat3/db — the server rolled the transaction back
+  X_DB_TRANSACTION_ABORTED: 500,
+  // @ultimat3/db — the connection was lost while COMMIT was in flight
+  X_DB_COMMIT_UNKNOWN: 500,
+  // @ultimat3/db — a nested transaction scope waited too long for its sibling
+  X_DB_SIBLING_SCOPE_TIMEOUT: 500,
   // The keys are LITERAL — deliberately not `Readonly<Record<string, number>>`, which is what the
   // annotation used to say. This table is the closed one, so `ERROR_STATUS.X_QUERY_NOT_PAGABLE`
   // has to be a compile error rather than an `undefined` a test then asserts `toBeNumber()` on.

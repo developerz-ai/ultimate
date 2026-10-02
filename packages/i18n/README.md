@@ -54,6 +54,8 @@ t('pagination.showing', { from: 1, to: 20, total: 137 });
 t('pagination.result', { count: 1 });   // "1 result"
 t('pagination.result', { count: 9 });   // "9 results"
 t('nav.settings');                      // "⟦nav.settings⟧" — fix it or ship it broken, visibly
+t('pagination.result');                 // "⟦count⟧ result" — vars or none, the template is always
+                                        // interpolated; t.raw(key) is the template itself
 ```
 
 | Call | Returns | Use for |

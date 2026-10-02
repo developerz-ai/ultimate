@@ -143,6 +143,28 @@
   applies ONLY when day-of-month is restricted and day-of-week is not: Vixie's OR means
   `0 0 30 2 5` fires every Friday in February, so refusing it would break a working schedule.
   `MAX_STEPS` stays as the backstop for what the check cannot see.
+- **The repeated hour of a fall-back night is run through by an INTERVAL and fired once by a FIXED
+  time, `As of 2026-10`.** `CronExpression.wildcardTime` — the minute or hour field spelled `*` or
+  `*/n`, Vixie's test — is the whole decision. The wall-clock walk alone cannot see the hour come
+  round again (from 02:55 it reaches 03:00), so `*/5 * * * *` went dark 01:00Z–02:00Z in Berlin
+  once a year while `matchesCron` answered `true` inside it. `nextCronOccurrence` walks a second
+  time from the wall clock the transition lands on. A fixed time never returns its second pass,
+  from ANY `after` — `@ultimat3/jobs`' `latestOccurrence` bisects over `after`, so the answer must
+  be monotone in it; `cron-occurrence.test.ts` pins that. `matchesCron` stays the pure wall-clock
+  predicate and is `true` for a fixed time's second pass: it answers "does this instant's clock
+  match", not "is this an occurrence".
+- **`addBusinessDays` builds every candidate from the calendar date + the ORIGINAL wall time.**
+  Chained through `addDaysInZone`, a 02:30 that crossed a spring-forward Sunday became 03:30 and
+  stayed 03:30 on Monday. `businessDaysBetween` walks the same dates (`localDay`): a chain steps
+  OVER a date the zone never had (Samoa, 2011-12-30) and so counted the day `to` excludes. A date
+  that does not exist is not a day of either kind.
+- **`formatRelative` takes `zone`, and from a day apart counts CALENDAR days** (`daysBetween`).
+  `trunc(47h / 24h)` called two midnights away "tomorrow". Under a day it is elapsed time; a full
+  day apart with no midnight crossed (a 25-hour day) is hours, not "today". **Breaking.**
+- **A cron name matches EXACTLY** — its three letters or its whole word. First-three-letters
+  matching read `marzipan` as March. Extra `-` and `/` parts are refused, not dropped.
+- **A `PlainDate` has four year digits.** `plainDateUtc` (and so `addPlainDays`) and `plainDateIn`
+  refuse a year outside 0000-9999 rather than brand `10000-01-01`, which `isPlainDate` rejects.
 - Never add `86_400_000` to cross a day boundary — use `addDaysInZone` / `fromZoned`.
 - Never take the clock from `Date.now()`; accept a `Clock` (`now(clock)`).
 - Cron and schedules iterate the **local wall clock**, then convert once with `fromZoned`.
