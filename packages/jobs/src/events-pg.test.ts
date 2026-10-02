@@ -8,6 +8,7 @@ import type { PgExecutor } from './driver-pg';
 import {
   SQL_EVENT_FIND,
   SQL_EVENT_LIST,
+  SQL_EVENT_NOW,
   SQL_EVENT_PUBLISH,
   SQL_EVENT_PURGE,
 } from './driver-pg-sql';
@@ -24,48 +25,70 @@ function recorder(rows: readonly unknown[] = []) {
   return { executor, calls };
 }
 
-const clock = { now: () => new Date(1_000_000), monotonic: () => 1_000_000 };
-
 describe('the pg event bus', () => {
   test('a step on ANOTHER process finds an event this one published', async () => {
     // One table, so the pod that publishes and the pod that resumes are never the same heap.
     const { executor } = recorder([{ payload: { invoice: 'in_1' }, published_at: '1000000' }]);
-    const bus = createPgEventBus({ executor, clock });
+    const bus = createPgEventBus({ executor });
 
     const hit = await bus.find('invoice.paid', 'org-1', 0);
 
     expect(hit).toEqual({ payload: { invoice: 'in_1' }, publishedAt: 1_000_000 });
   });
 
-  test('publish writes the row with an explicit expiry', async () => {
-    const { executor, calls } = recorder();
-    const bus = createPgEventBus({ executor, clock, defaultTtl: '1h' });
+  test('publish sends a TTL and no instant: the database stamps the row, and its stamps come back', async () => {
+    const { executor, calls } = recorder([{ published_at: '5000000', expires_at: '8600000' }]);
+    const bus = createPgEventBus({ executor, defaultTtl: '1h' });
 
     const event = await bus.publish('invoice.paid', { invoice: 'in_1' }, { correlationKey: 'o-1' });
 
     expect(calls[0]?.sql).toBe(SQL_EVENT_PUBLISH);
+    // id, name, payload, key, ttl — nothing this process's clock produced.
     expect(calls[0]?.params.slice(1)).toEqual([
       'invoice.paid',
       JSON.stringify({ invoice: 'in_1' }),
       'o-1',
-      1_000_000,
-      1_000_000 + 3_600_000,
+      3_600_000,
     ]);
-    expect(event.correlationKey).toBe('o-1');
+    expect(SQL_EVENT_PUBLISH).toContain(
+      "statement_timestamp() + ($5::bigint * interval '1 millisecond')",
+    );
+    expect(SQL_EVENT_PUBLISH).not.toContain('to_timestamp');
+    expect(event).toMatchObject({
+      correlationKey: 'o-1',
+      publishedAt: 5_000_000,
+      expiresAt: 8_600_000,
+    });
+  });
+
+  test('now() is the database clock, floored to the millisecond', async () => {
+    const { executor, calls } = recorder([{ now: '1790000000123' }]);
+    expect(await createPgEventBus({ executor }).now()).toBe(1_790_000_000_123);
+    expect(calls[0]?.sql).toBe(SQL_EVENT_NOW);
+    expect(SQL_EVENT_NOW).toContain('floor(');
+  });
+
+  test("every event statement reads the STATEMENT's time, never the transaction's", () => {
+    // `now()` is when the transaction began: a bus on a long transaction's connection stamped an
+    // event at its start (`events-pg.live.test.ts` proves it on a server).
+    for (const statement of [SQL_EVENT_PUBLISH, SQL_EVENT_NOW, SQL_EVENT_FIND, SQL_EVENT_PURGE]) {
+      expect(statement).not.toContain('now()');
+      expect(statement).toContain('statement_timestamp()');
+    }
   });
 
   test('the lookup honours order, expiry and the correlation key', () => {
     // Same three rules the memory bus follows, so a step behaves identically on either bus:
     // earliest match at or after the wait began, never an expired one, never another run's.
     expect(SQL_EVENT_FIND).toContain('order by published_at');
-    expect(SQL_EVENT_FIND).toContain('expires_at > now()');
+    expect(SQL_EVENT_FIND).toContain('expires_at > statement_timestamp()');
     expect(SQL_EVENT_FIND).toContain('published_at >= to_timestamp($3 / 1000.0)');
     expect(SQL_EVENT_FIND).toContain('($2::text is null or correlation_key = $2)');
   });
 
   test('an unmatched event is `undefined`, which is what re-suspends the step', async () => {
     const { executor } = recorder([]);
-    expect(await createPgEventBus({ executor, clock }).find('never.published', undefined, 0)).toBe(
+    expect(await createPgEventBus({ executor }).find('never.published', undefined, 0)).toBe(
       undefined,
     );
   });
@@ -94,7 +117,7 @@ describe('the pg event bus, read back and swept', () => {
       },
     ]);
 
-    const events = await createPgEventBus({ executor, clock, listLimit: 25 }).list('invoice.paid');
+    const events = await createPgEventBus({ executor, listLimit: 25 }).list('invoice.paid');
 
     expect(events).toEqual([
       {
@@ -120,13 +143,13 @@ describe('the pg event bus, read back and swept', () => {
 
   test('an unfiltered list passes a null name, never a missing predicate', async () => {
     const { executor, calls } = recorder([]);
-    await createPgEventBus({ executor, clock }).list();
+    await createPgEventBus({ executor }).list();
     expect(calls[0]?.params).toEqual([null, 1_000]);
   });
 
   test('purgeExpired fires the DELETE and answers 0 — this bus keeps no count', async () => {
     const { executor, calls } = recorder([]);
-    const bus = createPgEventBus({ executor, clock });
+    const bus = createPgEventBus({ executor });
     expect(bus.purgeExpired()).toBe(0);
     // Synchronous by signature, a round trip in fact: the statement is issued, not awaited.
     await Promise.resolve();
@@ -142,7 +165,7 @@ describe('the pg event bus, read back and swept', () => {
           : Promise.resolve([] as readonly R[]);
       },
     };
-    const bus = createPgEventBus({ executor, clock });
+    const bus = createPgEventBus({ executor });
     expect(bus.purgeExpired()).toBe(0);
     // An unhandled rejection here would fail the process, not this call: the assertion is that a
     // publish issued in the same turn still settles normally.
@@ -153,7 +176,7 @@ describe('the pg event bus, read back and swept', () => {
 
   test('size() is -1, the honest "not a number this bus keeps" — never 0, which reads as empty', async () => {
     const { executor } = recorder([]);
-    const bus = createPgEventBus({ executor, clock });
+    const bus = createPgEventBus({ executor });
     await bus.publish('invoice.paid', {});
     expect(bus.size()).toBe(-1);
   });

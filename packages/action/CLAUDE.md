@@ -18,11 +18,13 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `facade.ts` | the fluent surface — binds each projection to the action, re-implements none |
 | `mutator.ts` | action + optimistic `.local` twin + authoritative `.server` + `.conflict` |
 | `registry.ts` | export-name registration, collisions, `describeActions()` |
-| `define-api.ts` | `defineApi({ actions, mutators, queries, llm, jobs, tasks })` — the app's one boot call |
+| `define-api.ts` | `defineApi({ actions, mutators, queries, llm, jobs, tasks })` — the app's one boot call, and the `Api` type the typed clients are shaped from |
+| `client-scale-pins.ts` | compile-time pin: `rpc<Api['actions']>` over 300 actions in 100 modules, 100 reads in 50 |
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
 | `openapi-complete.ts` | the COMPLETE document (`defineApi({ openapi })`: info, servers, security schemes, 401/429 by the ROUTE's `meta.auth`) and a bearer mount's own cut |
 | `http-path.ts` | where an action is served: the app's `pathStyle` + a per-action `http.path` pin, read lazily by every projection |
+| `path-style-miss.ts` | `explainActionPathMiss` — `@ultimat3/http`'s `hooks.explainMiss`: a POST under the style this app does not serve is `X_CONTRACT_DRIFT` naming the one it does |
 | `api-declaration.ts` | `defineApi({ http, openapi })` held process-wide for the boot and `x manifest` |
 | `errors-http.ts` | the three HTTP-declaration refusals (codes registered in `errors.ts`) |
 | `client.ts` | typed RPC client (browser-safe: no server imports) — dispatches through core's `clientTransport` |
@@ -77,8 +79,21 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `'resource'` stays the default (changing it moves every URL). `defineApi` sets the style FIRST and
   `configureActionPathStyle` re-derives every seated action (the module scan may have seated them
   under the default). `derivePath(name)` is pin-aware through `installPinLookup` — handed down by
-  `registry.ts`, never imported up (cycle through `action.ts`). `rpc()` cannot see a pin: it takes
-  `pathStyle`; `action.client()` holds the pin.
+  `registry.ts`, never imported up (cycle through `action.ts`). `rpc()` cannot see a pin;
+  `action.client()` holds it.
+- **The style is stated ONCE, on the server.** A browser never restates it: the document carries
+  `<meta name="ultimate-path-style">` (render's `clientPathStyleTags`, written only for a
+  non-default style) and core's `actionPath(name)` reads it for every caller naming none — `rpc`,
+  realtime's `useMutation` and the outbox replay. `client.ts` passes `options.pathStyle` through
+  and adds NO default of its own. `ClientOptions.pathStyle` is for a caller with no document; a
+  wrong one is answered `X_CONTRACT_DRIFT` (404) by `explainActionPathMiss`, never
+  `X_ROUTE_NOT_FOUND`. A pinned action and a path under the SERVED style are never explained.
+- **`Merge` in `define-api.ts` never recurses over the module list.** `Head & Merge<Rest>` is not
+  a tail call: it cost one instantiation level per MODULE and answered TS2589 at the 48th entry of
+  one list, whatever each exported (#534). The list is read as a union and intersected in one
+  step. `client-scale-pins.ts` is the build error; `client-scale.contract.test.ts` compiles real
+  `action()`/`query()` modules through `defineApi`'s `const` inference; `@ultimat3/query` pins
+  `QueryClient` itself.
 - **`defineApi({ openapi })` opts into the complete document; absent, `openapi.json`'s bytes are
   unchanged** — an upgrade must not make a committed contract stale by itself.
 - Registration names the action the app exported, in place. Naming an already-named action is the
@@ -168,7 +183,9 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   | `rpc` | 18,097 B | 23,007 B | 18,119 B | 19,074 B |
   | `rpc` + `createClientFlight` | 23,903 B | 28,823 B | not measured | 25,197 B |
 
-  Net against the pre-transport figure: +977 B, about the envelope decoder's size.
+  Net against the pre-transport figure: +977 B, about the envelope decoder's size. `As of 2026-10-01`
+  `rpc` is 19,671 B (19,490 B before the document's path-style stamp was read: +181 B, +45 gzipped)
+  and `rpc` + `createClientFlight` 25,954 B.
 - **The `sideEffects` array is load-bearing**: `errors.ts` runs `registerErrorCodes` at import. Never `false`.
 
 ## Invariants — idempotency

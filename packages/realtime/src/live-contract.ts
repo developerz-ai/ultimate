@@ -26,8 +26,12 @@ export interface LiveQueryDefinition<R extends Row = Row> {
   readonly entities: readonly string[];
   /** Read set. Lets the pre-filter skip updates that touch no column this query reads. */
   readonly columns?: readonly string[];
-  /** Bounded read (`orderBy` + `limit`, enforced by `x verify`), unfiltered by policy. */
-  snapshot(args: { input: JsonValue }): Promise<SnapshotResult<R>>;
+  /**
+   * Bounded read (`orderBy` + `limit`, enforced by `x verify`), unfiltered by policy — and read
+   * FOR `tenant`: the org of the subscribers this window serves, `null` for subscribers that carry
+   * none. A window is keyed by it (`live-tenant.ts`), so one read is never two orgs' rows.
+   */
+  snapshot(args: { input: JsonValue; tenant: string | null }): Promise<SnapshotResult<R>>;
   /** Subscribe-time gate. Throws to deny — the same `policy` used by HTTP, jobs, and MCP. */
   authorize?(args: { actor: Actor | null; input: JsonValue }): void | Promise<void>;
   /** Row-level gate, evaluated per subscriber. The only row filter in the pipeline. */

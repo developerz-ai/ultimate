@@ -7,6 +7,7 @@ import type { Money } from '@ultimat3/money';
 import { isCurrencyCode } from '@ultimat3/schema';
 import { AdminFieldUnsupportedError } from './errors';
 import type { AdminField } from './fields';
+import type { AdminOption } from './relations';
 
 export interface WidgetContext {
   /** IANA zone. Required — there is no "server local time" in Ultimate. */
@@ -25,6 +26,15 @@ export interface WidgetContext {
    * caller that builds this context can. A wrong link is worse than no link.
    */
   readonly hrefFor?: (entity: string, id: string) => string | null;
+  /**
+   * The three things a reference widget shows that only the PAGE can know, because each is a read
+   * of another resource: a referenced row's label, a small target's whole option list, and where
+   * the target's lookup lives. Absent, a reference renders its id and edits as a text box — the
+   * widget never reads a row itself, so a cell cannot become a query.
+   */
+  readonly labelFor?: (entity: string, id: string) => string | undefined;
+  readonly optionsFor?: (entity: string) => readonly AdminOption[] | null;
+  readonly lookupHref?: (entity: string) => string | null;
 }
 
 export interface SelectOption {
@@ -60,15 +70,25 @@ export type WidgetProps =
       readonly field: string;
       readonly value: string | null;
       readonly entity: string;
-      readonly labelField: string;
+      /** The target row's label, when the page read it. `null` renders the id itself. */
+      readonly label: string | null;
+      /** Every row of a small target — a `<select>`. `null`: the picker is the lookup screen. */
+      readonly options: readonly AdminOption[] | null;
+      /** Where an operator finds a row of the target, or `null` when it is not an admin resource. */
+      readonly lookupHref: string | null;
     }
   | {
       readonly widget: 'upload';
       readonly field: string;
       readonly value: { readonly url: string; readonly name: string } | null;
-    };
+    }
+  /** No `value`, by type: a sealed column is written, never rendered and never prefilled. */
+  | { readonly widget: 'secret-input'; readonly field: string };
 
-const fail = (field: AdminField, cause: string, fix: string): never => {
+/** What a value guard names in its refusal — a field, or a computed column standing in for one. */
+export type GuardedField = Pick<AdminField, 'entity' | 'name'> & { readonly currency?: string };
+
+const fail = (field: GuardedField, cause: string, fix: string): never => {
   throw new AdminFieldUnsupportedError({ entity: field.entity, field: field.name, cause, fix });
 };
 
@@ -86,7 +106,7 @@ const minorUnits = (value: unknown): number | null => {
 };
 
 /** `Money = { minor: number; currency: string }` or nothing. A float is a bug, not a value. */
-export function assertMoney(field: AdminField, value: unknown): Money | null {
+export function assertMoney(field: GuardedField, value: unknown): Money | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number') {
     return fail(
@@ -207,16 +227,24 @@ export function widgetProps(field: AdminField, value: unknown, ctx: WidgetContex
         field: field.name,
         value: value === undefined ? '' : JSON.stringify(value, null, 2),
       };
-    case 'reference':
+    case 'reference': {
+      const entity = field.relation?.entity ?? field.name;
+      const id = value === null || value === undefined || value === '' ? null : String(value);
       return {
         widget: 'reference',
         field: field.name,
-        value: value === null || value === undefined ? null : String(value),
-        entity: field.relation?.entity ?? field.name,
-        labelField: field.relation?.labelField ?? 'id',
+        value: id,
+        entity,
+        label: id === null ? null : (ctx.labelFor?.(entity, id) ?? null),
+        options: ctx.optionsFor?.(entity) ?? null,
+        lookupHref: ctx.lookupHref?.(entity) ?? null,
       };
+    }
     case 'upload':
       return { widget: 'upload', field: field.name, value: uploadValue(field, value) };
+    case 'secret-input':
+      // The row value is not read at all — not even to test it for null.
+      return { widget: 'secret-input', field: field.name };
   }
 }
 

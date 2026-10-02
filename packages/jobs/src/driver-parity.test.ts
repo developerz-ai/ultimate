@@ -54,15 +54,21 @@ describe('attempt never goes below zero', () => {
     // negative attempt is a row `nextRetry` reads as having tries it does not have.
     for (let pass = 0; pass < 3; pass += 1) {
       await claimOne(driver);
-      await driver.nack(id, { delayMs: 0, countsAsAttempt: false });
+      await driver.nack(id, {
+        workerId: 'w1',
+        claim: pass + 1,
+        delayMs: 0,
+        countsAsAttempt: false,
+      });
     }
     expect((await driver.introspect?.job(id))?.attempt).toBe(0);
 
     // Two guards, and this asks for both: the settle fence refuses a nack on a row that is not
     // `running` (a suspended row is already back on the queue), and the decrement itself has a
     // floor. Drop either and this row reaches `-1`.
-    await driver.nack(id, { delayMs: 0, countsAsAttempt: false });
-    await driver.nack(id, { delayMs: 0, countsAsAttempt: false });
+    // The LAST claim's own identity, so it is the state fence and the floor being asked.
+    await driver.nack(id, { workerId: 'w1', claim: 3, delayMs: 0, countsAsAttempt: false });
+    await driver.nack(id, { workerId: 'w1', claim: 3, delayMs: 0, countsAsAttempt: false });
     expect((await driver.introspect?.job(id))?.attempt).toBe(0);
     // The floor the pg driver has always had. Both halves in one test: dropped from either side,
     // this fails.
@@ -94,7 +100,7 @@ describe('a settled job holds no lease', () => {
     expect(claimed?.claimedBy).toBe('w1');
     expect(typeof claimed?.visibleAt).toBe('number');
 
-    await driver.ack(id);
+    await driver.ack(id, { workerId: 'w1', claim: 1 });
 
     const settled = await driver.introspect?.job(id);
     expect(settled?.state).toBe('done');
@@ -115,7 +121,7 @@ describe('a settled job holds no lease', () => {
       maxAttempts: 3,
     });
     await claimOne(driver);
-    await driver.nack(id, { delayMs: 0, error: 'boom' });
+    await driver.nack(id, { workerId: 'w1', claim: 1, delayMs: 0, error: 'boom' });
 
     const settled = await driver.introspect?.job(id);
     expect(settled?.state).toBe('ready');
@@ -213,7 +219,7 @@ describe('stats puts a job in exactly one bucket', () => {
   const compactStats = () => SQL_STATS.replace(/\s+/g, ' ');
 
   /** Enqueue one job, claim it, and settle it the way `step.sleep` or a retry settles one. */
-  const settledOnce = async (key: string, options: NackOptions) => {
+  const settledOnce = async (key: string, options: Omit<NackOptions, 'workerId' | 'claim'>) => {
     const clock = frozenClock(1_700_000_000_000);
     const driver = createMemoryDriver({ clock });
     const { id } = await driver.enqueue({
@@ -224,7 +230,7 @@ describe('stats puts a job in exactly one bucket', () => {
       maxAttempts: 3,
     });
     await claimOne(driver);
-    await driver.nack(id, options);
+    await driver.nack(id, { workerId: 'w1', claim: 1, ...options });
     return (await driver.stats())[0];
   };
 
@@ -269,6 +275,7 @@ describe('stats puts a job in exactly one bucket', () => {
       delayed: 0,
       running: 0,
       suspended: 1,
+      failed: 0,
       dead: 0,
       oldestReadyMs: 0,
     });
@@ -287,6 +294,7 @@ describe('stats puts a job in exactly one bucket', () => {
       delayed: 1,
       running: 0,
       suspended: 0,
+      failed: 0,
       dead: 0,
       oldestReadyMs: 0,
     });
@@ -307,6 +315,7 @@ describe('stats puts a job in exactly one bucket', () => {
       delayed: 0,
       running: 0,
       suspended: 0,
+      failed: 0,
       dead: 0,
       oldestReadyMs: 0,
     });
@@ -315,8 +324,14 @@ describe('stats puts a job in exactly one bucket', () => {
     // mapping and the driver has to be asked for it.
     const executor = recordingExecutor();
     const pg = createPgDriver({ executor });
-    await pg.nack('shed', { delayMs: 0, countsAsAttempt: false });
-    await pg.nack('sleep', { delayMs: 0, countsAsAttempt: false, park: true });
+    await pg.nack('shed', { workerId: 'w1', claim: 1, delayMs: 0, countsAsAttempt: false });
+    await pg.nack('sleep', {
+      workerId: 'w1',
+      claim: 1,
+      delayMs: 0,
+      countsAsAttempt: false,
+      park: true,
+    });
     expect(executor.params.map((row) => row[1])).toEqual(['ready', 'suspended']);
     // And `countsAsAttempt` still means only the counter: neither of them burns an attempt.
     expect(executor.params.map((row) => row[2])).toEqual([false, false]);

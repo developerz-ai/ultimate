@@ -38,6 +38,11 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_EXPORT_PART_TOO_LARGE',
   'X_JOB_DECLARATION_INVALID',
   'X_JOB_NOT_REQUEUEABLE',
+  'X_JOB_KEY_BUSY',
+  'X_JOB_NOT_REMOVABLE',
+  'X_JOB_NOT_PROMOTABLE',
+  'X_JOB_PAGE_INVALID',
+  'X_JOB_ON_SETTLED_FAILED',
 ] as const;
 
 /**
@@ -88,8 +93,13 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_WEBHOOK_DELIVERY_REJECTED: 'the endpoint refused the delivery in a way a retry cannot change',
   X_EXPORT_ROW_INVALID: 'row() answered something the declared columns do not carry',
   X_EXPORT_PART_TOO_LARGE: 'one page encoded to more bytes than a part may hold',
-  X_JOB_DECLARATION_INVALID: 'the job declaration is missing a required field',
+  X_JOB_DECLARATION_INVALID: 'the job declaration is missing or mis-declares a field',
   X_JOB_NOT_REQUEUEABLE: 'the job is still live and cannot be requeued',
+  X_JOB_KEY_BUSY: 'the concurrency key already holds its limit of runs',
+  X_JOB_NOT_REMOVABLE: 'the job is running and cannot be removed',
+  X_JOB_NOT_PROMOTABLE: 'the job is not waiting on its run time',
+  X_JOB_PAGE_INVALID: 'a job list page was asked for outside its bounds',
+  X_JOB_ON_SETTLED_FAILED: 'the onSettled hook failed after the run was settled',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -141,6 +151,8 @@ registerErrorRetry({
   // the whole retry policy proving it.
   X_EXPORT_ROW_INVALID: 'terminal',
   X_EXPORT_PART_TOO_LARGE: 'terminal',
+  // The worker settles a busy key itself; listed so a body that RETHROWS one it was handed stops.
+  X_JOB_KEY_BUSY: 'terminal',
 });
 
 // No `docs:` on any class below, here or in `backfill-errors.ts`. `UltimateError` fills it from
@@ -427,22 +439,6 @@ export class CancelUnsupportedError extends UltimateError {
       code: 'X_JOB_NOT_CANCELLABLE',
       cause: `the "${input.driver}" jobs driver cannot cancel a single job`,
       fix: 'call setJobDriver(createPgDriver()) at boot — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
-    });
-  }
-}
-
-/**
- * `job.concurrency` is declared and this driver has no `leases`, so the cap is per PROCESS and the
- * fleet runs `concurrency x replicas`. Thrown at worker start rather than logged, because a
- * documented guarantee that silently does nothing is exactly what axiom 3 exists to refuse — the
- * worker refuses to start instead of running with the wrong number.
- */
-export class ConcurrencyUnenforceableError extends UltimateError {
-  constructor(input: { driver: string; jobs: readonly string[] }) {
-    super({
-      code: 'X_JOB_CONCURRENCY_UNENFORCEABLE',
-      cause: `${input.jobs.join(', ')} declare concurrency and the "${input.driver}" jobs driver has no lease store, so the cap would hold per process and the fleet would run concurrency x replicas`,
-      fix: `remove concurrency from job("${input.jobs[0] ?? 'the job'}"), or call setJobDriver(createPgDriver()) at boot — the pg driver is the one with a lease store`,
     });
   }
 }

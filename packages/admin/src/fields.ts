@@ -18,7 +18,9 @@ export type AdminFieldType =
   | 'locale'
   | 'json'
   | 'relation'
-  | 'file';
+  | 'file'
+  /** A `.sealed()` column: written through a form, read by nothing. Never derived from a kind. */
+  | 'secret';
 
 export type AdminWidget =
   | 'text-input'
@@ -32,7 +34,8 @@ export type AdminWidget =
   | 'locale-picker'
   | 'json-editor'
   | 'reference'
-  | 'upload';
+  | 'upload'
+  | 'secret-input';
 
 /**
  * A derived field: everything a list cell, a detail row, a form input, a filter, and an MCP
@@ -52,12 +55,33 @@ export interface AdminField {
   readonly sensitive: boolean;
   readonly inList: boolean;
   readonly filterable: boolean;
+  /**
+   * HOW the field filters, when a list offers it: which control the filter bar draws and which
+   * operators a URL may name (`list-filters.ts`). Absent for a type no predicate can be written
+   * against — money, JSON, a file, a sealed column — so such a field is never a filter.
+   */
+  readonly filterKind?: AdminFilterKind;
   readonly sortable: boolean;
   readonly searchable: boolean;
   readonly values?: readonly string[];
   readonly currency?: string;
-  readonly relation?: { readonly entity: string; readonly labelField?: string };
+  /** The resource a foreign key points at. Its label is THAT resource's `labelField`. */
+  readonly relation?: { readonly entity: string };
+  /** i18n key of the line under the form control. Declared, never derived. */
+  readonly hintKey?: string;
+  /**
+   * The one side of the form the field exists on: `create` is set once and never edited,
+   * `update` has no value until the row exists. Absent: both. Enforced on the write, not only
+   * on the form — `crud-input.ts` drops the field from the other side's input.
+   */
+  readonly on?: 'create' | 'update';
 }
+
+/**
+ * The six shapes a filter takes. A closed set: a control and an operator list hang off each in
+ * `list-filters.ts`, so a seventh shape cannot exist with one and not the other.
+ */
+export type AdminFilterKind = 'text' | 'exact' | 'choice' | 'boolean' | 'range' | 'reference';
 
 /** The table. Money always the Money widget; both date kinds always the DateTime widget. */
 export const WIDGET_BY_FIELD_TYPE: Readonly<Record<AdminFieldType, AdminWidget>> = {
@@ -74,6 +98,7 @@ export const WIDGET_BY_FIELD_TYPE: Readonly<Record<AdminFieldType, AdminWidget>>
   json: 'json-editor',
   relation: 'reference',
   file: 'upload',
+  secret: 'secret-input',
 };
 
 export function widgetFor(type: AdminFieldType): AdminWidget {
@@ -146,10 +171,44 @@ export function listable(type: AdminFieldType): boolean {
   return type !== 'json' && type !== 'file' && type !== 'textarea';
 }
 
-/** Only indexed, unique, enum, boolean, and FK columns are offered as filters. */
+/**
+ * Only indexed, unique, enum, boolean, and FK columns are offered as filters — and only when the
+ * type has a filter shape at all: an indexed money column is still two physical columns, and no
+ * single predicate names both.
+ */
 export function filterable(type: AdminFieldType, column: AdminColumnFacts): boolean {
+  if (filterKindFor(type, column) === undefined) return false;
   if (column.index || column.unique || column.primaryKey) return true;
   return type === 'enum' || type === 'boolean' || type === 'relation';
+}
+
+const FILTER_KIND_BY_FIELD_TYPE: Readonly<Partial<Record<AdminFieldType, AdminFilterKind>>> = {
+  boolean: 'boolean',
+  enum: 'choice',
+  timezone: 'choice',
+  locale: 'choice',
+  number: 'range',
+  date: 'range',
+  timestamptz: 'range',
+  relation: 'reference',
+};
+
+/**
+ * The shape a field filters in, or `undefined` for a type nothing can be compared against. A text
+ * box is `text` (a `contains`) only over a column `LIKE` runs against; a uuid, a `bigint` or a
+ * `numeric` renders in a text box too and takes an exact match instead — see
+ * `LIKE_ABLE_COLUMN_KINDS` below for what the other spelling costs.
+ */
+export function filterKindFor(
+  type: AdminFieldType,
+  column: AdminColumnFacts,
+): AdminFilterKind | undefined {
+  if (type === 'text' || type === 'textarea') {
+    return LIKE_ABLE_COLUMN_KINDS.has(column.kind) ? 'text' : 'exact';
+  }
+  return Object.hasOwn(FILTER_KIND_BY_FIELD_TYPE, type)
+    ? FILTER_KIND_BY_FIELD_TYPE[type]
+    : undefined;
 }
 
 /**

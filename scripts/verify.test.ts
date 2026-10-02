@@ -16,6 +16,7 @@ import {
   frameworkManifest,
   HOST_CHECKS,
   manifestFailureCause,
+  mergeGateParts,
   tierBoundaries,
 } from './verify';
 
@@ -210,9 +211,12 @@ describe('unit · the repo gate is the CLI gate', () => {
         join(dir, 'packages/core/src/bad.ts'),
         "import { dispatch } from '@ultimat3/cli';\nexport const run = dispatch;\n",
       );
-      const findings = await tierBoundaries(dir);
+      // The tier rule's own findings: `tierBoundaries` carries other host rules on the same step
+      // (the seal-call scan reports its exempt files missing from this one-file fixture).
+      const findings = (await tierBoundaries(dir)).filter(
+        (finding) => finding.code === 'X_BOUNDARY_VIOLATION',
+      );
       expect(findings).toHaveLength(1);
-      expect(findings[0]?.code).toBe('X_BOUNDARY_VIOLATION');
       expect(findings[0]?.at).toBe('packages/core/src/bad.ts');
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -326,6 +330,60 @@ describe('unit · the repo gate is the CLI gate', () => {
       expect(await frameworkManifest(root)).toEqual([]);
       expect(await errorCodeDocs(root)).toEqual([]);
       expect(await checkRoadmap(root)).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
+});
+
+describe('unit · the repo gate says where it is, and where it hung', () => {
+  test('a refused part names the command that runs at this root', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-merge-'));
+    try {
+      const refusal = async (files: readonly string[]): Promise<{ code: string; fix: string }> => {
+        try {
+          await mergeGateParts(dir, files);
+        } catch (error) {
+          return error as { code: string; fix: string };
+        }
+        return expect.unreachable('the parts were accepted');
+      };
+      const gone = await refusal([join(dir, 'gone.json')]);
+      expect(gone.code).toBe('X_VERIFY_MERGE_INPUT');
+      expect(gone.fix.startsWith('bun run verify --only unit --json > part.json')).toBe(true);
+      await Bun.write(join(dir, 'empty.json'), '');
+      expect((await refusal([join(dir, 'empty.json')])).fix).not.toContain('x verify');
+      // And a gap the merge finds is fixed by this entry's own merge.
+      await Bun.write(
+        join(dir, 'p.json'),
+        JSON.stringify({ ok: true, command: 'verify', summary: 's', steps: [], data: {} }),
+      );
+      const merged = await mergeGateParts(dir, [join(dir, 'p.json')]);
+      const fixes = merged.steps?.flatMap((step) => step.findings.map((finding) => finding.fix));
+      expect(fixes?.length).toBeGreaterThan(0);
+      for (const fix of fixes ?? []) expect(fix.startsWith('bun run verify merge ')).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test(
+    '--json streams each finished step to stderr; stdout stays the one document',
+    async () => {
+      const proc = Bun.spawn(['bun', 'run', 'scripts/verify.ts', '--only', 'roadmap', '--json'], {
+        cwd: repoRoot(),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      await proc.exited;
+      const lines = stderr.split('\n').filter((line) => line.startsWith('{'));
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0] ?? '')).toMatchObject({ step: 'roadmap' });
+      const document = JSON.parse(stdout) as { steps: readonly { name: string }[] };
+      expect(document.steps.map((step) => step.name)).toEqual(['roadmap']);
     },
     REPO_SCAN_TIMEOUT_MS,
   );

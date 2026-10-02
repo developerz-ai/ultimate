@@ -2,9 +2,12 @@
 // Views and MCP tools both call these, so there is one ordering of those five steps in the
 // admin rather than one per surface.
 
-import { type AuditEntry, type AuditLog, deniedDraft, diffRows } from './audit';
+import type { AuditEntry, AuditLog } from './audit';
 import { type AdminActor, type AdminAuthz, type AdminDecision, decideAll } from './authz';
-import { type AdminPage, fetchPage, type PageRequest } from './pagination';
+import { onlyFor, rowDiff, splitSecrets, withoutTenant, withTenant } from './crud-input';
+import { auditedWrite, deniedEntry, invalid, missingRow, refuse } from './crud-outcome';
+import { type AdminListRequest, findRow, listWhere } from './list-scope';
+import { type AdminPage, fetchPage } from './pagination';
 import {
   type AdminOperation,
   adminPermissionFor,
@@ -15,6 +18,8 @@ import {
 } from './permissions';
 import type { AdminRow } from './registry';
 import { type AdminResource, repoOf } from './resource';
+import type { AdminScope } from './resource-list';
+import { outOfScopeDecision, writeOutsideScope } from './row-scope-write';
 import { type ValidationIssue, validateInput } from './validate';
 
 export interface CrudCtx {
@@ -38,10 +43,22 @@ export type CrudResult<Row extends AdminRow> =
       readonly kind: 'invalid';
       readonly issues: readonly ValidationIssue[];
       readonly audit: AuditEntry;
-    };
+    }
+  /**
+   * An update or a delete of a row that is not there — gone, never existed, or outside this
+   * actor's row scope, which are one answer on purpose. Nothing was written; the attempt is on
+   * the log as `failed`, like every other write that did not happen.
+   */
+  | { readonly ok: false; readonly kind: 'missing'; readonly audit: AuditEntry };
 
 export type ListResult<Row extends AdminRow> =
-  | { readonly ok: true; readonly page: AdminPage<Row>; readonly audit: AuditEntry }
+  | {
+      readonly ok: true;
+      readonly page: AdminPage<Row>;
+      /** The scope the page was read under — the request's, or the resource's default. */
+      readonly scope: AdminScope | null;
+      readonly audit: AuditEntry;
+    }
   | {
       readonly ok: false;
       readonly kind: 'denied';
@@ -51,7 +68,11 @@ export type ListResult<Row extends AdminRow> =
 
 /** Both gates, always in this order: the admin-level one, then the entity-level one. */
 export function permissionsForOperation(entity: string, op: AdminOperation): readonly string[] {
-  return [adminPermissionFor(op), entityPermissionFor(entity, op)];
+  const gate = adminPermissionFor(op);
+  const own = entityPermissionFor(entity, op);
+  // The dashboard and the search are gated on the admin itself, where the two halves are one
+  // permission: `admin:read + admin:read` was what `x routes` printed for both.
+  return gate === own ? [gate] : [gate, own];
 }
 
 export function decideOperation(
@@ -81,7 +102,7 @@ export function decideOperation(
       trace: [`operations: ${resource.name} does not offer ${op}`],
     };
   }
-  return decideAll(ctx.authz, permissionsForOperation(resource.name, op), ctx.actor, {
+  return decideAll(ctx.authz, permissionsForOperation(resource.permission, op), ctx.actor, {
     entity: resource.name,
     ...(id === undefined ? {} : { id }),
     ...(row === undefined ? {} : { row }),
@@ -100,35 +121,8 @@ export function canOperate(resource: AdminResource, op: AdminOperation, ctx: Cru
   return decideOperation(resource, op, ctx).allowed;
 }
 
-const redactedFields = (resource: AdminResource): readonly string[] =>
-  resource.fields.filter((field) => field.sensitive).map((field) => field.name);
-
-async function refuse<Row extends AdminRow>(
-  resource: AdminResource<Row>,
-  op: AdminOperation,
-  ctx: CrudCtx,
-  decision: AdminDecision,
-  id: string | null,
-  confirmationRequired = false,
-): Promise<CrudResult<Row>> {
-  return {
-    ok: false,
-    kind: 'denied',
-    decision,
-    confirmationRequired,
-    audit: await ctx.audit.append(
-      deniedDraft({
-        requestId: ctx.requestId,
-        actor: ctx.actor,
-        operation: op,
-        kind: 'operation',
-        entity: resource.name,
-        entityId: id,
-        decision,
-      }),
-    ),
-  };
-}
+/** The key a required sealed column is refused with when a create names no value for it. */
+const SECRET_REQUIRED_REASON = 'admin.error.secret-required';
 
 /**
  * The one read that logged nothing, in either direction: `audit.ts` says denied and failed attempts
@@ -139,17 +133,30 @@ async function refuse<Row extends AdminRow>(
 export async function adminList<Row extends AdminRow>(
   resource: AdminResource<Row>,
   ctx: CrudCtx,
-  req: PageRequest = {},
+  req: AdminListRequest = {},
 ): Promise<ListResult<Row>> {
   const decision = decideOperation(resource, 'list', ctx);
   if (!decision.allowed) {
-    const refused = await refuse(resource, 'list', ctx, decision, null);
-    return { ok: false, kind: 'denied', decision, audit: refused.audit };
+    return {
+      ok: false,
+      kind: 'denied',
+      decision,
+      audit: await ctx.audit.append(deniedEntry(resource, 'list', ctx, decision, null)),
+    };
   }
-  const page = await fetchPage(resource, req);
+  // Composed AFTER the decision: an actor who may not list the table learns nothing about which
+  // scopes it declares from the refusal they get.
+  const { scope, where } = listWhere(resource, ctx.actor, req);
+  const page = await fetchPage(resource, {
+    ...(req.cursor === undefined ? {} : { cursor: req.cursor }),
+    ...(req.limit === undefined ? {} : { limit: req.limit }),
+    ...(req.sort === undefined ? {} : { sort: req.sort }),
+    ...(where.length === 0 ? {} : { where }),
+  });
   return {
     ok: true,
     page,
+    scope: scope ?? null,
     audit: await ctx.audit.append({
       requestId: ctx.requestId,
       actor: ctx.actor,
@@ -171,8 +178,9 @@ export async function adminDetail<Row extends AdminRow>(
 ): Promise<CrudResult<Row>> {
   // The row is loaded BEFORE the guard, the shape `packages/action/src/invoke.ts` uses for a
   // row-level `policy`: a rule that decides about a row cannot decide without one, and the
-  // predicate has to stay synchronous. A denial still returns no row.
-  const row = await repoOf(resource).find(id);
+  // predicate has to stay synchronous. A denial still returns no row. Through the row scope: a
+  // row this actor's `rows` leaves out is not found, exactly as a row that does not exist.
+  const row = await findRow(resource, ctx.actor, id);
   const decision = decideOperation(resource, 'detail', ctx, id, row);
   if (!decision.allowed) return refuse(resource, 'detail', ctx, decision, id);
   return {
@@ -192,51 +200,6 @@ export async function adminDetail<Row extends AdminRow>(
   };
 }
 
-/** The reason on a `failed` entry. A key, never the database's message. */
-const WRITE_FAILED_REASON = 'admin.audit.write-failed';
-
-/**
- * Run a repo WRITE, and leave a `failed` entry behind if it throws.
- *
- * `AuditOutcome` has declared a `failed` member all along and this file emitted it in exactly one
- * place — `invalid()`, for a VALIDATION issue. A constraint violation, a statement that timed out
- * after committing, a connection dropped mid-write: each left no entry at all, which is the case
- * an auditor opens the log for. Both siblings already do this and each states the rule
- * (`search.ts`, `action-gate.ts`).
- *
- * A mutation cannot append BEFORE the call the way a read does — that would record a write which
- * may never have happened. So: try, record, re-throw UNCHANGED. Nothing about the thrown value is
- * read or rendered; the caller owns it, and an audit reason is a key, not a database message.
- */
-async function auditedWrite<T>(
-  // Only the NAME is read, so this stays invariance-free: `AdminResource<Row>` at four call
-  // sites would need the generic threaded through for nothing.
-  resource: { readonly name: string },
-  op: AdminOperation,
-  ctx: CrudCtx,
-  entityId: string | null,
-  decision: AdminDecision,
-  run: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    await ctx.audit.append({
-      requestId: ctx.requestId,
-      actor: ctx.actor,
-      operation: op,
-      kind: 'operation',
-      entity: resource.name,
-      entityId,
-      permission: decision.permission,
-      outcome: 'failed',
-      reason: WRITE_FAILED_REASON,
-      diff: [],
-    });
-    throw error;
-  }
-}
-
 export async function adminCreate<Row extends AdminRow>(
   resource: AdminResource<Row>,
   ctx: CrudCtx,
@@ -245,28 +208,43 @@ export async function adminCreate<Row extends AdminRow>(
   const decision = decideOperation(resource, 'create', ctx);
   if (!decision.allowed) return refuse(resource, 'create', ctx, decision, null);
 
-  const parsed = await validateInput(resource.entity.$schema, input);
-  if (!parsed.ok) return invalid(resource, 'create', ctx, null, parsed.issues, decision);
-
-  const row = await auditedWrite(resource, 'create', ctx, null, decision, () =>
-    repoOf(resource).create(parsed.value),
+  const { open, secrets } = splitSecrets(
+    resource,
+    withTenant(resource, ctx, onlyFor(resource, 'create', input)),
   );
-  return {
-    ok: true,
-    row,
-    audit: await ctx.audit.append({
-      requestId: ctx.requestId,
-      actor: ctx.actor,
-      operation: 'create',
-      kind: 'operation',
-      entity: resource.name,
-      entityId: String(row[resource.idField] ?? ''),
-      permission: decision.permission,
-      outcome: 'allowed',
-      reason: decision.reason,
-      diff: diffRows(null, row, { redact: redactedFields(resource) }),
+  const parsed = await validateInput(resource.entity.$schema, open);
+  const unset: readonly ValidationIssue[] = resource.secretFields
+    .filter((field) => field.required && !Object.hasOwn(secrets, field.name))
+    .map((field) => ({
+      path: field.name,
+      message: 'a value is required: this column is sealed and has no default',
+      messageKey: SECRET_REQUIRED_REASON,
+    }));
+  if (!parsed.ok || unset.length > 0) {
+    const issues = [...(parsed.ok ? [] : parsed.issues), ...unset];
+    return invalid(resource, 'create', ctx, null, issues, decision);
+  }
+  // `rows` narrows a write's RESULT too: a row this actor could not then read is not theirs to
+  // create. Judged over what the schema validated, before the repo is asked for anything.
+  const outside = writeOutsideScope(resource, ctx.actor, parsed.value);
+  if (outside !== null) {
+    const permission = entityPermissionFor(resource.permission, 'create');
+    return refuse(resource, 'create', ctx, outOfScopeDecision(permission, outside), null);
+  }
+
+  const { value: row, audit } = await auditedWrite(
+    resource,
+    'create',
+    ctx,
+    null,
+    decision,
+    () => repoOf(resource).create({ ...parsed.value, ...secrets }),
+    (made) => ({
+      entityId: String(made[resource.idField] ?? ''),
+      diff: rowDiff(resource, null, made, secrets),
     }),
-  };
+  );
+  return { ok: true, row, audit };
 }
 
 export async function adminUpdate<Row extends AdminRow>(
@@ -278,11 +256,18 @@ export async function adminUpdate<Row extends AdminRow>(
   // `before` was already loaded here, just after the guard rather than before it — so the rule
   // that decides whether this actor may touch THIS row never saw the row.
   const repo = repoOf(resource);
-  const before = await repo.find(id);
+  const before = await findRow(resource, ctx.actor, id);
   const decision = decideOperation(resource, 'update', ctx, id, before);
   if (!decision.allowed) return refuse(resource, 'update', ctx, decision, id);
+  if (before === null) return missingRow(resource, 'update', ctx, id, decision);
 
-  const parsed = await validateInput(resource.entity.$schema, { ...(before ?? {}), ...patch });
+  // `{ ...before }` carries no sealed value — a row's sealed properties are non-enumerable — and
+  // `$schema` has no member for one, so the merged object is exactly what the schema describes.
+  const { open, secrets } = splitSecrets(
+    resource,
+    withoutTenant(resource, onlyFor(resource, 'update', patch)),
+  );
+  const parsed = await validateInput(resource.entity.$schema, { ...before, ...open });
   if (!parsed.ok) return invalid(resource, 'update', ctx, id, parsed.issues, decision);
 
   // Write what the schema validated, not the caller's raw patch — a field the schema would
@@ -294,31 +279,31 @@ export async function adminUpdate<Row extends AdminRow>(
   // — the exact thing the paragraph above says cannot happen. Over MCP the transport refuses
   // those keys (`additionalProperties: false`), but `callAdminTool` and `adminUpdate` are both
   // public API and `mcp.ts` keeps its own gate for a direct call and a future transport.
-  const submittedKeys = Object.keys(patch);
-  const validatedPatch: Readonly<Record<string, unknown>> = Object.fromEntries(
-    submittedKeys
-      .filter((key) => Object.hasOwn(parsed.value, key))
-      .map((key) => [key, parsed.value[key]]),
-  );
-  const after = await auditedWrite(resource, 'update', ctx, id, decision, () =>
-    repo.update(id, validatedPatch),
-  );
-  return {
-    ok: true,
-    row: after,
-    audit: await ctx.audit.append({
-      requestId: ctx.requestId,
-      actor: ctx.actor,
-      operation: 'update',
-      kind: 'operation',
-      entity: resource.name,
-      entityId: id,
-      permission: decision.permission,
-      outcome: 'allowed',
-      reason: decision.reason,
-      diff: diffRows(before, after, { redact: redactedFields(resource) }),
-    }),
+  const submittedKeys = Object.keys(open);
+  // The same rule as a create: an update may not MOVE a row out of the actor's own scope.
+  const outside = writeOutsideScope(resource, ctx.actor, parsed.value, submittedKeys);
+  if (outside !== null) {
+    const permission = entityPermissionFor(resource.permission, 'update');
+    return refuse(resource, 'update', ctx, outOfScopeDecision(permission, outside), id);
+  }
+  const validatedPatch: Readonly<Record<string, unknown>> = {
+    ...Object.fromEntries(
+      submittedKeys
+        .filter((key) => Object.hasOwn(parsed.value, key))
+        .map((key) => [key, parsed.value[key]]),
+    ),
+    ...secrets,
   };
+  const { value: after, audit } = await auditedWrite(
+    resource,
+    'update',
+    ctx,
+    id,
+    decision,
+    () => repo.update(id, validatedPatch),
+    (changed) => ({ entityId: id, diff: rowDiff(resource, before, changed, secrets) }),
+  );
+  return { ok: true, row: after, audit };
 }
 
 /** Destructive: the caller must echo `confirmationToken(entity, id)` or nothing happens. */
@@ -329,9 +314,10 @@ export async function adminDestroy<Row extends AdminRow>(
   confirmation: string | undefined,
 ): Promise<CrudResult<Row>> {
   const repo = repoOf(resource);
-  const before = await repo.find(id);
+  const before = await findRow(resource, ctx.actor, id);
   const decision = decideOperation(resource, 'delete', ctx, id, before);
   if (!decision.allowed) return refuse(resource, 'delete', ctx, decision, id);
+  if (before === null) return missingRow(resource, 'delete', ctx, id, decision);
 
   const expected = confirmationToken(resource.name, id);
   if (isDestructive('delete') && confirmation !== expected) {
@@ -350,48 +336,14 @@ export async function adminDestroy<Row extends AdminRow>(
     );
   }
 
-  await auditedWrite(resource, 'delete', ctx, id, decision, () => repo.destroy(id));
-  return {
-    ok: true,
-    row: null,
-    audit: await ctx.audit.append({
-      requestId: ctx.requestId,
-      actor: ctx.actor,
-      operation: 'delete',
-      kind: 'operation',
-      entity: resource.name,
-      entityId: id,
-      permission: decision.permission,
-      outcome: 'allowed',
-      reason: decision.reason,
-      diff: diffRows(before, null, { redact: redactedFields(resource) }),
-    }),
-  };
-}
-
-async function invalid<Row extends AdminRow>(
-  resource: AdminResource<Row>,
-  op: AdminOperation,
-  ctx: CrudCtx,
-  id: string | null,
-  issues: readonly ValidationIssue[],
-  decision: AdminDecision,
-): Promise<CrudResult<Row>> {
-  return {
-    ok: false,
-    kind: 'invalid',
-    issues,
-    audit: await ctx.audit.append({
-      requestId: ctx.requestId,
-      actor: ctx.actor,
-      operation: op,
-      kind: 'operation',
-      entity: resource.name,
-      entityId: id,
-      permission: decision.permission,
-      outcome: 'failed',
-      reason: 'admin.error.invalid-input',
-      diff: [],
-    }),
-  };
+  const { audit } = await auditedWrite(
+    resource,
+    'delete',
+    ctx,
+    id,
+    decision,
+    () => repo.destroy(id),
+    () => ({ entityId: id, diff: rowDiff(resource, before, null) }),
+  );
+  return { ok: true, row: null, audit };
 }

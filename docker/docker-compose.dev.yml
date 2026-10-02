@@ -4,11 +4,12 @@
 #   docker compose -f docker/docker-compose.dev.yml up -d
 #
 # Every published port binds 127.0.0.1, not 0.0.0.0. This stack ships the credentials in the file —
-# `ultimate:ultimate` on Postgres, `ultimate:ultimate-dev` on MinIO — so the short form `'5432:5432'`
-# put an open database and an open object store on every interface the laptop has, including the
-# café wifi. Docker publishes ports by writing DNAT rules, so a host firewall does not stop it. To
-# reach this stack from another machine, put a tunnel in front of it (`ssh -L`) rather than widening
-# the bind; production topology is docker-compose.prod.yml, and it is a different file for a reason.
+# `ultimate:ultimate` on Postgres, `ultimate:ultimate-dev` on the S3 gateway — so the short form
+# `'5432:5432'` put an open database and an open object store on every interface the laptop has,
+# including the café wifi. Docker publishes ports by writing DNAT rules, so a host firewall does not
+# stop it. To reach this stack from another machine, put a tunnel in front of it (`ssh -L`) rather
+# than widening the bind; production topology is docker-compose.prod.yml, and it is a different
+# file for a reason.
 
 name: ultimate-dev
 
@@ -21,7 +22,13 @@ name: ultimate-dev
 #
 #   docker compose -f docker/docker-compose.dev.yml up -d
 #   DATABASE_URL=postgres://ultimate:ultimate@127.0.0.1:5432/ultimate \
-#   NATS_URL=nats://127.0.0.1:4222 S3_ENDPOINT=http://127.0.0.1:9000 x dev
+#   NATS_URL=nats://127.0.0.1:4222 \
+#   S3_ENDPOINT=http://127.0.0.1:9000 S3_BUCKET=ultimate S3_FORCE_PATH_STYLE=1 \
+#   S3_ACCESS_KEY_ID=ultimate S3_SECRET_ACCESS_KEY=ultimate-dev x dev
+#
+# The suites' own services are a different file — docker-compose.test.yml, the same servers in RAM
+# with nothing kept. This one keeps a volume per service, because a dev stack that forgets its
+# rows on `down` is one nobody leaves running.
 services:
   db:
     image: postgres:17-alpine
@@ -48,15 +55,25 @@ services:
     command: ['-js', '-m', '8222']
     ports: ['127.0.0.1:4222:4222', '127.0.0.1:8222:8222']
 
+  # Versity S3 Gateway over a POSIX directory (Apache-2.0) — the server the test stack runs, here
+  # with a volume. Every directory under /data is a bucket, so the volume mounted AT /data/ultimate
+  # IS the bucket `ultimate`: it exists on the first `up`, with no CreateBucket call and no admin
+  # client to install. The gateway checks the region a request was signed for, and Bun signs for
+  # `auto` unless told — so the gateway's region IS `auto`, and an app that sets no S3_REGION
+  # works. :9001 is its web console. Why this server: docs/history/test-services.md.
   storage:
-    image: minio/minio
-    command: ['server', '/data', '--console-address', ':9001']
+    image: versity/versitygw:v1.8.0
     environment:
-      MINIO_ROOT_USER: ultimate
-      MINIO_ROOT_PASSWORD: ultimate-dev
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARG: /data
+      VGW_PORT: ':9000'
+      VGW_WEBUI_PORT: ':9001'
+      VGW_REGION: auto
+      ROOT_ACCESS_KEY: ultimate
+      ROOT_SECRET_KEY: ultimate-dev
     ports: ['127.0.0.1:9000:9000', '127.0.0.1:9001:9001']
-    volumes: ['s3data:/data']
+    volumes: ['s3bucket:/data/ultimate']
 
 volumes:
   pgdata:
-  s3data:
+  s3bucket:

@@ -155,6 +155,27 @@ export interface ColumnMeta {
    * indexes by a data key.
    */
   readonly machine?: StateMachine;
+  /**
+   * Presence is what makes this column SEALED: stored as `@ultimat3/core`'s `seal()` output, opened
+   * on read, absent from every schema that leaves the server. `sealed-repo.ts` is the one reader
+   * that seals and opens; everything else reads it to refuse (`sealed-declaration.ts`).
+   */
+  readonly sealed?: SealedMeta;
+}
+
+/** What `.sealed(options)` declared, resolved. */
+export interface SealedMeta {
+  /** Deterministic seal: equality in `where` and `.unique()` are allowed, and nothing else. */
+  readonly lookup: boolean;
+}
+
+export interface SealedOptions<Lookup extends boolean = boolean> {
+  /**
+   * Seal deterministically so the column can be matched by equality (`where`, `in`, `.unique()`).
+   * It REVEALS EQUALITY: two rows holding the same value store the same string. Never for a
+   * low-entropy value — a boolean, a status, a PIN.
+   */
+  readonly lookup?: Lookup;
 }
 
 /**
@@ -229,6 +250,85 @@ export interface TimestampColumn<Optional extends boolean = false> extends Colum
   onUpdateNow(): TimestampColumn<Optional>;
   column(name: string): TimestampColumn<Optional>;
 }
+
+/**
+ * `text()`'s own column: the one that may be sealed, because a sealed value is a string and no
+ * other kind has a use for it. `nullable()`, `unique()`, `default()` and `column()` keep the
+ * builder, so `.sealed()` reads the same wherever it sits among them.
+ */
+export interface TextColumn<T extends string | null = string, Optional extends boolean = false>
+  extends Column<T, Optional> {
+  nullable(): TextColumn<T | null, Optional>;
+  unique(): TextColumn<T, Optional>;
+  default(value: T): TextColumn<T, true>;
+  column(name: string): TextColumn<T, Optional>;
+  /**
+   * Seal this column under the app's master key: the row still reads `string`, the database holds
+   * `x1.<keyId>.<iv>.<ciphertext>`, and no view, `$schema`, record or predicate carries it.
+   * `.sealed({ lookup: true })` allows equality at the cost of revealing it.
+   */
+  sealed<const Lookup extends boolean = false>(
+    options?: SealedOptions<Lookup>,
+  ): SealedColumn<T, Optional, Lookup>;
+}
+
+/**
+ * A sealed column. `$sealed` is the phantom the typed handle reads: `'opaque'` is refused in every
+ * predicate, `'lookup'` in everything but equality. It is a real string at runtime too.
+ */
+export interface SealedColumn<
+  T extends string | null = string,
+  Optional extends boolean = false,
+  Lookup extends boolean = false,
+> extends Column<T, Optional> {
+  readonly $sealed: Lookup extends true ? 'lookup' : 'opaque';
+  nullable(): SealedColumn<T | null, Optional, Lookup>;
+  /** `lookup` only: uniqueness over ciphertext needs equal values to seal equal. */
+  unique(): SealedColumn<T, Optional, Lookup>;
+  column(name: string): SealedColumn<T, Optional, Lookup>;
+}
+
+/** The columns no predicate may name, and the ones only equality may. Read by `query.ts`. */
+export type OpaqueKeys<C extends ColumnMap> = {
+  [K in keyof C]-?: C[K] extends { readonly $sealed: 'opaque' } ? K : never;
+}[keyof C];
+export type SealedKeys<C extends ColumnMap> = {
+  [K in keyof C]-?: C[K] extends { readonly $sealed: string } ? K : never;
+}[keyof C];
+
+/**
+ * Which keys the typed chain refuses: `opaque` in every predicate, `sealed` (opaque and lookup
+ * both) in an order or a group. A pair rather than the column map itself, so `ReadBuilder` stays
+ * row-shaped and a `select()` or a `preload()` carries it along unchanged.
+ */
+export interface SealedKeySet {
+  readonly opaque: PropertyKey;
+  readonly sealed: PropertyKey;
+}
+
+/** The default: an entity with no sealed column, and every row-agnostic consumer. */
+export interface NoSealedKeys {
+  readonly opaque: never;
+  readonly sealed: never;
+}
+
+export interface SealedKeysOf<C extends ColumnMap> {
+  readonly opaque: OpaqueKeys<C>;
+  readonly sealed: SealedKeys<C>;
+}
+
+/** A filter's shape: the row without the columns no predicate may name. */
+export type Filterable<Row, S extends SealedKeySet> = [S['opaque']] extends [never]
+  ? Row
+  : Omit<Row, S['opaque']>;
+
+/**
+ * The row as it leaves the server: without its sealed columns. `[…] extends [never]` so an entity
+ * with none — and every row-agnostic `EntityCore` — keeps `Row` itself, not a mapped copy of it.
+ */
+export type WireRow<Row, C extends ColumnMap> = [SealedKeys<C>] extends [never]
+  ? Row
+  : Omit<Row, SealedKeys<C>>;
 
 export type AnyColumn = Column<unknown, boolean>;
 

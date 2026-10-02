@@ -15,6 +15,16 @@ import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagString } from './parse';
 
+/**
+ * Where a route comes from. A file route names its file; a MOUNTED one names the call that
+ * mounted it and every permission that gates it — there is no `page.tsx` to name, and printing the
+ * package would send a reader looking for a route file inside `node_modules`.
+ */
+const declaredBy = (route: RouteDescriptor): string =>
+  route.mount === undefined
+    ? route.file
+    : `${route.mount.by}() · ${route.mount.permissions.join(' + ')}`;
+
 /** Fixed-width columns so the output diffs cleanly between runs and between machines. */
 export function renderRouteTable(routes: readonly RouteDescriptor[]): readonly string[] {
   const rows = routes.map((route) => [
@@ -23,7 +33,7 @@ export function renderRouteTable(routes: readonly RouteDescriptor[]): readonly s
     route.mode,
     route.hydrate,
     route.offline,
-    route.file,
+    declaredBy(route),
   ]);
   const header = ['path', 'surface', 'render', 'hydrate', 'offline', 'file'];
   const widths = header.map((title, index) =>
@@ -43,6 +53,10 @@ const routeJson = (routes: readonly RouteDescriptor[]): JsonValue =>
     hydrate: route.hydrate,
     offline: route.offline,
     budget: { js: route.budgetJs, lcp: route.budgetLcp },
+    // Absent on a file route, never `null`: only a mounted route has the fact.
+    ...(route.mount === undefined
+      ? {}
+      : { mount: { by: route.mount.by, permissions: [...route.mount.permissions] } }),
   }));
 
 /**

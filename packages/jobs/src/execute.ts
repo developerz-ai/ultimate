@@ -13,17 +13,23 @@ import {
   renderThrowable,
   reportError,
   runWithContext,
+  stringField,
   useContext,
   withChildContext,
 } from '@ultimat3/core';
 import { nowMs } from './clock';
-import type { ClaimedJob, JobDriver } from './driver';
-import { JobAbortedError, JobTimeoutError } from './errors';
+import type { ClaimedJob, JobDriver, SettleBy } from './driver';
+import { claimOf } from './driver';
+import { JobAbortedError } from './errors';
 import { eventBus } from './events';
 import type { AnyJobHandle } from './job';
+import { createProgressReporter } from './progress';
+import { isFinalAttempt } from './retry';
 import type { JobStopReason } from './retry-classification';
-import { nextRetryForError, recordedFailure } from './retry-classification';
+import { failureForRow, nextRetryForError, recordedFailure } from './retry-classification';
+import { raceTimeout } from './run-deadline';
 import { createRunSignal } from './run-signal';
+import { announceSettled, settledCode } from './settled';
 import type { EventLookup, StepRecord } from './steps';
 import { createStepRunner, isStepSuspension } from './steps';
 import { jobRunActor } from './tenant';
@@ -32,9 +38,20 @@ import { jobRunActor } from './tenant';
  * How one attempt ended. `interrupted` is the worker's drain cutting the attempt short: the job is
  * back in the ready bucket with the attempt UNCOUNTED, because the process ended it and not the
  * job — filed as `retried`, a deploy would burn an attempt per job it held, and with
- * `attempts: 1` dead-letter it.
+ * `attempts: 1` dead-letter it. `dropped` is a run that failed for good on a job declaring
+ * `retry.deadLetter: false`: the row is `failed`, where it used to go back `ready` and run
+ * forever. `refused` is `whenBusy: 'fail'` over a busy concurrency key: the
+ * row is `failed`, the body never ran, and it is neither a retry nor a dead letter
+ * (`worker-key-busy.ts`).
  */
-export type JobOutcome = 'completed' | 'suspended' | 'retried' | 'dead-lettered' | 'interrupted';
+export type JobOutcome =
+  | 'completed'
+  | 'suspended'
+  | 'retried'
+  | 'dead-lettered'
+  | 'dropped'
+  | 'interrupted'
+  | 'refused';
 
 /** Stands in for a caller with nothing to cancel, so the composition below has one shape. */
 const NEVER_ABORTED = new AbortController().signal;
@@ -78,10 +95,13 @@ export interface JobExecution {
   readonly job: string;
   readonly attempt: number;
   readonly durationMs: number;
+  /** Epoch ms the row is claimable again: a suspension's wake, or a retry's backoff ending. */
   readonly resumeAt?: number;
   readonly error?: string;
   /** Why this attempt was the last. Absent while the job is still being retried. */
   readonly stopReason?: JobStopReason;
+  /** What the body returned — present exactly on `completed`, for a caller driving a run by hand. */
+  readonly result?: unknown;
   readonly steps: readonly StepRecord[];
   readonly replayed: readonly string[];
 }
@@ -93,6 +113,12 @@ export interface ExecuteJobOptions {
   readonly ctx: Ctx;
   readonly clock?: Clock;
   readonly events?: EventLookup;
+  /**
+   * Why this run may not start, decided before the body: the worker could not derive the run's
+   * concurrency key (its `key` function threw, or the row no longer parses), so it holds no slot
+   * and running it would be a run outside its own cap. Failed as an ordinary attempt.
+   */
+  readonly refusal?: unknown;
 }
 
 /**
@@ -135,13 +161,59 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     events: options.events ?? eventBus(),
   });
 
+  // Who settles, and how long the attempt took — the fence and the counter's duration, in one
+  // value both settles are handed.
+  const by = (): SettleBy => ({
+    ...claimOf(claimed),
+    durationMs: nowMs(options.clock) - startedAt,
+  });
+  const introspect = driver.introspect;
+  const progress = createProgressReporter({
+    job: handle.name,
+    jobId: claimed.id,
+    write:
+      introspect === undefined
+        ? undefined
+        : (value) => introspect.recordProgress(claimed.id, claimOf(claimed), value),
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
+  });
+  /**
+   * A settle that matched nothing: the row is another worker's now — this one's lease lapsed and
+   * the queue re-delivered — or it was cancelled. Logged, never thrown: theirs is the verdict.
+   */
+  const landed = (did: boolean, settling: string): boolean => {
+    if (!did) {
+      logger.warn('jobs.settle.unowned', {
+        job: handle.name,
+        jobId: claimed.id,
+        workerId: claimed.claimedBy,
+        settling,
+      });
+    }
+    return did;
+  };
+  /** The parsed payload, once it has parsed — what `onSettled` is handed. */
+  let parsed: { readonly value: unknown } | undefined;
+  /** What the body returned, for `onSettled` and for the execution this answers. */
+  let result: unknown;
+  /**
+   * Runs `fn` as the body runs: `ctx` ambient, the job's DECLARED tenant on the actor. Until the
+   * payload has parsed there is no tenant to derive, so the worker's own context stands in — and
+   * a tenant-scoped read under it fails closed, which is right for a payload nobody could read.
+   */
+  let inRunScope = <T>(fn: () => T): T => runWithContext(ctx, fn);
+
   const settle = async (outcome: JobExecution): Promise<JobExecution> => {
     const steps = await driver.steps.list(claimed.runId);
     return { ...outcome, steps, replayed: runner.replayedNames() };
   };
 
   try {
+    // Raised INSIDE the try so it takes the one failure path below — classified, nacked, logged
+    // and reported exactly as if the body had thrown it — and the body never starts.
+    if (options.refusal !== undefined) throw options.refusal;
     const input = handle.parse(claimed.input);
+    parsed = { value: input };
     // The job's DECLARED tenant, on the actor the body runs as. `tenant: 'none'` strips the org
     // rather than inheriting the worker's, so a tenant-scoped read inside such a job fails closed.
     const runActor = jobRunActor(callerActor(ctx), handle.tenantFor(input));
@@ -156,31 +228,39 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // still answer the worker's org while every ambient repository call answered the job's — one
     // run acting as two tenants, which is the same hole one layer up. It rebuilds every managed
     // factory against `runActor` and carries only the services no factory owns.
-    const work = runWithContext(ctx, () =>
-      withChildContext({ actor: runActor }, () =>
-        handle.run({
-          input,
-          step: runner.step,
-          // The child itself, never a rebuilt sibling: the ctx a body is HANDED and the ctx the
-          // entity guard READS have to be one object, which is what `tenancy-cross-surface` pins.
-          ctx: useContext(),
-          attempt: claimed.attempt,
-          jobId: claimed.id,
-          runId: claimed.runId,
-        }),
-      ),
+    inRunScope = (fn) => runWithContext(ctx, () => withChildContext({ actor: runActor }, fn));
+    const work = inRunScope(() =>
+      handle.run({
+        input,
+        step: runner.step,
+        // The child itself, never a rebuilt sibling: the ctx a body is HANDED and the ctx the
+        // entity guard READS have to be one object, which is what `tenancy-cross-surface` pins.
+        ctx: useContext(),
+        attempt: claimed.attempt,
+        // The comparison `nextRetry` stops on, over the same two operands — never a second one.
+        finalAttempt: isFinalAttempt(handle.retry, claimed.attempt),
+        progress: progress.report,
+        jobId: claimed.id,
+        runId: claimed.runId,
+      }),
     );
 
-    await (handle.timeoutMs === undefined
+    result = await (handle.timeoutMs === undefined
       ? work
       : raceTimeout(work, handle.timeoutMs, handle.name, cancel));
   } catch (error) {
+    // Before ANY settle: the last value a body reported is written while the row is still this
+    // worker's, which is the only time `recordProgress`'s fence lets it land.
+    await progress.flush();
     if (isStepSuspension(error)) {
       const delayMs = Math.max(0, error.resumeAt - nowMs(options.clock));
       // `park: true` is the suspension itself — the row leaves the ready bucket — and
       // `countsAsAttempt: false` only says not to burn an attempt on it. A limiter shed passes the
       // second and not the first: it is a job still waiting, and it belongs in `queue_depth`.
-      await driver.nack(claimed.id, { delayMs, countsAsAttempt: false, park: true });
+      landed(
+        await driver.nack(claimed.id, { ...by(), delayMs, countsAsAttempt: false, park: true }),
+        'suspended',
+      );
       return settle({
         outcome: 'suspended',
         jobId: claimed.id,
@@ -203,7 +283,15 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       // not the error, because the body's error is not always the signal's reason, and an
       // attempt burned per deploy is the "always twice" draining exists to prevent. The `error`
       // is still recorded on the row: `x jobs show` should say why the last attempt ended.
-      await driver.nack(claimed.id, { delayMs: 0, error: message, countsAsAttempt: false });
+      landed(
+        await driver.nack(claimed.id, {
+          ...by(),
+          delayMs: 0,
+          error: failureForRow(error),
+          countsAsAttempt: false,
+        }),
+        'interrupted',
+      );
       logger.info('jobs.attempt.interrupted', {
         job: handle.name,
         jobId: claimed.id,
@@ -228,12 +316,24 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // classified keeps the attempt-count path exactly as it was.
     const decision = nextRetryForError(handle.retry, claimed.attempt, error);
     const stop = decision.stoppedBy;
-    await driver.nack(claimed.id, {
-      delayMs: decision.delayMs,
-      error: recordedFailure(message, decision),
-      countsAsAttempt: true,
-      deadLetter: !decision.retry && decision.deadLetter,
-    });
+    // Failed for good with `deadLetter: false`: the row is DROPPED — settled `failed`. It was
+    // nacked with neither flag, which both drivers file `ready`, so a job its author declared
+    // "do not keep" was re-claimed and re-run forever with its attempt counter climbing.
+    const dropped = !decision.retry && !decision.deadLetter;
+    const recorded = recordedFailure(failureForRow(error), decision);
+    const stack = stringField(error, 'stack');
+    const settled = landed(
+      await driver.nack(claimed.id, {
+        ...by(),
+        delayMs: decision.delayMs,
+        error: recorded,
+        ...(stack === undefined ? {} : { stack }),
+        countsAsAttempt: true,
+        deadLetter: !decision.retry && decision.deadLetter,
+        fail: dropped,
+      }),
+      decision.retry ? 'retried' : dropped ? 'dropped' : 'dead-lettered',
+    );
     logger.warn('jobs.attempt.failed', {
       job: handle.name,
       jobId: claimed.id,
@@ -263,13 +363,32 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
         },
       },
     });
+    // After the row is settled, and only by the worker whose settle landed: a run this worker no
+    // longer owns is not this worker's ending to announce. Under the body's own scope, so the
+    // hook's tenant-scoped writes — "mark this connection broken" — are the job's tenant's.
+    if (!decision.retry && settled) {
+      await announceSettled({
+        handle,
+        claimed,
+        ctx,
+        run: { scope: inRunScope, input: parsed },
+        settlement: {
+          outcome: dropped ? 'dropped' : 'dead-lettered',
+          error: recorded,
+          code: settledCode(error),
+        },
+      });
+    }
     return settle({
-      outcome: decision.retry ? 'retried' : 'dead-lettered',
+      outcome: decision.retry ? 'retried' : dropped ? 'dropped' : 'dead-lettered',
       jobId: claimed.id,
       job: handle.name,
       attempt: claimed.attempt,
       durationMs: nowMs(options.clock) - startedAt,
       error: message,
+      // When the retry falls due, on this process's clock — what lets the worker that failed it
+      // pass again at that moment instead of finding out on a backed-off poll.
+      ...(decision.retry ? { resumeAt: nowMs(options.clock) + decision.delayMs } : {}),
       ...(stop === undefined ? {} : { stopReason: stop }),
       steps: [],
       replayed: [],
@@ -291,62 +410,27 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   // the run as `retried`, so `jobs_total{outcome}` would count a failure that never happened.
   // Let it reach the worker instead, which logs `jobs.worker.settle-failed`; the lease then
   // lapses and the queue re-delivers, which is the honest outcome for "we could not say it ended".
-  await driver.ack(claimed.id);
+  await progress.flush();
+  // Announced only when the ack LANDED: a row cancelled or re-delivered under this body is
+  // somebody else's to settle, and `completed` would be a claim about a row that is not `done`.
+  if (landed(await driver.ack(claimed.id, by()), 'completed')) {
+    await announceSettled({
+      handle,
+      claimed,
+      ctx,
+      run: { scope: inRunScope, input: parsed },
+      settlement: { outcome: 'completed', result },
+    });
+  }
   return settle({
     outcome: 'completed',
     jobId: claimed.id,
     job: handle.name,
     attempt: claimed.attempt,
     durationMs: nowMs(options.clock) - startedAt,
+    result,
     steps: [],
     replayed: [],
-  });
-}
-
-/**
- * The run's deadline. It CANCELS before it rejects, and the order is the whole point: the caller
- * nacks on this rejection and the queue hands the job straight to another worker, so the body has
- * to have been told to stop before that becomes possible.
- *
- * Nothing in JS can kill a body that ignores the signal, so what is left is to say so: a run that
- * settles after its deadline logs `jobs.timeout.abandoned`, which is how an app finds the handler
- * that never reads `ctx.signal`. A body that stopped BECAUSE it was cancelled is the intended end
- * and stays quiet.
- */
-function raceTimeout(
-  work: Promise<unknown>,
-  timeoutMs: number,
-  job: string,
-  cancel: AbortController,
-): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    let expired = false;
-    const timer = setTimeout(() => {
-      expired = true;
-      const failure = new JobTimeoutError({ job, timeoutMs });
-      cancel.abort(failure);
-      reject(failure);
-    }, timeoutMs);
-    const abandoned = (ended: 'resolved' | 'rejected', error?: unknown): void => {
-      logger.warn('jobs.timeout.abandoned', {
-        job,
-        timeoutMs,
-        ended,
-        ...(error === undefined ? {} : { error: renderThrowable(error) }),
-      });
-    };
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        if (expired) abandoned('resolved');
-        else resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        if (!expired) reject(error);
-        else if (!isCancellation(error, cancel.signal.reason)) abandoned('rejected', error);
-      },
-    );
   });
 }
 
@@ -357,9 +441,4 @@ function raceTimeout(
  */
 function drainedBy(signal: AbortSignal): boolean {
   return signal.aborted && isUltimateError(signal.reason) && signal.reason.code === 'X_DRAINING';
-}
-
-/** The body stopped because we cancelled it: our own reason back, or a fenced step write. */
-function isCancellation(error: unknown, reason: unknown): boolean {
-  return error === reason || (isUltimateError(error) && error.code === 'X_ABORTED');
 }

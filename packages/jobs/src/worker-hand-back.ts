@@ -4,6 +4,7 @@
 
 import { logger, renderThrowable } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
+import { claimOf } from './driver';
 
 /**
  * Each job returned exactly as a shed returns one — no attempt burned, no `lastError` — so
@@ -18,7 +19,11 @@ export async function handBack(
 ): Promise<void> {
   for (const claimed of jobs) {
     await driver
-      .nack(claimed.id, { delayMs: options.delayMs, countsAsAttempt: false })
+      .nack(claimed.id, {
+        ...claimOf(claimed),
+        delayMs: options.delayMs,
+        countsAsAttempt: false,
+      })
       .catch((error: unknown) => {
         logger.debug('jobs.worker.hand_back_failed', {
           workerId: options.workerId,

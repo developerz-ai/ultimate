@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'; // why: same — no Bun native answers the pla
 import { join } from 'node:path'; // why: same — Bun.write and import() both take a joined path.
 import { h } from './jsx';
 import {
+  claimStylesheets,
   clearStylesheets,
   installRenderLoader,
   JSX_FACTORY_SPECIFIER,
@@ -177,6 +178,64 @@ describe('stylesFor', () => {
 
   test('no stylesheets means no style tag to emit', () => {
     expect(stylesFor('site')).toBe('');
+  });
+
+  // Axiom 6, for a PACKAGE's sheet. `@ultimat3/admin`'s screens are served on `app/`, and its
+  // stylesheet rode every surface: an app's static `site/` documents carried 4.8 kB for an admin
+  // they never render.
+  describe('a package that claims its directory for one surface', () => {
+    const ADMIN_DIR = '/srv/demo/node_modules/@ultimat3/admin/src';
+    const ADMIN_SHEET = `${ADMIN_DIR}/admin.module.scss`;
+
+    test('its sheets are carried by that surface alone — a site document pays nothing', () => {
+      claimStylesheets(ADMIN_DIR, 'app');
+      loadStylesheet(ADMIN_SHEET, '.shell{color:purple}');
+      loadStylesheet(PACKAGE, '.card{color:green}');
+      expect(stylesFor('site')).not.toContain('color:purple');
+      expect(stylesFor('app')).toContain('color:purple');
+      // A package nobody claimed is still what both graphs carry.
+      expect(stylesFor('site')).toContain('color:green');
+    });
+
+    test('a claim made AFTER the sheet registered moves it, and moves the revision with it', () => {
+      const LATE_DIR = '/srv/demo/node_modules/@acme/back-office/src';
+      loadStylesheet(`${LATE_DIR}/board.module.scss`, '.board{color:teal}');
+      expect(stylesFor('site')).toContain('color:teal');
+      const before = stylesheetsRevision();
+      claimStylesheets(LATE_DIR, 'app');
+      expect(stylesFor('site')).not.toContain('color:teal');
+      expect(stylesFor('app')).toContain('color:teal');
+      expect(stylesheetsRevision()).toBeGreaterThan(before);
+      // Claiming the same directory again changes no answer, so it mints no new stylesheet URL.
+      const settled = stylesheetsRevision();
+      claimStylesheets(LATE_DIR, 'app');
+      expect(stylesheetsRevision()).toBe(settled);
+    });
+
+    test('a claim covers its own directory and nothing beside it', () => {
+      claimStylesheets(ADMIN_DIR, 'app');
+      loadStylesheet(`${ADMIN_DIR}-themes/dark.module.scss`, '.dark{color:navy}');
+      expect(stylesFor('site')).toContain('color:navy');
+    });
+
+    test('a claimed sheet is still LIBRARY in the cascade: before shared/ and the surface’s own', () => {
+      claimStylesheets(ADMIN_DIR, 'app');
+      loadStylesheet(APP, '.panel{color:blue}');
+      loadStylesheet(ADMIN_SHEET, '.shell{color:purple}');
+      const css = stylesFor('app');
+      // Present before ordered: a sheet that stopped being carried answers -1, which sorts first.
+      expect(css).toContain('color:purple');
+      expect(css).toContain('color:blue');
+      expect(css.indexOf('color:purple')).toBeLessThan(css.indexOf('color:blue'));
+    });
+
+    test('the root being renamed does not undo a claim', () => {
+      claimStylesheets(ADMIN_DIR, 'app');
+      loadStylesheet(ADMIN_SHEET, '.shell{color:purple}');
+      setStylesheetRoot('/srv/demo');
+      expect(stylesFor('site')).not.toContain('color:purple');
+      setStylesheetRoot(undefined);
+    });
   });
 
   // The bundle is one file made of many compiles, and an encoding claim is legal at byte 0 of a

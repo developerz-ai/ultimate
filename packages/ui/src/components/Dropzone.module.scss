@@ -4,7 +4,7 @@
   @include t.column(t.space(2), center);
   @include t.transition(background-color, border-color);
   position: relative;
-  border: 2px dashed t.role('line');
+  border: t.stroke(thick) dashed t.role('line');
   border-radius: t.radius(lg);
   background: t.role('surface');
   padding-block: t.space(8);
@@ -15,8 +15,8 @@
   // The hidden input keeps the focus, so the ring has to be drawn on the surface around it.
   &:focus-within {
     border-color: t.role('accent');
-    outline: 2px solid t.role('accent');
-    outline-offset: 2px;
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: t.stroke(thick);
   }
 
   &[data-over='true'] {

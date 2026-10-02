@@ -12,15 +12,15 @@ Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutori
 
 ```ts
 export const reindexTodo = job({
-  input: t.object({ id: t.uuid }),
-  tenant: 'none',                              // a todo carries no org in this tutorial
+  input: t.object({ id: t.uuid, orgId: t.uuid }),
+  tenant: (input) => input.orgId,              // the org the body reads as, from its own input
   idempotencyKey: ({ id }) => `reindex-todo:${id}`,
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step }) {
     const row = await step.run('load', () => repo.byId(input.id));
     if (row === undefined) return { skipped: true };
     await step.run('process', async () => {
-      await repo.listByOrg(row.orgId, 1);
+      await repo.list(1);
     });
     return { skipped: false };
   },
@@ -145,14 +145,17 @@ The Redis and NATS **job** drivers have **not shipped**, `As of 2026-09` — eac
 
 ```ts
 export const todoList = query({
-  input: t.object({ orgId: t.uuid, limit: t.number.default(50) }),
+  // No `orgId` input: the org is the actor's, and the typed handle under `repo.list` scopes the
+  // read to it — on a sync node too, where each window is read as its subscriber's tenant.
+  input: t.object({ limit: t.number.default(50) }),
   policy: canTodoRead,
   live: true,
-  mcp: { expose: true, description: 'todoList — generated, edit the description' },
-  sql: ({ orgId, limit }) =>
-    from<Todo>('todos', () => repo.listByOrg(orgId, limit))
-      .where({ orgId })
-      .orderBy('createdAt')
+  mcp: { expose: true, description: 'todoList — edit this description' },
+  sql: ({ limit }) =>
+    from<Todo>('todos', () => repo.list(limit))
+      // Newest first, as `repo.list` answers: the thunk is the in-memory read and this chain the
+      // SQL, so the two must agree on direction.
+      .orderBy('createdAt', 'desc')
       // The primary key last is what makes the order TOTAL: `createdAt` alone ties, and two rows
       // that tie can swap between evaluations — a bounded read then drops one and repeats the
       // other, and a live subscription patches a row it never sent.
@@ -173,9 +176,16 @@ export const todoList = query({
 The generated test asserts on the **SQL text**, because that is the contract an agent reads to self-correct:
 
 ```ts
-const source = await sourceFor(target, { orgId, limit: 50 }, { actor: null, enforce: false });
+const source = await sourceFor(
+  target,
+  { limit: 50 },
+  {
+    actor: null,
+    unenforced: 'a scaffolded test asserts the SQL text; the policy is asserted separately',
+  },
+);
 const text = source.toSQL().sql.toLowerCase();
-expect(text).toContain('order by');
+expect(text).toContain('order by "createdat" desc');
 expect(text).toContain('limit');
 // "ordered" is not enough — dropping the id tiebreak leaves an ORDER BY while going
 // non-deterministic under ties.
@@ -188,7 +198,7 @@ Not a subscribe-time gate that then trusts the stream. The same `policy` object 
 
 `.tool().mutates` is `false` and `.tool().policy === todoList.policy`. A read hands rows to an agent, so MCP exposure on a query is opt-in — silence exposes nothing.
 
-Five projections from the one declaration: HTTP `GET /_x/query/todo-list?orgId=…`, a typed client hook, the live subscription, a cache entry keyed by tenant and policy scope, and the MCP read tool. Full table: [Queries and live queries](Queries-And-Live-Queries).
+Five projections from the one declaration: HTTP `GET /_x/query/todo-list?limit=50`, a typed client hook, the live subscription, a cache entry keyed by tenant and policy scope, and the MCP read tool. Full table: [Queries and live queries](Queries-And-Live-Queries).
 
 ## Which role runs what
 

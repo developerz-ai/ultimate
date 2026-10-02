@@ -10,7 +10,7 @@
   position: absolute;
   z-index: t.z(tooltip);
   inset-inline-start: 50%;
-  translate: -50% 4px;
+  translate: -50% t.space(1);
   max-inline-size: 18rem;
   padding-block: t.space(1);
   padding-inline: t.space(2);

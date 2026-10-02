@@ -19,6 +19,7 @@ const tx = (id: string): Tx => ({ id, onRollback: () => undefined }) as unknown 
 
 const row = (id: string, stagedAt: number): OutboxRecord => ({
   id,
+  runId: `run-${id}`,
   job: 'notifySubscribers',
   queue: 'default',
   input: {},

@@ -39,6 +39,8 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_PROMPT_UNANSWERED',
   'X_SCRAPE_BLOCKED',
   'X_SCRAPE_KEY_INVALID',
+  'X_SCRAPE_EGRESS_UNSUPPORTED',
+  'X_SCRAPE_EGRESS_IN_PAYLOAD',
 ] as const;
 
 /**
@@ -91,6 +93,8 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_PROMPT_UNANSWERED: 'a login step asked for a code and nothing answered',
   X_SCRAPE_BLOCKED: 'the site refused this client — the identity is spent',
   X_SCRAPE_KEY_INVALID: 'the key chord names no key a browser can press',
+  X_SCRAPE_EGRESS_UNSUPPORTED: 'this driver cannot give the session the exit the run asked for',
+  X_SCRAPE_EGRESS_IN_PAYLOAD: 'the run exit carries a credential that is also in the job payload',
 };
 
 // One unconditional call, so a second package claiming one of these codes throws
@@ -192,6 +196,12 @@ export const SCRAPE_ERROR_RETRY = {
   // literal, attempt 2 passes the identical string, and a retry is a browser launch for no chance
   // of a different parse. Refused before any key goes down, so no modifier is left held.
   X_SCRAPE_KEY_INVALID: 'terminal',
+  // The exit is a function of the run's INPUT and the driver is a constant of the deploy: attempt
+  // 2 computes the same exit and meets the same driver. Dialling the driver's own exit instead
+  // would be the retry that "works", as a different client — which is the failure this code names.
+  X_SCRAPE_EGRESS_UNSUPPORTED: 'terminal',
+  // The payload is the row: every remaining attempt reads the same credential out of it.
+  X_SCRAPE_EGRESS_IN_PAYLOAD: 'terminal',
 } as const satisfies Readonly<Record<ScrapeOwnedErrorCode, 'retryable' | 'terminal'>>;
 
 registerErrorRetry(SCRAPE_ERROR_RETRY);

@@ -181,7 +181,9 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       if (routed instanceof Response) return routed;
       const match = matchRoute(input.table, ctx.method, routed);
       if (!match.ok) {
-        if (match.reason === 'not-found') throw routeNotFound(ctx.method, pathname);
+        if (match.reason === 'not-found') {
+          throw hooks.explainMiss?.(ctx.method, pathname) ?? routeNotFound(ctx.method, pathname);
+        }
         if (match.reason === 'path-invalid') throw pathInvalid(pathname, match.segment);
         ctx.headers.set('allow', match.allow.join(', '));
         throw methodNotAllowed(ctx.method, pathname, match.allow);

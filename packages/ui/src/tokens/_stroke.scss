@@ -1,0 +1,20 @@
+// Line weights: a border, an outline, a focus ring, an indicator. px on purpose — a line that
+// grew with the reader's text size would be a different design at 200% zoom, not a bigger one.
+
+$stroke: (
+  hairline: 1px,
+  thick: 2px,
+  heavy: 3px,
+);
+
+@mixin emit {
+  :root {
+    @each $name, $value in $stroke {
+      --stroke-#{$name}: #{$value};
+    }
+  }
+}
+
+@function stroke($name) {
+  @return var(--stroke-#{$name});
+}

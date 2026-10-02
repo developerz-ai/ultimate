@@ -3,6 +3,7 @@
 // clock- or iteration-order-dependent in this shape is a spurious change on every build.
 
 import { toJsonSchema } from '@ultimat3/schema';
+import type { WhenBusy } from './concurrency';
 import type { BackoffStrategy, RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
 
@@ -22,6 +23,21 @@ export interface JobDescriptor {
    * is app data, so a descriptor carrying it would put customer ids in `x.manifest.json`.
    */
   readonly idempotent: boolean;
+  /**
+   * The declared fleet-wide cap, or `null` for none. `keyed: true` says `limit` holds per
+   * `concurrency.key(input)` rather than for the whole job, and `whenBusy` is what a claim over
+   * it does — `null` for a plain number, which always waits. The KEY never crosses, for
+   * `idempotent`'s reason: it is computed from an input. `x jobs show <id>` reports one run's.
+   */
+  readonly concurrency: JobConcurrencyDescriptor | null;
+  /** Whether the job declares an `onSettled` hook — what is told how each run ended. */
+  readonly onSettled: boolean;
+}
+
+export interface JobConcurrencyDescriptor {
+  readonly limit: number;
+  readonly keyed: boolean;
+  readonly whenBusy: WhenBusy | null;
 }
 
 /**
@@ -40,6 +56,10 @@ export interface DescribableJob {
    * which is the exact wrong answer the `/_x` jobs panel used to give for every job.
    */
   readonly idempotencyKeyFor: unknown;
+  /** `JobHandle.concurrency` and `.whenBusy` — the cap as `job()` resolved it. */
+  readonly concurrency: number | undefined;
+  readonly whenBusy: WhenBusy | undefined;
+  readonly declaresOnSettled: boolean;
 }
 
 export function describeJob(handle: DescribableJob): JobDescriptor {
@@ -55,6 +75,15 @@ export function describeJob(handle: DescribableJob): JobDescriptor {
     // not statically knowable. `inspect(name)` reports the steps an actual run recorded.
     steps: [],
     idempotent: typeof handle.idempotencyKeyFor === 'function',
+    concurrency:
+      handle.concurrency === undefined
+        ? null
+        : {
+            limit: handle.concurrency,
+            keyed: handle.whenBusy !== undefined,
+            whenBusy: handle.whenBusy ?? null,
+          },
+    onSettled: handle.declaresOnSettled,
   };
 }
 

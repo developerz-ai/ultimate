@@ -39,6 +39,22 @@ const names = (source: string): readonly string[] =>
   scanSecretCompares('packages/auth/src/a.ts', source).map((site) => site.name);
 
 describe('a secret compared with a short-circuiting operator', () => {
+  test('a package over its pin has EVERY comparison named, not only its first', () => {
+    const gaps = checkSecretCompares({
+      files: [
+        { path: 'packages/auth/src/a.ts', source: 'if (a.tokenHash === b.tokenHash) return;' },
+        { path: 'packages/auth/src/b.ts', source: 'if (x.apiSecret === y.apiSecret) return;' },
+      ],
+      pins: { auth: 1 },
+    });
+    const finding = secretCompareFindingFor(gaps[0] as never);
+    expect(finding.cause).toContain('in 2 place(s) and is pinned at 1');
+    expect(finding.cause).toContain('packages/auth/src/a.ts:1');
+    expect(finding.cause).toContain('packages/auth/src/b.ts:1');
+    expect(finding.cause).toContain('x.apiSecret === y.apiSecret');
+    expect(finding.fix).toContain('1 of the 2 comparisons the cause lists');
+  });
+
   test('is reported, and the finding names timingSafeEqual', () => {
     const gaps = checkSecretCompares({
       files: [
@@ -140,6 +156,61 @@ describe('what the rule stays silent about, and why', () => {
  * module-scope constant actually uses. `packages/storage/src/driver-local.ts` compares a
  * `DEV_SIGNING_SECRET` and `@ultimat3/storage` was absent from the pin table entirely.
  */
+/**
+ * `candidate` is in the vocabulary for `mfa.ts`, where it is a recovery code. As the PARAMETER of
+ * an array predicate it is the element under test — a route, a table, a waiter — and 20 of the
+ * tree's 22 `candidate` sites were exactly that, each needing a sentence in the pins table to say
+ * so. The name is ignored THERE and nowhere else, and only the name: what it is compared WITH is
+ * still read.
+ */
+describe('a predicate`s own parameter named candidate is the element under test, not a secret', () => {
+  test('find, filter, some, every and the findIndex family, in every arrow spelling', () => {
+    for (const source of [
+      'const route = routes.find((candidate) => candidate.path === path);',
+      'this.waiters = this.waiters.filter((candidate) => candidate !== waiter);',
+      'return members.some(candidate => candidate === value);',
+      'const at = tables.findIndex((candidate: Table, index) => candidate.name === table);',
+      'const ok = names.every((candidate) => allowed.includes(candidate));',
+      'const hit = rows.findLast((candidate) => {\n  return sidOf(candidate) === sid;\n});',
+    ]) {
+      expect(names(source)).toEqual([]);
+    }
+  });
+
+  test('what the element is compared WITH is still read: a secret on the other side reports', () => {
+    expect(names('codes.find((candidate) => candidate.hash === hash);')).toEqual(['hash']);
+    expect(names('codes.some((candidate) => candidate === token);')).toEqual(['token']);
+    expect(names('keys.find((candidate) => candidate.tokenHash === given);')).toEqual([
+      'tokenHash',
+    ]);
+    expect(names('codes.some((candidate) => stored.includes(candidate.secret));')).toEqual([
+      'secret',
+    ]);
+  });
+
+  test('candidate anywhere else is still the recovery code it was added for', () => {
+    // A loop variable, a function parameter, and a use AFTER the predicate has closed.
+    expect(names('for (const candidate of codes) if (totp(step) !== candidate) continue;')).toEqual(
+      ['candidate'],
+    );
+    expect(names('function verify(candidate) { return stored === candidate; }')).toEqual([
+      'candidate',
+    ]);
+    expect(
+      names('const hit = xs.find((candidate) => ok(candidate));\nif (candidate === stored) {}'),
+    ).toEqual(['candidate']);
+    // A callback that is not a predicate — `map` builds a value, it does not test one.
+    expect(names('xs.map((candidate) => candidate === stored);')).toEqual(['candidate']);
+    // A PROPERTY called candidate is not the parameter.
+    expect(names('xs.find((candidate) => entry.candidate === given);')).toEqual(['candidate']);
+  });
+
+  test('only that one name: a predicate over tokens is a credential check', () => {
+    expect(names('tokens.find((token) => token === presented);')).toEqual(['token']);
+    expect(names('hashes.some((hash) => hash === computed);')).toEqual(['hash']);
+  });
+});
+
 describe('the vocabulary reads the spelling a constant is really written in', () => {
   test('SCREAMING_SNAKE is the same word as camelCase', () => {
     expect(namesASecret('SESSION_SECRET')).toBe('SESSION_SECRET');

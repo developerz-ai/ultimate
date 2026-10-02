@@ -43,8 +43,9 @@ export { dashboardFiles } from './scaffold-dashboard';
 export { docsFiles, EXECUTABLE_FILES } from './scaffold-docs';
 export { entryFiles } from './scaffold-entries';
 export { errorPageFiles, PWA_COLORS } from './scaffold-errors';
-// The nine guards `x new` ships, distinct from `guardFiles` above, which is `x g guard <name>`.
-export { scaffoldGuardFiles } from './scaffold-guards';
+// The guards `x new` ships — `SHIPPED_GUARD_NAMES` is the list — distinct from `guardFiles` above,
+// which is the blank template `x g guard <name>` writes for a name that is not one of them.
+export { SHIPPED_GUARD_NAMES, scaffoldGuardFiles, shippedGuardFiles } from './scaffold-guards';
 export { i18nIndex, localeEntry, localeImport } from './scaffold-i18n';
 export { repoFiles } from './scaffold-repo';
 export { shellFiles } from './scaffold-shell';

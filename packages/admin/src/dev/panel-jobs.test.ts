@@ -24,6 +24,8 @@ const run = (fact: Partial<JobRunFact> & { id: string }): JobRunFact => ({
   queue: 'default',
   status: 'running',
   attempt: 1,
+  concurrencyKey: null,
+  progress: null,
   steps: [],
   ...fact,
 });
@@ -188,8 +190,8 @@ describe('totalDepth is the whole backlog, across every queue', () => {
       staticDevSources({
         queues: () =>
           Promise.resolve([
-            { name: 'default', depth: 4, running: 1, failed: 0, deadLetter: 0 },
-            { name: 'mail', depth: 7, running: 0, failed: 2, deadLetter: 1 },
+            { name: 'default', depth: 4, running: 1, failed: 0, deadLetter: 0, paused: false },
+            { name: 'mail', depth: 7, running: 0, failed: 2, deadLetter: 1, paused: false },
           ]),
       }),
       new URLSearchParams(),

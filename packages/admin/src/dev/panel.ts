@@ -16,6 +16,12 @@ export interface DevPanel<Data = unknown> {
    */
   readonly questionKey: string;
   data(sources: DevSources, params: URLSearchParams): Promise<Data>;
+  /**
+   * The tab's body as HTML, when the panel draws one — the jobs tab renders the admin's own
+   * jobs overview. Absent: the tab is its `--json` payload in a `<pre>`. Asked only once `data`
+   * answered, so an unwired source is still the payload's own error with its fix.
+   */
+  html?(params: URLSearchParams, tabPath: string): Promise<string>;
 }
 
 export type PanelPayload =

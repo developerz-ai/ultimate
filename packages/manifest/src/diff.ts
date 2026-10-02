@@ -11,6 +11,7 @@
 // `[{ kind: 'internal', path: 'buildId' }]` and passed. `diff.test.ts` walks `ARRAY_SECTIONS` and
 // fails on a section nothing here classifies.
 
+import { diffAdmins } from './diff-admin';
 import type { ManifestChange } from './diff-change';
 import { diffNamedSet } from './diff-change';
 import { diffChannels } from './diff-channels';
@@ -49,6 +50,8 @@ export function diffManifest(before: Manifest, after: Manifest): ManifestDiff {
   changes.push(...diffQueries(before.queries, after.queries));
   // `?? []`: a file written before channels were projected carries none, which is not a removal.
   changes.push(...diffChannels(before.channels ?? [], after.channels ?? []));
+  // The same `?? []`, for the same reason: no `admin` key is a file older than the section.
+  changes.push(...diffAdmins(before.admin ?? [], after.admin ?? []));
   changes.push(...diffRoutes(before.routes, after.routes));
   changes.push(...diffJobs(before.jobs, after.jobs));
   changes.push(...diffTasks(before.tasks, after.tasks));

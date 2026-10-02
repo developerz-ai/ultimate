@@ -10,6 +10,8 @@
 // event field, an artifact or a screenshot, and it is summarised for logs by `sessionDigest()` —
 // counts and an origin, never a value.
 
+import type { SealKeySource } from '@ultimat3/core';
+import { isJsonObject, isSealed, openText, resolveSealKeys, seal } from '@ultimat3/core';
 import type { StorageDriver } from '@ultimat3/storage';
 import { assertSafeKey } from '@ultimat3/storage';
 import type { ScrapeCookie } from './target';
@@ -168,42 +170,103 @@ export function memorySessionStore(
 
 export const DEFAULT_SESSION_PREFIX = 'scrape-session';
 
+/** What a stored session is sealed FOR. Bound into the tag: nothing else sealed opens as one. */
+export const SESSION_SEAL_PURPOSE = 'scrape-session';
+
+export interface StorageSessionStoreOptions {
+  readonly prefix?: string | undefined;
+  /**
+   * Where the app's master key is read from — `seal()`'s own two fields, with its defaults: the
+   * process environment, then `.secrets.key` under the working directory.
+   */
+  readonly keySource?: SealKeySource | undefined;
+}
+
+/** The sealed string out of a stored object, or `undefined` for anything that is not one. */
+const sealedIn = (text: string): string | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isJsonObject(parsed) && isSealed(parsed['sealed']) ? parsed['sealed'] : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 /**
  * Sessions on the app's own disk, through `@ultimat3/storage` — the seam that already knows about
  * tenant-scoped keys and refuses one that escapes its prefix. This package owns no upload path.
  *
- * NOT encrypted at rest: the bytes are as sensitive as the bucket they sit in, so the bucket must
- * be private. Sealing them under core's secrets envelope is the obvious next step and is
- * deliberately not guessed at here — it needs a key the app declares, and a wrong guess about
- * where that key lives is worse than the honest note.
+ * SEALED at rest, under the app's master key — the one `x secrets init` writes — through core's
+ * `seal()`, purpose `SESSION_SEAL_PURPOSE`. The stored object is `{ "sealed": "x1.…" }`: no cookie
+ * value, no `localStorage` token and no origin is readable from the bucket. With no master key the
+ * store refuses (`X_SEAL_KEY_MISSING`) on `load()`, which a run calls BEFORE its browser opens —
+ * a login that could not be kept is a login repeated on every attempt.
+ *
+ * A session is a CACHE, so nothing is migrated: an object that is not a sealed session, does not
+ * open under a key this process declares, or opens to a record written for another key is burned
+ * and the run authenticates again.
+ *
+ * `storage` is a THUNK — `storageSessionStore(() => disk('sessions'))` — read on every call and
+ * never captured. A `scrape()` is declared when its module is evaluated; the app's disks exist
+ * once boot has run `defineStorage()`, which is later. A driver VALUE here could only be a
+ * `declare const` in a README.
  */
 export function storageSessionStore(
-  storage: StorageDriver,
-  options: { readonly prefix?: string | undefined } = {},
+  storage: () => StorageDriver,
+  options: StorageSessionStoreOptions = {},
 ): ScrapeSessionStore {
   const keyFor = (key: string): string => {
     const path = `${options.prefix ?? DEFAULT_SESSION_PREFIX}/${key}.json`;
     assertSafeKey(path);
     return path;
   };
+  /** Best effort: an object that could not be deleted is refused again by the next `load()`. */
+  const discard = async (path: string): Promise<undefined> => {
+    await storage()
+      .delete(path)
+      .catch(() => undefined);
+    return undefined;
+  };
   return {
     async load(key: string): Promise<SessionState | undefined> {
+      // The key ring FIRST, and outside every catch below: "no master key" is a deploy that cannot
+      // keep a session at all, and answering "no session" for it would log in, fail to save, and
+      // log in again on the retry.
+      const keys = await resolveSealKeys(options.keySource);
+      const path = keyFor(key);
+      let stored: string;
       try {
-        const read = await storage.get(keyFor(key));
-        return parseSessionState(JSON.parse(new TextDecoder().decode(read.bytes)) as unknown, key);
+        stored = new TextDecoder().decode((await storage().get(path)).bytes);
       } catch {
         // A session that cannot be read is a session that does not exist. Refusing the run over a
         // missing cache would make reuse — the fast path — the fragile path.
         return undefined;
       }
+      const sealed = sealedIn(stored);
+      if (sealed === undefined) return discard(path);
+      try {
+        const opened: unknown = JSON.parse(
+          await openText(sealed, { purpose: SESSION_SEAL_PURPOSE, keys }),
+        );
+        // The tag covers the record, and the record names the key it was saved under: an object
+        // copied onto another tenant's path opens, and is still not that tenant's session.
+        if (!isJsonObject(opened) || opened['key'] !== key) return discard(path);
+        return parseSessionState(opened, key) ?? discard(path);
+      } catch {
+        return discard(path);
+      }
     },
     async save(state: SessionState): Promise<void> {
-      await storage.put(keyFor(state.key), new TextEncoder().encode(JSON.stringify(state)), {
+      const sealed = await seal(JSON.stringify(state), {
+        purpose: SESSION_SEAL_PURPOSE,
+        ...options.keySource,
+      });
+      await storage().put(keyFor(state.key), new TextEncoder().encode(JSON.stringify({ sealed })), {
         contentType: 'application/json',
       });
     },
     async burn(key: string): Promise<void> {
-      await storage.delete(keyFor(key));
+      await storage().delete(keyFor(key));
     },
   };
 }

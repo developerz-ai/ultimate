@@ -6,6 +6,8 @@
 
 import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
 import { REQUIRED_BUN } from '../app-root';
+import type { CoverageExclude } from '../coverage-floor';
+import { COVERAGE_BAR } from '../coverage-floor';
 import { VERIFY_FLOOR_FILE } from '../verify-floor';
 import type { VerifyStepName } from '../verify-step';
 import type { GeneratedFile, NameSet } from './naming';
@@ -187,7 +189,7 @@ const appConfig = (
 // a missing value fails the boot with the exact command that fixes it, never at the first request.
 // A named export, never a default: the CLI and the runtime both import \`config\` by name.
 import type { EnvSchema } from '@ultimat3/core';
-import { defineConfig, defineEnv } from '@ultimat3/core';
+import { defineConfig, defineEnv, defineMeasurementActor, userActor } from '@ultimat3/core';
 
 ${envDeclaration()}
 
@@ -226,6 +228,18 @@ export const config = defineConfig({
   // the OS.
   theme: { defaultMode: 'dark' },
   ai: { mcp: { expose: true, path: '/mcp' } },
+});
+
+/**
+ * Who \`x build\`'s budget pass renders \`app/\` as. A page that reads rows reads its actor's org
+ * through the typed handle, which refuses an actor with none (X_TENANCY_ACTOR_ORG_REQUIRED) — and
+ * the framework's default measurement actor is a \`service\` with no org, so such a route is never
+ * weighed (X_BUDGET_UNMEASURED). A member of the demo org is a declared viewer: no row has to
+ * exist. Loaded lazily, so this file's import graph stays the config's own.
+ */
+defineMeasurementActor(async () => {
+  const { DEMO_ORG_ID } = await import('./apps/web/shared/demo-org');
+  return userActor({ id: 'x-build-measure', orgId: DEMO_ORG_ID, roles: ['member'] });
 });
 `;
 
@@ -330,8 +344,44 @@ const SCAFFOLD_FLOOR: readonly VerifyStepName[] = [
 /** The two suites only the example slice writes a file for — a floor step with no file is red. */
 const EXAMPLE_FLOOR: readonly VerifyStepName[] = ['live', 'job'];
 
+/**
+ * What a unit test cannot execute in a scaffolded app, each with its reason — `x doctor` prints
+ * them. Two kinds and no more: a file here is a file the floor does not see, so the list is not
+ * a place to put code that merely has no test yet.
+ */
+export const SCAFFOLD_COVERAGE_EXCLUDE: readonly CoverageExclude[] = [
+  {
+    glob: 'apps/**/*.island.tsx',
+    why: 'an island runs in a browser: its test mounts a BUILT chunk (mountIsland), and Bun cannot map that chunk back to this source — its states are held by guards/island-without-states.ts and photographed by x shot --island',
+  },
+  {
+    glob: 'apps/*/server.ts',
+    why: 'the container entry point: it boots the roles and lives as long as the process — bin/dev and the image exercise it',
+  },
+  {
+    glob: 'apps/*/prerender.ts',
+    why: "the static build's entry point: x build --target static runs it, and the budgets step weighs what it writes",
+  },
+];
+
+/**
+ * The coverage floor every scaffolded app starts on: the bar the framework holds its own packages
+ * to (`COVERAGE_BAR`), not a softer one for apps. `scaffold-smoke` runs the app's own `x verify`,
+ * so the scaffold is green at it on what it generates or the job is red.
+ */
 const verifyFloor = (example: boolean): string =>
-  `${JSON.stringify({ steps: example ? [...SCAFFOLD_FLOOR, ...EXAMPLE_FLOOR] : SCAFFOLD_FLOOR }, null, 2)}\n`;
+  `${JSON.stringify(
+    {
+      steps: example ? [...SCAFFOLD_FLOOR, ...EXAMPLE_FLOOR] : SCAFFOLD_FLOOR,
+      coverage: {
+        lines: COVERAGE_BAR,
+        funcs: COVERAGE_BAR,
+        exclude: SCAFFOLD_COVERAGE_EXCLUDE,
+      },
+    },
+    null,
+    2,
+  )}\n`;
 
 const bunfig = (): string => `[test]
 root = "."

@@ -12,17 +12,19 @@ Tier 4. Imports `@ultimat3/core`, `i18n`, `money`, `time` — **not `schema`**, 
 
 - **SCSS modules only.** `Foo.tsx` + `Foo.module.scss`, always paired. No Tailwind, no CSS-in-JS, no inline `style` except CSS custom properties.
 - **No raw colours.** Only `t.role('<role>')` / `var(--color-*)`. Canonical roles live in `src/tokens/_colors.scss`; `tokens.ts` mirrors them and `tokens.test.ts` fails on drift.
+- **No raw length, breakpoint, z-index, shadow or duration** in any sheet here: `t.space()` / `t.stroke()` / `t.rem()`, `respond-*`, `t.z()`, `t.shadow()`, `t.duration()`. Held by `packages/cli/src/templates/scaffold-guards-style.test.ts`, which runs the guards `x new` ships over this package.
 - **Logical properties only.** `margin-inline`, `inset-inline-start`, `text-align: start`. A `left`/`right` in a stylesheet is a bug.
 - **solid-js is a type-only import.** All reactive access goes through `src/theme/solid-adapter.ts`. Never `import { createSignal } from 'solid-js'`.
 - **The runtime SLOT is `src/theme/runtime-slot.ts`; the RULE is `solid-adapter.ts`, and the split is a byte measurement.** `solid-adapter.ts` reaches `../errors` and so core's error registry; the slot imports nothing, so an island that only calls `setSolidRuntime` pays 72 B, not 5,719. `barrel-bytes.test.ts` holds the ceiling at 1 kB.
 - **The barrel is the ONE import path; component subpath exports are refused on measurement** (issue #275). A barrel import and a deep path emit the same modules and bytes, so `@ultimat3/ui/button` would be a second idiom for zero bytes. The two subpaths that exist are not exceptions: `./icons/*` is 1,767 data modules no bundler can split, and `./jsx-probe` is test-only. `barrel-bytes.test.ts` compares the two paths and names `schema-error-codes.ts` (Bun 1.4.0's load-correlated shake, issues #273 #276) rather than allowing bytes for it.
-- **`useUi()`'s server branch is a SLOT, and the module that fills it is browser-mapped** (issue #490). `context.ts` imports no value from `@ultimat3/i18n` or `@ultimat3/time` (the i18n barrel installs the framework catalog at import: 16.1 kB per island). `src/theme/ambient.ts` registers `ambientUiContext` into `ambient-slot.ts` at import; `index.ts` imports it BARE above every re-export, and `package.json`'s `browser` field maps it to `ambient.browser.ts` (bundlers only — `bun test` and SSR get the server's). A test reaching components by module path must `import './ambient'` itself, as `inert-render.test.ts` does. `fallbackTranslator` is held member-for-member against `createTranslator({})` by `context.test.ts`. `errors.ts` is pure: `registerErrorCodes()` is `src/error-registry.ts`, imported bare. `barrel-bytes.test.ts` pins the theme island's retained-module list.
+- **`useUi()`'s server branch is a SLOT, and the module that fills it is browser-mapped** (issue #490). `context.ts` imports no value from `@ultimat3/i18n` or `@ultimat3/time`. `src/theme/ambient.ts` registers into `ambient-slot.ts` at import; `index.ts` imports it BARE above every re-export; `package.json`'s `browser` field maps it to `ambient.browser.ts`. A test reaching components by module path must `import './ambient'` itself. `errors.ts` is pure: `registerErrorCodes()` is `src/error-registry.ts`, imported bare.
 - **`solid()` always answers off-DOM.** No registered runtime and no DOM is a *server render*, and it gets `INERT_SOLID_RUNTIME` (`src/theme/inert-runtime.ts`) — signals hold, memos recompute on read, effects never run, `useContext` returns the default. No DOM means no reactivity to lose; a **DOM** with no runtime is still `X_UI_RUNTIME_MISSING`, because that one is the theme toggle that does nothing. Never widen this to "no runtime, never throw": that is the silent degradation the split exists to prevent.
 - **`useUi()` reads the request on the server**, via `ambientUiContext()` — `currentLocale()`, `currentTimeZone()`, `useI18n()`, which read **core's own `Ctx.locale` / `Ctx.tz`** (written once per request by `@ultimat3/http`'s `locale` stage). Never add a second ambient store here or in `i18n`/`time`. `theme`/`currency` have no ambient source at all.
 - **Every locale-sensitive call takes the locale as an ARGUMENT, `toLocaleUpperCase` included.** `initialsOf(name, locale)` reads `useUi().locale`; a bare `toLocaleUpperCase()` reads the runtime's default (Turkish dotted `i` → `İ`).
 - **`UiProvider` is client-only and throws on the server** (`providerNeedsRuntimeError`, the same `X_UI_RUNTIME_MISSING`). A Provider in an inert tree reaches no descendant — the tree is built before the renderer walks it, so consumers are walked outside every owner and read the context default even with a real Solid runtime registered. Rendering the children anyway would drop its locale, zone, currency and translator silently. Making it work needs the *renderer* to scope a context around the walk; until then it refuses.
 - **A component may call `solid()` freely.** Its effects must stay DOM-only work — they simply never run on the server.
 - **No `{...rest}` prop spreading.** Splitting props reactively needs solid's `splitProps` (a value import), so components declare explicit props and read `props.x` inside JSX.
+- **One mode per use is a UNION of interfaces** (`LinkProps`, `PaginationProps`, `DataTableProps` — where the mode covers the pager AND the sort headers: `hrefFor` + `sortHrefFor`, or `onCursor` + `onSortChange`; a linked table never renders a button with no handler): a mode forbids the other's props with `x?: undefined`, and `catalog/parse-component.ts` merges the modes.
 - **No hardcoded strings.** Label props, or `useUi().t(UI_KEYS.x)`. New built-in strings go in `src/i18n-keys.ts`.
 - **Page layout is four composites**: `AppShell` (frame + skip link + landmarks), `PageHeader`, `Section`, `Toolbar`. A screen that hand-rolls a header grid is the bug they exist to prevent. `AppShell` holds no state — off-canvas is `Drawer`.
 - **Restyling goes through `defineTheme()`**, never a forked stylesheet and never an SCSS `with ()` override. Its values are validated, not escaped: the output lands in a `<style>` element.
@@ -33,55 +35,15 @@ Tier 4. Imports `@ultimat3/core`, `i18n`, `money`, `time` — **not `schema`**, 
 - **`inert-render.test.ts` must not assume which factory its `.tsx` compiled to.** `@ultimat3/render` installs a process-global `.tsx` `onLoad` plugin at import, so in one `bun test` process a component may compile to render's `h`. The walker recognises both (`Symbol.for('ultimate.render.jsx')`), and the first test asserts a recognised node — otherwise the file renders `"[object Object]"` and passes by shard packing.
 - **Components are not unit-tested through a renderer.** `.tsx` compiles to `@ultimat3/render`'s `h`, which this package may not import, so every rule lives in a pure module beside the component (`icon-glyph.ts`, `accordion-view.ts`, `combobox-filter.ts`, `infinite-scroll-view.ts`) and *that* is what the tests assert.
 - Formatting logic lives in a pure `*-view.ts` next to the component (`money-view.ts`, `date-time-view.ts`) so it is testable with no renderer. Every other renderer-free core follows the same rule under its own name (`sort-state.ts`, `image-source.ts`) — the `.tsx` holds markup, never a rule.
-- **The rule being pure is not enough — the WIRING has to be tested too.** `createRovingTabindex` was correct and `Menu` handed it `[role="menuitem"]`, so a disabled item made every item after it unreachable and every assertion in the package still passed. `src/jsx-probe.ts` reads the props an element actually carries (a `tabindex`, an `aria-live`, an `onKeyDown`, a `ref`) and `src/fake-dom.ts` gives it a DOM where a disabled control REFUSES focus, exactly as the real one does. Both are test-only and neither is in `index.ts`. `jsx-probe`'s `probe`/`unprobe` are the one exception, reachable at the subpath `@ultimat3/ui/jsx-probe` and still absent from the barrel: `globalThis.React` is ONE property, so its install/restore counter has to be ONE counter — `@ultimat3/admin` (tier 5) kept a second pair, and interleaved installs restored the two harnesses in the wrong order, leaving the global holding a harness the run had already torn down. `components/interaction.test.ts` is where a keyboard or form-participation claim gets proven; asserting the pure helper alone is how these shipped.
+- **The rule being pure is not enough — the WIRING is tested too.** `src/jsx-probe.ts` reads the props an element carries and `src/fake-dom.ts` is a DOM where a disabled control refuses focus; both TEST-ONLY, neither in `index.ts`. `probe`/`unprobe` are the framework's ONE owner of `globalThis.React`, reachable at `@ultimat3/ui/jsx-probe` (admin imports them). A keyboard or form-participation claim is proven in `components/interaction.test.ts`.
 - **A roving group excludes disabled items from both answers** — the set arrows walk and the one item holding the tab stop (`src/roving.ts`). `focus()` on a disabled control is a no-op, so a disabled item left in the list pins the reducer on its index forever. And a control that answers arrows itself (`handlesOwnArrowKeys`) keeps them: a `Toolbar` exists to hold a search field.
 - **A single-winner state attribute is decided by POSITION, never by a missing prop.** `Breadcrumb` gives `aria-current="page"` to the last item and to nothing else; an href-less ancestor renders as plain text with no `aria-current` at all. Reading "no href" as "is the current page" put two of them in one `<nav>`. `Tabs.tsx` is the same rule for `tabindex`, and `Breadcrumb.test.ts` proves it through `jsx-probe` rather than through the pure helper.
-- **One async region, four branches, and `empty` is unreachable while `pending`.** `asyncBranch`
-  (`src/components/async-branch.ts`) is the ONLY place the `(pending, failed, empty, data)` decision
-  is made — `AsyncRegion` renders it and `DataTable` calls it, so a table and a card list cannot
-  disagree about what "loading with stale rows" looks like. The property is structural: an
-  `AsyncState` (declared in `@ultimat3/core` since 21.0.0 — imported here, never re-exported, so
-  it has one import path) in `pending` carries no data, so nothing can be found empty in it, and "No results"
-  for one frame before the first page arrives is unconstructible rather than discouraged.
-  `<AsyncRegion>`'s `empty` and `ready` are REQUIRED props, so forgetting the empty state is a type
-  error. `refreshing` CARRIES the previous data — a refetch dims what is on screen (`aria-busy`) and
-  never tears it down, which is what makes a search box feel fast; the empty branch is reachable
-  only from a completed result that returned zero. `reserve` feeds the placeholder AND the
-  `min-block-size` of every branch, so the skeleton and the loaded content cannot be written into
-  different boxes.
-- **A toast dwell stops for THREE independent reasons, and one of them is `document.hidden`.**
-  Hover and focus-within are the two everybody implements; a backgrounded tab spends the whole dwell
-  and the corner is empty when the user comes back. `ToastHold` is a set, never a boolean: a pointer
-  leaving a toast a keyboard user is still inside must not restart the countdown, which one flag
-  cannot express. Duration is a TOKEN (`TOAST_DWELL_MS`), never a per-call number of milliseconds.
-  The queue's rules are pure (`src/toast/toast-state.ts`) and the clock is injected (`ToastEnv`), so
-  a server render gets `INERT_TOAST_ENV` — nothing scheduled — and `ToastRegion` still emits its
-  empty live region, which is what the document has to carry BEFORE the first message.
-- **`announce()` writes into a region `AppShell` already rendered.** A live region created and
-  filled in the same frame is not announced by most screen readers, so `announce()`'s own
-  create-if-absent branch could only ever be right from its second call. `liveRegionAttrs` is the
-  one derivation both halves read. It is for a state change with no surface of its own ("12
-  results", "sorted by name"); a notification is a `Toast`, and two announcement paths for one
-  message is how a screen reader reads it twice.
-- **`loading` never sets the native `disabled` attribute** (`Button`), and that WILL read as a
-  mistake. A control that disables itself mid-flow drops focus to `<body>`, is exempt from the
-  contrast minimum, announces no reason, and still does not prevent the double submit — that race is
-  on the server. `aria-disabled` + a refused click keeps it focusable and readable; `Button.module.scss`
-  restores full opacity under `[aria-busy='true']` because `t.disabled` dims to 0.55. `<Form busy>`
-  refuses the submit again, because Enter in a text field touches no button at all.
-- **A failed submit focuses the first invalid CONTROL, and the summary only when there is none.**
-  GOV.UK's summary-with-links shape is not available here: `Field` mints its control ids internally,
-  and inverting that ownership is the drift `Field` exists to prevent. `firstInvalidField` answers in
-  DECLARATION order, never issue order — a server may report the last field first. `fieldSelector`
-  is the allowlist between a caller's string and a selector; a name the grammar refuses reaches no
-  `querySelector`.
-- **`defineTheme()` refuses a palette that fails WCAG 2.2 AA** (`X_UI_CONTRAST_INSUFFICIENT`),
-  measured against `CONTRAST_PAIRS` — the same table `contrast.test.ts` holds the shipped palette to,
-  in SOURCE rather than in a test, so an app cannot ship a brand the design system would have failed
-  its own suite over. Only pairings the brand can have CHANGED are measured, on the resolved palette
-  (shipped channels + overrides): a new `accent` against the shipped `accent-fg` is the commonest way
-  a brand goes unreadable. AA, never APCA — APCA is not a standard, and AA is the operative legal
-  benchmark.
+- **One async region, four branches, and `empty` is unreachable while `pending`.** `asyncBranch` (`src/components/async-branch.ts`) is the ONLY place the decision is made — `AsyncRegion` renders it, `DataTable` calls it. `AsyncState` is core's (imported, never re-exported). `empty` and `ready` are REQUIRED props; `refreshing` carries the previous data and dims it (`aria-busy`), never tears it down; `reserve` feeds the placeholder AND every branch's `min-block-size`.
+- **A toast dwell stops for THREE independent reasons** — hover, focus-within, `document.hidden` — so `ToastHold` is a set, never a boolean. Duration is a TOKEN (`TOAST_DWELL_MS`). Rules are pure (`src/toast/toast-state.ts`), the clock injected (`ToastEnv`); a server render gets `INERT_TOAST_ENV` and `ToastRegion` still emits its empty live region.
+- **`announce()` writes into a region `AppShell` already rendered** (`liveRegionAttrs` is the one derivation). For a state change with no surface of its own; a notification is a `Toast` — never both for one message.
+- **`loading` never sets the native `disabled` attribute** (`Button`): `aria-disabled` + a refused click keeps it focusable and readable; `Button.module.scss` restores full opacity under `[aria-busy='true']`. `<Form busy>` refuses the submit again.
+- **A failed submit focuses the first invalid CONTROL, and the summary only when there is none.** `firstInvalidField` answers in DECLARATION order; `fieldSelector` is the allowlist between a caller's string and a selector.
+- **`defineTheme()` refuses a palette that fails WCAG 2.2 AA** (`X_UI_CONTRAST_INSUFFICIENT`), measured against `CONTRAST_PAIRS` on the RESOLVED palette, only for pairings the brand changed. AA, never APCA.
 - **Live semantics belong to the container that outlives the message.** `ToastRegion`'s `<ol>` carries `aria-live`; a `Toast` is a plain `<li>`. A region created with its content already inside it is not announced, and a `role="status"` on the `<li>` also strips its `listitem` semantics.
 - **`aria-checked` never mirrors a native `checked`.** ARIA outranks host state in the accessibility tree, and on the no-JS path this package supports there is nothing to rewrite the attribute after the user ticks the box. `Checkbox` writes only `'mixed'` (an IDL property with no attribute form, so ARIA is the only server-side lever); `Switch` writes none at all, over a `biome-ignore` that says why.
 - **A form binds to an action; it never decides for one.** `useForm` (`src/form/`) is a binding over an existing `action`, not a ninth primitive and not a component — `submit` is REQUIRED and is the only producer of a `succeeded` state, and the client-side parse's **value** is discarded so that only its issues are read. A binding that submitted the locally-parsed value would let a browser choose what the server was asked to store; `FormSchema` has no output type for that reason.
@@ -96,7 +58,7 @@ Tier 4. Imports `@ultimat3/core`, `i18n`, `money`, `time` — **not `schema`**, 
 
 | Path | Responsibility |
 |---|---|
-| `src/tokens/*.scss` | canonical token maps + `_mixins.scss` authoring helpers |
+| `src/tokens/*.scss` | canonical token maps + `_mixins.scss` authoring helpers (`respond-to`/`-down`/`-between`) + `_units.scss` (`rem()`, `fluid()`). Every `@error` is `string.unquote('X_CODE: … fix: …')` with a REGISTERED code — `mixins.test.ts` |
 | `src/tokens/theme.scss` | the only stylesheet that emits global custom properties |
 | `src/tokens/reset.scss` | the reset, ZERO specificity: every rule a component may restyle sits in `:where(…)` whole, pseudo-class inside (`:where(a:hover)`, never `:where(a):hover`). `a:hover` (0,1,1) beat `.primary` and hid a button link's text until 22.3.2. `reset.test.ts` computes it |
 | `src/theme/runtime-slot.ts` | the module-scope slot holding the app's Solid runtime — and nothing else, so registering one costs an island 72 B |
@@ -127,6 +89,8 @@ Tier 4. Imports `@ultimat3/core`, `i18n`, `money`, `time` — **not `schema`**, 
 | `src/form/use-form.ts` | the Solid shell: the same binding with its state in a signal |
 | `src/form/form-values.ts` | `FormData` → the nested object the action's input schema declares |
 | `src/form/field-binding.test.ts` | the WIRING, end to end: a rejection reaching `aria-invalid` and `aria-describedby` on the control it named |
+| `src/sass-probe.ts` | TEST-ONLY: what Sass EMITS. `sass` is resolved from `packages/render`'s directory — never an import of render, never a second copy |
+| `src/components/button-classes.ts` | the keys of a button's look, asked by `Button` AND `<Link appearance="button">` (`link-classes.ts`). `Button` gets no `href` |
 | `src/fake-dom.ts` | TEST-ONLY: a DOM where a disabled control refuses focus. Never exported from `index.ts` |
 | `src/jsx-probe.ts` | TEST-ONLY: a component's node tree, so a test can assert the props and call the handlers an element carries. `probe`/`unprobe` are the framework's ONE owner of `globalThis.React`, reached from `@ultimat3/admin` at `@ultimat3/ui/jsx-probe`; the walkers stay internal |
 | `src/barrel-bytes.test.ts` | the build error behind the three claims above: the setter's byte ceiling, barrel-vs-deep-path parity, and the theme-toggle island's retained-module list — the last two read off the `minify: false` banners, never a byte allowance |

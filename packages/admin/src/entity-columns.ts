@@ -81,15 +81,34 @@ const factsFor = (
   ...(references === undefined ? {} : { references }),
 });
 
+const factsOf = (entity: AdminEntity, sealed: boolean): readonly AdminColumnFacts[] => {
+  const references = referencesOf(entity);
+  const keys = new Set(entity.$primaryKey);
+  return Object.entries(entity.$columns)
+    .filter(([, column]) => (column.$meta.sealed !== undefined) === sealed)
+    .map(([name, column]) =>
+      factsFor(name, column.$meta, column.$meta.primaryKey || keys.has(name), references.get(name)),
+    );
+};
+
 /**
  * Declaration order, which is the order every list, form and MCP schema is built in. A
  * composite key marks each of its members, the way `$describe()` does — the admin then treats
  * them as it treats any key column: addressable, and never editable.
+ *
+ * A `.sealed()` column is NOT here. Every screen reads a row by column name — `row[field.name]`
+ * — and a repository row still answers a sealed property with its plaintext, so a derived field
+ * for one is the secret in the list, the detail, the search and the MCP schema. Leaving it out of
+ * this list is what makes "never shown" a property of the derivation rather than of each view.
  */
 export function adminColumnsOf(entity: AdminEntity): readonly AdminColumnFacts[] {
-  const references = referencesOf(entity);
-  const keys = new Set(entity.$primaryKey);
-  return Object.entries(entity.$columns).map(([name, column]) =>
-    factsFor(name, column.$meta, column.$meta.primaryKey || keys.has(name), references.get(name)),
-  );
+  return factsOf(entity, false);
+}
+
+/**
+ * The sealed columns, and only them: what a form may WRITE and nothing may read. Separate from
+ * `adminColumnsOf` so no caller can iterate one list and render both.
+ */
+export function adminSealedColumnsOf(entity: AdminEntity): readonly AdminColumnFacts[] {
+  return factsOf(entity, true);
 }

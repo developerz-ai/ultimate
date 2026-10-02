@@ -6,18 +6,18 @@
 // Stored and not broadcast, exactly as the memory bus is: a step that suspends at 12:00 and
 // resumes at 12:00:30 must still see an event published at 12:00:10.
 
-import type { Clock } from '@ultimat3/core';
-import { finiteOption, logger, renderThrowable, systemClock, uuid } from '@ultimat3/core';
+import { finiteOption, logger, renderThrowable, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
-import { finiteDurationMs, nowMs } from './clock';
+import { finiteDurationMs } from './clock';
 import type { PgExecutor } from './driver-pg';
 import {
   SQL_EVENT_FIND,
   SQL_EVENT_LIST,
+  SQL_EVENT_NOW,
   SQL_EVENT_PUBLISH,
   SQL_EVENT_PURGE,
 } from './driver-pg-sql';
-import type { EventBus, JobEvent } from './events';
+import type { EventBus } from './events';
 
 interface EventRow {
   readonly id: string;
@@ -29,8 +29,11 @@ interface EventRow {
 }
 
 export interface PgEventBusOptions {
+  /**
+   * The only thing this bus is built from. There is no `clock`: every instant it writes or
+   * compares is the database's (`SQL_EVENT_PUBLISH`), and a process clock here was the defect.
+   */
   readonly executor: PgExecutor;
-  readonly clock?: Clock;
   /** How long an event stays matchable. Default 7d — longer than any sane wait. */
   readonly defaultTtl?: DurationInput;
   /** Rows returned by `list()`. Diagnostics only; `find()` is what a step uses. */
@@ -45,7 +48,6 @@ export interface PgEventBusOptions {
  * plus `expires_at > now()` in `find` means an unpurged row costs a filter, never a wrong answer.
  */
 export function createPgEventBus(options: PgEventBusOptions): EventBus {
-  const clock = options.clock ?? systemClock;
   // TWO screens, for the reason `events.ts` states: `defaultTtl` is the constructor's knob and
   // `ttl` is the publish call's, so one screen over `ttl ?? defaultTtl` names the wrong one for
   // whichever value actually arrived.
@@ -68,35 +70,43 @@ export function createPgEventBus(options: PgEventBusOptions): EventBus {
   };
 
   return {
+    stored: true,
+    async now() {
+      const rows = await exec.query<{ now: number | string }>(SQL_EVENT_NOW, []);
+      return Number(rows[0]?.now);
+    },
+
     async publish(name, payload, publishOptions = {}) {
-      const at = nowMs(clock);
-      const event: JobEvent = {
-        id: uuid(),
+      const id = uuid();
+      const ttlMs =
+        publishOptions.ttl === undefined
+          ? defaultTtlMs
+          : finiteDurationMs(publishOptions.ttl, 'the pg event bus', 'ttl');
+      const rows = await exec.query<{
+        published_at: number | string;
+        expires_at: number | string;
+      }>(SQL_EVENT_PUBLISH, [
+        id,
         name,
-        payload,
-        publishedAt: at,
-        expiresAt:
-          at +
-          (publishOptions.ttl === undefined
-            ? defaultTtlMs
-            : finiteDurationMs(publishOptions.ttl, 'the pg event bus', 'ttl')),
-        ...(publishOptions.correlationKey === undefined
-          ? {}
-          : { correlationKey: publishOptions.correlationKey }),
-      };
-      await exec.query(SQL_EVENT_PUBLISH, [
-        event.id,
-        event.name,
-        JSON.stringify(event.payload ?? null),
-        event.correlationKey ?? null,
-        event.publishedAt,
-        event.expiresAt,
+        JSON.stringify(payload ?? null),
+        publishOptions.correlationKey ?? null,
+        ttlMs,
       ]);
       logger.debug('jobs.event.published', {
         event: name,
         correlationKey: publishOptions.correlationKey ?? null,
       });
-      return event;
+      // The stamps the statement wrote, read back: what a consumer will compare against.
+      return {
+        id,
+        name,
+        payload,
+        publishedAt: Number(rows[0]?.published_at),
+        expiresAt: Number(rows[0]?.expires_at),
+        ...(publishOptions.correlationKey === undefined
+          ? {}
+          : { correlationKey: publishOptions.correlationKey }),
+      };
     },
 
     /** Earliest match at or after `afterMs`, so a resumed step consumes events in order. */

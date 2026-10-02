@@ -2,13 +2,16 @@
 // and the deterministic seed. No business logic — that is the package's own stated boundary, and it
 // is why `example` reaches only the two files describing the slice's table.
 //
-// No migration. `x db gen` is the ONE writer of `packages/db/migrations`, and a scaffold that hand-
-// wrote `0000_initial.sql` was a second one: it declared a `posts` table the generator had never
-// diffed, so the first `x db gen` saw a schema the ledger already claimed and the two disagreed
-// about what "initial" meant. `x db gen "initial"` is the app's first command instead — it writes
-// the `.sql`, the `.snapshot.json` and the `.hash` together, which no hand-written file can.
+// No migration and no schema dump. `x db gen` is the ONE writer of `packages/db/migrations` and
+// of `packages/db/schema`, and a scaffold that hand-wrote `0000_initial.sql` was a second one: it
+// declared a `posts` table the generator had never diffed, so the first `x db gen` saw a schema
+// the ledger already claimed and the two disagreed about what "initial" meant. `x db gen
+// "initial"` is the app's first command instead — it writes the `.sql`, the `.snapshot.json`, the
+// `.hash` and the dump together, which no hand-written file can.
 
+import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
+import { dbClientFiles } from './scaffold-db-client';
 import { packageShapeFiles, workspacePackageJson } from './scaffold-package-shape';
 
 const DESCRIPTION = 'Entity re-exports and SQL migrations, no business logic';
@@ -45,10 +48,14 @@ const dbPackage = (app: NameSet, example: boolean): string =>
     : workspacePackageJson(app, 'db', DESCRIPTION);
 
 const dbIndex =
-  (): string => `// Schema and migrations only — no business logic lives in this package. The client itself is
-// @ultimat3/db's: one connection pool, sized by ROLE, shared by every package in the app.
+  (): string => `// Schema, migrations and the typed handle — no business logic lives in this package.
+// \`db\` is the handle \`./client\` builds over the app's entities: \`db.<table>\`, which is what a
+// feature's repo.ts reads through. \`sql\` and \`withTransaction\` are @ultimat3/db's own, and the
+// connection pool behind all three is one, sized by ROLE.
 export type { DbClient, SqlFragment } from '@ultimat3/db';
-export { db, sql, withTransaction } from '@ultimat3/db';
+export { sql, withTransaction } from '@ultimat3/db';
+export type { Db } from './client';
+export { db, driver, selectDriver } from './client';
 export * as schema from './schema';
 `;
 
@@ -151,11 +158,86 @@ export const ${app.camel}Seed = defineSeed('${app.kebab}', async () => {
 });
 `;
 
+const dbSeedTest = (app: NameSet, example: boolean): string =>
+  example
+    ? `// The seed, run against the in-memory driver: the rows it writes, whose they are, and that a
+// second run writes nothing. The org is the point — a row seeded under any other id is one the
+// development viewer's tenant policy refuses, and the dashboard then counts zero.
+${sortedImports([
+  `import { DEMO_ORG_ID } from '@${app.kebab}/web/shared/demo-org';`,
+  "import { createContext, runWithContext } from '@ultimat3/core';",
+  "import { testActor } from '@ultimat3/policy';",
+  "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
+])}
+import { db, driver } from './client';
+import { ${app.camel}Seed } from './seed';
+
+/** The development viewer's org: every read below runs as an actor inside it. */
+const asViewer = <T>(run: () => Promise<T>): Promise<T> =>
+  runWithContext(createContext({ actor: testActor('viewer', { orgId: DEMO_ORG_ID }).actor }), run);
+
+// One store per process: without this, one test's rows are the next test's fixtures.
+afterEach(() => {
+  driver.reset?.();
+});
+
+unitTest('the seed writes its posts under the demo org', async () => {
+  const run = await ${app.camel}Seed.run({ driver });
+  expect(run.metrics).toEqual({ inserted: 2, updated: 0, skipped: 0 });
+  const rows = await asViewer(() => db.posts.where({ orgId: DEMO_ORG_ID }).orderBy('title').all());
+  expect(rows.map((row) => row.title)).toEqual(['Hello ${app.pascal}', 'Second post']);
+  expect(rows.map((row) => row.price.minor)).toEqual([0, 1900]);
+});
+
+unitTest('a replay writes nothing: its ids are derived from labels, never generated', async () => {
+  await ${app.camel}Seed.run({ driver });
+  const replay = await ${app.camel}Seed.run({ driver });
+  expect(replay.metrics).toEqual({ inserted: 0, updated: 0, skipped: 2 });
+});
+`
+    : `// The seed as \`x db seed\` finds it: a declared \`defineSeed()\` under this app's name, which
+// writes nothing until an entity exists. The day it inserts a row, the last assertion says so.
+import { isSeed } from '@ultimat3/entity';
+import { expect, unitTest } from '@ultimat3/testing';
+import { driver } from './client';
+import { ${app.camel}Seed } from './seed';
+
+unitTest('the seed is one x db seed discovers, in the dev tier', () => {
+  expect(isSeed(${app.camel}Seed)).toBe(true);
+  expect(${app.camel}Seed.name).toBe('${app.kebab}');
+  // \`dev\`: fixture data, never loaded into production. \`reference\` is the other tier.
+  expect(${app.camel}Seed.tier).toBe('dev');
+});
+
+unitTest('it writes nothing yet', async () => {
+  const run = await ${app.camel}Seed.run({ driver });
+  expect(run.metrics).toEqual({ inserted: 0, updated: 0, skipped: 0 });
+});
+`;
+
+/**
+ * `packages/db/schema/` is written by `x db gen` and held by the `drift` step, so two things about
+ * it are git's to know. `linguist-generated` collapses it in a review — the migration is what a
+ * human reads; the dump is its projection. `text eol=lf` is not cosmetic: the gate compares bytes,
+ * and a checkout that rewrote line endings would be `X_SCHEMA_DUMP_DRIFT` on a correct tree.
+ *
+ * The attributes ship; the directory does not. `x new` scaffolds no migration, so there is nothing
+ * to dump until the first `x db gen` — which creates it.
+ */
+export const DB_GITATTRIBUTES = `# Generated by \`x db gen\` from the migrations and held equal to them by \`x verify\`'s drift
+# step (X_SCHEMA_DUMP_DRIFT). Review the migration, not this projection of it.
+schema/** linguist-generated=true text eol=lf
+`;
+
 /** Every file the `packages/db` workspace ships, in the order `x new` writes them. */
 export const dbPackageFiles = (app: NameSet, example: boolean): readonly GeneratedFile[] => [
   { path: 'packages/db/package.json', contents: dbPackage(app, example) },
+  { path: 'packages/db/.gitattributes', contents: DB_GITATTRIBUTES },
   ...packageShapeFiles(app, 'db', DESCRIPTION),
   { path: 'packages/db/src/index.ts', contents: dbIndex() },
+  // The typed handle and its test — `scaffold-db-client.ts`, shared with `x g entity`.
+  ...dbClientFiles(app, example),
   { path: 'packages/db/src/schema.ts', contents: dbSchema(app, example) },
   { path: 'packages/db/src/seed.ts', contents: dbSeed(app, example) },
+  { path: 'packages/db/src/seed.test.ts', contents: dbSeedTest(app, example) },
 ];

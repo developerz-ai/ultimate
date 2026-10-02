@@ -141,9 +141,11 @@ describe('resource.field() and repoOf() name what is missing', () => {
 
   test('a resource with no repo bound cannot read or write, and says which resource', () => {
     const seen = thrown(() => repoOf(resource));
-    expect(seen.code).toBe('X_ADMIN_ENTITY_UNKNOWN');
+    expect(seen.code).toBe('X_ADMIN_REPO_UNBOUND');
     expect(seen.cause).toContain('admin_refuse_lookup');
-    expect(seen.cause).toContain('no repo bound');
+    expect(seen.cause).toContain('has no repo');
+    // The fix is the declaration that binds one, never the entity generator.
+    expect(seen.fix).toContain('defineAdmin({ entities, db })');
   });
 
   test('a bound repo is handed straight back', () => {

@@ -1,4 +1,9 @@
-# Optional: x dev needs none of this. Use it when you want the real Postgres/NATS/MinIO locally.
+# Optional: x dev needs none of this. Use it when you want a real Postgres, NATS and S3 locally:
+#
+#   docker compose -f docker/docker-compose.dev.yml up -d
+#   DATABASE_URL=postgres://postgres:social-media-clone@127.0.0.1:5432/social-media-clone NATS_URL=nats://127.0.0.1:4222 \
+#   S3_ENDPOINT=http://127.0.0.1:9000 S3_BUCKET=social-media-clone S3_FORCE_PATH_STYLE=1 \
+#   S3_ACCESS_KEY_ID=social-media-clone S3_SECRET_ACCESS_KEY=social-media-clone-dev x dev
 #
 # Every published port binds 127.0.0.1, not 0.0.0.0. This stack ships its credentials in the file,
 # as a dev stack reasonably does — so the short form `'5432:5432'` would put an authenticated
@@ -20,10 +25,21 @@ services:
     image: nats:2-alpine
     command: ['-js']
     ports: ['127.0.0.1:4222:4222']
+  # Versity S3 Gateway over a directory: a directory under /data is a bucket, so the volume mounted
+  # at /data/social-media-clone IS the bucket — ready on the first `up`, no CreateBucket call. It checks
+  # the region a request was signed for, and an app that sets no S3_REGION signs for `auto` — so
+  # that is this gateway's region. A server for a laptop; production is any S3-compatible endpoint.
   s3:
-    image: minio/minio
-    command: ['server', '/data']
+    image: versity/versitygw:v1.8.0
     environment:
-      MINIO_ROOT_USER: social-media-clone
-      MINIO_ROOT_PASSWORD: social-media-clone-dev
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARG: /data
+      VGW_PORT: ':9000'
+      VGW_REGION: auto
+      ROOT_ACCESS_KEY: social-media-clone
+      ROOT_SECRET_KEY: social-media-clone-dev
     ports: ['127.0.0.1:9000:9000']
+    volumes: ['s3bucket:/data/social-media-clone']
+
+volumes:
+  s3bucket:

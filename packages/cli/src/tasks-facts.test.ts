@@ -7,6 +7,7 @@ import { job, resetJobs, resetTasks, t, task } from '@ultimat3/jobs';
 import type { CronPhrases } from '@ultimat3/time';
 import {
   findTaskHandle,
+  isoInZone,
   knownTaskNames,
   listTaskFacts,
   parseCountFlag,
@@ -138,6 +139,19 @@ describe('unit · taskShowFacts', () => {
     if (handle === undefined) return expect.unreachable('task registered above');
     const de: CronPhrases = { ...EN, at: 'um {time}', everyDay: 'täglich' };
     expect(taskShowFacts(handle, 0, 1, de).describe).toBe('um 03:00 täglich');
+  });
+});
+
+describe('unit · isoInZone', () => {
+  // The one rendering `next` and `last` share: the zone's own offset on either side of a DST
+  // change. `Z` is what a UTC task reads as, and only a UTC task — an instant collapsed to it is
+  // the ambient zone a task's `tz` exists to prevent.
+  test('one instant reads in the zone it is asked for, offset spelled out', () => {
+    const winter = Date.UTC(2026, 0, 15, 8, 0, 0);
+    const summer = Date.UTC(2026, 6, 15, 7, 0, 0);
+    expect(isoInZone(winter, 'America/New_York')).toBe('2026-01-15T03:00:00-05:00');
+    expect(isoInZone(summer, 'America/New_York')).toBe('2026-07-15T03:00:00-04:00');
+    expect(isoInZone(winter, 'UTC')).toBe('2026-01-15T08:00:00Z');
   });
 });
 

@@ -6,14 +6,18 @@
 import type { Clock } from '@ultimat3/core';
 import { finiteOption, uuid } from '@ultimat3/core';
 import { nowMs } from './clock';
+import { DEFAULT_QUEUE } from './driver';
 import type { PgExecutor } from './driver-pg';
+import { SQL_SCHEDULER_FIRE } from './driver-pg-operator-sql';
 import {
   SQL_LEADER_ACQUIRE,
   SQL_LEADER_RELEASE,
   SQL_SCHEDULER_STATE_GET,
   SQL_SCHEDULER_STATE_MARK,
 } from './driver-pg-sql';
-import type { LeaderElection, SchedulerState } from './scheduler';
+import type { LeaderElection } from './scheduler-leader';
+import type { SchedulerState } from './scheduler-state';
+import { fireThroughDriver } from './scheduler-state';
 
 /**
  * `x_scheduler_state`, one row per task. The watermark is what makes "missed" a decidable
@@ -22,7 +26,7 @@ import type { LeaderElection, SchedulerState } from './scheduler';
  * boot and drops every occurrence between the two processes with nothing logged.
  */
 export function pgSchedulerState(executor: PgExecutor): SchedulerState {
-  return {
+  const state: SchedulerState = {
     async lastFiredAt(taskName) {
       const rows = await executor.query<{ last_fired_at: number | string | null }>(
         SQL_SCHEDULER_STATE_GET,
@@ -34,7 +38,50 @@ export function pgSchedulerState(executor: PgExecutor): SchedulerState {
     async markFired(taskName, occurrenceMs) {
       await executor.query(SQL_SCHEDULER_STATE_MARK, [taskName, occurrenceMs]);
     },
+    async fire(driver, fire) {
+      // One statement only when the queue IS this database. A host that swapped the driver keeps
+      // the watermark here and its jobs elsewhere, and no statement spans the two.
+      if (driver.name !== 'pg') return fireThroughDriver(state, driver, fire);
+      const ids = fire.jobs.map(() => uuid());
+      const rows = await executor.query<{
+        fired: number | string;
+        id: string | null;
+        run_id: string | null;
+        idempotency_key: string | null;
+      }>(SQL_SCHEDULER_FIRE, [
+        fire.task,
+        fire.occurrenceMs,
+        JSON.stringify(
+          fire.jobs.map((request, index) => ({
+            id: ids[index],
+            name: request.name,
+            queue: request.queue || DEFAULT_QUEUE,
+            input: request.input ?? null,
+            idempotency_key: request.idempotencyKey,
+            run_id: request.runId ?? uuid(),
+            max_attempts: request.maxAttempts,
+          })),
+        ),
+      ]);
+      if (Number(rows[0]?.fired ?? 0) === 0) return undefined;
+      const queued = new Map(
+        rows.flatMap((row) =>
+          row.id === null || row.run_id === null || row.idempotency_key === null
+            ? []
+            : [[row.idempotency_key, { id: row.id, runId: row.run_id }] as const],
+        ),
+      );
+      // A job absent from the answer met a LIVE row of its key — a fire from before this
+      // statement existed, still in flight. It is that row's work, so it is reported deduped.
+      return fire.jobs.map((request) => {
+        const inserted = queued.get(request.idempotencyKey);
+        return inserted === undefined
+          ? { id: '', runId: '', deduped: true }
+          : { ...inserted, deduped: false };
+      });
+    },
   };
+  return state;
 }
 
 export interface PgLeaseLeaderOptions {
@@ -53,6 +100,9 @@ export interface PgLeaseLeaderOptions {
 }
 
 export const DEFAULT_LEADER_TTL_MS = 30_000;
+
+/** Renewals a lease gets inside one TTL. Three: two may fail before leadership is at risk. */
+export const LEASE_RENEWALS_PER_TTL = 3;
 
 /**
  * Leader election as an expiring row, which is what makes it correct on the executor this package
@@ -87,6 +137,9 @@ export function createPgLeaseLeader(options: PgLeaseLeaderOptions): LeaderElecti
     async release() {
       await options.executor.query(SQL_LEADER_RELEASE, [lockKey, holder]);
     },
+    // A third of the TTL: the row cannot change hands before it expires, and two renewals can
+    // still be lost before it does.
+    renewEveryMs: Math.floor(ttlMs / LEASE_RENEWALS_PER_TTL),
   };
 }
 

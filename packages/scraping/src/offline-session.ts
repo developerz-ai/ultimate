@@ -42,6 +42,10 @@ export async function openOfflineSession(init: OfflineSessionInit): Promise<Scra
   if (init.session.restore !== undefined) await target.restore(init.session.restore);
   return {
     driver: init.driver,
+    // An offline session dials nothing — except the run's own `/robots.txt` read, which is a real
+    // request. Reporting the run's exit is what makes that one request leave through it, exactly
+    // as it would on the driver this recording stands in for.
+    ...(init.session.proxy === undefined ? {} : { proxy: init.session.proxy }),
     page: pageOverTarget(target, {
       clock: init.session.clock,
       allowHosts: init.session.rules.allowHosts,
@@ -51,6 +55,7 @@ export async function openOfflineSession(init: OfflineSessionInit): Promise<Scra
       signal: init.session.signal,
       onActivity: init.session.onActivity,
       pace: init.session.pace,
+      usage: init.session.usage,
     }),
     http: recordedHttp({
       lookup: init.http,
@@ -63,6 +68,7 @@ export async function openOfflineSession(init: OfflineSessionInit): Promise<Scra
       // The same bag, for the same reason: a redaction only the live leg performs is one no
       // fixture can prove.
       secrets: init.session.secrets,
+      usage: init.session.usage,
       maxAgeMs: init.maxAgeMs,
     }),
     close: () => target.close(),

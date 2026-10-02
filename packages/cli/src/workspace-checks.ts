@@ -10,10 +10,17 @@
 // public subject. `isReExportManifest` is the whole carve-out — one statement of logic in such a
 // file re-arms the ceiling on the same save, which is what keeps it from being a hole.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderCauseValue } from '@ultimat3/core';
 import type { Finding } from './output';
+import {
+  entryFilesOf,
+  FIXTURE_SUFFIX,
+  fixtureReachFinding,
+  fixturesReachedFrom,
+  mayReachFixture,
+} from './publish-closure';
 import { isReExportManifest } from './reexport-manifest';
 import { eachSourceFile, isGenerated } from './source-files';
 import { checkRootReferences } from './tsconfig-references';
@@ -177,6 +184,16 @@ export function checkLockstep(
  */
 export const TEST_EXCLUSION = '!src/**/*.test.ts';
 
+/**
+ * The same rule for the other suffix test code is written under. A `-fixture.ts` is a harness a
+ * test imports — a fake driver, a recorded page, a scaffolded tree — and `src` sweeps it into the
+ * tarball exactly as it sweeps a `*.test.ts`: six packages shipped 18 of them, 2026-10.
+ */
+export const FIXTURE_EXCLUSION = '!src/**/*-fixture.ts';
+
+/** Every exclusion a published package's `files` carries, in the order it is written. */
+export const TEST_CODE_EXCLUSIONS: readonly string[] = [TEST_EXCLUSION, FIXTURE_EXCLUSION];
+
 export const missingPublishedFileFinding = (dir: string, entry: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/package.json ships "${entry}" in "files", but packages/${dir}/${entry} does not exist`,
@@ -185,10 +202,10 @@ export const missingPublishedFileFinding = (dir: string, entry: string): Finding
   at: `packages/${dir}/package.json`,
 });
 
-export const publishesTestsFinding = (dir: string): Finding => ({
+export const publishesTestsFinding = (dir: string, exclusion: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',
-  cause: `packages/${dir}/package.json does not exclude ${TEST_EXCLUSION} from "files"`,
-  fix: `add "${TEST_EXCLUSION}" to "files" in packages/${dir}/package.json, after "src"`,
+  cause: `packages/${dir}/package.json does not exclude ${exclusion} from "files"`,
+  fix: `add "${exclusion}" to "files" in packages/${dir}/package.json, after "src"`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
@@ -222,7 +239,7 @@ export const buildArtifactsFinding = (dir: string, count: number): Finding => ({
 export const noFilesAllowlistFinding = (dir: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/package.json publishes with no "files" allowlist, so the tarball carries whatever is in the directory`,
-  fix: `add "files": ["src", "${TEST_EXCLUSION}", "README.md", "LICENSE"] to packages/${dir}/package.json`,
+  fix: `add "files": ["src", ${TEST_CODE_EXCLUSIONS.map((entry) => `"${entry}"`).join(', ')}, "README.md", "LICENSE"] to packages/${dir}/package.json`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
@@ -239,7 +256,7 @@ export const noFilesAllowlistFinding = (dir: string): Finding => ({
  * The second half is `src` sweeping in every `*.test.ts` beside it. Tests are the framework's own,
  * they run against a preloaded frozen clock and a sealed network, and a consumer's test runner
  * collecting them is a failure nobody asked for — 393 files, over half of `@ultimat3/cli`'s
- * tarball.
+ * tarball. A `*-fixture.ts` is the same code under its other suffix (`TEST_CODE_EXCLUSIONS`).
  *
  * Private packages are exempt: a generated app's `packages/*` never reach a registry, carry no
  * `files` and need no license of their own.
@@ -258,8 +275,10 @@ export function checkPublishShape(root: string, manifests: readonly ManifestFact
       if (existsSync(join(root, 'packages', manifest.dir, entry))) continue;
       findings.push(missingPublishedFileFinding(manifest.dir, entry));
     }
-    if (!manifest.files.includes(TEST_EXCLUSION)) {
-      findings.push(publishesTestsFinding(manifest.dir));
+    for (const exclusion of TEST_CODE_EXCLUSIONS) {
+      if (!manifest.files.includes(exclusion)) {
+        findings.push(publishesTestsFinding(manifest.dir, exclusion));
+      }
     }
   }
   return findings;
@@ -312,6 +331,28 @@ export interface PackageShapeOptions {
   readonly release?: string;
 }
 
+/**
+ * The fixtures a published package's entry points reach. A package with no fixture costs one glob
+ * — 19 of 31 — and one with some is read once: `mayReachFixture` answers from the text, and only a
+ * package it cannot clear pays for the import walk.
+ */
+async function fixtureReach(root: string, dir: string, manifest: unknown): Promise<Finding[]> {
+  const base = join(root, 'packages', dir);
+  const fixtures = new Bun.Glob(`src/**/*${FIXTURE_SUFFIX}`).scan({ cwd: base, absolute: false });
+  if ((await fixtures.next()).done === true) return [];
+  const entries = entryFilesOf(manifest);
+  // What the tarball carries of `src`, plus the fixtures themselves: a test's imports are not a
+  // consumer's, so no `*.test.ts` is read.
+  const sources = new Map<string, string>();
+  for await (const path of new Bun.Glob('src/**/*.{ts,tsx}').scan({ cwd: base, absolute: false })) {
+    if (!/\.test\.tsx?$/.test(path)) sources.set(path, readFileSync(join(base, path), 'utf8'));
+  }
+  if (!mayReachFixture(sources, entries)) return [];
+  return fixturesReachedFrom({ read: (path) => sources.get(path) }, entries).map((fixture) =>
+    fixtureReachFinding(dir, fixture, entries),
+  );
+}
+
 /** Every package ships the same contract files; a missing one is a build error, not a chore. */
 export async function checkPackageShape(
   root: string,
@@ -348,6 +389,7 @@ export async function checkPackageShape(
       findings.push(badVersionFinding(dir, version));
       continue;
     }
+    if (record.private !== true) findings.push(...(await fixtureReach(root, dir, manifest)));
     facts.push({
       dir,
       name: typeof record.name === 'string' ? record.name : `@ultimat3/${dir}`,

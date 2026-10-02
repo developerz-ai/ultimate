@@ -21,9 +21,21 @@ channels** so `rgb(var(--color-accent) / 0.12)` gives a tint with no extra token
 | `accent` / `accent-strong` / `accent-fg` | primary action, its hover, text on it |
 | `success` / `warning` / `danger` / `info` | status solid, each with a `-soft` tint and a `-fg` text-on-solid |
 
-Scales: `--space-*` (4px base), `--text-*` (fluid `clamp()`), `--radius-*`,
+Scales: `--space-*` (4px base), `--stroke-*` (line weights: `hairline thick heavy`), `--text-*` (fluid `clamp()`), `--radius-*`,
 `--shadow-*` (themed — dark gets deeper, higher-alpha shadows), `--duration-*`,
 `--easing-*`, `--z-*` (named ladder, no magic numbers).
+
+Authoring helpers, from the same `@use '@ultimat3/ui/tokens' as t` — an app writes no mixin of its own for any of them:
+
+| Helper | Emits |
+|---|---|
+| `@include t.respond-to(md)` | `@media (min-width: 768px)` — the rung and wider |
+| `@include t.respond-down(md)` | `@media (max-width: 767.98px)` — narrower than the rung; 0.02px under it, so no width matches both arms |
+| `@include t.respond-between(md, lg)` | `@media (min-width: 768px) and (max-width: 1023.98px)` |
+| `t.rem(24px)` | `1.5rem` — px, rem or a unitless px count in; `t.rem(20px, 10px)` states another root |
+| `t.fluid(1rem, 2rem, 20rem, 80rem)` | `clamp(1rem, 0.6666666667rem + 1.6666666667vw, 2rem)` — the first size at a 20rem viewport, the second at 80rem (the default range), linear between. Takes px too; a size that shrinks is legal |
+
+A rung is `sm md lg xl 2xl`, quoted or bare. Prefer a container query (`t.container` + `t.container-query`) to all three breakpoint mixins.
 
 ## The law
 
@@ -193,7 +205,7 @@ commit the diff. There is no hand-edited icon in the package.
 
 ## Works without JavaScript
 
-Three components are interactive without a client runtime, because the platform already
+These components are interactive without a client runtime, because the platform already
 has the behaviour. Each is correct server-rendered, and the script layer only adds.
 
 | Component | Platform base | The enhancement |
@@ -201,6 +213,8 @@ has the behaviour. Each is correct server-rendered, and the script layer only ad
 | `Accordion` | `<details>` / `<summary>`; `exclusive` is the native `name` group | `onToggle` notification, after the browser has applied it |
 | `Combobox` | `<input list>` + `<datalist>` — typing, filtering, keyboard, mobile | `onFilter`, debounced, for a live/server-side query |
 | `InfiniteScroll` | a real `rel="next"` link to the next page | an `IntersectionObserver` sentinel that calls `onLoadMore` and intercepts the click |
+| `Pagination` with `hrefFor` | `<a rel="next">` / `<a rel="prev">`, one per cursor | none — link mode attaches no handler |
+| `Link appearance="button"` | an `<a href>` wearing Button's classes | none |
 
 ```tsx
 <Accordion level={3} exclusive items={[{ id: 'ship', title: t('faq.ship'), panel: <p>…</p> }]} />
@@ -216,6 +230,47 @@ has the behaviour. Each is correct server-rendered, and the script layer only ad
 scripting off the control is a link, and a link needs somewhere to go. `Combobox` filters
 what it is given by `value` (`filterOptions` — case- and accent-insensitive, prefix first),
 so the list is right on the first paint and after a form round-trip, not only once JS runs.
+
+### A pager and a button that navigate
+
+```tsx
+import { Link, Pagination } from '@ultimat3/ui';
+import type { JSX } from 'solid-js';
+
+interface PostsFooterProps {
+  prevCursor?: string | undefined;
+  nextCursor?: string | undefined;
+  /** Already translated: `t('posts.new')` at the call site. */
+  newLabel: string;
+}
+
+export function PostsFooter(props: PostsFooterProps): JSX.Element {
+  return (
+    <footer>
+      <Link appearance="button" variant="secondary" size="sm" href="/posts/new">
+        {props.newLabel}
+      </Link>
+      <Pagination
+        prevCursor={props.prevCursor}
+        nextCursor={props.nextCursor}
+        hrefFor={(cursor, direction) =>
+          `/posts?${direction === 'next' ? 'after' : 'before'}=${cursor}`
+        }
+      />
+    </footer>
+  );
+}
+```
+
+| Rule | Held by |
+|---|---|
+| `Pagination` is one mode per use: `hrefFor`, or `onCursor` / `onPage` / `page` / `totalPages` — never both | the type: `PaginationProps` is `PaginationLinkProps \| PaginationCallbackProps`, and each forbids the other's props |
+| `DataTable` takes the same pair — `hrefFor` or `onCursor` — and hands it to its pager | the type: `DataTableProps<Row>` is `DataTableLinkProps<Row> \| DataTableCallbackProps<Row>` |
+| a `DataTable` sort header follows the table's mode: an anchor at `sortHrefFor(next)` in link mode, a button calling `onSortChange` in callback mode; a linked table with no `sortHrefFor` renders the header as text | the same union — `sortHrefFor` lives on `DataTableLinkProps`, `onSortChange` on `DataTableCallbackProps` — and `DataTable.test.ts` |
+| link mode pages by cursor only; a side with no cursor is a disabled button, never an anchor with nowhere to go | `Pagination.test.ts` |
+| a control that navigates is a `Link`; `Button` has no `href` | `ButtonProps` |
+| a button-link takes `variant` / `tone` / `size` / `fullWidth` / `iconStart` / `iconEnd`; a text link takes `underline` and `tone: 'accent' \| 'inherit'` | the type: `LinkProps` is `TextLinkProps \| ButtonLinkProps` |
+| both elements wear ONE set of classes | `buttonClassKeys` (`button-classes.ts`), asked by `Button` and `Link` |
 
 `debounce(fn, ms)` is exported on its own: trailing edge, `cancel()`, `flush()`, `pending()`.
 Components cancel theirs on cleanup, so a filter never fires into a tree that is gone.
@@ -539,13 +594,13 @@ of truth for the one thing the server decides.
 
 | Code | When |
 |---|---|
-| `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define — including a `defineTheme()` override of a role, radius or font slot that is not in the scale |
+| `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define — including a `defineTheme()` override of a role, radius or font slot that is not in the scale, and a breakpoint rung `respond-to` / `respond-down` / `respond-between` was handed that is not in `$breakpoints` (a Sass `@error`: the stylesheet does not compile) |
 | `X_THEME_INVALID` | a theme other than `light` / `dark` |
 | `X_UI_RUNTIME_MISSING` | a DOM render with no registered Solid runtime, `<UiProvider>` on the server, or `browserThemeEnv()` off-DOM. A server render with no runtime is **not** one of them — it gets `INERT_SOLID_RUNTIME` |
 | `X_UI_FORM_PATH_INVALID` | a form field or control name the path grammar cannot read (`items.0.price`, `items[]`, `__proto__`), or two control names describing different shapes for one path (`user` beside `user.name`) |
 | `X_UI_CONTRAST_INSUFFICIENT` | a `defineTheme()` palette whose resolved channels put a pairing in `CONTRAST_PAIRS` below WCAG 2.2 AA — 4.5:1 for text, 3:1 for the focus ring. Only pairings the brand changed are measured; the cause names the measured ratio and the required one |
 | `X_UI_QR_CAPACITY` | a `<QrCode>` value over version 3's 42-byte ceiling (byte mode, error-correction level M). The encoder draws versions 1–3 only; the cause names the byte count and the ceiling |
-| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors, one dimension without the other, or no reserved box at all, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
+| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors, one dimension without the other, or no reserved box at all, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry), or — as a Sass `@error` — `t.rem()` / `t.fluid()` given a unit other than px or rem, `t.fluid()` given a viewport range that is empty or reversed, `respond-between` given `$from` at or above `$to` |
 
 ### Error classes
 

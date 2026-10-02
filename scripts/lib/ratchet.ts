@@ -7,6 +7,8 @@
 import { flagList, parseScriptArgs } from './args';
 import type { Finding } from './log';
 import { report } from './log';
+import type { SiteProbe } from './ratchet-sites';
+import { newSitesFirst } from './ratchet-sites';
 import { repoRoot } from './run';
 import { ScriptError } from './script-error';
 
@@ -22,6 +24,19 @@ export interface RatchetGap<S> {
   readonly found: number;
   readonly pinned: number;
   readonly first?: S;
+  /**
+   * EVERY site of an `over` gap, in scan order. `first` is the package's first site, which is
+   * usually one the pin already allows: the site that took the package over its pin is whichever
+   * was added last, and the tree alone cannot say which that is. A finding that names only `first`
+   * sends its reader to a line that was never the problem, so a guard lists these instead.
+   */
+  readonly sites?: readonly S[];
+  /**
+   * How many of `sites`, from the front, are absent at the base ref — set by `newSitesFirst`
+   * (`ratchet-sites.ts`) when a guard can re-scan one file and the checkout has the ref. Absent
+   * means "not known", never "none".
+   */
+  readonly fresh?: number;
 }
 
 /** `packages/<pkg>/…` is `<pkg>`; anything else is its top directory (`scripts`, `examples`). */
@@ -77,7 +92,14 @@ export function ratchetGaps<S extends { readonly path: string }>(
     if (pinIsBlank(pkg, pins)) gaps.push({ kind: 'unexplained', pkg, found: hits.length, pinned });
     const first = hits[0];
     if (hits.length > pinned) {
-      gaps.push({ kind: 'over', pkg, found: hits.length, pinned, ...(first ? { first } : {}) });
+      gaps.push({
+        kind: 'over',
+        pkg,
+        found: hits.length,
+        pinned,
+        ...(first ? { first } : {}),
+        sites: hits,
+      });
     } else if (hits.length < pinned) {
       gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
     }
@@ -106,7 +128,9 @@ export async function applyUnpin(
     if (found >= pinnedFor(pkg, pins)) continue;
     const key = `(?<q>['"]?)${RegExp.escape(pkg)}\\k<q>`;
     const flat = new RegExp(`^(\\s*${key}:\\s*)\\d+,\\n`, 'm');
-    const nested = new RegExp(`^(\\s*${key}:\\s*\\{\\s*count:\\s*)\\d+,`, 'm');
+    // Comment lines may sit between the brace and the count: `pin-raises` asks for a `// why:`
+    // on a raised row and accepts one inside it, and a row carrying one matched nothing here.
+    const nested = new RegExp(`^(\\s*${key}:\\s*\\{\\s*(?://[^\\n]*\\n\\s*)*count:\\s*)\\d+,`, 'm');
     // One line (`{ count: 1, reason: '…' },`) or wrapped, with the brace closing on its own line.
     const whole = new RegExp(`^\\s*${key}:\\s*\\{(?:[^\\n]*\\},|[\\s\\S]*?\\n\\s*\\},)\\n`, 'm');
     const before = text;
@@ -130,6 +154,8 @@ export interface RatchetSpec<S extends { readonly path: string }> {
   readonly findingFor: (gap: RatchetGap<S>) => Finding;
   readonly clean: string;
   readonly groupOf?: (site: S) => string;
+  /** The guard's single-file scan, when it has one: an `over` gap then lists its new sites first. */
+  readonly probe?: SiteProbe<S>;
 }
 
 /** The two things a guard's command does: report the ratchet, or `--unpin` it. */
@@ -166,7 +192,9 @@ export async function ratchetMain<S extends { readonly path: string }>(
       args.json,
     );
   }
-  const gaps = ratchetGaps(sites, spec.pins, true, spec.groupOf);
+  const measured = ratchetGaps(sites, spec.pins, true, spec.groupOf);
+  const gaps =
+    spec.probe === undefined ? measured : await newSitesFirst(root, measured, spec.probe);
   return report(
     {
       ok: gaps.length === 0,

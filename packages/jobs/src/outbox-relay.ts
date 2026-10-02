@@ -7,12 +7,22 @@
 
 import { assert, logger, onShutdown, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
-import { settleAllBy } from './drain-wait';
+import { createDrainBudget, settleAllBy } from './drain-wait';
+import { onStaged, signalEnqueued } from './enqueue-signal';
+import { createIdleBackoff } from './idle-backoff';
 import type { OutboxDeps } from './outbox';
 
 export interface RelayOptions extends OutboxDeps {
   readonly batchSize?: number;
+  /** The gap between passes while rows are being published. Default 200 ms. */
   readonly intervalMs?: number;
+  /**
+   * The longest gap once passes come back empty — the relay doubles its wait from `intervalMs` up
+   * to this. Default `IDLE_POLL_CEILING_MS` (2 s), or `WOKEN_IDLE_POLL_CEILING_MS` (5 s) while
+   * `startQueueWake` has a proven `LISTEN`. It is the most a row another process committed waits
+   * for an idle relay when no notification reaches it.
+   */
+  readonly idlePollMaxMs?: number;
   /**
    * Register the two shutdown hooks. `false` only for a relay whose caller drives the teardown
    * itself — a test, or a script that owns the process. The same knob `WorkerOptions` carries, and
@@ -34,6 +44,8 @@ export interface OutboxRelay {
    */
   stop(deadlineAt?: number): Promise<void>;
   pending(): Promise<number>;
+  /** The gap the loop will wait before its next pass — the floor, or wherever idling has taken it. */
+  pollDelayMs(): number;
 }
 
 /**
@@ -52,10 +64,18 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
   );
   assert(
     Number.isFinite(intervalMs) && intervalMs >= 0,
-    `createOutboxRelay intervalMs is ${String(intervalMs)}, which setInterval reads as 0 — the relay would spin, not poll`,
+    `createOutboxRelay intervalMs is ${String(intervalMs)}, which a timer reads as 0 — the relay would spin, not poll`,
     'pass a finite intervalMs to createOutboxRelay(...), or omit it for the default 200',
   );
-  let timer: ReturnType<typeof setInterval> | undefined;
+  const backoff = createIdleBackoff({
+    subject: 'createOutboxRelay',
+    floorMs: intervalMs,
+    ...(options.idlePollMaxMs === undefined ? {} : { ceilingMs: options.idlePollMaxMs }),
+  });
+  /** What the next `arm()` waits. */
+  let delayMs = intervalMs;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let unsubscribe: (() => void) | undefined;
   let running = false;
   /** The pass in flight, so `stop()` joins it instead of returning underneath it. */
   let pass: Promise<void> | undefined;
@@ -63,6 +83,16 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
   let state: 'idle' | 'running' | 'draining' | 'stopped' = 'idle';
   let releaseShutdownHooks: (() => void)[] = [];
   let stopping: Promise<void> | undefined;
+  /** A committed row was announced while a pass was in flight: one more, right behind it. */
+  let again = false;
+  /**
+   * The deadline the teardown waits under: unbound for a manual `stop()`, bound the moment a
+   * shutdown lands — LATE, when it lands on a teardown already in flight. `stop()` memoises its
+   * teardown, and until 2026-10-01 the one a SIGTERM joined kept the `undefined` a manual stop
+   * had started it with: core abandoned the hook at the deadline and the relay sat behind a
+   * publish that never returned. The shape `worker.ts` holds, for the same reason.
+   */
+  let budget = createDrainBudget();
 
   const tick = async (): Promise<number> => {
     const batch = await options.store.claim(batchSize);
@@ -70,6 +100,10 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
     for (const record of batch) {
       try {
         await options.driver.enqueue({
+          // The ids the staging enqueue ANSWERED. Published under them, a repeat of this publish
+          // — a crash before the mark below — meets the job this one made rather than adding one.
+          id: record.id,
+          runId: record.runId,
           name: record.job,
           queue: record.queue,
           input: record.input,
@@ -109,6 +143,12 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
         break;
       }
     }
+    // The jobs are on the queue of THIS process's driver: wake its workers rather than leave them
+    // to find out on their own backed-off poll.
+    if (published > 0) signalEnqueued();
+    // The loop's next wait, decided by the pass itself so `tick()` and the timer agree: the floor
+    // while rows are moving, doubling to the ceiling while there are none.
+    delayMs = backoff.next(batch.length > 0);
     return published;
   };
 
@@ -118,20 +158,23 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
    * with the whole budget still in hand, which is what a wait parked here costs them.
    */
   const stopAccepting = (): void => {
-    if (timer !== undefined) clearInterval(timer);
+    if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
+    unsubscribe?.();
+    unsubscribe = undefined;
     if (state === 'running') state = 'draining';
   };
 
-  const teardown = async (deadlineAt?: number): Promise<void> => {
+  const teardown = async (): Promise<void> => {
     stopAccepting();
+    again = false;
     try {
       // The pass in flight is a `driver.enqueue` and the `markPublished` behind it. Abandoning
       // between the two republishes the row on the next boot — which the idempotency key collapses
       // only while the first job is still live — so it is waited out here, in `close`, under the
-      // deadline the hook was handed. `undefined` on a manual `stop()`: a caller that asked has no
-      // budget to spend, and nothing else in this process is waiting on the answer.
-      const settled = await settleAllBy(pass === undefined ? [] : [pass], deadlineAt);
+      // budget. Unbound on a manual `stop()`: a caller that asked has no deadline to spend, and
+      // nothing else in this process is waiting on the answer.
+      const settled = await settleAllBy(pass === undefined ? [] : [pass], budget);
       if (!settled) {
         logger.warn('jobs.outbox.drain-abandoned', {
           fix: 'raise the drain budget past one publish — configureLifecycle({ deadlineMs: 60_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
@@ -144,6 +187,8 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
       state = 'stopped';
       for (const release of releaseShutdownHooks) release();
       releaseShutdownHooks = [];
+      // Fresh per teardown: a restarted relay's manual stop must not inherit a deadline spent.
+      budget = createDrainBudget();
     }
   };
 
@@ -152,10 +197,13 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
     // wait is bounded on the SIGTERM path and the state is set in a `finally`), so a caller
     // landing after an abandoned drain gets an answer rather than joining a settled lifetime ago.
     if (state === 'stopped') return;
+    // Before the join, every time: the stop that finds a teardown already waiting is the one
+    // whose deadline that wait has not heard yet. The earliest bound wins.
+    if (deadlineAt !== undefined) budget.bind(deadlineAt);
     // One teardown, joined rather than repeated: a SIGTERM landing on a manual stop waits out the
     // same pass instead of returning underneath it. Cleared as it settles, so a relay started
     // again stops again rather than joining a promise that settled a lifetime ago.
-    stopping ??= teardown(deadlineAt).finally(() => {
+    stopping ??= teardown().finally(() => {
       stopping = undefined;
     });
     await stopping;
@@ -183,39 +231,66 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
           onShutdown('jobs.outbox', (reason) => stop(reason.deadlineAt), { phase: 'close' }),
         ];
       }
-      timer = setInterval(() => {
-        // Re-read on every tick: "stop claiming" means this timer too, and a callback already on
-        // the event loop when the interval was cleared must not open a claim behind the drain.
-        if (running || state !== 'running') return;
-        running = true;
-        // `.catch` before `.finally`, the shape every other loop in this package uses. `tick()`
-        // guards each publish but not `store.claim()` — one pool timeout during a failover
-        // rejects here unobserved, and Bun's default for an unhandled rejection is to end the
-        // process, taking every staged, unpublished row with it.
-        //
-        // Kept rather than discarded, because `stop()` awaits exactly this chain: the publish and
-        // the `markPublished` behind it are one pass, and a teardown that returned between them
-        // closed the database under the row it was about to mark. The chain carries its own
-        // `catch`, so a caller that does not await still gets no unhandled rejection.
-        pass = tick()
-          .then((): void => undefined)
-          .catch((error: unknown) => {
-            logger.error('jobs.outbox.tick-failed', {
-              error: renderThrowable(error),
+      // One pass, then re-armed by ITS result: the floor while rows are moving, doubling to the
+      // ceiling while there are none. It was a `setInterval` at 200 ms — five claims a second
+      // against an outbox with nothing in it, from every pod, for as long as the pod lived.
+      const arm = (): void => {
+        timer = setTimeout(() => {
+          // Re-read on every pass: "stop claiming" means this timer too, and a callback already on
+          // the event loop when the timer was cleared must not open a claim behind the drain.
+          if (running || state !== 'running') return;
+          running = true;
+          // `.catch` before `.finally`, the shape every other loop in this package uses. `tick()`
+          // guards each publish but not `store.claim()` — one pool timeout during a failover
+          // rejects here unobserved, and Bun's default for an unhandled rejection is to end the
+          // process, taking every staged, unpublished row with it.
+          //
+          // Kept rather than discarded, because `stop()` awaits exactly this chain: the publish
+          // and the `markPublished` behind it are one pass, and a teardown that returned between
+          // them closed the database under the row it was about to mark.
+          pass = tick()
+            .then((): void => undefined)
+            .catch((error: unknown) => {
+              // A failed pass is not an idle one: try again at the floor.
+              delayMs = backoff.next(true);
+              logger.error('jobs.outbox.tick-failed', {
+                error: renderThrowable(error),
+              });
+            })
+            .finally(() => {
+              running = false;
+              pass = undefined;
+              if (state !== 'running') return;
+              if (again) delayMs = 0;
+              again = false;
+              arm();
             });
-          })
-          .finally(() => {
-            running = false;
-            pass = undefined;
-          });
-      }, intervalMs);
-      // Never the thing keeping a drained process alive — the rule `renewal-timer.ts` and
-      // `lifecycle-deadline.ts` both state for their own timers. A poll every 200ms holds the
-      // event loop open past every phase of the shutdown, and the kubelet's SIGKILL becomes the
-      // exit; the hooks above are what stop this loop, not the process refusing to end.
-      timer.unref?.();
+        }, delayMs);
+        // Never the thing keeping a drained process alive — the rule `renewal-timer.ts` and
+        // `lifecycle-deadline.ts` both state for their own timers. The hooks above are what stop
+        // this loop, not the process refusing to end.
+        timer.unref?.();
+      };
+      // A staged row. Either way the passes after this one run at the floor again. One staged
+      // by THIS process is not committed yet, so the wait in hand is cut to the floor and the
+      // passes that follow find it. One Postgres ANNOUNCED has committed: the pass runs now — or
+      // right behind the one in flight, whose claim may have read before the commit.
+      unsubscribe = onStaged((committed) => {
+        backoff.reset();
+        const wait = committed === true ? 0 : intervalMs;
+        if (running) {
+          again = again || committed === true;
+          return;
+        }
+        if (delayMs <= wait || timer === undefined) return;
+        clearTimeout(timer);
+        delayMs = wait;
+        arm();
+      });
+      arm();
     },
     stop,
     pending: () => options.store.pendingCount(),
+    pollDelayMs: () => delayMs,
   };
 }

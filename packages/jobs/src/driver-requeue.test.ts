@@ -48,7 +48,7 @@ describe('memory: requeue takes a finished job and nothing else', () => {
     const driver = createMemoryDriver();
     const { id } = await enqueue(driver, 'sync:1');
     await claimOne(driver);
-    await driver.ack(id);
+    await driver.ack(id, { workerId: 'w1', claim: 1 });
     await enqueue(driver, 'sync:1');
     expect(await codeOf(driver.introspect?.requeue(id) ?? Promise.resolve())).toBe(
       'X_JOB_DUPLICATE',
@@ -60,7 +60,7 @@ describe('memory: requeue takes a finished job and nothing else', () => {
     const driver = createMemoryDriver();
     const { id } = await enqueue(driver, 'sync:1');
     await claimOne(driver);
-    await driver.nack(id, { delayMs: 0, deadLetter: true });
+    await driver.nack(id, { workerId: 'w1', claim: 1, delayMs: 0, deadLetter: true });
     const back = await driver.introspect?.requeue(id);
     expect(back?.state).toBe('ready');
     expect(back?.attempt).toBe(0);
@@ -85,7 +85,7 @@ describe('memory: fromStep drops that step AND every step after it', () => {
         attempts: 1,
       });
     }
-    await driver.nack(id, { delayMs: 0, deadLetter: true });
+    await driver.nack(id, { workerId: 'w1', claim: 1, delayMs: 0, deadLetter: true });
     await driver.introspect?.requeue(id, { fromStep: 'charge' });
     expect((await steps.list(runId)).map((record) => record.name)).toEqual(['fetch']);
   });
@@ -106,7 +106,7 @@ describe('memory: fromStep drops that step AND every step after it', () => {
         attempts: 1,
       });
     }
-    await driver.nack(id, { delayMs: 0, deadLetter: true });
+    await driver.nack(id, { workerId: 'w1', claim: 1, delayMs: 0, deadLetter: true });
     await driver.introspect?.requeue(id, { fromStep: 'receipt' });
     expect((await driver.steps.list(runId)).map((record) => record.name)).toEqual(['charge']);
   });

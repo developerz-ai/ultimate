@@ -9,6 +9,10 @@
 // Runtime imports only: `Bun.Transpiler.scanImports` sees what survives type erasure, which is
 // exactly the distinction the `app/ -> api/` rule needs (`import type` is allowed, a value
 // import is not).
+//
+// The browser-transport rule rides the same read: `boundary-findings.ts`'s `appBoundaryFindings`
+// hands the files read here to `app-transport.ts`, so a raw `fetch(` in an island is a finding of
+// this step with no second walk of the app.
 
 // Bun ships no `Bun.*` path API: `joinPath` reaches a file on disk with the host's separator.
 import { join as joinPath } from 'node:path';
@@ -17,6 +21,7 @@ import { dirname, join, normalize, relative } from 'node:path/posix';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
 import { checkSurfaceBoundary, importGraph, SURFACES } from '@ultimat3/render';
+import { commentSafe } from './comment-safe';
 import { scanRuntimeImports, stripShebang } from './import-scan';
 import type { Finding } from './output';
 import { hasPathSegment } from './path-segments';
@@ -157,20 +162,6 @@ function subjectOf(path: string): string | undefined {
 }
 
 /**
- * Control characters, `\u00xx`-escaped. The path is a value read off the repository being scanned,
- * and it rides in a `#` comment: a directory holding a NEWLINE ends that comment, so everything
- * after it is a second command in a line whose whole purpose is to be pasted into a shell.
- * Escaped rather than deleted, because the comment still has to name the file the reader owns.
- */
-const commentSafe = (path: string): string =>
-  [...path]
-    .map((char) => {
-      const code = char.codePointAt(0) ?? 0;
-      return code < 0x20 || code === 0x7f ? `\\u${code.toString(16).padStart(4, '0')}` : char;
-    })
-    .join('');
-
-/**
  * `x g query posts` where the path names a resource, `x g query <name>` where it names a surface.
  * The placeholder form is the shape `MissingPositionalError` already hands out (`x g route
  * <name>`) and the one the `errors` step leaves unjudged in that slot — an open positional, where
@@ -233,7 +224,7 @@ const APP_GLOBS = ['apps/*/{site,app,api,shared}/**/*.{ts,tsx}'];
 /**
  * Read every source file under an app's site, app, api and shared surfaces (`APP_GLOBS`). The
  * only I/O in this module, and the one definition of "which files are the app's sources" —
- * `checkAppBoundaries` reads through this, and so does `x fix boundary`, never a second glob.
+ * `appBoundaryFindings` reads through this, and so does `x fix boundary`, never a second glob.
  */
 export async function readAppSources(root: string): Promise<readonly SourceFile[]> {
   const files: SourceFile[] = [];
@@ -251,9 +242,4 @@ export async function readAppSources(root: string): Promise<readonly SourceFile[
 /** The resolved import graph over a file set — what `checkSurfaceBoundary` walks. */
 export function appImportGraph(files: readonly SourceFile[]): ImportGraph {
   return graphOf(scan(files));
-}
-
-/** Read an app's sources and check them. */
-export async function checkAppBoundaries(root: string): Promise<readonly Finding[]> {
-  return checkImportRules(await readAppSources(root));
 }

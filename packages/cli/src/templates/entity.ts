@@ -1,10 +1,13 @@
 // `x g entity <name>` — a table, its domain type and its invariants, plus the repo that owns the
-// only DB access for the feature. Emitted as strings rather than copied fixture files so the
-// generator output is typed, diffable and testable from a unit test.
+// only DB access for the feature and reads through the app's typed handle. Emitted as strings
+// rather than copied fixture files so the generator output is typed, diffable and testable from a
+// unit test.
 
+import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
-import { wrapImport, wrapList } from './wrap';
+import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
+import { LINE_WIDTH, wrapImport, wrapList } from './wrap';
 
 /** The columns that leave the server. One list, read by the declaration and by its test. */
 const VIEW_KEYS: readonly string[] = ["'id'", "'title'", "'price'", "'createdAt'"];
@@ -13,6 +16,12 @@ export interface FeatureTarget {
   /** `apps/web/app` or `apps/web/site` — the surface the feature lives in. */
   readonly surfaceDir: string;
   readonly feature: string;
+  /**
+   * The app's own db package, `@<app>/db` — where the generated `repo.ts` imports the typed handle
+   * from. Supplied by `x g` (read off `packages/db/package.json`) and by `x new`; absent only in a
+   * pure call that names no app, which gets `PLACEHOLDER_DB_MODULE`.
+   */
+  readonly dbModule?: string;
 }
 
 const entitySource = (
@@ -30,10 +39,10 @@ export const ${name.camel} = entity('${table}', {
   //
   // SINGLE-TENANT APP? There is no flag: \`x g action\`, \`x g query\` and \`x g policy\` decide on
   // \`orgId\` too, so the edit is per slice and it is this: delete \`tenant: 'orgId'\` and the
-  // \`orgId: uuid()\` column below, drop \`'orgId'\` from \`indexes\`, and in repo.ts turn
-  // \`listByOrg(orgId, limit)\` into \`list(limit)\` with no \`org_id\` predicate and no \`org_id\` in
-  // the insert. entity.test.ts then expects \`$tenantColumn\` null and \`orgScoped\` false, and its
-  // \`row()\` fixture loses \`orgId\`. Nothing else reads the column.
+  // \`orgId: uuid()\` column below and drop \`'orgId'\` from \`indexes\`. repo.ts needs no edit —
+  // it names no org. entity.test.ts then expects \`$tenantColumn\` null and \`orgScoped\` false,
+  // its \`row()\` fixture and repo.test.ts's \`draft()\` lose \`orgId\`, and repo.test.ts loses its
+  // last test. Nothing else reads the column.
   tenant: 'orgId',
   columns: {
     id: uuid().primaryKey(),
@@ -64,66 +73,151 @@ ${wrapList('', `export const ${name.pascal}View = ${name.camel}.$view([`, VIEW_K
 export type ${name.pascal}View = typeof ${name.pascal}View.$row;
 `;
 
-const repoSource = (name: NameSet, table: string): string => {
+/**
+ * A fluent read the way Biome prints it: on one line while it fits, one call per line when it does
+ * not. The name decides which — `db.creditNoteAttachments` breaks a chain `db.posts` does not — so
+ * a fixed shape is a red `lint` over code nobody typed.
+ */
+const chain = (indent: string, head: string, calls: readonly string[]): string => {
+  const joined = `${indent}${head}${calls.join('')};`;
+  if (joined.length <= LINE_WIDTH) return joined;
+  return `${indent}${head}\n${calls.map((call) => `${indent}  ${call}`).join('\n')};`;
+};
+
+const repoSource = (name: NameSet, dbModule: string): string => {
   const row = name.pascal;
-  const byIdCall = wrapList(
-    '  ',
-    'const row = await db().one<Physical>(',
-    [`sql\`select * from ${table} where id = \${id}\``],
-    ');',
-  );
+  const table = `db.${name.plural}`;
   const listSignature = wrapList(
     '',
-    'export async function listByOrg(',
-    ['orgId: string', 'limit = 50'],
+    'export async function list(',
+    ['limit = 50'],
     `): Promise<readonly ${row}[]> {`,
   );
+  const byIdSignature = wrapList(
+    '',
+    'export async function byId(',
+    ['id: string'],
+    `): Promise<${row} | undefined> {`,
+  );
+  const byIdBody = `  return (await ${table}.where({ id }).one()) ?? undefined;`;
   const insertSignature = wrapList(
     '',
     'export async function insert(',
     [`row: Omit<${row}, 'id' | 'createdAt'>`],
     `): Promise<${row}> {`,
   );
+  const listChain = chain('  ', `return ${table}`, [
+    ".orderBy('createdAt', 'desc')",
+    '.limit(limit)',
+    '.all()',
+  ]);
   return `// The only module allowed to query the ${name.pluralKebab} table. Routes call actions and
 // queries; actions call services; services call this.
-// \`db()\` is the ambient handle: inside a transaction it IS the transaction, so these functions
-// join the caller's transaction without knowing one is open.
+//
+// Every statement goes through the typed handle (\`db.<table>\`), so a renamed column is a compile
+// error here and there is no SQL text to keep in step with the entity. The handle owns the rest:
+// tenancy (every read runs under the ACTOR's org, so no function here takes or names one), the
+// codecs (money is one property; a sealed column is opened on read), keyset paging (\`.limit()\`,
+// \`.after(cursor)\`) and the ambient transaction.
+//
+// Raw SQL has two homes and neither is this file: a \`query\`'s source and a migration. Reach for
+// it here only for a statement the handle cannot express — a join, a window, a CTE.
 
-import { db, sql } from '@ultimat3/db';
-import { dbDrift, decodeRow, newId } from '@ultimat3/entity';
-${wrapImport([`type ${name.pascal}`, name.camel], './entity')}
+import { db } from '${dbModule}';
+import type { ${row} } from './entity';
 
-// What \`select *\` answers: snake_case columns, and money as three of them. Never cast to the row
-// type — \`decodeRow\` is the entity's own reading of it, so \`price\` is a Money again.
-type Physical = Readonly<Record<string, unknown>>;
-
-export async function byId(id: string): Promise<${name.pascal} | undefined> {
-${byIdCall}
-  return row === null ? undefined : decodeRow(${name.camel}, row);
+${byIdSignature}
+${byIdBody}
 }
 
 ${listSignature}
-  // Ordered and bounded: an unordered page is a different page on every request.
-  const rows = await db().query<Physical>(
-    sql\`select * from ${table} where org_id = \${orgId} order by created_at desc limit \${limit}\`,
-  );
-  return rows.map((row) => decodeRow(${name.camel}, row));
+  // The actor's org and nobody else's: the handle scopes the read, so there is no org to pass.
+  // Ordered and bounded — an unordered page is a different page on every request — and the handle
+  // adds the primary key as the last sort key, so the order is total without \`id\` spelled here.
+${listChain}
 }
 
 ${insertSignature}
-  // Money is three physical columns — integer minor units, the ISO code, and the scale, never a
-  // float. \`scale ?? null\`: an amount at the currency's own minor unit carries no scale at all,
-  // and writing \`0\` for it would claim whole units — a 100x reinterpretation of the price.
-  const created = await db().one<Physical>(sql\`
-    insert into ${table} (id, org_id, title, price_minor, price_currency, price_scale)
-    values (\${newId()}, \${row.orgId}, \${row.title}, \${row.price.minor}, \${row.price.currency},
-            \${row.price.scale ?? null})
-    returning *\`);
-  if (created === null) throw dbDrift('${table}', 'id');
-  return decodeRow(${name.camel}, created);
+  // \`id\` and \`createdAt\` are the declaration's defaults, filled by the handle. The row names its
+  // org, and one that is not the actor's is refused (X_TENANCY_ACTOR_MISMATCH).
+  return ${table}.insert(row);
 }
 `;
 };
+
+/**
+ * The repo's own test, emitted beside it: a generated file with no test is uncovered source in an
+ * app whose gate holds a coverage floor. Runs against the in-memory driver — the same contract
+ * Postgres serves — so it needs no database.
+ */
+const repoTest = (
+  name: NameSet,
+  dbModule: string,
+): string => `// The ${name.kebab} repo against the in-memory driver: the contract Postgres serves, with no
+// database. What it pins is what the repo cannot show by being read — whose rows a call reaches.
+${sortedImports([
+  "import { createContext, frozenClock, runWithContext } from '@ultimat3/core';",
+  "import { testActor } from '@ultimat3/policy';",
+  "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
+  `import { driver } from '${dbModule}';`,
+])}
+import * as repo from './repo';
+
+const orgId = '00000000-0000-4000-8000-000000000002';
+const otherOrg = '00000000-0000-4000-8000-000000000009';
+
+// The request clock, so \`createdAt\` is an instant this file chose and "newest" is decidable.
+const clock = frozenClock('2026-01-01T00:00:00.000Z');
+
+/** What a request is to the handle: an actor, whose org every read and write runs under. */
+const inOrg = <T>(org: string, run: () => Promise<T>): Promise<T> =>
+  runWithContext(createContext({ actor: testActor('member', { orgId: org }).actor, clock }), run);
+
+const draft = (title: string) => ({ orgId, title, price: { minor: 1200, currency: 'USD' } });
+
+// One store per process: without this, one test's rows are the next test's fixtures.
+afterEach(() => {
+  driver.reset?.();
+});
+
+unitTest('insert stores the row and byId reads it back', async () => {
+  const stored = await inOrg(orgId, () => repo.insert(draft('first')));
+  // Neither was supplied: the entity's own defaults filled both.
+  expect(stored.id).toHaveLength(36);
+  expect(stored.createdAt).toEqual(clock.now());
+  expect(stored.price).toEqual({ minor: 1200, currency: 'USD' });
+  // \`toEqualRow\`, never \`toEqual\`: a \`.sealed()\` column is a non-enumerable property of a row,
+  // so \`toEqual\` would call two rows equal that hold different secrets.
+  expect(await inOrg(orgId, () => repo.byId(stored.id))).toEqualRow(stored);
+});
+
+unitTest('byId answers undefined for an id nothing holds', async () => {
+  const absent = '00000000-0000-4000-8000-0000000000ff';
+  expect(await inOrg(orgId, () => repo.byId(absent))).toBeUndefined();
+});
+
+unitTest('list is newest first and bounded', async () => {
+  for (const title of ['first', 'second', 'third']) {
+    await inOrg(orgId, () => repo.insert(draft(title)));
+    clock.advance(1000);
+  }
+  const page = await inOrg(orgId, () => repo.list(2));
+  expect(page.map((row) => row.title)).toEqual(['third', 'second']);
+});
+
+unitTest('an actor in another org never reads the row, and no call names an org', async () => {
+  const stored = await inOrg(orgId, () => repo.insert(draft('private')));
+  // Neither read takes an org: the handle scopes both to the actor it runs under.
+  expect(await inOrg(otherOrg, () => repo.byId(stored.id))).toBeUndefined();
+  expect(await inOrg(otherOrg, () => repo.list())).toEqual([]);
+  expect(await inOrg(orgId, () => repo.list())).toHaveLength(1);
+});
+
+unitTest('a read with no actor is refused rather than answered for every org', async () => {
+  const refused = await repo.list().catch((error: unknown) => error);
+  expect(refused).toBeUltimateError('X_TENANCY_UNSCOPED');
+});
+`;
 
 const entityTest = (
   name: NameSet,
@@ -202,9 +296,11 @@ unitTest('${name.camel} parses a row through its own columns', () => {
 export function entityFiles(rawName: string, target: FeatureTarget): readonly GeneratedFile[] {
   const name = names(rawName);
   const dir = `${target.surfaceDir}/${target.feature}`;
+  const dbModule = target.dbModule ?? PLACEHOLDER_DB_MODULE;
   return [
     { path: `${dir}/entity.ts`, contents: entitySource(name, name.snake, name.table) },
     { path: `${dir}/entity.test.ts`, contents: entityTest(name, name.snake, name.table) },
-    { path: `${dir}/repo.ts`, contents: repoSource(name, name.table) },
+    { path: `${dir}/repo.ts`, contents: repoSource(name, dbModule) },
+    { path: `${dir}/repo.test.ts`, contents: repoTest(name, dbModule) },
   ];
 }

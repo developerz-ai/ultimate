@@ -7,6 +7,7 @@ import { registerCatalog, registeredLocales } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
 import {
   byComponent,
+  byTag,
   fire,
   installFactory,
   nodesOf,
@@ -15,7 +16,12 @@ import {
   withAttr,
 } from './inert-jsx';
 import type { WidgetContext } from './widget-value';
-import { Widget } from './widgets';
+
+// `widgets.tsx` is JSX: loaded after `@ultimat3/render/server` installs its `.tsx` loader, never
+// statically — a static import compiles it to the classic factory first, and every screen a later
+// file in this process renders through it dies with `React is not defined`.
+await import('@ultimat3/render/server');
+const { Widget } = await import('./widgets');
 
 registerCatalog('en', { 'admin.invoice.field.total': 'Total (probe)' });
 // A locale the framework's bundled list never named. The locale picker must offer it — and must
@@ -68,8 +74,14 @@ function edit(
   return { control: nodes, emitted };
 }
 
+/** The control itself. A money field also posts its currency beside it — that is `currencyOf`. */
 const input = (edited: Edited): ReturnType<typeof one> =>
-  one(byComponent(edited.control, 'Input'), '<Input>');
+  one(
+    byComponent(edited.control, 'Input').filter(
+      (node) => !String(node.props['name'] ?? '').endsWith('.currency'),
+    ),
+    '<Input>',
+  );
 
 const typed = (text: string): unknown => ({ currentTarget: { value: text } });
 
@@ -165,6 +177,44 @@ describe('money', () => {
       ['total', { minor: 500, currency: 'JPY' }],
       ['total', null],
     ]);
+  });
+});
+
+describe('money posts BOTH halves — a native form has no handler to assemble them', () => {
+  test('a known currency rides hidden beside the amount, under <field>.currency', () => {
+    const edited = edit({}, { minor: 1999, currency: 'EUR' });
+    const hidden = one(
+      byTag(edited.control, 'input').filter((node) => node.props['type'] === 'hidden'),
+      'the hidden currency',
+    );
+    expect(hidden.props['name']).toBe('total.currency');
+    expect(hidden.props['value']).toBe('EUR');
+  });
+
+  test('an unknown currency is ASKED for, never posted blank', () => {
+    const edited = edit({}, null);
+    const asked = one(
+      byComponent(edited.control, 'Input').filter(
+        (node) => node.props['name'] === 'total.currency',
+      ),
+      'the currency box',
+    );
+    expect(asked.props['maxlength']).toBe(3);
+    expect(
+      byTag(edited.control, 'input').filter((node) => node.props['type'] === 'hidden'),
+    ).toHaveLength(0);
+  });
+});
+
+describe('secret-input — a sealed column is written, never shown', () => {
+  test('a password box with no value, whatever the row holds', () => {
+    const edited = edit({ widget: 'secret-input', type: 'secret', name: 'token' }, 'PLAINTEXT');
+    const node = input(edited);
+    expect(node.props['type']).toBe('password');
+    expect(node.props['name']).toBe('token');
+    expect('value' in node.props).toBe(false);
+    expect(node.props['autocomplete']).toBe('new-password');
+    expect(JSON.stringify(edited.control.map((entry) => entry.props))).not.toContain('PLAINTEXT');
   });
 });
 
@@ -293,8 +343,62 @@ describe('the default branch', () => {
     expect(edited.emitted).toEqual([['title', 'Goodbye']]);
   });
 
-  test('a reference is edited as its raw id — the admin has no row picker', () => {
+  test('a reference with nothing read of its target is edited as its raw id', () => {
     const edited = edit({ widget: 'reference', type: 'relation', name: 'customerId' }, 'c_9');
     expect(input(edited).props['value']).toBe('c_9');
+    expect(byTag(edited.control, 'a')).toHaveLength(0);
+  });
+
+  describe('a reference picks from what the PAGE read of its target', () => {
+    const customer: Partial<AdminField> = {
+      widget: 'reference',
+      type: 'relation',
+      name: 'customerId',
+      relation: { entity: 'customers' },
+    };
+    const picking = (over: Partial<WidgetContext>, value: unknown = 'c_9') =>
+      nodesOf(Widget({ field: field(customer), value, ctx: { ...ctx, ...over }, mode: 'edit' }));
+
+    test('a small target is a <select> of its rows by label, with an empty first option', () => {
+      const nodes = picking({
+        optionsFor: (entity) =>
+          entity === 'customers'
+            ? [
+                { id: 'c_9', label: 'Acme' },
+                { id: 'c_2', label: 'Globex' },
+              ]
+            : null,
+      });
+      const select = one(byComponent(nodes, 'Select'), '<Select>');
+      expect(select.props['name']).toBe('customerId');
+      expect(select.props['value']).toBe('c_9');
+      expect((select.props['options'] as { value: string; label: string }[]).slice(1)).toEqual([
+        { value: 'c_9', label: 'Acme' },
+        { value: 'c_2', label: 'Globex' },
+      ]);
+      expect((select.props['options'] as { value: string }[])[0]?.value).toBe('');
+      expect(byComponent(nodes, 'Input')).toHaveLength(0);
+    });
+
+    test('a large target is the id in a text box, its label beside it, and a link to its lookup', () => {
+      const nodes = picking({
+        optionsFor: () => null,
+        labelFor: (_entity, id) => (id === 'c_9' ? 'Acme' : undefined),
+        lookupHref: (entity) => `/admin/${entity}/lookup`,
+      });
+      const box = one(byComponent(nodes, 'Input'), '<Input>');
+      expect(box.props['value']).toBe('c_9');
+      expect(box.props['suffix']).toBe('Acme');
+      const link = one(byTag(nodes, 'a'), 'the lookup link');
+      expect(link.props['href']).toBe('/admin/customers/lookup');
+      // A new tab: the form the operator is filling in must still be there when they come back.
+      expect(link.props['target']).toBe('_blank');
+    });
+
+    test('a target that is not an admin resource gets the box and no link', () => {
+      const nodes = picking({ lookupHref: () => null }, null);
+      expect(one(byComponent(nodes, 'Input'), '<Input>').props['value']).toBe('');
+      expect(byTag(nodes, 'a')).toHaveLength(0);
+    });
   });
 });

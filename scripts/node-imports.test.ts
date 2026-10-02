@@ -74,16 +74,43 @@ describe('what counts as saying why', () => {
   });
 
   /**
-   * The rule that makes "directly above" mean something: a `why:` written for one import must not
-   * silently cover the next one, three statements down.
+   * One `why:` covers the contiguous block of `node:` imports beneath it: `mkdtemp` and `tmpdir`
+   * are reached for together and one sentence says why. Counting the second as unexplained made
+   * authors repeat the sentence, which is noise the rule never asked for.
    */
-  test('a why: separated by a statement covers nothing', () => {
+  test('a why: covers the contiguous node: import block beneath it', () => {
     const source = [
-      '// why: Bun ships no temp-directory API',
+      '// why: Bun ships no temp-directory API and no tmpdir()',
       "import { mkdtemp } from 'node:fs/promises';",
+      "import { tmpdir } from 'node:os';",
+      'import {',
+      '  join,',
+      "} from 'node:path';",
+    ].join('\n');
+    expect(found(source)).toEqual([]);
+  });
+
+  /** What still makes "directly above" mean something: the block ends where it stops being one. */
+  test('a blank line, another statement or a non-node import ends the block', () => {
+    const head = ['// why: Bun ships no temp-directory API', "import { mkdtemp } from 'node:fs';"];
+    const tail = "import { tmpdir } from 'node:os';";
+    expect(found([...head, '', tail].join('\n'))).toEqual(['node:os']);
+    expect(found([...head, 'const a = 1;', tail].join('\n'))).toEqual(['node:os']);
+    expect(found([...head, "import { x } from './x';", tail].join('\n'))).toEqual(['node:os']);
+  });
+
+  test('a why: on one import`s own line is that import`s alone', () => {
+    const source = [
+      "import { mkdtemp } from 'node:fs'; // why: Bun ships no temp-directory API",
       "import { tmpdir } from 'node:os';",
     ].join('\n');
     expect(found(source)).toEqual(['node:os']);
+  });
+
+  test('a why: above a wrapped import covers it, though the specifier is three lines down', () => {
+    const source = ['// why: no Bun path joiner', 'import {', '  join,', "} from 'node:path';"];
+    expect(found(source.join('\n'))).toEqual([]);
+    expect(found(source.slice(1).join('\n'))).toEqual(['node:path']);
   });
 
   test('a blank line between the comment and the import is still directly above', () => {

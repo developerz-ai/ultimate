@@ -131,10 +131,19 @@ Over HTTP the same fields become the problem+json body, with `statusFor(code)` a
 
 ## Adding a code
 
+**One literal per `fix:`.** `x errors explain <CODE>` prints the fix off the throw site
+(`packages/cli/src/ts-scan.ts`, `scanCodeFixSites`), and it reads a `fix:` only when the value is
+ONE literal: a ternary or a concatenation of two is refused on purpose — picking a branch would
+publish half a fix as the whole one — and the answer degrades to "the fix is built there out of
+values only the raised error carries". Two shapes keep it a literal: one line that covers both
+conditions (`X_SEAL_INVALID`), or a second class under the same code, each with its own literal
+(`SecretsKeyInvalidError` / `SecretsRingKeyInvalidError`). Where a factory has two literals, the
+one written FIRST is the one printed — put the case an author meets first there.
+
 | # | Step | File |
 |---|---|---|
 | 1 | Confirm no existing code fits (discriminate with `meta` if it nearly does) | `packages/*/src/errors.ts` |
-| 2 | Register the code **and** write its wiki row in one command: `bun run new-error-code X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --fix '<command or edit>' [--meaning '…'] [--section '<## heading>']`. It adds the title to the package's `…TITLES` table and codes list (or its literal `registerErrorCodes({ … })`) and the row to `wiki/Error-Codes.md`, planned together so neither lands alone. An `errors.ts` in no shape it recognises is refused by name, `X_NEW_ERROR_CODE_PATTERN_UNKNOWN`, and then steps 2 and 6 are done by hand, in the same change | `packages/<pkg>/src/errors.ts`, `wiki/Error-Codes.md` |
+| 2 | Register the code **and** write its wiki row in one command: `bun run new-error-code X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --fix '<command or edit>' (--status <n> \| --off-socket) --cause '<what usually makes it happen>' [--section '<## heading>']`. It adds the title to the package's `…TITLES` table and codes list (or its literal `registerErrorCodes({ … })`), the row to `wiki/Error-Codes.md`, and the code's HTTP status decision, planned together so none lands alone. The registration file is the first of `error-codes.ts`, `<pkg>-error-codes.ts`, `errors.ts`, `<pkg>-error.ts` in a shape it recognises; none is `X_NEW_ERROR_CODE_PATTERN_UNKNOWN`, and then steps 2 and 6 are done by hand, in the same change. **The status is required for a tier ≤ 4 package**, exactly one of: `--status <n>` — the code can answer a request, so it gets a row in `packages/http/src/error-map.ts`; `--off-socket` — it never does, so it is pinned in `scripts/error-map-backlog.ts`. Neither or both is refused naming both; a tier-5 package takes neither. Without it the `errors` step is red with `X_ERROR_STATUS_MISSING` one command later | `packages/<pkg>/src/errors.ts`, `wiki/Error-Codes.md`, `packages/http/src/error-map.ts` or `scripts/error-map-backlog.ts` |
 | 3 | Write the `fix` as a command you have actually run | same |
 | 4 | Classify it with `registerErrorRetry({ X_YOUR_CODE: 'retryable' })` **only** if it is not terminal — `terminal` is the default and the safe one | same |
 | 5 | Add a test that asserts the code **and** that `fix` is non-empty | `packages/<pkg>/src/errors.test.ts` |

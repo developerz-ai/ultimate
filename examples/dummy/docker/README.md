@@ -23,6 +23,11 @@ docker run --rm -e ROLE=migrate -e DATABASE_URL=postgres://... postly:dev
 docker run -p 3000:3000 -e DATABASE_URL=postgres://... postly:dev
 ```
 
+The image build runs `x build --target prebuilt` after `COPY . .`: every island chunk and every
+compiled stylesheet is made once, there, by the image's own Bun — so a pod builds nothing at boot.
+Without that line every boot runs Babel and Sass over the whole app and logs
+`X_IMAGE_NOT_PREBUILT`, naming it.
+
 ## One box, every role
 
 ```sh

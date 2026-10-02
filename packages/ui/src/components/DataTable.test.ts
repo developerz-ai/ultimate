@@ -12,7 +12,7 @@ import { UltimateError } from '@ultimat3/core';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
 import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
-import { DataTable } from './DataTable';
+import { DataTable, type DataTableProps } from './DataTable';
 import type { SortState } from './sort-state';
 
 /**
@@ -236,6 +236,40 @@ describe('DataTable', () => {
     });
   });
 
+  describe('sorting by link', () => {
+    const linked = (extra: Record<string, unknown> = {}): ReturnType<typeof renderNodes> =>
+      table({
+        hrefFor: (cursor: string): string => `/invoices?cursor=${cursor}`,
+        sortHrefFor: (sort: SortState | undefined): string =>
+          sort === undefined ? '/invoices' : `/invoices?sort=${sort.key}:${sort.direction}`,
+        ...extra,
+      });
+
+    test('a sortable header is an anchor at the NEXT state of the cycle, and no button at all', () => {
+      expect(byTag(linked(), 'button')).toEqual([]);
+      const href = (sort?: SortState): unknown =>
+        one(byTag(linked(sort === undefined ? {} : { sort }), 'a'), 'sort link').props['href'];
+
+      expect(href()).toBe('/invoices?sort=name:asc');
+      expect(href({ key: 'name', direction: 'asc' })).toBe('/invoices?sort=name:desc');
+      // The third step of the cycle is "unsorted": the URL with no sort in it.
+      expect(href({ key: 'name', direction: 'desc' })).toBe('/invoices');
+    });
+
+    test('the anchor announces the action and carries no handler', () => {
+      const link = one(byTag(linked(), 'a'), 'sort link');
+      expect(link.props['aria-label']).toBe(`Name: ${uiString(UI_KEYS.sortAscending)}`);
+      expect(link.props['onClick']).toBeUndefined();
+    });
+
+    test('a linked table with no sort URL renders plain header text — never a dead button', () => {
+      const nodes = table({ hrefFor: (cursor: string): string => `/invoices?cursor=${cursor}` });
+      expect(byTag(nodes, 'button')).toEqual([]);
+      expect(byTag(nodes, 'a')).toEqual([]);
+      expect(byTag(nodes, 'th')[0]?.props['children']).toBe('Name');
+    });
+  });
+
   describe('cursor pagination', () => {
     test('is absent when the query returned no cursors', () => {
       expect(byTag(table(), 'nav')).toEqual([]);
@@ -268,6 +302,33 @@ describe('DataTable', () => {
 
     test('the pager appears for a previous cursor alone, too', () => {
       expect(byTag(table({ prevCursor: 'c0' }), 'nav')).toHaveLength(1);
+    });
+
+    // A server-rendered table: the pager is anchors, so paging needs no island. The same one
+    // mode per use as `Pagination`, handed straight through.
+    test('hrefFor turns each cursor into an anchor in the pager, and attaches no handler', () => {
+      const nodes = table({
+        columns: [{ key: 'name', header: 'Name', cell: (row: Row): string => row.name }],
+        prevCursor: 'c0',
+        nextCursor: 'c2',
+        hrefFor: (cursor: string, direction: string) => `/invoices?${direction}=${cursor}`,
+      });
+      const anchors = byTag(nodes, 'a');
+      expect(anchors.map((node) => node.props['href'])).toEqual([
+        '/invoices?prev=c0',
+        '/invoices?next=c2',
+      ]);
+      expect(anchors.map((node) => node.props['onClick'])).toEqual([undefined, undefined]);
+      expect(byTag(nodes, 'button')).toEqual([]);
+    });
+
+    test('hrefFor beside onCursor is not a DataTableProps', () => {
+      const base = { caption: 'x', columns: [], rows: [], rowKey: (row: Row) => row.id };
+      const hrefFor = (cursor: string): string => `/?after=${cursor}`;
+      // @ts-expect-error one mode per use: links or a callback
+      const both: DataTableProps<Row> = { ...base, hrefFor, onCursor: () => {} };
+      const links: DataTableProps<Row> = { ...base, hrefFor };
+      expect([both, links]).toHaveLength(2);
     });
   });
 });

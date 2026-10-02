@@ -3,7 +3,7 @@
 // is what a full bus drops, and the earliest match wins so a resumed step consumes in order.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createMemoryEventBus, eventBus, publishEvent, setEventBus } from './events';
+import { createMemoryEventBus, eventBus, publishEvent, resetEventBus, setEventBus } from './events';
 
 const clockAt = (start: number) => {
   let at = start;
@@ -119,5 +119,16 @@ describe('the ambient bus', () => {
       payload: { id: 'in_1' },
       publishedAt: 1_000,
     });
+  });
+
+  test('resetEventBus forgets every event: one test’s answer cannot resume the next test’s wait', async () => {
+    await publishEvent('scrape-prompt:run-1:1', { answer: '482913' });
+    expect(await eventBus().find('scrape-prompt:run-1:1', undefined, 0)).toBeDefined();
+
+    resetEventBus();
+
+    // A fresh in-process bus, the state a process boots in — never the one that held the event.
+    expect(await eventBus().find('scrape-prompt:run-1:1', undefined, 0)).toBeUndefined();
+    expect(eventBus().size()).toBe(0);
   });
 });

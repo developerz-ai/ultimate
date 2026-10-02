@@ -70,10 +70,10 @@ export function createNatsDriver(_options: NatsDriverOptions = {}): JobDriver {
     claim(_options: ClaimOptions): Promise<readonly ClaimedJob[]> {
       return unavailable('claim');
     },
-    ack(_jobId: string): Promise<void> {
+    ack(_jobId: string): Promise<boolean> {
       return unavailable('ack');
     },
-    nack(_jobId: string, _options: NackOptions): Promise<void> {
+    nack(_jobId: string, _options: NackOptions): Promise<boolean> {
       return unavailable('nack');
     },
     heartbeat(_jobId: string, _options: HeartbeatOptions): Promise<boolean> {

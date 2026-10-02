@@ -70,7 +70,6 @@ export const skipDocPath = (path: string): boolean =>
  */
 export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
   'packages/action/README.md': 1,
-  'packages/admin/CLAUDE.md': 1,
   'packages/admin/README.md': 1,
   // why: `packages/cli/CLAUDE.md`'s 12 moved verbatim with its history (plan 101 slice 17 f,
   // 2026-09-23); the record quotes the commands its rules were written against.

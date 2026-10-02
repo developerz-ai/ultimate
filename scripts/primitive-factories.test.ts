@@ -65,11 +65,38 @@ interface Declared {
   readonly at: string;
 }
 
-const sourceFiles = (): readonly string[] =>
-  [...new Bun.Glob('packages/*/src/**/*.ts').scanSync({ cwd: repoRoot() })]
+// The globs a package's tarball leaves OUT, read off its own manifest — the `!`-prefixed entries
+// of `files`. A factory is something an app can import, so the scan reads what ships and nothing
+// else: negating its `-fixture.ts` files is how `@ultimat3/jobs` says its `itemJob()` test
+// scaffolding is not one. Read, never restated: a package whose manifest negates no such pattern
+// DOES ship those files, and a helper there returning `JobHandle<…>` is a factory an app can reach.
+// (Line comments: the globs themselves would close a block comment.)
+export const unshippedGlobs = (manifest: unknown): readonly string[] => {
+  const listed = (manifest as { readonly files?: unknown } | null)?.files;
+  if (!Array.isArray(listed)) return [];
+  return listed.flatMap((entry) =>
+    typeof entry === 'string' && entry.startsWith('!') ? [entry.slice(1)] : [],
+  );
+};
+
+/** Whether `path` (package-relative, POSIX) is in the tarball, by that package's own negations. */
+export const ships = (path: string, unshipped: readonly string[]): boolean =>
+  !path.includes('.test.') && !unshipped.some((glob) => new Bun.Glob(glob).match(path));
+
+const sourceFiles = async (): Promise<readonly string[]> => {
+  const unshipped = new Map<string, readonly string[]>();
+  for (const manifest of new Bun.Glob('packages/*/package.json').scanSync({ cwd: repoRoot() })) {
+    const pkg = manifest.split('\\').join('/').split('/')[1] ?? '';
+    unshipped.set(pkg, unshippedGlobs(await Bun.file(`${repoRoot()}/${manifest}`).json()));
+  }
+  return [...new Bun.Glob('packages/*/src/**/*.ts').scanSync({ cwd: repoRoot() })]
     .map((path) => path.split('\\').join('/'))
-    .filter((path) => !path.includes('.test.'))
+    .filter((path) => {
+      const [, pkg = '', ...rest] = path.split('/');
+      return ships(rest.join('/'), unshipped.get(pkg) ?? []);
+    })
     .sort();
+};
 
 const read = (path: string): Promise<string> => Bun.file(`${repoRoot()}/${path}`).text();
 
@@ -125,7 +152,7 @@ export function factoriesIn(
   return found;
 }
 
-const files = sourceFiles();
+const files = await sourceFiles();
 const sources = await Promise.all(files.map(read));
 const kinds = primitiveTypes(sources);
 const declared = files.flatMap((path, index) => factoriesIn(path, sources[index] as string, kinds));
@@ -255,6 +282,23 @@ describe('unit · the scan itself can fail', () => {
         at: 'packages/action/src/stateful.ts',
       },
     ]);
+  });
+
+  /**
+   * A fixture returning `JobHandle<…>` by its honest name is test scaffolding, not a factory — but
+   * only where the package's own `files` says the file stays out of the tarball. One worker
+   * aliased a return type to get past a scan that knew `.test.` alone.
+   */
+  test('a file the package does not ship is not scanned; one it ships is', () => {
+    const jobs = unshippedGlobs({ files: ['src', '!src/**/*.test.ts', '!src/**/*-fixture.ts'] });
+    expect(jobs).toEqual(['src/**/*.test.ts', 'src/**/*-fixture.ts']);
+    expect(ships('src/operator-surface-fixture.ts', jobs)).toBe(false);
+    expect(ships('src/backfill.ts', jobs)).toBe(true);
+    // A package that negates no fixture pattern ships its fixtures, so they are still scanned.
+    expect(ships('src/auth-fixture.ts', unshippedGlobs({ files: ['src'] }))).toBe(true);
+    expect(ships('src/job.test.ts', unshippedGlobs({}))).toBe(false);
+    expect(files).not.toContain('packages/jobs/src/operator-surface-fixture.ts');
+    expect(files).toContain('packages/jobs/src/backfill.ts');
   });
 
   test('a JobHandle-returning export is a job factory, by the same rule', () => {

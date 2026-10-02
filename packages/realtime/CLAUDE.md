@@ -85,8 +85,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A denial is a decision; everything else is a failure.** `visibleWithPolicy` matches
   `QueryDeniedError` and rethrows the rest; `subscriber-gate.ts` and `reauthorize` ask
   `isPolicyDenial(error)`. A failed snapshot raises out of `subscribe`; a failed delivery desyncs that
-  one subscriber; a failed `reauthorize` keeps the subscription. Failures count as `gateFailures` via
-  `onGateFailed`, never `onRowDenied`.
+  one subscriber; a failed `reauthorize` keeps the subscription, unless its org moved — then it is
+  refused under its sid (`refuseSubscription`), as is a failed re-seat. Failures count as
+  `gateFailures` via `onGateFailed`, never `onRowDenied`.
 - **One serial lane per query id (`WindowLock`) is the only thing that orders a fanout.** `deliver`
   enters every lane before awaiting any; no fanout takes a second lane; a lane that fails desyncs its
   own subscribers; lanes chain on a settled shadow of each task.
@@ -107,8 +108,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A change the window already holds is refused** (`change.lsn <= entry.lsn`, counted as
   `staleChanges`). **A gap is detected**: the replicator stamps `producer` + `seq`; a skipped
   sequence marks every window stale and every subscriber desynced; `refillWindowInLane` replaces it.
-- **A qid is `@ultimat3/query`'s `queryHash(name, input)`**; this package owns no hash
-  (`live-contract.test.ts`). The canonical form is core's and injective (`-0` is wire-reachable).
+- **A bulk write stales only the windows reading its entity** (`invalidate(entity)`, from
+  `onBulk`). **A stale window's re-read re-snapshots EVERY subscriber**, before the lsn guard and
+  on a non-matching change too (`live-replicator-bulk.test.ts`, `live-fanout.test.ts`).
+- **A WINDOW is per TENANT**: its id is `windowId(queryHash(name, input), tenant)` (`live-tenant.ts`;
+  tenant = the subscriber's `actor.orgId`). This package owns no hash. The read runs `readFor`
+  (`live-definition.ts`): the node's ctx, a service actor carrying ONLY that org — never the
+  subscriber. A cursor naming another window is a cold start; `reauthorize` re-seats a
+  subscription whose actor changed org (`live-tenancy.test.ts`; `docs/history/realtime.md`).
 - **A `sid` is CLIENT data: a subscription is keyed by `(socket, sid)`**
   (`subscription-book.ts` is the only spelling). Reusing a sid the same socket holds is
   `X_SUBSCRIPTION_ID_TAKEN`.
@@ -168,8 +175,6 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `DrainedSocket[]` with `notified` and logs `sync.drain_frames_dropped`.
 - **Inbound frames run in a lane, never the socket**: `subscribe` is `sub:<sid>` or `topic:<name>`,
   everything else unlaned (`frame-lanes.ts`); a lane exists only while work is queued.
-- **Bun's native pub/sub is deleted**; `SocketRegistry.deliver` is the one fanout path.
-  `WsLike.subscribe`/`unsubscribe` stay declared for structural implementers.
 - **A dropped `records` frame is counted AND repaired**: per-node `seq`/`epoch` per channel; a refused
   frame marks the socket gapped, and the websocket `drain` handler sends `replay-gap`
   (`channel_replay_gaps_total` beside `channel_frames_dropped_total`). The client re-runs the
@@ -265,20 +270,16 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   throws in the timer is reported through `onError` (default `console.error`) and arms the next.
 - **`connect()` closes the socket it replaces**; `onOpen`, `onMessage` and `onClose` all carry the
   identity guard.
+- **A refusal `ack` is revived as a branded `UltimateError`** (`refusalError`, `client-frames.ts`).
 - **A reconnect replays registrations AND topics** — one `hello`, one `subscribe` per registration
   (with its cursor) and per topic.
-- **`hello` carries NO cursors** (`HelloFrame.resume` is deleted): a cursor's qid names a window but
-  not the input a decision needs.
 - **The client beats** (`heartbeatMs`, default `DEFAULT_HEARTBEAT_MS` 15 s, `0` disables): a `hello`
   plus one subscribe per topic (the presence heartbeat). Two silent windows close with `4000`. The
   node's `socket.skewed` compares the build the `hello` claims against its own. The server beat is
   derived: `PresenceRegistry.heartbeatMs = max(1000, floor(ttlMs / 3))`.
-- **There is ONE `backoffDelay`, `@ultimat3/core`'s, counted from 1.** `policyDelay(policy, attempt,
-  rng)` (internal, not on the barrel) maps a `BackoffPolicy` onto it; a 0-based counter adds 1 at the
-  call site (`client.ts`, `socket-engine.ts`, `replicator.ts`'s 0-based `retryDelayMs`).
-  `client-reconnect.test.ts`, `socket-engine-reconnect.test.ts`, `nats-transport.test.ts` pin the
-  first wait at the base. `drainPlan()` and `AcceptBudget` keep their own arithmetic.
-  `bun run flight-copies` refuses a second curve.
+- **There is ONE `backoffDelay`, `@ultimat3/core`'s, counted from 1** — `policyDelay()` maps a
+  `BackoffPolicy` onto it; `bun run flight-copies` refuses a second curve. Long form:
+  `docs/history/realtime.md`, "Moved 2026-10-01".
 
 ## Rules for code here
 
@@ -287,17 +288,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `Denied`, `ThirdPartySdkError`): it simulates a value this package did not construct. The rule
   governs what this package **throws**, never what a test hands it.
 
-## Browser bytes, per hook (`As of 2026-09-22`)
+## The page boot
 
-`bun build --target=browser --minify`, one entry importing one hook from the barrel. Re-measure
-before quoting.
-
-| Hook | Current |
-|---|---|
-| `useRecord` | 13,226 |
-| `useMutation` | 21,725 (after the outbox left islands) |
-| `useQuery` | 47,696 |
-| `useChannel` | 45,585 |
+Browser bytes per hook, as last measured: `docs/history/realtime.md`. Re-measure before quoting.
 
 - **The disk boot is ONE page script (`boot.ts`, `./boot`)**, served at `/_x/page-boot/<hash>.js`
   on a document with the scope tag and a realtime island; it wipes every other principal's stored
@@ -309,7 +302,7 @@ before quoting.
 
 `index.ts` / `server.ts` are the two barrels. Server side: `sync-node.ts` (+ `sync-auth`,
 `sync-frames`, `sync-upgrade`, `sync-listen`, `drain-evictions`), `channel.ts`, `presence.ts`,
-`socket.ts`, `live-query.ts` (+ `live-definition`, `query-window`, `live-fanout`, `window-lock`,
+`socket.ts`, `live-query.ts` (+ `live-definition`, `live-refusal`, `live-tenant`, `live-resume`, `query-window`, `live-fanout`, `window-lock`,
 `subscriber-gate`, `policy-gate` — the only authz seam — and `matcher-bridge`), `replicator.ts` /
 `live-replicator.ts`, the Postgres client (`pg-*.ts`, `pgoutput.ts`), the bus (`nats-*.ts`,
 `transport-env.ts`, `fanout.ts`). Client side: `client*.ts`, `socket-engine.ts` / `socket-host.ts` /

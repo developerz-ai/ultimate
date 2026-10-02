@@ -5,15 +5,25 @@
 // enforcement this repo counts (axiom 3).
 
 import type { Id } from '@ultimat3/core';
-import type { MoneyValue as SchemaMoneyValue } from '@ultimat3/schema';
+import type { Schema, MoneyValue as SchemaMoneyValue } from '@ultimat3/schema';
 import type { uuid } from './columns';
 import type { EntitySet } from './database';
 import type { Entity, EntityCore, EntityInit } from './entity';
 import type { ColumnExpr, InvariantColumns } from './expr';
 import type { Invariant, InvariantDef } from './invariants';
-import type { Table } from './query';
+import type { ReadBuilder, Table } from './query';
 import type { Repo } from './repo';
-import type { AnyColumn, IdOf, Insertable, MoneyInput, MoneyValue, RowOf } from './types';
+import type {
+  AnyColumn,
+  IdOf,
+  Insertable,
+  MoneyInput,
+  MoneyValue,
+  RowOf,
+  SealedColumn,
+  TextColumn,
+  WireRow,
+} from './types';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -344,4 +354,100 @@ type _RepoBatchWritesTakeABigIntMinor = Assert<
  */
 type _RepoAnswersTheValueType = Assert<
   [Awaited<ReturnType<Repo<PinMoneyRow>['insert']>>] extends [PinMoneyRow] ? true : false
+>;
+
+// --- Sealed columns (plan 101, slice 03) ---------------------------------------------------------
+// The row keeps `string`; the wire schema loses the column; a predicate naming it does not compile.
+
+declare const sealedPin: Entity<RowOf<SealedPinColumns>, SealedPinColumns>;
+type SealedPinColumns = {
+  readonly id: ReturnType<typeof uuid>;
+  readonly label: TextColumn;
+  readonly password: SealedColumn<string, false, false>;
+  readonly email: SealedColumn<string, false, true>;
+};
+type SealedPinRow = RowOf<SealedPinColumns>;
+declare const sealedTable: Table<SealedPinRow, SealedPinColumns>;
+
+/** The server row is the whole row, plaintext included. */
+export type _SealedRowKeepsTheColumn = Assert<
+  SealedPinRow['password'] extends string ? true : false
+>;
+
+/** `$schema` parses to the row WITHOUT its sealed columns — what an `output` sends. */
+type SealedWire = WireRow<SealedPinRow, SealedPinColumns>;
+export type _SealedWireDropsBoth = Assert<
+  'password' extends keyof SealedWire ? false : 'email' extends keyof SealedWire ? false : true
+>;
+export type _SealedWireKeepsTheRest = Assert<'label' extends keyof SealedWire ? true : false>;
+export type _SealedSchemaIsTheWireRow = Assert<
+  (typeof sealedPin)['$schema'] extends Schema<unknown, SealedWire> ? true : false
+>;
+/** …and an entity with no sealed column keeps `Row` itself, not a mapped copy. */
+export type _UnsealedWireIsTheRow = Assert<
+  WireRow<PinRow, PinColumns> extends PinRow
+    ? PinRow extends WireRow<PinRow, PinColumns>
+      ? true
+      : false
+    : false
+>;
+
+/** A sealed entity is still an `EntityCore`, so `database()` and every driver take it. */
+export type _SealedEntityIsACore = Assert<
+  typeof sealedPin extends EntityCore<SealedPinRow, SealedPinColumns> ? true : false
+>;
+export type _SealedEntityIsInASet = Assert<
+  { readonly x: typeof sealedPin } extends EntitySet ? true : false
+>;
+
+type WhereFilter = Parameters<(typeof sealedTable)['where']>[0];
+/** An opaque column is absent from the filter; a lookup column and a plain one are present. */
+export type _OpaqueIsNotFilterable = Assert<'password' extends keyof WhereFilter ? false : true>;
+export type _LookupIsFilterable = Assert<'email' extends keyof WhereFilter ? true : false>;
+export type _PlainIsFilterable = Assert<'label' extends keyof WhereFilter ? true : false>;
+
+type AndWhereColumn = Parameters<(typeof sealedTable)['andWhere']>[0];
+export type _OpaqueIsNotAPredicate = Assert<'password' extends AndWhereColumn ? false : true>;
+export type _LookupIsAPredicate = Assert<'email' extends AndWhereColumn ? true : false>;
+/** …but a NULL test names any column: presence is not sealed. The overload is the first one. */
+declare const nullTested: ReturnType<typeof nullTest>;
+declare function nullTest(): ReturnType<(typeof sealedTable)['andWhere']>;
+export type _NullTestTakesAnOpaqueColumn = Assert<
+  (typeof sealedTable)['andWhere'] extends (column: 'password', op: 'is-null') => typeof nullTested
+    ? true
+    : false
+>;
+
+type OrderColumn = Parameters<(typeof sealedTable)['orderBy']>[0];
+/** Neither kind orders: ciphertext has no order worth asking for. */
+export type _SealedDoesNotOrder = Assert<
+  'password' extends OrderColumn ? false : 'email' extends OrderColumn ? false : true
+>;
+export type _PlainOrders = Assert<'label' extends OrderColumn ? true : false>;
+
+/** `.sealed()` is `text()`'s: no other builder has it, so a sealed number does not compile. */
+export type _OnlyTextSeals = Assert<
+  'sealed' extends keyof TextColumn
+    ? 'sealed' extends keyof ReturnType<typeof uuid>
+      ? false
+      : true
+    : false
+>;
+/** It survives the links that may precede it, and keeps its marker across the ones that follow. */
+export type _SealedAfterNullable = Assert<
+  ReturnType<TextColumn['nullable']> extends { sealed: unknown } ? true : false
+>;
+export type _MarkerSurvivesNullable = Assert<
+  ReturnType<SealedColumn<string, false, true>['nullable']>['$sealed'] extends 'lookup'
+    ? true
+    : false
+>;
+
+/**
+ * A sealed table is still a `ReadBuilder<Row>`: `backfill({ source })`, `preload` and every other
+ * consumer that names the chain without the columns takes it. The refusal is in the PARAMETERS,
+ * which a method compares bivariantly, so the narrower chain is assignable to the wider one.
+ */
+export type _SealedTableIsAReadBuilder = Assert<
+  typeof sealedTable extends ReadBuilder<SealedPinRow> ? true : false
 >;

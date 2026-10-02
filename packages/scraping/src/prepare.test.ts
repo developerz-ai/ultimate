@@ -4,6 +4,7 @@
 // asked of three implementations.
 
 import { describe, expect, test } from 'bun:test';
+import { createLogger } from '@ultimat3/core';
 import { fakeCdpBrowser, fakeCdpLauncher } from './cdp-fake';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
@@ -96,6 +97,7 @@ describe('unit · every driver accepts the verb through the page vocabulary', ()
     for (const [name, driver] of drivers()) {
       const session = await driver.open({
         name: 'prepare',
+        logger: createLogger({ writer: () => undefined }),
         rules: RULES,
         clock: testClock(),
         timeoutMs: 5_000,

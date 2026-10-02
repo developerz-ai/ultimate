@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "c16ec2dff26ec3ec",
+  "buildId": "1493429aae3a765e",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -17,6 +17,382 @@
         "js": "0kb",
         "lcp": 1200
       }
+    },
+    {
+      "url": "/admin",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/audit",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/comments",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/comments/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/comments/:id/edit",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/comments/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/comments/new",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/connections",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/connections/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/connections/:id/edit",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/connections/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/connections/new",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/queues",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/queues/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/queues/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/runs",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/runs/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/runs/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/tasks",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/tasks/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/tasks/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/workers",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/workers/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/jobs/workers/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/members",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/members/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/members/:id/edit",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/members/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/members/new",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/orgs",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/orgs/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/orgs/:id/edit",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/orgs/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/orgs/new",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/posts",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/posts/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/posts/:id/edit",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/posts/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/posts/new",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/run_events",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/run_events/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/run_events/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/runs",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/runs/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/runs/lookup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/search",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
     },
     {
       "url": "/blog",
@@ -109,6 +485,18 @@
       }
     },
     {
+      "url": "/runs",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "129kb",
+        "lcp": 2000
+      }
+    },
+    {
       "url": "/settings",
       "render": "ssr",
       "offline": "runtime",
@@ -170,6 +558,56 @@
       ],
       "invariants": [
         "comment_body_present"
+      ]
+    },
+    {
+      "name": "connections",
+      "table": "connections",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false,
+          "hasDefault": true
+        },
+        {
+          "name": "credential",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false,
+          "sealed": "opaque"
+        },
+        {
+          "name": "exit",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false,
+          "sealed": "opaque"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "hasDefault": true
+        },
+        {
+          "name": "label",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "orgs.id"
+        }
+      ],
+      "invariants": [
+        "connection_label_present"
       ]
     },
     {
@@ -491,9 +929,304 @@
         "post_slug_shape",
         "post_slug_unique"
       ]
+    },
+    {
+      "name": "run_events",
+      "table": "run_events",
+      "columns": [
+        {
+          "name": "at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false,
+          "hasDefault": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "hasDefault": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "orgs.id"
+        },
+        {
+          "name": "prompt",
+          "type": "integer",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "run_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "runs.id"
+        },
+        {
+          "name": "seq",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "usage",
+          "type": "jsonb",
+          "nullable": true,
+          "primaryKey": false
+        }
+      ],
+      "invariants": [
+        "run_event_seq_from_one",
+        "run_event_seq_unique"
+      ]
+    },
+    {
+      "name": "runs",
+      "table": "runs",
+      "columns": [
+        {
+          "name": "code",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "connection_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "connections.id"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "hasDefault": true
+        },
+        {
+          "name": "job_id",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "orgs.id"
+        },
+        {
+          "name": "started_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false,
+          "hasDefault": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": []
     }
   ],
   "actions": [
+    {
+      "name": "answerPrompt",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prompt": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "orgId",
+          "runId",
+          "prompt",
+          "answer"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prompt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "runId",
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "run:write",
+      "permissions": [
+        "run:write"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Answer the prompt a run is waiting on — the code the site asked for. The run resumes with its browser still open"
+      }
+    },
+    {
+      "name": "cancelRun",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "runId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "runId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "run:write",
+      "permissions": [
+        "run:write"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Cancel a run that is queued or in flight"
+      }
+    },
+    {
+      "name": "connectSite",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "credential": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "exit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "orgId",
+          "label",
+          "credential"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "run:write",
+      "permissions": [
+        "run:write"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
     {
       "name": "contactSales",
       "input": {
@@ -1027,6 +1760,55 @@
       }
     },
     {
+      "name": "issueRunKey",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prefix": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "prefix",
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "run:key",
+      "permissions": [
+        "run:key"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "likePost",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1322,6 +2104,49 @@
       }
     },
     {
+      "name": "revokeRunKey",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "keyId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "orgId",
+          "keyId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revoked"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "run:key",
+      "permissions": [
+        "run:key"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "savePreferences",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1584,6 +2409,56 @@
         "description": "Set the acting member’s theme"
       },
       "mutator": true
+    },
+    {
+      "name": "startRun",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "connectionId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jobId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "runId",
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "run:write",
+      "permissions": [
+        "run:write"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Start one sync of a connection. Answers the run id its events and prompts are keyed by; a second run of a busy connection settles failed with X_JOB_KEY_BUSY"
+      }
     },
     {
       "name": "summarize",
@@ -1965,6 +2840,18 @@
       "cacheTags": []
     },
     {
+      "name": "liveRunEvents",
+      "policy": "run:read",
+      "permissions": [
+        "run:read"
+      ],
+      "live": true,
+      "subscribes": [
+        "run_events"
+      ],
+      "cacheTags": []
+    },
+    {
       "name": "orgPosts",
       "policy": "feed:read",
       "permissions": [
@@ -2031,6 +2918,15 @@
       "cacheTags": [
         "blog"
       ]
+    },
+    {
+      "name": "runConnections",
+      "policy": "run:read",
+      "permissions": [
+        "run:read"
+      ],
+      "live": false,
+      "cacheTags": []
     }
   ],
   "channels": [
@@ -2047,6 +2943,1191 @@
       "policy": "feed:read",
       "permissions": [
         "feed:read"
+      ]
+    }
+  ],
+  "admin": [
+    {
+      "basePath": "/admin",
+      "audit": "memory",
+      "resources": [
+        {
+          "entity": "comments",
+          "path": "/comments",
+          "filters": [
+            "body",
+            "id",
+            "postId",
+            "authorId"
+          ],
+          "sorts": [
+            "id",
+            "createdAt"
+          ],
+          "scopes": [],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "orgId",
+                "postId",
+                "authorId",
+                "body",
+                "createdAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "postId",
+                "authorId",
+                "body"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": []
+        },
+        {
+          "entity": "connections",
+          "path": "/connections",
+          "filters": [
+            "label",
+            "id"
+          ],
+          "sorts": [
+            "id",
+            "createdAt"
+          ],
+          "scopes": [],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "orgId",
+                "label",
+                "createdAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "label",
+                "credential",
+                "exit"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": []
+        },
+        {
+          "entity": "members",
+          "path": "/members",
+          "filters": [
+            "name",
+            "id",
+            "role",
+            "tz",
+            "locale",
+            "theme",
+            "digestOptIn"
+          ],
+          "sorts": [
+            "id",
+            "createdAt"
+          ],
+          "scopes": [],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "orgId",
+                "userId",
+                "email",
+                "name",
+                "role",
+                "tz",
+                "locale",
+                "theme",
+                "digestOptIn",
+                "createdAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "userId",
+                "email",
+                "name",
+                "role",
+                "tz",
+                "locale",
+                "theme",
+                "digestOptIn"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "inviteMember",
+              "permission": "org:invite",
+              "destructive": false,
+              "input": true,
+              "when": false,
+              "batch": false,
+              "threshold": null
+            }
+          ]
+        },
+        {
+          "entity": "orgs",
+          "path": "/orgs",
+          "filters": [
+            "name",
+            "id",
+            "slug",
+            "planCode",
+            "billingCurrency"
+          ],
+          "sorts": [
+            "id",
+            "slug",
+            "createdAt",
+            "updatedAt"
+          ],
+          "scopes": [],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "slug",
+                "name",
+                "planCode",
+                "billingCurrency",
+                "createdAt",
+                "updatedAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "slug",
+                "name",
+                "planCode",
+                "billingCurrency"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "upgradePlan",
+              "permission": "org:administer",
+              "destructive": false,
+              "input": true,
+              "when": false,
+              "batch": false,
+              "threshold": null
+            }
+          ]
+        },
+        {
+          "entity": "posts",
+          "path": "/posts",
+          "filters": [
+            "title",
+            "id",
+            "authorId",
+            "status"
+          ],
+          "sorts": [
+            "id",
+            "likeCount",
+            "publishedAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "scopes": [],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "orgId",
+                "authorId",
+                "slug",
+                "title",
+                "excerpt",
+                "body",
+                "coverUrl",
+                "status",
+                "likeCount",
+                "publishedAt",
+                "createdAt",
+                "updatedAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "authorId",
+                "slug",
+                "title",
+                "excerpt",
+                "body",
+                "coverUrl",
+                "status",
+                "likeCount",
+                "publishedAt"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "publishPost",
+              "permission": "post:publish",
+              "destructive": false,
+              "input": true,
+              "when": false,
+              "batch": false,
+              "threshold": null
+            }
+          ]
+        },
+        {
+          "entity": "run_events",
+          "path": "/run_events",
+          "filters": [
+            "message",
+            "id",
+            "runId",
+            "kind"
+          ],
+          "sorts": [
+            "id",
+            "seq",
+            "at",
+            "prompt"
+          ],
+          "scopes": [],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "orgId",
+                "runId",
+                "seq",
+                "kind",
+                "at",
+                "message",
+                "prompt",
+                "usage"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "runId",
+                "seq",
+                "kind",
+                "message",
+                "prompt",
+                "usage"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": []
+        },
+        {
+          "entity": "runs",
+          "path": "/runs",
+          "filters": [
+            "jobId",
+            "id",
+            "connectionId",
+            "status"
+          ],
+          "sorts": [
+            "id",
+            "startedAt"
+          ],
+          "scopes": [
+            {
+              "name": "running",
+              "default": false,
+              "count": true
+            },
+            {
+              "name": "failed",
+              "default": false,
+              "count": true
+            }
+          ],
+          "rowScoped": false,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "orgId",
+                "connectionId",
+                "jobId",
+                "status",
+                "code",
+                "startedAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "connectionId",
+                "jobId",
+                "status",
+                "code"
+              ]
+            }
+          ],
+          "related": [
+            "run_events"
+          ],
+          "actions": [
+            {
+              "name": "run.cancel",
+              "permission": "run:write",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": true,
+              "threshold": null
+            }
+          ]
+        },
+        {
+          "entity": "x_job_queues",
+          "path": "/jobs/queues",
+          "filters": [
+            "name",
+            "paused"
+          ],
+          "sorts": [
+            "name",
+            "ready",
+            "delayed",
+            "running",
+            "suspended",
+            "failed",
+            "dead",
+            "oldestReadyMs",
+            "pausedAt"
+          ],
+          "scopes": [],
+          "rowScoped": true,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "name",
+                "ready",
+                "delayed",
+                "running",
+                "suspended",
+                "failed",
+                "dead",
+                "oldestReadyMs",
+                "paused",
+                "pausedAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "ready",
+                "delayed",
+                "running",
+                "suspended",
+                "failed",
+                "dead",
+                "oldestReadyMs",
+                "paused",
+                "pausedAt"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "job.queue.pause",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null
+            },
+            {
+              "name": "job.queue.resume",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null
+            }
+          ]
+        },
+        {
+          "entity": "x_job_tasks",
+          "path": "/jobs/tasks",
+          "filters": [
+            "name",
+            "paused"
+          ],
+          "sorts": [
+            "name",
+            "lastFireAt",
+            "nextFireAt"
+          ],
+          "scopes": [],
+          "rowScoped": true,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "name",
+                "cron",
+                "tz",
+                "catchUp",
+                "enqueues",
+                "lastFireAt",
+                "nextFireAt",
+                "paused"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "cron",
+                "tz",
+                "catchUp",
+                "enqueues",
+                "lastFireAt",
+                "nextFireAt",
+                "paused"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "job.task.pause",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null
+            },
+            {
+              "name": "job.task.resume",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null
+            },
+            {
+              "name": "job.task.run-now",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": false,
+              "batch": false,
+              "threshold": null
+            }
+          ]
+        },
+        {
+          "entity": "x_job_workers",
+          "path": "/jobs/workers",
+          "filters": [
+            "id"
+          ],
+          "sorts": [
+            "id",
+            "concurrency",
+            "inFlight",
+            "startedAt",
+            "heartbeatAt"
+          ],
+          "scopes": [],
+          "rowScoped": true,
+          "sections": [
+            {
+              "title": null,
+              "fields": [
+                "id",
+                "host",
+                "queues",
+                "concurrency",
+                "inFlight",
+                "startedAt",
+                "heartbeatAt"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "host",
+                "queues",
+                "concurrency",
+                "inFlight",
+                "startedAt",
+                "heartbeatAt"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": []
+        },
+        {
+          "entity": "x_jobs",
+          "path": "/jobs/runs",
+          "filters": [
+            "id",
+            "name",
+            "queue",
+            "state",
+            "createdAt",
+            "tenantId"
+          ],
+          "sorts": [
+            "createdAt"
+          ],
+          "scopes": [
+            {
+              "name": "all",
+              "default": true,
+              "count": false
+            },
+            {
+              "name": "ready",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "delayed",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "running",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "suspended",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "done",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "failed",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "dead",
+              "default": false,
+              "count": false
+            },
+            {
+              "name": "cancelled",
+              "default": false,
+              "count": false
+            }
+          ],
+          "rowScoped": true,
+          "sections": [
+            {
+              "title": "admin.jobs.section.run",
+              "fields": [
+                "name",
+                "queue",
+                "state",
+                "attempt",
+                "maxAttempts",
+                "runAt",
+                "createdAt"
+              ]
+            },
+            {
+              "title": "admin.jobs.section.failure",
+              "fields": [
+                "lastError",
+                "lastErrorStack"
+              ]
+            },
+            {
+              "title": "admin.jobs.section.work",
+              "fields": [
+                "input",
+                "progress",
+                "steps"
+              ]
+            },
+            {
+              "title": "admin.jobs.section.trace",
+              "fields": [
+                "tenantId",
+                "traceparent",
+                "enqueuedBy",
+                "claimedBy",
+                "updatedAt"
+              ]
+            },
+            {
+              "title": "admin.section.other",
+              "fields": [
+                "id"
+              ]
+            }
+          ],
+          "formGroups": [
+            {
+              "title": null,
+              "fields": [
+                "name",
+                "queue",
+                "state",
+                "attempt",
+                "maxAttempts",
+                "runAt",
+                "createdAt",
+                "updatedAt",
+                "tenantId",
+                "lastError",
+                "lastErrorStack",
+                "progress",
+                "input",
+                "steps",
+                "traceparent",
+                "enqueuedBy",
+                "claimedBy"
+              ]
+            }
+          ],
+          "related": [],
+          "actions": [
+            {
+              "name": "job.retry",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": true,
+              "threshold": null
+            },
+            {
+              "name": "job.retry-from-step",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": true,
+              "when": true,
+              "batch": false,
+              "threshold": null
+            },
+            {
+              "name": "job.run-now",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": true,
+              "threshold": null
+            },
+            {
+              "name": "job.cancel",
+              "permission": "job:manage",
+              "destructive": false,
+              "input": false,
+              "when": true,
+              "batch": false,
+              "threshold": null
+            },
+            {
+              "name": "job.remove",
+              "permission": "job:manage",
+              "destructive": true,
+              "input": false,
+              "when": true,
+              "batch": true,
+              "threshold": null
+            }
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "url": "/admin",
+          "view": "dashboard",
+          "entity": null,
+          "permissions": [
+            "admin:read"
+          ]
+        },
+        {
+          "url": "/admin/audit",
+          "view": "audit",
+          "entity": null,
+          "permissions": [
+            "admin:read",
+            "audit:read"
+          ]
+        },
+        {
+          "url": "/admin/comments",
+          "view": "list",
+          "entity": "comments",
+          "permissions": [
+            "admin:read",
+            "comments:read"
+          ]
+        },
+        {
+          "url": "/admin/comments/:id",
+          "view": "detail",
+          "entity": "comments",
+          "permissions": [
+            "admin:read",
+            "comments:read"
+          ]
+        },
+        {
+          "url": "/admin/comments/:id/edit",
+          "view": "edit",
+          "entity": "comments",
+          "permissions": [
+            "admin:write",
+            "comments:write"
+          ]
+        },
+        {
+          "url": "/admin/comments/lookup",
+          "view": "lookup",
+          "entity": "comments",
+          "permissions": [
+            "admin:read",
+            "comments:read"
+          ]
+        },
+        {
+          "url": "/admin/comments/new",
+          "view": "create",
+          "entity": "comments",
+          "permissions": [
+            "admin:write",
+            "comments:write"
+          ]
+        },
+        {
+          "url": "/admin/connections",
+          "view": "list",
+          "entity": "connections",
+          "permissions": [
+            "admin:read",
+            "connections:read"
+          ]
+        },
+        {
+          "url": "/admin/connections/:id",
+          "view": "detail",
+          "entity": "connections",
+          "permissions": [
+            "admin:read",
+            "connections:read"
+          ]
+        },
+        {
+          "url": "/admin/connections/:id/edit",
+          "view": "edit",
+          "entity": "connections",
+          "permissions": [
+            "admin:write",
+            "connections:write"
+          ]
+        },
+        {
+          "url": "/admin/connections/lookup",
+          "view": "lookup",
+          "entity": "connections",
+          "permissions": [
+            "admin:read",
+            "connections:read"
+          ]
+        },
+        {
+          "url": "/admin/connections/new",
+          "view": "create",
+          "entity": "connections",
+          "permissions": [
+            "admin:write",
+            "connections:write"
+          ]
+        },
+        {
+          "url": "/admin/jobs",
+          "view": "jobs",
+          "entity": null,
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/queues",
+          "view": "list",
+          "entity": "x_job_queues",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/queues/:id",
+          "view": "detail",
+          "entity": "x_job_queues",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/queues/lookup",
+          "view": "lookup",
+          "entity": "x_job_queues",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/runs",
+          "view": "list",
+          "entity": "x_jobs",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/runs/:id",
+          "view": "detail",
+          "entity": "x_jobs",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/runs/lookup",
+          "view": "lookup",
+          "entity": "x_jobs",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/tasks",
+          "view": "list",
+          "entity": "x_job_tasks",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/tasks/:id",
+          "view": "detail",
+          "entity": "x_job_tasks",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/tasks/lookup",
+          "view": "lookup",
+          "entity": "x_job_tasks",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/workers",
+          "view": "list",
+          "entity": "x_job_workers",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/workers/:id",
+          "view": "detail",
+          "entity": "x_job_workers",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/jobs/workers/lookup",
+          "view": "lookup",
+          "entity": "x_job_workers",
+          "permissions": [
+            "admin:read",
+            "job:read"
+          ]
+        },
+        {
+          "url": "/admin/members",
+          "view": "list",
+          "entity": "members",
+          "permissions": [
+            "admin:read",
+            "members:read"
+          ]
+        },
+        {
+          "url": "/admin/members/:id",
+          "view": "detail",
+          "entity": "members",
+          "permissions": [
+            "admin:read",
+            "members:read"
+          ]
+        },
+        {
+          "url": "/admin/members/:id/edit",
+          "view": "edit",
+          "entity": "members",
+          "permissions": [
+            "admin:write",
+            "members:write"
+          ]
+        },
+        {
+          "url": "/admin/members/lookup",
+          "view": "lookup",
+          "entity": "members",
+          "permissions": [
+            "admin:read",
+            "members:read"
+          ]
+        },
+        {
+          "url": "/admin/members/new",
+          "view": "create",
+          "entity": "members",
+          "permissions": [
+            "admin:write",
+            "members:write"
+          ]
+        },
+        {
+          "url": "/admin/orgs",
+          "view": "list",
+          "entity": "orgs",
+          "permissions": [
+            "admin:read",
+            "orgs:read"
+          ]
+        },
+        {
+          "url": "/admin/orgs/:id",
+          "view": "detail",
+          "entity": "orgs",
+          "permissions": [
+            "admin:read",
+            "orgs:read"
+          ]
+        },
+        {
+          "url": "/admin/orgs/:id/edit",
+          "view": "edit",
+          "entity": "orgs",
+          "permissions": [
+            "admin:write",
+            "orgs:write"
+          ]
+        },
+        {
+          "url": "/admin/orgs/lookup",
+          "view": "lookup",
+          "entity": "orgs",
+          "permissions": [
+            "admin:read",
+            "orgs:read"
+          ]
+        },
+        {
+          "url": "/admin/orgs/new",
+          "view": "create",
+          "entity": "orgs",
+          "permissions": [
+            "admin:write",
+            "orgs:write"
+          ]
+        },
+        {
+          "url": "/admin/posts",
+          "view": "list",
+          "entity": "posts",
+          "permissions": [
+            "admin:read",
+            "posts:read"
+          ]
+        },
+        {
+          "url": "/admin/posts/:id",
+          "view": "detail",
+          "entity": "posts",
+          "permissions": [
+            "admin:read",
+            "posts:read"
+          ]
+        },
+        {
+          "url": "/admin/posts/:id/edit",
+          "view": "edit",
+          "entity": "posts",
+          "permissions": [
+            "admin:write",
+            "posts:write"
+          ]
+        },
+        {
+          "url": "/admin/posts/lookup",
+          "view": "lookup",
+          "entity": "posts",
+          "permissions": [
+            "admin:read",
+            "posts:read"
+          ]
+        },
+        {
+          "url": "/admin/posts/new",
+          "view": "create",
+          "entity": "posts",
+          "permissions": [
+            "admin:write",
+            "posts:write"
+          ]
+        },
+        {
+          "url": "/admin/run_events",
+          "view": "list",
+          "entity": "run_events",
+          "permissions": [
+            "admin:read",
+            "run_events:read"
+          ]
+        },
+        {
+          "url": "/admin/run_events/:id",
+          "view": "detail",
+          "entity": "run_events",
+          "permissions": [
+            "admin:read",
+            "run_events:read"
+          ]
+        },
+        {
+          "url": "/admin/run_events/lookup",
+          "view": "lookup",
+          "entity": "run_events",
+          "permissions": [
+            "admin:read",
+            "run_events:read"
+          ]
+        },
+        {
+          "url": "/admin/runs",
+          "view": "list",
+          "entity": "runs",
+          "permissions": [
+            "admin:read",
+            "runs:read"
+          ]
+        },
+        {
+          "url": "/admin/runs/:id",
+          "view": "detail",
+          "entity": "runs",
+          "permissions": [
+            "admin:read",
+            "runs:read"
+          ]
+        },
+        {
+          "url": "/admin/runs/lookup",
+          "view": "lookup",
+          "entity": "runs",
+          "permissions": [
+            "admin:read",
+            "runs:read"
+          ]
+        },
+        {
+          "url": "/admin/search",
+          "view": "search",
+          "entity": null,
+          "permissions": [
+            "admin:read"
+          ]
+        }
       ]
     }
   ],
@@ -2097,7 +4178,12 @@
         "attempts": 4,
         "backoff": "exponential"
       },
-      "steps": []
+      "steps": [],
+      "concurrency": {
+        "limit": 1,
+        "keyed": false,
+        "whenBusy": null
+      }
     },
     {
       "name": "mail.send",
@@ -2210,7 +4296,12 @@
         "attempts": 5,
         "backoff": "exponential"
       },
-      "steps": []
+      "steps": [],
+      "concurrency": {
+        "limit": 1,
+        "keyed": false,
+        "whenBusy": null
+      }
     },
     {
       "name": "onboardOrg",
@@ -2264,6 +4355,45 @@
         "backoff": "exponential"
       },
       "steps": []
+    },
+    {
+      "name": "runs.sync",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "connectionId",
+          "orgId",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 1,
+        "backoff": "exponential"
+      },
+      "steps": [],
+      "concurrency": {
+        "limit": 1,
+        "keyed": true,
+        "whenBusy": "fail"
+      },
+      "onSettled": true
     },
     {
       "name": "sendDigest",
@@ -2372,6 +4502,50 @@
   ],
   "policies": [
     {
+      "permission": "admin:destroy",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:impersonate",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "audit:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "comments:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "comments:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "comments:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "connections:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "connections:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "connections:write",
+      "enforcedIn": []
+    },
+    {
       "permission": "contact:submit",
       "enforcedIn": [
         "action:contactSales"
@@ -2393,6 +4567,22 @@
       ]
     },
     {
+      "permission": "job:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "job:manage",
+      "enforcedIn": []
+    },
+    {
+      "permission": "job:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "job:write",
+      "enforcedIn": []
+    },
+    {
       "permission": "member:self",
       "enforcedIn": [
         "action:grantAvatarUpload",
@@ -2401,6 +4591,18 @@
         "action:setTheme",
         "action:toggleDigestOptIn"
       ]
+    },
+    {
+      "permission": "members:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "members:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "members:write",
+      "enforcedIn": []
     },
     {
       "permission": "org:administer",
@@ -2413,6 +4615,18 @@
       "enforcedIn": [
         "action:inviteMember"
       ]
+    },
+    {
+      "permission": "orgs:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "orgs:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "orgs:write",
+      "enforcedIn": []
     },
     {
       "permission": "post:create",
@@ -2448,20 +4662,112 @@
         "query:publicPostSlugs",
         "query:publicPosts"
       ]
+    },
+    {
+      "permission": "posts:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "posts:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "posts:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "run:key",
+      "enforcedIn": [
+        "action:issueRunKey",
+        "action:revokeRunKey"
+      ]
+    },
+    {
+      "permission": "run:read",
+      "enforcedIn": [
+        "query:liveRunEvents",
+        "query:runConnections"
+      ]
+    },
+    {
+      "permission": "run:write",
+      "enforcedIn": [
+        "action:answerPrompt",
+        "action:cancelRun",
+        "action:connectSite",
+        "action:startRun"
+      ]
+    },
+    {
+      "permission": "run_events:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "run_events:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "run_events:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "runs:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "runs:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "runs:write",
+      "enforcedIn": []
     }
   ],
   "permissions": [
+    "admin:destroy",
+    "admin:impersonate",
+    "admin:read",
+    "admin:write",
+    "audit:read",
+    "comments:delete",
+    "comments:read",
+    "comments:write",
+    "connections:delete",
+    "connections:read",
+    "connections:write",
     "contact:submit",
     "end-session",
     "feed:read",
+    "job:delete",
+    "job:manage",
+    "job:read",
+    "job:write",
     "member:self",
+    "members:delete",
+    "members:read",
+    "members:write",
     "org:administer",
     "org:invite",
+    "orgs:delete",
+    "orgs:read",
+    "orgs:write",
     "post:create",
     "post:like",
     "post:publish",
     "post:read",
-    "post:read-public"
+    "post:read-public",
+    "posts:delete",
+    "posts:read",
+    "posts:write",
+    "run:key",
+    "run:read",
+    "run:write",
+    "run_events:delete",
+    "run_events:read",
+    "run_events:write",
+    "runs:delete",
+    "runs:read",
+    "runs:write"
   ],
   "locales": [
     "en",
@@ -2473,11 +4779,23 @@
       "package": "apps/web"
     },
     {
+      "code": "X_CONNECTION_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
       "code": "X_ORG_NOT_FOUND",
       "package": "apps/web"
     },
     {
       "code": "X_POST_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_RUN_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_RUN_QUEUE_UNAVAILABLE",
       "package": "apps/web"
     },
     {

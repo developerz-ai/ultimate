@@ -3,7 +3,7 @@
 // The backoff arithmetic stays in ./retry — nothing here recomputes a delay `nextRetry` owns.
 
 import type { ErrorRetry } from '@ultimat3/core';
-import { classifyThrown, statedDelayMs } from '@ultimat3/core';
+import { classifyThrown, isUltimateError, renderThrowable, statedDelayMs } from '@ultimat3/core';
 import { finiteDurationMs } from './clock';
 import type { Random, RetryDecision, RetryPolicy } from './retry';
 import { DEFAULT_RETRY, nextRetry } from './retry';
@@ -69,6 +69,18 @@ export function nextRetryForError(
   // day is still a responder this deployment has not agreed to wait a day for.
   const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
   return { ...decision, delayMs: Math.min(stated, cap), stoppedBy: undefined, classification };
+}
+
+/**
+ * A thrown value as a job ROW keeps it: core's rendering, plus the error's own `fix:`.
+ *
+ * `renderThrowable` answers `<name>: <code>: <title> — <cause>` and stops there, so `lastError` —
+ * the one failure field `x jobs show` prints — handed an operator a diagnosis with the instruction
+ * cut off. Only a branded error's fix travels: any other `fix` property is somebody's data.
+ */
+export function failureForRow(error: unknown): string {
+  const rendered = renderThrowable(error);
+  return isUltimateError(error) ? `${rendered} — fix: ${error.fix}` : rendered;
 }
 
 /**

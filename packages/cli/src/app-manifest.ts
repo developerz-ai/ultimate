@@ -6,8 +6,10 @@
 // Bun ships no `Bun.*` path API: `join` builds the host-separator path to `x.manifest.json`.
 import { join } from 'node:path';
 import { describeActions } from '@ultimat3/action';
+import { primitiveRegistrar } from '@ultimat3/core';
 import { registeredLocales } from '@ultimat3/i18n';
 import { registeredTasks } from '@ultimat3/jobs';
+import { sendMailJob } from '@ultimat3/mail';
 import type { Manifest, PolicyFact, RouteFact, TaskFact } from '@ultimat3/manifest';
 import {
   buildManifest,
@@ -30,9 +32,21 @@ export interface AppManifest {
   readonly findings: readonly Finding[];
 }
 
+/**
+ * The jobs every role process registers whatever the app imports: `runtime-services.ts` imports
+ * `@ultimat3/mail` in every role, and that import declares `mail.send` — so every app's worker
+ * runs it, and the manifest records it. Seated here rather than left to an import's side effect:
+ * `x manifest`'s module graph never reached the mail barrel and `x verify`'s did, so the same app
+ * got two job lists and the `fix:` of `X_MANIFEST_DRIFT` could never clear it.
+ */
+const RUNTIME_JOBS: Readonly<Record<string, unknown>> = { sendMailJob };
+
 /** Load the app, then describe it. Every command that needs facts goes through here. */
 export async function appManifest(root: string): Promise<AppManifest> {
   const loaded = await loadApp(root);
+  // Through the registrar `defineApi` uses (`define-api.ts`): the declared name wins, and the
+  // same handle seated twice is one registration, so a second build of one tree is unchanged.
+  primitiveRegistrar('job')(RUNTIME_JOBS);
   const manifest = buildManifest(
     frameworkSources({
       app: await appIdentity(root),

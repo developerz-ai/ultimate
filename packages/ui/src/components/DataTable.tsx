@@ -33,13 +33,12 @@ export interface Column<Row> {
   width?: string | undefined;
 }
 
-export interface DataTableProps<Row> {
+interface DataTableBaseProps<Row> {
   caption: string;
   columns: readonly Column<Row>[];
   rows: readonly Row[];
   rowKey: (row: Row) => string;
   sort?: SortState | undefined;
-  onSortChange?: (sort: SortState | undefined) => void;
   loading?: boolean | undefined;
   /** An UltimateError (or anything shaped like one) from the query. */
   error?: unknown | undefined;
@@ -49,13 +48,37 @@ export interface DataTableProps<Row> {
   /** Opaque cursors from the query result; absent means no further page. */
   nextCursor?: string | undefined;
   prevCursor?: string | undefined;
-  onCursor?: ((cursor: string, direction: 'next' | 'prev') => void) | undefined;
   stickyHeader?: boolean | undefined;
   density?: 'comfortable' | 'compact' | undefined;
   /** Placeholder row count while loading. Match the usual page size. */
   skeletonRows?: number | undefined;
   class?: string | undefined;
 }
+
+/** The pager and the sort headers call back: the table sits in an island. */
+export interface DataTableCallbackProps<Row> extends DataTableBaseProps<Row> {
+  /** Callback paging. Never beside `hrefFor` — the type refuses the pair. */
+  onCursor?: ((cursor: string, direction: 'next' | 'prev') => void) | undefined;
+  /** Callback sorting. Never beside `sortHrefFor` — the type refuses the pair. */
+  onSortChange?: ((sort: SortState | undefined) => void) | undefined;
+  hrefFor?: undefined;
+  sortHrefFor?: undefined;
+}
+
+/** The pager and the sort headers are anchors: a server-rendered table needs no script. */
+export interface DataTableLinkProps<Row> extends DataTableBaseProps<Row> {
+  /** Link paging: the URL of the page a cursor names, handed to `<Pagination hrefFor>`. */
+  hrefFor: (cursor: string, direction: 'next' | 'prev') => string;
+  /**
+   * Link sorting: the URL of the list under the NEXT sort state of a header's cycle (`undefined`
+   * is "unsorted"). Absent, a sortable header is plain text — never a button with no handler.
+   */
+  sortHrefFor?: ((sort: SortState | undefined) => string) | undefined;
+  onCursor?: undefined;
+  onSortChange?: undefined;
+}
+
+export type DataTableProps<Row> = DataTableCallbackProps<Row> | DataTableLinkProps<Row>;
 
 export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
   const ui = useUi();
@@ -131,6 +154,68 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     );
   }
 
+  /** One mode per use, exactly as `Pagination` declares it — the table only hands it through. */
+  const pager = (): JSX.Element =>
+    props.hrefFor === undefined ? (
+      <Pagination
+        nextCursor={props.nextCursor}
+        prevCursor={props.prevCursor}
+        onCursor={props.onCursor}
+      />
+    ) : (
+      <Pagination
+        nextCursor={props.nextCursor}
+        prevCursor={props.prevCursor}
+        hrefFor={props.hrefFor}
+      />
+    );
+
+  const indicator = (key: string): JSX.Element => (
+    <span aria-hidden="true" class={styles['indicator']}>
+      {ariaSortFor(props.sort, key) === 'ascending'
+        ? '▲'
+        : ariaSortFor(props.sort, key) === 'descending'
+          ? '▼'
+          : '↕'}
+    </span>
+  );
+
+  /**
+   * One mode per table, as the pager has: an anchor at the next state's URL when the table is
+   * linked, a button that calls back when it is not. A linked table with no `sortHrefFor` gets the
+   * header text alone — a `<button>` on a page that never hydrates is a control that does nothing.
+   */
+  const sortControl = (column: Column<Row>): JSX.Element => {
+    if (column.sortable !== true) return column.header;
+    const label = `${column.header}: ${sortLabel(column.key)}`;
+    if (props.hrefFor !== undefined) {
+      const sortHrefFor = props.sortHrefFor;
+      if (sortHrefFor === undefined) return column.header;
+      return (
+        <a
+          class={styles['sortButton']}
+          aria-label={label}
+          href={sortHrefFor(nextSortState(props.sort, column.key))}
+        >
+          {column.header}
+          {indicator(column.key)}
+        </a>
+      );
+    }
+    const onSortChange = props.onSortChange;
+    return (
+      <button
+        type="button"
+        class={styles['sortButton']}
+        aria-label={label}
+        onClick={() => onSortChange?.(nextSortState(props.sort, column.key))}
+      >
+        {column.header}
+        {indicator(column.key)}
+      </button>
+    );
+  };
+
   return (
     <div class={cx(styles['wrap'], props.class)}>
       <Table
@@ -147,25 +232,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
                 aria-sort={ariaSortFor(props.sort, column.key)}
                 class={column.numeric === true ? styles['numeric'] : undefined}
               >
-                {column.sortable === true ? (
-                  <button
-                    type="button"
-                    class={styles['sortButton']}
-                    aria-label={`${column.header}: ${sortLabel(column.key)}`}
-                    onClick={() => props.onSortChange?.(nextSortState(props.sort, column.key))}
-                  >
-                    {column.header}
-                    <span aria-hidden="true" class={styles['indicator']}>
-                      {ariaSortFor(props.sort, column.key) === 'ascending'
-                        ? '▲'
-                        : ariaSortFor(props.sort, column.key) === 'descending'
-                          ? '▼'
-                          : '↕'}
-                    </span>
-                  </button>
-                ) : (
-                  column.header
-                )}
+                {sortControl(column)}
               </th>
             ))}
           </tr>
@@ -177,13 +244,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
           {body()}
         </tbody>
       </Table>
-      {props.nextCursor === undefined && props.prevCursor === undefined ? null : (
-        <Pagination
-          nextCursor={props.nextCursor}
-          prevCursor={props.prevCursor}
-          onCursor={props.onCursor}
-        />
-      )}
+      {props.nextCursor === undefined && props.prevCursor === undefined ? null : pager()}
     </div>
   );
 }

@@ -72,9 +72,9 @@ async function rig(after: (ctx: Ctx) => void | Promise<void>): Promise<Rig> {
   const base = createMemoryDriver();
   const driver: JobDriver = {
     ...base,
-    async nack(jobId: string, options: NackOptions): Promise<void> {
+    async nack(jobId: string, options: NackOptions): Promise<boolean> {
       nacks.push(options);
-      await base.nack(jobId, options);
+      return base.nack(jobId, options);
     },
     // Read BEFORE the close: the memory driver holds nothing past it, and the teardown closes the
     // driver — so "what did the queue hold when this worker let go" is only answerable here.

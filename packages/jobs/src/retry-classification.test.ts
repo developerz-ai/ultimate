@@ -12,6 +12,7 @@ import {
 import type { RetryPolicy } from './retry';
 import {
   classifyThrown,
+  failureForRow,
   nextRetryForError,
   recordedFailure,
   statedDelayMs,
@@ -170,5 +171,20 @@ describe('recordedFailure', () => {
     expect(recordedFailure('boom', terminal).startsWith('boom')).toBe(true);
     expect(recordedFailure('boom', exhausted)).toBe('boom');
     expect(recordedFailure('boom', retried)).toBe('boom');
+  });
+});
+
+describe('failureForRow', () => {
+  test('a coded failure keeps its fix on the row, so `x jobs show` prints the instruction', () => {
+    const recorded = failureForRow(coded('X_TEST_CLASSIFY_TERMINAL'));
+    expect(recorded).toContain('X_TEST_CLASSIFY_TERMINAL');
+    expect(recorded).toContain('the credential was refused');
+    expect(recorded.endsWith(' — fix: rotate the credential, then re-enqueue')).toBe(true);
+  });
+
+  test('only a BRANDED error`s fix travels — any other `fix` property is somebody`s data', () => {
+    expect(failureForRow(new TypeError('socket hang up'))).toBe('TypeError: socket hang up');
+    const lookalike = Object.assign(new TypeError('boom'), { fix: 'rm -rf /' });
+    expect(failureForRow(lookalike)).not.toContain('rm -rf');
   });
 });

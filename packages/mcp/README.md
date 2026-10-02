@@ -91,7 +91,7 @@ A generated app exposes its own MCP surface with one call, so the user's agents 
 user's app:
 
 ```ts
-// apps/admin/src/mcp.ts
+// apps/admin/app/admin/mcp.ts — under app/, so the app scan imports it
 import { defineAppMcp, t } from '@ultimat3/mcp';
 
 export const mcp = defineAppMcp({

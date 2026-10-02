@@ -9,7 +9,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import type { ClaimedJob, ClaimOptions, EnqueueResult, JobDriver, NackOptions } from './driver';
+import type {
+  ClaimedJob,
+  ClaimOptions,
+  EnqueueResult,
+  JobDriver,
+  NackOptions,
+  SettleBy,
+} from './driver';
 import { createMemoryDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
@@ -62,13 +69,13 @@ function chaosDriver(base: JobDriver): ChaosDriver {
       if (dead.has(owner.get(jobId) ?? '')) throw severed();
       return base.heartbeat(jobId, heartbeatOptions);
     },
-    async ack(jobId: string): Promise<void> {
+    async ack(jobId: string, by: SettleBy): Promise<boolean> {
       if (dead.has(owner.get(jobId) ?? '')) throw severed();
-      await base.ack(jobId);
+      return base.ack(jobId, by);
     },
-    async nack(jobId: string, nackOptions: NackOptions): Promise<void> {
+    async nack(jobId: string, nackOptions: NackOptions): Promise<boolean> {
       if (dead.has(owner.get(jobId) ?? '')) throw severed();
-      await base.nack(jobId, nackOptions);
+      return base.nack(jobId, nackOptions);
     },
   };
 

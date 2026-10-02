@@ -4,11 +4,12 @@
 // holds which slot, and who gives it back, is bookkeeping of its own.
 
 import { logger, renderThrowable } from '@ultimat3/core';
-import type { ClaimedJob } from './driver';
-import { getJob } from './job';
+import type { ClaimedJob, JobDriver } from './driver';
+import { ConcurrencyUnenforceableError } from './errors-concurrency';
+import { getJob, registeredJobs } from './job';
 import type { HeldLease, LeaseStore } from './leases';
 import { jobLeaseKey } from './leases';
-import { startRenewalTimer } from './renewal-timer';
+import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
 
 /**
  * A renewal that REJECTED is not a lost slot: there is a TTL behind it and the interval gets
@@ -30,19 +31,56 @@ export interface FleetSlotOptions {
    */
   readonly ttlMs: number;
   readonly renewIntervalMs: number;
+  /** What every renewal runs on (`renewal-timer.ts`). Default: a real, unrefed interval. */
+  readonly schedule?: IntervalScheduler;
+}
+
+/**
+ * What the claim loop does with one claimed job. `wait` and `fail` are the two `whenBusy` answers
+ * to a full cap — a plain number always waits. `undecidable` is a keyed job whose key could not
+ * be derived: it holds no slot, so it must not run, and `error` is what the attempt fails with.
+ */
+export type SlotGrant =
+  | { readonly outcome: 'granted' }
+  | { readonly outcome: 'wait'; readonly limit: number; readonly key: string | undefined }
+  | { readonly outcome: 'fail'; readonly limit: number; readonly key: string }
+  | { readonly outcome: 'undecidable'; readonly error: unknown };
+
+const GRANTED: SlotGrant = Object.freeze({ outcome: 'granted' });
+
+/** The `holder` a slot is taken under. The job id is LAST, which is what `heldByRun` reads. */
+const slotHolder = (workerId: string, jobId: string): string => `${workerId}:${jobId}`;
+
+/** Whether `holder` is some claim of this same job — this worker's, or the one it replaced. */
+const heldByRun = (holder: string, jobId: string): boolean => holder.endsWith(`:${jobId}`);
+
+/**
+ * The boot refusal: a driver with no lease store can only hold a cap per PROCESS, plain or keyed,
+ * so the fleet would run `concurrency x replicas`. Refused rather than logged — a declared
+ * guarantee that silently does nothing is what axiom 3 exists to make impossible.
+ */
+export function assertConcurrencyEnforceable(driver: JobDriver): void {
+  if (driver.leases !== undefined) return;
+  const capped = registeredJobs().filter((handle) => handle.concurrency !== undefined);
+  if (capped.length === 0) return;
+  throw new ConcurrencyUnenforceableError({
+    driver: driver.name,
+    jobs: capped.map((handle) => handle.name),
+  });
 }
 
 export interface FleetSlots {
   /**
-   * A fleet slot for this job's declared `concurrency`, or `false` when the fleet is full.
-   * `true` means "no cap declared" — a job with no `concurrency` never touches the lease table.
+   * A fleet slot for this job's declared `concurrency` — per key when the cap is keyed — or what
+   * to do without one. `granted` is also the answer for "no cap declared": a job with no
+   * `concurrency` never touches the lease table.
    *
    * A driver with no lease store cannot reach here: `createWorker().start()` refuses to boot when
    * a registered job declares `concurrency` and the driver has none, because a cap that silently
    * holds per process is the documented-guarantee-that-does-nothing axiom 3 exists to make
    * impossible.
    */
-  acquire(claimed: ClaimedJob): Promise<boolean>;
+  acquire(claimed: ClaimedJob): Promise<SlotGrant>;
   /**
    * Keeps this job's slot alive until the returned stop is called. A no-op when it holds none.
    *
@@ -64,17 +102,45 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
 
   return {
     async acquire(claimed) {
-      const limit = getJob(claimed.name)?.concurrency;
-      if (limit === undefined || options.leases === undefined) return true;
-      const slot = await options.leases.acquire(
-        jobLeaseKey(claimed.name),
+      const handle = getJob(claimed.name);
+      const limit = handle?.concurrency;
+      const leases = options.leases;
+      if (handle === undefined || limit === undefined || leases === undefined) return GRANTED;
+
+      let key: string | undefined;
+      try {
+        // Parsed HERE as well as in `executeJob`: the key is a function of the input the body
+        // will be handed, and a row the schema no longer accepts has no key to count under.
+        if (handle.whenBusy !== undefined)
+          key = handle.concurrencyKeyFor(handle.parse(claimed.input));
+      } catch (error) {
+        // Answered, never thrown: a throw here fails the whole claim ROUND, which hands this job
+        // back uncounted — so one row with a bad key would stall its queue on every pass.
+        return { outcome: 'undecidable', error };
+      }
+
+      const leaseKey = jobLeaseKey(claimed.name, key);
+      const slot = await leases.acquire(
+        leaseKey,
         limit,
         options.ttlMs,
-        `${options.workerId}:${claimed.id}`,
+        slotHolder(options.workerId, claimed.id),
       );
-      if (slot === undefined) return false;
-      held.set(claimed.id, slot);
-      return true;
+      if (slot !== undefined) {
+        held.set(claimed.id, slot);
+        return GRANTED;
+      }
+      if (handle.whenBusy !== 'fail' || key === undefined) return { outcome: 'wait', limit, key };
+
+      // `'fail'` needs EVIDENCE that another run holds the key. A slot is released a moment after
+      // its job is nacked and expires a moment after its job's lease, so a retried, resumed or
+      // redelivered run can find its own previous claim still on the row — and a key nobody holds
+      // any more is simply free on the next pass. Both wait; only somebody else's run refuses.
+      const holders = await leases.holders(leaseKey);
+      const others = holders.filter((holder) => !heldByRun(holder, claimed.id));
+      return others.length === holders.length && others.length > 0
+        ? { outcome: 'fail', limit, key }
+        : { outcome: 'wait', limit, key };
     },
 
     startRenewal(jobId, onLost) {
@@ -84,30 +150,33 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
       // clock for "this worker still owns the job" and "this worker still owns the slot" is one
       // fewer way for them to disagree — and `timer.stopped()` is the same latch `heartbeat.ts`
       // reads, for the same reason.
-      const timer = startRenewalTimer(options.renewIntervalMs, () =>
-        options.leases
-          ?.renew(slot, options.ttlMs)
-          .then((renewed) => {
-            // `=== false`, never `!renewed`, for the reason `heartbeat.ts` reads `held` that way:
-            // a store written before this return value existed resolves `undefined`, and treating
-            // that as a loss would cancel every job on every renewal. Only an explicit no is one.
-            //
-            // `stopped()` re-read AFTER the await for the other half: the run settles, this timer
-            // is stopped and `worker.ts` releases the slot — so the renewal already on the wire
-            // finds the row gone and answers `false` for a job that FINISHED. Reported, that is
-            // `jobs.worker.slot-lost` at error and an abort on a controller `runSignal.dispose()`
-            // has already torn down: noise about a run nobody lost.
-            if (renewed !== false || timer.stopped()) return;
-            timer.stop();
-            logger.error('jobs.worker.slot-lost', {
-              workerId: options.workerId,
-              jobId,
-              leaseKey: slot.key,
-              slot: slot.slot,
-            });
-            onLost?.(slot);
-          })
-          .catch(noop),
+      const timer = startRenewalTimer(
+        options.renewIntervalMs,
+        () =>
+          options.leases
+            ?.renew(slot, options.ttlMs)
+            .then((renewed) => {
+              // `=== false`, never `!renewed`, for the reason `heartbeat.ts` reads `held` that way:
+              // a store written before this return value existed resolves `undefined`, and treating
+              // that as a loss would cancel every job on every renewal. Only an explicit no is one.
+              //
+              // `stopped()` re-read AFTER the await for the other half: the run settles, this timer
+              // is stopped and `worker.ts` releases the slot — so the renewal already on the wire
+              // finds the row gone and answers `false` for a job that FINISHED. Reported, that is
+              // `jobs.worker.slot-lost` at error and an abort on a controller `runSignal.dispose()`
+              // has already torn down: noise about a run nobody lost.
+              if (renewed !== false || timer.stopped()) return;
+              timer.stop();
+              logger.error('jobs.worker.slot-lost', {
+                workerId: options.workerId,
+                jobId,
+                leaseKey: slot.key,
+                slot: slot.slot,
+              });
+              onLost?.(slot);
+            })
+            .catch(noop),
+        options.schedule,
       );
       return () => timer.stop();
     },

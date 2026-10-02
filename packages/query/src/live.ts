@@ -16,6 +16,7 @@ import { guard } from './policy-gate';
 import type { Query } from './query';
 import { queryHash } from './query';
 import { queryName, sourceFor } from './read';
+import { assertNoSealedKey } from './sealed-shape';
 import type { QueryShape, SeekKey } from './shape';
 import { seekKeyOf } from './shape';
 import { assertSubscribed } from './subscribes';
@@ -128,6 +129,8 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
   // outgrown means `x db gen` granted REPLICA IDENTITY FULL somewhere else, so every UPDATE on this
   // relation arrives without its old row and no patch is computable from it.
   assertSubscribed(name, target.subscribes, shape.entity);
+  // And once more for the same moment: a window keyed on a sealed column is read and never patched.
+  assertNoSealedKey(name, shape);
 
   const epoch = options.epoch ?? liveEpoch();
   const hash = queryHash(name, input);

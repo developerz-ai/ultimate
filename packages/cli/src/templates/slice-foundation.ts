@@ -4,6 +4,7 @@
 // none of them, so each emitted TS2307 in any slice a resource had not been run in first.
 
 import { stripComments } from '@ultimat3/core';
+import { adminCatalogFiles } from './admin-catalog';
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
@@ -74,16 +75,24 @@ const ifAbsent = (files: readonly GeneratedFile[]): readonly GeneratedFile[] =>
 export function sliceFoundation(
   target: FeatureTarget,
   needs: readonly SliceModule[],
+  /** Every locale the planted entity's admin labels ship for. Defaults to `['en']`. */
+  locales?: readonly string[],
 ): readonly GeneratedFile[] {
   const feature = names(target.feature);
   const dir = `${target.surfaceDir}/${target.feature}`;
-  return ifAbsent([
-    ...(needs.includes('entity') ? entityFiles(target.feature, target) : []),
-    ...(needs.includes('policy') ? policyFiles(target.feature, target) : []),
-    ...(needs.includes('errors')
-      ? [{ path: `${dir}/errors.ts`, contents: errorsSource(feature) }]
-      : []),
-  ]);
+  return [
+    ...ifAbsent([
+      ...(needs.includes('entity') ? entityFiles(target.feature, target) : []),
+      ...(needs.includes('policy') ? policyFiles(target.feature, target) : []),
+      ...(needs.includes('errors')
+        ? [{ path: `${dir}/errors.ts`, contents: errorsSource(feature) }]
+        : []),
+    ]),
+    // A planted entity joins the typed handle, and an entity in the handle IS an admin screen —
+    // so it gets the labels `x g entity` writes for one, or its nav entry renders a missing-key
+    // marker. A catalog MERGE, never `if-absent`: a key already there keeps the value it has.
+    ...(needs.includes('entity') ? adminCatalogFiles(target.feature, target, locales) : []),
+  ];
 }
 
 /** The exported names an `export { a, b as c }` list declares — `c`, never `b`. */
@@ -117,10 +126,39 @@ export function sliceExports(source: string, name: string): boolean {
   const code = stripComments(source);
   // `(?:async\s+)?` before `function`: an `export async function byId` — every repo function
   // `x g entity` scaffolds — matched neither this nor `listedExports`, so a caller checking for
-  // `byId`/`listByOrg` on a real repo.ts always read `false`. `async` has no meaning before
+  // `byId`/`list` on a real repo.ts always read `false`. `async` has no meaning before
   // `class`/`const`/`let`/`var`/`enum`, so it is scoped to `function` only.
   const declared = new RegExp(
     `\\bexport\\s+(?:abstract\\s+)?(?:class|const|let|var|(?:async\\s+)?function|enum)\\s+${name}\\b`,
   );
   return declared.test(code) || listedExports(code).includes(name);
+}
+
+/** `    title: text({ max: 200 }),` — one column of an entity, as its name and its builder. */
+const COLUMN_LINE = /^ {4}([A-Za-z_$][\w$]*): ([A-Za-z_$][\w$]*)\(/gm;
+
+const columnsOf = (entitySource: string): string =>
+  [...stripComments(entitySource).matchAll(COLUMN_LINE)]
+    .map((match) => `${match[1] ?? ''}: ${match[2] ?? ''}`)
+    .join(', ');
+
+/**
+ * Whether a generated TEST may store a row in this slice: its entity declares exactly the columns
+ * `x g entity` scaffolds for this feature — read off the entity this generator would write, never
+ * a second list — and its `repo.ts`, when one is on disk, still exports `insert`. A slice an author
+ * reshaped has a row this generator cannot spell (one more required column is enough), so its
+ * tests assert the branches that need none and leave the stored-row case to the author.
+ */
+export function sliceTakesScaffoldRow(
+  target: FeatureTarget,
+  sliceEntity: string | undefined,
+  sliceRepo: string | undefined,
+): boolean {
+  if (sliceEntity === undefined) return false;
+  const scaffold = entityFiles(target.feature, target).find((file) =>
+    file.path.endsWith('/entity.ts'),
+  );
+  const wanted = columnsOf(String(scaffold?.contents ?? ''));
+  if (wanted === '' || columnsOf(sliceEntity) !== wanted) return false;
+  return sliceRepo === undefined || sliceExports(sliceRepo, 'insert');
 }

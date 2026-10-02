@@ -10,7 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: same — no Bun native answers the platform temp root.
 import { join } from 'node:path'; // why: same — the sandbox's paths are joined, never concatenated.
-import { HANDWRITTEN_ERRORS } from '../scaffold-fixture';
+import { HANDWRITTEN_ERRORS, INVOICE_ENTITY } from '../scaffold-fixture';
 import { sandboxPath, workspaceRoot } from '../scaffold-typecheck';
 import { actionFiles } from './action';
 import { sliceExports } from './slice-foundation';
@@ -153,5 +153,73 @@ describe('unit · x g action throws the feature error only where the slice decla
     // a fixture that lists only the slice `x g resource` wrote compiles only the shape that never
     // failed.
     expect(sliceExports(HANDWRITTEN_ERRORS, 'InvoiceNotFoundError')).toBe(false);
+  });
+});
+
+describe('unit · the unit test x g action writes runs the handler, in the shape the slice earns', () => {
+  const unitOf = (name: string, options: Parameters<typeof actionFiles>[1]): string => {
+    const file = actionFiles(name, options).find((one) => one.path.endsWith(`/${name}.test.ts`));
+    if (file === undefined || typeof file.contents !== 'string') {
+      return expect.unreachable(`x g action ${name} writes no unit test`);
+    }
+    return file.contents;
+  };
+  const invoice = { surfaceDir: 'apps/web/app', feature: 'invoice', dbModule: '@acme/db' } as const;
+
+  test('no entity: the grant refusal first, then what the handler answers — and no store', () => {
+    const unit = unitOf('ping', { surfaceDir: 'apps/web/app', feature: 'ping' });
+    expect(unit).toContain("toBeUltimateError('X_FORBIDDEN')");
+    expect(unit).toContain('an actor without the grant');
+    expect(unit).toContain('expect(await target.as(writer, input)).toEqual({ id });');
+    expect(unit.indexOf('an actor without the grant')).toBeLessThan(
+      unit.indexOf('the handler answers a writer in the org'),
+    );
+    expect(unit).not.toContain('driver');
+    expect(unit).not.toContain('repo');
+  });
+
+  test('the scaffold entity: the missing row first, then the row it found', () => {
+    const unit = unitOf('send-invoice', { ...invoice, sliceEntity: INVOICE_ENTITY });
+    expect(unit).toContain("toBeUltimateError('X_INVOICE_NOT_FOUND')");
+    expect(unit).toContain('the handler answers the row it found');
+    expect(unit).toContain('the handler refuses an id nothing holds');
+    expect(unit.indexOf('the handler refuses an id nothing holds')).toBeLessThan(
+      unit.indexOf('the handler answers the row it found'),
+    );
+    expect(unit).toContain('repo.insert(draft)');
+    expect(unit).toContain("import { driver } from '@acme/db';");
+    expect(unit).toContain('driver.reset?.();');
+  });
+
+  test('an entity an author reshaped: the missing row only, and nothing is stored', () => {
+    const reshaped = INVOICE_ENTITY.replace('title: text(', 'subject: text(');
+    const unit = unitOf('send-invoice', { ...invoice, sliceEntity: reshaped });
+    expect(unit).toContain("toBeUltimateError('X_INVOICE_NOT_FOUND')");
+    expect(unit).not.toContain('repo.insert');
+    expect(unit).not.toContain('driver');
+  });
+
+  test('a slice whose errors.ts declares no NotFound has no lookup to test: the neutral cases', () => {
+    const unit = unitOf('ping-invoice', {
+      ...invoice,
+      sliceEntity: INVOICE_ENTITY,
+      sliceErrors: HANDWRITTEN_ERRORS,
+    });
+    expect(unit).not.toContain('NOT_FOUND');
+    expect(unit).toContain('expect(await target.as(writer, input)).toEqual({ id });');
+  });
+
+  test('a mutator runs its local twin against the client store, twice, and its server half', () => {
+    const unit = unitOf('rename-invoice', { ...invoice, mutator: true });
+    expect(unit).toContain("const TABLE = 'invoices';");
+    expect(unit).toContain('const store = memoryLocalTx({ [TABLE]: {');
+    // Twice: a rebase replays the queued write, and a twin that climbs per replay is the defect.
+    expect(unit.match(/target\.local\(store\.tx, input\);/g)).toHaveLength(3);
+    expect(unit).toContain('the local twin invents no row the store never held');
+    expect(unit).toContain("toEqual({ id, title: 'a title' });");
+    // An action carries no client half, so its test imports no client store.
+    expect(unitOf('ping', { surfaceDir: 'apps/web/app', feature: 'ping' })).not.toContain(
+      'memoryLocalTx',
+    );
   });
 });

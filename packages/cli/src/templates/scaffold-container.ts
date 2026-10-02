@@ -7,6 +7,7 @@
 // buildpack, a Render blueprint or a fly.toml would be the primitive that never ships.
 
 import { SECRETS_KEY_FILE } from '@ultimat3/core';
+import { PREBUILT_COMMAND } from '../serve-prebuilt-paths';
 import type { GeneratedFile, NameSet } from './naming';
 import { composeProdFile, PROD_ENV_FILE } from './scaffold-container-compose';
 import { helmFiles } from './scaffold-helm';
@@ -55,6 +56,16 @@ RUN bun install --frozen-lockfile --production
 FROM deps AS runtime
 WORKDIR /app
 COPY . .
+
+# ---------- prebuilt: every island chunk and compiled stylesheet, made once, here ----------
+# What a web pod otherwise makes on EVERY boot — Babel over every island, Sass over every
+# stylesheet: seconds of CPU and a compiler's worth of memory, per replica, per start. It runs in
+# the image build because the store is valid only for the Bun and the paths that wrote it; above
+# BUILD_ID, so two images differing only by their stamp share this layer; and above
+# NODE_ENV=production, because it imports the app with no deployment environment and app.config.ts
+# must ask for none — exactly as on a fresh clone. An image without this line still serves, and
+# every boot logs X_IMAGE_NOT_PREBUILT naming it.
+RUN ${PREBUILT_COMMAND}
 
 # The immutable content hash this image serves. Stamped by CI (\`--build-arg BUILD_ID=$(git rev-parse HEAD)\`);
 # without one the server computes the same hash from the manifest at boot. Never \`latest\`.
@@ -152,6 +163,11 @@ x build --target docker --tag ${app.kebab}:dev
 docker run --rm -e ROLE=migrate -e DATABASE_URL=postgres://... ${app.kebab}:dev
 docker run -p 3000:3000 -e DATABASE_URL=postgres://... ${app.kebab}:dev
 \`\`\`
+
+The image build runs \`x build --target prebuilt\` after \`COPY . .\`: every island chunk and every
+compiled stylesheet is made once, there, by the image's own Bun — so a pod builds nothing at boot.
+Without that line every boot runs Babel and Sass over the whole app and logs
+\`X_IMAGE_NOT_PREBUILT\`, naming it.
 
 ## One box, every role
 

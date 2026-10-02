@@ -1,9 +1,9 @@
 // Settings form. One column, generous spacing, tokens throughout.
 //
-// `.editor`'s rules reach the island's elements by TAG, not by class: the island is compiled by
-// `Bun.build`, which resolves a `.module.scss` import to a URL string rather than to the class map
-// the server hashed — so a scoped name written there would arrive `undefined`. The wrapper is
-// server-rendered, the island's markup is inside it, and descendant selectors cross the seam.
+// `.editor`'s rules reach the island's elements by TAG, not by class. That is a size decision and
+// no longer a limit: an island MAY import a `.module.scss` (`settings.island.tsx`'s header, and
+// `app/runs/run-console.island.tsx` does), but this one imports none, so the wrapper — which is
+// server-rendered, with the island's markup inside it — styles it by descendant selectors.
 
 .page {
   max-inline-size: 34rem;

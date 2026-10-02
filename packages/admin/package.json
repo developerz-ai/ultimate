@@ -15,11 +15,13 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./dev": "./src/dev/index.ts"
+    "./dev": "./src/dev/index.ts",
+    "./schema": "./src/audit-schema.ts"
   },
   "files": [
     "src",
     "!src/**/*.test.ts",
+    "!src/**/*-fixture.ts",
     "CLAUDE.md",
     "README.md",
     "LICENSE"

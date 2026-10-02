@@ -317,11 +317,14 @@ describe('the newest migration records the schema this chain creates', () => {
   test('every table the chain creates is recorded, and nothing else is', () => {
     expect([...chain.tables].sort()).toEqual([
       'comments',
+      'connections',
       'likes',
       'members',
       'orgs',
       'plans',
       'posts',
+      'run_events',
+      'runs',
     ]);
     expect(recorded.map((table) => table.name).sort()).toEqual([...chain.tables].sort());
   });

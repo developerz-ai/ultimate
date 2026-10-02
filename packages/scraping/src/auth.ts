@@ -25,21 +25,42 @@ import type { ScrapePage } from './page';
 import type { ScrapeSecrets } from './secrets';
 import { type ScrapeSessionStore, type SessionState, sessionDigest } from './session-state';
 
-export interface PromptRequest {
+export interface PromptRequest<I = unknown> {
+  /**
+   * The run's own input — what ties this prompt to the app's identity for the run (a connection
+   * id, an org). A handler typed on the definition reads it typed; a shared one reads `unknown`.
+   */
+  readonly input: I;
   /** What the site is asking for: `'sms code'`, `'authenticator code'`, `'security question 3'`. */
   readonly label: string;
   readonly scrape: string;
   readonly url: string;
+  /** The job run asking. With `index` it names this one prompt: `promptEventName(runId, index)`. */
+  readonly runId: string;
+  /** 1 for the first prompt of this attempt, 2 for the next. */
+  readonly index: number;
+  /** The run's clock. A handler that waits, waits on this — never on a timer of its own. */
+  readonly clock: ScrapeClock;
+  /** The run's cancellation. A handler that waits past it holds a browser nobody is using. */
+  readonly signal: AbortSignal | undefined;
+  /**
+   * One cheap round trip to the browser. A handler that waits calls it between polls: the site is
+   * waiting INSIDE this session, so the wedge watchdog must keep seeing activity and a rented
+   * browser must not idle out — and a browser that died is found now, not after the answer.
+   */
+  keepAlive(): Promise<void>;
 }
 
 /**
  * Where an out-of-band code comes from. A declared callback field on the definition — typed,
  * discoverable, one per concern — and never a global "register a plugin" call.
  */
-export type PromptHandler = (request: PromptRequest) => Promise<string> | string;
+export type PromptHandler<I = unknown> = (request: PromptRequest<I>) => Promise<string> | string;
 
 export interface AuthContext<I> {
   readonly input: I;
+  /** The job run logging in — the id the run's events, steps and prompts are keyed by. */
+  readonly runId: string;
   readonly page: ScrapePage;
   /**
    * The declared secrets, boxed. A login body needs the credential it is about to type, and
@@ -78,15 +99,50 @@ export interface ScrapeAuth<I> {
   readonly maxAge?: number | undefined;
 }
 
-export function createPrompt(
-  scrape: string,
-  handler: PromptHandler | undefined,
-  page: ScrapePage,
-): (label: string) => Promise<string> {
+export interface PromptInit<I = unknown> {
+  readonly scrape: string;
+  readonly handler: PromptHandler<I> | undefined;
+  readonly input: I;
+  readonly page: ScrapePage;
+  readonly runId: string;
+  readonly clock: ScrapeClock;
+  readonly signal?: AbortSignal | undefined;
+  /** The run's secret set. Every answer is concealed in it before the body sees the answer. */
+  readonly secrets?: ScrapeSecrets | undefined;
+  /** Called once per answered prompt — `ScrapeReport.usage.promptsAnswered`. */
+  readonly onAnswered?: (() => void) | undefined;
+}
+
+/**
+ * Matches no element on any page, which is the point: the read costs one round trip and carries
+ * nothing back. It goes through the page vocabulary, so it reports activity like any other verb.
+ */
+const KEEPALIVE_SELECTOR = 'ultimate-keepalive';
+
+export function createPrompt<I>(init: PromptInit<I>): (label: string) => Promise<string> {
+  let asked = 0;
   return async (label: string): Promise<string> => {
+    const { scrape, handler, page } = init;
     if (handler === undefined) throw promptUnanswered(scrape, label);
-    const answer = await handler({ label, scrape, url: page.url() });
+    asked += 1;
+    const answer = await handler({
+      input: init.input,
+      label,
+      scrape,
+      url: page.url(),
+      runId: init.runId,
+      index: asked,
+      clock: init.clock,
+      signal: init.signal,
+      keepAlive: async (): Promise<void> => {
+        await page.count(KEEPALIVE_SELECTOR);
+      },
+    });
     if (typeof answer !== 'string' || answer === '') throw promptUnanswered(scrape, label);
+    // Before the body can type it: an OTP echoed into the page it was typed on is in `page.html()`,
+    // and the failure artifact is written from exactly that.
+    init.secrets?.conceal(answer);
+    init.onAnswered?.();
     return answer;
   };
 }
@@ -163,6 +219,7 @@ export async function burnSession<I>(plan: AuthPlanInput<I>): Promise<void> {
 
 export interface EnsureAuthInput<I> extends AuthPlanInput<I> {
   readonly input: I;
+  readonly runId: string;
   readonly page: ScrapePage;
   readonly secrets: ScrapeSecrets;
   readonly restored: SessionState | undefined;
@@ -182,6 +239,7 @@ export async function ensureAuthenticated<I>(args: EnsureAuthInput<I>): Promise<
   if (auth === undefined) return false;
   const context: AuthContext<I> = {
     input: args.input,
+    runId: args.runId,
     page: args.page,
     secrets: args.secrets,
     prompt: args.prompt,

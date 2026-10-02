@@ -31,6 +31,33 @@ const paths = (before = fixtureManifest(), after = fixtureManifest()) =>
   diffManifest(before, after);
 
 describe('jobs', () => {
+  test('a cap declared, edited or removed is internal — and an unchanged one is no change', () => {
+    const keyed = { limit: 1, keyed: true, whenBusy: 'fail' };
+    const at = (concurrency?: typeof keyed) =>
+      fixtureManifest({ jobs: job(concurrency === undefined ? {} : { concurrency }) });
+    const changed = (before: ReturnType<typeof at>, after: ReturnType<typeof at>) =>
+      paths(before, after).internal.map((c) => c.path);
+
+    expect(changed(at(), at(keyed))).toContain('jobs.sendMail.concurrency');
+    expect(changed(at(keyed), at({ ...keyed, limit: 2 }))).toContain('jobs.sendMail.concurrency');
+    expect(changed(at(keyed), at())).toContain('jobs.sendMail.concurrency');
+    expect(changed(at(keyed), at({ ...keyed }))).not.toContain('jobs.sendMail.concurrency');
+    expect(paths(at(), at(keyed)).hasBreaking).toBe(false);
+  });
+
+  test('an onSettled hook declared or removed is internal', () => {
+    const hooked = fixtureManifest({ jobs: job({ onSettled: true }) });
+    expect(paths(fixtureManifest(), hooked).internal.map((c) => c.path)).toContain(
+      'jobs.sendMail.onSettled',
+    );
+    expect(paths(hooked, fixtureManifest()).internal.map((c) => c.path)).toContain(
+      'jobs.sendMail.onSettled',
+    );
+    expect(paths(hooked, hooked).internal.map((c) => c.path)).not.toContain(
+      'jobs.sendMail.onSettled',
+    );
+  });
+
   test('a moved queue is breaking — workers bound to the old one stop draining it', () => {
     const diff = paths(fixtureManifest(), fixtureManifest({ jobs: job({ queue: 'default' }) }));
     expect(diff.hasBreaking).toBe(true);

@@ -19,6 +19,7 @@ import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import { REQUIRED_BUN } from './app-root';
 import { DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
+import { SCHEMA_DUMP_DIR } from './db-schema-dump';
 import { checkSourceDrift, schemaHash } from './drift';
 import { exec } from './exec';
 import { msg } from './messages';
@@ -58,8 +59,22 @@ interface GenJson {
     readonly migration: string | null;
     readonly files: readonly string[];
     readonly schemaHash: string | null;
+    readonly schemaDump: {
+      readonly directory: string;
+      readonly status: string;
+      readonly files: number;
+      readonly written: readonly string[];
+      readonly removed: readonly string[];
+    };
   };
 }
+
+/**
+ * `x db gen` replays the migrations on a scratch embedded database to write the schema dump — a
+ * WASM compile plus an initdb, once per run that has a migration to replay. A hang detector, not a
+ * budget.
+ */
+const DUMP_REPLAY_MS = 120_000;
 
 const sidecar = (file: string): string => `${MIGRATIONS_DIR}/${file}`;
 
@@ -86,37 +101,124 @@ describe('unit · x db gen', () => {
   // `{ migration: null, files: [] }`, so a run that wrote the sidecar reported writing nothing.
   // Pinning `GeneratedFiles.outcome` alone would pin the data the projection reads, not the
   // projection — and the projection was the half that lied.
-  test('--json names the sidecar it wrote and calls it hash-recorded, never unchanged', async () => {
+  test(
+    '--json names the sidecar it wrote and calls it hash-recorded, never unchanged',
+    async () => {
+      const restoreEntities = isolateEntityRegistry();
+      const root = await appRoot();
+      try {
+        entity('cmd_db_gen_json_notes', { columns: { id: uuid().primaryKey() } });
+        await Bun.write(join(root, 'packages/db/src/schema.ts'), 'export const schema = 1;\n');
+
+        const first = await dbCommand.run(ctxFor(['db', 'gen', 'add notes'], root));
+        const written = JSON.parse(renderJson(first)) as GenJson;
+        expect(written.data.outcome).toBe('generated');
+        expect(written.data.migration).not.toBeNull();
+        expect(written.data.files).toHaveLength(3);
+        // The dump rides along: the new table's own file, and the framework's twin beside it.
+        expect(written.data.schemaDump.status).toBe('written');
+        expect(written.data.schemaDump.directory).toBe(SCHEMA_DUMP_DIR);
+        expect(written.data.schemaDump.written).toContain(
+          `${SCHEMA_DUMP_DIR}/04_tables/cmd_db_gen_json_notes.sql`,
+        );
+        expect(written.data.schemaDump.written).toContain(
+          `${SCHEMA_DUMP_DIR}/framework/04_tables/x_migrations.sql`,
+        );
+        expect(written.data.schemaDump.files).toBe(written.data.schemaDump.written.length);
+
+        // A seed is not DDL. The hash covers it anyway, so `drift` goes red with nothing to generate.
+        await Bun.write(join(root, 'packages/db/src/seed.ts'), 'export const seed = () => {};\n');
+        expect(await checkSourceDrift(root)).toHaveLength(1);
+        // And a hand edit to the dump, which is what `X_SCHEMA_DUMP_DRIFT` reports: its `fix:` is
+        // this same command, so the run below — with no DDL to generate — must put the bytes back.
+        const table = join(root, SCHEMA_DUMP_DIR, '04_tables/cmd_db_gen_json_notes.sql');
+        const original = await Bun.file(table).text();
+        await Bun.write(table, original.replace('uuid', 'text'));
+
+        const second = await dbCommand.run(ctxFor(['db', 'gen', 'describe the change'], root));
+        const recorded = JSON.parse(renderJson(second)) as GenJson;
+        expect(recorded.ok).toBe(true);
+        expect(recorded.data.outcome).toBe('hash-recorded');
+        expect(recorded.data.migration).toBeNull();
+        // The claim the old body could not make: a file was written, and `--json` names which.
+        expect(recorded.data.files).toEqual([`${written.data.migration}.hash`].map(sidecar));
+        expect(recorded.data.schemaHash).toBe(await schemaHash(root));
+        expect(recorded.summary).toBe(
+          msg('cli.db.gen.recorded', { file: recorded.data.files[0] ?? '' }),
+        );
+        expect(recorded.summary).not.toBe(msg('cli.db.gen.unchanged'));
+        // And the instruction `X_DB_DRIFT` hands out has actually been carried out.
+        expect(await checkSourceDrift(root)).toEqual([]);
+        // So has `X_SCHEMA_DUMP_DRIFT`'s: exactly the edited file was rewritten, to what it was.
+        expect(recorded.data.schemaDump).toMatchObject({
+          status: 'written',
+          written: [`${SCHEMA_DUMP_DIR}/04_tables/cmd_db_gen_json_notes.sql`],
+          removed: [],
+        });
+        expect(await Bun.file(table).text()).toBe(original);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+        restoreEntities();
+      }
+    },
+    DUMP_REPLAY_MS,
+  );
+
+  // Exit 1 with a migration on disk. An agent that reads only the exit code regenerates, and
+  // gets a second migration for a schema the first already records.
+  test('a dump that cannot be produced still reports the migration it wrote, and says not to repeat it', async () => {
     const restoreEntities = isolateEntityRegistry();
     const root = await appRoot();
     try {
-      entity('cmd_db_gen_json_notes', { columns: { id: uuid().primaryKey() } });
-      await Bun.write(join(root, 'packages/db/src/schema.ts'), 'export const schema = 1;\n');
+      // An extension the embedded database cannot link, and no server named: the replay is
+      // refused before any database boots, which is what keeps this test instant.
+      await Bun.write(join(root, MIGRATIONS_DIR, '0000_geo.sql'), 'create extension postgis;\n');
+      await Bun.write(join(root, MIGRATIONS_DIR, '0000_geo.snapshot.json'), '{"tables":[]}\n');
+      entity('cmd_db_gen_dump_failed', { columns: { id: uuid().primaryKey() } });
 
-      const first = await dbCommand.run(ctxFor(['db', 'gen', 'add notes'], root));
-      const written = JSON.parse(renderJson(first)) as GenJson;
-      expect(written.data.outcome).toBe('generated');
-      expect(written.data.migration).not.toBeNull();
-      expect(written.data.files).toHaveLength(3);
-
-      // A seed is not DDL. The hash covers it anyway, so `drift` goes red with nothing to generate.
-      await Bun.write(join(root, 'packages/db/src/seed.ts'), 'export const seed = () => {};\n');
-      expect(await checkSourceDrift(root)).toHaveLength(1);
-
-      const second = await dbCommand.run(ctxFor(['db', 'gen', 'describe the change'], root));
-      const recorded = JSON.parse(renderJson(second)) as GenJson;
-      expect(recorded.ok).toBe(true);
-      expect(recorded.data.outcome).toBe('hash-recorded');
-      expect(recorded.data.migration).toBeNull();
-      // The claim the old body could not make: a file was written, and `--json` names which.
-      expect(recorded.data.files).toEqual([`${written.data.migration}.hash`].map(sidecar));
-      expect(recorded.data.schemaHash).toBe(await schemaHash(root));
-      expect(recorded.summary).toBe(
-        msg('cli.db.gen.recorded', { file: recorded.data.files[0] ?? '' }),
+      const result = await dbCommand.run(ctxFor(['db', 'gen', 'add things'], root));
+      const body = JSON.parse(renderJson(result)) as GenJson;
+      expect(body.ok).toBe(false);
+      expect(body.data.outcome).toBe('generated');
+      expect(body.data.schemaDump.status).toBe('failed');
+      const id = body.data.migration ?? expect.unreachable('the migration was written');
+      expect(await Bun.file(join(root, MIGRATIONS_DIR, `${id}.sql`)).exists()).toBe(true);
+      expect(body.summary).toBe(msg('cli.db.gen.writtenDumpFailed', { id }));
+      const [finding, ...rest] = result.findings ?? [];
+      expect(rest).toEqual([]);
+      expect(finding?.code).toBe('X_SCHEMA_DUMP_DRIFT');
+      expect(finding?.cause).toStartWith(`migration ${id} WAS written to ${MIGRATIONS_DIR}`);
+      expect(finding?.cause).toContain('extension "postgis"');
+      expect(finding?.fix).toEndWith(
+        ' x db gen   # a server with that extension installed, and a role that may create a database',
       );
-      expect(recorded.summary).not.toBe(msg('cli.db.gen.unchanged'));
-      // And the instruction `X_DB_DRIFT` hands out has actually been carried out.
-      expect(await checkSourceDrift(root)).toEqual([]);
+
+      // And the instruction holds: the next bare run generates NO second migration.
+      const again = await dbCommand.run(ctxFor(['db', 'gen'], root));
+      expect(again.data).toMatchObject({ outcome: 'unchanged', migration: null });
+      // Without a migration of its own to protect, the finding is the plain one.
+      expect(again.findings?.[0]?.cause).not.toContain('WAS written');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      restoreEntities();
+    }
+  });
+
+  // And a FOURTH that is none of them: the app did not load, so nothing was diffed at all. It
+  // used to fall through to the `unchanged` sentence — "entities and migrations agree" — over an
+  // exit 1, which told the reader the one thing this run could not know.
+  test('a blocked run never reads as "nothing to generate"', async () => {
+    const restoreEntities = isolateEntityRegistry();
+    const root = await appRoot();
+    try {
+      await Bun.write(join(root, 'packages/db/src/broken.ts'), 'throw new Error("boom");\n');
+      const result = await dbCommand.run(ctxFor(['db', 'gen', 'add notes'], root));
+      const body = JSON.parse(renderJson(result)) as GenJson;
+      expect(body.ok).toBe(false);
+      expect(body.data.outcome).toBe('blocked');
+      expect(body.summary).toBe(msg('cli.db.gen.blocked', { count: 1 }));
+      expect(body.summary).not.toBe(msg('cli.db.gen.unchanged'));
+      expect(result.findings?.length).toBe(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
       restoreEntities();
@@ -133,6 +235,8 @@ describe('unit · x db gen', () => {
       const body = JSON.parse(renderJson(result)) as GenJson;
       expect(body.data.outcome).toBe('unchanged');
       expect(body.data.files).toEqual([]);
+      // No migration and no dump held: nothing is replayed, so this run boots no database.
+      expect(body.data.schemaDump).toMatchObject({ status: 'skipped', files: 0, written: [] });
       expect(body.summary).toBe(msg('cli.db.gen.unchanged'));
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -164,6 +268,64 @@ describe('unit · x db studio is planned, not a second engine', () => {
   test('it stays in the subcommand list, so the parser reaches it', () => {
     expect(DB_SUBCOMMANDS).toContain('studio');
   });
+});
+
+describe('unit · x db migrate', () => {
+  // The whole command once, on a real embedded dev database: apply, verify against the ledger,
+  // regenerate the dump from a scratch replay, then look at the dev database again for objects no
+  // migration creates. Two embedded boots, so one test carries every assertion about them.
+  test(
+    'applies, writes the schema dump, and reports nothing on a database only migrations touched',
+    async () => {
+      const root = await appRoot();
+      try {
+        const id = '0001_notes';
+        await Bun.write(
+          join(root, MIGRATIONS_DIR, `${id}.sql`),
+          // `citext` on purpose: PGlite links an extension only when it is named at boot, so
+          // this migration applies on the DEV database only if `x dev`'s boot and the dump's
+          // scratch replay ask the same linker. The gate used to pass where `x dev` failed.
+          'create extension citext;\ncreate table "notes" ("id" uuid primary key, "email" citext);\n' +
+            '-- down\ndrop table "notes";\ndrop extension citext;\n',
+        );
+        await Bun.write(
+          join(root, MIGRATIONS_DIR, `${id}.snapshot.json`),
+          JSON.stringify({
+            tables: [
+              {
+                schema: 'public',
+                name: 'notes',
+                columns: [
+                  { name: 'id', dataType: 'uuid', nullable: false, default: null, position: 1 },
+                  { name: 'email', dataType: 'citext', nullable: true, default: null, position: 2 },
+                ],
+                primaryKey: ['id'],
+                indexes: [],
+                foreignKeys: [],
+              },
+            ],
+          }),
+        );
+
+        const result = await dbCommand.run(ctxFor(['db', 'migrate'], root));
+        expect(result.findings ?? []).toEqual([]);
+        expect(result.ok).toBe(true);
+        expect(result.data).toMatchObject({
+          applied: [id],
+          schemaDump: { directory: SCHEMA_DUMP_DIR, status: 'written', removed: [] },
+        });
+        // What it wrote is on disk, and it is the table the migration created.
+        const table = Bun.file(join(root, SCHEMA_DUMP_DIR, '04_tables/notes.sql'));
+        expect(await table.text()).toContain('"email" citext');
+        expect(result.lines).toContain(`  ${SCHEMA_DUMP_DIR}/01_extensions/citext.sql`);
+        // Human render and `--json` agree: one line per file written.
+        expect(result.lines).toContain(`  ${SCHEMA_DUMP_DIR}/04_tables/notes.sql`);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    DUMP_REPLAY_MS,
+  );
 });
 
 describe('unit · x db reset', () => {

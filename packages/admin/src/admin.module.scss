@@ -1,0 +1,298 @@
+// The admin's own layer, on @ultimat3/ui's tokens directly. Semantic roles and token rungs only:
+// a raw colour here would paint one theme correctly and the other one wrong, and a raw length is
+// a second scale beside the one every other screen is drawn on.
+
+@use '@ultimat3/ui/tokens' as t;
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(t.rem(192), t.rem(256)) 1fr;
+  gap: t.space(6);
+  min-block-size: 100dvh;
+  background: t.role('bg');
+  color: t.role('fg');
+
+  // One column under the `md` rung: the sidebar becomes a block above the screen it navigates.
+  @include t.respond-down('md') {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skip {
+  @include t.visually-hidden;
+
+  &:focus-visible {
+    @include t.focus-ring;
+  }
+}
+
+.side {
+  @include t.surface('surface', 'sm');
+  @include t.padding-block(t.space(6));
+  @include t.padding-inline(t.space(4));
+  @include t.column(t.space(4));
+
+  border-inline-end: t.stroke(hairline) solid t.role('line');
+}
+
+.brand {
+  @include t.row(t.space(2));
+
+  font-size: t.text('lg');
+  font-weight: t.weight('semibold');
+  color: t.role('fg-strong');
+  text-decoration: none;
+}
+
+.actor {
+  margin: 0;
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}
+
+.search {
+  display: grid;
+}
+
+.hidden {
+  @include t.visually-hidden;
+}
+
+.group {
+  display: grid;
+  gap: t.space(2);
+}
+
+.groupTitle {
+  @include t.label-caps;
+
+  margin: 0;
+  color: t.role('fg-muted');
+}
+
+.navList {
+  display: grid;
+  gap: t.space(1);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.navLink {
+  @include t.transition(background-color, color);
+
+  display: block;
+  padding: t.space(2) t.space(3);
+  border-radius: t.radius('md');
+  color: t.role('fg');
+  text-decoration: none;
+
+  &:hover,
+  &[aria-current='page'] {
+    background: t.role('bg-soft');
+    color: t.role('fg-strong');
+  }
+
+  &:focus-visible {
+    @include t.focus-ring;
+  }
+}
+
+.main {
+  @include t.padding-block(t.space(8));
+  @include t.padding-inline(t.space(6));
+  @include t.column(t.space(6));
+
+  min-inline-size: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: t.text('2xl');
+  color: t.role('fg-strong');
+}
+
+.toolbar {
+  @include t.row(t.space(3), center, space-between);
+
+  flex-wrap: wrap;
+}
+
+.panel {
+  display: grid;
+  gap: t.space(4);
+}
+
+.matrix {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: t.text('sm');
+
+  th,
+  td {
+    padding: t.space(2) t.space(3);
+    text-align: start;
+    border-block-end: t.stroke(hairline) solid t.role('line');
+    vertical-align: top;
+  }
+
+  th {
+    color: t.role('fg-muted');
+    font-weight: t.weight('semibold');
+  }
+}
+
+// The two verdict rows carry a tone, not a colour: `success` and `danger` both resolve in the
+// light and the dark scale.
+.allowed td:last-child {
+  color: t.role('success');
+}
+
+.denied td:last-child {
+  color: t.role('danger');
+}
+
+.mono {
+  @include t.data-text;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: minmax(t.rem(128), max-content) 1fr;
+  gap: t.space(2) t.space(4);
+  margin: 0;
+
+  dt {
+    color: t.role('fg-muted');
+    font-size: t.text('sm');
+  }
+
+  dd {
+    margin: 0;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.form {
+  @include t.column(t.space(4));
+}
+
+// One titled group of a detail page or a form. A `<section>` on the detail, a `<fieldset>` on the
+// form — the same spacing, so the two read as one layout.
+.section {
+  @include t.column(t.space(3));
+
+  padding: 0;
+  margin: 0;
+  border: 0;
+
+  h3,
+  legend {
+    margin: 0;
+    padding: 0;
+    font-size: t.text('sm');
+    font-weight: t.weight('semibold');
+    color: t.role('fg-muted');
+  }
+}
+
+// The list's batch bar: what to run, over which rows, and the submit — one native form whose
+// row checkboxes sit in the table and join it through their `form` attribute.
+.batch {
+  @include t.row(t.space(3), end);
+
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+// The counts a batch answers with, one term per outcome.
+.counts {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: t.space(1) t.space(4);
+  margin: 0;
+
+  dt {
+    color: t.role('fg-muted');
+  }
+
+  dd {
+    @include t.data-text;
+
+    margin: 0;
+  }
+}
+
+.actions {
+  @include t.row(t.space(2));
+
+  flex-wrap: wrap;
+}
+
+// One form per button — a native POST is the whole client on a page that never hydrates, and a
+// single form around several submits could not say which one was pressed.
+.actionForm {
+  @include t.row(t.space(2));
+
+  display: inline-flex;
+  margin: 0;
+}
+
+
+.note,
+.refusal {
+  margin: 0;
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}
+
+.refusal {
+  @include t.surface('surface-raised', 'sm');
+  @include t.padding-block(t.space(4));
+  @include t.padding-inline(t.space(4));
+
+  border-inline-start: t.stroke(heavy) solid t.role('danger');
+  border-radius: t.radius('md');
+  color: t.role('fg');
+}
+
+.list {
+  display: grid;
+  gap: t.space(2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+// The filter bar: controls flow and wrap, each as wide as its label needs, with the submit last.
+.filters {
+  @include t.row(t.space(3), end);
+
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+// Two bounds of one filter, or a control and the link beside it.
+.range {
+  @include t.row(t.space(2), center);
+}
+
+.scopes {
+  @include t.row(t.space(1));
+
+  flex-wrap: wrap;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+// The jobs overview: a row of figure tiles that wraps, each a link to the list it counts.
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(t.rem(160), 1fr));
+  gap: t.space(3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}

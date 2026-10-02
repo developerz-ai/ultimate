@@ -377,6 +377,7 @@ test('every island in the app is measured, and each is classified by its own gra
     'apps/web/app/feed/feed.island.tsx',
     'apps/web/app/posts/[id]/like.island.tsx',
     'apps/web/app/posts/[id]/likes-badge.island.tsx',
+    'apps/web/app/runs/run-console.island.tsx',
     'apps/web/app/settings/settings.island.tsx',
     'apps/web/app/update-banner.island.tsx',
     'apps/web/site/pricing/contact-sales.island.tsx',
@@ -391,6 +392,14 @@ test('every island in the app is measured, and each is classified by its own gra
     '@ultimat3/ui',
   ]);
   expect(reachable.get('apps/web/app/posts/[id]/like.island.tsx')).toEqual(['@ultimat3/realtime']);
+  // The run console: the live read, the design system's region and controls, the typed action
+  // client for its four writes, and core's page entry for `isSuperseded`.
+  expect(reachable.get('apps/web/app/runs/run-console.island.tsx')).toEqual([
+    '@ultimat3/action',
+    '@ultimat3/core/page',
+    '@ultimat3/realtime',
+    '@ultimat3/ui',
+  ]);
   expect(reachable.get('apps/web/app/posts/[id]/likes-badge.island.tsx')).toEqual([
     '@ultimat3/realtime',
   ]);
@@ -466,7 +475,7 @@ test('the rename tolerance is narrow: only binding names may differ, whatever th
 
 test('an island that reaches a side-effecting module differs by that module and by nothing else', () => {
   const impure = [...first.keys()].filter((file) => (reachable.get(file) ?? []).length > 0);
-  expect(impure).toHaveLength(6);
+  expect(impure).toHaveLength(7);
   for (const file of impure) {
     const before = first.get(file) as IslandChunk;
     const after = second.get(file) as IslandChunk;

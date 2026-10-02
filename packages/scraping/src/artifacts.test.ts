@@ -45,7 +45,11 @@ describe('unit · contentTypeFor answers a string for every name a site can pick
 describe('unit · what reaches storage.put is always a string content type', () => {
   test("a site-chosen filename cannot put a function on the object's header", async () => {
     const storage = recordingStorage();
-    const writer = createArtifactWriter({ storage, scrape: 'orders', runId: 'run-1' });
+    const writer = createArtifactWriter({
+      storage: () => storage,
+      scrape: 'orders',
+      runId: 'run-1',
+    });
     const ref = await writer.save('report.constructor', 'body');
     expect(typeof ref.contentType).toBe('string');
     expect(storage.puts).toEqual([
@@ -56,7 +60,7 @@ describe('unit · what reaches storage.put is always a string content type', () 
   test('an explicit content type still wins, and the key carries the run prefix', async () => {
     const storage = recordingStorage();
     const writer = createArtifactWriter({
-      storage,
+      storage: () => storage,
       scrape: 'orders',
       runId: 'run-1',
       prefix: 'forensics',

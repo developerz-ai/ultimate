@@ -89,7 +89,12 @@ export {
   settleActive,
   stepActive,
 } from './components/command-palette-view';
-export type { Column, DataTableProps } from './components/DataTable';
+export type {
+  Column,
+  DataTableCallbackProps,
+  DataTableLinkProps,
+  DataTableProps,
+} from './components/DataTable';
 export { DataTable } from './components/DataTable';
 export type { DateTimeProps } from './components/DateTime';
 export { DateTime } from './components/DateTime';
@@ -160,7 +165,7 @@ export { boxFor, reservedRatio, sourceSetsFor, srcsetFor } from './components/im
 export type { LoadMoreInput, LoadMoreState } from './components/infinite-scroll-view';
 export type { KbdProps } from './components/Kbd';
 export { Kbd } from './components/Kbd';
-export type { LinkProps } from './components/Link';
+export type { ButtonLinkProps, LinkProps, TextLinkProps } from './components/Link';
 export { Link } from './components/Link';
 export type { LocaleSwitcherProps } from './components/LocaleSwitcher';
 export { LocaleSwitcher, localeLabel } from './components/LocaleSwitcher';
@@ -176,7 +181,11 @@ export type { MoneyFormatter, MoneyInput, MoneyViewOptions } from './components/
 export { moneyText, toMoney } from './components/money-view';
 export type { PageHeaderProps } from './components/PageHeader';
 export { PageHeader } from './components/PageHeader';
-export type { PaginationProps } from './components/Pagination';
+export type {
+  PaginationCallbackProps,
+  PaginationLinkProps,
+  PaginationProps,
+} from './components/Pagination';
 export { Pagination } from './components/Pagination';
 export type { Placement, PopoverProps } from './components/Popover';
 export { Popover } from './components/Popover';
@@ -378,5 +387,6 @@ export {
   radiusTokens,
   shadowTokens,
   spaceTokens,
+  strokeTokens,
   zTokens,
 } from './tokens/tokens';

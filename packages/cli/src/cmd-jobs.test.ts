@@ -3,15 +3,8 @@
 // booting a queue — a real driver, real claim/ack semantics, no database and no app to load.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp, and Bun.write is async in these synchronous fixture helpers.
-import { mkdtempSync, writeFileSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
-// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
-import { join } from 'node:path';
 import type { JobDriver } from '@ultimat3/jobs';
-import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
-import { REQUIRED_BUN } from './app-root';
+import { createMemoryDriver, resetJobDriver, resetJobs } from '@ultimat3/jobs';
 import {
   buildDrainTarget,
   DRAIN_TARGETS,
@@ -20,78 +13,34 @@ import {
   JOBS_SUBCOMMANDS,
   jobsCommand,
 } from './cmd-jobs';
-import type { CommandContext } from './command';
+import { appRoot, contextFor, enqueue, runJobs } from './cmd-jobs-fixture';
 import { BadFlagError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 
-interface RunOptions {
-  readonly subcommand?: string;
-  readonly positionals?: readonly string[];
-  readonly flags?: Readonly<Record<string, string | boolean>>;
-  readonly env?: Readonly<Record<string, string>>;
-}
-
-function appRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'x-jobs-'));
-  writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
-  return dir;
-}
-
-const contextFor = (root: string, options: RunOptions): CommandContext => ({
-  args: {
-    command: 'jobs',
-    subcommand: options.subcommand,
-    positionals: [...(options.positionals ?? [])],
-    flags: new Map(Object.entries(options.flags ?? {})),
-    json: false,
-    help: false,
-    passthrough: [],
-  },
-  cwd: root,
-  runner: () =>
-    Promise.resolve({
-      command: ['true'],
-      code: 0,
-      ok: true,
-      stdout: '',
-      stderr: '',
-      durationMs: 0,
-    }),
-  env: options.env ?? {},
-  bunVersion: REQUIRED_BUN,
-});
-
-/** Install the driver `withJobDriver` must reuse, so no command under test boots a second queue. */
-function runJobs(driver: JobDriver, options: RunOptions = {}): Promise<CommandResult> {
-  setJobDriver(driver);
-  return jobsCommand.run(contextFor(appRoot(), options));
-}
-
-async function enqueue(driver: JobDriver, name: string, runAt?: number): Promise<string> {
-  const { id } = await driver.enqueue({
-    name,
-    queue: 'default',
-    input: {},
-    idempotencyKey: crypto.randomUUID(),
-    maxAttempts: 3,
-    ...(runAt === undefined ? {} : { runAt }),
-  });
-  return id;
-}
-
 afterEach(() => {
   resetJobDriver();
+  resetJobs();
 });
 
 describe('unit · x jobs spec', () => {
-  test('names all five subcommands, ls first, with every documented flag', () => {
-    expect(JOBS_SUBCOMMANDS).toEqual(['ls', 'show', 'retry', 'cancel', 'drain']);
+  test('names every subcommand, ls first, with every documented flag', () => {
+    expect(JOBS_SUBCOMMANDS).toEqual([
+      'ls',
+      'show',
+      'retry',
+      'cancel',
+      'rm',
+      'promote',
+      'pause',
+      'resume',
+      'drain',
+    ]);
     expect(jobsCommand.spec.subcommands).toBe(JOBS_SUBCOMMANDS);
     expect(jobsCommand.spec.name).toBe('jobs');
     expect(jobsCommand.spec.requiresApp).toBe(true);
     expect(jobsCommand.spec.flags?.map((flag) => flag.name).sort()).toEqual(
-      ['dry-run', 'from-step', 'limit', 'name', 'queue', 'reason', 'state', 'to'].sort(),
+      ['after', 'dry-run', 'from-step', 'limit', 'name', 'queue', 'reason', 'state', 'to'].sort(),
     );
   });
 });
@@ -118,7 +67,7 @@ describe('unit · x jobs ls rendering', () => {
       visibilityTimeoutMs: 60_000,
       workerId: 'w',
     });
-    await driver.nack(id, { delayMs: 0, deadLetter: true }); // no `error`: nothing was recorded
+    await driver.nack(id, { workerId: 'w', claim: 1, delayMs: 0, deadLetter: true }); // no `error`: nothing was recorded
 
     const result = await runJobs(driver, { subcommand: 'ls' });
     const rendered = (result.lines ?? []).join('\n');
@@ -236,7 +185,7 @@ describe('unit · x jobs show and retry rendering', () => {
       workerId: 'w1',
       visibilityTimeoutMs: 1000,
     });
-    await driver.nack(id, { delayMs: 0, deadLetter: true });
+    await driver.nack(id, { workerId: 'w1', claim: 1, delayMs: 0, deadLetter: true });
 
     const result = await runJobs(driver, { subcommand: 'retry', positionals: [id] });
 
@@ -254,7 +203,7 @@ describe('unit · x jobs cancel', () => {
       workerId: 'w1',
       visibilityTimeoutMs: 1000,
     });
-    await driver.ack(id);
+    await driver.ack(id, { workerId: 'w1', claim: 1 });
 
     // The failure case: a `done` job has nothing to stop, and cancelling it would rewrite a
     // terminal row an operator is reading as success — so there is no path where this command

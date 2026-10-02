@@ -490,16 +490,20 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `asset`, `setAssetResolver`, `assetPathProblem`, `AssetPath` | `asset('assets/x.avif')` → the content-hashed URL of a public site file; the table is the CLI's ([Static Assets](../../wiki/Static-Assets.md)) |
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
 | `registerRoute`, `describeRoutes`, `routeFor`, `routePathFromFile` | the route table |
+| `registerMountedRoutes`, `RouteMount`, `RouteMountInput`, `MountedRouteInput` | routes a package mounts with no surface file: listed by `describeRoutes()` with `mount: { by, permissions }`, absent from `routeEntries()` |
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
 | `renderStatic`†, `enumeratePrerender`† | build-time render, content hashing |
 | `createIsrController`†, `invalidateAndRevalidate`† | SWR + single-flight + tag triggers |
 | `renderSsr`†, `streamResult`† | the per-request modes |
 | `renderToHtml`†, `renderComponent`†, `stylesFor`† | the server JSX writer and the surface's css |
+| `claimStylesheets`† | a package claims its own directory's stylesheets for ONE surface, so the other surface's documents never carry them |
 | `installRenderLoader`†, `compileStylesheet`† | the `.tsx`/`.scss` loaders, installed on import |
+| `setSassCacheDir`†, `sassCompilations`† | where the Sass compile cache lives (`.x/cache/sass` under cwd; a container's is the image's prebuilt store) and how many compiles this process ran instead of reading one |
 | `emitIslandAttributes`, `hydrateRuntime`, `HYDRATE_RUNTIME_BODIES` | the four hydration strategies, and every body the runtime script can hold — a host hashes that list into `script-src`, because the runtime is emitted inline and no `render: 'static'` file can receive a nonce |
 | `ISLAND_MOUNTED_ATTRIBUTE`, `ISLAND_FAILED_ATTRIBUTE`, `IDLE_HYDRATE_TIMEOUT_MS` | what hydration looks like from outside the page |
 | `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script |
+| `clientPathStyleTags`, `CLIENT_PATH_STYLE_META` | `<meta name="ultimate-path-style">` — the action path style the server serves, for the browser's typed client. No tag for `'resource'`, the default |
 
 ## Notes
 

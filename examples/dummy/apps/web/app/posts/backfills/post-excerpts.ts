@@ -56,10 +56,14 @@ export const postExcerpts = backfill({
     // composed with this batch's ceiling, so a cancelled pass stops here rather than writing past
     // its lease — and past it `step.run` refuses the write anyway.
     signal.throwIfAborted();
-    // One statement for the page, not one per row: `upsertAll` is the bulk write a per-row
-    // `update` loop is the N+1 of, and `onConflict: ['id']` makes a replayed page a no-op rewrite
-    // of the same values rather than a second insert.
-    await db.posts.upsertAll(rows.map(withExcerpt), { onConflict: ['id'] });
+    // One `update` per row, by primary key, and only the column this pass owns. NOT
+    // `upsertAll(rows, { onConflict: ['id'] })`, which stood here until 2026-10-01: `posts` is
+    // tenant-scoped, a collision judged on `id` alone could land on another tenant's row, so the
+    // handle refuses it (`X_TENANCY_UNSCOPED`) — and this pass retried its first page for ever
+    // while every test that existed asserted the projection and never ran the handler.
+    for (const row of rows) {
+      await db.posts.update(row.id, { excerpt: withExcerpt(row).excerpt });
+    }
   },
   /**
    * How many rows still NEED the change — never how many the pass visits. It is the same predicate

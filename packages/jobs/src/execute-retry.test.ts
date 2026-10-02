@@ -62,7 +62,7 @@ async function claimOne(options: {
     ...base,
     async nack(jobId, nack) {
       nacks.push(nack);
-      await base.nack(jobId, nack);
+      return base.nack(jobId, nack);
     },
   };
   await driver.enqueue({
@@ -110,8 +110,20 @@ describe('a terminal error stops on the attempt it happened', () => {
     expect(execution.outcome).toBe('dead-lettered');
     expect(execution.attempt).toBe(1);
     expect(harness.nacks()).toEqual([
-      { delayMs: 0, error: expect.any(String), countsAsAttempt: true, deadLetter: true },
+      expect.objectContaining({
+        delayMs: 0,
+        error: expect.any(String),
+        countsAsAttempt: true,
+        deadLetter: true,
+        fail: false,
+        // Fenced on the claimer, like every settle the executor makes.
+        workerId: 'worker-test',
+      }),
     ]);
+    // The ROW carries the instruction, not only the diagnosis: `lastError` is what an operator opens.
+    expect((await harness.driver.introspect?.job(execution.jobId))?.lastError).toContain(
+      ' — fix: rotate the credential in the vault, then x jobs retry --json',
+    );
   });
 
   test('a per-instance terminal override beats the code’s own classification', async () => {
@@ -124,7 +136,7 @@ describe('a terminal error stops on the attempt it happened', () => {
     expect((await harness.execute()).outcome).toBe('dead-lettered');
   });
 
-  test('deadLetter: false still drops rather than parks it', async () => {
+  test('deadLetter: false DROPS it: the row is failed, and nothing ever claims it again', async () => {
     resetJobs();
     const handle = job<{ n: number }>({
       tenant: 'none',
@@ -140,7 +152,7 @@ describe('a terminal error stops on the attempt it happened', () => {
       ...driver,
       async nack(jobId, nack) {
         nacks.push(nack);
-        await driver.nack(jobId, nack);
+        return driver.nack(jobId, nack);
       },
     };
     await spied.enqueue({
@@ -166,8 +178,19 @@ describe('a terminal error stops on the attempt it happened', () => {
       ctx: createContext({ role: 'worker', buildId: 'test' }),
     });
 
-    expect(execution.outcome).toBe('dead-lettered');
-    expect(nacks[0]?.deadLetter).toBe(false);
+    // DROPPED: settled `failed`, terminal. It was nacked with neither flag, which both drivers
+    // file `ready` — so the row was claimed again at once, ran again, and never stopped.
+    expect(execution.outcome).toBe('dropped');
+    expect(nacks[0]).toMatchObject({ deadLetter: false, fail: true });
+    expect((await driver.introspect?.job(claimed.id))?.state).toBe('failed');
+    const again = await spied.claim({
+      queues: ['default'],
+      limit: 1,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'worker-test',
+    });
+    expect(again).toEqual([]);
+    expect(await driver.introspect?.deadLetters()).toEqual([]);
   });
 });
 
@@ -232,7 +255,7 @@ describe('retry-after retries at the time the responder named', () => {
       ...driver,
       async nack(jobId, nack) {
         nacks.push(nack);
-        await driver.nack(jobId, nack);
+        return driver.nack(jobId, nack);
       },
     };
     await spied.enqueue({

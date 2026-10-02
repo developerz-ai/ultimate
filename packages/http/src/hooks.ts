@@ -3,7 +3,7 @@
 // be imported here), and — a seam of a different kind, deciding nothing — what a dev diagnostic
 // found. All three are declared structurally, which keeps the import boundary intact and keeps
 // the pipeline testable.
-import type { Actor } from '@ultimat3/core';
+import type { Actor, UltimateError } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import type { OverlayNotice } from './overlay';
 import type { UltimateRequest } from './request';
@@ -51,6 +51,17 @@ export interface ServerHooks {
     status: number,
     ctx: RequestContext,
   ) => Promise<string | undefined> | string | undefined;
+  /**
+   * Why nothing is routed at this path, when a higher tier knows more than "no route". Consulted
+   * ONLY on a miss — never for a matched route, a refused method or an unreadable path — and the
+   * error it returns is thrown in place of `X_ROUTE_NOT_FOUND`; `undefined` keeps the plain miss.
+   * `@ultimat3/action` answers here for a path that is one of its actions under a path style this
+   * server does not serve.
+   *
+   * Synchronous and given only the request line: a miss is reached by any anonymous caller, so
+   * what runs on it must not read a body, a session or a database.
+   */
+  readonly explainMiss?: (method: string, pathname: string) => UltimateError | undefined;
 }
 
 export type Authenticator = NonNullable<ServerHooks['authenticate']>;

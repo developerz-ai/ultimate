@@ -1,11 +1,24 @@
-// `x jobs ls|show|retry|cancel|drain` — introspect and recover the job queue, bound to
+// `x jobs ls|show|retry|cancel|rm|promote|pause|resume|drain` — introspect and recover the job queue, bound to
 // `@ultimat3/jobs`'s
 // own introspection so the CLI, `/_x` and MCP report identically. This file is CLI wiring only:
 // the driver-injected logic is `jobs-report.ts`, the `--json` shapes `jobs-json.ts`, the table
 // `jobs-table.ts`, and getting hold of the queue at all is `jobs-driver.ts` — shared with `x db`.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import type { JobDriver } from '@ultimat3/jobs';
-import { cancelJob, createNatsDriver, createRedisDriver } from '@ultimat3/jobs';
+import {
+  cancelJob,
+  createNatsDriver,
+  createRedisDriver,
+  DEFAULT_JOB_PAGE,
+  jobCursor,
+  MAX_JOB_PAGE,
+  pauseQueue,
+  promoteJob,
+  removeJob,
+  resumeQueue,
+} from '@ultimat3/jobs';
+import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { DRAIN_TARGETS, jobsSpec } from './cmd-jobs-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -21,6 +34,8 @@ import {
   drainSkipToJson,
   jobRecordToJson,
   jobTraceToJson,
+  pausedToJson,
+  workerToJson,
 } from './jobs-json';
 import { listJobs, retryJob, showJob } from './jobs-report';
 import { renderJobTable } from './jobs-table';
@@ -64,6 +79,33 @@ function requireIdPositional(ctx: CommandContext, sub: string): string {
   return id;
 }
 
+function requireQueuePositional(ctx: CommandContext, sub: string): string {
+  const queue = ctx.args.positionals[0];
+  if (queue === undefined) {
+    throw new MissingPositionalError({
+      command: `jobs ${sub}`,
+      positional: 'queue',
+      example: `x jobs ${sub} default --json`,
+    });
+  }
+  return queue;
+}
+
+/**
+ * A page past the queue's own bound is refused HERE, as a flag error with the command that walks
+ * instead — `list()` would refuse it too, in the vocabulary of a caller holding a driver.
+ */
+function refuseOversizedPage(limit: string | undefined): void {
+  if (limit === undefined || !/^\d+$/.test(limit) || Number(limit) <= MAX_JOB_PAGE) return;
+  throw new BadFlagError({
+    flag: 'limit',
+    command: 'jobs',
+    reason: `one page holds at most ${MAX_JOB_PAGE} jobs`,
+    // The bound is the queue's own constant, screened like any value spliced into a command.
+    fix: `x jobs ls --limit ${renderFixShellArg(String(MAX_JOB_PAGE), '200')} --json   # then pass its data.next as --after for the page that follows`,
+  });
+}
+
 function requireEnvUrl(env: CommandContext['env'], name: string, target: string): string {
   const value = env[name];
   if (value === undefined || value.trim().length === 0) {
@@ -97,15 +139,33 @@ export function buildDrainTarget(to: string | undefined, env: CommandContext['en
 }
 
 async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
+  const limit = flagString(ctx.args, 'limit');
+  refuseOversizedPage(limit);
   const result = await listJobs(driver, {
     queue: flagString(ctx.args, 'queue'),
     state: flagString(ctx.args, 'state'),
     name: flagString(ctx.args, 'name'),
-    limit: flagString(ctx.args, 'limit'),
+    limit,
+    after: flagString(ctx.args, 'after'),
   });
+  // A FULL page may have another behind it: `next` is the cursor that asks for it, and `null`
+  // says this was the last one — so a walk never has to guess from a row count.
+  const size = limit === undefined ? DEFAULT_JOB_PAGE : Number(limit);
+  const last = result.rows[result.rows.length - 1];
+  const next = last === undefined || result.rows.length < size ? null : jobCursor(last);
+  const [paused, workers] = await Promise.all([
+    driver.introspect?.pausedQueues() ?? [],
+    driver.introspect?.workers() ?? [],
+  ]);
   const lines = [`  ${msg('cli.jobs.listed', { count: result.rows.length })}`];
   if (result.rows.length > 0) {
     lines.push(...renderJobTable(result.rows).map((line) => `  ${line}`));
+  }
+  if (next !== null) lines.push(`  ${msg('cli.jobs.nextPage', { cursor: next })}`);
+  if (paused.length > 0) {
+    lines.push(
+      `  ${msg('cli.jobs.pausedQueues', { queues: paused.map((q) => q.name).join(', ') })}`,
+    );
   }
   if (result.deadLetters.length > 0) {
     lines.push(`  ${msg('cli.jobs.deadLetters', { count: result.deadLetters.length })}`);
@@ -143,6 +203,9 @@ async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandRes
       rows: result.rows.map(jobRecordToJson),
       deadLetters: result.deadLetters.map(deadLetterToJson),
       backfills: result.backfills.map(backfillToJson),
+      next,
+      pausedQueues: paused.map(pausedToJson),
+      workers: workers.map(workerToJson),
     },
   };
 }
@@ -190,6 +253,48 @@ async function runCancel(driver: JobDriver, ctx: CommandContext): Promise<Comman
     command: 'jobs',
     summary: msg('cli.jobs.cancelled', { id: trace.id, state: trace.state }),
     data: jobTraceToJson(trace),
+  };
+}
+
+/** Exit 0 means the row is gone. An id nobody queued is `X_JOB_UNKNOWN`; a running one refuses. */
+async function runRm(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
+  const id = requireIdPositional(ctx, 'rm');
+  const removed = await removeJob(driver, id);
+  if (removed === undefined) throw new JobUnknownError({ id, driver: driver.name });
+  return {
+    ok: true,
+    command: 'jobs',
+    summary: msg('cli.jobs.removed', { id: removed.id, state: removed.state }),
+    data: jobRecordToJson(removed),
+  };
+}
+
+async function runPromote(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
+  const promoted = await promoteJob(driver, requireIdPositional(ctx, 'promote'));
+  return {
+    ok: true,
+    command: 'jobs',
+    summary: msg('cli.jobs.promoted', { id: promoted.id }),
+    data: jobRecordToJson(promoted),
+  };
+}
+
+/**
+ * Both verbs answer the list as the queue NOW holds it, read back after the write: the pause is a
+ * row every worker's next claim reads, so "paused" here is paused fleet-wide within one poll.
+ */
+async function runPause(
+  driver: JobDriver,
+  ctx: CommandContext,
+  sub: 'pause' | 'resume',
+): Promise<CommandResult> {
+  const queue = requireQueuePositional(ctx, sub);
+  const paused = await (sub === 'pause' ? pauseQueue(driver, queue) : resumeQueue(driver, queue));
+  return {
+    ok: true,
+    command: 'jobs',
+    summary: msg(sub === 'pause' ? 'cli.jobs.paused' : 'cli.jobs.resumed', { queue }),
+    data: { queue, paused: sub === 'pause', pausedQueues: paused.map(pausedToJson) },
   };
 }
 
@@ -246,6 +351,9 @@ async function runDrain(
   return drainResult(await drainJobs(driver, target, flagBool(ctx.args, 'dry-run')));
 }
 
+/** The subcommands that answer a `JobTrace`. `ls`, `rm`, `promote` and the rest read rows only. */
+const TRACE_SUBCOMMANDS: ReadonlySet<string> = new Set(['show', 'retry', 'cancel']);
+
 export const jobsCommand: CliCommand = {
   spec: jobsSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
@@ -258,10 +366,19 @@ export const jobsCommand: CliCommand = {
     // word they typed was refused by name. It also opens a connection to a target the command
     // then refuses, which is a socket nothing closes.
     const target = sub === 'drain' ? buildDrainTarget(flagString(ctx.args, 'to'), ctx.env) : null;
+    // A TRACE is the queue row projected through the job's own declaration — its concurrency key,
+    // its retry schedule — and a declaration exists in this process only once the app is loaded.
+    // Unloaded, `show` answered `concurrencyKey: null` and `retryDelaysMs: []` for every job of
+    // every app. The findings are deliberately dropped: a trace is read to debug a stuck queue,
+    // so an app that half-loads degrades those two fields and still answers.
+    if (TRACE_SUBCOMMANDS.has(sub)) await loadApp(root);
     return withJobDriver(root, ctx, (driver) => {
       if (sub === 'show') return runShow(driver, ctx);
       if (sub === 'retry') return runRetry(driver, ctx);
       if (sub === 'cancel') return runCancel(driver, ctx);
+      if (sub === 'rm') return runRm(driver, ctx);
+      if (sub === 'promote') return runPromote(driver, ctx);
+      if (sub === 'pause' || sub === 'resume') return runPause(driver, ctx, sub);
       if (target !== null) return runDrain(driver, target, ctx);
       return runLs(driver, ctx);
     });
