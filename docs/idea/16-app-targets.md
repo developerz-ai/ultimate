@@ -6,7 +6,8 @@ Web is SolidJS + SCSS modules. Desktop is that same build inside a Tauri window.
 Native, which shares no component with either. Everything *below* the view is shared on all three.
 
 **Design only, `As of 2026-08` — none of it exists.** No `@ultimat3/tokens`, no `@ultimat3/native`,
-no `desktop` or `native` build target (`BUILD_TARGETS` is still `docker | binary | static`), no
+no `desktop` or `native` build target (`BUILD_TARGETS` is `docker | binary | static | prebuilt`
+`As of 2026-10` — `prebuilt` is the image build's own step, not an app target), no
 `route.targets`, no `screen.tsx`, no gate step. 1.1.0 shipped without any of it; the target is a
 future minor, because every change here is additive — two new packages, two new `x build --target`
 values, one optional field on `route` — so no major.
@@ -186,7 +187,7 @@ Why the Expo protocol is a spec and not a vendor API — the load-bearing claims
 | `expo-updates` works in a bare project without adopting the managed workflow | `expo` + `expo-modules-core` install into existing `ios/`/`android/` folders |
 
 The framework's contribution: an `api/` route implementing the manifest response, assets served from
-`@ultimat3/storage` (S3, MinIO, or a local directory — the same seam everything else uses), and
+`@ultimat3/storage` (S3, an S3-compatible gateway, or a local directory — the same seam everything else uses), and
 signing with a key from the typed env. Nothing knows the name of a cloud. Using EAS instead remains
 possible precisely *because* the client is standard — that is the user's choice, made outside the
 framework, exactly like choosing Hetzner over Fly.

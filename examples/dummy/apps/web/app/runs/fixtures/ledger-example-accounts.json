@@ -1,0 +1,4 @@
+{
+  "url": "https://ledger.example/accounts",
+  "html": "<ul><li class=\"account\" data-id=\"acct-1\">Operating</li><li class=\"account\" data-id=\"acct-2\">Reserve</li></ul>"
+}

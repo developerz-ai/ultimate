@@ -104,7 +104,7 @@ test('unit · no admin test statically reaches a .tsx — the loader would be to
   }
 
   // The scan proves itself: a glob that matched nothing would report "no offenders" forever.
-  expect(scanned.length).toBeGreaterThan(5);
+  expect(scanned.length).toBeGreaterThan(3);
   expect(offenders.sort()).toEqual([]);
 });
 

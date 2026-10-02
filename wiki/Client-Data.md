@@ -4,11 +4,9 @@
 record per `entity:id`.** You never write `fetch`, never write a store, and never mirror a row
 into a signal by hand. Declare the entity, return its row, call the typed client.
 
-`As of 2026-09-22` this is **21.0.0 work and not released**. The HTTP half described here is in the
-tree. The store that *receives* the records and the hooks that read it are in the tree too.
-The store is installed the first time a realtime hook runs on the page. Before that, records reach
-the page handle and are held there until the store is installed. Every section says which half
-it is. The design is
+Shipped in 21.0.0, both halves: the HTTP seam and the store that receives its records, with the
+hooks that read it. The store is installed the first time a realtime hook runs on the page; records
+answered before that wait on the page handle until it is. The design is
 [`docs/architecture/21-client-data-layer.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/21-client-data-layer.md).
 
 ## One idiom per task
@@ -25,14 +23,32 @@ it is. The design is
 | install realtime in an island | nothing: `x build` does it for every island whose own graph imports `@ultimat3/realtime`. An island that reaches realtime only through a package calls `installRealtime({ signal: createSignal })` in `mount` | shipped in 21.0.0 |
 | show one record in a component | `useRecord('post', id)`: record type, then record key, from `@ultimat3/realtime` | shipped in 21.0.0 |
 | show a list | `useQuery({ name: 'postList', entity: 'post' }, input)`, or `{ name, live: true }` for a live query | shipped in 21.0.0 |
+| read once, no socket | `useQuery({ name: 'postList', entity: 'post' }, input)` with no `live` — one HTTP GET through the query client, rows into the same store. Nothing opens a socket (`packages/realtime/src/use-query.ts`): a list that needs no push needs no timer either — never poll | shipped in 21.0.0 |
 | follow a channel | declare it on one ref in two halves: `channelRef('org-feed', { params, catchUp })` for the browser, `channel(ORG_FEED, { records, policy })` on the server. Then `useChannel(ORG_FEED, { orgId }, { onEvent, onPresence })` in the island: records reach the store, events the handlers. `usePresence(ORG_FEED, params)` for a roster | shipped in 21.0.0 |
 | sign out | an action (the reference app's `endSession`, `POST /api/sessions/end`), posted by a native form, whose response appends `signOutHeaders()` from `@ultimat3/auth`: `Clear-Site-Data: "cache", "storage"` empties the page store, local storage and the service worker's cache. The redirect is a full navigation, so the next document carries the new scope | shipped in 21.0.0 |
 | keep a record type on disk across reloads | `entity('post', { columns, persist: true })`. Default `false`: a record is private data, and disk is a decision | shipped in 21.0.0 |
 | write with an optimistic update | `useMutation({ name: 'renamePost', local, conflict })`, posted over HTTP | shipped in 21.0.0 |
 
-Never write `fetch(` in an island. `bun run browser-transport` refuses it with
-`X_BROWSER_TRANSPORT_BYPASS` and names the line. `As of 2026-09-22` it is a standalone command,
-not yet a step of `x verify`.
+Never write `fetch(`, `new WebSocket(` or `new XMLHttpRequest(` in an island, or in anything an
+island imports. `x verify`'s `boundaries` step refuses it with `X_BROWSER_TRANSPORT_BYPASS` and
+names the line — in every app, `As of 2026-10`. Built in, not a file in `guards/`: there is no
+opt-out and no allowlist.
+
+| The raw call was | Write instead |
+|---|---|
+| an action (`POST /api/…`) | `await browserClient.<action>(input)` — `rpc<Api['actions']>` in `shared/browser-client.ts` |
+| a read (`GET /_x/query/…`) | `useQuery(<QUERY_REF>, input)`; outside a component, `await browserQueries.<query>(input)` |
+| a socket or an `EventSource` | `useQuery(<QUERY_REF>, input)` for rows, `useChannel(<CHANNEL_REF>, params, { onEvent })` for events |
+| a file upload | `await uploadFile({ file, grant, onProgress })` from `@ultimat3/storage` — the presigned PUT is its, not yours |
+| anything else | `await clientTransport({ method: 'GET', url })` from `@ultimat3/core/page` |
+
+| Fact | Rule |
+|---|---|
+| browser-reachable | every `*.island.tsx`, every module that calls `clientTransport` / `pageClient` itself, and what each imports — followed name by name through barrels, into the app's own `packages/*` |
+| not reported | a `route.ts`, a job, a task, a test: server code no island imports |
+| the package boundary | the walk stops at `node_modules`. `@ultimat3/*`'s three seams are trusted, never re-read |
+| a server barrel | `@ultimat3/entity` or `@ultimat3/query` imported for a VALUE in that closure is `X_BROWSER_SERVER_BARREL`; the fix names `@ultimat3/entity/record` / `@ultimat3/query/client` |
+| cannot see | a browser module that is no island, names no seam and is imported by neither; a request inside an installed package; `globalThis['fetch']`; a bare `fetch(` in a file that binds its own `fetch` |
 
 ## 1. The entity is the record
 
@@ -85,7 +101,7 @@ export const postList = query({
   policy: postRead,
   rows: Post.$schema, // without this line the rows never reach the store
   sql: ({ orgId }) =>
-    from<PostRow>('posts', () => repo.listByOrg(orgId)).where({ orgId }).orderBy('id'),
+    from<PostRow>('posts', () => repo.list()).where({ orgId }).orderBy('id'),
 });
 ```
 
@@ -97,21 +113,27 @@ off and the query still works, but its answer is bare rows the store never sees.
 ```ts
 // shared/browser-client.ts — type-only import of the api, so no server code reaches the island
 import { rpc } from '@ultimat3/action';
-import { queryClient } from '@ultimat3/query/client'; // the browser entry: 16,458 B vs 23,611 B via the barrel
+import { queryClient } from '@ultimat3/query/client'; // the browser entry: 10,899 B vs 23,997 B via the barrel
 import type { Api } from '../api';
 
-export const actions = rpc<Api['actions']>({ baseUrl: '' });
-export const queries = queryClient<Api['queries']>({ baseUrl: '' });
+export const browserClient = rpc<Api['actions']>({ baseUrl: '' });
+export const browserQueries = queryClient<Api['queries']>({ baseUrl: '' });
 ```
+
+| Fact | Rule |
+|---|---|
+| who writes the file | `x new` — `apps/web/shared/browser-client.ts`, both lines, with `browser-client.test.ts` beside it |
+| app size | both lines typecheck at any size — pinned at 300 actions in 100 modules and 100 reads in 50 (`client-scale-pins.ts` in each package). `As of 2026-10`; before, a 48th module in one `defineApi` list was TS2589 |
+| `pathStyle` | stated nowhere here. The server stamps `defineApi({ http: { pathStyle } })` into the document; the browser derives every action URL under it |
 
 ```ts
 // app/posts/rename.island.tsx
 import { isSuperseded, isUltimateError } from '@ultimat3/core';
-import { actions } from '../../shared/browser-client';
+import { browserClient } from '../../shared/browser-client';
 
 export async function rename(postId: string, title: string): Promise<void> {
   try {
-    await actions.renamePost({ postId, title }); // returns `data`, the envelope is stripped
+    await browserClient.renamePost({ postId, title }); // returns `data`, the envelope is stripped
   } catch (error) {
     if (isSuperseded(error)) return; // the page changed principal: render nothing
     if (isUltimateError(error) && error.code === 'X_CLIENT_TRANSPORT_FAILED') {
@@ -148,3 +170,21 @@ export async function rename(postId: string, title: string): Promise<void> {
 | `X_CONTRACT_DRIFT` | the client bundle and the server are on different builds | reload the page to pick up the new client bundle |
 
 Full rows: [Error codes](Error-Codes).
+
+## Shared island chunks
+
+**`islands: { sharedChunks: true }` in `app.config.ts` builds every island in one split build**, so
+a module two islands import is one `/islands/chunk-<hash>.js` a page fetches once. Off by default,
+by measurement (`packages/core/src/config-islands.ts`): tree shaking across one build keeps what
+any importer uses, so an island that takes one helper from a module the others use heavily pays for
+all of it — the reference app's plain-DOM update banner went 712 → 16,288 B with it on.
+
+| Turn it on when | Leave it off when |
+|---|---|
+| one surface's pages render several islands over one shared graph (the same form kit, the same chart) | an island is small and plain-DOM, or the islands share little |
+| `x build --target static`, then `x verify --only budgets`, shows the routes that render several islands getting smaller | any route's `budget.js` grows past its budget |
+
+Layering: the last config layer that states `sharedChunks` wins; absent everywhere is `false`
+(`mergeIslands`). A value that is not a boolean is refused at boot (`X_CONFIG_INVALID`). `As of
+2026-10`.
+

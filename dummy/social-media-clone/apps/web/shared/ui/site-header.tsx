@@ -30,7 +30,7 @@ export function SiteHeader(props: SiteHeaderProps): JSX.Element {
           <span class={styles.mark} aria-hidden="true">
             <Icon glyph={iconAtSign} />
           </span>
-          <span class={styles.wordmark}>{t('brand.name')}</span>
+          <span>{t('brand.name')}</span>
         </a>
 
         <nav class={styles.nav} aria-label={t('nav.primary')}>

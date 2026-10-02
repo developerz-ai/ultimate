@@ -1,12 +1,12 @@
 {
   "name": "@postly/admin",
   "version": "0.0.1",
-  "description": "Postly's generated admin dashboard and its MCP surface, declared (not yet mounted)",
+  "description": "Postly's admin dashboard, mounted under /admin, and its MCP surface",
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./app/admin/admin.ts"
   },
   "engines": {
     "bun": ">=1.4.0"

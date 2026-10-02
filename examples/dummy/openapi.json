@@ -1,6 +1,145 @@
 {
   "components": {
     "schemas": {
+      "AnswerPromptInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prompt": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "runId",
+          "prompt",
+          "answer"
+        ],
+        "type": "object"
+      },
+      "AnswerPromptOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "CancelRunInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "runId"
+        ],
+        "type": "object"
+      },
+      "CancelRunOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId"
+        ],
+        "type": "object"
+      },
+      "ConnectSiteInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "credential": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "exit": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "label",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "ConnectSiteOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "createdAt"
+        ],
+        "type": "object"
+      },
       "ContactSalesInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -456,6 +595,44 @@
         ],
         "type": "object"
       },
+      "IssueRunKeyInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId"
+        ],
+        "type": "object"
+      },
+      "IssueRunKeyOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "prefix": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "prefix",
+          "key"
+        ],
+        "type": "object"
+      },
       "LikePostInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -745,6 +922,38 @@
         ],
         "type": "object"
       },
+      "RevokeRunKeyInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "keyId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "keyId"
+        ],
+        "type": "object"
+      },
+      "RevokeRunKeyOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revoked"
+        ],
+        "type": "object"
+      },
       "SavePreferencesInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -977,6 +1186,44 @@
           "theme",
           "digestOptIn",
           "createdAt"
+        ],
+        "type": "object"
+      },
+      "StartRunInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "connectionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "connectionId"
+        ],
+        "type": "object"
+      },
+      "StartRunOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "runId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "jobId"
         ],
         "type": "object"
       },
@@ -1552,6 +1799,147 @@
           "capability": "feed:read",
           "live": true,
           "tool": null
+        }
+      }
+    },
+    "/_x/query/live-run-events": {
+      "get": {
+        "operationId": "liveRunEvents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the nextCursor (alias endCursor) a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "description": "alias of nextCursor — the same value",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasMore": {
+                          "description": "whether another page follows",
+                          "type": "boolean"
+                        },
+                        "hasNextPage": {
+                          "description": "alias of hasMore — the same value",
+                          "type": "boolean"
+                        },
+                        "nextCursor": {
+                          "description": "the signed cursor that continues this listing — send it as _after; null on an empty page",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "nextCursor",
+                        "hasMore",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "One run’s events in order: what it did and what it waits on",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [],
+          "capability": "run:read",
+          "live": true,
+          "tool": "liveRunEvents"
         }
       }
     },
@@ -2515,6 +2903,127 @@
         }
       }
     },
+    "/_x/query/run-connections": {
+      "get": {
+        "operationId": "runConnections",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the nextCursor (alias endCursor) a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "description": "alias of nextCursor — the same value",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasMore": {
+                          "description": "whether another page follows",
+                          "type": "boolean"
+                        },
+                        "hasNextPage": {
+                          "description": "alias of hasMore — the same value",
+                          "type": "boolean"
+                        },
+                        "nextCursor": {
+                          "description": "the signed cursor that continues this listing — send it as _after; null on an empty page",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "nextCursor",
+                        "hasMore",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "runConnections",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [],
+          "capability": "run:read",
+          "live": false,
+          "tool": null
+        }
+      }
+    },
     "/api/avatar-uploads/grant": {
       "post": {
         "operationId": "grantAvatarUpload",
@@ -3309,6 +3818,351 @@
         }
       }
     },
+    "/api/prompts/answer": {
+      "post": {
+        "operationId": "answerPrompt",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerPromptInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerPromptOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "Answer the prompt a run is waiting on — the code the site asked for. The run resumes with its browser still open",
+        "tags": [
+          "prompts"
+        ],
+        "x-ultimate": {
+          "capability": "run:write",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": "answerPrompt",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/run-keys/issue": {
+      "post": {
+        "operationId": "issueRunKey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueRunKeyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueRunKeyOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "issueRunKey",
+        "tags": [
+          "run-keys"
+        ],
+        "x-ultimate": {
+          "capability": "run:key",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/run-keys/revoke": {
+      "post": {
+        "operationId": "revokeRunKey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeRunKeyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeRunKeyOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "revokeRunKey",
+        "tags": [
+          "run-keys"
+        ],
+        "x-ultimate": {
+          "capability": "run:key",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/runs/cancel": {
+      "post": {
+        "operationId": "cancelRun",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelRunInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelRunOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "Cancel a run that is queued or in flight",
+        "tags": [
+          "runs"
+        ],
+        "x-ultimate": {
+          "capability": "run:write",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": "cancelRun",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/runs/start": {
+      "post": {
+        "operationId": "startRun",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRunInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartRunOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "Start one sync of a connection. Answers the run id its events and prompts are keyed by; a second run of a busy connection settles failed with X_JOB_KEY_BUSY",
+        "tags": [
+          "runs"
+        ],
+        "x-ultimate": {
+          "capability": "run:write",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": "startRun",
+          "rateLimit": null
+        }
+      }
+    },
     "/api/sales/contact": {
       "post": {
         "operationId": "contactSales",
@@ -3443,6 +4297,75 @@
         ],
         "x-ultimate": {
           "capability": "end-session",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/sites/connect": {
+      "post": {
+        "operationId": "connectSite",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectSiteInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectSiteOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "connectSite",
+        "tags": [
+          "sites"
+        ],
+        "x-ultimate": {
+          "capability": "run:write",
           "idempotent": false,
           "invalidates": [],
           "mcpTool": null,
@@ -3658,10 +4581,22 @@
       "name": "preferences"
     },
     {
+      "name": "prompts"
+    },
+    {
+      "name": "run-keys"
+    },
+    {
+      "name": "runs"
+    },
+    {
       "name": "sales"
     },
     {
       "name": "sessions"
+    },
+    {
+      "name": "sites"
     },
     {
       "name": "summarizes"

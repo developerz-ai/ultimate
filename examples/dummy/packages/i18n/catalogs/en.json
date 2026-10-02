@@ -82,7 +82,8 @@
     "nav": {
       "feed": "Feed",
       "settings": "Settings",
-      "org": "Organisation"
+      "org": "Organisation",
+      "runs": "Runs"
     },
     "feed": {
       "metaTitle": "Feed",
@@ -122,6 +123,58 @@
       "themeDark": "Dark",
       "digestLabel": "Nightly digest",
       "digestHelp": "One email at 09:00 your time with what your organisation published."
+    },
+    "runs": {
+      "metaTitle": "Runs",
+      "heading": "Run console",
+      "intro": "Start a sync of a connected site and watch it here, live. When the site asks for a code, you answer it on this page.",
+      "connection": "Connection",
+      "start": "Start run",
+      "cancel": "Cancel run",
+      "idle": "No run yet. Start one to watch it here.",
+      "events": "Run events",
+      "accounts_one": "{count} account read",
+      "accounts_other": "{count} accounts read",
+      "busy": "Another run is already active on this connection. Start this one again when it ends.",
+      "usage": {
+        "heading": "What the run used",
+        "browser": "Browser time",
+        "navigations": "Pages opened",
+        "requests": "Requests",
+        "bytes": "Data read",
+        "prompts": "Codes answered"
+      },
+      "state": {
+        "pending": "Waiting for the run to start",
+        "streaming": "Running",
+        "awaiting": "Waiting for your code",
+        "failed": "The run failed",
+        "done": "Finished"
+      },
+      "kind": {
+        "prompt": "The site asked for a code",
+        "answered": "Code received",
+        "navigated": "Opened the accounts page",
+        "extracted": "Read the accounts",
+        "done": "Finished",
+        "failed": "Stopped"
+      },
+      "connect": {
+        "heading": "Connect a site",
+        "name": "Name",
+        "credential": "Password",
+        "submit": "Connect"
+      },
+      "prompt": {
+        "label": "One-time code",
+        "submit": "Send code"
+      },
+      "fault": {
+        "connect": "The site could not be connected. Try again.",
+        "start": "The run could not be started. Try again.",
+        "answer": "The code could not be sent. Try again.",
+        "cancel": "The run could not be cancelled. Try again."
+      }
     }
   },
   "posts": {
@@ -218,6 +271,265 @@
     "updateAction": "Reload"
   },
   "admin": {
-    "title": "Postly admin"
+    "title": "Postly admin",
+    "orgs": {
+      "title": "Organisations",
+      "field": {
+        "id": "ID",
+        "slug": "Slug",
+        "name": "Name",
+        "planCode": "Plan",
+        "billingCurrency": "Billing currency",
+        "createdAt": "Created at",
+        "updatedAt": "Updated at"
+      }
+    },
+    "members": {
+      "title": "Members",
+      "field": {
+        "id": "ID",
+        "orgId": "Org ID",
+        "userId": "User ID",
+        "email": "Email",
+        "name": "Name",
+        "role": "Role",
+        "tz": "Time zone",
+        "locale": "Language",
+        "theme": "Theme",
+        "digestOptIn": "Nightly digest",
+        "createdAt": "Joined at"
+      }
+    },
+    "posts": {
+      "title": "Posts",
+      "field": {
+        "id": "ID",
+        "orgId": "Org ID",
+        "authorId": "Author",
+        "slug": "Slug",
+        "title": "Title",
+        "excerpt": "Excerpt",
+        "body": "Body",
+        "coverUrl": "Cover image",
+        "status": "Status",
+        "likeCount": "Likes",
+        "publishedAt": "Published at",
+        "createdAt": "Created at",
+        "updatedAt": "Updated at"
+      }
+    },
+    "comments": {
+      "title": "Comments",
+      "field": {
+        "id": "ID",
+        "orgId": "Org ID",
+        "postId": "Post",
+        "authorId": "Author",
+        "body": "Comment",
+        "createdAt": "Written at"
+      }
+    },
+    "connections": {
+      "title": "Connections",
+      "field": {
+        "id": "ID",
+        "orgId": "Org ID",
+        "label": "Label",
+        "credential": "Credential",
+        "exit": "Exit",
+        "createdAt": "Created at"
+      }
+    },
+    "run_events": {
+      "title": "Run events",
+      "field": {
+        "id": "ID",
+        "orgId": "Org ID",
+        "runId": "Run ID",
+        "seq": "Seq",
+        "kind": "Kind",
+        "at": "At",
+        "message": "Message",
+        "prompt": "Prompt",
+        "usage": "Usage"
+      }
+    },
+    "runs": {
+      "title": "Runs",
+      "field": {
+        "id": "Run ID",
+        "orgId": "Org ID",
+        "connectionId": "Connection",
+        "jobId": "Job ID",
+        "status": "Status",
+        "code": "Code",
+        "startedAt": "Started at"
+      },
+      "scope": {
+        "running": "Running",
+        "failed": "Failed"
+      }
+    },
+    "group": {
+      "data": "Data",
+      "jobs": "Jobs"
+    },
+    "dashboard": {
+      "title": "Dashboard"
+    },
+    "search": {
+      "title": "Search"
+    },
+    "audit": {
+      "title": "Audit trail"
+    },
+    "section": {
+      "other": "Other"
+    },
+    "jobs": {
+      "title": "Jobs",
+      "scope": {
+        "all": "All",
+        "ready": "Ready",
+        "delayed": "Delayed",
+        "running": "Running",
+        "suspended": "Suspended",
+        "done": "Done",
+        "failed": "Failed",
+        "dead": "Dead",
+        "cancelled": "Cancelled"
+      },
+      "section": {
+        "run": "Run",
+        "failure": "Failure",
+        "work": "Input, progress and steps",
+        "trace": "Tenant and trace"
+      },
+      "hint": {
+        "id": "Paste the first characters of a job id."
+      }
+    },
+    "x_jobs": {
+      "title": "Job runs",
+      "field": {
+        "id": "Id",
+        "name": "Job",
+        "queue": "Queue",
+        "state": "State",
+        "attempt": "Attempt",
+        "maxAttempts": "Max attempts",
+        "runAt": "Runs at",
+        "createdAt": "Queued",
+        "updatedAt": "Updated",
+        "tenantId": "Tenant",
+        "lastError": "Last error",
+        "lastErrorStack": "Stack",
+        "progress": "Progress",
+        "input": "Input",
+        "steps": "Steps",
+        "traceparent": "Trace",
+        "enqueuedBy": "Queued by",
+        "claimedBy": "Claimed by"
+      },
+      "column": {
+        "completed": "Progress",
+        "error": "Last error"
+      }
+    },
+    "x_job_queues": {
+      "title": "Queues",
+      "field": {
+        "name": "Queue",
+        "ready": "Ready",
+        "delayed": "Delayed",
+        "running": "Running",
+        "suspended": "Suspended",
+        "failed": "Failed",
+        "dead": "Dead",
+        "oldestReadyMs": "Oldest ready (ms)",
+        "paused": "Paused",
+        "pausedAt": "Paused at"
+      },
+      "column": {
+        "oldest": "Oldest ready",
+        "jobs": "Jobs"
+      }
+    },
+    "x_job_tasks": {
+      "title": "Scheduled tasks",
+      "field": {
+        "name": "Task",
+        "cron": "Schedule",
+        "tz": "Time zone",
+        "catchUp": "Catch-up",
+        "enqueues": "Queues",
+        "lastFireAt": "Last fire",
+        "nextFireAt": "Next fire",
+        "paused": "Paused"
+      }
+    },
+    "x_job_workers": {
+      "title": "Workers",
+      "field": {
+        "id": "Worker",
+        "host": "Host",
+        "queues": "Queues",
+        "concurrency": "Slots",
+        "inFlight": "In flight",
+        "startedAt": "Started",
+        "heartbeatAt": "Heartbeat"
+      },
+      "column": {
+        "heartbeat": "Last heartbeat",
+        "running": "Running jobs"
+      }
+    },
+    "action": {
+      "run": {
+        "cancel": "Cancel run"
+      },
+      "job": {
+        "retry": "Retry",
+        "retry-from-step": "Retry from a step",
+        "run-now": "Run now",
+        "cancel": "Cancel",
+        "remove": "Remove",
+        "queue": {
+          "pause": "Pause queue",
+          "resume": "Resume queue"
+        },
+        "task": {
+          "pause": "Pause task",
+          "resume": "Resume task",
+          "run-now": "Run now"
+        }
+      },
+      "publishPost": "Publish post",
+      "inviteMember": "Invite member",
+      "upgradePlan": "Upgrade plan"
+    },
+    "input": {
+      "publishPost": {
+        "postId": "Post",
+        "orgId": "Organisation ID",
+        "notify": "Notify readers"
+      },
+      "inviteMember": {
+        "email": "Email",
+        "role": "Role",
+        "tz": "Time zone",
+        "locale": "Language",
+        "orgId": "Organisation ID"
+      },
+      "upgradePlan": {
+        "orgId": "Organisation ID",
+        "plan": "Plan"
+      },
+      "job": {
+        "retry-from-step": {
+          "step": "Step"
+        }
+      }
+    }
   }
 }

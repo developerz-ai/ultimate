@@ -2,7 +2,7 @@
 
 One image, N roles. Build once; the `ROLE` env var selects behavior. No role-specific Dockerfile, no per-role dependency set, no drift between what you tested and what runs.
 
-`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). All three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. Milestone 11 is 🚧 on one thing ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)): the two-platform proof — the demo app on Compose **and** on K8s from one image, with a rolling restart invisible to connected clients.
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). All three artifact targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — plus `x build --target prebuilt`, the step the app image runs on itself (`As of 2026-10`), and so do the compose files and the Helm chart. Milestone 11 is 🚧 on one thing ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)): the two-platform proof — the demo app on Compose **and** on K8s from one image, with a rolling restart invisible to connected clients.
 
 ```
 docker build -t myapp .          # once
@@ -102,6 +102,7 @@ There is no `realtime.drain` config key — the spread window is `createSyncNode
 x build --target docker     # one image, all roles (default)
 x build --target binary     # single Bun-compiled executable, no runtime install
 x build --target static     # site/ output only: HTML, assets, sitemap, feeds
+x build --target prebuilt   # the line the Dockerfile runs INSIDE the image build
 ```
 
 | Target | Output | Use |
@@ -109,6 +110,35 @@ x build --target static     # site/ output only: HTML, assets, sitemap, feeds
 | `docker` | one OCI image, `ROLE` selects behavior | the normal path |
 | `binary` | `.x/app` — `bun build --compile`, all roles inside. Boots `As of 2026-08`; **not yet served from a bare VM** ([Known gaps](Known-Gaps)) | VMs, systemd, air-gapped, a CLI-shaped product |
 | `static` | `.x/static` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently |
+| `prebuilt` | `node_modules/.cache/ultimate/` — every island chunk and every compiled stylesheet. No gate, no subprocess, takes neither `--tag` nor `--out` | never by hand: it is `docker`'s other half, a `RUN` line in the image |
+
+### What a pod boots from
+
+**A pod builds nothing at boot.** `As of 2026-10-01`. The scaffolded Dockerfile carries, after `COPY . .`:
+
+```dockerfile
+RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target prebuilt
+```
+
+| Rule | Why |
+|---|---|
+| it runs in the image build, never on the host | the store is valid for one Bun, one framework version and one set of absolute paths — the image's |
+| above `ENV NODE_ENV=production` | it imports the app with no deployment environment; in production `app.config.ts` asks for values no image build has |
+| above `ARG BUILD_ID` | two images differing only by their stamp share the layer |
+| it writes under `node_modules/`, not `.x/` | `.x/` is state: every ignore file drops it and the compose topology mounts a tmpfs over it |
+| a module that will not import fails the image build | its stylesheets would be missing, and every pod would compile them |
+
+An image without the line still serves. Every boot then runs Babel over every island and Sass over
+every stylesheet, and logs one `error` line saying so — `X_IMAGE_NOT_PREBUILT`, with the counts,
+the milliseconds and the line above. Measured on the demo app's image, `ROLE=web`, four boots each:
+
+| | time to ready | boot CPU | peak RSS | settled RSS |
+|---|---|---|---|---|
+| no store | 4.2–4.8 s | 8.3–9.5 CPU-s | 244–269 Mi | 215–220 Mi |
+| prebuilt | 1.6–1.7 s | 1.8–2.0 CPU-s | 141–147 Mi | 97–102 Mi |
+
+**An app scaffolded before 23.0.0 does not have the line** — its `docker/Dockerfile` is the app's
+own file. Add it; the boot log names it until you do ([Upgrading](Upgrading)).
 
 All targets share one build ID (content hash), stamped into the image, the HTML, the assets, `x.manifest.json` — **and `sw.js`**, `As of 2026-08`: the worker's cache names carry the build id, so a deploy retires the previous build's caches instead of serving them ([#390](https://github.com/developerz-ai/ultimate/issues/390)). Every target that serves or writes a document emits `manifest.webmanifest`, `sw.js` and `x-sw-register.js` alike ([PWA and offline](PWA-And-Offline)).
 
@@ -127,13 +157,19 @@ $ x build --target docker
 ```yaml
 # docker/docker-compose.dev.yml — only needed for parity checks; `x dev` needs none of this
 services:
-  app:      { build: ., environment: { ROLE: web }, ports: ['3000:3000'] }
-  postgres: { image: postgres:17, ports: ['5432:5432'] }
-  nats:     { image: nats:2, command: '-js', ports: ['4222:4222'] }
-  minio:    { image: minio/minio, command: 'server /data', ports: ['9000:9000'] }
+  db:   { image: postgres:17-alpine, ports: ['127.0.0.1:5432:5432'] }
+  nats: { image: nats:2-alpine, command: ['-js'], ports: ['127.0.0.1:4222:4222'] }
+  s3:   { image: versity/versitygw:v1.8.0, ports: ['127.0.0.1:9000:9000'], volumes: ['s3bucket:/data/myapp'] }
 ```
 
-`x dev` uses embedded Postgres, in-process NATS, and a local directory for S3 — **Docker is not required to develop.** This file exists for parity debugging and CI jobs that want real services.
+`x dev` uses embedded Postgres, in-process NATS, and a local directory for S3 — **Docker is not required to develop.** This file exists for parity debugging: three backing services and no `app` service, because the app in development is `x dev` on the host, pointed at them by environment (the file's header is the line to paste).
+
+| Service | Rule |
+|---|---|
+| every port | binds `127.0.0.1` — the credentials are in the file |
+| `s3` | Versity S3 Gateway over a directory. A directory under `/data` is a bucket, so the volume mounted at `/data/<app>` **is** the bucket: ready on the first `up`, no CreateBucket call |
+| `S3_REGION` | not needed against it: an unset region signs for `auto`, and the gateway is started with that region. An endpoint that expects another refuses the first write with `X_CONFIG_INVALID`, naming the value to set |
+| production | any S3-compatible endpoint. This file picks a server for a laptop, never for a deployment |
 
 ## Prod compose
 
