@@ -5,12 +5,12 @@
 import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
+import { Button } from '@ultimat3/ui';
 import {
   CAPTCHA_AFTER_FAILURES,
   captchaSiteKey,
   HCAPTCHA_SCRIPT_URL,
 } from '../../shared/auth-policy';
-import { ActionButton } from '../../shared/ui/action';
 import { AppShell } from '../../shared/ui/app-shell';
 import { Field } from '../../shared/ui/field';
 import styles from './page.module.scss';
@@ -89,7 +89,9 @@ export function Page(props: SignInProps) {
             </>
           )}
 
-          <ActionButton size="lg">{t('site.signin.submit')}</ActionButton>
+          <Button type="submit" size="lg">
+            {t('site.signin.submit')}
+          </Button>
         </form>
 
         <section class={styles.demo}>
@@ -112,7 +114,9 @@ export function Page(props: SignInProps) {
           <form method="post" action="/api/sessions/destroy">
             {/* A form with no fields posts an empty body, and an action's input is an object. */}
             <input type="hidden" name="confirm" value="sign-out" />
-            <ActionButton variant="secondary">{t('site.signin.signOut.submit')}</ActionButton>
+            <Button type="submit" variant="secondary">
+              {t('site.signin.signOut.submit')}
+            </Button>
           </form>
         </details>
       </div>

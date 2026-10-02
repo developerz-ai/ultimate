@@ -13,14 +13,21 @@ the entity's columns and invariants.
 | filters and sorting, from indexed and unique columns | a fixed currency |
 | validation, from the entity's own schema | per-resource operation whitelists |
 
-## Three seams, and no "add a page" API
+## One declaration, no host code
 
-1. **Actions** — project a real `action` onto the toolbar. It keeps its own policy, so a button
-   here and a call over HTTP are the same decision.
+`app/admin/admin.ts` is the whole dashboard: `defineAdmin({ entities, db, … })`. The list, detail
+and form of each entity, the dashboard, search, the audit trail and the jobs screen are the
+framework's, served under `/admin` by `x dev` and the container. This app has no `page.tsx`, no
+repo adapter and no screen glue — `app/admin/mounted.test.ts` fails if a page file appears.
+
+## Three seams
+
+1. **Actions** — project a real `action` onto a row. It keeps its own policy, so a button here and
+   a call over MCP are the same decision.
 2. **Per-resource overrides** — fields, list columns, default sort, page size, and which operations
    exist at all.
-3. **Your own routes** — the generated routes are a plain list you mount alongside hand-written
-   pages. Nothing stops you writing a custom screen; it just does not pretend to be generated.
+3. **Pages** — `pages: [opsPage]`. A screen no generator would write, in the same route table and
+   behind the same gate as a generated one.
 
 ## View-only is a permission, not a UI state
 
@@ -30,20 +37,12 @@ A button you cannot press is never drawn — and hiding a button is never what s
 
 The demo's `admin/admin` account is exactly this: `admin:read` only.
 
-## The button and the call, `As of 2026-08`
+## The button and the call
 
-| Half | Where | Note |
-|---|---|---|
-| renders | `app/admin/views.tsx` → `RowActions` | one `<form method="post">` per allowed action, per row, carrying the row's id |
-| answers | `api/admin-actions.ts` → `runAdminAction` | resolves the posted name against `defineAdmin()`'s registry, then `invokeAdminAction` |
-| the URL | `shared/action-route.ts` | `derivePath('runAdminAction')`, read by both sides so neither types a path |
-
-Pages here are `hydrate: 'never'`, so a control is a **form submit** — the browser's own form
-handling is the client. The toolbar shipped as `<button type="button">` with no handler and no
-enclosing form until 2026-08, backed by an `invokeAdminAction` nothing called: two halves that each
-looked finished. A refusal at POST time is `X_ADMIN_ACTION_REFUSED` (403) with the permission that
-refused it, because the button only renders when the decision allows — reaching the POST anyway is
-a stale page, a hand-written request, or a destructive echo that was not given.
+Screens are `hydrate: 'never'`, so a control is a **native form submit** posted at the row's own
+URL — `POST /admin/users/<id>` with the action's name. The framework's mount answers it through
+`invokeAdminAction`: the same decision that drew the button. A refusal is a 403 page naming the
+permission, and it is on the audit log.
 
 ## Not a second front door
 

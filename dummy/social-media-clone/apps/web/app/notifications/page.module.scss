@@ -25,7 +25,7 @@
 }
 
 .new {
-  border-inline-start: 3px solid t.role('accent');
+  border-inline-start: t.stroke(heavy) solid t.role('accent');
 }
 
 .kind {

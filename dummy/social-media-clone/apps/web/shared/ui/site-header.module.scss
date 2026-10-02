@@ -10,7 +10,7 @@
   // Translucent over a blur rather than opaque: content scrolling under the bar stays legible as
   // motion, which is what tells a reader the page moved. `bg` at alpha, never a picked grey.
   background: t.role('bg', 0.82);
-  backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(t.rem(14px)) saturate(160%);
   border-block-end: 1px solid t.role('line');
 }
 
@@ -56,7 +56,7 @@
   // Below `md` the links become a full-width strip that scrolls sideways inside its own box. The
   // negative gutter is exactly `.bar`'s own, so the strip bleeds to the viewport edge and the
   // DOCUMENT still never scrolls horizontally — which an off-canvas menu could not do with 0kb JS.
-  @include t.bp-down('md') {
+  @include t.respond-down('md') {
     order: 3;
     flex-basis: 100%;
     margin-inline: calc(-1 * #{t.space(4)});
@@ -169,7 +169,7 @@
   }
 
   // One control is enough on a phone; the ghost sign-in link beside it already reaches the page.
-  @include t.bp-down('sm') {
+  @include t.respond-down('sm') {
     display: none;
   }
 }
