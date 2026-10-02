@@ -84,6 +84,21 @@ const insert = (id: number, orgId: string, label: string): Promise<Note> =>
 const labels = (frame: Frame | undefined): readonly unknown[] =>
   frame?.type === 'snapshot' ? frame.rows.map((row) => row['label']) : [];
 
+/**
+ * The strongest form: nothing in the input or the shape names a tenant at all, so the window's key
+ * and its read context are the ONLY things keeping two orgs apart.
+ */
+const unnamedNotes = () =>
+  query({
+    input: t.object({ limit: t.number.default(50) }),
+    policy: OPEN_POLICY,
+    live: true,
+    sql: ({ limit }) =>
+      from<Note>('tenant_notes', () => list(limit))
+        .orderBy('id')
+        .limit(limit),
+  });
+
 let registry: LiveQueryRegistry;
 let replicator: LiveReplicator;
 
@@ -101,21 +116,10 @@ beforeEach(async () => {
         .orderBy('id')
         .limit(limit),
   });
-  // And the strongest form: nothing in the input or the shape names a tenant at all, so the
-  // window's key and its read context are the ONLY things keeping two orgs apart.
-  const unnamed = query({
-    input: t.object({ limit: t.number.default(50) }),
-    policy: OPEN_POLICY,
-    live: true,
-    sql: ({ limit }) =>
-      from<Note>('tenant_notes', () => list(limit))
-        .orderBy('id')
-        .limit(limit),
-  });
   registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
   const ctx = createContext({ role: 'sync', buildId: 'b' });
   registry.register(liveQueryDefinition(registerQuery('liveNotes', generated), { ctx }));
-  registry.register(liveQueryDefinition(registerQuery('liveAllNotes', unnamed), { ctx }));
+  registry.register(liveQueryDefinition(registerQuery('liveAllNotes', unnamedNotes()), { ctx }));
   replicator = await startLiveReplicator({ registry });
 });
 
@@ -237,5 +241,96 @@ describe('a live source is read for the subscriber’s tenant', () => {
     expect(seated?.qid).not.toBe(first.subscription.qid);
     expect(registry.subscriberCount(first.subscription.qid)).toBe(0);
     expect(labels(ada.ws.frames.at(-1))).toEqual(['globex-1']);
+  });
+});
+
+/** Stands in for a policy store's timeout: a FOREIGN error, so it extends `Error` on purpose. */
+class PoolTimeout extends Error {
+  readonly code = 'X_DB_TIMEOUT';
+}
+
+describe('a re-seat that cannot complete is refused to the client, never lost', () => {
+  /** `liveAllNotes`, with an `authorize` that answers from a script — then the real one. */
+  const flaky = (script: ('ok' | 'fail')[]): { calls: () => number } => {
+    let calls = 0;
+    const base = liveQueryDefinition(registerQuery('liveFlakyNotes', unnamedNotes()), {
+      ctx: createContext({ role: 'sync', buildId: 'b' }),
+    });
+    registry.register({
+      ...base,
+      async authorize(args) {
+        calls += 1;
+        if (script.shift() === 'fail') throw new PoolTimeout('the policy store timed out');
+        await base.authorize?.(args);
+      },
+    });
+    return { calls: () => calls };
+  };
+
+  const refusals = (ws: FakeWs): readonly { ref: string; code: string | undefined }[] =>
+    ws.frames.flatMap((sent) =>
+      sent.type === 'ack' ? [{ ref: sent.ref, code: sent.error?.code }] : [],
+    );
+
+  test('an authorize that fails while the org moved: no second try, no stale window, a refusal', async () => {
+    await insert(1, ACME, 'acme-1');
+    const gate = flaky(['ok', 'fail', 'fail']);
+    const ada = socketFor('s-ada', member('ada', ACME));
+    const first = await registry.subscribe({
+      socket: ada.socket,
+      name: 'liveFlakyNotes',
+      input: {},
+      sid: 'sub-1',
+    });
+    ada.socket.actor = member('ada', GLOBEX);
+    const failuresBefore = registry.gateFailures;
+
+    // Not a denial, so not reported as one.
+    expect(await registry.reauthorize(ada.socket)).toEqual([]);
+
+    // One decision asked, one failure counted — the re-seat does not ask the store again.
+    expect(gate.calls()).toBe(2);
+    expect(registry.gateFailures - failuresBefore).toBe(1);
+    // Off acme's window: an actor that left the org is never served from it.
+    expect(registry.subscriberCount(first.subscription.qid)).toBe(0);
+    expect(registry.subscription('s-ada', 'sub-1')).toBeUndefined();
+    // And the client is told, in the words a refused subscribe uses, so the window renders failed.
+    expect(refusals(ada.ws)).toEqual([{ ref: 'sub-1', code: 'X_DB_TIMEOUT' }]);
+  });
+
+  test('a re-seat whose subscribe fails sends the refusal for that sid', async () => {
+    await insert(1, ACME, 'acme-1');
+    flaky(['ok', 'ok', 'fail']);
+    const ada = socketFor('s-ada', member('ada', ACME));
+    await registry.subscribe({
+      socket: ada.socket,
+      name: 'liveFlakyNotes',
+      input: {},
+      sid: 'sub-1',
+    });
+    ada.socket.actor = member('ada', GLOBEX);
+
+    expect(await registry.reauthorize(ada.socket)).toEqual([]);
+
+    expect(registry.subscription('s-ada', 'sub-1')).toBeUndefined();
+    expect(refusals(ada.ws)).toEqual([{ ref: 'sub-1', code: 'X_DB_TIMEOUT' }]);
+  });
+
+  test('an authorize that fails with the org unchanged keeps the subscription, desynced', async () => {
+    await insert(1, ACME, 'acme-1');
+    flaky(['ok', 'fail']);
+    const ada = socketFor('s-ada', member('ada', ACME));
+    await registry.subscribe({
+      socket: ada.socket,
+      name: 'liveFlakyNotes',
+      input: {},
+      sid: 'sub-1',
+    });
+
+    expect(await registry.reauthorize(ada.socket)).toEqual([]);
+
+    expect(registry.subscription('s-ada', 'sub-1')).toBeDefined();
+    expect(ada.socket.desynced.has('sub-1')).toBe(true);
+    expect(refusals(ada.ws)).toEqual([]);
   });
 });

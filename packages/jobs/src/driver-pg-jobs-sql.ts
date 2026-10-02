@@ -30,12 +30,13 @@ select ${JOB_ROW_COLUMNS}
 
 /**
  * The predicates a page shares, whichever way it reads. $1 queue, $2 name, $3 state, $5 id prefix,
- * $6 created from (ms), $7 created to (ms), $10 tenant.
+ * $6 created from (ms), $7 created to (ms), $10 tenant. The prefix is compared, never `like`d: a
+ * `_` or `%` in it is a character, as `startsWith` reads it in the memory driver.
  */
 const LIST_MATCH = `($1::text is null or queue = $1)
    and ($2::text is null or name  = $2)
    and ($3::text is null or state = $3)
-   and ($5::text is null or id::text like $5::text || '%')
+   and ($5::text is null or left(id::text, length($5::text)) = $5::text)
    and ($6::bigint is null or created_at >= to_timestamp($6::bigint / 1000.0))
    and ($7::bigint is null or created_at <  to_timestamp($7::bigint / 1000.0))
    and ($10::text is null or tenant_id = $10)`;
