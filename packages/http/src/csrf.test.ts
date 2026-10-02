@@ -57,8 +57,37 @@ describe('checkCsrf', () => {
     expect(checkCsrf(input({ method: 'GET', secFetchSite: 'cross-site' })).ok).toBe(true);
   });
 
-  test('an anonymous caller has no ambient credential to forge', () => {
-    expect(checkCsrf(input({ anonymous: true, secFetchSite: 'cross-site' })).ok).toBe(true);
+  // Login CSRF: a hostile page auto-submits the sign-in form with the ATTACKER's credentials, and
+  // the visitor is silently signed into the attacker's account. No session exists yet, so
+  // "anonymous" is exactly the caller this write has to be judged for.
+  test('an anonymous cross-site write is refused — a sign-in form is forgeable too', () => {
+    const forged = input({
+      anonymous: true,
+      secFetchSite: 'cross-site',
+      origin: 'https://evil.test',
+    });
+    expect(checkCsrf(forged).ok).toBe(false);
+    // The neighbours: either header alone is browser evidence, and each is judged.
+    expect(checkCsrf(input({ anonymous: true, secFetchSite: 'cross-site' })).ok).toBe(false);
+    expect(checkCsrf(input({ anonymous: true, origin: 'https://evil.test' })).ok).toBe(false);
+    expect(checkCsrf(input({ anonymous: true, secFetchSite: 'same-site' })).ok).toBe(false);
+    expect(checkCsrf(input({ anonymous: true, origin: 'null' })).ok).toBe(false);
+  });
+
+  test('an anonymous same-origin write is allowed, by either proof', () => {
+    expect(checkCsrf(input({ anonymous: true, secFetchSite: 'same-origin' })).ok).toBe(true);
+    expect(checkCsrf(input({ anonymous: true, origin: 'https://app.example.com' })).ok).toBe(true);
+    expect(checkCsrf(input({ anonymous: true, origin: 'https://admin.example.com' })).ok).toBe(
+      true,
+    );
+  });
+
+  // No session and no browser evidence at all: an inbound webhook, a server-to-server sign-up.
+  // There is no ambient credential to ride and no browser to drive, so nothing is forgeable —
+  // the SAME request with a session is still refused two tests up.
+  test('an anonymous write carrying neither header is not a browser, and passes', () => {
+    expect(checkCsrf(input({ anonymous: true })).ok).toBe(true);
+    expect(checkCsrf(input({ anonymous: false })).ok).toBe(false);
   });
 
   // A bearer token is chosen by the caller's own code; a cross-site page cannot make the browser

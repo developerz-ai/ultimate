@@ -24,15 +24,28 @@ export function navigationPurpose(request: Request): NavigationPurpose | null {
 
 const SAFE = new Set(['GET', 'HEAD']);
 
+/** The schemes a navigation may be handed over to. Everything else is not a place to go. */
+const WEB_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:']);
+
 /**
  * What `x-ultimate-location` says. A target on THIS origin is its path, query and fragment and
  * nothing else: behind a TLS-terminating proxy the request URL this process sees is
  * `http://internal…`, so an absolute URL built from it named the public site as `http://` (HSTS
  * hid it; it was still wrong). The router resolves a path against the page it runs in, whose origin
  * is the one the visitor typed. A target on ANOTHER origin is kept exactly as the app gave it.
+ *
+ * Only `http:` and `https:` are ever handed over. The router LOADS what this header says, so a
+ * scheme that runs in the page (`javascript:`, `data:`) would be script in the app's own origin
+ * whenever a redirect target is caller-influenced. Such a target — and one that will not parse —
+ * answers the REQUESTED url instead, as a path: a document load of it re-runs the route, and the
+ * browser's own redirect handling refuses what this refused. Total, never a throw: it runs in the
+ * `response` stage, after the handler.
  */
 export function locationFor(target: string, base: URL): string {
+  const requested = `${base.pathname}${base.search}${base.hash}`;
+  if (!URL.canParse(target, base)) return requested;
   const resolved = new URL(target, base);
+  if (!WEB_PROTOCOLS.has(resolved.protocol)) return requested;
   if (resolved.origin !== base.origin) return target;
   return `${resolved.pathname}${resolved.search}${resolved.hash}`;
 }

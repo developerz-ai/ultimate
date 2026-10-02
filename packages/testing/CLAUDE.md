@@ -145,8 +145,9 @@ lives beside the `PageLike` it implements. `cli` imports it over the declared `c
 | `e2e-errors.ts` | one constructor per refusal |
 | `e2e-dom-fixture.ts` | a document small enough to hold in a test and real enough to RUN the expressions above |
 | `cdp-browser.ts` | the two doors: `openE2eBrowserIfAvailable()` (undefined when there is no browser) and `openE2eBrowser()` (refuses by name), and the close that undoes both halves |
-| `cdp-launch.ts` | which Chrome, and starting it — the candidate list, the flags, and the endpoint read off its stderr |
-| `cdp-connection.ts` | CDP over Bun's own `WebSocket`: request framing, reply correlation by `id`, one-shot event waiters, the per-call deadline |
+| `cdp-launch.ts` | which Chrome, its flags, the launch deadline (`LAUNCH_TIMEOUT_MS`, 60 s — a cold start is not a call) and the ONE relaunch (`LAUNCH_ATTEMPTS`) |
+| `cdp-launch-attempt.ts` | one start: its own process group, the first answer over the pipe; on none, a full reap (group killed, profile removed) before the next. ONE `close()`, a promise, always awaited — no sync close |
+| `cdp-connection.ts` | CDP over a transport — the launched Chrome's pipe (`cdp-pipe.ts`), a remote one's `WebSocket` (`cdpConnect`): reply correlation by `id`, event waiters, the per-call deadline |
 | `cdp-e2e-session.ts` | the BROWSER half, `E2eSession`: every target auto-attached at browser level and PAUSED until its Network domain is on (a SharedWorker opens its socket at start-up) |
 | `cdp-e2e-page.ts` | one TAB, `E2eTab`: `E2eBrowserPage`'s five methods plus `reload`, `waitFor`, `indexedDbNames`, `close`. `offline()` forwards to the session — the switch is browser-wide |
 | `e2e-app.ts` | `startE2eApp({ root, mode, seed })`: reset + seed + spawn on a THROWAWAY `ULTIMATE_STATE_DIR` and free ports, `/readyz`-gated, spawned through the app's own `@ultimat3/cli` bin (`xBin`); `stop()` removes the directory |

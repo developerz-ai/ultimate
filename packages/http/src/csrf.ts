@@ -1,5 +1,5 @@
-// Whether an unsafe request carrying an AMBIENT credential came from somewhere allowed to make
-// it. CORS does not answer this: `application/x-www-form-urlencoded` is a CORS-simple content
+// Whether an unsafe request a BROWSER sent — with the session cookie, or to obtain one — came
+// from somewhere allowed to make it. CORS does not answer this: `application/x-www-form-urlencoded` is a CORS-simple content
 // type, so `<form method="post">` on evil.test is SENT and EXECUTED with the session cookie
 // attached — `cors.origins: []` only stops the attacker reading the reply, long after the refund
 // went through. `setRedirect` exists so those form posts work without JS, which makes them a
@@ -34,7 +34,11 @@ export interface CsrfCheckInput {
   readonly secFetchSite: string | null;
   /** A bearer token is not ambient: a cross-site page cannot make the browser attach one. */
   readonly hasAuthorizationHeader: boolean;
-  /** Anonymous callers have no credential to ride, so nothing to forge. */
+  /**
+   * No session resolved. NOT an exemption: a sign-in form is forgeable too (login CSRF — the
+   * visitor ends up in the attacker's account), so an anonymous write that carries browser
+   * evidence is judged exactly as a credentialed one. See `checkCsrf` for the one thing it buys.
+   */
   readonly anonymous: boolean;
   readonly cors: CorsConfig;
   readonly config: CsrfConfig;
@@ -50,12 +54,17 @@ export type CsrfVerdict =
  * `Origin` second, so an app that lists a sibling origin in `cors.origins` keeps working. A
  * request with neither — a non-browser client with a cookie, or a browser too old to send
  * either — is refused: "we could not tell" is the case this exists for.
+ *
+ * An ANONYMOUS request carrying neither is the one case let through: there is no ambient
+ * credential to ride and no browser evidence to judge, which is an inbound webhook or a
+ * server-to-server call, never a page a hostile site can drive — every browser that can submit a
+ * cross-site form sends `Origin` on it. Either header present, and it is judged like any other.
  */
 export const checkCsrf = (input: CsrfCheckInput): CsrfVerdict => {
   if (input.config.mode === 'off') return { ok: true };
   if (SAFE_METHODS.has(input.method)) return { ok: true };
-  if (input.anonymous) return { ok: true };
   if (input.hasAuthorizationHeader) return { ok: true };
+  if (input.anonymous && input.origin === null && input.secFetchSite === null) return { ok: true };
 
   // The rule itself is core's, shared with the sync node's upgrade: one answer to "did this
   // come from this app?" on every surface an ambient credential reaches.
@@ -79,8 +88,8 @@ export const selfOrigin = (url: URL, https: boolean): string =>
   `${https ? 'https' : 'http'}://${url.host}`;
 
 /**
- * A write that arrived with the browser's ambient credential and could not be shown to come from
- * this app. Never a 401: the caller IS signed in, which is precisely the problem.
+ * A write a browser sent — with its ambient credential, or anonymously to obtain one — that could
+ * not be shown to come from this app. Never a 401: who is calling was never the question.
  *
  * From a LOOPBACK `ip` the caller is `curl` against `x dev`: it sends neither
  * header, and the remedies below name a token or a config change dev does not need. The header a
@@ -95,11 +104,11 @@ export const csrfBlocked = (
   ip !== null && classifyAddress(ip) === 'loopback'
     ? new HttpError({
         code: 'X_CSRF_BLOCKED',
-        cause: `${pathname} refused a credentialed write: ${reason}`,
+        cause: `${pathname} refused a write it could not show came from this app: ${reason}`,
         fix: "curl -H 'sec-fetch-site: same-origin' -X POST http://localhost:3000/the-path-above   # a local client proves same-origin the way a browser does; the session cookie still decides who is calling",
       })
     : new HttpError({
         code: 'X_CSRF_BLOCKED',
-        cause: `${pathname} refused a credentialed write: ${reason}`,
+        cause: `${pathname} refused a write it could not show came from this app: ${reason}`,
         fix: "call it with an Authorization header instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
       });

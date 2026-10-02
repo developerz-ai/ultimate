@@ -79,8 +79,8 @@ describe.skipIf(chrome === undefined && !required)('the e2e session, in a real b
     browser = required ? await openE2eBrowser() : await openE2eBrowserIfAvailable();
   }, 60_000);
 
-  afterAll(() => {
-    browser?.close();
+  afterAll(async () => {
+    await browser?.close();
     server.stop(true);
   });
 

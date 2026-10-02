@@ -85,8 +85,8 @@ describe.skipIf(chrome === undefined && !required)('the raw-CDP browser drives a
     page = e2ePage({ page: browser.page, baseUrl });
   }, HOOK_TIMEOUT_MS);
 
-  afterAll(() => {
-    browser?.close();
+  afterAll(async () => {
+    await browser?.close();
   }, TEST_TIMEOUT_MS);
 
   test(

@@ -182,6 +182,55 @@ describe('bearerMount through the pipeline', () => {
   });
 });
 
+// A token that resolves to nobody never reaches the per-token allowance — there is no token to
+// key it on — so guessing tokens on the mount was unmetered. The `auth` stage's failure path
+// spends the address's allowance for it, as it does for every required route.
+describe('a bad token on the mount is metered by address', () => {
+  const guarded = () =>
+    createPipeline({
+      table: createRouter([
+        ...api,
+        ...bearerMount({
+          prefix: '/v1',
+          routes: api,
+          scopes: { 'cases:read': ['caseList'] },
+          resolveToken: (token) =>
+            token === 'tok-read' ? { actor: agent, scopes: new Set(['cases:read']) } : null,
+        }),
+      ]),
+      config: defineHttpConfig({
+        dev: false,
+        rateLimit: {
+          scope: 'process',
+          buckets: { default: { capacity: 3, refillPerSecond: 0.001 } },
+        },
+      }),
+    });
+
+  test('the fourth guess from one address is 429, and a real token is still served', async () => {
+    const pipeline = guarded();
+    const guess = (index: number) =>
+      pipeline.handle(call('GET', '/v1/case-list', { authorization: `Bearer guess-${index}` }), {
+        role: 'web',
+        ip: '203.0.113.9',
+      });
+    const statuses: number[] = [];
+    for (let index = 0; index < 5; index += 1) statuses.push((await guess(index)).status);
+    expect(statuses).toEqual([401, 401, 401, 429, 429]);
+    // No token at all is the same failure, and spends the same allowance.
+    const bare = await pipeline.handle(call('GET', '/v1/case-list'), {
+      role: 'web',
+      ip: '203.0.113.9',
+    });
+    expect(bare.status).toBe(429);
+    const real = await pipeline.handle(
+      call('GET', '/v1/case-list', { authorization: 'Bearer tok-read' }),
+      { role: 'web', ip: '203.0.113.9' },
+    );
+    expect(real.status).toBe(200);
+  });
+});
+
 describe('bearerMount refuses at construction', () => {
   const base = {
     routes: api,

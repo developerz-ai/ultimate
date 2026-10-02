@@ -156,10 +156,11 @@ describe('a finalize stage that throws', () => {
     expect(response.headers.get('content-type')).toContain('application/problem+json');
     const body = await bodyOf(response);
     expect(body['code']).toBe('X_PIPELINE_FINALIZE_FAILED');
-    // A 5xx cause is withheld outside dev (plan 101, 04 l); the code and the authored fix are what
-    // a caller is handed, and the cause is in the log under this request id.
+    // A 5xx cause is withheld outside dev, and the developer's fix with it: the code — and the
+    // command that explains it — is what a caller is handed; the rest is in the log under this
+    // request id.
     expect(body['cause']).not.toContain('immutable headers');
-    expect(body['fix']).toContain('redirect()');
+    expect(body['fix']).toBe('x errors explain X_PIPELINE_FINALIZE_FAILED --json');
   });
 
   test('the degraded answer still carries the request id and the security headers', async () => {

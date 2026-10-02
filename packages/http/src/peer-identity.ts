@@ -1,8 +1,7 @@
 // Who the MESH says is calling. TLS termination is the mesh's job (axiom 7) so the framework's
-// entire contribution is reading a header it has been TOLD to trust: Envoy's
-// `x-forwarded-client-cert`, at the same hop index `x-forwarded-for` is read at. Untrusted, this
-// header is worse than nothing — it authenticates — so an untrusted read answers `null` and
-// there is no second proxy-trust path to get it wrong in.
+// entire contribution is reading a header it has been TOLD to trust (`trustClientCertHeader`):
+// Envoy's `x-forwarded-client-cert`, at the hop index `x-forwarded-for` is read at. Untrusted,
+// this header is worse than nothing — it authenticates — so an untrusted read answers `null`.
 
 import { FORWARDED_CLIENT_CERT, type ForwardedInput, forwardedElement } from './forwarded';
 
@@ -82,11 +81,16 @@ const pairsOf = (element: string): ReadonlyMap<string, readonly string[]> => {
 };
 
 /**
- * The peer identity a TRUSTED proxy asserted, or `null`. `null` is the answer for an untrusted
- * deployment, a missing header and a chain shorter than `trustedProxyHops` alike: a certificate
+ * The peer identity a TRUSTED proxy asserted, or `null`. `null` is the answer for a deployment
+ * that did not declare `trustClientCertHeader`, an untrusted one, a missing header and a chain
+ * shorter than `trustedProxyHops` alike: a certificate
  * identity read from a hop nobody vouched for is a confident name for an attacker's claim.
  */
 export const peerIdentity = (input: ForwardedInput): PeerIdentity | null => {
+  // Its own declaration, never implied by `trustProxy`: that one says the proxy APPENDS to
+  // `x-forwarded-for`, and plenty of ingresses that do pass a client-sent certificate header
+  // straight through — where the caller would be naming its own identity.
+  if (!input.config.trustClientCertHeader) return null;
   const element = forwardedElement(
     input.headers.get(FORWARDED_CLIENT_CERT),
     input.config.trustedProxyHops,

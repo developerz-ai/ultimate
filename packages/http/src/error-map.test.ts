@@ -395,10 +395,10 @@ describe('the codes 12.0.0 added are each classified on purpose', () => {
   });
 
   // The reason the three entity rows are rows at all, rather than lines in
-  // `scripts/error-map-backlog.ts`: an UNDECLARED 5xx is blanked — `toProblem` swaps its cause for
-  // the opaque internal sentence — so a pin would have answered "the server failed while handling
-  // this request" for a fault whose own `fix:` names the exact call to write instead.
-  test('a declared 500 still hands the author the instruction it was thrown with', () => {
+  // `scripts/error-map-backlog.ts`: an UNDECLARED 5xx is blanked whole — title included — so a pin
+  // would have answered "unhandled server error" for a fault that has a name. Declared, the
+  // document keeps the title and the code, and the author reads the instruction in dev.
+  test('a declared 500 names itself to a caller and hands its author the instruction in dev', () => {
     // An `UltimateError` and not an object literal: `factsOf` takes a supplied `fix` only from a
     // BRANDED framework error, because it also normalises worker messages and app objects, and
     // `@ultimat3/entity` really does throw one of these. Constructed rather than imported —
@@ -412,10 +412,11 @@ describe('the codes 12.0.0 added are each classified on purpose', () => {
     );
     expect(document.status).toBe(500);
     // Production withholds a 5xx cause (it is the server's own words — for `X_DB_STATEMENT_FAILED`
-    // the Postgres message and the SQL), but the authored `fix:` still goes out, and in dev the
-    // cause does too.
+    // the Postgres message and the SQL) and the developer's `fix:` with it, which is written from
+    // the same facts. The code's own explanation is the line that goes out; dev gets both.
     expect(document.cause).not.toContain('2 currencies');
-    expect(document.fix).toContain('andWhere');
+    expect(document.fix).toBe('x errors explain X_AGGREGATE_MIXED_CURRENCY --json');
+    expect(document.title).not.toBe('unhandled server error');
     const dev = toProblem(
       new UltimateError({
         code: 'X_AGGREGATE_MIXED_CURRENCY',
@@ -425,6 +426,7 @@ describe('the codes 12.0.0 added are each classified on purpose', () => {
       { dev: true },
     );
     expect(dev.cause).toContain('2 currencies');
+    expect(dev.fix).toContain('andWhere');
   });
 
   // The one of the four that is a caller's own doing, and the only one with a second surface:

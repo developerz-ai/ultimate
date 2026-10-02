@@ -54,7 +54,15 @@ curl http://127.0.0.1:8085/readyz
 ```
 
 ```json
-{"state":"ready","ready":true,"uptimeMs":11792,"inflight":0,"buildId":"","role":"web"}
+{"state":"ready","ready":true,"role":"web"}
+```
+
+The verdict, and nothing else: a published port reaches the container from the bridge gateway,
+not from loopback, and only a peer `healthDetailPeers` lists is told the build id, the in-flight
+count and the check names. From inside the container it is loopback, and they are printed:
+
+```bash
+docker exec myapp-web bun --eval "fetch('http://127.0.0.1:8080/readyz').then(r=>r.text()).then(console.log)"
 ```
 
 The image's own `HEALTHCHECK` reports `healthy` within the 30s start period. Prove that locally before you debug it on a platform.

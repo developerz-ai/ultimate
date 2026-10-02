@@ -110,34 +110,34 @@ describe('launchChrome', () => {
     );
     try {
       const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
-      launched.close();
+      await launched.close();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  test('closed() resolves once the process has exited — at once when SIGTERM ends it', async () => {
+  test('close() resolves once the process has exited — at once when SIGTERM ends it', async () => {
     const { fake, dir } = await fakeBrowser(`${ANSWER}sleep 30\n`);
     try {
       const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
       const started = performance.now();
-      await launched.closed?.();
+      await launched.close();
       expect(performance.now() - started).toBeLessThan(CLOSE_GRACE_MS);
       // Idempotent: the second call is the same wait, already over.
-      await launched.closed?.();
+      await launched.close();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  test('closed() kills a browser that ignores SIGTERM, and still resolves — bounded', async () => {
+  test('close() kills a browser that ignores SIGTERM, and still resolves — bounded', async () => {
     const { fake, dir } = await fakeBrowser(
       `trap '' TERM\n${ANSWER}while true; do sleep 1; done\n`,
     );
     try {
       const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
       const started = performance.now();
-      await launched.closed?.();
+      await launched.close();
       const took = performance.now() - started;
       expect(took).toBeGreaterThanOrEqual(CLOSE_GRACE_MS - 100);
       expect(took).toBeLessThan(CLOSE_GRACE_MS * 2 + 1_000);
@@ -167,12 +167,14 @@ describe('launchChrome', () => {
     const { fake, dir } = await fakeBrowser('exec sleep 30\n');
     try {
       const started = performance.now();
-      const error = await launchChrome({ executable: fake, timeoutMs: 300 }).catch(
-        (e: unknown) => e,
-      );
+      const error = await launchChrome({
+        executable: fake,
+        timeoutMs: 300,
+        launchTimeoutMs: 300,
+      }).catch((e: unknown) => e);
       expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
       expect((error as { cause: string }).cause).toContain('printed nothing');
-      // The deadline plus the bounded exit/drain grace, never the process's 30 s.
+      // Two starts, each its deadline plus a bounded reap and drain — never the process's 30 s.
       expect(performance.now() - started).toBeLessThan(5_000);
     } finally {
       await rm(dir, { recursive: true, force: true });

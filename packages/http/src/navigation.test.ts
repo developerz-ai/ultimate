@@ -72,9 +72,37 @@ describe('locationFor — what x-ultimate-location says', () => {
       'https://www.notificado.co/panel',
     );
   });
+
+  // The router `load`s what this header says, so a scheme that executes in the page is script in
+  // the app's own origin whenever a redirect target is caller-influenced. Only http(s) leaves.
+  test('a target that is not http(s) is never handed over — the requested URL is, as a path', () => {
+    for (const target of [
+      'javascript:void(0)',
+      'JaVaScRiPt:void(0)',
+      'data:text/html,x',
+      'vbscript:x',
+      'blob:https://app.test/1',
+      'file:///etc/hosts',
+    ]) {
+      expect(locationFor(target, internal)).toBe('/r/tok/d/1');
+    }
+  });
+
+  test('a target that will not parse at all falls back the same way, never a throw', () => {
+    expect(locationFor('http://', internal)).toBe('/r/tok/d/1');
+    expect(locationFor('https://[', new URL('http://a.test/x?y=1'))).toBe('/x?y=1');
+  });
 });
 
 describe('redirectForRouter', () => {
+  test('a 303 to a script scheme never surfaces in x-ultimate-location', () => {
+    for (const target of ['javascript:void(0)', 'data:text/html,x', 'vbscript:x']) {
+      const out = redirectForRouter(at(soft, 'POST'), redirect(target, 303), URL_AT);
+      expect(out?.status).toBe(204);
+      expect(out?.headers.get('x-ultimate-location')).toBe('/r/tok/d/1');
+    }
+  });
+
   test('a redirect to a router request becomes 204 + a same-origin PATH, cookies kept', () => {
     const answered = redirect('/done?x=1', 303);
     answered.headers.append('set-cookie', 'a=1; Path=/');

@@ -3,7 +3,7 @@
 // middleware stack, so nothing can skip a stage and `/_x` and `pipeline.test.ts` can both read it.
 // The other two thirds of the lifecycle are siblings: `stages.ts` owns what each stage does, and
 // `finalize.ts` owns the promise that the tail always answers rather than rejecting.
-import { recordRequest, runWithContext, withSpan } from '@ultimat3/core';
+import { beginWork, recordRequest, runWithContext, withSpan } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfig } from './config';
 import { asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
 import { readCorrelation } from './correlation';
@@ -56,7 +56,7 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   {
     name: 'auth',
     phase: 'request',
-    why: 'before rate limiting so the limiter keys per actor and per tenant instead of punishing a shared NAT address',
+    why: 'before rate limiting so the limiter keys per actor and per tenant instead of punishing a shared NAT address — and a request that FAILS a required route is refused here, so this stage spends an allowance keyed on the address alone for it: a failed credential is metered, a signed-in caller behind the same address is not',
   },
   {
     name: 'rate-limit',
@@ -66,7 +66,7 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   {
     name: 'csrf',
     phase: 'request',
-    why: 'after auth so it only judges a caller holding an AMBIENT credential — a bearer token and an anonymous call are both exempt — and before body so a forged write never makes the server allocate its payload. CORS cannot cover this: application/x-www-form-urlencoded is a simple content type, so a cross-site form post is sent and executed and only the RESPONSE is withheld',
+    why: 'after auth so it knows who is calling: a bearer token is exempt (not ambient), and an anonymous write is judged like a signed-in one whenever it carries browser evidence, because a forged sign-in is a forged write — and before body so a forged write never makes the server allocate its payload. CORS cannot cover this: application/x-www-form-urlencoded is a simple content type, so a cross-site form post is sent and executed and only the RESPONSE is withheld',
   },
   {
     name: 'body',
@@ -188,8 +188,23 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
         // own; this race is the half that answers the SOCKET when it does not. `work` keeps its
         // own handler either way — a rejection arriving after the deadline already won is still
         // a rejection, and an unhandled one takes the process down.
-        void work.catch(() => undefined);
-        await Promise.race([work, deadline.expired]);
+        let settled = false;
+        const settle = (): void => {
+          settled = true;
+        };
+        void work.then(settle, settle);
+        try {
+          await Promise.race([work, deadline.expired]);
+        } finally {
+          // The deadline won and the handler is still running: it holds its pool slot and
+          // whatever it was writing. The caller's own count ends when this response leaves, so
+          // the orphan is counted in its own right until it settles — a drain that saw an idle
+          // process here closed the pool under it.
+          if (!settled) {
+            const done = beginWork();
+            void work.then(done, done);
+          }
+        }
       }
     } catch (error) {
       ctx.error = error;

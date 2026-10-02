@@ -122,7 +122,7 @@ endpoints return a body — never a bare `200 OK`.
 | `/healthz` | "is this process alive?" | the lifecycle is `stopped`. **Ignores the readiness checks, deliberately** — a database outage that failed liveness fleet-wide would restart every pod into the same outage, cold | liveness probe | **restart the container** |
 | `/readyz` | "should traffic come here?" | starting, draining, stopped, or any registered check answers `failing` | readiness probe, LB | **remove from rotation** |
 
-The body is `HealthReport` plus the role. `checks` is a **map** of check name → `ok` or `failing`, never an array — "alert on check failures BY CHECK NAME" is not writable against a boolean:
+The body is `{ state, ready, role }` for everyone; a peer in `healthDetailPeers` (default `['loopback']` — `kubectl exec`, a port-forward, the container's own probe) gets `HealthReport` plus the role, `As of 2026-10`. The status code never differs, and it is all a probe reads. On the `web` role; the `sync` node's own listener still answers the full report to any caller. `checks` is a **map** of check name → `ok` or `failing`, never an array — "alert on check failures BY CHECK NAME" is not writable against a boolean:
 
 ```json
 { "state": "ready", "ready": true, "uptimeMs": 41230, "inflight": 3,

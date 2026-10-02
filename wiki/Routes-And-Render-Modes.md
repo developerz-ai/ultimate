@@ -107,7 +107,7 @@ A render mode states the mode's **intent**; `@ultimat3/http`'s `cache-headers` s
 | The request | What it gets, whatever the mode wrote |
 |---|---|
 | anonymous | the mode's own intent, plus the key dimensions it forgot: `vary: accept-language, cookie, x-timezone` |
-| carrying an identity | `private, max-age=0` — never `public`, never `s-maxage`. `meta.auth` is only `'public' \| 'required'`, so the page that greets a signed-in visitor by name is a `'public'` route whose own header offered it to a CDN for 30 seconds |
+| carrying an identity | `private, max-age=0` — never `public`, never `s-maxage`, and never bare freshness: `max-age`, `must-revalidate` or `proxy-revalidate` without `private`/`no-store` is an offer a shared cache may take (RFC 9111 §3), so it is rewritten too. `meta.auth` is only `'public' \| 'required'`, so the page that greets a signed-in visitor by name is a `'public'` route whose own header offered it to a CDN for 30 seconds |
 | a content-addressed URL (`immutable`) | left alone. `immutable` asserts the body is a function of the URL, which is what an island chunk is |
 
 ### A route's own `cache`, on `ssr`

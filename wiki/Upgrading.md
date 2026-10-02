@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 23.x → 24.0.0 | **49** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, and a malformed policy decision that denies | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 23.x → 24.0.0 | **57** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, a malformed policy decision that denies; then `ctx.peer` behind its own switch, anonymous browser writes held to same-origin, failed sign-ins metered to a 429, health bodies trimmed for strangers, a `max-age` treated as a shared-cache offer, a body refused without a `content-type`, and an awaited browser `close()` | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
@@ -72,11 +72,11 @@ Each entry changes a surface the table below covers.
 
 ## 23.x → 24.0.0, entry by entry — **unreleased**
 
-**Forty-nine entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+**Fifty-seven entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
 `[Unreleased]` entries in their order: grouped by package, lowest tier first. No legacy path, no
 codemod, no compatibility shim — every break is a build error or an `X_*` error naming the rewrite.
-`As of 2026-10` slices 01–03 have landed: `@ultimat3/schema` and `@ultimat3/core`; tier 1 —
-`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry; then tier 2's `entity` and `policy`. A later slice appends
+`As of 2026-10` slices 01–04 have landed: `@ultimat3/schema` and `@ultimat3/core`; tier 1 —
+`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry; then slice 04, complete — tier 2's `entity`, `policy` and `http`, with one `testing` entry. A later slice appends
 its rows below the last one and never renumbers.
 
 ### The upgrade, top to bottom
@@ -98,14 +98,17 @@ its rows below the last one and never renumbers.
 | 13 | after the deploy: list and delete the old-shape image variants; expect signed URLs minted before it to fail for 15 minutes; purge the CDN once if a collection bust must reach older edge copies | orphaned variant files; an outstanding signed URL that no longer verifies | 32, 39, 41 |
 | 14 | `bun run typecheck` for tier 2: add `transactor()` to a hand-built or wrapping `Driver`, import `dbDrift` from `@ultimat3/db`, retype a `403` denial status as `DenialStatus` | TS2741 / TS2305 / TS2322 at each site | 44, 45, 48 |
 | 15 | `x verify --only unit,contract,policy` and fix the tests it fails; read every `catch` around `assertAllowed` and every policy predicate's return | `X_UNAUTHENTICATED` and a 401 where a test expected `X_FORBIDDEN` and 403; a denial where a malformed decision allowed; `X_INVARIANT_VIOLATED` from a preload over 10,000 rows | 46–49 |
-| 16 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+| 16 | set the http config the deploy needs: `trustClientCertHeader: true` where `ctx.peer` is read behind a proxy that strips the header, `healthDetailPeers` for an off-box health reader, `cors.origins` for a cross-origin browser form, `hostname` for an embedder | `ctx.peer` is `null`; a health body of three fields; `X_CSRF_BLOCKED` on an anonymous form post | 50, 51, 53, 56 |
+| 17 | `x verify --only unit,contract,e2e` and fix the tests it fails: `await` every browser `close()`, send `content-type` with every body, write `private, max-age=N` where a handler meant a per-user lifetime | `X_BODY_INVALID`; a rewritten `cache-control`; 429 after repeated 401s; a leaked Chrome | 52, 54, 55, 57 |
+| 18 | `x verify` | green, or a finding whose `fix:` is the edit | — |
 
 ### Entry by entry
 
 Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@ultimat3/i18n` (17),
 `@ultimat3/time` (18–21), `@ultimat3/db` (22–29), `@ultimat3/flags` (30–31), `@ultimat3/cache`
 (32–33), `@ultimat3/seo` (34), `@ultimat3/storage` (35–42). Tier 4 — `@ultimat3/render` (43).
-Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49).
+Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49), `@ultimat3/http` (50–56). Tier 5 —
+`@ultimat3/testing` (57).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
@@ -158,6 +161,14 @@ Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49).
 | 47 | `assertAllowed` | a `catch` or a test expects `X_FORBIDDEN` for a caller with no actor, or for a `denied(reason, code)` with the app's own code. It is `X_UNAUTHENTICATED`, or that code, as a `PolicyDenialError` |
 | 48 | `HttpDenial.status`, `problem.status`, `problem.title` | you type either status as `403`, or assert on them: no actor is 401, and the title is the code's registered title. Type them `DenialStatus` |
 | 49 | policy predicates, `definePolicy({ check })` | one returns something other than a boolean or a `PolicyDecision` — `{ allowed: 'yes' }`, an object from another library, nothing. It denies now. Return `true`, `false` or `denied(reason, code)` |
+| 50 | `ctx.peer` | you read the client certificate identity behind a proxy. It is `null` until `configureHttp({ trustClientCertHeader: true })` — set it only where the proxy strips or overwrites `x-forwarded-client-cert` |
+| 51 | anonymous `POST` / `PUT` / `PATCH` / `DELETE` from a browser | a page on another origin posts to this app without a session — an embedded sign-up form, a marketing site on its own domain. `X_CSRF_BLOCKED` (403). List the origin: `configureHttp({ cors: { origins: ['https://www.example.com'] } })`. Requests with no `Origin` and no `sec-fetch-site` are unaffected |
+| 52 | repeated 401s | a client, probe or test sends many requests that fail `auth: 'required'` from one address: past `rateLimit.defaultBucket` they are 429 with `Retry-After`. Authenticate the probe, point it at `/healthz`, or raise the bucket |
+| 53 | `/healthz`, `/readyz` bodies on the web role | a monitor off the box reads `buildId`, the in-flight count or the check names. It gets `{ state, ready, role }`. `configureHttp({ healthDetailPeers: ['loopback', 'private'] })`, or an exact address. Probes that read only the status need nothing. The sync role's routes are unchanged for now |
+| 54 | `cache-control` set by a handler | it says `max-age=N`, `must-revalidate` or `proxy-revalidate` with no `private`: the response is rewritten as a shared-cache offer would be. For a per-user lifetime write `private, max-age=N` |
+| 55 | request bodies | a client sends a non-empty body with no `content-type`. `X_BODY_INVALID` (422). Send `content-type: application/json`; a handler that wants raw bytes reads `bodyBytes()` |
+| 56 | `defineHttpConfig` | an embedder relied on `HOSTNAME` to choose the bind address: pass `hostname`. A config with `buildId: null` and `BUILD_ID` set now runs with skew detection off |
+| 57 | `E2eBrowser.close()`, `LaunchedBrowser.close()`, `CdpLaunchFailedError` | a test or script calls `close()` without `await`, or reads `closed`: `await browser.close()`. A hand-built `CdpLaunchFailedError` passes `{ executable, attempts }` |
 
 Entry 39, the orphaned variants. These commands were **not run against a real disk or bucket** for
 this page — list first, read the list, then delete. The pattern matches a variant of either shape,
@@ -200,6 +211,12 @@ aws s3 ls s3://<bucket> --recursive | grep -E '@(full|[whq][0-9]+|cover|contain)
 | `update` / `updateWhere` under an app-only invariant | on Postgres a refused write is rolled back; it used to stay written |
 | seed `dryRun` | runs every verb in a transaction and rolls back, so its metrics are a real run's and a seed that would fail fails |
 | drift findings | each `fix:` is one runnable command, mostly `psql "$DATABASE_URL" -c '…'` then `x db migrate`; for a table outside `public` it sets `search_path` first, and unexpected tables and objects are schema-qualified |
+| `X_CSRF_BLOCKED` | title is "an unsafe request that did not prove same-origin"; code and status unchanged |
+| 5xx problem documents | a withheld cause carries `callerFix` or `x errors explain <CODE> --json`, never the developer `fix:` |
+| `requestTimeoutMs`, `x-request-timeout-ms` | above 2,147,483,647 the config is `X_CONFIG_INVALID` and the header is ignored; both used to time every request out at once |
+| redirects | a non-http(s) target is never handed to the client router; the locale-prefix redirect stays on this origin |
+| `Set-Cookie` | two set in one request both reach the wire |
+| `X_CDP_LAUNCH_FAILED` | Chrome gets a 60 s launch deadline and one retry; the error lists each attempt in `cause` and `meta.attempts` |
 | a zone that is not a string | `X_TIMEZONE_INVALID` from every zoned function in `@ultimat3/time`, was a bare `TypeError` |
 
 ### Where the sites are
@@ -213,6 +230,7 @@ grep -rnE "withTransaction\(" -A12 apps packages --include=*.ts | grep -E "catch
 grep -rnE "formatRelative\(|addDaysInZone\(|formatDuration(Iso)?\(|cron: |expiresAt|reportEveryMs|introspect\(|\.generated\b|DriftKind" apps packages --include=*.ts --include=*.tsx
 grep -rnE "promoteAttachment\(|\.lastModified|implements StorageDriver|: StorageDriver = |canonicalRequest\(|signConstraints\(|variantKey\(|fitDimensions\(|\.get\(|allowedContentTypes|responsiveImage\(|usableWidths\(|declareTags\(|revalidate:" apps packages --include=*.ts --include=*.tsx
 grep -rnE "assertAllowed\(|X_FORBIDDEN|definePolicy\(|status: 403|\.preload\(|dbDrift|ENTITY_ERROR_CODES|: Driver = |implements Driver" apps packages --include=*.ts --include=*.tsx
+grep -rnE "ctx\.peer|trustProxy|cache-control|defineHttpConfig\(|healthz|readyz|\.close\(\)|\.closed\b|CdpLaunchFailedError" apps packages docker .github --include=*.ts --include=*.tsx --include=*.yml --include=*.yaml
 ```
 
 Tier 0: the `typecheck` step finds none of 1–16 — every entry is a value, not a type. A typed
@@ -233,6 +251,11 @@ run the unit, contract and e2e suites, and do step 13 by hand after the deploy.
 Slice 04, entity and policy: the `typecheck` step finds 44, 45 and a `403`-typed status in 48. It
 finds none of 46, 47 or 49, nor a test asserting on 48's status or title — run the unit, contract
 and policy suites.
+
+Slice 04, http and testing: the `typecheck` step finds a read of `closed` and a
+`CdpLaunchFailedError` built with `detail` (57). It finds none of 50–56 and no unawaited
+`close()` — run the unit, contract and e2e suites, and read the deploy's proxy, probe and monitor
+configuration for 50, 52 and 53.
 
 ## 22.x → 23.0.0, entry by entry
 

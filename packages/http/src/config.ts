@@ -7,6 +7,7 @@ import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import { type CsrfConfig, DEFAULT_CSRF } from './csrf';
 import { httpCountInvalid, trustProxyUnset } from './errors';
+import { assertHealthDetailPeers, DEFAULT_HEALTH_DETAIL_PEERS } from './health-disclosure';
 import {
   DEFAULT_LOCALE_CONFIG,
   DEFAULT_TZ_CONFIG,
@@ -45,6 +46,20 @@ export interface HttpConfig {
    * `0` when nothing is trusted.
    */
   readonly trustedProxyHops: number;
+  /**
+   * Read Envoy's `x-forwarded-client-cert` into `ctx.peer`. Its OWN declaration, `false` until an
+   * app makes it: `trustProxy` says the proxy appends to `x-forwarded-for`, which is no promise
+   * that it strips or overwrites a certificate header the client sent — and this one names an
+   * identity. Read at `trustedProxyHops`, so it does nothing without `trustProxy`.
+   */
+  readonly trustClientCertHeader: boolean;
+  /**
+   * Who `/healthz` and `/readyz` tell more than the verdict: each entry an address class
+   * (`'loopback'`, `'private'`, …) or one exact address. Everyone else gets `state`, `ready` and
+   * `role` — the endpoints answer outside the pipeline, so the build id, the in-flight count and
+   * the readiness check names were otherwise any stranger's to read. `[]` tells nobody.
+   */
+  readonly healthDetailPeers: readonly string[];
   readonly bodyLimitBytes: number;
   /**
    * How long one request may run before it is aborted and answered `X_TIMEOUT` (504). `0`
@@ -89,6 +104,8 @@ export interface HttpConfigInput {
   readonly signInPath?: string | null;
   readonly trustProxy?: boolean;
   readonly trustedProxyHops?: number;
+  readonly trustClientCertHeader?: boolean;
+  readonly healthDetailPeers?: readonly string[];
   readonly bodyLimitBytes?: number;
   readonly requestTimeoutMs?: number;
   readonly maxInflight?: number;
@@ -171,6 +188,13 @@ const assertFiniteCount = (
 const MAX_PORT = 65_535;
 
 /**
+ * The longest delay a timer holds: a signed 32-bit count of milliseconds, about 24.8 days. Past
+ * it `setTimeout` arms ~1 ms, so a "longer" request budget timed every request out at once.
+ * `requestTimeoutMs` is screened against it and `deadline.ts` reads the inbound header by it.
+ */
+export const MAX_TIMER_MS = 2_147_483_647;
+
+/**
  * Nobody has 64 proxies in front of one process; a bigger number is a typo, not a topology.
  *
  * EXPORTED, and that is the point of it: `@ultimat3/cli`'s `trustedHopsFromEnv` screens the same
@@ -241,14 +265,22 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
       'a whole port number from 0 to 65535, where 0 asks the OS for a free one',
       'port: 3000',
     ),
-    hostname: input.hostname ?? env('HOSTNAME') ?? '0.0.0.0',
+    // Never `HOSTNAME`: Docker sets it to the container id, which is not an address to bind. The
+    // boot passes what `HOST` says (`@ultimat3/cli`'s `hostnameFromEnv`); an embedder passes its own.
+    hostname: input.hostname ?? '0.0.0.0',
     basePath: input.basePath ?? '/',
-    buildId: input.buildId ?? env('BUILD_ID') ?? null,
+    // `undefined` falls back to the environment; an explicit `null` is the declaration that
+    // switches skew detection off, and `??` would have read it as unset.
+    buildId: input.buildId === undefined ? (env('BUILD_ID') ?? null) : input.buildId,
     buildIdHeader: input.buildIdHeader ?? 'x-ultimate-build',
     dev,
     signInPath: input.signInPath ?? null,
     trustProxy,
     trustedProxyHops,
+    trustClientCertHeader: input.trustClientCertHeader === true,
+    healthDetailPeers: assertHealthDetailPeers(
+      input.healthDetailPeers === undefined ? DEFAULT_HEALTH_DETAIL_PEERS : input.healthDetailPeers,
+    ),
     bodyLimitBytes: assertFiniteCount(
       'bodyLimitBytes',
       input.bodyLimitBytes ?? 1_048_576,
@@ -261,8 +293,8 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     requestTimeoutMs: assertFiniteCount(
       'requestTimeoutMs',
       input.requestTimeoutMs ?? 30_000,
-      Number.MAX_SAFE_INTEGER,
-      'a whole number of milliseconds, where 0 means no deadline',
+      MAX_TIMER_MS,
+      `a whole number of milliseconds up to ${MAX_TIMER_MS} (the longest a timer holds), where 0 means no deadline`,
       'requestTimeoutMs: 30_000',
     ),
     maxInflight: assertFiniteCount(

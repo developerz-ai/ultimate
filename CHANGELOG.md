@@ -14,10 +14,11 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slices 01–03 have landed: `schema` and
+a later slice appends its group below the last one. `As of 2026-10` slices 01–04 have landed: `schema` and
 `core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
-and `cli`; then tier 2's `entity` and `policy`.
+and `cli`; then slice 04, complete — tier 2's `entity`, `policy` and `http`. A browser-launcher
+repair in `testing` rode along with it.
 
 ### Added
 
@@ -77,6 +78,12 @@ Tier 2 — entity, policy.
   see Changed.
 - **policy:** `PolicyDenialError`, `denialError(label, reason, code)`,
   `POLICY_BORROWED_ERROR_CODES` and the `DenialStatus` type — see Changed.
+
+Tier 2 — http. Tier 5 — testing.
+
+- **http:** config keys `trustClientCertHeader` and `healthDetailPeers` — see Changed.
+- **testing:** `CdpLaunchAttempt`, `LAUNCH_TIMEOUT_MS` (60 s) and `LAUNCH_ATTEMPTS` (2);
+  `launchTimeoutMs` on `launchChrome` — see Changed and Fixed.
 
 Tier 5 — cli.
 
@@ -346,6 +353,49 @@ Tier 2 — policy.
   well-formed decision denies.** `{ allowed: 'yes' }` read as allowed; a forgotten `return` was a
   bare `TypeError`. Return `true`, `false`, or `denied(reason, code)`.
 
+Tier 2 — http.
+
+- **BREAKING — `ctx.peer` needs `trustClientCertHeader: true`.** `trustProxy` alone no longer reads
+  `x-forwarded-client-cert`: appending to `x-forwarded-for` is no promise that the proxy strips a
+  certificate header the client sent. `configureHttp({ trustClientCertHeader: true })`, only where
+  the proxy strips or overwrites that header.
+- **BREAKING — an anonymous unsafe request carrying `Origin` or `sec-fetch-site` must prove
+  same-origin**, else `X_CSRF_BLOCKED` (403). Anonymous writes were exempt, which left a sign-in
+  form forgeable. An anonymous request with neither header — a webhook, `curl`, a server-to-server
+  call, a one-click unsubscribe — is unaffected. A cross-origin browser form lists its origin:
+  `configureHttp({ cors: { origins } })`. The code's title is now "an unsafe request that did not
+  prove same-origin"; code and status are unchanged.
+- **BREAKING — a request that fails `auth: 'required'` is metered.** Each failure spends
+  `rateLimit.defaultBucket` under one key per client address, `unauthenticated|ip:<address>`,
+  across all routes. Past it the answer is 429 with `Retry-After`, not 401 or the sign-in
+  redirect. A request that authenticates spends nothing there. The bearer mount is metered the same
+  way: the fourth wrong token from one address is 429, and a real token is still served.
+- **BREAKING — `/healthz` and `/readyz` on the web role tell a stranger only the verdict.** A peer
+  not in `healthDetailPeers` gets `{ state, ready, role }`; the build id, the in-flight count and
+  the readiness check names go to a listed peer. Default `['loopback']`; an entry is an address
+  class (`loopback`, `private`, `link-local`, `ula`, `cgnat`, …) or one exact IP literal — no
+  CIDR, no hostname (`X_CONFIG_INVALID`). Status codes are unchanged. For an in-cluster reader:
+  `configureHttp({ healthDetailPeers: ['loopback', 'private'] })`. **The sync role's health routes
+  are not covered yet**; that lands with the realtime slice.
+- **BREAKING — a handler `cache-control` that states freshness is a shared-cache offer.**
+  `max-age`, `must-revalidate` or `proxy-revalidate` with no `private` or `no-store` is now
+  handled as `public` / `s-maxage` already were: `private, max-age=0` for an identified request;
+  `vary: accept-language, cookie, x-timezone` added for an anonymous GET; `no-store` on a POST or
+  a 4xx/5xx. To keep a browser-only lifetime, write `private, max-age=N`.
+- **BREAKING — a non-empty body with no `content-type` is refused.** `X_BODY_INVALID` (422) from
+  `request.body()` and the `body` stage; it read as `undefined`, so an all-optional schema
+  validated a request nobody parsed. Send the header. `bodyBytes()` still reads raw bytes.
+- **BREAKING — `defineHttpConfig` no longer defaults `hostname` from `HOSTNAME`.** Docker sets
+  that variable to the container id. The boot passes `HOST`; an embedder passes `hostname`.
+  `buildId: null` now wins over `BUILD_ID`, switching skew detection off as written.
+
+Tier 5 — testing.
+
+- **BREAKING — `E2eBrowser.close()` and `LaunchedBrowser.close()` return a promise.** Await them;
+  `closed` is removed. Unawaited, a process that exits next leaves a Chrome child and a profile
+  directory behind. `CdpLaunchFailedError`'s input is `{ executable, attempts }`, was
+  `{ executable, detail }`.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -503,6 +553,32 @@ Tier 1 — db (slice 04). Tier 2 — entity.
   (`text({ max })`) before it is sealed.
 - **entity:** `X_AGGREGATE_MIXED_CURRENCY` tells one currency at two scales ("N scales of USD")
   from a mix of currencies; each has its own `fix:`.
+
+Tier 2 — http (slice 04). Tier 4 — render. Tier 5 — testing, cli.
+
+- **http:** a 5xx problem document whose cause is withheld carries the error's `callerFix`, else
+  `x errors explain <CODE> --json`. It carried the developer `fix:`, which a driver writes from
+  the statement, row or path it failed on.
+- **http:** `requestTimeoutMs` above 2,147,483,647 is `X_CONFIG_INVALID`, and an
+  `x-request-timeout-ms` above it is ignored. A timer cannot hold more; both armed about 1 ms and
+  timed every request out at once.
+- **http, render:** a redirect to a target that is not `http:` or `https:`, answered to a
+  client-router request, hands over the requested URL's path. The client router likewise never
+  navigates to a handed-over location that is not http(s). Router script +178 B raw.
+- **http:** the locale-prefix redirect stays on this origin whatever follows the prefix;
+  `/<locale>//host/x` produced a scheme-relative `Location`.
+- **http:** two `Set-Cookie` headers set in one request both reach the wire; only the last did.
+- **http:** a handler that outlives its 504 stays in the in-flight count until it settles, so a
+  drain no longer closes the pool under it.
+- **testing:** `launchChrome` has its own launch deadline — `max(timeoutMs, LAUNCH_TIMEOUT_MS)`, or
+  `launchTimeoutMs` — and starts at most `LAUNCH_ATTEMPTS` times, the second only after the first
+  process is killed, awaited, its process group reaped and its profile removed.
+  `X_CDP_LAUNCH_FAILED` carries each attempt's reason, exit code and stderr tail in `cause` and
+  `meta.attempts`; code and title unchanged. This is the cold-runner CI flake.
+- **testing:** Chrome is spawned in its own process group and the group is reaped on close. Child
+  processes outlived the browser and re-created the profile directory — 6–12 of 30 closes leaked
+  one, as measured by the fix's author.
+- **cli:** `x shot`'s session end waits for the browser to be reaped.
 
 ## 23.0.0 - 2026-10-02
 

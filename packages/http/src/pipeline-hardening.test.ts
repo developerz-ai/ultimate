@@ -216,6 +216,9 @@ describe('the request deadline', () => {
 
 // --- H4: load shedding, and the drain 503 the package docs already claimed --------------------
 describe('the admit stage', () => {
+  // Before as well as after: the deadline tests above leave a handler that never settles, and it
+  // is — correctly — still in flight, which a drain in this describe would wait its budget out on.
+  beforeEach(() => resetLifecycle());
   afterEach(() => resetLifecycle());
 
   // DURING the drain a request is SERVED, with `connection: close` so the client's next request

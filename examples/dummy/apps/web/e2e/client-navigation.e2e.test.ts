@@ -67,7 +67,7 @@ describe.skipIf(noBrowser)('client navigation on the app surface', () => {
 
   afterAll(async () => {
     await tab?.close();
-    browser?.close();
+    await browser?.close();
     await app?.stop();
   });
 

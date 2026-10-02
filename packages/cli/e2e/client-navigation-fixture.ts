@@ -419,7 +419,7 @@ export function useBrowser(): void {
   }, HOOK_TIMEOUT_MS);
   afterAll(async () => {
     const launched = await opening?.catch(() => undefined);
-    await (launched ?? browser)?.closed?.();
+    await (launched ?? browser)?.close();
     browser = undefined;
   }, HOOK_TIMEOUT_MS);
 }

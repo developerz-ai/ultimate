@@ -2,8 +2,14 @@
 // `cdpConnectOver` framing, so what is asserted is the CDP a real browser would receive. A real
 // Chrome drives the same code in `e2e/cdp-shot.e2e.test.ts`.
 import { describe, expect, test } from 'bun:test';
+// why: a throwaway executable script is the fake browser; Bun has no mkdtemp, chmod or recursive rm of its own.
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+// why: the scratch directory lives under the OS temp dir, which Bun does not expose.
+import { tmpdir } from 'node:os';
+// why: joining the script and marker paths.
+import { join } from 'node:path';
 import type { CdpTransport } from '@ultimat3/testing';
-import { cdpConnectOver } from '@ultimat3/testing';
+import { cdpConnectOver, launchChrome } from '@ultimat3/testing';
 import type { ShotClock, ShotSessionInit } from './browser-launcher-port';
 import { cdpShotDriver } from './cdp-shot-driver';
 
@@ -84,7 +90,7 @@ const opened = async (answer: Answer = attach, overrides: Partial<ShotSessionIni
     executablePath: '/usr/bin/chrome',
     launch: async () => ({
       connection: wire.connection,
-      close: () => {
+      close: async () => {
         closed += 1;
       },
     }),
@@ -169,6 +175,51 @@ describe('unit · a session is one page, configured before it loads anything', (
     await session.close();
     await session.close();
     expect(closedCount()).toBe(1);
+  });
+
+  test('close REAPS a launched browser: its forked processes are gone and its profile stays removed', async () => {
+    // A real process behind the fake wire. Its child ignores SIGTERM and re-creates the profile
+    // every 20 ms — Chrome's network process did that after 6 and 12 of 30 closes — so only a
+    // close that awaits the launcher's `closed()` leaves nothing behind.
+    const dir = await mkdtemp(join(tmpdir(), 'x-shot-fake-'));
+    const fake = join(dir, 'chrome');
+    const script = [
+      '#!/bin/bash',
+      'for a in "$@"; do case "$a" in --user-data-dir=*) PROFILE="$(cut -d= -f2- <<<"$a")";; esac; done',
+      `( trap '' TERM; while true; do mkdir -p "$PROFILE"; echo x >"$PROFILE/late"; sleep 0.02; done ) &`,
+      'echo "$! $PROFILE" >"$(dirname "$0")/forked"',
+      `read -r -d '' _ <&3`,
+      `printf '{"id":1,"result":{}}\\0' >&4`,
+      'sleep 30',
+    ].join('\n');
+    await writeFile(fake, script, 'utf8');
+    await chmod(fake, 0o755);
+    try {
+      const wire = fakeWire(attach);
+      const driver = cdpShotDriver({
+        executablePath: fake,
+        launch: async (executable, timeoutMs) => ({
+          ...(await launchChrome({ executable, timeoutMs })),
+          connection: wire.connection,
+        }),
+      });
+      const session = await driver.open(init());
+
+      await session.close();
+
+      const [pid, profile] = (await Bun.file(join(dir, 'forked')).text()).trim().split(' ');
+      let alive = true;
+      try {
+        process.kill(Number(pid), 0);
+      } catch {
+        alive = false;
+      }
+      expect(alive).toBe(false);
+      await Bun.sleep(100);
+      expect(await Bun.file(join(profile ?? '', 'late')).exists()).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test('an attached browser is closed too — it is somebody else’s bill', async () => {
@@ -289,7 +340,7 @@ describe('unit · navigation', () => {
     );
     const driver = cdpShotDriver({
       executablePath: '/c',
-      launch: async () => ({ connection: wire.connection, close: () => undefined }),
+      launch: async () => ({ connection: wire.connection, close: async () => undefined }),
     });
     const { page } = await driver.open(init());
     const going = page.goto('http://localhost:3000/');

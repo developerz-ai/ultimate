@@ -128,6 +128,21 @@ describe('cdpConnect', () => {
     connection.close();
   });
 
+  test('one call may carry its own deadline, and the next call is back on the connection’s', async () => {
+    install();
+    const connection = await cdpConnect({ endpoint: 'ws://x/1', timeoutMs: 20 });
+
+    // Outlives the connection's 20 ms: the launcher's first call is a cold start, not a call.
+    const slow = connection.send('Browser.getVersion', {}, undefined, 2_000);
+    await Bun.sleep(80);
+    socket().reply({ id: 1, result: { product: 'late' } });
+    expect((await slow).result).toEqual({ product: 'late' });
+
+    const thrown = await connection.send('Runtime.evaluate').catch((error: unknown) => error);
+    expect((thrown as { cause?: string }).cause).toContain('20ms');
+    connection.close();
+  });
+
   test('a close settles every in-flight call at once, rather than one deadline each', async () => {
     install();
     // A deadline far past the test's own budget: if close did not settle these, the test would

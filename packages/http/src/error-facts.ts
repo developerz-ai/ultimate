@@ -271,6 +271,14 @@ export interface ProblemDocument {
   readonly meta?: ProblemMeta | undefined;
 }
 
+/**
+ * The fix a hidden document carries: the code's own registry entry, nothing off the throwable.
+ * `FRAMEWORK_CODE` gates it for `factsOf`'s reason — this is a command a reader pastes, and `code`
+ * is a string field off a value this package did not build.
+ */
+const explainFix = (code: string): string =>
+  FRAMEWORK_CODE.test(code) ? `x errors explain ${code} --json` : 'x errors list --json';
+
 /** The title a caller gets for a failure the framework cannot name. */
 const INTERNAL_TITLE = 'unhandled server error';
 
@@ -332,7 +340,14 @@ export const toProblem = (
     // The CALLER's fix outside dev: a production client cannot run `x policy explain`, and the
     // developer's line stays in the log this request wrote. Dev keeps the developer's, because the
     // reader of a dev response is the developer.
-    fix: meta.dev === true ? facts.fix : (facts.callerFix ?? facts.fix),
+    // HIDDEN, the developer's fix is withheld with the cause it was built beside: a driver or repo
+    // error writes its fix from the statement, the row or the path it failed on, so serving it
+    // under a blanked cause put back what the blanking took out. A declared `callerFix` is
+    // authored FOR the caller and still goes; otherwise the line names the code and nothing else.
+    fix:
+      meta.dev === true
+        ? facts.fix
+        : (facts.callerFix ?? (hidden ? explainFix(facts.code) : facts.fix)),
     docs: facts.docs,
     requestId: meta.requestId,
     ...(issues === undefined ? {} : { issues }),

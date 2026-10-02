@@ -1,17 +1,15 @@
-// One responsibility: start a Chrome in this container and hand back its DevTools endpoint and the
-// way to stop it. The connection is `cdp-connection.ts` and the page surface `cdp-e2e-page.ts`.
+// One responsibility: WHICH Chrome, with which flags, and how many starts it gets — the candidate
+// list, the launch deadline and the one relaunch. One start of the process is
+// `cdp-launch-attempt.ts`; the connection is `cdp-connection.ts`, the page `cdp-e2e-page.ts`.
 
-// why: Bun exposes no recursive-remove and no temp-root primitive, so the throwaway profile
-// directory this launcher must create and delete needs both.
-import { mkdtempSync, rmSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
-// why: Bun exposes no path-join primitive.
-import { join } from 'node:path';
-import type { CdpConnection } from './cdp-connection';
-import { cdpConnectOver } from './cdp-connection';
+import { finiteCount } from '@ultimat3/core';
+import type { CdpLaunchAttempt } from './cdp-errors';
 import { CdpBrowserMissingError, CdpLaunchFailedError } from './cdp-errors';
-import { pipeTransport } from './cdp-pipe';
+import type { LaunchedBrowser } from './cdp-launch-attempt';
+import { launchAttempt } from './cdp-launch-attempt';
+
+export type { LaunchedBrowser } from './cdp-launch-attempt';
+export { CLOSE_GRACE_MS } from './cdp-launch-attempt';
 
 /**
  * Where a Chrome is, in the order worth trying. `CHROME_PATH` first because it is the operator's
@@ -81,130 +79,59 @@ export const chromeLaunchFlags = (profileDir: string): readonly string[] => [
   'about:blank',
 ];
 
-export interface LaunchedBrowser {
-  /** The browser's own CDP connection, over its debugging pipe. Already answering. */
-  readonly connection: CdpConnection;
-  /** Idempotent: closes the connection, kills the process, deletes the profile. */
-  close(): void;
-  /**
-   * `close()`, then resolves once the process has EXITED — SIGTERM, then SIGKILL after
-   * `CLOSE_GRACE_MS`, never waiting longer than twice that. What a suite's `afterAll` awaits: a
-   * Chrome told to die but still shutting down competes with the next suite's launch on a 4-CPU
-   * runner, and one still running keeps the test process from exiting at all. Optional so a test
-   * double of a launch need not model a process; `launchChrome` always provides it.
-   */
-  closed?(): Promise<void>;
-}
+/**
+ * How long a COLD start may take before the browser is given up on. Its own number, never the
+ * per-call deadline: measured 2026-10-02 over `scaffold-smoke` on free `ubuntu-latest` runners, the
+ * first launch of a job cost 5-19 s more than a warm one in 11 green jobs, and the one red job was
+ * still printing start-up lines when a 30 s deadline killed it. Twice that, and finite: a browser
+ * that exits says so at once (its pipe closes), so only one alive and silent waits this long.
+ */
+export const LAUNCH_TIMEOUT_MS = 60_000;
+
+/**
+ * Starts per launch: the first, and ONE more on a fresh profile after the first was reaped. A
+ * process start is the one step here whose failure can belong to the machine rather than the
+ * binary — and the second start of a cold binary is a warm one. Never a loop: two starts that both
+ * went unanswered are `X_CDP_LAUNCH_FAILED` carrying both.
+ */
+export const LAUNCH_ATTEMPTS = 2;
 
 export interface LaunchOptions {
   readonly executable: string;
-  /** How long Chrome has to answer its first call, and every call's deadline after that. */
+  /** Every CDP call's deadline once the browser is up. */
   readonly timeoutMs: number;
-}
-
-const STDERR_TAIL_CHARS = 4_000;
-
-/**
- * Read stderr to its end for the life of the process, keeping only a bounded tail. A pipe nobody
- * reads fills, and Chrome's next stderr write then blocks the thread making it — a browser that
- * stops answering mid-run for a reason no log shows. The tail is the launch-failure diagnostics:
- * a missing library, a sandbox refusal and a bad flag are all named there and nowhere else.
- */
-function stderrTail(stream: ReadableStream<Uint8Array>): {
-  readonly text: () => string;
-  /** Settles once the stream has ended — every byte the process wrote has been read. */
-  readonly drained: Promise<void>;
-} {
-  let text = '';
-  const drained = (async () => {
-    const decoder = new TextDecoder();
-    for await (const chunk of stream) {
-      text = (text + decoder.decode(chunk, { stream: true })).slice(-STDERR_TAIL_CHARS);
-    }
-  })().catch(() => undefined);
-  return { text: () => text, drained };
+  /** The first answer's deadline, per start. Defaults to the larger of `timeoutMs` and `LAUNCH_TIMEOUT_MS`. */
+  readonly launchTimeoutMs?: number | undefined;
 }
 
 /**
- * How long a browser that failed its first call gets to finish dying, and its stderr to finish
- * draining, before the tail is read. The pipe ending and the stderr reader reaching the last line
- * are two unordered events; read at the first, the reason a browser died was reported as "printed
- * nothing". Bounded, because a WEDGED browser neither exits nor closes stderr.
- */
-const FAILURE_DRAIN_MS = 1_000;
-
-/** How long a closed Chrome gets to exit on SIGTERM before it is killed outright. */
-export const CLOSE_GRACE_MS = 5_000;
-
-const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
-  Promise.race([work, Bun.sleep(ms)]);
-
-/**
- * Start Chrome on a throwaway profile and answer once it has answered one CDP call. With a pipe
- * there is no "DevTools listening" line to wait for — the first reply IS the readiness signal, and
- * a browser that dies or stays silent before it is `X_CDP_LAUNCH_FAILED` carrying its own stderr.
+ * Start Chrome on a throwaway profile and answer once it has answered one CDP call. A browser that
+ * dies or stays silent is started once more; twice is `X_CDP_LAUNCH_FAILED` with each start's own
+ * stderr and whether it exited or was killed at the deadline.
  */
 export async function launchChrome(options: LaunchOptions): Promise<LaunchedBrowser> {
-  const profileDir = mkdtempSync(join(tmpdir(), 'x-e2e-chrome-'));
-  const child = Bun.spawn([options.executable, ...chromeLaunchFlags(profileDir)], {
-    // Chrome's fd 3 is where it READS commands and fd 4 where it WRITES replies and events.
-    stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
-  });
-  const tail = stderrTail(child.stderr as ReadableStream<Uint8Array>);
-  const [, , , toBrowser, fromBrowser] = child.stdio as unknown as readonly number[];
-  const sink = Bun.file(toBrowser ?? -1).writer();
-  const connection = cdpConnectOver(
-    pipeTransport({
-      write: (bytes) => {
-        sink.write(bytes);
-        void sink.flush();
-      },
-      read: Bun.file(fromBrowser ?? -1).stream(),
-      end: () => {
-        void Promise.resolve(sink.end()).catch(() => undefined);
-      },
-    }),
-    options.timeoutMs,
+  // Screened: `setTimeout(fn, NaN)` fires in 1 ms, which reports a healthy browser as silent.
+  const launchTimeoutMs = finiteCount(
+    'launchChrome',
+    'launchTimeoutMs',
+    options.launchTimeoutMs ?? Math.max(options.timeoutMs, LAUNCH_TIMEOUT_MS),
+    1,
   );
-  let closed = false;
-  const close = (): void => {
-    if (closed) return;
-    closed = true;
-    connection.close();
-    child.kill();
-    rmSync(profileDir, { recursive: true, force: true });
-  };
-  let exiting: Promise<void> | undefined;
-  const closeAndWait = (): Promise<void> => {
-    close();
-    exiting ??= (async () => {
-      const exited =
-        (await within(
-          CLOSE_GRACE_MS,
-          child.exited.then(() => true),
-        )) === true;
-      if (exited) return;
-      child.kill('SIGKILL');
-      await within(CLOSE_GRACE_MS, child.exited);
-    })();
-    return exiting;
-  };
-  try {
-    await connection.send('Browser.getVersion');
-    return { connection, close, closed: closeAndWait };
-  } catch {
-    await within(FAILURE_DRAIN_MS, child.exited);
-    close();
-    await within(FAILURE_DRAIN_MS, tail.drained);
-    const seen = tail.text().trim();
-    throw new CdpLaunchFailedError({
+  const failures: CdpLaunchAttempt[] = [];
+  while (failures.length < LAUNCH_ATTEMPTS) {
+    const started = await launchAttempt({
       executable: options.executable,
-      detail:
-        seen === ''
-          ? 'it answered no DevTools call and printed nothing before the deadline'
-          : seen.split('\n').slice(-3).join(' | '),
+      flags: chromeLaunchFlags,
+      timeoutMs: options.timeoutMs,
+      launchTimeoutMs,
     });
+    if (started.ok) return started.browser;
+    failures.push(started.failure);
+    // A process that outlived SIGKILL's grace still holds the machine; a second beside it is the
+    // load that made the first one late.
+    if (!started.reaped) break;
   }
+  throw new CdpLaunchFailedError({ executable: options.executable, attempts: failures });
 }
 
 /** `findChrome` then `launchChrome`. Refuses by name when there is no browser to drive. */

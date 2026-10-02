@@ -336,3 +336,108 @@ describe('lifecycle', () => {
     expect(response.headers.get('x-ultimate-build')).toBe('build-2');
   });
 });
+
+// The `auth` stage answers 401 before `rate-limit` runs, so a request that FAILS a required route
+// was never metered: an unauthenticated caller could ask a credential store about tokens for as
+// long as it liked. The failure path spends an allowance keyed on the address alone.
+describe('a failed credential is metered by address', () => {
+  let lookups = 0;
+  const metered = (enabled = true) => {
+    lookups = 0;
+    return createPipeline({
+      table: createRouter(routes),
+      config: defineHttpConfig({
+        dev: false,
+        buildId: null,
+        rateLimit: {
+          enabled,
+          scope: 'process',
+          buckets: { default: { capacity: 3, refillPerSecond: 0.001 } },
+        },
+      }),
+      hooks: {
+        authenticate: (request) => {
+          lookups += 1;
+          return request.header('cookie') === 'session=ok' ? ({ id: 'u1' } as never) : null;
+        },
+      },
+    });
+  };
+  const from = (ip: string, path = '/private', headers: Record<string, string> = {}) =>
+    [
+      get(path, { headers: { accept: 'application/json', ...headers } }),
+      { role: 'web', ip },
+    ] as const;
+
+  test('twelve anonymous requests against a capacity-3 bucket: the fourth is 429', async () => {
+    const pipeline = metered();
+    const statuses: number[] = [];
+    const codes: string[] = [];
+    let retryAfter = 0;
+    for (let index = 0; index < 12; index += 1) {
+      const response = await pipeline.handle(...from('203.0.113.9'));
+      statuses.push(response.status);
+      codes.push(((await response.json()) as { code: string }).code);
+      if (index === 3) retryAfter = Number(response.headers.get('retry-after'));
+    }
+    expect(statuses).toEqual([401, 401, 401, ...Array.from({ length: 9 }, () => 429)]);
+    expect(codes[3]).toBe('X_RATE_LIMITED');
+    expect(retryAfter).toBeGreaterThan(0);
+  });
+
+  test('the allowance is the address’s, across every required route — not one per route', async () => {
+    const pipeline = metered();
+    for (let index = 0; index < 3; index += 1) await pipeline.handle(...from('203.0.113.9'));
+    const other = await pipeline.handle(...from('203.0.113.9', '/private?again=1'));
+    expect(other.status).toBe(429);
+  });
+
+  test('it is keyed on the address only: another address, and a signed-in caller, are served', async () => {
+    const pipeline = metered();
+    for (let index = 0; index < 5; index += 1) await pipeline.handle(...from('203.0.113.9'));
+    expect((await pipeline.handle(...from('198.51.100.4'))).status).toBe(401);
+    const member = await pipeline.handle(
+      ...from('203.0.113.9', '/private', { cookie: 'session=ok' }),
+    );
+    expect(member.status).toBe(200);
+    // A public route never spent it either: its anonymous callers have their own per-route key.
+    expect((await pipeline.handle(...from('203.0.113.9', '/public'))).status).toBe(200);
+  });
+
+  test('a success spends nothing from it', async () => {
+    const pipeline = createPipeline({
+      table: createRouter(routes),
+      config: defineHttpConfig({
+        dev: false,
+        buildId: null,
+        rateLimit: {
+          scope: 'process',
+          defaultBucket: 'failures',
+          buckets: {
+            default: { capacity: 100, refillPerSecond: 1 },
+            failures: { capacity: 1, refillPerSecond: 0.001 },
+          },
+        },
+      }),
+      hooks: {
+        authenticate: (request) =>
+          request.header('cookie') === 'session=ok' ? ({ id: 'u1' } as never) : null,
+      },
+    });
+    // `/private` names no bucket, so a member spends `failures` under its OWN key — once.
+    const member = () =>
+      pipeline.handle(...from('203.0.113.9', '/private', { cookie: 'session=ok' }));
+    expect((await member()).status).toBe(200);
+    // The address's failure allowance is still whole: the first failure is a 401, not a 429.
+    expect((await pipeline.handle(...from('203.0.113.9'))).status).toBe(401);
+    expect((await pipeline.handle(...from('203.0.113.9'))).status).toBe(429);
+  });
+
+  test('a limiter the app switched off meters nothing here either', async () => {
+    const pipeline = metered(false);
+    for (let index = 0; index < 6; index += 1) {
+      expect((await pipeline.handle(...from('203.0.113.9'))).status).toBe(401);
+    }
+    expect(lookups).toBe(6);
+  });
+});

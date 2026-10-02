@@ -246,6 +246,14 @@ export function responseVerdict(facts: ResponseFacts): ResponseVerdict {
   }
   if (facts.status === 204) {
     if (facts.location === null) return { kind: 'stay' };
+    // The caller ASSIGNS this to `window.location`, so only http(s) is a place to go: a scheme
+    // that runs in the page would be script in the app's origin. `@ultimat3/http`'s `locationFor`
+    // refuses it at the source; this is the same rule for an answer something else wrote. The
+    // requested url is loaded as a document instead — a POST is never re-sent, so it fails.
+    if (!/^https?:\/\/./i.test(facts.location) || !URL.canParse(facts.location)) {
+      const reason = 'a location that is not http(s)';
+      return get ? load(facts.requested, reason) : { kind: 'failed', reason };
+    }
     if (origin(facts.location) !== origin(facts.requested))
       return load(facts.location, 'another origin');
     // The server asked for THIS url as a document: the route did not run, the browser runs it.

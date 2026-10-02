@@ -74,7 +74,7 @@ before any hook, before the handler**:
 | soft GET | anything but a page of THIS router's `<app>:<surface>` (a download, an evidence GET, a `'document'` page, another surface or app) | `204` + `x-ultimate-location: <same url>`; the router loads it for real, and it runs once |
 | soft GET | a page rendered for another principal than the router's document | `204` + `x-ultimate-location`, before `load` |
 | GET | a tab on another build | `409` from the existing build check; the router loads the page for real |
-| any router request answered with a 3xx (a form's 303, a sign-in wall, a `load`'s `setRedirect`, an OAuth or payment hop) | any | `204` + `x-ultimate-location: <target>`, cookies kept. The handler ran once; the router follows a same-origin target as its own next request, and hands another origin to the browser |
+| any router request answered with a 3xx (a form's 303, a sign-in wall, a `load`'s `setRedirect`, an OAuth or payment hop) | any | `204` + `x-ultimate-location: <target>`, cookies kept. The handler ran once; the router follows a same-origin target as its own next request, and hands another origin to the browser. A target that is not `http:`/`https:` (or will not parse) is never handed over: the header names the requested URL instead, as a path |
 | POST | any | never gated: it is the form's submission |
 
 A soft GET across a principal change runs auth and rate-limit **twice** — once before the `204` of

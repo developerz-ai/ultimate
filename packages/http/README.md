@@ -8,7 +8,7 @@ to skip.
 
 | Concern | Module |
 |---|---|
-| server lifecycle, drain, `/healthz` + `/readyz` | `server.ts` |
+| server lifecycle, drain, `/healthz` + `/readyz` | `server.ts`, `health-disclosure.ts` |
 | route table, matcher, `describeRoutes()` | `router.ts` |
 | the ordered request lifecycle | `pipeline.ts` |
 | typed request (params, query, body) | `request.ts` |
@@ -18,7 +18,7 @@ to skip.
 | token-bucket limiting, `toBucket` | `rate-limit.ts` |
 | the app's own HTTP declaration, and the boot's facts over it | `app-config.ts` |
 | CORS, CSP/HSTS | `cors.ts`, `security-headers.ts` |
-| CSRF (origin proof for a credentialed write) | `csrf.ts` |
+| CSRF (origin proof for an unsafe request a browser sent) | `csrf.ts` |
 | the request deadline and `ctx.signal` | `deadline.ts` |
 | the caller's real address behind a proxy | `forwarded.ts` |
 | the inbound request id and trace, read before the span | `correlation.ts` |
@@ -68,8 +68,8 @@ asserts the order; `/_x` renders it. Ordering rules worth restating:
 | Rule | Reason |
 |---|---|
 | admit second | a stopped or saturated process refuses before any work — no route match, no auth, no body; a DRAINING one serves and closes the connection |
-| auth before rate-limit | limiter keys per actor/tenant, not per NAT address |
-| csrf after auth | only a caller holding an AMBIENT credential can be forged into; bearer and anonymous are exempt |
+| auth before rate-limit | limiter keys per actor/tenant, not per NAT address. A request that FAILS `auth: 'required'` leaves here, so this stage spends `rateLimit.defaultBucket` for it under `unauthenticated\|ip:<address>` — one key per address across every route, the bearer mount's bad tokens included; a signed-in caller behind that address spends nothing from it |
+| csrf after auth | it has to know who is calling: a bearer caller is exempt (not ambient); an anonymous write is judged like a signed-in one once it carries `Origin` or `sec-fetch-site`, because a forged sign-in lands the visitor in the attacker's account. Anonymous with neither header — a webhook, a server-to-server call — passes |
 | csrf before body | a forged write never makes the server allocate its payload |
 | rate-limit before body | a limited request never allocates its payload |
 | body before authz | policies take parsed input as their subject |
@@ -95,13 +95,23 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | an injected limiter that does not hold a bucket a route declares | `X_RATE_LIMIT_BUCKET_UNBOUND` at `createPipeline`, because the name would fall through to `default` — measured at 120 burst for a route declaring 5 |
 | a config that never declared `rateLimit.scope` | `X_RATE_LIMIT_SCOPE_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `'process'` used to be the default, so "nobody asked" and "the app said one replica" were the same value while the chart runs three |
 | `trustProxy: true` with no `trustedProxyHops` | `X_TRUST_PROXY_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `trustProxy` now defaults to `false`, and `x-forwarded-for` is read at `entries.length - hops` — never at `[0]`, which is whatever the client typed |
-| a credentialed unsafe method that cannot be shown to be same-origin | `X_CSRF_BLOCKED` (403). `sec-fetch-site: same-origin`, `Origin` equal to this app, or an EXACT listing in `cors.origins` — anything else is refused before the body is read. `origins: ['*']` lists nobody here: `'*'` is a value for the response header, not a per-origin allowance |
-| a request past `requestTimeoutMs` (30s) | `ctx.signal` aborts and the socket is answered `X_TIMEOUT` (504); a caller may shorten the deadline with `x-request-timeout-ms`, never lengthen it |
+| an unsafe method from a browser — signed in, or anonymous with `Origin`/`sec-fetch-site` — that cannot be shown to be same-origin | `X_CSRF_BLOCKED` (403). `sec-fetch-site: same-origin`, `Origin` equal to this app, or an EXACT listing in `cors.origins` — anything else is refused before the body is read. `origins: ['*']` lists nobody here: `'*'` is a value for the response header, not a per-origin allowance |
+| a request past `requestTimeoutMs` (30s) | `ctx.signal` aborts and the socket is answered `X_TIMEOUT` (504); a caller may shorten the deadline with `x-request-timeout-ms`, never lengthen it. A handler still running after the 504 stays in core's in-flight count until it settles, so a drain waits for it instead of closing the pool under it |
+| a budget above `2_147_483_647` ms | no timer holds it: `requestTimeoutMs` past it is `X_CONFIG_INVALID`, and an `x-request-timeout-ms` past it is ignored — it used to arm a ~1 ms timer |
 | the caller going away mid-request | `ctx.signal` aborts on the inbound `Request.signal` too, so a closed tab unwinds cooperative work instead of holding its pool slot for the rest of the budget. Both halves are one signal (`AbortSignal.any`), and `requestTimeoutMs: 0` still delivers the caller's |
 | a request while the process is draining | SERVED, with `connection: close` so the client's next request lands on another pod, `As of 2026-09-23` — refusing it failed 598 of 7,690 requests across one helm upgrade on kind, every one on a kept-alive connection inside the readiness grace. Only a STOPPED process (resources closed) answers `X_DRAINING` (503) + `retry-after` |
 | SIGTERM | `/readyz` answers 503 at once, the listener stays open for `drain.readinessGraceMs` (core; 5000 ms outside development/test, 0 inside), then closes and the drain runs. Pass `createServer({ …, drain: appConfig.drain })` so `app.config.ts`'s value is the one applied; omitted, core's default holds and a `configureLifecycle({ readinessGraceMs })` stands |
 | `?locale=es` | the locale source that outranks the cookie and the header (`resolveLocale`'s order), `As of 2026-09-23` — documented in `wiki/I18n.md` and never read before |
 | a 4xx | logged at `warn` (401, 403, 429) or `info` (every other 4xx); only a 5xx is an `error` line |
+| `x-forwarded-client-cert` without `trustClientCertHeader: true` | `ctx.peer` is `null`. **Breaking**: `trustProxy` alone used to read it, and an ingress that appends to `x-forwarded-for` need not strip a certificate header the client sent |
+| `/healthz`, `/readyz` from a peer `healthDetailPeers` does not list | `{ state, ready, role }` and the same status code; `buildId`, `inflight`, `uptimeMs`, `checks` and `registered` go to a listed peer only (default `['loopback']`), and behind a declared proxy the forwarded caller must be listed too |
+| a `/<default-locale>/…` URL | `301`/`308` to the unprefixed path, normalised as the router matches it — `//host/x` after the prefix is `/host/x`, never a scheme-relative `Location` |
+| a 3xx to a client-router request whose target is not `http:`/`https:` | `x-ultimate-location` names the REQUESTED url as a path; the target is never handed over, and one that will not parse is treated the same |
+| a handler's `cache-control` carrying `max-age`, `must-revalidate` or `proxy-revalidate` with no `private`/`no-store` | an offer to a shared cache (RFC 9111 §3): `private, max-age=0` for a request carrying an identity, `vary`-keyed for an anonymous one. `immutable` stays exempt |
+| a body with no `content-type` | `X_BODY_INVALID` from `bodyRaw()` / the `body` stage — it used to read as "no body", so an all-optional schema validated a request nobody parsed. `bodyBytes()` still reads it |
+| two cookies set in one request | two `Set-Cookie` lines: the `response` stage appends them, where `headers.set` in a loop kept the last and dropped any on the handler's own Response |
+| a 5xx whose cause is withheld | its `fix` is the error's `callerFix`, else `x errors explain <CODE> --json` — never the developer's `fix:`, which is written from the same statement, row or path the cause was |
+| `buildId: null` | skew detection off, whatever `BUILD_ID` says; `hostname` never defaults from `HOSTNAME` (the container id under Docker) |
 | an `x-forwarded-client-cert` value in quotes | unescaped ONCE, after the pairs are split — `Subject="O=Acme; Inc,CN=svc-one"` is that whole subject, not `O=Acme` |
 | a request past `maxInflight` (1000) | `X_OVERLOADED` (503) + `retry-after`, shed in the `admit` stage before any work |
 

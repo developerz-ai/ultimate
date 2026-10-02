@@ -69,9 +69,9 @@ describe.skipIf(noBrowser)('the multi-tab harness', () => {
     fallback = await privateBrowser('delete window.SharedWorker;');
   }, 60_000);
 
-  afterAll(() => {
-    shared.close();
-    fallback.close();
+  afterAll(async () => {
+    await shared.close();
+    await fallback.close();
   });
 
   test('two tabs through a SharedWorker are ONE socket, counted in the worker realm', async () => {

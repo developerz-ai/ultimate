@@ -140,7 +140,7 @@ describe.skipIf(chrome === undefined && !required)(
 
     // Awaited until Chrome has EXITED (bounded): the next suite in this process launches its own.
     afterAll(async () => {
-      await browser?.closed?.();
+      await browser?.close();
     }, 30_000);
 
     test(

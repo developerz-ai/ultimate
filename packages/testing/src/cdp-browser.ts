@@ -27,13 +27,12 @@ export interface E2eBrowser {
    * drives, on the same launch as `page` — one harness, never a second one beside the driver.
    */
   readonly session: E2eSession;
-  /** Idempotent, and it closes both halves: the CDP socket, then the process and its profile. */
-  close(): void;
   /**
-   * `close()`, resolving once the process has exited (bounded — `CLOSE_GRACE_MS`, then SIGKILL).
-   * Optional so a test double need not model a process; the launched browser always has it.
+   * THE close, idempotent, awaited: the CDP connection, then the process, its process group and its
+   * profile (bounded — `CLOSE_GRACE_MS` per step). Unawaited, a process that exits next leaves a
+   * Chrome child and a profile directory behind.
    */
-  closed?(): Promise<void>;
+  close(): Promise<void>;
 }
 
 export interface OpenE2eBrowserOptions {
@@ -60,10 +59,6 @@ const compose = (launched: LaunchedBrowser, session: E2eSession, page: E2eTab): 
   // the process out from under an open connection makes every in-flight call report "the browser
   // closed the CDP connection", which is true and useless.
   close: () => launched.close(),
-  closed: async () => {
-    if (launched.closed === undefined) launched.close();
-    else await launched.closed();
-  },
 });
 
 /**
@@ -107,7 +102,7 @@ async function openLaunched(
     });
     return compose(launched, session, await session.newTab());
   } catch (error) {
-    launched.close();
+    await launched.close();
     throw error;
   }
 }

@@ -5,6 +5,7 @@
 
 import { type LocaleSources, localeConfig, resolveLocale, splitLocalePrefix } from '@ultimat3/i18n';
 import type { RequestContext } from './context';
+import { normalizePath } from './router';
 
 /** Methods whose redirect may change nothing but the URL. Anything else is a 308, never a 301. */
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
@@ -26,7 +27,10 @@ export function routeLocalePrefix(
   if (prefix === undefined) return pathname;
   if (prefix.isDefault) {
     const mount = basePath === '/' || basePath === '' ? '' : basePath.replace(/\/$/, '');
-    const location = `${mount}${prefix.path}${ctx.url.search}`;
+    // Normalised exactly as the router would match it. The remainder is caller-written, and
+    // `//host/x` in a `Location` is a scheme-relative URL: a permanent, cacheable redirect off
+    // the site, answered before auth. One leading slash, no empty segment.
+    const location = `${mount}${normalizePath(prefix.path)}${ctx.url.search}`;
     // PERMANENT, and so not `redirect()`, whose statuses are an application's (it refuses 301 on
     // purpose: a cached permanent redirect cannot be taken back). This one is the framework's URL
     // scheme, and it IS permanent — the default locale is never prefixed, in any release.

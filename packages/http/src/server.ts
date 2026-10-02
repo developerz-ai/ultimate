@@ -18,6 +18,7 @@ import {
 import type { Server } from 'bun';
 import { defineHttpConfig, type HttpConfig } from './config';
 import { HttpError, serverNotStarted } from './errors';
+import { disclosesHealthDetail, healthBody } from './health-disclosure';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { createPipeline, type Pipeline } from './pipeline';
@@ -193,10 +194,21 @@ export const createServer = (options: ServerOptions): ServerHandle => {
    * Core owns the health state, the in-flight count and the drain deadline so every
    * role reports identically. `HealthPayload` is `{ ok, status, body }` — core stays
    * HTTP-free and hands us the status code as data, which we render here.
+   *
+   * The STATUS is everyone's, which is all a probe reads. The body beyond the verdict is for a
+   * peer `healthDetailPeers` lists: these two paths answer outside the pipeline, unauthenticated.
    */
-  const healthResponse = (payload: HealthPayload): Response =>
+  const healthResponse = (payload: HealthPayload, request: Request, socket: BunServer): Response =>
     json(
-      { ...payload.body, role },
+      healthBody(
+        payload.body,
+        role,
+        disclosesHealthDetail({
+          config,
+          headers: request.headers,
+          socketAddress: socket.requestIP(request)?.address ?? null,
+        }),
+      ),
       { status: payload.status, headers: { 'cache-control': 'no-store' } },
     );
 
@@ -289,11 +301,14 @@ export const createServer = (options: ServerOptions): ServerHandle => {
           ...nativeRoutes(),
           // Health endpoints answer outside the pipeline on purpose: a draining or
           // rate-limited process must still be able to say what it is doing.
-          '/healthz': () => healthResponse(healthzPayload()),
+          '/healthz': (request: Request, socket: BunServer) =>
+            healthResponse(healthzPayload(), request, socket),
           // `?deep=1` always answers on the dependencies, whatever `health.readiness` says.
-          '/readyz': (request: Request) =>
+          '/readyz': (request: Request, socket: BunServer) =>
             healthResponse(
               readyzPayload({ deep: new URL(request.url).searchParams.get('deep') === '1' }),
+              request,
+              socket,
             ),
         },
       };

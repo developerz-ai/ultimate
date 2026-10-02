@@ -16,14 +16,22 @@ export const PRIVATE_CACHE: CacheHint = { mode: 'private', maxAgeSeconds: 0 };
 // for every signed-in user.
 const OFFERS_SHARED = /(?:^|,)\s*(?:public\b|s-maxage=)/i;
 const IMMUTABLE = /(?:^|,)\s*immutable\b/i;
+// RFC 9111 §3: a shared cache may store a response to a request without `Authorization` — which
+// is every cookie session — as soon as it carries explicit freshness or a revalidation rule. So
+// `max-age=3600` alone is an offer too, unless the same header withholds it.
+const STATES_FRESHNESS = /(?:^|,)\s*(?:max-age=|must-revalidate\b|proxy-revalidate\b)/i;
+const WITHHOLDS = /(?:^|,)\s*(?:private\b|no-store\b)/i;
 
 /**
  * Whether a `cache-control` a HANDLER wrote offers the response to a shared cache. A render mode
  * states the MODE's intent — `ssr` offers an ungated page to a CDN for 30 seconds — and the actor
  * is the half it cannot see, so the stage reviews the declaration rather than deferring to it.
  */
-export const offersSharedCache = (declared: string): boolean =>
-  OFFERS_SHARED.test(declared) && !IMMUTABLE.test(declared);
+export const offersSharedCache = (declared: string): boolean => {
+  if (IMMUTABLE.test(declared)) return false;
+  if (OFFERS_SHARED.test(declared)) return true;
+  return STATES_FRESHNESS.test(declared) && !WITHHOLDS.test(declared);
+};
 
 /**
  * Authenticated responses are never shared-cacheable; that default is not overridable.

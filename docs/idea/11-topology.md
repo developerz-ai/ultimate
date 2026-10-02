@@ -43,7 +43,7 @@ the metrics listener alone and are probed on `/metrics`.
 
 At most two checks are registered — `database` always, `transport` only when the transport can report a connection (NATS can; the in-process bus cannot), so `registered` is `1` under `x dev` and `2` on a NATS-backed node — and **no per-role check exists**. This table claimed five, including a `scheduler` standby reporting not-ready, and none of them was ever wired.
 
-Both return `{ ...HealthReport, role }` — `state`, `ready`, `uptimeMs`, `inflight`, `buildId`, `checks` as a **map** of name → `ok`/`failing`, and `registered`. Never a bare `200 OK` with no body. `registered: 0` is the state the pair could not otherwise express: an empty registry is still ready, so a 200 there means no more than "the socket is bound" ([`13-topology-runtime.md`](../architecture/13-topology-runtime.md#healthz-vs-readyz)).
+Both return `{ state, ready, role }` to everyone and `{ ...HealthReport, role }` — adding `uptimeMs`, `inflight`, `buildId`, `checks` as a **map** of name → `ok`/`failing`, and `registered` — to a peer `configureHttp({ healthDetailPeers })` lists (default `['loopback']`, `As of 2026-10`: the endpoints answer outside the pipeline, unauthenticated). The status code is the same for both. Never a bare `200 OK` with no body. `registered: 0` is the state the pair could not otherwise express: an empty registry is still ready, so a 200 there means no more than "the socket is bound" ([`13-topology-runtime.md`](../architecture/13-topology-runtime.md#healthz-vs-readyz)).
 
 ## Graceful drain on SIGTERM
 

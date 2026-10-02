@@ -14,7 +14,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 - **Every numeric knob `defineHttpConfig` resolves is screened** (`port`, `bodyLimitBytes`,
   `requestTimeoutMs`, `maxInflight`, `drainTimeoutMs`, `trustedProxyHops`) → `X_CONFIG_INVALID`
-  (borrowed). Helpers carry `Finite` (`assertFiniteCount`, `assertFiniteKeyCap`,
+  (borrowed). `requestTimeoutMs` tops out at `MAX_TIMER_MS` (2^31−1): past it a timer arms ~1 ms.
+  `buildId: null` is a declaration (`=== undefined`, never `??`); `hostname` never reads `HOSTNAME`. Helpers carry `Finite` (`assertFiniteCount`, `assertFiniteKeyCap`,
   `assertFiniteBodyLimit`) so `bun run finite-bounds` sees them; `webhook-verify.ts` and
   `rate-limit.ts` screen their own. **The floor is per option**: `requestTimeoutMs: 0` and
   `maxInflight: 0` are "off"; `trustedProxyHops` floors at 1. `resolveTrustedProxyHops` owns both
@@ -84,26 +85,30 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **Every proxy-supplied header goes through `forwardedElement(header, hops)`** — the entry at
   `entries.length - hops`, never `[0]`; a short chain trusts nothing. `trustProxy` defaults to false
   and requires `trustedProxyHops`. `x-forwarded-proto` (HSTS) and Envoy XFCC (`peer-identity.ts`) ride
-  it; `ctx.peer` is `null` unless trusted and is never an actor.
+  it; `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared (appending to
+  XFF is no promise of stripping a client-sent cert header), and is never an actor.
 - **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` disables), shortenable
   by `x-request-timeout-ms`, never lengthened. `ctx.signal` is the deadline OR the caller going away
   (`AbortSignal.any` with `Request.signal`); `expired` is the timer's alone. `Deadline.deadlineAt` is
   published as core's `ctx.deadlineAt`, which `traceHeaders()` sends onward. Always `deadline.clear()`
-  in the `finally`.
+  in the `finally`. An ask above `MAX_TIMER_MS` is ignored. **A handler that outlives its 504 is held
+  in core's in-flight count** (`beginWork()` in `execute`) until it settles (`pipeline-inflight.test.ts`).
 - **`admit` is the second stage and refuses before ANY work**: past `maxInflight` (1000) is
   `X_OVERLOADED` with `retry-after`, counted by core's `inflightCount()`. **A DRAINING process
   serves** with `connection: close`; only `lifecycleState() === 'stopped'` answers `X_DRAINING`
   (`pipeline-hardening.test.ts`).
-- **`csrf` sits after `auth` and before `body`**: an ambient-credential unsafe request needs
+- **`csrf` sits after `auth` and before `body`**: an unsafe request needs
   `sec-fetch-site: same-origin`, an `Origin` equal to this app (from `ctx.https`), or one EXACTLY in
   `cors.origins` (`originListed`, never `allowedOrigin`); else `X_CSRF_BLOCKED` (403). No
-  `mode: 'token'`.
+  `mode: 'token'`. **Anonymous is not an exemption** (login CSRF): exempt are an `Authorization`
+  header, and an anonymous request with NEITHER `Origin` nor `sec-fetch-site` (not a browser).
 - **`meta.enforcedBy` says who evaluates `meta.policy`**: `'pipeline'` (default) decides via
   `hooks.authorize`; `'handler'` stands the `authz` stage down.
 - **A 403's `fix:` names the POLICY** (`route.meta.policy`), degrading to `x routes --json` for a
   composite.
 - **The body cap is enforced while reading** (`UltimateRequest.#read`'s counting reader, cancelling
-  past `bodyLimitBytes`); multipart goes through the same capped bytes.
+  past `bodyLimitBytes`); multipart goes through the same capped bytes. **Bytes with no
+  `content-type` are `X_BODY_INVALID`** from `bodyRaw()`, never "no body"; `bodyBytes()` reads them.
 - **A repeated field is a LIST in all three parsers** (`collectFields`).
 - **`matchRoute` never throws**: `router.ts`'s `decodeSegment` answers `path-invalid` →
   `X_PATH_INVALID` (400).
@@ -120,13 +125,20 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **The `cache-headers` stage is the ONE owner of the final cache answer**: `offersSharedCache` turns a
   shared answer for an identified request into `PRIVATE_CACHE` and gives an anonymous one
   `SHARED_CACHE_VARY` (`accept-language, cookie`); `immutable` is left alone. `vary` is added, never
-  set (`addVary`).
+  set (`addVary`). An offer is `public`, `s-maxage`, or any `max-age` / `must-revalidate` /
+  `proxy-revalidate` without `private`/`no-store` (RFC 9111 §3).
+- **`Set-Cookie` is appended by the `response` stage, every other context header is `set`** —
+  it is the one header that is a list of lines (`pipeline-cookies.test.ts`).
+- **A redirect the framework writes stays on this origin**: the default-locale redirect goes
+  through `normalizePath`; `locationFor` hands over `http:`/`https:` only, else the requested path.
 - **A `cache-control` age is delta-seconds or DROPPED** (`finiteDeltaSeconds`, total, always the
   shorter direction; logs `http.cache_hint_not_delta_seconds`). Its boot half is `route-cache.ts`:
   `createRouter` refuses a bad `Route.cache` with `X_CONFIG_INVALID`. Both accept the same set; zero
   is legal. `ctx.cache` is not screened.
 - **A handler's own `Response.status` is never rewritten** (`pipeline-handler-status.test.ts`).
-- Health endpoints answer outside the pipeline. **Lifecycle belongs to core** (`beginWork()`,
+- Health endpoints answer outside the pipeline, so their body is a stranger's: `{ state, ready,
+  role }` unless the peer is in `healthDetailPeers` (default `['loopback']`; socket AND trusted
+  forwarded caller must both be listed — `health-disclosure.ts`). **Lifecycle belongs to core** (`beginWork()`,
   `markReady()`, `drain()`, the payloads) — never a private state or in-flight counter.
 - **`stop()` hands its two hooks back ABOVE its early return** (`packages/http/e2e/server.e2e.test.ts`
   reads `shutdownHookCount()`).
@@ -140,7 +152,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `ERROR_DOCS_URL`.** `finalize.ts`'s `lastResort` literal is pinned against `problemTypeFor('X_INTERNAL')`.
 - **A 5xx cause is withheld unless its code opts in** (`hasPublicCause`, `problem-meta.ts`;
   `registerProblemMeta({ CODE: { publicCause: true } })`). `toProblem(error, { dev })` defaults `dev`
-  to false. An unclassified 5xx carries nothing off the throwable.
+  to false. An unclassified 5xx carries nothing off the throwable. **A hidden cause hides the `fix`
+  too**: `callerFix`, else `x errors explain <CODE> --json` — never `facts.fix` outside dev.
 - **The document carries the ISSUE LIST** as a top-level `issues` member: `issuesOf` is total,
   all-or-nothing, absent (never `[]`) when none, dropped past `MAX_PROBLEM_ISSUES` (100), dropped under
   the opacity condition; `received` forced to `''`, entries rebuilt member by member.
@@ -173,6 +186,9 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **The scope is DECLARED, with no default**: an enabled limiter without `scope` is
   `X_RATE_LIMIT_SCOPE_UNSET`; `assertRateLimitScope` (in `createPipeline`) refuses `'shared'` over a
   per-process store (`X_RATE_LIMIT_NOT_SHARED`). Install through `createServer({ rateLimitStore })`.
+- **A failed `auth: 'required'` is metered in the `auth` stage** (`spendUnauthenticated`,
+  `rate-limit-stage.ts`): `defaultBucket` under `unauthenticated|ip:<address>`, not route-scoped,
+  spent only on failure — the 401 leaves before `rate-limit`. Covers the bearer mount's bad tokens.
 - **`postgresRateLimitStore({ executor })` is the shared store**, over a structural `PgExecutor`. The
   refill expression is repeated inside `on conflict do update` on purpose; `spent` is a stored column;
   `purgeExpired(nowMs)` takes the caller's clock.
@@ -220,10 +236,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `forwarded.ts` | one hop-indexed reader for every header a trusted proxy writes |
 | `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
-| `csrf.ts` | the origin proof an unsafe method from a credentialed browser must carry |
+| `csrf.ts` | the origin proof an unsafe method from a browser must carry, signed in or not |
 | `webhook-verify.ts` | the INBOUND webhook: the canonical string, the constant-time mac check and the replay window. The outbound half is `webhook()` in `@ultimat3/jobs`, which this package can never import |
 | `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only, plus `readCookie`. It negotiates nothing |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
+| `rate-limit-stage.ts` | what the pipeline spends and when: the `rate-limit` stage's list of keys, and the address-keyed allowance the `auth` stage spends for a failed credential |
+| `health-disclosure.ts` | what `/healthz` and `/readyz` say and to whom: the verdict for everyone, the detail for a `healthDetailPeers` peer, and the screen that list gets |
 | `bearer-mount.ts` | a second door onto existing routes: `Authorization: Bearer` on a prefix, the scope cut, the per-token allowance |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
 
