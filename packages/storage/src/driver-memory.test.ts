@@ -72,6 +72,33 @@ describe('the memory disk answers as the local disk does', () => {
     }
   });
 
+  test('what put was handed and what a read hands back are snapshots, never the stored object', async () => {
+    for (const [name, driver] of pair) {
+      const metadata: Record<string, string> = { owner: 'ada' };
+      const put = await driver.put('org/o1/m.json', bytes('{}'), { metadata });
+      metadata['owner'] = 'mallory';
+      (put.metadata as Record<string, string>)['owner'] = 'eve';
+      put.lastModified.setTime(0);
+      const read = await driver.get('org/o1/m.json');
+      (read.object.metadata as Record<string, string>)['owner'] = 'eve';
+      read.object.lastModified.setTime(0);
+      const [listed] = (await driver.list({ prefix: 'org/o1/' })).objects;
+      listed?.lastModified.setTime(0);
+      const copied = await driver.copy('org/o1/m.json', 'org/o1/n.json');
+      (copied.metadata as Record<string, string>)['owner'] = 'eve';
+      for (const key of ['org/o1/m.json', 'org/o1/n.json']) {
+        const again = (await driver.get(key)).object;
+        // The local disk's `lastModified` is the file's mtime, so "never the epoch" is the claim.
+        expect([name, key, again.metadata, again.lastModified.getTime() > 0]).toEqual([
+          name,
+          key,
+          { owner: 'ada' },
+          true,
+        ]);
+      }
+    }
+  });
+
   test('a key that escapes, a wrong checksum and an oversized body are refused by code', async () => {
     const small = memoryDriver({ maxPutBytes: 4 });
     expect(await codeOf(() => small.put('big.bin', bytes('12345')))).toBe('X_STORAGE_TOO_LARGE');

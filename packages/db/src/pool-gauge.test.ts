@@ -147,6 +147,33 @@ describe('unit · the pool gauges', () => {
     expect(series().db_pool_in_use).toBe(0);
   });
 
+  test('a pool that could not be opened registers nothing', async () => {
+    host.Bun.SQL = class {
+      constructor() {
+        throw new TypeError('invalid connection string');
+      }
+    };
+    const db = client(3);
+    await db.query(sql`select 1`).then(
+      () => expect.unreachable('the driver could not be built'),
+      () => undefined,
+    );
+    expect(series()).toEqual({ db_pool_max: 0, db_pool_in_use: 0, db_pool_waiting: 0 });
+  });
+
+  test('a closed pool still draining is not counted against the pool that replaced it', async () => {
+    const gate = installGatedSql();
+    const db = client(1);
+    const draining = db.query(sql`select 1`);
+    await db.close();
+    const fresh = db.query(sql`select 2`);
+    // One statement on a one-connection pool: in use, nothing waiting behind the old pool's work.
+    expect(series()).toEqual({ db_pool_max: 1, db_pool_in_use: 1, db_pool_waiting: 0 });
+    gate.settle();
+    await Promise.all([draining, fresh]);
+    expect(series()).toEqual({ db_pool_max: 1, db_pool_in_use: 0, db_pool_waiting: 0 });
+  });
+
   test('two pools sum, and a closed one leaves the totals', async () => {
     installGatedSql();
     const primary = client(3);
