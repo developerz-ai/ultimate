@@ -85,8 +85,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A denial is a decision; everything else is a failure.** `visibleWithPolicy` matches
   `QueryDeniedError` and rethrows the rest; `subscriber-gate.ts` and `reauthorize` ask
   `isPolicyDenial(error)`. A failed snapshot raises out of `subscribe`; a failed delivery desyncs that
-  one subscriber; a failed `reauthorize` keeps the subscription. Failures count as `gateFailures` via
-  `onGateFailed`, never `onRowDenied`.
+  one subscriber; a failed `reauthorize` keeps the subscription, unless its org moved — then it is
+  refused under its sid (`refuseSubscription`), as is a failed re-seat. Failures count as
+  `gateFailures` via `onGateFailed`, never `onRowDenied`.
 - **One serial lane per query id (`WindowLock`) is the only thing that orders a fanout.** `deliver`
   enters every lane before awaiting any; no fanout takes a second lane; a lane that fails desyncs its
   own subscribers; lanes chain on a settled shadow of each task.
@@ -301,7 +302,7 @@ Browser bytes per hook, as last measured: `docs/history/realtime.md`. Re-measure
 
 `index.ts` / `server.ts` are the two barrels. Server side: `sync-node.ts` (+ `sync-auth`,
 `sync-frames`, `sync-upgrade`, `sync-listen`, `drain-evictions`), `channel.ts`, `presence.ts`,
-`socket.ts`, `live-query.ts` (+ `live-definition`, `live-tenant`, `live-resume`, `query-window`, `live-fanout`, `window-lock`,
+`socket.ts`, `live-query.ts` (+ `live-definition`, `live-refusal`, `live-tenant`, `live-resume`, `query-window`, `live-fanout`, `window-lock`,
 `subscriber-gate`, `policy-gate` — the only authz seam — and `matcher-bridge`), `replicator.ts` /
 `live-replicator.ts`, the Postgres client (`pg-*.ts`, `pgoutput.ts`), the bus (`nats-*.ts`,
 `transport-env.ts`, `fanout.ts`). Client side: `client*.ts`, `socket-engine.ts` / `socket-host.ts` /
