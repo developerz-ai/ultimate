@@ -4,6 +4,7 @@
 // and another in the fixture rows is a defect an app inherits — these read both and compare.
 
 import { describe, expect, test } from 'bun:test';
+import { kindsOf } from './column-kinds';
 import type { OrderKey } from './shape';
 import { from, isAfterKey } from './source';
 
@@ -216,32 +217,48 @@ describe('page two does not stop at the first NULL', () => {
   });
 });
 
+const UNDECLARED = kindsOf('source_test_undeclared');
+
 /** The fallback `paginate()` uses when a source cannot push the seek down. One "after", two paths. */
 describe('isAfterKey answers what the SQL answers', () => {
   test('a NULL row follows a value under `asc`', () => {
-    expect(isAfterKey({ id: 'c', publishedAt: null }, { key: ['2026-02-01'], id: 'b' }, ASC)).toBe(
-      true,
-    );
+    expect(
+      isAfterKey({ id: 'c', publishedAt: null }, { key: ['2026-02-01'], id: 'b' }, ASC, UNDECLARED),
+    ).toBe(true);
   });
 
   test('nothing with a value follows a NULL under `asc`', () => {
-    expect(isAfterKey({ id: 'a', publishedAt: '2026-01-01' }, { key: [null], id: 'c' }, ASC)).toBe(
-      false,
-    );
+    expect(
+      isAfterKey({ id: 'a', publishedAt: '2026-01-01' }, { key: [null], id: 'c' }, ASC, UNDECLARED),
+    ).toBe(false);
   });
 
   test('every value follows a NULL under `desc`, and no NULL follows a value', () => {
-    expect(isAfterKey({ id: 'b', publishedAt: '2026-02-01' }, { key: [null], id: 'c' }, DESC)).toBe(
-      true,
-    );
-    expect(isAfterKey({ id: 'c', publishedAt: null }, { key: ['2026-02-01'], id: 'b' }, DESC)).toBe(
-      false,
-    );
+    expect(
+      isAfterKey(
+        { id: 'b', publishedAt: '2026-02-01' },
+        { key: [null], id: 'c' },
+        DESC,
+        UNDECLARED,
+      ),
+    ).toBe(true);
+    expect(
+      isAfterKey(
+        { id: 'c', publishedAt: null },
+        { key: ['2026-02-01'], id: 'b' },
+        DESC,
+        UNDECLARED,
+      ),
+    ).toBe(false);
   });
 
   test('two NULLs tie, so the id decides', () => {
-    expect(isAfterKey({ id: 'd', publishedAt: null }, { key: [null], id: 'c' }, ASC)).toBe(true);
-    expect(isAfterKey({ id: 'c', publishedAt: null }, { key: [null], id: 'd' }, ASC)).toBe(false);
+    expect(
+      isAfterKey({ id: 'd', publishedAt: null }, { key: [null], id: 'c' }, ASC, UNDECLARED),
+    ).toBe(true);
+    expect(
+      isAfterKey({ id: 'c', publishedAt: null }, { key: [null], id: 'd' }, ASC, UNDECLARED),
+    ).toBe(false);
   });
 });
 

@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { can } from '@ultimat3/policy';
+import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryTool, toQueryTools } from './mcp-tool';
 import { query } from './query';
@@ -56,5 +56,33 @@ describe('the MCP read descriptor', () => {
   test('the catalog is sorted by the served name', () => {
     const tools = toQueryTools([defineRead('publicPostSlugs'), defineRead('liveFeed')]);
     expect(tools.map((tool) => tool.name)).toEqual(['liveFeed', 'publicPostSlugs']);
+  });
+});
+
+describe('a single: true read as a tool', () => {
+  const byId = (single: boolean) =>
+    query({
+      input: t.object({ id: t.string }),
+      policy: allow('public'),
+      mcp: { expose: true },
+      ...(single ? { single: true as const } : {}),
+      sql: ({ id }) => from<Post>('posts', posts).where({ id }).limit(1),
+    }).named('postById');
+
+  test('answers the ROW, as the route does — never a one-row array', async () => {
+    const answer = await toQueryTool(byId(true)).read({ id: 'a' }, { actor: null });
+    expect(answer).toEqual(posts[0] as object);
+  });
+
+  test('no row is X_NOT_FOUND, as the route answers 404 — never an empty array', async () => {
+    const miss = toQueryTool(byId(true)).read({ id: 'missing' }, { actor: null });
+    await expect(miss).rejects.toBeUltimateError('X_NOT_FOUND');
+  });
+
+  test('a list read still answers its rows, and an empty one answers []', async () => {
+    expect(await toQueryTool(byId(false)).read({ id: 'a' }, { actor: null })).toEqual([
+      posts[0] as object,
+    ]);
+    expect(await toQueryTool(byId(false)).read({ id: 'missing' }, { actor: null })).toEqual([]);
   });
 });

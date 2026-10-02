@@ -239,7 +239,7 @@ whitelisted key the input does not declare is `X_MCP_LIST_PARAMS_INVALID` at boo
 | `initialize.instructions` | `defineAppMcp({ instructions })` / `createMcpServer({ instructions })` — a string, or `(caller) => string \| undefined` | none; a function that throws or answers blank sends none |
 | `title` | `mcp: { title }` · hand-written `title` | none |
 | `annotations` | `deriveAnnotations(primitive)`, then `mcp: { annotations }` key by key | query `{ readOnlyHint: true }`; action `{ readOnlyHint: false, destructiveHint: true, idempotentHint: <idempotent> }`; `openWorldHint` only when declared |
-| `outputSchema` | an action's `output` with an object root; a query's `rows` as `{ rows: [<row>] }` — `toOutputSchema` / `toRowsOutputSchema`, structure only (no bounds, patterns or `additionalProperties`: a client refuses a result that misses its schema) | none |
+| `outputSchema` | an action's `output` with an object root; a query's `rows` as `{ rows: [<row>] }`, or as the row itself for a `single: true` read (which answers one row or `X_NOT_FOUND`, as its route does) — `toOutputSchema` / `toRowsOutputSchema`, structure only (no bounds, patterns or `additionalProperties`: a client refuses a result that misses its schema) | none |
 | `structuredContent` | `structuredResult(value, wrap?)`: the serialized answer read back, beside the text block | absent |
 
 A tool's text is **compact JSON** (`jsonResult`; the 2-space form until 22.10). The meta tools

@@ -4,9 +4,13 @@
  * app's `sql:` returns `from()` over an `@ultimat3/entity` repo, and a source only has to
  * answer these four questions.
  */
+
+import { compareByKind } from '@ultimat3/entity';
+import type { KindOf } from './column-kinds';
+import { kindsOf } from './column-kinds';
 import { QueryColumnUnselectedError } from './errors';
 import type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
-import { compareRows, compareValues, isNull, matchesFilters, totalOrder } from './shape';
+import { compareRows, isNull, matchesFilters, totalOrder } from './shape';
 import { columnOf } from './stable';
 
 /** Nothing matches. `in ()` is a syntax error in Postgres, so an empty set needs a constant. */
@@ -97,8 +101,13 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
     return this.derive({ unsupported: [...this.unsupported, feature] });
   }
 
+  /**
+   * The window is the SMALLER of the two limits. It used to replace a declared `.limit()`, so a
+   * page wider than a "top N" served rows the read itself never would.
+   */
   seek(after: SeekKey | null, limit: number): Builder<TRow> {
-    return this.derive({ after, rowLimit: limit, totalized: true });
+    const rowLimit = this.rowLimit === null ? limit : Math.min(this.rowLimit, limit);
+    return this.derive({ after, rowLimit, totalized: true });
   }
 
   /**
@@ -134,14 +143,15 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   async execute(): Promise<readonly TRow[]> {
     const source = typeof this.rows === 'function' ? await this.rows() : this.rows;
     this.assertCarried(source);
-    let result = source.filter((row) => matchesFilters(row, this.filters));
+    const kindOf = kindsOf(this.entity);
+    let result = source.filter((row) => matchesFilters(row, this.filters, kindOf));
     const keys = this.servedOrder();
     if (keys.length > 0) {
-      result = [...result].sort((a, b) => compareRows(a, b, keys));
+      result = [...result].sort((a, b) => compareRows(a, b, keys, kindOf));
     }
     if (this.after !== null) {
       const cut = this.after;
-      result = result.filter((row) => isAfterKey(row, cut, this.order));
+      result = result.filter((row) => isAfterKey(row, cut, this.order, kindOf));
     }
     return this.rowLimit === null ? result : result.slice(0, this.rowLimit);
   }
@@ -264,7 +274,7 @@ function filterClause(filter: Filter, slot: Slot): string {
 
 /**
  * NULL's place in the ordering, written down rather than inherited. Postgres already defaults
- * to `nulls last` under `asc` and `nulls first` under `desc` — that is the rule `compareValues`
+ * to `nulls last` under `asc` and `nulls first` under `desc` — that is the rule `compareRows`
  * implements, so the in-memory sort, the live matcher and `seekClause` below can only agree
  * with it. Saying it out loud is what keeps a driver whose default differs from re-opening the
  * divergence, and it is what an agent reads when a nullable sort key surprises it.
@@ -312,11 +322,16 @@ interface BuilderState {
  * pagination needs the same answer when a source cannot push the seek down — a second definition
  * of "after" is how one path skips a row the other returns.
  */
-export function isAfterKey(row: object, cursor: SeekKey, order: readonly OrderKey[]): boolean {
+export function isAfterKey(
+  row: object,
+  cursor: SeekKey,
+  order: readonly OrderKey[],
+  kindOf: KindOf,
+): boolean {
   for (const [index, key] of order.entries()) {
-    const result = compareValues(columnOf(row, key.column), cursor.key[index]);
+    const result = compareByKind(kindOf(key.column), columnOf(row, key.column), cursor.key[index]);
     const signed = key.direction === 'asc' ? result : -result;
     if (signed !== 0) return signed > 0;
   }
-  return compareValues(columnOf(row, 'id'), cursor.id) > 0;
+  return compareByKind(kindOf('id'), columnOf(row, 'id'), cursor.id) > 0;
 }

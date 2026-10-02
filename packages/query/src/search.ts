@@ -6,12 +6,13 @@
  * syntax, and the tenant predicate is never optional.
  */
 
-import { assert, type Ctx, finiteOption } from '@ultimat3/core';
+import { type Ctx, finiteOption } from '@ultimat3/core';
 import type { InferOutput, Shape, Simplify } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
+import { QueryInputInvalidError } from './errors';
 import type { QueryPolicy } from './policy-gate';
 import type { QueryCache, QueryMcp, QueryRateLimit } from './query';
-import { query } from './query';
+import { query, queryName } from './query';
 import type { SeekKey } from './shape';
 import type { Builder, SqlSource, SqlText } from './source';
 import { from } from './source';
@@ -19,10 +20,9 @@ import { from } from './source';
 /**
  * What `@ultimat3/entity`'s `ReadBuilder` answers, crossed STRUCTURALLY.
  *
- * This package may import `@ultimat3/entity` (tier 2) and deliberately does not: nothing here does
- * today, so a real dependency would be a new edge in `package.json` and a new block in `bun.lock`
- * for four methods. Same trade `@ultimat3/db`'s `entity-shape.ts` makes one tier down, and the same
- * discipline — the shape is the contract, and a chain that does not satisfy it does not compile.
+ * Four methods are all this file reads, so the chain is named by its shape rather than by
+ * `ReadBuilder`'s type: an app may hand over a wrapper of its own, and one that does not satisfy
+ * the shape does not compile.
  */
 export interface SearchChain<Row extends object> {
   /** Appends the full-text predicate. The TERM, never a tsquery. */
@@ -85,8 +85,12 @@ const limitSchema = (max: number, fallback: number) =>
  * signed, plan-scoped string, and there is no way to mint one from the other here. Falling through
  * to `paginate`'s in-memory slice would cut inside the one page the provider fetched and report
  * `hasNextPage: false` at its edge — rows served on no page at all, which is the defect 12.0.0 spent
- * a release removing from the timestamp seek. So it is a refusal with the alternative in the `fix`:
- * page with the entity chain's own `.search(term).after(cursor)`, or raise this read's `limit`.
+ * a release removing from the timestamp seek. So it is a refusal naming the alternative: page with
+ * the entity chain's own `.search(term).after(cursor)`, or raise this read's `limit`.
+ *
+ * **Every refusal here is the CALLER's, so each is `X_INPUT_INVALID`** — a 400. A cursor, a window
+ * and a blank term all arrive on the request (`?_after=`, `?_first=`, `?q=%20`); raised with core's
+ * `assert` they were `X_INVARIANT`, a 500 that blamed the server and paged whoever watches it.
  *
  * **The refusal is on the rows that would be CUT, never on the window** (`As of 2026-08-26`). It
  * used to serve `first` rows, mint an `endCursor` and report `hasNextPage: true` — a connection
@@ -112,6 +116,8 @@ const limitSchema = (max: number, fallback: number) =>
  */
 const onePage = <Row extends object>(
   base: Builder<Row>,
+  /** The read's registered name — what the refusal's `fix:` asks `x queries describe` about. */
+  read: string,
   entity: string,
   /** Rows the chain was capped at — this read's `limit` input, and its whole page. */
   served: number,
@@ -123,14 +129,15 @@ const onePage = <Row extends object>(
   // resumed in", which is exactly true of a relevance ranking — and `total()` would totalize the
   // Builder, re-sorting that ranking by id for the same reason `seek` must not.
   seek: (after: SeekKey | null, window: number): SqlSource<Row> => {
-    assert(
-      after === null,
-      `search of ${entity} serves one page: a relevance-filtered read has no cursor this layer can carry`,
-      `db.${entity}.search(term).orderBy('<key>').after(cursor).page()   # the entity chain pages this read — or raise its limit`,
-    );
+    if (after !== null) {
+      throw new QueryInputInvalidError(
+        read,
+        `search of ${entity} serves one page: a relevance-filtered read has no cursor this layer can carry — raise this read's limit, or page the entity chain itself with .search(term).after(cursor)`,
+      );
+    }
     // `paginate` asks for `first + 1` — the extra row IS `hasNextPage` — so the window it names is
     // one wider than the page it will serve.
-    return windowOf(base, entity, served, window - 1);
+    return windowOf(base, read, entity, served, window - 1);
   },
 });
 
@@ -142,11 +149,12 @@ const onePage = <Row extends object>(
  * rows or fewer, which is most searches. Refusing it on the declaration alone made the framework's
  * own defaults a 500.
  *
- * The `fix:` names `served` — the read's declared `limit` — and never the count that came back: a
+ * The refusal names `served` — the read's declared `limit` — and never the count that came back: a
  * window sized to today's result set breaks on the first row added to the corpus.
  */
 const windowOf = <Row extends object>(
   base: Builder<Row>,
+  read: string,
   entity: string,
   served: number,
   /** Rows `paginate` will serve. It fetched one more, to decide `hasNextPage`. */
@@ -161,11 +169,12 @@ const windowOf = <Row extends object>(
     // ranking, which `total()` would re-sort by id for the same reason `seek` must not.
     execute: async () => {
       const rows = await windowed.execute();
-      assert(
-        rows.length <= first,
-        `search of ${entity} answered more than the ${String(first)} rows .page() asked for, and this read has no second page: the rest would be on no page at all`,
-        `read.page(input, { first: ${String(served)} })   # widen the window to the read's whole page — or narrow the page: read({ q, limit: ${String(first)} })`,
-      );
+      if (rows.length > first) {
+        throw new QueryInputInvalidError(
+          read,
+          `search of ${entity} answered more than the ${String(first)} rows .page() asked for, and this read has no second page: the rest would be on no page at all — widen the window to the read's whole page with read.page(input, { first: ${String(served)} }), or narrow the read with read({ q, limit: ${String(first)} })`,
+        );
+      }
       return rows;
     },
   };
@@ -190,28 +199,37 @@ export const search = <Row extends object, S extends Shape = Record<string, neve
     ),
   } as SearchShape<S>;
 
-  return query({
+  const self = query({
     input: t.object(shape),
     policy: def.policy,
     live: false,
     ...(def.cache === undefined ? {} : { cache: def.cache }),
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
     ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),
-    sql: (input, ctx) => {
+    // The return type is WRITTEN: the body names `self`, and an inferred one would make this
+    // declaration's type depend on itself.
+    sql: (input, ctx): SqlSource<Row> => {
       const parsed = input as SearchInput<S> & { readonly q: string; readonly limit: number };
       // Trimmed and refused HERE, before the chain exists: `websearch_to_tsquery('english', '  ')`
       // is a legal empty tsquery matching nothing, so a blank box would answer "no results" as if
       // it had searched. Saying so is the difference between an empty answer and an empty question.
       const term = parsed.q.trim();
-      assert(
-        term.length > 0,
-        'a search term of only whitespace is not a search',
-        'guard the input before calling: if (term.trim() === "") return [] — an empty box is not an empty result set',
-      );
+      if (term.length === 0) {
+        throw new QueryInputInvalidError(
+          queryName(self),
+          'q is only whitespace, which is not a search — guard the box before calling: an empty box is not an empty result set',
+        );
+      }
       const chain = def.in({ input: parsed, ctx });
       const name = chain.plan().entity;
       const rows = () => chain.search(term).limit(parsed.limit).all();
-      return onePage(from<Row>(name, rows).raw('full-text search'), name, parsed.limit);
+      return onePage(
+        from<Row>(name, rows).raw('full-text search'),
+        queryName(self),
+        name,
+        parsed.limit,
+      );
     },
   });
+  return self;
 };

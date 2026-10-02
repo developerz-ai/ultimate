@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 23.x → 24.0.0 | **68** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, a malformed policy decision that denies; then `ctx.peer` behind its own switch, anonymous browser writes held to same-origin, failed sign-ins metered to a 429, health bodies trimmed for strangers, a `max-age` treated as a shared-cache offer, a body refused without a `content-type`, an awaited browser `close()`; then auth — **a sealed MFA secret that needs `x auth seal-mfa` run once**, a retired `x_auth_failures` table, a reservation-shaped `AuthLimiter`, API keys bound to their owner and its grants, `X_MFA_REQUIRED` carrying a challenge, eight more required `AuthAdapter` members, `oauthLogin` requiring `APP_URL`, and an e2e `offline()` that rejects when a page refuses the switch | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 23.x → 24.0.0 | **72** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, a malformed policy decision that denies; then `ctx.peer` behind its own switch, anonymous browser writes held to same-origin, failed sign-ins metered to a 429, health bodies trimmed for strangers, a `max-age` treated as a shared-cache offer, a body refused without a `content-type`, an awaited browser `close()`; then auth — **a sealed MFA secret that needs `x auth seal-mfa` run once**, a retired `x_auth_failures` table, a reservation-shaped `AuthLimiter`, API keys bound to their owner and its grants, `X_MFA_REQUIRED` carrying a challenge, eight more required `AuthAdapter` members, `oauthLogin` requiring `APP_URL`, an e2e `offline()` that rejects when a page refuses the switch; then `compareValues` removed from query, a `.limit()` that bounds every page, a `single` read answering one row over MCP, and `admin:*` declared by `defineAdmin()` rather than by import | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
@@ -72,11 +72,11 @@ Each entry changes a surface the table below covers.
 
 ## 23.x → 24.0.0, entry by entry — **unreleased**
 
-**Sixty-eight entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+**Seventy-two entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
 `[Unreleased]` entries in their order: grouped by package, lowest tier first. No legacy path, no
 codemod, no compatibility shim — every break is a build error or an `X_*` error naming the rewrite.
 `As of 2026-10` slices 01–05 have landed: `@ultimat3/schema` and `@ultimat3/core`; tier 1 —
-`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry; then slice 04, complete — tier 2's `entity`, `policy` and `http`, with one `testing` entry; then slice 05, `auth`. **A deployment with MFA-enrolled users has an
+`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry; then slice 04, complete — tier 2's `entity`, `policy` and `http`, with one `testing` entry; then slice 05, `auth`; then the first half of slice 06 — `query`, `mcp`, `admin`. **A deployment with MFA-enrolled users has an
 operator step: entry 58, upgrade steps 18–20.** A later slice appends
 its rows below the last one and never renumbers.
 
@@ -106,7 +106,9 @@ its rows below the last one and never renumbers.
 | 20 | **deploy, then `x auth seal-mfa --json` once** | `X_MFA_SECRET_UNSEALED` (500) at the second factor for every enrolled user | 58 |
 | 21 | `x verify --only unit,contract,e2e`; move the second-factor client to `meta.challenge` and `completeMfa`; list each API key's scopes and pass `grantsOf` where users hold roles | a key that resolves with fewer scopes or 401; a client still reading `meta.userId`; `X_AUTH_WRITE_FAILED` where a test matched `X_DB_UNIQUE_VIOLATION`; `X_CDP_CALL_FAILED` from an `offline()` a page refused | 61–63, 66, 68 |
 | 22 | once every replica runs this release: `x doctor --json`, then `psql "$DATABASE_URL" -c 'drop table if exists x_auth_failures'` | `X_FRAMEWORK_TABLE_ORPHANED` from `x doctor` | 59 |
-| 23 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+| 23 | `bun run typecheck` for slice 06: delete `compareValues`, pass `kindsOf(shape.entity)` to `compareRows` / `matchesFilter` / `isAfterKey`, replace `adminPermissions` with `...ADMIN_PERMISSIONS` in `definePermissions([...])` | TS2305 / TS2554 at each site | 69, 72 |
+| 24 | `x verify --only unit,contract,e2e`; drop `.limit()` from each read a client pages to the end; read the row, not `.rows`, from a `single: true` MCP tool | a listing that ends at its limit; `X_CURSOR_INVALID` once for a cursor minted before the deploy; an MCP answer of a different shape | 70, 71 |
+| 25 | `x verify` | green, or a finding whose `fix:` is the edit | — |
 
 ### Entry by entry
 
@@ -115,7 +117,8 @@ Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@u
 (32–33), `@ultimat3/seo` (34), `@ultimat3/storage` (35–42). Tier 4 — `@ultimat3/render` (43).
 Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49), `@ultimat3/http` (50–56). Tier 5 —
 `@ultimat3/testing` (57). Tier 2 — `@ultimat3/auth` (58–67). Tier 5 —
-`@ultimat3/testing` again (68).
+`@ultimat3/testing` again (68). Tier 3 — `@ultimat3/query` (69–70), with `@ultimat3/mcp` (71). Tier 5 —
+`@ultimat3/admin` (72).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
@@ -187,6 +190,10 @@ Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49), `@ultimat
 | 66 | `BuiltinAdapter` write errors | you match `X_DB_UNIQUE_VIOLATION` on a user write. Match `X_AUTH_WRITE_FAILED` and read `meta.column` (`email`, `external_id`, `id`) |
 | 67 | `oauthLogin` | neither `baseUrl` nor `APP_URL` is set. `X_ENV_MISSING` at the start leg: set `APP_URL` to the app's public origin |
 | 68 | `E2eSession.offline()` | an e2e test toggles offline while a page refuses the script — a page mid-navigation, a crashed tab. `X_CDP_CALL_FAILED` where the call used to resolve and leave that page online. Wait for the page to settle, or close it, before `offline()` |
+| 69 | `compareValues`, `compareRows`, `matchesFilter`, `isAfterKey` from `@ultimat3/query` | you wrote a custom `SqlSource` or matcher: delete `compareValues` (TS2305) and pass `kindsOf(shape.entity)` as the kinds argument of the other three (TS2554) |
+| 70 | a read with `.limit()` | a client pages it past the limit with `.page()` / `?_first=` and a cursor. The listing now ends at the limit: the next page is empty with `nextCursor: null`. Drop the `.limit()` to page to the end. A cursor a client held across the deploy on a limited read is `X_CURSOR_INVALID` once — restart from the first page |
+| 71 | the MCP tool of a `single: true` read | an agent, prompt or test reads `{ rows }` from it. It answers the row itself, or `X_NOT_FOUND`; its `outputSchema` is the row |
+| 72 | `adminPermissions`, permissions declared by importing `@ultimat3/admin` | you import `adminPermissions` (TS2305), or your own closed permission set relies on the import having declared `admin:*` before `defineAdmin()` runs: add `...ADMIN_PERMISSIONS` to `definePermissions([...])` |
 
 Entry 58, **the one step an operator must not skip.** A deployment with MFA-enrolled users:
 
@@ -253,6 +260,9 @@ aws s3 ls s3://<bucket> --recursive | grep -E '@(full|[whq][0-9]+|cover|contain)
 | OAuth discovery and JWKS | a document answering for another issuer is refused; a key set with no importable key keeps the cached keys |
 | `x doctor` | two auth probes: unsealed second-factor secrets, and an orphaned framework table |
 | `X_CDP_TIMEOUT` | `meta.reading` says `target-gone`, `lost-in-transport` or `no-answer`, with the frames seen since the call |
+| `search()` refusals | `X_INPUT_INVALID` (400), were `X_INVARIANT` (500) |
+| entity tests on `memoryDriver()`, again | decimal kinds compare by value: `'2.5'` matches a stored `'2.50'`, `10` matches a `bigint()` column — as Postgres does |
+| the typed read client | a `Date` input goes as its ISO instant; an omitted required array reads `[]` |
 | a zone that is not a string | `X_TIMEZONE_INVALID` from every zoned function in `@ultimat3/time`, was a bare `TypeError` |
 
 ### Where the sites are
@@ -268,6 +278,7 @@ grep -rnE "promoteAttachment\(|\.lastModified|implements StorageDriver|: Storage
 grep -rnE "assertAllowed\(|X_FORBIDDEN|definePolicy\(|status: 403|\.preload\(|dbDrift|ENTITY_ERROR_CODES|: Driver = |implements Driver" apps packages --include=*.ts --include=*.tsx
 grep -rnE "ctx\.peer|trustProxy|cache-control|defineHttpConfig\(|healthz|readyz|\.close\(\)|\.closed\b|CdpLaunchFailedError" apps packages docker .github --include=*.ts --include=*.tsx --include=*.yml --include=*.yaml
 grep -rnE "mfaSecret|redeemRecoveryCode|mfaRequired|authNotImplemented|verifyApiKey\(|apiKeyActor\(|actorFromApiKey\(|issueApiKey\(|apiKeyResolver\(|assertAllowed\(|recordFailure\(|implements AuthAdapter|: AuthAdapter = |: AuthLimiter = |X_DB_UNIQUE_VIOLATION|oauthLogin\(|meta\.userId" apps packages --include=*.ts --include=*.tsx
+grep -rnE "compareValues|compareRows\(|matchesFilter\(|isAfterKey\(|adminPermissions|single: true|\.limit\(|_first=" apps packages --include=*.ts --include=*.tsx
 ```
 
 Tier 0: the `typecheck` step finds none of 1–16 — every entry is a value, not a type. A typed
@@ -298,6 +309,10 @@ Slice 05, auth: the `typecheck` step finds 60, 64, 65 and the changed shapes of 
 finds 58 (the count of unsealed rows) and 59. Nothing finds 62, 63, 66 or a missing `APP_URL` (67)
 before a request does — run the unit, contract and e2e suites and sign in once with an MFA user
 after step 20. The e2e suite finds 68.
+
+Slice 06, query, mcp and admin: the `typecheck` step finds 69 and the removed `adminPermissions`
+of 72. It finds neither 70, 71 nor a permission set that leaned on the import — run the unit,
+contract and e2e suites.
 
 ## 22.x → 23.0.0, entry by entry
 

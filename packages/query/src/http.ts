@@ -16,6 +16,7 @@ import {
   QueryInputInvalidError,
   QueryRowNotFoundError,
 } from './errors';
+import { absentArraysOf } from './input-shape';
 import { derivePath } from './naming';
 import { PAGE_FIRST_KEY, pageControlsOf } from './page-controls';
 import { admitsAnonymous, policyCapability } from './policy-gate';
@@ -63,7 +64,7 @@ export function toQueryRoute(target: AnyQuery): Route {
     // The two page controls come OUT first (`page-controls.ts`): they are the route's, not the
     // read's, and a schema that refused unknown keys would otherwise refuse every paged call.
     const { input: values, page } = pageControlsOf(name, request.queryRaw());
-    const input = coerceQuery(target.input, values);
+    const input = absentArraysOf(target.input, coerceQuery(target.input, values));
     if (target.single === true) {
       // Refused, not ignored: a caller paging a read of one object has the wrong read in mind, and
       // a silently dropped `_first` would answer a shape it did not ask for.

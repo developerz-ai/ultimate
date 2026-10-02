@@ -10,10 +10,11 @@
  * and a keyset page boundary was cut where the database never cuts one.
  *
  * It answers `undefined` rather than guessing, and that is the whole of its contract: a caller
- * that knows the column's declared kind (`@ultimat3/entity`'s `compareByKind`) asks; a caller that
- * does NOT know it — `@ultimat3/query`, whose `OrderKey` is a name and a direction — must not,
- * because Postgres orders a `text` column holding `"10"` and `"9"` lexically and a comparator
- * guessing "both sides look like decimals" would disagree with the SQL it printed.
+ * that knows the column's declared kind asks — `@ultimat3/entity`'s `numericOrder`, behind
+ * `compareByKind`, which `@ultimat3/query` calls with the kind it resolves from the entity — and a
+ * caller with NO kind in hand must not, because Postgres orders a `text` column holding `"10"` and
+ * `"9"` lexically and a comparator guessing "both sides look like decimals" would disagree with
+ * the SQL it printed.
  */
 
 /** A decimal, split so two of them can be compared exactly however long the digits run. */

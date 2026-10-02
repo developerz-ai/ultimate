@@ -1343,3 +1343,23 @@ and `ENTITY_BORROWED_ERROR_CODES`; `ENTITY_ERROR_CODES` is now exactly the codes
 The record modules still import `entity-error.ts` and never `errors.ts`
 (`record-bundle.test.ts`): the rule stands on its own, since `errors.ts` is where a future
 `@ultimat3/db` import would land.
+
+## 2026-10-02 — one comparison rule, checked against Postgres 17, and exported
+
+`compareByKind` and `sameValueOfKind` (`memory-match.ts`) are exported: `@ultimat3/query` deleted
+its own `typeof`-based comparator and calls these. Running one `(kind, left, right)` table through
+both and through a real server found this package's rule wrong on nine rows, all fixed here:
+
+| Pair | Before | Postgres |
+|---|---|---|
+| `bigint` `'10'` = `10` / `10n`; `numeric` `'2.50'` = `'2.5'` / `2.5`; `'0.1'` = `'0.10'`; `'-0.00'` = `'0'` | not equal (`===`) | equal |
+| `uuid` order, upper against lower case | by the text as written | by value |
+| a `number` beside a `bigint`, no declared kind | as text (`'2' > '10'`) | numerically |
+
+There is ONE numeric comparison, `numericOrder` (`numeric-compare.ts`): `compareByKind` used to
+call core's `compareDecimalText` directly while invariants went through `numericOrder`, two paths
+that differed on an operand written `1e21`. Order, equality and an invariant's `gte`/`eq` now ask
+the same function, which reads either side as plain digits. So `where({ total: 10 })` on a
+`bigint()` column matches the row holding `'10'` in the memory driver, as it always did in
+Postgres. `compare-parity.test.ts` runs the rows against both drivers; emitted DDL did not move
+(`ddl-pin.test.ts`).

@@ -68,8 +68,11 @@ A detail read declares `single: true`. The route answers the first row as the bo
 `X_NOT_FOUND`** when `sql` returns none (a list read answers `200 []`), refuses `_first`/`_after`
 (400), and `openapi.json` documents one object with a `404` and no page controls. `.client()` and
 `queryClient` type it `Promise<TRow>` with no `.page`. In process nothing moves: `postById({ id })`,
-`.as()`, `.page()`, `.live()` and the MCP tool still answer `readonly TRow[]`, so opting in breaks no
-`[0]` already written. `As of 2026-09-29`.
+`.as()`, `.page()` and `.live()` still answer `readonly TRow[]`, so opting in breaks no `[0]`
+already written. `As of 2026-09-29`. **`tool().read()` answers as the route does**
+(`As of 2026-10`): the row itself, and `X_NOT_FOUND` when `sql` returns none — an agent given `[]`
+for a missing id read "found, and empty" where HTTP said 404. The tool `@ultimat3/mcp` serves over
+`tools/call` answers the same two ways.
 
 ```ts
 import { can } from '@ultimat3/policy';
@@ -208,6 +211,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `sql.ts` | `explain()` — the generated SQL, verbatim |
 | `cache.ts` | request memo + tag-keyed tier, one invalidation graph |
 | `source.ts` | the `SqlSource` contract + `from()`, the in-memory reference |
+| `column-kinds.ts` | `kindsOf(relation)` — the declared kind of each column, which every comparison is decided by |
 | `sealed-shape.ts` | a live read may not filter or order on a `.sealed()` column — refused at subscribe |
 
 ## Live queries
@@ -341,7 +345,16 @@ empty box is not an empty result set.
 **It serves one page.** The rows come from the entity chain, which pages by its own signed cursor;
 that cursor cannot cross the `SqlSource` seam, and slicing in memory instead would cut inside the
 page the provider fetched and report `hasNextPage: false` at its edge. So a second page is
-refused, and the `fix:` names the chain — `db.posts.search(term).after(cursor).page()`.
+refused, and the cause names the chain — `db.posts.search(term).after(cursor).page()`.
+
+| A request `search()` refuses | Answer |
+|---|---|
+| `q` of only whitespace (`?q=%20%20` passes `t.string.min(1)`) | **400** `X_INPUT_INVALID` |
+| a cursor (`?_after=…`) | **400** `X_INPUT_INVALID` |
+| a window that would cut rows (`?_first=1` with two matches) | **400** `X_INPUT_INVALID`, naming both edits: widen `first` to the read's `limit`, or narrow `limit` |
+
+All three arrive on the request, so all three are the caller's. `As of 2026-10`; until then they
+were core `assert`s — `X_INVARIANT`, a 500 blaming the server.
 
 ## Pagination is cursor-only
 
@@ -380,11 +393,14 @@ GET /_x/query/live-feed?orgId=…                       → [ …rows ]   (uncha
 | `_first` outside 1–10,000, not a whole number, or `_after` without `_first` | **400** `X_INPUT_INVALID` with the read's own fix line — judged at the wire (`page-controls.ts`), because `paginate` asserts the same bound as `X_INVARIANT`, which is a 500 blaming the server for a number the caller typed |
 | a cursor that is not this read's | **400** `X_CURSOR_INVALID` — `decodeCursor` is the one judge of a cursor; the route checks only that `_after` is one non-empty string |
 | a control sent twice | refused, never resolved to the last one as a declared scalar is: two page sizes is two pages asked for in one request |
+| a declared `.limit()` is the size of the LISTING | `first` is the size of a page and never widens it: the window is `min(what the limit has left, first + 1)`, a limited read's cursor carries how many rows are already served, and the page after the last is empty with `nextCursor: null`. `As of 2026-10`; until then `first` REPLACED the limit, so `?_first=10000` walked a "top 3" to the end of the table. A read paged past its limit on purpose drops the `.limit()` |
+| a cursor a limited read minted before that | **400** `X_CURSOR_INVALID` — it does not say how much of the limit is spent, and honouring it would start a second "top N" below the first |
 | the typed client | `feed.client({ baseUrl }).page(input, { first, after })` and `queries.feed.page(…)` append the two controls after the sorted input, so a paged URL is the plain URL plus a suffix |
 | `openapi.json` | every read is a `GET` path item with its input as `in: query` parameters, the two controls after them, and a `200` that is `oneOf` the bare rows and the envelope — `queryOpenApiPaths`, merged into `@ultimat3/action`'s document by the CLI |
 
 The MCP read tool does not page: `read()` answers the source's rows, bounded by the read's own
-`limit`, and an agent that wants more asks a narrower question.
+`limit` — or the one row of a `single: true` read — and an agent that wants more asks a narrower
+question.
 
 The codec lives in `@ultimat3/core`, not here: `encodeCursor`, `decodeCursor`,
 `configureCursorSigning` (set the signing secret once at boot; rotating it invalidates every
@@ -453,8 +469,31 @@ the rows after it were unreachable through a cursor. An ascending key now reache
 NULL under `nulls last`, and the page continues on the id tiebreak, which is never NULL.
 
 `nulls last` / `nulls first` are Postgres' own defaults, written down rather than inherited: it is
-the rule `compareValues` implements, so the in-memory sort and the seek predicate can only agree
+the rule `compareRows` implements, so the in-memory sort and the seek predicate can only agree
 with it, and a driver whose default differs cannot re-open the divergence.
+
+## How two values compare
+
+**By the column's declared kind, and by `@ultimat3/entity`'s comparator — this package has none.**
+`kindsOf(shape.entity)` resolves each column's `ColumnKind` from the entity declared on that table,
+and `compareRows`, `matchesFilter`, `isAfterKey` and the matcher hand it to entity's
+`compareByKind` / `sameValueOfKind`: the one JS statement of how Postgres compares a column.
+`As of 2026-10`; until then a second comparator here decided by `typeof`.
+
+| Column | What its row holds | Decided as |
+|---|---|---|
+| `bigint()`, `decimal()` | decimal TEXT | digits, exactly: `'9'` before `'10'`, `'2.50'` equal to `'2.5'` and to `2.5` |
+| `uuid()` | text | a value: upper and lower case are one id |
+| `timestamp()` | `Date` | an instant: a `Date` equals the ISO text naming it |
+| `text()` | text | characters: `'10'` before `'9'`, as `order by` on a text column answers |
+| a relation no entity declares | whatever the row provider returned | no kind — numbers numerically (a `number` and a `bigint` in one order), `Date`s by instant, the rest as text |
+
+`compare-parity-fixture.ts` is the one `(kind, left, right)` table: `compare-parity.test.ts` runs it
+through entity's evaluator, the matcher and `from()`; `compare-parity.live.test.ts` runs it through
+Postgres, and walks a live window ordered on a `bigint()` and a `decimal()` column against the
+database's own `order by`. A custom `SqlSource` calling `compareRows`, `matchesFilter` or
+`isAfterKey` passes `kindsOf(shape.entity)` — the argument is required, because a comparison with
+no kind is the defect.
 
 ## Caching
 
@@ -564,9 +603,9 @@ router feature here.
 | `X_MATCHER_UNSUPPORTED` | live query the matcher cannot patch | reshape it, or `live: false` |
 | `X_CURSOR_INVALID` | tampered / foreign / malformed cursor | request the first page again |
 | `X_QUERY_NOT_PAGEABLE` | a paged or live read returned a row with no `id` | select the primary key: `db.<rows>.select({ id: true, … })` |
-| `X_INPUT_INVALID` | input failed the Standard Schema | `x queries describe <name> --json` |
+| `X_INPUT_INVALID` | input failed the Standard Schema; a page control the wire refuses; a `search()` handed a blank term, a cursor, or a window that would cut rows | `x queries describe <name> --json` |
 | `X_QUERY_UNREGISTERED` | used before `registerQueries()` ran | register at boot |
-| `X_NOT_FOUND` | a `single: true` read matched no row — the HTTP route's 404 only (entity's code) | `x queries describe <name> --json` prints the SQL |
+| `X_NOT_FOUND` | a `single: true` read matched no row — the HTTP route's 404, and the MCP tool's refusal (entity's code) | `x queries describe <name> --json` prints the SQL |
 | `X_QUERY_SINGLE_INVALID` | `single:` declared as something other than a boolean | `single: true`, or drop the key |
 | `X_QUERY_FOREIGN` | a look-alike was projected as a query | declare it with `query({ … })` |
 | `X_CLIENT_TRANSPORT_FAILED` | `.client()` got no response, or a non-`problem+json` failure (core's code, since 21.0.0; was `X_RPC_FAILED`) | check the gateway in front of the app: `x doctor --json` |

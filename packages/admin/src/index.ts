@@ -290,7 +290,6 @@ export {
   ruleFor,
 } from './permissions';
 export {
-  adminPermissions,
   declareAdminPermissions,
   type PolicyAuthzInput,
   policyAuthz,

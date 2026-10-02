@@ -19,7 +19,8 @@ a later slice appends its group below the last one. `As of 2026-10` slices 01–
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
 and `cli`; then slice 04, complete — tier 2's `entity`, `policy` and `http`. A browser-launcher
 repair in `testing` rode along with it. Slice 05 is `auth`: **a deployment with MFA-enrolled
-users has an operator step — the first `auth` entry under Changed.**
+users has an operator step — the first `auth` entry under Changed.** Slice 06 has begun: `query`,
+with `entity`'s comparison rule, `mcp` and `admin`.
 
 ### Added
 
@@ -104,6 +105,12 @@ Tier 5 — testing (slice 05).
 
 - **testing:** the types `CdpTimeoutObservation`, `CdpTimeoutReading` and `CdpTargetGone` — see
   Changed.
+
+Tier 2 — entity. Tier 3 — query (slice 06).
+
+- **entity:** `compareByKind` and `sameValueOfKind` — how Postgres compares two values of one
+  column, by the column's declared kind.
+- **query:** `kindsOf(entity)` and the `KindOf` type — see Changed.
 
 Tier 5 — cli.
 
@@ -482,6 +489,35 @@ Tier 5 — testing (slice 05).
   (`framesArrived`, `lastFrames`), the frames dropped as unparseable (`framesDropped` — they were
   dropped silently) and the navigations since. Code and title unchanged.
 
+Tier 3 — query.
+
+- **BREAKING — `compareValues` is removed, and `compareRows`, `matchesFilter` and `isAfterKey`
+  require a `KindOf`.** Pass `kindsOf(shape.entity)`. Values compare by the column's declared kind
+  in the live matcher, `from()` and the seek fallback, so a live query ordered on a `bigint()` or
+  `decimal()` column patches rows where the database returns them. A relation no entity declares
+  compares digits as text.
+- **BREAKING — a declared `.limit()` is the size of the listing on every page.** `.page()` and
+  `?_first=` no longer replace it, and a cursor cannot walk past it: the page after the last is
+  empty with `nextCursor: null`. Drop the `.limit()` from a read meant to be paged to the end. A
+  limited read's cursor carries the rows served so far, so a cursor minted before the upgrade on
+  a limited read answers `X_CURSOR_INVALID` once.
+- **query:** `./client` is 11,012 B minified for the browser, was 10,899; the cap is 11,264.
+  `As of 2026-10-02`, as stated in the package's own notes — not re-measured here.
+
+Tier 3 — query. Tier 4 — mcp.
+
+- **BREAKING — a `single: true` read answers one row through its MCP tool**, or `X_NOT_FOUND` —
+  from `tool().read()` and from the served `tools/call`. Its `outputSchema` is the row, was
+  `{ rows }`. An agent or client that read `.rows[0]` reads the object.
+
+Tier 5 — admin.
+
+- **BREAKING — importing `@ultimat3/admin` no longer declares `admin:*`.** The import used to
+  close the app's permission set as a side effect; `defineAdmin()` declares them now, and the
+  `adminPermissions` export is removed. An app with its own closed permission set that writes
+  `can('admin:read')` before `defineAdmin()` runs adds `...ADMIN_PERMISSIONS` to its
+  `definePermissions([...])`.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -691,6 +727,18 @@ Tier 5 — testing (slice 05). Reference app.
 - **examples/dummy:** the `network` fixture's browser restore is awaited in teardown; the next
   test's page read `navigator.onLine === false` in 9 of 15 runs, as measured by the fix's author.
   The stale-build e2e awaits the update banner as an event, not a 5 s budget.
+
+Tier 2 — entity. Tier 3 — query (slice 06).
+
+- **entity:** one comparison rule, `numericOrder`, agreeing with Postgres 17. In the memory driver
+  `where` and `order` compare decimal kinds by value: `where({ total: 10 })` on a `bigint()`
+  column, `'2.5'` against a stored `'2.50'`, and `'-0.00'` against `'0'` now match. `uuid`
+  operands order case-insensitively, and a `number` / `bigint` pair compares numerically.
+  Invariants and the driver no longer disagree on an operand written `1e21`.
+- **query:** `search()` refusals are `X_INPUT_INVALID` (400), were `X_INVARIANT` (500): a blank
+  `q`, a cursor, a window that would cut rows.
+- **query:** the typed read client sends a `Date` input as its ISO instant. A required array input
+  the request omits reads `[]` instead of a 400, so `{ tags: [] }` arrives.
 
 ## 23.0.0 - 2026-10-02
 

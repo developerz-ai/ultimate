@@ -65,6 +65,14 @@ export type {
 } from './client';
 /** `queryClient` is the map-wide read client; `queryClientMethodFor` is what `.client()` binds. */
 export { queryClient, queryClientMethodFor } from './client';
+/**
+ * `isNull` is the one definition of SQL NULL a custom `SqlSource` has to agree with, and
+ * `totalOrder` is the one definition of the order it must serve a page in. `compareRows`,
+ * `matchesFilter` and `isAfterKey` take the relation's declared kinds — `kindsOf(shape.entity)` —
+ * because how two values compare is `@ultimat3/entity`'s answer for the column's kind.
+ */
+export type { KindOf } from './column-kinds';
+export { kindsOf } from './column-kinds';
 /** The compat window a retirement gets. Versioning is two deployments, not a router feature. */
 export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
 export { recordDeprecatedCall, renderDeprecation } from './deprecation';
@@ -151,7 +159,6 @@ export type {
 export { describeQuery, isQuery, query, queryHash } from './query';
 /** The one read path. `defOf` stays unexported — that is the enforcement. */
 export { queryName, runQuery, sourceFor } from './read';
-
 export {
   describeQueries,
   getQuery,
@@ -164,13 +171,8 @@ export {
 export type { SearchChain, SearchDef, SearchInput, SearchPage } from './search';
 export { search } from './search';
 export type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
-/**
- * `isNull` is the one definition of SQL NULL a custom `SqlSource` has to agree with, and
- * `totalOrder` is the one definition of the order it must serve a page in.
- */
 export {
   compareRows,
-  compareValues,
   isNull,
   matchesFilter,
   seekKeyOf,

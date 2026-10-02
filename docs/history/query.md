@@ -691,3 +691,24 @@ it is addressed by the index its id was found at, so a projected query still rem
 The rule generalises what `assertSeekable` already applies to a cursor: **a sort key has to be
 readable on the row.** A live query whose rows omit one still works — it re-reads instead of
 patching — which is correct and slower, and the fix is to project the key.
+
+## 2026-10-02 — `compareValues` is deleted; the `DECLARED_GAP` is closed
+
+Everything above that names `compareValues`, `same`, the number/bigint "family" and the
+`DECLARED_GAP` in `shape-order.test.ts` describes the tree before this date. This package no longer
+has a comparator: `compareRows`, `matchesFilter` and `isAfterKey` take a `KindOf`
+(`kindsOf(shape.entity)`, `column-kinds.ts`) and call `@ultimat3/entity`'s `compareByKind` /
+`sameValueOfKind`. The gap closed the way the note said it had to — a kind reaching the comparison —
+but through the relation the shape already names, not through an `OrderKey` carrying one.
+
+Two comparators had answered four inputs differently (a `bigint()` and a `decimal()` row, a `uuid`
+in two cases, a `Date` against its ISO text), so a live window patched rows into positions the
+database never returned. Writing the parity table (`compare-parity-fixture.ts`) against Postgres 17
+then showed entity's own rule wrong on nine rows — decimal equality across spellings, `uuid` order
+across case, a `number` beside a `bigint` — and those were fixed in entity in the same change
+(`docs/history/entity.md`). A relation no entity declares has no kinds; its digits are text, which
+is what Postgres answers for a `text` column.
+
+The same change made a declared `.limit()` bound the listing on every page (a limited read's cursor
+carries the rows served), turned `search()`'s three refusals into `X_INPUT_INVALID`, and made a
+`single: true` read answer one row or `X_NOT_FOUND` through the MCP tool.

@@ -119,8 +119,10 @@ describe('search()', () => {
       in: () => chainFor(recorded),
     });
     registerQuery('searchPosts', searchPosts);
-    await expect(runQuery(searchPosts, { q: '   ' }, { ctx })).rejects.toBeInstanceOf(
-      UltimateError,
+    // The caller's mistake, so the caller's code: `t.string.min(1)` passes three spaces and the
+    // trim refuses them, and an `X_INVARIANT` here was a 500 paging the on-call for a search box.
+    await expect(runQuery(searchPosts, { q: '   ' }, { ctx })).rejects.toBeUltimateError(
+      'X_INPUT_INVALID',
     );
     expect(recorded.term).toBeNull();
   });
@@ -171,11 +173,16 @@ describe('search()', () => {
     const refused = paginate(searchPosts, { q: 'cats' }, { first: 2, ctx });
     await expect(refused).rejects.toBeInstanceOf(UltimateError);
     const caught = await refused.catch((thrown: unknown) => thrown);
-    // Both edits, spelled out — widen the window, or narrow the read's own page.
-    const instruction = caught instanceof UltimateError ? caught.fix : '';
-    expect(instruction).toContain('first: 20');
-    expect(instruction).toContain('limit: 2');
-    expect(caught instanceof UltimateError ? caught.code : '').toBe('X_INVARIANT');
+    // Both edits, spelled out — widen the window, or narrow the read's own page. In the CAUSE:
+    // the `fix:` is the one command that prints this read's schema.
+    const cause = caught instanceof UltimateError ? caught.cause : '';
+    expect(cause).toContain('first: 20');
+    expect(cause).toContain('limit: 2');
+    // `?q=a&_first=2` is a request, and a request the read cannot serve is a 4xx.
+    expect(caught).toBeUltimateError('X_INPUT_INVALID');
+    expect(caught instanceof UltimateError ? caught.fix : '').toContain(
+      'x queries describe searchPosts --json',
+    );
   });
 
   test('a window that COVERS the read page serves it whole and advertises no next page', async () => {
@@ -214,6 +221,7 @@ describe('search()', () => {
     expect(caught instanceof UltimateError ? caught.cause : '').toContain(
       'no cursor this layer can carry',
     );
+    expect(caught).toBeUltimateError('X_INPUT_INVALID');
   });
 
   test('a window the read exactly FILLS is served — the refusal is on the cut, not on the numbers', async () => {

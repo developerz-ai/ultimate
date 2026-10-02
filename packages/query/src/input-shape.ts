@@ -79,3 +79,23 @@ export function assertEncodableInput(input: unknown): void {
   const offender = unencodable(node);
   if (offender !== undefined) throw new QueryInputUnencodableError(offender);
 }
+
+/**
+ * The route's half of an empty array. `searchOf` sends NOTHING for `[]` — a query string has no
+ * spelling for "this key, zero times" — so a REQUIRED array nobody sent can only be the empty one:
+ * left absent it fails validation, on a call the typed client accepted.
+ *
+ * Required only. An optional or defaulted array already has a meaning for absence, and it is the
+ * schema's: `[]` there would overwrite a declared default with a value the caller never wrote.
+ */
+export function absentArraysOf(
+  schema: unknown,
+  input: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...input };
+  for (const [key, child] of Object.entries(tryIntrospect(schema)?.properties ?? {})) {
+    if (child.kind !== 'array' || child.optional === true || child.hasDefault === true) continue;
+    if (!Object.hasOwn(input, key)) out[key] = [];
+  }
+  return out;
+}

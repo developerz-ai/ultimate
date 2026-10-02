@@ -98,7 +98,7 @@ declaration already written.
 | `annotations.destructiveHint` | the kind | action `true` — the spec's own default made explicit: the framework cannot tell an insert from a delete. Declare `false` for an additive write |
 | `annotations.idempotentHint` | `idempotent: true` on the action | `false` |
 | `annotations.openWorldHint` | `mcp.annotations` only | not published (only the author knows a write sends mail) |
-| `outputSchema` | an action's `output` whose root is an object; a query's declared `rows` as `{ rows: [<row>] }` | none — text only |
+| `outputSchema` | an action's `output` whose root is an object; a query's declared `rows` as `{ rows: [<row>] }` — or the row itself for a `single: true` read, which answers one row or `X_NOT_FOUND` as its route does (`As of 2026-10`) | none — text only |
 | `structuredContent` | every successful call of a tool that publishes `outputSchema`: the serialized answer read back (a `Date` is its string), a query's under `rows` | absent |
 
 ```ts

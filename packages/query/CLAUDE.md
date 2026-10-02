@@ -35,6 +35,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `search.ts` | `search()` — the query FACTORY over an entity's `.searchable()` columns |
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
 | `shape.ts` | shared read vocabulary (filters, ordering, seek keys) |
+| `column-kinds.ts` | `kindsOf(relation)`: a column's DECLARED kind, from `QueryShape.entity` |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
 | `deprecation.ts` | `Deprecation` + RFC 9745/8594 render + `deprecated_calls_total` — TWINNED with `@ultimat3/action`'s |
 
@@ -68,6 +69,11 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   it pins is the intersection `@ultimat3/action`'s `Merge` hands over; that package pins `Merge`.
 - **The route coerces (`coerceQuery`), `runQuery` validates.** No `request.query(schema)` and no
   `meta.input` on the route.
+- **The client and the route are two halves of one encoding.** `searchOf` sends a `Date` as its ISO
+  instant and nothing for `[]`; `absentArraysOf` (`input-shape.ts`) reads a REQUIRED array nobody
+  sent as `[]`. Never for an optional or defaulted one — absence there is the schema's answer.
+  `http-round-trip.test.ts` pins both ends against each other.
+- **`tool().read()` answers a `single: true` read as the route does**: the row, or `X_NOT_FOUND`.
 - **`rateLimit:` is declarable; `toQueryRoute` sets both `meta.rateLimit` and
   `meta.rateLimitBucket`**, via `@ultimat3/http`'s `toBucket` — never a local copy.
 - **`deprecated:` is a compat WINDOW**: `Deprecation` / `Sunset` / `rel="successor-version"` on every
@@ -116,7 +122,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   import core from `@ultimat3/core/page`, the page keys live in the leaf `page-keys.ts`, and
   `client.ts` never imports `page-controls.ts` or `stable.ts`. `client-bundle.test.ts` fails on any
   titles table in the graph or past 11 kB; `client-subpath.test.ts` pins the specifier. Byte figures
-  (`As of 2026-10-01`, browser, minified): barrel `queryClient` 23,997 B; `./client` 10,899 B.
+  (`As of 2026-10-02`, browser, minified): barrel `queryClient` 25,237 B; `./client` 11,012 B.
 - **The record envelope is derived from `rows:`** — `answersRecords(rows)` (`hasEntityRows`,
   `@ultimat3/entity`), decided once at projection for `http.ts` and `openapi.ts`, sent on every
   answer. No `rows:` is byte-identical on the wire.
@@ -131,7 +137,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `SearchChain`). No `PRIMITIVE_FACTORIES` row (it returns a query from the query package). **It serves
   ONE page**: `windowOf.execute` refuses only when rows would be CUT; `onePage.seek` narrows with
   `Builder.limit()`, never `Builder.seek()`, so the chain's own ranking survives; no `total()`.
-  `search.test.ts`'s fixture must stay NOT id-ascending.
+  Its three refusals (blank term, a cursor, a window that cuts rows) are caller-reachable, so each
+  is `X_INPUT_INVALID` — never core's `assert`. `search.test.ts`'s fixture must stay NOT
+  id-ascending.
 - **`subscribes:` is DECLARED (nothing can derive it) and CROSS-CHECKED**: `toLiveQuery` asserts
   `shape.entity` is among the declared names at first subscribe (`X_QUERY_SUBSCRIBES_DRIFT`) —
   membership, never equality. An empty list, or one on a non-live read, is refused at `query()`
@@ -146,6 +154,10 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - `paginate` has no `offset` and never grows one; it is reachable only as
   `query.page(input, { first, after })`. **A page is bounded**: `first` is 1…`MAX_PAGE_SIZE`
   (10,000, a twin of `@ultimat3/entity`'s).
+- **A declared `.limit()` bounds the LISTING, on every page**: the window is
+  `min(rowsLeft, first + 1)`, and a limited read's cursor carries the rows served so far at the
+  tail of its key (after the typed id). A cursor without it is `X_CURSOR_INVALID` on a limited
+  read. `Builder.seek()` takes the smaller limit too. `pagination-limit.test.ts`.
 - **A `RowProvider` may be a list, a sync function or an async one** (`source.test.ts`).
 - **A cursor is a position, not a row**: `isAfterKey` (`source.ts`) is the one definition of "after";
   never reintroduce a row lookup. The seek predicate is spelled out per key
@@ -163,10 +175,14 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A sort value carries its TYPE through the cursor** (`cursor-value.ts`: `{ $x: 'date' | 'bigint',
   v }`; `undefined` → `null`). Untaggable values are `X_CURSOR_VALUE_UNSUPPORTED` where the cursor is
   minted.
-- **`compareValues` orders numbers and bigints in one order**; equality treats `number` and `bigint`
-  as one family (`shape.ts` `same`). `shape-order.test.ts` reads `@ultimat3/entity`'s `COLUMN_KINDS`.
-- **`numeric` and the TEXT form of `bigint` are a DECLARED gap** (`DECLARED_GAP` in
-  `shape-order.test.ts`): closing it needs an `OrderKey` carrying a kind, never a guessing comparator.
+- **This package has NO comparator.** How two values compare is `@ultimat3/entity`'s
+  `compareByKind` / `sameValueOfKind`, asked under the column's declared kind (`kindsOf(shape.entity)`,
+  `column-kinds.ts`). `compareRows`, `matchesFilter(s)` and `isAfterKey` REQUIRE the `KindOf`; never
+  add a `typeof` branch here — fix the rule in entity. `equalOrBothNull` adds only this package's
+  NULL rule. `compare-parity-fixture.ts` is the one table: `compare-parity.test.ts` (entity, matcher,
+  `from()`) and `compare-parity.live.test.ts` (Postgres). `grep compareValues src` stays empty.
+- **A relation no entity declares has no kinds** — digits there are text, as in a `text` column.
+  `shape-order.test.ts` reads `@ultimat3/entity`'s `COLUMN_KINDS`, one case per kind.
 - **A refill is owed by a FULL window only** (`held >= shape.limit`). **A move OUT of a full window is
   a `refill`, never an `add`.**
 - **A position is decided against the rows the WINDOW holds**: `unprojectedOrderKey` — a held row
