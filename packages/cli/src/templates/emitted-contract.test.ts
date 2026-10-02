@@ -16,6 +16,7 @@ import type { GenerateOptions } from '../cmd-generate';
 import { generate } from '../cmd-generate';
 import { planNewApp } from '../cmd-new';
 import { fixProblem, staticFix } from '../error-contract';
+import { exec } from '../exec';
 import { citedCommandProblem, loadCommandCatalog } from '../fix-command';
 import { scanFixes } from '../fix-scan';
 import { scaffoldVariants } from '../scaffold-fixture';
@@ -86,12 +87,14 @@ describe('unit · every emitted file survives the linter the scaffold configures
     try {
       for (const file of files) await Bun.write(join(dir, file.path), file.contents);
       const biome = join(REPO_ROOT, 'node_modules', '.bin', 'biome');
-      const run = Bun.spawnSync([biome, 'check', '.'], {
-        cwd: dir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      return run.exitCode === 0 ? '' : `${run.stdout.toString()}${run.stderr.toString()}`;
+      // AWAITED, through the CLI's one subprocess boundary — never `Bun.spawnSync`. A synchronous
+      // wait holds the test worker's only thread, so a Biome that does not come back is a worker
+      // that does not either: this file is the one CI named when the `unit` step ran out its
+      // eight minutes (run 36992691094, `worker crashed: SIGKILL` under this file's header, after
+      // `killed 1 dangling process` and no result line). Awaited, a slow or stuck Biome is one
+      // test failing at its own timeout while the worker moves on to the next.
+      const run = await exec([biome, 'check', '.'], { cwd: dir });
+      return run.ok ? '' : `${run.stdout}${run.stderr}`;
     } finally {
       // The findings are already a string. Left behind, each run kept a whole scaffold under the
       // temp root: 812 of them were sitting in /tmp on one workstation, measured 2026-10-01.

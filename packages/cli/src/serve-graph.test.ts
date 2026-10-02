@@ -18,6 +18,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; the child's argv takes paths already joined.
 import { join } from 'node:path';
+import { exec } from './exec';
 
 /** Never a production module: a harness, a generator's text, a browser driver. */
 const FORBIDDEN = /packages\/testing\/|packages\/cli\/src\/templates\/|\/e2e-|\/cdp-/;
@@ -95,7 +96,10 @@ describe('the @ultimat3/cli/serve module graph', () => {
     // that change what resolves, and the graph under test is the one a plain build sees.
     const dir = mkdtempSync(join(tmpdir(), 'serve-graph-'));
     const meta = join(dir, 'meta.json');
-    const child = Bun.spawnSync(
+    // Awaited through the CLI's one subprocess boundary, never `Bun.spawnSync`: a synchronous wait
+    // holds the test worker's only thread, so a build that does not come back is a worker the
+    // test timeout cannot end.
+    const child = await exec(
       [
         process.execPath,
         'build',
@@ -104,9 +108,9 @@ describe('the @ultimat3/cli/serve module graph', () => {
         `--outdir=${join(dir, 'out')}`,
         `--metafile=${meta}`,
       ],
-      { stdout: 'pipe', stderr: 'pipe' },
+      { cwd: process.cwd() },
     );
-    expect([child.exitCode, child.stderr.toString().slice(0, 400)]).toEqual([0, '']);
+    expect([child.code, child.stderr.slice(0, 400)]).toEqual([0, '']);
     const { inputs } = (await Bun.file(meta).json()) as {
       inputs: Readonly<Record<string, MetaInput>>;
     };

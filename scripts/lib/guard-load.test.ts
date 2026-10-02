@@ -77,15 +77,33 @@ async function fixture(guard: string): Promise<string> {
   return `${dir}/scripts/fixture-guard.ts`;
 }
 
-const run = (entry: string) =>
-  Bun.spawnSync(['bun', '--preload', PRELOAD, entry, '--json'], { stdout: 'pipe', stderr: 'pipe' });
+// Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so a
+// child that does not come back is a worker the test timeout cannot end.
+const spawned = async (
+  cmd: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
+  const child = Bun.spawn([...cmd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(env === undefined ? {} : { env }),
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+};
+
+const run = (entry: string) => spawned(['bun', '--preload', PRELOAD, entry, '--json']);
 
 describe('a guard run under the preload', () => {
   test('a static import that fails to link is X_GUARD_LOAD_FAILED on stdout, exit 1', async () => {
     const entry = await fixture("import { absent } from './lib-module';\nconsole.log(absent);\n");
-    const result = run(entry);
+    const result = await run(entry);
     expect(result.exitCode).toBe(1);
-    const document = JSON.parse(result.stdout.toString()) as {
+    const document = JSON.parse(result.stdout) as {
       readonly script: string;
       readonly findings: readonly { readonly code: string; readonly at: string }[];
     };
@@ -98,10 +116,10 @@ describe('a guard run under the preload', () => {
     const entry = await fixture(
       "import { present } from './lib-module';\nthrow new TypeError('bad ' + present);\n",
     );
-    const result = run(entry);
+    const result = await run(entry);
     expect(result.exitCode).toBe(1);
-    expect(result.stdout.toString()).not.toContain('X_GUARD_LOAD_FAILED');
-    expect(result.stderr.toString()).toContain('bad 1');
+    expect(result.stdout).not.toContain('X_GUARD_LOAD_FAILED');
+    expect(result.stderr).toContain('bad 1');
   });
 
   test('a guard`s own dynamic import is caught by loadOrReport the same way', async () => {
@@ -109,8 +127,8 @@ describe('a guard run under the preload', () => {
     const entry = await fixture(
       `import { loadOrReport } from '${loader}';\nawait loadOrReport('fixture-guard', () => import('./lib-module').then((m) => (m as Record<string, unknown>)['absent'] ?? import('./missing-module')));\n`,
     );
-    const result = Bun.spawnSync(['bun', entry, '--json'], { stdout: 'pipe', stderr: 'pipe' });
+    const result = await spawned(['bun', entry, '--json']);
     expect(result.exitCode).toBe(1);
-    expect(result.stdout.toString()).toContain('X_GUARD_LOAD_FAILED');
+    expect(result.stdout).toContain('X_GUARD_LOAD_FAILED');
   });
 });

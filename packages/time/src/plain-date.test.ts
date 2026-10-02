@@ -20,6 +20,25 @@ import {
   plainDaysBetween,
 } from './plain-date';
 
+// Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so a
+// child that does not come back is a worker the test timeout cannot end.
+const spawned = async (
+  cmd: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
+  const child = Bun.spawn([...cmd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(env === undefined ? {} : { env }),
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+};
+
 describe('unit · plainDate', () => {
   test('takes an ISO calendar date and refuses everything that only looks like one', () => {
     expect(plainDate('2026-03-14')).toBe('2026-03-14' as PlainDate);
@@ -79,7 +98,7 @@ describe('unit · plainDate and instants', () => {
     );
   });
 
-  test('the UTC read holds in a zone that is not UTC — which bun test alone cannot show', () => {
+  test('the UTC read holds in a zone that is not UTC — which bun test alone cannot show', async () => {
     // `bun test` pins the process to UTC, so every assertion above passes whether this function
     // reads UTC components or local ones. The zone has to come from OUTSIDE the runner, which is
     // what makes this a subprocess: in America/Los_Angeles, midnight UTC on the 14th is the 13th
@@ -93,10 +112,11 @@ describe('unit · plainDate and instants', () => {
       '  answer: plainDateUtc(at),',
       '}));',
     ].join('\n');
-    const run = Bun.spawnSync(['bun', '-e', source], {
-      env: { ...process.env, TZ: 'America/Los_Angeles' },
+    const run = await spawned(['bun', '-e', source], {
+      ...process.env,
+      TZ: 'America/Los_Angeles',
     });
-    const out = new TextDecoder().decode(run.stdout).trim();
+    const out = run.stdout.trim();
     const seen = JSON.parse(out) as { zone: string; local: number; answer: string };
     // The control: the subprocess really is west of Greenwich, so a local read WOULD answer the 13th.
     expect(seen.zone).toBe('America/Los_Angeles');

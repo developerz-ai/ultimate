@@ -9,6 +9,7 @@ import { rm } from 'node:fs/promises';
 // why: Bun exposes no path API — nothing native joins a directory to a file.
 import { join } from 'node:path';
 import { clearStylesheets, loadStylesheet, setStylesheetRoot } from '@ultimat3/render/server';
+import { exec } from './exec';
 import { STYLE_BASE_PATH, styleBundle, styleBundleOf, writeStyles } from './style-bundle';
 
 const SITE = '/srv/demo/apps/web/site/page.module.scss';
@@ -177,15 +178,18 @@ describe('the surface stylesheet URL is the same in every process', () => {
     }
     console.log(styleBundle().hrefFor('app'));`;
 
-  const run = (order: readonly string[]): string => {
-    const child = Bun.spawnSync(['bun', '-e', script(order)], { cwd: join(import.meta.dir, '..') });
-    if (child.exitCode !== 0) expect.unreachable(child.stderr.toString());
-    return child.stdout.toString().trim();
+  // Awaited through the CLI's one subprocess boundary, never `Bun.spawnSync`: a synchronous wait
+  // holds the test worker's only thread, so a child that does not come back is a worker the test
+  // timeout cannot end.
+  const run = async (order: readonly string[]): Promise<string> => {
+    const child = await exec(['bun', '-e', script(order)], { cwd: join(import.meta.dir, '..') });
+    if (!child.ok) expect.unreachable(child.stderr);
+    return child.stdout.trim();
   };
 
-  test('shuffled island sheets, two processes, one URL', () => {
-    const first = run(['alpha', 'beta', 'gamma', 'delta']);
+  test('shuffled island sheets, two processes, one URL', async () => {
+    const first = await run(['alpha', 'beta', 'gamma', 'delta']);
     expect(first).toMatch(new RegExp(`^${STYLE_BASE_PATH}/[0-9a-f]{8}\\.css$`));
-    expect(run(['delta', 'gamma', 'alpha', 'beta'])).toBe(first);
+    expect(await run(['delta', 'gamma', 'alpha', 'beta'])).toBe(first);
   });
 });

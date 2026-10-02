@@ -10,13 +10,17 @@ import { mkdtemp, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { exec } from './exec';
 import { typecheckArgs, usesProjectReferences } from './verify-typecheck';
 
 const TSC = join(import.meta.dir, '../../../node_modules/.bin/tsc');
 const OLD = new Date('2020-01-01T00:00:00Z');
 
-const tsc = (root: string, argv: readonly string[]): number =>
-  Bun.spawnSync([TSC, ...argv.slice(1)], { cwd: root, stdout: 'pipe', stderr: 'pipe' }).exitCode;
+// Awaited through the CLI's one subprocess boundary, never `Bun.spawnSync`: a synchronous wait
+// holds the test worker's only thread, so a compiler that does not come back is a worker the test
+// timeout cannot end.
+const tsc = async (root: string, argv: readonly string[]): Promise<number> =>
+  (await exec([TSC, ...argv.slice(1)], { cwd: root })).code;
 
 async function writeDep(root: string, type: 'number' | 'string'): Promise<void> {
   const path = join(root, 'node_modules/dep/index.d.ts');
@@ -66,12 +70,12 @@ describe('unit · the typecheck step cannot be fooled by an old mtime (#450)', (
       );
       await writeDep(root, 'number');
       const argv = await typecheckArgs(root, 'tsc');
-      expect(tsc(root, argv)).toBe(0);
+      expect(await tsc(root, argv)).toBe(0);
 
       await writeDep(root, 'string');
       // The defect, pinned so the day tsc stops trusting dates this test says so: `-b` is green.
-      expect(tsc(root, ['tsc', '-b', '--pretty', 'false'])).toBe(0);
-      expect(tsc(root, argv)).not.toBe(0);
+      expect(await tsc(root, ['tsc', '-b', '--pretty', 'false'])).toBe(0);
+      expect(await tsc(root, argv)).not.toBe(0);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

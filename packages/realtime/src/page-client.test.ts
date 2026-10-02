@@ -39,6 +39,25 @@ class CountingSocket {
   close(): void {}
 }
 
+// Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so a
+// child that does not come back is a worker the test timeout cannot end.
+const spawned = async (
+  cmd: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
+  const child = Bun.spawn([...cmd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(env === undefined ? {} : { env }),
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+};
+
 async function island(name: string): Promise<IslandCopy> {
   // An island's own entry, importing the barrel the way island code does.
   const entry = `${dir}/${name}.ts`;
@@ -49,14 +68,14 @@ async function island(name: string): Promise<IslandCopy> {
   // A separate `bun build`, as `x build` runs one: inside the test runtime, `Bun.build` resolves a
   // workspace package's own imports differently from the CLI, and the CLI is what ships.
   const out = `${dir}/${name}`;
-  const built = Bun.spawnSync([
+  const built = await spawned([
     process.execPath,
     'build',
     entry,
     '--target=browser',
     `--outdir=${out}`,
   ]);
-  if (built.exitCode !== 0) expect(built.stderr.toString()).toBe('');
+  if (built.exitCode !== 0) expect(built.stderr).toBe('');
   const output = `${out}/${name}.js`;
   return (await import(output)) as IslandCopy;
 }

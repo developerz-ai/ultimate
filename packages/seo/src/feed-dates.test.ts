@@ -2,6 +2,25 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { epochOf, isoOf, newestEpoch, nowEpoch, rfc822Of } from './feed-dates';
 
+// Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so a
+// child that does not come back is a worker the test timeout cannot end.
+const spawned = async (
+  cmd: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
+  const child = Bun.spawn([...cmd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(env === undefined ? {} : { env }),
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+};
+
 describe('epochOf', () => {
   test('parses an ISO timestamp', () => {
     expect(epochOf('2026-07-01T00:00:00.000Z')).toBe(Date.UTC(2026, 6, 1));
@@ -74,22 +93,24 @@ describe('a date-time with no offset', () => {
   // `Date.parse` resolves `2026-03-14T09:00:00` through the PROCESS's zone, so one CMS row gave a
   // `pubDate` that moved with `TZ`. Treated as absent, like any string that names no instant.
   // Subprocesses, because the test preload pins this runner to UTC and the drift is invisible here.
-  test('reads the same — absent — under every TZ, and the ISO forms still parse', () => {
+  test('reads the same — absent — under every TZ, and the ISO forms still parse', async () => {
     const source = [
       `import { epochOf } from ${JSON.stringify(`${import.meta.dir}/feed-dates.ts`)};`,
       "const forms = ['2026-03-14T09:00:00', 'March 14, 2026', '2026-03-14T09:00:00Z', '2026-03-14'];",
       'console.log(JSON.stringify({ zone: Intl.DateTimeFormat().resolvedOptions().timeZone,',
       '  answers: forms.map((form) => epochOf(form) ?? null) }));',
     ].join('\n');
-    const readIn = (zone: string): { zone: string; answers: unknown[]; logged: string } => {
-      const run = Bun.spawnSync(['bun', '-e', source], { env: { ...process.env, TZ: zone } });
+    const readIn = async (
+      zone: string,
+    ): Promise<{ zone: string; answers: unknown[]; logged: string }> => {
+      const run = await spawned(['bun', '-e', source], { ...process.env, TZ: zone });
       // The LAST line: the refusal logs `seo.feed.date_offsetless` to stdout ahead of it.
-      const lines = new TextDecoder().decode(run.stdout).trim().split('\n');
+      const lines = run.stdout.trim().split('\n');
       const parsed = JSON.parse(lines.at(-1) ?? '') as { zone: string; answers: unknown[] };
       return { ...parsed, logged: lines.slice(0, -1).join('\n') };
     };
-    const utc = readIn('UTC');
-    const newYork = readIn('America/New_York');
+    const utc = await readIn('UTC');
+    const newYork = await readIn('America/New_York');
     expect([utc.zone, newYork.zone]).toEqual(['UTC', 'America/New_York']);
     expect(newYork.answers).toEqual(utc.answers);
     // Said, not silently dropped: the author meant a real date.
