@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "7e81469fd5e5116ae1e4a819447d5471f4902f5751e9246990c670027f0cf8b4",
+  "buildId": "561a1cd3db770486548f5e7bbbfd30a980d19bc9e4abf4e83c29fe3f88e4106b",
   "tiers": {
     "0": [
       "core",
@@ -1715,6 +1715,11 @@
       "at": "packages/jobs/src/errors.ts"
     },
     {
+      "code": "X_IDEMPOTENCY_RESERVATION_LOST",
+      "owner": "action",
+      "at": "packages/action/src/errors-idempotency.ts"
+    },
+    {
       "code": "X_IDEMPOTENCY_STATUS_UNKNOWN",
       "owner": "action",
       "at": "packages/action/src/errors-idempotency.ts"
@@ -2278,6 +2283,11 @@
       "code": "X_MUTATOR_CLOCK_MISSING",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_MUTATOR_NOT_IDEMPOTENT",
+      "owner": "action",
+      "at": "packages/action/src/errors-idempotency.ts"
     },
     {
       "code": "X_N_PLUS_ONE_QUERY",

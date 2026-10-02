@@ -13,10 +13,13 @@ import {
   STATUS_BACKLOG,
   STATUS_TABLE,
   STATUS_TABLE_MAX_TIER,
+  STATUS_TABLE_SLICES,
+  statusTableFor,
   WIKI_PAGE,
 } from './new-error-code';
 import {
   fixtureRoot,
+  ROOT,
   read,
   refusal,
   removeFixtureRoots,
@@ -45,8 +48,12 @@ describe('the HTTP status is decided in the same edit', () => {
   test('--status writes the row in the status table, inside the literal', async () => {
     const dir = await fixtureRoot();
     const result = await newErrorCode(dir, money('X_MONEY_PROBE_ONLY', '--status', '422'));
-    expect(result.written).toEqual(['packages/money/src/errors.ts', WIKI_PAGE, STATUS_TABLE]);
-    const table = await read(dir, STATUS_TABLE);
+    expect(result.written).toEqual([
+      'packages/money/src/errors.ts',
+      WIKI_PAGE,
+      statusTableFor('money'),
+    ]);
+    const table = await read(dir, statusTableFor('money'));
     expect(table).toContain('  // @ultimat3/money — a title\n  X_MONEY_PROBE_ONLY: 422,\n');
     // Inside the literal: nothing after its close names the code.
     expect(table.slice(table.lastIndexOf('} satisfies'))).not.toContain('X_MONEY_PROBE_ONLY');
@@ -64,7 +71,7 @@ describe('the HTTP status is decided in the same edit', () => {
     const [group = ''] = after.split('\n  ],');
     expect(group).toContain("'X_MONEY_PROBE_ONLY',");
     expect(transpiles(backlog)).toBe(true);
-    expect(await read(dir, STATUS_TABLE)).not.toContain('X_MONEY_PROBE_ONLY');
+    expect(await read(dir, statusTableFor('money'))).not.toContain('X_MONEY_PROBE_ONLY');
   });
 
   test('a one-line group and a package with no group yet both take the pin', async () => {
@@ -116,7 +123,7 @@ describe('the HTTP status is decided in the same edit', () => {
     const before = [
       await read(dir, 'packages/money/src/errors.ts'),
       await read(dir, WIKI_PAGE),
-      await read(dir, STATUS_TABLE),
+      await read(dir, statusTableFor('money')),
       await read(dir, STATUS_BACKLOG),
     ];
     for (const rest of [[], ['--status', '422', '--off-socket']]) {
@@ -138,7 +145,7 @@ describe('the HTTP status is decided in the same edit', () => {
     expect([
       await read(dir, 'packages/money/src/errors.ts'),
       await read(dir, WIKI_PAGE),
-      await read(dir, STATUS_TABLE),
+      await read(dir, statusTableFor('money')),
       await read(dir, STATUS_BACKLOG),
     ]).toEqual(before);
   });
@@ -200,6 +207,43 @@ describe('the HTTP status is decided in the same edit', () => {
     expect(codeOf(() => backlogPinIn('export const B = 1;\n', 'b.ts', input))).toBe(
       'X_NEW_ERROR_CODE_INVALID',
     );
+  });
+
+  test('every package at or under the bound has a slice, and the composed table imports each one', async () => {
+    const composed = await Bun.file(`${ROOT}/${STATUS_TABLE}`).text();
+    for (const slice of STATUS_TABLE_SLICES) {
+      expect(await Bun.file(`${ROOT}/${slice}`).exists()).toBe(true);
+      const module = slice.slice(slice.lastIndexOf('/') + 1, -'.ts'.length);
+      expect(composed).toContain(`from './${module}'`);
+    }
+    for (const pkg of ['core', 'money', 'db', 'entity', 'auth', 'http', 'action', 'jobs', 'ui']) {
+      expect(STATUS_TABLE_SLICES).toContain(statusTableFor(pkg));
+    }
+    expect(statusTableFor('http')).not.toBe(statusTableFor('entity'));
+  });
+
+  test('a code ANOTHER slice already names is refused — a spread would take the last one silently', async () => {
+    const dir = await fixtureRoot();
+    const other = statusTableFor('action');
+    const held = await read(dir, other);
+    await Bun.write(
+      `${dir}/${other}`,
+      held.replace('\n} satisfies', '\n  X_MONEY_PROBE_ONLY: 409,\n} satisfies'),
+    );
+    const before = await read(dir, statusTableFor('money'));
+    expect(await refusal(newErrorCode(dir, money('X_MONEY_PROBE_ONLY', '--status', '422')))).toBe(
+      'X_NEW_ERROR_CODE_EXISTS',
+    );
+    expect(await read(dir, statusTableFor('money'))).toBe(before);
+    expect(await read(dir, 'packages/money/src/errors.ts')).not.toContain('X_MONEY_PROBE_ONLY');
+  });
+
+  test('the slice a row lands in is still a module: the literal closes after it', async () => {
+    const dir = await fixtureRoot();
+    await newErrorCode(dir, money('X_MONEY_PROBE_ONLY', '--status', '422'));
+    const slice = await read(dir, statusTableFor('money'));
+    expect(transpiles(slice)).toBe(true);
+    expect(slice.trimEnd().endsWith('} satisfies Readonly<Record<string, number>>;')).toBe(true);
   });
 
   test('the tier bound is the status guard`s own, restated only so the generator loads mid-edit', () => {

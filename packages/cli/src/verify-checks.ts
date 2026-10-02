@@ -6,19 +6,13 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest } from '@ultimat3/manifest';
-import {
-  AGENTS_MD_FILENAME,
-  assertNoDrift,
-  MANIFEST_FILENAME,
-  verifyContract,
-} from '@ultimat3/manifest';
+import { AGENTS_MD_FILENAME, MANIFEST_FILENAME, verifyContract } from '@ultimat3/manifest';
 import type { MetaIssue } from '@ultimat3/seo';
 import { validateMeta } from '@ultimat3/seo';
 import { checkAgentsMd } from './app-agents-md';
 import { readAppSources } from './app-boundaries';
 import { envExampleFindings } from './app-env';
 import { appManifest, readAppManifest } from './app-manifest';
-import { OPENAPI_FILE, openApiStaleness } from './app-openapi';
 import { policyFindings } from './app-permissions';
 import { APP_CONFIG_FILE } from './app-root';
 import { asyncPageFindings } from './async-pages';
@@ -33,6 +27,11 @@ import { catalogFindings } from './i18n-registration';
 import { unregisteredJobFindings } from './job-registration';
 import { liveRouteFindings } from './live-routes';
 import { withLoadFindings, withoutLoadFindings } from './load-findings';
+import {
+  hasCommittedContract,
+  manifestMissingFindings,
+  manifestStaleness,
+} from './manifest-staleness';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { findingFrom } from './output';
@@ -198,10 +197,11 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'contract-diff',
     summary: 'the published contract vs the committed manifest',
-    // Either file is a published contract on its own: `openapi.json` generates the typed client,
-    // so gating on the manifest alone let a stale spec ship a wrong client unchecked.
-    applies: async (ctx) =>
-      existsSync(join(ctx.root, MANIFEST_FILENAME)) || existsSync(join(ctx.root, OPENAPI_FILE)),
+    // A BREAKING change against the committed manifest, and nothing else. Whether the committed
+    // files are stale — `openapi.json` included — is the `manifest` step's, through the one check
+    // `x manifest --check` runs (`manifest-staleness.ts`): reported here as well it was two
+    // steps and one command answering one question, and the step named `manifest` saying green.
+    applies: async (ctx) => existsSync(join(ctx.root, MANIFEST_FILENAME)),
     async run(ctx) {
       const committed = await readAppManifest(ctx.root);
       const { manifest, findings } = await appManifest(ctx.root);
@@ -209,7 +209,6 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       return withoutLoadFindings(ctx.root, [
         ...findings,
         ...(committed === undefined ? [] : contractFindings(committed, manifest)),
-        ...(await openApiStaleness(ctx.root, manifest)),
       ]);
     },
   },
@@ -346,7 +345,6 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       const roleLoad = app ? roleLoadFindings(ctx.root, ctx.runner) : Promise.resolve([]);
       const drift = await driftFindings(ctx.root);
       const findings = [
-        ...manifestMissingFindings(ctx.root),
         ...(app ? await withLoadFindings(ctx.root, drift) : drift),
         // An app only: the framework monorepo declares no `defineApi`, so it has no list to be in.
         ...(existsSync(join(ctx.root, APP_CONFIG_FILE))
@@ -384,41 +382,14 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
 ];
 
 /**
- * The half that had never been asked: is the file there at all? `driftFindings` returns nothing
- * when it is absent — correctly, it has nothing to compare — and `AGENTS.md` line 3 tells an agent
- * that facts live in `x.manifest.json`, `x dev` prints its path, and `x manifest` is the only
- * thing that writes it. Nothing ran it: after `x new`, `bin/setup` and all thirteen generators,
- * `find . -name '*.manifest.json'` returned nothing while this step reported green (#F7).
- *
- * An app root, never this repo: the framework monorepo emits `framework.manifest.json` and has no
- * `x.manifest.json` to be missing, so the `app.config.ts` is what decides — the same discriminator
- * `drift`, `budgets`, `seo`, `i18n` and `policy` each use.
+ * The committed generated files against the code — `x manifest --check`'s check, through its
+ * function. With no committed contract there is nothing to load an app for: an app root is told
+ * its manifest is missing, and the framework monorepo (which has neither file) is told nothing.
  */
-function manifestMissingFindings(root: string): readonly Finding[] {
-  if (!existsSync(join(root, APP_CONFIG_FILE))) return [];
-  if (existsSync(join(root, MANIFEST_FILENAME))) return [];
-  return [
-    {
-      code: 'X_MANIFEST_MISSING',
-      cause: `${MANIFEST_FILENAME} does not exist, so every fact an agent reads about this app — route table, action schemas, policies, error codes — is unavailable`,
-      fix: 'x manifest',
-      docs: ERROR_DOCS_URL,
-      at: MANIFEST_FILENAME,
-    },
-  ];
-}
-
-/** `assertNoDrift` throws `X_MANIFEST_DRIFT`; a step reports, so the error becomes a finding. */
 async function driftFindings(root: string): Promise<readonly Finding[]> {
-  const path = join(root, MANIFEST_FILENAME);
-  if (!existsSync(path)) return [];
+  if (!hasCommittedContract(root)) return manifestMissingFindings(root);
   const { manifest, findings } = await appManifest(root);
-  try {
-    await assertNoDrift({ manifest, path });
-    return findings;
-  } catch (error) {
-    return [...findings, { ...findingFrom(error), at: MANIFEST_FILENAME }];
-  }
+  return [...findings, ...(await manifestStaleness(root, manifest))];
 }
 
 /** A breaking change is allowed — with a major bump. `verifyContract` is the one that decides. */

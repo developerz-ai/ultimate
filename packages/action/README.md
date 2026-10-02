@@ -296,6 +296,13 @@ fan-out that refuses — an undeclared tag, `X_CACHE_TAG_UNKNOWN` — is one
 `action.invalidate.failed` log line and the entries expire by TTL. A replayed idempotent
 call busts nothing; the first call already did.
 
+**After the COMMIT, not after the handler** (`As of 2026-10-02`). An action invoked inside a
+`withTransaction` — an app's own unit of work, or another action's — hands its bust to the ROOT
+transaction's `onCommit`: it fires once the commit is answered and never for a rollback or an
+aborted transaction (`X_DB_TRANSACTION_ABORTED`). Busting at the handler's return let a
+concurrent read refill the cache from the pre-commit rows, which then stayed for the TTL. With no
+transaction open the bust runs when the handler returns, as it always did.
+
 Registering an action without `policy:` throws `X_ACTION_POLICY_MISSING`; there is
 no bypass flag. A look-alike that never came out of `action()` is `X_ACTION_FOREIGN`.
 
@@ -310,6 +317,7 @@ export const likePost = mutator({
   input: t.object({ postId: t.uuid }),
   output: PostLikes,
   policy: can('post:like'),
+  idempotent: true, // REQUIRED — a replayed write answers the first result (below)
   // Convergent, not incremental: `local` replays on every rebase, so applying it N times has to
   // equal applying it once — `likedByMe` is what makes the second application a no-op.
   local(tx, { postId }) {
@@ -340,6 +348,14 @@ the input parse, the policy and the output parse all still run: an actor the pol
 denies is denied there exactly as over HTTP. `.local()` is the only half that skips
 the core, because it never leaves the client; keep it a pure function of `(tx, input)`
 — no I/O, no clock, no randomness — since every rebase replays it.
+
+**`idempotent: true` is required on every mutator** — a compile error without it, and
+`X_MUTATOR_NOT_IDEMPOTENT` at declaration for a caller the compiler never saw. A mutator's write
+is replayed by construction: `useMutation` retries, and the offline queue drains after a dropped
+response, under ONE `Idempotency-Key`. The server reads that key only for an idempotent action, so
+without the declaration the replay ran `server` a second time — a toggle flipped back. It is
+declared, never defaulted, because the replay is answered from the idempotency store and which
+store that is (below) is the app's to decide. `transition()` declares it for you.
 
 `LocalTx` is the client write surface, implemented by `@ultimat3/realtime` over the page's
 record store — the SAME shape as that store's tx. Every table is addressed by **key**:
@@ -388,12 +404,13 @@ await moveOrder({ id, from: 'pending', to: 'paid' }, { ctx });
 | **`from` is required, and never defaulted or inferred** | it rides in the UPDATE's own predicate, so the state observed and the state written are one decision under the row's lock. Measured on the mechanism underneath: twenty concurrent moves at one row gave 14 winners with a read-then-check-then-write and **1 winner plus 19 refusals** with `from` in the predicate. Anything that supplies `from` for the caller is the lost update coming back |
 | the states are the **input schema**, not a `t.string` | the union survives into `InferOutput`, so the typed client refuses a typo at **compile** time, the MCP tool's `inputSchema` and the OpenAPI component both publish the legal set, and a bad state is `X_INPUT_INVALID` before a database is touched |
 | `conflict: 'server-wins'`, not overridable | the server is the half that REFUSED the move; a local twin winning the rebase would leave the client showing a state the database rejected |
+| `id` is the entity's **key**, read off `output.id` | a uuid key stays `t.uuid` (a malformed one is `X_INPUT_INVALID` before a database reads it); a `text()` key keeps its length and a `bigint()` key its digits pattern — never a fixed `t.uuid`, which refused every move on an entity keyed by anything else. An `output` that does not carry the key as `id` passes the key's schema as `id:`; with neither, the id is a uuid |
+| `idempotent: true`, always | a move replayed under its `Idempotency-Key` answers the first outcome, not an `X_STATE_CONFLICT` for a move that already happened |
 | `audit` is **off** unless the app says so | `audit: true` with no sink installed is `X_AUDIT_SINK_MISSING`, raised before the input parse — an on-by-default audit would make every `transition()` refuse until an unrelated decision was made. What the row is kept for, and for how long, is the same compliance question that kept a purge out of `postgresAuditSink` |
 | `X_STATE_TRANSITION_ILLEGAL`, `X_STATE_CONFLICT` and `X_STATE_UNDECLARED` propagate untouched | they are `@ultimat3/entity`'s. A second error class over one failure is a second path |
 
-`table` is typed structurally (`TransitionTarget`), not imported: `@ultimat3/action` holds no
-dependency edge on `@ultimat3/entity` — the tier table permits one, the manifest and the lockfile do
-not — and a real `Table` satisfies the seam as written.
+`table` is typed structurally (`TransitionTarget`), not imported — a real `Table` satisfies the
+seam as written.
 
 ## Determinism + idempotency
 
@@ -464,6 +481,7 @@ no record and runs the handler again:
 import {
   configureIdempotency,
   postgresIdempotencyStore,
+  requestDeadlineMs,
   setIdempotencyStore,
 } from '@ultimat3/action';
 import { db } from '@ultimat3/db';
@@ -478,6 +496,10 @@ const client = db();
 setIdempotencyStore(
   postgresIdempotencyStore({
     executor: { query: (text, values) => client.query({ text, values }) },
+    // The client transactions on THIS database open on: a settle rides one of those and no other.
+    origin: () => client,
+    // The app's `requestTimeoutMs` (`configureHttp`), read per reservation — never a number here.
+    reclaimAfterMs: requestDeadlineMs,
   }),
 );
 configureIdempotency({ scope: 'shared' });
@@ -513,6 +535,26 @@ Both stores fence on it AND on `in-flight` `As of 2026-08`, the way `@ultimat3/j
 `id = $1 and state = 'running'`: a reservation whose window lapsed is reclaimed by the next caller,
 so a straggler from the first attempt satisfied a status-only fence exactly and overwrote a live
 reservation.
+
+**Inside a transaction the settlement commits with the write** (`As of 2026-10-02`, BOTH stores —
+`idempotency-parity.test.ts` runs one set of cases over memory and Postgres). An action invoked
+inside `withTransaction` settles with that transaction: on its own connection (Postgres), or at
+its `onCommit` (memory).
+
+| The unit of work | The record | A retry |
+|---|---|---|
+| commits | `settled`, by the same `COMMIT` | replays the first result |
+| rolls back after the handler returned | still `in-flight` — never `settled` for rows nobody stored | `X_IDEMPOTENCY_CONFLICT` until the request deadline, then it runs |
+| dies mid-flight | still `in-flight` | the same |
+| outlives the deadline and a retry takes the key | the retry's | the slow attempt's settle is refused `X_IDEMPOTENCY_RESERVATION_LOST`, which rolls its transaction back — one write |
+
+| Rule | Why |
+|---|---|
+| the deadline is `reclaimAfterMs: () => number`, **required** on the Postgres store | it is the app's `requestTimeoutMs`, declared (`configureHttp`) after the boot built the store — so it is read per reservation, and `requestDeadlineMs` is the reader. `0` is "no deadline": nothing is reclaimed before the window. The memory store defaults to the same reader |
+| it frees only a record whose settle was BOUND to a transaction (`x_idempotency.tx_bound`) | a handler with no transaction around it keeps the old rule — reserve, run and settle are three commits, "died before the write" and "wrote, then died before the settle" are one row, and that row answers 409 for the whole window rather than risk the second charge |
+| the reservation and a recorded failure always go through the pool | a duplicate sees the first at once, and a failure outlives its rollback |
+| `origin: () => client` is **required** on the Postgres store | a transaction opened on ANOTHER database (`withTransaction(fn, { client: shard })`) has no `x_idempotency`; its record is settled on the pool, as an autocommit handler's is |
+| a finished transaction binds nothing | a promise chain the body forgot to await still finds the scope's handle; the settle then runs at once (`liveTxConnection`), never as a commit hook that a rollback already dropped |
 
 A `query` has none and never will: a read has nothing to be idempotent about.
 
@@ -685,7 +727,7 @@ setAuditSink({
 |---|---|
 | input schema rejects garbage | the invocation fails `X_INPUT_INVALID` — that code, not any failure |
 | policy denies an anonymous actor | the invocation fails with an `ActionDeniedError` |
-| OpenAPI document contains its operation | the derived path is in `buildOpenApi()` |
+| OpenAPI document contains its operation | the action's path, in the document built from the WHOLE registry (plus this action when a test drives an unregistered `.named()` twin), is this action's operation — a second registered action deriving the same route fails it |
 
 The denial assertion sends an input synthesized from `input:`'s own schema — required keys
 only, formats included — because a payload the schema rejects never reaches a policy. It
@@ -716,8 +758,10 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_INPUT_INVALID` | input failed the Standard Schema. Carries the rejections **twice**: the flattened line in `cause`, and the structured list in `meta.issues` — one value rendered two ways, `As of 2026-08-24` | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
 | `X_IDEMPOTENCY_KEY_INVALID` | `Idempotency-Key:` sent blank (`Headers.get()` answers `''`, not `null`) or past 255 characters | send one unique value per request, or omit the header |
-| `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor })` at boot |
+| `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor, origin, reclaimAfterMs })` at boot |
 | `X_IDEMPOTENCY_REPLAYED_FAILURE` | a retried key replays a first attempt that failed and carried no framework code of its own | read the first attempt, then send a fresh key |
+| `X_IDEMPOTENCY_RESERVATION_LOST` | a settle inside the handler's transaction matched no record: the attempt outlived the request deadline and a retry took the key. This attempt's transaction rolls back | resend with the same `Idempotency-Key` |
+| `X_MUTATOR_NOT_IDEMPOTENT` | `mutator()` declared without `idempotent: true` | add `idempotent: true` to the definition |
 | `X_IDEMPOTENCY_STATUS_UNKNOWN` | `x_idempotency.status` holds a word this build has no branch for — written by a newer deploy | finish the rollout onto the build that writes it, then reconcile those requests — never DELETE the rows, which frees the key to run an already-committed action a second time |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --only contract` |
 | `X_RPC_FAILED` | registered, thrown by nothing since 21.0.0 — a non-`problem+json` failure is core's `X_CLIENT_TRANSPORT_FAILED` now, as for a query | match `X_CLIENT_TRANSPORT_FAILED` instead |
@@ -762,13 +806,15 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `IdempotencyKeyInvalidError` | `X_IDEMPOTENCY_KEY_INVALID` | `src/errors-idempotency.ts` |
 | `IdempotencyNotSharedError` | `X_IDEMPOTENCY_NOT_SHARED` | `src/errors-idempotency.ts` |
 | `IdempotencyReplayedFailureError` | `X_IDEMPOTENCY_REPLAYED_FAILURE` | `src/errors-idempotency.ts` |
+| `IdempotencyReservationLostError` | `X_IDEMPOTENCY_RESERVATION_LOST` | `src/errors-idempotency.ts` |
 | `IdempotencyStatusUnknownError` | `X_IDEMPOTENCY_STATUS_UNKNOWN` | `src/errors-idempotency.ts` |
 | `InputInvalidError` | `X_INPUT_INVALID` | `src/errors.ts` |
+| `MutatorNotIdempotentError` | `X_MUTATOR_NOT_IDEMPOTENT` | `src/errors-idempotency.ts` |
 | `OutputInvalidError` | `X_OUTPUT_INVALID` | `src/errors.ts` |
 | `RemoteActionError` | the code the server sent, verbatim — `meta.origin: 'remote'` | `src/errors.ts` |
 | `RpcFailedError` | `X_RPC_FAILED` | `src/errors.ts` |
 
 ## Boundaries
 
-Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `entity`, `policy`, `http`. Never imports
+Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `db`, `entity`, `policy`, `http`. Never imports
 `query`, `jobs`, `realtime` (same tier) or anything above it — those import *this*.

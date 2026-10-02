@@ -37,6 +37,7 @@
   "dependencies": {
     "@ultimat3/cache": "23.0.0",
     "@ultimat3/core": "23.0.0",
+    "@ultimat3/db": "23.0.0",
     "@ultimat3/entity": "23.0.0",
     "@ultimat3/http": "23.0.0",
     "@ultimat3/policy": "23.0.0",

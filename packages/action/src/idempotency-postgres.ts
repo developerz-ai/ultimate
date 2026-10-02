@@ -5,7 +5,7 @@
  * Statements are spelled out so an agent can run the exact one it saw in a log.
  */
 import { finiteCount, logger, uuid } from '@ultimat3/core';
-import { IdempotencyStatusUnknownError } from './errors';
+import { IdempotencyReservationLostError, IdempotencyStatusUnknownError } from './errors';
 import type {
   IdempotencyFailure,
   IdempotencyRecord,
@@ -15,11 +15,13 @@ import type {
 } from './idempotency';
 import { IDEMPOTENCY_STATUSES, isIdempotencyStatus } from './idempotency';
 import { DEFAULT_IDEMPOTENCY_WINDOW_MS } from './idempotency-memory';
+import { liveTransaction } from './tx-scope';
 
 /**
  * The one thing this store needs from the DB layer, declared structurally rather than imported.
- * `@ultimat3/jobs` declares the same shape for the same reason: neither package owns the other's
- * connection, and neither depends on a database package.
+ * `@ultimat3/jobs` declares the same shape for the same reason: neither package owns the
+ * connection — boot does. (The OPEN TRANSACTION's connection is the one thing this package reads
+ * for itself, in `tx-scope.ts`.)
  *
  * **`Bun.sql` does not satisfy it** — verified against Bun 1.3.14: `Bun.sql.query` is `undefined`.
  * `Bun.sql` is a tagged template whose positional form is `unsafe`, so `{ executor: Bun.sql }`
@@ -51,25 +53,37 @@ create table if not exists x_idempotency (
 );
 
 create index if not exists x_idempotency_created_at_idx on x_idempotency (created_at);
+
+alter table x_idempotency add column if not exists tx_bound boolean not null default false;
 `;
 
 /**
- * The reservation, atomic in one statement. The `do update` fires ONLY for a row already outside
- * the window — which answers as a missing one — so a returned row always means this caller owns
- * the reservation and must run the handler. No row back means a live record exists and belongs to
- * someone else.
+ * The reservation, atomic in one statement. The `do update` fires ONLY for a row that answers as a
+ * missing one, so a returned row always means this caller owns the reservation and must run the
+ * handler. No row back means a live record exists and belongs to someone else.
+ *
+ * Two rows answer as missing. One outside the window. And one still `in-flight` past the request
+ * deadline (`$6`) whose settlement was BOUND TO A TRANSACTION (`tx_bound`): that settle commits
+ * with the handler's writes or not at all, so the record being in flight proves nothing committed
+ * — the process died, or the unit of work rolled back. An autocommit handler's record is never
+ * reclaimed this way: "died before the write" and "wrote, then died before the settle" are one
+ * row, and re-running the second is the double charge.
  */
 export const SQL_IDEMPOTENCY_RESERVE = `
-insert into x_idempotency (key, id, request_hash, status)
-values ($1, $2, $3, 'in-flight')
+insert into x_idempotency (key, id, request_hash, status, tx_bound)
+values ($1, $2, $3, 'in-flight', $5)
 on conflict (key) do update
    set id           = excluded.id,
        request_hash = excluded.request_hash,
        status       = 'in-flight',
        value        = null,
        failure      = null,
+       tx_bound     = excluded.tx_bound,
        created_at   = now()
  where x_idempotency.created_at < now() - make_interval(secs => $4::double precision)
+    or (x_idempotency.status = 'in-flight'
+        and x_idempotency.tx_bound
+        and x_idempotency.created_at < now() - make_interval(secs => $6::double precision))
 returning key, id, request_hash, status, value, failure,
           (extract(epoch from created_at) * 1000)::bigint as created_at
 `;
@@ -125,7 +139,24 @@ interface IdempotencyRow {
 
 export interface PostgresIdempotencyStoreOptions {
   readonly executor: PgExecutor;
+  /**
+   * The client transactions on THIS database are opened on — `baseClient` from `@ultimat3/db` for
+   * the store the boot installs. Compared by identity with an open transaction's `origin`: the
+   * settle rides a transaction on this database and no other. One opened elsewhere
+   * (`withTransaction(fn, { client: shard })`) has no `x_idempotency` to settle in, so the record
+   * is settled on the pool, exactly as an autocommit handler's is. REQUIRED: a store that could
+   * not tell would send the settle to whichever database the handler happened to be writing.
+   */
+  readonly origin: () => object;
   readonly windowMs?: number | undefined;
+  /**
+   * The request deadline in milliseconds, read at every reservation: how long an in-flight record
+   * whose settlement rides a transaction is kept before a retry may take the key. REQUIRED and a
+   * function — the deadline is the app's (`requestTimeoutMs`), declared after this store is built,
+   * and a number restated here would silently disagree with it. `0` is "no deadline": nothing is
+   * reclaimed before the window. Never applies to an autocommit handler's record.
+   */
+  readonly reclaimAfterMs: () => number;
   /**
    * Injectable, exactly as `MemoryIdempotencyStoreOptions.now` is. The two stores are one seam and
    * a caller must be able to drive either from the same clock; a hardcoded `Date.now()` here made
@@ -148,7 +179,7 @@ export interface PostgresIdempotencyStore extends IdempotencyStore {
 /**
  * **The boot installs this for you — an app declares the scope and nothing else.**
  * `@ultimat3/cli`'s `startServices` builds a `PgExecutor` from the client it already resolved and
- * calls `setIdempotencyStore(postgresIdempotencyStore({ executor }))` before `loadApp`, so the
+ * calls `setIdempotencyStore(postgresIdempotencyStore({ executor, origin, reclaimAfterMs }))` before `loadApp`, so the
  * store is in place by the time `registerAction` evaluates a declaration against it. All an app
  * owes is the one line `x new` scaffolds into `apps/web/server.ts`:
  *
@@ -165,6 +196,8 @@ export interface PostgresIdempotencyStore extends IdempotencyStore {
  * setIdempotencyStore(
  *   postgresIdempotencyStore({
  *     executor: { query: (text, values) => client.query({ text, values }) },
+ *     origin: () => client,
+ *     reclaimAfterMs: requestDeadlineMs, // the app's `requestTimeoutMs`, from '@ultimat3/action'
  *   }),
  * );
  * ```
@@ -181,7 +214,18 @@ export function postgresIdempotencyStore(
     1,
   );
   const windowSecs = windowMs / 1000;
+  // Screened on every read, like the window above: the value is the app's and arrives late. Never
+  // past the window, which already frees the record — and `0` means exactly that.
+  const reclaimSecs = (): number => {
+    const ms = finiteCount('postgresIdempotencyStore', 'reclaimAfterMs', options.reclaimAfterMs());
+    return (ms === 0 ? windowMs : Math.min(ms, windowMs)) / 1000;
+  };
   const exec = options.executor;
+  /** The executor of a transaction open on THIS database, or `undefined` — the pool settles. */
+  const boundTx = (): PgExecutor | undefined => {
+    const tx = liveTransaction();
+    return tx !== undefined && tx.origin === options.origin() ? tx.executor : undefined;
+  };
   const now = options.now ?? ((): number => Date.now());
 
   const fetch = async (key: string): Promise<IdempotencyRecord | undefined> => {
@@ -199,11 +243,16 @@ export function postgresIdempotencyStore(
       // back empty is a concurrent `release`/`purgeExpired` deleting the row between them, and a
       // caller losing that race twice is a store nobody should keep retrying against.
       for (let attempt = 0; attempt < 3; attempt += 1) {
+        // On the POOL, never the open transaction: a duplicate has to see the reservation now,
+        // and one that rolled back with the handler would let both attempts run. What rides the
+        // transaction is the SETTLE — and the row says so, which is what makes it reclaimable.
         const claimed = await exec.query<IdempotencyRow>(SQL_IDEMPOTENCY_RESERVE, [
           key,
           uuid(),
           requestHash,
           windowSecs,
+          boundTx() !== undefined,
+          reclaimSecs(),
         ]);
         const row = claimed[0];
         if (row !== undefined) return { record: toRecord(row), created: true };
@@ -226,14 +275,22 @@ export function postgresIdempotencyStore(
     },
 
     async settle(key, value, reservationId): Promise<void> {
-      const rows = await exec.query(SQL_IDEMPOTENCY_SETTLE, [
-        key,
-        JSON.stringify(value ?? null),
-        reservationId,
-      ]);
-      fenced(rows, key, reservationId, 'settle');
+      const params = [key, JSON.stringify(value ?? null), reservationId];
+      const tx = boundTx();
+      if (tx === undefined) {
+        fenced(await exec.query(SQL_IDEMPOTENCY_SETTLE, params), key, reservationId, 'settle');
+        return;
+      }
+      // On the handler's OWN connection: the record is settled by the same COMMIT that makes the
+      // write durable, so a rollback leaves it in flight instead of replaying a success for rows
+      // that were never stored. And a settle that matches nothing here is THROWN, not logged —
+      // the key was taken over, nothing has committed yet, and the throw is what rolls it back.
+      const rows = await tx.query(SQL_IDEMPOTENCY_SETTLE, params);
+      if (rows.length === 0) throw new IdempotencyReservationLostError(key);
     },
 
+    // On the pool, whatever is open: the transaction this failure came out of is about to roll
+    // back, and the record of it has to outlive that.
     async fail(key, failure: IdempotencyFailure, reservationId): Promise<void> {
       const rows = await exec.query(SQL_IDEMPOTENCY_FAIL, [
         key,
@@ -260,7 +317,7 @@ export function postgresIdempotencyStore(
 }
 
 /**
- * Logged, never thrown. A settlement lands after the handler has committed, so raising here would
+ * Logged, never thrown — the AUTOCOMMIT path. A settlement lands after the handler has committed, so raising here would
  * turn a durable write into the caller's error — the rule `withIdempotency` already follows for a
  * store that refuses. An operator still has to see it: a fenced settle means this attempt's record
  * belongs to another reservation, and the value this attempt produced is stored nowhere.

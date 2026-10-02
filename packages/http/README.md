@@ -13,7 +13,7 @@ to skip.
 | the ordered request lifecycle | `pipeline.ts` |
 | typed request (params, query, body) | `request.ts` |
 | response constructors + `problem()` | `response.ts` |
-| code → status, closed table | `error-map.ts` |
+| code → status, closed table | `error-map.ts`, composing `error-map-http.ts` + `error-map-tier-<n>.ts` |
 | `factsOf()`, the problem document, the terminal lines | `error-facts.ts` |
 | token-bucket limiting, `toBucket` | `rate-limit.ts` |
 | the app's own HTTP declaration, and the boot's facts over it | `app-config.ts` |

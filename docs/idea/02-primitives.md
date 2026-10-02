@@ -160,6 +160,7 @@ export const likePost = mutator({
   input:  t.object({ postId: t.uuid, orgId: t.uuid }),
   output: PostView,
   policy: postLike,
+  idempotent: true, // REQUIRED: a replayed write answers the first result, never a second run
   // Convergent, not incremental: applying it N times equals applying it once.
   local(tx, { postId }) {
     tx.posts.update(postId, (p) =>

@@ -39,6 +39,7 @@ import { tierOf } from './lib/tiers';
 
 const SCRIPT = 'new-error-code';
 export const WIKI_PAGE = 'wiki/Error-Codes.md';
+/** The composed table — what the gate's `errors` step reads. Rows are written to its SLICES. */
 export const STATUS_TABLE = 'packages/http/src/error-map.ts';
 export const STATUS_BACKLOG = 'scripts/error-map-backlog.ts';
 /**
@@ -47,6 +48,23 @@ export const STATUS_BACKLOG = 'scripts/error-map-backlog.ts';
  * holds the two equal.
  */
 export const STATUS_TABLE_MAX_TIER = 4;
+
+/**
+ * The slice of the status table a package's rows live in: `@ultimat3/http`'s own file, else one per
+ * tier. The table was ONE file until it reached the line ceiling at exactly the next code; a slice
+ * per tier is what keeps "add a row" from being "split a file" again.
+ */
+export function statusTableFor(pkg: string): string {
+  return pkg === 'http'
+    ? 'packages/http/src/error-map-http.ts'
+    : `packages/http/src/error-map-tier-${tierOf(pkg)}.ts`;
+}
+
+/** Every slice a row can be in — a code is refused if ANY of them already names it. */
+export const STATUS_TABLE_SLICES: readonly string[] = Object.freeze([
+  'packages/http/src/error-map-http.ts',
+  ...[0, 1, 2, 3, 4].map((tier) => `packages/http/src/error-map-tier-${tier}.ts`),
+]);
 
 /** Where the code's HTTP status was decided: a row, a pin, or — above the table's tiers — nowhere. */
 export type StatusDecision =
@@ -152,12 +170,25 @@ export async function planFiles(
     fixes = { path: fixesPath, text: fixRowIn(current, fixesPath, input) };
   }
   if (decision.kind === 'none') return { errorsPath, errorsTs, wiki, fixes };
-  const path = decision.kind === 'row' ? STATUS_TABLE : STATUS_BACKLOG;
+  const path = decision.kind === 'row' ? statusTableFor(input.pkg) : STATUS_BACKLOG;
   const current = await Bun.file(`${root}/${path}`).text();
-  const text =
-    decision.kind === 'row'
-      ? statusRowIn(current, path, input, decision.status)
-      : backlogPinIn(current, path, input);
+  if (decision.kind === 'pin') {
+    return {
+      errorsPath,
+      errorsTs,
+      wiki,
+      fixes,
+      status: { path, text: backlogPinIn(current, path, input) },
+    };
+  }
+  // The table is composed by spread, which takes the last duplicate silently: a code another
+  // slice already names is refused here, by the same check that guards the slice being written.
+  for (const other of STATUS_TABLE_SLICES) {
+    const file = Bun.file(`${root}/${other}`);
+    if (other !== path && (await file.exists()))
+      statusRowIn(await file.text(), other, input, decision.status);
+  }
+  const text = statusRowIn(current, path, input, decision.status);
   return { errorsPath, errorsTs, wiki, fixes, status: { path, text } };
 }
 

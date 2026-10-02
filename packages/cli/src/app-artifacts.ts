@@ -1,6 +1,6 @@
 // The two generated contracts an app commits — `x.manifest.json` and `openapi.json` — written by one
 // function, because two commands wrote them and only one wrote both: `x g` refreshed the manifest
-// and left `openapi.json` behind, so its own output failed the `contract-diff` step next.
+// and left `openapi.json` behind, so its own output failed the gate's `manifest` step next.
 
 import { join } from 'node:path'; // why: Bun ships no path-join primitive.
 import type { Manifest } from '@ultimat3/manifest';

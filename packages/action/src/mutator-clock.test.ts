@@ -28,6 +28,7 @@ function declare(output: unknown, conflict: 'last-write-wins' | 'server-wins'): 
       input: t.object({ id: t.uuid }),
       output: output as never,
       policy: can('post:edit'),
+      idempotent: true,
       local: () => {},
       server: () => ({}) as never,
       conflict,

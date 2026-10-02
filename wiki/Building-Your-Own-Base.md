@@ -90,6 +90,7 @@ export const auditedMutator = <TIn extends AnySchema, TOut extends AnySchema>(
     input: def.input,
     output: def.output,
     policy: def.policy,
+    idempotent: true, // required on every mutator — see Actions
     conflict: 'server-wins',
     local: def.local,
     server: async (ctx, input) => {

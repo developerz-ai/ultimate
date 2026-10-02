@@ -20,6 +20,7 @@ import { OPENAPI_FILE } from './app-openapi';
 // `join` builds the host-separator paths the fixtures are written to and read from.
 import { REQUIRED_BUN } from './app-root';
 import { manifestCommand } from './cmd-manifest';
+import { VERIFY_STEPS } from './cmd-verify';
 import type { CommandContext } from './command';
 import { msg } from './messages';
 import type { FlagValue } from './parse';
@@ -91,6 +92,26 @@ const contextFor = (root: string, flags: Readonly<Record<string, FlagValue>>): C
   bunVersion: REQUIRED_BUN,
 });
 
+type Stale = readonly (readonly [string, string | undefined])[];
+
+/** What `x manifest --check` says about the committed files. */
+const checked = async (root: string): Promise<Stale> =>
+  ((await manifestCommand.run(contextFor(root, { check: true }))).findings ?? []).map(
+    (finding) => [finding.code, finding.at] as const,
+  );
+
+/**
+ * What `x verify`'s `manifest` step says about the same files — its `X_MANIFEST_*` findings; the
+ * step also judges `AGENTS.md` and the env example, which `--check` has no opinion on.
+ */
+const verified = async (root: string): Promise<Stale> => {
+  const step = VERIFY_STEPS.find((candidate) => candidate.name === 'manifest');
+  const outcome = await step?.run({ root, runner: contextFor(root, {}).runner });
+  return (outcome?.findings ?? [])
+    .filter((finding) => finding.code.startsWith('X_MANIFEST_'))
+    .map((finding) => [finding.code, finding.at] as const);
+};
+
 const exists = (root: string, file: string): Promise<boolean> =>
   Bun.file(join(root, file)).exists();
 
@@ -107,16 +128,15 @@ afterAll(async () => {
 });
 
 describe('unit · x manifest', () => {
-  test('--check on an app that never generated one reports drift, not a second code', async () => {
+  test('--check on an app that never generated one says it is missing — the gate`s own answer', async () => {
     const result = await manifestCommand.run(contextFor(WHOLE, { check: true }));
     expect(result.ok).toBe(false);
     expect(result.summary).toBe(msg('cli.manifest.stale'));
-    // `x verify` reports this exact condition as X_MANIFEST_DRIFT through `assertNoDrift`;
-    // X_MANIFEST_STALE is openapi.json's, which drifts on its own.
-    expect(result.findings?.map((finding) => finding.code)).toEqual(['X_MANIFEST_DRIFT']);
+    expect(result.findings?.map((finding) => finding.code)).toEqual(['X_MANIFEST_MISSING']);
     expect(result.findings?.[0]?.docs).toBe(ERROR_DOCS_URL);
     expect(result.findings?.[0]?.fix).toBe('x manifest');
     expect(result.findings?.[0]?.at).toBe(MANIFEST_FILENAME);
+    expect(await verified(WHOLE)).toEqual(await checked(WHOLE));
   });
 
   test('a whole load writes both generated files', async () => {
@@ -132,6 +152,7 @@ describe('unit · x manifest', () => {
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(msg('cli.manifest.fresh'));
     expect(result.findings ?? []).toEqual([]);
+    expect(await verified(WHOLE)).toEqual([]);
   });
 
   // Row j: `--check` read `x.manifest.json` alone and answered fresh over a stale `openapi.json`.
@@ -145,8 +166,23 @@ describe('unit · x manifest', () => {
       expect(result.findings?.map((finding) => [finding.code, finding.at])).toEqual([
         ['X_MANIFEST_STALE', OPENAPI_FILE],
       ]);
+      // ONE check: the gate's `manifest` step answered green here while this command said stale,
+      // so `x verify --only manifest` and `x manifest --check` disagreed about one file.
+      expect(await verified(WHOLE)).toEqual([['X_MANIFEST_STALE', OPENAPI_FILE]]);
     } finally {
       await Bun.write(spec, original);
+    }
+  });
+
+  test('a hand-edited x.manifest.json is drift to both, by the same code', async () => {
+    const file = join(WHOLE, MANIFEST_FILENAME);
+    const original = await Bun.file(file).text();
+    try {
+      await Bun.write(file, original.replace('"1.4.0"', '"9.9.9"'));
+      expect(await checked(WHOLE)).toEqual([['X_MANIFEST_DRIFT', MANIFEST_FILENAME]]);
+      expect(await verified(WHOLE)).toEqual(await checked(WHOLE));
+    } finally {
+      await Bun.write(file, original);
     }
   });
 

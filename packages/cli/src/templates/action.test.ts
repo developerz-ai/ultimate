@@ -118,6 +118,19 @@ describe('unit · x g action throws the feature error only where the slice decla
     });
   }
 
+  test('a generated mutator declares idempotent: true — the framework refuses one without it', () => {
+    const emitted = (mutator: boolean): string =>
+      sourceOf(
+        actionFiles('ping-fleet', { ...target, mutator, sliceErrors: FLEET_ERRORS }),
+        'actions/ping-fleet.ts',
+      );
+    // A template is a string no typecheck reads: `X_MUTATOR_NOT_IDEMPOTENT` at the first import of
+    // a freshly generated file is what this pins against.
+    expect(emitted(true)).toMatch(/^ {2}idempotent: true,$/m);
+    // An action is not replayed by construction, so the generator decides nothing for it.
+    expect(emitted(false)).not.toContain('idempotent');
+  });
+
   test('the generated action loads — the whole defect was a file that did not', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'x-action-'));
     try {

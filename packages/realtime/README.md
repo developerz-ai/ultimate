@@ -25,6 +25,9 @@ export const liveFeed = query({
 
 // mutator (action + optimistic local twin)
 export const likePost = mutator({
+  // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
+  // first result instead of running `server` again.
+  idempotent: true,
   // Convergent, not incremental: `local` replays on every server update, so applying it N times has to
   // equal applying it once — `likedByMe` is what makes the second application a no-op.
   local(tx, { postId }) {

@@ -5,7 +5,7 @@
  * `X_INPUT_INVALID` for the whole reference app and never once reached a policy.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -14,6 +14,7 @@ import type { ContractTest, ContractTestOptions } from './contract-test';
 import { contractTestsFor, policyTestStubFor } from './contract-test';
 import { ContractDriftError } from './errors';
 import type { ActionPolicy } from './policy-gate';
+import { registerAction, resetRegistry } from './registry';
 
 const Input = t.object({ postId: t.uuid, notify: t.boolean.default(true) });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -256,8 +257,39 @@ describe('the garbage assertion', () => {
 });
 
 describe('the OpenAPI assertion', () => {
-  test('holds: a registered action always has an entry in its own OpenAPI document', async () => {
+  beforeEach(() => {
+    resetRegistry();
+  });
+
+  const order = () =>
+    action({
+      input: Input,
+      output: Output,
+      policy: can('order:archive'),
+      handle: ({ input }) => ({ id: input.postId, published: input.notify }),
+    });
+
+  test('holds for a named action nothing else in the registry shadows', async () => {
+    registerAction('archivePost', order());
     await openapi(publish(can('post:publish'))).run();
+  });
+
+  test('holds for the seated action itself', async () => {
+    const seated = registerAction('publishPost', order());
+    await openapi(contractTestsFor(seated)).run();
+  });
+
+  test('fails: another registered action owns the path in the document the app publishes', async () => {
+    // `pluralize` leaves a trailing `s` alone, so these two names are one route. A document built
+    // from this action ALONE always held its own path — which is the assertion that could not fail.
+    registerAction('archiveOrders', order());
+    const failure = await openapi(contractTestsFor(order().named('archiveOrder')))
+      .run()
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeUltimateError('X_CONTRACT_DRIFT');
+    expect(causeOf(failure)).toContain('archiveOrders');
+    expect(fixOf(failure)).toContain('archiveOrder');
   });
 
   test('is generated third, named for the action', () => {

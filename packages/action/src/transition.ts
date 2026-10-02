@@ -17,15 +17,14 @@ import type {
   StandardSchemaV1,
   StringSchema,
 } from '@ultimat3/schema';
-import { t } from '@ultimat3/schema';
+import { nodeOf, t } from '@ultimat3/schema';
 import { type Mutator, mutator } from './mutator';
 import type { ActionPolicy } from './policy-gate';
 
 /**
  * The one method this factory calls, declared structurally: `@ultimat3/entity`'s `Table.transition`
- * satisfies it as written. Structural and not an import because `@ultimat3/action` holds no
- * dependency edge on `@ultimat3/entity` — the tier table permits one (2 is below 3), the manifest
- * and the lockfile do not — the same trade `@ultimat3/db`'s `entity-shape.ts` makes one tier down.
+ * satisfies it as written. Structural because it is all this file needs of a table — one method —
+ * and a fake that implements it is the whole test seam; the package does import entity elsewhere.
  *
  * `id` is a plain `string` rather than entity's `IdOf<Row>`: that alias "collapses to `string` for
  * every unbranded entity" by its own account, and a branded one still satisfies this because a
@@ -69,16 +68,22 @@ export interface TransitionDef<
    * tool's `inputSchema` carries it, the typed client refuses a typo at COMPILE time, and a
    * misspelled state is `X_INPUT_INVALID` before the request reaches a database.
    *
-   * It is the one thing restated from the column's own declaration, and the reason is a boundary:
-   * reading the machine off the entity needs `@ultimat3/entity` as a real dependency of this
-   * package. Listing a SUBSET refuses a legal move at the input schema — loud, and the fix is the
-   * enum in the refusal.
+   * It is the one thing restated from the column's own declaration: `table` is resolved per request
+   * (`(ctx) => …`), and the input schema is needed at declaration, before any table exists to read
+   * a machine off. Listing a SUBSET refuses a legal move at the input schema — loud, and the fix is
+   * the enum in the refusal.
    */
   readonly states: readonly [S, ...S[]];
   /** The local store's name for this entity — what the optimistic twin patches. */
   readonly localTable: string;
   /** The projection the caller gets back. Unknown keys are dropped by the parse, so a `$view` works. */
   readonly output: TOutput;
+  /**
+   * The key's schema, for an `output` that does not carry the key as `id`. Omitted — the usual
+   * case — it is read off `output.id` (`keySchemaOf`), which for an entity `$view` IS the key
+   * column's own shape.
+   */
+  readonly id?: StringSchema;
   readonly policy: ActionPolicy;
   /**
    * OFF unless the app says otherwise, and deliberately not `?? true`.
@@ -115,9 +120,12 @@ export function transition<
   // can reach these two callbacks.
   const valuesOf = (raw: unknown): TransitionValues<S> => raw as TransitionValues<S>;
   return mutator({
-    input: t.object({ id: t.uuid, from: state, to: state }),
+    input: t.object({ id: def.id ?? keySchemaOf(def.output), from: state, to: state }),
     output: def.output,
     policy: def.policy,
+    // A compare-and-set move replayed under its key answers the first outcome, never a second
+    // `X_STATE_CONFLICT` for a move that already happened.
+    idempotent: true,
     ...(def.audit === undefined ? {} : { audit: def.audit }),
     // Never overridable: the server is the half that REFUSED the move, and a local twin that won
     // the rebase would leave the client showing a state the database rejected.
@@ -141,4 +149,22 @@ export function transition<
       });
     },
   });
+}
+
+/**
+ * The `id` a move takes, from the key the OUTPUT declares — never a fixed `t.uuid`, which made
+ * every call on an entity keyed by `text()` or `bigint()` `X_INPUT_INVALID` while the mechanism
+ * underneath addresses any single-column key. An entity `$view` builds its `id` node from the key
+ * column, so the bounds copied here are that column's: a uuid stays a uuid (and a malformed one is
+ * still refused before a database reads it), a `bigint()` keeps its digits pattern, a `text()` its
+ * length. Never empty: an empty string names no row. An output with no string `id` keeps the
+ * framework's default key type, `uuid().primaryKey()`.
+ */
+function keySchemaOf(output: StandardSchemaV1): StringSchema {
+  const key = nodeOf(output)?.properties?.['id'];
+  if (key === undefined || key.kind !== 'string' || key.format === 'uuid') return t.uuid;
+  let schema = t.string.min(Math.max(1, key.minLength ?? 1));
+  if (key.maxLength !== undefined) schema = schema.max(key.maxLength);
+  if (key.pattern !== undefined) schema = schema.pattern(new RegExp(key.pattern, key.patternFlags));
+  return schema;
 }

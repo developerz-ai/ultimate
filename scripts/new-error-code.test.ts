@@ -13,7 +13,7 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 afterAll(removeFixtureRoots);
 
 import { ScriptError } from './lib/script-error';
-import { newErrorCode, STATUS_BACKLOG, STATUS_TABLE, WIKI_PAGE } from './new-error-code';
+import { newErrorCode, STATUS_BACKLOG, statusTableFor, WIKI_PAGE } from './new-error-code';
 import {
   fixtureRoot,
   ROOT,
@@ -39,7 +39,11 @@ describe('a new code, registered and documented in one edit', () => {
       '--status',
       '422',
     ]);
-    expect(result.written).toEqual(['packages/money/src/errors.ts', WIKI_PAGE, STATUS_TABLE]);
+    expect(result.written).toEqual([
+      'packages/money/src/errors.ts',
+      WIKI_PAGE,
+      statusTableFor('money'),
+    ]);
     const errors = await read(dir, 'packages/money/src/errors.ts');
     expect(errors).toContain("  'X_MONEY_ROUNDING_LOST',\n] as const;");
     expect(errors).toContain(
@@ -209,7 +213,7 @@ describe('a package whose titles are not in the first file the planner looks at'
     expect(result.written).toEqual([
       'packages/entity/src/entity-error.ts',
       WIKI_PAGE,
-      STATUS_TABLE,
+      statusTableFor('entity'),
     ]);
     const errors = await read(dir, 'packages/entity/src/entity-error.ts');
     expect(errors).toContain("  'X_ENTITY_PROBE_ONLY',\n] as const;");

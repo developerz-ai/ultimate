@@ -60,3 +60,29 @@ already carry schema, and `moneyText` — which always did, through `@ultimat3/m
 **7.8 kB smaller** because the duplicates are gone.
 
 **`db` is tier 1, decided 2026-08.** It imports `core` and nothing else, so tier 1 is the lowest its real imports allow — and that is what lets `entity` (tier 2) hold its own Postgres driver (`postgresDriver()`) instead of exiling it to a tier-3 package. Two things would have been wrong: a second package owning `Driver`'s only production implementation (two places to look for "where rows live"), and `database()` callers importing the seam from one package and the driver from another. Same shape as `auth → db`.
+
+**`action → db` is an import since 2026-10-02 — downward, 3 → 1, and one file wide.** Until then
+`@ultimat3/action` reached Postgres only through a structural `PgExecutor` the boot supplied, the
+shape `@ultimat3/jobs`' outbox still takes (`txExecutor`), and its `CLAUDE.md` said "no `action →
+db` edge". That held while the package needed a CONNECTION. Two call sites need the
+**transaction**: the cache bust has to wait for the root `COMMIT` (`cache-gate.ts`), and an
+idempotency record has to settle on the handler's own connection (`idempotency-postgres.ts`,
+`idempotency-memory.ts`). Both ask `currentTx()` / `liveTxConnection()`, which live on an
+`AsyncLocalStorage` only `@ultimat3/db` holds. The injected alternative — a
+`configureActionTransactions(() => currentTx())` the boot would call — was rejected for what it
+does when forgotten: nothing. A host that boots the framework itself would get a bust before the
+commit and a `settled` record for a rolled-back write, with the gate green, which is the defect
+both rows exist to close. `@ultimat3/entity`'s row observer already reads `currentTx()` directly
+for the same reason.
+
+- **One importer.** `packages/action/src/tx-scope.ts` is the only shipped module that imports
+  `@ultimat3/db`; `tx-scope.test.ts` scans the package and fails on a second.
+- **No bytes.** A browser chunk importing `mutator` already carried db's `transaction.ts` through
+  `@ultimat3/entity` (measured, `bun build --target=browser --minify`, 647,294 B before the edge).
+  `client.ts` imports none of it, before or after.
+- **The store keeps its structural executor.** The pool is still the boot's to supply; what the
+  package reads for itself is the open transaction, and `origin` on the store is what stops a
+  transaction on another database from being mistaken for one on this.
+- **`db` grew one export for it**: `liveTxConnection`, because `currentTx()` deliberately keeps
+  answering a finished scope's handle and a settlement bound to a finished transaction is bound
+  to nothing.

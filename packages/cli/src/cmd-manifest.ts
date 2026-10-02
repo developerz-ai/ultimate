@@ -4,16 +4,15 @@
 
 import { join } from 'node:path';
 import type { Manifest } from '@ultimat3/manifest';
-import { assertNoDrift, MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { writeAppArtifacts } from './app-artifacts';
 import { appManifest } from './app-manifest';
-import { openApiStaleness } from './app-openapi';
 import { requireAppRoot } from './app-root';
 import { manifestSpec } from './cmd-manifest-spec';
 import type { CliCommand, CommandContext } from './command';
+import { manifestStaleness } from './manifest-staleness';
 import { msg } from './messages';
-import type { CommandResult, Finding, JsonValue } from './output';
-import { findingFrom } from './output';
+import type { CommandResult, JsonValue } from './output';
 import { flagBool } from './parse';
 
 const countsOf = (manifest: Manifest): JsonValue => ({
@@ -27,21 +26,6 @@ const countsOf = (manifest: Manifest): JsonValue => ({
   policies: manifest.policies.length,
 });
 
-/**
- * The identical comparison `x verify`'s `manifest` step makes, through the identical function.
- * A buildId equality test here would answer "fresh" for a hand-edited file whose body no longer
- * hashes to the id it carries — and two commands giving two answers about one file is itself the
- * drift the manifest exists to prevent.
- */
-async function staleness(root: string, manifest: Manifest): Promise<Finding | undefined> {
-  try {
-    await assertNoDrift({ manifest, path: join(root, MANIFEST_FILENAME) });
-    return undefined;
-  } catch (error) {
-    return { ...findingFrom(error), at: MANIFEST_FILENAME };
-  }
-}
-
 export const manifestCommand: CliCommand = {
   spec: manifestSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
@@ -50,12 +34,9 @@ export const manifestCommand: CliCommand = {
     const counts = countsOf(manifest);
 
     if (flagBool(ctx.args, 'check')) {
-      // BOTH files the command writes: `--check` compared only `x.manifest.json`, so a stale
-      // `openapi.json` — the one the typed client is generated from — read as fresh.
-      const stale = [
-        ...[await staleness(root, manifest)].filter((one) => one !== undefined),
-        ...(await openApiStaleness(root, manifest)),
-      ];
+      // The gate's own check, through its function (`manifest-staleness.ts`): both files this
+      // command writes, and the same code for each condition `x verify`'s `manifest` step gives.
+      const stale = await manifestStaleness(root, manifest);
       return {
         ok: stale.length === 0 && findings.length === 0,
         command: 'manifest',

@@ -34,6 +34,7 @@ const publishPost = (audit = true) =>
     input: Input,
     output: Output,
     policy: can('post:publish'),
+    idempotent: true,
     ...(audit ? { audit: true } : {}),
     local: () => undefined,
     server: (_ctx, input) => ({ id: input.postId, published: true }),

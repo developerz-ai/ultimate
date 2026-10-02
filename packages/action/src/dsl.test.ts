@@ -164,6 +164,7 @@ function defineMutatorTarget() {
     input: Input,
     output: Output,
     policy: can('post:like'),
+    idempotent: true,
     mcp: { expose: true, description: 'dsl pin' },
     local: (tx, { postId }) =>
       tx.table<PostRow>('posts').update(postId, (post) => ({ likes: post.likes + 1 })),

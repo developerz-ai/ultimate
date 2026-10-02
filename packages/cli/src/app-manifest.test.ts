@@ -69,6 +69,7 @@ export const likePost = mutator({
   input: t.object({ id: t.uuid }),
   output: t.object({ id: t.uuid }),
   policy: canPostWrite,
+  idempotent: true,
   local() {},
   async server(_ctx, input) {
     return { id: input.id };

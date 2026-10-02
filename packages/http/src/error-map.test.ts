@@ -8,7 +8,7 @@ import {
 import { CURRENCY_CODE_PATTERN, isCurrencyCode } from '@ultimat3/schema';
 import { defineHttpConfig } from './config';
 import { toProblem } from './error-facts';
-import { ERROR_STATUS } from './error-map';
+import { ERROR_STATUS, ERROR_STATUS_SLICES } from './error-map';
 import { declaredStatusFor, statusFor } from './error-status';
 import { HTTP_ERROR_CODES } from './errors';
 import { createPipeline } from './pipeline';
@@ -32,6 +32,22 @@ describe('error -> status', () => {
     const typo: unknown = ERROR_STATUS.X_QUERY_NOT_PAGABLE;
     expect(typo).toBeUndefined();
     expect(ERROR_STATUS.X_QUERY_NOT_PAGEABLE).toBe(500);
+  });
+
+  // The table is composed by spread, and a spread takes the LAST duplicate without a word: a code
+  // listed in two slices with two statuses would answer whichever slice is composed later.
+  test('no code sits in two slices — composition can never pick between two statuses', () => {
+    const seen = new Map<string, number>();
+    for (const [index, slice] of ERROR_STATUS_SLICES.entries()) {
+      for (const code of Object.keys(slice)) {
+        expect(
+          seen.get(code),
+          `${code} is in slices ${seen.get(code)} and ${index}`,
+        ).toBeUndefined();
+        seen.set(code, index);
+      }
+    }
+    expect(seen.size).toBe(Object.keys(ERROR_STATUS).length);
   });
 
   test('maps the codes callers depend on', () => {

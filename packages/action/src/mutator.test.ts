@@ -50,6 +50,7 @@ const likePost = mutator({
   input: Input,
   output: Output,
   policy: can('post:like'),
+  idempotent: true,
   mcp: { expose: true, description: 'Like a post' },
   local(tx, { postId }) {
     tx.table<PostRow>('posts').update(postId, (post) => ({ likes: post.likes + 1 }));
@@ -189,6 +190,7 @@ describe('mutator', () => {
       input: Input,
       output: Output,
       policy: can('post:like'),
+      idempotent: true,
       local() {},
       server: (_ctx, input) => ({ id: input.postId, likes: 1 }),
       conflict: custom((_local, server) => server),
@@ -220,6 +222,7 @@ describe('a mutator carries the action fields it was missing', () => {
         ({ actor, row }) => row !== null && row.ownerId === actor?.id,
       ),
       row: () => ({ ownerId }),
+      idempotent: true,
       rateLimit: { limit: 5, windowMs: 60_000 },
       deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2026-12-31T23:59:59Z' },
       local() {},

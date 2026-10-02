@@ -74,6 +74,7 @@ beforeAll(() => {
       input: t.object({ id: t.uuid }),
       output: t.object({ id: t.uuid }),
       policy: and(can('post:archive'), can('org:administer')),
+      idempotent: true,
       conflict: 'server-wins',
       local: () => undefined,
       server: (_ctx, input) => ({ id: input.id }),

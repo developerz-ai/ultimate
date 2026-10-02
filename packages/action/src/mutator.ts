@@ -18,6 +18,7 @@ import type {
 } from './action';
 import { action, isAction } from './action';
 import type { Deprecation } from './deprecation';
+import { MutatorNotIdempotentError } from './errors';
 import type { ActionHttp } from './http-path';
 import { assertConflictClock } from './mutator-clock';
 import type { ActionPolicy } from './policy-gate';
@@ -97,7 +98,14 @@ export interface MutatorDef<
   readonly deprecated?: Deprecation;
   /** Same key, same meaning as an action's: `http: { path }` pins the URL. */
   readonly http?: ActionHttp;
-  readonly idempotent?: boolean;
+  /**
+   * REQUIRED, and only `true`. A mutator's write is replayed under one `Idempotency-Key` —
+   * `useMutation`'s retry, the offline queue's drain after a dropped response — and the server
+   * reads that key only for an idempotent action. Declared rather than defaulted because the
+   * replay is answered from the idempotency store, and which store that is (`configureIdempotency`)
+   * is the app's decision to see. Omitted: a compile error, and `X_MUTATOR_NOT_IDEMPOTENT`.
+   */
+  readonly idempotent: true;
   /**
    * The row a row-level `policy` decides about — an action's `row`, and dropped on the way into
    * the action until 2026-09-23, so such a policy received `row === null` and denied every call.
@@ -158,6 +166,9 @@ export function mutator<
   TOutput extends StandardSchemaV1,
   TRow = unknown,
 >(def: MutatorDef<TInput, TOutput, TRow>): Mutator<TInput, TOutput> {
+  // First, and for a caller the compiler never saw: a replay that runs the server half twice is
+  // silent, so the declaration is refused where it is written rather than on the second POST.
+  if (def.idempotent !== true) throw new MutatorNotIdempotentError();
   const row = def.row;
   const actionDef: ActionDef<TInput, TOutput, TRow> = {
     input: def.input,
@@ -169,7 +180,7 @@ export function mutator<
     ...(def.deprecated === undefined ? {} : { deprecated: def.deprecated }),
     ...(def.http === undefined ? {} : { http: def.http }),
     ...(row === undefined ? {} : { row: (args: ActionRowArgs<TInput>) => row.call(def, args) }),
-    ...(def.idempotent === undefined ? {} : { idempotent: def.idempotent }),
+    idempotent: true,
     ...(def.audit === undefined ? {} : { audit: def.audit }),
     handle: ({ input, ctx }) => def.server(ctx, input),
   };

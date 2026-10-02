@@ -268,8 +268,9 @@ async function perform(
   }
   // Only for a run that actually happened, and only through the gate. A replay ran no handler
   // and changed nothing the first call had not already busted — re-busting per retry re-purges
-  // the CDN and re-queues ISR for a write nobody made. And the bust is post-commit either way,
-  // so `bustAfterCommit` swallowing its own failure is what keeps a dead cache from turning a
+  // the CDN and re-queues ISR for a write nobody made. And the bust is post-COMMIT either way —
+  // invoked inside a transaction, it waits for the root commit and is dropped by a rollback — so
+  // `bustAfterCommit` swallowing its own failure is what keeps a dead cache from turning a
   // durable write into a failed action.
   if (wrote && def.cache !== undefined) await bustAfterCommit(name, def.cache.invalidates);
   return value;

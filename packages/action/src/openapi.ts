@@ -76,7 +76,12 @@ function compareByName(a: AnyAction, b: AnyAction): number {
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 }
 
-/** RFC 9457 + the Ultimate error contract (code / cause / fix / docs). */
+/**
+ * RFC 9457 + the Ultimate error contract, member for member what `@ultimat3/http`'s `toProblem`
+ * serves (`openapi-problem.test.ts` compares the two). `code` carries no `pattern`: `factsOf`
+ * serves whatever string an app's own throwable holds, and a published pattern the server breaks
+ * makes a generated client reject the very document it was written to read.
+ */
 const PROBLEM_SCHEMA: JsonSchemaObject = {
   type: 'object',
   required: ['type', 'title', 'status', 'code'],
@@ -85,9 +90,27 @@ const PROBLEM_SCHEMA: JsonSchemaObject = {
     title: { type: 'string' },
     status: { type: 'integer' },
     detail: { type: 'string' },
-    code: { type: 'string', pattern: '^X_[A-Z0-9_]+$' },
+    instance: { type: 'string' },
+    code: { type: 'string' },
     cause: { type: 'string' },
     fix: { type: 'string' },
     docs: { type: 'string', format: 'uri' },
+    requestId: { type: 'string' },
+    // Absent when the failure produced none — never `[]`, which would claim "validated clean".
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['path', 'expected', 'received', 'message'],
+        properties: {
+          path: { type: 'string' },
+          expected: { type: 'string' },
+          received: { type: 'string' },
+          message: { type: 'string' },
+        },
+      },
+    },
+    // Only the keys the code declared through `registerProblemMeta`; its shape is per code.
+    meta: { type: 'object' },
   },
 };

@@ -6,7 +6,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { getIdempotencyStore } from '@ultimat3/action';
-import { REPLICA_URL_ENV, raw, setDbClient } from '@ultimat3/db';
+import { REPLICA_URL_ENV, raw, setDbClient, withTransaction } from '@ultimat3/db';
+import { configureHttp, resetHttpConfig } from '@ultimat3/http';
 import { jobDriver, resetJobDriver } from '@ultimat3/jobs';
 import { resolveServices } from './runtime-bindings';
 import type { RunningQueue } from './runtime-queue';
@@ -27,6 +28,7 @@ afterEach(async () => {
   await running?.stop();
   running = undefined;
   resetJobDriver();
+  resetHttpConfig();
   setDbClient(undefined);
   await rm(ROOT, { recursive: true, force: true });
 }, BOOT_TIMEOUT_MS);
@@ -60,6 +62,30 @@ describe('startQueue', () => {
       running = queue;
       expect(queue.idempotency.scope).toBe('shared');
       expect(getIdempotencyStore()).toBe(queue.idempotency);
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  // The deadline an in-flight record is reclaimed after is the APP's `requestTimeoutMs`, and the
+  // app declares it (`configureHttp`, at module scope) AFTER this boot built the store — so it is
+  // read per reservation. A number restated in the store disagreed with a 5s app for 25 seconds.
+  test(
+    'the installed store reclaims on the request deadline the app configured, declared after boot',
+    async () => {
+      const queue = await startQueue(resolveServices(ROOT, {}));
+      running = queue;
+      // Reserved inside a transaction and never settled: the record a dead request leaves.
+      await withTransaction(async () => {
+        expect((await queue.idempotency.reserve('k', 'hash')).created).toBe(true);
+      });
+      await queue.db.execute(
+        raw("update x_idempotency set created_at = created_at - interval '10 seconds'"),
+      );
+
+      // Ten seconds old, under the 30s default: still somebody's.
+      expect((await queue.idempotency.reserve('k', 'hash')).created).toBe(false);
+      configureHttp({ requestTimeoutMs: 5_000 });
+      expect((await queue.idempotency.reserve('k', 'hash')).created).toBe(true);
     },
     BOOT_TIMEOUT_MS,
   );

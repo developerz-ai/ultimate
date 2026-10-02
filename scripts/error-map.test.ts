@@ -44,6 +44,8 @@ describe('unit · a framework code with no status row', () => {
     expect(found[0]?.cause).toContain('X_FIXTURE_ACTION');
     expect(found[0]?.cause).toContain('answers 500');
     expect(found[0]?.fix).toContain(ERROR_MAP_FILE);
+    // The slice the row goes in: the composed table holds none.
+    expect(found[0]?.fix).toContain('packages/http/src/error-map-tier-3.ts');
     expect(found[0]?.fix).toContain(BACKLOG_FILE);
     // Points at the declaration, so "where does this come from?" is not a grep.
     expect(found[0]?.at).toBe(at('action'));

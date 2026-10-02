@@ -19,6 +19,7 @@ import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { tierOf } from './lib/tiers';
 import { collectErrorCodes } from './manifest';
+import { statusTableFor } from './new-error-code';
 
 /**
  * Tier 5 is `ui`, `admin`, `testing`, `cli` — three of which never answer a request at all. The
@@ -104,7 +105,8 @@ export function checkStatusTable(input: StatusTableInput): readonly StatusGap[] 
 const missingFinding = (gap: StatusGap): Finding => ({
   code: 'X_ERROR_STATUS_MISSING',
   cause: `${gap.code} is owned by @ultimat3/${gap.owner} (tier ${tierOf(gap.owner)}) and has no row in ${ERROR_MAP_FILE}, so a request carrying it answers 500 and pages the on-call`,
-  fix: `add \`${gap.code}: <status>,\` to ERROR_STATUS in ${ERROR_MAP_FILE}, or add '${gap.code}' to the ${gap.owner} group in ${BACKLOG_FILE} if it can never reach a request`,
+  // The SLICE, never the composed table: `error-map.ts` holds no rows of its own.
+  fix: `add \`${gap.code}: <status>,\` to ${statusTableFor(gap.owner)} (a slice of ERROR_STATUS in ${ERROR_MAP_FILE}), or add '${gap.code}' to the ${gap.owner} group in ${BACKLOG_FILE} if it can never reach a request`,
   at: gap.at,
 });
 
