@@ -41,8 +41,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   holds a `number`); `RowWrite<Row>` types `insert`/`insertAll`/`upsertAll`; `narrowRow` (`columns.ts`)
   narrows at each write method's ENTRY, before `$assert`/`upsertPlan`. `pg-money-write.live.test.ts`,
   `money-write-parity.test.ts`, `type-pins.ts`.
-- **A PREDICATE's meaning is decided by the column's KIND** (`memory-match.ts`): decimal-text columns
-  compare through core's `compareDecimalText` (`DECIMAL_TEXT`, `numeric-compare.ts`); a `uuid` is a value
+- **A PREDICATE's meaning is decided by the column's KIND** (`memory-match.ts`); `compareByKind` /
+  `sameValueOfKind` are EXPORTED — `@ultimat3/query` calls them. **ONE numeric comparison,
+  `numericOrder`**: `DECIMAL_TEXT` columns by VALUE (`'2.50' = 2.5`), `number`/`bigint` numerically
+  (`compare-parity.test.ts`). A `uuid` is a value, compared lower-cased and
   stored lower-case (`keyOf`, `parseUuid`, `narrowUuid`; text is never narrowed); `LIKE` (`like.ts`)
   uses Postgres' default `\` escape, refuses a trailing escape, counts CHARACTERS and is a bounded
   two-pointer walk — never a regex; `in` takes a

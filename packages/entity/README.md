@@ -780,12 +780,19 @@ database({ orgs, posts }, { driver: postgresDriver() });   // production
 | A predicate | `memory-match.ts`, by the column's declared KIND | the SQL `pg-sql.ts` compiles |
 
 Both answer the same predicate the same way, and the kind is what decides — never the JS type of
-the value: `bigint()`/`decimal()` hold decimal STRINGS and order by their digits (`2, 9, 10, 100`),
-a `uuid` compares case-insensitively because Postgres compares it as a value, `\` escapes a `%` or
+the value: `bigint()`/`decimal()` hold decimal STRINGS, order by their digits (`2, 9, 10, 100`) and
+are EQUAL by value (`'2.50'` matches `'2.5'`, `2.5` and `'2.500'`; `'10'` matches `10`),
+a `uuid` is ordered and equated case-insensitively because Postgres compares it as a value, `\` escapes a `%` or
 a `_` inside a `like` (whose `_` is one CHARACTER, astral or not, and whose match is bounded by
 pattern × value — never a backtracking regex), a unique declared as `invariant(name, c.unique([…]))`
 is enforced by memory exactly as an index is, and `in` takes a list or nothing (a scalar matches no rows; a list carrying
 a `null` also matches the NULL rows, which `col = null` never does).
+
+`compareByKind(kind, left, right)` and `sameValueOfKind(kind, left, right)` are that rule, exported
+(`As of 2026-10`): `-1 | 0 | 1` and a boolean for two values of one column of a declared
+`ColumnKind`, NULL sorting largest. `@ultimat3/query`'s live matcher and in-memory source call them
+rather than keep a comparator of their own; `compare-parity.test.ts` runs the rule against both
+drivers.
 
 `database()` called with no driver takes the process default, and `defaultDriver()` is that same
 object — the one seam a test harness needs, `As of 2026-08`:

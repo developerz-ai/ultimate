@@ -4,7 +4,6 @@
 // JS type of whichever value is in hand: the database decides by the column's type, so a driver
 // deciding by `typeof` is answering a different question.
 
-import { compareDecimalText } from '@ultimat3/core';
 import { keyOf } from './batch-read';
 import { arrayContains, arrayOverlaps, jsonContains, jsonHasKey } from './containment';
 import { kindOf, valueAt } from './cursor';
@@ -14,7 +13,7 @@ import { searchInMemory } from './feature-errors';
 import { instantMicros } from './instant';
 import { isNullish as isNull } from './is-null';
 import { likeMatches } from './like';
-import { DECIMAL_TEXT } from './numeric-compare';
+import { DECIMAL_TEXT, numericOrder } from './numeric-compare';
 import type { Predicate } from './tenancy';
 import type { ColumnKind } from './types';
 
@@ -50,14 +49,18 @@ export const compareByKind = (
     if (before !== undefined && after !== undefined) return sign(before, after);
   }
   if (left instanceof Date && right instanceof Date) return sign(left.getTime(), right.getTime());
-  if (kind !== undefined && DECIMAL_TEXT.has(kind)) {
-    // `undefined` when either side is not a plain decimal — that pair is not a numeric comparison,
-    // so it falls through to the branches below rather than being guessed at.
-    const exact = compareDecimalText(left, right);
-    if (exact !== undefined) return exact;
+  // A `uuid` is ordered as a VALUE — its sixteen bytes, which is the order of its lower-cased
+  // text. Compared as written, `…A` sorted before `…a` and the two are one value to Postgres.
+  if (kind === 'uuid' && typeof left === 'string' && typeof right === 'string') {
+    return sign(keyOf('uuid', left), keyOf('uuid', right));
   }
-  if (typeof left === 'number' && typeof right === 'number') return sign(left, right);
-  if (typeof left === 'bigint' && typeof right === 'bigint') return sign(left, right);
+  // ONE numeric comparison, `numericOrder` — the same call an invariant's `gte`/`eq` makes
+  // (`expr.ts`), so a row cannot pass a rule and sort as though it had failed it. Decimal kinds are
+  // compared by their digits; anything else only when both sides ARE numbers, and a `number`
+  // against a `bigint` is one of those: `String(2) < String(10n)` is false and Postgres says true.
+  // `undefined` means the pair is not a numeric comparison, and it falls through as text.
+  const numeric = numericOrder(kind !== undefined && DECIMAL_TEXT.has(kind), left, right);
+  if (numeric !== undefined) return numeric;
   return sign(String(left), String(right));
 };
 
@@ -84,6 +87,12 @@ export const sameValueOfKind = (
   if (kind === 'uuid' && typeof left === 'string' && typeof right === 'string') {
     return keyOf('uuid', left) === keyOf('uuid', right);
   }
+  // A `bigint()` or `decimal()` row is decimal TEXT and `=` is numeric there: `'2.50' = 2.5` and
+  // `'10' = 10` are both true in Postgres, and `===` answered false for each.
+  // One driver's `int8` is a JS `bigint` and the literal beside it a `number`: `5n = 5` is true.
+  // The same `numericOrder` `compareByKind` asks, so `=` and `order by` cannot disagree on a tie.
+  const numeric = numericOrder(kind !== undefined && DECIMAL_TEXT.has(kind), left, right);
+  if (numeric !== undefined) return numeric === 0;
   return left === right;
 };
 

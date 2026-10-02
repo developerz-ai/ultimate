@@ -23,9 +23,6 @@ import {
 } from './authz';
 import { ADMIN_PERMISSIONS } from './permissions';
 
-/** The admin's own permission set, registered with the policy layer at import time. */
-export const adminPermissions = definePermissions(ADMIN_PERMISSIONS);
-
 /**
  * The admin carries its own actor shape; @ultimat3/policy evaluates core's `Actor`. The
  * mapping lives here because this file is the only one allowed to speak to the policy layer.
@@ -62,13 +59,18 @@ function readDecision(permission: string, result: unknown): AdminDecision {
 const isPermission = (value: string): value is Permission => /^[^:]+:[^:]+$/.test(value);
 
 /**
- * Declare the permissions an admin DERIVES — `<entity>:read|write|delete`, a page's, an action's —
- * so `can()` knows them. Granting them stays the app's: a role map that names none of these
- * refuses every screen. Idempotent, and this file's because it is the one that speaks to
- * `@ultimat3/policy`.
+ * Declare the admin's OWN permissions (`ADMIN_PERMISSIONS`) and the ones a mount DERIVES —
+ * `<entity>:read|write|delete`, a page's, an action's — so `can()` knows them. Granting them stays
+ * the app's: a role map that names none of these refuses every screen. Idempotent, and this file's
+ * because it is the one that speaks to `@ultimat3/policy`.
+ *
+ * Called by `defineAdmin()`, never at module scope. The permission registry is permissive while
+ * EMPTY and closed once it holds one name, so registering `admin:*` on import closed the set for
+ * every module that merely shared a process with this package — an app that imported the admin
+ * for a type, and every test file that ran after an admin one.
  */
 export function declareAdminPermissions(permissions: readonly string[]): void {
-  definePermissions(permissions.filter(isPermission));
+  definePermissions([...ADMIN_PERMISSIONS, ...permissions.filter(isPermission)]);
 }
 
 const evaluated = (

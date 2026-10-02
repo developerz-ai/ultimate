@@ -75,6 +75,10 @@ export {
 } from './feature-errors';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
 export { assertInvariants, invariant, MAX_ASSERTED_ROWS } from './invariants';
+// How Postgres compares two values of one column, decided by the column's declared KIND. Exported
+// because `@ultimat3/query`'s matcher and in-memory source ask the same question — and a second
+// answer there is how a live window and the database returned one read in two orders.
+export { compareByKind, sameValueOfKind } from './memory-match';
 export { memoryRepo, memoryTransactor } from './memory-repo';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';

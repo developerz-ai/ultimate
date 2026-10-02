@@ -338,8 +338,8 @@ describe('a paged read over the route', () => {
   test('a page control never reaches the schema — an input named `first` still coerces', async () => {
     // `Input` declares `first` (the read's own limit) beside the route's `_first`: two names, two
     // jobs, and the reserved one is what keeps them apart.
-    // (`seek()` sets the window, so the read's `limit(first)` is not what bounds the page —
-    // `paginate` has always worked that way; what is pinned is that `first=1` COERCED, as a 200.)
+    // The read's own `limit(first)` is the size of the LISTING and `_first` the size of a page, so
+    // `first=1` is a listing of one row: the page holds it, and nothing follows.
     const response = await read(
       serve(feed({ count: 0 }), reader('u1')),
       `?orgId=${ORG}&first=1&_first=1`,
@@ -347,7 +347,17 @@ describe('a paged read over the route', () => {
     expect(response.status).toBe(200);
     const page = (await response.json()) as PageBody;
     expect(page.rows).toHaveLength(1);
-    expect(page.hasNextPage).toBe(true);
+    expect(page.hasNextPage).toBe(false);
+  });
+
+  test('the widest `_first` the wire accepts cannot widen a declared limit', async () => {
+    const response = await read(
+      serve(feed({ count: 0 }), reader('u1')),
+      `?orgId=${ORG}&first=1&_first=10000`,
+    );
+    const page = (await response.json()) as PageBody;
+    expect(page.rows.map((row) => row.id)).toEqual(['a']);
+    expect(page.hasNextPage).toBe(false);
   });
 
   test('a cursor that is not this read’s is X_CURSOR_INVALID, a 400', async () => {

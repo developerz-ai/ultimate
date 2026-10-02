@@ -11,17 +11,15 @@ import { toBucket } from '@ultimat3/http';
 import { coerceQuery } from '@ultimat3/schema';
 import type { Deprecation } from './deprecation';
 import { recordDeprecatedCall, renderDeprecation } from './deprecation';
-import {
-  QueryDeprecationInvalidError,
-  QueryInputInvalidError,
-  QueryRowNotFoundError,
-} from './errors';
+import { QueryDeprecationInvalidError, QueryInputInvalidError } from './errors';
+import { absentArraysOf } from './input-shape';
 import { derivePath } from './naming';
 import { PAGE_FIRST_KEY, pageControlsOf } from './page-controls';
 import { admitsAnonymous, policyCapability } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, runQuery } from './read';
 import { recordAnswerFor, recordRowAnswerFor } from './record-answer';
+import { oneRowOf } from './single-answer';
 
 /**
  * `liveFeed` -> `GET /_x/query/live-feed`. Named for the primitive rather than spelled
@@ -63,7 +61,7 @@ export function toQueryRoute(target: AnyQuery): Route {
     // The two page controls come OUT first (`page-controls.ts`): they are the route's, not the
     // read's, and a schema that refused unknown keys would otherwise refuse every paged call.
     const { input: values, page } = pageControlsOf(name, request.queryRaw());
-    const input = coerceQuery(target.input, values);
+    const input = absentArraysOf(target.input, coerceQuery(target.input, values));
     if (target.single === true) {
       // Refused, not ignored: a caller paging a read of one object has the wrong read in mind, and
       // a silently dropped `_first` would answer a shape it did not ask for.
@@ -75,9 +73,7 @@ export function toQueryRoute(target: AnyQuery): Route {
       }
       // The first row — what every in-process `[0]` of the same read already takes. None is the
       // 404 a detail URL means, where a list read answers `200 []`.
-      const [row] = await runQuery(target, input, { surface: 'http' });
-      if (row === undefined) throw new QueryRowNotFoundError(name);
-      return answerRow(row);
+      return answerRow(oneRowOf(name, await runQuery(target, input, { surface: 'http' })));
     }
     // With a page control the answer is the `Page` envelope `query.page()` answers a server
     // caller with — `{ rows, nextCursor, hasMore, endCursor, hasNextPage }`, the same names (the

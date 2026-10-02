@@ -11,7 +11,9 @@
  */
 import { assert, decodeCursor, encodeCursor } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { kindsOf } from './column-kinds';
 import { reviveSortKey, serializeSortValue } from './cursor-value';
+import { CursorInvalidError } from './errors';
 import { MAX_PAGE_SIZE } from './page-controls';
 import type { Query, SourceOptions } from './query';
 import { queryHash, queryName, sourceFor } from './query';
@@ -73,18 +75,24 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   const base = await sourceFor(target, input, args);
   const shape = base.shape();
   // Revived to the types the columns hold, never left as the strings JSON handed back: a `Date`
-  // key decoded as an ISO string reaches `compareValues` as text and is compared against the
-  // row's own millisecond number, so page two matched nothing at all. See `cursor-value.ts`.
-  const after: SeekKey | null =
-    decoded === null ? null : seekFromCursor(decoded, shape.orderBy.length);
+  // key decoded as an ISO string was compared as text against the row's own instant, so page two
+  // matched nothing at all. See `cursor-value.ts`.
+  const resumed = decoded === null ? null : seekFromCursor(decoded, shape.orderBy.length);
+  const after = resumed?.seek ?? null;
+  const left = rowsLeft(shape.limit, resumed);
+  // The whole of a declared limit is already served: there is no row to ask the source for.
+  if (left === 0) return pageOf<TRow>([], null, false);
 
   // `MAX_PAGE_SIZE` lives in `page-controls.ts`: the route checks the same bound at the wire, as
   // a 400, before this `assert` — which is a 500 — can see the number.
-  // Fetch one extra row: its presence *is* `hasNextPage`, with no count query.
-  const window = args.first + 1;
+  // Fetch one extra row: its presence *is* `hasNextPage`, with no count query. Never past what a
+  // declared `.limit()` has left — `first` used to REPLACE that limit, so `?_first=10000` walked a
+  // "top 3" to the end of the table.
+  const window = Math.min(left, args.first + 1);
   const source: SqlSource<object> = base.seek === undefined ? base : base.seek(after, window);
   const executed = await source.execute();
-  const scoped = base.seek === undefined ? inTotalOrder(executed, after, shape) : executed;
+  const scoped =
+    base.seek === undefined ? inTotalOrder(executed, after, shape).slice(0, window) : executed;
   // The source came from this query's own `sql()`, so its rows are TRow.
   const rows = scoped.slice(0, args.first) as unknown as readonly TRow[];
   const last = rows[rows.length - 1];
@@ -97,10 +105,39 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
           scope: hash,
           // The id rides TYPED at the tail of the key — core's `id` slot is a string — so a
           // numeric or bigint tiebreak compares as a number on the next page, not lexically.
-          key: [...seek.key, seek.id].map(serializeSortValue),
+          // A limited read appends how much of its limit is now spent: a keyset cursor names a
+          // position and no count, and the count is the only thing that can end a "top N".
+          key: [
+            ...[...seek.key, seek.id].map(serializeSortValue),
+            ...(shape.limit === null ? [] : [(resumed?.served ?? 0) + rows.length]),
+          ],
           id: String(seek.id),
         });
   return pageOf(rows, nextCursor, scoped.length > args.first);
+}
+
+/** A decoded cursor: where the page resumes, and how many rows of a declared limit are spent. */
+interface Resumed {
+  readonly seek: SeekKey;
+  readonly served: number | undefined;
+}
+
+/**
+ * Rows a declared limit still allows, or no bound at all for a read that declares none.
+ *
+ * A cursor on a limited read MUST say how many rows came before it. One that does not was minted
+ * before the limit bounded the listing (or before the read declared one), and honouring it would
+ * start a fresh "top N" below the real one — so it is refused as any other cursor this read did
+ * not mint, with core's own instruction: request the first page again.
+ */
+function rowsLeft(limit: number | null, resumed: Resumed | null): number {
+  if (limit === null) return Number.POSITIVE_INFINITY;
+  if (resumed === null) return Math.max(0, limit);
+  const { served } = resumed;
+  if (served === undefined || !Number.isInteger(served) || served < 1) {
+    throw new CursorInvalidError('it does not say how much of this read’s limit is already served');
+  }
+  return Math.max(0, limit - served);
 }
 
 /**
@@ -128,20 +165,26 @@ function inTotalOrder(
   shape: QueryShape,
 ): readonly object[] {
   const keys = totalOrder(shape.orderBy);
-  const ordered = [...rows].sort((left, right) => compareRows(left, right, keys));
+  const kindOf = kindsOf(shape.entity);
+  const ordered = [...rows].sort((left, right) => compareRows(left, right, keys, kindOf));
   if (after === null) return ordered;
-  return ordered.filter((row) => isAfterKey(row, after, shape.orderBy));
+  return ordered.filter((row) => isAfterKey(row, after, shape.orderBy, kindOf));
 }
 
 /**
- * The seek a decoded cursor names. A cursor carrying one more key than the ordering has its typed
- * id at the tail; an older cursor, minted before the id rode there, falls back to the string slot.
+ * The seek a decoded cursor names. A cursor carrying more keys than the ordering has its typed id
+ * next, then — on a limited read — the count of rows served so far; an older cursor, minted before
+ * the id rode there, falls back to the string slot.
  */
 function seekFromCursor(
   decoded: { readonly key: readonly unknown[]; readonly id: string },
   width: number,
-): SeekKey {
+): Resumed {
   const key = reviveSortKey(decoded.key);
-  if (key.length !== width + 1) return { key, id: decoded.id };
-  return { key: key.slice(0, width), id: key[width] };
+  if (key.length <= width) return { seek: { key, id: decoded.id }, served: undefined };
+  const count = key[width + 1];
+  return {
+    seek: { key: key.slice(0, width), id: key[width] },
+    served: typeof count === 'number' ? count : undefined,
+  };
 }

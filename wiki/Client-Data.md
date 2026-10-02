@@ -113,7 +113,7 @@ off and the query still works, but its answer is bare rows the store never sees.
 ```ts
 // shared/browser-client.ts — type-only import of the api, so no server code reaches the island
 import { rpc } from '@ultimat3/action';
-import { queryClient } from '@ultimat3/query/client'; // the browser entry: 10,899 B vs 23,997 B via the barrel
+import { queryClient } from '@ultimat3/query/client'; // the browser entry: 11,012 B vs 25,237 B via the barrel
 import type { Api } from '../api';
 
 export const browserClient = rpc<Api['actions']>({ baseUrl: '' });

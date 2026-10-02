@@ -151,6 +151,14 @@ notes: >-
   page-outbox.ts:104, :153-155, :262). Settle whether that is at-least-once as designed. The
   'like taken offline' e2e is satisfied by the optimistic count before the server confirms.
   For the cli PR: nothing checks that x auth seal-mfa has run except x doctor when someone runs
-  it - a boot-time warning with the unsealed count would enforce the operator step. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  it - a boot-time warning with the unsealed count would enforce the operator step.
+  PR 5 merged as #622 (f8fa90bf). PR 6 found that entity's own comparison rule - the one the plan
+  told query to adopt - disagreed with Postgres 17 on 9 rows (decimal equality by string identity,
+  uuid order as written); entity's memory driver, invariants and query's matcher now share one rule,
+  numericOrder, proven on memory, PGlite and Postgres 17.
+  For the admin PR (slice 11): 22 admin test files call defineAdmin() at module scope
+  (describe.test.ts:38, routes.test.ts:42, ...), so `bun test ./packages/admin ./packages/query`
+  in one process still fails 165 query tests in that order. The source is fixed in PR 6 (importing
+  admin declares nothing); move those calls into beforeAll. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02

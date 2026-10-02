@@ -45,7 +45,7 @@ export function facadeFor<
     // signed cursor is only reachable through the query that issued it.
     page: (input, args) => paginate(self(), input, args),
     live: (input, options) => toLiveQuery(self(), input, options),
-    tool: () => toQueryTool(self()),
+    tool: () => toQueryTool<TSingle>(self()),
     // One implementation for both wire shapes: the route decides the body, the transport parses
     // it, and only the TYPE differs — a single read's method answers the row, and has no `page`.
     client: (options) =>

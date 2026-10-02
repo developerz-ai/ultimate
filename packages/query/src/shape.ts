@@ -1,7 +1,11 @@
 /**
  * The read vocabulary shared by the matcher, the SQL sources, pagination and the
- * live descriptor. Types only plus two pure predicates — no I/O lives here.
+ * live descriptor: the types, and the two predicates that read a row. How two VALUES compare is
+ * `@ultimat3/entity`'s answer (`compareByKind`, `sameValueOfKind`) — no comparator lives here.
  */
+import type { ColumnKind } from '@ultimat3/entity';
+import { compareByKind, sameValueOfKind } from '@ultimat3/entity';
+import type { KindOf } from './column-kinds';
 import { QueryNotPageableError } from './errors';
 import { columnOf } from './stable';
 
@@ -87,24 +91,33 @@ export function isNull(value: unknown): boolean {
   return value === null || value === undefined;
 }
 
-export function matchesFilters(row: object, filters: readonly Filter[]): boolean {
-  return filters.every((filter) => matchesFilter(row, filter));
+export function matchesFilters(row: object, filters: readonly Filter[], kindOf: KindOf): boolean {
+  return filters.every((filter) => matchesFilter(row, filter, kindOf));
 }
 
-export function matchesFilter(row: object, filter: Filter): boolean {
+/**
+ * One filter against one row, as Postgres answers it for that column. `kindOf` is required: a
+ * comparison with no declared kind to decide by is how `'10'` in a `bigint()` column sorted before
+ * `'9'`, and an optional argument is one a caller forgets.
+ */
+export function matchesFilter(row: object, filter: Filter, kindOf: KindOf): boolean {
   const actual = columnOf(row, filter.column);
+  const kind = kindOf(filter.column);
   switch (filter.op) {
     case '=':
-      return same(actual, filter.value);
+      return equalOrBothNull(kind, actual, filter.value);
     case '!=':
-      return !same(actual, filter.value);
+      return !equalOrBothNull(kind, actual, filter.value);
     case 'in':
-      return Array.isArray(filter.value) && filter.value.some((item) => same(actual, item));
+      return (
+        Array.isArray(filter.value) &&
+        filter.value.some((item) => equalOrBothNull(kind, actual, item))
+      );
     case '>':
     case '>=':
     case '<':
     case '<=':
-      return ordered(filter.op, actual, filter.value);
+      return ordered(filter.op, kind, actual, filter.value);
     default:
       return false;
   }
@@ -115,9 +128,14 @@ export function matchesFilter(row: object, filter: Filter): boolean {
  * ordering operator matches nothing here either. Only `=`, `!=` and `in` read NULL as a value —
  * and those are exactly the three `Builder.toSQL()` compiles to `is null` / `is distinct from`.
  */
-function ordered(op: '>' | '>=' | '<' | '<=', actual: unknown, value: unknown): boolean {
+function ordered(
+  op: '>' | '>=' | '<' | '<=',
+  kind: ColumnKind | undefined,
+  actual: unknown,
+  value: unknown,
+): boolean {
   if (isNull(actual) || isNull(value)) return false;
-  const result = compareValues(actual, value);
+  const result = compareByKind(kind, actual, value);
   switch (op) {
     case '>':
       return result > 0;
@@ -131,88 +149,37 @@ function ordered(op: '>' | '>=' | '<' | '<=', actual: unknown, value: unknown): 
 }
 
 /**
- * Dates compare by instant, everything else by value. No coercion across types.
- *
- * NULL is greater than every value and equal to itself — Postgres' own sort rule, which is what
- * lets `Builder.toSQL()` write it down as `asc nulls last` / `desc nulls first` and mean this
- * function. Sorting only: a comparison *filter* against NULL matches nothing (`ordered`). Before
- * this, `null` sorted as the string `"null"`, so it landed between `"m"` and `"o"` in memory and
- * at the end in the database — the same page read two ways.
+ * This package's NULL rule around `@ultimat3/entity`'s equality: `=`, `!=` and `in` read NULL as a
+ * value, so two absences are equal and an absence equals nothing else. What two PRESENT values
+ * are to each other is not decided here — `sameValueOfKind` answers by the column's kind.
  */
-export function compareValues(a: unknown, b: unknown): number {
-  if (isNull(a) || isNull(b)) return isNull(a) ? (isNull(b) ? 0 : 1) : -1;
-  const left = normalize(a);
-  const right = normalize(b);
-  if (isNumeric(left) && isNumeric(right)) return compareNumeric(left, right);
-  const l = String(left);
-  const r = String(right);
-  return l < r ? -1 : l > r ? 1 : 0;
-}
-
-function isNumeric(value: unknown): value is number | bigint {
-  return typeof value === 'number' || typeof value === 'bigint';
-}
-
-/**
- * Numbers and bigints, in one order, because **Postgres orders them in one order**.
- *
- * `bigint` is a first-class `ColumnKind` — the physical type of every `<p>_minor` column — and
- * `@ultimat3/entity`'s `count-by.ts` lists it as groupable, so these values do reach the
- * comparator. The old numeric fast path was `typeof left === 'number' && typeof right ===
- * 'number'` alone, so a bigint fell through to `String(left) < String(right)`:
- * `compareValues(9n, 10n)` answered `1` and a sort came out `["10", "100", "9"]`, which means the
- * in-memory source, the live matcher and the seek fallback all disagreed with the database on any
- * bigint-ordered read — including page two of one.
- *
- * A bigint pair never subtracts: the difference is exact but the return type is a `number`. A
- * mixed pair goes through `BigInt` when the number is whole, so a value past 2^53 keeps its exact
- * place; a fractional number cannot equal a bigint, so comparing it as a float is enough to place
- * it. `Number.isInteger` is false for `NaN` and `±Infinity`, which is what keeps them out of the
- * `BigInt()` call that would throw on them.
- */
-function compareNumeric(left: number | bigint, right: number | bigint): number {
-  if (typeof left === 'number' && typeof right === 'number') return left - right;
-  if (typeof left === 'bigint' && typeof right === 'bigint') return sign(left, right);
-  // Widened rather than negated: `-sign(a, b)` answers `-0` for a tie, and `-0` is a different
-  // value from `0` to `Object.is` and to a caller writing `=== 0`.
-  return typeof left === 'bigint'
-    ? mixed(left, right as number)
-    : -mixed(right as bigint, left) || 0;
-}
-
-/** A bigint against a number, in that order. Whole numbers go through `BigInt` so a value past
- * 2^53 keeps its exact place; a fractional number can never equal a bigint, so comparing it as a
- * float is enough to place it. `Number.isInteger` is false for `NaN` and `±Infinity`, which is
- * what keeps them out of the `BigInt()` call that would throw on them. */
-function mixed(big: bigint, other: number): number {
-  return Number.isInteger(other) ? sign(big, BigInt(other)) : sign(Number(big), other);
-}
-
-function sign<T extends number | bigint>(left: T, right: T): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
-/** A `Date` compares by instant, so two of them order by time and never by their ISO text. */
-function normalize(value: unknown): unknown {
-  return value instanceof Date ? value.getTime() : value;
-}
-
-/**
- * Equality as Postgres answers it. A number and a bigint are ONE family — an `int8` arrives as a
- * `bigint` from one driver while a filter value is usually a `number` literal, and `5n = 5` is
- * true there — so the type check that keeps `'5'` from equalling `5` treats them as one.
- */
-function same(a: unknown, b: unknown): boolean {
+function equalOrBothNull(kind: ColumnKind | undefined, a: unknown, b: unknown): boolean {
   if (isNull(a) || isNull(b)) return isNull(a) && isNull(b);
-  return compareValues(a, b) === 0 && family(normalize(a)) === family(normalize(b));
+  return sameValueOfKind(kind, a, b);
 }
 
-const family = (value: unknown): string => (isNumeric(value) ? 'numeric' : typeof value);
-
-/** Row ordering under an `orderBy` list. Stable, and total when an id key is last. */
-export function compareRows(a: object, b: object, orderBy: readonly OrderKey[]): number {
+/**
+ * Row ordering under an `orderBy` list. Stable, and total when an id key is last.
+ *
+ * Each key is ordered by `@ultimat3/entity`'s `compareByKind` under the column's declared kind —
+ * the one JS statement of how Postgres orders a column. NULL is the largest value there and equal
+ * to itself, which is what lets `Builder.toSQL()` write `asc nulls last` / `desc nulls first` and
+ * mean this function. This package used to keep a second comparator that decided by `typeof`: a
+ * `bigint()` or `decimal()` row is decimal TEXT, so `'10'` sorted before `'9'` in the in-memory
+ * source, the live matcher and the seek fallback while the database answered the other way.
+ */
+export function compareRows(
+  a: object,
+  b: object,
+  orderBy: readonly OrderKey[],
+  kindOf: KindOf,
+): number {
   for (const key of orderBy) {
-    const result = compareValues(columnOf(a, key.column), columnOf(b, key.column));
+    const result = compareByKind(
+      kindOf(key.column),
+      columnOf(a, key.column),
+      columnOf(b, key.column),
+    );
     if (result !== 0) return key.direction === 'asc' ? result : -result;
   }
   return 0;

@@ -17,6 +17,7 @@ import {
   isQuery,
   guardBeforeInput as queryGuardBeforeInput,
   queryName,
+  readAnswer,
   sourceFor,
 } from '@ultimat3/query';
 import { asCallerContext } from './caller-context';
@@ -87,17 +88,22 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
 
 export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
   const exposure = exposureOf(target.mcp);
-  // Only a query that DECLARED its rows (`rows: Post.$schema`) has a known answer shape; the tool
-  // answers the rows as a list, so the structured copy is `{ rows }` — `structuredContent` is an
-  // object by the spec.
-  const output = toRowsOutputSchema(target.rows);
+  // A `single: true` read answers ONE row, or not-found — what its route answers (404) and what
+  // `tool().read()` answers. Handing an agent `[]` for a missing id said "found, and empty".
+  const single = target.single === true;
+  // Only a query that DECLARED its rows (`rows: Post.$schema`) has a known answer shape. A list
+  // read answers the rows as a list, so the structured copy is `{ rows }` — `structuredContent`
+  // is an object by the spec; a single read's answer already IS the object.
+  const output = single ? toOutputSchema(target.rows) : toRowsOutputSchema(target.rows);
   const name = queryName(target);
   return {
     name,
     ...(exposure === undefined ? {} : { mcp: exposure }),
     ...(exposure?.description === undefined ? {} : { description: exposure.description }),
     inputJsonSchema: toWireSchema(target.input),
-    ...(output === undefined ? {} : { outputJsonSchema: output, outputWrap: 'rows' }),
+    ...(output === undefined
+      ? {}
+      : { outputJsonSchema: output, ...(single ? {} : { outputWrap: 'rows' }) }),
     mutates: false,
     // `sourceFor`'s opening gate, on the surface it runs on ('server'), asked before `invalid-args`.
     admit: (actor: Actor) =>
@@ -112,7 +118,8 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
         // cache tiers on purpose: an agent diffing two tool calls must be reading the rows,
         // not a TTL.
         const source = await sourceFor(target, input);
-        return source.execute();
+        // `@ultimat3/query`'s one rule for what a read answers: rows, or a single read's row.
+        return readAnswer(target, await source.execute());
       }),
   };
 }

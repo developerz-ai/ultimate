@@ -95,6 +95,26 @@ describe('the map-wide read client', () => {
     expect(seen.url).toBe(`https://app.test/_x/query/feed?limit=20&orgId=${ORG_ID}&tags=a&tags=b`);
   });
 
+  test('a Date is sent as its ISO instant, never JSON-quoted', async () => {
+    const { fetch, seen } = recorder();
+    const read = queryClientMethodFor('feed', { baseUrl: 'https://app.test', fetch });
+
+    await read({ since: new Date('2026-03-04T05:06:07.089Z'), days: [new Date(0)] });
+
+    expect(seen.url).toBe(
+      'https://app.test/_x/query/feed?days=1970-01-01T00%3A00%3A00.000Z&since=2026-03-04T05%3A06%3A07.089Z',
+    );
+  });
+
+  test('an Invalid Date is sent as text the schema refuses, not thrown as a RangeError', async () => {
+    const { fetch, seen } = recorder();
+    const read = queryClientMethodFor('feed', { baseUrl: 'https://app.test', fetch });
+
+    await read({ since: new Date(Number.NaN) });
+
+    expect(seen.url).toBe('https://app.test/_x/query/feed?since=Invalid+Date');
+  });
+
   test('a failing read raises the server code, with the server fix line', async () => {
     const fetchStub: FetchLike = async () =>
       Response.json(

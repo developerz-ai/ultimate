@@ -1,8 +1,8 @@
-// The one global-state property `policy-bridge.ts` rests on: its module-scope
-// `definePermissions(ADMIN_PERMISSIONS)` ADDS admin's four names to the process-global permission
-// registry and never replaces what an app declared. Both tracked apps depend on it in both
-// directions — `dummy/social-media-clone/apps/admin/app/admin/policy.ts` declares its own set on
-// top of this one and says so in a comment.
+// The one global-state property `policy-bridge.ts` rests on: IMPORTING it declares nothing, and
+// `declareAdminPermissions()` — called by `defineAdmin()` — ADDS admin's four names to the
+// process-global permission registry without replacing what an app declared. Until 2026-10 the
+// import itself registered them, which closed the permission set for every module sharing the
+// process: an app importing the admin for a type, and every test file after an admin one.
 //
 // And what the bridge HANDS a policy, which lives here for the same reason: this is the ONE file
 // allowed to load `policy-bridge` in this process. A second one would import it first, the module
@@ -82,21 +82,30 @@ afterAll(() => {
   restoreRoles(ambientRoles, ambientRoleSites);
 });
 
-describe('the module-scope permission registration', () => {
-  // Imported dynamically, inside the test: a static import would register admin's four names in
-  // every process that merely loads this file, which is the hazard being pinned.
-  test('registering by import alone is what lets an app never declare admin:*', async () => {
-    const { adminPermissions } = await import('./policy-bridge');
+describe('the admin permission registration', () => {
+  test('importing the bridge declares nothing — an empty set stays permissive', async () => {
+    clearPermissions();
+    // A FRESH evaluation, by a specifier no earlier file can have loaded: a module evaluates once
+    // per process, so a plain `import('./policy-bridge')` after another suite imported it runs no
+    // module scope at all and this test could not fail.
+    const fresh: string = `./policy-bridge.ts?fresh=${String(Date.now())}`;
+    await import(fresh);
 
-    expect(adminPermissions.all).toEqual([...ADMIN_PERMISSIONS]);
-    for (const permission of ADMIN_PERMISSIONS) {
-      expect(knownPermissions()).toContain(permission);
-    }
+    expect(knownPermissions()).toEqual([]);
+  });
+
+  test('declareAdminPermissions is the explicit call, and it declares admin:* with what it is handed', async () => {
+    clearPermissions();
+    const { declareAdminPermissions } = await import('./policy-bridge');
+    declareAdminPermissions(['posts:read', 'not a permission']);
+
+    expect([...knownPermissions()].sort()).toEqual([...ADMIN_PERMISSIONS, 'posts:read'].sort());
   });
 
   test("an app's own set survives it — declaration adds, it never replaces", async () => {
     definePermissions(['post:read', 'post:publish']);
-    await import('./policy-bridge');
+    const { declareAdminPermissions } = await import('./policy-bridge');
+    declareAdminPermissions([]);
 
     // If `definePermissions` ever replaced instead of merging, one of these two sets would be gone
     // and every `can()` in the losing half would throw X_PERMISSION_UNKNOWN at declaration time —
@@ -109,14 +118,13 @@ describe('the module-scope permission registration', () => {
 
 /**
  * The bridge is imported DYNAMICALLY and every registration below is undone in the `afterAll`
- * above. `definePermissions` writes a process-global registry whose EMPTY state is permissive, and
- * merely importing `policy-bridge` registers admin's four names — doing either at this file's
- * module scope makes every later FILE in the run declare `can('post:read')` into
- * `X_PERMISSION_UNKNOWN`. Measured: 247 failures across `action`, `query`, `mcp` and `ai`.
+ * above. `definePermissions` writes a process-global registry whose EMPTY state is permissive —
+ * declaring at this file's module scope makes every later FILE in the run declare
+ * `can('post:read')` into `X_PERMISSION_UNKNOWN`. Measured: 247 failures across `action`, `query`,
+ * `mcp` and `ai`.
  *
- * `ADMIN_PERMISSIONS` is declared here as well as by the import, because `definePermissions` merges
- * and a module evaluates once per process: a re-run of this hook in a process where something
- * already cleared them would otherwise fail at `definePolicy('admin:read')`.
+ * `ADMIN_PERMISSIONS` is declared here because no `defineAdmin()` runs in this file, and
+ * `definePolicy('admin:read')` below needs the name.
  */
 let authz: AdminAuthz;
 

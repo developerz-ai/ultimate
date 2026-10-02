@@ -35,6 +35,9 @@ export const plainDecimal = (value: number | bigint): string => {
   return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
 };
 
+/** Either side may be the JS number: a cursor revives one, and one driver returns one. */
+const plain = (value: unknown): unknown => (isNumber(value) ? plainDecimal(value) : value);
+
 /**
  * `-1`, `0` or `1` for a column value against an operand — or `undefined` when the pair is not a
  * numeric comparison at all (a NULL, a string in an integer column), which every caller reads as
@@ -48,9 +51,7 @@ export const numericOrder = (
   value: unknown,
   operand: unknown,
 ): number | undefined => {
-  if (decimal) {
-    return compareDecimalText(value, isNumber(operand) ? plainDecimal(operand) : operand);
-  }
+  if (decimal) return compareDecimalText(plain(value), plain(operand));
   if (!isNumber(value) || !isNumber(operand)) return undefined;
   return value < operand ? -1 : value > operand ? 1 : 0;
 };

@@ -4,6 +4,8 @@
  * filters + orderBy + limit; anything else throws X_MATCHER_UNSUPPORTED, because
  * an honest refusal beats a silently wrong result set.
  */
+import type { KindOf } from './column-kinds';
+import { kindsOf } from './column-kinds';
 import { MatcherUnsupportedError, QueryNotPageableError } from './errors';
 import type { QueryShape } from './shape';
 import { compareRows, matchesFilters, totalOrder } from './shape';
@@ -58,7 +60,10 @@ export function match<TRow extends object>(
   const id = idOf(event.row, shape.entity);
   const index = rows.findIndex((row) => idOf(row, shape.entity) === id);
   const inSet = index >= 0;
-  const belongs = event.op !== 'delete' && matchesFilters(event.row, shape.filters);
+  // The declared kinds of the relation's columns, resolved once for this event: every comparison
+  // below is `@ultimat3/entity`'s, asked under the kind Postgres would decide by.
+  const kindOf = kindsOf(shape.entity);
+  const belongs = event.op !== 'delete' && matchesFilters(event.row, shape.filters, kindOf);
 
   if (event.op === 'delete' || (inSet && !belongs)) {
     return inSet ? removeAt(shape, index, id, true, rows.length) : [];
@@ -81,14 +86,14 @@ export function match<TRow extends object>(
     return [{ kind: 'refill', from: 0 }];
   }
 
-  if (!inSet) return insert(shape, rows, event.row);
+  if (!inSet) return insert(shape, rows, event.row, kindOf);
 
   // Present and still matching: a change to an ordering column is a move, not an update.
   const current = rows[index];
   const moved =
     shape.orderBy.length > 0 &&
     current !== undefined &&
-    compareRows(event.row, current, shape.orderBy) !== 0;
+    compareRows(event.row, current, shape.orderBy, kindOf) !== 0;
   if (!moved) return [{ kind: 'update', position: index, row: event.row }];
 
   const without = [...rows.slice(0, index), ...rows.slice(index + 1)];
@@ -100,12 +105,12 @@ export function match<TRow extends object>(
   // window is `[b, c, d]`. Whether the moved row is still in the window is the server's answer
   // too, so the refill covers both.
   const wasFull = shape.limit !== null && rows.length >= shape.limit;
-  if (wasFull && positionFor(shape, without, event.row) >= without.length) {
+  if (wasFull && positionFor(shape, without, event.row, kindOf) >= without.length) {
     return removeAt<TRow>(shape, index, id, true, rows.length);
   }
   return [
     ...removeAt<TRow>(shape, index, id, false, rows.length),
-    ...insert(shape, without, event.row),
+    ...insert(shape, without, event.row, kindOf),
   ];
 }
 
@@ -113,8 +118,9 @@ function insert<TRow extends object>(
   shape: QueryShape,
   rows: readonly TRow[],
   row: TRow,
+  kindOf: KindOf,
 ): readonly Patch<TRow>[] {
-  const position = positionFor(shape, rows, row);
+  const position = positionFor(shape, rows, row, kindOf);
   // Sorted past the end of a full window: the row exists but nobody sees it.
   if (shape.limit !== null && position >= shape.limit) return [];
   const patches: Patch<TRow>[] = [{ kind: 'add', position, row }];
@@ -186,10 +192,11 @@ export function positionFor<TRow extends object>(
   shape: QueryShape,
   rows: readonly TRow[],
   row: TRow,
+  kindOf: KindOf = kindsOf(shape.entity),
 ): number {
   if (shape.orderBy.length === 0) return rows.length;
   const order = totalOrder(shape.orderBy);
-  const found = rows.findIndex((current) => compareRows(row, current, order) < 0);
+  const found = rows.findIndex((current) => compareRows(row, current, order, kindOf) < 0);
   return found === -1 ? rows.length : found;
 }
 

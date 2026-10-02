@@ -208,8 +208,8 @@ the first realtime hook. Records answered earlier wait in core's pending buffer.
 | a new principal | `rescope()` clears every record |
 
 **`@ultimat3/query/client` is a second import path, deliberately.** It is the browser entry of
-`queryClient`, like `@ultimat3/entity/record`: 10,899 B against 23,997 B through the barrel
-(`As of 2026-10-01`, `bun build --target=browser --minify`, per `packages/query/CLAUDE.md`). The barrel's extra cost
+`queryClient`, like `@ultimat3/entity/record`: 11,012 B against 25,237 B through the barrel
+(`As of 2026-10-02`, `bun build --target=browser --minify`, per `packages/query/CLAUDE.md`). The barrel's extra cost
 is its anchored registry, which a browser never needs. `browser-transport` refuses the barrel in
 browser code (`X_BROWSER_SERVER_BARREL`), so the second path is enforced, not optional.
 
