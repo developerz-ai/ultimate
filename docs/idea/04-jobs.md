@@ -147,7 +147,8 @@ A `task` only enqueues. The `scheduler` role is a fixed single instance elected 
 |---|---|
 | `/_x` dev panel | queue depth per queue, in-flight, failed, step timeline per job |
 | `x jobs ls --json` / `x jobs show <id> --json` | machine-readable state, step results, next retry |
-| MCP tools | `jobs.list`, `jobs.status`, `jobs.retry` — same authz as the actions |
+| admin `/admin/jobs` | the jobs dashboard every `defineAdmin()` serves — runs, queues, tasks, workers, overview; reading is `job:read`, every control `job:manage` |
+| MCP tools | the dashboard's own admin tools — `admin.x_jobs.list`, `admin.x_jobs.read`, `admin.action.job.retry`, `admin.x_job_tasks.list`, … — same authz as the screens; the dev server's `jobs.inspect` and `queue.depth` |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
 
 Errors follow the contract: `X_JOB_MAX_ATTEMPTS`, `X_IDEMPOTENCY_REQUIRED`, `X_STEP_DUPLICATE`, each with a `fix:` command. The full table is [`../architecture/08-jobs-internals.md`](../architecture/08-jobs-internals.md).

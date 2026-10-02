@@ -38,7 +38,7 @@
     color: t.role('fg');
 
     @include t.motion {
-      transform: translateY(-2px);
+      transform: translateY(t.rem(-2px));
     }
   }
 }

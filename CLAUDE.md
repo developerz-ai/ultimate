@@ -19,26 +19,25 @@ versioned and published in lockstep: one version, one commit, one tag, 31 tarbal
 the eight primitive shapes, the `x` CLI surface and the tier table are as stable as the `X_*` codes.
 
 **This page states no version number, deliberately.** Every fact below is a command:
-**run the right-hand column — never quote the left.** How each of these came to be is
-[`docs/history/publishing-and-provenance.md`](docs/history/publishing-and-provenance.md).
+**run the right-hand column — never quote the left.** What each answer means:
+[`PUBLISHING.md`](PUBLISHING.md#facts-as-commands); history:
+[`publishing-and-provenance.md`](docs/history/publishing-and-provenance.md).
 
 | Fact | Read it yourself |
 |---|---|
-| what this tree is stamped at, per workspace | `bun run scripts/list-workspaces.ts --json` — `.data[].version`; one value across every workspace, or the tree is out of lockstep |
-| the whole repository is stamped at one version | `bun run scripts/release.ts --check <version>` — exits 1 and names every finding when it is not |
-| the release workflow names every publishable workspace | `bun run scripts/release-workflow.ts --json` |
-| every one of them is on npm at that version, attested | `bun run scripts/registry-audit.ts --json` — also names a new package owing its one bootstrap publish ([`PUBLISHING.md`](PUBLISHING.md) step 1) |
-| what npm serves, and what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
-| provenance on a release | `npm view @ultimat3/core@<version> dist.attestations _npmUser` — `GitHub Actions` is the workflow; a person's name is a hand publish with no attestation |
-| the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — the ref **and** its peeled `^{}` line. Not `git tag --list`, which reads the local repository. `git tag -a` only: `--follow-tags` never pushes a lightweight tag |
-| the GitHub Release exists — the Release triggers the workflow | `gh release view v<version> --json tagName,isDraft,publishedAt` |
-| the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
-| which majors have shipped, and what each one breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
+| the stamped version, per workspace | `bun run scripts/list-workspaces.ts --json` — `.data[].version` |
+| the whole repository is at one version | `bun run scripts/release.ts --check <version>` |
+| the workflow names every publishable workspace | `bun run scripts/release-workflow.ts --json` |
+| every one is on npm at that version, attested | `bun run scripts/registry-audit.ts --json` |
+| what npm serves | `npm view @ultimat3/core version` |
+| provenance on a release | `npm view @ultimat3/core@<version> dist.attestations _npmUser` |
+| the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — `git tag -a` only |
+| the GitHub Release exists | `gh release view v<version> --json tagName,isDraft,publishedAt` |
+| the OIDC trusted publisher is attached | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` |
+| which majors shipped, and what each breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md) |
 
-**The `npm-publish` environment has no required reviewers** (owner's decision, 2026-09-05). The
-gate is `release.yml`'s `check` job — it waits for `ci.yml`'s verdict on the tagged commit and runs
-`scripts/release.ts --check` — plus the environment's `v*` deployment tag rule; `publish` cannot
-start without `check`.
+**The `npm-publish` environment has no required reviewers** (owner's decision, 2026-09-05): the
+gate is `release.yml`'s `check` job plus the `v*` deployment tag rule.
 
 ## Design axioms (override any instinct that conflicts)
 
@@ -73,13 +72,15 @@ Run everything from the repo root.
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
+| test services | `docker compose -f docker/docker-compose.test.yml up -d --wait`, then `set -a; . docker/test-services.env; set +a` — in RAM, silent; unset, live suites skip |
 | test (one name) | `bun test packages/core/src/errors.test.ts -t '<name>'` — **always with a path**: a bare `-t` loads every test file into one process |
-| coverage, per package | `bun run coverage` · `bun run coverage:package <pkg>` |
+| coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
 | **the app gate** | `bun run scripts/reference-app-gate.ts` — both tracked apps built (`x build --target static`) then verified, blocking on a ratchet: a passing step must keep passing, a step pinned in `expectedRed` (`scripts/lib/gated-apps.ts`) must still fail |
 | shrink the ratchet | `bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]` |
-| a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --fix '…'` — writes the registration and its `wiki/Error-Codes.md` row together |
+| a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket)` — writes the registration, its `wiki/Error-Codes.md` row and its HTTP status decision together. Tier ≤ 4 takes exactly one of the two flags, tier 5 neither |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |
+| both tracked apps' schema dumps | `bun run schema-dumps` regenerates `packages/db/schema/` in each · `--check` only reports |
 | stale `@ultimat3/*` ranges in `bun.lock` | `bun run lockfile` reports, `bun run lockfile:fix` performs the edit |
 | the CLI, in-repo | `bun run x -- <args>` (e.g. `bun run x -- doctor --json`) |
 | **every guard** | [`docs/architecture/guards.md`](docs/architecture/guards.md) — generated from each guard's header by `bun run scripts/guards-doc.ts --write`, drift refused by `--check` |
@@ -188,25 +189,18 @@ a list, never a count or an ordinal: `PRIMITIVE_FACTORIES` in the same file, hel
 
 ## CI
 
-Free runners (`ubuntu-latest`), never a paid one. Target under 5 minutes.
-`awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}' .github/workflows/ci.yml` re-derives the jobs:
+Free runners (`ubuntu-latest`), never a paid one. Target under 5 minutes. One runner per unit
+([why](docs/history/ci-split.md)); each job's question is the comment above it in `ci.yml`.
+`awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}' .github/workflows/ci.yml` re-derives the jobs.
 
-| Job | The question only it answers |
-|---|---|
-| `verify` | the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its **steps**, never a second job |
-| `reference-app-verify` | both tracked apps, built then gated, on their ratchet |
-| `scaffold-smoke` | `x new` → `bun install` → the documented first run → the scaffolded app's own `x verify`, outside the checkout |
-| `container` | `docker/` as a built artifact, ending in the runtime stage's own `/app/x --version`, plus `helm template` assertions |
-| `deploy-proof` | a kind cluster, the scaffolded chart installed and then upgraded under load, failing on a single non-2xx (`docker/deploy-proof/run.sh`). `main` pushes and manual dispatch only |
-| `packages` | each package tested and covered **alone** (`bun run scripts/coverage-gate.ts --all`) |
+- `gate` — the gate in parts: `x verify --only <steps>` per runner, `unit` sharded. Never a
+  verdict, and never a lint/typecheck job beside it.
+- `verify` — the verdict: `x verify merge` over the parts, red for a step no part ran.
 
-| Workflow | Trigger | What it does |
-|---|---|---|
-| `ci.yml` | push to `main`, every PR | the jobs above |
-| `release.yml` | a **published** GitHub Release | every publishable workspace to npm via OIDC trusted publishing, after the `check` job; the list is derived by `scripts/release-workflow.ts` |
-| `registry-audit.yml` | daily cron | `scripts/registry-audit.ts`; files a `registry-drift` issue when the tree and the registry disagree |
-| `deploy-social-demo.yml` | push to `main` | builds and publishes the demo app's production image |
-| `wiki.yml` | push to `main` | mirrors `wiki/` into the GitHub wiki |
+Other workflows, each explained by its own header: `release.yml` (a **published** GitHub Release
+→ npm via OIDC trusted publishing, after `check`), `registry-audit.yml` (daily; a `registry-drift`
+issue on disagreement), `deploy-social-demo.yml` (green `ci` on `main` → the demo image),
+`wiki.yml` (push to `main` → the GitHub wiki).
 
 ## Note
 

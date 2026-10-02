@@ -7,7 +7,7 @@ import type { Finding } from './log';
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 
 export interface AdminWalk {
-  /** `http://127.0.0.1:<port>` — also the `Origin` a form post has to name. */
+  /** `http://localhost:<port>`, the name `x dev` binds — also the `Origin` a form post names. */
   readonly base: string;
   /** The resource's admin path segment: its table, `smoke_resources`. */
   readonly resource: string;

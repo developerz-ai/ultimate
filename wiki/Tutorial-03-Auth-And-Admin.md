@@ -196,28 +196,31 @@ Two different things share the word.
 
 | Surface | Is | Gated by | Available |
 |---|---|---|---|
-| `/_x` | the **dev** dashboard from `@ultimat3/admin`, 11 panels | dev-only, never mounted in `ROLE=web` | in `x dev`, immediately |
-| `apps/admin/` | a generated Ultimate app running `ROLE=web` | `admin:read` on the route config | a one-page shell; you build the screens |
+| `/_x` | the **dev** dashboard from `@ultimat3/admin/dev` — routes, timeline, live, jobs, db, mail, cache, policy, manifest (`DEV_PANELS`) | dev-only, never mounted in production | in `x dev`, immediately |
+| `apps/admin/` | the app's own admin, served by `defineAdmin()` under `ROLE=web` | the app's role map (`roleAuthz()`), permission by permission | in `x dev`, immediately: a list, a detail and a form per entity, the audit log, and the jobs dashboard at `/admin/jobs` |
 
-The scaffolded shell, `As of 2026-08`:
+The scaffold writes a declaration, not a page, `As of 2026-10`:
 
 ```ts
-// apps/admin/app/admin/page.tsx
-export const config = defineRoute({
-  render: 'ssr',
-  hydrate: 'idle',
-  offline: 'network-only',
-  // Behind auth, so the mode has to render per request: `ssr` and `stream` both do, and both take
-  // a `policy`. `static` and `isr` refuse one outright — a file on disk has no actor to decide
-  // against, and an ISR document is cached per URL, so the first actor's HTML would be served to
-  // every later one who passes the same policy.
-  policy: { permission: 'admin:read' },
-  budget: { js: '120kb' },
-  meta: ({ t }) => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
+// apps/admin/app/admin/admin.ts
+import { db } from '@myapp/db';
+import { adminEntitiesOf, defineAdmin } from '@ultimat3/admin';
+
+export const admin = defineAdmin({
+  // Every entity on the typed handle is a screen; `entities: [post]` names them one by one instead.
+  entities: adminEntitiesOf(db),
+  db,
 });
 ```
 
-**`app/admin/page.tsx`, not `app/page.tsx`** — the directory is the URL relative to the surface root, so the shallower path resolves to `/` and collides with `apps/web/site/page.tsx`: `x dev` loads both surfaces into one route table, and the scaffold used to fail its own `x routes` with `X_ROUTE_DUPLICATE`. `x new` now writes the deeper path, and `/admin` is also `@ultimat3/admin`'s own `basePath` default, so the two agree rather than merely not clashing. Nothing to move.
+There is no `page.tsx`, no repo adapter and no screen glue: `defineAdmin()` serves
+`/admin/<table>` from the entity and reads rows through the app's handle. A page file on a path the
+admin mounts is `X_ROUTE_DUPLICATE`; a `defineAdmin()` under `apps/*/src/`, which no boot
+imports, is `X_ADMIN_UNSCANNED`. Who may do what is `apps/web/shared/roles.ts`: `admin:read` +
+`<table>:read` to look, `admin:write` + `<table>:write` to create or edit, `admin:destroy` +
+`<table>:delete` to delete; `x g entity` and `x g resource` grant a new table's three to `admin`.
+`job:read` opens the jobs dashboard and `job:manage` runs its controls. A permission a mounted
+admin route asks for and no role grants is `X_PERMISSION_UNGRANTED` in the `policy` step.
 
 ### Per-entity screens
 
@@ -225,22 +228,75 @@ export const config = defineRoute({
 bunx x g resource note --admin
 ```
 
-```text
-  + apps/web/app/note/admin/resource.ts
-  + apps/web/app/note/admin/resource.test.ts
-```
-
-The override is the only hand-written part; fields, operations and detail layout derive from the entity.
+`--admin` adds two files to the slice — `apps/web/app/note/admin/resource.ts` and its test — and
+lists the override under `resources:` in `apps/admin/app/admin/admin.ts` in the same run. The
+override is the only hand-written part; fields, operations, filters and forms derive from the entity.
 
 ```ts
 export const noteAdminResource: AdminResourceOptions<AdminRow> = {
-  titleKey: 'admin.note.title',
-  listFields: ['id', 'title', 'createdAt'],
+  // Columns of the entity, in its own order — read off the entity this run wrote.
+  listFields: ['title', 'price', 'createdAt'],
   pageSize: 25,
 };
 ```
 
-It imports `@ultimat3/admin`, which the scaffold does not depend on — `TS2307: Cannot find module '@ultimat3/admin'` until you `bun add @ultimat3/admin@1.1.0`. Wire it in once with `defineAdmin({ entities: [...], resources: { notes: noteAdminResource } })`.
+### Detail pages, actions, batches
+
+Everything past the list is declared on the same call. The reference app's operator view
+(`examples/dummy/apps/admin/app/admin/admin.ts`), cut to one resource and one action:
+
+```ts
+import { db, LIVE_RUN_STATUSES, runEvents, runs } from '@postly/db';
+import { api } from '@postly/web/api';
+import { defineAdmin } from '@ultimat3/admin';
+import { useContext } from '@ultimat3/core';
+
+export const admin = defineAdmin({
+  entities: [runs, runEvents],
+  db,
+  resources: {
+    runs: {
+      operations: ['list', 'detail', 'search'],
+      scopes: {
+        running: { where: [{ field: 'status', op: 'eq', value: 'running' }], count: true },
+        failed: { where: [{ field: 'status', op: 'eq', value: 'failed' }], count: true },
+      },
+      // A `hasMany` of the entity, drawn as `run_events`' own list filtered to this run.
+      related: ['run_events'],
+    },
+  },
+  actions: [
+    {
+      name: 'run.cancel',
+      permission: 'run:write',
+      entity: runs.$name,
+      // Decides the button on each row, and is asked again on the server before `handle`.
+      when: (row) => LIVE_RUN_STATUSES.some((status) => status === row['status']),
+      // A checkbox per row and an "all matching" choice in the list's batch bar.
+      batch: true,
+      handle: ({ input }) => {
+        const actor = useContext().actor;
+        return api.actions.cancelRun.as(actor, {
+          orgId: actor.orgId ?? '',
+          runId: String(input['id']),
+        });
+      },
+    },
+  ],
+});
+```
+
+| Declared | Served |
+|---|---|
+| `sections`, `formGroups`, `fields.<f>.hintKey`, `fields.<f>.on` | titled groups on the detail and the forms; a hint under a control; a field on one side of create/update only |
+| `related` | the related resource's own list — its columns, its row scope, its policy — under the row |
+| `input: t.object({ … })` on an action | the action's own form at `/admin/<entity>/<id>?action=<name>`, 422 with each issue on its field |
+| `when` | the button only where it applies; a forged post is `X_ADMIN_ACTION_NOT_APPLICABLE` (409) |
+| `batch` | checked rows or every row the list's URL matches, each through the button's gate and audited; past `batch.threshold` rows, `admin.batch` jobs on the worker |
+
+No island ships for any of it: the checkboxes join the batch form by their `form` attribute and a
+confirmation is a server round trip, so the admin stays at zero JavaScript. Every action is also
+an MCP tool, `admin.action.<name>`.
 
 ### The rules the admin never breaks
 
@@ -268,6 +324,7 @@ A tool a caller may not see is absent from `tools/list` and answers ToolNotFound
 | a permission string nothing declared | `typecheck` | `PermissionRegistry` augmentation narrows `can()` |
 | a route reading a table with no org predicate | `contract` | `X_TENANCY_UNSCOPED` |
 | a grant nothing enforces | — | not a gate; read the `x policy list` columns |
+| a permission a mounted admin route asks for that no role grants | `policy` | `X_PERMISSION_UNGRANTED` |
 
 ## Next
 

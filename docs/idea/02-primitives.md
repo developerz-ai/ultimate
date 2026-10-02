@@ -245,7 +245,7 @@ rather than from a call site.
 
 | Aspect | Rule |
 |---|---|
-| Projects to | queue row, per-step persistence, retry schedule, dashboard entry, MCP `jobs.status` tool |
+| Projects to | queue row, per-step persistence, retry schedule, a row on the admin's jobs dashboard (`/admin/jobs/runs`), admin MCP tools `admin.x_jobs.read` / `admin.action.job.retry` |
 | Owns | retries, steps, concurrency class |
 | Never | assume it runs once — assume at-least-once. Durable business state lives in your tables, never only in the payload |
 
@@ -301,7 +301,7 @@ following day, which becomes a wrong idempotency key that nothing downstream cat
 
 | Aspect | Rule |
 |---|---|
-| Projects to | scheduler entry (lease-row leader), next-run introspection, MCP `tasks.list` |
+| Projects to | scheduler entry (lease-row leader), next-run introspection (`nextTaskRun`), a row on `/admin/jobs/tasks`, admin MCP tool `admin.x_job_tasks.list` |
 | Owns | cron expression + explicit `tz` |
 | Never | contain a handler body. If it does work, it is a `job` |
 

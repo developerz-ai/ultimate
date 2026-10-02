@@ -6,11 +6,14 @@
 import { resolveEnvironment } from '@ultimat3/core';
 import { type Driver, database, memoryDriver, postgresDriver } from '@ultimat3/entity';
 import { comments } from './schema/comments';
+import { connections } from './schema/connections';
 import { likes } from './schema/likes';
 import { members } from './schema/members';
 import { orgs } from './schema/orgs';
 import { plans } from './schema/plans';
 import { posts } from './schema/posts';
+import { runEvents } from './schema/run-events';
+import { runs } from './schema/runs';
 
 /**
  * One driver, NAMED rather than defaulted, and exported so the test preload seeds through the same
@@ -38,9 +41,16 @@ export const selectDriver = (env: Readonly<Record<string, string | undefined>>):
 export const driver = selectDriver(Bun.env);
 
 /**
+ * The entity set, named so `x g entity` has a list to add to: the generator edits THIS literal
+ * (`X_DB_HANDLE_UNREGISTERED` when it finds none), and a handle built from an inline object gave
+ * it nothing to find.
+ */
+const entities = { comments, connections, likes, members, orgs, plans, posts, runEvents, runs };
+
+/**
  * Only a feature's `repo.ts`, a `query`'s `sql`, a migration, or a seed may use this.
  * A route or a component importing `db` is `X_BOUNDARY_VIOLATION`.
  */
-export const db = database({ comments, likes, members, orgs, plans, posts }, { driver });
+export const db = database(entities, { driver });
 
 export type Db = typeof db;

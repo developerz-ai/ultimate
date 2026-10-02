@@ -98,6 +98,21 @@ server-side prepare — which is the shape that survives transaction pooling. **
 Bun version before you pool in transaction mode.** If in doubt, session mode is correct and costs
 you only multiplexing.
 
+**The job queue's wake does not cross a transaction-mode pooler.** A `worker` pod holds one
+`LISTEN` session so a job another pod commits starts in milliseconds
+([Jobs and workflows](../../wiki/Jobs-And-Workflows.md#idle-cost-and-pickup-latency)). In
+transaction mode the `LISTEN` lands on a backend the pooler takes back at once and nothing is
+ever delivered.
+
+| Through | The wake | Pickup of a job another pod enqueued, worker idle | Idle claims a minute, per loop |
+|---|---|---|---|
+| direct, or `pool_mode = session` | proven: `jobs.wake.live` at boot | milliseconds | 12 |
+| `pool_mode = transaction` | never proven: `jobs.wake.unverified`, once, at warn | within `idlePollMaxMs` — 2 s | 30 |
+
+Nothing is lost either way: the poll is the guarantee and the wake only shortens it. To keep the
+wake behind a transaction pooler, point the `worker` role's `DATABASE_URL` at the primary or at a
+session-mode pool — the session costs one connection per worker pod, outside the role's pool.
+
 Three more pooler lessons, each paid for:
 
 | Trap | What happens |
