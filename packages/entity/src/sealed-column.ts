@@ -74,7 +74,11 @@ export const makeSealedColumn = <T extends Text, Optional extends boolean, Looku
 };
 
 /** What `.sealed(options)` turns the declared meta into. */
-const sealedMeta = (meta: ColumnMeta, options: SealedOptions): ColumnMeta => {
+const sealedMeta = (
+  meta: ColumnMeta,
+  options: SealedOptions,
+  plaintext: (value: unknown) => unknown,
+): ColumnMeta => {
   if (meta.default !== undefined) {
     refuseSealed(
       'given a default',
@@ -96,7 +100,7 @@ const sealedMeta = (meta: ColumnMeta, options: SealedOptions): ColumnMeta => {
     );
   }
   const { check: _check, length: _length, ...rest } = meta;
-  return { ...rest, sealed: { lookup } };
+  return { ...rest, sealed: { lookup, plaintext } };
 };
 
 export const makeTextColumn = <T extends Text, Optional extends boolean>(
@@ -114,6 +118,6 @@ export const makeTextColumn = <T extends Text, Optional extends boolean>(
     default: (value) => again(base.default(value)),
     column: (name) => again(base.column(name)),
     sealed: (options = {}) =>
-      makeSealedColumn(sealedMeta(meta, options), sealedParse(parse), optional),
+      makeSealedColumn(sealedMeta(meta, options, parse), sealedParse(parse), optional),
   };
 };

@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 23.x → 24.0.0 | **43** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, and `v2` signed URLs that name their disk | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 23.x → 24.0.0 | **49** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, and a malformed policy decision that denies | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
@@ -72,11 +72,11 @@ Each entry changes a surface the table below covers.
 
 ## 23.x → 24.0.0, entry by entry — **unreleased**
 
-**Forty-three entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+**Forty-nine entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
 `[Unreleased]` entries in their order: grouped by package, lowest tier first. No legacy path, no
 codemod, no compatibility shim — every break is a build error or an `X_*` error naming the rewrite.
 `As of 2026-10` slices 01–03 have landed: `@ultimat3/schema` and `@ultimat3/core`; tier 1 —
-`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry. A later slice appends
+`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry; then tier 2's `entity` and `policy`. A later slice appends
 its rows below the last one and never renumbers.
 
 ### The upgrade, top to bottom
@@ -96,13 +96,16 @@ its rows below the last one and never renumbers.
 | 11 | load the app once (`x verify --only unit`) and rename each cache tag and `revalidate.tags` entry it refuses | `X_ROUTE_MODE_INVALID` at registration; `X_CACHE_PURGE_FAILED` where a tagged response is built | 33, 43 |
 | 12 | `x verify --only unit,contract,e2e` and fix the tests it fails; add the real media types to each upload policy; pass `{ formats: FORMAT_ORDER }` where your driver encodes AVIF | a header or `<picture>` snapshot that changed; `X_STORAGE_TOO_LARGE` from a `get()`; an upload refused for its sniffed type | 32, 34, 38, 40, 42 |
 | 13 | after the deploy: list and delete the old-shape image variants; expect signed URLs minted before it to fail for 15 minutes; purge the CDN once if a collection bust must reach older edge copies | orphaned variant files; an outstanding signed URL that no longer verifies | 32, 39, 41 |
-| 14 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+| 14 | `bun run typecheck` for tier 2: add `transactor()` to a hand-built or wrapping `Driver`, import `dbDrift` from `@ultimat3/db`, retype a `403` denial status as `DenialStatus` | TS2741 / TS2305 / TS2322 at each site | 44, 45, 48 |
+| 15 | `x verify --only unit,contract,policy` and fix the tests it fails; read every `catch` around `assertAllowed` and every policy predicate's return | `X_UNAUTHENTICATED` and a 401 where a test expected `X_FORBIDDEN` and 403; a denial where a malformed decision allowed; `X_INVARIANT_VIOLATED` from a preload over 10,000 rows | 46–49 |
+| 16 | `x verify` | green, or a finding whose `fix:` is the edit | — |
 
 ### Entry by entry
 
 Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@ultimat3/i18n` (17),
 `@ultimat3/time` (18–21), `@ultimat3/db` (22–29), `@ultimat3/flags` (30–31), `@ultimat3/cache`
 (32–33), `@ultimat3/seo` (34), `@ultimat3/storage` (35–42). Tier 4 — `@ultimat3/render` (43).
+Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
@@ -149,6 +152,12 @@ Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@u
 | 41 | signed URLs on the local and memory disks | always: URLs minted before the deploy stop verifying (15 minutes by default) — a client retries with a fresh grant. A caller of `canonicalRequest` / `signConstraints` adds the base path: `signedUrlBasePath(baseUrl)` |
 | 42 | upload policies | a policy allowed `video/mp4` and took AVIF, HEIC, MOV, M4A or 3GP under it. Add `image/avif`, `image/heic`, `video/quicktime`, `audio/mp4`, `video/3gpp` as needed |
 | 43 | a route's `revalidate.tags` | a tag holds whitespace or a comma. `X_ROUTE_MODE_INVALID` at registration, naming the file. Rename the tag |
+| 44 | a hand-built `Driver`, a hand-built `SealedMeta` | you ship or wrap an entity driver: add `transactor()` — a wrapper writes `transactor: () => inner.transactor()` (TS2741). A hand-built `SealedMeta` adds `plaintext` |
+| 45 | `dbDrift`, `ENTITY_ERROR_CODES` from `@ultimat3/entity` | you import `dbDrift` from entity: `import { dbDrift } from '@ultimat3/db'` (TS2305). A list built from `ENTITY_ERROR_CODES` no longer holds `X_DB_DRIFT` |
+| 46 | `preload(relation)` | one page attaches more than 10,000 related rows. `X_INVARIANT_VIOLATED`; pass the bound the relation really has: `.preload('comments', { max: 50000 })`, or page the relation itself |
+| 47 | `assertAllowed` | a `catch` or a test expects `X_FORBIDDEN` for a caller with no actor, or for a `denied(reason, code)` with the app's own code. It is `X_UNAUTHENTICATED`, or that code, as a `PolicyDenialError` |
+| 48 | `HttpDenial.status`, `problem.status`, `problem.title` | you type either status as `403`, or assert on them: no actor is 401, and the title is the code's registered title. Type them `DenialStatus` |
+| 49 | policy predicates, `definePolicy({ check })` | one returns something other than a boolean or a `PolicyDecision` — `{ allowed: 'yes' }`, an object from another library, nothing. It denies now. Return `true`, `false` or `denied(reason, code)` |
 
 Entry 39, the orphaned variants. These commands were **not run against a real disk or bucket** for
 this page — list first, read the list, then delete. The pattern matches a variant of either shape,
@@ -186,6 +195,11 @@ aws s3 ls s3://<bucket> --recursive | grep -E '@(full|[whq][0-9]+|cover|contain)
 | storage error codes | a refused write is `X_STORAGE_PUT_FAILED`, a refused read `X_STORAGE_READ_FAILED`, a local-disk key under another key `X_STORAGE_KEY_CONFLICT` — each was a bare error. An empty org is `X_STORAGE_ORG_MISMATCH` (404), was `X_STORAGE_PATH_UNSAFE` (400) |
 | `GET /_storage/:disk/*key` | no `Last-Modified` when the disk reports no date |
 | the Redis cache tier | one extra round trip before each `load()` and one after the `SET`; a fill whose load outlives 60 s is not written to Redis |
+| `transition(column, id, move)` | an `undefined` or `null` id is `X_NOT_FOUND` and moves no row; on Postgres it moved every row in the `from` state |
+| entity tests on `memoryDriver()` | a unique declared as `invariant(name, c.unique([...]))` is enforced (`X_DB_UNIQUE_VIOLATION`); `bigint()` refuses a value outside int8; `trimmed()` strips spaces only; `url()` refuses what the column's CHECK refused — each as Postgres already did |
+| `update` / `updateWhere` under an app-only invariant | on Postgres a refused write is rolled back; it used to stay written |
+| seed `dryRun` | runs every verb in a transaction and rolls back, so its metrics are a real run's and a seed that would fail fails |
+| drift findings | each `fix:` is one runnable command, mostly `psql "$DATABASE_URL" -c '…'` then `x db migrate` |
 | a zone that is not a string | `X_TIMEZONE_INVALID` from every zoned function in `@ultimat3/time`, was a bare `TypeError` |
 
 ### Where the sites are
@@ -198,6 +212,7 @@ grep -rnE "(ssl|enabled|expose): *process\.env" apps packages --include=*.ts
 grep -rnE "withTransaction\(" -A12 apps packages --include=*.ts | grep -E "catch|Promise\.all|isolation|readOnly|deferrable|client:"
 grep -rnE "formatRelative\(|addDaysInZone\(|formatDuration(Iso)?\(|cron: |expiresAt|reportEveryMs|introspect\(|\.generated\b|DriftKind" apps packages --include=*.ts --include=*.tsx
 grep -rnE "promoteAttachment\(|\.lastModified|implements StorageDriver|: StorageDriver = |canonicalRequest\(|signConstraints\(|variantKey\(|fitDimensions\(|\.get\(|allowedContentTypes|responsiveImage\(|usableWidths\(|declareTags\(|revalidate:" apps packages --include=*.ts --include=*.tsx
+grep -rnE "assertAllowed\(|X_FORBIDDEN|definePolicy\(|status: 403|\.preload\(|dbDrift|ENTITY_ERROR_CODES|: Driver = |implements Driver" apps packages --include=*.ts --include=*.tsx
 ```
 
 Tier 0: the `typecheck` step finds none of 1–16 — every entry is a value, not a type. A typed
@@ -214,6 +229,10 @@ read every `catch` and every `Promise.all` inside a `withTransaction` body.
 Slice 03: the `typecheck` step finds 35, 36, 37 and the changed signatures of 41. Entry 43 throws
 at registration and 33 where the response is built. It finds none of 32, 34, 38, 39, 40 or 42 —
 run the unit, contract and e2e suites, and do step 13 by hand after the deploy.
+
+Slice 04, entity and policy: the `typecheck` step finds 44, 45 and a `403`-typed status in 48. It
+finds none of 46, 47 or 49, nor a test asserting on 48's status or title — run the unit, contract
+and policy suites.
 
 ## 22.x → 23.0.0, entry by entry
 

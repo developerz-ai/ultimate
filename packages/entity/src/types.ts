@@ -167,6 +167,12 @@ export interface ColumnMeta {
 export interface SealedMeta {
   /** Deterministic seal: equality in `where` and `.unique()` are allowed, and nothing else. */
   readonly lookup: boolean;
+  /**
+   * The parser the column had BEFORE it was sealed — the one that judges a plaintext, `max`
+   * included. The column's own `$parse` passes any string shaped like a sealed value (a driver
+   * hands it one), so a value about to be sealed is judged by this instead.
+   */
+  readonly plaintext: (value: unknown) => unknown;
 }
 
 export interface SealedOptions<Lookup extends boolean = boolean> {

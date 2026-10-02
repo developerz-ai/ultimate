@@ -9,19 +9,23 @@
 // The shapes are declared structurally rather than imported: `@ultimat3/http` is a
 // sibling tier, and jobs/realtime/mcp are higher tiers that import this package.
 
-import { forbidden, surfaceUnknown } from './errors';
+import { describeErrorCode } from '@ultimat3/core';
+import { denialError, surfaceUnknown } from './errors';
 import { codeOf, type EvaluateArgs, evaluate, type PolicyEvaluation, reasonOf } from './evaluate';
 import type { Policy } from './policy';
 
 export type Surface = 'http' | 'live' | 'job' | 'mcp';
 
+/** 401 when the decision says nobody is signed in, 403 for every other denial. */
+export type DenialStatus = 401 | 403;
+
 export interface HttpDenial {
   readonly surface: 'http';
-  readonly status: 403;
+  readonly status: DenialStatus;
   /** RFC-9457 fields `@ultimat3/http` renders verbatim. */
   readonly problem: {
     readonly title: string;
-    readonly status: 403;
+    readonly status: DenialStatus;
     readonly detail: string;
     readonly code: string;
   };
@@ -54,20 +58,32 @@ const reason = (evaluation: PolicyEvaluation): string => reasonOf(evaluation.dec
 
 const code = (evaluation: PolicyEvaluation): string => codeOf(evaluation.decision) ?? 'X_FORBIDDEN';
 
+/**
+ * The status a denial's code means. Only `X_UNAUTHENTICATED` is "come back signed in"; every other
+ * code — `X_FORBIDDEN`, or one an app's predicate chose — is a refusal of this actor. It was a
+ * pinned `403` beside a problem whose own `code` said `X_UNAUTHENTICATED`.
+ */
+const statusOf = (denialCode: string): DenialStatus =>
+  denialCode === 'X_UNAUTHENTICATED' ? 401 : 403;
+
 export const enforceHttp = <I, R = unknown>(
   policy: Policy<I, R>,
   args: EvaluateArgs<I, R>,
 ): HttpDenial | undefined => {
   const evaluation = evaluate(policy, args, { surface: 'http' });
   if (evaluation.allowed) return undefined;
+  const denialCode = code(evaluation);
+  const status = statusOf(denialCode);
   return {
     surface: 'http',
-    status: 403,
+    status,
     problem: {
-      title: 'policy denied this actor',
-      status: 403,
+      // The CODE's registered title, so the document reads as one fact: the owner of the code
+      // wrote it once, and `X_FORBIDDEN`'s own title is this package's.
+      title: describeErrorCode(denialCode).title,
+      status,
       detail: reason(evaluation),
-      code: code(evaluation),
+      code: denialCode,
     },
   };
 };
@@ -143,12 +159,12 @@ export const enforce = <I, R = unknown>(
   return adapters[surface](policy, args);
 };
 
-/** For call sites that would rather throw than branch. Same decision, same reason. */
+/** For call sites that would rather throw than branch. Same decision, same reason, same CODE. */
 export const assertAllowed = <I, R = unknown>(
   policy: Policy<I, R>,
   args: EvaluateArgs<I, R>,
 ): PolicyEvaluation => {
   const evaluation = evaluate(policy, args);
-  if (!evaluation.allowed) throw forbidden(policy.label, reason(evaluation));
+  if (!evaluation.allowed) throw denialError(policy.label, reason(evaluation), code(evaluation));
   return evaluation;
 };

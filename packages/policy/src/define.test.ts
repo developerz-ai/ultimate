@@ -67,6 +67,29 @@ describe('definePolicy()', () => {
     expect(result.decision.allowed ? '' : result.decision.reason).toBe('errors.moreSpecific');
   });
 
+  // `check` is typed `boolean | PolicyDecision`; a JS caller, an `as` and a forgotten `return`
+  // all hand back something else, and it used to pass through to a bare `TypeError`.
+  test.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['a truthy number', 1],
+    ['a string', 'yes'],
+    ['an empty object', {}],
+    ['a decision with no reason', { allowed: false }],
+    ['a truthy-but-not-true allowed', { allowed: 'yes' }],
+  ])('check returning %s is DENIED with the declared key, never a throw', (_label, outcome) => {
+    const policy = definePolicy<PostInput>('post:publish', {
+      deny: 'errors.notPublishable',
+      check: () => outcome as unknown as boolean,
+    });
+    const result = evaluate(policy, { input, actor: editor });
+    expect(result.decision).toEqual({
+      allowed: false,
+      reason: 'errors.notPublishable',
+      code: 'X_FORBIDDEN',
+    });
+  });
+
   test('an actor lacking the permission never reaches check() at all', () => {
     let checkRan = false;
     const policy = definePolicy<PostInput>('post:publish', {

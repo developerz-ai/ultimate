@@ -123,8 +123,12 @@ const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFr
     // (measured), and the qualified spelling is immune to any client that reads `?` as a
     // placeholder and to a search_path that shadows the operator. Postgres matches the index
     // against it identically — verified in the same EXPLAIN run.
+    //
+    // A key is a STRING or the test matches no row — `jsonHasKey`'s rule (`containment.ts`).
+    // `String(value)` bound `"null"` for a null operand and `"1"` for the number 1, so Postgres
+    // answered rows the memory driver never did.
     case 'has-key':
-      return sql`${column} operator(pg_catalog.?) ${String(predicate.value)}`;
+      return typeof value === 'string' ? sql`${column} operator(pg_catalog.?) ${value}` : NEVER;
   }
 };
 

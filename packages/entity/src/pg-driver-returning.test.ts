@@ -145,7 +145,14 @@ describe('a filtered write over an entity only the app can judge', () => {
     // The second row's slug is one no CHECK could have refused, which is the entire reason the
     // rows come back here and nowhere else.
     expect(await caught(patch())).toBeUltimateError('X_INVARIANT_VIOLATED');
-    expect(lastText()).toEndWith('returning *');
+    expect(client.texts.at(-2)).toEndWith('returning *');
+    // And the refusal takes the statement with it: judged after it was sent, the write used to
+    // stand outside a transaction — committed, with the caller told it was refused.
+    expect(client.texts.slice(-3).map((text) => text.split(' ')[0])).toEqual([
+      'BEGIN',
+      'update',
+      'ROLLBACK',
+    ]);
   });
 
   test('the count comes first, so a refusal never allocates what it is refusing', async () => {
@@ -165,6 +172,7 @@ describe('a filtered write over an entity only the app can judge', () => {
     client.on('count(*)', { rows: [{ count: 1 }] });
     client.on('update', { rows: [ticketRow()] });
     expect(await patch()).toBe(1);
+    expect(lastText()).toBe('COMMIT');
   });
 
   test('both drivers answer one filtered write the same way', async () => {

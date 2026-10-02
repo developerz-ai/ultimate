@@ -15,7 +15,7 @@
 
 import type { KnownPermission } from './permissions';
 import type { Policy, PolicyArgs, PolicyDecision } from './policy';
-import { can, denied } from './policy';
+import { can, denied, isDecision } from './policy';
 
 export interface DefinePolicyInput<I, R = unknown> {
   /**
@@ -25,7 +25,8 @@ export interface DefinePolicyInput<I, R = unknown> {
   readonly deny: string;
   /**
    * Pure decision over the actor, the already-loaded input and the already-loaded row.
-   * Returning `false` denies with `deny`; return a `PolicyDecision` for a more specific reason.
+   * Returning `false` — or anything that is neither `true` nor a `PolicyDecision` — denies with
+   * `deny`; return a `PolicyDecision` for a more specific reason.
    *
    * Must not perform I/O — see the file header. A rule that needs a row reads `args.row`,
    * which the surface loaded and passed in; `row` is `null` when the rule decides on input
@@ -63,9 +64,10 @@ export const definePolicy = <I = unknown, R = unknown>(
   const { deny, check } = input;
   if (check === undefined) return can<I, R>(permission);
   return can<I, R>(permission, (args) => {
-    const outcome = check(args);
+    // `unknown`, whatever the type says: only `true` allows and only a real decision speaks for
+    // itself. `undefined` from a forgotten `return` — and anything else — denies with `deny`.
+    const outcome: unknown = check(args);
     if (outcome === true) return true;
-    if (outcome === false) return denied(deny);
-    return outcome;
+    return isDecision(outcome) ? outcome : denied(deny);
   });
 };

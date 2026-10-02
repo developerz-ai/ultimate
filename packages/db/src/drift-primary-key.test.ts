@@ -39,7 +39,7 @@ describe('drift · primary key', () => {
     const difference = report.differences.find((entry) => entry.kind === 'changed-primary-key');
     expect(difference?.table).toBe('posts');
     expect(difference?.cause).toBe(
-      'table "posts" has primary key (id), and migrations declare (slug)',
+      'table "posts" has primary key (id) as constraint "posts_pkey", and migrations declare (slug)',
     );
     // ONE command a shell runs: the pair is psql's argument, never bare DDL beside a `#`.
     expect(difference?.fix).toBe(
@@ -74,6 +74,8 @@ describe('drift · primary key', () => {
     expect(report.differences[0]?.fix).not.toContain('alter table');
     // Prose still leads with a command that runs.
     expect(report.differences[0]?.fix).toStartWith('psql "$DATABASE_URL"');
+    // And the finding still NAMES the constraint it could not spell — in the cause, never the fix.
+    expect(report.differences[0]?.cause).toContain('as constraint "pk`rm -rf`"');
   });
 
   test("a ' in a name cannot close the shell word the statements ride in", () => {

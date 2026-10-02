@@ -46,6 +46,10 @@ export const posts = entity('posts', {
 export type Post = typeof posts.$row;
 ```
 
+`trimmed()` strips leading and trailing **spaces** only, exactly as the `btrim(col)` it emits, so a
+tab-only title passes this rule on both sides; `c.title.matches(/[^ \t\n\r\f\v]/)` refuses a title
+that is all whitespace (`\S` is refused — the two regex engines disagree on it).
+
 `entity(name, init)` is name-first, and `init` is `{ columns, tenant?, primaryKey?, invariants?,
 indexes?, tags? }`. `tenant: 'orgId'` in `init` is the said-out-loud form of the `.tenant()` marker
 above; `init` wins when both appear, and with neither, a column named `orgId` is still inferred —

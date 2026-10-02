@@ -62,6 +62,13 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   say it in a type (a config-driven route table, a policy resolved by name). Never default
   to allow.
 - `can()` validates its permission at declaration time, not at request time.
+- **Only `true` or a real decision allows** (`isDecision`, `policy.ts`). A predicate or a
+  `definePolicy` `check` returning anything else — `undefined`, `1`, `{ allowed: 'yes' }` — DENIES;
+  it used to reach `decision.allowed` as a bare `TypeError`, and a truthy `allowed` read as ALLOWED.
+- **A denial keeps its code everywhere.** `assertAllowed` throws `codeOf(decision)` (`denialError`:
+  `X_FORBIDDEN` through `forbidden()`, any other code as a `PolicyDenialError`) and
+  `HttpDenial.status` follows it — 401 for `X_UNAUTHENTICATED`, 403 otherwise. `X_UNAUTHENTICATED`
+  is `@ultimat3/auth`'s (`POLICY_BORROWED_ERROR_CODES`): named here, titled there.
 - **`definePermissions()` merges, and an EMPTY registry is permissive.** It only ever `add`s, so a
   package that declares its own names at import time (`@ultimat3/admin`'s policy bridge) cannot
   clobber an app's set. What it does change is the mode: `isKnownPermission` answers `true` to

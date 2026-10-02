@@ -11,6 +11,7 @@ import {
   raw,
   setDbClient,
   statementsOf,
+  withTransaction,
 } from '@ultimat3/db';
 import { integer, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
@@ -101,6 +102,40 @@ describe.skipIf(!hasPostgres)('live · postgres · a seed replays', () => {
   const countOf = async (table: string): Promise<number> =>
     Number((await client.query<{ n: string }>(raw(`select count(*) as n from "${table}"`)))[0]?.n);
 
+  test('a dry run is the real run rolled back: it reports the writes and keeps none', async () => {
+    // On an EMPTY database, so the posts' foreign key is only satisfiable because the dry run
+    // really wrote the org a statement earlier — and then took all of it back.
+    const dry = await fixture(2500).run({ driver: postgresDriver(), dryRun: true });
+    expect(dry.metrics).toEqual({ inserted: 4, updated: 0, skipped: 0 });
+    expect(await countOf('seed_live_orgs')).toBe(0);
+    expect(await countOf('seed_live_posts')).toBe(0);
+    expect(await countOf('seed_live_plans')).toBe(0);
+  });
+
+  test('through a driver PINNED to its own client the dry run still rolls back', async () => {
+    // The dry run's transaction is opened on the pinned client, so the pinned repositories join it
+    // (`tx.origin`). Refusing here would make a dry run fail where the real run works.
+    const pinned = postgresDriver({ client });
+    const dry = await fixture(2500).run({ driver: pinned, dryRun: true });
+    expect(dry.metrics).toEqual({ inserted: 4, updated: 0, skipped: 0 });
+    expect(await countOf('seed_live_orgs')).toBe(0);
+    expect(await countOf('seed_live_posts')).toBe(0);
+  });
+
+  test('inside an open transaction — the shape x db seed runs it in — it undoes only itself', async () => {
+    const other = '00000000-0000-7000-8000-0000000000d1';
+    await withTransaction(async () => {
+      await postgresDriver()
+        .repo(orgs)
+        .insert({ id: other, slug: 'kept', name: 'Kept', createdAt: new Date() });
+      const dry = await fixture(2500).run({ driver: postgresDriver(), dryRun: true });
+      expect(dry.metrics).toEqual({ inserted: 4, updated: 0, skipped: 0 });
+    });
+    expect(await countOf('seed_live_orgs')).toBe(1);
+    expect(await countOf('seed_live_posts')).toBe(0);
+    await client.execute(raw(`delete from "seed_live_orgs" where id = '${other}'`));
+  });
+
   test('a second run raises nothing and writes nothing — the whole point of a seed', async () => {
     const driver = postgresDriver();
     const first = await fixture(2500).run({ driver });
@@ -129,6 +164,21 @@ describe.skipIf(!hasPostgres)('live · postgres · a seed replays', () => {
     expect(rows).toHaveLength(1);
     expect(Number(rows[0]?.monthly_minor)).toBe(3000);
     expect(rows[0]?.created_at.toISOString()).toBe('2024-05-05T00:00:00.000Z');
+  });
+  test('a key another tenant holds is skipped by the dry run, as the real run skips it', async () => {
+    // After the runs above `post:one` belongs to acme. The conflict target is the primary key, and
+    // a key is global — so a seed naming that id under another org writes nothing, dry or not.
+    const theirs = '00000000-0000-7000-8000-0000000000d2';
+    await client.execute(
+      raw(`insert into "seed_live_orgs" (id, slug, name) values ('${theirs}', 'them', 'Them')`),
+    );
+    const seed = defineSeed('seed_live_two_tenants', async ({ insert, id }) => {
+      await insert(posts, [{ id: id('post:one'), orgId: theirs, title: 'Taken' }]);
+    });
+    const dry = await seed.run({ driver: postgresDriver(), dryRun: true });
+    expect(dry.metrics).toEqual({ inserted: 0, updated: 0, skipped: 1 });
+    expect((await seed.run({ driver: postgresDriver() })).metrics).toEqual(dry.metrics);
+    expect(await countOf('seed_live_posts')).toBe(2);
   });
 });
 

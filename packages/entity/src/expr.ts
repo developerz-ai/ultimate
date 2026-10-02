@@ -15,6 +15,7 @@
 import { literal as sqlLiteral } from '@ultimat3/db';
 import { invariantViolated } from './errors';
 import { isNullish } from './is-null';
+import { DECIMAL_TEXT, numericOrder } from './numeric-compare';
 import { unportableConstruct } from './pattern-portability';
 import { refuseInvariant } from './refuse';
 import type { ColumnMap } from './types';
@@ -49,12 +50,14 @@ export interface Expr {
 interface Term {
   readonly path: readonly string[];
   readonly label: string;
+  /** The column's row value is decimal TEXT (`bigint()`, `decimal()`), by its declared kind. */
+  readonly decimal: boolean;
   sql(resolve: Resolve): string;
   read(row: Row): unknown;
 }
 
 export interface ColumnExpr {
-  /** `btrim(...)` in SQL, `.trim()` in the app — the same rule, both sides. */
+  /** `btrim(col)` in SQL and its rule in the app: leading and trailing SPACES (U+0020) only. */
   trimmed(): ColumnExpr;
   minLength(length: number): Expr;
   contains(value: string): Expr;
@@ -178,6 +181,21 @@ const check = (
   holds: (row: Row) => boolean,
 ): Expr => ({ kind: 'check', paths, message, toSql: sql, holds });
 
+/**
+ * A numeric operand a CHECK can spell. `NaN` and the infinities render as `col >= NaN` — a column
+ * reference Postgres does not have — so they are refused on the line that wrote them.
+ */
+const finite = <T>(rule: 'atLeast' | 'eq', operand: T): T => {
+  if (typeof operand === 'number' && !Number.isFinite(operand)) {
+    refuseInvariant(
+      rule,
+      `${String(operand)} is not a number a CHECK can compare a column against`,
+      `pass a finite number — c.total.${rule}(0) — or a bigint for a bound past 2^53: c.total.${rule}(9007199254740993n)`,
+    );
+  }
+  return operand;
+};
+
 const isColumnExpr = (value: unknown): value is ColumnExpr =>
   typeof value === 'object' && value !== null && terms.has(value as ColumnExpr);
 
@@ -192,11 +210,14 @@ const expr = (term: Term): ColumnExpr => {
     trimmed: () =>
       expr({
         path: term.path,
+        decimal: term.decimal,
         label: `trimmed ${term.label}`,
         sql: (resolve) => `btrim(${term.sql(resolve)})`,
         read: (row) => {
           const value = term.read(row);
-          return typeof value === 'string' ? value.trim() : value;
+          // U+0020 only — what one-argument `btrim` strips. `.trim()` also removed tabs, newlines
+          // and NBSP, so the app approved a row the CHECK then refused as a raw 23514.
+          return typeof value === 'string' ? value.replace(/^ +| +$/g, '') : value;
         },
       }),
 
@@ -233,21 +254,32 @@ const expr = (term: Term): ColumnExpr => {
       );
     },
 
-    atLeast: (bound) =>
-      one(
+    atLeast: (bound) => {
+      finite('atLeast', bound);
+      return one(
         `${term.label} must be at least ${bound}`,
         (resolve) => `${term.sql(resolve)} >= ${bound}`,
-        (value) => (typeof value === 'number' || typeof value === 'bigint') && value >= bound,
-      ),
+        // By the column's KIND, never `typeof value`: a `bigint()`/`decimal()` row is decimal text,
+        // so a number test failed every row the CHECK beside it accepts.
+        (value) => (numericOrder(term.decimal, value, bound) ?? -1) >= 0,
+      );
+    },
 
-    eq: (other) =>
-      isColumnExpr(other)
-        ? sameAs(term, other)
-        : one(
-            `${term.label} must equal ${literal(other)}`,
-            (resolve) => `${term.sql(resolve)} = ${literal(other)}`,
-            (value) => value === other,
-          ),
+    eq: (other) => {
+      if (isColumnExpr(other)) return sameAs(term, other);
+      finite('eq', other);
+      // `col = 1.5` is numeric equality whatever spelled the operand, and on a decimal column so is
+      // `col = '1.5'` — Postgres coerces the literal. Everything else is the value itself.
+      const numeric = term.decimal || typeof other === 'number' || typeof other === 'bigint';
+      return one(
+        `${term.label} must equal ${literal(other)}`,
+        (resolve) => `${term.sql(resolve)} = ${literal(other)}`,
+        (value) =>
+          numeric && typeof other !== 'boolean'
+            ? numericOrder(term.decimal, value, other) === 0
+            : value === other,
+      );
+    },
 
     isTrue: () =>
       one(
@@ -281,6 +313,8 @@ const expr = (term: Term): ColumnExpr => {
 const part = (term: Term, key: string): ColumnExpr =>
   expr({
     path: [...term.path, key],
+    // A money part is a `number` (minor) or text (currency) — never decimal text.
+    decimal: false,
     label: `${term.label}.${key}`,
     sql: (resolve) => resolve([...term.path, key]),
     read: (row) => walk(row, [...term.path, key]),
@@ -300,12 +334,18 @@ const sameAs = (left: Term, other: ColumnExpr): Expr => {
     [left.path, right.path],
     `${left.label} must equal ${right.label}`,
     (resolve) => `${left.sql(resolve)} = ${right.sql(resolve)}`,
-    (row) => left.read(row) === right.read(row),
+    // Two numeric columns are equal when their NUMBERS are: `'2' = '2.00'` across a `bigint()` and
+    // a `decimal()`, which `===` over the two row strings denied.
+    (row) =>
+      left.decimal || right.decimal
+        ? numericOrder(true, left.read(row), right.read(row)) === 0
+        : left.read(row) === right.read(row),
   );
 };
 
-const columnTerm = (property: string): Term => ({
+const columnTerm = (property: string, decimal: boolean): Term => ({
   path: [property],
+  decimal,
   label: property,
   sql: (resolve) => resolve([property]),
   read: (row) => row[property],
@@ -403,25 +443,31 @@ export const iff = (left: Expr, right: Expr): Expr => {
  * catches a typo at compile time: a JS caller, a dynamically built rule and a `satisfies()` column
  * list all reach it untyped, and the thrown message names the columns that do exist rather than
  * failing later as `undefined is not a function`.
+ *
+ * It takes the column MAP, not a name list: a numeric rule is judged by the column's declared kind
+ * (`numeric-compare.ts`), and the map is the only place that kind is written.
  */
 export const invariantColumns = <C extends ColumnMap>(
   entity: string,
-  properties: readonly string[],
+  columns: C,
 ): InvariantColumns<C> => {
-  const known = new Set(properties);
+  const properties = Object.keys(columns);
   const helpers = { unique, satisfies };
   return new Proxy(helpers, {
     get(target, property) {
       if (property === 'unique' || property === 'satisfies') return target[property];
       if (typeof property !== 'string') return undefined;
-      if (!known.has(property)) {
+      // `Object.hasOwn`, never `columns[property]`: the name is caller data on the JS path, and a
+      // plain read answers an `Object.prototype` member for `constructor`.
+      const column = Object.hasOwn(columns, property) ? columns[property] : undefined;
+      if (column === undefined) {
         throw invariantViolated(
           entity,
           'invariant',
           `no column "${property}"; declared columns are ${properties.join(', ')}`,
         );
       }
-      return expr(columnTerm(property));
+      return expr(columnTerm(property, DECIMAL_TEXT.has(column.$meta.kind)));
     },
   }) as unknown as InvariantColumns<C>;
 };

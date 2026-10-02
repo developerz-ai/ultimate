@@ -45,7 +45,6 @@ export type {
 // so a third-party driver has to be able to raise the same refusals the two shipped ones do.
 export {
   crossTenantDenied,
-  dbDrift,
   ENTITY_ERROR_CODES,
   ENTITY_ERROR_TITLES,
   EntityError,
@@ -90,6 +89,8 @@ export { postgresTransactor } from './pg-transactor';
 // its own `pageSize` input against a hardcoded 10_000 is a second declaration of one number.
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './plan';
 export type { RelatedTable, RelatedTables } from './preload';
+export type { PreloadOptions } from './preload-ceiling';
+export { MAX_PRELOADED_ROWS } from './preload-ceiling';
 export type { Preloaded, ReadBuilder, Table } from './query';
 export { tableFor } from './query';
 // The client projection of an entity (plan 101): record type, record key, and the brand on

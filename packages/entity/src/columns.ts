@@ -109,6 +109,9 @@ const parseInstant = (value: unknown): Date => {
 export const timestamp = (): TimestampColumn =>
   makeTimestamp<false>({ ...BARE, kind: 'timestamptz' }, parseInstant, false);
 
+/** The column's CHECK (`~ '^https?://'`), before the scheme is lower-cased. */
+const STORED_HTTP = /^https?:\/\//i;
+
 /**
  * An absolute http(s) URL, validated on write rather than on render: a bad URL stored once is
  * served to every reader, and `<img src>` fails silently in the browser.
@@ -126,7 +129,11 @@ export const url = (): Column<string> =>
           // The scheme is stored in its canonical LOWER case: the CHECK is `~ '^https?://'`, so
           // `HTTPS://a.b` was stored by memory and refused by Postgres. Only the scheme is
           // rewritten — the rest of the URL is the caller's, byte for byte.
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          // And the STORED text must itself open with it: WHATWG strips leading whitespace and
+          // embedded tabs and mends `https:/a.b` before `protocol` is read, while the column keeps
+          // the caller's bytes — which the CHECK then refused as a raw 23514.
+          const http = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+          if (http && STORED_HTTP.test(value)) {
             return value.replace(/^https?(?=:)/i, (scheme) => scheme.toLowerCase());
           }
         } catch {

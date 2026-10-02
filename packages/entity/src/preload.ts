@@ -11,6 +11,7 @@ import { keyOf, MAX_IDS_PER_STATEMENT, statementChunks } from './batch-read';
 import { valueAt } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
+import { type PreloadRelation, preloadTooMany } from './preload-ceiling';
 import type { Relation } from './relations';
 import type { Repo } from './repo';
 import { copyRow } from './sealed';
@@ -73,11 +74,14 @@ const tenantScope = (
  * genuinely full. A `belongsTo` over a page of 50 is exactly one statement.
  *
  * The page loop is what keeps a `hasMany` honest: a relation with more rows than one page holds
- * costs another statement rather than silently returning the first page of them.
+ * costs another statement rather than silently returning the first page of them. And the ceiling
+ * is what keeps the loop finite: it asks for at most ONE row past `relation.max`, which is the
+ * row that proves the refusal, and reads nothing after it.
  */
 const relatedRows = async (
+  source: string,
   target: RelatedTable,
-  relation: Relation,
+  relation: PreloadRelation,
   values: readonly unknown[],
   scope: readonly Predicate[],
 ): Promise<readonly unknown[]> => {
@@ -87,10 +91,11 @@ const relatedRows = async (
     do {
       const page = await target.repo.findMany({
         where: [{ column: relation.remoteKey, op: 'in', value: chunk }, ...scope],
-        limit: MAX_IDS_PER_STATEMENT,
+        limit: Math.min(MAX_IDS_PER_STATEMENT, relation.max + 1 - rows.length),
         cursor,
       });
       rows.push(...page.rows);
+      if (rows.length > relation.max) throw preloadTooMany(source, relation);
       cursor = page.nextCursor;
     } while (cursor !== null);
   }
@@ -99,15 +104,16 @@ const relatedRows = async (
 
 /** Related rows filed under the key they attach to — in the order the read returned them. */
 const indexed = async (
+  source: string,
   target: RelatedTable,
-  relation: Relation,
+  relation: PreloadRelation,
   kind: string,
   values: readonly unknown[],
   scope: readonly Predicate[],
 ): Promise<ReadonlyMap<string, readonly unknown[]>> => {
   const index = new Map<string, unknown[]>();
   if (values.length === 0) return index;
-  const found = await relatedRows(target, relation, values, scope);
+  const found = await relatedRows(source, target, relation, values, scope);
   for (const row of found) {
     const at = keyOf(kind, valueAt(row, relation.remoteKey));
     const bucket = index.get(at);
@@ -135,7 +141,7 @@ export interface PreloadRead<Source> {
   readonly entity: EntityCore<Source>;
   /** `undefined` for a table built by hand — `tableFor(entity, repo)` reaches no other table. */
   readonly related: RelatedTables | undefined;
-  readonly relations: readonly Relation[];
+  readonly relations: readonly PreloadRelation[];
   /** The page's own predicates: what the related read inherits its tenant scope from. */
   readonly where: readonly Predicate[];
 }
@@ -165,7 +171,14 @@ export const preloaded = async <Source, Row>(
       const kind = read.entity.$columns[relation.localKey]?.$meta.kind ?? '';
       const keys = source.map((row) => valueAt(row, relation.localKey));
       const scope = tenantScope(read.entity, target.entity, read.where);
-      const index = await indexed(target, relation, kind, distinctKeys(kind, keys), scope);
+      const index = await indexed(
+        read.entity.$name,
+        target,
+        relation,
+        kind,
+        distinctKeys(kind, keys),
+        scope,
+      );
       return { relation, kind, keys, index };
     }),
   );

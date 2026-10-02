@@ -68,23 +68,46 @@ export const notAggregatable = (
           : `${entityName}.${fn}('${candidates[0]}')   # ${fn} takes one of: ${candidates.join(', ')}`,
   });
 
+/** One amount is one currency at one scale. Two of either have no common unit. */
+export interface MoneyUnit {
+  readonly currency: string;
+  readonly scale: number | null;
+}
+
 /**
  * Money crossing currencies has no sum, no minimum and no maximum: 100 JPY and 100 EUR are not
  * comparable and adding them answers a number in no currency at all. Both drivers count the
- * distinct currencies of the rows they are about to aggregate and refuse past one, rather than
- * silently answering in whichever currency happened to come first.
+ * distinct units of the rows they are about to aggregate and refuse past one, rather than
+ * silently answering in whichever happened to come first.
+ *
+ * Two situations under the one code, told apart because they do not share a repair. Several
+ * CURRENCIES are narrowed by a predicate on the currency. One currency at several SCALES is not —
+ * `{ minor: 5, currency: 'USD' }` is five cents and the same at `scale: 6` is five millionths of a
+ * dollar, a filter on `'USD'` keeps both, and the scale is not a part a predicate can name
+ * (`MONEY_PARTS`) — so those rows are folded in the app, at a scale somebody chose.
  */
 export const mixedCurrency = (
   entityName: string,
   fn: AggregateFn,
   property: string,
-  currencies: readonly string[],
-): EntityError =>
-  new EntityError({
+  units: readonly MoneyUnit[],
+): EntityError => {
+  const currencies = [...new Set(units.map((unit) => unit.currency))].sort();
+  const [only] = currencies;
+  if (currencies.length === 1 && only !== undefined) {
+    const scales = units.map((unit) => (unit.scale === null ? 'the currency default' : unit.scale));
+    return new EntityError({
+      code: 'X_AGGREGATE_MIXED_CURRENCY',
+      cause: `${entityName}.${fn}('${property}') covers ${scales.length} scales of ${only} (${scales.join(', ')}) — one minor unit is a different amount at each, so they have no common unit`,
+      fix: `for await (const rows of ${entityName}.inBatches(1000)) { … }   # fold row.${property} at ONE scale in the app: the scale is not a part a predicate can name`,
+    });
+  }
+  return new EntityError({
     code: 'X_AGGREGATE_MIXED_CURRENCY',
-    cause: `${entityName}.${fn}('${property}') covers ${currencies.length} currencies (${[...currencies].sort().join(', ')}) — they have no common unit`,
-    fix: `${entityName}.andWhere('${property}.currency', 'eq', '${[...currencies].sort()[0]}').${fn}('${property}')   # one currency per call, or countBy('${property}.currency') first`,
+    cause: `${entityName}.${fn}('${property}') covers ${currencies.length} currencies (${currencies.join(', ')}) — they have no common unit`,
+    fix: `${entityName}.andWhere('${property}.currency', 'eq', '${only}').${fn}('${property}')   # one currency per call, or countBy('${property}.currency') first`,
   });
+};
 
 /** Digits only, optionally signed, optionally with a fraction. What `decimal()` hands back. */
 const DECIMAL_TEXT = /^-?\d+(\.\d+)?$/;
@@ -180,12 +203,6 @@ export const aggregateColumnOf = <Row>(
   return column;
 };
 
-/** One amount is one currency at one scale. Two of either have no common unit. */
-export interface MoneyUnit {
-  readonly currency: string;
-  readonly scale: number | null;
-}
-
 export const assertOneUnit = <Row>(
   entity: EntityCore<Row>,
   fn: AggregateFn,
@@ -195,18 +212,10 @@ export const assertOneUnit = <Row>(
   const seen = new Map<string, MoneyUnit>();
   for (const unit of units) seen.set(`${unit.currency}/${unit.scale ?? ''}`, unit);
   if (seen.size > 1) {
-    throw mixedCurrency(entity.$name, fn, property, [...seen.values()].map(unitLabel));
+    throw mixedCurrency(entity.$name, fn, property, [...seen.values()]);
   }
   return [...seen.values()][0];
 };
-
-/**
- * What the refusal names. The scale rides along because it is half of what makes two amounts
- * incomparable: `{ minor: 5, currency: 'USD' }` is five cents and `{ minor: 5, currency: 'USD',
- * scale: 6 }` is five millionths of a dollar, and adding them is a 10,000x error with no symptom.
- */
-const unitLabel = (unit: MoneyUnit): string =>
-  unit.scale === null ? unit.currency : `${unit.currency}@${unit.scale}`;
 
 /**
  * The minor unit an aggregate answers with, narrowed exactly where every other reader of that

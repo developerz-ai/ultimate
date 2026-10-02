@@ -182,6 +182,21 @@ describe('conditions()', () => {
     expect(stmt.text).not.toContain('jsonb_exists');
   });
 
+  test('has-key binds a STRING key and compiles any other operand to no rows', () => {
+    // `String(value)` bound "null" for a null operand and "1" for the number 1 — keys the memory
+    // driver never matches, so the two drivers answered different rows.
+    for (const value of [1, null, undefined, ['k'], true, { k: 1 }]) {
+      const stmt = selectStatement(
+        documents,
+        planOf({ entity: documents.$name, where: [{ column: 'data', op: 'has-key', value }] }),
+        SHAPE,
+        50,
+      );
+      expect(stmt.text).toContain('1 = 0');
+      expect(stmt.text).not.toContain('pg_catalog.?');
+    }
+  });
+
   test('a soft-deleting entity gets "deleted_at is null" appended unless includeDeleted', () => {
     const hidden = selectStatement(posts, planOf(), SHAPE, 50);
     expect(hidden.text).toContain('"deleted_at" is null');

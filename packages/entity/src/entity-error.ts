@@ -1,12 +1,14 @@
 // The entity layer's code registry, its error class, and the two refusals the declaration path
 // raises — split from `errors.ts` so a module the BROWSER loads (the record key, the projection,
-// the registry) can raise one without importing `@ultimat3/db`, which `errors.ts` needs for
-// `dbDrift`'s shell-inert fix line.
+// the registry) can raise one without importing `@ultimat3/db`.
 import type { ErrorRetry } from '@ultimat3/core';
 import { registerErrorCodes, registerErrorRetry, UltimateError } from '@ultimat3/core';
 
-/** Codes this package declares and owns. */
-export const ENTITY_OWNED_ERROR_CODES = [
+/**
+ * Every code this package throws, and it owns each one. `X_DB_DRIFT` is `@ultimat3/db`'s and is
+ * raised there — drift is a fact about migrations.
+ */
+export const ENTITY_ERROR_CODES = [
   'X_ENTITY_DUPLICATE',
   'X_INVARIANT_VIOLATED',
   'X_TENANCY_UNSCOPED',
@@ -33,23 +35,9 @@ export const ENTITY_OWNED_ERROR_CODES = [
   'X_ENTITY_SEALED_IN_VIEW',
 ] as const;
 
-/**
- * `X_DB_DRIFT` is `@ultimat3/db`'s — drift is a fact about migrations, and this package imports db
- * rather than the other way round. `dbDrift()` below throws it; nothing here titles it, because a
- * second copy of the title is what lets the two packages disagree about what the code means.
- */
-export const ENTITY_BORROWED_ERROR_CODES = ['X_DB_DRIFT'] as const;
-
-/** Every code entity can throw: the ones it owns plus the one it borrows. */
-export const ENTITY_ERROR_CODES = [
-  ...ENTITY_OWNED_ERROR_CODES,
-  ...ENTITY_BORROWED_ERROR_CODES,
-] as const;
-
-export type EntityOwnedErrorCode = (typeof ENTITY_OWNED_ERROR_CODES)[number];
 export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
 
-export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>> = {
+export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_ENTITY_DUPLICATE: 'two entities claim the same name',
   X_INVARIANT_VIOLATED: 'a domain invariant rejected this row',
   X_TENANCY_UNSCOPED: 'a tenant-scoped query has no org predicate',
@@ -96,7 +84,7 @@ registerErrorCodes(
 export const ENTITY_ERROR_RETRY = {
   X_ENTITY_SEALED_PREDICATE: 'terminal',
   X_ENTITY_SEALED_IN_VIEW: 'terminal',
-} as const satisfies Readonly<Partial<Record<EntityOwnedErrorCode, ErrorRetry>>>;
+} as const satisfies Readonly<Partial<Record<EntityErrorCode, ErrorRetry>>>;
 
 registerErrorRetry(ENTITY_ERROR_RETRY);
 

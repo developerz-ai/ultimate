@@ -1,5 +1,5 @@
 // Single responsibility: `unexpected-object` — what a live database holds that replaying the
-// migrations does not create, compared by identity, with a fix that drops before it re-creates.
+// migrations does not create, compared by identity, with a fix that is one command a shell runs.
 
 import { describe, expect, test } from 'bun:test';
 import { type CatalogDescription, emptyCatalog } from './catalog';
@@ -36,10 +36,12 @@ describe('unexpectedObjects', () => {
       column: null,
       cause:
         'trigger "posts_touch" on table "posts" exists in this database and no migration creates it',
+      // ONE command a shell runs, and the harmless one: it prints the definition a migration
+      // would need, which a drop-first line destroyed before anyone could copy it.
       fix:
-        'run drop trigger "posts_touch" on "posts"; inside psql "$DATABASE_URL", then write its ' +
-        'create statement into a migration and run x db migrate — or leave it dropped if nothing ' +
-        'owns it',
+        `psql "$DATABASE_URL" -c '\\d "posts"'   # no migration creates it: copy its definition ` +
+        'into a migration as a create statement, run drop trigger "posts_touch" on "posts"; ' +
+        'here, then x db migrate — or only drop it if nothing owns it',
     });
     expect(driftError(difference ?? expect.unreachable()).code).toBe('X_DB_DRIFT');
   });
@@ -89,19 +91,55 @@ describe('unexpectedObjects', () => {
     expect(rest).toEqual([]);
     // `drop function "add";` is `42725 function name is not unique` while both live: the fix
     // names the overload it means.
-    expect(difference?.fix).toStartWith('run drop function "add"(a text); inside psql');
+    expect(difference?.fix).toContain(
+      `pg_get_function_identity_arguments(oid) = '\\''a text'\\'''`,
+    );
+    expect(difference?.fix).toContain('run drop function "add"(a text); here');
   });
 
   test('a function with no arguments is dropped by its empty list', () => {
     const [difference] = unexpectedObjects(catalog({ functions: [fn('touch')] }), emptyCatalog());
-    expect(difference?.fix).toStartWith('run drop function "touch"(); inside psql');
+    expect(difference?.fix).toStartWith(
+      `psql "$DATABASE_URL" -c 'select pg_get_functiondef(oid) from pg_proc where `,
+    );
+    expect(difference?.fix).toContain('run drop function "touch"(); here');
   });
 
   test('a signature no statement can spell is left out of the fix, never escaped into it', () => {
     const live = catalog({ functions: [fn('add', 'a "$(id)"')] });
     const [difference] = unexpectedObjects(live, emptyCatalog());
     expect(difference?.fix).not.toContain('$(id)');
-    expect(difference?.fix).toStartWith('drop it by hand');
+    expect(difference?.fix).toStartWith('psql "$DATABASE_URL"   # ');
+  });
+
+  test('each kind is shown by the psql command that prints its definition', () => {
+    const live = catalog({
+      types: [{ kind: 'enum', name: 'mood', labels: ['ok'] }],
+      views: [
+        { name: 'report', materialized: false, options: null, definition: 'SELECT 1;' },
+        { name: 'totals', materialized: true, options: null, definition: 'SELECT 1;' },
+      ],
+    });
+    const head = (fix: string): string => fix.split('   # ')[0] ?? '';
+    expect(unexpectedObjects(live, emptyCatalog()).map((one) => head(one.fix))).toEqual([
+      `psql "$DATABASE_URL" -c '\\dT+ "mood"'`,
+      `psql "$DATABASE_URL" -c '\\d+ "report"'`,
+      `psql "$DATABASE_URL" -c '\\d+ "totals"'`,
+    ]);
+  });
+
+  test("a ' in the arguments stays inside psql's one shell word, and out of the comment", async () => {
+    const live = catalog({ functions: [fn('add', `a text DEFAULT 'x'::text`)] });
+    const fix = unexpectedObjects(live, emptyCatalog())[0]?.fix ?? '';
+    const head = 'psql "$DATABASE_URL" -c ';
+    const probe = Bun.spawn(['sh', '-c', fix.replace(head, 'printf "%s|" ')], { stdout: 'pipe' });
+    // One word, and the SQL in it quotes the value twice over: `'x'` is `''x''` inside a literal.
+    expect(await new Response(probe.stdout).text()).toBe(
+      'select pg_get_functiondef(oid) from pg_proc where pg_function_is_visible(oid) and ' +
+        `proname = 'add' and pg_get_function_identity_arguments(oid) = ` +
+        `'a text DEFAULT ''x''::text'|`,
+    );
+    expect(fix.split('   # ')[1]).not.toContain("'");
   });
 
   test('one direction: an object the database lacks is the ledger’s to report', () => {
@@ -120,7 +158,7 @@ describe('unexpectedObjects', () => {
     const live = catalog({ functions: [fn('$(id)')] });
     const [difference] = unexpectedObjects(live, emptyCatalog());
     expect(difference?.fix).not.toContain('$(id)');
-    expect(difference?.fix).toStartWith('drop it by hand');
+    expect(difference?.fix).toStartWith('psql "$DATABASE_URL"   # ');
     expect(difference?.cause).toContain('$(id)');
   });
 });

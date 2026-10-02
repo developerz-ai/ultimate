@@ -11,6 +11,7 @@ import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { EntityError, invariantViolated } from './errors';
 import { columnsOf } from './pg-row';
 import type { RowPatch } from './types';
+import { uniqueConstraints } from './unique-constraints';
 
 /**
  * Postgres binds at most 65535 parameters in one statement and a multi-row insert spends
@@ -134,22 +135,12 @@ const crossTenantUpsert = (
   });
 
 /**
- * Every conflict target Postgres could infer an index for. Three sources, because this framework
- * has three ways to declare one unique index and a target refused for being declared the "wrong"
- * way would send its author to add a SECOND declaration of a constraint they already wrote:
- * the primary key, `unique()`/`indexes: [{ unique: true }]` (both land in `$indexes`), and
- * `invariant(name, c.unique([…]))`, which emits its `create unique index` out of `$invariants`.
- *
- * A partial unique index is excluded from all three: its predicate would have to be repeated in
- * the `on conflict` clause, which this layer does not spell. `bindInvariant` stamps that `where`
- * on a soft-deleting entity, so the same one rule covers both lists.
+ * Every conflict target Postgres could infer an index for: the primary key, and every non-partial
+ * unique the entity declares by either spelling (`unique-constraints.ts`).
  */
 const uniqueTargets = <Row>(entity: EntityCore<Row>): readonly (readonly string[])[] => [
   insertColumns(entity, entity.$primaryKey),
-  ...entity.$indexes.filter((i) => i.unique && i.where === undefined).map((i) => i.columns),
-  ...entity.$invariants
-    .filter((i) => i.kind === 'unique' && i.where === undefined)
-    .map((i) => i.columns),
+  ...uniqueConstraints(entity).map((unique) => unique.columns),
 ];
 
 const sameColumns = (left: readonly string[], right: readonly string[]): boolean =>

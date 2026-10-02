@@ -223,8 +223,9 @@ back as `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))`), so 
 read as `conname` alone and lands on `TableDescription.checkNames`, a **separate field** from the
 declaration's `checks`. Only the declared side is judged, so a NOT NULL, an `enumerated()` column's
 old anonymous form and an extension's own constraint are all silent; a declared one the catalog
-does not hold is `missing-check`, whose `fix:` is the `add constraint` statement itself, because the
-migration that declares it is already in the ledger and `x db migrate` would apply nothing. There is
+does not hold is `missing-check`, whose `fix:` is the `add constraint` statement as one
+`psql "$DATABASE_URL" -c '…'` command against that database, because the migration that declares
+it is already in the ledger and `x db migrate` would apply nothing. There is
 no `changed-check`: presence is a boolean, a predicate is text, and normalising the text is an
 expression parser competing with the server's.
 
@@ -250,11 +251,12 @@ X_DB_DRIFT: schema differs from migrations
 |---|---|---|
 | live column, no migration | `table "T" has column "C" not present in any migration` | `x db gen "add C"` — the name goes through `shellInertIdentifier()`, and one it refuses is left OUT of the command rather than escaped into it (`x db gen "add the undeclared column"`, the name in the cause) |
 | migrated column, not live | `table "T" is missing column "C" that migrations declare` | `x db migrate` |
-| live table, no migration | `table "T" is not present in any migration` | a `create table if not exists` in a migration, then `x db migrate` — or `drop table` in `psql` where nothing owns it. Never `x db gen`, which diffs a table nothing declares against nothing and writes no file (issue #345). The name goes through `shellInertIdentifier()`, and one it refuses leaves the fix as prose |
+| live table, no migration | `table "T" is not present in any migration` | `psql "$DATABASE_URL" -c '\d "T"'` — one harmless command that shows the table — with the two repairs as its comment: a `create table if not exists` in a migration, then `x db migrate`, or `drop table` where nothing owns it. Never `x db gen`, which diffs a table nothing declares against nothing and writes no file (issue #345). The name goes through `shellInertIdentifier()`, and one it refuses leaves `psql "$DATABASE_URL"   # <the steps>` |
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
 | index rebuilt differently | `index "I" on "T" covers (…)` / `is unique` / `is descending` / `is partial`, `not what migrations declare` | `x db migrate` |
-| foreign key, rule moved | `foreign key on "T" (C) to "R" is on delete cascade, not what migrations declare` | the `drop constraint` + `add constraint` pair, in a new migration |
-| primary key differs (`changed-primary-key`, `As of 2026-10-02`) | `table "T" has primary key (id), and migrations declare (slug)` — compared in column ORDER; `has no primary key` when the database holds none | `psql "$DATABASE_URL" -c '<drop constraint "<the live key>"; add constraint "T_pkey" primary key (…)>'` — one command, against the drifted database — then `x db migrate`. Nullability is skipped for the DECLARED key's columns only |
+| foreign key, rule moved | `foreign key "K" on "T" (C) to "R" is on delete cascade, not what migrations declare` — `K` is the constraint the database holds | `psql "$DATABASE_URL" -c '<the drop constraint + add constraint pair>'` — one command, against the drifted database — then `x db migrate` |
+| column nullability differs (`changed-column`) | `table "T" allows NULL in column "C" that migrations declare not null` / `forbids NULL in column "C" that migrations declare nullable` | `psql "$DATABASE_URL" -c 'alter table "T" alter column "C" set not null;'` (or `drop not null`) — one command, then `x db migrate`. A name `shellInertIdentifier()` refuses degrades every one of these three to `psql "$DATABASE_URL"   # <the steps>`: still a command that runs, with no name in it |
+| primary key differs (`changed-primary-key`, `As of 2026-10-02`) | `table "T" has primary key (id) as constraint "T_pkey", and migrations declare (slug)` — the constraint named is the one the DATABASE holds — compared in column ORDER; `has no primary key` when the database holds none | `psql "$DATABASE_URL" -c '<drop constraint "<the live key>"; add constraint "T_pkey" primary key (…)>'` — one command, against the drifted database — then `x db migrate`. Nullability is skipped for the DECLARED key's columns only |
 
 `checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` renders
 them all as findings and exits non-zero; a `ROLE=migrate` container throws the first one

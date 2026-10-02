@@ -58,7 +58,10 @@ describe('a foreign key migrations declare, against the one the catalog holds', 
     const report = diffSchema(live, schema(withKeys(posts, key())));
     expect(report.ok).toBe(false);
     expect(report.differences[0]?.kind).toBe('changed-foreign-key');
-    expect(report.differences[0]?.cause).toContain('is on delete cascade');
+    expect(report.differences[0]?.cause).toBe(
+      'foreign key "posts_org_id_fkey" on "posts" (org_id) to "orgs" is on delete cascade, ' +
+        'not what migrations declare',
+    );
   });
 
   test('a declared cascade the database dropped to no action is drift the other way', () => {
@@ -67,10 +70,11 @@ describe('a foreign key migrations declare, against the one the catalog holds', 
     expect(report.differences[0]?.kind).toBe('changed-foreign-key');
     expect(report.differences[0]?.cause).toContain('declares no on delete rule');
     // Executable, and it is the pair: `add constraint` alone is `42710` on a name already taken.
+    // And ONE command a shell runs: the pair is psql's argument, never bare DDL beside a `#`.
     expect(report.differences[0]?.fix).toBe(
-      'alter table "posts" drop constraint "posts_org_id_fkey"; ' +
+      `psql "$DATABASE_URL" -c 'alter table "posts" drop constraint "posts_org_id_fkey"; ` +
         'alter table "posts" add constraint "posts_org_id_fkey" foreign key ("org_id") ' +
-        'references "orgs" ("id") on delete cascade;   # in a new migration',
+        `references "orgs" ("id") on delete cascade;'   # then x db migrate, which re-checks`,
     );
   });
 

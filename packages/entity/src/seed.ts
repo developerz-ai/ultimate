@@ -10,6 +10,7 @@ import type { Driver } from './database';
 import { memoryDriver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { EntityError } from './errors';
+import type { Tx } from './repo';
 import type { Predicate } from './tenancy';
 import type { ColumnMap, Insertable } from './types';
 
@@ -143,7 +144,7 @@ export interface SeedContext {
   readonly now: Date;
   readonly environment: Environment;
   readonly tier: SeedTier;
-  /** Reads still run; every write short-circuits and is counted as what it WOULD have written. */
+  /** Every verb runs for real, inside a transaction `run()` rolls back: counted, never kept. */
   readonly dryRun: boolean;
   readonly metrics: SeedMetrics;
 }
@@ -210,6 +211,14 @@ const primaryKeyTarget = <Row>(entity: EntityCore<Row>): readonly (keyof Row & s
   entity.$primaryKey as readonly (keyof Row & string)[];
 
 /**
+ * Thrown out of the dry run's own transaction to roll it back; never leaves `run()`. A dry run IS
+ * the real run, in a transaction (`Driver.transactor()`) that is then rolled back — one rule, so
+ * what it reports is what a real run would do: a key another tenant holds is skipped, a second
+ * verb sees the first one's rows, and a seed that would fail fails.
+ */
+const UNDO = Object.freeze({ seedDryRun: 'undo' });
+
+/**
  * A primary key the row leaves to a GENERATED default is a different id on every run, so the
  * conflict target finds nothing and each replay inserts one more copy. `$parse` refuses a key with
  * no value at all; this is the half it cannot see, because filling that column is what it does.
@@ -256,89 +265,104 @@ export const defineSeed = (
       const driver = options.driver ?? memoryDriver();
       const dryRun = options.dryRun ?? false;
       const metrics: SeedMetrics = { inserted: 0, updated: 0, skipped: 0 };
-      const context: SeedContext = {
-        insert: async (entity, rows) => {
-          // Judged on the row as WRITTEN, before `$parse` fills the column that would hide it.
-          for (const [position, row] of rows.entries()) {
-            const missing = entity.$primaryKey.find(
-              (property) =>
-                entity.$columns[property]?.$meta.default?.kind === 'generated' &&
-                !Object.hasOwn(row, property),
-            );
-            if (missing !== undefined) throw generatedKey(entity, missing, position);
-          }
-          const parsed = rows.map((row) => entity.$parse(row));
-          if (dryRun) {
-            metrics.inserted += parsed.length;
-            return;
-          }
-          const written = await driver.repo(entity).upsertAll(parsed, {
-            onConflict: primaryKeyTarget(entity),
-            // Never `'update'`: a do-nothing conflict needs no tenant column in the target, so this
-            // is the one form that replays on a tenant-scoped entity whose unique keys are global.
-            onMatch: 'nothing',
-          });
-          metrics.inserted += written.length;
-          metrics.skipped += parsed.length - written.length;
-        },
+      /** The context a seed body writes through; `tx` is the dry run's, and absent otherwise. */
+      const contextFor = (tx: Tx | undefined): SeedContext => {
+        // The in-memory driver undoes through the `tx` a write is handed; Postgres finds the open
+        // transaction itself and ignores it.
+        const undo = tx === undefined ? {} : { tx };
+        const context: SeedContext = {
+          insert: async (entity, rows) => {
+            // Judged on the row as WRITTEN, before `$parse` fills the column that would hide it.
+            for (const [position, row] of rows.entries()) {
+              const missing = entity.$primaryKey.find(
+                (property) =>
+                  entity.$columns[property]?.$meta.default?.kind === 'generated' &&
+                  !Object.hasOwn(row, property),
+              );
+              if (missing !== undefined) throw generatedKey(entity, missing, position);
+            }
+            const parsed = rows.map((row) => entity.$parse(row));
+            const written = await driver.repo(entity).upsertAll(parsed, {
+              ...undo,
+              onConflict: primaryKeyTarget(entity),
+              // Never `'update'`: a do-nothing conflict needs no tenant column in the target, so this
+              // is the one form that replays on a tenant-scoped entity whose unique keys are global.
+              onMatch: 'nothing',
+            });
+            metrics.inserted += written.length;
+            metrics.skipped += parsed.length - written.length;
+          },
 
-        upsert: async (entity, key, values) => {
-          const row = entity.$parse(values);
-          const repo = driver.repo(entity);
-          const where = Object.fromEntries(
-            key.by.map((property) => [property, cellOf(row, property)]),
-          );
-          const found = await repo.findMany({ where: equalityPredicates(where), limit: 1 });
-          const stored = found.rows[0];
-          const preserve: readonly string[] = key.preserve ?? [CREATED_AT_COLUMN];
-          // Only what the CALLER named, and never a key the table generates: `$parse` fills a
-          // fresh uuid and a `defaultNow()` into `row`, which no stored row can equal — so a
-          // re-run reported every row `'updated'` and never once `'skipped'`.
-          const compared = Object.keys(row as Record<string, unknown>).filter(
-            (property) =>
-              !preserve.includes(property) &&
-              Object.hasOwn(values, property) &&
-              (!entity.$primaryKey.includes(property) || key.by.includes(property as never)),
-          );
-          if (
-            stored !== undefined &&
-            compared.every((property) => sameCell(cellOf(stored, property), cellOf(row, property)))
-          ) {
-            metrics.skipped += 1;
-            return 'skipped';
-          }
-          const write: SeedWrite = stored === undefined ? 'inserted' : 'updated';
-          if (!dryRun) {
+          upsert: async (entity, key, values) => {
+            const row = entity.$parse(values);
+            const repo = driver.repo(entity);
+            const where = Object.fromEntries(
+              key.by.map((property) => [property, cellOf(row, property)]),
+            );
+            const found = await repo.findMany({ where: equalityPredicates(where), limit: 1 });
+            const stored = found.rows[0];
+            const preserve: readonly string[] = key.preserve ?? [CREATED_AT_COLUMN];
+            // Only what the CALLER named, and never a key the table generates: `$parse` fills a
+            // fresh uuid and a `defaultNow()` into `row`, which no stored row can equal — so a
+            // re-run reported every row `'updated'` and never once `'skipped'`.
+            const compared = Object.keys(row as Record<string, unknown>).filter(
+              (property) =>
+                !preserve.includes(property) &&
+                Object.hasOwn(values, property) &&
+                (!entity.$primaryKey.includes(property) || key.by.includes(property as never)),
+            );
+            if (
+              stored !== undefined &&
+              compared.every((property) =>
+                sameCell(cellOf(stored, property), cellOf(row, property)),
+              )
+            ) {
+              metrics.skipped += 1;
+              return 'skipped';
+            }
+            const write: SeedWrite = stored === undefined ? 'inserted' : 'updated';
             await repo.upsertAll([stored === undefined ? row : withoutPreserved(row, preserve)], {
+              ...undo,
               onConflict: key.by,
               onMatch: 'update',
             });
-          }
-          metrics[write === 'inserted' ? 'inserted' : 'updated'] += 1;
-          return write;
-        },
+            metrics[write === 'inserted' ? 'inserted' : 'updated'] += 1;
+            return write;
+          },
 
-        count: async (entity, where) =>
-          driver
-            .repo(entity)
-            .count(where === undefined ? {} : { where: equalityPredicates(where) }),
+          count: async (entity, where) =>
+            driver
+              .repo(entity)
+              .count(where === undefined ? {} : { where: equalityPredicates(where) }),
 
-        exists: async (entity, where) => (await context.count(entity, where)) > 0,
+          exists: async (entity, where) => (await context.count(entity, where)) > 0,
 
-        deleteWhere: async (entity, where) => {
-          if (entity.$softDelete) throw softDeleteWipe(entity);
-          if (dryRun) return context.count(entity, where);
-          return driver.repo(entity).deleteWhere(where);
-        },
+          deleteWhere: async (entity, where) => {
+            if (entity.$softDelete) throw softDeleteWipe(entity);
+            return driver.repo(entity).deleteWhere(where, undo);
+          },
 
-        id: seedId,
-        now: entityNow(),
-        environment: resolveEnvironment({ env: options.env }),
-        tier,
-        dryRun,
-        metrics,
+          id: seedId,
+          now: entityNow(),
+          environment: resolveEnvironment({ env: options.env }),
+          tier,
+          dryRun,
+          metrics,
+        };
+        return context;
       };
-      await build(context);
+      if (!dryRun) {
+        await build(contextFor(undefined));
+        return { name, tier, metrics };
+      }
+      try {
+        await driver.transactor().run(async (tx) => {
+          await build(contextFor(tx));
+          throw UNDO;
+        });
+      } catch (thrown) {
+        if (thrown !== UNDO) throw thrown;
+      }
       return { name, tier, metrics };
     },
   };

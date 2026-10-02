@@ -209,18 +209,18 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - `compareTable` judges declared indexes (`missing-index`, `changed-index` over method, column list,
   uniqueness, predicate presence and direction; `asc` normalises to `null`); never the predicate text.
 - `compareForeignKeys` matches on where a key points (`foreignKeyTarget`, the one copy) and compares
-  `onDelete` through `onDeleteRule` (`changed-foreign-key`, fix = drop/add pair).
+  `onDelete` through `onDeleteRule` (`changed-foreign-key`; its fix, `changed-column`'s and
+  `missing-check`'s are one `psql -c` too — `repair()`).
 - `introspect()` reads index columns in key order (`indkey`) and a foreign key's two column lists
   together (`unnest(a, b) with ordinality`), pinned by `introspect-embedded.test.ts`.
 - **`appTables()`** excludes the whole `x_` namespace for drift; `introspect()` alone excludes
   `x_migrations` by default. **`app-relation.ts`**: `nonAppRelations(client, schema)` — extension
   ownership from `pg_depend` (`deptype = 'e'`) plus views, materialised views and foreign tables —
   merged into `excluded` unconditionally.
-- **`unexpectedTable`'s `fix:` never names `x db gen`**: a `create table if not exists` in a migration
-  (accepted by `@ultimat3/cli`'s `acceptCreatedTables`) or dropping a table nothing owns.
-- **`dbDrift()` lives in `drift-errors.ts`** (it needs `shellInertIdentifier`); the `X_DB_DRIFT`
-  rendering and title are duplicated in `@ultimat3/entity`, held equal by
-  `packages/entity/src/errors.test.ts`. `errors.ts` registers `DB_ERROR_TITLES` unconditionally.
+- **`unexpectedTable`'s `fix:` never names `x db gen`**: `psql -c '\d "T"'`, commented with the two
+  repairs (claim it with `create table if not exists`, or drop it).
+- **`dbDrift()` lives in `drift-errors.ts`** (it needs `shellInertIdentifier`) and is the only one —
+  `@ultimat3/entity`'s copy is deleted. `errors.ts` registers `DB_ERROR_TITLES` unconditionally.
 - `drift-findings.ts` holds every `DriftDifference` constructor and `DriftKind`; `drift.ts` keeps the
   comparisons.
 

@@ -312,3 +312,22 @@ describe('admitsAnonymous', () => {
     }
   });
 });
+
+describe('a predicate that returns neither a boolean nor a decision', () => {
+  // `asDecision` passed it through, so `decision.allowed` threw a bare TypeError out of `run` —
+  // fail-closed, but as a 500 where a denial belongs.
+  test.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['a truthy number', 1],
+    ['an object that is not a decision', { allowed: 'yes' }],
+  ])('%s is a denial', (_label, outcome) => {
+    const policy = can('post:read', () => outcome as unknown as boolean);
+    const decision = policy.run({ input: {}, actor: viewer, row: null });
+    expect(decision).toEqual({
+      allowed: false,
+      reason: 'post:read predicate returned neither a boolean nor a decision',
+      code: 'X_FORBIDDEN',
+    });
+  });
+});

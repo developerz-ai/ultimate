@@ -7,6 +7,8 @@ import { text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
+import { MAX_PAGE_SIZE } from './plan';
+import { MAX_PRELOADED_ROWS } from './preload-ceiling';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
 
@@ -237,6 +239,50 @@ describe('the refusals', () => {
         .all(),
     ).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
   });
+});
+
+describe('a preload is bounded', () => {
+  // A `hasMany` paged until the relation was exhausted: one parent with a million children was a
+  // million rows in the process, from a chain that named no number at all.
+  test('a declared ceiling is refused past it, and met exactly is not', async () => {
+    const page = () => db.members.where({ orgId: ORG }).orderBy('id');
+    // Three posts hang off the two members of this page.
+    expect(await page().preload(BY_AUTHOR, { max: 3 }).all()).toHaveLength(2);
+    let error: unknown;
+    try {
+      await page().preload(BY_AUTHOR, { max: 2 }).all();
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(String((error as { cause: string }).cause)).toContain('more than 2');
+    expect(String((error as { fix: string }).fix)).toContain(`preload('${BY_AUTHOR}', { max: 4 })`);
+  });
+
+  test('the ceiling bounds a belongsTo by the same rule', async () => {
+    const page = () => db.posts.where({ orgId: ORG }).orderBy('id');
+    expect(await page().preload('author', { max: 2 }).all()).toHaveLength(3);
+    await expect(page().preload('author', { max: 1 }).all()).rejects.toBeUltimateError(
+      'X_INVARIANT_VIOLATED',
+    );
+  });
+
+  test('with none declared the ceiling is one page of rows', () => {
+    expect(MAX_PRELOADED_ROWS).toBe(MAX_PAGE_SIZE);
+  });
+
+  test.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '5', null])(
+    'a ceiling of %p is refused on the chain',
+    (max) => {
+      let error: unknown;
+      try {
+        db.members.preload(BY_AUTHOR, { max: max as number });
+      } catch (thrown) {
+        error = thrown;
+      }
+      expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    },
+  );
 });
 
 describe('the scope the page was read under', () => {

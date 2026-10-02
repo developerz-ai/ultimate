@@ -34,6 +34,7 @@ import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound, repoClientPinned } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
+import { judgedWrite } from './judged-write';
 import { bindValues, decodeRow, type PhysicalRow, physicalName, sortPrecision } from './pg-row';
 import { countStatement, type ReadShape, selectStatement } from './pg-sql';
 import {
@@ -45,6 +46,7 @@ import {
   type GroupRow,
   type MoneyUnitRow,
 } from './pg-sql-aggregate';
+import { postgresTransactor } from './pg-transactor';
 import {
   type ConflictTarget,
   deleteStatement,
@@ -85,20 +87,24 @@ export const postgresRepo = <Row>(
 ): Repo<Row> => {
   /**
    * The one place a connection is chosen, which is why the transaction guard is here and not on
-   * each method. Unpinned, `db()` answers with the open transaction when there is one — that is
-   * how a repository call inside `withTransaction` joins it without being told. Pinned, it cannot:
-   * `withTransaction` ran `BEGIN` on a connection IT reserved, and a statement sent straight to
-   * `config.client` takes a different connection out of the pool, so the write commits whatever
-   * the transaction decides and the read cannot see what the transaction has written. Refused
-   * rather than resolved — a `DbTx` does not name the client it was opened on, so this layer
-   * cannot even tell whether the two are the same database.
+   * each method. Unpinned, `db()` answers with the open transaction when there is one. Pinned, a
+   * statement sent straight to `config.client` takes another connection out of that pool — so it
+   * goes through the open transaction instead when that transaction was opened ON this client
+   * (`tx.origin`): one database, one reservation, and the repository joins it. Any other open
+   * transaction is a second database in one scope, and is refused rather than written around.
    */
   const client = (): DbClient => {
     const pinned = config.client;
     if (pinned === undefined) return db();
-    if (currentTx() !== undefined) throw repoClientPinned(entity.$name);
-    return pinned;
+    const tx = currentTx();
+    if (tx === undefined) return pinned;
+    if (tx.origin === pinned) return tx;
+    throw repoClientPinned(entity.$name);
   };
+
+  /** The statement and its app-side judgement on one connection — see `judged-write.ts`. */
+  const judged = <T>(work: (send: DbClient) => Promise<T>): Promise<T> =>
+    judgedWrite(entity, client(), config.client, work);
 
   /**
    * Every statement a repository call sends carries the entity and the operation that compiled it,
@@ -298,20 +304,17 @@ export const postgresRepo = <Row>(
         if (current === null) throw notFound(entity.$name, id);
         return current;
       }
-      const written = await attributed(op, () =>
-        writing(() =>
-          client().one<PhysicalRow>(
-            updateStatement(entity, plan, values, shapeOf(options ?? {}), true),
-          ),
-        ),
-      );
-      if (written === null) throw notFound(entity.$name, id);
-      const after = decodeRow(entity, written);
+      const statement = updateStatement(entity, plan, values, shapeOf(options ?? {}), true);
       // SQL-expressible invariants are CHECK constraints, so Postgres already rejected the
-      // statement. A JS-only one (`kind: 'assert'`, `sql: null`) can only be judged on the
-      // result — inside `withTransaction` the throw takes the row with it.
-      entity.$assert(after);
-      return after;
+      // statement. A JS-only one can only be judged on the result — which is why `judged` sends
+      // the statement inside a transaction the refusal rolls back.
+      return judged(async (send) => {
+        const written = await attributed(op, () => writing(() => send.one<PhysicalRow>(statement)));
+        if (written === null) throw notFound(entity.$name, id);
+        const after = decodeRow(entity, written);
+        entity.$assert(after);
+        return after;
+      });
     },
 
     async delete(id, options) {
@@ -368,12 +371,13 @@ export const postgresRepo = <Row>(
       const rows = Number(matched?.count ?? 0);
       if (rows > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, op, rows);
       const statement = updateStatement(entity, plan, values, shape, true);
-      // Inside `withTransaction` a failed assert takes the whole statement with it.
-      const written = await attributed(op, () =>
-        writing(() => client().query<PhysicalRow>(statement)),
-      );
-      for (const row of written) entity.$assert(decodeRow(entity, row));
-      return written.length;
+      return judged(async (send) => {
+        const written = await attributed(op, () =>
+          writing(() => send.query<PhysicalRow>(statement)),
+        );
+        for (const row of written) entity.$assert(decodeRow(entity, row));
+        return written.length;
+      });
     },
 
     async count(args = {}) {
@@ -482,4 +486,6 @@ export const postgresRepo = <Row>(
  */
 export const postgresDriver = (config: PostgresDriverOptions = {}): Driver => ({
   repo: <Row>(entity: EntityCore<Row>) => postgresRepo(entity, config),
+  transactor: () =>
+    postgresTransactor(config.client === undefined ? {} : { client: config.client }),
 });

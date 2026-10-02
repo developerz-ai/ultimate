@@ -67,7 +67,7 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
       "`drift-findings.ts`, `drift-errors.ts` and `migration-errors.ts` splice a COLUMN NAME, a MIGRATION ID, a migration FILE PATH and a branch name into `x db gen`, `git checkout --` and `rm`. SUSPECT: a column name comes off the live Postgres catalog and a migration path off disk, so neither is a literal this process wrote — `shellInertIdentifier` is `@ultimat3/db`'s own screen and these are the sites it was written for.",
   },
   entity: {
-    count: 4,
+    count: 3,
     reason:
       '`errors.ts`, `count-by.ts` and `aggregate.ts` splice an ENTITY NAME or a COLUMN NAME into `x db gen` / `x entities describe`. Both are registry keys an `entity()` declaration wrote in this process, and the registry is what the refusal consulted to find them missing.',
   },

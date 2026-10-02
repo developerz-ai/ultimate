@@ -136,15 +136,31 @@ describe.skipIf(!hasPostgres)('live · postgres · a CHECK the catalog no longer
       `table "${TABLE}" is missing check constraint "${TABLE}_status_check" that migrations declare`,
     );
     expect(report.differences[0]?.fix).toBe(
-      `alter table "${TABLE}" add constraint "${TABLE}_status_check" ` +
-        `check (status in ('draft', 'published'));   # in a new migration, then x db migrate`,
+      `psql "$DATABASE_URL" -c 'alter table "${TABLE}" add constraint "${TABLE}_status_check" ` +
+        `check (status in ('\\''draft'\\'', '\\''published'\\''));'   ` +
+        '# then x db migrate, which re-checks',
     );
   });
 
-  test('and the fix is a statement that RUNS — after it, the report is clean again', async () => {
+  test('and the fix is a COMMAND that runs — after it, the report is clean again', async () => {
     const [difference] = diffSchema(await live(), declared).differences;
-    const statement = (difference?.fix ?? '').split('#')[0] ?? '';
-    await client.execute(raw(statement));
+    const fix = difference?.fix ?? '';
+    if (Bun.which('psql') !== null) {
+      // As written, through a real shell: the line is one command, and its quoting is the shell's.
+      const shell = Bun.spawn(['sh', '-c', fix], {
+        // `PGOPTIONS`, not the URL: libpq reads the `+` a URL encoder writes for a space literally.
+        env: { ...Bun.env, DATABASE_URL: url ?? '', PGOPTIONS: `-c search_path=${SCHEMA}` },
+        stdout: 'ignore',
+        stderr: 'pipe',
+      });
+      const said = await new Response(shell.stderr).text();
+      expect([await shell.exited, said]).toEqual([0, '']);
+    } else {
+      // No psql on this machine: the statement it would be handed, the shell's quoting undone.
+      const word = /^psql "\$DATABASE_URL" -c '(.*)' {3}# /s.exec(fix)?.[1];
+      expect(word).toBeDefined();
+      await client.execute(raw((word ?? '').replaceAll(`'\\''`, `'`)));
+    }
     expect(diffSchema(await live(), declared).ok).toBe(true);
   });
 

@@ -240,8 +240,43 @@ export const makeColumn = <T, Optional extends boolean>(
  * the derived name is checked, because that runs once per column at `entity()` rather than on
  * every statement.
  */
+const isPhysicalName = (name: string): boolean =>
+  /^[a-z_][a-z0-9_$]*$/.test(name) && name.length <= 63;
+
+/** The nearest legal spelling of a name, so the fix hands back a value and never a placeholder. */
+const physicalSpelling = (name: string): string => {
+  const snake = name
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[^a-z0-9_$]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return (/^[a-z_]/.test(snake) ? snake : `t_${snake}`).slice(0, 63);
+};
+
+/** A name as a TypeScript literal that parses whatever it holds — it is pasted into source. */
+const asSource = (name: string): string =>
+  /^[\w-]+$/.test(name) ? `'${name}'` : JSON.stringify(name);
+
+/**
+ * The TABLE's physical name — `init.table`, or the entity name when none is declared. The same
+ * rule as a column's, and its own refusal: it used to go through `assertColumnName`, which called
+ * a table "not a physical column name" and handed back `.column('created_at')`, an edit to a
+ * column that was never the problem. The repair is at `entity(name, { table })`, and the entity
+ * NAME stays what it was — cache tags and policies key on it.
+ */
+export const assertTableName = (entityName: string, table: string): string => {
+  if (!isPhysicalName(table)) {
+    refuseColumn(
+      'table-name',
+      `"${table}" is not a physical table name: lower-case letters, digits and underscores, at most 63 of them`,
+      `entity(${asSource(entityName)}, { table: '${physicalSpelling(table)}', columns })   # table is the physical name; the entity name is unchanged`,
+    );
+  }
+  return table;
+};
+
 export const assertColumnName = (name: string): string => {
-  if (!/^[a-z_][a-z0-9_$]*$/.test(name) || name.length > 63) {
+  if (!isPhysicalName(name)) {
     refuseColumn(
       'column-name',
       `"${name}" is not a physical column name: lower-case letters, digits and underscores, at most 63 of them`,

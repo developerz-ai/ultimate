@@ -43,6 +43,7 @@ afterAll(() => {
 });
 
 const ID = '00000000-0000-7000-8000-000000000101';
+const OTHER_ID = '00000000-0000-7000-8000-000000000102';
 
 const fresh = () => {
   const db = database({ orders, plain }, { driver: memoryDriver() });
@@ -143,4 +144,29 @@ describe('Table.transition · a state the machine never declared', () => {
     expect(failure?.cause).not.toContain('terminal');
     expect(failure?.cause).toContain('pending | paid');
   });
+});
+
+describe('Table.transition · an id that names no row', () => {
+  // `namedColumns` drops an `undefined` filter value, so the id predicate vanished and the
+  // statement read "every row in the from-state" — a mass write, reported afterwards as NOT FOUND.
+  for (const [label, missing] of [
+    ['undefined', undefined],
+    ['null', null],
+  ] as const) {
+    test(`${label} is refused and changes NO row`, async () => {
+      const db = fresh();
+      await db.orders.insert({ id: ID, reference: 'a' });
+      await db.orders.insert({ id: OTHER_ID, reference: 'b' });
+      expect(
+        await code(() =>
+          db.orders.transition('status', missing as unknown as string, {
+            from: 'pending',
+            to: 'paid',
+          }),
+        ),
+      ).toBe('X_NOT_FOUND');
+      const after = await db.orders.all();
+      expect(after.map((row) => row.status)).toEqual(['pending', 'pending']);
+    });
+  }
 });

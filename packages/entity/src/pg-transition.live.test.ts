@@ -166,6 +166,32 @@ describe.skipIf(!hasPostgres)('live · postgres · a state machine transition', 
     expect(untouched?.status).toBe('pending');
   });
 
+  test('an undefined or null id is refused and moves NO row', async () => {
+    // Its own org, so the count below is this test's rows and nobody else's.
+    for (const n of [11, 12]) {
+      await inOrg(OTHER, () =>
+        postgresRepo(orders).insert({
+          id: id(n),
+          orgId: OTHER,
+          reference: `mass-${n}`,
+          status: 'pending',
+          updatedAt: new Date(),
+        }),
+      );
+    }
+    for (const missing of [undefined, null]) {
+      let failure: UltimateError | undefined;
+      try {
+        await inOrg(OTHER, () => move(missing as unknown as string, 'pending', 'paid'));
+      } catch (error) {
+        failure = error instanceof UltimateError ? error : undefined;
+      }
+      expect(failure?.code).toBe('X_NOT_FOUND');
+      const rows = await inOrg(OTHER, () => postgresRepo(orders).findMany({}));
+      expect(rows.rows.map((row) => row.status)).toEqual(['pending', 'pending']);
+    }
+  });
+
   test('the database refuses a state the enumerated() CHECK does not hold, whatever this layer thinks', async () => {
     const rowId = id(4);
     await inOrg(ACME, () =>

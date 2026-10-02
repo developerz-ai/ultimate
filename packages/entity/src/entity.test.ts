@@ -293,7 +293,7 @@ describe('describe()', () => {
     // was checked and the fallback, which is every entity that does not rename its table, was not.
     expect(() =>
       entity('t" (x int); drop table u; --', { columns: { id: uuid().primaryKey() } }),
-    ).toThrow(/is not a physical column name/);
+    ).toThrow(/is not a physical table name/);
   });
 
   test('the ceiling is measured in BYTES, which is what the server truncates at', () => {

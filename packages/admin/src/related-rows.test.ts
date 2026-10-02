@@ -33,6 +33,7 @@ const previousPermissions = knownPermissions();
 /** Every call a table makes to its repository. One entry, one statement. */
 const statements: string[] = [];
 const counting = (inner: Driver): Driver => ({
+  transactor: () => inner.transactor(),
   repo: (declared) =>
     new Proxy(inner.repo(declared), {
       get(target, property, receiver) {

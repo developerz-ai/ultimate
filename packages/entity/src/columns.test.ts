@@ -308,6 +308,24 @@ describe('time', () => {
   });
 });
 
+describe('url() stores only what its CHECK accepts', () => {
+  // `new URL` strips leading whitespace and embedded tabs before it judges, and the column stores
+  // the CALLER's bytes — so these passed here and met `~ '^https?://'` as a raw 23514.
+  test.each([
+    ['leading spaces', '  https://a.b'],
+    ['a tab inside the scheme', 'ht\ttps://a.b'],
+    ['a leading newline', '\nhttps://a.b'],
+    ['one slash', 'https:/a.b'],
+    ['backslashes', 'https:\\\\a.b'],
+  ])('%s is refused', (_label, value) => {
+    expect(() => url().$parse(value)).toThrow(/absolute http/);
+  });
+
+  test('a well-formed URL is still stored byte for byte past its scheme', () => {
+    expect(url().$parse('HTTP://A.b/Path?q=1 ')).toBe('http://A.b/Path?q=1 ');
+  });
+});
+
 describe('the chain', () => {
   test('.nullable() widens the parser as well as the column', () => {
     const cover = url().nullable();

@@ -58,6 +58,25 @@ const canonicalDigits = (digits: string): string => {
   return negative && whole !== '0' ? `-${whole}` : whole;
 };
 
+const INT8_MIN = -(2n ** 63n);
+const INT8_MAX = 2n ** 63n - 1n;
+
+/**
+ * Whole digits inside `int8`, in Postgres's spelling. Memory stored a 40-digit value the server
+ * answers `22003 — bigint out of range` for, so a row every app test wrote was one production
+ * refuses. The digits are never echoed: a column message reaches the log line.
+ */
+const int8 = (digits: string): string => {
+  const value = BigInt(digits);
+  return value >= INT8_MIN && value <= INT8_MAX
+    ? canonicalDigits(digits)
+    : refuseColumn(
+        'bigint',
+        'the value is past the int8 range (-2^63 to 2^63 - 1), which Postgres answers 22003 for',
+        'declare the column decimal({ precision: 40, scale: 0 }) — a numeric holds whole numbers past int8 — and run x db gen "widen the bigint to numeric"',
+      );
+};
+
 /**
  * An ACCEPTED decimal in Postgres's spelling: leading zeros stripped, `-0` and `-0.00` unsigned,
  * and a short fraction padded to the column's scale (`numeric(8, 2)` answers `7.50` for `7.5`).
@@ -86,7 +105,7 @@ const canonicalDecimal = (text: string, scale: number | undefined): string => {
  */
 export const bigint = (): Column<string> =>
   column<string>('bigint', (value) => {
-    if (typeof value === 'bigint') return value.toString();
+    if (typeof value === 'bigint') return int8(value.toString());
     if (typeof value === 'number') {
       return Number.isSafeInteger(value)
         ? String(value)
@@ -97,7 +116,7 @@ export const bigint = (): Column<string> =>
           );
     }
     return typeof value === 'string' && DIGITS.test(value)
-      ? canonicalDigits(value)
+      ? int8(value)
       : refuseColumn(
           'bigint',
           `expected whole digits, ${got(value)}`,
@@ -167,7 +186,9 @@ export const decimal = (options: DecimalOptions = {}): Column<string> => {
           `Number(value).toFixed(${scale}) at the call site decides the rounding, or widen the column to decimal({ precision: ${(precision ?? fraction) + fraction - scale}, scale: ${fraction} }) and run x db gen "widen the numeric"`,
         );
       }
-      const whole = (digits[0] ?? '').replace(/^0+(?=\d)/, '').length;
+      // A whole part of `0` is NO digit: `numeric(2, 2)` holds `0.50`, and counting the zero
+      // refused every legal value of a `numeric(p, p)` column.
+      const whole = (digits[0] ?? '').replace(/^0+/, '').length;
       if (precision !== undefined && whole > precision - (scale ?? 0)) {
         return refuseColumn(
           'numeric',

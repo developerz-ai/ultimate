@@ -83,8 +83,8 @@ migration takes its constraint with it, and no second `drop constraint` is emitt
 'cascade' })` has type-checked since 1.0 and the clause it produced was `references "orgs" ("id");`
 — a declared cascade that the database refuses the delete under instead. `ColumnDescription` and
 `ReferenceDescription` carry `onDelete`, `addForeignKey` writes the clause, and a rule changed on
-either side is `changed-foreign-key` drift whose `fix:` is the drop/add pair, because Postgres has
-no `alter constraint` for it.
+either side is `changed-foreign-key` drift whose `fix:` is the drop/add pair as one `psql -c`
+command, because Postgres has no `alter constraint` for it.
 
 The sidecar is written through `snapshotJson()`, not `JSON.stringify(value, null, 2)`. Biome
 collapses a short array onto one line and `JSON.stringify` never does, so an app whose `lint` step
@@ -158,7 +158,7 @@ Limits, stated:
 
 An embedded scratch boot restores a post-`initdb` snapshot instead of running `initdb`: `.x/cache/pglite-<version>-f1.snapshot`, keyed on the PGlite version alone (one snapshot serves every extension set), about 40 MB, gitignored with the rest of `.x/`. Read only through its own checksum; a file that does not verify, or verifies and will not open, is deleted and rebuilt. Written under a temp name and renamed, so two commands racing leave one whole file. A fresh checkout — CI — pays one `initdb` and writes it. Delete it freely: `rm -r .x/cache`.
 
-`x db migrate` also reports `unexpected-object` (`X_DB_DRIFT`): a trigger, function, view, type or sequence the dev database holds and replaying the migrations does not create. Compared by identity, never by definition text. The fix drops it first, then moves its `create` into a migration.
+`x db migrate` also reports `unexpected-object` (`X_DB_DRIFT`): a trigger, function, view, type or sequence the dev database holds and replaying the migrations does not create. Compared by identity, never by definition text. The fix is one command that prints its definition (`psql "$DATABASE_URL" -c '…'`); its comment gives the repair in order — copy the definition into a migration, drop the hand-made copy, then `x db migrate`.
 
 ## The destructive-migration rail
 

@@ -121,12 +121,23 @@ error shape; allowed returns `undefined`.
 
 | Adapter | Denial shape |
 |---|---|
-| `enforceHttp` | `403` + RFC-9457 fields |
+| `enforceHttp` | RFC-9457 fields, and the status its code means: `401` for `X_UNAUTHENTICATED` (no actor), `403` for every other denial. The title is the code's registered one |
 | `enforceLive` | close frame `4403` |
 | `enforceJob` | `failed`, `retryable: false` — the answer will not change on retry |
 | `enforceMcp` | `isError: true` with readable text |
 
 Adding a fifth surface means adding an adapter here **and nothing else**.
+
+`assertAllowed(policy, args)` is the throwing form, and it throws the code the DECISION carries:
+`X_UNAUTHENTICATED` for no actor, `X_FORBIDDEN` for an actor who may not, and the code a predicate
+chose with `denied(reason, code)` otherwise (`denialError`, a `PolicyDenialError` for a code this
+package does not own).
+
+A predicate — `can(p, fn)` or `definePolicy`'s `check` — allows only by returning `true` or an
+`{ allowed: true }` decision. `false` denies, and so does anything that is neither a boolean nor a
+decision (`undefined` from a forgotten `return`, `1`, `{ allowed: 'yes' }`): with `check` under
+the declared `deny` key, with `can()` as `<permission> predicate returned neither a boolean nor a
+decision`. Never a bare `TypeError`, and never an allow.
 
 `enforce(surface, policy, args)` dispatches over that table with `Object.hasOwn`, and a surface
 with no adapter is `X_POLICY_SURFACE_UNKNOWN`. Not a formality: the table is an object literal, so

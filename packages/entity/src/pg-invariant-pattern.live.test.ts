@@ -69,7 +69,7 @@ const TABLES = [
 const DROP = `drop table if exists ${TABLES.map((name) => `"${name}"`).join(', ')} cascade`;
 
 const probe = { value: text() };
-const c = invariantColumns<typeof probe>('pattern_probe', Object.keys(probe));
+const c = invariantColumns<typeof probe>('pattern_probe', probe);
 
 /** The SQL a rule compiles to, with the property standing in for the physical column name. */
 const emittedSql = (source: RegExp): string => {

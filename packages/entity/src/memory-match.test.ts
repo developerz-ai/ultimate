@@ -212,6 +212,50 @@ describe('a LIKE pattern means what it means in Postgres', () => {
   });
 });
 
+describe('a LIKE wildcard counts characters and never explodes', () => {
+  const matching = async (
+    labels: readonly string[],
+    pattern: string,
+  ): Promise<readonly string[]> => {
+    const repo = memoryRepo(ledger);
+    for (const [at, label] of labels.entries()) {
+      await repo.insert({ id: idAt(at + 1), seq: String(at), rate: '1.0000', label } as Ledger);
+    }
+    const found = await repo.findMany({ where: [{ column: 'label', op: 'like', value: pattern }] });
+    return found.rows.map((row) => row.label);
+  };
+
+  test('_ is one CHARACTER, so an astral one matches it once', async () => {
+    // `.` without the `u` flag is one UTF-16 unit: `like '_'` answered 3 of these 4 and Postgres 4.
+    expect(await matching(['a', 'b', 'c', '😀'], '_')).toEqual(['a', 'b', 'c', '😀']);
+    expect(await matching(['😀😀', '😀'], '__')).toEqual(['😀😀']);
+    expect(await matching(['x😀y', 'xy'], 'x_y')).toEqual(['x😀y']);
+    expect(await matching(['😀', '👍'], '😀')).toEqual(['😀']);
+    expect(await matching(['a\nb'], 'a_b')).toEqual(['a\nb']);
+  });
+
+  test('wildcards separated by other wildcards mean "at least that many"', async () => {
+    expect(await matching(['', 'a', 'ab', 'abc'], '%_%_%')).toEqual(['ab', 'abc']);
+    expect(await matching(['ab', 'aab', 'b'], '_%b')).toEqual(['ab', 'aab']);
+    expect(await matching(['abcabc', 'abc'], '%b%b%')).toEqual(['abcabc']);
+  });
+
+  test.each([
+    ['%_', 7],
+    ['%a', 7],
+  ])(
+    'a pattern of separated wildcards (%p × %p) fails fast on a long value',
+    async (unit, times) => {
+      // An anchored regex with one `.*` per separated wildcard backtracks combinatorially — 2.3 s at
+      // this size, hours a few wildcards later — and a filter value arrives from a search box.
+      const label = 'a'.repeat(70);
+      const started = performance.now();
+      expect(await matching([label], `${unit.repeat(times)}b`)).toEqual([]);
+      expect(performance.now() - started).toBeLessThan(250);
+    },
+  );
+});
+
 // `in` reads a list or nothing, in both drivers and in `@ultimat3/query`: the operand below used to
 // be wrapped into a one-element list by `predicateSql` and refused here — 0 rows against memory,
 // 1 against Postgres, from a call `andWhere(column, op, value: unknown)` compiles.

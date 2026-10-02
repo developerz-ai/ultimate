@@ -29,6 +29,15 @@ const sameElement = (left: unknown, right: unknown): boolean => {
 };
 
 /**
+ * Two elements of a SQL ARRAY, equal — and a NULL element is equal to nothing, itself included.
+ * `array['a', null] @> array[null]` and `array[null] && array[null]` are both FALSE in Postgres:
+ * the element comparison is `=`, and `NULL = NULL` is unknown. Arrays only — a `jsonb` `null` is a
+ * VALUE and equals itself, which is why `jsonContains` keeps `sameElement`.
+ */
+const sameArrayElement = (left: unknown, right: unknown): boolean =>
+  !isNull(left) && !isNull(right) && sameElement(left, right);
+
+/**
  * `left @> right` for `jsonb`, to the letter of Postgres' definition — each clause below measured
  * on Postgres 16 rather than read off a summary, because three of them are easy to state wrongly:
  *
@@ -67,7 +76,7 @@ const contains = (left: unknown, right: unknown, top: boolean): boolean => {
  * by every array, which is what Postgres answers.
  */
 export const arrayContains = (left: readonly unknown[], right: readonly unknown[]): boolean =>
-  right.every((item) => left.some((candidate) => sameElement(candidate, item)));
+  right.every((item) => left.some((candidate) => sameArrayElement(candidate, item)));
 
 /**
  * `left && right`: they share at least one element. Arrays only — `jsonb` has no `&&` — and the
@@ -75,7 +84,7 @@ export const arrayContains = (left: readonly unknown[], right: readonly unknown[
  * contained by everything.
  */
 export const arrayOverlaps = (left: readonly unknown[], right: readonly unknown[]): boolean =>
-  right.some((item) => left.some((candidate) => sameElement(candidate, item)));
+  right.some((item) => left.some((candidate) => sameArrayElement(candidate, item)));
 
 /**
  * The memory half of `col ? key`. The SQL side emits the OPERATOR, schema-qualified —
@@ -88,6 +97,10 @@ export const arrayOverlaps = (left: readonly unknown[], right: readonly unknown[
  * Three shapes, all of them Postgres': a top-level key of an object, a string ELEMENT of an array,
  * and a string value equal to the key. A number never matches — `'[1]'::jsonb ? '1'` is false
  * there, and a `String(item) === key` here would have made it true.
+ *
+ * The KEY is a string or the test matches no row, in both drivers: `pg-sql.ts` compiles any other
+ * operand to no rows rather than binding `String(key)`, which found a key named `"null"` for a
+ * `null` operand and `"1"` for the number `1`.
  */
 export const jsonHasKey = (value: unknown, key: unknown): boolean => {
   if (typeof key !== 'string' || isNull(value)) return false;

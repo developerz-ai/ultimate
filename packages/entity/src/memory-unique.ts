@@ -1,5 +1,5 @@
 // Single responsibility: the uniqueness Postgres enforces, enforced by the in-memory driver too —
-// the primary key and every non-partial `unique` index. Memory silently REPLACED a row on a
+// the primary key and every non-partial unique, an index or an invariant (`unique-constraints.ts`). Memory silently REPLACED a row on a
 // duplicate key and ignored `unique()` entirely, so a signup race that is a 409 in production was
 // a quiet overwrite under `x dev` and in every app test.
 
@@ -7,6 +7,7 @@ import { driverError } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { bindValues } from './pg-row';
 import type { RowPatch } from './types';
+import { uniqueConstraints } from './unique-constraints';
 
 /** The refusal Postgres answers `23505` with, in the shape `driverError` gives it there. */
 export const uniqueViolation = (entity: EntityCore, constraint: string): Error =>
@@ -25,16 +26,16 @@ const cellOf = (value: unknown): string | undefined => {
 };
 
 /**
- * The first unique index `candidate` collides with among `others`, or `undefined`. Partial indexes
- * are skipped: their predicate is SQL this driver cannot evaluate, and a guess would refuse rows
- * Postgres accepts — the one direction that must never happen.
+ * The first unique constraint `candidate` collides with among `others`, or `undefined`. Partial
+ * ones are skipped: their predicate is SQL this driver cannot evaluate, and a guess would refuse
+ * rows Postgres accepts — the one direction that must never happen.
  */
 export const uniqueClash = <Row>(
   entity: EntityCore<Row>,
   candidate: Row,
   others: Iterable<Row>,
 ): string | undefined => {
-  const unique = entity.$indexes.filter((index) => index.unique && index.where === undefined);
+  const unique = uniqueConstraints(entity);
   if (unique.length === 0) return undefined;
   const bound = (row: Row) => bindValues(entity, row as unknown as RowPatch<Row>);
   const incoming = bound(candidate);
@@ -44,7 +45,7 @@ export const uniqueClash = <Row>(
     for (const other of others) {
       const stored = bound(other);
       if (index.columns.every((name, at) => cellOf(stored.get(name)) === key[at]))
-        return index.name;
+        return index.name();
     }
   }
   return undefined;

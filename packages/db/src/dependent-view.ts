@@ -168,7 +168,7 @@ export const psqlCommand = (statement: string): string =>
  * a shell read `drop` as a program that does not exist. Neither reader could run it (axiom 4).
  *
  * `identifier()` REFUSES a name holding a quote, a space or a backslash — all three legal inside a
- * quoted Postgres name — and a `fix:` may not throw: the rule `rebuildForeignKey` already states,
+ * quoted Postgres name — and a `fix:` may not throw: the rule `changedForeignKey` (`drift-findings.ts`) states,
  * with the same shape. A refusal that raised `X_SQL_UNSAFE` in place of the finding would hand the
  * operator an exception where a verdict was asked for, over a view name that is perfectly legal.
  * The fallback still leads with a command that runs — a psql session — because quoting that name

@@ -61,6 +61,7 @@ const notes = entity('seed_test_notes', {
 });
 
 const ORG = '00000000-0000-7000-8000-0000000000b1';
+const PLAN = { code: 'pro', currency: 'EUR', monthly: { minor: 900, currency: 'EUR' } };
 const POST = '00000000-0000-7000-8000-0000000000b2';
 
 /**
@@ -94,6 +95,7 @@ const durableDriver = (): Driver => {
       };
     },
     reset: () => base.reset?.(),
+    transactor: () => base.transactor(),
   };
 };
 
@@ -258,6 +260,67 @@ describe('defineSeed() · dry run, tiers and identity', () => {
     const run = await fixtures.run({ driver, dryRun: true });
     expect(run.metrics.inserted).toBe(3);
     expect(await driver.repo(orgs).count()).toBe(0);
+  });
+
+  test('a dry run over a seeded store reports what a real replay reports', async () => {
+    // It counted every row as inserted without reading a key, so `--dry-run` promised three
+    // writes on a database a real run then skipped all three on.
+    await fixtures.run({ driver });
+    const dry = await fixtures.run({ driver, dryRun: true });
+    const real = await fixtures.run({ driver });
+    expect(dry.metrics).toEqual({ inserted: 0, updated: 0, skipped: 3 });
+    expect(dry.metrics).toEqual(real.metrics);
+  });
+
+  test('a dry run counts a half-seeded batch row by row, and a repeated key once', async () => {
+    await driver.repo(orgs).insert({ id: ORG, slug: 'acme', name: 'Acme', createdAt: new Date() });
+    const seed = defineSeed('seed_test_half', async ({ insert, id }) => {
+      await insert(orgs, [
+        { id: ORG, slug: 'acme', name: 'Acme' },
+        { id: id('org:new'), slug: 'new', name: 'New' },
+        { id: id('org:new'), slug: 'new', name: 'New' },
+      ]);
+    });
+    const dry = await seed.run({ driver, dryRun: true });
+    expect(dry.metrics).toEqual({ inserted: 1, updated: 0, skipped: 2 });
+    expect(await driver.repo(orgs).count()).toBe(1);
+    expect((await seed.run({ driver })).metrics).toEqual(dry.metrics);
+  });
+
+  test('a key another TENANT holds is skipped by a dry run, exactly as the real run skips it', async () => {
+    // The conflict target is the primary key, and a key is global: the real `on conflict do
+    // nothing` skips a row whose id another org already stored. A dry run that looked the key up
+    // under the row's own tenant found nothing and promised an insert.
+    const theirs = '00000000-0000-7000-8000-0000000000c1';
+    await driver.repo(orgs).insert({ id: ORG, slug: 'acme', name: 'Acme', createdAt: new Date() });
+    await driver
+      .repo(orgs)
+      .insert({ id: theirs, slug: 'them', name: 'Them', createdAt: new Date() });
+    await driver
+      .repo(posts)
+      .insert({ id: POST, orgId: theirs, title: 'Held', likeCount: 0, createdAt: new Date() });
+    const seed = defineSeed('seed_test_two_tenants', async ({ insert }) => {
+      await insert(posts, [{ id: POST, orgId: ORG, title: 'Tenancy is a column' }]);
+    });
+    const dry = await seed.run({ driver, dryRun: true });
+    expect(dry.metrics).toEqual({ inserted: 0, updated: 0, skipped: 1 });
+    expect((await seed.run({ driver })).metrics).toEqual(dry.metrics);
+  });
+
+  test('a dry run sees its own earlier writes, then leaves none of them behind', async () => {
+    // One seed, three verbs, each depending on the one before — what a per-call lookup cannot see.
+    const seed = defineSeed('seed_test_chain', async ({ insert, upsert, deleteWhere, count }) => {
+      await insert(orgs, [{ id: ORG, slug: 'acme', name: 'Acme' }]);
+      await upsert(plans, { by: ['code', 'currency'] }, PLAN);
+      await upsert(plans, { by: ['code', 'currency'] }, PLAN);
+      expect(await count(orgs)).toBe(1);
+      expect(await deleteWhere(reports, { day: 'never' })).toBe(0);
+    });
+    const dry = await seed.run({ driver, dryRun: true });
+    expect(dry.metrics).toEqual({ inserted: 2, updated: 0, skipped: 1 });
+    expect(await driver.repo(orgs).count()).toBe(0);
+    expect(await driver.repo(plans).count()).toBe(0);
+    expect((await seed.run({ driver })).metrics).toEqual(dry.metrics);
   });
 
   test('id() is deterministic, so a bug reproduced locally reproduces in CI', async () => {

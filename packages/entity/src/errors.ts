@@ -1,16 +1,13 @@
-// The entity layer's stable error codes. Each factory produces the exact command
-// that fixes the situation — `X_DB_DRIFT` is the flagship: it names the table, the
-// column and the generator invocation. The code registry, the class, `invariantViolated` and
-// `entityDuplicate` live in `entity-error.ts`, which imports no `@ultimat3/db`; re-exported here.
-import { shellInertIdentifier } from '@ultimat3/db';
+// The entity layer's stable error codes. Each factory produces the exact command that fixes the
+// situation. The code registry, the class, `invariantViolated` and `entityDuplicate` live in
+// `entity-error.ts`, which imports no `@ultimat3/db`; re-exported here. `X_DB_DRIFT` is not
+// raised here at all: drift is `@ultimat3/db`'s, factory included.
 import { EntityError } from './entity-error';
 
-export type { EntityErrorCode, EntityOwnedErrorCode } from './entity-error';
+export type { EntityErrorCode } from './entity-error';
 export {
-  ENTITY_BORROWED_ERROR_CODES,
   ENTITY_ERROR_CODES,
   ENTITY_ERROR_TITLES,
-  ENTITY_OWNED_ERROR_CODES,
   EntityError,
   entityDuplicate,
   invariantViolated,
@@ -165,48 +162,24 @@ export const crossTenantDenied = (init: {
   });
 
 /**
- * A repository built with an explicit `client`, used while a transaction is open.
+ * A repository built with an explicit `client`, used inside a transaction that was opened on some
+ * OTHER client.
  *
- * Refused rather than resolved, because neither answer is available. `withTransaction` reserves
- * ONE connection and runs `BEGIN` on it — the ambient pool's, or a reservation of its own
- * `client:` option — while a repository pinned through `postgresDriver({ client })` sends every
- * statement straight to that client, which takes a different connection out of the pool. So the
- * write commits immediately and survives the rollback, and the read cannot see the rows the
- * transaction has already written; both are silent. Joining the transaction instead would be the
- * worse half of the same guess: a `DbTx` does not name the client it was opened on, so "is this
- * even the same database" is not a question this layer can ask, and on a sharded app the answer
- * is no.
+ * Refused rather than resolved. `withTransaction` reserves one connection and runs `BEGIN` on it,
+ * while a pinned repository sends to its own client — another connection, and on a sharded app
+ * another database — so the write would commit immediately and survive the rollback, and the read
+ * would miss rows the transaction has written; both silent. A transaction opened ON the pinned
+ * client (`tx.origin`) is the same database and the same reservation, and the repository joins it:
+ * that case never reaches here.
  *
- * The fix names the ambient seam because that is the one path a repository joins a transaction
- * through: `db()` resolves `currentTx()` first, which is exactly what a pinned client skips.
+ * The fix names the ambient seam because that is the path a repository joins the AMBIENT
+ * transaction through: `db()` resolves `currentTx()` first, which is what a pinned client skips.
  */
 export const repoClientPinned = (entityName: string): EntityError =>
   new EntityError({
     code: 'X_REPO_CLIENT_PINNED',
     cause: `${entityName} is served by a repository pinned to its own client, and a transaction is open — its statements would run on another connection, outside that transaction, committed whether it commits or rolls back`,
     fix: `setDbClient(client) at boot and build the repository with no client: — postgresDriver() then resolves the open transaction through db() — or run this call outside withTransaction()`,
-  });
-
-/**
- * The contract's pinned wording. Mirror of `@ultimat3/db`'s `dbDrift()` (`drift-errors.ts`) —
- * keep in sync; both screen through the same `shellInertIdentifier`, so the two lines are one
- * text on both sides of the tier seam, and `errors.test.ts` asserts it rather than asking.
- *
- * The column is the CATALOG's, so it is data, and `x db gen "add C"` puts it inside SHELL DOUBLE
- * QUOTES where `$(…)` and a backtick substitute before `x` is reached at all. The argument is a
- * migration DESCRIPTION, not an identifier, so no quoted form makes a hostile name safe to pass —
- * a refused one is left OUT of the command rather than escaped into it, and read off `cause`.
- */
-export const dbDrift = (tableName: string, columnName: string): EntityError =>
-  new EntityError({
-    code: 'X_DB_DRIFT',
-    cause: `table "${tableName}" has column "${columnName}" not present in any migration`,
-    fix:
-      shellInertIdentifier(columnName) === null
-        ? 'x db gen "add the column named in this error"   # its name carries a backtick, a ' +
-          'dollar sign, a quote, a backslash or whitespace, so it is in the cause and not in ' +
-          'this command'
-        : `x db gen "add ${columnName}"`,
   });
 
 export const notFound = (entityName: string, id: string): EntityError =>

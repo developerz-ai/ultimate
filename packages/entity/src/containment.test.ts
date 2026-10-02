@@ -94,6 +94,31 @@ describe('arrayContains and arrayOverlaps', () => {
   });
 });
 
+describe('a NULL array element — SQL NULL, which equals nothing', () => {
+  // Postgres: `array['a', null] @> array[null]` is FALSE and `array[null] && array[null]` is FALSE.
+  // `===` made the two nulls equal, so memory answered rows the server never returns.
+  test('contains never matches a null, on either side', () => {
+    expect(arrayContains(['a', null], [null])).toBe(false);
+    expect(arrayContains(['a', null], ['a', null])).toBe(false);
+    expect(arrayContains([undefined], [undefined])).toBe(false);
+    expect(arrayContains(['a', null], ['a'])).toBe(true);
+    // An empty right side is still contained by everything, nulls or none.
+    expect(arrayContains([null], [])).toBe(true);
+  });
+
+  test('overlaps never matches on a shared null', () => {
+    expect(arrayOverlaps([null], [null])).toBe(false);
+    expect(arrayOverlaps(['a', null], [null, 'b'])).toBe(false);
+    expect(arrayOverlaps(['a', null], [null, 'a'])).toBe(true);
+  });
+
+  test('jsonb null is a VALUE, and stays equal to itself', () => {
+    expect(jsonContains([null], [null])).toBe(true);
+    expect(jsonContains({ a: null }, { a: null })).toBe(true);
+    expect(jsonContains([1, null], null)).toBe(true);
+  });
+});
+
 describe('jsonHasKey', () => {
   test('a top-level key of an object', () => {
     expect(jsonHasKey({ a: 1 }, 'a')).toBe(true);

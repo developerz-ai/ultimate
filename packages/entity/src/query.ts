@@ -10,10 +10,8 @@ import { entityNow } from './clock';
 import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
-import type { RelatedTables } from './preload';
-import { preloaded } from './preload';
-import type { Relation } from './relations';
-import { relationNamed } from './relations';
+import { preloaded, type RelatedTables } from './preload';
+import { type PreloadOptions, type PreloadRelation, preloadOf } from './preload-ceiling';
 import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
 import { copyRow, pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
@@ -86,15 +84,18 @@ export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys> {
   /**
    * One relation, read for the whole page in one extra `where <key> in (…)` and attached to every
    * row under its own name — the eager form of the batching a point lookup does for itself, and
-   * the line an N+1 warning names. The relation is the `references()` already declared, so there
-   * is nothing to declare here; a name no foreign key produces is `X_PRELOAD_UNKNOWN_RELATION`,
-   * listing the ones that exist.
+   * the line an N+1 warning names. The relation is the `references()` already declared; a name no
+   * foreign key produces is `X_PRELOAD_UNKNOWN_RELATION`. `max` is the most related rows it may
+   * attach to one page (default `MAX_PRELOADED_ROWS`), refused past it and never truncated.
    *
    * A `belongsTo` attaches the row or `null`, a `hasMany` an array — always present, so "no
    * author" never reads like "nobody preloaded the author". Attached after the projection: a
    * `select()` narrows the columns, never the relations.
    */
-  preload<Name extends string>(relation: Name): ReadBuilder<Row & Preloaded<Name>, S>;
+  preload<Name extends string>(
+    relation: Name,
+    options?: PreloadOptions,
+  ): ReadBuilder<Row & Preloaded<Name>, S>;
   /**
    * Every row the chain matches, `size` at a time and one statement per batch — the terminal a
    * `for await` consumes instead of holding a whole table in memory. A batch is the page `page()`
@@ -252,7 +253,7 @@ interface State {
   readonly cursor: string | null;
   readonly select: readonly string[] | undefined;
   /** Resolved when `preload()` was called, so an unknown name fails at the chain and not a page later. */
-  readonly preload: readonly Relation[];
+  readonly preload: readonly PreloadRelation[];
 }
 
 const EMPTY: State = {
@@ -356,10 +357,10 @@ const builder = <Source, Row>(
       );
     },
 
-    preload<Name extends string>(relation: Name) {
+    preload<Name extends string>(relation: Name, options?: PreloadOptions) {
       // Resolved here, so a name no foreign key produces fails on the chain rather than one page
       // later — and naming one relation twice is one statement, not two identical ones.
-      const resolved = relationNamed(entity.$name, relation);
+      const resolved = preloadOf(entity.$name, relation, options);
       const already = state.preload.some((held) => held.name === resolved.name);
       return builder<Source, Row & Preloaded<Name>>(
         entity,

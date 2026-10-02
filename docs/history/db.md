@@ -1599,3 +1599,20 @@ the same slice and the current one is in that file.
 - **`reapBranches` sweeps branches of THIS database**: the marker is `ultimate:branch:<base>:<iso>`
   (`BranchInfo.base`), split on the ISO tail; an older one-segment marker is skipped, never dropped; an
   unparseable `createdAt` is skipped. `@ultimat3/cli`'s `ls`/`drop` scope by name prefix.
+
+### 2026-10-02 — one `dbDrift()`, and a drift `fix:` is one command
+
+- **`@ultimat3/entity`'s `dbDrift()` is deleted; this package's is the only one.** The entry above
+  that calls entity's copy a "mirror" describes the tree before this date. The copy restated the
+  cause and the shell-screened fix line and was held equal by a "keep in sync" comment plus a test;
+  nothing in the repository, either tracked app or the wiki called it. Entity no longer lists
+  `X_DB_DRIFT` among its codes.
+- **`rebuildForeignKey` (`foreign-key.ts`) is deleted.** Its one caller, `changedForeignKey`, now
+  asks `dropForeignKey` / `addForeignKey` itself, because it has to know WHETHER the pair was
+  written to choose between `repair()` and `byHand()` — a string that is sometimes DDL and
+  sometimes a sentence cannot say.
+- **Every `fix:` in `drift-findings.ts` is one line a shell runs.** `changed-column`,
+  `missing-check`, `changed-foreign-key` (and, the same day, `unexpected-table` and the
+  `unknown-schema` refusal) paired bare SQL or prose with a `#`: `#` is not a comment to Postgres
+  and `alter` is not a program to a shell. `changed-primary-key` had already moved to
+  `psql "$DATABASE_URL" -c '…'`; the rest followed through two helpers, `repair()` and `byHand()`.

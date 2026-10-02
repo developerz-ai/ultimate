@@ -2,11 +2,11 @@
 // writes a repository class per entity, and nobody can reach a table that is not in the set.
 
 import type { EntityCore } from './entity';
-import { memoryRepo } from './memory-repo';
+import { memoryRepo, memoryTransactor } from './memory-repo';
 import type { RelatedTables } from './preload';
 import type { Table } from './query';
 import { tableFor } from './query';
-import type { Repo } from './repo';
+import type { Repo, Transactor } from './repo';
 import { observedRepo } from './row-observer';
 
 export type EntitySet = Readonly<Record<string, EntityCore>>;
@@ -25,6 +25,12 @@ export interface Driver {
    * `reset()` eventually would. A harness therefore asks and does not assume: `driver.reset?.()`.
    */
   reset?(): void;
+  /**
+   * The transactor that undoes THIS driver's writes. Required: a seed dry run writes for real and
+   * rolls back through it, and a driver that could not undo would be found out at run time. A
+   * driver that wraps another delegates — `transactor: () => inner.transactor()`.
+   */
+  transactor(): Transactor;
 }
 
 export interface DatabaseOptions {
@@ -54,6 +60,7 @@ export const memoryDriver = (): Driver => {
     reset() {
       for (const reset of resets) reset();
     },
+    transactor: () => memoryTransactor(),
   };
 };
 

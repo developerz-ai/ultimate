@@ -51,6 +51,8 @@ page.rows[0].author;   // the member row, or null — always present
 
 A `belongsTo` attaches the row or `null`; a `hasMany` attaches an array, always present so "no author" and "nobody preloaded the author" cannot read the same. `preload()` is resolved on the chain (`relationNamed`), so an unknown relation fails there and not a page later. Attachment happens after the projection — `select()` is widened internally with every preloaded relation's own key, so a projection can never drop what a preload needs; `plan().select` reports the widened list that actually ran. Only the terminals that read a row resolve it: `page()`, `all()`, `one()` — never `count()`, `countBy()` or `plan()`, since none of those has a row to attach one to.
 
+A preload is **bounded**: one relation attaches at most `max` related rows to one page — `preload('comments', { max: 2000 })`, default 10,000 (`MAX_PRELOADED_ROWS`). Past it the read is refused (`X_INVARIANT_VIOLATED`, naming the raised ceiling and the `inBatches` form), never truncated — an array one row short reads as "these are the children".
+
 Reach for `.preload()` when the relation is part of what the page *is* — a list rendered with its authors, rows handed somewhere that will not call back into the repo, or a read a reviewer should see stated rather than inferred from a loop. The other two forms ask for nothing.
 
 ## The tenancy guarantee — a security boundary, not a perf detail

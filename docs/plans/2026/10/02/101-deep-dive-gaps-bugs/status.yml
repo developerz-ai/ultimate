@@ -108,6 +108,18 @@ notes: >-
   of packages/scraping/src/session-seal.test.ts in a batch run - tier-5 PR. A guard refusing an
   un-timed spawnSync in a test - scripts PR.
   X_STORAGE_NOT_FOUND's fix names the driver kind, not the registered disk, on all three drivers
-  (pre-existing; the s3 and memory drivers do not know their registered name) - unify PR, slice 14. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  (pre-existing; the s3 and memory drivers do not know their registered name) - unify PR, slice 14.
+  PR 4 limits /healthz and /readyz detail to healthDetailPeers on the web role only. The sync role
+  (packages/realtime/src/sync-upgrade.ts:86-88) still answers the full report to any caller and has
+  no http import. Decided for the realtime PR (slice 08): the body rule and the peer-list match move
+  to core (which owns the health payloads), http and realtime both call it, cli passes
+  healthDetailPeers into createSyncNode (packages/cli/src/role-sync.ts:198), and the sync node
+  answers the reduced body to any request carrying a Forwarded / X-Forwarded-For header, so a
+  same-box proxy cannot make every caller loopback. No new import edge.
+  PR 3 merged as #618 (b698a3d9). main's CI went red on it from a third, unrelated flake:
+  scaffold-smoke (demoapp), X_CDP_LAUNCH_FAILED - Chrome started on the runner and did not announce
+  a DevTools endpoint before the launcher's deadline (run 37007059251). Re-run requested. The
+  launcher (packages/testing/src/cdp-launch.ts:200) is in the tier-5 PR's scope: establish its
+  deadline against a cold runner and whether a failed launch may be relaunched once. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02
