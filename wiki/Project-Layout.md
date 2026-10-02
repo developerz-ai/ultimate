@@ -21,8 +21,9 @@ myapp/
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
   bin/                    # setup, dev, check — thin wrappers over `x`
   guards/                 # one rule per file, DISCOVERED not registered — `x verify` runs
-                          #   each inside its `boundaries` step. `x new` ships four:
-                          #   bare-error, raw-colour, untranslated-string, unzoned-date
+                          #   each inside its `boundaries` step. `x new` writes every
+                          #   name in SHIPPED_GUARD_NAMES (packages/cli/src/templates/
+                          #   scaffold-guards.ts); `x doctor` lists the ones missing
   docker/                 # Dockerfile, Dockerfile.dockerignore, both compose files, and
                           #   helm/ — the chart, 8 files. All written by `x new`
   app.config.ts           # the one config file
@@ -88,21 +89,26 @@ Opting a `site/` route into hydration is allowed, explicit, and budgeted — nev
 Feature-sliced, not layer-sliced. One folder per feature, one job per file.
 
 ```
-apps/web/app/<feature>/{entity,repo,service,actions,live,jobs,policy,ui}.ts
+apps/web/app/<feature>/{entity,repo,service,policy,errors}.ts
+apps/web/app/<feature>/{actions,live,queries,jobs,tasks}/<name>.ts   # one per file, as generated
+apps/web/app/<feature>/ui/                                           # components
 ```
 
-| File | Owns | Never |
+**A primitive is registered by `defineApi()` and found by the module scan, never by its filename**, so a feature may keep one declaration per file (`actions/<verb>-<name>.ts` — what `x g` writes) or several in one (`actions.ts` — what `examples/dummy` keeps); nothing enforces either, `As of 2026-10`. The filenames that ARE enforced:
+
+| File | Owns | Never — and the error |
 |---|---|---|
 | `entity.ts` | table + domain type + invariants | I/O, policy |
-| `repo.ts` | SQL for this feature | business rules, HTTP |
-| `service.ts` | business logic, composed from repos | HTTP, rendering, direct SQL |
-| `actions.ts` | `action` / `mutator` declarations | logic (delegate to `service.ts`) |
-| `live.ts` | `query` declarations, `live: true` | writes |
-| `jobs.ts` | `job` declarations | inline slow work in an action |
+| `repo.ts` | the feature's reads and writes, through the typed handle | a raw SQL literal the handle can express — `guards/repo-raw-sql.ts` |
+| `service.ts` | business logic, composed from repos | an HTTP import — `X_BOUNDARY_SERVICE_TO_HTTP` |
+| `page.tsx` · `layout.tsx` · `route.ts` | a URL | a database import — `X_BOUNDARY_ROUTE_TO_DB` |
+| `actions/` · `actions.ts` | `action` / `mutator` declarations | logic (delegate to `service.ts`) |
+| `live/` · `queries/` · `live.ts` | `query` declarations | writes |
+| `jobs/` · `tasks/` · `jobs.ts` | `job` / `task` declarations | inline slow work in an action |
 | `policy.ts` | `policy` rules for this feature | data shaping |
 | `ui/` | Solid components | fetching, business logic, its own authz |
 
-A feature imports another feature only through that feature's `service.ts` or its published types — never its `repo.ts`. Cross-feature `repo` access is a build error, and it is the reason "just add a join" turns into a distributed monolith.
+A feature imports another feature through that feature's `service.ts` or its published types, never its `repo.ts` — a convention, **not a build error** (`As of 2026-10`: no boundary rule reads it, and `x new`'s own dashboard reads `../post/repo`).
 
 ## App packages
 

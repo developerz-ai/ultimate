@@ -46,6 +46,11 @@ x verify --only unit --shard 2/4 --json > part-unit-2.json
   list plus the `files` this shard ran), and each step carries the same facts as `steps[].shard`.
 - A shard whose slice is empty, or ran only skipped tests, is not red: the zero-tests floor
   (`x.verify.json`) is applied by `merge`, on the counts summed over every shard.
+- An app's coverage floor is not judged by a shard — one slice cannot hold it. The shard is green
+  on coverage and carries what it covered in `data.coverage.unit.facts`; `merge` folds every shard and judges
+  once (`X_COVERAGE_BELOW_FLOOR`). Shards that carry nothing fold to 0%, never to a skip.
+- Under `--json` each finished step is one line on stderr (`{"step":"unit","ok":true,"ms":61250}`),
+  so a cancelled job's log ends on the last step that finished. Redirect stdout only.
 - A red shard reproduces locally with the same flags.
 
 ## `x verify merge <part.json…>` — the verdict
@@ -61,6 +66,7 @@ answers the gate:
 - a sharded step has shards `1..n` exactly once, all with one `corpusHash` — a missing shard, a
   duplicate, or two corpora (jobs on different commits) is named;
 - the zero-tests floor is applied to each sharded step's summed counts;
+- an app's coverage floor is applied to the fold of a sharded `unit` step's `data.coverage.unit.facts`;
 - a red step in any part is red here, with its findings and output kept.
 
 The merged document has no `notAGateRun` — it is the gate's answer — and its `durationMs` is the
@@ -109,9 +115,10 @@ jobs:
         run: |
           bunx x verify --only '${{ matrix.only }}' \
             ${{ matrix.shard && format('--shard {0}', matrix.shard) || '' }} \
-            --json > part.json || true
+            --json > "$RUNNER_TEMP/part.json" || true
+      # Outside the checkout: the file is open and empty while the part runs, and `lint` walks the tree.
       - uses: actions/upload-artifact@v4
-        with: { name: 'part-${{ matrix.name }}', path: part.json }
+        with: { name: 'part-${{ matrix.name }}', path: '${{ runner.temp }}/part.json' }
 
   check: # the one required status check
     needs: part

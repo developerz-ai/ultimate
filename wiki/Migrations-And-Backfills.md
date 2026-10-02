@@ -21,6 +21,7 @@ One engine per concern. A **migration** changes the shape of a table — schema,
 ```
 x db gen "initial"            # a new app's first database command — x new writes no migration
 x db gen "add publish_at"     # diffs entities against migrations, writes a named migration + its down
+x db gen                      # nothing to generate: rewrites the schema dump and nothing else
 x db migrate                  # applies pending migrations, dev or prod, through migrate()
 ROLE=migrate                  # the same migrate() as a release-phase container, one image
 ```
@@ -47,7 +48,7 @@ Every migration applies inside its own transaction, recorded into `x_migrations`
 
 ### `generateMigration()` — one diff engine
 
-`x db gen` diffs the app's entity snapshots against the schema the newest migration's `.snapshot.json` sidecar recorded, and writes the migration text plus that sidecar for the *next* diff. A migration missing its sidecar — deleted, or hand-written without one — is `X_MIGRATION_SNAPSHOT_MISSING`: refused rather than defaulted to an empty schema, which would emit `create table` for every table the database already holds. No migration at all is a different answer and not a refusal: zero migrations declare the empty schema, which is what makes `x db gen "initial"` work in an app that has never generated one.
+`x db gen` diffs the app's entity snapshots against the schema the newest migration's `.snapshot.json` sidecar recorded, and writes the migration text plus that sidecar for the *next* diff. The sidecar is the generator's diff base, in the entity's vocabulary; what the database holds, in SQL, is [the schema dump](#the-schema-dump). A migration missing its sidecar — deleted, or hand-written without one — is `X_MIGRATION_SNAPSHOT_MISSING`: refused rather than defaulted to an empty schema, which would emit `create table` for every table the database already holds. No migration at all is a different answer and not a refusal: zero migrations declare the empty schema, which is what makes `x db gen "initial"` work in an app that has never generated one.
 
 Its two remedies, in the order they are safe to run: `git checkout -- packages/db/migrations/<id>.snapshot.json`, or, when the file was never written, `rm packages/db/migrations/<id>.* && x db gen "<name>"`. The delete comes first because `x db gen` against the migration that is still there raises this same code. Until 2026-08 the `fix:` said "restore … from version control" alone while `x db migrate`'s `unknown-schema` difference answered `x db gen "snapshot <name>"` — each naming the command that raises the other, with nothing to restore in an app whose sidecar was never written.
 
@@ -91,6 +92,73 @@ read that directory failed `x verify` on a file no author typed — *Formatter w
 following content* — as `X_LINT_FAILED`. Two fixes, both in 2.0.0: the serialiser is a
 fixed point of Biome 2.5.5 at `lineWidth: 100`, and `x new`'s `biome.json` excludes
 `**/migrations`, the glob this repo's own config already carried.
+
+## The schema dump
+
+Rule: the current schema is committed SQL under `packages/db/schema/` — written by `x db gen` and `x db migrate`, never by hand, and held equal to the migrations by `x verify`'s `drift` step (`X_SCHEMA_DUMP_DRIFT`). `As of 2026-10`. Source: [`packages/db/src/introspect-catalog.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/introspect-catalog.ts), [`schema-dump.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/schema-dump.ts), [`schema-load.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/schema-load.ts).
+
+| Directory | Holds | One file per |
+|---|---|---|
+| `01_extensions/` | `create extension if not exists` | extension |
+| `02_types/` | enums, domains | type |
+| `03_sequences/` | sequences no column owns | sequence |
+| `04_tables/` | columns, defaults, generated and identity columns, primary key, unique, check; a `serial` column's sequence; `replica identity` | table |
+| `05_indexes/` | indexes no constraint backs | table |
+| `06_foreign_keys/` | `alter table … add constraint` | table |
+| `07_views/` | views; materialized views with their indexes | view |
+| `08_functions/` | functions and procedures, overloads together | name |
+| `09_triggers/` | triggers, and a non-default enabled state | table |
+| `framework/<same nine>/` | the framework's own tables — `x_jobs`, `x_users`, `x_migrations`, … | — |
+| `unrendered.sql` | comment lines naming what the dump cannot spell | — |
+
+- **One producer.** A scratch database, framework tables applied, every migration replayed, then read out of `pg_catalog`. Never the dev database: a table made by hand there is not in the dump. No `pg_dump`.
+- **One engine rule: PGlite unless the migrations require otherwise.** The scratch database is the embedded one. It is a real Postgres only when a migration creates an extension the installed PGlite cannot link — decided from the migrations and the installed package, never from which URL is set, so a laptop and CI choose alike.
+- **Deterministic.** Objects sorted by name in code-unit order, columns in ordinal order, Postgres' own `pg_get_*def` spellings, every sequence option written out. No timestamp, version, owner or grant. Same migrations, same bytes.
+- **A one-table change is a one-file diff.** A file whose bytes did not move is not rewritten.
+- **Load equals replay.** The `drift` step empties the scratch schema, loads the dump, and renders it again; the bytes must match. Loading runs in kind order, framework twin first, and retries a file that names something not created yet (a view over a later view, a default calling a function).
+- **500-line ceiling.** A longer file is split `<name>.1.sql`, `<name>.2.sql`, …; the loader joins the parts in numeric order.
+- **`packages/db/.gitattributes`** (scaffolded): `schema/** linguist-generated=true text eol=lf`. The `eol=lf` is load-bearing — the gate compares bytes.
+
+| Not the same thing | Answers | Vocabulary |
+|---|---|---|
+| `<id>.snapshot.json` | what `x db gen` diffs the entities against | the entity's — generator spellings |
+| `packages/db/schema/` | what the database holds | SQL — Postgres' spellings |
+| `x_migrations` | what is deployed | ledger rows, checksummed |
+
+When it is owed: from the first migration. An app with no migration and no dump owes none — `x new --no-example` stays green.
+
+| `drift` finding | Cause | Fix |
+|---|---|---|
+| `…/schema does not exist` | migrations, and the dump was never generated | `x db gen` |
+| `… differs from what the migrations produce` | a hand edit, a migration written or pulled with no regeneration, or a framework upgrade that changed an `x_` table | `x db gen` |
+| `… is what the migrations produce and is not committed` / `describes nothing the migrations produce` | a file missing, or a stray one | `x db gen` |
+| `the migrations do not replay on the scratch database` | a statement the scratch database refuses | `x db migrate --json` names it, then `x db gen` |
+| `the migrations create extension "…", which the embedded database cannot link … neither TEST_DATABASE_URL nor DATABASE_URL names one` | the engine rule chose a server and none is named | `TEST_DATABASE_URL=postgres://<user>:<password>@localhost:5432/postgres x db gen` |
+| `migration <id> WAS written … only the schema dump failed` | `x db gen` exited 1 **after** writing the migration | repair what the rest of the cause names, then a bare `x db gen` — it writes the dump and no second migration |
+| `a database loaded from the schema dump is not the one the migrations build` | the dump renders an object wrong | `x db gen`, then report the file |
+
+Limits, stated:
+
+- **Rendered:** the nine kinds above. **Named in `unrendered.sql`, not rendered:** partitioned tables and their partitions, inheritance children, foreign tables, composite and range types, aggregates, row-security policies and the row-security flag, rules. A dump that names one makes no load-equals-replay claim, and the step does not ask.
+- **Neither rendered nor named:** comments, grants, owners, publications, statistics objects, event triggers, collations, operators, casts.
+- **Bytes are promised per engine major.** `pg_get_*def` spellings move between Postgres majors. On the embedded engine the major is the installed PGlite's (0.5.8 is PostgreSQL 18), pinned by the lockfile. An app on the server engine pins its own: the same major in CI as on the laptops that run `x db gen`, or the `drift` step reports the difference.
+- **`x db reset` still replays.** Loading the dump builds the schema faster in isolation (reference app: 159 ms → 74 ms) and is under 3% of a reset, which is one embedded-database boot.
+
+### Extensions and the scratch database
+
+| The migrations create | Scratch database | Needs |
+|---|---|---|
+| no extension | embedded | nothing |
+| an extension the installed PGlite ships — `citext`, `pgcrypto`, `pg_trgm`, `uuid-ossp`, `hstore`, `ltree`, `unaccent`, `btree_gin`, 34 in 0.5.8 | embedded, with it linked | nothing |
+| one it does not — `vector`, `postgis`, `pgstattuple` (0.5.8 ships no `vector`) | a real Postgres: a database created, replayed in, and dropped | `TEST_DATABASE_URL`, else `DATABASE_URL` — the admin URL `@ultimat3/testing` clones its template databases from; the role must be able to create a database |
+
+`x dev`'s embedded database links the same list from the same reader, so a migration that replays in the gate applies in `x dev`. An app in the third row cannot run on the embedded database at all and develops against `DATABASE_URL`.
+
+### The boot is cached
+
+An embedded scratch boot restores a post-`initdb` snapshot instead of running `initdb`: `.x/cache/pglite-<version>-f1.snapshot`, keyed on the PGlite version alone (one snapshot serves every extension set), about 40 MB, gitignored with the rest of `.x/`. Read only through its own checksum; a file that does not verify, or verifies and will not open, is deleted and rebuilt. Written under a temp name and renamed, so two commands racing leave one whole file. A fresh checkout — CI — pays one `initdb` and writes it. Delete it freely: `rm -r .x/cache`.
+
+`x db migrate` also reports `unexpected-object` (`X_DB_DRIFT`): a trigger, function, view, type or sequence the dev database holds and replaying the migrations does not create. Compared by identity, never by definition text. The fix drops it first, then moves its `create` into a migration.
 
 ## The destructive-migration rail
 
@@ -301,6 +369,7 @@ Scaffolds a working pair, never a stub: `x g backfill <name>` writes `<feature>/
 | `X_MIGRATION_SNAPSHOT_MISSING` | the newest migration on disk carries no `.snapshot.json` sidecar to diff against | `git checkout -- packages/db/migrations/<id>.snapshot.json` — or, when it was never written, `rm packages/db/migrations/<id>.* && x db gen "<name>"`, the delete first |
 | `X_MIGRATION_VIEW_DEPENDS` | a view is compiled against a column this migration retypes — Postgres answers `0A000` and rolls the whole migration back | `drop view "<v>";` then `x db migrate`, then re-create it from the `create view` the `fix` line carries verbatim. Caught by a **preflight** inside the migration's own transaction, before its first statement, so nothing partial is applied |
 | `X_DB_DRIFT` | the live schema, or the source, disagrees with the migrations | `x db gen "<name>"` — see [Entities and migrations → Drift is a `x verify` failure](Entities-And-Migrations#drift-is-a-x-verify-failure) |
+| `X_SCHEMA_DUMP_DRIFT` | `packages/db/schema/` is not what the migrations produce, or was never generated | `x db gen` — see [The schema dump](#the-schema-dump) |
 
 Seven codes, and each one exists because it sends the reader somewhere different — run it, force it, change environment, migrate first, wait, fix the predicates, fix the name. All are `@ultimat3/jobs`': the CLI throws the framework package's errors rather than minting a parallel set, and the pass enforces two of them itself.
 

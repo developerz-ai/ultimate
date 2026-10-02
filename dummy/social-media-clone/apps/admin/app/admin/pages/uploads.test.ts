@@ -1,6 +1,6 @@
-// The gate the ops board grew in 2026-08. `mediaStateCounts` reaches the media table directly —
-// it is imported BY `admin.ts`, so it cannot ask the `AdminApp`'s authz without closing a cycle —
-// which made this call the one place in apps/admin that touched the database with nothing deciding.
+// The gate the ops board grew in 2026-08. Its counts read the media table through the admin's
+// adapter with no `AdminApp` in hand — which made this call the one place in apps/admin that
+// touched the database with nothing deciding.
 
 import { expect, test } from 'bun:test';
 import type { CrudCtx } from '@ultimat3/admin';

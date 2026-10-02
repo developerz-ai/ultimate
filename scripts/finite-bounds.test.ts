@@ -245,6 +245,18 @@ describe('the ratchet', () => {
     expect(gaps[0]?.first?.expression).toBe('options.maxBytes ?? 1024');
   });
 
+  test('the finding lists every site with its expression, never only the first', () => {
+    const [gap] = checkFiniteBounds({
+      files: site('const n = options.maxBytes ?? 1024;\nconst m = options.maxRows ?? 10;'),
+      pins: { a: { count: 1, reason: 'measured' } },
+    });
+    if (gap === undefined) expect.unreachable('two sites against a pin of one is over');
+    const finding = finiteBoundFindingFor(gap);
+    expect(finding.cause).toContain('packages/a/src/one.ts:1 (options.maxBytes ?? 1024)');
+    expect(finding.cause).toContain('packages/a/src/one.ts:2 (options.maxRows ?? 10)');
+    expect(finding.fix).toContain('1 of the 2 sites the cause lists');
+  });
+
   test('a package AT its pin is silence, and one below it is stale', () => {
     const files = site('const n = options.maxBytes ?? 1024;');
     const reason = 'measured';

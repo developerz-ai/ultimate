@@ -31,3 +31,63 @@ Tier 4 (moved 5 → 4 on 2026-08-19, when the `admin → ui` exception was delet
 - **Generated source is a CODE sink.** `build-icons.ts` writes modules every app EXECUTES at import, from data fetched over the network, so an attribute value goes through `JSON.stringify` and never `'${value}'` — and `SAFE_ATTR_VALUE` refuses anything that is not glyph geometry one layer earlier. `iconElements` guards tags and attribute NAMES; it has never guarded a value. Malformed upstream data is `X_UI_INVALID_VALUE`; only the generator's real environment faults (no network, no biome binary) are `X_UI_RUNTIME_MISSING`.
 
 - **The icon NAME is the third sink, and it has no escape.** The upstream map key becomes a filesystem path under `GLYPHS_DIR`, an exported identifier and a `//` banner, and `buildIcons` clears `GLYPHS_DIR` before it writes — so `../../index` was a delete of the glyph tree followed by an overwrite of a hand-written module, and a key carrying `;` produced a module that typechecked and ran. `SAFE_ICON_NAME` (`/^[a-z0-9]+(-[a-z0-9]+)*$/`) is checked in `parseIconNodes` BEFORE `out.set`, the same allowlist-over-a-sink shape as `SAFE_ATTR_VALUE` one layer down; all 1767 committed names pass it and `build-icons.test.ts` asserts that.
+
+## Moved 2026-10-01 (plan 101, slice 07)
+
+Eight rules shortened in `packages/ui/CLAUDE.md` to the rule itself; the reasoning each carried, verbatim as it stood:
+
+- **The rule being pure is not enough — the WIRING has to be tested too.** `createRovingTabindex` was correct and `Menu` handed it `[role="menuitem"]`, so a disabled item made every item after it unreachable and every assertion in the package still passed. `src/jsx-probe.ts` reads the props an element actually carries (a `tabindex`, an `aria-live`, an `onKeyDown`, a `ref`) and `src/fake-dom.ts` gives it a DOM where a disabled control REFUSES focus, exactly as the real one does. Both are test-only and neither is in `index.ts`. `jsx-probe`'s `probe`/`unprobe` are the one exception, reachable at the subpath `@ultimat3/ui/jsx-probe` and still absent from the barrel: `globalThis.React` is ONE property, so its install/restore counter has to be ONE counter — `@ultimat3/admin` (tier 5) kept a second pair, and interleaved installs restored the two harnesses in the wrong order, leaving the global holding a harness the run had already torn down. `components/interaction.test.ts` is where a keyboard or form-participation claim gets proven; asserting the pure helper alone is how these shipped.
+
+- **One async region, four branches, and `empty` is unreachable while `pending`.** `asyncBranch`
+  (`src/components/async-branch.ts`) is the ONLY place the `(pending, failed, empty, data)` decision
+  is made — `AsyncRegion` renders it and `DataTable` calls it, so a table and a card list cannot
+  disagree about what "loading with stale rows" looks like. The property is structural: an
+  `AsyncState` (declared in `@ultimat3/core` since 21.0.0 — imported here, never re-exported, so
+  it has one import path) in `pending` carries no data, so nothing can be found empty in it, and "No results"
+  for one frame before the first page arrives is unconstructible rather than discouraged.
+  `<AsyncRegion>`'s `empty` and `ready` are REQUIRED props, so forgetting the empty state is a type
+  error. `refreshing` CARRIES the previous data — a refetch dims what is on screen (`aria-busy`) and
+  never tears it down, which is what makes a search box feel fast; the empty branch is reachable
+  only from a completed result that returned zero. `reserve` feeds the placeholder AND the
+  `min-block-size` of every branch, so the skeleton and the loaded content cannot be written into
+  different boxes.
+
+- **A toast dwell stops for THREE independent reasons, and one of them is `document.hidden`.**
+  Hover and focus-within are the two everybody implements; a backgrounded tab spends the whole dwell
+  and the corner is empty when the user comes back. `ToastHold` is a set, never a boolean: a pointer
+  leaving a toast a keyboard user is still inside must not restart the countdown, which one flag
+  cannot express. Duration is a TOKEN (`TOAST_DWELL_MS`), never a per-call number of milliseconds.
+  The queue's rules are pure (`src/toast/toast-state.ts`) and the clock is injected (`ToastEnv`), so
+  a server render gets `INERT_TOAST_ENV` — nothing scheduled — and `ToastRegion` still emits its
+  empty live region, which is what the document has to carry BEFORE the first message.
+
+- **`announce()` writes into a region `AppShell` already rendered.** A live region created and
+  filled in the same frame is not announced by most screen readers, so `announce()`'s own
+  create-if-absent branch could only ever be right from its second call. `liveRegionAttrs` is the
+  one derivation both halves read. It is for a state change with no surface of its own ("12
+  results", "sorted by name"); a notification is a `Toast`, and two announcement paths for one
+  message is how a screen reader reads it twice.
+
+- **`loading` never sets the native `disabled` attribute** (`Button`), and that WILL read as a
+  mistake. A control that disables itself mid-flow drops focus to `<body>`, is exempt from the
+  contrast minimum, announces no reason, and still does not prevent the double submit — that race is
+  on the server. `aria-disabled` + a refused click keeps it focusable and readable; `Button.module.scss`
+  restores full opacity under `[aria-busy='true']` because `t.disabled` dims to 0.55. `<Form busy>`
+  refuses the submit again, because Enter in a text field touches no button at all.
+
+- **A failed submit focuses the first invalid CONTROL, and the summary only when there is none.**
+  GOV.UK's summary-with-links shape is not available here: `Field` mints its control ids internally,
+  and inverting that ownership is the drift `Field` exists to prevent. `firstInvalidField` answers in
+  DECLARATION order, never issue order — a server may report the last field first. `fieldSelector`
+  is the allowlist between a caller's string and a selector; a name the grammar refuses reaches no
+  `querySelector`.
+
+- **`defineTheme()` refuses a palette that fails WCAG 2.2 AA** (`X_UI_CONTRAST_INSUFFICIENT`),
+  measured against `CONTRAST_PAIRS` — the same table `contrast.test.ts` holds the shipped palette to,
+  in SOURCE rather than in a test, so an app cannot ship a brand the design system would have failed
+  its own suite over. Only pairings the brand can have CHANGED are measured, on the resolved palette
+  (shipped channels + overrides): a new `accent` against the shipped `accent-fg` is the commonest way
+  a brand goes unreadable. AA, never APCA — APCA is not a standard, and AA is the operative legal
+  benchmark.
+
+- **`useUi()`'s server branch is a SLOT, and the module that fills it is browser-mapped** (issue #490). `context.ts` imports no value from `@ultimat3/i18n` or `@ultimat3/time` (the i18n barrel installs the framework catalog at import: 16.1 kB per island). `src/theme/ambient.ts` registers `ambientUiContext` into `ambient-slot.ts` at import; `index.ts` imports it BARE above every re-export, and `package.json`'s `browser` field maps it to `ambient.browser.ts` (bundlers only — `bun test` and SSR get the server's). A test reaching components by module path must `import './ambient'` itself, as `inert-render.test.ts` does. `fallbackTranslator` is held member-for-member against `createTranslator({})` by `context.test.ts`. `errors.ts` is pure: `registerErrorCodes()` is `src/error-registry.ts`, imported bare. `barrel-bytes.test.ts` pins the theme island's retained-module list.

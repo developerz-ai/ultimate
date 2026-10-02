@@ -8,11 +8,10 @@
 
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
-import { Icon } from '@ultimat3/ui';
+import { Icon, Link } from '@ultimat3/ui';
 import { iconArrowRight } from '@ultimat3/ui/icons/arrow-right';
 import { iconCircleCheck } from '@ultimat3/ui/icons/circle-check';
 import { iconEyeOff } from '@ultimat3/ui/icons/eye-off';
-import { ActionLink } from '../shared/ui/action';
 import { AppShell } from '../shared/ui/app-shell';
 import styles from './page.module.scss';
 
@@ -37,6 +36,14 @@ const PROOFS = ['policy', 'realtime', 'offline', 'admin'] as const;
 const STATS = ['primitives', 'js', 'authz', 'packages'] as const;
 
 const POINTS = ['one', 'two', 'three'] as const;
+
+/**
+ * Source code, shown as source: the call the panel illustrates and the column it reads. Constants
+ * and not catalog keys for the reason the audience names below are — a translated identifier is an
+ * identifier that no longer names anything in this codebase.
+ */
+const DECISION_CALL = 'canSeePost(null, post)';
+const AUDIENCE_FIELD = 'audience';
 
 /**
  * The audience ladder as an anonymous reader meets it — the app's whole subject, in three rows.
@@ -76,25 +83,29 @@ export function HomePage(props: { readonly url?: string | undefined }) {
             <p class={styles.lede}>{t('site.home.description')}</p>
 
             <div class={styles.ctas}>
-              <ActionLink href="/feed" size="lg">
+              <Link
+                appearance="button"
+                size="lg"
+                href="/feed"
+                iconEnd={<Icon glyph={iconArrowRight} />}
+              >
                 {t('site.home.cta')}
-                <Icon glyph={iconArrowRight} />
-              </ActionLink>
-              <ActionLink href="/signin" size="lg" variant="secondary">
+              </Link>
+              <Link appearance="button" variant="secondary" size="lg" href="/signin">
                 {t('site.home.signin')}
-              </ActionLink>
+              </Link>
             </div>
 
             <p class={styles.note}>{t('site.home.seeded')}</p>
           </div>
 
           <div class={styles.decision}>
-            <p class={styles.decisionBar}>canSeePost(null, post)</p>
+            <p class={styles.decisionBar}>{DECISION_CALL}</p>
             <p class={styles.decisionCaption}>{t('site.home.decision.caption')}</p>
             <ul class={styles.decisionList}>
               {DECISION.map((row) => (
                 <li class={row.visible ? styles.rowVisible : styles.rowHidden}>
-                  <span class={styles.rowKey}>audience: {row.audience}</span>
+                  <span class={styles.rowKey}>{`${AUDIENCE_FIELD}: ${row.audience}`}</span>
                   <span class={styles.rowVerdict}>
                     <Icon glyph={row.visible ? iconCircleCheck : iconEyeOff} />
                     {/* Two literal calls, not one with a computed key: `x i18n check` can only see
@@ -172,13 +183,17 @@ export function HomePage(props: { readonly url?: string | undefined }) {
           <h2 class={styles.closingTitle}>{t('site.home.closing.title')}</h2>
           <p class={styles.closingBody}>{t('site.home.closing.body')}</p>
           <div class={styles.ctas}>
-            <ActionLink href="/feed" size="lg">
+            <Link
+              appearance="button"
+              size="lg"
+              href="/feed"
+              iconEnd={<Icon glyph={iconArrowRight} />}
+            >
               {t('site.home.closing.cta')}
-              <Icon glyph={iconArrowRight} />
-            </ActionLink>
-            <ActionLink href="/signup" size="lg" variant="secondary">
+            </Link>
+            <Link appearance="button" variant="secondary" size="lg" href="/signup">
               {t('site.home.closing.secondary')}
-            </ActionLink>
+            </Link>
           </div>
         </div>
       </section>

@@ -19,6 +19,7 @@ import { grantGeneratedPermissions } from './generate-grants';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { containedPath, writeFiles } from './generate-write';
+import { declareGeneratedImports } from './generated-imports';
 import { registerGeneratedEntities, resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
 import { catalogLocales, syncI18nIndex } from './i18n-index';
@@ -114,11 +115,16 @@ export const generateCommand: CliCommand = {
     const handle = await registerGeneratedEntities(root, report.written, dbModule);
     // And a fourth, for `--admin`: the override it wrote, listed where `defineAdmin()` reads it.
     const adminWiring = await registerAdminResources(root, report.written);
+    // And a fifth, last because the others add imports too: every sibling workspace a written file
+    // imports, declared in the manifest it landed under — or `package-shape` refuses the output.
     const edited = [
-      ...(await grantGeneratedPermissions(root, report.written)),
-      ...(await registerGeneratedPrimitives(root, report.written)),
-      ...handle.edited,
-      ...adminWiring.edited,
+      ...new Set([
+        ...(await grantGeneratedPermissions(root, report.written)),
+        ...(await registerGeneratedPrimitives(root, report.written)),
+        ...handle.edited,
+        ...adminWiring.edited,
+        ...(await declareGeneratedImports(root, report.written)),
+      ]),
     ];
     // A grant that edit could not place is said so, with the role each permission belongs to: an
     // app whose role map is not the scaffold's got no grant and no word, and a 403 on every

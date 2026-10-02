@@ -4,7 +4,14 @@
 // the same steps because there is only one list. This file adds the two rules a package monorepo
 // enforces that the CLI cannot know on its own: the tier table, and its generated manifest.
 //
-//   bun run scripts/verify.ts [--json] [--verbose] [--workers N] [--only <step>]
+//   bun run scripts/verify.ts [--json] [--verbose] [--workers N] [--only <step>[,<step>…]]
+//   bun run scripts/verify.ts --only unit --shard i/n [--timings file]   # one CI runner's slice
+//   bun run scripts/verify.ts merge <part.json…> [--json]                # the parts, as one verdict
+//
+// The last two are how CI runs this gate on several runners and still gets ONE verdict: each part
+// is `--only` (and `--shard` for the parallel suites), and `merge` is red for a step no part ran.
+// `x verify` has both, but refuses the repo root (`X_NOT_IN_APP`) and carries no host checks, so
+// they are spelled here too — same readers, same merge, this file's `HOST_CHECKS` under them.
 //
 // `--workers` is the CLI's own flag, passed through: the test steps shard over `cpus` by default,
 // and on a shared machine that width was measured to take the whole gate down (OOM-killed twice
@@ -25,10 +32,17 @@ import {
   SPECS,
   VERIFY_STEPS,
 } from '@ultimat3/cli';
-import { renderThrowable } from '@ultimat3/core';
+import { isUltimateError, renderThrowable } from '@ultimat3/core';
 // The leaf, not the barrel (DX ledger #10): a guard must load while a package is mid-edit.
 import { checkErrorCodesThrown } from '../packages/cli/src/error-unthrown';
-import { BadFlagError } from '../packages/cli/src/errors';
+import { BadFlagError, MissingPositionalError } from '../packages/cli/src/errors';
+import { VerifyMergeInputError } from '../packages/cli/src/verify-errors';
+import { readVerifyFloor } from '../packages/cli/src/verify-floor';
+import { mergeParts, parsePart } from '../packages/cli/src/verify-merge';
+import { stepStream } from '../packages/cli/src/verify-progress';
+import { readTimings } from '../packages/cli/src/verify-shard';
+import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
+import { writeErrorLine } from '../packages/cli/src/write-line';
 import { benchClaimFindings } from './bench-claims';
 import {
   adminFlattenerFindingFor,
@@ -54,14 +68,14 @@ import { imageContractFindings } from './image-contract';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { report, writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
-import type { VerifyArgs } from './lib/verify-args';
-import { readVerifyArgs } from './lib/verify-args';
+import { REPO_GATE, readVerifyArgs, VERIFY_SUBCOMMANDS } from './lib/verify-args';
 import { llmsTxtFindings } from './llms-txt';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { readmeFenceFindings } from './readme-fences';
 import { releaseFactFindings } from './release-facts';
 import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
+import { sealCallFindings } from './seal-calls';
 import { setupCommandFindings } from './setup-commands';
 import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
@@ -114,6 +128,9 @@ export const tierBoundaries: HostCheck = async (root) => {
     // `packages/cli/src` — and on `boundaries` rather than an eighteenth step, for the reason the
     // `errors` step's comment already gives: `VerifyStepName` is a closed union the CLI owns.
     ...(await checkFlagReads(SPECS, join(root, 'packages', 'cli', 'src'))),
+    // One cipher call: a package above tier 0 seals through `seal()` / `open()` in
+    // `@ultimat3/core`, never its own `subtle.encrypt`. A text rule, so it rides here.
+    ...(await sealCallFindings(root)),
   ];
 };
 
@@ -299,26 +316,84 @@ export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
   roadmap: checkRoadmap,
 };
 
+/**
+ * `merge <part.json…>`: the parts CI ran on separate runners, folded by the CLI's own `mergeParts`
+ * under this repo's `x.verify.json`. Green only when every step of the gate is in exactly one part
+ * (or in every shard of one split) — a step no part ran is `X_VERIFY_MERGE_INCOMPLETE`.
+ */
+export async function mergeGateParts(root: string, files: readonly string[]) {
+  if (files.length === 0) {
+    throw new MissingPositionalError({
+      command: 'verify merge',
+      positional: 'part.json…',
+      example: 'bun run verify merge parts/*.json --json',
+    });
+  }
+  const parts = await Promise.all(
+    files.map(async (file) => {
+      const handle = Bun.file(file);
+      // An unmatched `parts/*.json` arrives as that literal: refused by name, never an ENOENT.
+      if (!(await handle.exists())) {
+        throw new VerifyMergeInputError({ file, reason: 'does not exist', command: REPO_GATE });
+      }
+      return parsePart(file, await handle.text(), REPO_GATE);
+    }),
+  );
+  // No coverage riders: this root is not an app. The framework's floor is judged per package and
+  // for `scripts/`, one process each, by `scripts/coverage-gate.ts` — the `packages` CI job.
+  return mergeParts(parts, await readVerifyFloor(root), VERIFY_STEP_NAMES, { command: REPO_GATE });
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
-  let gate: VerifyArgs = {};
+  const verbose = flagBool(args, 'verbose');
   try {
-    gate = readVerifyArgs(args);
+    const [word, ...rest] = args.positionals;
+    if (word !== undefined && !(VERIFY_SUBCOMMANDS as readonly string[]).includes(word)) {
+      // A stray word used to be dropped and the whole gate ran: `verify lint` is not `--only lint`.
+      throw new BadFlagError({
+        flag: 'only',
+        command: 'verify',
+        reason: `"${word}" is not a subcommand (${VERIFY_SUBCOMMANDS.join(', ')}); a step is named with --only`,
+        fix: 'bun run verify --only lint',
+      });
+    }
+    const gate = readVerifyArgs(args);
+    const result =
+      word === 'merge'
+        ? await mergeGateParts(root, rest)
+        : await runVerify(VERIFY_STEPS, {
+            root,
+            runner: exec,
+            hostChecks: HOST_CHECKS,
+            command: REPO_GATE,
+            // One line per finished step on stderr under `--json`, so a cancelled CI part's log
+            // ends on the last step that finished (#589). stdout stays the one document.
+            ...stepStream(args.json, writeErrorLine),
+            ...(gate.only === undefined ? {} : { only: gate.only }),
+            ...(gate.workers === undefined ? {} : { workers: gate.workers }),
+            ...(gate.shard === undefined
+              ? {}
+              : {
+                  shard: {
+                    ...gate.shard,
+                    ...(gate.timings === undefined
+                      ? {}
+                      : { timings: await readTimings(gate.timings, REPO_GATE) }),
+                  },
+                }),
+          });
+    // Through `writeOut`, not `process.stdout.write`: see the note there. A failing gate's JSON
+    // carries each failed step's own output, which is exactly when the payload clears 64KB and
+    // exactly when a developer needs it — so the truncation only ever bit the runs that mattered.
+    writeOut(`${render(result, args.json, verbose)}\n`);
+    process.exit(exitCodeFor(result));
   } catch (error) {
-    if (!(error instanceof BadFlagError)) throw error;
+    // A refused flag, a refused shard and an unreadable part are all coded: reported in the
+    // script's own shape, never as a stack trace.
+    if (!isUltimateError(error)) throw error;
     const finding = { code: error.code, cause: error.cause, fix: error.fix };
     report({ ok: false, script: 'verify', summary: 'refused', findings: [finding] }, args.json);
   }
-  const result = await runVerify(VERIFY_STEPS, {
-    root,
-    runner: exec,
-    hostChecks: HOST_CHECKS,
-    ...gate,
-  });
-  // Through `writeOut`, not `process.stdout.write`: see the note there. A failing gate's JSON
-  // carries each failed step's own output, which is exactly when the payload clears 64KB and
-  // exactly when a developer needs it — so the truncation only ever bit the runs that mattered.
-  writeOut(`${render(result, args.json, flagBool(args, 'verbose'))}\n`);
-  process.exit(exitCodeFor(result));
 }

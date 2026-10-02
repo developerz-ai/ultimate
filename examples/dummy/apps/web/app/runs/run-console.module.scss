@@ -1,0 +1,114 @@
+// The run console. Tokens and the ladder's helpers only: no raw length, no hand-written media
+// query, no colour that is not a role — the guards in `guards/` refuse each by name.
+@use '@ultimat3/ui/tokens' as tokens;
+
+.page {
+  max-inline-size: tokens.rem(640px);
+}
+
+.console {
+  display: flex;
+  flex-direction: column;
+  gap: tokens.space(4);
+}
+
+.toolbar {
+  align-items: end;
+  display: flex;
+  gap: tokens.space(3);
+
+  // Narrower than the first rung the controls stack: a select beside a button does not fit.
+  @include tokens.respond-down(sm) {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: tokens.space(1);
+}
+
+.run {
+  background-color: tokens.role('surface');
+  border: tokens.stroke(hairline) solid tokens.role('line');
+  border-radius: tokens.radius(md);
+  padding: tokens.space(4);
+}
+
+.status {
+  font-weight: tokens.weight(semibold);
+  margin-block: 0 tokens.space(3);
+}
+
+.events {
+  display: flex;
+  flex-direction: column;
+  gap: tokens.space(2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.event {
+  align-items: baseline;
+  display: flex;
+  gap: tokens.space(3);
+}
+
+.seq {
+  color: tokens.role('fg-muted');
+  font-variant-numeric: tabular-nums;
+  min-inline-size: tokens.rem(24px);
+}
+
+.detail {
+  color: tokens.role('fg-muted');
+  margin-inline-start: auto;
+}
+
+.prompt {
+  align-items: end;
+  display: flex;
+  gap: tokens.space(3);
+  margin-block-start: tokens.space(4);
+}
+
+.fault {
+  color: tokens.role('danger');
+  margin: 0;
+}
+
+.usage {
+  border-block-start: tokens.stroke(hairline) solid tokens.role('line');
+  margin-block-start: tokens.space(4);
+  padding-block-start: tokens.space(3);
+}
+
+.usageHeading {
+  font-size: tokens.text(sm);
+  font-weight: tokens.weight(semibold);
+  margin-block: 0 tokens.space(2);
+}
+
+.figures {
+  display: grid;
+  gap: tokens.space(2) tokens.space(4);
+  grid-template-columns: repeat(auto-fill, minmax(tokens.rem(128px), 1fr));
+  margin: 0;
+}
+
+.figure {
+  display: flex;
+  flex-direction: column;
+
+  dt {
+    color: tokens.role('fg-muted');
+  }
+
+  dd {
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+  }
+}

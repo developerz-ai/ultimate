@@ -1021,3 +1021,230 @@ own poll loop, never `tick()` driven by hand. `worker-soak.job.test.ts` runs sev
 against one shared driver with one killed mid-job (its queue connection severed, not a clean
 `stop()`) and asserts every job still reaches a terminal state and the work behind it runs exactly
 once. Collected by bare `bun test`, excluded from `bun run test`.
+
+## Moved 2026-10-01 — keyed concurrency (plan 101, slice 05)
+
+The long form of the four rules `packages/jobs/CLAUDE.md` now states in a line each, verbatim as
+they stood when slice 05 landed.
+
+- **`concurrency` is resolved ONCE, in `concurrency.ts`**: a number is one cap, `{ key, limit,
+  whenBusy }` that cap per key. The handle carries `concurrency` (the limit), `whenBusy` (set exactly
+  when keyed) and `concurrencyKeyFor()` — a METHOD, for `tenantFor`'s variance reason. Keyed lease
+  key `job-key:<encoded name>:<key>`; the plain `job:<name>` never changes shape (rolling deploys).
+- **`whenBusy: 'fail'` refuses only on EVIDENCE another run holds the key** (`LeaseStore.holders`,
+  read after a refused acquire): a slot outlives its nack and its job's lease by a moment, so a
+  retried, resumed or redelivered run meets its own. `holders` is REQUIRED on `LeaseStore`. Every
+  bad cap — plain number or `limit` — is `X_JOB_DECLARATION_INVALID`, never `X_INVARIANT`.
+- **A key refusal is `nack({ fail: true, countsAsAttempt: false })`** — state `failed`, outcome
+  `refused` (`worker-key-busy.ts`): never `executeJob`, never a dead letter, not `reportError`ed.
+  `nackState()` in `driver.ts` is the ONE state reading both drivers call.
+- **A key underivable at claim is `SlotGrant` `undecidable`** → `executeJob({ refusal })` fails the
+  ATTEMPT before the body. A throw from `acquire` fails the ROUND and hands the row back uncounted,
+  forever.
+- **`finalAttempt` is `isFinalAttempt(handle.retry, attempt)`** — `nextRetry`'s own comparison,
+  passed by `executeJob`, REQUIRED on `JobRunArgs`.
+
+Why `'fail'` reads `holders()` at all: a slot is released a moment AFTER its job is nacked and
+expires a moment AFTER its job's lease, so a retried, resumed or redelivered run finds its own
+previous claim still on the lease row. Refusing on a busy key alone turned a worker crash into
+`X_JOB_KEY_BUSY` on the very run that crashed. `holders()` was added for that and nothing else —
+the plan claimed no store change was needed.
+
+`worker.ts` stood at 492 of 500 lines after slice 05. Slice 06 split the per-job gating out as
+`worker-admit.ts` before adding the registry.
+
+## Moved 2026-10-01 — known coupling
+
+`driver-pg.ts`'s `PgExecutor` is a one-method structural interface (no `@ultimat3/db` dependency).
+`packages/cli/src/dev-queue.ts` wraps a real `@ultimat3/db` client, so queue statements pass
+`@ultimat3/db`'s statement observer with no `{entity, op}` attribution — future work, see
+`packages/db/CLAUDE.md`'s `observe.ts` section.
+
+## Moved 2026-10-01 — factories
+
+The long form of `packages/jobs/CLAUDE.md`'s "Rules — factories over `job()`", verbatim as it stood
+before slice 06 needed the room.
+
+- **`backfill()`**: a step persists the CURSOR and a count, never the page; step names are positional
+  (`batch:<index>`), so `handle` gets no `step`; the iteration is rebuilt when `batches.cursor`
+  disagrees with the checkpoint; a read-back checkpoint is checked. **`handle` is AT LEAST ONCE** (it
+  runs before its checkpoint) — never invert. **A REPLAYED batch writes no ledger row.**
+- **A `backfill()` declaring `tenant: 'none'` gets the cross-tenant scope, and nothing else does**
+  (`backfill-scope.ts`, `withBackfillScope`): only on the pass's own actor, for the pass's life;
+  `runWithContext` outside `crossTenant`. `backfill-tenancy.test.ts` drives `executeJob`.
+- **`x_backfills` is what was SWEPT; the checkpoints are where a pass resumes**. Keyed by RUN; only
+  `completed` blocks; `start()` clears `completed_at` on an adopted row. A moved checksum warns and
+  does not run; `force` rides the input.
+- **The throttle is spent INSIDE the batch's `step.run`** (`backfill-rate.ts`, `createPacer` asserts
+  its own rate).
+- **A backfill STAMPS its own handle** (`stampBackfill`, not exported); `registeredBackfills()` derives
+  from `registeredJobs()`.
+- **The ledger says what RAN, the registry what EXISTS, `backfill-pending.ts` is the diff**;
+  `isPendingBackfillState` is shared with `x db backfill --all`.
+- **`environments` is checked in `backfillPass()` (the rail) and `gateBackfill()` (a CLI pre-check);
+  `requires` in `gateBackfill()` only; `count` in `backfillPass()` after the last batch**
+  (`X_BACKFILL_STALLED`, its result parsed). `gateBackfill()` RETURNS its refusal.
+- **`inspectBackfills()` is the ONE projection of the ledger**, reads no clock, answers `[]` for a
+  driver with none. The ledger hangs off `driver.backfills`, optional.
+- **`purge()`** is the one caller of every `purgeExpired()`: `PurgeTarget` is structural, `targets()` a
+  thunk, one table per `step.run`, one clock reading for the whole pass, duplicate names refused
+  (`X_INVARIANT`). `DEFAULT_PURGE_CRON`; `@ultimat3/cli`'s `dev-purge.ts` schedules it.
+- **`exportRows()`**: one object per PAGE, named by page index (a rerun rewrites the same bytes); the
+  interleaving assertion in `export-pass.test.ts` is the memory guard; NO cross-tenant escape; the CSV
+  formula guard is on strings only.
+- **`webhook()` delivers ONE event to ONE endpoint** (key `<name>:<endpointId>:<eventId>`); no steps
+  (the endpoint carries the secret); the timestamp is SEND time; endpoint headers merge UNDER the
+  framework's; `redirect: 'manual'`. `WebhookLedger` is a seam; every attempt is recorded before the
+  throw. **The wire format is core's** (`packages/core/src/webhook-signature.ts`), re-exported.
+- A `-fixture.ts` file does not ship; `backfill-pass-fixture.ts` raises a plain `Error` subclass on
+  purpose (it stands in for app code).
+
+## Moved 2026-10-01 — the outbox
+
+The long form of `packages/jobs/CLAUDE.md`'s "Rules — the outbox", verbatim as it stood before
+slice 06 and the idle-cost work needed the room.
+
+- **The relay drains in two phases** (`accept` clears the interval; `close` awaits the pass under
+  `settleAllBy`), its timer `unref`ed. **`relay.stop()` JOINS the pass in flight.**
+- **The claim is a LEASE in one statement** (`claimed_at`/`claimed_by` stamped in the locking CTE;
+  outer `order by staged_at, id`). `OutboxStore.release` (optional) hands back a failed batch.
+  `outbox-claim.test.ts` pins both stores.
+- **The lease is fenced on every mutation** (`and claimed_by = $n`; `OutboxRecord.claimedBy`);
+  `markPublished` also requires `published_at is null`. A token-less call is unfenced in memory and
+  fenced on this relay's id in pg (`outbox-pg.ts` says so). `id` (UUIDv7) is the tiebreak.
+- **`claimLeaseMs` is normalised in ONE place** (`outbox-lease.ts`, `resolveClaimLeaseMs`,
+  `X_INVARIANT` at construction).
+- **The memory outbox store DELETES a published row** (`retained()` is the seam).
+
+## 2026-10-01 — idle cost (measured on a production app)
+
+An idle scheduler pod with ~35 cron tasks burned 48–53 mcores and the database took ~79 commits a
+second at 0.05 HTTP requests a second. The loop ticked every second and, per round, renewed its
+lease once and again before every task (an UPSERT each) and read every task's watermark: 2T+1
+statements, plus a cron resolution per task. An idle worker claimed once per queue every 250 ms and
+its outbox relay every 200 ms.
+
+| Loop | Statements per idle minute, before | After |
+|---|---|---|
+| scheduler, 35 tasks | 4,321 | 6 |
+| worker, 2 queues | 480 | 34 |
+| outbox relay | 300 | 33 |
+
+What was rejected: arming the scheduler's timer for the earliest next occurrence. An idle round is
+now a map walk — no store, no cron resolution — so the one-second tick costs nothing worth saving,
+and a timer armed far ahead would have to be woken by every task-set change and every resume.
+The cross-process wake this left out is the next section.
+
+## 2026-10-01 — the cross-process wake
+
+The idle backoff above made a job enqueued by ANOTHER process wait up to 2 s for an idle worker,
+where the fixed poll had made it wait 250 ms — and a web pod enqueuing for a worker pod is the
+normal production shape. Measured on Postgres 17 over loopback, two pools standing in for two pods,
+idle worker, six samples each:
+
+| Path | Before: median / max | After: median / max |
+|---|---|---|
+| same process (`signalEnqueued`) | 7 ms / 21 ms | 10 ms / 19 ms |
+| another process, direct enqueue | 1,033 ms / 1,785 ms | 8 ms / 18 ms |
+| another process, through the outbox, from COMMIT | 1,275 ms / 2,008 ms | 9 ms / 13 ms |
+| statements per idle minute, worker + relay + depth gauges | 64 | 28 |
+
+| Decision | Why |
+|---|---|
+| the session is `@ultimat3/db`'s `client.listen`, over `Bun.SQL.listen` | "the driver is handed a pool" was the reason this was not built. A pooled client cannot hold a `LISTEN`, but the client can hold one connection beside its pool: measured on Bun 1.4.0, the listener is outside `max`, survives `idleTimeout`, is re-dialled by the driver after `pg_terminate_backend` with `onlisten` firing again, and ends with `unlisten()` or `close()`. Two `LISTEN`s share one session. PGlite has `listen` too, so `x dev` takes the same path |
+| the listener is `startQueueWake`, started by the boot for the `worker` role | not by `createPgDriver`: a web pod builds a driver and must not open a session it never reads from |
+| a notification is throttled IN the statement | `PreCommit_Notify` takes one database-wide lock and holds it through the commit's WAL flush, so every notifying transaction commits one at a time. A `NOTIFY` per enqueue would cap an app's enqueuing commits at one flush at a time. Enqueue: once per queue per 250 ms slot, read over `x_jobs_created_idx`. Stage: not while a committed row is already waiting unclaimed |
+| a wake RESETS the backoff | the slot rule keeps a second row of one slot silent; the woken worker's next pass, one floor later, is what finds it. So pickup is never worse than the fixed 250 ms poll, and only the first row of a quiet period is instant |
+| the ceiling rises only on PROOF | a `LISTEN` through PgBouncer in transaction mode resolves and delivers nothing. A probe sent through the pool must come back on the session; until it does the ceiling stays 2 s. Every re-dial un-proves it |
+| 5 s, not more | 12 claims a minute per loop. The ceiling is still what bounds a notification lost with a session, a delayed job another process queued, and a lapsed lease |
+| a stage's wake cannot use the slot rule | `x_outbox.staged_at` is the ENQUEUER's clock, and the row commits whenever its business transaction does. "An unclaimed committed row is waiting" needs no clock. The residual: a stage silenced by a row that committed a moment earlier, inside a transaction that then runs for seconds, is found by the relay's ramp (200, 600, 1,400, 3,000 ms) rather than at its commit |
+
+Found on the way, and fixed with it:
+
+| Defect | Was |
+|---|---|
+| a wake on a pass in flight forked the claim loop | `wake()` armed a second timer while the first pass's `.finally` armed its own: two chains polling for the life of the worker, one more per such wake |
+| a full worker waited out its backoff to refill a slot | a pass with no free slot asks for nothing, so the loop backed off to its ceiling under a backlog. With `concurrency: 1` and a 3 s job, every refill waited up to 2 s |
+| a retry was found by the poll, not when it fell due | up to the ceiling late on an otherwise idle worker. `JobExecution.resumeAt` now carries a retry's due time and the worker keeps a timer for one inside a minute |
+
+Not done: `EnqueueRequest.runAt` is stamped from the enqueuer's process clock, so an enqueuer
+running ahead of the database writes "immediate" jobs that are due later. A row due within 1 s
+is still announced; a clock further ahead than that falls back to the poll. And
+`step.waitForEvent` still compares the worker's `startedAt` with the bus's `published_at`.
+
+## 2026-10-01 — a claim has an ordinal
+
+`ack` and `nack` were fenced on `claimed_by`, which names a WORKER. A worker whose lease lapsed
+and who then claimed the same row again has the same id, so the body still unwinding from the
+first claim settled the second — and its heartbeat kept renewing a lease it had lost, so it never
+learned. `x_jobs.claims` is incremented by the claim and never reset; `ClaimedJob.claim` carries
+it, and `SQL_ACK`, `SQL_NACK`, `SQL_HEARTBEAT` and `SQL_JOB_PROGRESS` all read it.
+
+`attempt` was not usable as the token: an uncounted nack gives an attempt back and a requeue
+resets it to zero, so two claims of one row can share one. `claimed_at` was rejected because two
+claims in one microsecond are indistinguishable — and under the test clock every claim is.
+
+## 2026-10-01 — the event bus has one clock
+
+`x_job_events.published_at` and `expires_at` were bound from the PUBLISHER's process clock, and
+`eventPrompt` took "asked at" from the WORKER's. A worker 30 s ahead of the publisher read every
+answer as older than its question and timed out with the human's answer sitting in the table; an
+hour-slow publisher wrote rows that had expired before they were inserted. `SQL_EVENT_PUBLISH`
+stamps with `now()`, `EventBus.now()` answers the same clock, and `createPgEventBus` takes no
+`clock` at all.
+
+## Moved 2026-10-01 — retry and bounds
+
+Verbatim from `packages/jobs/CLAUDE.md`, moved to keep it under its size pin.
+
+- **The retry decision reads the ERROR** (`retry-classification.ts` composes around `nextRetry`;
+  `nextRetryForError` is `execute.ts`'s only caller). **`classifyThrown` never reads `error.retry`
+  alone** — core's `declaredErrorRetry(code)`. `retry-after` reuses the nack delay
+  (`meta.retryAfterSeconds`, clamped). The verdict is published (`stop`, `stopReason`,
+  `recordedFailure`).
+- **The backoff arithmetic is core's** (`backoffDelay` via `backoffDelayMs`), `jitter: true` = EQUAL.
+  `RetryPolicy`, `DEFAULT_RETRY`, `retrySchedule()` unchanged; `BackoffStrategy` aliases core's
+  `BackoffCurve`. `retry-core-parity.test.ts`. **`classifyThrown` / `statedDelayMs` are core's,
+  re-exported** (pinned by identity).
+- **`limits.ts`'s per-tenant state is BOUNDED**: a zero counter is deleted; `starts`/`refusals` swept
+  and capped at `DEFAULT_MAX_LIMIT_TENANTS`, evicting the LEAST throttled first. `LimitSnapshot.tracked`
+  publishes both sizes.
+- **`clock.ts`'s conversion is `finiteDurationMs(duration, subject, option)`**: floor `finiteOption`
+  (negative and zero are shipped behaviour), `subject`/`option` REQUIRED, and `Finite` in the name for
+  the ratchet. `duration-bounds.test.ts`. `parseDuration` and `nextCronOccurrence` are normalised in
+  one place each (`finiteDurationMs`, `defaultCronResolver`).
+
+## Moved 2026-10-01 — test harnesses
+
+Out of `packages/jobs/CLAUDE.md`, which stands at its size ceiling.
+
+`backfill-pass-fixture.ts` is the one harness `backfill-pass.test.ts` and
+`backfill-pass-ledger.test.ts` share. `keyed-concurrency-fixture.ts` holds the keyed scenarios ONCE:
+`keyed-concurrency.test.ts` runs them on memory, `keyed-concurrency.job.test.ts` on the pg driver;
+`operator-surface-fixture.ts` likewise. Both `.job.` suites share `embedded-pg-fixture.ts` (time
+passes by AGING rows — `now()` is the database's). `*.job.test.ts` is the opt-in `job` step: `replay`,
+`idempotency` and `outbox-atomicity` each prove one guarantee through a REAL worker, and
+`worker-soak.job.test.ts` kills one worker mid-job and asserts exactly-once completion.
+
+## 2026-10-01 — one settle hook, and ids known at stage time
+
+`onDead` shipped and was reshaped the same day into `onSettled` (`settled.ts`), before any release
+carried it. The first consumer — a run console in `examples/dummy` — needed three things `onDead`
+could not say: a completed run's RESULT (`executeJob` awaited the body and dropped what it
+returned, so a `ScrapeReport.usage` never left the worker), a run refused by a busy concurrency key
+(`onDead` excluded it by design, so "a second run was refused" existed for no app), and a hook
+`scrape()` could pass through. One hook with a discriminated `outcome` answers all three; two hooks
+would have been two orderings to document against one settle. `X_JOB_ON_DEAD_FAILED` was renamed
+`X_JOB_ON_SETTLED_FAILED` while still unshipped.
+
+A cancel is deliberately NOT a settlement. The worker's settle matches nothing once the row is
+`cancelled` — the fence that keeps a cancelled job cancelled — so the worker has no ending to
+announce, and whoever called `cancelJob` already knows.
+
+The same consumer could not enqueue inside its transaction: a staged enqueue answered `runId: ''`
+and the OUTBOX row's id, and it had to answer the run its events are keyed by. Both ids are now
+allocated at stage (`x_outbox.run_id`; the row id is published as the job id). Publishing under a
+caller-allocated id needed `SQL_ENQUEUE` to refuse a second row under it — a plain primary-key
+violation would have wedged the relay on a repeated publish — and that refusal also closes the
+"re-publish after the first job finished runs the handler twice" window the README documented.
+

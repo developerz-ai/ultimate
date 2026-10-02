@@ -5,7 +5,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { describeRoutes, routeEntries } from '@ultimat3/render';
+import { clearRoutes, describeRoutes, routeEntries } from '@ultimat3/render';
 import { defineAdmin } from './admin';
 import { type AdminActor, staticAuthz } from './authz';
 import type { AdminCustomPage } from './pages';
@@ -19,7 +19,13 @@ const post = entity('admin_routes_post', {
   columns: { id: uuid().primaryKey(), title: text({ max: 120 }) },
 });
 
-afterAll(clearRegistry);
+// The route list is one per process and every admin mounts into it: a file that ran first left
+// its own `/back-office` mount there, so this file reads the list from empty — and leaves it so.
+clearRoutes();
+afterAll(() => {
+  clearRegistry();
+  clearRoutes();
+});
 
 const auth = {
   actor: (): AdminActor | null => null,

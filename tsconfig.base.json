@@ -8,8 +8,10 @@
 
     "paths": {
       "@ultimat3/admin/dev": ["./packages/admin/src/dev/index.ts"],
+      "@ultimat3/admin/schema": ["./packages/admin/src/audit-schema.ts"],
       "@ultimat3/cli/serve": ["./packages/cli/src/serve-entry.ts"],
       "@ultimat3/core/page": ["./packages/core/src/page.ts"],
+      "@ultimat3/db/schema-dump": ["./packages/db/src/schema-dump-entry.ts"],
       "@ultimat3/entity/record": ["./packages/entity/src/record.ts"],
       "@ultimat3/query/client": ["./packages/query/src/client.ts"],
       "@ultimat3/realtime/server": ["./packages/realtime/src/server.ts"],

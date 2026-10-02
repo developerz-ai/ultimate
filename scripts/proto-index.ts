@@ -35,9 +35,12 @@ import type { Finding } from './lib/log';
 import { PROTO_INDEX_PINS, PROTO_PINS_FILE } from './lib/proto-index-pins';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import type { SiteProbe } from './lib/ratchet-sites';
+import { leadSite, newSitesFirst, siteList } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'proto-index';
+const EXPLAIN = 'bun run scripts/proto-index.ts --explain --json lists every one';
 
 /** `const X: Readonly<Record<K, V>> = {…}` — the annotation form, `Partial<>` and all. */
 const ANNOTATED = /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*:\s*(?:Readonly<)?(?:Partial<)?Record\s*</g;
@@ -216,12 +219,26 @@ export const checkProtoIndex = (input: ProtoIndexInput): readonly ProtoIndexGap[
 const at = (site: ProtoIndexSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
-const overFinding = (gap: ProtoIndexGap): Finding => ({
-  code: 'X_PROTO_CHAIN_INDEX',
-  cause: `${gap.pkg} reads a Record object literal with a computed key in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${at(gap.first)} evaluates ${gap.first?.table ?? ''}[${gap.first?.key ?? ''}], and when that key is the string "constructor", "toString" or "__proto__" the answer is an Object.prototype member rather than undefined`,
-  fix: `guard the read at ${at(gap.first)} with Object.hasOwn(${gap.first?.table ?? ''}, ${gap.first?.key ?? ''}) before indexing, or make ${gap.first?.table ?? ''} a Map; if the table is deliberately prototype-free, build it with Object.create(null) and this rule stops reporting it`,
-  at: at(gap.first),
-});
+/**
+ * EVERY read, never only the first: a package's first site is usually one its pin already holds,
+ * and the read that took it over the pin is whichever was added last — which the tree cannot say.
+ * With one site the fix names its guard outright; with several it says how many have to go.
+ */
+const overFinding = (gap: ProtoIndexGap): Finding => {
+  const sites = gap.sites ?? (gap.first === undefined ? [] : [gap.first]);
+  const listed = siteList(gap, (site) => `${at(site)} (${site.table}[${site.key}])`, EXPLAIN);
+  const [only] = sites;
+  const guard =
+    sites.length === 1 && only !== undefined
+      ? `guard the read at ${at(only)} with Object.hasOwn(${only.table}, ${only.key}) before indexing, or make ${only.table} a Map`
+      : `guard ${String(gap.found - gap.pinned)} of the ${String(sites.length)} reads the cause lists — the one this change added — with Object.hasOwn(table, key) before indexing, or make that table a Map`;
+  return {
+    code: 'X_PROTO_CHAIN_INDEX',
+    cause: `${gap.pkg} reads a Record object literal with a computed key in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${listed} — and when that key is the string "constructor", "toString" or "__proto__" the answer is an Object.prototype member rather than undefined`,
+    fix: `${guard}; if the table is deliberately prototype-free, build it with Object.create(null) and this rule stops reporting it`,
+    at: at(leadSite(gap)),
+  };
+};
 
 const staleFinding = (gap: ProtoIndexGap): Finding => ({
   code: 'X_PROTO_CHAIN_INDEX_PIN_STALE',
@@ -260,8 +277,13 @@ export const protoIndexSites = async (root: string): Promise<readonly ProtoIndex
     isTestPath(file.path) ? [] : scanProtoIndex(file.path, file.source, file.masked),
   );
 
+const PROBE: SiteProbe<ProtoIndexSite> = {
+  rescan: (path, source) => scanProtoIndex(path, source),
+  line: (site) => site.line,
+};
+
 export const protoIndexGaps = async (root: string): Promise<readonly ProtoIndexGap[]> =>
-  ratchetGaps(await protoIndexSites(root), PROTO_INDEX_PINS, true);
+  newSitesFirst(root, ratchetGaps(await protoIndexSites(root), PROTO_INDEX_PINS, true), PROBE);
 
 /** What this rule contributes to `x verify`, through its own test file. */
 export const protoIndexFindings = async (root: string): Promise<readonly Finding[]> =>
@@ -274,6 +296,7 @@ if (import.meta.main) {
     pins: PROTO_INDEX_PINS,
     sites: protoIndexSites,
     findingFor: protoIndexFindingFor,
+    probe: PROBE,
     clean: 'no package reads a Record object literal with an unguarded computed key above its pin',
   });
 }

@@ -36,6 +36,8 @@ export interface TestTypecheckGap {
   readonly errors: number;
   readonly pinned: number;
   readonly first?: TestDiagnostic;
+  /** Errors per file for an `over` gap, most first: the file a change broke is rarely the first. */
+  readonly files?: readonly (readonly [string, number])[];
   readonly detail?: string;
 }
 
@@ -56,6 +58,19 @@ const firstFor = (
   diagnostics: readonly TestDiagnostic[],
   pkg: string,
 ): TestDiagnostic | undefined => diagnostics.find((one) => one.file.includes(`packages/${pkg}/`));
+
+/** Every file of the package that carries an error, with its count — most errors first. */
+const filesFor = (
+  diagnostics: readonly TestDiagnostic[],
+  pkg: string,
+): readonly (readonly [string, number])[] => {
+  const counts = new Map<string, number>();
+  for (const one of diagnostics) {
+    if (one.file.includes(`packages/${pkg}/`))
+      counts.set(one.file, (counts.get(one.file) ?? 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+};
 
 /** Pure, so both halves of the ratchet are tested from fixtures rather than from a real compile. */
 export function checkTestTypecheck(input: TestTypecheckInput): readonly TestTypecheckGap[] {
@@ -80,7 +95,14 @@ export function checkTestTypecheck(input: TestTypecheckInput): readonly TestType
       continue;
     }
     if (errors > pinned) {
-      gaps.push({ kind: 'over', pkg, errors, pinned, ...(first === undefined ? {} : { first }) });
+      gaps.push({
+        kind: 'over',
+        pkg,
+        errors,
+        pinned,
+        ...(first === undefined ? {} : { first }),
+        files: filesFor(input.diagnostics, pkg),
+      });
       continue;
     }
     if (errors < pinned) gaps.push({ kind: 'stale', pkg, errors, pinned });
@@ -96,9 +118,13 @@ const overFinding = (gap: TestTypecheckGap): Finding => {
   const at = gap.first === undefined ? PINS_FILE : `${gap.first.file}:${gap.first.line}`;
   const said =
     gap.first === undefined ? '' : `; the first says TS${gap.first.code}: ${gap.first.text}`;
+  // Every file, with its count: the first diagnostic is in whichever file sorts first, which is
+  // rarely the one a change just broke.
+  const files = (gap.files ?? []).map(([file, count]) => `${file} (${count})`).join(', ');
+  const where = files === '' ? '' : ` — in ${files}`;
   return {
     code: 'X_TEST_TYPECHECK_REGRESSED',
-    cause: `${gap.pkg}'s tests carry ${gap.errors} typecheck error(s) and ${gap.pinned} are pinned${said}`,
+    cause: `${gap.pkg}'s tests carry ${gap.errors} typecheck error(s) and ${gap.pinned} are pinned${where}${said}`,
     fix: `fix the error at ${at} — bun run scripts/test-typecheck-gate.ts --json prints every diagnostic — or raise '${gap.pkg}' to ${gap.errors} in ${PINS_FILE} on purpose`,
     at,
   };

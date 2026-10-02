@@ -2,16 +2,31 @@
 // Bun's cross-package dilution, and the ratchet that fails in both directions.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+// why: Bun ships no temp-directory primitive; the unloaded-file fixture is a real tree on disk.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun ships no path-join primitive.
+import { join } from 'node:path';
+import { COVERAGE_BAR } from '../packages/cli/src/coverage-floor';
 import {
   concurrency,
-  hasExecutableCode,
   judge,
   pool,
   scopeLcov,
   suiteFailure,
   unimportedSources,
+  withUnloadedCounted,
 } from './coverage-gate';
-import { COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
+import { COVERAGE_PINS, COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
+import {
+  COVERAGE_GATE_FLAGS,
+  SCRIPTS_UNIT,
+  shardUnits,
+  unitOf,
+  unitsFor,
+  unitsToGate,
+} from './lib/coverage-units';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -86,79 +101,6 @@ describe('scoping an lcov report to one package', () => {
 });
 
 describe('a file with no lcov record at all', () => {
-  test('a pure re-export barrel has no executable code — bun records none, correctly', () => {
-    // `packages/money/src/index.ts` is exactly this shape. Flagging it would be noise.
-    expect(
-      hasExecutableCode(`/** Public surface. */
-export { allocate, sum } from './arithmetic';
-export type { Money } from './money';
-export { type Currency, formatMoney } from './format';
-`),
-    ).toBe(false);
-  });
-
-  test('a module with a statement has executable code, however small', () => {
-    expect(hasExecutableCode('export const ZERO = 0;\n')).toBe(true);
-    expect(hasExecutableCode("import { a } from './a';\nexport const b = a();\n")).toBe(true);
-  });
-
-  test('an ambient module augmentation emits nothing', () => {
-    // `packages/testing/src/matcher-surface.ts` is exactly this shape and nothing else. The inner
-    // `interface` was stripped by the declaration loop, which left a bare `declare module '…' { }`
-    // shell behind — non-empty, so the file read as a real module no test imports. It is the
-    // opposite: an augmentation emits no runtime code, so bun writes no lcov record for it.
-    expect(
-      hasExecutableCode(`declare module 'bun:test' {
-  interface Matchers<T> extends UltimateMatchers<T> {}
-}
-`),
-    ).toBe(false);
-    expect(
-      hasExecutableCode(`declare global {
-  interface Window { readonly x: number }
-}
-`),
-    ).toBe(false);
-  });
-
-  test('an ambient block does not hide real code beside it', () => {
-    // The strip must remove the block, never everything after it.
-    expect(
-      hasExecutableCode(`declare global {
-  interface W { readonly x: 1 }
-}
-export const y = 2;
-`),
-    ).toBe(true);
-  });
-
-  test('comments alone are not executable code', () => {
-    expect(hasExecutableCode('// just a note\n/* and a block */\n')).toBe(false);
-  });
-
-  test('a comment that LOOKS like a statement does not count', () => {
-    // The strip runs before the check, so a commented-out export cannot resurrect a barrel.
-    expect(hasExecutableCode("export { a } from './a';\n// export const x = 1;\n")).toBe(false);
-  });
-
-  test('a type alias containing an object literal is still types-only', () => {
-    // The case that broke the first scanner: the `{ … }` inside the alias is not the end of the
-    // declaration, so matching braces there left `, ] extends [Actor] … >;` behind — which then
-    // read as executable code and reported `type-pins.ts` as an unimported module.
-    expect(
-      hasExecutableCode(
-        'type _A = Assert<[FactKeysOf<{ a: 1 }>] extends [Actor] ? true : false>;\n',
-      ),
-    ).toBe(false);
-  });
-
-  test('a types-only module and a barrel are both invisible for the RIGHT reason', () => {
-    expect(hasExecutableCode('export interface Counter {\n  add(n: number): void;\n}\n')).toBe(
-      false,
-    );
-    expect(hasExecutableCode("export const COLUMN_KINDS = ['text'] as const;\n")).toBe(true);
-  });
-
   test('an unimported file is reported, and is NOT a zero in the percentage', () => {
     // This is the whole point: bun records a file only when something imports it, so a module no
     // test reaches is absent from BOTH halves of the fraction and makes the number read higher.
@@ -310,5 +252,162 @@ describe('a suite that fails alone', () => {
     )?.cause;
     expect(cause).toContain('beforeAll timed out after 5000ms');
     expect(cause).not.toContain('untimed outcomes');
+  });
+});
+
+describe('the units --all gates', () => {
+  const units = unitsToGate(repoRoot());
+
+  test('every workspace with a src/, and scripts — sorted', () => {
+    expect(units).toContain('core');
+    expect(units).toContain('create-ultimate');
+    expect(units).toContain(SCRIPTS_UNIT.name);
+    expect([...units].sort()).toEqual([...units]);
+    const packages = [
+      ...new Bun.Glob('packages/*/src').scanSync({ cwd: repoRoot(), onlyFiles: false }),
+    ];
+    expect(units).toHaveLength(packages.length + 1);
+  });
+
+  test('scripts is measured under scripts/, a package under its own src/', () => {
+    expect(unitOf('scripts')).toBe(SCRIPTS_UNIT);
+    expect(unitOf('cache').source).toBe('packages/cache/src/');
+    const lcov = [
+      'SF:scripts/boundaries.ts',
+      'FNF:4',
+      'FNH:3',
+      'LF:10',
+      'LH:9',
+      'end_of_record',
+      'SF:scripts/boundaries.test.ts',
+      'FNF:1',
+      'FNH:0',
+      'LF:90',
+      'LH:0',
+      'end_of_record',
+      'SF:examples/dummy/scripts/test-setup.ts',
+      'FNF:1',
+      'FNH:0',
+      'LF:90',
+      'LH:0',
+      'end_of_record',
+    ].join('\n');
+    const reading = scopeLcov(lcov, 'scripts');
+    expect(reading.measured).toBe(10);
+    expect(reading.lines).toBe(90);
+    expect(reading.funcs).toBe(75);
+    expect(judge({ ...reading, lines: 10, funcs: 10 }, undefined).findings[0]?.at).toBe('scripts');
+    expect(suiteFailure('scripts', 1, '')?.fix).toContain('bun test ./scripts');
+  });
+
+  test('one bar: the target is the constant an app is held to, and a pin is under it with a reason', () => {
+    expect(COVERAGE_TARGET).toBe(COVERAGE_BAR);
+    for (const [name, pin] of Object.entries(COVERAGE_PINS)) {
+      expect(units).toContain(name);
+      expect(pin.lines < COVERAGE_TARGET || pin.funcs < COVERAGE_TARGET).toBe(true);
+      expect(pin.why.trim().length).toBeGreaterThan(20);
+    }
+  });
+
+  test('a scripts file no test loads counts at zero instead of vanishing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-coverage-units-'));
+    try {
+      await Bun.write(
+        join(root, 'scripts/never-loaded.ts'),
+        'export const a = (): number => 1;\nexport const b = (): number => 2;\n',
+      );
+      const lcov = 'SF:scripts/loaded.ts\nFNF:2\nFNH:2\nLF:2\nLH:2\nend_of_record\n';
+      const scoped = {
+        ...scopeLcov(lcov, 'scripts'),
+        unimported: unimportedSources(root, 'scripts', lcov),
+      };
+      expect(scoped.lines).toBe(100);
+      expect(scoped.unimported).toEqual(['scripts/never-loaded.ts']);
+      const counted = withUnloadedCounted(root, scoped, lcov);
+      expect(counted.unimported).toEqual([]);
+      expect(counted.measured).toBe(4);
+      expect(counted.lines).toBe(50);
+      expect(counted.funcs).toBe(50);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('--shard i/n', () => {
+  const units = unitsToGate(repoRoot());
+
+  for (const total of [2, 3]) {
+    test(`every unit is in exactly one shard of ${String(total)}`, () => {
+      const shards = Array.from({ length: total }, (_, i) =>
+        shardUnits(units, `${String(i + 1)}/${String(total)}`),
+      );
+      expect(shards.flat().sort()).toEqual([...units]);
+      expect(new Set(shards.flat()).size).toBe(units.length);
+      // Round-robin: no shard is more than one unit larger than another.
+      const sizes = shards.map((shard) => shard.length);
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+    });
+  }
+
+  test('round-robin over the SORTED list, whatever order it arrives in', () => {
+    expect(shardUnits(['c', 'a', 'd', 'b'], '1/2')).toEqual(['a', 'c']);
+    expect(shardUnits(['c', 'a', 'd', 'b'], '2/2')).toEqual(['b', 'd']);
+  });
+
+  test('a spec that is not i/n with 1 <= i <= n is refused with a command that runs', () => {
+    for (const raw of ['0/2', '3/2', '1', 'a/b', '', '1/0']) {
+      try {
+        shardUnits(units, raw);
+        expect.unreachable(`"${raw}" was accepted`);
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: 'X_CLI_BAD_FLAG',
+          fix: 'bun run scripts/coverage-gate.ts --all --shard 1/2',
+        });
+      }
+    }
+  });
+});
+
+describe('the flags the gate reads', () => {
+  const root = repoRoot();
+  const flags = (
+    entries: Record<string, string | boolean>,
+  ): ReadonlyMap<string, string | boolean> => new Map(Object.entries(entries));
+  const refusal = (entries: Record<string, string | boolean>): unknown => {
+    try {
+      unitsFor(root, flags(entries));
+    } catch (error) {
+      return error;
+    }
+    return expect.unreachable(`${JSON.stringify(entries)} was accepted`);
+  };
+
+  test('--package names one unit, --all every one, --all --shard a share', () => {
+    expect(unitsFor(root, flags({ package: 'core', json: true }))).toEqual(['core']);
+    expect(unitsFor(root, flags({ all: true }))).toEqual(unitsToGate(root));
+    expect(unitsFor(root, flags({ all: true, shard: '2/2', jobs: '2' }))).toEqual(
+      shardUnits(unitsToGate(root), '2/2'),
+    );
+  });
+
+  test('an unknown flag is refused, never dropped', () => {
+    expect(COVERAGE_GATE_FLAGS).toContain('shard');
+    expect(refusal({ all: true, shrad: '1/2' })).toMatchObject({
+      code: 'X_CLI_BAD_FLAG',
+      fix: 'bun run scripts/coverage-gate.ts --all',
+    });
+  });
+
+  test('--shard without --all, neither flag, both flags and a bare --shard are refused', () => {
+    expect(refusal({ package: 'core', shard: '1/2' })).toMatchObject({
+      code: 'X_CLI_BAD_FLAG',
+      fix: 'bun run scripts/coverage-gate.ts --all --shard 1/2',
+    });
+    expect(refusal({})).toMatchObject({ code: 'X_CLI_BAD_FLAG' });
+    expect(refusal({ package: true })).toMatchObject({ code: 'X_CLI_BAD_FLAG' });
+    expect(refusal({ package: 'core', all: true })).toMatchObject({ code: 'X_CLI_BAD_FLAG' });
+    expect(refusal({ all: true, shard: true })).toMatchObject({ code: 'X_CLI_BAD_FLAG' });
   });
 });

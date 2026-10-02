@@ -15,8 +15,8 @@ import type { GatedApp } from './lib/gated-apps';
 import { PINS_FILE } from './lib/gated-apps';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import { pinnedSteps } from './lib/unpin';
-import { unpin } from './reference-app-gate';
 import { appWith } from './reference-app-gate.fixtures';
+import { unpin } from './reference-app-unpin';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant

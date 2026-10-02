@@ -26,6 +26,8 @@ import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
 import type { CommentView, CreatePostInput, PostSummary, PostView } from '../app/posts/entity';
 import type { PostRow } from '../app/posts/policy';
+import type { ConnectInput, ConnectionView, RunKeyIssued, RunStarted } from '../app/runs/entity';
+import type { RunOwner } from '../app/runs/policy';
 
 export interface PostsService {
   byId(postId: PostId): Promise<PostView>;
@@ -83,9 +85,25 @@ export interface OrgsService {
   allDigestRecipients(): Promise<MemberView[]>;
 }
 
+export interface RunsService {
+  connect(input: ConnectInput): Promise<ConnectionView>;
+  /** Enqueue one sync of the connection; the answer is the handle the console follows. */
+  start(orgId: string, connectionId: string): Promise<RunStarted>;
+  /** `null` when the run asked no such prompt in the acting org — what `canRunAct` denies on. */
+  promptOwner(runId: string, prompt: number): Promise<RunOwner | null>;
+  answer(runId: string, prompt: number, answer: string): Promise<void>;
+  /** `null` when no such run exists in the acting org. */
+  runOwner(runId: string): Promise<RunOwner | null>;
+  cancel(runId: string): Promise<void>;
+  issueKey(orgId: string): Promise<RunKeyIssued>;
+  keyOwner(keyId: string): Promise<RunOwner | null>;
+  revokeKey(keyId: string): Promise<boolean>;
+}
+
 /**
- * Two services, and both are registered: `defineService('posts', …)` and `defineService('orgs', …)`
- * run when `apps/web/api/index.ts` imports their modules, which is this app's whole boot.
+ * Three services, and all are registered: `defineService('posts', …)`, `defineService('orgs', …)`
+ * and `defineService('runs', …)` run when `apps/web/api/index.ts` imports their modules, which is
+ * this app's whole boot.
  *
  * A `session` and a `channel` were declared here until 2026-08 and neither was ever registered —
  * `CtxServices` carries a string index signature, so `ctx.session` compiled and was `undefined` at
@@ -97,5 +115,6 @@ declare module '@ultimat3/core' {
   interface CtxServices {
     readonly posts: PostsService;
     readonly orgs: OrgsService;
+    readonly runs: RunsService;
   }
 }
