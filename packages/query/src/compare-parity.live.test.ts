@@ -42,6 +42,12 @@ const SEEDED: readonly (readonly [string, string | null, string | null])[] = [
   ['h', '9007199254740993', '9007199254740992.0001'],
 ];
 
+// At FILE scope and unconditional: a hook inside the skipped block never runs, and a registry
+// reset that depends on the skip condition is one the skipped configuration never reaches.
+afterAll(() => {
+  clearRegistry();
+});
+
 describe.skipIf(!hasPostgres)('live · postgres · one comparison, three readers', () => {
   let sql: SQL;
 
@@ -64,7 +70,6 @@ describe.skipIf(!hasPostgres)('live · postgres · one comparison, three readers
   afterAll(async () => {
     await sql.unsafe(`drop table if exists "${PARITY_TABLE}"`);
     await sql.close();
-    clearRegistry();
   });
 
   test('Postgres answers every row of the parity table as the table says', async () => {
