@@ -136,7 +136,7 @@ test('withAppRuntime reads apps/<app>/runtime.ts only when the caller passed no 
 test('runRole refuses a bad ROLE before it starts a single service', async () => {
   // The root does not exist: reaching it at all would mean the role was resolved too late, after
   // `resolveServices` had already created `.x/` somewhere it had no business creating it.
-  expect(runRole({ root: '/nonexistent-app-root', env: { ROLE: 'webb' } })).rejects.toThrow(
+  await expect(runRole({ root: '/nonexistent-app-root', env: { ROLE: 'webb' } })).rejects.toThrow(
     'X_ROLE_UNKNOWN',
   );
 });

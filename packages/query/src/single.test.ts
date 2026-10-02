@@ -127,7 +127,7 @@ describe('the typed client of a single read', () => {
   test('answers the row, and rejects with the server’s X_NOT_FOUND', async () => {
     const row: PostRow = await call({ id: POST_A });
     expect(row).toEqual(ROW_A);
-    expect(call({ id: MISSING })).rejects.toThrow('X_NOT_FOUND');
+    await expect(call({ id: MISSING })).rejects.toThrow('X_NOT_FOUND');
   });
 
   test('is typed as one row with no page, in both client spellings', () => {

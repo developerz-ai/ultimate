@@ -180,13 +180,13 @@ describe('BuiltinAdapter reads the violation off the driver error, wrapped or no
   test('a constraint x_users does not declare is not renamed to one it does', async () => {
     const failure = driverError('insert', bunSqlError('23505', 'app_users_handle_key'));
     const adapter = new BuiltinAdapter(failingWith(() => failure));
-    expect(adapter.createUser(user(ADA, 'ada@example.com'))).rejects.toBe(failure);
+    await expect(adapter.createUser(user(ADA, 'ada@example.com'))).rejects.toBe(failure);
   });
 
   test('another SQLSTATE travels on untouched', async () => {
     const failure = driverError('insert', bunSqlError('23503', 'x_users_email_key'));
     const adapter = new BuiltinAdapter(failingWith(() => failure));
-    expect(adapter.createUser(user(ADA, 'ada@example.com'))).rejects.toBe(failure);
-    expect(adapter.updateUser(ADA, { externalId: 'okta|abc' })).rejects.toBe(failure);
+    await expect(adapter.createUser(user(ADA, 'ada@example.com'))).rejects.toBe(failure);
+    await expect(adapter.updateUser(ADA, { externalId: 'okta|abc' })).rejects.toBe(failure);
   });
 });

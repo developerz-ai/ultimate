@@ -151,11 +151,11 @@ describe('x dev --role replicator', () => {
     expect(cause).not.toContain('billingAccount');
   });
 
-  test('the entity list comes from the app registry, so the feed filters what the app declared', () => {
+  test('the entity list comes from the app registry, so the feed filters what the app declared', async () => {
     declarePost();
     entity('comment', { columns: { id: uuid().primaryKey(), body: text() } });
     // Proven through the refusal path rather than a live connection: with entities registered the
     // role gets past its own preflight and fails only on the database that is not there.
-    expect(startReplicator({ services: external, env: ENV, transport })).rejects.toThrow();
+    await expect(startReplicator({ services: external, env: ENV, transport })).rejects.toThrow();
   });
 });

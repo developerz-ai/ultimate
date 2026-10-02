@@ -121,7 +121,7 @@ describe('a duplicate identity is refused by both, not created by one', () => {
       createdAt: new Date('2026-08-09T12:00:00.000Z'),
     });
 
-    expect(
+    await expect(
       memory.createUser({
         id: SECOND,
         email: 'grace@example.com',

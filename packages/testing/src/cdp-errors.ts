@@ -153,7 +153,8 @@ export class CdpTimeoutError extends UltimateError {
       fix:
         reading === undefined || reading === 'no-answer'
           ? 'raise timeoutMs on installE2eDriver({ timeoutMs }), or find the request the page is still waiting on — a navigation that never settles is an app that never finishes its response'
-          : 'x test e2e',
+          : // `--json`: the rerun's `meta.reading` and `meta.framesDropped` are only printed there.
+            'x test e2e --json',
       ...(observed === undefined
         ? {}
         : { meta: { method: input.method, timeoutMs: input.timeoutMs, reading, ...observed } }),

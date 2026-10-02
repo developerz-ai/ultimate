@@ -278,7 +278,7 @@ describe('the typed client against the route', () => {
     const call = target.client({ baseUrl: 'http://dev.test', fetch: fetchLike });
 
     // Not `X_RPC_FAILED`: the server already said what broke, and the client re-throws it verbatim.
-    expect(call({ orgId: ORG })).rejects.toThrow('X_UNAUTHENTICATED');
+    await expect(call({ orgId: ORG })).rejects.toThrow('X_UNAUTHENTICATED');
   });
 });
 

@@ -54,9 +54,9 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   reservations are the record); `release()` for no verdict (a shed KDF, a store that is down, a
   bucket that refused) or a factor proven with another still owed; `succeed()` clears the account
   and refunds the shared two.
-- **`postgresAuthLimiter` is the shared limiter: ONE row per key in `x_auth_buckets`, holding the
+- **`postgresAuthLimiter` is the shared limiter: ONE row per key in `x_auth_lockouts`, holding the
   instants still inside the window** (`attempts_ms bigint[]` — a sliding window). The take is one
-  `insert … on conflict do update` reading the window off `x_auth_buckets.<column>`, never a CTE
+  `insert … on conflict do update` reading the window off `x_auth_lockouts.<column>`, never a CTE
   and never a second table: only the row the statement locks is re-read after a wait. `admitted`
   is a column because `returning` cannot see the old row; no row back is never an admission. A
   live lockout is never rewritten. `PgExecutor` is structural: the pool is the host's.

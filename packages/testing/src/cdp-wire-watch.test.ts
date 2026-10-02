@@ -24,10 +24,11 @@ const wire = () => {
 interface TimedOut {
   readonly code: string;
   readonly cause: string;
+  readonly fix: string;
   readonly meta: Record<string, unknown>;
 }
 
-/** The call's own refusal, read as the three fields a failing job prints. */
+/** The call's own refusal, read as the four fields a failing job prints. */
 const timedOut = async (call: Promise<unknown>): Promise<TimedOut> => {
   const thrown: unknown = await call.then(
     () => expect.unreachable('the call was answered'),
@@ -65,6 +66,8 @@ describe('X_CDP_TIMEOUT says which of three things happened', () => {
     expect(error.cause).toContain('"Runtime.evaluate" did not answer inside 20ms');
     expect(error.cause).toContain('the target did not answer');
     expect(error.cause).toContain('the page navigated 1 time(s) since the call');
+    // A silent target is not answered by a rerun: this reading keeps the timeoutMs instruction.
+    expect(error.fix).toContain('installE2eDriver({ timeoutMs })');
   });
 
   test('the reply was lost in transport: frames arrived after the call that nothing could parse', async () => {
@@ -85,6 +88,8 @@ describe('X_CDP_TIMEOUT says which of three things happened', () => {
     });
     expect(error.cause).toContain('2 frame(s) arrived unparseable after it was sent');
     expect(error.cause).toContain('lost in transport');
+    // `--json`, or the rerun prints neither `reading` nor `framesDropped`.
+    expect(error.fix).toBe('x test e2e --json');
   });
 
   test('the target is gone: its session detached, or its tab crashed, under the call', async () => {
@@ -99,6 +104,7 @@ describe('X_CDP_TIMEOUT says which of three things happened', () => {
     const first = await timedOut(detached);
     expect(first.meta).toMatchObject({ reading: 'target-gone', targetGone: 'detached' });
     expect(first.cause).toContain('its target is gone (detached)');
+    expect(first.fix).toBe('x test e2e --json');
 
     frame({
       method: 'Target.attachedToTarget',
