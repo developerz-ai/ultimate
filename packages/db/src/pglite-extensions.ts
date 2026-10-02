@@ -3,6 +3,8 @@
 // embedded boot — `x dev`'s database and the schema dump's scratch replay — asks this one linker,
 // and a caller that must choose another engine asks it what is `missing`.
 
+import { renderThrowable, stringField } from '@ultimat3/core';
+import { DbError } from './errors';
 import { PGLITE_PACKAGE } from './pglite-package';
 
 export type PgliteExtensionLoader = (specifier: string) => Promise<unknown>;
@@ -52,25 +54,46 @@ const specifiersFor = (exported: string): readonly string[] =>
 
 const importBundle: PgliteExtensionLoader = (specifier) => import(specifier);
 
+/**
+ * What `import()` answers for a path nothing ships — Bun says `ERR_MODULE_NOT_FOUND` for an
+ * unexported subpath too (measured on 1.4, 2026-10-01). Anything else is a bundle that IS there
+ * and failed to evaluate, and reading that as absent would boot without it and lose the reason.
+ */
+const NOT_SHIPPED: ReadonlySet<string> = new Set([
+  'ERR_MODULE_NOT_FOUND',
+  'MODULE_NOT_FOUND',
+  'ERR_PACKAGE_PATH_NOT_EXPORTED',
+]);
+
+const bundleBroken = (specifier: string, sourceError: unknown): DbError =>
+  new DbError({
+    code: 'X_DB_UNAVAILABLE',
+    cause: `${specifier} is installed and failed to load: ${renderThrowable(sourceError)}`,
+    fix: `bun install --force   # reinstall ${PGLITE_PACKAGE}; its extension bundle does not evaluate`,
+    sourceError,
+  });
+
 async function bundleFor(exported: string, load: PgliteExtensionLoader): Promise<unknown> {
   for (const specifier of specifiersFor(exported)) {
+    let bundle: unknown;
     try {
-      const bundle: unknown = await load(specifier);
-      const extension = (bundle as Readonly<Record<string, unknown>> | null | undefined)?.[
-        exported
-      ];
-      if (extension !== undefined) return extension;
-    } catch {
-      // Not at this specifier. Deliberately not an error: the answer is `missing`, and the caller
-      // decides what an extension the embedded database cannot link means.
+      bundle = await load(specifier);
+    } catch (error) {
+      // Not at this specifier: deliberately not an error — the answer is `missing`, and the
+      // caller decides what an extension the embedded database cannot link means.
+      if (NOT_SHIPPED.has(stringField(error, 'code') ?? '')) continue;
+      throw bundleBroken(specifier, error);
     }
+    const extension = (bundle as Readonly<Record<string, unknown>> | null | undefined)?.[exported];
+    if (extension !== undefined) return extension;
   }
   return undefined;
 }
 
 /**
- * Resolve every name. Never throws and never boots anything: a bundle is a small module beside a
- * tarball PGlite reads only when `create extension` runs.
+ * Resolve every name. Never boots anything: a bundle is a small module beside a tarball PGlite
+ * reads only when `create extension` runs. Throws only for a bundle that is installed and fails
+ * to evaluate (`X_DB_UNAVAILABLE`) — an absent one is `missing`.
  */
 export async function linkPgliteExtensions(
   names: readonly string[],
