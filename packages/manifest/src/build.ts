@@ -19,6 +19,7 @@
 import { canonicalJson } from '@ultimat3/core';
 import type {
   ActionFact,
+  AdminFact,
   ChannelFact,
   EntityFact,
   ErrorCodeFact,
@@ -38,6 +39,7 @@ export interface ManifestSources {
   readonly actions?: readonly ActionFact[];
   readonly queries?: readonly QueryFact[];
   readonly channels?: readonly ChannelFact[];
+  readonly admin?: readonly AdminFact[];
   readonly jobs?: readonly JobFact[];
   readonly tasks?: readonly TaskFact[];
   readonly policies?: readonly PolicyFact[];
@@ -51,6 +53,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
   const actions = sortBy(sources.actions ?? [], (a) => a.name).map(normalizeAction);
   const queries = sortBy(sources.queries ?? [], (q) => q.name).map(normalizeQuery);
   const channels = sortBy(sources.channels ?? [], (c) => c.name).map(normalizeChannel);
+  const admin = sortBy(sources.admin ?? [], (a) => a.basePath).map(normalizeAdmin);
   const jobs = sortBy(sources.jobs ?? [], (j) => j.name).map(normalizeJob);
   const tasks = sortBy(sources.tasks ?? [], (t) => t.name).map((t) => ({
     ...t,
@@ -84,6 +87,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
     actions,
     queries,
     channels,
+    admin,
     jobs,
     tasks,
     policies,
@@ -133,6 +137,15 @@ const normalizeRoute = (route: RouteFact): RouteFact =>
     : // Spread, never assigned: `exactOptionalPropertyTypes` makes an explicit `undefined` a
       // different answer from an absent key, and `emit.ts` writes what it is given.
       { ...route, revalidateTags: [...route.revalidateTags].sort() };
+
+// Resources and routes are sets, keyed by entity and by URL. What is INSIDE them is not: filters
+// and scopes are drawn in declaration order, and a route's permissions are a pair with the coarse
+// gate first — sorting either would publish an order the admin does not have.
+const normalizeAdmin = (admin: AdminFact): AdminFact => ({
+  ...admin,
+  resources: sortBy(admin.resources, (r) => r.entity),
+  routes: sortBy(admin.routes, (r) => r.url),
+});
 
 const normalizeEntity = (entity: EntityFact): EntityFact => ({
   ...entity,

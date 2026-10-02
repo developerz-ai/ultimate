@@ -18,6 +18,7 @@ import { currentTx, expectedQueryLoop } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { MAX_PAGE_SIZE } from './plan';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
+import { sealedFields } from './sealed';
 import type { IdOf, RowPatch } from './types';
 
 export type RowChangeOp = 'insert' | 'update' | 'delete';
@@ -183,6 +184,20 @@ const beforeAllOf = async <Row>(
  */
 export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Repo<Row> {
   const name = entity.$name;
+  const sealed = sealedFields(entity).map((field) => field.property);
+
+  /**
+   * A reported row WITHOUT its sealed properties. This wrapper sits above the sealing seam, so the
+   * rows it holds carry plaintext — and a change is what a live query delivers to a subscriber. A
+   * sealed column leaves the server through no path, so it is not on a change either.
+   */
+  const reported = (row: unknown): Readonly<Record<string, unknown>> | null => {
+    const record = asRecord(row);
+    if (record === null || sealed.length === 0) return record;
+    return Object.fromEntries(
+      Object.entries(record).filter(([property]) => !sealed.includes(property)),
+    );
+  };
 
   /**
    * Reported at COMMIT. The write may sit in a transaction — the caller's `options.tx`, or the
@@ -209,8 +224,8 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
     const change: RowChange = {
       entity: name,
       op,
-      before: asRecord(before),
-      after: asRecord(after),
+      before: reported(before),
+      after: reported(after),
       ...(write === undefined ? {} : { write }),
     };
     afterCommit(options, () => observer.onChange(change));

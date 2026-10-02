@@ -1,19 +1,16 @@
-// A session is credential material: tenant-scoped, never logged, never an artifact. Three things
-// are pinned here — the key is a tenant-first PATH, the digest is counts and an origin with no
-// value in it, and a stored session that cannot be read is "no session" rather than a failed run.
+// A session is credential material: tenant-scoped, never logged, never an artifact. Two things
+// are pinned here — the key is a tenant-first PATH, and the digest is counts and an origin with no
+// value in it. What `storageSessionStore` writes and refuses is `session-seal.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import type { StorageDriver, StorageObject } from '@ultimat3/storage';
 import { cookieHeaderFor } from './cookie-scope';
 import type { SessionState } from './session-state';
 import {
-  DEFAULT_SESSION_PREFIX,
   EMPTY_SESSION,
   memorySessionStore,
   parseSessionState,
   sessionDigest,
   sessionKeyFor,
-  storageSessionStore,
 } from './session-state';
 
 const STATE: SessionState = {
@@ -27,60 +24,6 @@ const STATE: SessionState = {
   userAgent: 'agent',
   origin: 'https://shop.test',
 };
-
-const object = (key: string): StorageObject => ({
-  key,
-  size: 0,
-  contentType: 'application/json',
-  etag: 'e',
-  lastModified: new Date(0),
-});
-
-/**
- * Only the three methods this store uses. Everything else throws rather than answering something
- * plausible: a fake that quietly returned `[]` from `list()` would let a store that started
- * listing objects read as covered.
- */
-function fakeStorage(seed: Readonly<Record<string, string>> = {}): StorageDriver & {
-  readonly writes: { key: string; body: string; contentType: string | undefined }[];
-  readonly deletes: string[];
-} {
-  const objects = new Map(Object.entries(seed));
-  const writes: { key: string; body: string; contentType: string | undefined }[] = [];
-  const deletes: string[] = [];
-  const unsupported = (what: string) => (): never => {
-    throw new Error(`this fake storage driver does not implement ${what}`);
-  };
-  return {
-    name: 'fake',
-    writes,
-    deletes,
-    put(key, body, options) {
-      writes.push({
-        key,
-        body: new TextDecoder().decode(body as Uint8Array),
-        contentType: options?.contentType,
-      });
-      objects.set(key, new TextDecoder().decode(body as Uint8Array));
-      return Promise.resolve(object(key));
-    },
-    get(key) {
-      const found = objects.get(key);
-      if (found === undefined) expect.unreachable(`no object at ${key}`);
-      return Promise.resolve({ object: object(key), bytes: new TextEncoder().encode(found) });
-    },
-    delete(key) {
-      deletes.push(key);
-      objects.delete(key);
-      return Promise.resolve();
-    },
-    stream: unsupported('stream'),
-    copy: unsupported('copy'),
-    exists: unsupported('exists'),
-    list: unsupported('list'),
-    signedUrl: unsupported('signedUrl'),
-  };
-}
 
 describe('unit · sessionKeyFor', () => {
   test('the TENANT comes first, because the key is also an object-store prefix', () => {
@@ -201,65 +144,6 @@ describe('unit · memorySessionStore', () => {
 
     await store.burn(STATE.key);
     expect(await store.load(STATE.key)).toBeUndefined();
-  });
-});
-
-describe('unit · storageSessionStore', () => {
-  test('a session round-trips through one JSON object under the default prefix', async () => {
-    const storage = fakeStorage();
-    const store = storageSessionStore(storage);
-
-    await store.save(STATE);
-    expect(storage.writes).toHaveLength(1);
-    expect(storage.writes[0]?.key).toBe(`${DEFAULT_SESSION_PREFIX}/${STATE.key}.json`);
-    expect(storage.writes[0]?.contentType).toBe('application/json');
-
-    expect(await store.load(STATE.key)).toEqual(STATE);
-  });
-
-  test('the prefix is configurable and burn deletes the SAME path save wrote', async () => {
-    const storage = fakeStorage();
-    const store = storageSessionStore(storage, { prefix: 'sessions/v2' });
-    await store.save(STATE);
-    await store.burn(STATE.key);
-    expect(storage.deletes).toEqual([`sessions/v2/${STATE.key}.json`]);
-    expect(storage.writes[0]?.key).toBe(`sessions/v2/${STATE.key}.json`);
-  });
-
-  test('a session that is not there is undefined — reuse is the fast path, not the fragile one', async () => {
-    // The driver THROWS on a missing key. Refusing the run over a cache miss would make every
-    // first run of a scrape a failure.
-    expect(
-      await storageSessionStore(fakeStorage()).load('org-1/orders.daily/default'),
-    ).toBeUndefined();
-  });
-
-  test('a corrupt record is undefined too, not a half-parsed session', async () => {
-    const storage = fakeStorage({
-      [`${DEFAULT_SESSION_PREFIX}/org-1/orders.daily/default.json`]: '{ not json',
-    });
-    expect(await storageSessionStore(storage).load('org-1/orders.daily/default')).toBeUndefined();
-  });
-
-  test('a key that would escape its prefix is refused, not written', async () => {
-    // The key IS a storage path, so `assertSafeKey` is the backstop. It is still the backstop:
-    // a hand-built key with a `..` segment is refused here.
-    const storage = fakeStorage();
-    await expect(
-      storageSessionStore(storage).save({ ...STATE, key: 'org-1/../default' }),
-    ).rejects.toThrow(/X_STORAGE_PATH_UNSAFE|".." segment/);
-    expect(storage.writes).toEqual([]);
-  });
-
-  test('a scrape literally named ".." does not build a traversing key at all', async () => {
-    // It used to: `sessionKeyFor({ scrape: '..' })` answered `org-1/../default`, and only
-    // `assertSafeKey` stood between that and another tenant's object. The per-segment digest
-    // means no segment can BE `..`, so the refusal below never has to fire.
-    const storage = fakeStorage();
-    const key = sessionKeyFor({ scrape: '..', tenant: 'org-1' });
-    expect(key.split('/')[1]).not.toBe('..');
-    await storageSessionStore(storage).save({ ...STATE, key });
-    expect(storage.writes[0]?.key).toBe(`${DEFAULT_SESSION_PREFIX}/${key}.json`);
   });
 });
 

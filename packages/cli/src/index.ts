@@ -8,11 +8,10 @@
 import './error-codes';
 
 /** The app's own API over HTTP — the one table `x dev` and a container both mount. */
-export { apiRoutes } from './api-routes';
+export { apiMountRoutes, apiRoutes } from './api-routes';
 export type { SourceFile } from './app-boundaries';
 export {
   appImportGraph,
-  checkAppBoundaries,
   readAppSources,
   resolveSpecifier,
   scanRuntimeImports,
@@ -46,6 +45,11 @@ export type { BranchRow } from './db-branch';
 export { BRANCH_SUBCOMMANDS, branchDatabaseName, branchNameOf } from './db-branch';
 export type { GeneratedFiles } from './db-generate';
 export { generateAppMigration } from './db-generate';
+// The schema dump's two verbs for a caller that holds an app root and no command context —
+// `scripts/schema-dumps.ts` regenerates and checks every tracked app's through them.
+export { SCHEMA_DUMP_DIR } from './db-schema-dump';
+export type { SchemaDumpRefresh } from './db-schema-refresh';
+export { refreshSchemaDump } from './db-schema-refresh';
 export { QuerySubscribesUnknownError, replicaIdentityTables } from './db-subscribes';
 export { dispatch } from './dispatch';
 export { checkSourceDrift, reconcileSchemaHash, writeSchemaHash } from './drift';
@@ -99,6 +103,10 @@ export { checkFlagReads } from './flag-reads';
 // The framework's own tables, as data. Exported so `scripts/` can read the applier's list without
 // re-deriving it — the shape a ratchet over declared-but-never-applied DDL needs.
 export { FRAMEWORK_SCHEMA } from './framework-schema';
+// What a guard's `check(root, sources)` is handed: the run's one read of the app. Types an app's
+// `guards/*.ts` names, and the constructor a test of one needs.
+export type { GuardFile, GuardSources, GuardStylesheet } from './guard-sources';
+export { guardSources } from './guard-sources';
 export type { Guard } from './guards';
 export { findingProblem, guardFindings, guardPaths } from './guards';
 export { ICON_BASE_PATH, ICON_SOURCE } from './icon-assets';
@@ -134,6 +142,7 @@ export type { RunningServices } from './runtime-services';
 export { startServices } from './runtime-services';
 // The drift a hash cannot see, and the composition both the gate step and `x doctor` read.
 export { checkMigrationDrift, checkSnapshotDrift } from './schema-drift';
+export { checkSchemaDump } from './schema-dump-drift';
 export { FrameworkSchemaFailedError } from './schema-errors';
 export type { MigratedApp, ServeOptions } from './serve';
 export {

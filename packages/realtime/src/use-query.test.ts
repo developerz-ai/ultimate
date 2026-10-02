@@ -4,7 +4,7 @@
 // core's `AsyncState`, and a refetch keeps what is on screen.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { Row } from '@ultimat3/core';
+import { isUltimateError, type Row } from '@ultimat3/core';
 import { makeCursor } from './cursor';
 import { flush, liveFeed, pageHarness, querySid, resetPage } from './hooks-fixture';
 import { PROTOCOL_VERSION } from './sync-protocol';
@@ -190,7 +190,11 @@ describe('useQuery — a live read', () => {
       lsn: null,
       error: denied,
     });
-    expect(feed()).toEqual({ status: 'failed', error: denied });
+    const state = feed();
+    if (state.status !== 'failed') return expect.unreachable('the subscription was refused');
+    // Itself, never `X_INTERNAL`: what an error screen asks is `isUltimateError`.
+    expect(isUltimateError(state.error)).toBe(true);
+    expect(state.error).toMatchObject(denied);
   });
 
   test('on a server render it is pending and opens nothing', () => {

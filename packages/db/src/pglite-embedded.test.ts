@@ -175,4 +175,49 @@ describe('the real embedded database', () => {
     },
     PGLITE_BOOT_MS,
   );
+  // What `@ultimat3/jobs` wakes an idle worker with. A NOTIFY belongs to its transaction: it is
+  // delivered when that commits and never when it rolls back — which is the property that lets
+  // an outbox stage carry one.
+  test(
+    'LISTEN delivers a committed NOTIFY, never a rolled-back one, and stops on unlisten',
+    async () => {
+      setDbClient(client);
+      try {
+        const got: string[] = [];
+        let listening = 0;
+        const subscription = await client.listen(
+          'x_embedded_wake',
+          (payload) => got.push(payload),
+          () => {
+            listening += 1;
+          },
+        );
+        expect(listening).toBe(1);
+
+        await expect(
+          withTransaction(async (tx) => {
+            await tx.execute(sql`select pg_notify('x_embedded_wake', 'rolled-back')`);
+            // The app's own failure: what makes the transaction roll back.
+            return Promise.reject(new RangeError('this unit of work fails'));
+          }),
+        ).rejects.toThrow('this unit of work fails');
+        await withTransaction(async (tx) => {
+          await tx.execute(sql`select pg_notify('x_embedded_wake', 'committed')`);
+          await Bun.sleep(5);
+          expect(got).toEqual([]);
+        });
+        await client.execute(sql`select pg_notify('x_embedded_wake', 'plain')`);
+        await Bun.sleep(5);
+        expect(got).toEqual(['committed', 'plain']);
+
+        await subscription.unlisten();
+        await client.execute(sql`select pg_notify('x_embedded_wake', 'after-unlisten')`);
+        await Bun.sleep(5);
+        expect(got).toEqual(['committed', 'plain']);
+      } finally {
+        setDbClient(undefined);
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
 });

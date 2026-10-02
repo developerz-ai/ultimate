@@ -11,6 +11,7 @@
 import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { ClaimQueuesEmptyError } from './errors';
+import type { JobIntrospection, JobProgress } from './introspection';
 import type { LeaseStore } from './leases';
 import type { StepStore } from './steps';
 
@@ -66,7 +67,13 @@ export interface JobRecord {
   /** Actor's orgId, for per-tenant limits. */
   readonly tenantId?: string;
   readonly lastError?: string;
+  /** The thrown value's stack for `lastError`, bounded (`MAX_ERROR_STACK_LENGTH`). */
+  readonly lastErrorStack?: string;
+  /** What the body last reported through `progress()` — see `introspection.ts`. */
+  readonly progress?: JobProgress;
   readonly claimedBy?: string;
+  /** How many times this row has been claimed. Absent until the first claim. */
+  readonly claim?: number;
   readonly visibleAt?: number;
   /**
    * W3C `traceparent` of the request that queued this job. The job's span is opened as a CHILD of
@@ -81,6 +88,13 @@ export interface JobRecord {
 export type ConflictPolicy = 'dedupe' | 'error';
 
 export interface EnqueueRequest {
+  /**
+   * The row's id, when the caller already allocated one. The outbox does, at STAGE time, so the
+   * enqueue that staged it can name the job before it exists — and so a row published twice
+   * meets the job its first publish made (`deduped: true`), live or finished, instead of
+   * inserting a second one. Omit it everywhere else: the driver mints one.
+   */
+  readonly id?: string;
   readonly name: string;
   readonly queue: string;
   readonly input: unknown;
@@ -89,7 +103,10 @@ export interface EnqueueRequest {
   /** Epoch ms. Omit for "now". */
   readonly runAt?: number;
   readonly tenantId?: string;
-  /** Reuse an existing run id when resuming, so step history is preserved. */
+  /**
+   * The run's id — the key its steps, its events and its prompts hang off. Allocated by the
+   * outbox at stage time or named by the caller (`EnqueueOptions.runId`); minted here otherwise.
+   */
   readonly runId?: string;
   readonly onConflict?: ConflictPolicy;
   /** W3C `traceparent` of the enqueuing request. The facade stamps it; callers rarely set it. */
@@ -132,12 +149,57 @@ export interface ClaimOptions {
 export interface ClaimedJob extends JobRecord {
   readonly claimedAt: number;
   readonly visibleAt: number;
+  /** The worker this claim was made for. */
+  readonly claimedBy: string;
+  /**
+   * THIS claim, as the row's claim ordinal: 1 for the first, one more for each after it, never
+   * reset. With `claimedBy` it is the identity every settle, renewal and progress write of this
+   * claim is fenced on — `claimOf(claimed)` is how a caller carries the pair.
+   */
+  readonly claim: number;
 }
 
-export interface NackOptions {
+/**
+ * WHICH claim is acting. `workerId` alone was the fence, and it names a worker, not a claim: a
+ * worker that takes back its own lapsed job is the same worker, so the body still unwinding from
+ * the first claim settled the second. The ordinal is what tells the two apart.
+ */
+export interface ClaimIdentity {
+  readonly workerId: string;
+  readonly claim: number;
+}
+
+export const claimOf = (claimed: Pick<ClaimedJob, 'claimedBy' | 'claim'>): ClaimIdentity => ({
+  workerId: claimed.claimedBy,
+  claim: claimed.claim,
+});
+
+/**
+ * Who settles a claim, and how long the attempt ran. The identity is the FENCE: a settle from a
+ * claim the row no longer carries matches nothing. The lease lapses, the row is claimed again —
+ * by another worker or by this one — and the first body unwinds: its ack would mark the second
+ * run `done`, its nack would hand a running job to a third. `durationMs` feeds the per-minute
+ * counters the same statement writes.
+ */
+export interface SettleBy extends ClaimIdentity {
+  readonly durationMs?: number;
+}
+
+export interface AckOptions extends SettleBy {
+  /**
+   * False when the row is finished WITHOUT its body having run here — `x jobs drain` moving it to
+   * another driver. It is settled `done` and adds nothing to the job's counters: a job that was
+   * moved is not a job that completed.
+   */
+  readonly counted?: boolean;
+}
+
+export interface NackOptions extends SettleBy {
   /** Delay before the job becomes claimable again. */
   readonly delayMs: number;
   readonly error?: string;
+  /** The thrown value's stack, kept beside `error` for `x jobs show`. */
+  readonly stack?: string;
   /**
    * The ATTEMPT COUNTER, and nothing else. False for a suspension and for a shed alike: neither is
    * a failure, and a 3-day sleep that burned an attempt would dead-letter the job.
@@ -157,7 +219,28 @@ export interface NackOptions {
    */
   readonly park?: boolean;
   readonly deadLetter?: boolean;
+  /**
+   * Terminal WITHOUT the dead-letter queue: the row settles `failed` — finished, never claimed
+   * again, requeueable by `x jobs retry`, and absent from `queue_dead_jobs`. For an ending that is
+   * an answer rather than a fault: `whenBusy: 'fail'` over a busy concurrency key
+   * (`X_JOB_KEY_BUSY`). `deadLetter` wins when both are set, and `park` loses to both.
+   */
+  readonly fail?: boolean;
 }
+
+/**
+ * The state a nack leaves its row in — ONE reading, for every driver. It was a three-way written
+ * out in each, which is two places for a fourth branch to land in one and not the other; a
+ * `fail` the pg driver filed as `ready` would re-claim a refused run forever.
+ */
+export const nackState = (options: NackOptions): JobState =>
+  options.deadLetter === true
+    ? 'dead'
+    : options.fail === true
+      ? 'failed'
+      : options.park === true
+        ? 'suspended'
+        : 'ready';
 
 export interface QueueStats {
   readonly queue: string;
@@ -165,6 +248,8 @@ export interface QueueStats {
   readonly delayed: number;
   readonly running: number;
   readonly suspended: number;
+  /** Rows that ended `failed` — refused by a busy key, or exhausted with `deadLetter: false`. */
+  readonly failed: number;
   readonly dead: number;
   /**
    * Age in ms of the oldest job that is READY and due — the number that decides autoscaling.
@@ -174,40 +259,12 @@ export interface QueueStats {
   readonly oldestReadyMs: number;
 }
 
-export interface JobFilter {
-  readonly queue?: string;
-  readonly name?: string;
-  readonly state?: JobState;
-  readonly limit?: number;
-}
-
-/** Optional: powers `/_x` and the MCP tools. A minimal driver may omit it. */
-export interface JobIntrospection {
-  job(jobId: string): Promise<JobRecord | undefined>;
-  list(filter?: JobFilter): Promise<readonly JobRecord[]>;
-  deadLetters(limit?: number): Promise<readonly JobRecord[]>;
-  /**
-   * Re-queue a finished job (`REQUEUEABLE_STATES`); a live one is `X_JOB_NOT_REQUEUEABLE`, and a
-   * key a live job holds is `X_JOB_DUPLICATE`. `fromStep` drops that step and every step that
-   * started after it.
-   */
-  requeue(jobId: string, options?: { readonly fromStep?: string }): Promise<JobRecord>;
-  /**
-   * Stop a job from outside. The only answer to a runaway pass that was otherwise "scale the
-   * worker to zero" (which stops every job) or a hand-written `UPDATE` (which the running
-   * worker's next ack overwrote). Terminal for a queued row immediately; a RUNNING one stops at
-   * its next heartbeat, which no longer matches its own row and cancels the attempt.
-   *
-   * Optional on the interface for the reason `requeue` is not: a driver may have no way to
-   * address a single row. Answers `undefined` for a job id it does not hold.
-   */
-  cancel?(jobId: string, reason?: string): Promise<JobRecord | undefined>;
-}
-
 export interface HeartbeatOptions {
   readonly visibilityTimeoutMs: number;
   /** Renew only if this worker is still the claimant. Omit and any claimant matches. */
   readonly workerId?: string;
+  /** Renew only if the row still carries THIS claim (`ClaimedJob.claim`). Omit and any does. */
+  readonly claim?: number;
 }
 
 export interface JobDriver {
@@ -216,8 +273,13 @@ export interface JobDriver {
   readonly steps: StepStore;
   enqueue(request: EnqueueRequest): Promise<EnqueueResult>;
   claim(options: ClaimOptions): Promise<readonly ClaimedJob[]>;
-  ack(jobId: string): Promise<void>;
-  nack(jobId: string, options: NackOptions): Promise<void>;
+  /**
+   * Both settles are fenced on `state = 'running'` AND on the claimer, and both answer whether
+   * they LANDED. `false` is a settle from a worker that no longer owns the row — logged by the
+   * caller, never thrown: the row is somebody else's now and theirs is the verdict.
+   */
+  ack(jobId: string, by: AckOptions): Promise<boolean>;
+  nack(jobId: string, options: NackOptions): Promise<boolean>;
   /**
    * Extends the lease of a long-running job so it is not double-claimed.
    *

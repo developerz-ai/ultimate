@@ -169,7 +169,7 @@ export interface AppMcp {
  * Project an app's primitives into a ready MCP server.
  *
  * ```ts
- * // apps/admin/src/mcp.ts
+ * // apps/admin/app/admin/mcp.ts
  * export const mcp = defineAppMcp({
  *   name: 'acme-admin',
  *   include: 'exposed',

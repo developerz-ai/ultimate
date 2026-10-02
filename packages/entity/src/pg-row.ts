@@ -185,7 +185,10 @@ export const decodeRow = <Row>(entity: EntityCore<Row>, source: PhysicalRow): Ro
         ? moneyOf(source, head, currency, scale)
         : source[head];
     if (value !== null && value !== undefined) {
-      row[property] = column.$parse(value);
+      // A sealed column's stored value is not the author's to parse: it goes up as it is, and the
+      // sealing seam opens it — so a row somebody left in the clear is `X_SEAL_INVALID` there
+      // rather than whatever the plaintext parser thinks of its length here.
+      row[property] = column.$meta.sealed === undefined ? column.$parse(value) : value;
       continue;
     }
     if (column.$meta.notNull) {

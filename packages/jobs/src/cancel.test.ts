@@ -45,11 +45,11 @@ describe('cancelling a job', () => {
     await driver.introspect?.cancel?.(id, 'wrong predicate, 40M rows');
 
     // The worker finishes and tries to say so. It must not resurrect the row.
-    await driver.ack(id);
+    await driver.ack(id, { workerId: 'w', claim: 1 });
     expect((await driver.introspect?.job(id))?.state).toBe('cancelled');
 
     // Nor may a failure path.
-    await driver.nack(id, { delayMs: 0, error: 'boom' });
+    await driver.nack(id, { workerId: 'w', claim: 1, delayMs: 0, error: 'boom' });
     expect((await driver.introspect?.job(id))?.state).toBe('cancelled');
   });
 
@@ -71,7 +71,7 @@ describe('cancelling a job', () => {
     const driver = createMemoryDriver();
     const { id } = await driver.enqueue(enqueue('finished'));
     await driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 5000, workerId: 'w' });
-    await driver.ack(id);
+    await driver.ack(id, { workerId: 'w', claim: 1 });
 
     // An operator cancelling a 40M-row sweep has to know whether they stopped it or missed it.
     await expect(cancelJob(driver, id)).rejects.toThrow(/"done"/);

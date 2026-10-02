@@ -182,7 +182,8 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
           bucket,
           endpoint: binding.url,
           ...(env['S3_REGION'] === undefined ? {} : { region: env['S3_REGION'] }),
-          // MinIO needs path style; R2 and AWS do not. Declared, never sniffed from the endpoint.
+          // A gateway addressed by host and port needs path style; R2 and AWS do not. Declared,
+          // never sniffed from the endpoint.
           forcePathStyle: env['S3_FORCE_PATH_STYLE'] === '1',
         }),
       },

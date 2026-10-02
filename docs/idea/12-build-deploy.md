@@ -47,7 +47,7 @@ services:
   app:      { build: ., environment: { ROLE: all }, ports: ['3000:3000'] }
   postgres: { image: postgres:17, ports: ['5432:5432'] }
   nats:     { image: nats:2, command: '-js', ports: ['4222:4222'] }
-  minio:    { image: minio/minio, command: 'server /data', ports: ['9000:9000'] }
+  s3:       { image: versity/versitygw:v1.8.0, ports: ['9000:9000'] }
 ```
 
 There is no `ROLE=all` — the six roles are the whole set, and anything else is `X_ROLE_UNKNOWN` at boot. `x dev` co-locates `web`, `sync`, `worker` and `scheduler` in one process instead. The default local loop (`x dev`) uses embedded Postgres, in-process NATS, and a local directory for S3 — **Docker is not required to develop** ([`13-dx.md`](./13-dx.md)). This compose file exists for parity debugging and for CI jobs that want real services.
@@ -93,7 +93,8 @@ services:
 ## Helm chart
 
 **A committed artifact, not a generated one.** [`docker/helm/`](../../docker/helm/) is checked in and
-read directly — `x build` has three targets (`docker`, `binary`, `static`) and no `--helm` flag;
+read directly — `x build` has four targets (`docker`, `binary`, `static`, and `prebuilt`, which the
+image build runs on itself `As of 2026-10`) and no `--helm` flag;
 one existed and was removed in 1.2.0. `x deploy --method helm --image <ref>` runs `helm upgrade`
 against it, overriding `image.repository` and `image.tag`.
 

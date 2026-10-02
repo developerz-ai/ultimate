@@ -58,6 +58,18 @@ export interface BunSqlDriver {
   unsafe(text: string, values?: readonly unknown[]): Promise<unknown>;
   reserve(): Promise<BunSqlReserved>;
   close(options?: { readonly timeout?: number }): Promise<void>;
+  /**
+   * `LISTEN` on a connection the driver opens for it, OUTSIDE the pool. Measured on Bun 1.4.0
+   * against Postgres 17: a `max: 1` pool still answers statements while it is held;
+   * `idleTimeout` does not close it; a backend killed under it is re-dialled by the driver, with
+   * its own growing gap between attempts, and `onlisten` fires again once it is back; `close()`
+   * and `unlisten()` both end the session. Optional because a fake driver has none.
+   */
+  listen?(
+    channel: string,
+    onnotify: (payload: string) => void,
+    onlisten?: () => void,
+  ): Promise<{ unlisten(): Promise<void> }>;
 }
 
 export type BunSqlFactory = new (

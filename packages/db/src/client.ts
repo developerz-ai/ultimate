@@ -4,7 +4,7 @@
 // `Bun.SQL` slice in `bun-sql.ts` and the observed statement funnel in `statement-funnel.ts`, so
 // importing this module never opens a socket.
 
-import { type Role, resolveRole } from '@ultimat3/core';
+import { logger, type Role, renderThrowable, resolveRole } from '@ultimat3/core';
 import {
   type BunSqlDriver,
   type BunSqlReserved,
@@ -17,6 +17,13 @@ import { connectionUrl } from './connection-url';
 // module evaluation, and both sides are `function` declarations, so hoisting covers the TDZ.
 import { defaultClient } from './default-client';
 import { DbError, drainTimeout, driverError } from './errors';
+import {
+  assertListenChannel,
+  type DbSubscription,
+  type ListeningClient,
+  listenUnsupported,
+} from './listen';
+import { type PoolDemand, trackPool } from './pool-gauge';
 import { assertPoolProfile, type PoolProfile, poolProfileFor } from './pool-profile';
 import { reserveWithin } from './pool-reserve';
 import { type SqlFragment, sql } from './sql';
@@ -55,7 +62,7 @@ export interface PostgresClientOptions {
   readonly applicationName?: string | undefined;
 }
 
-export interface PostgresClient extends ReservableClient {
+export interface PostgresClient extends ReservableClient, ListeningClient {
   readonly profile: PoolProfile;
   ping(): Promise<void>;
   close(): Promise<void>;
@@ -68,18 +75,28 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     ...poolProfileFor(role),
     ...(options.profile ?? {}),
   });
-  let driver: BunSqlDriver | undefined;
+  // The driver and what `db_pool_in_use` / `db_pool_waiting` are derived from (`pool-gauge.ts`),
+  // as ONE value: a pool still draining after `close()` settles its own work against its own
+  // counter, never against the pool that replaced it. Built only once the driver exists, so a
+  // connection string that cannot be built registers no pool in `db_pool_max`.
+  let driver: { readonly pool: BunSqlDriver; readonly demand: PoolDemand } | undefined;
 
-  function connect(): BunSqlDriver {
+  function connect(): { readonly pool: BunSqlDriver; readonly demand: PoolDemand } {
     if (driver !== undefined) return driver;
     const url = connectionUrl(options, profile);
     const Factory = bunSqlFactory();
-    driver = new Factory(url, bunSqlPoolOptions(profile));
+    driver = { pool: new Factory(url, bunSqlPoolOptions(profile)), demand: trackPool(profile.max) };
     return driver;
   }
 
   async function run(fragment: SqlFragment): Promise<unknown> {
-    return runOn(connect(), fragment);
+    const { pool, demand } = connect();
+    demand.enter();
+    try {
+      return await runOn(pool, fragment);
+    } finally {
+      demand.leave();
+    }
   }
 
   const client: PostgresClient = {
@@ -99,11 +116,14 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       // (`ERR_POSTGRES_UNSAFE_TRANSACTION`), and a BEGIN that landed on a different connection
       // than the statement after it would not be a transaction at all — which is exactly what
       // `withTransaction` and `readOnlyQuery` depend on being true.
-      const pool = connect();
+      const { pool, demand } = connect();
       let reserved: BunSqlReserved;
+      // Counted from the ASK: a pin queued behind a full pool is exactly what `waiting` reports.
+      demand.enter();
       try {
         reserved = await reserveWithin(pool, profile);
       } catch (error) {
+        demand.leave();
         // Acquiring the pin is the one step that runs outside `runOn`, so an exhausted or
         // unreachable pool would escape as an untyped driver error — and `readOnlyQuery` reaches
         // this line before its first statement, which is how MCP ends up returning something
@@ -126,6 +146,7 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       const release = (): void => {
         if (!held) return;
         held = false;
+        demand.leave();
         // Total by construction — `releaseReserved` owns the reason (`bun-sql.ts`).
         releaseReserved(reserved);
       };
@@ -137,6 +158,30 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
         [Symbol.dispose]: release,
       };
     },
+    async listen(channel, onNotify, onListening): Promise<DbSubscription> {
+      assertListenChannel(channel);
+      const { pool } = connect();
+      if (pool.listen === undefined) throw listenUnsupported('this Bun.SQL');
+      let held: { unlisten(): Promise<void> };
+      try {
+        // The driver's own session, never a pin out of the pool: a reserved connection holds the
+        // LISTEN and surfaces no notification, and it would cost the pool a slot for good.
+        held = await pool.listen(channel, onNotify, onListening);
+      } catch (error) {
+        throw driverError(`LISTEN ${channel}`, error);
+      }
+      let ended: Promise<void> | undefined;
+      return {
+        unlisten: () => {
+          // Best-effort, the rule `releaseReserved` states: the session this would end may be
+          // gone with the pool already, and that is the outcome asked for.
+          ended ??= held.unlisten().catch((error: unknown) => {
+            logger.debug('db.unlisten_failed', { error: renderThrowable(error) });
+          });
+          return ended;
+        },
+      };
+    },
     async ping(): Promise<void> {
       await client.query(sql`select 1`);
     },
@@ -146,9 +191,12 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       // after it would fail for a reason no caller can see. Clearing first also means a
       // `connect()` racing the await opens a fresh pool instead of joining the one draining. The
       // rejection still reaches the caller — a shutdown that could not drain wants to know.
-      const pool = driver;
+      const closing = driver;
       driver = undefined;
-      if (pool === undefined) return;
+      if (closing === undefined) return;
+      // Only THIS pool's counter leaves the totals; its in-flight work settles against it.
+      closing.demand.close();
+      const { pool } = closing;
       // BOUNDED, `As of 2026-08-27`, and through the driver's OWN option rather than a race here.
       // This was a bare `await pool.close()`, and `Bun.SQL`'s `end()` waits on an outstanding
       // reserved connection without ever giving up — measured three runs per case on Bun 1.3.14

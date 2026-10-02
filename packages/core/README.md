@@ -36,6 +36,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | a value that cannot be printed by accident | `secret.ts` |
 | the committed encrypted secrets envelope, AES-256-GCM | `secrets.ts` |
 | the two secrets files, and decrypted values → `defineEnv` | `secrets-store.ts` |
+| one value sealed under the master key — `seal()` / `open()` | `seal.ts` |
+| the key ring those work under: the current key plus retired ones | `seal-keys.ts` |
 | `defineConfig()` for `app.config.ts` | `config.ts` |
 | how overlays layer onto it — per section, key by key | `config-merge.ts` |
 | the `pwa` block — what an install needs, and the boot refusal when it is not there | `config-pwa.ts` |
@@ -43,7 +45,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |
-| structured JSON logging + redaction | `logger.ts` |
+| structured JSON logging + redaction; `setLogSink(sink)` — the test seam that sends every default-writer line to a sink instead of the process's streams (a test preload drops them; a test asserting on the process logger collects them) | `logger.ts` |
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
 | the sampling decision, and `OTEL_TRACES_SAMPLER*` | `sampler.ts` |
 | OTLP/HTTP JSON: endpoint, headers, value encoding | `otlp.ts` |
@@ -54,6 +56,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | OTel-shaped counter / gauge / histogram, same seam | `metrics.ts` |
 | the `/metrics` scrape body | `metrics-text.ts` |
 | the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
+| what the process itself costs: `process_resident_memory_bytes`, `process_heap_used_bytes`, `process_heap_total_bytes`, `process_external_memory_bytes`, `process_cpu_seconds_total`, `process_event_loop_lag_seconds`, `process_start_time_seconds`, `process_info{role}` — **server-only**, never on `@ultimat3/core/page` | `process-metrics.ts` (`startProcessMetrics`, `readProcess`) |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
 | SIGTERM/SIGINT → the one drain | `lifecycle-signals.ts` |
@@ -193,9 +196,13 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `OtlpEndpointInvalidError` | `X_OTLP_ENDPOINT_INVALID` | `src/otlp.ts` |
 | `OtlpHeadersInvalidError` | `X_OTLP_HEADERS_INVALID` | `src/otlp.ts` |
 | `OtlpProtocolUnsupportedError` | `X_OTLP_PROTOCOL_UNSUPPORTED` | `src/otlp.ts` |
+| `SealInvalidError` | `X_SEAL_INVALID` | `src/seal-errors.ts` |
+| `SealKeyMissingError` | `X_SEAL_KEY_MISSING` | `src/seal-errors.ts` |
+| `SealKeyUnknownError` | `X_SEAL_KEY_UNKNOWN` | `src/seal-errors.ts` |
 | `SecretsFileInvalidError` | `X_SECRETS_FILE_INVALID` | `src/secrets-errors.ts` |
 | `SecretsFileMissingError` | `X_SECRETS_FILE_MISSING` | `src/secrets-errors.ts` |
 | `SecretsKeyInvalidError` | `X_SECRETS_KEY_INVALID` | `src/secrets-errors.ts` |
+| `SecretsRingKeyInvalidError` | `X_SECRETS_KEY_INVALID` — a malformed entry of `ULTIMATE_SECRETS_RETIRED_KEYS` | `src/secrets-errors.ts` |
 | `SecretsKeyMismatchError` | `X_SECRETS_KEY_MISMATCH` | `src/secrets-errors.ts` |
 | `SecretsKeyMissingError` | `X_SECRETS_KEY_MISSING` | `src/secrets-errors.ts` |
 | `SecretsPlaintextInvalidError` | `X_SECRETS_PLAINTEXT_INVALID` | `src/secrets-errors.ts` |
@@ -349,6 +356,56 @@ only writer.
 A missing file is not an error — an app may declare no secrets. A file with **no key to open it**
 is `X_SECRETS_KEY_MISSING` and fatal: a process that booted past its secrets authenticates against
 nothing and still reports healthy.
+
+## Seal one value
+
+One function seals a value under the app's master key. Nothing above tier 0 writes its own AES call.
+
+```ts
+import { openText, seal } from '@ultimat3/core';
+
+export async function roundTrip(password: string): Promise<string> {
+  const purpose = 'scrape-session';
+  // 'x1.4f2a9c0d1e2b3a4f.<iv>.<ciphertext+tag>' — one string, base64url
+  const stored = await seal(password, { purpose });
+  return openText(stored, { purpose });
+}
+```
+
+A column is sealed by declaring it — `text().sealed()` in `@ultimat3/entity`, which derives the
+purpose `entity:<table>.<column>` and calls this. Call `seal()` yourself only for a value that is
+not a column.
+
+| Export | Signature | |
+|---|---|---|
+| `seal` | `(plaintext: string \| Uint8Array, options: SealOptions) => Promise<string>` | always under the CURRENT key |
+| `open` | `(sealed: string, options: SealPurposeOptions) => Promise<Uint8Array>` | picks the key the string names |
+| `openText` | `(sealed: string, options: SealPurposeOptions) => Promise<string>` | the string spelling; no JSON helper |
+| `sealAll` | `(plaintext: string \| Uint8Array, options: SealPurposeOptions) => Promise<readonly string[]>` | the deterministic seal under every declared key, current first |
+| `isSealed` | `(value: unknown) => value is string` | shape only — tells a legacy plaintext row from a sealed one |
+| `sealedKeyId` | `(sealed: string) => string` | what a re-seal `backfill()` compares to the current id |
+| `sealKeyIds` | `(source?: SealKeySource) => Promise<{ current: string; retired: readonly string[] }>` | ids, never keys |
+| `resolveSealKeys` | `(source?: SealKeySource) => Promise<SealKeyRing>` | the ring, resolved once — pass it as `keys` to seal or open MANY values in one operation |
+
+`SealPurposeOptions` is `{ purpose: string; root?: string; env?: Record<string, string | undefined> }`;
+`SealOptions` adds `deterministic?: boolean`. `root` and `env` default to the working directory and
+`process.env`, exactly as `installSecrets()` does. `keys?: SealKeyRing` skips that lookup: a batch
+resolves the ring once and hands it to every call — never kept past the operation, so the next one
+sees a rotation.
+
+| Rule | |
+|---|---|
+| Key | the one `x secrets` manages — `ULTIMATE_SECRETS_KEY` first, `.secrets.key` second. No second variable |
+| `purpose` | REQUIRED, bound as additional authenticated data with the key id: a value sealed for `scrape-session` does not open as `entity:connections.password` |
+| Wire form | `x1.<keyId>.<iv>.<ciphertext+tag>`. `keyId` is `masterKeyId`'s, so a rotated key is a named mismatch, never a garbled read |
+| Key ring | retired keys in `ULTIMATE_SECRETS_RETIRED_KEYS` (comma-separated hex). `x secrets rotate` writes the replaced key there, inside `secrets.enc.json`; `installSecrets()` carries it into the process; `x secrets rotate --drop <keyId>` removes it |
+| Refusals | `X_SEAL_KEY_MISSING`, `X_SEAL_KEY_UNKNOWN`, `X_SEAL_INVALID` — all terminal. Never garbage, never the raw string back, and no reading of an unsealed value |
+
+**`deterministic: true` reveals equality.** The IV is an HMAC of the purpose and the plaintext, so
+equal values seal to equal strings and a column can be matched by `=`. Anyone who can read the
+stored strings sees which rows hold the same value; never use it for a low-entropy value (a
+boolean, a status, a PIN). During a rotation one value has one sealed form per declared key —
+match with `sealAll()`; uniqueness cannot be held across keys.
 
 ## Time, ids, telemetry, drain
 
@@ -614,6 +671,7 @@ read; `@ultimat3/jobs` re-exports both rather than keeping a second pair.
 |---|---|---|
 | `clientTransport({ method, url, body?, rawBody?, headers?, signal?, idempotencyKey?, flight?, fresh?, retry?, onResponse?, decodeError?, onEnvelope?, fetchImpl? })` | every browser request | `credentials: 'same-origin'`, JSON in and out, the `idempotency-key` header, a non-2xx `problem+json` back into the server's code (`meta.origin: 'remote'`) unless `decodeError` answers first, a network `TypeError` into `X_CLIENT_TRANSPORT_FAILED`. A GET is abortable on `rescope()` and deduped only when a `flight` is passed (`fresh` refuses to join); any other method is never deduped and never aborted by the fence. `rawBody` goes out verbatim with no default header and resolves `undefined`. `onResponse` sees headers before the body is read. `onEnvelope` sees the decoded records envelope after adoption — the one way to learn the order of `records[type]`. `fetchImpl` defaults to `globalThis.fetch`, read at call time |
 | `actionPath(name)`, `actionRoute(name)`, `queryPath(name)`, `QUERY_PATH_PREFIX`, `splitWords`, `pluralize` | the one URL rule | `publishPost` → `/api/posts/publish`, `liveFeed` → `/_x/query/live-feed`. Tier 0 so `action`, `query` and `realtime` derive one URL with no sideways import |
+| `actionPath(name)` with no `style`, `renderedActionPathStyle()`, `CLIENT_PATH_STYLE_META` | the style nobody restates | `actionPath(name)` reads the document's `<meta name="ultimate-path-style">` stamp, so a browser caller derives under the style the server serves (`defineApi({ http: { pathStyle } })`). No document, no stamp or an unknown value is `'resource'` — a `'resource'` server writes no stamp. A named `style` is never overridden |
 | `RECORDS_HEADER`, `encodeRecordEnvelope`, `decodeRecordEnvelope`, `RecordRows` | `{ data, records?: { [type]: { [key]: Row } }, removed?: { [type]: key[] } }`, only behind `x-ultimate-records: 1` | how an answer carries entity rows without changing the wire of an answer that has none. A malformed envelope is `X_CLIENT_RECORD_ENVELOPE_INVALID` |
 | `pageClient()` → `{ store, socket, scope }`, `RecordSink` | one handle per TAB, not per module copy | every island bundle carries its own core; the handle lives on `globalThis` under one `Symbol.for` key so all of them resolve the same store. No store installed = records dropped |
 | `rescope(principal)`, `onRescope(fn)`, `isSuperseded(error)` | the principal fence | a principal change bumps the epoch and notifies synchronously; reads in flight reject `X_CLIENT_SCOPE_CHANGED`, writes complete but their records are not adopted. `isSuperseded` answers true for it and for `X_SUPERSEDED` |

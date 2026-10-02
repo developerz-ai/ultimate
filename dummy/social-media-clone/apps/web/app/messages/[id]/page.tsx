@@ -14,10 +14,9 @@ import { actorOf } from '@ultimat3/action';
 import { useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { defineRoute, type RouteParams } from '@ultimat3/render';
-import { Icon } from '@ultimat3/ui';
+import { Button, Icon } from '@ultimat3/ui';
 import { iconArrowLeft } from '@ultimat3/ui/icons/arrow-left';
 import { iconMessageSquare } from '@ultimat3/ui/icons/message-square';
-import { ActionButton } from '../../../shared/ui/action';
 import { AppShell } from '../../../shared/ui/app-shell';
 import { EmptyState } from '../../../shared/ui/empty-state';
 import { type Thread, threadFor } from '../service';
@@ -95,7 +94,7 @@ export function Page(props: {
           rows={3}
           placeholder={t('app.messages.compose.placeholder')}
         />
-        <ActionButton>{t('app.messages.compose.send')}</ActionButton>
+        <Button type="submit">{t('app.messages.compose.send')}</Button>
       </form>
     </AppShell>
   );

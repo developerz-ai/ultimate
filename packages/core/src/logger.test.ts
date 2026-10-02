@@ -13,7 +13,7 @@ import { type Clock, frozenClock } from './clock';
 import { ERROR_DOCS_URL } from './error-codes';
 import { UltimateError } from './errors';
 import type { LogLevel } from './logger';
-import { createLogger, LOG_LEVELS, REDACTED, redactKeys, setLogStream } from './logger';
+import { createLogger, LOG_LEVELS, REDACTED, redactKeys, setLogSink, setLogStream } from './logger';
 
 function capture(level: 'trace' | 'info' = 'info') {
   const lines: Record<string, unknown>[] = [];
@@ -64,6 +64,7 @@ describe('logger', () => {
     // SIGTERM hangs.
     const lines: Record<string, unknown>[] = [];
     const logger = createLogger({
+      level: 'info',
       clock: frozenClock('not-a-date'),
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
     });
@@ -85,6 +86,7 @@ describe('logger', () => {
       monotonic: () => 0,
     };
     const logger = createLogger({
+      level: 'info',
       clock: hostile,
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
     });
@@ -93,6 +95,7 @@ describe('logger', () => {
 
     const notADate = { now: () => 0, monotonic: () => 0 } as unknown as Clock;
     const second = createLogger({
+      level: 'info',
       clock: notADate,
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
     });
@@ -264,6 +267,37 @@ describe('logger', () => {
  * own JSON to fd 1, so `json.load` on the output of a command whose whole contract is `--json`
  * raised on the second object.
  */
+describe('logger · the sink', () => {
+  test('a default-writer line goes to the sink instead of the streams, with its level', () => {
+    const got: [string, string][] = [];
+    const previous = setLogSink((line, level) => got.push([level, line]));
+    try {
+      const log = createLogger({ level: 'info', clock: frozenClock('2026-07-26T10:00:00.000Z') });
+      log.debug('below the level: never written, sink or not');
+      log.info('to the sink');
+      log.error('errors too');
+    } finally {
+      // Returned so a caller restores what was there — the preload's own sink, in this process.
+      expect(setLogSink(previous)).toBeDefined();
+    }
+    expect(got.map(([level]) => level)).toEqual(['info', 'error']);
+    expect(JSON.parse(got[0]?.[1] ?? '{}')).toMatchObject({ level: 'info', msg: 'to the sink' });
+  });
+
+  test('a logger given its own writer never reaches the sink', () => {
+    const sunk: string[] = [];
+    const own: string[] = [];
+    const previous = setLogSink((line) => sunk.push(line));
+    try {
+      createLogger({ level: 'info', writer: (line) => own.push(line) }).info('mine');
+    } finally {
+      setLogSink(previous);
+    }
+    expect(own).toHaveLength(1);
+    expect(sunk).toEqual([]);
+  });
+});
+
 describe('logger · the default writer', () => {
   const drive = (): { readonly out: string[]; readonly err: string[] } => {
     const out: string[] = [];
@@ -279,11 +313,14 @@ describe('logger · the default writer', () => {
       err.push(String(chunk));
       return true;
     };
+    // The streams themselves are the subject here, so the test preload's sink is lifted.
+    const sink = setLogSink(undefined);
     try {
       const log = createLogger({ level: 'info', clock: frozenClock('2026-07-26T10:00:00.000Z') });
       log.info('ultimate migrate applied');
       log.error('ultimate migrate failed');
     } finally {
+      setLogSink(sink);
       process.stdout.write = stdout;
       process.stderr.write = stderr;
     }

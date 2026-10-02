@@ -48,6 +48,9 @@ top-level `UltimateError` use in `error-codes.ts`.
 - **A string's length is CODE POINTS** — `validators.ts` rejects in that unit and
   `json-schema.ts` publishes `minLength` in it. `parseId`/`uuidTimestamp` describe a rejected id and
   never echo it: a value baked into a message has no log field key to redact.
+- **A test never patches `process.stdout` to read a log line**: `setLogSink(sink)` is the seam, and the
+  test preloads install one that drops every line (`LOG_LEVEL` named = not installed). It decides
+  WHERE a line goes, never whether — the level is untouched.
 - `logger.ts` must not import `context.ts` (`context.ts` injects ids via `setLoggerContextFields()`).
   It imports `secret.ts` one way only: `secret.ts` owns `REDACTED`, `logger.ts` re-exports it.
 - **`ActorFacts` is the app's extension point on `Actor`** (module augmentation). Core never declares
@@ -71,7 +74,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | which HTTP statuses are worth repeating | `retryable-status.ts` | `>= 500` plus 408, 409, 425, 429 |
 | how long this request has left | `request-budget.ts` (`Ctx.deadlineAt`, `REQUEST_TIMEOUT_HEADER`) | `@ultimat3/http`'s `startDeadline` is the one writer of the instant; `traceHeaders()` the one writer of the header. A spent budget sends nothing, never `0` |
 | the above, composed into one typed-client call | `client-flight.ts` + `client-wire.ts` | shared by `@ultimat3/action` and `@ultimat3/query` (both tier 3), re-exported by both. Declares no code of its own |
-| the browser's one HTTP function, records envelope, per-tab handle and principal fence | `client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `client-paths.ts`, `record-envelope.ts`, `record-sink.ts`, `client-scope.ts` | `pageClient()` is the ONE `globalThis` write (`Symbol.for('ultimate.client')`); the scope's listeners live ON the handle. `clientTransport` never value-imports `createClientFlight` or `traceHeaders()`: trace/budget headers reach it through the page handle's OUTBOUND SLOT (`outbound-headers.ts`). `isSuperseded` answers both `X_SUPERSEDED` and `X_CLIENT_SCOPE_CHANGED`. The fence never `bump()`s a caller's flight. A write never dedupes; a read dedupes only with a caller's `flight`. `pageClient()` reads `<meta name="ultimate-scope">` (`CLIENT_SCOPE_META`) once: content = principal, empty = anonymous (`null`), absent = UNSCOPED (`undefined`, nothing persisted). Byte figures (`As of 2026-09-23`): `clientTransport` 14,405 B, `pageClient` 8,853 B through the barrel, 332 B from its own module; `rpc`'s live in `packages/action/CLAUDE.md`, `queryClient`'s in `packages/query/CLAUDE.md` |
+| the browser's one HTTP function, records envelope, per-tab handle and principal fence | `client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `client-paths.ts`, `record-envelope.ts`, `record-sink.ts`, `client-scope.ts` | `pageClient()` is the ONE `globalThis` write (`Symbol.for('ultimate.client')`); the scope's listeners live ON the handle. `clientTransport` never value-imports `createClientFlight` or `traceHeaders()`: trace/budget headers reach it through the page handle's OUTBOUND SLOT (`outbound-headers.ts`). `isSuperseded` answers both `X_SUPERSEDED` and `X_CLIENT_SCOPE_CHANGED`. The fence never `bump()`s a caller's flight. A write never dedupes; a read dedupes only with a caller's `flight`. `pageClient()` reads `<meta name="ultimate-scope">` (`CLIENT_SCOPE_META`) once: content = principal, empty = anonymous (`null`), absent = UNSCOPED (`undefined`, nothing persisted). `actionPath(name)` with no `style` reads the document's `<meta name="ultimate-path-style">` (`renderedActionPathStyle()`; `CLIENT_PATH_STYLE_META` in `page-meta.ts`) and falls back to `'resource'`. Byte figures (`As of 2026-10-01`, `bun build --target=browser --minify`): `clientTransport` 14,251 B and `pageClient` 8,348 B through the barrel, 9,633 B and 1,156 B through `./page`; the whole `./page` entry 15,979 B against `page-bundle.test.ts`'s 16,384; `rpc`'s live in `packages/action/CLAUDE.md`, `queryClient`'s in `packages/query/CLAUDE.md` |
 | a write's public name | `write-digest.ts` (`writeDigest`, `isWriteDigest`, also on `./page`) + `write-origin.ts` (`withWriteOrigin`, `currentWriteOrigin`, `WRITE_ORIGIN_WAL_PREFIX`, server-only) | SHA-256 of an idempotency key, 32 hex; carried action → entity → WAL → realtime `records` frame. A malformed value runs the work unnamed: a label, never a gate |
 | which row survives a conflict | `conflict-policy.ts` (`ConflictPolicy`, `resolveConflict`, `Row`) | read by `action`'s mutator and `realtime`'s rebase |
 | the four shapes of an async region | `async-state.ts` (`AsyncState`) | `realtime` returns it, `ui` renders it. `bun run render-modes` refuses a second status union sharing three members |
@@ -80,6 +83,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | an `Intl` formatter cache, and the screen in front of it | `intl-cache.ts` (`cachedFormatter`, `canonicalLocale`, `assertLocale`, `MAX_CACHED_FORMATTERS`, `MAX_LOCALE_EXCERPT`) | a locale arrives from a header: refuse a non-tag (`X_LOCALE_INVALID`), key canonically AND bound the cache — never a copy of any of the three. The cause quotes at most `MAX_LOCALE_EXCERPT` (35) code points; the whole tag rides in `meta.locale` |
 | the text direction of a locale | `locale-direction.ts` (`directionOf`, `isRtl`, `Direction`) | re-exported by `@ultimat3/i18n`; lives here so `@ultimat3/ui` need not reach the i18n barrel |
 | the committed encrypted values | `secrets.ts` (envelope) + `secrets-store.ts` (files, `installSecrets`) | plaintext is a flat map of ENV NAMES; there is no `secrets.get()` |
+| ONE sealed value | `seal.ts` (`seal`, `open`, `openText`, `sealAll`) + `seal-keys.ts` (the ring) + `seal-errors.ts` | the framework's one AES call above the envelope: `entity`'s sealed column and `scraping`'s stored session call it, never WebCrypto. `purpose` is required and is AAD |
 
 - **`installSecrets()` is the ONLY path from `secrets.enc.json` to an app value**, landing in
   `process.env` before `defineEnv` reads it. The real environment always wins.
@@ -91,6 +95,14 @@ top-level `UltimateError` use in `error-codes.ts`.
   `X_SECRETS_KEY_MISMATCH`'s command carries no key id (it is read from a file). Its seven codes
   register through `registerErrorCodes()`, so `resetErrorCodes()` drops them — take
   `errorCodeSnapshot()` first. The envelope's `kid` lets *wrong key* and *edited file* be two codes.
+- **`seal.ts` adds no variable for the CURRENT key** — `findMasterKey()`, the same call
+  `installSecrets()` makes. Retired keys are `ULTIMATE_SECRETS_RETIRED_KEYS`, written into
+  `secrets.enc.json` by `x secrets rotate`; the ring memo is keyed by its source strings, never by
+  time. Constants, `parseMasterKey`, `masterKeyId`, `importKey` and the base64 codec are
+  `secrets.ts`'s — no second set. `seal-errors.ts` runs nothing at import: its titles are in
+  `CORE_CODE_TITLES` and its retry class in `CORE_ERROR_RETRY`, so it is no `sideEffects` anchor.
+  The wire form `x1.<keyId>.<iv>.<ciphertext+tag>` and the AAD string are persisted data: a change
+  is `x2`, never an edit.
 - **`schema-error-codes.ts` registers `@ultimat3/schema`'s codes** (schema cannot call core), and
   derives their retry classification from the same set. It is a `SIDE_EFFECTS_ANCHORS` entry.
 - `timing-safe-equal.ts` is the one constant-time comparison (`@ultimat3/auth`, `@ultimat3/storage`).
@@ -134,7 +146,10 @@ top-level `UltimateError` use in `error-codes.ts`.
 `metrics.ts` is to `telemetry.ts` what a counter is to a span: always on, no-op exporter by
 default. `runtime-metrics.ts` is the only place that names a series the chart reads
 (`http_requests_total`, `connections`, `queue_depth`), keyed by `ScalingSignal` in
-`SCALING_METRICS`. One call site per package; a second is the bug:
+`SCALING_METRICS`. `process-metrics.ts` names what the PROCESS costs (`process_*`: resident
+memory, heap, external, CPU seconds, event-loop lag, start time, `process_info{role}`); server-only
+— it reads `process`, so it is never exported from `page.ts`. One call site per package; a second
+is the bug:
 
 | Recorder | The one caller |
 |---|---|

@@ -6,8 +6,12 @@
 // pair folded into money by name. So a nullable money column diverged from the repository shape,
 // two plain columns that happened to be called `x_minor`/`x_currency` were folded into a `Money`,
 // and a `.column()` rename arrived under its physical name. One decoder, the entity's, now.
+//
+// A SEALED column is the one place a live row is not the repository's: the log carries the stored
+// string, and nothing here opens it. It is dropped, so a change — on the bus, in the ring, in a
+// patch frame — names no sealed column at all.
 
-import { decodeRow, entityForTable } from '@ultimat3/entity';
+import { decodeRow, entityForTable, sealedFields } from '@ultimat3/entity';
 import { ReplicationProtocolError } from './errors';
 import type { PhysicalRow } from './pg-values';
 import type { PgRelation } from './pgoutput';
@@ -47,5 +51,10 @@ export function entityRow(
     });
   }
   const source = image === 'before' ? replicatedOnly(relation, physical) : physical;
-  return decodeRow(entity, source) as PhysicalRow;
+  const row = decodeRow(entity, source) as PhysicalRow;
+  // Not opened and not forwarded. A client never receives a sealed column on any other path, so
+  // a patch carrying one would be the only frame that does — and a `lookup` column's stored string
+  // is the same for equal plaintexts, which tells every subscriber which rows share a value.
+  for (const field of sealedFields(entity)) delete row[field.property];
+  return row;
 }

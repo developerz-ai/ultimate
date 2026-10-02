@@ -39,7 +39,9 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 |---|---|
 | `driver.ts` | `StorageDriver` contract (8 methods) + bounded `toBytes`/`sha256Base64`/`etagOf` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
+| `driver-memory.ts` | `memoryDriver()` — a test's disk over a `Map`: `localDriver`'s contract and refusals, `objects()` for an assertion about the bucket. `driver-memory.test.ts` runs each claim on BOTH disks. Signs through `resolveSigningSecret` (`driver-local.ts`), the one rule both share |
 | `driver-s3.ts` | `Bun.S3Client`, built lazily (import must never open a socket) |
+| `driver-s3-region.ts` | a provider's wrong-region refusal → `X_CONFIG_INVALID` whose fix names `S3_REGION` |
 | `path.ts` | key validation + `META_DIR` + `scopedKey`/`isWithinOrg`/`isTenantScoped` tenant boundary |
 | `signed-url.ts` | HMAC over the constraint tuple, constant-time verify |
 | `upload.ts` | magic-byte sniff + size/allowlist/checksum policy |
@@ -187,6 +189,12 @@ Gotchas:
   whole path exists to prevent. That is why it derives the box itself and asks core for
   `fit: 'cover'` — core's `contain` letterboxes to the requested box, this API fits inside it.
 - Bun's S3 flag is `virtualHostedStyle`; our `forcePathStyle` is its inverse.
+- **No `region` signs for `auto`.** R2 wants that; AWS and a gateway that checks the scope answer
+  `AuthorizationHeaderMalformed … expecting "<region>"`. `put`/`copy`/`list`/`delete` ask
+  `regionMismatch()` BEFORE their own verdict, so the code is `X_CONFIG_INVALID` and the fix is the
+  region — never `X_STORAGE_LIST_FAILED` with a fix about `s3:ListBucket`. The captured region is
+  held to `[A-Za-z0-9-]`: a provider's sentence may put nothing else into a `fix:`. A HEAD has no
+  body, so `exists()`/`stat()` never see it. `driver-s3.live.test.ts` runs with no region on purpose.
 - The signature check runs BEFORE the expiry check. Do not reorder.
 - `timingSafeEqual` is `@ultimat3/core`'s (`signed-url.ts` imports and re-exports it) — the same
   implementation `@ultimat3/auth` uses, not a second copy. Add new secret comparisons through it.

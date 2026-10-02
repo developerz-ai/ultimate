@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { actionPath, actionRoute, pluralize, queryPath } from './client-paths';
+import {
+  actionPath,
+  actionRoute,
+  pluralize,
+  queryPath,
+  renderedActionPathStyle,
+} from './client-paths';
+import { CLIENT_PATH_STYLE_META } from './page-meta';
 
 describe('actionPath', () => {
   test.each([
@@ -61,6 +68,71 @@ describe("actionPath, 'readable' style", () => {
   test("the default is still 'resource' — an app that declares nothing keeps every URL", () => {
     expect(actionPath('signIn')).toBe('/api/ins/sign');
     expect(actionPath('signIn', 'resource')).toBe('/api/ins/sign');
+  });
+});
+
+/** A document whose `<head>` carries the server's stamp — or, for `undefined`, none at all. */
+const withDocument = (content: unknown, run: () => void): void => {
+  const doc = {
+    querySelector: (selector: string) =>
+      selector === `meta[name="${CLIENT_PATH_STYLE_META}"]` && content !== undefined
+        ? { content }
+        : null,
+  };
+  Reflect.set(globalThis, 'document', doc);
+  try {
+    run();
+  } finally {
+    Reflect.deleteProperty(globalThis, 'document');
+  }
+};
+
+describe('the path style the server stamped into the document', () => {
+  test('is what a browser derives under when the caller names no style', () => {
+    withDocument('readable', () => {
+      expect(renderedActionPathStyle()).toBe('readable');
+      expect(actionPath('signIn')).toBe('/api/sign-in');
+    });
+  });
+
+  test('never overrides a style the caller passed — that caller is naming another server', () => {
+    withDocument('readable', () => {
+      expect(actionPath('signIn', 'resource')).toBe('/api/ins/sign');
+    });
+  });
+
+  test("a document with no stamp was rendered by a 'resource' server", () => {
+    withDocument(undefined, () => {
+      expect(renderedActionPathStyle()).toBeUndefined();
+      expect(actionPath('signIn')).toBe('/api/ins/sign');
+    });
+  });
+
+  test.each([['READABLE'], [''], ['rest'], [7]])('an unknown stamp %p is no stamp', (content) => {
+    withDocument(content, () => {
+      expect(renderedActionPathStyle()).toBeUndefined();
+      expect(actionPath('signIn')).toBe('/api/ins/sign');
+    });
+  });
+
+  test('no document at all — a server, a worker, a script — is no stamp', () => {
+    expect(Reflect.has(globalThis, 'document')).toBe(false);
+    expect(renderedActionPathStyle()).toBeUndefined();
+  });
+
+  test('a document that cannot be queried is no stamp, never a throw', () => {
+    Reflect.set(globalThis, 'document', {});
+    try {
+      expect(renderedActionPathStyle()).toBeUndefined();
+    } finally {
+      Reflect.deleteProperty(globalThis, 'document');
+    }
+  });
+
+  test('actionRoute stays pure: it never reads the document', () => {
+    withDocument('readable', () => {
+      expect(actionRoute('signIn').path).toBe('/api/ins/sign');
+    });
   });
 });
 

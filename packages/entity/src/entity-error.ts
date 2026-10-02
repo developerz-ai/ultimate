@@ -2,7 +2,8 @@
 // raises — split from `errors.ts` so a module the BROWSER loads (the record key, the projection,
 // the registry) can raise one without importing `@ultimat3/db`, which `errors.ts` needs for
 // `dbDrift`'s shell-inert fix line.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import type { ErrorRetry } from '@ultimat3/core';
+import { registerErrorCodes, registerErrorRetry, UltimateError } from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const ENTITY_OWNED_ERROR_CODES = [
@@ -28,6 +29,8 @@ export const ENTITY_OWNED_ERROR_CODES = [
   'X_STATE_TRANSITION_ILLEGAL',
   'X_STATE_CONFLICT',
   'X_RECORD_KEY_MISSING',
+  'X_ENTITY_SEALED_PREDICATE',
+  'X_ENTITY_SEALED_IN_VIEW',
 ] as const;
 
 /**
@@ -71,6 +74,9 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
   X_STATE_TRANSITION_ILLEGAL: 'the machine has no such transition',
   X_STATE_CONFLICT: 'the row is no longer in the state this transition named',
   X_RECORD_KEY_MISSING: 'a row reached its record key without a primary-key value',
+  X_ENTITY_SEALED_PREDICATE:
+    'a sealed column is read by a predicate, an order or a rule the database evaluates',
+  X_ENTITY_SEALED_IN_VIEW: 'a sealed column is named in a view',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the
@@ -79,6 +85,20 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
 registerErrorCodes(
   Object.fromEntries(Object.entries(ENTITY_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
+
+/**
+ * How the codes here that are worth classifying are retried. Only the two sealed-column refusals:
+ * both are the app's own declaration or call, so attempt five answers what attempt one did — and
+ * left unclassified, `classifyThrown` reads them as undecided and a job spends its whole retry
+ * policy re-proving it. Listed although `terminal` is the default, for the reason core's own table
+ * gives for `X_NOT_IMPLEMENTED`. The rest of this package's codes are unclassified, as they were.
+ */
+export const ENTITY_ERROR_RETRY = {
+  X_ENTITY_SEALED_PREDICATE: 'terminal',
+  X_ENTITY_SEALED_IN_VIEW: 'terminal',
+} as const satisfies Readonly<Partial<Record<EntityOwnedErrorCode, ErrorRetry>>>;
+
+registerErrorRetry(ENTITY_ERROR_RETRY);
 
 /**
  * Base for every error this package throws. No `docs:` — `UltimateError` fills it from

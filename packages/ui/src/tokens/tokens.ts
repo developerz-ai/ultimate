@@ -119,6 +119,12 @@ export const radiusTokens = {
 
 export type RadiusName = keyof typeof radiusTokens;
 
+export const strokeTokens = {
+  hairline: '1px',
+  thick: '2px',
+  heavy: '3px',
+} as const;
+
 export const zTokens = {
   base: '0',
   raised: '10',

@@ -309,6 +309,33 @@ describe('renderFixShellArg', () => {
     }
   });
 
+  test('a scoped package name travels: a leading @ is inert in every shell that reads a fix', () => {
+    // `bun add <the package>` is a placeholder, and a placeholder is a redirection, not a
+    // command. `@` starts no expansion in sh, bash, zsh or fish — `$@` needs the `$`, and an
+    // extglob `@(…)` needs the parenthesis, which stays refused.
+    for (const name of ['@electric-sql/pglite', '@ultimat3/core', '@scope/pkg@1.2.3']) {
+      expect(isFixShellSafe(name)).toBe(true);
+      expect(renderFixShellArg(name, '<the package>')).toBe(name);
+    }
+  });
+
+  test('every shell metacharacter is still refused — leading, inside and trailing', () => {
+    const META = [
+      ...['$', '`', '(', ')', ';', '&', '|', '<', '>', '\\', '"', "'", ' ', '\t', '\n', '\r'],
+      ...['*', '?', '[', ']', '{', '}', '!', '#', '^', '\0'],
+    ];
+    for (const meta of META) {
+      for (const value of [`${meta}scope/pkg`, `@scope${meta}pkg`, `@scope/pkg${meta}`]) {
+        expect(isFixShellSafe(value)).toBe(false);
+        expect(renderFixShellArg(value, '<the package>')).toBe('<the package>');
+      }
+    }
+    // The extglob and the positional-parameter spellings a leading @ could be mistaken for.
+    for (const value of ['@(a|b)', '$@', '@$(id)', '@`id`']) {
+      expect(isFixShellSafe(value)).toBe(false);
+    }
+  });
+
   test('a leading dash or tilde is the placeholder too — it changes what the command means', () => {
     // Not injection: `--force` in an argument position is an OPTION, and `~` expands. A fix that
     // silently means something else than it reads is not a fix.

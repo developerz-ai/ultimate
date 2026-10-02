@@ -89,12 +89,12 @@ describe('memoryAuditLog', () => {
       reason: 'admin.policy.not-granted',
     });
 
-    const entries = log.entries();
+    const entries = await log.entries();
     expect(entries.map((entry) => entry.id)).toEqual(['a_1', 'a_0']);
     expect(entries[1]?.diff).toEqual([{ field: 'title', before: 'a', after: 'b' }]);
     expect(entries[1]?.at).toBe(new Date(1_700_000_000_000).toISOString());
     expect(entries[0]?.entityId).toBeNull();
-    expect(log.entries({ actorId: 'u_2' }).length).toBe(1);
+    expect((await log.entries({ actorId: 'u_2' })).length).toBe(1);
   });
 
   test('sinks receive every entry', async () => {
@@ -143,26 +143,26 @@ describe('memoryAuditLog · a capacity that is not a number is not a capacity', 
     }
   });
 
-  test('a capacity of 0 is refused — a ring that keeps nothing records nothing', () => {
+  test('a capacity of 0 is refused — a ring that keeps nothing records nothing', async () => {
     expect(() => memoryAuditLog({ capacity: 0 })).toThrow('X_INVARIANT');
-    expect(memoryAuditLog({ capacity: 1 }).entries()).toEqual([]);
+    expect(await memoryAuditLog({ capacity: 1 }).entries()).toEqual([]);
   });
 
   test('the ring still evicts at the capacity it was given', async () => {
     const log = memoryAuditLog({ capacity: 2 });
     for (const name of ['a', 'b', 'c']) await log.append(entry(name));
-    expect(log.entries().map((e) => e.operation)).toEqual(['c', 'b']);
+    expect((await log.entries()).map((e) => e.operation)).toEqual(['c', 'b']);
   });
 
   test('a non-finite entries limit is refused, never read as an empty log', async () => {
     const log = memoryAuditLog();
     await log.append(entry('create'));
     for (const limit of NOT_A_BOUND) {
-      expect(() => log.entries({ limit })).toThrow('X_INVARIANT');
+      await expect(log.entries({ limit })).rejects.toThrow('X_INVARIANT');
     }
     // 0 stays legal: "give me none" is a coherent request, and refusing it would narrow a
     // shipped API for no safety gained.
-    expect(log.entries({ limit: 0 })).toEqual([]);
-    expect(log.entries({ limit: 1 }).length).toBe(1);
+    expect(await log.entries({ limit: 0 })).toEqual([]);
+    expect((await log.entries({ limit: 1 })).length).toBe(1);
   });
 });

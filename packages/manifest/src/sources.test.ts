@@ -43,6 +43,18 @@ beforeAll(() => {
     invariants: (c) => [invariant('title_present', c.title.trimmed().minLength(1))],
   });
 
+  // Registered SECOND, so the post above stays `entities[0]` for every case that reads it.
+  entity('sources_test_secret', {
+    columns: {
+      id: uuid().primaryKey(),
+      title: text({ max: 80 }),
+      // One of each kind, and one renamed: the fact is keyed by the PHYSICAL column, which is the
+      // manifest's vocabulary.
+      apiToken: text().sealed().column('token_sealed'),
+      contactEmail: text().sealed({ lookup: true }),
+    },
+  });
+
   registerAction(
     'publishSourcesPost',
     action({
@@ -129,7 +141,10 @@ describe('frameworkSources reaches every registry', () => {
     const sources = frameworkSources({ app: APP });
     // Not "is defined" — the NAME the registry holds, so a projection wired to the wrong
     // registry (or to none) fails rather than reporting an empty list as success.
-    expect(sources.entities?.map((e) => e.name)).toEqual(['sources_test_post']);
+    expect(sources.entities?.map((e) => e.name)).toEqual([
+      'sources_test_post',
+      'sources_test_secret',
+    ]);
     expect(sources.actions?.map((a) => a.name)).toEqual([
       'archiveSourcesPost',
       'publishSourcesPost',
@@ -177,6 +192,20 @@ describe('the entity projection', () => {
       { name: 'title', type: 'text', nullable: false, primaryKey: false },
       { name: 'author_name', type: 'text', nullable: true, primaryKey: false },
     ]);
+  });
+
+  test('a sealed column says so, by its kind — and a plain one carries no `sealed` key at all', () => {
+    const secret = frameworkSources({ app: APP }).entities?.find(
+      (one) => one.name === 'sources_test_secret',
+    );
+    const columns = secret?.columns ?? [];
+    const byName = new Map(columns.map((column) => [column.name, column]));
+    expect(byName.get('token_sealed')?.sealed).toBe('opaque');
+    expect(byName.get('contact_email')?.sealed).toBe('lookup');
+    // Still `text`: sealing changes what the column holds, never its SQL type.
+    expect(byName.get('token_sealed')?.type).toBe('text');
+    const title = byName.get('title') ?? expect.unreachable('no title column');
+    expect(Object.hasOwn(title, 'sealed')).toBe(false);
   });
 
   test('a column with no foreign key carries no `references` key at all', () => {
@@ -269,5 +298,40 @@ describe('the query and job projections', () => {
     // Empty BY CONSTRUCTION, not dropped: a step name is chosen inside `run()`, so no static
     // reader can know it.
     expect(fact?.steps).toEqual([]);
+  });
+
+  test('a job row carries its cap — keyed and limit — and a job with none carries no key', () => {
+    const input = t.object({ accountId: t.string });
+    const base = {
+      input,
+      tenant: 'none',
+      retry: { attempts: 1 },
+      run: () => Promise.resolve(),
+    } as const;
+    job({
+      ...base,
+      name: 'sourcesKeyed',
+      idempotencyKey: ({ accountId }) => `keyed:${accountId}`,
+      concurrency: { key: ({ accountId }) => accountId, limit: 2, whenBusy: 'fail' },
+    });
+    job({
+      ...base,
+      name: 'sourcesPlain',
+      idempotencyKey: () => 'plain',
+      concurrency: 4,
+      onSettled: () => Promise.resolve(),
+    });
+    job({ ...base, name: 'sourcesUncapped', idempotencyKey: () => 'uncapped' });
+
+    const rows = frameworkSources({ app: APP }).jobs ?? [];
+    const row = (name: string) => rows.find((entry) => entry.name === name);
+
+    expect(row('sourcesKeyed')?.concurrency).toEqual({ limit: 2, keyed: true, whenBusy: 'fail' });
+    expect(row('sourcesPlain')?.concurrency).toEqual({ limit: 4, keyed: false, whenBusy: null });
+    // Absent, not null: the committed manifest of an app with no capped job does not move.
+    expect(Object.keys(row('sourcesUncapped') ?? {})).not.toContain('concurrency');
+    // `onSettled` on the row of the job that declares it, and on no other.
+    expect(row('sourcesPlain')?.onSettled).toBe(true);
+    expect(Object.keys(row('sourcesKeyed') ?? {})).not.toContain('onSettled');
   });
 });

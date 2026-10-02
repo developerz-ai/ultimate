@@ -6,11 +6,13 @@
 import type { Clock, Ctx } from '@ultimat3/core';
 import { parseTraceparent, withSpan } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
+import { claimOf } from './driver';
 import { JobSlotLostError } from './errors';
 import type { JobExecution } from './execute';
 import { executeJob } from './execute';
 import { startLeaseHeartbeat } from './heartbeat';
 import { getJob } from './job';
+import type { IntervalScheduler } from './renewal-timer';
 import type { RunSignal } from './run-signal';
 import { createRunSignal } from './run-signal';
 import type { EventLookup } from './steps';
@@ -26,6 +28,8 @@ export interface RunClaimedOptions {
   readonly visibilityTimeoutMs: number;
   readonly heartbeatIntervalMs: number;
   readonly clock?: Clock;
+  /** What every renewal runs on (`renewal-timer.ts`). Default: a real, unrefed interval. */
+  readonly schedule?: IntervalScheduler;
   readonly events?: EventLookup;
   /**
    * The worker's drain, composed into every run it starts: aborted with a `JobDrainedError` when
@@ -33,6 +37,8 @@ export interface RunClaimedOptions {
    * reads — before core's in-flight wait starts spending the budget on it.
    */
   readonly drain?: AbortSignal;
+  /** Why this run may not start — handed to `executeJob`, which fails the attempt with it. */
+  readonly refusal?: unknown;
 }
 
 /** A name this deploy does not know, parked rather than failed — almost always a deploy skew. */
@@ -58,6 +64,7 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
     // A genuine park — no worker in this deploy can run it — so it leaves the ready bucket, unlike
     // a limiter shed, which is a job this fleet will pick up on its next pass.
     await driver.nack(claimed.id, {
+      ...claimOf(claimed),
       delayMs: 30_000,
       error: `no job registered as "${claimed.name}"`,
       countsAsAttempt: false,
@@ -82,6 +89,7 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
     intervalMs: options.heartbeatIntervalMs,
     workerId,
     ...(options.clock === undefined ? {} : { clock: options.clock }),
+    ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
   });
 
   // Everything from here on is INSIDE the `finally`, because the heartbeat is now running.
@@ -132,6 +140,7 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
           ctx,
           ...(options.clock === undefined ? {} : { clock: options.clock }),
           ...(options.events === undefined ? {} : { events: options.events }),
+          ...(options.refusal === undefined ? {} : { refusal: options.refusal }),
         }),
       {
         ...(parent === undefined ? {} : { parent }),

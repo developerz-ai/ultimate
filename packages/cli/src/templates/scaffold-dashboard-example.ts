@@ -34,7 +34,6 @@ ${sortedImports([
     "} from '@ultimat3/ui';",
   ].join('\n'),
 ])}
-import { DEMO_ORG_ID } from '../../shared/demo-org';
 import { Shell } from '../../shared/shell';
 import * as repo from '../post/repo';
 import {
@@ -46,14 +45,6 @@ import {
   toPostRow,
 } from './dashboard-view';
 import styles from './page.module.scss';
-
-/**
- * Whose posts. The route's policy decides who may open this page; which org's rows it aggregates
- * is a decision the load makes, and until this app issues sessions the only org with rows is the
- * one \`packages/db/src/seed.ts\` writes. The day sessions exist, this becomes the actor's org and
- * the read becomes \`postList.as(actor, …)\` — the query already declares the tenancy rule.
- */
-const DEMO_ORG = DEMO_ORG_ID;
 
 /** The stat row counts what it can see. Past this many posts, write an aggregate query. */
 const ROW_LIMIT = 500;
@@ -68,29 +59,40 @@ export interface DashboardData {
   readonly now: string;
 }
 
-async function load(): Promise<DashboardData> {
+/**
+ * What \`load\` answers, with the read as a parameter. The one branch a running app never takes is
+ * the build's: \`x build --target static\` renders every route once to measure its JS budget with
+ * no database wired, and that render gets the real empty branches — which weigh the same markup —
+ * instead of a route the budget step cannot measure. Any other failure still propagates.
+ */
+export async function dashboardData(
+  read: () => Promise<readonly Parameters<typeof toPostRow>[0][]>,
+): Promise<DashboardData> {
   const now = new Date().toISOString();
   try {
-    const rows = await repo.listByOrg(DEMO_ORG, ROW_LIMIT);
-    return { rows: rows.map(toPostRow), now };
+    return { rows: (await read()).map(toPostRow), now };
   } catch (error) {
-    // \`x build --target static\` renders every route once to measure its JS budget, with no
-    // database wired — so this is that measurement pass, not a request. Empty rows render the
-    // real empty branches, which measure the same markup. Any other failure still propagates.
     if (isUltimateError(error) && error.code === 'X_DB_UNAVAILABLE') return { rows: [], now };
     throw error;
   }
 }
 
+/**
+ * Whose posts: the ACTOR's org. The repo names none — the typed handle scopes every read to the
+ * request's actor — so the viewer \`auth/dev-actor.ts\` resolves sees the rows
+ * \`packages/db/src/seed.ts\` wrote, and a real session sees its own org's the day one exists.
+ */
+const load = (): Promise<DashboardData> => dashboardData(() => repo.list(ROW_LIMIT));
+
 ${themeIsland}
 
 ${routeConfig('\n  load,')}
 
-export interface DashboardPageProps {
+export interface PageProps {
   readonly data: DashboardData;
 }
 
-export function DashboardPage(props: DashboardPageProps) {
+export function Page(props: PageProps) {
   const t = useT();
   const locale = currentLocale();
   const now = new Date(props.data.now);
@@ -176,20 +178,15 @@ export interface PostRow {
 }
 
 /**
- * Duck-typed rather than the entity's own row: the page only ever reads these three columns.
- *
- * BOTH spellings of the timestamp, and that is a measured fact rather than caution: the repo's
- * \`select *\` hands back column names as Postgres has them (\`created_at\`) while its row type
- * says \`createdAt\`, so the typed property is \`undefined\` on a real row. Until the repo aliases
- * its columns — dz-showcase's does — the page reads whichever one arrived.
+ * Duck-typed rather than the entity's own row: the page only ever reads these three columns. The
+ * repo reads through the typed handle, so \`createdAt\` arrives as the \`Date\` the entity declares.
  */
 export function toPostRow(row: {
   readonly id: string;
   readonly title: string;
-  readonly createdAt?: Date | string | undefined;
-  readonly created_at?: Date | string | undefined;
+  readonly createdAt: Date | string;
 }): PostRow {
-  const at = row.createdAt ?? row.created_at ?? '';
+  const at = row.createdAt;
   return {
     id: row.id,
     title: row.title,
@@ -303,13 +300,10 @@ unitTest('bucketByDay is one bar per day, oldest first, quiet days included', ()
   expect(bucketByDay([], NOW, 3).map((point) => point.value)).toEqual([0, 0, 0]);
 });
 
-unitTest('toPostRow serialises a Date, passes ISO text through, and reads the raw column', () => {
+unitTest('toPostRow serialises a Date and passes ISO text through', () => {
   const at = new Date('2026-01-02T03:04:05.000Z');
   expect(toPostRow({ id: 'x', title: 't', createdAt: at }).createdAt).toBe(at.toISOString());
   expect(toPostRow({ id: 'x', title: 't', createdAt: '2026-01-01' }).createdAt).toBe('2026-01-01');
-  // What \`select *\` really returns: the snake_case column, and no \`createdAt\` at all.
-  expect(toPostRow({ id: 'x', title: 't', created_at: at }).createdAt).toBe(at.toISOString());
-  expect(toPostRow({ id: 'x', title: 't' }).createdAt).toBe('');
 });
 
 unitTest('formatCount follows the locale', () => {
@@ -318,9 +312,108 @@ unitTest('formatCount follows the locale', () => {
 });
 `;
 
-/** The example dashboard's page, view module and view test. */
+const examplePageTest = (
+  app: NameSet,
+): string => `// The dashboard, rendered as a request renders it: \`load\` reads the actor's org through the
+// slice's repo — the in-memory driver under test — and the page turns the rows into tiles, a chart
+// and a table. Losing the policy is the other regression worth a test: the page still renders, to
+// anyone.
+${sortedImports([
+  `import { driver } from '@${app.kebab}/db';`,
+  `import { useT } from '@${app.kebab}/i18n';`,
+  "import { createContext, frozenClock, runWithContext } from '@ultimat3/core';",
+  "import { testActor } from '@ultimat3/policy';",
+  "import { dbUnavailable } from '@ultimat3/db';",
+  "import { afterEach, expect, renderRoute, unitTest } from '@ultimat3/testing';",
+])}
+import { DEMO_ORG_ID } from '../../shared/demo-org';
+import * as repo from '../post/repo';
+import * as page from './page';
+
+const url = 'https://example.test/dashboard';
+const viewer = testActor('viewer', { orgId: DEMO_ORG_ID }).actor;
+const stranger = testActor('stranger', { orgId: '00000000-0000-4000-8000-000000000009' }).actor;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * One post in the viewer's org, written the way the app writes one — \`daysAgo\` days before now.
+ * The request's clock is what stamps \`createdAt\`, so the test chooses the instant.
+ */
+const post = (title: string, daysAgo: number) => {
+  const clock = frozenClock(new Date(Date.now() - daysAgo * DAY_MS));
+  const draft = { orgId: DEMO_ORG_ID, title, price: { minor: 0, currency: 'USD' } };
+  return runWithContext(createContext({ actor: viewer, clock }), () => repo.insert(draft));
+};
+
+/** The figure a tile shows, read off the markup by the \`stat\` the page gave it. */
+const stat = (html: string, name: string): string | undefined =>
+  html.match(new RegExp(\`data-stat="\${name}">([^<]*)<\`))?.[1];
+
+// One store per process: without this, one test's rows are the next test's fixtures.
+afterEach(() => {
+  driver.reset?.();
+});
+
+unitTest('the dashboard is gated, renders per request, and hydrates one island', async () => {
+  const view = await renderRoute(page, { url, actor: viewer });
+  expect(page.config.render).toBe('ssr');
+  expect(page.config.policy?.permission).toBe('dashboard:read');
+  expect(page.config.offline).toBe('runtime');
+  expect(page.config.budget.js).toBe('60kb');
+  // What the render emitted, beside what the config declares: the theme toggle, and only it.
+  expect(view.islands.map((island) => [island.moduleId, island.strategy])).toEqual([
+    ['shared-theme-toggle', 'visible'],
+  ]);
+});
+
+unitTest('it counts and lists the posts of the org that is looking', async () => {
+  await post('Last month', 30);
+  await post('This week', 3);
+  await post('Today', 0);
+  const view = await renderRoute(page, { url, actor: viewer });
+  // Newest first, as the repo orders them — and each tile counts its own window.
+  expect(view.data.rows.map((row) => row.title)).toEqual(['Today', 'This week', 'Last month']);
+  expect(stat(view.html, 'posts-total')).toBe('3');
+  expect(stat(view.html, 'posts-week')).toBe('2');
+  expect(stat(view.html, 'posts-today')).toBe('1');
+  // One table row per post, and one bar per day of the window whether or not it has posts.
+  expect(view.html.match(/<tr data-row=/g)).toHaveLength(3);
+  expect(view.html.match(/data-bar="true"/g)).toHaveLength(14);
+  expect(view.text).toContain('This week');
+  // The sidebar knows where it is.
+  expect(view.html).toMatch(/<a href="\\/dashboard" aria-current="page"/);
+});
+
+unitTest('another org sees none of them: the page says so instead of an empty table', async () => {
+  const t = useT();
+  await post('Not theirs', 0);
+  const view = await renderRoute(page, { url, actor: stranger });
+  expect(view.data.rows).toEqual([]);
+  expect(stat(view.html, 'posts-total')).toBe('0');
+  expect(view.html).not.toContain('<tr data-row=');
+  expect(view.text).toContain(t('app.dashboard.emptyTitle'));
+  expect(view.meta.title).toBe(t('app.dashboard.title'));
+  expect(view.meta.description).toBe(t('app.dashboard.description'));
+});
+
+unitTest('the build measures the empty page: no database is not a failure there', async () => {
+  const measured = await page.dashboardData(() => Promise.reject(dbUnavailable('no database')));
+  // The clock is frozen under test, so the instant the windows are cut at is this one.
+  expect(measured).toEqual({ rows: [], now: new Date().toISOString() });
+});
+
+unitTest('any other failure of the read propagates', async () => {
+  const cause = new TypeError('the read broke');
+  const read = (): Promise<never> => Promise.reject(cause);
+  expect(await page.dashboardData(read).catch((error: unknown) => error)).toBe(cause);
+});
+`;
+
+/** The example dashboard's page, view module and the tests beside both. */
 export const exampleDashboardFiles = (app: NameSet): readonly GeneratedFile[] => [
   { path: `${DASHBOARD_DIR}/page.tsx`, contents: examplePage(app) },
   { path: `${DASHBOARD_DIR}/dashboard-view.ts`, contents: exampleView() },
   { path: `${DASHBOARD_DIR}/dashboard-view.test.ts`, contents: exampleViewTest() },
+  { path: `${DASHBOARD_DIR}/page.test.ts`, contents: examplePageTest(app) },
 ];

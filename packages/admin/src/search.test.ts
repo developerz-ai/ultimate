@@ -11,6 +11,7 @@ import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
 import type { CrudCtx } from './crud';
 import type { AdminRepo, AdminRow } from './registry';
+import { adminResource } from './resource';
 import { adminSearch } from './search';
 
 // `title` is text and `body` is a textarea, so the entity declares exactly two searchable fields —
@@ -127,7 +128,7 @@ describe('adminSearch is audited, allowed or refused', () => {
     });
 
     expect(found.audit.map((entry) => entry.operation)).toEqual(['search']);
-    const entries = context.audit.entries();
+    const entries = await context.audit.entries();
     expect(entries).toHaveLength(1);
     expect(entries[0]?.outcome).toBe('allowed');
     expect(entries[0]?.entity).toBe('admin_search_post');
@@ -149,7 +150,7 @@ describe('adminSearch is audited, allowed or refused', () => {
     expect(found.skipped).toEqual([
       { entity: 'admin_search_post', reason: 'admin.search.skipped.forbidden' },
     ]);
-    const entries = context.audit.entries();
+    const entries = await context.audit.entries();
     expect(entries).toHaveLength(1);
     expect(entries[0]?.outcome).toBe('denied');
     expect(entries[0]?.operation).toBe('search');
@@ -167,7 +168,7 @@ describe('adminSearch is audited, allowed or refused', () => {
     });
 
     expect(found.audit).toEqual([]);
-    expect(context.audit.entries()).toEqual([]);
+    expect(await context.audit.entries()).toEqual([]);
   });
 });
 
@@ -205,7 +206,7 @@ describe('a resource skipped for a structural reason is not an authz event', () 
       resources: [app.resource('admin_search_post'), app.resource('admin_search_counter')],
       ctx: context,
     });
-    return { ...found, logged: context.audit.entries().length };
+    return { ...found, logged: (await context.audit.entries()).length };
   };
 
   test('a resource with no text field is skipped, and writes NO audit entry', async () => {
@@ -222,15 +223,12 @@ describe('a resource skipped for a structural reason is not an authz event', () 
   });
 
   test('a resource WITH text fields but no repo is skipped for that reason, and writes nothing', async () => {
-    // Same entity, no repo bound: searchable in principle, with nothing to ask.
-    const app = defineAdmin({
-      entities: [posts],
-      auth: { actor: (): AdminActor => actor, authz: staticAuthz(GRANTS) },
-    });
+    // Same entity, derived on its own: `defineAdmin` refuses a repo-less resource at declaration
+    // (X_ADMIN_REPO_UNBOUND), so the only one a search can meet is a bare `adminResource()`.
     const context = ctx();
     const found = await adminSearch({
       term: 'First',
-      resources: [app.resource('admin_search_post')],
+      resources: [adminResource(posts)],
       ctx: context,
     });
 
@@ -240,7 +238,7 @@ describe('a resource skipped for a structural reason is not an authz event', () 
     ]);
     // Not an authorization event: the actor was allowed, there was simply nowhere to look.
     expect(found.audit).toEqual([]);
-    expect(context.audit.entries()).toEqual([]);
+    expect(await context.audit.entries()).toEqual([]);
   });
 });
 

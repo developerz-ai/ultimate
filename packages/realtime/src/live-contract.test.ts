@@ -17,6 +17,7 @@ import { formatLsn } from './changefeed';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
+import { windowId } from './live-tenant';
 import { SyncSocket, type WsLike } from './socket';
 
 class SilentWs implements WsLike {
@@ -63,18 +64,23 @@ const subscribed = async (input: JsonValue, sid: string): Promise<LiveQueryRegis
   return registry;
 };
 
+/** The window alice's org is served from: the query package's hash, qualified by her tenant. */
+const windowOf = (name: string, input: JsonValue): string => windowId(queryHash(name, input), 'o1');
+
 describe('the qid a subscription is seated under is queryHash, not a local derivation', () => {
   test('the registry answers a subscriber count under the query package own hash', async () => {
     const input: JsonValue = { orgId: 'o1', limit: 50 };
     const registry = await subscribed(input, 'sid-1');
-    expect(registry.subscriberCount(queryHash('liveFeed', input))).toBe(1);
+    expect(registry.subscriberCount(windowOf('liveFeed', input))).toBe(1);
+    // The bare hash is the window of subscribers in NO org, which alice is not.
+    expect(registry.subscriberCount(queryHash('liveFeed', input))).toBe(0);
   });
 
   test('key order is not identity, and neither the name nor the input is dropped from it', async () => {
     const registry = await subscribed({ limit: 50, orgId: 'o1' }, 'sid-2');
     // The same input, spelled the other way round: one window, because the hash sorts keys.
-    expect(registry.subscriberCount(queryHash('liveFeed', { orgId: 'o1', limit: 50 }))).toBe(1);
-    expect(registry.subscriberCount(queryHash('liveFeed', { orgId: 'o2', limit: 50 }))).toBe(0);
-    expect(registry.subscriberCount(queryHash('otherFeed', { orgId: 'o1', limit: 50 }))).toBe(0);
+    expect(registry.subscriberCount(windowOf('liveFeed', { orgId: 'o1', limit: 50 }))).toBe(1);
+    expect(registry.subscriberCount(windowOf('liveFeed', { orgId: 'o2', limit: 50 }))).toBe(0);
+    expect(registry.subscriberCount(windowOf('otherFeed', { orgId: 'o1', limit: 50 }))).toBe(0);
   });
 });

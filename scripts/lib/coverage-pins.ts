@@ -3,12 +3,16 @@
 // reason `gated-apps.ts` is split out — the pins are the part a human edits, and every landed
 // test deletes a line here.
 
+import { COVERAGE_BAR } from '../../packages/cli/src/coverage-floor';
+
 /** Where the pins live, so `X_COVERAGE_PIN_STALE` can name the file to edit. */
 export const PINS_FILE = 'scripts/lib/coverage-pins.ts';
 
 /**
- * Line and function coverage a package's own `src/` must reach. One number for all 30: a
- * per-package target negotiated downward is not a bar, it is a record of what happened.
+ * Line and function coverage a unit's own source must reach. One number for every package, for
+ * `scripts/` and for every app built on the framework — it IS `COVERAGE_BAR`, the constant an
+ * app's `x verify` holds its own floor to (`packages/cli/src/coverage-floor.ts`), never a second
+ * literal. A per-package target negotiated downward is not a bar, it is a record of what happened.
  *
  * **This number is a FLOOR, and it is not the bar.** Coverage measures execution, not
  * validation — 100% is reachable with zero assertions, and the well-documented failure of a
@@ -26,7 +30,7 @@ export const PINS_FILE = 'scripts/lib/coverage-pins.ts';
  * five of which initially SURVIVED and were closed. If a future push raises a package without
  * that evidence, the number will be true and worthless.
  */
-export const COVERAGE_TARGET = 95;
+export const COVERAGE_TARGET = COVERAGE_BAR;
 
 /**
  * How far above its pin a package may drift before the pin is stale. A pin is a claim about
@@ -48,7 +52,7 @@ export const PIN_SLACK = 1.5;
  */
 
 export interface CoveragePin {
-  /** Line coverage this package is at today, as a percentage of its own `src/`. */
+  /** Line coverage this unit is at today, as a percentage of its own source. */
   readonly lines: number;
   /** Function coverage this package is at today. */
   readonly funcs: number;
@@ -57,19 +61,33 @@ export interface CoveragePin {
 }
 
 /**
- * Packages below `COVERAGE_TARGET`, each pinned at what it measures today. A package ABSENT from
- * this table must clear the target — that is what makes the gate blocking while the last few are
+ * Units below `COVERAGE_TARGET`, each pinned at what it measures today. A unit ABSENT from this
+ * table must clear the target — that is what makes the gate blocking while the last few are
  * still being written. Both directions fail: under the pin is a regression, and comfortably over
  * it is a pin that has outlived its reason.
  *
- * **Empty `As of 2026-08-19`, and that is the ratchet reaching its end**: all 30 packages clear
- * 95% lines and 95% functions on their own `src/`, so there is nothing left to excuse. It started
- * at 18 pinned with `admin` lowest at 77.93%.
+ * **No package is pinned, `As of 2026-08-19`**: all 30 clear 95% lines and 95% functions on their
+ * own `src/`. It started at 18 pinned with `admin` lowest at 77.93%.
+ *
+ * `scripts` joined the gate on 2026-10-01 as one more unit, measured for the first time.
  *
  * A new entry here is a regression that someone chose not to fix yet, and it needs the reason
  * written in `why`. Re-measure with `bun run scripts/coverage-gate.ts --all --json`.
  */
-export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {};
+export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
+  scripts: {
+    lines: 80,
+    funcs: 88,
+    why:
+      'First measurement, 2026-10-01: 80.35% lines / 88.21% functions over 139 files, a file no ' +
+      "test loads counted at 0%. What is uncovered is each script's `import.meta.main` block " +
+      '(argv, report, exit — release.ts 171 lines, trust-publishers.ts 130, new-package.ts 119, ' +
+      'side-effects.ts 102) and seven entry points nothing imports (setup.ts, ' +
+      'list-workspaces.ts, the four bench/restart-bench*.ts, lib/guard-preload.ts). Closed by ' +
+      "moving each main block's logic into an exported function its test calls; the pin rises " +
+      'with every script that does.',
+  },
+};
 
 /**
  * Paths inside a package's `src/` that do not count toward its own coverage.

@@ -64,10 +64,11 @@ describe('one policy decides both the button and the call', () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.decision.allowed).toBe(false);
+    expect(!result.ok && result.kind === 'denied' && result.decision.allowed).toBe(false);
+    expect(result.ok === false && result.kind).toBe('denied');
     // The refusal is on the record: a denial nobody logged is a denial nobody can review.
-    expect(audit.entries()[0]?.outcome).toBe('denied');
-    expect(audit.entries()[0]?.operation).toBe('post.publish');
+    expect((await audit.entries())[0]?.outcome).toBe('denied');
+    expect((await audit.entries())[0]?.operation).toBe('post.publish');
   });
 
   test('the admin-level gate is checked as well as the action policy', () => {
@@ -93,7 +94,7 @@ describe('one policy decides both the button and the call', () => {
       confirmation: 'nope',
     });
     expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.confirmationRequired).toBe(true);
+    expect(!refused.ok && refused.kind === 'denied' && refused.confirmationRequired).toBe(true);
 
     const confirmed = await invokeAdminAction({
       action: purge,
@@ -106,7 +107,7 @@ describe('one policy decides both the button and the call', () => {
       confirmation: 'post:p_1',
     });
     expect(confirmed.ok).toBe(true);
-    expect(audit.entries({ limit: 2 }).map((entry) => entry.outcome)).toEqual([
+    expect((await audit.entries({ limit: 2 })).map((entry) => entry.outcome)).toEqual([
       'allowed',
       'denied',
     ]);
@@ -145,9 +146,9 @@ describe('a destructive action with no confirmation', () => {
       subject: { entity: 'post', id: 'p_1' },
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.confirmationRequired).toBe(true);
+    expect(!result.ok && result.kind === 'denied' && result.confirmationRequired).toBe(true);
     expect(ran).toBe(0);
-    expect(audit.entries()[0]?.outcome).toBe('denied');
+    expect((await audit.entries())[0]?.outcome).toBe('denied');
   });
 
   test('the echo of the token the gate derives — entity and subject id — is what runs it', async () => {
@@ -222,7 +223,7 @@ describe('a handler that throws is audited as failed, and the throw is not swall
 
   test('a thrown value with no prototype is still audited, and still re-thrown as itself', async () => {
     const { thrown, audit } = await run(hostile);
-    const entries = audit.entries();
+    const entries = await audit.entries();
     expect(entries).toHaveLength(1);
     expect(entries[0]?.outcome).toBe('failed');
     expect(entries[0]?.reason).toBe('admin.error.action-failed');
@@ -240,7 +241,7 @@ describe('a handler that throws is audited as failed, and the throw is not swall
 
   test('the failure is logged before the throw escapes — "if it isn’t logged, it didn’t happen"', async () => {
     const { audit } = await run(boom);
-    const entries = audit.entries();
+    const entries = await audit.entries();
     expect(entries).toHaveLength(1);
     const entry = entries[0];
     expect(entry).toBeDefined();
@@ -268,7 +269,7 @@ describe('a handler that throws is audited as failed, and the throw is not swall
     };
     const { thrown, audit } = await run(rude);
     expect(thrown).toBe('a bare string');
-    expect(audit.entries()[0]?.outcome).toBe('failed');
+    expect((await audit.entries())[0]?.outcome).toBe('failed');
   });
 
   test('a global action with no entity is audited under "admin", with a null row id', async () => {
@@ -289,7 +290,7 @@ describe('a handler that throws is audited as failed, and the throw is not swall
       requestId: 'req_global',
     }).catch(() => undefined);
 
-    expect(audit.entries()[0]?.entity).toBe('admin');
-    expect(audit.entries()[0]?.entityId).toBeNull();
+    expect((await audit.entries())[0]?.entity).toBe('admin');
+    expect((await audit.entries())[0]?.entityId).toBeNull();
   });
 });

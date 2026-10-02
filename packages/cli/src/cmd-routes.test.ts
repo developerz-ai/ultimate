@@ -11,7 +11,13 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { RouteDescriptor } from '@ultimat3/render';
-import { clearRoutes, defineRoute, registerRoute, SURFACES } from '@ultimat3/render';
+import {
+  clearRoutes,
+  defineRoute,
+  registerMountedRoutes,
+  registerRoute,
+  SURFACES,
+} from '@ultimat3/render';
 import { REQUIRED_BUN } from './app-root';
 import { readSurfaceFilter, renderRouteTable, routesCommand } from './cmd-routes';
 import type { CommandContext } from './command';
@@ -151,6 +157,31 @@ describe('unit · x routes --json projects every fact the table shows', () => {
         },
       ],
     });
+  });
+
+  test('a MOUNTED route is listed as what it is: who mounted it, and every permission that gates it', async () => {
+    registerRoute({ file: 'apps/web/site/page.tsx', config: site });
+    registerMountedRoutes(
+      { key: '/admin', by: 'defineAdmin', file: '@ultimat3/admin', surface: 'app' },
+      [{ path: '/admin/posts', config: app, permissions: ['admin:read', 'posts:read'] }],
+    );
+    const result = await routesCommand.run(contextFor(['routes', '--json']));
+    const rows = (result.data as { routes: readonly Record<string, unknown>[] }).routes;
+    expect(rows.find((row) => row['path'] === '/admin/posts')).toMatchObject({
+      surface: 'app',
+      file: '@ultimat3/admin',
+      mount: { by: 'defineAdmin', permissions: ['admin:read', 'posts:read'] },
+    });
+    // A file route says nothing about a mount.
+    expect(rows.find((row) => row['path'] === '/')).not.toHaveProperty('mount');
+    // The printed row names the mount where a file route names its file — never a `page.tsx`
+    // that does not exist.
+    const printed = (result.lines ?? []).find((line) => line.includes('/admin/posts')) ?? '';
+    expect(printed).toContain('defineAdmin() · admin:read + posts:read');
+    expect(printed).not.toContain('page.tsx');
+    // And the surface filter reads it like any other `app` route.
+    const filtered = await routesCommand.run(contextFor(['routes', '--surface', 'site', '--json']));
+    expect((filtered.data as { routes: readonly unknown[] }).routes).toHaveLength(1);
   });
 
   test('the JSON rows and the printed rows are the same routes, filtered the same way', async () => {

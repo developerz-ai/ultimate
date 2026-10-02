@@ -47,7 +47,7 @@
     inset-inline-end: 0;
     inline-size: 28%;
     block-size: 28%;
-    border: 2px solid t.role('surface');
+    border: t.stroke(thick) solid t.role('surface');
     border-radius: t.radius(full);
     content: '';
   }

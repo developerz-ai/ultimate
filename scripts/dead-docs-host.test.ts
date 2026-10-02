@@ -46,6 +46,33 @@ describe('a link a reader can click, in markdown and YAML', () => {
     expect(finding.fix).toContain('https://github.com/developerz-ai/ultimate');
   });
 
+  test('both findings list every site of the gap, never only the first', () => {
+    const docs = scanDeadHostDoc(
+      'wiki/a.md',
+      '[u](https://ultimate.dev)\n\n[v](https://ultimate.dev/x)',
+    );
+    const [first] = docs;
+    if (first === undefined) expect.unreachable('the scan found the links');
+    const doc = deadHostFindingFor({
+      kind: 'over',
+      pkg: 'wiki',
+      found: 2,
+      pinned: 0,
+      first,
+      sites: docs,
+    });
+    expect(doc.cause).toContain('wiki/a.md:1, wiki/a.md:3');
+    const gaps = checkDeadHost({
+      files: [
+        { path: 'packages/x/src/a.ts', source: "const d = 'https://ultimate.dev/errors/A';" },
+        { path: 'packages/x/src/b.ts', source: "const d = 'https://ultimate.dev/errors/B';" },
+      ],
+      pins: {},
+    });
+    const code = deadHostFindingFor(gaps[0] as never);
+    expect(code.cause).toContain('packages/x/src/a.ts:1, packages/x/src/b.ts:1');
+  });
+
   test('this tree links to the host nowhere, and the scan read its docs and workflows', async () => {
     const { sites, files } = await docSites(repoRoot());
     expect(files).toBeGreaterThan(100);

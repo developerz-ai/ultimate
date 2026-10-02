@@ -1,5 +1,5 @@
 // Single responsibility: the dev-default disk — a real, working driver over `Bun.file` /
-// `Bun.write` rooted at one directory, so `x dev` needs no MinIO and no cloud account.
+// `Bun.write` rooted at one directory, so `x dev` needs no S3 server and no cloud account.
 // Content type, etag and user metadata live in a sidecar under `.meta/`: a POSIX file has
 // nowhere to keep them, and `get` must round-trip exactly what `put` was handed.
 
@@ -142,6 +142,37 @@ function parseSidecar(raw: unknown): Sidecar | undefined {
 }
 
 /**
+ * The secret a disk that mints its OWN URLs signs with — `localDriver` and `memoryDriver` both.
+ *
+ * A dev disk must work with zero config. Outside development the fallback is refused rather than
+ * used: the literal is published, so signing with it hands every reader the power to mint a PUT
+ * for any key with any size and type limit — which `acceptSignedUpload` then trusts over the app's
+ * own `uploadPolicy`. Refused at construction, so the boot fails rather than the first upload.
+ *
+ * The published literal counts as no secret at all, whichever way it arrives: an env var or an
+ * `app.config.ts` that pasted it in signs exactly as weakly as the fallback does. One table for
+ * all three reads — the secret, the environment test and the environment the refusal names.
+ * Splitting them is how the guard and the disk came to answer about two different processes.
+ */
+export function resolveSigningSecret(
+  disk: string,
+  options: Pick<LocalDriverOptions, 'signingSecret' | 'env'>,
+): string {
+  const env = options.env ?? (process.env as Record<string, string | undefined>);
+  const supplied = options.signingSecret ?? env[STORAGE_SIGNING_SECRET_KEY];
+  const configured =
+    supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
+      ? undefined
+      : supplied;
+  // FAILS CLOSED: a process that names no environment resolves as `production` here, the answer
+  // core's `assertNoDevSecretsOutsideLocal` gives. `isLocal`'s own fallback is `development`, so the
+  // process that forgot to say signed with the published key — exactly the one that must not.
+  if (configured === undefined && !isLocal({ env, fallback: 'production' }))
+    throw signingSecretMissing(resolveEnvironment({ env, fallback: 'production' }), disk);
+  return configured ?? DEV_SIGNING_SECRET;
+}
+
+/**
  * A POSIX file is not encrypted at rest by this driver, and recording the request in the sidecar
  * would answer a security review with a field the disk never honoured. Refused on the DEV disk
  * too, and deliberately: a `put()` that succeeds locally and throws in production is a gap an app
@@ -174,28 +205,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   // 404 its own URLs. An explicit `baseUrl` outranks the registration: that is the operator
   // stating where the route is mounted, and inference must not overwrite a decision.
   let baseUrl = options.baseUrl ?? signedUrlBaseFor(DRIVER_NAME);
-  // A dev disk must work with zero config. Outside development the fallback is refused rather
-  // than used: the literal is published, so signing with it hands every reader the power to mint
-  // a PUT for any key with any size and type limit — which `acceptSignedUpload` then trusts over
-  // the app's own `uploadPolicy`. Refused HERE, at construction, so the boot fails rather than
-  // the first upload.
-  // The published literal counts as no secret at all, whichever way it arrives: an env var or an
-  // `app.config.ts` that pasted it in signs exactly as weakly as the fallback does.
-  // One table for all three reads — the secret, the environment test and the environment the
-  // refusal names. Splitting them is how the guard and the disk came to answer about two
-  // different processes.
-  const env = options.env ?? (process.env as Record<string, string | undefined>);
-  const supplied = options.signingSecret ?? env[STORAGE_SIGNING_SECRET_KEY];
-  const configured =
-    supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
-      ? undefined
-      : supplied;
-  // FAILS CLOSED: a process that names no environment resolves as `production` here, the answer
-  // core's `assertNoDevSecretsOutsideLocal` gives. `isLocal`'s own fallback is `development`, so the
-  // process that forgot to say signed with the published key — exactly the one that must not.
-  if (configured === undefined && !isLocal({ env, fallback: 'production' }))
-    throw signingSecretMissing(resolveEnvironment({ env, fallback: 'production' }));
-  const secret = configured ?? DEV_SIGNING_SECRET;
+  const secret = resolveSigningSecret(DRIVER_NAME, options);
 
   const filePath = (key: string): string => `${root}/${key}`;
   const metaPath = (key: string): string => `${root}/${META_DIR}/${key}.json`;

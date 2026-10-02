@@ -53,6 +53,9 @@ const [post] = await queries.publicPost({ slug }); // typed input, typed rows
 
 Both spellings run `queryClientMethodFor`, so a read has one URL however it is addressed.
 
+`queryClient<Api['queries']>` typechecks at any app size: `client-scale-pins.ts` compiles it over
+100 reads in 50 modules — a list read, its `.page` and a `single: true` read — on every `typecheck`.
+
 Every read goes through `@ultimat3/core`'s **`clientTransport`** — the one browser HTTP function,
 `As of 2026-09-22` (21.0.0). There is no `fetch` call in this package: the `fetch` option is handed
 on as the transport's `fetchImpl`. The transport owns `Accept`, the trace/budget headers, the
@@ -205,6 +208,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `sql.ts` | `explain()` — the generated SQL, verbatim |
 | `cache.ts` | request memo + tag-keyed tier, one invalidation graph |
 | `source.ts` | the `SqlSource` contract + `from()`, the in-memory reference |
+| `sealed-shape.ts` | a live read may not filter or order on a `.sealed()` column — refused at subscribe |
 
 ## Live queries
 
@@ -262,6 +266,22 @@ cursor cannot prove that rows sorting *before* it are unchanged, so any epoch ch
 new build, new policy, new schema — forces a full refetch instead of a resume. Bounded
 server memory bought with an occasional extra page fetch.
 
+## A sealed column never rides on a row
+
+A query has no output schema; nothing here strips a column. A `.sealed()` column is absent from
+every projection because `@ultimat3/entity` answers it as a server-only (non-enumerable) property —
+`row.password` on the server, nothing in `JSON.stringify(row)`.
+
+| Projection | Sealed column |
+|---|---|
+| HTTP — list, `Page`, `single: true`, the record envelope | absent |
+| MCP read, a `cache:` entry, a live snapshot | absent |
+| a derived row `({ ...row, extra })` | absent |
+| a derived row naming it `({ token: row.token })` | sent — the name is the statement |
+| `query(input)` on the server | `row.password` reads the plaintext |
+
+`sealed-egress.test.ts` holds one assertion per projection.
+
 ## Matcher support
 
 | Shape | Result |
@@ -270,6 +290,7 @@ server memory bought with an occasional extra page fetch.
 | `orderBy` (any number of keys) | insert position computed, moves become remove + add |
 | `limit` | tail eviction on insert, `refill` patch on removal |
 | joins, aggregates, `group by`, subqueries | `X_MATCHER_UNSUPPORTED` with a fix line |
+| a `.sealed()` column in a filter or an order | `X_MATCHER_UNSUPPORTED` — a change row carries no sealed column |
 
 An honest refusal beats a silently wrong result set, so unsupported shapes fail at
 **subscribe** time, not on the first change event.

@@ -76,6 +76,8 @@ describe('one pass', () => {
       step: runner.step,
       ctx,
       attempt: 1,
+      finalAttempt: false,
+      progress: () => undefined,
       jobId: 'job-2',
       runId: RUN_ID,
     });

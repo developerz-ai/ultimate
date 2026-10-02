@@ -7,8 +7,24 @@ import { statementAttribution } from './attribution';
 import type { DbClient, DbConnection, ReservableClient } from './client';
 import { DbError, driverError } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
+import {
+  assertListenChannel,
+  type DbSubscription,
+  type ListeningClient,
+  listenUnsupported,
+} from './listen';
 import { statementObserver } from './observe';
 import { PGLITE_INSTANT_PARSERS } from './pg-instant';
+import { linkPgliteExtensions, type PgliteExtensionLoader } from './pglite-extensions';
+import { PGLITE_PACKAGE } from './pglite-package';
+import {
+  discardSnapshot,
+  pgliteVersion,
+  readSnapshot,
+  snapshotFile,
+  snapshotKey,
+  writeSnapshot,
+} from './pglite-snapshot';
 import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
 import { statementExcerpt } from './statement-excerpt';
@@ -26,6 +42,10 @@ export interface PgliteResult {
 export interface PgliteDriver {
   query(text: string, values?: readonly unknown[]): Promise<PgliteResult>;
   exec?(text: string): Promise<unknown>;
+  /** `LISTEN` on the one session there is. Resolves to the unsubscribe. */
+  listen?(channel: string, callback: (payload: string) => void): Promise<() => Promise<void>>;
+  /** The whole data directory as one tarball — what `pglite-snapshot.ts` caches. */
+  dumpDataDir?(compression: 'none'): Promise<Blob>;
   close(): Promise<void>;
 }
 
@@ -33,7 +53,13 @@ export interface PgliteDriver {
 export interface PgliteModule {
   readonly PGlite: new (
     dataDir?: string,
-    options?: { readonly parsers?: Readonly<Record<number, (text: string) => unknown>> },
+    options?: {
+      readonly parsers?: Readonly<Record<number, (text: string) => unknown>>;
+      /** Keyed by the bundle's own export name; each value is opaque to this package. */
+      readonly extensions?: Readonly<Record<string, unknown>>;
+      /** A `dumpDataDir()` tarball to start from instead of running `initdb`. */
+      readonly loadDataDir?: Blob;
+    },
   ) => PgliteDriver;
 }
 
@@ -47,6 +73,24 @@ export interface PgliteOptions {
   readonly driver?: PgliteDriver | undefined;
   /** Swap the module loader. Tests use it; nothing in the framework does. */
   readonly load?: PgliteLoader | undefined;
+  /**
+   * Extensions to make available to `create extension`, by their Postgres names (`citext`,
+   * `uuid-ossp`). PGlite links an extension only when it is handed over at boot, so a migration
+   * that creates one fails on an instance that was not told. A function, for a caller whose list
+   * is read from disk: a client is constructed synchronously and boots on its first statement.
+   * A name PGlite ships no bundle for is skipped here and refused by the server at
+   * `create extension`, in its own words (`pglite-extensions.ts`).
+   */
+  readonly extensions?: readonly string[] | (() => Promise<readonly string[]>) | undefined;
+  /** Swap the extension bundle loader, by module specifier. Tests use it. */
+  readonly loadExtension?: PgliteExtensionLoader | undefined;
+  /**
+   * A directory to keep the post-`initdb` snapshot in, so an in-memory boot is a restore
+   * (`pglite-snapshot.ts`). Read only for `memory://`: a directory on disk is its own snapshot.
+   */
+  readonly snapshotDir?: string | undefined;
+  /** Swap how the installed PGlite version is read. Tests use it; `undefined` disables caching. */
+  readonly version?: (() => Promise<string | undefined>) | undefined;
 }
 
 export const PGLITE_FIX =
@@ -57,13 +101,9 @@ export const PGLITE_MEMORY = 'memory://';
 
 const PGLITE_URL = 'pglite://';
 
-/**
- * The optional peer's specifier. Exported because `x doctor` asks whether it RESOLVES — a resolve,
- * never an import, since loading it boots the WASM build and takes the single-writer lock — and a
- * diagnostic that spelled the package name a second time is a diagnostic that can name the wrong
- * one after a rename.
- */
-export const PGLITE_PACKAGE = '@electric-sql/pglite';
+// Re-exported: `src/index.ts` and `x doctor` read it from here, and the constant itself lives in
+// a leaf so the extension linker and the snapshot cache can share it without a cycle.
+export { PGLITE_PACKAGE };
 
 /**
  * Why there is no embedded database when that specifier does not resolve. One sentence, shared:
@@ -99,6 +139,38 @@ function pgliteConstructor(loaded: unknown): PgliteModule['PGlite'] {
   return exported as PgliteModule['PGlite'];
 }
 
+type PgliteConstructor = PgliteModule['PGlite'];
+
+/**
+ * A scratch boot from the cache, or `undefined` when there is nothing sound to restore from. The
+ * restored instance is asked one statement before it is believed: a tarball can verify against
+ * its checksum and still be one this build cannot open, and that must cost a rebuild, never a
+ * failed command.
+ */
+async function restore(
+  PGlite: PgliteConstructor,
+  base: { readonly extensions?: Readonly<Record<string, unknown>> },
+  file: string,
+  key: string,
+): Promise<PgliteDriver | undefined> {
+  const snapshot = await readSnapshot(file, key);
+  if (snapshot === undefined) return undefined;
+  let driver: PgliteDriver | undefined;
+  try {
+    driver = new PGlite(PGLITE_MEMORY, {
+      parsers: PGLITE_INSTANT_PARSERS,
+      ...base,
+      loadDataDir: snapshot,
+    });
+    await driver.query('select 1');
+    return driver;
+  } catch {
+    await driver?.close().catch(() => undefined);
+    await discardSnapshot(file, key);
+    return undefined;
+  }
+}
+
 /** Boots one embedded Postgres. Costs seconds — `createPgliteClient` calls it exactly once. */
 export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<PgliteDriver> {
   if (options.driver !== undefined) return options.driver;
@@ -110,13 +182,45 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
     throw missing(PGLITE_MISSING, error);
   }
   const PGlite = pgliteConstructor(loaded);
+  const names =
+    typeof options.extensions === 'function' ? await options.extensions() : options.extensions;
+  const { linked } = await linkPgliteExtensions(names ?? [], options.loadExtension);
+  // Absent, never `{}`: every boot that names no extension hands PGlite exactly what it did.
+  const base = Object.keys(linked).length === 0 ? {} : { extensions: linked };
+  const version =
+    options.snapshotDir === undefined || dataDir !== PGLITE_MEMORY
+      ? undefined
+      : await (options.version ?? pgliteVersion)();
+  const key = version === undefined ? undefined : snapshotKey(version);
+  const file =
+    key === undefined || options.snapshotDir === undefined
+      ? undefined
+      : snapshotFile(options.snapshotDir, key);
+  if (file !== undefined && key !== undefined) {
+    const restored = await restore(PGlite, base, file, key);
+    if (restored !== undefined) return restored;
+  }
+  let driver: PgliteDriver;
   try {
     // `pg-instant.ts` reads every timestamp: PGlite's own parser took year 0099 for 1999 and an
     // offset with seconds for Invalid Date under any session zone that is not UTC.
-    return new PGlite(dataDir, { parsers: PGLITE_INSTANT_PARSERS });
+    driver = new PGlite(dataDir, { parsers: PGLITE_INSTANT_PARSERS, ...base });
   } catch (error) {
     throw missing(`PGlite could not open its data directory (dataDir=${dataDir})`, error);
   }
+  // Taken before the caller's first statement, so what is cached is `initdb`'s output and nothing
+  // of the caller's. A dump that fails leaves no cache and a working database.
+  if (file !== undefined && key !== undefined && driver.dumpDataDir !== undefined) {
+    try {
+      // Uncompressed, by measurement: gzip costs the boot that WRITES the snapshot ~0.3 s of
+      // CPU and saves nothing on the one that reads it. A fresh CI checkout always writes, so
+      // the cache must cost a cold boot nothing; the price is ~40 MB under `.x/cache`.
+      await writeSnapshot(file, key, await driver.dumpDataDir('none'));
+    } catch {
+      // The boot stands; the next one runs `initdb` again.
+    }
+  }
+  return driver;
 }
 
 /**
@@ -124,7 +228,7 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
  * both pin a connection before they `BEGIN`, and a client that cannot be pinned silently gets a
  * shared one — which on a single-session database is every concurrent transaction at once.
  */
-export interface PgliteClient extends ReservableClient {
+export interface PgliteClient extends ReservableClient, ListeningClient {
   /** Pay the boot up front. `x dev` calls it so the first request is not the slow one. */
   ping(): Promise<void>;
   close(): Promise<void>;
@@ -286,6 +390,25 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
       };
       issued.add(connection);
       return connection;
+    },
+    async listen(channel, onNotify, onListening): Promise<DbSubscription> {
+      assertListenChannel(channel);
+      const driver = await connect();
+      const subscribe = driver.listen?.bind(driver);
+      if (subscribe === undefined) throw listenUnsupported('this PGlite driver');
+      // A turn of its own: the `LISTEN` is a statement on the one session, and issued beside an
+      // open transaction it would ride inside it — rolled back with it, and nothing delivered.
+      const stop = await turns.run(() => subscribe(channel, onNotify));
+      // One session and no socket to lose: established once, for the life of the client.
+      onListening?.();
+      let ended: Promise<void> | undefined;
+      return {
+        unlisten: () => {
+          // After `close()` the session is gone and so is the subscription: nothing to report.
+          ended ??= turns.run(() => stop()).catch(() => undefined);
+          return ended;
+        },
+      };
     },
     async ping(): Promise<void> {
       await connect();

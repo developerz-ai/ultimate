@@ -91,6 +91,13 @@ export const sameValueOfKind = (
   right: unknown,
 ): boolean => {
   if (left instanceof Date && right instanceof Date) return left.getTime() === right.getTime();
+  // An instant handed over as ISO text is the instant it names, as Postgres parses the bound
+  // parameter: `eq` against a stored `Date` compared an object to a string and matched no row.
+  if (kind === 'timestamptz') {
+    const stored = instantMicros(left);
+    const given = instantMicros(right);
+    if (stored !== undefined && given !== undefined) return stored === given;
+  }
   if (kind === 'uuid' && typeof left === 'string' && typeof right === 'string') {
     return keyOf('uuid', left) === keyOf('uuid', right);
   }

@@ -15,6 +15,14 @@ import {
   SurfaceBoundaryError,
 } from './errors';
 import { assertModeInvariants, defaultIslandBudget } from './modes';
+import type { MountedRouteInput, RouteMount, RouteMountInput } from './mounted-routes';
+import {
+  clearMountedRoutes,
+  mountCollision,
+  mountedAt,
+  mountedRoutes,
+  setMountedRoutes,
+} from './mounted-routes';
 import type { RouteConfig, RouteData } from './route';
 import { isRouteConfig, tagKeys } from './route';
 import type { RouteComponent } from './route-component';
@@ -83,7 +91,14 @@ export interface RouteDescriptor {
   readonly islandSources: readonly string[];
   readonly budgetJs: string | null;
   readonly budgetLcp: number | null;
+  /**
+   * Present on a route NO surface file declares: who mounted it and every permission that gates
+   * it. Absent on a file route — so a reader never has to ask whether `file` is a path.
+   */
+  readonly mount?: RouteMount;
 }
+
+export type { MountedRouteInput, RouteMount, RouteMountInput } from './mounted-routes';
 
 export interface CompiledPattern {
   readonly source: string;
@@ -284,6 +299,8 @@ export function registerRoute<TData = RouteData>(
       `rename or delete one of them — the route table is keyed by URL`,
     );
   }
+  const claimed = mountedAt(path);
+  if (claimed !== undefined) throw mountCollision(path, input.file, claimed.mount);
 
   const entry: RouteEntry<TData> = {
     file: input.file,
@@ -329,8 +346,27 @@ function withIslandBudget<TData>(config: RouteConfig<TData>, surface: Surface): 
   return Object.freeze(derived);
 }
 
+/**
+ * Declare the routes a package MOUNTS — screens no surface file exists for, like the admin's — so
+ * the one route list carries them. Described, never rendered here: the mounting host serves them,
+ * and `routeEntries()` stays the pages a file declares. Re-declaring a `key` replaces its set,
+ * because `x dev` re-evaluates the module that declared it on every save.
+ */
+export function registerMountedRoutes(
+  mount: RouteMountInput,
+  declared: readonly MountedRouteInput[],
+): void {
+  for (const route of declared) {
+    const file = routes.get(route.path)?.file;
+    if (file !== undefined) throw mountCollision(route.path, file, mount);
+  }
+  setMountedRoutes(mount, declared);
+  described = undefined;
+}
+
 export function clearRoutes(): void {
   routes.clear();
+  clearMountedRoutes();
   described = undefined;
 }
 
@@ -361,25 +397,50 @@ export function describeRoutes(): readonly RouteDescriptor[] {
 }
 
 function buildDescriptors(): RouteDescriptor[] {
-  return routeEntries().map((entry) => ({
-    path: entry.path,
-    file: entry.file,
-    surface: entry.surface,
-    mode: entry.config.render,
-    offline: entry.config.offline,
-    hydrate: entry.config.hydrate,
-    revalidateTags: tagKeys(entry.config.revalidate?.tags),
-    revalidateTtl: entry.config.revalidate?.ttl ?? null,
-    prerenderable: entry.config.prerender !== undefined,
-    dynamic: entry.pattern.keys.length > 0,
-    hasPolicy: entry.config.policy !== undefined,
-    personal: isPersonal(entry.config),
-    islands: entry.islands,
-    islandSources: entry.config.islands.map((spec) => spec.src),
-    budgetJs: entry.config.budget.js ?? null,
-    budgetLcp: entry.config.budget.lcp ?? null,
-  }));
+  const files = routeEntries().map((entry) =>
+    descriptorOf(entry.path, entry.file, entry.surface, entry.config, entry.pattern.keys.length),
+  );
+  const mounts = mountedRoutes().map(
+    (route): RouteDescriptor => ({
+      ...descriptorOf(
+        route.path,
+        route.mount.file,
+        route.mount.surface,
+        route.config,
+        compilePattern(route.path).keys.length,
+      ),
+      mount: { by: route.mount.by, permissions: [...route.permissions] },
+    }),
+  );
+  return mounts.length === 0
+    ? files
+    : [...files, ...mounts].sort((a, b) => byCodeUnit(a.path, b.path));
 }
+
+const descriptorOf = (
+  path: string,
+  file: string,
+  surface: Surface,
+  config: RouteConfig,
+  params: number,
+): RouteDescriptor => ({
+  path,
+  file,
+  surface,
+  mode: config.render,
+  offline: config.offline,
+  hydrate: config.hydrate,
+  revalidateTags: tagKeys(config.revalidate?.tags),
+  revalidateTtl: config.revalidate?.ttl ?? null,
+  prerenderable: config.prerender !== undefined,
+  dynamic: params > 0,
+  hasPolicy: config.policy !== undefined,
+  personal: isPersonal(config),
+  islands: config.islands.map((spec) => spec.moduleId),
+  islandSources: config.islands.map((spec) => spec.src),
+  budgetJs: config.budget.js ?? null,
+  budgetLcp: config.budget.lcp ?? null,
+});
 
 /** See `RouteDescriptor.personal`. */
 function isPersonal(config: RouteConfig): boolean {

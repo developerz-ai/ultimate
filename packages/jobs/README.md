@@ -35,7 +35,7 @@ nightlyDigest.describe();                         // { kind: 'task', cron, tz, j
 
 | Member | On | Behaviour |
 |---|---|---|
-| `enqueue(input, options?)` | `JobHandle` | queues through `jobsFacade()`; joins the caller's `tx` when the outbox is installed |
+| `enqueue(input, options?)` | `JobHandle` | queues through `jobsFacade()`; joins the caller's `tx` when the outbox is installed. Answers `{ id, runId, deduped }` — the job's own ids on every path, staged or direct. `options.runId` names the run instead of having one minted |
 | `as(actor, input, options?)` | `JobHandle` | enqueue on behalf of an actor — fills `tenantId` from `actor.orgId` so per-tenant limits apply |
 | `describe()` | `JobHandle` | the `JobDescriptor` the manifest, `/_x` and MCP read |
 | `entries()` | `TaskHandle` | the declared `[job, input]` pairs |
@@ -187,6 +187,16 @@ input. The tenant is a fact about the work, so the job declares it.
 | `step.sleep(name, '3d')` | suspends the run, requeues it for the wake time |
 | `step.sleep('3d')` | same, step name derived from the duration |
 | `step.waitForEvent(name, event, { match, timeout })` | suspends until `publishEvent()` matches |
+
+`resetEventBus()` is the test seam beside `resetJobDriver()`: an event is matchable until it
+expires, so on a bus shared by one `bun test` process an answer one test published resumes the
+next test's wait — call it between tests.
+
+The event bus has ONE clock. `createPgEventBus({ executor })` stamps `publishedAt` and the expiry
+with the database's `now()` — it takes no `clock` — and `bus.now()` answers that same clock. A
+consumer that wants "published after I asked" (`@ultimat3/scraping`'s `eventPrompt`) reads its
+"asked at" from `bus.now()`, never from its own process: a skew between two pods must not decide
+which answers count.
 
 Step names are the replay key, so they must be deterministic and unique in a run — a
 duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control flow
@@ -440,7 +450,7 @@ export const exportOrders = exportRows({
     placedAt: formatDate(instant(order.placedAt), { locale: 'en', zone: 'UTC' }),
     total: formatMoney(order.total, 'en'),
   }),
-  sink: disk('exports'),   // a StorageDriver already IS an ExportSink
+  sink: () => disk('exports'), // a thunk: read per write, after defineStorage() — never at import
 });
 ```
 
@@ -566,7 +576,9 @@ there, as before. A manual `stop()` aborts nothing: it waits for the work it hol
 | `step.sleep` / `step.waitForEvent` | `suspended` | no | not counted |
 | the body throwing, attempts left | `retried` | yes | `failed` |
 | the body throwing, none left or `terminal` | `dead-lettered` | yes | `dead` |
+| the same, on a job declaring `retry.deadLetter: false` | `dropped` — the row is `failed` | yes | `failed` |
 | the worker's drain (`X_DRAINING` on `ctx.signal`) | `interrupted` | **no** | not counted |
+| `whenBusy: 'fail'` over a busy concurrency key — the body never started | `refused` | **no** | `failed` |
 
 Three ceilings, declared on the job and nowhere else (`As of 2026-08` — `stepTimeout` and
 `eventPoll` had been implemented in the step runner since 1.0 with no declaration able to reach
@@ -601,16 +613,45 @@ it after commit. The bug class this removes:
 
 Both are load-dependent, both pass every test you would write, and both produce "the email
 went out but the order isn't in the database". Joining the transaction closes the window.
-The relay publishes *then* marks published, so a crash re-publishes — and **that repeat is
-collapsed only while the first job is still live** (`As of 2026-08`): `SQL_ENQUEUE`'s conflict
-target is a partial index over `ready`/`delayed`/`running`/`suspended`, so a re-publish landing
-after the first job reached a terminal state inserts a second row and the handler runs again.
-**Handlers are at-least-once. Write them idempotent** — that is the standing contract, not a
-caveat on this paragraph. A publish that FAILS stops the batch rather than letting later rows
+The relay publishes *then* marks published, so a crash re-publishes — and **that repeat meets
+the job the first publish made** (`As of 2026-10`): a staged row is published under its own id
+(`EnqueueRequest.id`), and `SQL_ENQUEUE` inserts nothing under an id that already names a row,
+live or finished. Until then the repeat was collapsed only while the first job was still live —
+the conflict target is a partial index over `ready`/`delayed`/`running`/`suspended` — so one
+landing after it finished ran the handler again. A job row an operator removed is the one case
+left. **Handlers are still at-least-once** — a lease that lapses re-delivers — **so write them
+idempotent**: that is the standing contract, not a caveat on this paragraph. A publish that FAILS stops the batch rather than letting later rows
 overtake it: `claim()` returns rows in `staged_at, id` order — total, so two relays compose the
 same batch in the same order — and an app that stages `createInvoice` then `chargeCard` in one
 transaction must never have the charge run first. Set `mode: 'required'` to
 make an enqueue outside a transaction an `X_OUTBOX_NO_TX` error instead of a direct publish.
+
+**The ids are known at enqueue time, on every path** (`As of 2026-10`). A staged enqueue used to
+answer `runId: ''` and the outbox row's id — neither names a job — so an action that had to say
+which run it started had to pass `outbox: false` and give the transaction up. Both ids are
+allocated when the row is staged (`x_outbox.run_id`, and the row id IS the job id), so:
+
+```ts
+import { job, t } from '@ultimat3/jobs';
+
+export const syncAccount = job({
+  input: t.object({ accountId: t.uuid, orgId: t.uuid, requestId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
+  idempotencyKey: ({ requestId }) => `sync:${requestId}`,
+  retry: { attempts: 1 },
+  async run() {},
+});
+
+export async function start(accountId: string, orgId: string) {
+  const queued = await syncAccount.enqueue({ accountId, orgId, requestId: crypto.randomUUID() });
+  // The run its events are keyed by and the job a cancel names — inside the caller's transaction.
+  return { runId: queued.runId, jobId: queued.id };
+}
+```
+
+`deduped` is the one answer only the publish can give: a staged enqueue whose idempotency key a
+LIVE job already holds creates nothing, and its ids then name no row. Give a run its own key
+(a request id) when the caller keeps the ids.
 
 **It is not on by default, and it is not on until you install it** (`As of 2026-08`). Three
 things have to be true in a process:
@@ -657,8 +698,9 @@ What the lease buys, precisely:
 | It stops | It does not stop |
 |---|---|
 | two relays holding one batch — a committed row cannot be claimed twice inside its lease | the handler running twice |
-| a lapsed claimant releasing or retiring a newer claimant's rows | a crash between publish and `markPublished` re-publishing after the first job is terminal |
+| a lapsed claimant releasing or retiring a newer claimant's rows | a re-publish after the job row was REMOVED (the id is free again) |
 | a relay that died mid-batch stranding its rows forever | anything a **non-idempotent** handler does on its second run |
+| — | a lapsed visibility lease re-delivering a job that is still running |
 
 The memory store (`createMemoryOutboxStore`, `x dev` and tests) **drops** a published row —
 `retained()` is the relay's backlog, not a running total; the pg store keeps `published_at` as
@@ -668,12 +710,14 @@ and the loop re-arms: an unobserved rejection would end the process with rows st
 `relay.stop()` is **async and joins the pass in flight** — `await` it before closing the database,
 the way `worker.stop()` and `scheduler.stop()` are awaited. A pass is a publish followed by a
 `markPublished`, and a caller that returned between the two closed the pool under the row it was
-about to mark.
+about to mark. `relay.stop(deadlineAt)` binds the deadline LATE: a shutdown landing on a manual `stop()` bounds the wait already in flight, and the earliest deadline wins.
 
 ## Drivers
 
-One interface: `enqueue`, `claim` (visibility timeout), `ack`, `nack` (backoff),
-`heartbeat`, `stats`, plus optional `introspect`, `backfills` and `leases`. Zero job-code change
+One interface: `enqueue`, `claim` (visibility timeout), `ack(jobId, { workerId, claim, durationMs? })`,
+`nack(jobId, { workerId, claim, … })` (backoff), `heartbeat`, `stats`, plus optional `introspect`,
+`backfills` and `leases`. Both settles are fenced on the CLAIM — `claimOf(claimed)` is the
+`{ workerId, claim }` a `ClaimedJob` carries — and answer whether they landed. Zero job-code change
 between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driver` config line**:
 `JobsConfig.driver` has no reader and boot always builds `createPgDriver`.
 
@@ -686,6 +730,11 @@ between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driv
 
 The pg SQL is exported verbatim (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …) so an agent
 debugging a stuck queue can read and run the exact statement.
+
+A driver you write reads a nack's target state through `nackState(options)` — `dead`
+(`deadLetter`), `failed` (`fail`, terminal and out of the dead-letter queue), `suspended` (`park`)
+or `ready` — so a new branch cannot land in one driver and not another. Its lease store implements
+`holders(key)`: the live holders of one key, in slot order.
 
 ## Roles
 
@@ -732,7 +781,7 @@ import {
 } from '@ultimat3/jobs';
 
 declare const driver: JobDriver;
-declare const executor: PgExecutor;   // `@ultimat3/cli`'s pgExecutorFor(client)
+declare const executor: PgExecutor;   // see "A `PgExecutor`" below
 
 createScheduler({
   driver,
@@ -773,6 +822,95 @@ after a long outage it fires the TRUE latest missed occurrence, found by bisecti
 too, so a scheduler back up after a day down enqueues one catch-up and then waits for the next
 real occurrence. It used to leave the watermark on the occurrence it had just run, which made an
 hourly task fire 24 catch-ups a second apart.
+
+### A `PgExecutor`
+
+`PgExecutor` is one method — `query(text, values)` — and the boot supplies it (`@ultimat3/cli`'s
+`pgExecutorFor(client)`). Outside the boot — a test, a script — build it over `@ultimat3/db`'s
+client, which already speaks `(text, values)` and decodes `jsonb`:
+
+```ts
+import { createPostgresClient } from '@ultimat3/db';
+import type { PgExecutor } from '@ultimat3/jobs';
+
+const client = createPostgresClient({ url: 'postgres://localhost:5432/app_test' });
+export const executor: PgExecutor = {
+  query: <R>(text: string, values: readonly unknown[]) => client.query<R>({ text, values }),
+};
+```
+
+| Not this | Because |
+|---|---|
+| `{ executor: Bun.sql }` | `Bun.sql` is a tagged template with no `.query(text, values)`: the first claim is a `TypeError` |
+| a hand adapter over raw `Bun.SQL`'s `unsafe(text, values)` | observed `As of 2026-10`: a `$n::jsonb` parameter is encoded twice unless the client is built with `prepare: false`, and a JS array is refused where the statement expects `text[]` (`SQL_CLAIM`'s `queue = any($1::text[])`) unless it is written as an array literal. `@ultimat3/db`'s client handles both |
+
+## Idle cost and pickup latency
+
+A queue with nothing to do costs almost nothing, and a job starts when it is committed — whichever process committed it.
+
+| Loop | While there is work | While idle | Claims per idle minute |
+|---|---|---|---|
+| `worker` | a claim per queue every `pollIntervalMs` (250 ms) | the wait doubles to `idlePollMaxMs`; each pass is ONE claim over every queue with a free slot | 12 with a proven wake, 30 without (was 240 per queue) |
+| outbox relay | a claim every `intervalMs` (200 ms) | the wait doubles to `idlePollMaxMs` | 12 with a proven wake, 30 without (was 300) |
+| `scheduler` | one round every `tickIntervalMs` (1 s) | a round reads no store and resolves no cron: watermarks are held in memory while it leads, the lease is renewed every `renewEveryMs` (a third of its TTL — 10 s) | 6 statements, for any number of tasks (was 2T+1 a second: 4,321 a minute at 35 tasks) |
+
+`idlePollMaxMs` defaults to `IDLE_POLL_CEILING_MS` (2 s), and to `WOKEN_IDLE_POLL_CEILING_MS` (5 s) while `wakeIsLive()`. Declared, it is the ceiling either way.
+
+### The wake
+
+`startQueueWake({ listener, executor })` holds ONE `LISTEN` session per worker pod and turns "another process committed" into the signal the idle loops already hear. The boot starts it for the `worker` role.
+
+```ts
+import { createPostgresClient } from '@ultimat3/db';
+import type { PgExecutor } from '@ultimat3/jobs';
+import { startQueueWake } from '@ultimat3/jobs';
+
+const client = createPostgresClient({ url: 'postgres://localhost:5432/app_test' });
+const executor: PgExecutor = {
+  query: <R>(text: string, values: readonly unknown[]) => client.query<R>({ text, values }),
+};
+// `client.listen` is the session; the pooled executor sends the probe that proves it.
+export const wake = startQueueWake({ listener: client, executor });
+```
+
+| Statement | Announces | Stays silent when |
+|---|---|---|
+| `SQL_ENQUEUE` | `pg_notify('x_jobs_wake', <queue>)` | another row of that queue was created in the same `WAKE_SLOT_MS` (250 ms) slot; the row is due more than `WAKE_DUE_WITHIN_MS` (1 s) out; the idempotency key deduped |
+| `SQL_OUTBOX_STAGE` | `pg_notify('x_outbox_wake', '')`, delivered on COMMIT | a committed row is already waiting unclaimed |
+| `SQL_SCHEDULER_FIRE` | each queue the occurrence filled, once | the watermark refused the fire |
+| `SQL_JOB_REQUEUE`, `SQL_JOB_PROMOTE`, `requeueMany`, `resumeQueue` | the queue | — |
+
+| Rule | Why |
+|---|---|
+| the payload is the queue name, never an id, an input or a tenant | every session on the channel reads it |
+| a notification is throttled in the statement | Postgres serialises the commit of every transaction that issued a `NOTIFY` behind one lock, held through its WAL flush. One per enqueue caps enqueuing commits at one flush at a time |
+| a woken loop passes now, then at the floor again | that pass is what finds the row its slot kept silent — so pickup is never worse than the fixed 250 ms poll |
+| the wake is PROVEN before the ceiling rises | a probe sent through the pool has to come back on the session (`jobs.wake.live`). One that does not is `jobs.wake.unverified`, once, with the fix |
+| the poll is the guarantee | a notification is lost with the session that would have carried it. The driver re-dials (`jobs.wake.live` again); meanwhile jobs start on the poll |
+| a transaction-pooling proxy delivers nothing | PgBouncer `pool_mode = transaction`: the `LISTEN` lands on a connection the proxy takes back. The wake stays unproven and the ceiling stays 2 s — give the `worker` role a direct or session-pooled `DATABASE_URL` |
+| the memory driver needs none | one process: `signalEnqueued` is the whole wake |
+
+| A job enqueued by | Starts after — measured, Postgres 17 on loopback, idle worker, `As of 2026-10-01` |
+|---|---|
+| this process — a direct enqueue, the relay's publish, the scheduler's fire | at once (`signalEnqueued`): median 10 ms, max 19 ms |
+| another process, direct | median 8 ms, max 18 ms (was median 1,033 ms, max 1,785 ms: the 2 s poll) |
+| another process, through the outbox — from its COMMIT | median 9 ms, max 13 ms (was median 1,275 ms, max 2,008 ms) |
+| another process, no wake (proxy, lost session) | within `idlePollMaxMs` — 2 s |
+| nobody — a retry or a `step.sleep` this worker handed back | when it falls due: the worker keeps a timer for a row due inside a minute (`JobExecution.resumeAt`) |
+| nobody — a delayed job another process queued | within `idlePollMaxMs` past its `runAt` |
+
+| Rule | Detail |
+|---|---|
+| a slot coming free is refilled at once | a full worker asks the queue for nothing, so its loop backs off; the job that finishes kicks one pass |
+| a wake on a pass in flight | asks for ONE more pass behind it, never a second loop |
+| a wake naming a queue the worker does not serve | ignored |
+| a pause is read by the claim itself | `pauseQueue` stops claims at each worker's NEXT claim — no poll to wait for. `resumeQueue` announces the queue |
+| a paused task | checked when it is due, so the pause holds for the very next occurrence; a task found paused is looked at again after `PAUSE_RECHECK_MS` (5 s), which is the resume's latency |
+| a standby scheduler | asks for the lease every `renewEveryMs`, not every round |
+| a queue no registered job names | still polled — a per-call `enqueue({ queue })` may land there — and reported once at boot as `jobs.worker.queue-unregistered`; idle, it adds nothing to the one claim |
+| an enqueuer whose clock runs ahead of the database's | its "immediate" jobs are due a moment from now (`run_at` is the enqueuer's clock); up to 1 s ahead they are still announced, past that they start on the poll |
+
+Lower `idlePollMaxMs` to trade idle load for the no-wake bound; there is no flag for the old fixed interval.
 
 ## Retries
 
@@ -833,11 +971,79 @@ cannot hold the cap, so `createWorker().start()` **refuses to boot**
 Over any cap the claim is handed straight back without burning an attempt — one org's 50k-row
 import cannot starve the fleet.
 
+### One run per key
+
+A number caps the whole job. `{ key, limit, whenBusy }` caps it **per key** — "at most one run
+per account, fleet-wide" is a declared field, not three guards in app code:
+
+```ts
+import { job, t } from '@ultimat3/jobs';
+
+export const syncAccount = job({
+  input: t.object({ accountId: t.uuid, orgId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
+  idempotencyKey: ({ accountId }) => `sync:${accountId}`,
+  retry: { attempts: 3 },
+  concurrency: { key: ({ accountId }) => accountId, limit: 1, whenBusy: 'fail' },
+  async run({ input, step, finalAttempt }) {
+    await step.run('sync', () => ({ accountId: input.accountId, lastTry: finalAttempt }));
+  },
+});
+```
+
+| Field | Rule |
+|---|---|
+| `key(input)` | the lease this run counts under. Deterministic from `input` only; a non-empty string of at most `MAX_CONCURRENCY_KEY_LENGTH` (200) characters — an id, never a payload |
+| `limit` | max in-flight runs sharing one key. A whole number, 1 or more |
+| `whenBusy: 'wait'` (default) | the run stays `ready`, no attempt burned, claimed again once a slot frees |
+| `whenBusy: 'fail'` | the run settles **`failed`** with `X_JOB_KEY_BUSY` in `lastError`; its body never runs, nothing retries it, and it is **not** a dead letter. `onSettled` is told (`outcome: 'refused'`). `x jobs retry <id>` re-queues it |
+| no `duration` | the bound after which a stuck holder stops blocking its key is the lease TTL — the worker's `visibilityTimeoutMs`, renewed every `heartbeatIntervalMs`. A second number could disagree with it |
+
+| Refused | Where | Code |
+|---|---|---|
+| a cap of `0`, negative, fractional, `NaN` or `Infinity` — `concurrency: 0` and `limit: 0` alike; a `key` that is not a function; a `whenBusy` outside the two | where the job is declared | `X_JOB_DECLARATION_INVALID` |
+| `key(input)` answering `''`, a non-string, or more than 200 characters | at that **enqueue** — the facade and the scheduler both ask | `X_JOB_DECLARATION_INVALID` |
+| a driver with no lease store, for any `concurrency` | `createWorker().start()` | `X_JOB_CONCURRENCY_UNENFORCEABLE` |
+| a `LeaseStore` with no `holders(key)` | the build — the member is required | `TS2741` |
+
+What `'fail'` decides, exactly:
+
+| Case | Answer |
+|---|---|
+| another run holds the key | refused — `failed`, `X_JOB_KEY_BUSY`, `JobOutcome` `refused`, `WorkerStats.refused` |
+| the only holder is **this run's own** earlier claim (a retry, a `step.sleep` resume or a redelivery meeting the slot its last claim has not yet released or let lapse) | waits one poll — a run is never failed by its own leftovers. This is what `LeaseStore.holders()` is read for |
+| the key was busy at the acquire and free a moment later | waits one poll |
+| the holder's worker was SIGKILLed | the key stays busy until the lease TTL passes, then frees with no cleanup call |
+| `key(input)` throws at claim, or the stored input no longer parses | that **attempt** fails without the body running and takes the ordinary retry path — never the claim round |
+
+The decision is taken at **every claim**, so a retry or a resumed run claims its key again: under
+`'fail'`, a different run that took the key in between refuses it.
+
+The lease row is keyed `job-key:<encoded job name>:<key>` (`jobLeaseKey(name, key)`), apart from
+the plain cap's `job:<name>` so no job name can collide with another job's key.
+
+### `finalAttempt`
+
+`run({ finalAttempt })` is `true` when a failure of this attempt is not retried for want of
+attempts — `isFinalAttempt(retry, attempt)`, the one comparison the runner dead-letters on, so a
+body never re-derives it from `retry.attempts`.
+
+| Not | Because |
+|---|---|
+| "the body runs at most once more" | a `terminal` error stops an earlier attempt |
+| true exactly once per job | an attempt handed back uncounted — `step.sleep`, a drain — is presented again under the same number |
+
+`finalAttempt` is a REQUIRED member of `JobRunArgs`: a test that drives a body by hand —
+`handle.run({ input, step, ctx, attempt, finalAttempt, jobId, runId })` — states it, and
+`isFinalAttempt(handle.retry, attempt)` is the worker's own answer.
+
 ## Leases
 
 A claim buys `visibilityTimeoutMs` of invisibility; the worker renews it every
-`heartbeatIntervalMs` (default a third of the window) for as long as the job runs. Renewal
-failures are not swallowed:
+`heartbeatIntervalMs` (default a third of the window) for as long as the job runs. Every renewal —
+the lease, a fleet slot, the worker's registry row — is armed through `schedule`
+(`IntervalScheduler`, default a real unrefed interval); `@ultimat3/testing`'s `runJobs` hands one
+driven by the frozen clock. Renewal failures are not swallowed:
 
 | Fact | Signal |
 |---|---|
@@ -856,10 +1062,101 @@ already **on the wire**, not only for the next one: a clean completion acks the 
 pool was slow enough. The fleet slot's `jobs.worker.slot-lost` had the same shape and the same
 fix (`renewal-timer.ts`).
 
+## The operator surface
+
+Every operator capability is a member of `JobIntrospection` (`driver.introspect`), implemented by
+the pg and the memory driver alike. `x jobs`, `/_x` and a dashboard read nothing else.
+
+| Member | Does | Bound |
+|---|---|---|
+| `list(filter)` | one page, newest first; `filter.after = jobCursor(lastRow)` for the next, `filter.before = jobCursor(firstRow)` for the previous (the rows nearest the cursor, still newest first; never both). Filters: `queue`, `name`, `state`, `tenantId`, `idPrefix`, `createdFrom`, `createdTo` | `MAX_JOB_PAGE` = 200 rows; `DEFAULT_JOB_PAGE` = 100. A page shorter than its limit is the last. A larger `limit`, or a cursor no page produced, is `X_JOB_PAGE_INVALID` |
+| `remove(id)` | delete one job and its steps. A running one is `X_JOB_NOT_REMOVABLE` | — |
+| `requeueMany({ state, queue?, name?, tenantId? })` | re-queue finished rows; a row whose key a live job holds stays | `MAX_BULK_ROWS` = 1,000 per call; answers `{ affected, remaining }` |
+| `removeMany({ state, queue?, name?, tenantId? })` | delete rows in any state but `running` | the same |
+| `promoteMany({ state, queue?, name?, tenantId? })` | `promote` over a set: every row still waiting on its `runAt` is due now. `state` is `delayed` or `ready` (`PROMOTABLE_STATES`) | the same; `remaining` is the rows still waiting |
+| `promote(id)` | a job waiting on its `runAt` — delayed, or backing off — is due now | — |
+| `pauseQueue(q)` / `resumeQueue(q)` / `pausedQueues()` | a paused queue is claimed by no worker; enqueues still land | effective at every worker's next claim |
+| `pauseTask(t)` / `resumeTask(t)` / `pausedTasks()` | a paused task is not dispatched; on resume its own `catchUp` decides what it missed | — |
+| `workers()` | every live worker: id, host, started, queues, slots, in-flight job ids, last heartbeat | rows expire one visibility timeout after the last heartbeat; `MAX_WORKER_IN_FLIGHT` = 100 ids |
+| `counters({ job, sinceMs })` / `counterTotals(sinceMs)` | per-job history: `done`, `retried`, `failed`, `dead`, `durationMs` per bucket | `COUNTER_TIERS`: 1-minute buckets for 24 h, 5-minute for 7 d, 1-hour for 30 d — 4,176 rows per job name at most |
+| `rollupCounters()` | fold buckets past their tier into the next; the scheduler leader calls it once a minute | idempotent |
+| `recordProgress(id, { workerId, claim }, progress)` | what `run({ progress })` writes | at most one write per `PROGRESS_INTERVAL_MS` (1 s) per run, plus the last before the settle |
+| `taskFires()` | per task, the last occurrence that DISPATCHED: `{ task, occurrenceMs, firedAt }`, by task name. Arming a task or skipping missed occurrences moves the watermark and is not a fire. The NEXT fire is `nextTaskRun(task, from)` — the scheduler's own resolver, no scheduler needed | `MAX_TASK_FIRES` = 1,000 rows |
+| `recordTaskFire({ task, occurrenceMs })` | the scheduler's record of a fire that went through `driver.enqueue`; the pg fire writes it in `SQL_SCHEDULER_FIRE` | — |
+
+| Rule | Why |
+|---|---|
+| the counter moves in the statement that settles the row | a count that can disagree with the rows is worse than none — and no second round trip per job |
+| a shed, a suspension and a drained attempt add nothing | they are handed back uncounted; counted, every `step.sleep` would read as a failure |
+| `ack` / `nack` / `heartbeat` / `recordProgress` are fenced on the CLAIM | `{ workerId, claim }`: a body whose lease lapsed must not settle, renew or report on the run that replaced it — claimed by another worker, or by the SAME one, whose id did not change. A miss answers `false` and logs `jobs.settle.unowned` |
+| `ack(id, { …, counted: false })` adds nothing to the counters | `x jobs drain` settles the row it moved: `done` here, and not a completed run |
+| a pause is a row the claim reads | never a column on every queued row: pausing a million-row queue takes effect within one poll |
+| an occurrence fires in one statement | the watermark and its jobs move together (`SchedulerState.fire`), so a crash between them cannot fire it twice |
+
+`run({ progress })` reports how far a run has got — `progress(done, total, note?)`, as often as
+the loop turns.
+
+### `onSettled` — how a run ended
+
+ONE hook, told once per ending. There is no `onDead` and no `onComplete` beside it.
+
+```ts
+import { job, t } from '@ultimat3/jobs';
+
+/** The app's own reactions — tenant-scoped writes, which is why the hook runs under the tenant. */
+const markSynced = (_accountId: string, _rows: number): Promise<void> => Promise.resolve();
+const markBroken = (_accountId: string, _code: string | undefined): Promise<void> =>
+  Promise.resolve();
+
+export const syncAccountWatched = job({
+  input: t.object({ accountId: t.uuid, orgId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
+  idempotencyKey: ({ accountId }) => `sync:${accountId}`,
+  retry: { attempts: 3 },
+  concurrency: { key: ({ accountId }) => accountId, limit: 1, whenBusy: 'fail' },
+  async run({ input, progress }) {
+    progress(0, 2, `account ${input.accountId}`);
+    progress(2, 2);
+    return { rows: 2 };
+  },
+  async onSettled(settled) {
+    if (settled.outcome === 'completed') {
+      await markSynced(settled.input.accountId, settled.result.rows);
+    } else if (settled.input !== undefined) {
+      await markBroken(settled.input.accountId, settled.code);
+    }
+  },
+});
+```
+
+| The run ended | `outcome` | Carries | Row state when the hook runs |
+|---|---|---|---|
+| the body returned and the ack landed | `completed` | `input`, `result` — what `run` returned, typed from it | `done` |
+| failed for good, parked in the dead-letter queue | `dead-lettered` | `input` (or `undefined`: the stored payload no longer parses), `error`, `code` | `dead` |
+| failed for good on `retry.deadLetter: false` | `dropped` | the same | `failed` |
+| `whenBusy: 'fail'` over a busy key — the body never ran | `refused` | the same, `code: 'X_JOB_KEY_BUSY'` | `failed` |
+
+| Not a settlement | Who observes it instead |
+|---|---|
+| a retry, a `step.sleep` / `waitForEvent`, a drain | nobody: the run has not ended |
+| `cancelJob()` / `x jobs cancel` on a queued or running row | the caller of the cancel — the worker's own settle then matches nothing |
+| `x jobs retry`, `rm`, `promote`, `drain` | the operator; a retried run settles again, and is told again |
+| a settle that did not land — the lease lapsed and the queue re-delivered | the claim that holds the row now |
+
+| Guarantee | Stated plainly |
+|---|---|
+| when | AFTER the row is settled, by the worker whose settle landed, under the job's declared tenant; `settled.ctx` is that context |
+| how often | **at most once** per ending across a crash: a worker killed between the settle and the hook never runs it. Not at-least-once — nothing re-drives a hook |
+| inside one process | `ON_SETTLED_ATTEMPTS` (3) tries, back to back. A hook that threw halfway is run again from the top, so write it idempotent |
+| a hook that keeps throwing | logged `jobs.on-settled.failed` and reported as `X_JOB_ON_SETTLED_FAILED`. The row, the outcome, the counters and `JobExecution` are untouched |
+| `result` | the value itself, in the worker's process — never stored, never serialised. `JobExecution.result` carries the same value to a caller driving a run by hand |
+| what must be recorded for certain | written by the BODY, inside a `step.run` — that is at-least-once, replayed from storage. The hook is for a notification, a status column, a usage line |
+
 ## Introspection
 
-`inspectQueues`, `inspectJob` (per-step trace), `inspectDeadLetters`, `retryFromStep`,
-`cancelJob`, `inspectManifest` — all `--json`-shaped, shared by `/_x`, the CLI and the MCP tools.
+`inspectQueues`, `inspectJob` (per-step trace, the redacted `input`, the failure's `stack`, the
+last `progress`), `inspectDeadLetters`, `retryFromStep`, `cancelJob`, `removeJob`, `promoteJob`,
+`pauseQueue`, `resumeQueue`, `inspectManifest` — all `--json`-shaped, shared by `/_x`, the CLI and the MCP tools.
 
 `cancelJob(driver, id, reason?)` is the answer to a runaway pass. A queued row becomes `cancelled`
 immediately; a RUNNING one stops at its next heartbeat, which no longer matches its own row and
@@ -902,7 +1199,13 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 | `X_JOB_LEASE_LOST` | the job was cancelled, or its lease lapsed and the queue re-delivered it, while this worker was still running it |
 | `X_JOB_SLOT_LOST` | the fleet `concurrency` slot this run held was taken by another worker — a different row on a different clock from the lease above |
 | `X_JOB_NOT_CANCELLABLE` | `cancelJob` reached a job that already finished, or a driver with no `cancel` |
-| `X_JOB_CONCURRENCY_UNENFORCEABLE` | a registered job declares `concurrency` and the driver has no lease store |
+| `X_JOB_CONCURRENCY_UNENFORCEABLE` | a registered job declares `concurrency`, plain or keyed, and the driver has no lease store |
+| `X_JOB_KEY_BUSY` | a run claimed under `whenBusy: 'fail'` while its key already held `limit` runs. Classified `terminal`. Fix: `x jobs ls --name <job> --state running --json` |
+| `X_JOB_DECLARATION_INVALID` | `job()` is missing a required field, declares a `concurrency` no worker can honour (plain or keyed), or its `concurrency.key` answered an empty, non-string or over-long key at enqueue |
+| `X_JOB_NOT_REMOVABLE` | `remove` / `removeMany` reached a running job. Fix: `x jobs cancel <id> --json` |
+| `X_JOB_NOT_PROMOTABLE` | `promote` reached a job not waiting on its run time |
+| `X_JOB_PAGE_INVALID` | `list()` was asked for more than `MAX_JOB_PAGE` rows, or handed a cursor no page produced. Fix: `list({ limit: 200, after: jobCursor(lastRow) })` |
+| `X_JOB_ON_SETTLED_FAILED` | a declared `onSettled` threw on every one of its tries; logged and reported, never thrown |
 | `X_NOT_IMPLEMENTED` | redis / nats driver |
 
 ### Error classes
@@ -922,19 +1225,26 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `BackfillUnknownError` | `X_BACKFILL_UNKNOWN` | `src/backfill-errors.ts` |
 | `CancelUnsupportedError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
 | `ClaimQueuesEmptyError` | `X_JOB_CLAIM_QUEUES_EMPTY` | `src/errors.ts` |
-| `ConcurrencyUnenforceableError` | `X_JOB_CONCURRENCY_UNENFORCEABLE` | `src/errors.ts` |
+| `ConcurrencyUnenforceableError` | `X_JOB_CONCURRENCY_UNENFORCEABLE` | `src/errors-concurrency.ts` |
 | `DriverUnavailableError` | `X_DRIVER_UNAVAILABLE` | `src/errors.ts` |
 | `ExportPartTooLargeError` | `X_EXPORT_PART_TOO_LARGE` | `src/export-errors.ts` |
 | `ExportRowInvalidError` | `X_EXPORT_ROW_INVALID` | `src/export-errors.ts` |
 | `IdempotencyRequiredError` | `X_IDEMPOTENCY_REQUIRED` | `src/errors.ts` |
 | `JobAbortedError` | `X_ABORTED` | `src/errors.ts` |
+| `JobConcurrencyInvalidError` | `X_JOB_DECLARATION_INVALID` | `src/errors-concurrency.ts` |
+| `JobConcurrencyKeyInvalidError` | `X_JOB_DECLARATION_INVALID` | `src/errors-concurrency.ts` |
 | `JobDeclarationInvalidError` | `X_JOB_DECLARATION_INVALID` | `src/errors-declaration.ts` |
 | `JobDrainedError` | `X_DRAINING` | `src/errors.ts` |
 | `JobDuplicateError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
+| `JobKeyBusyError` | `X_JOB_KEY_BUSY` | `src/errors-concurrency.ts` |
 | `JobMaxAttemptsError` | `X_JOB_MAX_ATTEMPTS` | `src/errors.ts` |
 | `JobNameTakenError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
 | `JobNotCancellableError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
+| `JobNotPromotableError` | `X_JOB_NOT_PROMOTABLE` | `src/errors-operator.ts` |
+| `JobNotRemovableError` | `X_JOB_NOT_REMOVABLE` | `src/errors-operator.ts` |
 | `JobNotRequeueableError` | `X_JOB_NOT_REQUEUEABLE` | `src/errors-requeue.ts` |
+| `JobOnSettledFailedError` | `X_JOB_ON_SETTLED_FAILED` | `src/errors-operator.ts` |
+| `JobPageInvalidError` | `X_JOB_PAGE_INVALID` | `src/errors-operator.ts` |
 | `JobRowStatusUnknownError` | `X_JOB_ROW_STATUS_UNKNOWN` | `src/errors.ts` |
 | `JobSlotLostError` | `X_JOB_SLOT_LOST` | `src/errors.ts` |
 | `JobsNotImplementedError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |

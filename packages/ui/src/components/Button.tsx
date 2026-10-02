@@ -14,6 +14,7 @@ import type { JSX } from 'solid-js';
 import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './Button.module.scss';
+import { buttonClassKeys } from './button-classes';
 import { Spinner } from './Spinner';
 import type { ButtonVariant, Size, Tone } from './variants';
 
@@ -66,14 +67,8 @@ export function Button(props: ButtonProps): JSX.Element {
     <button
       id={props.id}
       type={props.type ?? 'button'}
-      class={cx(
-        styles['button'],
-        styles[`variant-${props.variant ?? 'primary'}`],
-        styles[`tone-${props.tone ?? 'accent'}`],
-        styles[`size-${props.size ?? 'md'}`],
-        props.fullWidth === true && styles['full'],
-        props.class,
-      )}
+      // The keys are `button-classes.ts`'s: `<Link appearance="button">` asks the same function.
+      class={cx(...buttonClassKeys(props).map((key) => styles[key]), props.class)}
       // Only the caller's explicit `disabled` reaches the attribute. `loading` is a state the user
       // is meant to read and wait out, not a control taken away from under them.
       disabled={props.disabled === true ? true : undefined}

@@ -41,6 +41,8 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
     fallback: '/offline',
     routes: [{ path: '/offline', surface: 'site' }],
   }),
+  // The app the scaffold writes: no sealed column, so the key ring is never asked about.
+  sealedKeys: async () => ({ columns: [], keys: undefined }),
   ...over,
 });
 
@@ -48,6 +50,24 @@ const codes = async (input: DoctorProbe): Promise<readonly string[]> =>
   (await runDoctor(input)).map((finding) => finding.code);
 
 describe('unit · x doctor', () => {
+  test('a retired key beside a sealed column is reported, and a clean ring is not', async () => {
+    const columns = [{ entity: 'connections', column: 'password', lookup: false }];
+    const current = 'a'.repeat(16);
+    expect(
+      await codes(probe({ sealedKeys: async () => ({ columns, keys: { current, retired: [] } }) })),
+    ).toEqual([]);
+    expect(
+      await codes(
+        probe({
+          sealedKeys: async () => ({ columns, keys: { current, retired: ['b'.repeat(16)] } }),
+        }),
+      ),
+    ).toEqual(['X_SEAL_RESEAL_PENDING']);
+    expect(await codes(probe({ sealedKeys: async () => ({ columns, keys: undefined }) }))).toEqual([
+      'X_SEAL_KEY_MISSING',
+    ]);
+  });
+
   test('a healthy environment reports nothing', async () => {
     expect(await codes(probe())).toEqual([]);
   });

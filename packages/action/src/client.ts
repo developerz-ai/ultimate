@@ -84,10 +84,13 @@ export interface ClientOptions {
    */
   readonly flight?: ClientFlight;
   /**
-   * The server's `defineApi({ http: { pathStyle } })`, restated: the browser derives each URL from
-   * the name and cannot read the server's registry. Absent is `'resource'`, the server's default.
-   * A per-action `http.path` pin is honoured by `action.client()` (it holds the declaration); the
-   * name-only `rpc()` proxy cannot see one, so a pinned action is called through its own client.
+   * The style of a server that is NOT the one that rendered this page — a script, another
+   * service. A browser states nothing: the server stamps its `defineApi({ http: { pathStyle } })`
+   * into the document and every path is derived under that. With no document and no value here it
+   * is `'resource'`, the server's default; a server reached under the wrong one answers
+   * `X_CONTRACT_DRIFT` naming the style it serves. A per-action `http.path` pin is honoured by
+   * `action.client()` (it holds the declaration); the name-only `rpc()` proxy cannot see one, so a
+   * pinned action is called through its own client.
    */
   readonly pathStyle?: ActionPathStyle;
 }
@@ -123,7 +126,9 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
   options: ClientOptions,
   pinnedPath?: string,
 ): ClientMethod<TInput, TOutput> {
-  const path = pinnedPath ?? actionPath(name, options.pathStyle ?? 'resource');
+  // No default here: for a caller naming no style, `actionPath` asks the document the server
+  // rendered, and that answer must be the same one `useMutation` and the outbox replay get.
+  const path = pinnedPath ?? actionPath(name, options.pathStyle);
   const url = `${options.baseUrl.replace(/\/+$/, '')}${path}`;
   const onResponse = (response: Response): void =>
     assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);

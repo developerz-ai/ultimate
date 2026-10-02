@@ -121,6 +121,28 @@ export function setLogStream(stream: 'stdout' | 'stderr'): void {
   logStream = stream;
 }
 
+/** What `setLogSink` installs: one complete JSON line, and the level it was written at. */
+export type LogSink = (line: string, level: LogLevel) => void;
+
+let logSink: LogSink | undefined;
+
+/**
+ * TEST SEAM. Every line with no explicit `writer` goes to `sink` INSTEAD of the process's streams,
+ * until it is cleared with `undefined`. Returns the sink that was installed, so a caller restores
+ * rather than clears — the shape `setRowObserver` has, for the same shared-process reason.
+ *
+ * It exists for two callers. A test preload installs a sink that drops every line, so a green run
+ * prints its reporter and nothing else; and a test that asserts on what the PROCESS logger wrote
+ * installs one that collects, instead of patching `process.stdout`. A logger given its own
+ * `writer` never reaches it, and the level is untouched: this decides where a line goes, never
+ * whether it is written.
+ */
+export function setLogSink(sink: LogSink | undefined): LogSink | undefined {
+  const previous = logSink;
+  logSink = sink;
+  return previous;
+}
+
 /**
  * The second half of the same defect, one call deeper than `envLevel`. A module init made safe
  * that still reached `process.stdout` here would only move the `ReferenceError` from load to the
@@ -135,6 +157,10 @@ export function setLogStream(stream: 'stdout' | 'stderr'): void {
  * its log stream, and where there is a `process` this writes to the fd as it always did.
  */
 function defaultWriter(line: string, level: LogLevel): void {
+  if (logSink !== undefined) {
+    logSink(line, level);
+    return;
+  }
   const toStderr = logStream === 'stderr' || LEVEL_WEIGHT[level] >= LEVEL_WEIGHT.error;
   if (typeof process === 'undefined') {
     if (toStderr) console.error(line);

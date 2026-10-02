@@ -443,7 +443,7 @@ describe('a snapshot claims the lsn from before its read', () => {
       ctx: nodeCtx(),
       lsn: () => formatLsn(position),
     });
-    const result = await definition.snapshot({ input: INPUT });
+    const result = await definition.snapshot({ input: INPUT, tenant: null });
     expect(result.lsn).toBe(formatLsn(1));
   });
 });

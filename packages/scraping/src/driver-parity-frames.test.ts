@@ -8,12 +8,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake';
 import { testClock } from './clock';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
-import { fixtureBrowser, recordingFilename } from './driver-fixture';
+import { fixtureBrowser, recordingFilename } from './driver-recorded';
 import type { PageRecording } from './recording';
 
 const URL_ORDERS = 'https://shop.test/orders/2';
@@ -76,6 +77,7 @@ const forEachFrameDriver = async (
   for (const [name, driver] of drivers()) {
     const session = await driver.open({
       name: 'login',
+      logger: createLogger({ writer: () => undefined }),
       rules: { allowHosts: ['shop.test'] },
       clock: testClock(),
       timeoutMs: 5_000,

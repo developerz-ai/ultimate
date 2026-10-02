@@ -4,7 +4,14 @@
 // action, whose route says `enforcedBy: 'handler'` because `invoke` is its one evaluation.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry, t, toRoute } from '@ultimat3/action';
+import {
+  action,
+  configureActionPathStyle,
+  registerAction,
+  resetRegistry,
+  t,
+  toRoute,
+} from '@ultimat3/action';
 import { userActor } from '@ultimat3/core';
 import type { AuthzDecision, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import {
@@ -174,5 +181,29 @@ describe('unit · the dev-notice seam is passed in, never reached for', () => {
     expect(hooks.authenticate).toBeDefined();
     expect(hooks.authorize).toBeDefined();
     resetAuthenticator();
+  });
+});
+
+// The fourth seam: what a miss means. Every web role boots through these hooks, so a caller that
+// derived an action's URL under the wrong path style is told so in `x dev` and in production alike.
+describe('unit · a route miss is explained by the action surface', () => {
+  afterEach(() => resetRegistry());
+
+  test("an action's path under the style this app does not serve is X_CONTRACT_DRIFT", () => {
+    configureActionPathStyle('readable');
+    registerAction(
+      'signIn',
+      action({
+        input: t.object({ email: t.string }),
+        output: t.object({ ok: t.boolean }),
+        policy: allow('session:create'),
+        handle: () => ({ ok: true }),
+      }),
+    );
+    const explained = devHooks().explainMiss?.('POST', '/api/ins/sign');
+
+    expect(explained?.code).toBe('X_CONTRACT_DRIFT');
+    expect(explained?.cause).toContain("this server serves pathStyle 'readable'");
+    expect(devHooks().explainMiss?.('POST', '/api/nothing-here')).toBeUndefined();
   });
 });

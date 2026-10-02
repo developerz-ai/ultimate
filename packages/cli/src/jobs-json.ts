@@ -7,9 +7,11 @@ import type {
   DeadLetterEntry,
   JobRecord,
   JobTrace,
+  PausedName,
   QueueDepthReport,
   QueueStats,
   StepTrace,
+  WorkerRecord,
 } from '@ultimat3/jobs';
 import type { DrainFailure, DrainSkip } from './jobs-drain';
 import type { JsonValue } from './output';
@@ -59,12 +61,58 @@ export function jobTraceToJson(trace: JobTrace): JsonValue {
     runId: trace.runId,
     runAt: trace.runAt,
     lastError: trace.lastError,
+    // The failure's stack, bounded by the queue. `null` when the thrown value carried none.
+    stack: trace.stack,
+    // The payload with every key the app declared secret already replaced (`redactInput`), so it
+    // is the queue's promise that this is safe to print — never this file's.
+    input: toJson(trace.input),
+    progress:
+      trace.progress === null
+        ? null
+        : {
+            done: trace.progress.done,
+            total: trace.progress.total,
+            note: trace.progress.note ?? null,
+            at: trace.progress.at,
+          },
     tenantId: trace.tenantId,
     steps: trace.steps.map(stepTraceToJson),
     retryDelaysMs: trace.retryDelaysMs.map((ms) => ms),
+    // `concurrency.key(input)` for a keyed job, `null` for every other: which lease this run waits on.
+    concurrencyKey: trace.concurrencyKey,
     // `null` for every job that is not a `backfill()` pass. Dropped, `x jobs show <id> --json`
     // would answer "how far has it got" with silence for the one job kind that can say.
     backfill: trace.backfill === null ? null : backfillToJson(trace.backfill),
+  };
+}
+
+/**
+ * An app payload as plain JSON. A round trip through the serialiser is the proof: whatever a
+ * payload held that JSON cannot carry — a bigint, a function, a cycle — degrades to `null` rather
+ * than failing the command that was asked to show it.
+ */
+function toJson(value: unknown): JsonValue {
+  try {
+    const text: string | undefined = JSON.stringify(value);
+    return text === undefined ? null : (JSON.parse(text) as JsonValue);
+  } catch {
+    return null;
+  }
+}
+
+export function pausedToJson(paused: PausedName): JsonValue {
+  return { name: paused.name, pausedAt: paused.pausedAt };
+}
+
+export function workerToJson(worker: WorkerRecord): JsonValue {
+  return {
+    id: worker.id,
+    host: worker.host,
+    startedAt: worker.startedAt,
+    heartbeatAt: worker.heartbeatAt,
+    queues: [...worker.queues],
+    concurrency: worker.concurrency,
+    inFlight: [...worker.inFlight],
   };
 }
 
@@ -100,6 +148,7 @@ function queueStatsToJson(stats: QueueStats): JsonValue {
     delayed: stats.delayed,
     running: stats.running,
     suspended: stats.suspended,
+    failed: stats.failed,
     dead: stats.dead,
     oldestReadyMs: stats.oldestReadyMs,
   };
@@ -114,6 +163,7 @@ export function depthToJson(depth: QueueDepthReport): JsonValue {
       delayed: depth.totals.delayed,
       running: depth.totals.running,
       suspended: depth.totals.suspended,
+      failed: depth.totals.failed,
       dead: depth.totals.dead,
     },
     oldestReadyMs: depth.oldestReadyMs,

@@ -129,10 +129,8 @@ describe('adminResource with zero config', () => {
     expect(resource.field('published').widget).toBe('checkbox');
     expect(resource.field('publishedAt').widget).toBe('datetime');
     expect(resource.field('authorId').widget).toBe('reference');
-    expect(resource.field('authorId').relation).toEqual({
-      entity: 'admin_res_author',
-      labelField: 'id',
-    });
+    // The target and nothing else: its label is the TARGET resource's own `labelField`.
+    expect(resource.field('authorId').relation).toEqual({ entity: 'admin_res_author' });
   });
 
   test('labels are i18n keys, never strings', () => {
@@ -148,8 +146,10 @@ describe('adminResource with zero config', () => {
     expect(filters).toContain('published');
     expect(filters).toContain('authorId');
     // Unindexed text: offering it as a filter would offer a table scan.
-    expect(filters).not.toContain('title');
     expect(filters).not.toContain('body');
+    // The one exception, and first: the label is the list's search box.
+    expect(filters[0]).toBe('title');
+    expect(resource.field('title').filterable).toBe(false);
   });
 
   test('list columns lead with the label field and stay under the width cap', () => {
@@ -346,5 +346,28 @@ describe('adminResource · a page size that is not a number is not a page size',
   test('the declared page size is still what the resource carries', () => {
     expect(adminResource(post, { pageSize: 10 }).pageSize).toBe(10);
     expect(adminResource(post).pageSize).toBe(25);
+  });
+});
+
+describe('the permission noun', () => {
+  test('defaults to the entity name, and a declared one names every operation instead', async () => {
+    const { permissionsForOperation } = await import('./crud');
+    expect(adminResource(authors).permission).toBe('admin_res_author');
+    const shared = adminResource(authors, { permission: 'roster' });
+    expect(shared.permission).toBe('roster');
+    const ctx: CrudCtx = {
+      actor: { id: 'u' },
+      requestId: 'r',
+      audit: memoryAuditLog(),
+      authz: staticAuthz(['admin:read', 'roster:read']),
+    };
+    const { canOperate } = await import('./crud');
+    // `roster:read` lists it; the entity's own name is not what is asked.
+    expect(canOperate(shared, 'list', ctx)).toBe(true);
+    expect(canOperate(adminResource(authors), 'list', ctx)).toBe(false);
+    expect(permissionsForOperation(shared.permission, 'delete')).toEqual([
+      'admin:destroy',
+      'roster:delete',
+    ]);
   });
 });

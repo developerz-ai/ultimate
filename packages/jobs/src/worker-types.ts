@@ -6,6 +6,7 @@ import type { Clock, Ctx } from '@ultimat3/core';
 import type { JobDriver, QueueStats } from './driver';
 import type { JobExecution } from './execute';
 import type { Limiter } from './limits';
+import type { IntervalScheduler } from './renewal-timer';
 import type { EventLookup } from './steps';
 
 export interface WorkerOptions {
@@ -20,9 +21,25 @@ export interface WorkerOptions {
   /** Supplies the ambient Ctx for a job run; the app wires ALS + tenant here. */
   readonly context: () => Ctx;
   readonly visibilityTimeoutMs?: number;
+  /** The gap between claim passes while there is work. Default 250 ms. */
   readonly pollIntervalMs?: number;
+  /**
+   * The longest gap once passes come back empty: the worker doubles its wait from
+   * `pollIntervalMs` up to this. Default `IDLE_POLL_CEILING_MS` (2 s). It is the most a job
+   * enqueued by ANOTHER process — or a delayed one coming due — waits for an idle worker; a job
+   * enqueued by this process wakes the worker at once.
+   */
+  readonly idlePollMaxMs?: number;
   readonly heartbeatIntervalMs?: number;
+  /**
+   * What the lease, fleet-slot and registry renewals run on. Default: a real, unrefed interval.
+   * The `runJobs` fixture hands one driven by the frozen clock, so a test renews when
+   * `clock.advance()` says time passed, never on the wall clock.
+   */
+  readonly schedule?: IntervalScheduler;
   readonly workerId?: string;
+  /** Where this worker runs, for the registry. Default `HOSTNAME`, which a pod sets to its name. */
+  readonly host?: string;
   /** Default true. Registers a SIGTERM drain via `onShutdown`. */
   readonly drainOnShutdown?: boolean;
 }
@@ -38,6 +55,12 @@ export interface WorkerStats {
   readonly deadLettered: number;
   /** Attempts this worker's drain cut short and handed back uncounted — see `JobDrainedError`. */
   readonly interrupted: number;
+  /** Runs settled `failed` with `X_JOB_KEY_BUSY`, their bodies never started — `whenBusy: 'fail'`. */
+  readonly refused: number;
+  /** Runs that failed for good on a `retry.deadLetter: false` job and were settled `failed`. */
+  readonly dropped: number;
+  /** The gap before the next claim pass: `pollIntervalMs`, or wherever idling has taken it. */
+  readonly pollDelayMs: number;
   readonly queueDepth: readonly QueueStats[];
 }
 

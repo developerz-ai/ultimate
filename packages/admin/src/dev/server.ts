@@ -170,6 +170,8 @@ function shell(
   panels: readonly DevPanel[],
   active: DevPanel,
   payload: PanelPayload,
+  /** The panel's own drawing, when it has one; the payload follows it, folded. */
+  drawn: string | null,
 ): string {
   const tabs = panels
     .map(
@@ -186,7 +188,11 @@ function shell(
 <body><header><h1>_x</h1><nav>${tabs}</nav>
 <a href="${basePath}/${active.key}?json=1">--json</a></header>
 <main><p class="question">${escapeHtml(t(active.questionKey))}</p>
-<pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></main></body></html>`;
+${
+  drawn === null
+    ? `<pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`
+    : `${drawn}<details><summary>--json</summary><pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></details>`
+}</main></body></html>`;
 }
 
 /** Build the dashboard. Throws X_DEV_DASHBOARD_IN_PROD before anything else happens. */
@@ -232,12 +238,14 @@ export function devDashboard(opts: DevDashboardOptions = {}): DevDashboard {
         url.searchParams.has('json') ||
         (request.headers.get('accept') ?? '').includes('application/json');
 
-      return wantsJson
-        ? jsonResponse(payload, payload.ok ? 200 : 500)
-        : new Response(shell(await devShellStyle(), basePath, panels, panel, payload), {
-            status: 200,
-            headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
-          });
+      if (wantsJson) return jsonResponse(payload, payload.ok ? 200 : 500);
+      const tabPath = `${basePath}/${panel.key}`;
+      const drawn =
+        payload.ok && panel.html !== undefined ? await panel.html(url.searchParams, tabPath) : null;
+      return new Response(shell(await devShellStyle(), basePath, panels, panel, payload, drawn), {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+      });
     },
   };
 }

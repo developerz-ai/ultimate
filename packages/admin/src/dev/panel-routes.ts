@@ -13,6 +13,11 @@ export interface RoutesPanelData {
   // no member it could ever hold — and it was published from a `RouteFact.hasMeta` that read a
   // key no descriptor has, which made it name EVERY route instead. See `RouteFact` in `facts.ts`.
   readonly overBudget: readonly string[];
+  /**
+   * Routes no surface file declares, counted per mounting call — `{ defineAdmin: 14 }`. Each row's
+   * own `mount` names its permissions; this is the line that says an admin is mounted at all.
+   */
+  readonly mountedBy: Readonly<Record<string, number>>;
 }
 
 const BUDGET_LIMIT_KB = 40;
@@ -35,6 +40,10 @@ export const routesPanel: DevPanel<RoutesPanelData> = {
     const counts = new Map<string, number>();
     for (const route of routes) counts.set(route.render, (counts.get(route.render) ?? 0) + 1);
     const byRenderMode = Object.fromEntries(counts);
+    const mounts = new Map<string, number>();
+    for (const route of routes) {
+      if (route.mount !== null) mounts.set(route.mount.by, (mounts.get(route.mount.by) ?? 0) + 1);
+    }
     return {
       // Code units, never `localeCompare`: with no locale argument it answers from the runtime's
       // ICU default locale and collation version, so the same route table reads in a different
@@ -46,6 +55,7 @@ export const routesPanel: DevPanel<RoutesPanelData> = {
       overBudget: routes
         .filter((route) => kb(route.budget.js) > BUDGET_LIMIT_KB)
         .map((route) => route.path),
+      mountedBy: Object.fromEntries(mounts),
     };
   },
 };

@@ -3,11 +3,12 @@
 // every piece of the client a frame may touch, so the blast radius of a new frame kind is a
 // reviewable list rather than "whatever the router could reach through `this`".
 
+import { UltimateError } from '@ultimat3/core/page';
 import type { ChannelBook } from './client-channels';
 import { CLOSE } from './close-codes';
 import { advance } from './cursor';
 import type { Registration, RowWindows } from './live-rows';
-import type { Frame } from './sync-protocol';
+import type { Frame, WireError } from './sync-protocol';
 
 /** Declared with the window it projects; re-exported here because the router is what writes it. */
 export type { LiveState, Registration } from './live-rows';
@@ -40,6 +41,28 @@ export interface ClientFrameTarget {
   closeSocket(code: number, reason: string): void;
   /** Where a refusal that names nothing this client holds is reported. */
   report(error: unknown): void;
+}
+
+/** An absolute HTTP(S) link, or nothing: a node's `docs` is data and may be `javascript:`. */
+const HTTP_URL = /^https?:\/\/[^\s]+$/;
+
+/**
+ * A refusal off the wire, as the error the node raised: the same code, cause and fix, BRANDED —
+ * the shape `@ultimat3/core`'s `problemError` gives an HTTP failure, marked `origin: 'remote'` the
+ * same way. Handed over as the bare `WireError` it failed `isUltimateError`, so every reader that
+ * asks that question — `<ErrorState>`, a boundary, a reporter — fell through to "an unknown value
+ * was thrown": `X_INTERNAL`, the real error JSON-stringified into its cause, and a fix telling the
+ * reader to throw the `UltimateError` it already was.
+ */
+export function refusalError(wire: WireError): UltimateError {
+  const docs = wire.docs !== undefined && HTTP_URL.test(wire.docs) ? wire.docs : undefined;
+  return new UltimateError({
+    code: wire.code,
+    cause: wire.cause,
+    fix: wire.fix,
+    meta: { origin: 'remote' },
+    ...(docs === undefined ? {} : { docs }),
+  });
 }
 
 export function applyFrame(frame: Frame, target: ClientFrameTarget): void {
@@ -78,13 +101,14 @@ export function applyFrame(frame: Frame, target: ClientFrameTarget): void {
       // The socket carries no writes, so an `ack` is only ever a refusal: of a subscription (its
       // `ref` is the sid) or of a frame the node could not read at all (its `ref` is the socket).
       if (frame.error === null) return;
+      const refusal = refusalError(frame.error);
       const registration = target.registration(frame.ref);
       if (registration === undefined) {
-        if (!target.channels.refused(frame.ref, frame.error)) target.report(frame.error);
+        if (!target.channels.refused(frame.ref, refusal)) target.report(refusal);
         return;
       }
       registration.state = 'failed';
-      registration.error = frame.error;
+      registration.error = refusal;
       registration.notify();
       return;
     }

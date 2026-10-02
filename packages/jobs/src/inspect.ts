@@ -4,9 +4,13 @@
 
 import type { BackfillProgress } from './backfill-inspect';
 import { backfillForRun } from './backfill-inspect';
-import type { JobDriver, JobFilter, JobRecord, QueueStats } from './driver';
+import type { WhenBusy } from './concurrency';
+import type { JobDriver, JobRecord, QueueStats } from './driver';
 import { CancelUnsupportedError, JobNotCancellableError, JobsNotImplementedError } from './errors';
+import type { JobFilter, JobProgress } from './introspection';
+import type { AnyJobHandle } from './job';
 import { registeredJobs } from './job';
+import { redactInput } from './redact-input';
 import { retrySchedule } from './retry';
 import type { Scheduler } from './scheduler';
 import type { StepRecord } from './steps';
@@ -20,6 +24,7 @@ export interface QueueDepthReport {
     readonly delayed: number;
     readonly running: number;
     readonly suspended: number;
+    readonly failed: number;
     readonly dead: number;
   };
   /** Oldest claimable job across all queues, in ms. The autoscaling signal. */
@@ -34,9 +39,10 @@ export async function inspectQueues(driver: JobDriver): Promise<QueueDepthReport
       delayed: acc.delayed + queue.delayed,
       running: acc.running + queue.running,
       suspended: acc.suspended + queue.suspended,
+      failed: acc.failed + queue.failed,
       dead: acc.dead + queue.dead,
     }),
-    { ready: 0, delayed: 0, running: 0, suspended: 0, dead: 0 },
+    { ready: 0, delayed: 0, running: 0, suspended: 0, failed: 0, dead: 0 },
   );
   return {
     driver: driver.name,
@@ -68,6 +74,15 @@ export interface JobTrace {
   readonly runId: string;
   readonly runAt: string;
   readonly lastError: string | null;
+  /** The thrown value's stack for `lastError`, bounded. `null` when the failure carried none. */
+  readonly stack: string | null;
+  /**
+   * The stored payload, with every key the app declared secret (`redactKeys`) replaced. App data
+   * all the same: a surface that shows it gates it like any other read of a tenant's rows.
+   */
+  readonly input: unknown;
+  /** What the body last reported through `progress()`; `null` until it reports. */
+  readonly progress: JobProgress | null;
   readonly tenantId: string | null;
   /** W3C `traceparent` of the request that queued it — paste it into the trace viewer. */
   readonly traceparent: string | null;
@@ -76,6 +91,13 @@ export interface JobTrace {
   readonly steps: readonly StepTrace[];
   /** Remaining retry delays in ms, jitter excluded. */
   readonly retryDelaysMs: readonly number[];
+  /**
+   * The concurrency key THIS run counts under — `concurrency.key(input)` — when its job declares a
+   * keyed cap. `null` for every other job, for a job this process has not registered, and for a
+   * stored input the key cannot be derived from: a trace is read to debug a stuck queue, so it
+   * degrades rather than refusing.
+   */
+  readonly concurrencyKey: string | null;
   /**
    * The `x_backfills` row this run wrote, when the job is a `backfill()`. `null` for every other
    * job and for a driver with no ledger — a step trace says which batch is next, and this says how
@@ -95,6 +117,15 @@ function requireIntrospection(driver: JobDriver): NonNullable<JobDriver['introsp
     });
   }
   return driver.introspect;
+}
+
+function concurrencyKeyOf(handle: AnyJobHandle | undefined, record: JobRecord): string | null {
+  if (handle === undefined || handle.whenBusy === undefined) return null;
+  try {
+    return handle.concurrencyKeyFor(handle.parse(record.input)) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function toStepTrace(record: StepRecord): StepTrace {
@@ -127,11 +158,15 @@ export async function inspectJob(driver: JobDriver, jobId: string): Promise<JobT
     runId: record.runId,
     runAt: new Date(record.runAt).toISOString(),
     lastError: record.lastError ?? null,
+    stack: record.lastErrorStack ?? null,
+    input: redactInput(record.input),
+    progress: record.progress ?? null,
     tenantId: record.tenantId ?? null,
     traceparent: record.traceparent ?? null,
     enqueuedBy: record.enqueuedBy ?? null,
     steps: steps.map(toStepTrace),
     retryDelaysMs: handle === undefined ? [] : [...retrySchedule(handle.retry)],
+    concurrencyKey: concurrencyKeyOf(handle, record),
     backfill: backfill ?? null,
   };
 }
@@ -217,6 +252,9 @@ export interface JobsManifest {
     readonly attempts: number;
     readonly backoff: string;
     readonly concurrency: number | null;
+    /** Non-null exactly when `concurrency` holds per key — see `JobDescriptor.concurrency`. */
+    readonly whenBusy: WhenBusy | null;
+    readonly onSettled: boolean;
     readonly timeoutMs: number | null;
     readonly retryDelaysMs: readonly number[];
   }[];
@@ -239,6 +277,8 @@ export function inspectManifest(scheduler?: Scheduler): JobsManifest {
       attempts: handle.retry.attempts,
       backoff: handle.retry.backoff ?? 'exponential',
       concurrency: handle.concurrency ?? null,
+      whenBusy: handle.whenBusy ?? null,
+      onSettled: handle.declaresOnSettled,
       timeoutMs: handle.timeoutMs ?? null,
       retryDelaysMs: [...retrySchedule(handle.retry)],
     })),

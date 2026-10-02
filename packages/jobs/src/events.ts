@@ -25,6 +25,19 @@ export interface PublishOptions {
 }
 
 export interface EventBus extends EventLookup {
+  /**
+   * Whether an event published by ONE process is found by another. `true` for a bus over a table,
+   * `false` for the in-memory one — which is the whole question a wait across the web / worker
+   * split asks, and the reason `eventPrompt()` refuses the in-memory bus outside development.
+   */
+  readonly stored: boolean;
+  /**
+   * The bus's OWN clock, in epoch ms: what a publish issued now would be stamped with. A consumer
+   * that wants "published after I asked" takes its "asked at" from here and never from its own
+   * process — `publishedAt` is this clock's, and two clocks compared is a skew between pods
+   * deciding which answers count.
+   */
+  now(): Promise<number>;
   publish(name: string, payload: unknown, options?: PublishOptions): Promise<JobEvent>;
   list(name?: string): Promise<readonly JobEvent[]>;
   purgeExpired(): number;
@@ -65,6 +78,8 @@ export function createMemoryEventBus(options: MemoryEventBusOptions = {}): Event
   };
 
   return {
+    stored: false,
+    now: () => Promise.resolve(nowMs(clock)),
     publish(name, payload, publishOptions = {}) {
       purgeExpired();
       const at = nowMs(clock);
@@ -141,6 +156,16 @@ export function setEventBus(bus: EventBus): void {
 
 export function eventBus(): EventBus {
   return ambientBus;
+}
+
+/**
+ * Test seam, the counterpart of `resetJobDriver()` and `resetJobsFacade()`: back to a FRESH
+ * in-process bus, the state a process boots in. An event is matchable until it expires, so on a
+ * bus shared by a whole `bun test` process an answer one test published resumes the next test's
+ * wait before that test has asked anything — call this between tests.
+ */
+export function resetEventBus(): void {
+  ambientBus = createMemoryEventBus();
 }
 
 /** The one function app code calls to unblock a waiting step. */

@@ -112,6 +112,8 @@ export function driver(options: { store?: StepStore; runId?: string } = {}): Dri
         step: runner.step,
         ctx,
         attempt: attempts,
+        finalAttempt: false,
+        progress: () => undefined,
         jobId: 'job-notify-1',
         runId,
       })) as NotifyReport;

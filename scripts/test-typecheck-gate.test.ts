@@ -49,6 +49,21 @@ describe('a package whose tests carry more errors than it is pinned at', () => {
     expect(finding.cause).toContain('Cannot find name Foo.');
   });
 
+  test('every file carrying an error is named, with its count — not only the first', () => {
+    const other: TestDiagnostic = { ...at('money', 7), file: 'packages/money/src/other.test.ts' };
+    const gaps = checkTestTypecheck(
+      input({
+        diagnostics: [at('money', 40), at('money', 41), other],
+        counts: { money: 3, entity: 2 },
+      }),
+    );
+    const finding = testTypecheckFindingFor(gaps[0] as never);
+    expect(finding.cause).toContain('packages/money/src/thing.test.ts (2)');
+    expect(finding.cause).toContain('packages/money/src/other.test.ts (1)');
+    // Still one diagnostic quoted in full, so the line is readable; the rest are counted.
+    expect(finding.cause).toContain('Cannot find name Foo.');
+  });
+
   test('a package with no pin at all must typecheck — absent means zero', () => {
     const gaps = checkTestTypecheck(
       input({ packages: ['fresh'], pins: {}, counts: { fresh: 3 }, diagnostics: [at('fresh')] }),
@@ -179,10 +194,13 @@ describe('the table and the program describe this repo', () => {
   test(
     'the matcher surface is declared in exactly ONE file, and it is not matchers.ts',
     async () => {
+      // A DECLARATION opens its line. A substring match also caught a doc comment naming the
+      // augmentation and a test passing its text as a fixture (`packages/cli/src/coverage-source*`).
+      const declaration = /^\s*declare\s+module\s+['"]bun:test['"]/m;
       const declaring: string[] = [];
       for await (const path of new Bun.Glob('packages/*/src/**/*.ts').scan({ cwd: repoRoot() })) {
         const text = await Bun.file(join(repoRoot(), path)).text();
-        if (text.includes("declare module 'bun:test'")) declaring.push(path);
+        if (declaration.test(text)) declaring.push(path);
       }
       expect(declaring).toEqual(['packages/testing/src/matcher-surface.ts']);
     },

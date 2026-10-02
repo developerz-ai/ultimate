@@ -17,7 +17,7 @@ import type { NatsClient, NatsConnect } from './nats-client';
 import { parseNatsUrl } from './nats-client';
 import { ensureKvBucket } from './nats-jetstream';
 import { NatsKvSet } from './nats-kv';
-import { openNatsClient } from './nats-lib-client';
+import { openNatsClient } from './nats-open';
 import { type BackoffPolicy, defaultBackoff, policyDelay, type Rng } from './thundering-herd';
 
 const encoder = new TextEncoder();

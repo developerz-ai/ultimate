@@ -44,7 +44,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | File | Owns |
 |---|---|
-| `meta.ts` | the metadata model, `renderMeta()` → head tags: title template, canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per colour scheme |
+| `meta.ts` | the metadata model, `renderMeta()` → head tags: title template, canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per colour scheme. **`robots: { index: false }` withdraws every `og:*`, `article:*` and `twitter:*` tag** — declared or derived; there is no `social` switch |
 | `validate.ts` | the build gate — `validateMeta()` (`--json`-shaped) and `assertMeta()` |
 | `ld.ts` | typed JSON-LD builders; required fields are required in the **input type** |
 | `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates, automatic index splitting past 50k |

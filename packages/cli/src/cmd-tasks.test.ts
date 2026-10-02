@@ -2,7 +2,7 @@
 // detail view, and the error paths — driven against `@ultimat3/jobs`'s real registries so a
 // broken table column or a wrong fix line fails here, not just in `tasks-facts.test.ts`.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API and no path API: `mkdtempSync`/`tmpdir`/`join` are the only
 // way to build the throwaway app root `requireAppRoot` has to find on disk.
 // `mkdirSync`/`writeFileSync` stay with them because `Bun.write` is async and these run inside
@@ -12,7 +12,17 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { job, resetJobs, resetTasks, t, task } from '@ultimat3/jobs';
+import {
+  createMemoryDriver,
+  type JobDriver,
+  job,
+  resetJobDriver,
+  resetJobs,
+  resetTasks,
+  setJobDriver,
+  t,
+  task,
+} from '@ultimat3/jobs';
 import { REQUIRED_BUN } from './app-root';
 import { tasksCommand } from './cmd-tasks';
 import type { CommandContext } from './command';
@@ -112,10 +122,38 @@ function registerNightlyPing(): void {
   });
 }
 
+/**
+ * The app's queue, already running — what `x tasks` finds inside `x dev`. Without one the command
+ * boots the app's own (an embedded database: seconds per test), which `jobs-driver.ts` owns and
+ * its own suite covers.
+ */
+let driver: JobDriver;
+beforeEach(() => {
+  driver = createMemoryDriver();
+  setJobDriver(driver);
+});
+
 afterEach(() => {
+  resetJobDriver();
   resetTasks();
   resetJobs();
 });
+
+/** The occurrence a day before `NEXT_MS`: what the scheduler last dispatched, in the fixture. */
+const LAST_MS = Date.parse('2025-12-31T08:00:00Z');
+const LAST_AT = '2025-12-31T03:00:00-05:00';
+
+/** One rendered table line as its cells, from the jobs column on: `jobs`, `last`, `next`. */
+const tailCells = (line: string | undefined): readonly string[] =>
+  (line ?? '')
+    .trim()
+    .split(/\s{2,}/)
+    .slice(4);
+
+const recordFire = async (name: string, occurrenceMs: number): Promise<void> => {
+  if (driver.introspect === undefined) expect.unreachable('the memory driver introspects');
+  await driver.introspect.recordTaskFire({ task: name, occurrenceMs });
+};
 
 describe('unit · x tasks spec', () => {
   test('names both subcommands, list first, with the --count flag', () => {
@@ -153,8 +191,71 @@ describe('unit · x tasks list', () => {
         jobs: ['notify'],
         nextMs: NEXT_MS,
         next: NEXT_AT,
+        // Never dispatched: three nulls, never an absent key — a reader of `--json` asks one way.
+        lastMs: null,
+        last: null,
+        lastFiredAtMs: null,
       },
     ]);
+    // And in the table the cell is `-`, in the column before `next`.
+    expect((result.lines?.[0] ?? '').trim().split(/\s{2,}/)).toEqual([
+      'name',
+      'cron',
+      'tz',
+      'catchUp',
+      'jobs',
+      'last',
+      'next',
+    ]);
+    expect(tailCells(row)).toEqual(['notify', '-', NEXT_AT]);
+  });
+
+  test('the last fire sits beside the next one, in the task’s own zone', async () => {
+    registerNightlyPing();
+    await recordFire('nightlyPing', LAST_MS);
+    // A fire filed under a name no task carries any more is nobody's row.
+    await recordFire('renamedAway', LAST_MS);
+    const result = await tasksCommand.run(contextFor(appRoot(), { subcommand: 'list' }));
+    const row = result.lines?.find((line) => line.includes('nightlyPing'));
+    expect(tailCells(row)).toEqual(['notify', LAST_AT, NEXT_AT]);
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        name: 'nightlyPing',
+        // The occurrence it was scheduled FOR — and when the scheduler dispatched it, on the
+        // store's clock, which is the frozen one here.
+        lastMs: LAST_MS,
+        last: LAST_AT,
+        lastFiredAtMs: NOW_MS,
+        nextMs: NEXT_MS,
+        next: NEXT_AT,
+      }),
+    ]);
+  });
+
+  test('an app that declares no task opens no queue at all', async () => {
+    // A queue that answers would be a queue that was asked: this one refuses to be read.
+    const base = createMemoryDriver();
+    const introspect = base.introspect;
+    if (introspect === undefined) expect.unreachable('the memory driver introspects');
+    setJobDriver({
+      ...base,
+      introspect: {
+        ...introspect,
+        taskFires: () => expect.unreachable('x tasks read the queue with no task to join'),
+      },
+    });
+    const result = await tasksCommand.run(contextFor(appRoot(), { subcommand: 'list' }));
+    // (`ok` is the app's: a fixture root that declares nothing at all is `X_APP_EMPTY`.)
+    expect(result.summary).toBe(msg('cli.tasks.count', { count: 0 }));
+    expect(result.data).toEqual([]);
+  });
+
+  test('a driver with no introspection lists every task as never fired', async () => {
+    registerNightlyPing();
+    const { introspect: _none, ...bare } = createMemoryDriver();
+    setJobDriver(bare);
+    const result = await tasksCommand.run(contextFor(appRoot(), { subcommand: 'list' }));
+    expect(result.data).toEqual([expect.objectContaining({ name: 'nightlyPing', lastMs: null })]);
   });
 
   test('jobs renders as "-" for a task that enqueues nothing', async () => {
@@ -181,8 +282,9 @@ describe('unit · x tasks list', () => {
 });
 
 describe('unit · x tasks show', () => {
-  test('the descriptor, the human phrase and count upcoming occurrences', async () => {
+  test('the descriptor, the last fire, the human phrase and count upcoming occurrences', async () => {
     registerNightlyPing();
+    await recordFire('nightlyPing', LAST_MS);
     const result = await tasksCommand.run(
       contextFor(appRoot(), {
         subcommand: 'show',
@@ -203,6 +305,7 @@ describe('unit · x tasks show', () => {
     expect(result.lines).toContain('  cron: 0 3 * * *');
     expect(result.lines).toContain('  tz: America/New_York');
     expect(result.lines).toContain('  at 03:00 every day');
+    expect(result.lines).toContain(`  last: ${LAST_AT}`);
     expect(result.lines).toContain(`    ${NEXT_AT}`);
     expect(result.lines).toContain('    2026-01-03T03:00:00-05:00');
     expect(result.data).toEqual({
@@ -213,6 +316,9 @@ describe('unit · x tasks show', () => {
       catchUp: 'skip',
       maxCatchUp: 10,
       jobs: ['notify'],
+      lastMs: LAST_MS,
+      last: LAST_AT,
+      lastFiredAtMs: NOW_MS,
       describe: 'at 03:00 every day',
       upcoming: [
         { ms: NEXT_MS, at: NEXT_AT },

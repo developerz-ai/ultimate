@@ -168,7 +168,8 @@ describe('request context', () => {
 describe('request-scoped log fields', () => {
   const lineOf = (fn: () => void): Record<string, unknown> => {
     const lines: string[] = [];
-    const log = createLogger({ writer: (line) => lines.push(line) });
+    // The level is named: the ambient one is `silent` under the test preload, on purpose.
+    const log = createLogger({ level: 'info', writer: (line) => lines.push(line) });
     runWithContext(
       createContext({
         actor: userActor({ id: 'u-1', orgId: 'org-3' }),
@@ -210,7 +211,8 @@ describe('request-scoped log fields', () => {
 
   test('omits orgId for an actor that has none, rather than logging undefined', () => {
     const lines: string[] = [];
-    const log = createLogger({ writer: (line) => lines.push(line) });
+    // The level is named: the ambient one is `silent` under the test preload, on purpose.
+    const log = createLogger({ level: 'info', writer: (line) => lines.push(line) });
     runWithContext(createContext({ actor: anonymousActor(), logger: log }), () => {
       useContext().logger.info('event');
     });

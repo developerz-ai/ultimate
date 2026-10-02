@@ -34,7 +34,7 @@ const definition = (
   format: 'csv',
   columns: ['id', 'title'],
   row: (record) => ({ id: record.id, title: record.title }),
-  sink: memoryExportSink(),
+  sink: () => memoryExportSink(),
   ...over,
 });
 
@@ -83,6 +83,21 @@ describe('the factory', () => {
     resetJobs();
     const none = exportRows<Row, Input>(definition({ tenant: 'none' }));
     expect(none.tenantFor({ orgId: ORG, exportId: 'e1' })).toBeUndefined();
+  });
+});
+
+describe('the sink is a thunk', () => {
+  test('declaring an export reads no disk — the app defines its storage after its modules load', () => {
+    let reads = 0;
+    exportRows<Row, Input>(
+      definition({
+        sink: () => {
+          reads += 1;
+          return memoryExportSink();
+        },
+      }),
+    );
+    expect(reads).toBe(0);
   });
 });
 

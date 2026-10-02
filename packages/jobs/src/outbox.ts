@@ -29,12 +29,16 @@ import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
 import { DEFAULT_QUEUE, jobDriver } from './driver';
+import { signalEnqueued, signalStaged } from './enqueue-signal';
 import { DriverUnavailableError, OutboxNoTxError } from './errors';
 import type { JobHandle } from './job';
 import { resolveClaimLeaseMs } from './outbox-lease';
 
 export interface OutboxRecord {
+  /** The outbox row's id AND the id of the job its publish creates: allocated once, at stage. */
   readonly id: string;
+  /** The run the published job carries. Allocated at stage, so the enqueue could answer it. */
+  readonly runId: string;
   readonly job: string;
   readonly queue: string;
   readonly input: unknown;
@@ -211,6 +215,11 @@ export interface EnqueueOptions {
   readonly enqueuedBy?: string;
   /** Override the ambient trace. Almost never: the facade stamps the current span for you. */
   readonly traceparent?: string;
+  /**
+   * Name the run instead of having one minted: a uuid the caller already wrote somewhere — the
+   * row its own table keys the run by. `EnqueueResult.runId` answers it back either way.
+   */
+  readonly runId?: string;
 }
 
 /**
@@ -249,6 +258,7 @@ export function enqueueInTx<I>(
   const trace = options.traceparent ?? ambientTraceparent();
   const record: OutboxRecord = {
     id: uuid(),
+    runId: options.runId ?? uuid(),
     job: handle.name,
     queue: options.queue ?? handle.queue ?? DEFAULT_QUEUE,
     input,
@@ -262,7 +272,11 @@ export function enqueueInTx<I>(
     ...(trace === undefined ? {} : { traceparent: trace }),
     ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
   };
-  return deps.store.stage(tx, record).then(() => record);
+  return deps.store.stage(tx, record).then(() => {
+    // Wakes a relay in THIS process that has backed off; a relay elsewhere polls on its own.
+    signalStaged();
+    return record;
+  });
 }
 
 export interface JobsFacade {
@@ -273,8 +287,6 @@ export interface JobsFacade {
   enqueue<I>(handle: JobHandle<I>, input: I, options?: EnqueueOptions): Promise<EnqueueResult>;
 }
 
-const STAGED_RESULT: EnqueueResult = { id: '', runId: '', deduped: false };
-
 export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefined): JobsFacade {
   return {
     async enqueue<I>(
@@ -282,6 +294,10 @@ export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       input: I,
       options: EnqueueOptions = {},
     ): Promise<EnqueueResult> {
+      // Asked before anything is staged, and for its refusal alone: a `concurrency.key` that
+      // answers an empty string is one lock shared by every run of the job, and the caller of
+      // this enqueue is the only one who can still be told (`X_JOB_DECLARATION_INVALID`).
+      handle.concurrencyKeyFor(input);
       const tx = options.outbox === false ? undefined : currentTx();
 
       if (tx === undefined) {
@@ -289,22 +305,29 @@ export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
           throw new OutboxNoTxError({ job: handle.name });
         }
         const trace = options.traceparent ?? ambientTraceparent();
-        return deps.driver.enqueue({
+        const result = await deps.driver.enqueue({
           name: handle.name,
           queue: options.queue ?? handle.queue,
           input,
           idempotencyKey: handle.idempotencyKeyFor(input),
           maxAttempts: handle.retry.attempts,
           runAt: options.runAt ?? nowMs(deps.clock),
+          ...(options.runId === undefined ? {} : { runId: options.runId }),
           ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
           ...(trace === undefined ? {} : { traceparent: trace }),
           ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
         });
+        // A worker in this process that has backed off starts its next pass now.
+        signalEnqueued(options.queue ?? handle.queue);
+        return result;
       }
 
       const record = await enqueueInTx(deps, tx, handle, input, options);
-      // No queue id yet by design: the row does not exist until COMMIT.
-      return { ...STAGED_RESULT, id: record.id };
+      // The job does not exist until COMMIT, but its ids do: both were allocated at stage time
+      // and the relay publishes under them, so a caller can say which run it started. `deduped`
+      // is the one thing only the publish can know — a staged enqueue whose idempotency key a
+      // LIVE job holds creates nothing, and these ids then name no row.
+      return { id: record.id, runId: record.runId, deduped: false };
     },
   };
 }

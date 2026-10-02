@@ -37,7 +37,12 @@ export interface StepResult {
   readonly durationMs: number;
   readonly skipped?: boolean;
   readonly findings: readonly Finding[];
-  /** Captured stdout/stderr, shown on failure or with --verbose. */
+  /**
+   * Captured stdout/stderr, for a reader working out what a step DID — carried by both renderers
+   * on failure or with `--verbose`, and by neither on a quiet green run. Never the home of a fact:
+   * a number a passing step must report by default goes in `CommandResult.data` (the `unit` step's
+   * coverage is `data.coverage.unit`), where `--json` and the terminal both always have it.
+   */
   readonly output?: string;
   /** Worker processes the step used; `1` means it ran serially. Absent for a non-test step. */
   readonly workers?: number;
@@ -208,6 +213,10 @@ const why = (step: StepResult): string => {
   return `  ${msg('cli.verify.allSkipped', { skipped: tests.skipped })}`;
 };
 
+/** The one rule for a step's captured output, so the two renderers cannot answer differently. */
+const showsOutput = (step: StepResult, verbose: boolean): boolean =>
+  step.output !== undefined && step.output.length > 0 && (verbose || !step.ok);
+
 export function renderHuman(result: CommandResult, verbose = false): string {
   const out: string[] = [];
   for (const step of result.steps ?? []) {
@@ -218,8 +227,8 @@ export function renderHuman(result: CommandResult, verbose = false): string {
     // NOT escaped, and that is the one exception: `output` is this process's own captured
     // subprocess stdout — `bun test`'s colour is the reason a human reads it at all, and it is
     // already split on its real newlines rather than carrying them inside one entry.
-    if (step.output !== undefined && step.output.length > 0 && (verbose || !step.ok)) {
-      for (const line of step.output.trimEnd().split('\n')) out.push(`      | ${line}`);
+    if (showsOutput(step, verbose)) {
+      for (const line of (step.output ?? '').trimEnd().split('\n')) out.push(`      | ${line}`);
     }
   }
   // Every free-text line through the SAME `singleLine` the 3-line format runs, because this is
@@ -234,7 +243,7 @@ export function renderHuman(result: CommandResult, verbose = false): string {
   return out.join('\n');
 }
 
-export function renderJson(result: CommandResult): string {
+export function renderJson(result: CommandResult, verbose = false): string {
   const steps = (result.steps ?? []).map((step) => ({
     name: step.name,
     ok: step.ok,
@@ -261,10 +270,10 @@ export function renderJson(result: CommandResult): string {
     // fix line — the failing test's name and its assertion diff existed and were thrown away, so
     // the only way to learn what broke was to re-run it somewhere else. CI output is a prompt:
     // whoever reads it next, agent or human, must be able to act without reproducing first.
-    // Success stays quiet (`--verbose` is the human's opt-in) so a green run is not a wall of text.
-    ...(step.ok || step.output === undefined || step.output.length === 0
-      ? {}
-      : { output: step.output }),
+    // Success stays quiet so a green run is not a wall of text — unless `--verbose` asked, which
+    // is the same opt-in the terminal honours: a green step's output used to be reachable from the
+    // human render and from nowhere under `--json`.
+    ...(showsOutput(step, verbose) ? { output: step.output } : {}),
   }));
   const payload = {
     ok: result.ok,
@@ -278,7 +287,7 @@ export function renderJson(result: CommandResult): string {
 }
 
 export function render(result: CommandResult, json: boolean, verbose = false): string {
-  return json ? renderJson(result) : renderHuman(result, verbose);
+  return json ? renderJson(result, verbose) : renderHuman(result, verbose);
 }
 
 export function exitCodeFor(result: CommandResult): number {

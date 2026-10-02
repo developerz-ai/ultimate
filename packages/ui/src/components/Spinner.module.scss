@@ -8,10 +8,10 @@
 
 .spinner {
   display: inline-block;
-  border: 2px solid t.role('line');
+  border: t.stroke(thick) solid t.role('line');
   border-block-start-color: t.role('accent');
   border-radius: t.radius(full);
-  animation: ultimate-spin 700ms linear infinite;
+  animation: ultimate-spin t.duration(slower) linear infinite;
   // Reduced motion is handled globally in reset.scss; the ring still reads as
   // a distinct shape when the animation is neutralised.
 }
@@ -29,5 +29,5 @@
 .size-lg {
   inline-size: 2rem;
   block-size: 2rem;
-  border-width: 3px;
+  border-width: t.stroke(heavy);
 }

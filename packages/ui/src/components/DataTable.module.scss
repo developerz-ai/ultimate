@@ -20,6 +20,8 @@
   border-radius: t.radius(sm);
   color: inherit;
   font: inherit;
+  // The link mode renders this class on an anchor: a sort header reads as a header, not a link.
+  text-decoration: none;
   cursor: pointer;
 
   &:hover {

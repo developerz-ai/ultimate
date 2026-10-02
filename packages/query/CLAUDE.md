@@ -18,12 +18,14 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
 | `mcp-tool.ts` | MCP read descriptor, same `sourceFor` |
 | `client.ts` | typed read client (browser-safe); dispatches through `@ultimat3/core`'s `clientTransport`, never `fetch` |
+| `client-scale-pins.ts` | compile-time pin: `queryClient<Api['queries']>` over 100 reads in 50 modules — list, `.page` and `single: true` |
 | `record-answer.ts` | a read's HTTP answer: bare rows, or the record envelope when `rows:` is an entity's branded row schema |
 | — | flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported. No local copy |
 | `naming.ts` | export name → `/_x/query/<kebab>` — `derivePath` IS core's `queryPath`. **Paths only** |
 | `registry.ts` | export-name registration, `describeQueries()`, the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
 | `subscribes.ts` | the relations a live read declares, and the two assertions that keep them true |
+| `sealed-shape.ts` | a live read keyed on a `.sealed()` column is refused at subscribe (`X_MATCHER_UNSUPPORTED`) |
 | `matcher.ts` | change event → minimal patch, `refill` when the window cannot place the row, or `X_MATCHER_UNSUPPORTED` |
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
 | `cursor-value.ts` | what a sort value becomes inside a cursor, and back |
@@ -61,6 +63,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   barrel exports nothing matching `/tool_?name/i`.
 - **`queryClient` is the map-wide read client (mirror of `rpc`)**; both spellings run
   `queryClientMethodFor`. **`toQueryRoute` and `client()` derive the same URL from `naming.ts`.**
+- **`QueryClient` typechecks at any app size, and a `.test.ts` cannot say so** (`tsconfig.json`
+  excludes them): `client-scale-pins.ts` is source, so a regression is a `typecheck` error. The map
+  it pins is the intersection `@ultimat3/action`'s `Merge` hands over; that package pins `Merge`.
 - **The route coerces (`coerceQuery`), `runQuery` validates.** No `request.query(schema)` and no
   `meta.input` on the route.
 - **`rateLimit:` is declarable; `toQueryRoute` sets both `meta.rateLimit` and
@@ -84,6 +89,15 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })`; a live denial keeps its 4403
   close code on `QueryDeniedError.denial`. Policy runs per subscriber for live queries — never cache a
   decision across actors.
+- **This package strips NO column, and must not start.** A query has no output parse; a
+  `.sealed()` column is absent from every projection because `@ultimat3/entity`'s repository row
+  does not ENUMERATE it (`serverOnly`, `packages/entity/src/sealed.ts`). So nothing on the read
+  path may rebuild a row property by property from a column list or `Object.getOwnPropertyNames`
+  — `JSON.stringify`, a spread and `Object.keys` are the only walks. `sealed-egress.test.ts` pins
+  HTTP (list, `Page`, single, envelope), MCP, live, the cache tier and a derived row.
+- **A live read keyed on a sealed column is refused at subscribe** (`assertNoSealedKey`, called by
+  `toLiveQuery`): a change row carries none, so the window would be read once and never patched.
+  The refusal names the column, never the filter's value.
 
 ## Invariants — the client
 
@@ -102,7 +116,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   import core from `@ultimat3/core/page`, the page keys live in the leaf `page-keys.ts`, and
   `client.ts` never imports `page-controls.ts` or `stable.ts`. `client-bundle.test.ts` fails on any
   titles table in the graph or past 11 kB; `client-subpath.test.ts` pins the specifier. Byte figures
-  (`As of 2026-09-22`, browser, minified): barrel `queryClient` 24,114 B; `./client` 10,210 B.
+  (`As of 2026-10-01`, browser, minified): barrel `queryClient` 23,997 B; `./client` 10,899 B.
 - **The record envelope is derived from `rows:`** — `answersRecords(rows)` (`hasEntityRows`,
   `@ultimat3/entity`), decided once at projection for `http.ts` and `openapi.ts`, sent on every
   answer. No `rows:` is byte-identical on the wire.

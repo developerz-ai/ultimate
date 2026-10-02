@@ -60,7 +60,8 @@ const app = defineAdmin({
     admin_ctx_doc: {
       repo: {
         list: async (): Promise<readonly AdminRow[]> => [],
-        find: async (): Promise<AdminRow | null> => null,
+        // A row to act on: an action on a row nobody can find is refused before its handler.
+        find: async (id): Promise<AdminRow | null> => ({ id }),
         create: async (input): Promise<AdminRow> => input,
         update: async (_id, patch): Promise<AdminRow> => patch,
         destroy: async (): Promise<void> => undefined,

@@ -34,6 +34,8 @@ describe('unit · x g backfill', () => {
     expect(files.filter((file) => file.merge === undefined).map((file) => file.path)).toEqual([
       'app/post/backfills/normalize-titles.ts',
       'app/post/backfills/normalize-titles.job.test.ts',
+      // The pass itself, on the `unit` step: the only suite an app's coverage floor counts.
+      'app/post/backfills/normalize-titles.test.ts',
     ]);
     // `../entity` is what the declaration reads and what the generated test builds rows of, so the
     // generator writes it too — the run that emitted the import is the run that has to close it.
@@ -68,7 +70,9 @@ describe('unit · x g backfill', () => {
     // on its own actor for a `tenant: 'none'` backfill, and this guard is the scaffold's only
     // reader of that fact. A source that dropped the import or the check would still contain every
     // word of the comment above it.
-    expect(source).toContain('import { CROSS_TENANT_SCOPE, postgresRepo, tableFor } from');
+    expect(source).toContain(
+      "import { CROSS_TENANT_SCOPE, type ReadBuilder } from '@ultimat3/entity';",
+    );
     expect(source).toContain('hasScope(ctx.actor, CROSS_TENANT_SCOPE)');
   });
 
@@ -101,27 +105,53 @@ describe('unit · x g backfill', () => {
     }
   });
 
-  test('a backfill named after its own feature does not redeclare the entity it imports', () => {
-    // `x g backfill post --feature post` is a legal invocation and it emitted `import { post }`
-    // beside `export const post = backfill(...)`: one name, two declarations, which is
-    // lint/suspicious/noRedeclare in the app's own gate and an ambiguous reference in TS.
+  test('the sweep reads and writes through the typed handle, never a table built by hand', () => {
+    const source = generated().source;
+    // `db.<table>` is `tableFor(entity, driver.repo(entity))` — the table a query reads — so the
+    // pass runs on the in-memory driver under `bun test` and on Postgres everywhere else.
+    expect(source).toContain("import { db } from '@app/db';");
+    expect(source).toContain('return db.posts;');
+    expect(source).not.toContain('postgresRepo');
+    expect(source).not.toContain('tableFor(');
+    // The handle is the app's own package once `x g` names it.
+    const named = backfillFiles('normalize-titles', { ...target, dbModule: '@acme/db' });
+    const at = named.find((file) => file.path === 'app/post/backfills/normalize-titles.ts');
+    expect(at?.contents).toContain("import { db } from '@acme/db';");
+  });
+
+  test('a backfill named after its own feature declares one binding of that name', () => {
+    // `x g backfill post --feature post` emitted `import { post }` beside `export const post =
+    // backfill(...)`: lint/suspicious/noRedeclare in the app's own gate. The entity VALUE is no
+    // longer imported at all — the handle carries the table — so only the type import remains.
     const source = backfillFiles('post', target).find(
       (file) => file.path === 'app/post/backfills/post.ts',
     )?.contents;
-    expect(source).toContain("import { post as postEntity } from '../entity';");
+    expect(source).toContain("import type { Post } from '../entity';");
     expect(source).toContain('export const post = backfill({');
-    expect(source).toContain('tableFor(postEntity, postgresRepo(postEntity))');
+    expect(String(source).match(/\bimport \{[^}]*\bpost\b[^}]*\} from '\.\.\/entity'/)).toBeNull();
   });
 
-  test('a backfill named anything else imports the entity plainly — the alias is not the default', () => {
+  test('the page is written one row at a time, by primary key — never an id-only upsert', () => {
+    // `upsertAll(rows, { onConflict: ['id'] })` is refused on a tenant-scoped table
+    // (X_TENANCY_UNSCOPED): the generated pass retried its first page for ever, and nothing ran
+    // the handler to say so until the emitted unit test did.
     const source = generated().source;
-    expect(source).toContain("import { post } from '../entity';");
-    expect(source).not.toContain('postEntity');
+    expect(source).toContain('await db.posts.update(row.id, { title: next.title });');
+    expect(source).not.toMatch(/^\s*await .*upsertAll\(/m);
   });
 
-  test('the generated test still pins the work, not only the declaration around it', () => {
+  test('the generated tests pin the work, not only the declaration around it', () => {
+    const files = backfillFiles('normalize-titles', target);
+    const unit = String(
+      files.find((file) => file.path === 'app/post/backfills/normalize-titles.test.ts')?.contents,
+    );
+    // The pass, RUN: a worker in this process, rows in two tenants, and the outcome it ends on.
+    expect(unit).toContain('await runJobs(normalizeTitles, {})');
+    expect(unit).toContain("toEqual(['completed'])");
+    expect(unit).toContain('idempotent');
+    // And nothing the unit suite proves is restated in the job suite beside it.
     const suite = generated().test;
-    expect(suite).toContain('actually rewrites the row it is handed');
-    expect(suite).toContain('idempotent');
+    expect(suite).toContain('enqueues once, and dedupes the retry');
+    expect(suite).not.toContain('normalizeTitlesRow');
   });
 });

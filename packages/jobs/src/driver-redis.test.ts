@@ -9,6 +9,9 @@ import type { JobDriver } from './driver';
 import { createRedisDriver } from './driver-redis';
 import { JobsNotImplementedError } from './errors';
 
+/** A settle names its claim; a stub refuses before it reads one. */
+const BY = { workerId: 'w1', claim: 1 };
+
 const FIX =
   'call setJobDriver(createPgDriver()) at boot instead of this driver; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it';
 
@@ -84,12 +87,12 @@ describe('every queue method throws synchronously, naming itself', () => {
 
   test('ack', () => {
     const driver = createRedisDriver();
-    expectUnavailable(() => driver.ack('job-1'), 'ack');
+    expectUnavailable(() => driver.ack('job-1', BY), 'ack');
   });
 
   test('nack', () => {
     const driver = createRedisDriver();
-    expectUnavailable(() => driver.nack('job-1', { delayMs: 1000 }), 'nack');
+    expectUnavailable(() => driver.nack('job-1', { ...BY, delayMs: 1000 }), 'nack');
   });
 
   test('heartbeat', () => {
@@ -137,7 +140,7 @@ describe('every steps method throws synchronously, naming itself as steps.<metho
 describe('mutation check — a method that starts resolving instead of throwing fails its test', () => {
   function withAckPatchedToSucceed(): JobDriver {
     const driver = createRedisDriver();
-    return { ...driver, ack: () => Promise.resolve() };
+    return { ...driver, ack: () => Promise.resolve(true) };
   }
 
   function withEnqueuePatchedToSucceed(): JobDriver {
@@ -155,10 +158,10 @@ describe('mutation check — a method that starts resolving instead of throwing 
 
   test('a patched ack no longer throws — proving the real ack does', async () => {
     const patched = withAckPatchedToSucceed();
-    await expect(patched.ack('job-1')).resolves.toBeUndefined();
+    await expect(patched.ack('job-1', BY)).resolves.toBe(true);
     // The real driver, unpatched, still rejects: the patch above is a genuine mutation of
     // behaviour, not a no-op that would have passed either way.
-    expectUnavailable(() => createRedisDriver().ack('job-1'), 'ack');
+    expectUnavailable(() => createRedisDriver().ack('job-1', BY), 'ack');
   });
 
   test('a patched enqueue no longer throws — proving the real enqueue does', async () => {
@@ -200,7 +203,7 @@ describe('mutation check — a method that starts resolving instead of throwing 
 describe('the fix is an instruction that can be carried out', () => {
   const thrownFix = (): string => {
     try {
-      void createRedisDriver().ack('job-1');
+      void createRedisDriver().ack('job-1', BY);
     } catch (error) {
       if (error instanceof UltimateError) return error.fix;
     }

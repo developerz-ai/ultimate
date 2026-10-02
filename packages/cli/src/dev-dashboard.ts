@@ -55,8 +55,8 @@ export interface DevDashboardInput {
 
 /**
  * Read-only is already enforced by `assertReadOnly` inside `dbPanel`, before `runSql` is ever
- * reached. A second gate here would be a second authz: two places to update when `x db psql
- * --write` changes what is allowed, and one of them would eventually disagree.
+ * reached. A second gate here would be a second authz: two places to update when what the panel
+ * allows changes, and one of them would eventually disagree.
  */
 async function runSql(input: DevDashboardInput, sql: string): Promise<SqlResult> {
   const started = performance.now();

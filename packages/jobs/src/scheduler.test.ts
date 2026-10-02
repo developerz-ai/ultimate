@@ -10,8 +10,10 @@ import { createMemoryDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
-import type { CronResolver, LeaderElection } from './scheduler';
-import { createMemorySchedulerState, createScheduler } from './scheduler';
+import type { CronResolver } from './scheduler';
+import { createScheduler } from './scheduler';
+import type { LeaderElection } from './scheduler-leader';
+import { createMemorySchedulerState } from './scheduler-state';
 import { resetTasks, task } from './task';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -402,6 +404,7 @@ describe('scheduler', () => {
     });
     const clock = fakeClock(T0);
     const follower: LeaderElection = {
+      renewEveryMs: 0,
       acquire: () => Promise.resolve(false),
       release: () => Promise.resolve(),
     };
@@ -427,6 +430,8 @@ describe('leadership is re-asserted inside the round, not only on entry', () => 
     // A lease-backed election (`createPgLeaseLeader`) expires on a wall clock, not on a round
     // boundary: node B takes it at 31s while this node is still walking its own task list.
     const expiring: LeaderElection = {
+      // Asked every round and before every task: the expiry mid-round is the case.
+      renewEveryMs: 0,
       acquire: () => {
         acquires += 1;
         return Promise.resolve(acquires <= heldUntil);

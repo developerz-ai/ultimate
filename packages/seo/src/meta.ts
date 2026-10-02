@@ -197,35 +197,23 @@ export function hreflangSet(
   return href === undefined ? alternates : [...alternates, { hreflang: 'x-default', href }];
 }
 
-export function renderMeta(meta: RouteMeta, options: RenderMetaOptions = {}): readonly HeadTag[] {
+/**
+ * The card a link preview is built from: `og:*`, `article:*`, `twitter:*`.
+ *
+ * Emitted only for a document that may be INDEXED. `robots: { index: false }` withdraws the whole
+ * set, declared or derived — one rule, no second switch: a page its author keeps out of a search
+ * result is a page behind sign-in, an error, or a draft, and a card for it publishes the title and
+ * description the `noindex` was hiding. Every admin document carried one until 2026-10.
+ */
+function socialTags(
+  meta: RouteMeta,
+  localization: MetaLocalization | undefined,
+  canonicalHref: string | undefined,
+  abs: (value: string) => string,
+): readonly HeadTag[] {
+  if (meta.robots?.index === false) return [];
   const tags: HeadTag[] = [];
-  const abs = (value: string): string =>
-    options.baseUrl === undefined ? value : absoluteUrl(options.baseUrl, value);
-
-  const canonical = meta.canonical ?? (options.path === undefined ? undefined : options.path);
-  const canonicalHref = canonical === undefined ? undefined : abs(canonical);
-
-  if (meta.title !== undefined) {
-    tags.push({
-      tag: 'title',
-      attrs: {},
-      text: applyTitleTemplate(meta.title, meta.titleTemplate),
-    });
-  }
-  if (meta.description !== undefined) {
-    tags.push({ tag: 'meta', attrs: { name: 'description', content: meta.description } });
-  }
-  if (canonicalHref !== undefined) {
-    tags.push({ tag: 'link', attrs: { rel: 'canonical', href: canonicalHref } });
-  }
-  tags.push({
-    tag: 'meta',
-    attrs: { name: 'robots', content: robotsContent(meta.robots ?? {}) },
-  });
-
-  // --- Open Graph ------------------------------------------------------------
   const og = meta.og ?? {};
-  const localization = options.localization;
   const ogLocale =
     og.locale ?? (localization === undefined ? undefined : ogLocaleTag(localization.locale));
   const ogEntries: Array<[string, string | undefined]> = [
@@ -298,6 +286,37 @@ export function renderMeta(meta: RouteMeta, options: RenderMetaOptions = {}): re
   for (const [name, content] of twitterEntries) {
     if (content !== undefined) tags.push({ tag: 'meta', attrs: { name, content } });
   }
+  return tags;
+}
+
+export function renderMeta(meta: RouteMeta, options: RenderMetaOptions = {}): readonly HeadTag[] {
+  const tags: HeadTag[] = [];
+  const abs = (value: string): string =>
+    options.baseUrl === undefined ? value : absoluteUrl(options.baseUrl, value);
+
+  const canonical = meta.canonical ?? (options.path === undefined ? undefined : options.path);
+  const canonicalHref = canonical === undefined ? undefined : abs(canonical);
+
+  if (meta.title !== undefined) {
+    tags.push({
+      tag: 'title',
+      attrs: {},
+      text: applyTitleTemplate(meta.title, meta.titleTemplate),
+    });
+  }
+  if (meta.description !== undefined) {
+    tags.push({ tag: 'meta', attrs: { name: 'description', content: meta.description } });
+  }
+  if (canonicalHref !== undefined) {
+    tags.push({ tag: 'link', attrs: { rel: 'canonical', href: canonicalHref } });
+  }
+  tags.push({
+    tag: 'meta',
+    attrs: { name: 'robots', content: robotsContent(meta.robots ?? {}) },
+  });
+
+  const localization = options.localization;
+  tags.push(...socialTags(meta, localization, canonicalHref, abs));
 
   // --- hreflang --------------------------------------------------------------
   // A route's own `alternates` win whole; otherwise the cluster comes from the routed locales.

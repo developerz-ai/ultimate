@@ -85,9 +85,11 @@ import { FINITE_SCREENS_FILE, SCREENING_CALL } from './lib/finite-screens';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { packageOf, ratchetGaps, ratchetMain } from './lib/ratchet';
+import { leadSite, siteList, siteTarget } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'finite-bounds';
+const EXPLAIN = 'bun run scripts/finite-bounds.ts --explain --json lists every one';
 
 /** Source the CLI EMITS rather than executes, and generated fixtures. Neither is shipped logic. */
 const TEMPLATE_ROOT = 'packages/cli/src/templates/';
@@ -331,11 +333,16 @@ export const checkFiniteBounds = (input: FiniteBoundsInput): readonly FiniteBoun
 const at = (site: FiniteBoundSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
+/**
+ * Every site, never only the first: the package's first is usually one its pin already allows.
+ * Which are NEW is not asked here — a site depends on numeric constants and tables read across the
+ * whole corpus, so one file at the base ref cannot be re-scanned alone.
+ */
 const overFinding = (gap: FiniteBoundGap): Finding => ({
   code: 'X_FINITE_BOUND_UNCHECKED',
-  cause: `${gap.pkg} defaults ${String(gap.found)} numeric option(s) with ?? and never checks them for finiteness, and is pinned at ${String(gap.pinned)} — ${at(gap.first)} writes ${gap.first?.expression ?? ''}, and ?? guards nullish while NaN is not nullish, so Number(process.env.X) on an unset variable reaches the bound intact`,
-  fix: `assert(Number.isFinite(${gap.first?.option ?? 'value'}), '…', '…') beside ${at(gap.first)} — as packages/jobs/src/limits.ts:122 does — or Number.isSafeInteger where it counts rows. Math.max/Math.min/Math.floor are NOT the fix: all three propagate NaN. If a helper already screens it, add that callee to SCREENING_CALLEES in ${FINITE_SCREENS_FILE} instead — the table is what this rule reads, never the callee's name`,
-  at: at(gap.first),
+  cause: `${gap.pkg} defaults ${String(gap.found)} numeric option(s) with ?? and never checks them for finiteness, and is pinned at ${String(gap.pinned)} — ${siteList(gap, (site) => `${at(site)} (${site.expression})`, EXPLAIN)} — and ?? guards nullish while NaN is not nullish, so Number(process.env.X) on an unset variable reaches the bound intact`,
+  fix: `assert(Number.isFinite(${gap.found === 1 ? (leadSite(gap)?.option ?? 'value') : 'value'}), '…', '…') beside ${siteTarget(gap, at)} — as packages/jobs/src/limits.ts:122 does — or Number.isSafeInteger where it counts rows. Math.max/Math.min/Math.floor are NOT the fix: all three propagate NaN. If a helper already screens it, add that callee to SCREENING_CALLEES in ${FINITE_SCREENS_FILE} instead — the table is what this rule reads, never the callee's name`,
+  at: at(leadSite(gap)),
 });
 
 const staleFinding = (gap: FiniteBoundGap): Finding => ({

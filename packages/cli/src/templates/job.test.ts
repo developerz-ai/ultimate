@@ -1,8 +1,8 @@
 // `x g job`/`x g task` read one fact from the app's disk before assuming the tenant-scoped shape:
 // whether the feature's OWN `entity.ts` declares a real tenant column and its `repo.ts` actually
-// exports `byId`/`listByOrg`. Measured in dz-showcase's `links` feature — no `orgId`, no `byId` or
-// `listByOrg` in `repo.ts` — where `x g task purgeOrphans --feature links` produced a job that
-// called `repo.byId`/`repo.listByOrg` and did not compile.
+// exports `byId`/`list`. Measured in dz-showcase's `links` feature — no `orgId`, no `byId` or
+// `list` in `repo.ts` — where `x g task purgeOrphans --feature links` produced a job that
+// called `repo.byId`/`repo.listByOrg` (the pair's name then) and did not compile.
 
 import { describe, expect, test } from 'bun:test';
 // why: Bun has no API for a temporary directory or a symlink, and loading a generated file for
@@ -26,8 +26,8 @@ export const link = entity('links', {
 export type Link = typeof link.$row;
 `;
 
-/** The paired `repo.ts`: a single-tenant slice's shape, per `entity.ts`'s own comment — `list`
- * instead of `listByOrg`, no `byId` either, because nothing in this feature reads by id yet. */
+/** The paired `repo.ts`: a single-tenant slice's shape — a raw-SQL `list`, and no `byId`, because
+ * nothing in this feature reads by id yet. */
 const LINKS_REPO = `import { db, sql } from '@ultimat3/db';
 import type { Link } from './entity';
 
@@ -63,14 +63,14 @@ describe('unit · isTenantScopedSlice reads what the feature actually has', () =
     expect(isTenantScopedSlice(entity, LINKS_REPO)).toBe(false);
   });
 
-  test('a tenant-scoped entity whose repo never got listByOrg/byId is not scoped either', () => {
+  test('a tenant-scoped entity whose repo never got byId is not scoped either', () => {
     const entity = LINKS_ENTITY.replace('columns: {', "tenant: 'orgId',\n  columns: {");
     expect(isTenantScopedSlice(entity, LINKS_REPO)).toBe(false);
   });
 
   test('a tenant-scoped entity with the real repo pair is scoped', () => {
     const entity = `tenant: 'orgId'\n${LINKS_ENTITY}`;
-    const repo = `export async function byId(id: string) {}\nexport async function listByOrg(orgId: string, limit = 50) {}\n`;
+    const repo = `export async function byId(id: string) {}\nexport async function list(limit = 50) {}\n`;
     expect(isTenantScopedSlice(entity, repo)).toBe(true);
   });
 
@@ -91,7 +91,9 @@ describe('unit · x g job emits the tenant-scoped shape only where the slice ear
     expect(source).toContain('input: t.object({ id: t.uuid, orgId: t.uuid })');
     expect(source).toContain('tenant: (input) => input.orgId');
     expect(source).toContain('repo.byId(input.id)');
-    expect(source).toContain('repo.listByOrg(row.orgId, 1)');
+    // No org argument: the typed handle scopes the read to the org the job runs as.
+    expect(source).toContain('repo.list(1)');
+    expect(source).not.toContain('listByOrg');
   });
 
   test('a feature with no tenant column gets the neutral job — no repo, no orgId', () => {
@@ -183,5 +185,66 @@ describe('unit · the generated neutral job loads for real', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('unit · the job body test stores a row only in a slice whose row it can spell', () => {
+  const unitOf = (files: ReturnType<typeof jobFiles>, name: string): string =>
+    sourceOf(files, `jobs/${name}.test.ts`);
+
+  test('the scaffold entity, no repo on disk: both branches, the stored row included', () => {
+    const files = jobFiles('sweep-invoices', {
+      surfaceDir: 'apps/web/app',
+      feature: 'invoice',
+      sliceEntity: INVOICE_ENTITY,
+      dbModule: '@acme/db',
+    });
+    const unit = unitOf(files, 'sweep-invoices');
+    // The refusal branch first, then the row the job reads — stored through the slice's own repo.
+    expect(unit).toContain('an id nothing holds');
+    expect(unit).toContain('a stored row is loaded');
+    expect(unit.indexOf('an id nothing holds')).toBeLessThan(
+      unit.indexOf('a stored row is loaded'),
+    );
+    expect(unit).toContain('repo.insert(draft)');
+    expect(unit).toContain("import { driver } from '@acme/db';");
+    expect(unit).toContain('driver.reset?.();');
+  });
+
+  test('a tenant-scoped slice an author reshaped: the refusal branch only, and no store to reset', () => {
+    const reshaped = INVOICE_ENTITY.replace('title: text(', 'subject: text(');
+    expect(reshaped).not.toBe(INVOICE_ENTITY);
+    const unit = unitOf(
+      jobFiles('sweep-invoices', {
+        surfaceDir: 'apps/web/app',
+        feature: 'invoice',
+        sliceEntity: reshaped,
+      }),
+      'sweep-invoices',
+    );
+    expect(unit).toContain('an id nothing holds');
+    expect(unit).not.toContain('repo.insert');
+    expect(unit).not.toContain('driver');
+  });
+
+  test('a repo on disk that lost insert is not stored into either', () => {
+    const repo = 'export async function byId() {}\nexport async function list() {}\n';
+    const unit = unitOf(
+      jobFiles('sweep-invoices', {
+        surfaceDir: 'apps/web/app',
+        feature: 'invoice',
+        sliceEntity: INVOICE_ENTITY,
+        sliceRepo: repo,
+      }),
+      'sweep-invoices',
+    );
+    expect(unit).not.toContain('repo.insert');
+  });
+
+  test('the neutral job runs its one step, with no org anywhere in the test', () => {
+    const unit = unitOf(jobFiles('purge-orphans', target), 'purge-orphans');
+    expect(unit).toContain('await runJobs(purgeOrphans, { id })');
+    expect(unit).toContain("toEqual(['process'])");
+    expect(unit).not.toContain('orgId');
   });
 });

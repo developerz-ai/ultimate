@@ -1,5 +1,6 @@
-// Single responsibility: the production disk over Bun's native S3 client. One driver covers
-// MinIO, Cloudflare R2 and AWS — the difference is `endpoint` + `forcePathStyle`, nothing else.
+// Single responsibility: the production disk over Bun's native S3 client. One driver covers AWS,
+// Cloudflare R2 and any S3-compatible gateway — the difference is `endpoint`, `region` and
+// `forcePathStyle`, nothing else.
 // The client is built lazily on first use so importing this module never opens a socket, and
 // credentials arrive as env var NAMES: a literal key in app.config.ts is a key in git.
 
@@ -19,6 +20,7 @@ import {
   sha256Base64,
   toBytes,
 } from './driver';
+import { regionMismatch } from './driver-s3-region';
 import {
   checksumMismatch,
   deleteFailed,
@@ -75,10 +77,14 @@ export interface S3ClientLike {
 
 export interface S3DriverOptions {
   readonly bucket: string;
+  /**
+   * The region requests are signed for. Unset, `Bun.S3Client` signs for `auto` — which R2 wants,
+   * and which AWS and a gateway that checks the scope refuse (`X_CONFIG_INVALID`, naming theirs).
+   */
   readonly region?: string | undefined;
-  /** MinIO: `http://localhost:9000`. R2: `https://<account>.r2.cloudflarestorage.com`. */
+  /** A self-hosted gateway: `http://localhost:9000`. R2: `https://<account>.r2.cloudflarestorage.com`. */
   readonly endpoint?: string | undefined;
-  /** MinIO needs `true`; AWS and R2 do not. */
+  /** A gateway addressed by host and port needs `true`; AWS and R2 do not. */
   readonly forcePathStyle?: boolean | undefined;
   /** Env var NAME holding the key id. Default `S3_ACCESS_KEY_ID`. */
   readonly accessKeyIdEnv?: string | undefined;
@@ -138,7 +144,7 @@ function buildClient(options: S3DriverOptions): S3ClientLike {
   }
   const tokenVar = options.sessionTokenEnv;
   const sessionToken = tokenVar === undefined ? undefined : env[tokenVar];
-  // Bun's flag is the inverse: MinIO's path style means "not virtual hosted".
+  // Bun's flag is the inverse: path style means "not virtual hosted".
   const pathStyle = options.forcePathStyle;
   return new Client({
     bucket: options.bucket,
@@ -224,6 +230,21 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     return client;
   };
 
+  /**
+   * A refused request as the disk-misconfigured error, when the provider named its own repair (a
+   * wrong region). Asked before any call's own verdict, so the fix an operator reads is the one
+   * that works rather than one about a grant they already have. `misconfigured` is the same
+   * question for a call with no verdict of its own: it rethrows whatever arrived.
+   */
+  const throwIfMisconfigured = (error: unknown): void => {
+    const mismatch = regionMismatch(options.bucket, error);
+    if (mismatch !== undefined) throw mismatch;
+  };
+  const misconfigured = (error: unknown): never => {
+    throwIfMisconfigured(error);
+    throw error;
+  };
+
   const statObject = async (key: string): Promise<StorageObject> => {
     const stat = await conn().file(key).stat();
     return {
@@ -253,7 +274,8 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       }
       await conn()
         .file(safe)
-        .write(bytes, { type: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE });
+        .write(bytes, { type: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE })
+        .catch(misconfigured);
       return statObject(safe);
     },
 
@@ -287,7 +309,8 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       const stat = await file.stat();
       await conn()
         .file(destination)
-        .write(file, { type: stat.type ?? DEFAULT_CONTENT_TYPE });
+        .write(file, { type: stat.type ?? DEFAULT_CONTENT_TYPE })
+        .catch(misconfigured);
       return statObject(destination);
     },
 
@@ -299,6 +322,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         // Idempotent means an ABSENT key, and nothing else. AWS answers DELETE on a missing key
         // with 204, so this branch is for the providers that do not.
         if (isAbsentObject(error)) return;
+        throwIfMisconfigured(error);
         throw deleteFailed(
           DRIVER_NAME,
           safe,
@@ -331,6 +355,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         // A bare `S3Error` used to escape here, uncoded: no `X_*`, no `fix`, no `--json` shape, and
         // `@ultimat3/http`'s error map has nothing to turn it into but a 500. A denied
         // `s3:ListBucket` is the commonest one and reads to an operator as an app crash.
+        throwIfMisconfigured(error);
         throw listFailed(
           DRIVER_NAME,
           prefix,

@@ -58,7 +58,7 @@ Follow in order. Each page states what it was executed against in its own first 
 |---|---|
 | [1 · First app](Tutorial-01-First-App) | a scaffolded app running on `x dev`, green gate, no Docker |
 | [2 · First feature](Tutorial-02-First-Feature) | one `action` projected into five surfaces, with tests |
-| [3 · Auth and admin](Tutorial-03-Auth-And-Admin) | roles, policies and a real login flow |
+| [3 · Auth and admin](Tutorial-03-Auth-And-Admin) | roles, policies, a real login flow, and the admin's detail pages, actions and batches |
 | [4 · Jobs and realtime](Tutorial-04-Jobs-And-Realtime) | a durable job, a cron task, a live query |
 | [5 · Deploy free](Tutorial-05-Deploy-Free) | the image running on a free PaaS tier, migrations on release |
 | [6 · Growing up](Tutorial-06-Growing-Up) | the rung you should be on, and the signal to climb |
@@ -70,10 +70,10 @@ Follow in order. Each page states what it was executed against in its own first 
 | [The eight primitives](The-Eight-Primitives) | `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task` — the whole vocabulary |
 | [Building your own base](Building-Your-Own-Base) | wrap a primitive in your own factory: `tenantEntity`, `auditedMutator`, the two caveats, and why nothing downstream notices |
 | [Actions](Actions) | every field, the six generated artifacts, the mutator twin, contract tests |
-| [Entities and migrations](Entities-And-Migrations) | tables, invariants, tenancy, `x db gen`, drift, branch databases |
+| [Entities and migrations](Entities-And-Migrations) | tables, invariants, tenancy, the typed-handle repo, `.sealed()` columns, `x db gen`, the schema dump, drift, branch databases |
 | [Policies and authz](Policies-And-Authz) | `can()`, where a policy is evaluated, denials, tenancy scoping |
 | [Queries and live queries](Queries-And-Live-Queries) | reads, `live: true`, per-row policy, bounded SQL |
-| [Jobs and workflows](Jobs-And-Workflows) | transactional outbox, durable steps, idempotency, drivers |
+| [Jobs and workflows](Jobs-And-Workflows) | transactional outbox, durable steps, idempotency, keyed concurrency, `onSettled`, operating a queue, `webhook()`, drivers |
 | [Scheduled tasks](Scheduled-Tasks) | cron with an explicit tz, leader election, next-run introspection |
 | [Routes and render modes](Routes-And-Render-Modes) | five render modes, hydration timing, budgets, enforced SEO |
 
@@ -86,11 +86,12 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Batching and preloading](Batching-And-Preloading) | JIT preload, `.preload()`, `insertAll`/`upsertAll`/`updateWhere`, `inBatches`, the tenancy guarantee |
 | [N+1 detection](N-Plus-One-Detection) | the two codes, `expectedQueryLoop`, four surfaces, why prod pays nothing |
 | [PWA and offline](PWA-And-Offline) | generated `sw.js`, precache budgets, version skew |
+| [Client data](Client-Data) | the one browser transport (`browserClient`, `useQuery`), the record store, and the gate that refuses a raw `fetch(` |
 | [Client navigation](Client-Navigation) | soft navigation over server-rendered pages: one config line per surface, swap, prefetch, history, focus |
 | [MCP and AI](MCP-And-AI) | the dev MCP server, every action as a tool, the `llm()` gateway, evals |
 | [Agents](Agents) | `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap |
-| [Admin dashboard](Admin-Dashboard) | the generated admin app and its MCP surface |
-| [Scraping](Scraping) | `scrape()` as a job factory, the driver-blind page vocabulary, robots and host gates, the yield alarm |
+| [Admin dashboard](Admin-Dashboard) | `defineAdmin()` serving list, detail and form per entity with no host code; filters, scopes, sections, related rows, actions with `when` and `batch`, the audit log, the jobs dashboard; zero JavaScript; its MCP surface |
+| [Scraping](Scraping) | `scrape()` as a job factory, the driver-blind page vocabulary, robots and host gates, per-run egress, a rented CDP browser, usage, sealed sessions, mid-run prompts |
 | [Auth](Auth) | sessions, OAuth, MFA, API keys and service tokens — the output is an `Actor` |
 | [Mail](Mail) | one template renders HTML and text, every string a key, sending is a job |
 | [Notify](Notify) | `notifier()` as a job factory: fan-out, preference gate, digest window, ledger, inbox |
@@ -103,13 +104,14 @@ Follow in order. Each page states what it was executed against in its own first 
 | Page | What it covers |
 |---|---|
 | [I18n](I18n) | flat catalogs, loud misses, locale routing, `hreflang` |
-| [Theming](Theming) | 24 semantic colour roles as RGB channels, every token scale, `defineTheme()`, what contrast is gated |
+| [Theming](Theming) | 24 semantic colour roles as RGB channels, every token scale, breakpoint and layout mixins, `defineTheme()`, what contrast is gated |
+| [Interface rules](Interface-Rules) | how a screen must behave, and which of the app's `guards/` refuses each rule |
 | [UI components](UI-Components) | the four page composites, and the generated 52-component catalog |
 | [Timezones and dates](Timezones-And-Dates) | store UTC, format with an explicit IANA zone, frozen clocks in tests |
 | [Money](Money) | `Money = { minor, currency }`, never a float |
 | [Resource management](Resource-Management) | `Disposable` db resources, `using`/`await using`, idempotent release, compile-time pins |
 | [Migrations and backfills](Migrations-And-Backfills) | one migration engine and ledger, the destructive-migration rail, `backfill()` as a `job` factory |
-| [Testing](Testing) | six test types, cloned databases, sealed network, `x verify` |
+| [Testing](Testing) | six test types, cloned databases, sealed network, the coverage floor, silent runs, `x verify` |
 
 ## Reference
 
@@ -118,10 +120,10 @@ Follow in order. Each page states what it was executed against in its own first 
 | [CLI reference](CLI-Reference) | every `x` command and flag, with `--json` examples |
 | [Error codes](Error-Codes) | every `X_*` code: meaning, cause, exact fix |
 | [Configuration](Configuration) | every `app.config.ts` field and every env var |
-| [Deployment](Deployment) | one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, `docs/ops/` |
-| [Observability](Observability) | counters, gauges, histograms, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach |
+| [Deployment](Deployment) | one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, the prebuilt island store, `docs/ops/` |
+| [Observability](Observability) | counters, gauges, histograms, process and pool gauges, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach |
 | [Known gaps](Known-Gaps) | every defect and unfinished seam in the published release, named |
-| [Upgrading](Upgrading) | why the next release is a major, breaking-change detection, version skew — and that `x upgrade` is planned |
+| [Upgrading](Upgrading) | one section per major with every manual edit, the in-flight 23.0.0 as a checklist, version skew — and that `x upgrade` is planned |
 | [Troubleshooting](Troubleshooting) | symptom → cause → fix |
 | [FAQ](FAQ) | why Bun only, why no GraphQL, is it production ready |
 | [Contributing](Contributing) | package layout, import tiers, conventions, PR expectations |

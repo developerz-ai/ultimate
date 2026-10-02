@@ -5,11 +5,14 @@
 import { finiteCount } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { type AuditEntry, deniedDraft } from './audit';
+import type { AdminActor } from './authz';
 import { denied } from './authz';
 import type { CrudCtx } from './crud';
 import { decideOperation } from './crud';
-import type { AdminFilter, AdminRow } from './registry';
+import { rowWhere } from './list-scope';
+import type { AdminFilter } from './registry';
 import { rowId } from './registry';
+import { labelOf } from './relations';
 import { type AdminResource, repoOf } from './resource';
 
 /** Per resource, and per field within it. Search is a jump box, not a report. */
@@ -61,10 +64,14 @@ export interface AdminSearchInput {
  */
 async function searchResource(
   resource: AdminResource,
+  actor: AdminActor,
   term: string,
   limit: number,
 ): Promise<readonly AdminSearchHit[]> {
   const repo = repoOf(resource);
+  // The resource's row scope rides every lookup: a hit is a row, and a row this actor's `rows`
+  // leaves out is not one they may be told exists.
+  const visible = rowWhere(resource, actor);
   const fields = resource.searchFields.slice(0, MAX_FIELDS_PER_RESOURCE);
   const seen = new Set<string>();
   const hits: AdminSearchHit[] = [];
@@ -73,7 +80,10 @@ async function searchResource(
     'admin search runs one indexed lookup per text field, which beats one unindexed OR',
     async () => {
       for (const field of fields) {
-        const where: readonly AdminFilter[] = [{ field: field.name, op: 'contains', value: term }];
+        const where: readonly AdminFilter[] = [
+          ...visible,
+          { field: field.name, op: 'contains', value: term },
+        ];
         const rows = await repo.list({ where, sort: resource.defaultSort, limit });
         for (const row of rows) {
           const id = rowId(row, resource.idField);
@@ -92,12 +102,6 @@ async function searchResource(
       return hits;
     },
   );
-}
-
-function labelOf(row: AdminRow, resource: AdminResource): string {
-  const value = row[resource.labelField];
-  if (typeof value === 'string' && value !== '') return value;
-  return rowId(row, resource.idField);
 }
 
 const SKIPPED_FORBIDDEN = 'admin.search.skipped.forbidden';
@@ -172,7 +176,7 @@ export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchR
         reason: decision.reason,
       }),
     );
-    hits.push(...(await searchResource(resource, term, limit)));
+    hits.push(...(await searchResource(resource, ctx.actor, term, limit)));
   }
 
   return { term, hits, searched, skipped, audit };

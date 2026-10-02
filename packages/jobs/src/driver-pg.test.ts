@@ -14,6 +14,7 @@ import {
   SQL_HEARTBEAT,
   SQL_JOBS_TABLE,
   SQL_NACK,
+  SQL_OUTBOX_PUBLISHED_JOB,
   SQL_TRY_ADVISORY_LOCK,
 } from './driver-pg-sql';
 import { DriverUnavailableError, JobDuplicateError } from './errors';
@@ -234,6 +235,41 @@ describe('pg enqueue, ack and nack', () => {
     expect(executor.calls[0]?.params.slice(8)).toEqual(['org-1', '00-abc-def-01', 'user-7']);
   });
 
+  test('a caller-allocated id and run id are the row’s, and a repeat of that publish is deduped', async () => {
+    // The outbox allocates both at stage time and publishes under them.
+    const landed = recordingExecutor([{ id: 'row-1', run_id: 'run-1' }]);
+    const request = {
+      id: 'row-1',
+      runId: 'run-1',
+      name: 'onboardOrg',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'onboard:org-1',
+      maxAttempts: 1,
+    };
+    await createPgDriver({ executor: landed }).enqueue(request);
+    expect(landed.calls[0]?.params[0]).toBe('row-1');
+    expect(landed.calls[0]?.params[5]).toBe('run-1');
+    // The statement itself refuses a second row under an id that already names one — the partial
+    // idempotency index stops covering the first job the moment it finishes.
+    expect(SQL_ENQUEUE).toContain('where not exists (select 1 from x_jobs published');
+
+    let call = 0;
+    const repeated = {
+      calls: [] as { sql: string; params: readonly unknown[] }[],
+      query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
+        this.calls.push({ sql, params });
+        call += 1;
+        // The insert lands nothing; the lookup by id finds the job the first publish made.
+        return Promise.resolve((call === 1 ? [] : [{ id: 'row-1', run_id: 'run-1' }]) as R[]);
+      },
+    };
+    const again = await createPgDriver({ executor: repeated }).enqueue(request);
+    expect(again).toEqual({ id: 'row-1', runId: 'run-1', deduped: true });
+    expect(repeated.calls[1]?.sql).toBe(SQL_OUTBOX_PUBLISHED_JOB);
+    expect(repeated.calls[1]?.params).toEqual(['row-1']);
+  });
+
   test('the live-row lookup is keyed by name, key AND tenant — never by the key alone', async () => {
     // Without the name it returned whichever other job derived the same natural key; without the
     // tenant it handed the caller another tenant's job id, on a surface that cancels by id.
@@ -333,23 +369,44 @@ describe('pg enqueue, ack and nack', () => {
 
   test('ack settles one id', async () => {
     const executor = recordingExecutor();
-    await createPgDriver({ executor }).ack('job-1');
+    await createPgDriver({ executor }).ack('job-1', {
+      workerId: 'w1',
+      claim: 1,
+      durationMs: 412.6,
+    });
     expect(executor.calls[0]?.sql).toBe(SQL_ACK);
-    expect(executor.calls[0]?.params).toEqual(['job-1']);
+    // The id, the claimer and the CLAIM the settle is fenced on (last but one), the duration its
+    // counter bucket adds, and that it is counted — only `x jobs drain` settles one uncounted.
+    expect(executor.calls[0]?.params).toEqual(['job-1', 'w1', 413, 1, true]);
+    await createPgDriver({ executor }).ack('job-2', { workerId: 'w1', claim: 4, counted: false });
+    expect(executor.calls[1]?.params).toEqual(['job-2', 'w1', 0, 4, false]);
   });
 
   test('nack maps deadLetter, park and neither onto three states, and park burns no attempt', async () => {
     const executor = recordingExecutor();
     const driver = createPgDriver({ executor });
-    await driver.nack('job-1', { delayMs: 1_000, error: 'smtp timeout' });
-    await driver.nack('job-2', { delayMs: 0, park: true, countsAsAttempt: false });
-    await driver.nack('job-3', { delayMs: 0, deadLetter: true, park: true });
+    await driver.nack('job-1', { workerId: 'w1', claim: 1, delayMs: 1_000, error: 'smtp timeout' });
+    await driver.nack('job-2', {
+      workerId: 'w1',
+      claim: 2,
+      delayMs: 0,
+      park: true,
+      countsAsAttempt: false,
+    });
+    await driver.nack('job-3', {
+      workerId: 'w1',
+      claim: 7,
+      delayMs: 0,
+      deadLetter: true,
+      park: true,
+    });
 
     expect(executor.calls.map((call) => call.params)).toEqual([
-      ['job-1', 'ready', true, 1_000, 'smtp timeout'],
-      ['job-2', 'suspended', false, 0, null],
+      // …, error, claimer, stack, then retried / failed / dead, the duration, and the CLAIM.
+      ['job-1', 'ready', true, 1_000, 'smtp timeout', 'w1', null, 1, 0, 0, 0, 1],
+      ['job-2', 'suspended', false, 0, null, 'w1', null, 0, 0, 0, 0, 2],
       // deadLetter wins over park: a job that exhausted its retries is not merely shed.
-      ['job-3', 'dead', true, 0, null],
+      ['job-3', 'dead', true, 0, null, 'w1', null, 0, 0, 1, 0, 7],
     ]);
     expect(executor.calls[0]?.sql).toBe(SQL_NACK);
   });
@@ -360,16 +417,17 @@ describe('pg enqueue, ack and nack', () => {
       await createPgDriver({ executor: lost }).heartbeat('job-1', {
         visibilityTimeoutMs: 30_000,
         workerId: 'worker-a',
+        claim: 3,
       }),
     ).toBe(false);
     expect(lost.calls[0]?.sql).toBe(SQL_HEARTBEAT);
-    expect(lost.calls[0]?.params).toEqual(['job-1', 30_000, 'worker-a']);
+    expect(lost.calls[0]?.params).toEqual(['job-1', 30_000, 'worker-a', 3]);
 
     const kept = recordingExecutor([{ id: 'job-1' }]);
     expect(
       await createPgDriver({ executor: kept }).heartbeat('job-1', { visibilityTimeoutMs: 30_000 }),
     ).toBe(true);
-    expect(kept.calls[0]?.params).toEqual(['job-1', 30_000, null]);
+    expect(kept.calls[0]?.params).toEqual(['job-1', 30_000, null, null]);
   });
 });
 

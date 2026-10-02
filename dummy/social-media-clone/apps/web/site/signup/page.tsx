@@ -5,8 +5,8 @@
 import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
+import { Button } from '@ultimat3/ui';
 import { captchaSiteKey, HCAPTCHA_SCRIPT_URL, MIN_PASSWORD_LENGTH } from '../../shared/auth-policy';
-import { ActionButton } from '../../shared/ui/action';
 import { AppShell } from '../../shared/ui/app-shell';
 import { Field } from '../../shared/ui/field';
 import styles from './page.module.scss';
@@ -91,7 +91,9 @@ export function Page(props: SignUpProps) {
             </>
           )}
 
-          <ActionButton size="lg">{t('site.signup.submit')}</ActionButton>
+          <Button type="submit" size="lg">
+            {t('site.signup.submit')}
+          </Button>
         </form>
 
         <p class={styles.alt}>

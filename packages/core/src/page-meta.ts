@@ -27,6 +27,13 @@ export const CLIENT_BUILD_META = 'x-ultimate-build';
  */
 export const APP_UPDATE_MESSAGE = 'AppUpdateAvailable';
 
+/**
+ * How this server turns an action's name into its URL (`defineApi({ http: { pathStyle } })`), for
+ * the browser's `actionPath`. Written only for a style other than the default: absent IS
+ * `'resource'`, so an app that declares nothing renders the bytes it always did.
+ */
+export const CLIENT_PATH_STYLE_META = 'ultimate-path-style';
+
 /** Where the page's one socket dials: `/_x/sync`, or the deployment's absolute `SYNC_URL`. */
 export const CLIENT_SYNC_META = 'ultimate-sync';
 

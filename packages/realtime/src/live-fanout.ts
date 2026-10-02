@@ -47,14 +47,29 @@ export async function fanoutChange(
     return { sent: 0, stale: 0 };
   }
   if (change.op === 'truncate') return await truncated(deps, entry, change);
-  if (entry.stale) await refillWindowInLane(entry);
+  const reread = entry.stale;
+  if (reread) {
+    await refillWindowInLane(entry);
+    // Every subscriber was fed from the rows this read just replaced, so each is owed a snapshot —
+    // not only the ones `invalidate()` marked: a read that failed or timed out stales the window
+    // and marks nobody.
+    for (const subscription of entry.subscribers.values()) {
+      subscription.socket.markDesynced(subscription.sid);
+    }
+    // The read claims to hold this change already (`lsn` is the node's newest when it began), so
+    // there is nothing to patch. Returning before the loop below was the defect: the guard after
+    // this refused the change as stale and every desynced subscriber went without the change AND
+    // without its snapshot — a run console frozen on its first event after one `updateWhere`.
+    if (change.lsn <= entry.lsn) return { sent: await resnapshotAll(deps, entry), stale: 0 };
+  }
   // The consume-side twin of the replicator's own duplicate guard, which had none. `entry.lsn =
   // change.lsn` was unconditional, so a change the window already holds — a redelivery, or one
   // that arrived behind the snapshot that already included it — rewound every subscriber's cursor
   // to it and asked them to fold state they had already folded over newer rows.
   if (entry.lsn !== '' && change.lsn <= entry.lsn) return { sent: 0, stale: 1 };
   const bridged = bridgeChange(entry.shape, entry.matcher, change, entry.rows);
-  if (!bridged) return { sent: 0, stale: 0 };
+  // Matching nothing ends the fanout, but never before a re-read's marks are answered.
+  if (!bridged) return { sent: reread ? await resnapshotAll(deps, entry) : 0, stale: 0 };
   // Keyed ONCE, here, before the retained window stores them: a resume replays the same key.
   const result = { ...bridged, patches: keyPatches(entry, change, bridged.patches) };
   entry.lsn = change.lsn;
@@ -138,12 +153,20 @@ async function truncated(
   if (!entry.shape.entities.includes(change.entity)) return { sent: 0, stale: 0 };
   await refillWindowInLane(entry);
   if (change.lsn > entry.lsn) entry.lsn = change.lsn;
-  let sent = 0;
   for (const subscription of entry.subscribers.values()) {
     subscription.socket.markDesynced(subscription.sid);
+  }
+  return { sent: await resnapshotAll(deps, entry), stale: 0 };
+}
+
+/** Each marked subscriber, re-snapshotted out of the window just read. Frames that left. */
+async function resnapshotAll(deps: FanoutDeps, entry: QueryEntry): Promise<number> {
+  let sent = 0;
+  for (const subscription of entry.subscribers.values()) {
+    if (!subscription.socket.desynced.has(subscription.sid)) continue;
     if (await resnapshot(deps, entry, subscription)) sent += 1;
   }
-  return { sent, stale: 0 };
+  return sent;
 }
 
 /**

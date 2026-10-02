@@ -30,6 +30,11 @@ export interface QueryEntry {
   readonly qid: string;
   readonly definition: LiveQueryDefinition;
   readonly input: JsonValue;
+  /**
+   * The org this window is read for and patched for — its subscribers' own, `null` for subscribers
+   * that carry none. Part of `qid`, so two orgs on one `(query, input)` are two entries.
+   */
+  readonly tenant: string | null;
   /** Told to the client on every snapshot: the identity scope its rows belong under. */
   readonly rowEntity: string | null;
   /** The record key a row travels under; `null` = its `id` (a plain table). */
@@ -80,12 +85,14 @@ export function createEntry(
   definition: LiveQueryDefinition,
   input: JsonValue,
   matcher: IncrementalMatcher,
-  options?: EntryOptions,
+  options?: EntryOptions & { readonly tenant?: string | null },
 ): QueryEntry {
+  const tenant = options?.tenant ?? null;
   return {
     qid,
     definition,
     input,
+    tenant,
     // Resolved with the matcher, from the same build: `prepare` has already run, so a definition
     // that compiles its shape per input can answer.
     rowEntity: definition.rowEntity?.(input) ?? null,
@@ -96,7 +103,9 @@ export function createEntry(
       // static declaration and can only be a superset of it. Preferring the matcher is what lets a
       // definition built from a real query carry no static list at all.
       entities: matcher.entities.length > 0 ? matcher.entities : definition.entities,
-      orgId: orgIdOf(input),
+      // The window's own tenant first: a change in another org is dropped before any predicate
+      // runs, whether or not the query's `where` happens to name one.
+      orgId: tenant ?? orgIdOf(input),
       ...(definition.columns ? { columns: definition.columns } : {}),
     },
     matcher,
@@ -253,7 +262,7 @@ function startRead(entry: QueryEntry): PendingRead {
  */
 async function readSnapshot(entry: QueryEntry): Promise<SnapshotResult> {
   try {
-    return await entry.definition.snapshot({ input: entry.input });
+    return await entry.definition.snapshot({ input: entry.input, tenant: entry.tenant });
   } catch (error) {
     entry.stale = true;
     throw error;

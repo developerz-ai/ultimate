@@ -8,7 +8,7 @@
 
   &:focus-within {
     border-color: t.role('accent');
-    outline: 2px solid t.role('accent');
+    outline: t.stroke(thick) solid t.role('accent');
     outline-offset: 1px;
   }
 

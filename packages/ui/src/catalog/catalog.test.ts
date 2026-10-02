@@ -24,6 +24,15 @@ describe('CATALOG.md', () => {
     expect(undocumented).toEqual([]);
   });
 
+  // A props type the parser cannot read — a union it has no rule for, an intersection — yields no
+  // props at all, and the page then says `_No props._` about a component that takes ten.
+  test('no component is catalogued as taking no props', async () => {
+    const empty = (await collectComponents())
+      .filter((doc) => doc.props.length === 0)
+      .map((doc) => doc.name);
+    expect(empty).toEqual([]);
+  });
+
   test('every prop resolves to a named type — no empty cells', async () => {
     const broken = (await collectComponents()).flatMap((doc) =>
       doc.props.filter((prop) => prop.type === '').map((prop) => `${doc.name}.${prop.name}`),

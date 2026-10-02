@@ -80,6 +80,7 @@ describe('manifestJson', () => {
       'actions',
       'queries',
       'channels',
+      'admin',
       'jobs',
       'tasks',
       'policies',

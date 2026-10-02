@@ -30,6 +30,7 @@ describe('secret', () => {
   test('the logger redacts a secret under a key nobody listed', () => {
     const lines: Record<string, unknown>[] = [];
     const logger = createLogger({
+      level: 'info',
       clock: frozenClock('2026-08-11T00:00:00.000Z'),
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
     });

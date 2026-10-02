@@ -3,8 +3,8 @@
 // that safe — lease, copy steps, enqueue, then ack — has to be readable in one screen.
 
 import { uuid } from '@ultimat3/core';
-import type { JobDriver, JobRecord, JobState } from '@ultimat3/jobs';
-import { inspectJobList } from '@ultimat3/jobs';
+import type { ClaimedJob, JobDriver, JobRecord, JobState } from '@ultimat3/jobs';
+import { claimOf, inspectJobList } from '@ultimat3/jobs';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -57,7 +57,7 @@ export interface DrainOutcome {
 function leaseCandidates(
   source: JobDriver,
   candidates: readonly JobRecord[],
-): Promise<readonly JobRecord[]> {
+): Promise<readonly ClaimedJob[]> {
   if (candidates.length === 0) return Promise.resolve([]);
   return source.claim({
     queues: [...new Set(candidates.map((record) => record.queue))],
@@ -82,9 +82,14 @@ async function copySteps(source: JobDriver, target: JobDriver, runId: string): P
  * `countsAsAttempt: false` was the only bit the drivers had and `step.sleep` had claimed it;
  * `NackOptions.park` now carries the suspension, so the two callers no longer share one meaning.
  */
-async function releaseLease(source: JobDriver, id: string): Promise<void> {
+async function releaseLease(source: JobDriver, leased: ClaimedJob): Promise<void> {
   try {
-    await source.nack(id, { delayMs: 0, countsAsAttempt: false });
+    // Fenced on the drain's own claim, like every settle: a lease that lapsed is not handed back.
+    await source.nack(leased.id, {
+      ...claimOf(leased),
+      delayMs: 0,
+      countsAsAttempt: false,
+    });
   } catch {
     // The lease expires on its own. Masking the transfer's real error with this one helps nobody.
   }
@@ -141,14 +146,16 @@ export async function drainJobs(
       // Only now is the ack the drain's to make: the lease proves no source worker holds this
       // job, and the target already has both the row and its steps. A crash between the two
       // leaves the job live on both drivers, where `idempotencyKey` dedupes it.
-      await source.ack(record.id);
+      // `counted: false`: the row is finished HERE because it left, and a job that was moved is
+      // not a job that completed — it must add nothing to the source's `done` history.
+      await source.ack(record.id, { ...claimOf(record), counted: false });
       // Report the row as the drain FOUND it: `claim()` returns it mid-lease (`running`, one
       // attempt higher), a state nothing on either driver is in once this returns.
       moved.push(found.get(record.id) ?? record);
     } catch (error) {
       // A failed enqueue left nothing on the target, so the lease goes back. A failed ack did
       // not: the job is already live there, and releasing it would race the target's worker.
-      if (!enqueued) await releaseLease(source, record.id);
+      if (!enqueued) await releaseLease(source, record);
       failures.push({ id: record.id, name: record.name, finding: findingFrom(error) });
     }
   }

@@ -185,17 +185,10 @@ function layoutFinding(path: string, at: string, property: string, where: string
 
 export const guard: Guard = {
   summary: 'an animation moves transform and opacity, never the layout',
-  async check(root) {
-    const files: StyleFile[] = [];
-    for await (const entry of new Bun.Glob('{apps,packages}/**/*.scss').scan({
-      cwd: root,
-      absolute: false,
-    })) {
-      const path = entry.split('\\\\').join('/');
-      if (path.includes('node_modules/')) continue;
-      files.push({ path, scss: await Bun.file(\`\${root}/\${path}\`).text() });
-    }
-    return animatedLayoutProperties(files);
+  async check(_root, sources) {
+    // The run's ONE read of the stylesheets: every guard asking for this glob shares the walk.
+    const sheets = await sources.files('{apps,packages}/**/*.scss');
+    return animatedLayoutProperties(sheets.map((file) => ({ path: file.path, scss: file.text })));
   },
 };
 `;

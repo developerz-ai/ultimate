@@ -103,13 +103,14 @@ Small status label. Tone maps straight onto the status colour roles so the same 
 
 ### BarChart
 
-A bar chart of one series — clicks per day, signups per week — as static SVG. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. Geometry lives in `bar-chart-view.ts`.
+A bar chart of one series — clicks per day, signups per week — or two stacked (done, and failed on top), as static SVG. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. Geometry lives in `bar-chart-view.ts`.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `label` | `string` | yes | The accessible name for the whole chart, already translated. |
 | `points` | `readonly ChartPoint[]` | yes | Oldest first. Every bar comes from exactly this array — the caller zero-fills gaps. |
 | `highlightLast` | `boolean` | — | Draw the last bar at full strength — the eye lands where the live number is. Default on. |
+| `seriesLabels` | `{ readonly primary: string; readonly secondary: string }` | — | Names of the two series, already translated, read by each rect's `<title>`. Give them when a point carries `secondary`: a stacked bar with no name for its top is two numbers and no key. |
 | `class` | `string` | — |  |
 
 ### Breadcrumb
@@ -170,6 +171,7 @@ Native checkbox with a token-drawn indicator. The label element wraps the input,
 | `id` | `string` | — |  |
 | `name` | `string` | — |  |
 | `value` | `string` | — |  |
+| `form` | `string` | — | The id of the `<form>` this box submits with, when it cannot sit inside it — a row checkbox in a table whose page already holds another form. The platform's own association, no script. |
 | `checked` | `boolean` | — |  |
 | `indeterminate` | `boolean` | — | Tri-state for "some children selected". The ONLY thing mirrored to `aria-checked`. |
 | `disabled` | `boolean` | — |  |
@@ -258,7 +260,6 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `rows` | `readonly Row[]` | yes |  |
 | `rowKey` | `(row: Row) => string` | yes |  |
 | `sort` | `SortState` | — |  |
-| `onSortChange` | `(sort: SortState \| undefined) => void` | — |  |
 | `loading` | `boolean` | — |  |
 | `error` | `unknown` | — | An UltimateError (or anything shaped like one) from the query. |
 | `onRetry` | `(() => void)` | — |  |
@@ -266,11 +267,14 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `emptyDescription` | `string` | — |  |
 | `nextCursor` | `string` | — | Opaque cursors from the query result; absent means no further page. |
 | `prevCursor` | `string` | — |  |
-| `onCursor` | `((cursor: string, direction: 'next' \| 'prev') => void)` | — |  |
 | `stickyHeader` | `boolean` | — |  |
 | `density` | `'comfortable' \| 'compact'` | — |  |
 | `skeletonRows` | `number` | — | Placeholder row count while loading. Match the usual page size. |
 | `class` | `string` | — |  |
+| `onCursor` | `((cursor: string, direction: 'next' \| 'prev') => void)` | — | Callback paging. Never beside `hrefFor` — the type refuses the pair. |
+| `onSortChange` | `((sort: SortState \| undefined) => void)` | — | Callback sorting. Never beside `sortHrefFor` — the type refuses the pair. |
+| `hrefFor` | `(cursor: string, direction: 'next' \| 'prev') => string` | — | Link paging: the URL of the page a cursor names, handed to `<Pagination hrefFor>`. |
+| `sortHrefFor` | `((sort: SortState \| undefined) => string)` | — | Link sorting: the URL of the list under the NEXT sort state of a header's cycle (`undefined` is "unsorted"). Absent, a sortable header is plain text — never a button with no handler. |
 
 ### DateTime
 
@@ -546,7 +550,7 @@ A keyboard key or chord as the user reads it — "⌘K", "Esc", "/". A native `<
 
 ### Link
 
-Anchor primitive. External links get `rel` hardening and a translated "opens in a new tab" hint automatically — never a bare `target="_blank"`.
+Anchor primitive. External links get `rel` hardening and a translated "opens in a new tab" hint automatically — never a bare `target="_blank"`. `appearance="button"` is Button's look on the same anchor: a control that navigates is a link.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -554,12 +558,19 @@ Anchor primitive. External links get `rel` hardening and a translated "opens in 
 | `children` | `JSX.Element` | yes |  |
 | `external` | `boolean` | — |  |
 | `externalHint` | `string` | — | Announced suffix for external links; supply via `t()` at the call site. |
-| `underline` | `'always' \| 'hover' \| 'none'` | — |  |
-| `tone` | `'accent' \| 'inherit'` | — |  |
+| `rel` | `'next' \| 'prev'` | — | A pager's direction. Joins the hardening an external link always carries, never replaces it. |
 | `id` | `string` | — |  |
 | `class` | `string` | — |  |
 | `aria-current` | `'page' \| 'step' \| 'true' \| false` | — |  |
 | `onClick` | `JSX.EventHandlerUnion<HTMLAnchorElement, MouseEvent>` | — |  |
+| `appearance` | `'link' \| 'button'` | — | `button` wears Button's classes on the same `<a>`; the two looks take different props. |
+| `underline` | `'always' \| 'hover' \| 'none'` | — |  |
+| `tone` | `'accent' \| 'inherit' \| Tone` | — | A text link: `accent` or `inherit`. A button-link: any `Tone`. |
+| `variant` | `ButtonVariant` | — | `appearance="button"` only. |
+| `size` | `Size` | — | `appearance="button"` only. |
+| `fullWidth` | `boolean` | — | `appearance="button"` only. |
+| `iconStart` | `JSX.Element` | — | `appearance="button"` only. |
+| `iconEnd` | `JSX.Element` | — | `appearance="button"` only. |
 
 ### LocaleSwitcher
 
@@ -631,19 +642,20 @@ The top of a screen: breadcrumbs, the page's one heading, a description, and the
 
 ### Pagination
 
-Cursor-first pagination — the only shape a Postgres-backed list should use. Numbered mode exists for prerendered archives where the total is known.
+Cursor-first pagination — the only shape a Postgres-backed list should use. Numbered mode exists for prerendered archives where the total is known. One mode per use: callbacks (`onCursor` / `onPage`) for an island, or `hrefFor` for a server-rendered list — anchors the browser follows, with no script on the page.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `nextCursor` | `string` | — | Opaque cursor for the following page; absent disables "next". |
 | `prevCursor` | `string` | — |  |
-| `onCursor` | `((cursor: string, direction: 'next' \| 'prev') => void)` | — |  |
-| `page` | `number` | — | Numbered mode: 1-based page and total. Ignored when cursors are present. |
-| `totalPages` | `number` | — |  |
-| `onPage` | `((page: number) => void)` | — |  |
 | `labelPrevious` | `string` | — | Already-translated; falls back to the ui.* catalog keys. |
 | `labelNext` | `string` | — |  |
 | `class` | `string` | — |  |
+| `onCursor` | `((cursor: string, direction: 'next' \| 'prev') => void)` | — | Callback mode. Never beside `hrefFor` — the type refuses the pair. |
+| `page` | `number` | — | Numbered mode: 1-based page and total. Ignored when cursors are present. |
+| `totalPages` | `number` | — |  |
+| `onPage` | `((page: number) => void)` | — |  |
+| `hrefFor` | `(cursor: string, direction: 'next' \| 'prev') => string` | — | Link mode: the URL of the page a cursor names. Renders `<a rel="next\|prev">` and attaches no handler, so it needs no island. Cursor paging only — never beside `onCursor`, `onPage`, `page` or `totalPages`. |
 
 ### Popover
 
@@ -1014,6 +1026,14 @@ charts and email.
 | `pill` | `999px` |
 | `full` | `50%` |
 
+### Stroke — `--stroke-*`
+
+| Token | Value |
+|---|---|
+| `hairline` | `1px` |
+| `thick` | `2px` |
+| `heavy` | `3px` |
+
 ### Font size — `--text-*`
 
 | Token | Value |
@@ -1078,7 +1098,7 @@ charts and email.
 | `toast` | `700` |
 | `skip-nav` | `800` |
 
-### Breakpoints — `@include t.respond-to(<name>)`
+### Breakpoints — `respond-to` · `respond-down` · `respond-between`
 
 | Token | Value |
 |---|---|
@@ -1087,3 +1107,14 @@ charts and email.
 | `lg` | `1024px` |
 | `xl` | `1280px` |
 | `2xl` | `1536px` |
+
+`@include t.respond-to(md)` is `md` and wider, `t.respond-down(md)` is narrower than `md`, and
+`t.respond-between(md, lg)` is `md` up to `lg`. A max-width arm stops 0.02px under its rung, so
+no width matches two of them.
+
+### Computed lengths
+
+| Function | Answers |
+|---|---|
+| `t.rem(24px)` | `1.5rem` — px, rem or a unitless px count in, rem out |
+| `t.fluid(1rem, 2rem, 20rem, 80rem)` | one `clamp()`: the first size at a 20rem viewport, the second at 80rem, linear between |

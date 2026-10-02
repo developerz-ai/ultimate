@@ -188,9 +188,11 @@ export function renderFixLiteral(value: unknown, placeholder: string): string {
  * denylist has to be right about every character every shell will ever read, and this only has to
  * be right about the ones a fix line needs. No space, so a value is always one word; no leading
  * `-` or `~`, because an argument starting with either is an OPTION or a home directory rather
- * than the value it reads as.
+ * than the value it reads as. A leading `@` IS carried: a scoped package name starts with one, and
+ * `@` opens nothing in a POSIX shell — `$@` needs the `$`, an extglob `@(…)` the parenthesis, and
+ * neither is in the set.
  */
-const SHELL_ARG_SAFE = /^[A-Za-z0-9/][A-Za-z0-9._:/@=+,%~-]*$/;
+const SHELL_ARG_SAFE = /^[A-Za-z0-9/@][A-Za-z0-9._:/@=+,%~-]*$/;
 
 /**
  * The same value where the text is read by a SHELL. A `fix:` is a command meant to be pasted, so a

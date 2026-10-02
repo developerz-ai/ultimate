@@ -22,14 +22,23 @@ not exist — five of these had an empty column and were each measured green on 
 | Rule | Detail | Refused by |
 |---|---|---|
 | One gate | \`bin/check\` — \`x build\` and then \`x verify\`. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request |
+| Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
 | One way | generators, not hand-rolled files: \`x g resource\`, \`x g action\`, \`x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
+| Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal the handle can express | \`guards/repo-raw-sql.ts\` |
 | Errors | never \`throw new Error\` — subclass \`UltimateError\` with a code, a cause and a fix | \`guards/bare-error.ts\` |
 | Money | \`{ minor, currency }\`, never a float — \`money()\` on the column | the type: \`price: 19.99\` is TS2322, \`number\` is not \`MoneyInput\` |
 | Time | store UTC, format with an explicit IANA time zone | \`guards/unzoned-date.ts\` |
 | Strings | every user-facing string goes through \`t()\` | \`guards/untranslated-string.ts\` |
 | Colour | semantic tokens only, never a raw hex | \`guards/raw-colour.ts\` |
+| Lengths | a length is a token or \`rem()\`, never a raw \`px\` | \`guards/raw-length.ts\` |
+| Breakpoints | a viewport query names a breakpoint rung (\`respond-up\`, \`respond-down\`, \`respond-between\`), never a width | \`guards/raw-breakpoint.ts\` |
+| Layers | a \`z-index\` is a named layer, never a number | \`guards/raw-z-index.ts\` |
+| Shadows | a shadow comes off the shadow scale, never a hand-written offset and blur | \`guards/raw-shadow.ts\` |
+| Timing | a duration and an easing curve come off the motion scale, never a literal | \`guards/raw-motion.ts\` |
+| Classes | a class a component reads off its stylesheet is one that sheet compiles | \`guards/undefined-style-class.ts\` |
+| Properties | a custom property a stylesheet reads is one the app declares | \`guards/undeclared-custom-property.ts\` |
 | Interaction | a click is answered by a control — never a \`<div onClick>\`, and never a \`role=\` where the native tag exists | \`guards/semantic-interactive.ts\` |
 | Focus | \`outline: none\` replaces the ring in the same rule or the one beside it, or it does not remove it | \`guards/focus-visible.ts\` |
 | Images | every image carries width + height or an aspect-ratio, and the priority one is never \`loading="lazy"\` | \`guards/image-dimensions.ts\` |
@@ -50,6 +59,23 @@ Size is a hard line and not a style note: past ${LINE_CEILING} lines a file has 
 unit of review, and \`x verify\` refuses it. The one exemption is a file that is nothing but re-exports —
 it has one job by construction, and its length tracks the API's size rather than its complexity;
 one statement of logic in such a file re-arms the ceiling on the same save.
+
+Coverage counts execution, not validation: 100% is reachable with zero assertions, and a covered
+branch whose test cannot fail is worse than an uncovered one, because it reads as done. An
+\`exclude\` entry under \`coverage\` is for code a unit test cannot execute — an island's
+browser-only mount, a container entry point — carries its \`why\`, and is printed by \`x doctor\`.
+
+Every test the scaffold and the generators write is the idiom to copy. All of them run on the
+\`unit\` step — in process, on the in-memory driver, with no database, browser or server:
+
+| What | How its test runs it | Copy from |
+|---|---|---|
+| a page | \`renderRoute(page, { url, actor })\` — \`load\`, \`meta\` and the page on one resolution; assert on \`view.text\`, \`view.html\`, \`view.meta\`, \`view.islands\` | \`apps/web/app/dashboard/page.test.ts\` |
+| a component | \`renderView(Component, props)\` | \`apps/web/shared/shell.test.ts\` |
+| an island | \`mountIsland\`, once per state its \`*.island.states.ts\` declares | \`apps/web/shared/theme-toggle.island.test.ts\` |
+| an action or a query | \`target.as(actor, input)\` — the refusal first, then what it answers | \`apps/web/api/health.test.ts\` |
+| a job, a task, a backfill | \`test('…', async ({ runJobs }) => …)\` — a worker in this process; assert on \`trace.steps\` and each run's \`outcome\` | what \`x g job\` writes |
+| a repo, a seed | as an actor, \`runWithContext(createContext({ actor }), …)\`, with \`driver.reset?.()\` after each | \`packages/db/src/seed.test.ts\` |
 
 Money is the one row with no guard, deliberately: a float has no static signature a text rule can
 see, and the type already fires — measured, \`price: 19.99\` in a seed is
@@ -86,6 +112,9 @@ ${app.kebab} — Ultimate app. Read AGENTS.md first; it is the same content in t
 - Scaffold, do not hand-write: \`x g <kind> <name>\` — \`x g --help\` lists every kind, and is the
   only place that list is stated.
 - Destructive DB work goes in a branch: \`x db branch create <name>\`, never the shared dev DB.
+- \`x db gen\` also writes \`packages/db/schema/\` — the whole schema as SQL, one file per table.
+  Read it; never edit it. \`x verify\` fails with \`X_SCHEMA_DUMP_DRIFT\` when it is not what the
+  migrations produce, and \`x db gen\` rewrites it.
 - \`x doctor\` explains a broken environment and prints the fix command for every finding.
 
 \`.claude/\` holds the harness that reads this file: \`/feature\`, \`/planx\`, \`/verify\` and four
@@ -182,7 +211,12 @@ exec bunx x verify "$@"
 
 const composeDev = (
   app: NameSet,
-): string => `# Optional: x dev needs none of this. Use it when you want the real Postgres/NATS/MinIO locally.
+): string => `# Optional: x dev needs none of this. Use it when you want a real Postgres, NATS and S3 locally:
+#
+#   docker compose -f docker/docker-compose.dev.yml up -d
+#   DATABASE_URL=postgres://postgres:${app.kebab}@127.0.0.1:5432/${app.kebab} NATS_URL=nats://127.0.0.1:4222 \\
+#   S3_ENDPOINT=http://127.0.0.1:9000 S3_BUCKET=${app.kebab} S3_FORCE_PATH_STYLE=1 \\
+#   S3_ACCESS_KEY_ID=${app.kebab} S3_SECRET_ACCESS_KEY=${app.kebab}-dev x dev
 #
 # Every published port binds 127.0.0.1, not 0.0.0.0. This stack ships its credentials in the file,
 # as a dev stack reasonably does — so the short form \`'5432:5432'\` would put an authenticated
@@ -204,13 +238,24 @@ services:
     image: nats:2-alpine
     command: ['-js']
     ports: ['127.0.0.1:4222:4222']
+  # Versity S3 Gateway over a directory: a directory under /data is a bucket, so the volume mounted
+  # at /data/${app.kebab} IS the bucket — ready on the first \`up\`, no CreateBucket call. It checks
+  # the region a request was signed for, and an app that sets no S3_REGION signs for \`auto\` — so
+  # that is this gateway's region. A server for a laptop; production is any S3-compatible endpoint.
   s3:
-    image: minio/minio
-    command: ['server', '/data']
+    image: versity/versitygw:v1.8.0
     environment:
-      MINIO_ROOT_USER: ${app.kebab}
-      MINIO_ROOT_PASSWORD: ${app.kebab}-dev
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARG: /data
+      VGW_PORT: ':9000'
+      VGW_REGION: auto
+      ROOT_ACCESS_KEY: ${app.kebab}
+      ROOT_SECRET_KEY: ${app.kebab}-dev
     ports: ['127.0.0.1:9000:9000']
+    volumes: ['s3bucket:/data/${app.kebab}']
+
+volumes:
+  s3bucket:
 `;
 
 /** Docs, shims and container files for a new app, in the order a reader meets them. */

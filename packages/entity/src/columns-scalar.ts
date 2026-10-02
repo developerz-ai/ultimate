@@ -3,17 +3,18 @@
 // store a value production answers 23514, 22003 or 22021 (a NUL in text) for. Split from `columns.ts` at its ceiling.
 
 import { charCount } from '@ultimat3/schema';
-import { column } from './column';
+import { BARE, column } from './column';
 import { got, refuseNul } from './column-values';
 import { refuseColumn } from './refuse';
-import type { Column } from './types';
+import { makeTextColumn } from './sealed-column';
+import type { Column, TextColumn } from './types';
 
 export interface TextOptions {
   /** Emits `char_length(<column>) <= max`, so Postgres refuses an over-long string too. */
   readonly max?: number;
 }
 
-export const text = (options: TextOptions = {}): Column<string> => {
+export const text = (options: TextOptions = {}): TextColumn => {
   const { max } = options;
   // Refused where it is declared: a `NaN` or fractional max emitted `char_length(x) <= NaN` into
   // the DDL, which Postgres refuses one migration later, far from the line that wrote it.
@@ -24,8 +25,14 @@ export const text = (options: TextOptions = {}): Column<string> => {
       'text({ max: 200 }) — a whole count of characters, or text() for no bound',
     );
   }
-  return column<string>(
-    'text',
+  return makeTextColumn<string, false>(
+    {
+      ...BARE,
+      kind: 'text',
+      ...(max === undefined
+        ? {}
+        : { length: max, check: (name) => `char_length(${name}) <= ${max}` }),
+    },
     (value) => {
       if (typeof value !== 'string') {
         return refuseColumn(
@@ -45,7 +52,7 @@ export const text = (options: TextOptions = {}): Column<string> => {
       }
       return refuseNul(value);
     },
-    max === undefined ? {} : { length: max, check: (name) => `char_length(${name}) <= ${max}` },
+    false,
   );
 };
 

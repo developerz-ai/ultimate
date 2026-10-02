@@ -25,24 +25,33 @@ export class TestBudgetInvalidError extends UltimateError {
   }
 }
 
+/**
+ * The gate as an app types it. A refusal raised from another entry — `bun run verify` at the
+ * framework root, where `x verify` answers `X_NOT_IN_APP` — passes its own spelling, so the
+ * `fix:` runs where it was raised.
+ */
+const GATE = 'x verify';
+
 /** `x verify --shard` asked for a split the gate cannot make. */
 export class VerifyShardInvalidError extends UltimateError {
-  constructor(input: { reason: string; fix?: string }) {
+  constructor(input: { reason: string; fix?: string; command?: string }) {
+    const command = input.command ?? GATE;
     super({
       code: 'X_VERIFY_SHARD_INVALID',
-      cause: `x verify --shard: ${input.reason}`,
-      fix: input.fix ?? 'x verify --only unit --shard 1/4 --json',
+      cause: `${command} --shard: ${input.reason}`,
+      fix: input.fix ?? `${command} --only unit --shard 1/4 --json`,
     });
   }
 }
 
 /** A part handed to `x verify merge` that is not an `x verify --json` document. */
 export class VerifyMergeInputError extends UltimateError {
-  constructor(input: { file: string; reason: string; sourceError?: unknown }) {
+  constructor(input: { file: string; reason: string; sourceError?: unknown; command?: string }) {
+    const command = input.command ?? GATE;
     super({
       code: 'X_VERIFY_MERGE_INPUT',
-      cause: `x verify merge: ${input.file} ${input.reason}`,
-      fix: 'x verify --only <step> --json > part.json   # one document per part, the last line of stdout',
+      cause: `${command} merge: ${input.file} ${input.reason}`,
+      fix: `${command} --only unit --json > part.json   # one document per part, the last line of stdout`,
       ...(input.sourceError === undefined ? {} : { sourceError: input.sourceError }),
     });
   }

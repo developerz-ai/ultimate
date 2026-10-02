@@ -18,16 +18,19 @@ import { routesPanel } from './panel-routes';
 /** The four names a plain `{}` answers for without anybody having written them. */
 const INHERITED = ['__proto__', 'constructor', 'toString', 'hasOwnProperty'] as const;
 
-const route = (path: string, render: string): RouteFact =>
-  ({
-    path,
-    render,
-    hydrate: 'never',
-    offline: 'none',
-    budget: { js: '10kb' },
-    revalidate: null,
-    policy: null,
-  }) as unknown as RouteFact;
+// A whole `RouteFact`, never a cast: this fixture named `revalidate` and `policy`, two keys no
+// fact has, and went on compiling for as long as nothing read the fields it left out.
+const route = (path: string, render: string): RouteFact => ({
+  path,
+  render,
+  hydrate: 'never',
+  offline: 'none',
+  handler: '@ultimat3/admin',
+  budget: { js: '10kb' },
+  revalidateTags: [],
+  // Mounted BY the same inherited name, so the `mountedBy` counter is under the same test.
+  mount: { by: render, permissions: ['admin:read'] },
+});
 
 describe('a panel counting into a record is not confused by an inherited name', () => {
   test('the cache panel counts a dependent kind that collides with Object.prototype', async () => {
@@ -56,6 +59,8 @@ describe('a panel counting into a record is not confused by an inherited name', 
     for (const render of INHERITED) {
       expect(Object.hasOwn(data.byRenderMode, render)).toBe(true);
       expect(data.byRenderMode[render]).toBe(1);
+      expect(Object.hasOwn(data.mountedBy, render)).toBe(true);
+      expect(data.mountedBy[render]).toBe(1);
     }
   });
 

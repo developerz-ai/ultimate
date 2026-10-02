@@ -9,7 +9,7 @@
 // every time. Collapsing the second onto the first is privilege escalation with a cache hit rate.
 
 import type { Ctx } from '@ultimat3/core';
-import { finiteOption } from '@ultimat3/core';
+import { finiteOption, runWithContext, serviceActor, withChildContext } from '@ultimat3/core';
 import { type AnyQuery, queryHash, queryName } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
@@ -22,7 +22,8 @@ export interface LiveDefinitionOptions {
   /**
    * The node's own context — never a subscriber's. It supplies services, clock and locale to the
    * shared read; it supplies no authority, because that read is built with the query's policy
-   * switched off and every row leaving it is gated per subscriber.
+   * switched off and every row leaving it is gated per subscriber. The read itself runs in a CHILD
+   * of it that carries the window's tenant and nothing else of any subscriber's (`readFor`).
    */
   readonly ctx: Ctx;
   /**
@@ -82,6 +83,25 @@ const UNRESOLVED: IncrementalMatcher = {
   match: () => ({ patches: [], refill: true }),
 };
 
+/** Who a shared read runs as: the node, in one org. Never a subscriber — a window has many. */
+const LIVE_READER_ID = 'live-window';
+
+/**
+ * Run one shared read FOR a tenant: inside the node's context, as a service actor that carries the
+ * window's org and no subscriber's identity, roles or grants. `@ultimat3/entity`'s tenant guard
+ * derives from the ambient context, so this is what makes a repo that leaves the tenant to the
+ * acting actor read on a sync node exactly as it reads over HTTP — and what refuses a read that
+ * names another org (`X_TENANCY_ACTOR_MISMATCH`), which with NO context was simply answered.
+ *
+ * `tenant === null` runs under the node's own actor, which has no org: a tenant-scoped read is
+ * then `X_TENANCY_ACTOR_ORG_REQUIRED`, the verdict the same anonymous read gets over HTTP.
+ */
+function readFor<T>(ctx: Ctx, tenant: string | null, read: () => Promise<T>): Promise<T> {
+  if (tenant === null) return runWithContext(ctx, read);
+  const actor = serviceActor({ id: LIVE_READER_ID, orgId: tenant });
+  return runWithContext(ctx, () => withChildContext({ actor }, read));
+}
+
 /**
  * Registrable definition for one declared query. `register` takes it by name, so what comes back
  * is input-independent: the per-input half is resolved by `prepare`, which the registry awaits
@@ -140,13 +160,13 @@ export function liveQueryDefinition(
     prepare: async (input) => {
       await resolve(input);
     },
-    snapshot: async ({ input }): Promise<SnapshotResult> => {
+    snapshot: async ({ input, tenant }): Promise<SnapshotResult> => {
       const window = await resolve(input);
       // The position is taken BEFORE the rows: the rows are then at least that new, so the claim
       // is true. Taken after, a commit landing mid-read was claimed and missing — and every change
       // up to it is dropped downstream as already folded.
       const lsn = options.lsn?.() ?? '';
-      return { rows: await window.read(), lsn };
+      return { rows: await readFor(options.ctx, tenant, () => window.read()), lsn };
     },
     matcher: (input) => windows.get(queryHash(name, input))?.matcher ?? UNRESOLVED,
     // Read off the same resolved window as the matcher, so the scope the client keys rows under and

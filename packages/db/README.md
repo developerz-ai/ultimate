@@ -51,6 +51,13 @@ await withTransaction(async (tx) => {
 | `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructive()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
 | `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a reader sees the operation and not the prose. Shared by `readOnlyQuery()` and the destructive rail |
 | `introspect()` | live schema → `SchemaDescription`. **App tables only**, `As of 2026-08-24`: a relation an extension owns (`pg_depend`, `deptype = 'e'`) and anything that is not an ordinary or partitioned table are excluded before the fold, and an explicit `exclude` cannot bring them back |
+| `introspectCatalog()` / `CatalogDescription` / `emptyCatalog()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: the WHOLE schema in the catalog's own spelling — extensions, enum and domain types, sequences, tables, indexes, foreign keys, views, functions, triggers — sorted in code-unit order, plus `unrendered`: what exists and the dump cannot spell. Comparable only to another reading of itself; `introspect()` stays the entity-vocabulary reading a snapshot is diffed in |
+| `renderSchemaDump()` / `SchemaDumpFile` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: a catalog → the schema dump's files. Pure and byte-deterministic. [The schema dump](#the-schema-dump) |
+| `loadSchemaDump()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: build a schema from those files, in one transaction, retrying a file that names something not created yet |
+| `compareSchemaDump()` / `reloadDifferences()` / `schemaDumpDrift()` / `schemaDumpDifferenceOf()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: `X_SCHEMA_DUMP_DRIFT` — committed files against rendered ones in both directions, and load-equals-replay as a comparison |
+| `unexpectedObjects()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: the triggers, functions, views, types and sequences a live catalog holds and an expected one does not, as `unexpected-object` drift. Identity, never definition text |
+| `PgliteOptions.extensions` / `linkPgliteExtensions()` | `As of 2026-10`: Postgres extensions to link at boot, by name — a list, or a function for a caller whose list is read from disk. `linkPgliteExtensions(names)` answers `{ linked, missing }` without booting anything: `missing` is what the installed PGlite ships no bundle for, which is how `@ultimat3/cli` decides a replay needs a real Postgres. A missing name is skipped at boot and refused by `create extension` itself |
+| `PgliteOptions.snapshotDir` | `As of 2026-10`: a directory for the post-`initdb` snapshot, so an in-memory boot is a restore (~0.4 s against ~2.7 s). Keyed on the PGlite version alone — `initdb` never sees a linked extension, so one snapshot serves every set; checksummed, never trusted, written by temp-name-then-rename. Ignored for a data directory on disk |
 | `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases. `As of 2026-08-19` the marker comment records the **base** as well as the instant (`ultimate:branch:<base>:<iso>`, on `BranchInfo.base`), and `reapBranches()` sweeps only branches of the database it is connected to — one Postgres hosting two Ultimate apps used to mean one app's nightly reap dropped the other's branches. A pre-3.x marker records no base and is skipped, never dropped |
 | `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
@@ -231,6 +238,52 @@ the exit code — and a deploy that rolled on past a schema nobody can reconstru
 drift exists to catch. There is no `x db drift`, and `x verify`'s `drift` step is the *source*
 detector (`checkSourceDrift`), which needs no database and never calls this.
 
+## The schema dump
+
+**Imported from `@ultimat3/db/schema-dump`, never from the barrel** (23.0.0): `introspectCatalog`,
+`emptyCatalog`, the `Catalog*` types, `renderSchemaDump`, `loadSchemaDump`, `compareSchemaDump`,
+`reloadDifferences`, `schemaDumpDrift`, `schemaDumpDifferenceOf` and `unexpectedObjects`. Three
+callers run them — `x db gen`, `x db migrate`, the gate's `drift` step — and `@ultimat3/db` is in
+every role's boot graph, where these ten modules served nothing. `schema-dump-entry.test.ts` holds
+both halves: the barrel evaluates none of them, and no name has two homes.
+
+`renderSchemaDump(await introspectCatalog({ client }))` is the schema as files: one directory per
+object kind, numbered in the order a database is built in, one file per named object.
+
+| Directory | Holds |
+|---|---|
+| `01_extensions/` | `create extension if not exists` — never `plpgsql` |
+| `02_types/` | enums, domains |
+| `03_sequences/` | sequences no column owns |
+| `04_tables/` | the table; a `serial` column's sequence before it and its ownership after; `replica identity full` |
+| `05_indexes/` | per table, indexes no constraint backs; `replica identity using index` |
+| `06_foreign_keys/` | per table, `alter table … add constraint` |
+| `07_views/` | views; a materialized view with its indexes |
+| `08_functions/` | per name, overloads together |
+| `09_triggers/` | per table |
+
+- An object whose owner — its table, else itself — starts with `x_` goes to a `framework/` twin of
+  the same layout. The rule is `FRAMEWORK_TABLE_PREFIX`, the one `appTables()` already holds.
+- Postgres' own spellings (`format_type`, `pg_get_expr`, `pg_get_*def`), so a loaded dump renders
+  the same bytes. Sorted in JS, never by `order by`: a name's order follows the server's collation.
+- No timestamp, version, owner or grant. Every sequence option is written, defaults included.
+- A name becomes a file name with everything outside `[A-Za-z0-9_-]` percent-encoded.
+- A file over 500 lines (`SCHEMA_DUMP_MAX_LINES`, the `filesize` ceiling) is split `<name>.1.sql`, `<name>.2.sql`;
+  `loadSchemaDump()` joins the parts in numeric order.
+- What cannot be spelled — partitions, inheritance, foreign tables, composite and range types,
+  aggregates, row-security policies, rules — is named in `unrendered.sql` as comments.
+
+`loadSchemaDump()` runs kind by kind, the framework twin first, each file in a savepoint. A file
+refused with `42P01`, `42883` or `42704` — "not created yet" — is retried after the rest; a pass
+that loads nothing ends with `X_SCHEMA_DUMP_DRIFT` naming the file.
+
+**Not the snapshot.** `<id>.snapshot.json` is `x db gen`'s diff base, in the entity's vocabulary:
+both sides of that diff are generator spellings. The dump is what the database holds, in SQL:
+both sides of ITS comparison are catalog spellings. Neither can be compared with the other.
+
+Which engine, where the files live, when they are written and what holds them is `@ultimat3/cli`'s
+(`x db gen`, `x db migrate`, the `drift` step). This package renders, loads and compares.
+
 ## The embedded database
 
 No `DATABASE_URL` means no Docker: `createPgliteClient()` runs Postgres as WASM inside this
@@ -311,6 +364,33 @@ so every later query on that table queues behind the ALTER. `migrate` runs `stat
 so nothing else would ever end that wait. `migrate()` emits it as `SET LOCAL lock_timeout` inside
 each migration's own transaction — it reverts at COMMIT, so a DDL value never leaks onto the session
 the ledger insert runs on.
+
+## `LISTEN` on a session of its own
+
+A pooled statement cannot hold a subscription: the next one runs on another connection. Both
+clients hold ONE session beside the pool for it.
+
+```ts
+import { createPostgresClient } from '@ultimat3/db';
+
+const client = createPostgresClient({ url: 'postgres://localhost:5432/app_test' });
+const subscription = await client.listen(
+  'x_jobs_wake',
+  (payload) => console.log('notified', payload),
+  () => console.log('listening'), // again after every re-dial
+);
+await subscription.unlisten();
+```
+
+| Fact | Detail |
+|---|---|
+| the session | `Bun.SQL.listen` on the pooled client — outside `max`, untouched by `idleTimeout`, ended by `unlisten()` or `close()`; PGlite's own `listen` on the embedded one. Every channel a client listens on shares it |
+| `onListening` | fires each time the subscription is (re-)established. The driver re-dials a session that died, and what was notified in between is LOST — re-read the source of truth there |
+| the channel | a lower-case identifier of at most 63 characters, refused otherwise before a driver sees it |
+| a transaction-pooling proxy | `listen()` resolves and nothing is ever delivered. Only a notification that arrives proves the path |
+| `canListen(client)` | `true` for both shipped clients. `false` for a replicated pair — listen on the primary it was built from, as the boot does |
+
+`@ultimat3/jobs`' `startQueueWake` is the framework's one caller.
 
 ## Migrations
 
@@ -424,6 +504,7 @@ job the moment Postgres fails over.
 | `X_MIGRATION_IRREVERSIBLE` | generated `down` would lose data |
 | `X_SQL_UNSAFE` | non-bindable interpolation, or an unsafe identifier/branch name |
 | `X_BRANCH_EXISTS` | branch database already exists (or is the connected one) |
+| `X_SCHEMA_DUMP_DRIFT` | the committed schema dump is not what the migrations produce, or does not load back |
 | `X_NOT_IMPLEMENTED` | branching an in-memory PGlite — a copy needs a directory |
 | `X_ENV_MISSING` | core's — `DATABASE_POOL_MAX` is set to something that is not a positive integer |
 

@@ -132,6 +132,12 @@ alter table x_outbox add column if not exists claimed_at timestamptz;
 
 alter table x_outbox add column if not exists claimed_by text;
 
+-- The run the published job carries, allocated when the row is STAGED so the enqueue that staged
+-- it can answer which run it started. The row id is the published job id for the same reason.
+-- Added by alter because x_outbox shipped without it. A row staged before this column existed is
+-- given a run id by the default, which is what the driver would have minted at its publish.
+alter table x_outbox add column if not exists run_id uuid not null default gen_random_uuid();
+
 -- The scheduler watermark. Without a durable one a redeployed scheduler has no idea what the
 -- pod it replaced already fired, so runRound takes the arming branch and every occurrence
 -- between the two processes is dropped with nothing logged.
@@ -140,6 +146,13 @@ create table if not exists x_scheduler_state (
   last_fired_at timestamptz not null,
   updated_at    timestamptz not null default now()
 );
+
+-- The last occurrence that DISPATCHED, and when. Apart from the watermark, which arming a task or
+-- skipping missed occurrences also moves: an operator asking when a task last ran is asking about
+-- jobs that were queued. Added by alter because x_scheduler_state shipped without them.
+alter table x_scheduler_state add column if not exists fired_occurrence_at timestamptz;
+
+alter table x_scheduler_state add column if not exists fired_at timestamptz;
 
 -- Leader election as an EXPIRING LEASE rather than a session advisory lock: the executor this
 -- package is handed is a pool, and a session-level pg_try_advisory_lock is released the moment
@@ -176,4 +189,62 @@ create table if not exists x_job_events (
 
 create index if not exists x_job_events_lookup_idx
   on x_job_events (name, published_at);
+
+-- What the body last reported through progress, as one value: done, total, note and the instant.
+-- A column and not a table, because it is read with the row and dies with it. Added by alter
+-- because x_jobs shipped without it.
+alter table x_jobs add column if not exists progress jsonb;
+
+-- The stack of the thrown value last_error describes, bounded by the driver before it is bound.
+alter table x_jobs add column if not exists last_error_stack text;
+
+-- How many times the row has been claimed, moved by the claim itself and never reset. A settle is
+-- fenced on it as well as on claimed_by: a worker that takes back its own lapsed job has the same
+-- id as the body still unwinding from the first claim, and only the ordinal tells the two apart.
+alter table x_jobs add column if not exists claims int not null default 0;
+
+-- The keyset a paged listing seeks by. Newest first, id as the tiebreak, so a page is an index
+-- range and never a sort of the whole table.
+create index if not exists x_jobs_created_idx on x_jobs (created_at desc, id desc);
+
+-- A paused queue or task, one row each. A queue pause is a fact about the QUEUE and not a column
+-- on every one of its rows: the claim reads this table with not exists, and a pause that had to
+-- rewrite a million rows would not take effect within one poll interval.
+create table if not exists x_job_pauses (
+  kind      text        not null,
+  name      text        not null,
+  paused_at timestamptz not null default now(),
+  primary key (kind, name)
+);
+
+-- The worker registry. One row per live worker, rewritten on its heartbeat and expired by time
+-- like a lease: a killed worker announces nothing and its row stops being read. Never cleaned up
+-- by anything that has to be running.
+create table if not exists x_job_workers (
+  id           text primary key,
+  host         text        not null,
+  queues       jsonb       not null,
+  concurrency  int         not null,
+  in_flight    jsonb       not null,
+  started_at   timestamptz not null,
+  heartbeat_at timestamptz not null default now(),
+  expires_at   timestamptz not null
+);
+
+-- Per-job history, in buckets. A settle adds to the one-minute bucket in the SAME statement that
+-- moves the row, and the scheduler leader folds old buckets into wider ones, so the key count per
+-- job name is fixed whatever the throughput.
+create table if not exists x_job_counters (
+  job          text        not null,
+  bucket_ms    int         not null,
+  bucket_start timestamptz not null,
+  done         bigint      not null default 0,
+  retried      bigint      not null default 0,
+  failed       bigint      not null default 0,
+  dead         bigint      not null default 0,
+  duration_ms  bigint      not null default 0,
+  primary key (job, bucket_ms, bucket_start)
+);
+
+create index if not exists x_job_counters_age_idx on x_job_counters (bucket_ms, bucket_start);
 `.trim();

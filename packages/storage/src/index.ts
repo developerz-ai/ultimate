@@ -59,6 +59,8 @@ export {
   STORAGE_SIGNING_SECRET_KEY,
   usesDevStorageSecret,
 } from './driver-local';
+export type { MemoryDriverOptions, MemoryStorageDriver } from './driver-memory';
+export { memoryDriver } from './driver-memory';
 export type {
   S3ClientLike,
   S3DriverOptions,

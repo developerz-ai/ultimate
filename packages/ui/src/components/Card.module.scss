@@ -17,7 +17,7 @@
 
   &:hover {
     border-color: t.role('accent', 0.4);
-    transform: translateY(-2px);
+    transform: translateY(t.rem(-2px));
     box-shadow: t.shadow(md);
   }
 

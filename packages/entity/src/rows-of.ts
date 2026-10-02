@@ -74,12 +74,24 @@ const fits = (projection: RecordProjection, value: Readonly<Record<string, unkno
 
 type Found = Map<string, Map<string, Row>>;
 
+/**
+ * The row as a RECORD: without its sealed properties. The handler's own object is what reaches
+ * here — it holds the plaintext — and a record goes to a browser store, so the copy is made at the
+ * one place every record is collected. An entity with none keeps the same object, as before.
+ */
+const withoutSealed = (projection: RecordProjection, row: Row): Row => {
+  if (projection.sealed.length === 0) return row;
+  return Object.fromEntries(
+    Object.entries(row).filter(([property]) => !projection.sealed.includes(property)),
+  );
+};
+
 const collect = (found: Found, projection: RecordProjection, row: Row): void => {
   const byKey = found.get(projection.type) ?? new Map<string, Row>();
   found.set(projection.type, byKey);
   const key = projection.key(row);
   // First sighting wins: one record shown twice in a response is one record, not two writes.
-  if (!byKey.has(key)) byKey.set(key, row);
+  if (!byKey.has(key)) byKey.set(key, withoutSealed(projection, row));
 };
 
 const walk = (node: SchemaNode, value: unknown, found: Found, inUnion: boolean): void => {

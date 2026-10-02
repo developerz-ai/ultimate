@@ -10,6 +10,7 @@ import {
   onShutdown,
   resetLifecycle,
   shutdownHookCount,
+  systemClock,
 } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
@@ -24,6 +25,7 @@ const fakeTx = (id: string): Tx => ({ id }) as unknown as Tx;
 
 const record = (id: string): OutboxRecord => ({
   id,
+  runId: `run-${id}`,
   job: 'notifySubscribers',
   queue: 'default',
   input: {},
@@ -204,6 +206,43 @@ describe('the relay takes part in the drain instead of running through it', () =
     // listening" is an `accept` hook too — ever ran.
     expect(accepted).toBe(1);
 
+    app.release();
+  });
+  // Audit 04-jobs step 4. `stop()` memoises its teardown, and the teardown kept the deadline it
+  // was STARTED with — so a SIGTERM landing on a manual stop joined a wait with no bound, behind a
+  // publish that never returns. Core abandoned the hook; the relay never reached 'stopped'.
+  test('a shutdown deadline landing on a manual stop() bounds the wait already in flight', async () => {
+    const app = await rig({ park: true });
+
+    const manual = app.relay.stop();
+    const still = await Promise.race([
+      manual.then(() => 'stopped'),
+      Bun.sleep(20).then(() => 'waiting'),
+    ]);
+    // Manual: it waits as long as its pass takes.
+    expect(still).toBe('waiting');
+
+    const bounded = app.relay.stop(systemClock.monotonic() + 40);
+    const outcome = await Promise.race([
+      Promise.all([manual, bounded]).then(() => 'stopped'),
+      Bun.sleep(400).then(() => 'wedged'),
+    ]);
+    expect(outcome).toBe('stopped');
+    // Abandoned, not finished: the row was never marked, and the next boot republishes it.
+    expect(await app.store.pendingCount()).toBe(1);
+    // And a relay that was abandoned still answers a later stop at once.
+    await app.relay.stop();
+
+    app.release();
+  });
+
+  test('the EARLIEST deadline wins: a later, looser one cannot extend the wait', async () => {
+    const app = await rig({ park: true });
+    const started = performance.now();
+    const first = app.relay.stop(systemClock.monotonic() + 40);
+    const second = app.relay.stop(systemClock.monotonic() + 5_000);
+    await Promise.all([first, second]);
+    expect(performance.now() - started).toBeLessThan(400);
     app.release();
   });
 });

@@ -37,6 +37,7 @@ export const DB_OWNED_ERROR_CODES = [
   'X_MIGRATE_CONCURRENT',
   'X_SQL_UNSAFE',
   'X_BRANCH_EXISTS',
+  'X_SCHEMA_DUMP_DRIFT',
 ] as const;
 
 /**
@@ -81,6 +82,7 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_MIGRATION_VIEW_DEPENDS: 'a view is compiled against a column this migration retypes',
   X_SQL_UNSAFE: 'SQL was built by string interpolation',
   X_BRANCH_EXISTS: 'that branch database already exists',
+  X_SCHEMA_DUMP_DRIFT: 'the committed schema dump is not what the migrations produce',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails

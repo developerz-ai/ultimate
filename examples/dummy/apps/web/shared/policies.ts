@@ -18,24 +18,47 @@ import { allow, defineRoles, type RoleDef } from '@ultimat3/policy';
  * second call in a feature folder is legal and silent, and *that* is why this file exists: Postly
  * calls it exactly once, from the leaf both surfaces already import, and every role is here.
  */
+/**
+ * The operator's dashboard (`apps/admin`), owner-only. `admin:<verb>` gates every screen and
+ * `<table>:<verb>` each resource, so the dashboard is decided by this map like every other
+ * surface — no admin-only policy. A run and its events are read-only there (the job writes them);
+ * cancelling one is the console's own `run:write`. `job:read`, `job:manage` and `audit:read` are
+ * the jobs and audit screens every admin carries: looking, and retrying or pausing.
+ */
+const OPERATOR_GRANTS = [
+  'admin:read',
+  'admin:write',
+  'admin:destroy',
+  ...['orgs', 'members', 'posts', 'comments', 'connections'].flatMap((table) => [
+    `${table}:read`,
+    `${table}:write`,
+    `${table}:delete`,
+  ]),
+  'runs:read',
+  'run_events:read',
+  'job:read',
+  'job:manage',
+  'audit:read',
+];
+
 export const roles = defineRoles({
   reader: {
     description: 'Reads the org feed, comments and likes.',
-    grants: ['feed:read', 'post:read', 'post:like', 'member:self'],
+    grants: ['feed:read', 'post:read', 'post:like', 'member:self', 'run:read'],
   },
   author: {
     description: 'Writes and publishes their own posts.',
-    grants: ['post:create', 'post:publish'],
+    grants: ['post:create', 'post:publish', 'run:write'],
     inherits: ['reader'],
   },
   admin: {
     description: 'Runs the blog: the roster, and anyone’s post.',
-    grants: ['org:invite'],
+    grants: ['org:invite', 'run:key'],
     inherits: ['author'],
   },
   owner: {
     description: 'Signs the contract. Billing is owner-only.',
-    grants: ['org:administer'],
+    grants: ['org:administer', ...OPERATOR_GRANTS],
     inherits: ['admin'],
   },
 } satisfies Record<MemberRole, RoleDef>);

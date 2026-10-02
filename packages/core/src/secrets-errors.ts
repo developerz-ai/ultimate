@@ -85,6 +85,27 @@ export class SecretsKeyInvalidError extends UltimateError {
 }
 
 /**
+ * The same condition under the same code, for a key that is NOT the current one: a malformed entry
+ * of a ring variable (`ULTIMATE_SECRETS_RETIRED_KEYS`). Its own class because its repair is an
+ * edit of that variable — the current key is fine, and re-exporting it changes nothing — and
+ * because a class has one literal `fix:`, which is what `x errors explain` prints without an
+ * instance. A variable name that is not one never reaches the line.
+ */
+export class SecretsRingKeyInvalidError extends UltimateError {
+  constructor(input: { at: string; found: number; expected: number; variable: string }) {
+    const variable = ENV_VAR_NAME.test(input.variable)
+      ? input.variable
+      : 'the variable the cause names';
+    super({
+      code: 'X_SECRETS_KEY_INVALID',
+      cause: `the master key in ${input.at} is ${input.found} character(s); an AES-256 key is ${input.expected} lowercase hex characters`,
+      fix: `x secrets edit   # ${variable} holds ${input.expected}-character lowercase hex keys separated by commas: correct or remove the entry the cause names`,
+      meta: { at: input.at },
+    });
+  }
+}
+
+/**
  * A well-formed key that is not the one this file was sealed with. Distinguishable from tampering
  * only because the envelope carries a key id — a domain-separated SHA-256 of the key, which is
  * safe to commit and is what turns "it will not decrypt" into two different instructions.

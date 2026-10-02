@@ -77,6 +77,10 @@ describe('the queue DDL', () => {
       'x_scheduler_leader',
       'x_job_leases',
       'x_job_events',
+      // The operator surface: paused queues and tasks, the worker registry, the history counters.
+      'x_job_pauses',
+      'x_job_workers',
+      'x_job_counters',
     ]);
   });
 

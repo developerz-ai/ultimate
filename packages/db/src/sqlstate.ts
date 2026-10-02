@@ -16,6 +16,9 @@ export const SQLSTATE = Object.freeze({
   undefinedTable: '42P01',
   /** `undefined_column` — an entity edited before the migration that adds the column ran. */
   undefinedColumn: '42703',
+  /** `undefined_function` and `undefined_object` — with `undefined_table`, "not created YET". */
+  undefinedFunction: '42883',
+  undefinedObject: '42704',
   uniqueViolation: '23505',
   foreignKeyViolation: '23503',
   serializationFailure: '40001',

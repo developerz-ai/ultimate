@@ -43,6 +43,14 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_VERIFY_MERGE_INCOMPLETE:
     'x verify merge parts/*.json --json   # after every CI job uploaded its part',
   X_VERIFY_MERGE_INPUT: 'x verify --only unit --json > part.json   # one document per part',
+  X_VERIFY_STEP_TIMEOUT:
+    'x verify --only unit --json   # reproduce the step alone; one that needs longer states it under "stepTimeoutMs" in x.verify.json',
+  X_COVERAGE_BELOW_FLOOR:
+    'x verify --only unit --json   # names the ten files losing the most lines; cover the worst with a test beside it',
+  X_COVERAGE_FLOOR_UNSTATED:
+    'x verify --only unit --json   # the finding carries the measured numbers and the "coverage" line to add to x.verify.json',
+  X_COVERAGE_FLOOR_STALE:
+    'x verify --only unit --json   # the finding carries the measured numbers; raise "coverage" in x.verify.json to them',
   X_TEST_SHARD_FAILED: 'x test --workers 1 --json',
   X_SCAFFOLD_PATH_ESCAPE: 'x g route posts --json   # a path with no ".." segment',
   X_GENERATE_JSON_INVALID:
@@ -233,18 +241,30 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_GUARD_FAILED: 'x verify --json   # the cause carries the throw the guard raised, verbatim',
   X_GUARD_FINDING_INVALID:
     'x verify --json   # then give the finding an X_ code, a cause and a fix naming a command',
+  // The finding's own `fix:` is this command plus the edit — the line, and what replaces the call.
+  X_BROWSER_TRANSPORT_BYPASS:
+    'x verify --only boundaries --json   # each finding names the line and the transport to use instead',
+  X_BROWSER_SERVER_BARREL:
+    'x verify --only boundaries --json   # each finding names the import and the browser entry to import instead',
   // `EDITOR=` inline rather than `export`: the variable is only needed for the one invocation, and
   // an agent copying this line gets a working command instead of a shell it has to keep.
   X_SECRETS_EDITOR_MISSING: 'EDITOR=nano x secrets edit',
   X_SECRETS_EDIT_FAILED: 'x secrets show --json   # then re-open the buffer: x secrets edit',
+  X_SEAL_RESEAL_PENDING:
+    'x doctor --json   # names the sealed columns and the retired key; re-seal with a backfill(), then: x secrets rotate --drop <keyId>',
   // Render's code, thrown here by the bundler half: the cause names the specifier and the file it
   // resolved to, and `x g island` is what puts that file where the page already says it is.
   X_ISLAND_INVALID: 'x routes --json   # the cause names the src; then: x g island <name>',
   // The four slice-11 codes: generated code that passed the gate and failed at runtime.
+  // The role map's file is the app's: the finding's `at` names it, so this line never guesses one.
   X_PERMISSION_UNGRANTED:
-    'x verify --only policy --json   # then add the permission to a role in apps/web/shared/roles.ts',
+    'x verify --only policy --json   # then add the permission to a role in the file the finding names (at)',
   X_JOB_UNREGISTERED:
     'x manifest --json   # after listing the module under jobs: [...] in apps/web/api/index.ts',
+  // The boot's twin of the line above: the worker or scheduler loaded only what the API index
+  // imports, and the manifest names a job or task that load did not register.
+  X_ROLE_LOAD_INCOMPLETE:
+    'x manifest --json   # after importing the module the cause names from apps/web/api/index.ts',
   X_FEATURE_UNKNOWN:
     'x entities --json   # then x g resource <feature> for the one the cause names',
   X_BUDGET_PARAMS_UNDECLARED:
@@ -256,6 +276,14 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_DEV_RESTART_REQUIRED:
     'x dev --json   # a fresh process; the supervised x dev restarts itself on such a save',
   X_DEV_ROOT_GONE: 'x dev --json   # from the app root, once it exists again',
+  X_DB_HANDLE_UNREGISTERED:
+    'x g entity widget --dry-run --json   # lists the files; the finding names the two lines to add to packages/db/src/client.ts',
+  X_ADMIN_RESOURCE_UNWIRED:
+    'x g resource widget --admin --dry-run --json   # lists the files; the finding names the two lines to add to apps/admin/app/admin/admin.ts',
+  X_IMAGE_NOT_PREBUILT:
+    'edit docker/Dockerfile: add RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target prebuilt after COPY . . in the runtime stage, then rebuild the image',
+  X_ADMIN_UNSCANNED:
+    'git mv apps/admin/src/index.ts apps/admin/app/admin/admin.ts   # then repoint its relative imports and x verify --only manifest --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -28,6 +28,7 @@ const tx = (id: string): Tx => ({ id, onRollback: () => undefined });
 
 const record: OutboxRecord = {
   id: 'row-1',
+  runId: 'run-1',
   job: 'chargeCard',
   queue: 'payments',
   input: { orderId: 'o-1' },
@@ -67,6 +68,7 @@ describe('the pg outbox store', () => {
       'org-1',
       '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
       'user-9',
+      'run-1',
     ]);
   });
 
@@ -100,6 +102,7 @@ describe('the pg outbox store', () => {
     const pool = recorder([
       {
         id: 'row-1',
+        run_id: 'run-1',
         job: 'chargeCard',
         queue: 'payments',
         input: { orderId: 'o-1' },

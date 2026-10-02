@@ -93,8 +93,13 @@ export interface ExportDefinition<Row, I> {
   readonly columns: readonly string[];
   /** One row -> its cells. Where a date gets its explicit zone and a Money its currency. */
   row(record: Row): ExportRecord;
-  /** Where the parts land. A `StorageDriver` satisfies this by having the method it already has. */
-  readonly sink: ExportSink;
+  /**
+   * Where the parts land — a THUNK, read per write: `sink: () => disk('exports')`. An export is
+   * declared at module evaluation and the app's disks exist after `defineStorage()`, so a value
+   * here (`disk()` called at import) failed before boot. A `StorageDriver` is an `ExportSink` by
+   * having the method it already has.
+   */
+  readonly sink: () => ExportSink;
   /** Rows per statement, per step and per part. Defaults to `DEFAULT_EXPORT_BATCH`. */
   readonly batch?: number;
   /** Defaults to `DEFAULT_EXPORT_MAX_PART_BYTES`. */
@@ -124,9 +129,14 @@ export interface ExportReport {
   readonly bytes: number;
 }
 
+/** The declaration as the pass reads it: the sink a value whose every `put` reads the thunk. */
+export type PlannedExport<Row, I> = Omit<ExportDefinition<Row, I>, 'sink'> & {
+  readonly sink: ExportSink;
+};
+
 /** Everything fixed at declaration, validated and built once. Read by `exportPass`. */
 export interface ExportPlan<Row, I> {
-  readonly definition: ExportDefinition<Row, I>;
+  readonly definition: PlannedExport<Row, I>;
   readonly size: number;
   readonly maxPartBytes: number;
   /** Absent unless a `rate` was declared — see `ExportDefinition.rate`. */
@@ -169,6 +179,12 @@ export function exportRows<Row, I>(definition: ExportDefinition<Row, I>): JobHan
       ? undefined
       : createPacer({ rate: definition.rate, job: definition.name, clock });
 
+  // Resolved per write, never here: this line runs at the app's import, before its storage exists.
+  const planned: PlannedExport<Row, I> = {
+    ...definition,
+    sink: { put: (key, body) => definition.sink().put(key, body) },
+  };
+
   return job<I>({
     name: definition.name,
     input: definition.input,
@@ -182,6 +198,9 @@ export function exportRows<Row, I>(definition: ExportDefinition<Row, I>): JobHan
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     run: (args) =>
-      exportPass<Row, I>({ definition, size, maxPartBytes, pace, nowMs: () => nowMs(clock) }, args),
+      exportPass<Row, I>(
+        { definition: planned, size, maxPartBytes, pace, nowMs: () => nowMs(clock) },
+        args,
+      ),
   });
 }

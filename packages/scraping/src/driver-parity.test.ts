@@ -10,12 +10,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake';
 import { testClock } from './clock';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
-import { fixtureBrowser, recordingFilename } from './driver-fixture';
+import { fixtureBrowser, recordingFilename } from './driver-recorded';
 import { httpRecordingFilename } from './http-recorded';
 import type { PageRecording } from './recording';
 
@@ -62,6 +63,7 @@ afterAll(async () => {
 const open = (driver: ScrapeDriver): Promise<ScrapeSession> =>
   driver.open({
     name: 'orders',
+    logger: createLogger({ writer: () => undefined }),
     rules: { allowHosts: ['shop.test'], block: ['image'] },
     clock: testClock(),
     timeoutMs: 5_000,
@@ -260,6 +262,7 @@ describe('unit · where the drivers genuinely cannot agree, pinned in one place'
     const withRestore = (driver: ScrapeDriver): Promise<ScrapeSession> =>
       driver.open({
         name: 'orders',
+        logger: createLogger({ writer: () => undefined }),
         rules: { allowHosts: ['shop.test'], block: ['image'] },
         clock: testClock(),
         timeoutMs: 5_000,

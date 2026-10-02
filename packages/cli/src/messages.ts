@@ -50,12 +50,21 @@ const CATALOG = {
   'cli.db.branch.unknown': '-',
   'cli.db.gen.failed': 'migration not generated',
   'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',
+  'cli.db.gen.blocked':
+    'nothing was compared — the app did not load ({count} finding(s)); fix them, then run x db gen again',
   // A THIRD outcome, and it is neither of the other two: nothing to generate, but the sidecar the
   // `drift` step reads did move — an edit under `packages/db/src` that implies no DDL. Rendering it
   // as `written` would name a migration nobody can apply; as `unchanged`, it would hide a file this
   // command wrote. `GeneratedFiles.outcome` is what `--json` carries the same distinction on.
   'cli.db.gen.recorded': 'no migration needed — schema hash re-recorded in {file}',
+  // The fourth: no DDL and no sidecar moved, but `packages/db/schema/` did — a hand edit repaired,
+  // or a framework table that changed under an upgrade. `unchanged` would deny a write the lines
+  // below it list, and this command is `X_SCHEMA_DUMP_DRIFT`'s whole `fix:`.
+  'cli.db.gen.dumped': 'no migration needed — schema dump rewritten ({count} file(s))',
   'cli.db.gen.written': 'migration {id} generated',
+  // Exit 1 and a migration on disk at once: the summary carries the half the exit code hides.
+  'cli.db.gen.writtenDumpFailed':
+    'migration {id} generated and written — the schema dump was not; do not generate it again',
   'cli.db.migrate.applied': 'migrations applied',
   'cli.db.migrate.failed': 'migration failed',
   'cli.db.reset.done': 'database reset and migrated',
@@ -88,6 +97,11 @@ const CATALOG = {
   'cli.deploy.plan': 'containers only: {images} image, roles {roles}',
   'cli.doctor.clean': 'no findings — environment is shippable',
   'cli.doctor.findings': '{count} finding(s)',
+  'cli.doctor.guards':
+    '{count} shipped guard(s) this app does not hold — each line adds one, then x verify reports what it finds:',
+  // `x doctor`'s other listing: what the coverage floor in x.verify.json does not see, and why.
+  'cli.doctor.coverageExclude':
+    '{count} path(s) x.verify.json excludes from the coverage floor — each with the reason it gives:',
   'cli.docs.code': '{code} is an error code — x errors explain answers it',
   'cli.docs.exports': 'exports: {list}',
   'cli.docs.installed': 'installed: {list}',
@@ -110,6 +124,8 @@ const CATALOG = {
   'cli.fix.plan':
     '{count} boundary violation(s) involve {file} — {edits} edit(s) to make, nothing written',
   'cli.generate.wrote': 'wrote {count} file(s) for {kind} {name}',
+  // The run that declared a table: `{next}` is commands, joined with `&&`, that run as printed.
+  'cli.generate.wroteNext': 'wrote {count} file(s) for {kind} {name} — next: {next}',
   // A distinct key, not the same sentence with a flag beside it: `--dry-run` reported "wrote 4
   // file(s)" while `data.dryRun` said nothing had landed, so an agent branching on `summary`
   // believed the files were on disk.
@@ -131,7 +147,13 @@ const CATALOG = {
   'cli.jobs.drainedPartial':
     'drained {count} job(s) from {from} to {to} — {skipped} left on {from}',
   'cli.jobs.listed': '{count} job(s)',
+  'cli.jobs.nextPage': 'more — next page: x jobs ls --after {cursor}',
   'cli.jobs.noError': 'no error recorded',
+  'cli.jobs.paused': 'queue {queue} paused — no worker claims from it; enqueues still land',
+  'cli.jobs.pausedQueues': 'paused queue(s): {queues}',
+  'cli.jobs.promoted': 'job {id} promoted — due now',
+  'cli.jobs.removed': 'job {id} removed — it was {state}',
+  'cli.jobs.resumed': 'queue {queue} resumed',
   'cli.jobs.retried': 'job {id} re-queued — {state}',
   'cli.jobs.shown': 'job {id} — {state}, attempt {attempt} of {attempts}',
   'cli.jobs.skipped': '{count} job(s) left on {from} — re-run the drain once each is claimable:',
@@ -296,6 +318,12 @@ const CATALOG = {
   // no skipped test to read a reason off, so the files the step selected hold no test.
   'cli.verify.ranNothing': 'found no test to run in the file(s) it selected',
   'cli.verify.merged': 'merged {parts} part(s) — {summary}',
+  // The `unit` step's own measurement, in `output`: what the suite covered of the app's whole
+  // source tree, beside the floor it was held to. A shard says it measured a slice instead.
+  'cli.verify.coverage':
+    'coverage: {lines}% of lines, {funcs}% of functions over {files} source file(s) — floor {floor}',
+  'cli.verify.coverageDeferred':
+    'coverage: this shard measured its own slice — x verify merge folds every shard and judges the floor',
   'cli.verify.serial': 'serial',
   'cli.verify.workers': '{workers} workers',
   'cli.env.checked': '{count} declared variable(s), all present and valid',
@@ -314,6 +342,11 @@ const CATALOG = {
   'cli.secrets.set': 'sealed {name} into {path} — {count} secret(s)',
   'cli.secrets.rotated':
     'rotated {path} from master key {from} to {to} — {count} secret(s) resealed',
+  'cli.secrets.retired':
+    '  master key {kid} is retired, not gone: values it sealed still open — once they are re-sealed, x secrets rotate --drop {kid}',
+  'cli.secrets.dropped':
+    'dropped retired master key {kid} from {path} — {count} retired key(s) still declared',
+  'cli.secrets.ring': 'retired master key(s) that still open sealed values: {kids}',
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

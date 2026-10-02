@@ -1,24 +1,26 @@
 # @postly/admin
 
-The admin dashboard, in one file: `src/index.ts` declares it with `defineAdmin` and projects it for
-agents with `adminMcp`. `src/index.test.ts` is what proves it constructs against this app's real
-entities and actions.
+The admin dashboard, in one file: `app/admin/admin.ts` declares it with `defineAdmin` and projects
+it for agents with `adminMcp`. `app/admin/admin.test.ts` proves it constructs against this app's
+real entities and actions, that the role map opens it, and that the run console's operator view
+does what it declares.
 
-**Declared, not mounted** — `As of 2026-09-23`. Nothing serves these routes or the MCP route:
-an app contributes actions, queries and pages to the server (`packages/cli/src/serve.ts`), and
-there is no seam for a raw `Route`. `index.test.ts` pins that as a fact somebody chose. The mounted
-admin in this repo is the deployed demo's (`dummy/social-media-clone/apps/admin`).
+**Mounted** — `x dev` and the container serve every screen under `/admin`, because the app scan
+evaluates `apps/admin/app/**` and `defineAdmin` registers what it declares. There is no page file.
 
 ## What the declaration buys
 
-`defineAdmin` receives four keys here — `branding`, `entities`, `actions` and `auth`:
-
 | Declared | Derived |
 |---|---|
-| `entities: [orgs, members, posts, comments]` | a resource per entity, served at `/admin/<entity name>` (`/admin/orgs`, never a guessed plural) — list columns, filters and the searchable columns come from the column metadata, tenancy from each entity's own tenant column |
-| `actions` | a toolbar button per action on its own entity (`orgs:upgradePlan`, `members:inviteMember`, `posts:publishPost`), running the action's one callable (`action.as(actor, input)`) — the same input parse, policy and handler as over HTTP |
-| `auth: { actor, authz: policyAuthz({ policies }) }` | the actor the app's pipeline already resolved, and every admin permission mapped onto the app's own `can('org:administer')` — no admin-only policy |
+| `entities: [orgs, members, posts, comments, connections, runs, runEvents]` | a resource per entity at `/admin/<entity name>` — list columns, filters and searchable columns from the column metadata, tenancy from each entity's tenant column, sealed columns (`credential`, `exit`) never shown |
+| `db` | every resource reads and writes through the app's typed handle |
+| `resources.runs` | read-only (`operations`), `running` / `failed` tabs with counts, `related: ['run_events']` — a run's events drawn as `run_events`' own list |
+| `actions` | a toolbar button per app action on its own entity (`orgs:upgradePlan`, `members:inviteMember`, `posts:publishPost`), running the action's one callable; `run.cancel` on each live run (`when`) and over a selection (`batch`), through the console's own `cancelRun` |
 | `branding: { nameKey: 'admin.title' }` | the dashboard's title, through `t()` |
+
+Who may open what is the role map in `apps/web/shared/policies.ts`: the owner holds `admin:read|write|destroy`
+and `<table>:<verb>` for each resource. A permission the dashboard asks for that no role grants is
+`X_PERMISSION_UNGRANTED` in the gate's `policy` step.
 
 `likes` and `plans` are left out on purpose: both key on more than one column, and
 `@ultimat3/admin` refuses a composite primary key (`X_ADMIN_FIELD_UNSUPPORTED`).
@@ -31,18 +33,16 @@ A toolbar action whose policy carries no permission, or more than one, throws
 `adminMcp({ app: admin, actor })` projects the same dashboard as MCP tools, answered per caller —
 a tool the actor may not use is absent from `tools/list`, and a direct call answers not-found:
 
-| Tools | Count |
+| Tools | For |
 |---|---|
-| `admin.<entity>.list` · `.read` · `.create` · `.update` · `.delete` | 4 entities × 5 |
-| `admin.action.publishPost` · `admin.action.inviteMember` · `admin.action.upgradePlan` | 3 |
-| `admin.search` | 1 |
-
-24 in all, asserted by `index.test.ts`. The agent acts as the signed-in person, so it can never
-exceed the permissions of the person it acts for.
+| `admin.<entity>.list` · `.read` · `.create` · `.update` · `.delete` | each writable resource |
+| `admin.<entity>.list` · `.read` | `runs`, `run_events` |
+| `admin.action.<name>` | each action, `run.cancel` included |
+| `admin.search` | the shell's search |
 
 ## Rules
 
-- No business logic here. If admin needs a rule, it belongs in `@postly/core` where the web app
-  and the worker can use it too.
+- No business logic here. If admin needs a rule, it belongs in `@postly/core` or the feature's
+  service, where the web app and the worker can use it too.
 - No admin-only policy. A rule that exists only for admin is a second authz system.
-- Adding an entity to `ENTITIES` is the entire change needed to administer it.
+- Adding an entity to `ENTITIES` is the entire change needed to administer it — plus its grants.

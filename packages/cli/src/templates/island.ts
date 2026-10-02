@@ -73,8 +73,8 @@ function ${Name}(props: ${Name}Props): JSX.Element {
  */
 export function mount(el: HTMLElement, props: ${Name}Props): () => void {
   el.textContent = '';
-  // Solid's \`render\` answers its disposer; returning it is what lets \`mountIsland\` in
-  // \`@ultimat3/testing\` stop this island — its timers included — when a test is done with it.
+  // Solid's \`render\` answers its disposer; returning it is what lets \`@ultimat3/testing\`
+  // stop this island — its timers included — when a test is done with it.
   return render(() => <${Name} {...props} />, el);
 }
 `;
@@ -102,9 +102,9 @@ const islandStyle =
 const islandTest = (
   name: string,
   dir: string,
-): string => `// The island the browser actually runs. \`mountIsland\` builds this entry with the same
-// \`buildIslands\` that \`x build\` and \`x dev\` use, imports the emitted chunk the way the hydration
-// runtime does, and drives \`mount\` against a DOM small enough to read.
+): string => `// The island the browser actually runs, in every state its manifest declares: built once for
+// this file with the same \`buildIslands\` that \`x build\` and \`x dev\` use, imported the way the
+// hydration runtime imports it, and driven against a DOM small enough to read.
 //
 // Importing the module and asserting \`typeof mount === 'function'\` proves the file exists, and a
 // file that exists is exactly what ships dead: a renamed export, a dropped handler and a signal
@@ -112,60 +112,43 @@ const islandTest = (
 
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  type MountedIsland,
-  mountIsland,
-  test,
-} from '@ultimat3/testing';
+import { describeIslandState, expect, test } from '@ultimat3/testing';
+import { ${camel(name)}States } from './${name}.island.states';
 
-const APP_ROOT = join(import.meta.dir, ${upToAppRoot(dir)});
-const ISLAND = '${dir}/${name}.island.tsx';
+// One block per declared state: \`describeIslandState\` mounts it before the block's first test
+// and disposes it after the last. The props are the manifest's own — what
+// \`x shot --island ${name}\` photographs — so the picture and the test are of one component.
+const island = {
+  build: buildIslands,
+  root: join(import.meta.dir, ${upToAppRoot(dir)}),
+  // What the server rendered inside the island's wrapper. \`mount\` replaces it.
+  shell: '<span>shell</span>',
+};
 
-let mounted: MountedIsland;
-
-// The build is a Babel pass plus a browser bundle — seconds, not milliseconds. It lives in
-// \`beforeAll\` with its own timeout because \`test\` takes no third argument: fixtures are resolved
-// per case, so the slow work goes where it can be given one and every case shares the result.
-beforeAll(async () => {
-  mounted = await mountIsland({
-    build: buildIslands,
-    root: APP_ROOT,
-    file: ISLAND,
-    props: { label: 'Open' },
-    // What the server rendered inside the island's wrapper. \`mount\` replaces it.
-    shell: '<span>Open</span>',
-  });
-}, 60_000);
-
-// The fake \`document\` is process-global: left installed it reaches every LATER FILE in the run.
-//
-// \`?.\` on a binding the type says is always set: TypeScript's definite-assignment analysis does not
-// cross the \`beforeAll\` closure, so a setup that REJECTED leaves this undefined at run time — and
-// bun runs \`afterAll\` regardless. Unguarded, the build failure is followed by a \`TypeError:
-// undefined is not an object\` that says nothing, and that second line is the one a tail reads.
-// Nothing is skipped by the guard: \`mountIsland\` restores the process itself when a mount throws.
-afterAll(() => {
-  mounted?.[Symbol.dispose]();
-});
-
-describe('the ${name} island', () => {
-  test('mount replaces the server shell', () => {
-    expect(mounted.find('span')).toBeNull();
+describeIslandState(${camel(name)}States, 'idle', island, (mounted) => {
+  test('mount replaces the server shell with the labelled control', () => {
+    expect(mounted().find('span')).toBeNull();
+    expect(mounted().text('button')).toBe('Open');
     // Solid compiles to real DOM calls; a chunk that fell back to the classic React factory names
     // a global that is not in it, and \`Bun.build\` answers \`success: true\` over that all the same.
-    expect(mounted.code).not.toMatch(/\\bReact\\b/);
+    expect(mounted().code).not.toMatch(/\\bReact\\b/);
   });
 
   test('a click reaches the DOM through the signal', () => {
-    expect(mounted.text('[data-role="count"]')).toBe('0');
+    expect(mounted().text('[data-role="count"]')).toBe('0');
     // \`false\` means no handler ran — an island whose onClick never reached the DOM looks identical
     // to a selector typo otherwise.
-    expect(mounted.fire('button', 'click')).toBe(true);
-    expect(mounted.text('[data-role="count"]')).toBe('1');
+    expect(mounted().fire('button', 'click')).toBe(true);
+    expect(mounted().text('[data-role="count"]')).toBe('1');
+  });
+});
+
+describeIslandState(${camel(name)}States, 'long-label', island, (mounted) => {
+  test('the label arrives whole, and the control still counts from zero', () => {
+    // Whether it FITS is a picture's question — \`x shot --island ${name} --state long-label\`.
+    // What a test can say is that the island was handed this state's own text, not the idle one's.
+    expect(mounted().text('button')).toBe('Abrechnungseinstellungen anzeigen');
+    expect(mounted().text('[data-role="count"]')).toBe('0');
   });
 });
 `;

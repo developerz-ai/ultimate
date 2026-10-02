@@ -142,6 +142,8 @@ const attempt = (runner: StepRunner, reads: Reads, nth: number): Promise<unknown
     step: runner.step,
     ctx: contextFor(reads),
     attempt: nth,
+    finalAttempt: false,
+    progress: () => undefined,
     jobId: 'job-notify-1',
     runId: RUN,
   });

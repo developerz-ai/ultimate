@@ -11,6 +11,7 @@ import { type AdminDecision, decideAll } from './authz';
 import { type CrudCtx, decideOperation, permissionsForOperation } from './crud';
 import type { AdminFieldType } from './fields';
 import type { AdminOperation } from './permissions';
+import type { AdminAction } from './registry';
 import type { AdminResource } from './resource';
 
 export type AdminToolKind = 'list' | 'read' | 'search' | 'create' | 'update' | 'delete' | 'action';
@@ -19,6 +20,8 @@ export interface AdminToolField {
   readonly name: string;
   readonly type: AdminFieldType;
   readonly required: boolean;
+  /** The argument is a LIST of `type`: the list tool's `where` is a list of predicates. */
+  readonly list?: true;
 }
 
 export interface AdminMcpTool {
@@ -49,10 +52,29 @@ const ID_FIELD: AdminToolField = { name: 'id', type: 'text', required: true };
  * description of the same contract. `mcp.ts` leaves an action tool's schema OPEN instead, so the
  * action's own validation is the one that decides.
  */
-const actionEnvelope = (destructive: boolean): readonly AdminToolField[] => [
+const actionEnvelope = (action: AdminAction): readonly AdminToolField[] => [
   { name: 'id', type: 'text', required: false },
-  ...(destructive ? [{ name: 'confirmation', type: 'text', required: true } as const] : []),
+  // A batch action is the SAME tool, given a list of rows instead of one: run once per row through
+  // the button's gate, answered with the counts the batch bar shows.
+  ...(action.batch === undefined
+    ? []
+    : [{ name: 'ids', type: 'text', required: false, list: true } as const]),
+  ...(action.destructive === true
+    ? [{ name: 'confirmation', type: 'text', required: true } as const]
+    : []),
 ];
+
+/** What an agent reads about when and over what an action runs — the schema cannot say it. */
+const actionDescription = (action: AdminAction): string =>
+  [
+    action.mcp?.description ?? `Run the ${action.name} action.`,
+    action.when === undefined
+      ? ''
+      : ' Applies only to some rows: a row it does not apply to is refused with X_ADMIN_ACTION_NOT_APPLICABLE.',
+    action.batch === undefined
+      ? ''
+      : ` Pass ids: [...] to run it once per row; the answer counts done, refused and failed${action.destructive === true ? ', and confirmation is "<entity>:<n> rows"' : ''}.`,
+  ].join('');
 
 const formFields = (resource: AdminResource): readonly AdminToolField[] =>
   resource.formFields.map((field) => ({
@@ -61,18 +83,40 @@ const formFields = (resource: AdminResource): readonly AdminToolField[] =>
     required: field.required,
   }));
 
+/**
+ * The list tool says what it filters by, because a schema cannot: `where` is a list of
+ * `{ field, op?, value }` and the fields and scopes are this resource's own. The same names the
+ * list screen's URL takes — one grammar, two transports.
+ */
+const listDescription = (resource: AdminResource): string => {
+  const filters = resource.filters.map((field) => field.name);
+  const scopes = resource.scopes.map((scope) => scope.name);
+  return [
+    `List ${resource.name} rows, cursor-paginated.`,
+    filters.length === 0
+      ? ''
+      : ` where: [{ field, op?, value }] over ${filters.join(', ')}; op defaults per field.`,
+    scopes.length === 0 ? '' : ` scope: one of ${scopes.join(', ')}.`,
+  ].join('');
+};
+
 function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | null {
   switch (op) {
     case 'list':
       return {
         name: `admin.${resource.name}.list`,
         kind: 'list',
-        description: `List ${resource.name} rows, cursor-paginated, newest first.`,
+        description: listDescription(resource),
         entity: resource.name,
         action: null,
-        permissions: permissionsForOperation(resource.name, 'list'),
+        permissions: permissionsForOperation(resource.permission, 'list'),
         destructive: false,
-        input: [CURSOR_FIELD, { name: 'limit', type: 'number', required: false }],
+        input: [
+          CURSOR_FIELD,
+          { name: 'limit', type: 'number', required: false },
+          { name: 'scope', type: 'text', required: false },
+          { name: 'where', type: 'json', required: false, list: true },
+        ],
       };
     case 'detail':
       return {
@@ -81,7 +125,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         description: `Read one ${resource.name} row by id.`,
         entity: resource.name,
         action: null,
-        permissions: permissionsForOperation(resource.name, 'detail'),
+        permissions: permissionsForOperation(resource.permission, 'detail'),
         destructive: false,
         input: [ID_FIELD],
       };
@@ -92,7 +136,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         description: `Create a ${resource.name} row. Validated by the entity's schema.`,
         entity: resource.name,
         action: null,
-        permissions: permissionsForOperation(resource.name, 'create'),
+        permissions: permissionsForOperation(resource.permission, 'create'),
         destructive: false,
         input: formFields(resource),
       };
@@ -103,7 +147,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         description: `Update fields of one ${resource.name} row.`,
         entity: resource.name,
         action: null,
-        permissions: permissionsForOperation(resource.name, 'update'),
+        permissions: permissionsForOperation(resource.permission, 'update'),
         destructive: false,
         input: [ID_FIELD, ...formFields(resource)],
       };
@@ -114,7 +158,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         description: `Delete one ${resource.name} row. Requires confirmation "<entity>:<id>".`,
         entity: resource.name,
         action: null,
-        permissions: permissionsForOperation(resource.name, 'delete'),
+        permissions: permissionsForOperation(resource.permission, 'delete'),
         destructive: true,
         input: [ID_FIELD, { name: 'confirmation', type: 'text', required: true }],
       };
@@ -154,12 +198,12 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
         tool: {
           name: `admin.action.${action.name}`,
           kind: 'action',
-          description: action.mcp?.description ?? `Run the ${action.name} action.`,
+          description: actionDescription(action),
           entity: action.entity ?? null,
           action: action.name,
           permissions: permissionsForAction(action),
           destructive: action.destructive === true,
-          input: actionEnvelope(action.destructive === true),
+          input: actionEnvelope(action),
         },
         gate: (ctx) => decideAction(action, ctx.actor, ctx.authz),
       });
@@ -189,12 +233,12 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
       tool: {
         name: `admin.action.${action.name}`,
         kind: 'action',
-        description: action.mcp?.description ?? `Run the ${action.name} action.`,
+        description: actionDescription(action),
         entity: null,
         action: action.name,
         permissions: permissionsForAction(action),
         destructive: action.destructive === true,
-        input: actionEnvelope(action.destructive === true),
+        input: actionEnvelope(action),
       },
       gate: (ctx) => decideAction(action, ctx.actor, ctx.authz),
     });

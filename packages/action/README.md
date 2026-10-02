@@ -113,8 +113,10 @@ export const client = rpc<Api['actions']>({ baseUrl: '/' });
 ```
 
 `Api['actions']` is the merged module type, so `client.publishPost` is typed from the
-declaration with no codegen step. `Api` is imported as a **type only**, which is what keeps
-a page's module graph free of any edge to a feature's implementation.
+declaration with no codegen step — at any app size: `client-scale-pins.ts` compiles the idiom over
+300 actions in 100 modules on every `typecheck` (the limit was 47 modules in one list, #534).
+`x new` writes this file as `apps/web/shared/browser-client.ts`. `Api` is imported as a **type
+only**, which is what keeps a page's module graph free of any edge to a feature's implementation.
 
 Every call dispatches through `@ultimat3/core`'s `clientTransport` — the one browser HTTP function.
 It owns credentials, the JSON body, the `Idempotency-Key` header, the principal fence and the
@@ -157,8 +159,8 @@ await api.charge({ orderId }, { idempotencyKey: `charge:${orderId}`, retry: { at
 It shipped as a byte-identical copy in each; the copies are gone and every name is importable from
 this package exactly as before.
 
-Importing `rpc` alone from this package is **23,007 B** minified for the browser; adding
-`createClientFlight` is **28,823 B** (`As of 2026-09-22`; `CLAUDE.md` carries the before/after and
+Importing `rpc` alone from this package is **19,671 B** minified for the browser; adding
+`createClientFlight` is **25,954 B** (`As of 2026-10-01`; `CLAUDE.md` carries the before/after and
 what the delta is). `ClientFlight` is a TYPE inside `client.ts` and never a value, which is what
 keeps the second number off the first caller's bill.
 
@@ -182,9 +184,15 @@ One rule per app, declared once — `defineApi({ http: { pathStyle } })` — plu
   `/_x` (`X_ACTION_HTTP_PATH_INVALID`). A pin colliding with another path is
   `X_ACTION_PATH_DUPLICATE` at boot.
 - Every server-side reader agrees: `toRoute`, `toOpenApiOperation`, `describeAction`,
-  `derivePath(name)` (pin-aware) and `actionHttpPath(action | name)`. The browser's `rpc()` derives
-  from the name alone, so it is told the style: `rpc({ baseUrl, pathStyle: 'readable' })`; a pinned
-  action is called through `action.client()`, which holds the pin.
+  `derivePath(name)` (pin-aware) and `actionHttpPath(action | name)`. A pinned action is called
+  through `action.client()`, which holds the pin.
+- **A browser states no style.** The server stamps a non-default one into every document
+  (`<meta name="ultimate-path-style">`) and `rpc({ baseUrl: '' })` derives under it — as do
+  `useMutation` and the outbox replay. `'resource'` writes no tag.
+- **A caller with no document passes it**: `rpc({ baseUrl, pathStyle: 'readable' })` in a script or
+  another service. The wrong one is answered by the server — 404 `X_CONTRACT_DRIFT`, naming the
+  style it serves and the path the action lives at — never a bare `X_ROUTE_NOT_FOUND`
+  (`explainActionPathMiss`, wired as `@ultimat3/http`'s `hooks.explainMiss`).
 - **The style is read when the path is derived, so derive it late.** The scan evaluates
   `apps/web/api/index.ts` before any other module, so a page or admin view already sees the declared
   style. A module the index itself imports runs before its `defineApi` call: a module-level

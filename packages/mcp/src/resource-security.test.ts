@@ -11,8 +11,8 @@
 // on a missing `x.manifest.json` is an ENOENT, and it escaped `handle()` — `serveStdio` REJECTED
 // with the raw error, zero frames written, the request unanswered and the session dead.
 
-import { describe, expect, spyOn, test } from 'bun:test';
-import { agentActor, UltimateError } from '@ultimat3/core';
+import { describe, expect, test } from 'bun:test';
+import { agentActor, setLogSink, UltimateError } from '@ultimat3/core';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
 import type { McpResource } from './resources';
@@ -212,26 +212,16 @@ describe('every resources/read outcome is audited, hidden included', () => {
   });
 
   /**
-   * The process logger's real output — the sink production writes to, not a stand-in. BOTH
-   * streams: core's logger sends `error` to stderr and everything below it to stdout, and the
-   * `failed` outcome is the one that lands on the other one.
+   * What the PROCESS logger wrote, through its own sink seam — never a patched `process.stdout`.
+   * Every level reaches the sink, the `failed` outcome's `error` line included.
    */
   async function captureLines(run: () => Promise<unknown>): Promise<Record<string, unknown>[]> {
     const lines: Record<string, unknown>[] = [];
-    const collect = ((chunk: string) => {
-      for (const line of String(chunk).split('\n')) {
-        if (line.trim().length > 0) lines.push(JSON.parse(line) as Record<string, unknown>);
-      }
-      return true;
-    }) as never;
-    const spies = [
-      spyOn(process.stdout, 'write').mockImplementation(collect),
-      spyOn(process.stderr, 'write').mockImplementation(collect),
-    ];
+    const previous = setLogSink((line) => lines.push(JSON.parse(line) as Record<string, unknown>));
     try {
       await run();
     } finally {
-      for (const spy of spies) spy.mockRestore();
+      setLogSink(previous);
     }
     return lines;
   }
