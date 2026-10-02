@@ -53,8 +53,8 @@ describe('s3Driver', () => {
       const read = await driver.get('org/org-1/b.bin');
       expect(read.object.contentType).toBe('application/octet-stream');
       expect(read.object.etag).toBe('');
-      // stat() gave no lastModified either, so it reads as the epoch.
-      expect(read.object.lastModified).toEqual(new Date(0));
+      // stat() gave no lastModified either: absent, never the epoch.
+      expect(read.object.lastModified).toBeUndefined();
     });
 
     test('get on a missing key throws objectNotFound (X_STORAGE_NOT_FOUND)', async () => {
@@ -219,7 +219,6 @@ describe('s3Driver', () => {
           key: 'org/org-1/b.txt',
           size: 0,
           etag: '',
-          lastModified: new Date(0),
         },
       ]);
       expect(page.objects[0]?.contentType).toBeUndefined();
@@ -306,12 +305,12 @@ describe('s3Driver', () => {
   });
 
   describe('toDate via stat() and list entries', () => {
-    test('undefined lastModified reads as the epoch', async () => {
+    test('undefined lastModified is absent, never the epoch', async () => {
       const fake = new FakeS3Client();
       fake.store.set('org/org-1/j.txt', { bytes: bytesOf('x'), lastModified: undefined });
       const driver = s3Driver({ bucket: 'b', client: fake });
       const read = await driver.get('org/org-1/j.txt');
-      expect(read.object.lastModified).toEqual(new Date(0));
+      expect(read.object.lastModified).toBeUndefined();
     });
 
     test('a Date instance passes through unchanged', async () => {

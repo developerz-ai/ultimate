@@ -63,6 +63,18 @@ export class FakeS3Client implements S3ClientLike {
    */
   failListWith: Error | undefined;
 
+  /** A refused READ — a denied `s3:GetObject`, a throttle. Raised by `exists`, `stat` and the body read. */
+  failReadWith: Error | undefined;
+  /** A refused HEAD only, so a test can let the write through and fail the stat that follows it. */
+  failStatWith: Error | undefined;
+  /** Narrows `failStatWith` to ONE key — a copy's destination, whose source must still stat. */
+  failStatFor: string | undefined;
+  /** A refused BODY read only: `exists()` and the HEAD succeed, and the GET itself is refused. */
+  failBodyWith: Error | undefined;
+
+  /** A refused WRITE — a denied `s3:PutObject`, a throttle. `put()` and `copy()` both write. */
+  failWriteWith: Error | undefined;
+
   /** Which key each handed-out `S3FileLike` stands for, so `write(sourceFile)` can read it. */
   private readonly fileKeys = new WeakMap<object, string>();
 
@@ -81,6 +93,7 @@ export class FakeS3Client implements S3ClientLike {
       async write(data, options) {
         // `copy()` hands the SOURCE S3File to write(), exactly as Bun's own union allows, so the
         // fake has to read one back out of its store rather than assume bytes.
+        if (client.failWriteWith !== undefined) throw client.failWriteWith;
         const source = client.sourceOf(data);
         const bytes =
           source !== undefined
@@ -92,6 +105,8 @@ export class FakeS3Client implements S3ClientLike {
         return bytes.byteLength;
       },
       async arrayBuffer() {
+        if (client.failReadWith !== undefined) throw client.failReadWith;
+        if (client.failBodyWith !== undefined) throw client.failBodyWith;
         const entry = store.get(key);
         // Reads the way the provider does: a GET on a key that is not there is a 404, and the
         // driver is expected to have gated it behind exists() before ever getting here.
@@ -99,6 +114,7 @@ export class FakeS3Client implements S3ClientLike {
         return new Uint8Array(entry.bytes).buffer;
       },
       async exists() {
+        if (client.failReadWith !== undefined) throw client.failReadWith;
         return store.has(key);
       },
       async delete() {
@@ -120,6 +136,9 @@ export class FakeS3Client implements S3ClientLike {
         });
       },
       async stat(): Promise<S3StatLike> {
+        if (client.failReadWith !== undefined) throw client.failReadWith;
+        const statRefused = client.failStatFor === undefined || client.failStatFor === key;
+        if (client.failStatWith !== undefined && statRefused) throw client.failStatWith;
         const entry = store.get(key);
         if (entry === undefined) throw objectNotFound(FAKE_DISK, key);
         return {

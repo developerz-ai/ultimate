@@ -42,6 +42,9 @@ function hasControlByte(key: string): boolean {
 }
 
 function unsafeReason(key: string): string | undefined {
+  // The type says string; a key off an untyped caller is whatever it is, and `.length` on
+  // `undefined` was a bare `TypeError` out of every driver method at once.
+  if (typeof key !== 'string') return 'is not a string';
   if (key.length === 0) return 'is empty';
   const bytes = utf8Bytes(key);
   if (bytes > MAX_KEY_LENGTH) {
@@ -110,9 +113,21 @@ export function scopedKey(orgId: string, ...parts: readonly string[]): string {
   return joinKey(ORG_PREFIX, assertOrgId(orgId), ...parts);
 }
 
-/** Guard for read paths: a key handed in by a client must still belong to the actor's org. */
+/**
+ * Guard for read paths: a key handed in by a client must still belong to the actor's org.
+ *
+ * A PREDICATE, so it answers and never throws. An org id that cannot be one — empty, or carrying
+ * a separator — has no keys inside it, and that is `false`: it used to raise
+ * `X_STORAGE_PATH_UNSAFE` through `orgPrefix`, blaming the KEY for an actor with no org, and every
+ * caller that knew wrote `orgId === '' ||` in front of it while the ones that did not threw.
+ */
 export function isWithinOrg(key: string, orgId: string): boolean {
-  return isSafeKey(key) && key.startsWith(orgPrefix(orgId));
+  // `typeof`, because the caller is a guard on a request: an actor whose org claim is `undefined`
+  // at runtime must read as "inside no org", not as a `TypeError` out of `.includes`.
+  if (typeof key !== 'string' || typeof orgId !== 'string') return false;
+  const prefix = `${ORG_PREFIX}/${orgId}`;
+  if (orgId.includes('/') || !isSafeKey(prefix)) return false;
+  return isSafeKey(key) && key.startsWith(`${prefix}/`);
 }
 
 /**

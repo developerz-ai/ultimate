@@ -131,7 +131,7 @@ registered under is `X_ROUTE_POST_INVALID` at boot, as is `post` on a `static` p
 | Mode | Invariant | Error if violated |
 |---|---|---|
 | `static` | no per-request state — no `policy`, no `revalidate` | `X_ROUTE_MODE_INVALID` |
-| `isr` | needs a trigger: `revalidate.tags` or `revalidate.ttl`; **no `policy`** — one cached document per URL cannot answer two actors | `X_ROUTE_MODE_INVALID` |
+| `isr` | needs a trigger: `revalidate.tags` or `revalidate.ttl`; **no `policy`** — one cached document per URL cannot answer two actors; every `revalidate.tags` entry must be a purgeable CDN key (no whitespace, no comma) | `X_ROUTE_MODE_INVALID` |
 | `ssr` | cannot be prerendered | `X_ROUTE_MODE_INVALID` |
 | any but `ssr` | declares no `cache` — `static`/`isr` headers are the mode, a `stream` is always `private, no-store` | `X_ROUTE_MODE_INVALID` |
 | gated (`policy`) | its `cache` is never `public`/`immutable` — one actor's document in a shared cache | `X_ROUTE_MODE_INVALID` |
@@ -517,6 +517,16 @@ a job boundary the class is gone and the `code` is what survives — match on th
   dependents and the revalidator slot, the latter only while it is still this controller's.
   The default store (`memoryIsrStore`) is capped at `DEFAULT_ISR_MAX_ENTRIES` (1,000) pages,
   least recently generated evicted first.
+- **A tag-revalidated ISR document carries its purge keys while it is shared-cacheable**,
+  `As of 2026-10-02` — `@ultimat3/http`'s `cache-headers` stage rewrites the response to `private`
+  for a signed-in visitor and strips both headers: `Surrogate-Key`
+  (space-joined) and `Cache-Tag` (comma-joined) from `@ultimat3/cache`'s `surrogateKeys()` over
+  the route's `revalidate.tags` — `revalidate: { tags: [tag.post] }` answers `post e:post` — on a
+  miss, a hit and a served-stale response alike. That is what lets the same `invalidates` purge
+  the document at the CDN; before it, the edge held every ISR page for its whole `s-maxage`. A
+  TTL-only route carries neither header. A tag a CDN would split (whitespace, a comma) is refused
+  when the route registers — `X_ROUTE_MODE_INVALID`, naming the file — for file routes and
+  mounted routes both.
 - **`stream`** flushes the shell first, then reveals holes in completion order with a
   ~200-byte inline script. A client that disconnects mid-stream cancels it: `StreamHole.resolve`
   is handed an `AbortSignal` so the work stops, and nothing more is enqueued. Solid's compiled templates and signals mean the shell costs zero

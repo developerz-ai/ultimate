@@ -13,6 +13,7 @@ import {
   registerDependent,
   registerRevalidator,
   sampleFence,
+  surrogateKeys,
   unregisterDependent,
 } from '@ultimat3/cache';
 import { logger, renderThrowable } from '@ultimat3/core';
@@ -149,6 +150,10 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
     return table.find((r) => r.path === path) ?? matchersOf(table).find((m) => m.test(path))?.route;
   }
 
+  /** The route's `revalidate.tags` for a store key — what its document is purged by at the edge. */
+  const tagsOf = (key: string): readonly CacheTag[] =>
+    (descriptorFor(key)?.revalidateTags ?? []).map(parseWireTag);
+
   /**
    * A rendered page joins the invalidation graph under its route's tags, so `/blog/a` and
    * `/blog/b` are separately addressable and a `tag.post` bust does not touch `/team`.
@@ -247,14 +252,15 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
 
       if (cached === undefined) {
         const entry = await regenerate(path, render);
-        return { state: 'miss', entry, result: toResult(entry, buildId), regenerating: false };
+        const result = toResult(entry, buildId, tagsOf(path));
+        return { state: 'miss', entry, result, regenerating: false };
       }
 
       if (isFresh(cached)) {
         return {
           state: 'hit',
           entry: cached,
-          result: toResult(cached, buildId),
+          result: toResult(cached, buildId, tagsOf(path)),
           regenerating: false,
         };
       }
@@ -270,7 +276,7 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
       return {
         state: 'stale',
         entry: cached,
-        result: toResult(cached, buildId, true),
+        result: toResult(cached, buildId, tagsOf(path), true),
         regenerating: !already,
       };
     },
@@ -402,7 +408,12 @@ function entryStatus(entry: IsrEntry): number {
   return 200;
 }
 
-function toResult(entry: IsrEntry, buildId: string, servedStale = false): RenderResult {
+function toResult(
+  entry: IsrEntry,
+  buildId: string,
+  tags: readonly CacheTag[],
+  servedStale = false,
+): RenderResult {
   const headers: Record<string, string> = {
     ...staticHeaders(entry.hash, buildId),
     'cache-control': cacheControl(entryTtlMs(entry)),
@@ -412,6 +423,15 @@ function toResult(entry: IsrEntry, buildId: string, servedStale = false): Render
     // `cache-headers` stage, which sees the actor this function cannot.
     vary: 'accept-language',
   };
+  // The keys an edge purges this document by — `@ultimat3/cache`'s list, never a second one, so
+  // what a bust sends and what the page carries cannot drift. Absent, an `invalidates` cleared
+  // every tier but the CDN, which held the document for its whole `s-maxage`. The tags were
+  // screened when the route registered (`registry.ts`), so this cannot refuse on the request path.
+  const keys = surrogateKeys(tags, 'isr');
+  if (keys.length > 0) {
+    headers['surrogate-key'] = keys.join(' ');
+    headers['cache-tag'] = keys.join(',');
+  }
   if (servedStale) headers['x-ultimate-isr'] = 'stale';
   return { status: entryStatus(entry), headers, body: entry.html };
 }

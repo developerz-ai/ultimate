@@ -7,14 +7,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // temporary directory is.
 import { tmpdir } from 'node:os';
 import { isLocal } from '@ultimat3/core';
+import { type LocalDriverOptions, localDriver } from './driver-local';
+import { isStorageError } from './errors';
 import {
   DEV_SIGNING_SECRET,
-  type LocalDriverOptions,
-  localDriver,
   STORAGE_SIGNING_SECRET_KEY,
   usesDevStorageSecret,
-} from './driver-local';
-import { isStorageError } from './errors';
+} from './signing-secret';
 
 // A path, not a directory: construction reads its argument and never touches the file system.
 const root = `${tmpdir()}/ultimate-storage-boot`;

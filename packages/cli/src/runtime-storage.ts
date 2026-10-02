@@ -103,11 +103,10 @@ export function authorizeStorageRead(input: StorageReadInput, ctx: RequestContex
  */
 export function assertReadableKey(key: string, actor: Actor): string {
   const safe = assertSafeKey(key);
-  // An actor with no org is inside no org, so every tenant-scoped key is somebody else's. Checked
-  // before `isWithinOrg`, which reads an empty org as a malformed key and would blame the caller's
-  // URL for the actor's missing claim.
+  // An actor with no org is inside no org, so every tenant-scoped key is somebody else's —
+  // `isWithinOrg` answers exactly that for an empty org, without throwing.
   const orgId = actor.orgId ?? '';
-  if (isTenantScoped(safe) && (orgId === '' || !isWithinOrg(safe, orgId))) {
+  if (isTenantScoped(safe) && !isWithinOrg(safe, orgId)) {
     throw orgMismatch(safe, orgId);
   }
   return safe;
@@ -185,9 +184,12 @@ export function storageResponse(request: UltimateRequest, read: StorageRead): Re
   const headers = new Headers({
     'content-type': read.object.contentType,
     etag,
-    'last-modified': read.object.lastModified.toUTCString(),
     'accept-ranges': 'bytes',
   });
+  // Omitted, never invented: a disk whose provider reported no date has none, and a `Last-Modified`
+  // made up for it is a validator a cache would go on to trust.
+  const modified = read.object.lastModified;
+  if (modified !== undefined) headers.set('last-modified', modified.toUTCString());
   // Revalidation costs a request and no bytes, which is the trade an authorized response wants:
   // the bytes never change under a key, but the actor's permission to read them can be revoked.
   if (etagMatches(request.header('if-none-match'), etag)) {

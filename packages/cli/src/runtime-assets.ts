@@ -9,7 +9,7 @@ import { probeImage } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
-import { builtinImageDriver, DEFAULT_WIDTHS, parseImageQuery } from '@ultimat3/seo';
+import { builtinImageDriver, DEFAULT_WIDTHS, parseImageQuery, usableWidths } from '@ultimat3/seo';
 import type { ImageTransform, Storage, VariantFormat } from '@ultimat3/storage';
 import { isTenantScoped, isVariantFormat, variantKey } from '@ultimat3/storage';
 import { faviconRoute } from './favicon';
@@ -58,14 +58,15 @@ const IMMUTABLE_IMAGE: CacheHint = { mode: 'immutable' };
  * blast radius and does not close it: 8192 stored objects per source, per format, is amplification
  * a tenant drives with a `for` loop.
  *
- * The set is `DEFAULT_WIDTHS` **plus the source's intrinsic width**, which is exactly what
- * `usableWidths` puts in a `srcset` — clamping to the constant alone would refuse the widest entry
- * of every image whose intrinsic width is not one of the eight, a URL the framework mints itself.
+ * The set is `usableWidths(intrinsic, DEFAULT_WIDTHS)` — the function that writes the `srcset`,
+ * asked rather than restated. A restatement (`DEFAULT_WIDTHS` plus the intrinsic width) disagreed
+ * with it for a source wider than `MAX_IMAGE_WIDTH`, whose widest candidate is the ceiling: that
+ * URL, minted by the framework itself, was decoded on every request and never stored.
  * Anything outside it is still SERVED: this decides what is written, not what is answered, so no
  * caller gains a new 4xx and the disk stops growing on a stranger's key.
  */
 const isMintableWidth = (width: number | undefined, intrinsic: number): boolean =>
-  width === undefined || width === intrinsic || DEFAULT_WIDTHS.includes(width);
+  width === undefined || usableWidths(intrinsic, DEFAULT_WIDTHS).includes(width);
 
 const imageResponse = (bytes: Uint8Array, contentType: string, cache: CacheHint): Response =>
   applyCacheHeaders(
@@ -174,7 +175,7 @@ export interface AssetRoutesOptions {
   /** App root. The source icon is resolved against it; storage keys never are. */
   readonly root: string;
   readonly storage: Storage;
-  /** Replaces `builtinImageDriver` for `/media/*`. Omitted, core's PNG/JPEG pipeline. */
+  /** Replaces `builtinImageDriver` for `/media/*`. Omitted, core's PNG/JPEG/WebP pipeline. */
   readonly images?: ImageTransformDriver;
   /**
    * `manifest.webmanifest`, resolved at boot by `pwa-artifacts.ts`. Absent when the app declares

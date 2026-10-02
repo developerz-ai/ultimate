@@ -15,9 +15,18 @@ export function hreflangTag(locale: string): string {
   }
 }
 
-/** `es-co` → `es_CO`: Open Graph's `language_TERRITORY`. */
+/**
+ * `es-co` → `es_CO`, `zh-hant-tw` → `zh_TW`: Open Graph's `language_TERRITORY`, which has no slot
+ * for a script, a variant or an extension. Replacing hyphens in the BCP 47 tag produced
+ * `zh_Hant_TW`, a value no consumer recognises. Total, for `hreflangTag`'s reason.
+ */
 export function ogLocaleTag(locale: string): string {
-  return hreflangTag(locale).replace(/-/g, '_');
+  try {
+    const { language, region } = new Intl.Locale(locale);
+    return region === undefined ? language : `${language}_${region}`;
+  } catch {
+    return locale.replace(/-/g, '_');
+  }
 }
 
 /** A page in one locale: the locale and the page's own path in it. */

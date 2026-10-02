@@ -4,8 +4,16 @@
 // The client is built lazily on first use so importing this module never opens a socket, and
 // credentials arrive as env var NAMES: a literal key in app.config.ts is a key in git.
 
-import { ConfigInvalidError, EnvMissingError, finiteCount, stringField } from '@ultimat3/core';
 import {
+  ConfigInvalidError,
+  EnvMissingError,
+  finiteCount,
+  renderFixShellArg,
+  stringField,
+} from '@ultimat3/core';
+import {
+  assertListOptions,
+  assertPutOptions,
   DEFAULT_CONTENT_TYPE,
   type ListOptions,
   type ListPage,
@@ -24,8 +32,12 @@ import { regionMismatch } from './driver-s3-region';
 import {
   checksumMismatch,
   deleteFailed,
+  getTooLarge,
+  isStorageError,
   listFailed,
   objectNotFound,
+  putFailed,
+  readFailed,
   storageNotImplemented,
 } from './errors';
 import { assertSafeKey } from './path';
@@ -102,6 +114,12 @@ export interface S3DriverOptions {
    * and S3's single-PUT limit is 5GB regardless of what this says.
    */
   readonly maxPutBytes?: number | undefined;
+  /**
+   * Ceiling on ONE `get()`, because `get()` buffers the whole object — and on this disk nothing
+   * bounds what a presigned PUT stored (`SignedUrlOptions.maxBytes`). Defaults to `maxPutBytes`;
+   * an object past it is read with `stream()`.
+   */
+  readonly maxGetBytes?: number | undefined;
 }
 
 interface S3ClientConstructor {
@@ -157,8 +175,12 @@ function buildClient(options: S3DriverOptions): S3ClientLike {
   });
 }
 
-const toDate = (value: string | Date | undefined): Date =>
-  value === undefined ? new Date(0) : value instanceof Date ? value : new Date(value);
+/**
+ * A missing `LastModified` is ABSENT, never `new Date(0)`: epoch 0 is older than every window, so
+ * `sweepOrphans` deleted an upload on the strength of a field the provider never sent.
+ */
+const dated = (value: string | Date | undefined): { readonly lastModified?: Date } =>
+  value === undefined ? {} : { lastModified: value instanceof Date ? value : new Date(value) };
 
 /** One numeric field off a value that may fight being read — `stringField`'s missing twin. */
 function numberField(value: unknown, key: string): number | undefined {
@@ -224,6 +246,12 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     options.maxPutBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : options.maxPutBytes,
     1,
   );
+  const maxGetBytes = finiteCount(
+    'the s3 driver',
+    'maxGetBytes',
+    options.maxGetBytes === undefined ? maxPutBytes : options.maxGetBytes,
+    1,
+  );
   let client: S3ClientLike | undefined;
   const conn = (): S3ClientLike => {
     client ??= buildClient(options);
@@ -240,19 +268,51 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     const mismatch = regionMismatch(options.bucket, error);
     if (mismatch !== undefined) throw mismatch;
   };
-  const misconfigured = (error: unknown): never => {
-    throwIfMisconfigured(error);
-    throw error;
-  };
+  /**
+   * A write the provider refused, coded: a denied `s3:PutObject`, a throttle, an expired
+   * credential. The bare `S3Error` used to escape `put()` and `copy()` exactly as it once escaped
+   * `list()` — no code, no fix, an anonymous 500.
+   */
+  const refusedWrite =
+    (key: string) =>
+    (error: unknown): never => {
+      throwIfMisconfigured(error);
+      throw putFailed(
+        DRIVER_NAME,
+        key,
+        error,
+        `aws s3api get-bucket-policy --bucket ${renderFixShellArg(options.bucket, '<bucket>')}`,
+      );
+    };
+
+  /**
+   * A read the provider refused, coded — `refusedWrite`'s twin. A 404 is "not found" wherever it
+   * arrives: an object deleted between `exists()` and the read is absent, not unreadable.
+   */
+  const refusedRead =
+    (key: string) =>
+    (error: unknown): never => {
+      if (isStorageError(error)) throw error;
+      if (isAbsentObject(error)) throw objectNotFound(DRIVER_NAME, key);
+      throwIfMisconfigured(error);
+      throw readFailed(
+        DRIVER_NAME,
+        key,
+        error,
+        `aws s3api head-object --bucket ${renderFixShellArg(options.bucket, '<bucket>')} --key ${renderFixShellArg(key, '<key>')}`,
+      );
+    };
+  const present = (key: string): Promise<boolean> =>
+    conn().file(key).exists().catch(refusedRead(key));
 
   const statObject = async (key: string): Promise<StorageObject> => {
-    const stat = await conn().file(key).stat();
+    const stat = await conn().file(key).stat().catch(refusedRead(key));
     return {
       key,
       size: stat.size,
       contentType: stat.type ?? DEFAULT_CONTENT_TYPE,
       etag: stat.etag ?? '',
-      lastModified: toDate(stat.lastModified),
+      ...dated(stat.lastModified),
     };
   };
 
@@ -262,6 +322,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
       const safe = assertSafeKey(key);
       refuseUnsupportedPut(options.bucket, safe, putOptions);
+      assertPutOptions(DRIVER_NAME, putOptions);
       // Buffered on purpose: size and checksum must be known before the object exists — so this
       // path is for objects that FIT IN MEMORY, and `maxPutBytes` is what makes that a contract
       // rather than a hope. User uploads never come through here: they go direct to the bucket
@@ -275,22 +336,32 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       await conn()
         .file(safe)
         .write(bytes, { type: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE })
-        .catch(misconfigured);
+        .catch(refusedWrite(safe));
       return statObject(safe);
+    },
+
+    async stat(key: string): Promise<StorageObject | undefined> {
+      const safe = assertSafeKey(key);
+      return (await present(safe)) ? statObject(safe) : undefined;
     },
 
     async get(key: string): Promise<StorageRead> {
       const safe = assertSafeKey(key);
       const file = conn().file(safe);
-      if (!(await file.exists())) throw objectNotFound(DRIVER_NAME, safe);
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      return { object: await statObject(safe), bytes };
+      if (!(await present(safe))) throw objectNotFound(DRIVER_NAME, safe);
+      // The HEAD comes FIRST, and it is the whole point: a client PUT straight into the bucket is
+      // bounded by nothing on this disk, so `arrayBuffer()` on whatever is there was heap growth
+      // the uploader chose. Refused on the provider's own size before a byte is read.
+      const object = await statObject(safe);
+      if (object.size > maxGetBytes) throw getTooLarge(DRIVER_NAME, safe, object.size, maxGetBytes);
+      const bytes = new Uint8Array(await file.arrayBuffer().catch(refusedRead(safe)));
+      return { object, bytes };
     },
 
     async stream(key: string): Promise<ReadableStream<Uint8Array>> {
       const safe = assertSafeKey(key);
       const file = conn().file(safe);
-      if (!(await file.exists())) throw objectNotFound(DRIVER_NAME, safe);
+      if (!(await present(safe))) throw objectNotFound(DRIVER_NAME, safe);
       return file.stream();
     },
 
@@ -305,12 +376,12 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       const source = assertSafeKey(from);
       const destination = assertSafeKey(to);
       const file = conn().file(source);
-      if (!(await file.exists())) throw objectNotFound(DRIVER_NAME, source);
-      const stat = await file.stat();
+      if (!(await present(source))) throw objectNotFound(DRIVER_NAME, source);
+      const stat = await file.stat().catch(refusedRead(source));
       await conn()
         .file(destination)
         .write(file, { type: stat.type ?? DEFAULT_CONTENT_TYPE })
-        .catch(misconfigured);
+        .catch(refusedWrite(destination));
       return statObject(destination);
     },
 
@@ -333,13 +404,14 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     },
 
     async exists(key: string): Promise<boolean> {
-      return conn().file(assertSafeKey(key)).exists();
+      return present(assertSafeKey(key));
     },
 
     async list(listOptions?: ListOptions): Promise<ListPage> {
       const prefix = listOptions?.prefix ?? '';
       // Refused at the seam both drivers share, before the provider is asked: `maxKeys: 0` used to
       // go straight through, while the local disk answered a complete-looking empty page.
+      assertListOptions(listOptions);
       const maxKeys = resolveListLimit(listOptions?.limit);
       // `conn()` OUTSIDE the try: a missing credential or an absent `Bun.S3Client` is this disk
       // misconfigured, and it already answers with its own code and its own fix.
@@ -375,7 +447,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           key: entry.key,
           size: entry.size ?? 0,
           etag: entry.eTag ?? '',
-          lastModified: toDate(entry.lastModified),
+          ...dated(entry.lastModified),
         });
       }
       const cursor = result.nextContinuationToken;

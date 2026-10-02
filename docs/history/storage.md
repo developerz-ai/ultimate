@@ -86,3 +86,29 @@ a current fact: the rules that still hold are in that file, and where the two di
   (`As of 2026-09-22`): **11,822 B** at 20.2.1, **17,767 B** on `clientTransport`. The +5.9 kB is
   core's transport graph, paid only where the chunk did not already carry it — an island that
   also calls an action or a query already does.
+
+- **Plan 101 (2026-10), what changed and why.**
+  - `promoteAttachment` takes the **policy** and measures with `stat()`. `get` + `put` became
+    `copy` long ago; the size was still never read, so on s3 the grant's `maxBytes` bound nothing.
+    `stat` is REQUIRED on `StorageDriver` — it shipped optional for one review round with a runtime
+    `X_NOT_IMPLEMENTED`, and a contract enforced at runtime only is not one.
+  - `lastModified` is optional. Epoch 0 for a provider that sent none was read by `sweepOrphans` as
+    "older than any window"; an invalid `Date` sentinel replaced it for one round and was dropped
+    for the same reason as the optional `stat` — a value a reader has to remember to test.
+  - The signed tuple is `v2` and carries the base PATH: every local disk shares one secret, so a
+    URL for one disk verified on another.
+  - A variant key keeps the whole source key (`hero.png@w640.webp`); the extension was cut, so
+    `hero.png` and `hero.jpg` shared one cached variant.
+  - `get()` has a ceiling (`maxGetBytes`) on every driver.
+  - The local write is staged and renamed in the order **marker, sidecar, bytes, clear marker**.
+    The 2026-09-28 plan said "sidecar last" and sweep 2 said "sidecar first"; neither is sound
+    alone — bytes-first serves new bytes under the old type, sidecar-first serves old bytes under
+    the new one. The pending marker (the new etag, beside the sidecar) is what makes the torn pair
+    detectable, and sidecar-before-bytes is what makes a torn FRESH write absent rather than
+    typeless. `driver-local-crash.test.ts` dies at every step.
+  - A refused write is `X_STORAGE_PUT_FAILED` on local and s3; a key that is another key's path on
+    the local disk is `X_STORAGE_KEY_CONFLICT`. Suffixed on-disk names were considered and not
+    taken: they need a migration for every existing root.
+
+- **The signed base, before it was stated once on the driver** (moved from the package notes,
+  2026-10): Before that, the base was stated twice (`/_storage/local` in the driver, `/_storage` in `verifySignedUrl`'s default) and NO genuine URL verified at all: the key parsed as `local/<key>`.

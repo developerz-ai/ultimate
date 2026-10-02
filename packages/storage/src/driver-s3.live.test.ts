@@ -242,6 +242,33 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
     expect(await disk.exists(at('region.txt'))).toBe(false);
   });
 
+  test('stat answers size and age without the bytes, and get refuses past maxGetBytes', async () => {
+    if (target === undefined) return;
+    await disk.put(at('capped.txt'), bytesOf('12345'), { contentType: 'text/plain' });
+    const capped = s3Driver({
+      bucket: target.bucket,
+      endpoint: target.endpoint,
+      forcePathStyle: true,
+      maxGetBytes: 4,
+      env: {
+        S3_ACCESS_KEY_ID: target.accessKeyId,
+        S3_SECRET_ACCESS_KEY: target.secretAccessKey,
+      },
+    });
+
+    const stat = await disk.stat(at('capped.txt'));
+    const refused = await catchError(() => capped.get(at('capped.txt')));
+    const streamed = await new Response(await capped.stream(at('capped.txt'))).text();
+
+    expect(stat?.size).toBe(5);
+    expect(stat?.contentType).toStartWith('text/plain');
+    // A real provider always dates an object: an absent `lastModified` is for one that does not.
+    expect(stat?.lastModified).toBeInstanceOf(Date);
+    expect(await disk.stat(at('capped-absent.txt'))).toBeUndefined();
+    expect(codeOf(refused)).toBe('X_STORAGE_TOO_LARGE');
+    expect(streamed).toBe('12345');
+  });
+
   test('a presigned GET cannot be replayed as a PUT', async () => {
     await disk.put(at('readonly.txt'), bytesOf('original'));
     const url = await disk.signedUrl(at('readonly.txt'), { expiresInMs: 60_000 });

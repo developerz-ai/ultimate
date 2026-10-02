@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createRaster, encodeImage, probeImage, type Raster } from '@ultimat3/core';
 import { notImplementedDriver } from './errors';
 import { builtinImageDriver, type TransformedImage } from './image-driver';
-import { IMAGE_QUERY_KEYS, parseImageQuery } from './images';
+import { DEFAULT_FORMATS, IMAGE_QUERY_KEYS, parseImageQuery, responsiveImage } from './images';
 
 /** A flat 64x48 PNG. `alpha: 255` is opaque; anything less makes the raster alpha-bearing. */
 function pngSource(alpha: number): Uint8Array {
@@ -171,5 +171,22 @@ describe('notImplementedDriver', () => {
       capability: 'transform()',
       at: 'app/cdn-image.ts',
     });
+  });
+});
+
+describe('the default markup and the default driver agree', () => {
+  test('every format responsiveImage offers by default is one builtinImageDriver encodes', async () => {
+    // The two defaults are configured apart and fail apart: a `<source>` the driver refuses is an
+    // error response the browser does not fall back from.
+    const driver = builtinImageDriver({ read: async () => OPAQUE });
+    expect(DEFAULT_FORMATS.length).toBeGreaterThan(0);
+    for (const format of DEFAULT_FORMATS) {
+      const result = await driver.transform({ src: '/img/hero.png', width: 32, format });
+      expect(result.contentType).toBe(`image/${format}`);
+    }
+    const offered = responsiveImage({ src: '/img/hero.png', width: 64, height: 48, alt: '' });
+    expect(offered.sources.map((source) => source.type)).toEqual(
+      DEFAULT_FORMATS.map((format) => `image/${format}`),
+    );
   });
 });

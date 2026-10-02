@@ -69,7 +69,7 @@ export interface RuntimeOverrides {
    * answers a document, and a protocol that fixes its own error shape is neither.
    */
   readonly routes?: readonly Route[];
-  /** The `/media/*` transform. Omitted, `builtinImageDriver` — core's PNG/JPEG pipeline. */
+  /** The `/media/*` transform. Omitted, `builtinImageDriver` — core's PNG/JPEG/WebP pipeline. */
   readonly images?: ImageTransformDriver;
   /**
    * Who is dialling the `sync` node. Omitted, the app's own `configureAuthenticator()` is adapted

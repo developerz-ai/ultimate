@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "266011ead7a23e10e5994a21fb33c4218a2e0dfdc4bffe406e8b7f8a40023b80",
+  "buildId": "89819ac593f8960a0fc7055e1afb779c98de4c9d28768faf4197f71808e2f1a6",
   "tiers": {
     "0": [
       "core",
@@ -3535,6 +3535,11 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_KEY_CONFLICT",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
       "code": "X_STORAGE_LIST_FAILED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
@@ -3560,7 +3565,17 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_PUT_FAILED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
       "code": "X_STORAGE_QUARANTINED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_READ_FAILED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },

@@ -1,7 +1,13 @@
 // Public API of @ultimat3/cache. Explicit, no `export *`.
 
 export type { CacheHeaderOptions, CdnTierOptions, PurgeDriver } from './cdn';
-export { cacheHeaders, createCdnTier, isNoopPurgeDriver, noopPurgeDriver } from './cdn';
+export {
+  cacheHeaders,
+  createCdnTier,
+  isNoopPurgeDriver,
+  noopPurgeDriver,
+  surrogateKeys,
+} from './cdn';
 export type { CacheErrorCode } from './errors';
 export {
   CACHE_ERROR_CODES,
@@ -96,6 +102,7 @@ export {
 } from './tags';
 export type { TierFailure, TierOperation } from './tier-failures';
 export { bestEffort, recentTierFailures } from './tier-failures';
+export type { FenceVerdict, TierFence } from './tier-fence';
 export type {
   CacheEntry,
   CacheSetOptions,

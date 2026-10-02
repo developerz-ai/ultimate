@@ -60,6 +60,29 @@ describe('renderMeta', () => {
     );
   });
 
+  test('the brand is matched as a WORD, not as a run of letters inside another one', () => {
+    // `'Ultimately fast'.includes('Ultimate')` is true, so the page shipped with no brand at all.
+    expect(applyTitleTemplate('Ultimately fast', '%s — Ultimate')).toBe(
+      'Ultimately fast — Ultimate',
+    );
+    expect(applyTitleTemplate('Penultimate', '%s — Ultimate')).toBe('Penultimate — Ultimate');
+    expect(applyTitleTemplate('Ultimate2 notes', '%s — Ultimate')).toBe(
+      'Ultimate2 notes — Ultimate',
+    );
+    // Punctuation and the ends of the string are boundaries.
+    expect(applyTitleTemplate('Ultimate: the docs', '%s — Ultimate')).toBe('Ultimate: the docs');
+    expect(applyTitleTemplate('Docs (Ultimate)', '%s — Ultimate')).toBe('Docs (Ultimate)');
+    expect(applyTitleTemplate("Ultimate's roadmap", '%s — Ultimate')).toBe("Ultimate's roadmap");
+    // A later whole-word occurrence still counts when an earlier one is inside a word.
+    expect(applyTitleTemplate('Ultimately, Ultimate', '%s — Ultimate')).toBe(
+      'Ultimately, Ultimate',
+    );
+    // Letters outside ASCII are letters: `\b` would call the `é` a boundary.
+    expect(applyTitleTemplate('Caféteria', '%s · Café')).toBe('Caféteria · Café');
+    // A brand that is itself punctuation-edged still matches where it stands alone.
+    expect(applyTitleTemplate('About C++', '%s | C++')).toBe('About C++');
+  });
+
   test('a template with no %s slot keeps the page title, never the brand alone', () => {
     // `template.replace('%s', title)` on a template with no slot is a no-op, so the page's own
     // title was DISCARDED and every route rendered the brand as its <title>. The renderer stays

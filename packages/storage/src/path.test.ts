@@ -75,6 +75,24 @@ describe('isWithinOrg', () => {
   test('a prefix collision is not containment', () => {
     expect(isWithinOrg(scopedKey('org-10', 'a.png'), 'org-1')).toBe(false);
   });
+
+  test('an org id that cannot be one contains nothing, and says so without throwing', () => {
+    // It raised X_STORAGE_PATH_UNSAFE through `orgPrefix`, so an actor with no org claim was
+    // reported as a malformed KEY — and a predicate that throws is a guard nobody can `&&`.
+    const key = scopedKey('org-1', 'a.png');
+    for (const orgId of ['', 'org-1/x', 'a\\b', '..', '.', ' org-1', 'org-1 ']) {
+      expect(codeOf(() => isWithinOrg(key, orgId))).toBe('no-error-thrown');
+      expect(isWithinOrg(key, orgId)).toBe(false);
+    }
+    // An untyped caller: a missing claim is `undefined` at runtime whatever the type says.
+    for (const missing of [undefined, null, 7]) {
+      expect(isWithinOrg(key, missing as unknown as string)).toBe(false);
+      expect(isWithinOrg(missing as unknown as string, 'org-1')).toBe(false);
+    }
+    // The shapes an empty org could have matched by accident.
+    expect(isWithinOrg('org//a.png', '')).toBe(false);
+    expect(isWithinOrg('org/a.png', '')).toBe(false);
+  });
 });
 
 describe('isTenantScoped', () => {

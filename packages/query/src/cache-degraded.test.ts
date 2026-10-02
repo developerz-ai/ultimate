@@ -50,7 +50,9 @@ describe('a read tier that refuses', () => {
     // looking slow. It used to be labelled `query-read` — this package's own seam, which was the
     // whole problem: a rung nothing had registered and no fan-out could reach.
     const failures = recentTierFailures().filter((failure) => failure.key === KEY);
-    expect(failures.map((failure) => failure.op).sort()).toEqual(['get', 'set']);
+    // Newest first: the `del` is the fill's repair of a refused `set` — a tier that refuses
+    // everything refuses that too, and says so rather than leaving a stale entry unreported.
+    expect(failures.map((failure) => failure.op)).toEqual(['del', 'set', 'get']);
     expect(failures.every((failure) => failure.tier === 'redis')).toBe(true);
   });
 });

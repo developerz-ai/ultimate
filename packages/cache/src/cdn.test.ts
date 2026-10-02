@@ -4,7 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PurgeDriver } from './cdn';
-import { cacheHeaders, createCdnTier, noopPurgeDriver } from './cdn';
+import { cacheHeaders, createCdnTier, noopPurgeDriver, surrogateKeys } from './cdn';
+import { CachePurgeFailedError } from './errors';
 import { tag } from './tags';
 
 describe('cacheHeaders', () => {
@@ -38,16 +39,45 @@ describe('cacheHeaders', () => {
     );
   });
 
-  test('tags become a space-joined Surrogate-Key', () => {
+  test('tags become a space-joined Surrogate-Key, with the entity index beside them', () => {
+    // `e:post` is what a collection bust purges. Without it a detail page keyed `post:1` alone is
+    // unreachable by `invalidateTags([tag.post])` and serves for its whole `s-maxage`.
     const headers = cacheHeaders({ tags: [tag('post'), tag('post', '1')] });
-    expect(headers['Surrogate-Key']).toBe('post post:1');
+    expect(headers['Surrogate-Key']).toBe('post e:post post:1');
+  });
+
+  test('a row tag alone still carries its entity index, once per entity', () => {
+    const headers = cacheHeaders({ tags: [tag('post', '1'), tag('post', '2'), tag('user', '9')] });
+    expect(headers['Surrogate-Key']).toBe('post:1 e:post post:2 user:9 e:user');
+  });
+
+  test('a tag a CDN would split is refused at EMISSION, not on the purge nobody watches', () => {
+    // `post:a b` goes out as two keys, `post:a` and `b`; the purge of `post:a b` is refused by
+    // the driver's own guard. Tagged and unpurgeable — so the response is never tagged that way.
+    for (const id of ['a b', 'a,b', 'a\tb']) {
+      try {
+        cacheHeaders({ tags: [tag('post', id)] });
+        expect.unreachable('an unpurgeable key was emitted');
+      } catch (error) {
+        expect(error).toBeInstanceOf(CachePurgeFailedError);
+        expect((error as CachePurgeFailedError).code).toBe('X_CACHE_PURGE_FAILED');
+        expect((error as CachePurgeFailedError).cause).toContain('cacheHeaders');
+      }
+    }
+    expect(() => surrogateKeys([tag('po st')])).toThrow(CachePurgeFailedError);
+  });
+
+  test('a private response screens nothing, because it carries no key', () => {
+    expect(cacheHeaders({ visibility: 'private', tags: [tag('post', 'a b')] })).toEqual({
+      'Cache-Control': 'private, no-store',
+    });
   });
 
   // Cloudflare reads `Cache-Tag`, comma-separated, and never `Surrogate-Key`; the two headers are
   // what `@ultimat3/http`'s `applyCacheHeaders` emits too, so a purge reaches either CDN.
   test('the same tags become a comma-joined Cache-Tag', () => {
     expect(cacheHeaders({ tags: [tag('post'), tag('post', '1')] })['Cache-Tag']).toBe(
-      'post,post:1',
+      'post,e:post,post:1',
     );
   });
 
@@ -147,13 +177,35 @@ describe('createCdnTier', () => {
     });
   });
 
-  test('invalidateTags purges the serialized wire tags and surfaces the driver-accepted keys', async () => {
+  test('invalidateTags surfaces the driver-accepted keys', async () => {
     const { driver, calls } = purgeSpy((keys) => keys.filter((key) => key === 'post'));
     const tier = createCdnTier({ purge: driver });
 
     const result = await tier.invalidateTags([tag('post'), tag('post', '1')]);
 
-    expect(calls).toEqual([['post', 'post:1']]);
+    expect(calls).toEqual([['e:post', 'post', 'post:1']]);
     expect(result).toEqual({ tier: 'cdn', keys: ['post'] });
+  });
+
+  test('a ROW bust purges the row and the bare collection key, never the entity index', async () => {
+    // The list keyed `post` contained the row, so it goes. `e:post` is on every response of the
+    // entity: purging it here would clear `post:2`'s page for a write to `post:1`.
+    const { driver, calls } = purgeSpy();
+    await createCdnTier({ purge: driver }).invalidateTags([tag('post', '1')]);
+    expect(calls).toEqual([['post:1', 'post']]);
+  });
+
+  test('a COLLECTION bust purges the entity index, and the bare key older responses carry', async () => {
+    const { driver, calls } = purgeSpy();
+    await createCdnTier({ purge: driver }).invalidateTags([tag('post')]);
+    expect(calls).toEqual([['e:post', 'post']]);
+  });
+
+  test('a bust of an unpurgeable tag is refused before any driver is asked', async () => {
+    const { driver, calls } = purgeSpy();
+    await expect(
+      createCdnTier({ purge: driver }).invalidateTags([tag('post', 'a b')]),
+    ).rejects.toThrow(CachePurgeFailedError);
+    expect(calls).toEqual([]);
   });
 });

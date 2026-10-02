@@ -5,10 +5,11 @@
 // so the tenant prefix is a construction, not a check somebody remembered to write.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, renderThrowable, systemClock } from '@ultimat3/core';
+import { assert, finiteCount, renderThrowable, systemClock } from '@ultimat3/core';
 import type { ListPage, StorageDriver, StorageListEntry, StorageObject } from './driver';
-import { notPending, orgMismatch, quarantined } from './errors';
+import { notPending, objectNotFound, orgMismatch, quarantined, tooLarge } from './errors';
 import { isWithinOrg, orgPrefix, scopedKey } from './path';
+import type { UploadPolicy } from './upload';
 
 /** The one segment an unattached upload lives under. `sweepOrphans` reads only this prefix. */
 export const PENDING_SEGMENT = 'pending';
@@ -123,13 +124,27 @@ export interface PromoteAttachmentInput {
   readonly key: string;
   readonly orgId: string;
   readonly target: AttachmentTarget;
+  /**
+   * The policy the upload was GRANTED under — required, never defaulted. On a bucket-backed disk
+   * the presigned PUT carries no size, so `policy.maxBytes` bound nothing until this call measured
+   * the object; a default here would silently replace an app's own ceiling with the framework's.
+   */
+  readonly policy: UploadPolicy;
 }
 
 /**
  * Move a pending upload onto the row that now exists. Copy first, delete second: a delete that
  * ran first would lose the bytes on a failed write, and the sweep would have collected them
- * anyway. Re-promoting an already-promoted key is `X_STORAGE_NOT_FOUND` from the copy, never a
- * silent no-op that leaves the caller believing a file is attached.
+ * anyway.
+ *
+ * MEASURED before it moves: `stat().size` over `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, and the
+ * object stays under `pending/` for `sweepOrphans` — never at a key a row points to. `stat` and
+ * not `get`: this is the call that learns the size, so it cannot be one that buffers it.
+ *
+ * Idempotent across a retry: a source that is gone with the destination already there answers the
+ * destination. Promotion is copy-then-delete inside a request whose row write can still roll back,
+ * and the retry used to raise `X_STORAGE_NOT_FOUND` for a file sitting exactly where it belonged.
+ * A source that is gone with NO destination is still `X_STORAGE_NOT_FOUND`.
  *
  * The copy is `disk.copy`, not `get` + `put`: promotion used to download the whole object into
  * this process and upload it again, so attaching a 500MB file moved a gigabyte through the pod
@@ -141,10 +156,27 @@ export async function promoteAttachment(input: PromoteAttachmentInput): Promise<
   // copy-then-delete below would move that row's file here and delete theirs.
   if (!isPendingKey(input.key, input.orgId)) throw notPending(input.key, input.orgId);
   if (isQuarantinedKey(input.key, input.orgId)) throw quarantined(input.key, input.orgId);
+  // The type says required; an untyped caller upgrading from the four-field call does not read
+  // types, and `input.policy.maxBytes` on `undefined` is a bare `TypeError` two lines down.
+  assert(
+    typeof input.policy?.maxBytes === 'number',
+    'promoteAttachment was called with no policy, so nothing bounds the size of the upload it attaches',
+    'promoteAttachment({ disk, key, orgId, target, policy: uploadPolicy({ maxBytes }) }) — the policy the upload was granted under',
+  );
+  const disk = input.disk;
   const name = input.key.slice(input.key.lastIndexOf('/') + 1);
   const attached = attachmentKey(input.orgId, input.target, name);
-  const object = await input.disk.copy(input.key, attached);
-  await input.disk.delete(input.key);
+  const pending = await disk.stat(input.key);
+  if (pending === undefined) {
+    const already = await disk.stat(attached);
+    if (already !== undefined) return already;
+    throw objectNotFound(disk.name, input.key);
+  }
+  if (pending.size > input.policy.maxBytes) {
+    throw tooLarge(input.key, pending.size, input.policy.maxBytes);
+  }
+  const object = await disk.copy(input.key, attached);
+  await disk.delete(input.key);
   return object;
 }
 
@@ -204,7 +236,8 @@ export async function sweepOrphans(input: SweepOrphansInput): Promise<SweepResul
       ...(cursor === undefined ? {} : { cursor }),
     });
     for (const object of page.objects) {
-      if (object.lastModified.getTime() > cutoff) continue;
+      // An object whose age the provider did not report is SPARED: only a proven age is swept.
+      if (object.lastModified === undefined || object.lastModified.getTime() > cutoff) continue;
       if ((await input.keep?.(object)) === true) continue;
       try {
         await input.disk.delete(object.key);

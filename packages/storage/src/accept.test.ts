@@ -71,7 +71,7 @@ async function paramsFor(constraints: SignedUrlConstraints): Promise<string> {
     [SIGNED_URL_PARAMS.expires]: String(constraints.expiresAt),
     [SIGNED_URL_PARAMS.maxBytes]: String(constraints.maxBytes),
     [SIGNED_URL_PARAMS.contentType]: String(constraints.contentType),
-    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints),
+    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints, BASE),
   }).toString();
 }
 
@@ -187,7 +187,7 @@ describe('acceptSignedUpload', () => {
       maxBytes: 1024,
       contentType: 'image/png',
     };
-    expect(canonicalRequest(constraints)).toContain(key);
+    expect(canonicalRequest(constraints, BASE)).toContain(key);
     // `%2E%2E` does not survive `new URL()`: the path collapses to `/_storage/local/etc/passwd`,
     // so the key that gets verified is NOT the key that was signed, and the HMAC fires. The
     // traversal can therefore never reach a driver, whichever of the two gates gets there first.
@@ -355,7 +355,7 @@ async function forgedGet(key: string, encodeWhole = false): Promise<string> {
   const params = new URLSearchParams({
     [SIGNED_URL_PARAMS.method]: 'GET',
     [SIGNED_URL_PARAMS.expires]: String(constraints.expiresAt),
-    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints),
+    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints, BASE),
   });
   const path = encodeWhole
     ? encodeURIComponent(key)

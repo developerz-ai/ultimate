@@ -16,7 +16,7 @@ import { createRaster, encodeImage, probeImage, userActor } from '@ultimat3/core
 import type { Route } from '@ultimat3/http';
 import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
-import { responsiveImage } from '@ultimat3/seo';
+import { MAX_IMAGE_WIDTH, responsiveImage } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, resetStorage, variantKey } from '@ultimat3/storage';
 import { ICON_SOURCE } from './icon-assets';
@@ -237,6 +237,31 @@ describe('unit · dev assets · responsive variants', () => {
 
     await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=1200&f=png`);
     expect(await storage.disk().exists(cached)).toBe(true);
+  });
+
+  // A source wider than seo's `MAX_IMAGE_WIDTH` has a srcset that tops out AT the ceiling, not at
+  // its own width — so the widest URL the framework mints was decoded on every single request.
+  test('the widest candidate of an oversized source is the ceiling, and it is cacheable', async () => {
+    const wideKey = 'covers/panorama.png';
+    await storage.disk().put(wideKey, png(MAX_IMAGE_WIDTH + 8, 2), { contentType: 'image/png' });
+    const routes = assetRoutes({ root, storage });
+    const image = responsiveImage({
+      src: `${MEDIA_BASE_PATH}/${wideKey}`,
+      width: MAX_IMAGE_WIDTH + 8,
+      height: 2,
+      alt: 'panorama',
+    });
+    expect(image.img.src).toContain(`w=${MAX_IMAGE_WIDTH}`);
+
+    const response = await call(routes, `${image.img.src}&f=png`);
+    expect(probeImage(new Uint8Array(await response.arrayBuffer())).width).toBe(MAX_IMAGE_WIDTH);
+    const cached = variantKey(wideKey, { width: MAX_IMAGE_WIDTH, format: 'png' });
+    expect(await storage.disk().exists(cached)).toBe(true);
+    // Still closed: a width between two candidates is served and not stored.
+    await call(routes, `${MEDIA_BASE_PATH}/${wideKey}?w=5000&f=png`);
+    expect(await storage.disk().exists(variantKey(wideKey, { width: 5000, format: 'png' }))).toBe(
+      false,
+    );
   });
 
   test('an unusable width is refused before any byte is decoded', async () => {

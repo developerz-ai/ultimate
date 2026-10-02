@@ -77,21 +77,26 @@ beforeEach(() => {
 
 describe('variantKey', () => {
   test('derives the key from the source key and the transform, webp by default', () => {
-    expect(variantKey('photos/hero.png', {})).toBe('photos/hero@full.webp');
-    expect(variantKey('photos/hero.png', { width: 640 })).toBe('photos/hero@w640.webp');
+    expect(variantKey('photos/hero.png', {})).toBe('photos/hero.png@full.webp');
+    expect(variantKey('photos/hero.png', { width: 640 })).toBe('photos/hero.png@w640.webp');
     expect(variantKey('photos/hero.png', { width: 640, height: 480, fit: 'cover' })).toBe(
-      'photos/hero@w640-h480-cover.webp',
+      'photos/hero.png@w640-h480-cover.webp',
     );
   });
 
   test('spells the extension per format, jpeg as jpg', () => {
     const extensions = VARIANT_FORMATS.map((format) => variantKey('a/b.tiff', { format }));
-    expect(extensions).toEqual(['a/b@full.avif', 'a/b@full.webp', 'a/b@full.jpg', 'a/b@full.png']);
+    expect(extensions).toEqual([
+      'a/b.tiff@full.avif',
+      'a/b.tiff@full.webp',
+      'a/b.tiff@full.jpg',
+      'a/b.tiff@full.png',
+    ]);
   });
 
   test('names the quality only when it is not the default', () => {
-    expect(variantKey('a.png', { width: 10, quality: DEFAULT_QUALITY })).toBe('a@w10.webp');
-    expect(variantKey('a.png', { width: 10, quality: 55 })).toBe('a@w10-q55.webp');
+    expect(variantKey('a.png', { width: 10, quality: DEFAULT_QUALITY })).toBe('a.png@w10.webp');
+    expect(variantKey('a.png', { width: 10, quality: 55 })).toBe('a.png@w10-q55.webp');
   });
 
   test('is deterministic — the same transform is the same cache key', () => {
@@ -110,7 +115,7 @@ describe('srcsetDescriptors', () => {
     expect(descriptors.map((d) => d.descriptor)).toEqual(
       DEFAULT_SRCSET_WIDTHS.map((width) => `${width}w`),
     );
-    expect(descriptors[0]?.key).toBe('photos/hero@w320.webp');
+    expect(descriptors[0]?.key).toBe('photos/hero.png@w320.webp');
   });
 
   test('drops widths above the intrinsic width — upscaling is never useful', () => {
@@ -126,7 +131,7 @@ describe('srcsetDescriptors', () => {
       format: 'jpeg',
       quality: 60,
     });
-    expect(descriptors.map((d) => d.key)).toEqual(['a@w100-q60.jpg']);
+    expect(descriptors.map((d) => d.key)).toEqual(['a.png@w100-q60.jpg']);
   });
 });
 
@@ -329,8 +334,8 @@ describe('the variant quality is screened against core, not beside it', () => {
   );
 
   test('a real quality still mints the key it always did', () => {
-    expect(variantKey('a.png', { width: 10, quality: 55 })).toBe('a@w10-q55.webp');
-    expect(variantKey('a.png', { width: 10, quality: DEFAULT_QUALITY })).toBe('a@w10.webp');
+    expect(variantKey('a.png', { width: 10, quality: 55 })).toBe('a.png@w10-q55.webp');
+    expect(variantKey('a.png', { width: 10, quality: DEFAULT_QUALITY })).toBe('a.png@w10.webp');
   });
 });
 
@@ -364,5 +369,82 @@ describe('an explicitly null quality is refused, never defaulted', () => {
     }
     expect(rendered).toContain('X_INVARIANT');
     expect(rendered).toContain('quality');
+  });
+});
+
+describe('two sources never share a variant', () => {
+  // The stem was the key with its extension CUT, so `p/hero.png` and `p/hero.jpg` both minted
+  // `p/hero@w100.webp` — whichever was requested first was served for the other, from cache.
+  test('the source extension is part of the variant key', () => {
+    const png = variantKey('p/hero.png', { width: 100 });
+    const jpg = variantKey('p/hero.jpg', { width: 100 });
+    expect(png).toBe('p/hero.png@w100.webp');
+    expect(jpg).toBe('p/hero.jpg@w100.webp');
+    expect(variantKey('p/hero', { width: 100 })).toBe('p/hero@w100.webp');
+    expect(new Set([png, jpg, variantKey('p/hero', { width: 100 })]).size).toBe(3);
+  });
+
+  test('a variant of a variant is still its own key', () => {
+    const once = variantKey('p/hero.png', { width: 100 });
+    expect(variantKey(once, { width: 50 })).toBe('p/hero.png@w100.webp@w50.webp');
+  });
+});
+
+describe('a variant box is screened where it is named', () => {
+  const refusal = (run: () => unknown): string => {
+    try {
+      run();
+    } catch (error) {
+      return isUltimateError(error) ? error.code : `uncoded: ${String(error)}`;
+    }
+    return 'no-error-thrown';
+  };
+
+  // `{ width: NaN }` minted `a@wNaN.webp` — a writable key for bytes no encoder can produce, and
+  // an unbounded spelling (`w1.5`, `w-3`, `wInfinity`) is an unbounded number of keys in a bucket.
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -3, 1.5]) {
+    test(`width or height ${String(bad)} is refused by variantKey and fitDimensions`, () => {
+      expect(refusal(() => variantKey('a.png', { width: bad }))).toBe('X_INVARIANT');
+      expect(refusal(() => variantKey('a.png', { height: bad }))).toBe('X_INVARIANT');
+      expect(refusal(() => fitDimensions({ width: 40, height: 20 }, { width: bad }))).toBe(
+        'X_INVARIANT',
+      );
+      expect(refusal(() => fitDimensions({ width: 40, height: 20 }, { height: bad }))).toBe(
+        'X_INVARIANT',
+      );
+    });
+  }
+
+  test('an explicit null is refused, never read as "no width"', () => {
+    const blanked = { width: null } as unknown as ImageTransform;
+    expect(refusal(() => variantKey('a.png', blanked))).toBe('X_INVARIANT');
+  });
+
+  test('srcsetDescriptors refuses a fractional width rather than minting w1.5', () => {
+    expect(refusal(() => srcsetDescriptors('a.png', { widths: [1.5] }))).toBe('X_INVARIANT');
+  });
+});
+
+describe('fitDimensions never answers a zero edge and never upscales', () => {
+  test('an extreme ratio floors the derived edge at one pixel', () => {
+    // 1000x1 at width 100 rounded the height to 0 — a box no encoder can fill.
+    expect(fitDimensions({ width: 1000, height: 1 }, { width: 100 })).toEqual({
+      width: 100,
+      height: 1,
+    });
+    expect(fitDimensions({ width: 1, height: 1000 }, { height: 100 })).toEqual({
+      width: 1,
+      height: 100,
+    });
+    expect(
+      fitDimensions({ width: 1000, height: 1 }, { width: 100, height: 100, fit: 'contain' }),
+    ).toEqual({ width: 100, height: 1 });
+  });
+
+  test('contain with both edges stops at the source size, as a single edge already does', () => {
+    const source = { width: 40, height: 20 };
+    expect(fitDimensions(source, { width: 400, height: 400, fit: 'contain' })).toEqual(source);
+    expect(fitDimensions(source, { width: 400, height: 400 })).toEqual(source);
+    expect(fitDimensions(source, { width: 400, height: 10 })).toEqual({ width: 20, height: 10 });
   });
 });

@@ -244,3 +244,80 @@ describe('the largest amount a Money can hold renders every digit', () => {
     ).toBe('-$90,071,992,547,409.91');
   });
 });
+
+describe('trimZeroFraction drops a WHOLE amount’s zeros and nothing else', () => {
+  const trimmed = { trimZeroFraction: true } as const;
+
+  // `minimumFractionDigits: 0` trimmed EVERY trailing zero, so 1250 cents rendered `$12.5` — a
+  // spelling no price list uses. The contract is "drop `.00` on whole amounts".
+  test('a fractional amount keeps every digit of its scale', () => {
+    expect(normalize(formatMoney(money(1250, 'USD'), 'en-US', trimmed))).toBe('$12.50');
+    expect(normalize(formatMoney(money(1250, 'EUR'), 'de-DE', trimmed))).toBe('12,50 €');
+    expect(normalize(formatMoney(money(-1250, 'USD'), 'en-US', trimmed))).toBe('-$12.50');
+    // A three-digit currency and a finer scale: the neighbours of the cited input.
+    expect(normalize(formatMoney(money(1230, 'KWD'), 'en-US', trimmed))).toContain('1.230');
+    expect(normalize(formatMoney(money(12_500_000, 'USD', 6), 'en-US', trimmed))).toBe(
+      '$12.500000',
+    );
+  });
+
+  test('a whole amount loses its zeros', () => {
+    expect(normalize(formatMoney(money(1200, 'USD'), 'en-US', trimmed))).toBe('$12');
+    expect(normalize(formatMoney(money(12_000_000, 'USD', 6), 'en-US', trimmed))).toBe('$12');
+    expect(normalize(formatMoney(money(1200, 'JPY'), 'en-US', trimmed))).toBe('¥1,200');
+  });
+
+  test('the parts agree with the string', () => {
+    const parts = formatMoneyParts(money(1250, 'USD'), 'en-US', trimmed);
+    expect(parts.find((part) => part.type === 'fraction')?.value).toBe('50');
+  });
+
+  test('the trimmed and untrimmed formatters never share a cache entry', () => {
+    expect(normalize(formatMoney(money(1200, 'USD'), 'en-US', { fractionDigits: 2 }))).toBe(
+      '$12.00',
+    );
+    expect(
+      normalize(
+        formatMoney(money(1200, 'USD'), 'en-US', { fractionDigits: 2, trimZeroFraction: true }),
+      ),
+    ).toBe('$12');
+    expect(normalize(formatMoney(money(1200, 'USD'), 'en-US', { fractionDigits: 2 }))).toBe(
+      '$12.00',
+    );
+  });
+});
+
+describe('fractionDigits is screened before Intl sees it', () => {
+  // `Intl.NumberFormat` raised a bare, uncoded `RangeError` for each of these.
+  for (const fractionDigits of [200, 101, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    test(`fractionDigits ${String(fractionDigits)} is X_MONEY_SCALE_INVALID`, () => {
+      for (const run of [
+        () => formatMoney(money(1299, 'USD'), 'en-US', { fractionDigits }),
+        () => formatMoneyParts(money(1299, 'USD'), 'en-US', { fractionDigits }),
+      ]) {
+        let caught: unknown;
+        try {
+          run();
+        } catch (error) {
+          caught = error;
+        }
+        expect(isUltimateError(caught) ? caught.code : caught).toBe('X_MONEY_SCALE_INVALID');
+      }
+    });
+  }
+
+  test('a null handed through an untyped caller is refused, never defaulted', () => {
+    let caught: unknown;
+    try {
+      formatMoney(money(1299, 'USD'), 'en-US', { fractionDigits: null as unknown as number });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isUltimateError(caught) ? caught.code : caught).toBe('X_MONEY_SCALE_INVALID');
+  });
+
+  test('every count Intl accepts still formats', () => {
+    expect(formatMoney(money(1299, 'USD'), 'en-US', { fractionDigits: 0 })).toBe('$13');
+    expect(formatMoney(money(1299, 'USD'), 'en-US', { fractionDigits: 4 })).toBe('$12.9900');
+  });
+});

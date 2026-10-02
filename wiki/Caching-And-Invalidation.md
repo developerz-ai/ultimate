@@ -76,7 +76,7 @@ export const publishPost = action({
 | Tier 2 in-process LRU (**all instances**) | tag-invalidation message on NATS | ~ms, best-effort; a missed message costs a stale read until TTL, never a wrong write |
 | Tier 3 Redis | `SREM`/`DEL` over the tag's key set | immediate, inside the fan-out |
 | ISR pages | routes whose `revalidate.tags` include the tag are marked stale → regenerated in background | next request serves stale, regen enqueued as a job |
-| CDN | purge by surrogate key — the same tag strings — through the configured `PurgeDriver` | seconds; `stale-while-revalidate` covers the gap |
+| CDN | purge by surrogate key through the configured `PurgeDriver` — a row bust purges `post:1` and `post`, a collection bust `e:post` and `post` | seconds; `stale-while-revalidate` covers the gap |
 | Live queries | the same commit already flows through logical replication | **independent path** — realtime does not depend on cache invalidation |
 
 Fan-out runs **after the handler resolves, in the same call** — `bustAfterCommit` awaits `invalidateTags()` directly (`packages/action/src/cache-gate.ts`), never through the outbox `As of 2026-08`. A handler that throws never reaches it, so a rolled-back write never purges; a process that dies between the commit and the fan-out leaves those entries until their TTL.
@@ -118,9 +118,33 @@ Agents are measurably bad at *distant* invariants — "edit here, remember to al
 ## The CDN leg
 
 The CDN is the one tier Ultimate never reads back from, so the emitted header and the purge call
-are the whole contract. `cacheHeaders()` writes the surrogate keys, and they are the tag strings
-unchanged — `post`, `post:1` — which is what keeps an edge purge from ever meaning something
-different than an `invalidates: [tag.post]`.
+are the whole contract. An edge purges by exact key, so the two-way rule every other tier keeps —
+a collection bust reaches its rows, a row bust reaches the lists that held it — is built from two
+key lists, `As of 2026-10`:
+
+| | Row tag `post:1` | Collection tag `post` |
+|---|---|---|
+| a response carries (`cacheHeaders()`, `surrogateKeys()`) | `post:1` `e:post` | `post` `e:post` |
+| a bust purges | `post:1` `post` | `e:post` `post` |
+
+`e:<entity>` is the entity index: `len(entity) + 3` bytes per distinct entity in each header (7
+for `post`, 14 across both). A
+key carrying whitespace or a comma is refused at emission (`X_CACHE_PURGE_FAILED`), not on the
+purge — a CDN splits it into keys nothing ever names.
+
+Which responses carry keys, `As of 2026-10-02`:
+
+| Response | `Surrogate-Key` / `Cache-Tag` |
+|---|---|
+| an `isr` document whose route declares `revalidate.tags`, answered as a shared (`public`) response | yes — those tags through `surrogateKeys()`, on a miss, a hit and a served-stale answer |
+| an `isr` document with `revalidate.ttl` only | no — nothing purges it; `s-maxage` is its whole lease |
+| the same `isr` document answered to a **signed-in** visitor | no — the `cache-headers` stage rewrites it to `private` and strips both headers |
+| `static`, `ssr`, `stream` documents; assets; action and query responses | no — none is a tagged shared response (`ssr`'s `cache` takes no `tags`; actions and queries are `no-store`) |
+| a response your own handler tags (`ctx.cache = { mode: 'public', tags }`, or `cacheHeaders()`) | whatever you pass — hand `CacheHint.tags` the output of `surrogateKeys(tags)`, which `@ultimat3/http` emits verbatim |
+
+Before this date **no shipped response carried a key at all**: the purge drivers were called with
+keys nothing at the edge had ever been tagged with, and answered success. An unpurgeable tag in
+`revalidate.tags` is refused when the route registers (`X_ROUTE_MODE_INVALID`, naming the file).
 
 | Driver | Purge | Purge all | Per call |
 |---|---|---|---|

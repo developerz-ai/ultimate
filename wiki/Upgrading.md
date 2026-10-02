@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 23.x → 24.0.0 | **31** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, and flag expiries that must be ISO | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 23.x → 24.0.0 | **43** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, and `v2` signed URLs that name their disk | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
@@ -72,11 +72,11 @@ Each entry changes a surface the table below covers.
 
 ## 23.x → 24.0.0, entry by entry — **unreleased**
 
-**Thirty-one entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+**Forty-three entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
 `[Unreleased]` entries in their order: grouped by package, lowest tier first. No legacy path, no
 codemod, no compatibility shim — every break is a build error or an `X_*` error naming the rewrite.
-`As of 2026-10` slices 01 and 02 have landed: `@ultimat3/schema` and `@ultimat3/core`, then tier 1 —
-`i18n`, `time`, `db`, `flags`. A later slice appends
+`As of 2026-10` slices 01–03 have landed: `@ultimat3/schema` and `@ultimat3/core`; tier 1 —
+`i18n`, `time`, `db`, `flags`; then `cache`, `seo`, `storage` and one `render` entry. A later slice appends
 its rows below the last one and never renumbers.
 
 ### The upgrade, top to bottom
@@ -92,12 +92,17 @@ its rows below the last one and never renumbers.
 | 7 | load the app once (`x verify --only unit`) and fix each cron and flag declaration it refuses | `X_CRON_INVALID`, `X_FLAG_EXPIRY_INVALID` at the first import of the declaring file | 19, 30 |
 | 8 | `x db gen` where the database holds an object entry 29 lists; commit `packages/db/schema/` | a dump that no longer matches the one the gate regenerates | 29 |
 | 9 | `x verify --only unit,contract,job,live` and fix the tests it fails; read every `catch` and every `Promise.all` inside a `withTransaction` body | `X_DB_TRANSACTION_ABORTED` where a call used to resolve; `X_DB_SIBLING_SCOPE_TIMEOUT` after a 30 s wait; `⟦name⟧` in a rendered string; a relative date counted in calendar days | 17, 20–25, 27, 31 |
-| 10 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+| 10 | `bun run typecheck` for the storage types: add `policy` to each `promoteAttachment` call, `stat()` to a hand-written `StorageDriver`, a guard to each `lastModified` read, a base path to `canonicalRequest` / `signConstraints` | TS2741 / TS18048 / TS2554 at each site | 35–37, 41 |
+| 11 | load the app once (`x verify --only unit`) and rename each cache tag and `revalidate.tags` entry it refuses | `X_ROUTE_MODE_INVALID` at registration; `X_CACHE_PURGE_FAILED` where a tagged response is built | 33, 43 |
+| 12 | `x verify --only unit,contract,e2e` and fix the tests it fails; add the real media types to each upload policy; pass `{ formats: FORMAT_ORDER }` where your driver encodes AVIF | a header or `<picture>` snapshot that changed; `X_STORAGE_TOO_LARGE` from a `get()`; an upload refused for its sniffed type | 32, 34, 38, 40, 42 |
+| 13 | after the deploy: list and delete the old-shape image variants; expect signed URLs minted before it to fail for 15 minutes; purge the CDN once if a collection bust must reach older edge copies | orphaned variant files; an outstanding signed URL that no longer verifies | 32, 39, 41 |
+| 14 | `x verify` | green, or a finding whose `fix:` is the edit | — |
 
 ### Entry by entry
 
 Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@ultimat3/i18n` (17),
-`@ultimat3/time` (18–21), `@ultimat3/db` (22–29), `@ultimat3/flags` (30–31).
+`@ultimat3/time` (18–21), `@ultimat3/db` (22–29), `@ultimat3/flags` (30–31), `@ultimat3/cache`
+(32–33), `@ultimat3/seo` (34), `@ultimat3/storage` (35–42). Tier 4 — `@ultimat3/render` (43).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
@@ -132,6 +137,32 @@ Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@u
 | 29 | `packages/db/schema/unrendered.sql` | the database holds extended statistics, forced row security, non-default column storage, an unpopulated materialized view, or a trigger on a partitioned table. `x db gen`, commit the directory |
 | 30 | a temporary flag's `expiresAt` | it is not ISO-8601 (`'December 1, 2026'`, `'12/01/2026'`) or names a day its month lacks. `X_FLAG_EXPIRY_INVALID` at declaration. Write `'2026-12-01'` |
 | 31 | `configureFlags({ reportEveryMs })` | the value can be `NaN`, infinite, negative or a fraction — `Number(process.env.X)` unset. `X_INVARIANT`. Parse and default it first; `0` is legal |
+| 32 | `Surrogate-Key` / `Cache-Tag` from `cacheHeaders()` | a test asserts the header value, or a CDN rule parses it: each tagged response adds `e:<entity>`. After the deploy a collection bust misses edge copies cached before it until their `s-maxage` passes — purge the CDN once if that window matters |
+| 33 | cache tags | a tag's entity or id holds whitespace or a comma. `X_CACHE_PURGE_FAILED` from `cacheHeaders()`, `surrogateKeys()` and the CDN tier's bust. Rename it in its `declareTags(...)` call |
+| 34 | `responsiveImage()`, `usableWidths` | your image driver encodes AVIF and you relied on the default offering it: pass `{ formats: FORMAT_ORDER }`. A snapshot of `<picture>` markup loses its AVIF `<source>`. A source wider than 8192 gets `?w=8192` as its widest candidate. An intrinsic width that is `NaN`, zero or negative is `X_INVARIANT` |
+| 35 | `promoteAttachment` | always: add `policy` (TS2741; `X_INVARIANT` from untyped code) — the `uploadPolicy()` the upload was granted under. An upload over `policy.maxBytes` is `X_STORAGE_TOO_LARGE` and stays under `pending/` |
+| 36 | a hand-written `StorageDriver` | you ship one: add `stat(key): Promise<StorageObject \| undefined>` (TS2741) |
+| 37 | `StorageListEntry.lastModified`, `StorageObject.lastModified` | you read it without a guard (TS18048), or relied on `sweepOrphans` deleting objects with no reported date. Handle `undefined` |
+| 38 | `disk.get(key)` | an object can exceed the disk's `maxPutBytes` (10 MB unless set) — a presigned upload, a file written by another tool. `X_STORAGE_TOO_LARGE`. Use `disk.stream(key)`, or set `maxGetBytes` on the driver |
+| 39 | stored image variants | always, if variants exist: keys are `<source key>@<transform>.<ext>` with the source's extension kept. Old-shape variants are orphaned; delete them with the commands below. A stored reference to a variant key is recomputed with `variantKey()` |
+| 40 | `variantKey`, `fitDimensions` | a width or height can be `NaN`, zero, negative or a fraction (`X_INVARIANT`): round it first. A caller that relied on `contain` upscaling a small source gets the source's size |
+| 41 | signed URLs on the local and memory disks | always: URLs minted before the deploy stop verifying (15 minutes by default) — a client retries with a fresh grant. A caller of `canonicalRequest` / `signConstraints` adds the base path: `signedUrlBasePath(baseUrl)` |
+| 42 | upload policies | a policy allowed `video/mp4` and took AVIF, HEIC, MOV, M4A or 3GP under it. Add `image/avif`, `image/heic`, `video/quicktime`, `audio/mp4`, `video/3gpp` as needed |
+| 43 | a route's `revalidate.tags` | a tag holds whitespace or a comma. `X_ROUTE_MODE_INVALID` at registration, naming the file. Rename the tag |
+
+Entry 39, the orphaned variants. These commands were **not run against a real disk or bucket** for
+this page — list first, read the list, then delete. The pattern matches a variant of either shape,
+so new-shape variants already written are deleted too and regenerate on the next request. A key
+of your own that ends in such a suffix (`photos/team@w640.png`) matches as well.
+
+```sh
+# local disk — list, then repeat with -delete in place of -print
+find <root> -type f -regextype posix-extended -regex '.*@(full|((w|h|q)[0-9]+|cover|contain)(-((w|h|q)[0-9]+|cover|contain))*)\.(avif|webp|jpg|png)' -print
+# their sidecars live under <root>/.meta/ as <key>.json — the same pattern with \.json appended
+find <root>/.meta -type f -regextype posix-extended -regex '.*@(full|((w|h|q)[0-9]+|cover|contain)(-((w|h|q)[0-9]+|cover|contain))*)\.(avif|webp|jpg|png)\.json' -print
+# s3 — list, then `aws s3 rm s3://<bucket>/<key>` for each key
+aws s3 ls s3://<bucket> --recursive | grep -E '@(full|[whq][0-9]+|cover|contain)[^/]*\.(avif|webp|jpg|png)$'
+```
 
 ### Not breaking, but you will see it
 
@@ -148,6 +179,13 @@ Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@u
 | db error codes | a syscall error (`EPIPE`, `E2BIG`) is `X_DB_UNAVAILABLE`, was `X_DB_STATEMENT_FAILED`; a ragged array or Invalid Date parameter is `X_INVARIANT` on both drivers, was `X_DB_UNAVAILABLE` |
 | `addBusinessDays`, `businessDaysBetween` | the wall time survives a DST day; a date the zone skipped is not counted |
 | `Accept-Language` | a `q` that is not a plain decimal ranks 0, not 1 |
+| `formatMoney({ trimZeroFraction: true })` | 1250 USD is `$12.50`, was `$12.5`; a whole amount still drops `.00` |
+| `robots.txt` | `seo.robots.disallow` is in every group, and a `User-agent: *` group is emitted when none is declared |
+| ISR documents | carry `Surrogate-Key` and `Cache-Tag` from `revalidate.tags`; a response rewritten to `private` or `no-store` drops both |
+| feeds | Atom gains the channel `<author>`, `<rights>`, `<icon>`; RSS an item author and `<media:content>` for an item `image` |
+| storage error codes | a refused write is `X_STORAGE_PUT_FAILED`, a refused read `X_STORAGE_READ_FAILED`, a local-disk key under another key `X_STORAGE_KEY_CONFLICT` — each was a bare error. An empty org is `X_STORAGE_ORG_MISMATCH` (404), was `X_STORAGE_PATH_UNSAFE` (400) |
+| `GET /_storage/:disk/*key` | no `Last-Modified` when the disk reports no date |
+| the Redis cache tier | one extra round trip before each `load()` and one after the `SET`; a fill whose load outlives 60 s is not written to Redis |
 | a zone that is not a string | `X_TIMEZONE_INVALID` from every zoned function in `@ultimat3/time`, was a bare `TypeError` |
 
 ### Where the sites are
@@ -159,6 +197,7 @@ grep -rnE "LOG_LEVEL|ULTIMATE_CURSOR_SECRET|OTEL_(EXPORTER_OTLP_(TRACES|METRICS)
 grep -rnE "(ssl|enabled|expose): *process\.env" apps packages --include=*.ts
 grep -rnE "withTransaction\(" -A12 apps packages --include=*.ts | grep -E "catch|Promise\.all|isolation|readOnly|deferrable|client:"
 grep -rnE "formatRelative\(|addDaysInZone\(|formatDuration(Iso)?\(|cron: |expiresAt|reportEveryMs|introspect\(|\.generated\b|DriftKind" apps packages --include=*.ts --include=*.tsx
+grep -rnE "promoteAttachment\(|\.lastModified|implements StorageDriver|: StorageDriver = |canonicalRequest\(|signConstraints\(|variantKey\(|fitDimensions\(|\.get\(|allowedContentTypes|responsiveImage\(|usableWidths\(|declareTags\(|revalidate:" apps packages --include=*.ts --include=*.tsx
 ```
 
 Tier 0: the `typecheck` step finds none of 1–16 — every entry is a value, not a type. A typed
@@ -171,6 +210,10 @@ Tier 1: the `typecheck` step finds 20, and 18, 26 and 28 where a literal, a `swi
 read exists. Entries 19 and 30 throw at the first import of the declaring file; 24 and 31 at the
 call. It finds none of 17, 21–23, 25, 27 or 29 — run the unit, contract, job and live suites, and
 read every `catch` and every `Promise.all` inside a `withTransaction` body.
+
+Slice 03: the `typecheck` step finds 35, 36, 37 and the changed signatures of 41. Entry 43 throws
+at registration and 33 where the response is built. It finds none of 32, 34, 38, 39, 40 or 42 —
+run the unit, contract and e2e suites, and do step 13 by hand after the deploy.
 
 ## 22.x → 23.0.0, entry by entry
 

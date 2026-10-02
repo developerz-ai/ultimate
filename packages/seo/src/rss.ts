@@ -84,8 +84,33 @@ function byNewest(a: DatedItem, b: DatedItem): number {
   return b.published - a.published;
 }
 
+/** Atom's person construct (RFC 4287 §3.2): a name, and whichever of email and uri is known. */
+function atomAuthor(author: FeedAuthor): string {
+  const email = author.email === undefined ? '' : xmlElement('email', author.email);
+  const uri = author.url === undefined ? '' : xmlElement('uri', author.url);
+  return `<author>${xmlElement('name', author.name)}${email}${uri}</author>`;
+}
+
+/** RSS 2.0's `<author>` IS an e-mail address; a name with none is Dublin Core's `dc:creator`. */
+const needsCreator = (author: FeedAuthor | undefined): author is FeedAuthor =>
+  author !== undefined && author.email === undefined;
+
+function rssAuthor(author: FeedAuthor): string {
+  return author.email === undefined
+    ? xmlElement('dc:creator', author.name)
+    : xmlElement('author', `${author.email} (${author.name})`);
+}
+
 function buildRss(channel: FeedChannel, items: readonly DatedItem[], updated: number): string {
   const self = absoluteUrl(channel.siteUrl, channel.feedUrl);
+  // Declared only when used: a namespace on every feed would change bytes no reader asked for.
+  const dublinCore = items.some(({ item }) => needsCreator(item.author))
+    ? ' xmlns:dc="http://purl.org/dc/elements/1.1/"'
+    : '';
+  // Media RSS, not `<enclosure>`: RSS 2.0 requires a byte `length` there and nothing here has one.
+  const media = items.some(({ item }) => item.image !== undefined)
+    ? ' xmlns:media="http://search.yahoo.com/mrss/"'
+    : '';
   const entries = items
     .map(({ item, published }) => {
       const parts = [
@@ -94,18 +119,23 @@ function buildRss(channel: FeedChannel, items: readonly DatedItem[], updated: nu
         `      <guid isPermaLink="false">${escapeXml(item.id)}</guid>`,
       ];
       if (published !== undefined) parts.push(xmlElement('pubDate', rfc822Of(published)));
+      if (item.author !== undefined) parts.push(rssAuthor(item.author));
       if (item.summary !== undefined) parts.push(xmlElement('description', item.summary));
       if (item.contentHtml !== undefined) {
         parts.push(`      <content:encoded>${cdata(item.contentHtml)}</content:encoded>`);
       }
       for (const tag of item.tags ?? []) parts.push(xmlElement('category', tag));
+      if (item.image !== undefined) {
+        const url = escapeXml(absoluteUrl(channel.siteUrl, item.image));
+        parts.push(`      <media:content url="${url}" medium="image"/>`);
+      }
       return `    <item>\n${parts.map((line) => (line.startsWith('      ') ? line : `      ${line}`)).join('\n')}\n    </item>`;
     })
     .join('\n');
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">',
+    `<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"${dublinCore}${media}>`,
     '  <channel>',
     `    ${xmlElement('title', channel.title)}`,
     `    ${xmlElement('link', channel.siteUrl)}`,
@@ -142,29 +172,43 @@ function buildAtom(channel: FeedChannel, items: readonly DatedItem[], updated: n
       if (item.contentHtml !== undefined) {
         parts.push(`      <content type="html">${escapeXml(item.contentHtml)}</content>`);
       }
-      if (item.author !== undefined) {
-        parts.push(`      <author>${xmlElement('name', item.author.name)}</author>`);
-      }
+      if (item.author !== undefined) parts.push(`      ${atomAuthor(item.author)}`);
       for (const tag of item.tags ?? []) {
         parts.push(`      <category term="${escapeXml(tag)}"/>`);
+      }
+      if (item.image !== undefined) {
+        const href = escapeXml(absoluteUrl(channel.siteUrl, item.image));
+        parts.push(`      <link rel="enclosure" href="${href}"/>`);
       }
       return `    <entry>\n${parts.join('\n')}\n    </entry>`;
     })
     .join('\n');
 
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    `<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="${escapeXml(channel.language)}">`,
-    `  ${xmlElement('title', channel.title)}`,
-    `  ${xmlElement('subtitle', channel.description)}`,
-    `  ${xmlElement('id', channel.siteUrl)}`,
-    `  ${xmlElement('updated', isoOf(updated))}`,
-    `  <link href="${escapeXml(channel.siteUrl)}"/>`,
-    `  <link href="${escapeXml(self)}" rel="self" type="application/atom+xml"/>`,
-    entries,
-    '</feed>',
-    '',
-  ].join('\n');
+  return (
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      `<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="${escapeXml(channel.language)}">`,
+      `  ${xmlElement('title', channel.title)}`,
+      `  ${xmlElement('subtitle', channel.description)}`,
+      `  ${xmlElement('id', channel.siteUrl)}`,
+      `  ${xmlElement('updated', isoOf(updated))}`,
+      `  <link href="${escapeXml(channel.siteUrl)}"/>`,
+      `  <link href="${escapeXml(self)}" rel="self" type="application/atom+xml"/>`,
+      // RFC 4287 §4.1.1: a feed carries an author unless every entry does. The channel's was read
+      // by the JSON builder alone, so an Atom feed with authorless entries was not a valid one.
+      channel.author === undefined ? '' : `  ${atomAuthor(channel.author)}`,
+      channel.copyright === undefined ? '' : `  ${xmlElement('rights', channel.copyright)}`,
+      channel.icon === undefined
+        ? ''
+        : `  ${xmlElement('icon', absoluteUrl(channel.siteUrl, channel.icon))}`,
+      entries,
+      '</feed>',
+      '',
+    ]
+      // The trailing '' is the document's final newline; only an absent optional line is dropped.
+      .filter((line, index, lines) => line !== '' || index === lines.length - 1)
+      .join('\n')
+  );
 }
 
 function buildJsonFeed(channel: FeedChannel, items: readonly DatedItem[]): string {

@@ -5,12 +5,15 @@
  * from. Nothing downstream may keep its own list of routes.
  */
 
+import type { CacheTag } from '@ultimat3/cache';
+import { serializeTag, surrogateKeys } from '@ultimat3/cache';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
-import { finiteCount } from '@ultimat3/core';
+import { finiteCount, isUltimateError, renderFixLiteral } from '@ultimat3/core';
 import { byCodeUnit } from './code-unit-order';
 import {
   RouteDuplicateError,
   RouteFileInvalidError,
+  RouteModeInvalidError,
   RouteUnnormalizedError,
   SurfaceBoundaryError,
 } from './errors';
@@ -256,6 +259,27 @@ export interface RegisterRouteInput<TData = RouteData> {
   readonly component?: RouteComponent;
 }
 
+/**
+ * A `revalidate.tags` entry goes out as a purge key on every response of the route
+ * (`render-isr.ts`), so one a CDN would split is refused HERE, naming the file. Asked of
+ * `@ultimat3/cache`'s own screen rather than restated: found at serve time it is a 500 on a
+ * public page, found at purge time it is a document nothing can clear.
+ */
+function assertPurgeableTags(file: string, tags: readonly CacheTag[] | undefined): void {
+  for (const owned of tags ?? []) {
+    try {
+      surrogateKeys([owned], file);
+    } catch (error) {
+      if (!isUltimateError(error) || error.code !== 'X_CACHE_PURGE_FAILED') throw error;
+      const wire = renderFixLiteral(serializeTag(owned), '<the tag>');
+      throw new RouteModeInvalidError(
+        `${file} declares revalidate tag ${wire}, which cannot be a CDN purge key — a key is split on whitespace and commas and capped at 1024 bytes, so every response of the route would carry one no purge can name`,
+        `edit revalidate.tags in ${file}: replace ${wire} with a tag whose entity and id carry no whitespace or comma`,
+      );
+    }
+  }
+}
+
 /** Register a route and enforce every invariant that needs the surrounding module. */
 export function registerRoute<TData = RouteData>(
   input: RegisterRouteInput<TData>,
@@ -291,6 +315,8 @@ export function registerRoute<TData = RouteData>(
     surface: derived.surface,
     suspenseBoundaries,
   });
+
+  assertPurgeableTags(input.file, config.revalidate?.tags);
 
   const existing = routes.get(path);
   if (existing !== undefined && existing.file !== input.file) {
@@ -359,6 +385,7 @@ export function registerMountedRoutes(
   for (const route of declared) {
     const file = routes.get(route.path)?.file;
     if (file !== undefined) throw mountCollision(route.path, file, mount);
+    assertPurgeableTags(mount.file, route.config.revalidate?.tags);
   }
   setMountedRoutes(mount, declared);
   described = undefined;

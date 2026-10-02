@@ -6,12 +6,13 @@
 import {
   assertFiniteImageQuality,
   blurDataUrl,
+  finiteCount,
   type ImageFormat,
   imageUnsupported,
   probeImage,
   transformImageBytes,
 } from '@ultimat3/core';
-import { assertSafeKey, keyExtname } from './path';
+import { assertSafeKey } from './path';
 
 /**
  * The formats a stored VARIANT can be minted in — a strict subset of the ones `@ultimat3/core`
@@ -68,12 +69,27 @@ const FORMAT_EXTENSIONS: Readonly<Record<VariantFormat, string>> = {
 };
 
 /**
+ * One edge of a variant box: a whole number of pixels, at least one. Core's `finiteCount`, for the
+ * reason `quality` goes through core's screen below — `{ width: NaN }` minted `a@wNaN.webp`, a
+ * writable key for bytes no encoder can produce, and `w1.5` / `w-3` are an unbounded number of
+ * keys in a bucket. `!== undefined`, never a truthiness test: an explicit `null` is refused.
+ */
+function edge(subject: string, option: 'width' | 'height', value: number | undefined): void {
+  if (value !== undefined) finiteCount(subject, option, value, 1);
+}
+
+/**
  * Derived, not stored: the same source + transform always yields the same key, so a variant
  * is a cache lookup rather than a database row.
+ *
+ * The WHOLE source key is the stem, extension included. It used to be cut, so `p/hero.png` and
+ * `p/hero.jpg` minted one `p/hero@w100.webp` and whichever was requested first was served for
+ * both — two sources, one cache identity.
  */
 export function variantKey(sourceKey: string, transform: ImageTransform): string {
   const safe = assertSafeKey(sourceKey);
-  const stem = safe.slice(0, safe.length - keyExtname(safe).length);
+  edge('variantKey', 'width', transform.width);
+  edge('variantKey', 'height', transform.height);
   // `string`, not `VariantFormat`: a format off a query string or through an `as` reaches here as
   // any string core can probe, and indexing FORMAT_EXTENSIONS with `gif` minted
   // `photos/hero@full.undefined` — a well-formed, writable key naming a file nothing can serve.
@@ -101,7 +117,7 @@ export function variantKey(sourceKey: string, transform: ImageTransform): string
   );
   if (quality !== DEFAULT_QUALITY) parts.push(`q${quality}`);
   if (parts.length === 0) parts.push('full');
-  return assertSafeKey(`${stem}@${parts.join('-')}.${FORMAT_EXTENSIONS[format]}`);
+  return assertSafeKey(`${safe}@${parts.join('-')}.${FORMAT_EXTENSIONS[format]}`);
 }
 
 export interface SrcsetDescriptor {
@@ -139,23 +155,33 @@ export function srcsetDescriptors(
     }));
 }
 
-/** Aspect-ratio fitting. `cover` rounds up so the box is always fully covered. */
+/** A derived edge is never zero: 1000x1 at width 100 rounded to a height no encoder can fill. */
+const atLeastOne = (pixels: number): number => Math.max(1, Math.round(pixels));
+
+/**
+ * Aspect-ratio fitting. `cover` is the exact box asked for; everything else fits INSIDE the box
+ * and never above the source — upscaling is never useful, whichever edges were named.
+ */
 export function fitDimensions(source: ImageSize, transform: ImageTransform): ImageSize {
   const ratio = source.height / source.width;
   const { width, height } = transform;
+  edge('fitDimensions', 'width', width);
+  edge('fitDimensions', 'height', height);
   if (width === undefined && height === undefined) return source;
   if (height === undefined) {
     const target = Math.min(width ?? source.width, source.width);
-    return { width: target, height: Math.round(target * ratio) };
+    return { width: target, height: atLeastOne(target * ratio) };
   }
   if (width === undefined) {
     const target = Math.min(height, source.height);
-    return { width: Math.round(target / ratio), height: target };
+    return { width: atLeastOne(target / ratio), height: target };
   }
   // `cover` crops to the exact box; `contain` scales down until both sides fit.
   if (transform.fit === 'cover') return { width, height };
-  const scale = Math.min(width / source.width, height / source.height);
-  return { width: Math.round(source.width * scale), height: Math.round(source.height * scale) };
+  // Clamped at 1: a single named edge already stopped at the source, and two of them did not —
+  // a 40x20 source asked for 400x400 came back 400x200.
+  const scale = Math.min(1, width / source.width, height / source.height);
+  return { width: atLeastOne(source.width * scale), height: atLeastOne(source.height * scale) };
 }
 
 /**

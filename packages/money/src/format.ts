@@ -5,6 +5,7 @@
 
 import { assertLocale, cachedFormatter } from '@ultimat3/core';
 import { exponentOf } from './currency';
+import { fractionDigitsInvalid } from './errors';
 import { type Money, toDecimalString } from './money';
 import { moneyScale } from './scale';
 
@@ -16,10 +17,13 @@ export interface FormatMoneyOptions {
    * locale decides the notation: `de-DE` has no parenthesised form in CLDR and keeps `-1.299,00 €`.
    */
   accounting?: boolean;
-  /** Drop `.00` on whole amounts — price lists, never invoices. */
+  /**
+   * Drop `.00` on whole amounts — price lists, never invoices. A fractional amount keeps every
+   * digit: 1250 cents is `$12.50`, never `$12.5`.
+   */
   trimZeroFraction?: boolean;
-  /** Force a digit count; defaults to the value's own scale, which is the currency's unless
-   * the amount names a finer one. */
+  /** Force a digit count, 0…`MAX_FRACTION_DIGITS` (`X_MONEY_SCALE_INVALID` otherwise); defaults
+   * to the value's own scale, which is the currency's unless the amount names a finer one. */
   fractionDigits?: number;
   /** `never` disables grouping separators. */
   grouping?: 'auto' | 'never';
@@ -98,6 +102,20 @@ export function formatMoneyDecimal(amount: Money, locale: string): string {
  */
 const exactDecimal = (amount: Money): `${number}` => toDecimalString(amount) as `${number}`;
 
+/** `Intl.NumberFormat`'s own ceiling on a fraction digit count. */
+export const MAX_FRACTION_DIGITS = 100;
+
+/**
+ * `Intl` refuses a digit count outside 0…100, a fraction and `NaN` with a bare `RangeError`,
+ * several frames from the call that named it. A digit count IS a scale, so it is refused as one.
+ */
+function assertFractionDigits(digits: number): number {
+  if (!Number.isInteger(digits) || digits < 0 || digits > MAX_FRACTION_DIGITS) {
+    throw fractionDigitsInvalid(digits, MAX_FRACTION_DIGITS);
+  }
+  return digits;
+}
+
 const cache = new Map<string, Intl.NumberFormat>();
 const decimalCache = new Map<string, Intl.NumberFormat>();
 
@@ -123,21 +141,22 @@ function formatterFor(
   options: FormatMoneyOptions,
   exponent: number,
 ): Intl.NumberFormat {
+  // `=== undefined`, never `??`: `??` coalesces on `null` too, so an untyped caller's blanked
+  // option took the default instead of the refusal beside it.
   const digits =
-    options.fractionDigits ?? (options.trimZeroFraction === true ? undefined : exponent);
+    options.fractionDigits === undefined ? exponent : assertFractionDigits(options.fractionDigits);
+  const trim = options.trimZeroFraction === true;
   const sign = options.accounting === true ? 'accounting' : 'standard';
   const tag = assertLocale(locale);
-  // `exponent` is in the key because it stopped being derivable from `currency` the moment it
-  // started coming from the amount's own scale. On the `trimZeroFraction` path `digits` is
-  // `undefined`, so without it every scale of one currency shared a formatter: format 12.99 EUR
-  // first and 12.990001 EUR then rendered as `12,99 €` — the sub-cent bug back, silently, in the
-  // one place a human reads the number.
+  // `trim` is in the key because it no longer changes `digits`: a trimmed and an untrimmed
+  // formatter at one digit count are two formatters, and sharing an entry rendered whichever was
+  // built first.
   const key = [
     tag,
     currency,
     options.display ?? 'symbol',
-    digits ?? 'auto',
-    exponent,
+    digits,
+    trim ? 'trim' : 'keep',
     options.grouping ?? 'auto',
     sign,
   ].join('|');
@@ -150,9 +169,12 @@ function formatterFor(
         currency,
         currencyDisplay: options.display ?? 'symbol',
         currencySign: sign,
-        ...(digits === undefined
-          ? { minimumFractionDigits: 0, maximumFractionDigits: exponent }
-          : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
+        // min = max, always: the digit count is the value's scale and never a range. Trimming is
+        // `stripIfInteger` — drop the fraction of a WHOLE amount — because `minimumFractionDigits:
+        // 0` trimmed every trailing zero and rendered 1250 cents as `$12.5`.
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+        ...(trim ? { trailingZeroDisplay: 'stripIfInteger' as const } : {}),
         ...(options.grouping === 'never' ? { useGrouping: false } : {}),
       }),
   );

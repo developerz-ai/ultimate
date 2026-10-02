@@ -250,17 +250,17 @@ describe('over a real socket', () => {
 });
 
 describe('the cdn tier over a real driver', () => {
-  // Surrogate keys ARE the tags: the strings `invalidateTags` fans out are the strings Fastly
-  // is asked to purge, byte for byte. A translation step anywhere here is a drift no test could
-  // catch later, because the edge would answer 200 for a key nothing was ever tagged with.
-  test('the wire tags reach the provider unchanged', async () => {
+  // The keys the tier derives from the tags are the strings Fastly is asked to purge, byte for
+  // byte. A translation step between tier and driver is a drift no test could catch later,
+  // because the edge would answer 200 for a key nothing was ever tagged with.
+  test('the keys the tier purges reach the provider unchanged', async () => {
     const { calls, fetch } = recorder();
     const tier = createCdnTier({ purge: driverWith(fetch) });
 
     const result = await tier.invalidateTags([tag('post'), tag('post', '1')]);
 
-    expect(bodyOf(calls[0])).toEqual({ surrogate_keys: ['post', 'post:1'] });
-    expect(result).toEqual({ tier: 'cdn', keys: ['post', 'post:1'] });
+    expect(bodyOf(calls[0])).toEqual({ surrogate_keys: ['e:post', 'post', 'post:1'] });
+    expect(result).toEqual({ tier: 'cdn', keys: ['e:post', 'post', 'post:1'] });
   });
 });
 

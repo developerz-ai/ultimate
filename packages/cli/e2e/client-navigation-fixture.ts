@@ -134,6 +134,44 @@ const documentOf = (doc: Doc): string => {
 export const ran: string[] = [];
 export const count = (line: string): number => ran.filter((one) => one === line).length;
 
+const watchers = new Set<() => void>();
+const gates = new Map<string, { readonly opened: Promise<void>; readonly open: () => void }>();
+
+/**
+ * Resolves once a route has recorded `line` — the request REACHED the server. What a test waits
+ * on instead of a sleep: a hover's prefetch leaves on a page timer, and a renderer that stalls
+ * sends it late, after the step the sleep was meant to order it before.
+ */
+export async function recorded(line: string, timeoutMs = 15_000): Promise<void> {
+  if (ran.includes(line)) return;
+  let watch = (): void => undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const seen = new Promise<boolean>((resolve) => {
+    watch = () => {
+      if (ran.includes(line)) resolve(true);
+    };
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  watchers.add(watch);
+  const arrived = await seen;
+  watchers.delete(watch);
+  clearTimeout(timer);
+  if (!arrived) expect.unreachable(`no route recorded '${line}': ${JSON.stringify(ran)}`);
+}
+
+/**
+ * The next execution recorded as `line` is answered only after the returned release is called:
+ * the test, not the clock, decides what happens while that request is in flight.
+ */
+export function hold(line: string): () => void {
+  let open = (): void => undefined;
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  gates.set(line, { opened, open });
+  return open;
+}
+
 const html = (body: string, status = 200, headers: Record<string, string> = {}): Response =>
   new Response(body, {
     status,
@@ -157,8 +195,13 @@ const route = (
   method,
   path,
   meta: { name: path, auth: 'public', ...(navigation === undefined ? {} : { navigation }) },
-  handler: (request) => {
-    ran.push(`${method} ${path} ${request.raw.headers.get('x-ultimate-navigation') ?? 'full'}`);
+  handler: async (request) => {
+    const line = `${method} ${path} ${request.raw.headers.get('x-ultimate-navigation') ?? 'full'}`;
+    ran.push(line);
+    for (const watch of [...watchers]) watch();
+    const gate = gates.get(line);
+    gates.delete(line);
+    await gate?.opened;
     return handler(request.raw, request.url);
   },
 });
@@ -392,8 +435,20 @@ export const hover = (id: string): Promise<unknown> =>
     `document.getElementById('${id}').dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))`,
   );
 
+/**
+ * The answer to the router's fetch of `path` has fully ARRIVED in the page (its resource timing
+ * entry exists) — as `recorded()` is for the request leaving, with no sleep standing in for it.
+ */
+export const landed = (path: string): Promise<void> =>
+  tab.waitFor(
+    `performance.getEntriesByType('resource').some((entry) => entry.initiatorType === 'fetch' && entry.name === '${base}${path}')`,
+    `the answer for ${path} to land`,
+  );
+
 /** A fresh document at `path`, marked, with the router listening. */
 export async function start(path: string, on: E2eTab = tab): Promise<void> {
+  // A gate a failed test never reached holds nothing in the next one.
+  gates.clear();
   await on.goto(`${base}${path}`);
   await on.waitFor('window.__xNavigation !== undefined', 'the router to start');
   await on.waitFor('document.querySelector("[data-x-mounted]") !== null', 'the islands to mount');

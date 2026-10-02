@@ -143,6 +143,28 @@ export function localizedAlternates(
  */
 const TEMPLATE_SEPARATORS = /^[\s\-–—|·:>/]+|[\s\-–—|·:>/]+$/g;
 
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+
+const isWordCharacter = (char: string | undefined): boolean =>
+  char !== undefined && WORD_CHARACTER.test(char);
+
+/**
+ * `word` standing alone in `text`: `\b`, but for every script. `'Ultimately fast'.includes(
+ * 'Ultimate')` is true, so that page shipped with no brand at all. A side of the word that is not
+ * itself a letter or digit (`C++`) needs no boundary, exactly as `\b` would not find one there.
+ */
+function containsWord(text: string, word: string): boolean {
+  const [first, last] = [[...word][0], [...word].at(-1)];
+  for (let at = text.indexOf(word); at !== -1; at = text.indexOf(word, at + 1)) {
+    const before = [...text.slice(0, at)].at(-1);
+    const after = [...text.slice(at + word.length)][0];
+    const opens = !isWordCharacter(first) || !isWordCharacter(before);
+    const closes = !isWordCharacter(last) || !isWordCharacter(after);
+    if (opens && closes) return true;
+  }
+  return false;
+}
+
 /** Where the page's own title goes. Case-sensitive: `%S` names no slot, and neither does absence. */
 export const TITLE_SLOT = '%s';
 
@@ -159,7 +181,7 @@ export function applyTitleTemplate(title: string, template?: string): string {
   // can name the file.
   if (!template.includes(TITLE_SLOT)) return title;
   const brand = template.replace(TITLE_SLOT, '').replace(TEMPLATE_SEPARATORS, '');
-  if (brand !== '' && title.includes(brand)) return title;
+  if (brand !== '' && containsWord(title, brand)) return title;
   // A FUNCTION as the replacement, never the string: `replace` expands `$$`, `$&` and `$'` in a
   // replacement literal, and a title is app data — "Save $$ on shoes" rendered one dollar.
   return template.replace(TITLE_SLOT, () => title);

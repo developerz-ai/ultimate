@@ -30,7 +30,8 @@ Reads walk down until a hit, then populate every tier they walked past. Writes p
 | 2 | `redis` | `Bun.redis` | tag→keys set, one `EVAL` **per tag** + slot-local `DEL`s | single node |
 | 3 | `cdn` | headers + purge driver | surrogate keys | no CDN |
 
-A tier is a `CacheTier` (`get`/`set`/`del`/`invalidateTags`). Swap or omit any of them
+A tier is a `CacheTier` (`get`/`set`/`del`/`invalidateTags`, plus an optional `fence` for a tier
+other processes also write). Swap or omit any of them
 without touching a call site — order comes from `TIER_ORDER`, not registration order.
 
 ```ts
@@ -92,6 +93,27 @@ const value = await run();
 if (fence.isValid()) await tier.set(key, value, { tags });
 ```
 
+**That fence is this process's; the Redis tier keeps a second one for the fleet.** A bust another
+replica ran reaches this process only when the broadcast does, and a lost broadcast means never —
+so the fill would publish the pre-write rows into the *shared* tier and every replica would promote
+them. `createRedisTier` implements `CacheTier.fence`: a bust writes a leased generation
+(`<ns>:g:{entity}:r:<id>`, `:c`, `:a`) **before** it reads its buckets, `stack.read` samples the
+generations its tags watch before `load()`, and re-reads them after the tier's `SET`.
+
+| Verdict | Means | The fill |
+|---|---|---|
+| `valid` | nothing the tags match moved | stands |
+| `busted` | a generation moved — proof the value is stale | withdrawn from every tier written so far |
+| `unprovable` | Redis could not be asked, the load outlived the 60s proof window, or a joiner brought a tag nobody sampled | that tier alone is left unwritten; nearer tiers keep the value |
+
+Cost, `As of 2026-10`: one pipelined round trip before each `load()` and one after the `SET` (one
+`GET` for a collection tag, two for a row tag), two `SET`s per busted tag. Plain commands, no
+script. Tag busts only — `stack.drop(key)` and `stack.write(key)` still fence this process alone.
+
+**A tier that refuses a `set` during a fill has the key deleted in that tier.** The refusal is
+absorbed (below), so without the `del` the tier keeps answering with the value the fill was
+replacing — an entry that outgrew the LRU's budget served its previous version for a whole lease.
+
 **A `null` can carry its own TTL.** `negativeTtlMs` is used when the loaded value is `null` or
 `undefined`, so a lookup for a row that has not replicated yet is not held for the positive lease:
 
@@ -131,7 +153,7 @@ tagsFor(Post, row) // both, for a repo write
 ```
 
 Wire form is `post` / `post:<id>`, identical in Redis keys, CDN surrogate keys and
-`--json` reports. Invalidation is asymmetric-tolerant on purpose: busting a collection
+`--json` reports — the edge adds one `e:<entity>` index key per entity ([CDN](#cdn)). Invalidation is asymmetric-tolerant on purpose: busting a collection
 kills its rows, busting a row kills the collections that held it.
 
 `tag.post` is typed via a registry that `x manifest` generates, so `tag.pots` is a build
@@ -306,11 +328,26 @@ covers — so a suite outside `packages/cache` isolates the tiers and gets the f
 ```ts
 cacheHeaders({ sMaxAge: 300, staleWhileRevalidate: 86_400, tags: [tag('post', id)] });
 // => { 'Cache-Control': 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
-//      'Surrogate-Key': 'post:1' }
+//      'Surrogate-Key': 'post:1 e:post', 'Cache-Tag': 'post:1,e:post' }
 ```
 
-The surrogate keys **are** the tags, byte for byte, so an edge purge and an app-level
-invalidation can never mean different things. A `cdn-path` dependent registered against a tag goes
+An edge purges by exact key, so `tagMatches` is built from what a response **carries** and what a
+bust **purges** — both from `cdn.ts`, so they cannot drift:
+
+| | Row tag `post:1` | Collection tag `post` |
+|---|---|---|
+| a response carries (`surrogateKeys(tags)`) | `post:1` `e:post` | `post` `e:post` |
+| a bust purges | `post:1` `post` | `e:post` `post` |
+
+So a row bust clears that row's pages and the lists keyed `post`, never `post:2`'s; a collection
+bust clears everything of the entity. `e:<entity>` is the edge twin of the Redis tier's entity
+index. Carrying the wire tags alone left a detail page unreachable by a collection bust, and a
+list unreachable by a row bust, with `errors: []`. Header growth, measured: `len(entity) + 3`
+bytes per distinct entity in each of the two headers — 7 bytes each for `post`, 14 per response.
+
+`surrogateKeys()` is exported for any emitter that does not go through `cacheHeaders()`. Both
+refuse a key carrying whitespace or a comma **at emission** (`X_CACHE_PURGE_FAILED`): the CDN
+would split it into keys no purge ever names. A `cdn-path` dependent registered against a tag goes
 out in the same purge — as a surrogate key, the one currency `PurgeDriver` has — so a host
 registering one must tag that response with its own path. Three `PurgeDriver`s ship:
 

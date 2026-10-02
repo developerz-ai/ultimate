@@ -184,12 +184,12 @@ describe('the grant TTL is screened where the caller writes it', () => {
     );
 
   test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
-    'refuses expiresInMs %p, naming createUploadGrant',
+    'refuses expiresInMs %p, naming grantUpload',
     async (expiresInMs) => {
       const rendered = await grantWith(expiresInMs);
       expect(rendered).toContain('X_INVARIANT');
       expect(rendered).toContain('expiresInMs');
-      expect(rendered).toContain('createUploadGrant');
+      expect(rendered).toContain('grantUpload');
     },
   );
 
@@ -215,7 +215,7 @@ describe('the grant TTL is screened where the caller writes it', () => {
  * option's type and this is the caller the bug is about.
  */
 describe('an explicitly null grant TTL is refused, never defaulted', () => {
-  test('expiresInMs: null names createUploadGrant', async () => {
+  test('expiresInMs: null names grantUpload', async () => {
     const fromJson: number = JSON.parse('null');
     let rendered = 'no-error-thrown';
     try {

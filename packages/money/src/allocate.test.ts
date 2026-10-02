@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import {
   allocate,
   allocateByPercentages,
   allocateByRatios,
   assertAllocationSums,
+  MAX_ALLOCATION_PARTS,
 } from './allocate';
 import { sum } from './arithmetic';
 import { money } from './money';
@@ -40,6 +42,26 @@ describe('allocate', () => {
   test('rejects a nonsensical part count', () => {
     expect(codeOf(() => allocate(money(100, 'USD'), 0))).toBe('X_ALLOCATION_INVALID');
     expect(codeOf(() => allocate(money(100, 'USD'), 2.5))).toBe('X_ALLOCATION_INVALID');
+  });
+
+  test('a part count no array can hold is a coded refusal, never a bare RangeError', () => {
+    // `new Array(1e10)` raised "Array length must be a positive integer of safe magnitude", and a
+    // count just under that limit was an out-of-memory kill instead of an answer.
+    for (const parts of [1e10, 2 ** 32, MAX_ALLOCATION_PARTS + 1]) {
+      let caught: unknown;
+      try {
+        allocate(money(100, 'USD'), parts);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isUltimateError(caught) ? caught.code : caught).toBe('X_ALLOCATION_INVALID');
+    }
+  });
+
+  test('more parts than minor units is still a split, and it still sums', () => {
+    const parts = allocate(money(3, 'USD'), 1000);
+    expect(parts).toHaveLength(1000);
+    expect(sum(parts).minor).toBe(3);
   });
 });
 

@@ -24,7 +24,7 @@ Swapping `local` for `s3` changes no call site, and `x dev` needs no S3 server.
 
 | Driver | Backing | For |
 |---|---|---|
-| `localDriver` | `Bun.file` / `Bun.write` under one root | dev, tests, a single node |
+| `localDriver` | `Bun.file` under one root; writes are staged and renamed in an order whose every crash point reads as absent, whole or untyped — never a wrong content type | dev, tests, a single node. A key cannot be a path prefix of another (`a` and `a/b`): the second is `X_STORAGE_KEY_CONFLICT`. `s3Driver` and `memoryDriver` hold both |
 | `s3Driver` | `Bun.s3` | any S3-compatible endpoint — AWS, R2, a self-hosted gateway. The difference is `endpoint`, `region` and `forcePathStyle`. Credentials are env var **names**, never literals |
 | `memoryDriver` | a `Map` in this process | a test's disk: `defineStorage({ disks: { uploads: memoryDriver() } })`. Every method `localDriver` answers, the same refusals, the same signing rule; `objects()` is a copy of the stored bytes by key. Never a deployment's disk — a restart is every object gone |
 
@@ -70,9 +70,19 @@ actor's org. It validates the upload against what the grant signed (the content 
 is accepted, and it does not use `uploadPolicy()`'s image-only default. The signed `maxBytes` caps
 how much of the body is read. `bodyLimitBytes` does not, and neither does an unverified query value.
 
-The signature covers the **constraints** (method, key, expiry, `maxBytes`, content type), so editing
-`?x-max=` invalidates it. Uploads are **sniffed**: `validateUpload()` reads magic bytes and refuses a
-`.png` that is really HTML (`X_STORAGE_TYPE_REJECTED`).
+The signature covers the **constraints** (the disk's base path, method, key, expiry, `maxBytes`,
+content type), so editing `?x-max=` invalidates it — and so does moving the URL to another disk:
+every local disk signs with the one `STORAGE_SIGNING_SECRET`, and the base path
+(`/_storage/<disk>`) is what keeps a grant for `uploads` from verifying on `evidence`. Uploads are
+**sniffed**: `validateUpload()` reads magic bytes and refuses a `.png` that is really HTML
+(`X_STORAGE_TYPE_REJECTED`). ISO base media files are told apart by their major brand, so
+`image/avif`, `image/heic`, `video/quicktime`, `audio/mp4` and `video/mp4` each pass when the
+policy allows them; `audio/x-m4a` and `video/x-m4v` are read as `audio/mp4` and `video/mp4`.
+
+**On an s3 disk the grant's `maxBytes` is measured later, not at the PUT.** A provider presign
+carries no size, so the browser's PUT is unbounded there. `promoteAttachment` is where it is
+measured, and `get()` refuses an object over the disk's `maxGetBytes` (default: its `maxPutBytes`,
+10 MB) with `X_STORAGE_TOO_LARGE` — read anything larger with `stream()`.
 
 The local disk signs with `STORAGE_SIGNING_SECRET`. The shipped development secret is accepted
 **only** in `development` or `test`; a process that names no environment is treated as production
@@ -106,11 +116,15 @@ An upload lands under `org/<org>/pending/…` before its row exists, and is prom
 
 | Call | Does |
 |---|---|
-| `promoteAttachment({ disk, key, orgId, target })` | copy then delete, onto `org/<org>/<entity>/<id>/<field>/…`. Only a **pending** key: another row's attached key is `X_STORAGE_NOT_PENDING` |
+| `promoteAttachment({ disk, key, orgId, target, policy })` | measure, copy, then delete, onto `org/<org>/<entity>/<id>/<field>/…`. **`policy` is required** — pass the one the upload was granted under: the object's size is read with `stat()` and one over `policy.maxBytes` is `X_STORAGE_TOO_LARGE` and stays pending. Only a **pending** key: another row's attached key is `X_STORAGE_NOT_PENDING`. Safe to retry: a source already moved answers the attached object |
 | `grantUpload({ …, quarantine: true })` → `releaseQuarantine({ disk, key, orgId })` | the place for your scanner: a quarantined key cannot be promoted (`X_STORAGE_QUARANTINED`) until your scan job releases it. The scanner is your app's (axiom 8) |
 | `sweepOrphans({ disk, orgId, olderThanMs })` | deletes stale `pending/` keys of one org and answers `{ deleted, failed }` — a refused delete is reported, never counted as done |
 
 ## Images
+
+A variant's key is the whole source key plus the transform — `photos/hero.png` at width 640 is
+`photos/hero.png@w640.webp` — so two sources that differ only by extension never share a cached
+variant. `width` and `height` are whole numbers of at least 1 (`X_INVARIANT` otherwise).
 
 `transformImage()` and `blurPlaceholder()` run on core's pipeline (`Bun.Image`, no `sharp`) and
 encode `png`, `jpeg` and `webp`; `avif` is key and `srcset` math only. `variantKey()`,

@@ -320,9 +320,9 @@ describe('recentInvalidations log', () => {
     await invalidateTags([tag('post')]);
 
     // The path is not merely *reported* busted: the driver was actually asked to purge it.
-    expect(purged).toEqual(['post', '/feed.xml']);
+    expect(purged).toEqual(['e:post', 'post', '/feed.xml']);
     const [event] = recentInvalidations();
-    expect(event?.busted).toEqual(['post', '/feed.xml', '/blog', 'live:post-list']);
+    expect(event?.busted).toEqual(['post', 'e:post', '/feed.xml', '/blog', 'live:post-list']);
   });
 
   test('with no CDN tier registered, a cdn-path is a dependent and never a bust', async () => {

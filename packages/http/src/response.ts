@@ -216,6 +216,14 @@ export const applyCacheHeaders = (response: Response, hint: CacheHint): Response
     response.headers.set('surrogate-key', hint.tags.join(' '));
     response.headers.set('cache-tag', hint.tags.join(','));
   }
+  // A response REWRITTEN to private or no-store may already carry keys: the `cache-headers` stage
+  // turns an `isr` document's shared header into `private` for a signed-in visitor, and the keys
+  // the render wrote beside it would stay on what is now a per-user document — purge keys an
+  // intermediary has no business storing it under.
+  if (!shared) {
+    response.headers.delete('surrogate-key');
+    response.headers.delete('cache-tag');
+  }
   // `cookie` is not optional on the shared path. A `public` response is stored by a CDN under the
   // URL, and every session in this framework travels in a cookie — so without it the first
   // signed-in render of a public page is what every later visitor is served. `SHARED_CACHE_VARY`

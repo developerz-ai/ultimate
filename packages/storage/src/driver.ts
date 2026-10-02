@@ -23,7 +23,12 @@ export interface StorageListEntry {
   /** Absent means the driver's listing does not carry it. Never a fabricated default. */
   readonly contentType?: string | undefined;
   readonly etag: string;
-  readonly lastModified: Date;
+  /**
+   * ABSENT when the provider did not say — never epoch 0, which every age test reads as "older
+   * than any window", and never an invalid `Date`, which is a value a reader has to remember to
+   * test. A reader that needs an age handles `undefined`; `sweepOrphans` spares it.
+   */
+  readonly lastModified?: Date | undefined;
   /** Present only when the driver actually stored what `put()` was handed — never invented. */
   readonly cacheControl?: string | undefined;
   readonly metadata?: Readonly<Record<string, string>> | undefined;
@@ -115,6 +120,17 @@ export interface StorageDriver {
    */
   registerAs?(diskName: string): void;
   put(key: string, body: StorageBody, options?: PutOptions): Promise<StorageObject>;
+  /**
+   * What a read would say about the object, WITHOUT its bytes — `undefined` when nothing is there.
+   * `promoteAttachment` decides on `stat().size`, because a presigned PUT lands on the disk
+   * unmeasured and `get()` is the one call that must not be how its size is learned. Required: a
+   * driver that cannot measure cannot be promoted from, and that is a compile error, not a refusal.
+   */
+  stat(key: string): Promise<StorageObject | undefined>;
+  /**
+   * The whole object, BUFFERED — so bounded: an object over the driver's `maxGetBytes` is
+   * `X_STORAGE_TOO_LARGE`, exactly as `put()` refuses a body over `maxPutBytes`. Past it, `stream()`.
+   */
   get(key: string): Promise<StorageRead>;
   /** Bytes without buffering — the only safe path for anything over a few MB. */
   stream(key: string): Promise<ReadableStream<Uint8Array>>;
@@ -181,6 +197,45 @@ export function resolveListLimit(limit: number | undefined): number {
   return limit;
 }
 
+const isStringRecord = (value: unknown): boolean =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.values(value).every((entry) => typeof entry === 'string');
+
+/**
+ * What `put()` was told ABOUT the bytes, held to its type before a byte moves. An untyped caller's
+ * `metadata: { n: 1n }` reached `JSON.stringify` on the local disk as a bare `TypeError`, and the
+ * memory disk stored it — against the `Record<string, string>` every reader is typed on.
+ */
+export function assertPutOptions(driver: string, options: PutOptions | undefined): void {
+  if (options === undefined) return;
+  for (const name of ['contentType', 'cacheControl'] as const) {
+    assert(
+      options[name] === undefined || typeof options[name] === 'string',
+      `put() on the ${driver} disk was given a ${name} that is not a string`,
+      `put(key, body, { ${name}: 'a string' }) — or omit ${name}`,
+    );
+  }
+  assert(
+    options.metadata === undefined || isStringRecord(options.metadata),
+    `put() on the ${driver} disk was given metadata that is not a plain object of string values`,
+    "put(key, body, { metadata: { name: 'value' } }) — every value a string: String(n) a number, JSON.stringify anything nested",
+  );
+}
+
+/** A `prefix` or a `cursor` that is not a string reached `startsWith` and `<=` as whatever it was. */
+export function assertListOptions(options: ListOptions | undefined): void {
+  for (const name of ['prefix', 'cursor'] as const) {
+    const value = options?.[name];
+    assert(
+      value === undefined || typeof value === 'string',
+      `list() was given a ${name} that is not a string`,
+      `disk.list({ ${name}: 'a string' }) — or omit ${name}`,
+    );
+  }
+}
+
 /** What `toBytes` needs to refuse a body: the ceiling, and the key to name in the refusal. */
 export interface ByteLimit {
   readonly driver: string;
@@ -212,6 +267,13 @@ export async function toBytes(body: StorageBody, limit: ByteLimit): Promise<Uint
     }
     return new Uint8Array(await body.arrayBuffer());
   }
+  // The type says so; an untyped caller's `put(key, 'a string')` reached `getReader` as a
+  // bare `TypeError`.
+  assert(
+    body instanceof ReadableStream,
+    `put() on the ${limit.driver} disk was given a body that is not a Uint8Array, a Blob or a ReadableStream`,
+    "put(key, new TextEncoder().encode(text)) — bytes, never a string: encode it, or pass the request's own body stream",
+  );
   return readBounded(body, limit);
 }
 

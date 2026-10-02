@@ -69,6 +69,51 @@ sidecar so `get()`/`list()` round-trip everything `put()` was handed; sidecars n
 `list()`. `s3Driver` cannot: it refuses `cacheControl`/`metadata` on `put()` (`X_NOT_IMPLEMENTED`,
 Bun exposes no header hook yet).
 
+**The local disk writes an object by rename, in an order no crash can make lie.** An object there
+is two files, so a `put()` or `copy()` stages bytes, sidecar and a *pending marker* (the new etag)
+under `<root>/.meta/.tmp/` and then: renames the marker to `.meta/<key>.json.pending`, renames the
+sidecar, renames the bytes, removes the marker. What a reader sees if the process dies:
+
+| Died before | Fresh key | Overwrite |
+|---|---|---|
+| the marker or the sidecar rename | absent | the previous object, whole |
+| the bytes rename | absent (a sidecar alone is no object) | the previous BYTES; `get`/`stat` answer `application/octet-stream` and the bytes' own etag, `list` no type and `etag: ''` — never the new type |
+| clearing the marker | the new object to `get`/`stat` (re-checked against the bytes); `list` reports it untyped until the next put | same |
+
+No row serves a content type or an etag the bytes were not checked against. A marker that
+cannot be cleared after the renames landed is not a failed put — the object is committed and the
+last row is what it leaves. `stat()`, `list()` and a copy's source read queue behind the key's
+writer exactly as `get()` does. Writers and `get()` of
+ONE key are also serialised inside a process, so two concurrent puts cannot interleave; across
+processes the marker is what covers the window. `stream()` hands back bytes with no metadata and
+checks nothing. The layout is otherwise unchanged — an existing root needs no migration.
+
+**A refused write is coded.** `EACCES`, `ENOSPC`, `EROFS` or a root that is a file on the local
+disk, and a provider's refused PUT on s3, are `X_STORAGE_PUT_FAILED` from `put()` and `copy()`,
+with the errno or provider code in the cause. `put()` options are held to their types first
+(`assertPutOptions`: string `contentType`/`cacheControl`, a plain object of strings for
+`metadata`, `X_INVARIANT` otherwise) on all three drivers. A refused READ is `X_STORAGE_READ_FAILED` the same
+way. No driver method leaves with a bare throw for a wrong-typed argument either: a key that is not
+a string is `X_STORAGE_PATH_UNSAFE`, a body that is not bytes, a `Blob` or a stream and a
+non-string `list()` prefix or cursor are `X_INVARIANT` (`driver-read-failed.test.ts` sweeps every
+method on every disk). The one thing no code can cover is a `stream()` that fails after it was
+handed back: that is the stream's own error.
+
+**A key cannot be another key's path on the local disk.** A POSIX path is a file or a directory:
+`put('a')` then `put('a/b')` — or the reverse, or `a` beside `a.json/b`, which collide in the
+sidecar tree — is `X_STORAGE_KEY_CONFLICT`, refused before a byte moves, where it used to be a
+bare `ENOTDIR` / `EISDIR`. Its `fix` names the disk as `defineStorage` registered it, not the
+driver kind. `s3Driver` and `memoryDriver` hold both keys; `driver-contract.test.ts`
+pins the divergence.
+
+`stat(key)` answers what a read would — size, type, etag, age — **without the bytes**, and
+`undefined` for nothing there. It is a required `StorageDriver` method: `promoteAttachment` measures
+with it, and a driver that cannot measure does not compile.
+
+`lastModified` is **optional** on a listing entry and on a `StorageObject`: absent when the
+provider reported none, never epoch 0 — which `sweepOrphans` read as "older than any window" and
+deleted. A reader that needs an age handles `undefined`; the sweep spares it.
+
 **`StorageListEntry.contentType` is optional; `StorageObject.contentType` is not.** S3's
 `ListObjectsV2` returns no Content-Type, so a listed s3 object simply has none — reading the real
 value would cost one `HeadObject` per row, which is what `list()` exists to avoid. It used to
@@ -100,6 +145,12 @@ is the architecture and not an optimisation — see the round trip below. Raise 
 for a disk that really does write large objects server-side, and remember S3 caps a single PUT at
 5GB whatever you set.
 
+**`get()` buffers too, so it has the same ceiling**: `maxGetBytes`, on all three drivers,
+defaulting to that disk's `maxPutBytes`. An object past it is `X_STORAGE_TOO_LARGE` — decided on
+the disk's own size (a HEAD on s3) before a byte is read — and is read with `stream()`. It exists
+because an object's size is not the server's to choose: a presigned PUT lands in a bucket
+unmeasured, so a later `get()` of it was heap growth the uploader picked.
+
 ## Server-side encryption, storage classes, lifecycle
 
 `PutOptions.serverSideEncryption` exists so the gap is visible **at the type level**, and every
@@ -123,7 +174,9 @@ it, `put('.meta/a/b.json', …)` overwrote the recorded content type of `a/b` an
 that object answered attacker HTML from the app's own origin. No sanitising — a key that needed
 fixing was built wrong.
 `scopedKey('org-1', 'avatars', 'a.png')` is `org/org-1/avatars/a.png`; guard every
-client-supplied key with `isWithinOrg(key, ctx.actor.orgId)`. A surface that serves objects pairs
+client-supplied key with `isWithinOrg(key, ctx.actor.orgId)` — a predicate that never throws: an
+org id that cannot be one (empty, or carrying a separator) contains nothing, so an actor with no
+org claim is `false` and not an `X_STORAGE_PATH_UNSAFE` blaming the key. A surface that serves objects pairs
 it with `isTenantScoped(key)`: only a key already inside `org/` is another tenant's to refuse, so
 `disk().put('brand/logo.png', …)` stays reachable while `org/org-2/…` never is. `accept.ts` asks
 the pair too. `isTenantScoped` folds case (`Org/`, `ORG/`) and `isWithinOrg` does not, so a
@@ -132,8 +185,16 @@ case-variant prefix — one directory, not two, on APFS or NTFS — is refused r
 ## Signed URLs
 
 The HMAC covers the **constraints**, not just the key —
-`v1 \n METHOD \n key \n expiresAt \n maxBytes \n contentType`.
+`v2 \n basePath \n METHOD \n key \n expiresAt \n maxBytes \n contentType`.
 A client that edits `?x-max=` invalidates the signature — it cannot widen what it was granted.
+
+`basePath` is the disk: the PATH of the base the URL was minted under (`/_storage/<registered
+name>`). Every local disk signs with the one `STORAGE_SIGNING_SECRET`, so without it a URL for
+`uploads/<key>` verified on `private/<key>` with only the path segment edited. The origin is not
+signed — the route that verifies is handed a path — and an absolute `baseUrl`
+(`https://cdn.example.com/_storage/local`) is compared by its pathname (`signedUrlBasePath`), where
+it used to make every URL minted under it `malformed`. `canonicalRequest` and `signConstraints`
+take the base path as their last argument.
 
 The HMAC key is `signingSecret`, else `STORAGE_SIGNING_SECRET`, else the shipped
 `DEV_SIGNING_SECRET` — and **only in `development` or `test`**, read with a fallback of `production`: a process that names no environment at all (`ULTIMATE_ENV` and `NODE_ENV` both unset) is refused like a production one, `As of 2026-09-23`. Anywhere else `localDriver` refuses
@@ -161,9 +222,19 @@ it on every grant, so refusing would break every s3 upload an app mints.
 
 `Content-Type` is attacker-controlled. A `.png` that is really an HTML document is stored XSS
 the moment a surface serves it back with the declared type. `validateUpload()` reads the magic
-bytes (PNG, JPEG, GIF, WebP, PDF, ZIP/OOXML, SVG, MP4, HTML, plain text) and rejects any
-payload whose bytes contradict the declaration. Checks run cheapest-first: key → size →
+bytes (PNG, JPEG, GIF, WebP, PDF, ZIP/OOXML, SVG, the ISO-BMFF family, HTML, plain text) and
+rejects any payload whose bytes contradict the declaration. Checks run cheapest-first: key → size →
 allowlist → sniff → checksum.
+
+Every ISO base media file opens with the same `ftyp` box, so the box alone says "container" and
+the **major brand** after it decides (`iso-bmff.ts`): `avif`/`avis` → `image/avif`, `heic`/`heix`…
+→ `image/heic`, `qt  ` → `video/quicktime`, `M4A `/`M4B ` → `audio/mp4`, `3gp*` → `video/3gpp`,
+anything else → `video/mp4`. Two brands name only a container and stand in as `application/zip`
+does for OOXML: `video/mp4` for a declared `audio/mp4` (an audio-only MP4 carries `isom`), and
+`image/heif` (`mif1`) for `image/heic` and `image/avif`. `audio/x-m4a` and `video/x-m4v` — what a
+browser reports for a picked file — normalise to `audio/mp4` and `video/mp4`, and
+`uploadPolicy({ allowedContentTypes })` normalises its list the same way, so an alias in an
+allowlist names the type it means.
 
 `validateUpload({ key, declaredContentType, bytes }, uploadPolicy({ maxBytes: 5e6 }))`
 
@@ -226,7 +297,7 @@ An upload happens **before** the row it belongs to exists, so it lands at
 | `pendingKey(orgId, uploadName(id, filename))` | `org/o1/pending/u-1.png` |
 | `quarantineKey(orgId, name)` | `org/o1/pending/quarantine/u-1.png` |
 | `attachmentKey(orgId, { entity, id, field }, name)` | `org/o1/post/p-1/cover/u-1.png` |
-| `promoteAttachment({ disk, key, orgId, target })` | `copy` then `delete` — never the reverse. The key must be a **pending** one (`isPendingKey`): an attached key a client sent back is another row's file, and moving it would delete the victim's copy (`X_STORAGE_NOT_PENDING`) |
+| `promoteAttachment({ disk, key, orgId, target, policy })` | `stat`, `copy`, then `delete` — never the reverse. **`policy` is required**: the object is measured here (`stat().size` over `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, and it stays under `pending/` for the sweep), because an s3 presign bounds no size. A retry after the source is gone answers the already-attached object instead of `X_STORAGE_NOT_FOUND`. The key must be a **pending** one (`isPendingKey`): an attached key a client sent back is another row's file, and moving it would delete the victim's copy (`X_STORAGE_NOT_PENDING`) |
 | `releaseQuarantine({ disk, key, orgId })` | quarantine → pending; returns the released key |
 | `sweepOrphans({ disk, orgId, olderThanMs })` | `{ deleted, failed }` for stale `pending/` keys. `olderThanMs` is a whole number of 0 or more, refused otherwise (`X_INVARIANT`) — `NaN` read as "everything is old enough" and deleted an upload made a moment ago |
 
@@ -266,7 +337,7 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_DISK_UNKNOWN` | `disk(name)` is not in `storage.disks`; cause lists the real ones |
 | `X_STORAGE_NOT_FOUND` | `get`/`stream` on a key that does not exist |
 | `X_STORAGE_PATH_UNSAFE` | traversal, absolute key, backslash, NUL, `%2e`, empty segment |
-| `X_STORAGE_TOO_LARGE` | payload over the policy `maxBytes`, or over a disk's `maxPutBytes` |
+| `X_STORAGE_TOO_LARGE` | payload over the policy `maxBytes` (at validation, or measured by `promoteAttachment`), or over a disk's `maxPutBytes` / `maxGetBytes` |
 | `X_STORAGE_TYPE_REJECTED` | declared type off the allowlist, or contradicted by magic bytes |
 | `X_STORAGE_CHECKSUM_MISMATCH` | supplied base64 SHA-256 does not describe the bytes |
 | `X_STORAGE_URL_INVALID` | a signed request that does not match what was signed — edited constraint, wrong base, wrong method, contradicting `Content-Type` |
@@ -277,6 +348,9 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_LIST_FAILED` | the disk REFUSED a listing — denied `s3:ListBucket`, a throttle, an unreadable root. An **empty** disk is still not an error |
 | `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
 | `X_STORAGE_NOT_PENDING` | `promoteAttachment` on a key outside the org's `pending/` prefix — most often another row's attached key |
+| `X_STORAGE_PUT_FAILED` | the disk REFUSED a `put()`/`copy()` — `EACCES`, `ENOSPC`, `EROFS`, a provider's refused PUT |
+| `X_STORAGE_READ_FAILED` | the disk REFUSED a `get`/`stat`/`exists`/`stream` or the read half of a `copy` — a denied `s3:GetObject`, a throttle, an unreadable file. An **absent** object is still `X_STORAGE_NOT_FOUND`, including one deleted between the existence check and the read |
+| `X_STORAGE_KEY_CONFLICT` | local disk only: the key's path is another key's directory, or the reverse (`a` and `a/b`) |
 | `X_NOT_IMPLEMENTED` | S3 user metadata / cache-control; `serverSideEncryption` on either driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
 | `X_IMAGE_UNSUPPORTED` | core's: an `avif` encode, a source no built-in decoder reads, or a `variantKey` format no variant can carry |
@@ -295,6 +369,13 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 `variantKey()`, `srcsetDescriptors()`, `fitDimensions()` are pure — `@ultimat3/seo` builds
 `srcset` from them without decoding a byte.
+
+A variant key is the WHOLE source key plus the transform: `photos/hero.png` at width 640 is
+`photos/hero.png@w640.webp`. The source extension stays in, so `hero.png` and `hero.jpg` are two
+cache identities — it was cut, and both minted `photos/hero@w640.webp`. `width` and `height` are
+whole numbers of at least 1 on `variantKey` and `fitDimensions` (`X_INVARIANT` otherwise — no
+`wNaN`, no `w1.5`). `fitDimensions` never answers a zero edge (1000×1 at width 100 is 100×1) and
+never upscales except under `fit: 'cover'`, which is the exact box asked for.
 
 **`VARIANT_FORMATS` / `VariantFormat` are what a variant KEY can carry, `As of 2026-08`** —
 `avif`, `webp`, `jpeg`, `png` — and this package exports no `IMAGE_FORMATS` and no `ImageFormat`. Those two names are

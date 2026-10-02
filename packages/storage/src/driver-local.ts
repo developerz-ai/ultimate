@@ -6,13 +6,13 @@
 import {
   type Clock,
   finiteCount,
-  isLocal,
   type ResolveEnvironmentOptions,
-  resolveEnvironment,
   stringField,
   systemClock,
 } from '@ultimat3/core';
 import {
+  assertListOptions,
+  assertPutOptions,
   DEFAULT_CONTENT_TYPE,
   etagOf,
   type ListOptions,
@@ -28,51 +28,24 @@ import {
   sha256Base64,
   toBytes,
 } from './driver';
+import { etagOfFile, headObject, readObjectBytes } from './driver-local-read';
+import type { Sidecar } from './driver-local-sidecar';
+import { commitObject, keyedQueue, pendingPathOf, sidecarPathOf } from './driver-local-write';
 import {
   checksumMismatch,
   deleteFailed,
+  getTooLarge,
   listFailed,
   objectNotFound,
-  signingSecretMissing,
   storageNotImplemented,
 } from './errors';
 import { assertSafeKey, META_DIR } from './path';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
+import { resolveSigningSecret } from './signing-secret';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 'local';
-
-/**
- * The dev-only fallback signing key. A literal, not a per-process random one, so a restart does
- * not invalidate every URL `x dev` handed out — and published in this repo, which is exactly why
- * `localDriver` refuses to use it outside a development or test environment.
- */
-export const DEV_SIGNING_SECRET = 'ultimate-dev-signing-secret';
-
-/** The env key production must set. Named once, read by the driver and by the predicate below. */
-export const STORAGE_SIGNING_SECRET_KEY = 'STORAGE_SIGNING_SECRET';
-
-/**
- * True while a local disk built without an explicit `signingSecret` would sign with the shipped
- * development key — `x doctor` reports it, exactly as it reports `usesDevCursorSecret()`.
- *
- * Reads the environment, not a driver instance: this is the same question `x doctor` asks about
- * the cursor secret, and a disk handed an explicit `signingSecret` in `app.config.ts` never
- * consults the variable at all.
- *
- * `env` is core's own slot, so this half of the guard reads the SAME table its other half does:
- * `dev-runtime.ts` asks `!isLocal({ env }) && usesDevStorageSecret({ env })`, and an embedding
- * caller (`serveApp({ env })`, a test fixture) whose `env` is not `process.env` used to get one
- * answer about the boot and one about the process — for the decision of whether a disk may be
- * signed with the published development key. Defaulted to `process.env`, so a bare call is
- * unchanged.
- */
-export function usesDevStorageSecret(options?: Pick<ResolveEnvironmentOptions, 'env'>): boolean {
-  const source = options?.env ?? (process.env as Record<string, string | undefined>);
-  const configured = source[STORAGE_SIGNING_SECRET_KEY];
-  return configured === undefined || configured === '' || configured === DEV_SIGNING_SECRET;
-}
 
 export interface LocalDriverOptions {
   /** Directory the disk owns outright. Created on first write. */
@@ -104,72 +77,11 @@ export interface LocalDriverOptions {
    * discovers by being OOM-killed.
    */
   readonly maxPutBytes?: number | undefined;
-}
-
-interface Sidecar {
-  readonly contentType: string;
-  readonly etag: string;
-  readonly cacheControl?: string | undefined;
-  readonly metadata?: Readonly<Record<string, string>> | undefined;
-}
-
-// `!Array.isArray` is the load-bearing clause, matching `isPlainObject` in
-// `@ultimat3/schema`'s `builder.ts`: `typeof [] === 'object'` and every value of `['a','b']` is a
-// string, so an array in the `metadata` slot was handed back through `head()`/`get()` as object
-// metadata — against a `Record<string, string>` every reader downstream is typed on.
-const isStringRecord = (value: unknown): value is Readonly<Record<string, string>> =>
-  typeof value === 'object' &&
-  value !== null &&
-  !Array.isArray(value) &&
-  Object.values(value as Record<string, unknown>).every((entry) => typeof entry === 'string');
-
-function parseSidecar(raw: unknown): Sidecar | undefined {
-  if (typeof raw !== 'object' || raw === null) return undefined;
-  const record = raw as Record<string, unknown>;
-  const contentType = record['contentType'];
-  const etag = record['etag'];
-  if (typeof contentType !== 'string' || typeof etag !== 'string') return undefined;
-  // `put()` writes cacheControl/metadata into the same sidecar (below) — dropping them here
-  // silently truncated what was just written, even though `Sidecar` itself declares both.
-  const cacheControl = record['cacheControl'];
-  const metadata = record['metadata'];
-  return {
-    contentType,
-    etag,
-    ...(typeof cacheControl === 'string' ? { cacheControl } : {}),
-    ...(isStringRecord(metadata) ? { metadata } : {}),
-  };
-}
-
-/**
- * The secret a disk that mints its OWN URLs signs with — `localDriver` and `memoryDriver` both.
- *
- * A dev disk must work with zero config. Outside development the fallback is refused rather than
- * used: the literal is published, so signing with it hands every reader the power to mint a PUT
- * for any key with any size and type limit — which `acceptSignedUpload` then trusts over the app's
- * own `uploadPolicy`. Refused at construction, so the boot fails rather than the first upload.
- *
- * The published literal counts as no secret at all, whichever way it arrives: an env var or an
- * `app.config.ts` that pasted it in signs exactly as weakly as the fallback does. One table for
- * all three reads — the secret, the environment test and the environment the refusal names.
- * Splitting them is how the guard and the disk came to answer about two different processes.
- */
-export function resolveSigningSecret(
-  disk: string,
-  options: Pick<LocalDriverOptions, 'signingSecret' | 'env'>,
-): string {
-  const env = options.env ?? (process.env as Record<string, string | undefined>);
-  const supplied = options.signingSecret ?? env[STORAGE_SIGNING_SECRET_KEY];
-  const configured =
-    supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
-      ? undefined
-      : supplied;
-  // FAILS CLOSED: a process that names no environment resolves as `production` here, the answer
-  // core's `assertNoDevSecretsOutsideLocal` gives. `isLocal`'s own fallback is `development`, so the
-  // process that forgot to say signed with the published key — exactly the one that must not.
-  if (configured === undefined && !isLocal({ env, fallback: 'production' }))
-    throw signingSecretMissing(resolveEnvironment({ env, fallback: 'production' }), disk);
-  return configured ?? DEV_SIGNING_SECRET;
+  /**
+   * Ceiling on ONE `get()`, because `get()` buffers the whole object too — and an object's size
+   * is the uploader's, not this process's. Defaults to `maxPutBytes`; past it, `stream()`.
+   */
+  readonly maxGetBytes?: number | undefined;
 }
 
 /**
@@ -199,7 +111,16 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     options.maxPutBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : options.maxPutBytes,
     1,
   );
+  const maxGetBytes = finiteCount(
+    'the local disk driver',
+    'maxGetBytes',
+    options.maxGetBytes === undefined ? maxPutBytes : options.maxGetBytes,
+    1,
+  );
   const clock = options.clock ?? systemClock;
+  const oneAtATime = keyedQueue();
+  // What `defineStorage` registered this driver as — the name a refusal's `disk('…')` must use.
+  let registered = DRIVER_NAME;
   // The segment is the disk's REGISTERED name, learned from `defineStorage` at boot — the driver
   // kind is not a mount point, and minting under it made every disk not literally named `local`
   // 404 its own URLs. An explicit `baseUrl` outranks the registration: that is the operator
@@ -208,45 +129,16 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   const secret = resolveSigningSecret(DRIVER_NAME, options);
 
   const filePath = (key: string): string => `${root}/${key}`;
-  const metaPath = (key: string): string => `${root}/${META_DIR}/${key}.json`;
+  const metaPath = (key: string): string => `${root}/${sidecarPathOf(key)}`;
 
-  const readSidecar = async (key: string): Promise<Sidecar | undefined> => {
-    const file = Bun.file(metaPath(key));
-    if (!(await file.exists())) return undefined;
-    try {
-      const raw: unknown = await file.json();
-      return parseSidecar(raw);
-    } catch {
-      return undefined;
-    }
-  };
-
-  // No `contentType` fallback: the sidecar is the only thing that knows, so a missing one means
-  // this driver does not know either — exactly what the s3 driver's `list()` reports. `get()`
-  // fills the default below, because a `StorageObject` promises a type and a read has one.
-  //
-  // `hash` is the ONLY thing that reads the object's bytes, and it defaults off. The etag used to
-  // be computed unconditionally when the sidecar was missing, under a comment saying "`list()`
-  // must not read every file it lists" — which is exactly what `list()` then did, one whole
-  // object at a time, sequentially, for every sidecar-less key on the disk (a `put()` that died
-  // between its two writes leaves one). `copy()` inherited it too, so a copy documented as never
-  // routing bytes through the heap buffered the whole source. A listing that cannot know an etag
-  // reports `''`, which is what the s3 listing already answers for a provider that returns none.
-  const head = async (key: string, hash = false): Promise<StorageListEntry | undefined> => {
-    const file = Bun.file(filePath(key));
-    if (!(await file.exists())) return undefined;
-    const sidecar = await readSidecar(key);
-    const etag = sidecar?.etag ?? (hash ? etagOf(new Uint8Array(await file.arrayBuffer())) : '');
-    return {
-      key,
-      size: file.size,
-      etag,
-      lastModified: new Date(file.lastModified),
-      ...(sidecar?.contentType === undefined ? {} : { contentType: sidecar.contentType }),
-      ...(sidecar?.cacheControl === undefined ? {} : { cacheControl: sidecar.cacheControl }),
-      ...(sidecar?.metadata === undefined ? {} : { metadata: sidecar.metadata }),
-    };
-  };
+  // Both QUEUED behind the key's writers, as `get()` is: unqueued, a measurement read the size of
+  // one generation before a commit and the sidecar of the next after it.
+  /** A listing's view: no bytes read, so a pair in doubt reports no type and no etag. */
+  const head = (key: string): Promise<StorageListEntry | undefined> =>
+    oneAtATime(key, () => headObject(root, key));
+  /** The same, settled against the bytes on disk — streamed through a hasher, never buffered. */
+  const measured = (key: string): Promise<StorageListEntry | undefined> =>
+    oneAtATime(key, () => headObject(root, key, () => etagOfFile(root, key)));
 
   /** Removes one path, or reports WHY it could not — a swallowed refusal is a false erasure. */
   const removeIfPresent = async (path: string, key: string): Promise<void> => {
@@ -272,12 +164,14 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     },
 
     registerAs(diskName: string): void {
+      registered = diskName;
       if (options.baseUrl === undefined) baseUrl = signedUrlBaseFor(diskName);
     },
 
     async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
       const safe = assertSafeKey(key);
       refuseUnsupportedPut(putOptions);
+      assertPutOptions(DRIVER_NAME, putOptions);
       const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });
       const claimed = putOptions?.checksum;
       if (claimed !== undefined) {
@@ -290,8 +184,9 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         cacheControl: putOptions?.cacheControl,
         metadata: putOptions?.metadata,
       };
-      await Bun.write(filePath(safe), bytes);
-      await Bun.write(metaPath(safe), JSON.stringify(sidecar));
+      await oneAtATime(safe, () =>
+        commitObject({ root, key: safe, disk: registered, body: bytes, sidecar }),
+      );
       return {
         key: safe,
         size: bytes.byteLength,
@@ -303,21 +198,29 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       };
     },
 
+    async stat(key: string): Promise<StorageObject | undefined> {
+      const entry = await measured(assertSafeKey(key));
+      return entry && { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
+    },
+
     async get(key: string): Promise<StorageRead> {
       const safe = assertSafeKey(key);
-      const entry = await head(safe);
-      if (entry === undefined) throw objectNotFound(DRIVER_NAME, safe);
-      const bytes = new Uint8Array(await Bun.file(filePath(safe)).arrayBuffer());
-      return {
-        object: {
-          ...entry,
-          contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
-          // Hashed HERE and not inside `head`, so a sidecar-less object is read exactly once: a
-          // `get()` already holds every byte, and `head(key, true)` would have read them again.
-          etag: entry.etag === '' ? etagOf(bytes) : entry.etag,
-        },
-        bytes,
-      };
+      // Queued behind this key's writers: an object is two files, and a read between a put()'s
+      // renames is a pair in doubt this process has no need to meet.
+      return oneAtATime(safe, async () => {
+        const file = Bun.file(filePath(safe));
+        if (!(await file.exists())) throw objectNotFound(DRIVER_NAME, safe);
+        if (file.size > maxGetBytes) throw getTooLarge(DRIVER_NAME, safe, file.size, maxGetBytes);
+        const bytes = await readObjectBytes(root, safe);
+        // Settled against the bytes this read ALREADY holds: hashed only for a sidecar-less object
+        // or a pair in doubt, and then exactly once.
+        const entry = await headObject(root, safe, () => etagOf(bytes));
+        if (entry === undefined) throw objectNotFound(DRIVER_NAME, safe);
+        return {
+          object: { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE },
+          bytes,
+        };
+      });
     },
 
     async stream(key: string): Promise<ReadableStream<Uint8Array>> {
@@ -331,19 +234,30 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     async copy(from: string, to: string): Promise<StorageObject> {
       const source = assertSafeKey(from);
       const destination = assertSafeKey(to);
-      // `hash: true` — the destination gets a sidecar, and a sidecar carrying `etag: ''` is a
-      // durable lie every later `get()` of the copy would trust. The read is bounded to the one
-      // case the source has no sidecar of its own; the common path still touches no bytes.
-      const entry = await head(source, true);
+      // Measured, not merely read: the destination gets a sidecar, and one carrying `etag: ''` or
+      // a torn source's borrowed type is a durable lie every later `get()` of the copy would
+      // trust. The hash is streamed, and only for a sidecar-less source or a pair in doubt.
+      const entry = await measured(source);
       if (entry === undefined) throw objectNotFound(DRIVER_NAME, source);
-      await Bun.write(filePath(destination), Bun.file(filePath(source)));
       const sidecar: Sidecar = {
         contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
         etag: entry.etag,
         cacheControl: entry.cacheControl,
         metadata: entry.metadata,
       };
-      await Bun.write(metaPath(destination), JSON.stringify(sidecar));
+      await oneAtATime(destination, () =>
+        commitObject({
+          root,
+          key: destination,
+          disk: registered,
+          body: Bun.file(filePath(source)),
+          sidecar,
+        }),
+      ).catch(async (error: unknown) => {
+        // The source was deleted while this copy waited its turn on the destination.
+        if (!(await Bun.file(filePath(source)).exists())) throw objectNotFound(DRIVER_NAME, source);
+        throw error;
+      });
       return {
         ...entry,
         key: destination,
@@ -357,8 +271,11 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       // Idempotent by contract: a missing key is already in the desired state. A REFUSED unlink
       // is not — a read-only mount or a root this process cannot write reports the bytes gone
       // when they are still on disk, which is the one lie an erasure sweep must never repeat.
-      await removeIfPresent(filePath(safe), safe);
-      await removeIfPresent(metaPath(safe), safe);
+      await oneAtATime(safe, async () => {
+        await removeIfPresent(filePath(safe), safe);
+        await removeIfPresent(metaPath(safe), safe);
+        await removeIfPresent(`${root}/${pendingPathOf(safe)}`, safe);
+      });
     },
 
     async exists(key: string): Promise<boolean> {
@@ -367,6 +284,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
     async list(listOptions?: ListOptions): Promise<ListPage> {
       const prefix = listOptions?.prefix ?? '';
+      assertListOptions(listOptions);
       const limit = resolveListLimit(listOptions?.limit);
       const cursor = listOptions?.cursor;
       const keys: string[] = [];

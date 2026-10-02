@@ -16,6 +16,7 @@ import {
   contentTypeUnrecognised,
   tooLarge,
 } from './errors';
+import { HEIF_CONTAINER, ISO_BMFF_CONTAINER, ISO_BMFF_TYPES, sniffIsoBmff } from './iso-bmff';
 import { assertSafeKey } from './path';
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -65,7 +66,12 @@ export function uploadPolicy(init: UploadPolicyInit = {}): UploadPolicy {
       init.maxBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : init.maxBytes,
       1,
     ),
-    allowedContentTypes: init.allowedContentTypes ?? IMAGE_CONTENT_TYPES,
+    // Normalised, because the declared type is: `validateUpload` and `grantUpload` compare the
+    // NORMALISED declaration against this list, so an allowlist spelling an alias (`image/jpg`,
+    // `audio/x-m4a`) named a type no upload could ever match.
+    allowedContentTypes: (init.allowedContentTypes ?? IMAGE_CONTENT_TYPES).map(
+      normalizeContentType,
+    ),
     requireChecksum: init.requireChecksum ?? false,
   };
 }
@@ -111,7 +117,6 @@ const MAGIC_RULES: readonly MagicRule[] = [
     ],
   },
   { type: 'application/pdf', parts: [{ offset: 0, pattern: ascii('%PDF-') }] },
-  { type: 'video/mp4', parts: [{ offset: 4, pattern: ascii('ftyp') }] },
   // Every OOXML document and epub is a zip; the container is as far as magic bytes go.
   { type: 'application/zip', parts: [{ offset: 0, pattern: [0x50, 0x4b, 0x03, 0x04] }] },
 ];
@@ -154,7 +159,9 @@ export function sniffContentType(bytes: Uint8Array): string | undefined {
   for (const rule of MAGIC_RULES) {
     if (matches(bytes, rule)) return rule.type;
   }
-  return sniffText(bytes);
+  // Not a `MagicRule`: every ISO base media file opens with the same `ftyp` box, and the one rule
+  // that matched it labelled AVIF, HEIC, MOV and M4A all `video/mp4`. The major brand decides.
+  return sniffIsoBmff(bytes) ?? sniffText(bytes);
 }
 
 // A `Map`, not an object literal: `base` is the transport's own `Content-Type` header by the time
@@ -164,6 +171,10 @@ const ALIASES: ReadonlyMap<string, string> = new Map([
   ['image/jpg', 'image/jpeg'],
   ['image/x-png', 'image/png'],
   ['application/x-pdf', 'application/pdf'],
+  // What Chrome and Safari report for an `.m4a` / `.m4v` picked from disk.
+  ['audio/x-m4a', 'audio/mp4'],
+  ['audio/m4a', 'audio/mp4'],
+  ['video/x-m4v', 'video/mp4'],
 ]);
 
 /** Strip parameters and case: `IMAGE/PNG; charset=binary` and `image/png` are one type. */
@@ -182,11 +193,23 @@ const TEXT_FAMILY = new Set([
   'text/xml',
 ]);
 
-/** A generic sniff (zip container, plain text) may stand in for a specific declared type. */
+// A brand that names only the container: `isom` is on an audio-only MP4 as often as on a video,
+// and `mif1` on a still HEIC and a still AVIF alike. `image/heif` is also the general name of a
+// file whose brand says `heic`, so that pair matches in the other direction too.
+const MP4_CONTAINED = new Set(['audio/mp4']);
+const HEIF_CONTAINED = new Set(['image/heic', 'image/avif']);
+
+/**
+ * A generic sniff (zip container, ISO-BMFF container, plain text) may stand in for a specific
+ * declared type.
+ */
 export function contentTypeMatches(declared: string, sniffed: string): boolean {
   const type = normalizeContentType(declared);
   if (type === sniffed) return true;
   if (sniffed === 'application/zip') return ZIP_CONTAINERS.has(type);
+  if (sniffed === ISO_BMFF_CONTAINER) return MP4_CONTAINED.has(type);
+  if (sniffed === HEIF_CONTAINER) return HEIF_CONTAINED.has(type);
+  if (sniffed === 'image/heic') return type === HEIF_CONTAINER;
   if (sniffed === 'text/plain') return TEXT_FAMILY.has(type);
   return false;
 }
@@ -199,7 +222,10 @@ export function contentTypeMatches(declared: string, sniffed: string): boolean {
  * as provably wrong as one under `image/png`.
  */
 function hasSignature(declared: string): boolean {
-  return MAGIC_RULES.some((rule) => contentTypeMatches(declared, rule.type));
+  return (
+    MAGIC_RULES.some((rule) => contentTypeMatches(declared, rule.type)) ||
+    ISO_BMFF_TYPES.some((type) => contentTypeMatches(declared, type))
+  );
 }
 
 /**

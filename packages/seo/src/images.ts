@@ -3,16 +3,30 @@
 // so the browser reserves the box before the bytes arrive, keeping CLS at 0. Producing those
 // bytes is `image-driver.ts`; nothing here decodes a pixel.
 
+import { canEncode, finiteCount } from '@ultimat3/core';
 import { imageQueryInvalid } from './errors';
 import { attributes, escapeAttribute } from './xml';
 
 /** Ordered widest-first is wrong for `srcset`; browsers want ascending. */
 export const DEFAULT_WIDTHS: readonly number[] = [320, 480, 640, 768, 1024, 1280, 1536, 1920];
 
-/** Most-preferred first. The original format is always appended last. */
+/** Every modern format the markup can offer, most-preferred first. The original comes last. */
 export const FORMAT_ORDER = ['avif', 'webp'] as const;
 
 export type ModernFormat = (typeof FORMAT_ORDER)[number];
+
+/**
+ * What `responsiveImage` offers when the caller names no `formats`: the part of `FORMAT_ORDER`
+ * the built-in pipeline can ENCODE, read off core's own capability list so the two cannot drift.
+ *
+ * A `<source>` is a promise the browser does not hedge: it picks the first type it supports and
+ * never falls back from an error response. Offering AVIF by default made that pick a URL the
+ * default driver answers with `X_IMAGE_UNSUPPORTED`. An app whose driver does encode AVIF — a
+ * CDN — says so: `responsiveImage(input, { formats: FORMAT_ORDER })`.
+ */
+export const DEFAULT_FORMATS: readonly ModernFormat[] = FORMAT_ORDER.filter((format) =>
+  canEncode(format),
+);
 
 export const MIME_TYPES: Readonly<Record<string, string>> = {
   avif: 'image/avif',
@@ -124,7 +138,7 @@ function parseQuality(raw: string): number {
  * Hard, not configurable: the shape `packages/mcp/src/query-limits.ts:48-56` uses — a caller may
  * narrow a request by asking for less, never widen it by asking for more.
  */
-const MAX_IMAGE_WIDTH = 8192;
+export const MAX_IMAGE_WIDTH = 8192;
 
 function parseWidth(raw: string): number {
   const width = parsePositiveInt(IMAGE_QUERY_KEYS.width, raw);
@@ -165,11 +179,22 @@ export function parseImageQuery(params: URLSearchParams): ImageQuery | null {
   };
 }
 
-/** Never upscale: drop candidate widths above the intrinsic width. */
+/**
+ * Never upscale, and never mint what `parseImageQuery` refuses: candidates are whole pixel counts
+ * from 1 to the intrinsic width or `MAX_IMAGE_WIDTH`, whichever is smaller, and that cap closes
+ * the list. A 10,000-wide source used to put `?w=10000` in its own `srcset` — the widest
+ * candidate, the one a large display picks, answered `X_IMAGE_QUERY_INVALID`.
+ *
+ * The intrinsic width is floored (an SVG may measure a fraction) and then has to BE a size: `NaN`
+ * fails every comparison below, so it came back as the only candidate and went out as `?w=NaN`.
+ */
 export function usableWidths(intrinsic: number, widths: readonly number[]): readonly number[] {
-  const usable = widths.filter((width) => width <= intrinsic);
-  if (usable.length === 0) return [intrinsic];
-  return usable.includes(intrinsic) ? usable : [...usable, intrinsic];
+  const cap = Math.min(
+    finiteCount('usableWidths', 'intrinsic', Math.floor(intrinsic), 1),
+    MAX_IMAGE_WIDTH,
+  );
+  const usable = widths.filter((width) => Number.isInteger(width) && width >= 1 && width <= cap);
+  return usable.includes(cap) ? usable : [...usable, cap];
 }
 
 /** The widest candidate, or `undefined` for an empty list — never `Math.max()`'s `-Infinity`. */
@@ -198,7 +223,7 @@ export function responsiveImage(
   const urlFor = options.urlFor ?? defaultUrlFor;
   const widths = usableWidths(input.width, options.widths ?? DEFAULT_WIDTHS);
   const sizes = input.sizes ?? '100vw';
-  const formats = options.formats ?? FORMAT_ORDER;
+  const formats = options.formats ?? DEFAULT_FORMATS;
 
   const sources: ImageSourceSet[] = formats.map((format) => ({
     // `Object.hasOwn`, never a bare index: `MIME_TYPES` is a `{}`-prototyped literal, so an
@@ -238,7 +263,7 @@ export function responsiveImage(
   };
 }
 
-/** `<picture>` with AVIF, then WebP, then the original. */
+/** `<picture>`: each offered modern format in order, then the original as the `<img>`. */
 export function renderPicture(image: ResponsiveImage): string {
   const sources = image.sources
     .map(

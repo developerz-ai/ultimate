@@ -43,22 +43,18 @@ export type {
   StorageRead,
 } from './driver';
 export {
+  // Exported for the same reason `toBytes` is: a driver written outside this package has to
+  // refuse a `limit` the same way both shipped ones do, or it is a third answer to one question.
+  assertPutOptions,
   DEFAULT_CONTENT_TYPE,
   DEFAULT_LIST_LIMIT,
   etagOf,
-  // Exported for the same reason `toBytes` is: a driver written outside this package has to
-  // refuse a `limit` the same way both shipped ones do, or it is a third answer to one question.
   resolveListLimit,
   sha256Base64,
   toBytes,
 } from './driver';
 export type { LocalDriverOptions } from './driver-local';
-export {
-  DEV_SIGNING_SECRET,
-  localDriver,
-  STORAGE_SIGNING_SECRET_KEY,
-  usesDevStorageSecret,
-} from './driver-local';
+export { localDriver } from './driver-local';
 export type { MemoryDriverOptions, MemoryStorageDriver } from './driver-memory';
 export { memoryDriver } from './driver-memory';
 export type {
@@ -78,13 +74,17 @@ export {
   contentTypeUnrecognised,
   deleteFailed,
   diskUnknown,
+  getTooLarge,
   isStorageError,
+  keyConflict,
   listFailed,
   objectNotFound,
   orgMismatch,
   pathUnsafe,
+  putFailed,
   putTooLarge,
   quarantined,
+  readFailed,
   STORAGE_ERROR_CODES,
   STORAGE_ERROR_TITLES,
   StorageError,
@@ -152,9 +152,15 @@ export {
   SIGNED_URL_VERSION,
   signConstraints,
   signedUrlBaseFor,
+  signedUrlBasePath,
   timingSafeEqual,
   verifySignedUrl,
 } from './signed-url';
+export {
+  DEV_SIGNING_SECRET,
+  STORAGE_SIGNING_SECRET_KEY,
+  usesDevStorageSecret,
+} from './signing-secret';
 export type { Storage, StorageConfig } from './storage';
 export { definedStorage, defineStorage, disk, resetStorage, storage } from './storage';
 export type { UploadCandidate, UploadPolicy, UploadPolicyInit, ValidatedUpload } from './upload';

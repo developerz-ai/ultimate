@@ -1,11 +1,12 @@
 // Tier 3: the CDN. Ultimate does not read from the CDN (it sits in front of us), so this
 // tier's job is the other two thirds of caching: emitting the headers that let the CDN hold
-// the response, and purging by surrogate key when a tag changes. Surrogate keys ARE the
-// tags — same strings, so a CDN purge cannot drift from an app-level invalidation.
+// the response, and purging by surrogate key when a tag changes. Surrogate keys are built from
+// the tags in this one file, so what a purge sends cannot drift from what a response carries.
 
 import { dependentsOfKind } from './graph';
+import { assertPurgeableKeys } from './purge-http';
 import type { CacheTag } from './tags';
-import { serializeTags } from './tags';
+import { serializeTag } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
 
 export interface CacheHeaderOptions {
@@ -20,6 +21,56 @@ export interface CacheHeaderOptions {
   readonly visibility?: 'public' | 'private';
   readonly immutable?: boolean;
   readonly tags?: readonly CacheTag[];
+}
+
+/**
+ * The edge's entity index: every response tagged with ANY tag of `entity` carries it. The CDN twin
+ * of `redis.ts`'s `e:{entity}` bucket, and a separate key for the same reason — one key serving as
+ * both "the collection tag" and "everything of this entity" is what makes a row bust over-reach.
+ */
+const entityIndexKey = (entity: string): string => `e:${entity}`;
+
+const screened = (emitter: string, keys: readonly string[]): readonly string[] => {
+  const unique = [...new Set(keys)];
+  assertPurgeableKeys(emitter, unique);
+  return unique;
+};
+
+/**
+ * What a response CARRIES: each tag's wire form, plus its entity's index key.
+ *
+ * A CDN cannot ask "does this key match?" — it purges by exact key — so `tagMatches`, the two-way
+ * rule every other tier keeps, has to be built out of what is carried and what is purged. Carrying
+ * the wire tags alone meant a collection bust (`post`) never reached a detail page keyed `post:1`,
+ * with `errors: []`. `purgeKeysFor` below is the other half; they live together so they cannot drift.
+ *
+ * Screened HERE, at emission: a key carrying whitespace or a comma is split by the CDN into keys
+ * nothing ever purges, so the response would be tagged and could never be cleared.
+ */
+export function surrogateKeys(
+  tags: readonly CacheTag[],
+  emitter = 'surrogateKeys',
+): readonly string[] {
+  return screened(
+    emitter,
+    tags.flatMap((owned) => [serializeTag(owned), entityIndexKey(owned.entity)]),
+  );
+}
+
+/**
+ * What a bust PURGES. A COLLECTION bust matches every tag of the entity, so it purges the index —
+ * and the bare collection key too, which responses cached before the index existed still carry.
+ * A ROW bust matches its own tag and the bare collection tag only: `post:2` survives `post:1`.
+ */
+function purgeKeysFor(tags: readonly CacheTag[]): readonly string[] {
+  return screened(
+    'cdn',
+    tags.flatMap((requested) =>
+      requested.id === undefined
+        ? [entityIndexKey(requested.entity), requested.entity]
+        : [serializeTag(requested), requested.entity],
+    ),
+  );
 }
 
 /** `Cache-Control` + `Surrogate-Key` + `Cache-Tag`, ready to spread into a `Headers` init. */
@@ -41,7 +92,7 @@ export function cacheHeaders(options: CacheHeaderOptions = {}): Record<string, s
   if (options.immutable === true) parts.push('immutable');
 
   const headers: Record<string, string> = { 'Cache-Control': parts.join(', ') };
-  const keys = serializeTags(options.tags ?? []);
+  const keys = surrogateKeys(options.tags ?? [], 'cacheHeaders');
   if (keys.length > 0) {
     headers['Surrogate-Key'] = keys.join(' ');
     // Cloudflare's spelling of the same list; `@ultimat3/http`'s `applyCacheHeaders` writes both.
@@ -111,7 +162,7 @@ export function createCdnTier(options: CdnTierOptions = {}): CacheTier {
     },
 
     /**
-     * The tags themselves plus every `cdn-path` the graph hangs off them — one purge, one list.
+     * `purgeKeysFor(tags)` plus every `cdn-path` the graph hangs off them — one purge, one list.
      *
      * Those paths were computed by `invalidate.ts` and reported as busted while nothing ever
      * purged them, so `x cache bust --json` named a path the edge still held for its whole
@@ -128,7 +179,7 @@ export function createCdnTier(options: CdnTierOptions = {}): CacheTier {
       if (isNoopPurgeDriver(driver)) {
         return { tier: 'cdn', keys: [], skipped: 'no purge driver configured' };
       }
-      const keys = [...new Set([...serializeTags(tags), ...dependentsOfKind(tags, 'cdn-path')])];
+      const keys = [...new Set([...purgeKeysFor(tags), ...dependentsOfKind(tags, 'cdn-path')])];
       if (keys.length === 0) return { tier: 'cdn', keys: [] };
       const accepted = await driver.purge(keys);
       return { tier: 'cdn', keys: accepted };

@@ -61,8 +61,8 @@ function requestedFormat(format: string | undefined): ImageFormat | undefined {
 
 /**
  * The zero-dependency pipeline in `@ultimat3/core`: PNG, JPEG, WebP and GIF in, PNG, JPEG and
- * WebP out. `<picture>` still offers AVIF, and nothing here synthesises it — asking for one
- * raises core's `X_IMAGE_UNSUPPORTED`, and that variant belongs on a CDN driver instead.
+ * WebP out. Nothing here synthesises AVIF — asking for one raises core's `X_IMAGE_UNSUPPORTED` —
+ * which is why `images.ts`'s `DEFAULT_FORMATS` does not offer it; that variant is a CDN driver's.
  */
 export function builtinImageDriver(options: BuiltinImageDriverOptions): ImageTransformDriver {
   return {

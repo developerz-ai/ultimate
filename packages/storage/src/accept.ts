@@ -113,12 +113,9 @@ async function constraintsFor(
   // The PAIR is the question "does this key belong to somebody else?". `isWithinOrg` alone
   // answered `false` for every un-scoped key, so an app's own `brand/logo.png` was unreachable
   // through a URL it had just signed — `path.ts` says so and `dev-storage.ts` already asks it this
-  // way. An actor with no org is inside no org, so every tenant-scoped key is somebody else's;
-  // checked here because `isWithinOrg` reads an empty org as a malformed key and would blame the
-  // URL for the actor's missing claim.
-  const orgId = input.orgId;
-  if (isTenantScoped(constraints.key) && (orgId === '' || !isWithinOrg(constraints.key, orgId))) {
-    throw orgMismatch(constraints.key, orgId);
+  // way. An actor with no org is inside no org, and `isWithinOrg` answers exactly that.
+  if (isTenantScoped(constraints.key) && !isWithinOrg(constraints.key, input.orgId)) {
+    throw orgMismatch(constraints.key, input.orgId);
   }
   return constraints;
 }

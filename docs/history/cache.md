@@ -346,3 +346,55 @@ a current fact: the rules that still hold are in that file, and where the two di
   backtick in it substitute before `curl` is reached. An ordinary endpoint travels verbatim; the
   URL is in the `detail` either way, which is read rather than run. `renderFixLiteral` cannot
   stand in: its double quotes leave `$(…)` live.
+
+## Plan 101 (2026-10), slice 03
+
+- **The edge got an entity index key, `e:<entity>`, `As of 2026-10-02`.** A CDN purges by exact
+  key, so `tagMatches` cannot be asked of it — it has to be built from what a response carries and
+  what a bust purges. Sending the wire tags alone on both sides kept neither direction of the rule:
+  `invalidateTags([tag('post','1')])` purged `post:1` and left a list keyed `post`;
+  `invalidateTags([tag.post])` purged `post` and left a detail page keyed `post:1` — both with
+  `errors: []`. The first repair considered was the plan's: carry and purge the bare `<entity>`
+  key with every row tag. It is the two-role bucket `redis.ts` had already been cured of — every
+  row response would carry `post`, so a write to `post:1` would purge `post:2`'s page — and it
+  fails `tag-parity.test.ts`'s "busting a row" case. So the edge takes the Redis layout: a
+  response carries its wire tags plus `e:<entity>`; a row bust purges `<entity>:<id>` and
+  `<entity>`; a collection bust purges `e:<entity>`, and `<entity>` too, for responses cached
+  before the index existed. Cost, measured: `len(entity) + 3` bytes per distinct entity per
+  header. `e:post` collides with a tag on an entity literally named `e` — in the over-purge
+  direction only.
+
+- **`cacheHeaders()` had no production caller when this landed**, and no shipped path put a
+  `Surrogate-Key` on a response: `@ultimat3/http`'s `applyCacheHeaders` emits `CacheHint.tags`
+  only on a `public`/`immutable` hint, the only hints carrying tags were `no-store` (action and
+  query), and an `isr` document — the one tagged public response — wrote `cache-control` alone.
+  `surrogateKeys()` is exported so the emitter that closes that takes the screened list from here —
+  and the same slice closed it: `toResult` in `packages/render/src/render-isr.ts` now writes both
+  headers for a route's `revalidate.tags`, screened at registration, and `applyCacheHeaders`
+  strips them when the `cache-headers` stage rewrites the document to private.
+
+- **The fleet fence, and why the Known-Gaps row was wrong about its price.** `fence.ts` is module
+  state; a bust on another replica reaches it only with the broadcast, and NATS is at-most-once.
+  The row said closing it needed "a shared epoch, a read of it before every `load()`, a CAS, and a
+  wire-format change". The read is real — one pipelined round trip before the load, one after the
+  `SET`. The CAS and the wire change are not, for one reason: ORDER does the work atomicity was
+  assumed to. A bust writes its generation BEFORE it reads its buckets; a fill joins its buckets,
+  writes, and re-reads the generation AFTER. Either the fill sees the new generation and
+  withdraws, or its re-read came first — in which case its bucket join and `SET` came earlier
+  still, and the bust's bucket read, which follows the generation write, finds the key and deletes
+  it. No interleaving leaves the stale value, so nothing has to be compared inside a script, and
+  the broadcast's wire form is untouched because the generation lives in Redis, not on the bus.
+  That is also what made it shippable: the fakes cannot run Lua, so a compare inside the `SET`
+  script would have been a claim only CI could test.
+
+- **A generation is a random token with a lease, never a counter.** `INCR` on an expired key
+  restarts at 1 and can repeat a value a fence sampled. And because a token EXPIRES, "unchanged"
+  proves nothing past the lease: sampled absent, written, expired reads as absent again. So a
+  fence vouches for half the lease (`FENCE_PROOF_WINDOW_MS`) and answers `unprovable` after it —
+  which skips the shared tier only. `busted` is a proof and withdraws the near tiers too: this
+  replica now knows what no broadcast is going to tell it.
+
+- **Three generations per entity, not one.** `r:<id>` moves on that row's bust, `c` on a
+  collection bust, `a` on any. One counter per entity would decline every row fill while any
+  other row of the entity was being written — a write-heavy entity would never cache in Redis.
+

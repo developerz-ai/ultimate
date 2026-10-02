@@ -89,17 +89,64 @@ describe('config disallow', () => {
     expect(body).toContain('User-agent: *\nAllow: /\nDisallow: /panel\nDisallow: /api\n');
   });
 
-  test('a declared group for another agent is left alone', () => {
+  test('EVERY declared group gets it: a crawler obeys only the group that names it', () => {
+    // A crawler with its own group never reads `*`. Left out of GPTBot's group, `/panel` was
+    // open to exactly the crawler the app had singled out.
     const body = buildRobots({
       ...BASE,
       environment: 'production',
       groups: [
-        { userAgent: 'GPTBot', disallow: ['/'] },
+        { userAgent: 'GPTBot', allow: ['/blog'] },
         { userAgent: '*', allow: ['/'] },
       ],
       disallow: ['/panel'],
     });
-    expect(body).toContain('User-agent: GPTBot\nDisallow: /\n\n');
+    expect(body).toContain('User-agent: GPTBot\nAllow: /blog\nDisallow: /panel\n\n');
     expect(body).toContain('User-agent: *\nAllow: /\nDisallow: /panel');
+  });
+
+  test('with no * group declared, one is emitted to carry the list', () => {
+    // `groups: [{ userAgent: 'Googlebot', allow: ['/'] }]` + `disallow: ['/admin']` emitted no
+    // `Disallow: /admin` anywhere: "paths every crawler is kept out of", kept from no crawler.
+    const body = buildRobots({
+      ...BASE,
+      environment: 'production',
+      groups: [{ userAgent: 'Googlebot', allow: ['/'] }],
+      disallow: ['/admin'],
+    });
+    expect(body).toContain('User-agent: Googlebot\nAllow: /\nDisallow: /admin\n\n');
+    expect(body).toContain('User-agent: *\nDisallow: /admin\n\n');
+    expect(body.match(/User-agent: \*/g)).toHaveLength(1);
+  });
+
+  test('a * named inside a multi-agent group counts as the * group', () => {
+    const body = buildRobots({
+      ...BASE,
+      environment: 'production',
+      groups: [{ userAgent: ['Googlebot', '*'], allow: ['/'] }],
+      disallow: ['/admin'],
+    });
+    expect(body.match(/User-agent: \*/g)).toHaveLength(1);
+    expect(body).toContain('User-agent: Googlebot\nUser-agent: *\nAllow: /\nDisallow: /admin');
+  });
+
+  test('a path a group already disallows is not listed twice', () => {
+    const body = buildRobots({
+      ...BASE,
+      environment: 'production',
+      groups: [{ userAgent: '*', disallow: ['/admin'] }],
+      disallow: ['/admin', '/api'],
+    });
+    expect(body.match(/Disallow: \/admin\n/g)).toHaveLength(1);
+    expect(body).toContain('Disallow: /api');
+  });
+
+  test('no config list, no extra group: declared groups come out as declared', () => {
+    const body = buildRobots({
+      ...BASE,
+      environment: 'production',
+      groups: [{ userAgent: 'Googlebot', allow: ['/'] }],
+    });
+    expect(body).not.toContain('User-agent: *');
   });
 });

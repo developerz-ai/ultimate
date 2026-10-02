@@ -246,9 +246,20 @@ describe('unit · storage surfaces · the transform is a write', () => {
   });
 
   test('an authorized ?w= still caches its variant', async () => {
+    // The fixture is 64 wide, so 64 is the one width a srcset mints for it (`usableWidths`).
+    const cached = variantKey(SCOPED_KEY, { width: 64, format: 'png' });
+    const media = await mediaVerdict(SCOPED_KEY, reader(['member'], 'org-a'), '?w=64&f=png');
+    expect(media.kind).toBe('served');
+    expect(await storage.disk().exists(cached)).toBe(true);
+  });
+
+  test('a width wider than the source is served, and not stored under a key no srcset names', async () => {
+    // This asked for `?w=320` and expected a stored `w320` variant — of a 64px image. The
+    // pipeline never upscales, so that object held the 64px bytes again, and each of the eight
+    // default widths would store its own copy: writes a reader drives, for URLs nothing mints.
     const cached = variantKey(SCOPED_KEY, { width: 320, format: 'png' });
     const media = await mediaVerdict(SCOPED_KEY, reader(['member'], 'org-a'), '?w=320&f=png');
     expect(media.kind).toBe('served');
-    expect(await storage.disk().exists(cached)).toBe(true);
+    expect(await storage.disk().exists(cached)).toBe(false);
   });
 });

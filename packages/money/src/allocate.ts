@@ -14,10 +14,23 @@ import { factorFraction } from './factor';
 import { formatMoneyDebug, type Money, money } from './money';
 import { minorAt, moneyScale } from './scale';
 
+/**
+ * The most equal shares one `allocate` call hands back. A bound on memory, not on business: every
+ * part is a `Money` held at once, so `allocate(m, 1e10)` was a bare `RangeError` out of `new
+ * Array` and a count just under that an out-of-memory kill. A split wider than this is paged by
+ * the caller — `allocateByRatios` over each page's share.
+ */
+export const MAX_ALLOCATION_PARTS = 1_000_000;
+
 /** Split into `parts` equal shares. `allocate(money(100,'USD'), 3)` → 34, 33, 33. */
 export function allocate(amount: Money, parts: number): Money[] {
   if (!Number.isSafeInteger(parts) || parts <= 0) {
     throw allocationInvalid(`part count must be a positive integer, got ${String(parts)}`);
+  }
+  if (parts > MAX_ALLOCATION_PARTS) {
+    throw allocationInvalid(
+      `part count ${String(parts)} is over the ${MAX_ALLOCATION_PARTS} shares one call holds in memory`,
+    );
   }
   return allocateByRatios(amount, new Array<number>(parts).fill(1));
 }
