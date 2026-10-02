@@ -1,9 +1,12 @@
-// The enforcement half of `scripts/browser-transport.ts`: the gate's `unit` step runs every
-// `scripts/**/*.test.ts`, so a raw `fetch(` or a page-owned socket in browser-reachable code fails
-// `bun run verify` with no extra wiring. Every false positive the plan names is a fixture below —
-// a noisy rule is a rule its readers switch off.
+// This repository's half of the browser-transport rule: the gate's `unit` step runs every
+// `scripts/**/*.test.ts`, so a raw `fetch(` or a page-owned socket in browser-reachable framework
+// code fails `bun run verify` with no extra wiring. The rule's own cases — what counts as a call,
+// the name-by-name closure, the server barrel — are `@ultimat3/cli`'s tests, beside the rule; what
+// is asserted here is what only this repo has: seams that are FILES in the tree, and the real tree.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { serverBarrels } from '../packages/cli/src/server-barrels';
+import { transportCalls } from '../packages/cli/src/transport-calls';
 import type { TransportTree } from './browser-transport';
 import {
   barrelFinding,
@@ -14,15 +17,9 @@ import {
   TRANSPORT_SEAMS,
   transportResult,
 } from './browser-transport';
-import { importClosure } from './lib/import-closure';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
-import { barrelImports, serverBarrels } from './lib/server-barrels';
-import { transportCalls } from './lib/transport-calls';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
-
-const shapes = (source: string): readonly string[] =>
-  transportCalls(source).map((call) => `${call.shape}:${call.spelled}`);
 
 const FETCH_SEAM = TRANSPORT_SEAMS.get('fetch') ?? '';
 const SEAM_SOURCE = 'const browserFetch = (i, n) => globalThis.fetch(i, n);\n';
@@ -36,51 +33,6 @@ const tree = (files: Record<string, string>): TransportTree => ({
   prefixes: new Map([['@app/web/', 'examples/app/apps/web/']]),
 });
 
-describe('what counts as opening a connection', () => {
-  test('a fetch CALL, bare or through the global object, is reported', () => {
-    expect(shapes('await fetch(url);')).toEqual(['fetch:fetch']);
-    expect(shapes('await globalThis.fetch(url);')).toEqual(['fetch:globalThis.fetch']);
-    expect(shapes('await window .fetch(url);')).toEqual(['fetch:window.fetch']);
-  });
-
-  test('each constructed transport is reported under its own shape', () => {
-    expect(
-      shapes('new WebSocket(u); new globalThis.XMLHttpRequest(); new EventSource(u);'),
-    ).toEqual(['websocket:WebSocket', 'xhr:XMLHttpRequest', 'eventsource:EventSource']);
-  });
-
-  test('an injected default is the seam, never a call', () => {
-    expect(
-      shapes('function send(fetchImpl = globalThis.fetch) { return fetchImpl(u, i); }'),
-    ).toEqual([]);
-    expect(shapes('const run = options.fetch ?? browserFetch; run(u, i);')).toEqual([]);
-  });
-
-  test('a method named fetch is not the global — called or defined', () => {
-    expect(shapes('const res = await server.fetch(new Request(u));')).toEqual([]);
-    expect(shapes('Bun.serve({ fetch(req) { return new Response(); } });')).toEqual([]);
-    expect(
-      shapes('class H { async fetch(req: Request): Promise<Response> { return x; } }'),
-    ).toEqual([]);
-    expect(shapes('export async function fetch(key: string) { return key; }')).toEqual([]);
-  });
-
-  test('a local binding named fetch shadows the global — the idempotency-postgres shape', () => {
-    const source =
-      'const fetch = async (key: string) => rows.get(key);\nconst e = await fetch(key);';
-    expect(shapes(source)).toEqual([]);
-    expect(shapes('const load = async (fetch: F, key: string) => fetch(key);')).toEqual([]);
-    // ...and never through the global object, which no local shadows.
-    expect(shapes('const fetch = f;\nglobalThis.fetch(u);')).toEqual(['fetch:globalThis.fetch']);
-  });
-
-  test('a name that merely starts with fetch, a string and a comment are not calls', () => {
-    expect(shapes('await fetchSignedPut(input);')).toEqual([]);
-    expect(shapes("const msg = 'never call fetch( here';")).toEqual([]);
-    expect(shapes('// fetch(url) would bypass the store\nconst x = 1;')).toEqual([]);
-  });
-});
-
 describe('browser-reachable is followed name by name through a barrel', () => {
   const barrel = tree({
     'packages/action/src/index.ts':
@@ -91,14 +43,8 @@ describe('browser-reachable is followed name by name through a barrel', () => {
     'packages/core/src/index.ts': "export { clientTransport } from './client-transport';\n",
     'packages/core/src/client-transport.ts': "import { d } from './client-dispatch';\n",
   });
-  const host = {
-    read: (path: string) => barrel.files.get(path),
-    alias: (spec: string) => barrel.aliases.get(spec),
-  };
 
   test('a named import reaches the module the name lives in, and not its siblings', () => {
-    const reached = importClosure(host, ['x.island.tsx']);
-    expect(reached).toEqual([]);
     const withIsland = tree({
       ...Object.fromEntries(barrel.files),
       'examples/app/apps/web/x.island.tsx': "import { rpc } from '@ultimat3/action';\n",
@@ -147,8 +93,12 @@ describe('where each shape may live', () => {
     const finding = bypassFinding(bypasses[0] ?? expect.unreachable('no bypass'));
     expect(finding.code).toBe('X_BROWSER_TRANSPORT_BYPASS');
     expect(finding.at).toBe('examples/app/apps/web/settings.island.tsx:1');
-    expect(finding.fix).toContain('<action>.client()');
-    expect(finding.fix).toContain('bun run browser-transport --json');
+    // The repo's context: the seam is a FILE here, and the re-run is this repo's own script.
+    expect(finding.cause).toContain(`only ${FETCH_SEAM} may`);
+    expect(finding.fix).toStartWith(
+      'bun run browser-transport --json   # after replacing fetch at ',
+    );
+    expect(finding.fix).toContain('`await browserClient.<action>(input)`');
   });
 
   test('the seam is exempt at its own path only — the exemption is the file, not the shape', () => {
@@ -218,16 +168,6 @@ describe('a server barrel in browser-reachable code', () => {
     return { ...base, aliases: new Map([...base.aliases, ...Object.entries(RECORD)]) };
   };
 
-  test('is derived from a published browser subpath, never from a list', () => {
-    const barrels = serverBarrels([
-      '@ultimat3/core',
-      '@ultimat3/entity',
-      '@ultimat3/entity/record',
-      '@ultimat3/realtime/server',
-    ]);
-    expect([...barrels]).toEqual([['@ultimat3/entity', '@ultimat3/entity/record']]);
-  });
-
   test('a value import of the barrel is refused, and the fix names the browser entry', () => {
     const { barrels } = checkBrowserTransport(
       withEntity({
@@ -241,15 +181,10 @@ describe('a server barrel in browser-reachable code', () => {
     ]);
     const finding = barrelFinding(barrels[0] ?? expect.unreachable('no barrel'));
     expect(finding.code).toBe('X_BROWSER_SERVER_BARREL');
-    expect(finding.fix).toContain("import from '@ultimat3/entity/record'");
+    expect(finding.fix).toContain("from '@ultimat3/entity' to '@ultimat3/entity/record'");
   });
 
-  test('a type-only import, the browser entry itself, and the package`s own modules are not', () => {
-    const map = serverBarrels(Object.keys(RECORD));
-    expect(barrelImports("import type { Row } from '@ultimat3/entity';", map)).toEqual([]);
-    expect(barrelImports("import { type Row } from '@ultimat3/entity';", map)).toEqual([]);
-    expect(barrelImports("import { recordKey } from '@ultimat3/entity/record';", map)).toEqual([]);
-    expect(barrelImports("const m = await import('@ultimat3/entity');", map)).toHaveLength(1);
+  test('the package`s own modules importing its barrel are not paying for a server half', () => {
     const { barrels } = checkBrowserTransport(
       withEntity({
         'packages/query/src/q.island.tsx': "import './../../entity/src/record';\n",

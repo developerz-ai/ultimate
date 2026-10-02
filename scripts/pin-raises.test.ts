@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no recursive rm of its own; the scratch copy of a pins module is removed after.
+import { rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(); the scratch copy must live outside the checkout.
+import { tmpdir } from 'node:os';
 import { BASE_REF, baseRef } from './lib/base-ref';
-import { pinRows } from './lib/pin-rows';
-import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import { importPinSource, pinRows } from './lib/pin-rows';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { checkPinRaises, pinRaiseResult, readPinTables, rowLine, statesWhy } from './pin-raises';
 
 const PATH = 'scripts/lib/demo-pins.ts';
@@ -97,6 +101,26 @@ describe('unit · a ratchet pin that rises needs a why: on the row', () => {
     ]);
   });
 
+  test('a pins module with a relative import loads from its scratch copy', async () => {
+    // `coverage-pins.ts` imports its bar by a relative path; copied to a scratch directory
+    // unrewritten, that import resolved against the scratch directory and the whole run crashed.
+    const scratch = `${tmpdir()}/pin-rows-test-${process.pid}`;
+    const source = [
+      "import { BASE_REF } from './base-ref';",
+      'export const DEMO_PINS = { [BASE_REF]: 2 };',
+    ].join('\n');
+    try {
+      const loaded = await importPinSource(
+        source,
+        scratch,
+        `${repoRoot()}/scripts/lib/demo-pins.ts`,
+      );
+      expect([...pinRows(loaded)]).toEqual([[`DEMO_PINS.${BASE_REF}`, 2]]);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
   test('rowLine finds a quoted key and a pkg: row, and 0 for a row it cannot place', () => {
     expect(rowLine("const T = {\n  'a-b': 1,\n};", 'T.a-b')).toBe(2);
     expect(rowLine("const T = [\n  { pkg: 'ui', count: 2 },\n];", 'T.ui')).toBe(2);
@@ -124,6 +148,18 @@ describe('the real tree, against origin/main', () => {
       expect(tables.filter((one) => one.base !== undefined).length).toBeGreaterThan(5);
       expect(tables.reduce((sum, one) => sum + one.now.size, 0)).toBeGreaterThan(20);
       expect(pinRaiseResult(tables, base).findings ?? []).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
+
+  test(
+    'the command itself loads, runs and answers one JSON document',
+    async () => {
+      // The pure halves above were green while `bun run pin-raises` died on its first import: a
+      // rule whose command cannot start verifies nothing, so the command is what this runs.
+      const ran = await run(['bun', 'run', 'scripts/pin-raises.ts', '--json'], { cwd: repoRoot() });
+      const answer: unknown = JSON.parse(ran.output.trim().split('\n').at(-1) ?? '');
+      expect(answer).toMatchObject({ script: 'pin-raises', data: { base: BASE_REF } });
     },
     REPO_SCAN_TIMEOUT_MS,
   );

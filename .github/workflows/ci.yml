@@ -1,19 +1,30 @@
 name: ci
 
-# The gate. Same steps a contributor runs locally with `bun run verify` — a check that lives only
-# in CI is a check developers cannot run. Free GitHub-hosted runners only.
+# The gate, run in parts and re-joined. Same steps a contributor runs locally with `bun run verify`
+# — a check that lives only in CI is a check developers cannot run. Free GitHub-hosted runners only.
 #
-# Six jobs, and each answers a question no other job answers: does the framework ship (`verify`),
-# do the tracked apps still gate (`reference-app-verify`), can a stranger scaffold an app that
-# gates (`scaffold-smoke`), do the deployable artifacts BUILD and RENDER (`container`), does a
-# rolling upgrade on the scaffolded chart drop a request (`deploy-proof`, main only), and is each
-# package green and above its coverage bar in isolation (`packages`). The last three each carry
-# their own argument, above the job. There is deliberately no separate `lint`,
-# `typecheck`, `boundaries` or `test` job — those are steps of `x verify`, and running them again
-# beside the gate is the second path axiom 1 forbids. It also cost what it duplicated: the four
-# jobs took ~2.2 runner-minutes and, because `verify` waited on them through `needs`, added their
-# slowest (~1.6 min) to the critical path before the gate could start. `x verify` reports per step,
-# so a red lint still names itself on its own line.
+# One runner per UNIT, by the owner's instruction of 2026-10-01 (docs/history/ci-split.md): each
+# tracked app, each scaffold, each slice of the packages and each part of the framework gate gets
+# its own. Every job answers a question no other job answers: does the framework ship (`gate`, in
+# parts, and `verify`, their one verdict), does each tracked app still gate
+# (`reference-app-verify`), can a stranger scaffold an app that gates (`scaffold-smoke`), do the
+# deployable artifacts BUILD and RENDER (`container`), does a rolling upgrade on the scaffolded
+# chart drop a request (`deploy-proof`, main only), and is each package green and above its
+# coverage bar in isolation (`packages`). The last three each carry their own argument, above the
+# job.
+#
+# There is still no `lint`, `typecheck`, `boundaries` or `test` job BESIDE the gate — that is the
+# second path axiom 1 forbids, and it once cost ~2.2 runner-minutes for checks the gate then ran
+# again. The `gate` parts are the opposite of that: each is `x verify --only <steps>` for a slice of
+# the ONE step list, no step runs twice, and `verify` folds the parts back with `x verify merge`,
+# which is red for a step no part ran. The split cannot drop a step in silence either way:
+# `scripts/ci-workflow-shape.test.ts` holds the parts to exactly the gate's step list before a push,
+# and the merge holds the run to it after. A red lint still names itself on its own line, in its
+# own part.
+#
+# What it buys, measured on the last six runs before the split (2026-10-01): the gate was one
+# 307-362 s job, over this repo's own five-minute target, and hit its 12-minute timeout twice on a
+# push to main (#589). Its slowest part is now ~2 minutes.
 
 on:
   push:
@@ -53,52 +64,77 @@ env:
   E2E_BROWSER_REQUIRED: '1'
 
 jobs:
-  # The whole gate, exactly as `x verify` runs it. Green here means shippable.
-  verify:
+  # The framework gate, one part per runner. Every part is the same command a contributor runs —
+  # `bun run verify --only <steps>` — over a slice of the one step list, and none of them is a
+  # verdict: a narrowed run says NOT A GATE RUN on its own summary line. `verify`, below, is.
+  #
+  # THE PARTS, sized from the per-step wall times the gate printed on main (run 36899716351, a
+  # 4-core runner):
+  #
+  #   unit-N   180 s over three shards   the one step worth splitting; `--shard i/n` is a pure
+  #                                      function of the sorted file list, so 2/3 is the same files
+  #                                      on every runner and reproduces locally with the same flags
+  #   live     64 s, the static steps    every suite that needs a server. The six static steps run
+  #            BESIDE it, at no wall     BESIDE the serial suites whenever `live` is in the list —
+  #            time of their own         the runner's own rule, and how the whole gate has run them
+  #                                      since 2026-09-23 — so they cost this part nothing: the
+  #                                      slowest was 37 s inside a 64 s window. Two runners of
+  #                                      their own cost 4 billed minutes to save none.
+  #   e2e      8 s + 42 s                a browser, and the compiler: `tsc -b` writes, so it runs
+  #                                      alone and first, on the part with a core to spare
+  #
+  # Fixed cost per part, measured on main: 7-11 s for checkout and setup (the install cache is a
+  # 34 MB restore keyed on bun.lock and the install after it is under a second), plus the services
+  # where a part starts any.
+  #
+  # The shape is the one wiki/CI-Parallel-Gate.md hands an app: a matrix of parts, each uploading
+  # its `--json` document, and one job that merges them.
+  #
+  # `fail-fast: false`: a red part must not cancel the others. An agent fixing three things needs
+  # all three findings from one run, which is the rule `x verify` itself runs every step under.
+  #
+  # SERVICES are started by `docker compose` from docker/docker-compose.test.yml, not declared as
+  # `services:` here, for three reasons. A `services:` container takes no command, so `wal_level`
+  # and JetStream had to be `docker run` by hand in a step anyway — two mechanisms for one job. A
+  # part starts only what its steps read, and `services:` cannot be conditional on a matrix value.
+  # And it is the file a laptop starts, so a suite cannot be green here against a server nobody
+  # else can boot. Every server in it keeps its data on a tmpfs, runs without fsync and logs
+  # nothing (the file says how); `--wait` returns when each healthcheck passes, so there is no
+  # readiness loop here to get wrong.
+  #
+  # A part exports the `TEST_*_URL` of exactly the services it started — docker/test-services.env
+  # is the one place the URLs are written. One it did not start stays unset and its suites skip; a
+  # URL exported for a server that is not there would fail them instead, never pass them.
+  gate:
+    name: gate (${{ matrix.part }})
     runs-on: ubuntu-latest
-    timeout-minutes: 12
-    # A real Postgres, not a fake driver — packages/testing/src/template-db.ts clones a database
-    # off it per worker, so client.ts/introspect.ts/branch.ts get exercised against a live server
-    # instead of a recording client. No admin URL means those tests skip, so `bun test` still
-    # passes on a laptop with nothing installed.
-    #
-    # pgvector/pgvector:pg17 rather than stock postgres:17: @ultimat3/ai's PgVectorStore is the
-    # only production vector path, and pg-vector.live.test.ts REFUSES to skip when the extension
-    # is missing. Asserting the statement text a store compiles to cannot catch a statement
-    # Postgres rejects — this image is what makes that suite a measurement instead of a skip.
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_USER: ultimate
-          POSTGRES_PASSWORD: ultimate
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U ultimate"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-      # The shared cache tier's two Lua scripts are the only thing in the framework a real Redis
-      # answers differently from a fake: `EVAL` enforces the KEYS declaration, and the invalidation
-      # script `DEL`d keys it never declared. Asserting the script TEXT cannot catch a script the
-      # server rejects, so without this container that path is proved by nothing.
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd="redis-cli ping"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-    env:
-      TEST_DATABASE_URL: postgres://ultimate:ultimate@localhost:5432/postgres
-      TEST_REPLICATION_URL: postgres://ultimate:ultimate@localhost:5433/postgres
-      TEST_NATS_URL: nats://localhost:4222
-      # Absent on a laptop, so `packages/cache/src/redis.live.test.ts` skips there and measures here.
-      TEST_REDIS_URL: redis://localhost:6379
+    # A runaway kill-switch, not a budget: the slowest part is ~2 minutes.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: unit-1
+            only: unit
+            shard: 1/3
+            services: postgres
+            urls: TEST_DATABASE_URL
+          - part: unit-2
+            only: unit
+            shard: 2/3
+            services: postgres
+            urls: TEST_DATABASE_URL
+          - part: unit-3
+            only: unit
+            shard: 3/3
+            services: postgres
+            urls: TEST_DATABASE_URL
+          - part: live
+            only: lint,boundaries,filesize,package-shape,errors,contract,live,job,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
+            services: postgres postgres-logical redis nats s3
+            urls: TEST_DATABASE_URL|TEST_REPLICATION_URL|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
+          - part: e2e
+            only: typecheck,e2e
     steps:
       - uses: actions/checkout@v7
         with:
@@ -106,80 +142,142 @@ jobs:
       # `scripts/budget-raises.ts` compares every route budget with origin/main's TIP, so one commit
       # at depth 1 is all it needs — never `fetch-depth: 0`. Skipped on a push to main, where HEAD
       # IS that tip: the rule then prints that it compared nothing, and there is nothing to raise.
+      # In every part, because the rule is a test and a shard may be the one that holds it.
       - name: fetch origin/main's tip for budget-raises
         if: github.ref != 'refs/heads/main'
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
       - uses: ./.github/actions/setup
-      # `wal_level = logical` is a server argument, and a service container takes none —
-      # so the replication server is started by hand. Without it the logical-replication
-      # feed's live tests skip, and a decoder nothing exercises is a decoder nobody trusts.
-      #
-      # JetStream is a server argument too, and it is what presence is built on — the KV bucket,
-      # its per-message TTL and its batch direct reads. Without a real one the bus client is only
-      # ever proved against the in-memory server in nats-fake.ts, which is the thing being checked.
-      #
-      # Both are started before either is waited on: they are independent servers, and starting
-      # them in sequence pays each one's readiness wait end to end for no reason.
-      - name: start the logical-replication postgres and the JetStream nats-server
+      # `time` prints what the services cost this part to start; it is the line to read when this
+      # step is suspected of being the slow one.
+      - name: test services, in RAM
+        if: matrix.services
+        env:
+          SERVICES: ${{ matrix.services }}
+          URLS: ${{ matrix.urls }}
         run: |
-          docker run -d --name pg-logical \
-            -e POSTGRES_USER=ultimate -e POSTGRES_PASSWORD=ultimate -e POSTGRES_DB=postgres \
-            -p 5433:5432 postgres:17-alpine -c wal_level=logical
-          docker run -d --name nats-js -p 4222:4222 nats:2.11-alpine -js
-          # `-h 127.0.0.1`, not the default unix socket, and that is the whole point: the
-          # postgres entrypoint boots a TEMPORARY server to run initdb, and that one listens on
-          # the socket ONLY. A socket probe therefore answers "accepting connections" for a
-          # server that is about to shut down and be replaced — this step went red on main
-          # having logged "accepting connections" and "no response" two lines apart. TCP is up
-          # only once the real server is, so it cannot see the bootstrap one at all.
-          for _ in $(seq 1 30); do
-            docker exec pg-logical pg_isready -U ultimate -h 127.0.0.1 -p 5432 && break
-            sleep 2
-          done
-          docker exec pg-logical pg_isready -U ultimate -h 127.0.0.1 -p 5432 \
-            || { echo 'postgres with wal_level=logical never became ready' >&2; exit 1; }
-          for _ in $(seq 1 30); do
-            docker logs nats-js 2>&1 | grep -q 'Server is ready' && break
-            sleep 2
-          done
-          docker logs nats-js 2>&1 | grep -q 'Server is ready' \
-            || { echo 'nats-server never became ready' >&2; exit 1; }
-      - name: x verify
-        run: bun run scripts/verify.ts --json
+          # $SERVICES is a list of compose service names, split on purpose.
+          # shellcheck disable=SC2086
+          time docker compose -f docker/docker-compose.test.yml up -d --wait $SERVICES \
+            || { docker compose -f docker/docker-compose.test.yml ps -a; exit 1; }
+          grep -E "^(${URLS})=" docker/test-services.env >> "$GITHUB_ENV"
+      # The part's `--json` document is the artifact `verify` merges, so it is written to a file
+      # first and printed after — and the step table is rendered from it for the person reading a
+      # red run, because a 60 kB JSON line is not something anyone scans for a failing step.
+      - name: x verify --only ${{ matrix.only }} ${{ matrix.shard && format('--shard {0}', matrix.shard) || '' }}
+        env:
+          PART: ${{ matrix.part }}
+          ONLY: ${{ matrix.only }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          mkdir -p parts
+          status=0
+          bun run scripts/verify.ts --only "$ONLY" ${SHARD:+--shard "$SHARD"} --json \
+            > "parts/${PART}.json" || status=$?
+          cat "parts/${PART}.json"
+          jq -r '
+            (.steps // [])[]
+            | "\(if .skipped then "-" elif .ok then "✓" else "✗" end) \(.name)  \(.durationMs)ms\(if .tests then "  \(.tests.ran) ran, \(.tests.skipped) skipped\(if .tests.errors then ", \(.tests.errors) errored" else "" end)" else "" end)",
+              (.findings[]? | "    \(.code)\(if .at then " (\(.at))" else "" end)\n      cause: \(.cause)\n      fix:   \(.fix)")
+          ' "parts/${PART}.json" || true
+          exit "$status"
+      # Uploaded when the part is RED too: the verdict is the merge's, and a part that failed
+      # without a document would read there as a step nobody ran rather than a step that failed.
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: verify-part-${{ matrix.part }}
+          path: parts/${{ matrix.part }}.json
+          if-no-files-found: error
+          retention-days: 7
 
-  # Both tracked apps — `examples/dummy` and the deployed `dummy/social-media-clone` — are BUILT
-  # (`x build --target static`, as a generated app's `bin/check` does, because `budgets` weighs what
-  # the build writes) and then run the same 20-step gate a generated app would, and this job BLOCKS
-  # on both. Independent of `verify`:
-  # the framework gate and the app gate are two different contracts, checked separately — a red app
-  # doesn't hide a green framework or vice versa. One job, not two, because they answer the same
-  # question about two directories; the script names the app in every finding.
+  # THE VERDICT. Green here means shippable, and this is the only job that says so: it folds every
+  # part back into one gate result with `x verify merge`, which is green only when the parts are
+  # provably the whole gate — every step of the list reported by exactly one part, a sharded step
+  # by every shard of one split over one corpus, and the zero-tests floor applied to the shards'
+  # SUMMED counts. A step no part ran is `X_VERIFY_MERGE_INCOMPLETE` on that step's own line, so a
+  # part dropped from the matrix above, a part that died before writing its document and an
+  # artifact that never uploaded are all red here rather than absent.
   #
-  # Neither app is green yet, so blocking on a bare `x verify` would make red the resting state,
-  # which is how a gate stops being read. `scripts/reference-app-gate.ts` blocks on the ratchet
-  # instead: every step passing today must keep passing, every step pinned in that app's
+  # `!cancelled()`, not the default `success()`: with a red part the default SKIPS this job, and a
+  # skipped verdict reads as no verdict. It runs, merges what exists and fails with every finding
+  # from every part in one document. A cancelled run leaves it skipped, which
+  # `release.yml` refuses as it refuses anything but `success`.
+  #
+  # Job id unchanged from when it was the whole gate: `release.yml`'s `check` job reads this job's
+  # conclusion, by this name, for the tagged commit.
+  verify:
+    needs: gate
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: verify-part-*
+          path: parts
+          merge-multiple: true
+      # The human render, not `--json`: this is the one table a person reads to learn what the
+      # gate said, with every finding from every part under the step that raised it.
+      - name: x verify merge — every step, from exactly one part, green
+        run: bun run scripts/verify.ts merge parts/*.json
+
+  # Each tracked app — `examples/dummy` and the deployed `dummy/social-media-clone` — on its own
+  # runner: BUILT (`x build --target static`, as a generated app's `bin/check` does, because
+  # `budgets` weighs what the build writes) and then run through the same 20-step gate a generated
+  # app would, and this job BLOCKS on it. Independent of `verify`:
+  # the framework gate and the app gate are two different contracts, checked separately — a red app
+  # doesn't hide a green framework or vice versa. One runner per app since 2026-10-01: the two ran
+  # back to back in one job (the gate boots an embedded Postgres and binds the e2e port, so never
+  # side by side on one box), and the second app waited out the first. The matrix below is the
+  # gated-apps table, held to it by `scripts/ci-workflow-shape.test.ts` — an app added to the table
+  # and not to this list is a red test, not an ungated app.
+  #
+  # Blocking on a bare `x verify` would make red the resting state whenever an app carries a known
+  # red step, which is how a gate stops being read. `scripts/reference-app-gate.ts` blocks on the
+  # ratchet instead: every step passing today must keep passing, every step pinned in that app's
   # `expectedRed` table (scripts/lib/gated-apps.ts) must still be failing, and the moment an app's
   # `typecheck` comes off the pin it has to join the root `tsc -b` solution. The pin can only ever
   # shrink, and when it empties the job is asserting a plain 20 of 20. Human render, not `--json`:
   # the whole step table, every failing step and every fix line belong in the log for the person
   # reading a red run.
   #
-  # Job id unchanged from when it gated one app: it is a required status check.
+  # `deploy-social-demo.yml` reads the check `reference-app-verify (dummy/social-media-clone)` — the
+  # gate of the app whose image it publishes — so the `name:` below is a contract with that file.
   reference-app-verify:
+    name: reference-app-verify (${{ matrix.app }})
     runs-on: ubuntu-latest
-    # Covers BOTH apps, which the gate runs sequentially — and it is a runaway kill-switch, not a
-    # budget. Measured `As of 2026-08` over four runs of this job with both apps wired in: 53s, 29s,
-    # 28s, 24s wall-clock end to end, so 15 minutes is ~17× the worst one. A gate whose steps fail
-    # fast is dominated by install and boot, not by the second app; the number moves when a
-    # measurement moves it.
-    timeout-minutes: 15
+    # A runaway kill-switch, not a budget: both apps together measured 106 s on main, 2026-10-01.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [examples/dummy, dummy/social-media-clone]
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: x build + x verify (every tracked app), against the ratchet
-        run: bun run scripts/reference-app-gate.ts
+      # The scratch Postgres `x db gen` and the `drift` step replay migrations on is PGlite, and its
+      # first boot in a checkout is an `initdb`: ~3.0 s, against ~0.75 s restored from the
+      # post-`initdb` snapshot it leaves under the APP's `.x/cache` (measured 2026-10-01; 40 MB on
+      # disk, 3.8 MB as the cache stores it). The file is named for the PGlite version and its own
+      # format and read only through its checksum, so a stale entry is a miss, never a wrong
+      # database — and the key moves with both, so a miss is also what refreshes it.
+      - name: the PGlite version bun.lock pins
+        id: pglite
+        run: echo "version=$(grep -om1 '"@electric-sql/pglite@[0-9][^"]*"' bun.lock | tr -dc '0-9.')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ matrix.app }}/.x/cache/pglite-*.snapshot
+          key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
+      - name: x build + x verify, against the ratchet
+        env:
+          APP: ${{ matrix.app }}
+        run: bun run scripts/reference-app-gate.ts --app "$APP"
 
   # The end-to-end promise, proved for real and proved as the PLATFORM consumes it: a dz-runner box
   # is an Ubuntu VM with bun and git, no docker and no services, and on a freshly scaffolded app it
@@ -218,24 +316,57 @@ jobs:
   #     --linker=hoisted` this job used to run itself, because `bin/setup` now performs the install
   #     and a second `bun install` in the other layout relays out the whole tree.
   #
-  # TWO scaffolds and two gates each, so the budget is two of everything below plus a second
-  # `bin/setup` and `bin/check` per scaffold. 20 minutes is the ceiling that covers it; the job is
-  # the slowest in this file and deliberately so — it is the only one that measures what a
-  # stranger's first ten minutes with the framework actually do.
+  # TWO scaffolds, one runner each since 2026-10-01 — they share no state, and the second waited
+  # out the first (44 s then 33 s on main). `scaffold-gate.ts` takes one directory per run by
+  # design, so covering both shapes was already two invocations rather than a flag; the matrix is
+  # those two. `--no-example` is an app with no islands and no example slice — some thirty files
+  # fewer, a count `scripts/generator-counts.ts` derives and this comment does not restate — which
+  # is precisely why it stayed green through a default scaffold whose fix chain was a loop: the
+  # steps that read emitted island and feature files had nothing to read.
+  #
+  # Two gates per scaffold. 10 minutes is the kill-switch that covers it; this is the only job
+  # that measures what a stranger's first ten minutes with the framework actually do.
   scaffold-smoke:
+    name: scaffold-smoke (${{ matrix.app }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: demoapp
+            flags: ''
+          - app: bareapp
+            flags: --no-example
+    env:
+      APP: ${{ matrix.app }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: x new demoapp
-        run: bun run x -- new demoapp --dir "${{ runner.temp }}"
-      - name: point demoapp's @ultimat3/* ranges at this repo's own packages
+      - name: x new ${{ matrix.app }} ${{ matrix.flags }}
+        env:
+          FLAGS: ${{ matrix.flags }}
         run: |
-          bun run scripts/scaffold-smoke-overrides.ts "${{ runner.temp }}/demoapp"
-          printf '\n[install]\nlinker = "hoisted"\n' >> "${{ runner.temp }}/demoapp/bunfig.toml"
+          # $FLAGS is empty or one flag, split on purpose.
+          # shellcheck disable=SC2086
+          bun run x -- new "$APP" --dir "$RUNNER_TEMP" $FLAGS
+      - name: point the app's @ultimat3/* ranges at this repo's own packages
+        run: |
+          bun run scripts/scaffold-smoke-overrides.ts "$RUNNER_TEMP/$APP"
+          printf '\n[install]\nlinker = "hoisted"\n' >> "$RUNNER_TEMP/$APP/bunfig.toml"
+      # The same snapshot `reference-app-verify` caches, for the scaffold's own `.x/cache` — AFTER
+      # `x new`, which refuses a directory that already exists. Keyed on the version THIS repo
+      # locks; the scaffold resolves its own `^` range, so the day npm serves a newer PGlite the
+      # entry is a miss and the job pays the `initdb` it paid before this step existed.
+      - name: the PGlite version bun.lock pins
+        id: pglite
+        run: echo "version=$(grep -om1 '"@electric-sql/pglite@[0-9][^"]*"' bun.lock | tr -dc '0-9.')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/${{ matrix.app }}/.x/cache/pglite-*.snapshot
+          key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
       # THE CONTRACT, and the only step in this repo that runs it. `bin/setup` installs, generates
       # and applies the first migration, SEEDS and writes the manifest; `bin/check` builds and then
       # gates. Both are the scaffold's own scripts — no flag waives a step, and nothing runs a
@@ -248,41 +379,31 @@ jobs:
       #
       # It prints per-step wall time for both commands and for all 20 gate steps, so the run is its
       # own measurement rather than something a PR body claims.
-      - name: bin/setup && bin/check (demoapp), first pass, no waiver
-        run: bun run scripts/scaffold-gate.ts "${{ runner.temp }}/demoapp"
+      - name: bin/setup && bin/check, first pass, no waiver
+        run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
       # The generator sweep, over an app whose first run has already happened. All thirteen exit 0
       # even when what they emit cannot resolve an import, so this step is not the catch: the gate
       # below is, over the files they wrote — `TS2307: Cannot find module '../repo'` was invisible
       # to every exit code in this job. The defect that bought it broke 4 generators of the 13,
       # found by a human scaffolding an app — so the list is projected from the CLI's own
       # `GENERATORS` and a fourteenth generator is covered the day it lands.
-      - name: every generator (demoapp)
-        run: bun run scripts/scaffold-first-run.ts "${{ runner.temp }}/demoapp"
+      - name: every generator
+        run: bun run scripts/scaffold-first-run.ts "$RUNNER_TEMP/$APP"
       # The same two scripts again, and the second run is not a repeat: `bin/setup` applies the
       # migration the generators earned (which is also what makes its own documented "idempotent,
       # safe to re-run" a measurement), and `bin/check` gates 13 generators' output with the same
       # no-waiver rule.
-      - name: bin/setup && bin/check (demoapp), over every generator's output
-        run: bun run scripts/scaffold-gate.ts "${{ runner.temp }}/demoapp"
-
-      # The SECOND scaffold. `scaffold-gate.ts` takes one directory per run by design, so covering
-      # both shapes is two invocations rather than a flag. `--no-example` is an app with no islands
-      # and no example slice — 133 files against the default's 161, measured with
-      # `x new <name> --dry-run --json` and derived by `scripts/generator-counts.ts`, never counted
-      # by hand — which is precisely why it stayed green through a default scaffold whose fix chain
-      # was a loop: the steps that read emitted island and feature files had nothing to read.
-      - name: x new bareapp --no-example
-        run: bun run x -- new bareapp --dir "${{ runner.temp }}" --no-example
-      - name: point bareapp's @ultimat3/* ranges at this repo's own packages
-        run: |
-          bun run scripts/scaffold-smoke-overrides.ts "${{ runner.temp }}/bareapp"
-          printf '\n[install]\nlinker = "hoisted"\n' >> "${{ runner.temp }}/bareapp/bunfig.toml"
-      - name: bin/setup && bin/check (bareapp), first pass, no waiver
-        run: bun run scripts/scaffold-gate.ts "${{ runner.temp }}/bareapp"
-      - name: every generator (bareapp)
-        run: bun run scripts/scaffold-first-run.ts "${{ runner.temp }}/bareapp"
-      - name: bin/setup && bin/check (bareapp), over every generator's output
-        run: bun run scripts/scaffold-gate.ts "${{ runner.temp }}/bareapp"
+      - name: bin/setup && bin/check, over every generator's output
+        run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
+      # The one step here that opens a socket. Everything above typechecks and gates the files
+      # `x g resource` wrote; none of it would notice an admin that mounted nothing, or mounted for
+      # everybody. This boots the app as its developer does (`x dev`, embedded Postgres), creates a
+      # row through the admin's own form as the `admin` role, finds it in the list, edits it,
+      # deletes it, and is refused the list and the write as `member`. Last, because the table it
+      # writes to exists only once the `bin/setup` above has applied the generators' migration.
+      # ~3 s, 2 s of it the boot (measured 2026-10-01, both scaffolds).
+      - name: /admin serves the generated resource, to the admin role only
+        run: bun run scripts/scaffold-admin.ts "$RUNNER_TEMP/$APP"
 
   # The deployable artifacts, BUILT and RENDERED — not merely present.
   #
@@ -563,7 +684,8 @@ jobs:
           WORK: ${{ runner.temp }}/deploy-proof
         run: mkdir -p "$WORK" && bash docker/deploy-proof/run.sh
 
-  # Every package's own tests and its own coverage bar, each in isolation. No lint — `verify`'s
+
+  # Every package's own tests and its own coverage bar, each in isolation. No lint — the gate's
   # `biome check .` is a strict superset of any per-package lint, and a second one cannot fail alone.
   #
   # This does NOT duplicate `verify`, and the rule at the top of this file is why it has to be
@@ -578,24 +700,34 @@ jobs:
   #      another package's preload registered something first is invisible. Run alone, it is a
   #      failure — and `registerFrameworkCatalog`/`registerMailCatalog` were exactly that shape.
   #
-  # ONE job, not a matrix of one per package, and isolation is not what was traded for it:
+  # A FEW shards, never a matrix of one per package, and isolation is not what was traded for it:
   # `coverage-gate.ts --all` spawns a separate `bun test` process per package, which is the
-  # isolation, and runs as many at once as the runner has cores. The matrix was 32 jobs — a
-  # `package-list` job plus one per package — and GitHub bills each job rounded UP to a whole
+  # isolation, and runs as many at once as the runner has cores. The per-package matrix was 32 jobs
+  # — a `package-list` job plus one per package — and GitHub bills each job rounded UP to a whole
   # minute, so ~9s of checkout-and-install plus a 5s suite cost a minute 32 times per run: 33 of
   # the ~40 runner-minutes one push to `main` cost, measured 2026-09-16, for about nine minutes of
-  # actual work. `--all` reports every package's findings, never only the first to break.
+  # actual work. One job was 138-183 s on main, 2026-10-01; `--shard i/n` halves the package list
+  # per runner and keeps the script as the only thing that knows what the list is — no package
+  # name is written here, and `--all` still reports every package's findings, never only the first
+  # to break.
   #
   # No services, deliberately: `scripts/lib/coverage-pins.ts` explains that the pins are measured
   # with no Postgres, no Redis and no NATS so the number is identical on a laptop and on a runner.
-  # The live paths are `verify`'s `live` step, which does have them.
+  # The live paths are the gate's `live` step, which does have them.
   packages:
+    name: packages (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/2, 2/2]
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: every package's tests + coverage, each in its own process, all cores
-        run: bun run scripts/coverage-gate.ts --all
+      - name: tests + coverage per package, each in its own process, all cores
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: bun run scripts/coverage-gate.ts --all --shard "$SHARD"

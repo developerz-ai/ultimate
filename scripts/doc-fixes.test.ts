@@ -54,6 +54,30 @@ describe('a Fix cell that cannot be run as written', () => {
   });
 });
 
+describe('a cause cell that repeats its title', () => {
+  const page = (means: string, cause: string) =>
+    [
+      '| Code | Means | Typical cause | Fix |',
+      '|---|---|---|---|',
+      `| \`X_A\` | ${means} | ${cause} | \`x db migrate\` |`,
+    ].join('\n');
+
+  test('is the finding, naming the code and the line — the row says what failed twice', () => {
+    const found = checkDocFixes({ markdown: page('a thing broke', ' A thing broke '), catalog });
+    expect(found.map((gap) => [gap.kind, gap.code, gap.line])).toEqual([['echoed', 'X_A', 3]]);
+    const finding = docFixFindingFor(found[0] as never);
+    expect(finding.code).toBe('X_DOC_CAUSE_ECHOES_TITLE');
+    expect(finding.at).toBe('wiki/Error-Codes.md:3');
+  });
+
+  test('a cause of its own holds, and a table with no cause column is not read for one', () => {
+    expect(checkDocFixes({ markdown: page('a thing broke', 'the disk filled'), catalog })).toEqual(
+      [],
+    );
+    expect(gaps('`x db migrate`')).toEqual([]);
+  });
+});
+
 describe('the column is found by its header, never by position', () => {
   test('a table with the Fix column somewhere else is still read', () => {
     const markdown = ['| Fix | Code |', '|---|---|', '| `x db query` | `X_B` |'].join('\n');

@@ -1,0 +1,132 @@
+# The backing services the test suites measure against — in RAM, and silent.
+#
+#   docker compose -f docker/docker-compose.test.yml up -d --wait
+#   set -a; . docker/test-services.env; set +a
+#   bun run verify
+#
+# `--wait` returns when every healthcheck passes, so there is no readiness loop to write. Name the
+# services to start fewer: `up -d --wait postgres` is all the `unit` step reads. CI runs these same
+# two lines (.github/workflows/ci.yml), so a suite cannot be green there against a server a laptop
+# cannot start. Nothing here is required: with no `TEST_*_URL` set, every live suite skips.
+#
+# Three rules, on every service:
+#
+#   * RAM. The data directory is a tmpfs, so a run writes no block device and `down` leaves nothing
+#     behind — no volume to prune, and no state one run can leave for the next.
+#   * NO DURABILITY. A test database that survives a crash is a database nobody asked for:
+#     `fsync`, `synchronous_commit` and `full_page_writes` are off on both Postgres servers, and
+#     Redis keeps no RDB snapshot and no AOF.
+#   * SILENT. Each server is told to log nothing it can be told not to, and the container's log
+#     driver is `none`, so `docker logs` has nothing to read and the daemon keeps no JSON file. To
+#     watch a server that will not start, run it attached: `docker compose -f
+#     docker/docker-compose.test.yml up postgres`.
+#
+# Every published port binds 127.0.0.1 — the credentials are in this file.
+
+name: ultimate-test
+
+x-silent: &silent
+  logging: { driver: none }
+
+# What both Postgres servers are initialised with. `initdb -c` (Postgres 16+) writes each setting
+# into the new cluster's postgresql.conf, so the server needs no command of its own. `--no-sync`
+# is initdb's own fsync of a cluster that lives on a tmpfs; the next three are the durability
+# Postgres pays for on every commit; the rest is everything the server would write to stderr.
+x-postgres-initdb: &postgres-initdb >-
+  --no-sync
+  -c fsync=off
+  -c synchronous_commit=off
+  -c full_page_writes=off
+  -c log_min_messages=fatal
+  -c log_statement=none
+  -c log_checkpoints=off
+  -c log_connections=off
+  -c log_disconnections=off
+
+x-postgres: &postgres
+  <<: *silent
+  environment:
+    POSTGRES_USER: ultimate
+    POSTGRES_PASSWORD: ultimate
+    POSTGRES_DB: postgres
+    POSTGRES_INITDB_ARGS: *postgres-initdb
+  tmpfs: [/var/lib/postgresql/data]
+  healthcheck:
+    # `-h 127.0.0.1`, never the unix socket: the entrypoint boots a TEMPORARY server to run initdb,
+    # and that one listens on the socket only. A socket probe answers "accepting connections" for a
+    # server that is about to be replaced; TCP is up only once the real one is.
+    test: ['CMD-SHELL', 'pg_isready -U ultimate -h 127.0.0.1 -p 5432']
+    interval: 1s
+    timeout: 3s
+    retries: 60
+
+services:
+  # pgvector, not stock postgres: `@ultimat3/ai`'s PgVectorStore is the only production vector
+  # path, and `pg-vector.live.test.ts` refuses to skip when the extension is missing.
+  postgres:
+    <<: *postgres
+    image: pgvector/pgvector:pg17
+    ports: ['127.0.0.1:5432:5432']
+
+  # A second server because `wal_level` is a server argument: the logical-replication feed's live
+  # tests decode a real WAL stream, and the template-database clones the other suites make must not
+  # share a server with a replication slot that pins a database open.
+  postgres-logical:
+    <<: *postgres
+    image: postgres:17-alpine
+    command: ['postgres', '-c', 'wal_level=logical']
+    ports: ['127.0.0.1:5433:5432']
+
+  # The shared cache tier's two Lua scripts are the only thing a real Redis answers differently
+  # from a fake. No snapshot, no append-only file, and a log level that prints nothing.
+  redis:
+    <<: *silent
+    image: redis:7-alpine
+    command: ['redis-server', '--save', '', '--appendonly', 'no', '--loglevel', 'nothing']
+    tmpfs: [/data]
+    ports: ['127.0.0.1:6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  # JetStream is what presence is built on — the KV bucket, its per-message TTL and its batch
+  # direct reads. 2.11 is the floor (docker-compose.dev.yml says why). The stream store is the
+  # tmpfs; `-l /dev/null` is the only quiet a nats-server has.
+  nats:
+    <<: *silent
+    image: nats:2.11-alpine
+    command: ['-js', '-sd', '/data', '-m', '8222', '-l', '/dev/null']
+    tmpfs: [/data]
+    ports: ['127.0.0.1:4222:4222']
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8222/healthz']
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  # The S3 endpoint `packages/storage/src/driver-s3.live.test.ts` drives. Versity S3 Gateway over a
+  # POSIX directory: every directory under /data is a bucket, so mounting the tmpfs AT the bucket's
+  # path is the whole bootstrap — no CreateBucket call, no init container, no admin client. Why
+  # this server and not the four it was measured against: docs/history/test-services.md.
+  s3:
+    <<: *silent
+    image: versity/versitygw:v1.8.0
+    environment:
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARG: /data
+      VGW_PORT: ':9000'
+      VGW_QUIET: 'true'
+      # What `Bun.S3Client` signs for when no region is set. The gateway checks the scope, so
+      # its default (us-east-1) would refuse every request from a disk that names no region.
+      VGW_REGION: auto
+      ROOT_ACCESS_KEY: ultimate
+      ROOT_SECRET_KEY: ultimate-test
+    tmpfs: [/data/ultimate-test]
+    ports: ['127.0.0.1:9000:9000']
+    healthcheck:
+      test: ['CMD', 'nc', '-z', '127.0.0.1', '9000']
+      interval: 1s
+      timeout: 3s
+      retries: 30

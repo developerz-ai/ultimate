@@ -135,6 +135,15 @@ describe('unit · the ratchet moves in one direction', () => {
     expect(finding.fix).toContain('renderThrowable(error)');
   });
 
+  test('the finding lists every unsafe render in the package, never only the first', () => {
+    const files = [file('packages/x/src/a.ts'), file('packages/x/src/b.ts')];
+    const [gap] = checkCatchRenders({ files, pins: {} });
+    const finding = catchRenderFindingFor(gap as never);
+    expect(finding.cause).toContain('packages/x/src/a.ts:');
+    expect(finding.cause).toContain('packages/x/src/b.ts:');
+    expect(finding.fix).toContain('renderThrowable');
+  });
+
   test('a package AT its pin is silent, and one below it is a stale pin to lower', () => {
     expect(checkCatchRenders({ files: [file('packages/x/src/a.ts')], pins: { x: 1 } })).toEqual([]);
     const stale = checkCatchRenders({ files: [file('packages/x/src/a.ts')], pins: { x: 3 } });

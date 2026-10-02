@@ -1,5 +1,6 @@
-// The two edits a new error code is: its REGISTRATION in the owning package's `errors.ts` and its
-// ROW in `wiki/Error-Codes.md`, planned together from one input so they can never land apart. Pure
+// The edits a new error code is: its REGISTRATION in the owning package's `errors.ts`, its ROW in
+// `wiki/Error-Codes.md`, its HTTP status and — where the package types one — its fix-table row,
+// planned together from one input so they can never land apart. Pure
 // text in, text out — `scripts/new-error-code.ts` does the reading and the writing. A package whose
 // `errors.ts` is written in a shape this planner does not recognise is refused by name rather than
 // edited by guess.
@@ -15,8 +16,12 @@ export interface NewErrorCode {
   readonly title: string;
   /** The wiki row's fix: runnable or editable as written. */
   readonly fix: string;
-  /** The wiki row's "Typical cause". The title stands in when it is not given. */
-  readonly meaning?: string | undefined;
+  /**
+   * The wiki row's "Typical cause" — REQUIRED, and never the title again: a row whose cause cell
+   * repeats its title tells a reader one thing twice and the cause not at all
+   * (`scripts/doc-fixes.ts` refuses that row on the page, `X_DOC_CAUSE_ECHOES_TITLE`).
+   */
+  readonly cause: string;
   /** A `## ` heading of the page, overriding the package's default section. */
   readonly section?: string | undefined;
 }
@@ -59,7 +64,8 @@ export const PACKAGE_SECTIONS: ReadonlyMap<string, string> = new Map([
 ]);
 
 const CODE = /^X_[A-Z0-9]+(?:_[A-Z0-9]+)*$/;
-const RERUN = "bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --fix '…'";
+const RERUN =
+  "bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'";
 
 const invalid = (cause: string, fix: string): ScriptError =>
   new ScriptError({ code: 'X_NEW_ERROR_CODE_INVALID', cause, fix });
@@ -73,6 +79,7 @@ export function validateNewCode(input: NewErrorCode): void {
   }
   for (const [name, value] of [
     ['title', input.title],
+    ['cause', input.cause],
     ['fix', input.fix],
   ] as const) {
     if (value.trim().length === 0 || value.includes('\n')) {
@@ -82,7 +89,17 @@ export function validateNewCode(input: NewErrorCode): void {
       );
     }
   }
+  if (sameSentence(input.cause, input.title)) {
+    throw invalid(
+      '--cause repeats --title, so the row would state what failed twice and why it failed never',
+      `rerun with a --cause naming what usually makes ${input.code} happen: ${RERUN}`,
+    );
+  }
 }
+
+/** Two cells that say the same thing: equal once case and surrounding space are set aside. */
+export const sameSentence = (left: string, right: string): boolean =>
+  left.trim().toLowerCase() === right.trim().toLowerCase();
 
 /** A TypeScript single-quoted literal, whatever the title holds. */
 const tsString = (value: string): string =>
@@ -123,6 +140,17 @@ function ownCodesArray(source: string): number | undefined {
   return found.index;
 }
 
+/**
+ * How the titles literal opening at `open` ends: `};`, or `} as const;` where the package derives
+ * its code union from the object itself (`@ultimat3/core`). Whichever comes FIRST — reading only
+ * `};` skipped past core's own closer and added the title to the next literal in the file.
+ */
+function titlesClose(source: string, open: number): string {
+  const plain = source.indexOf('\n};', open);
+  const asConst = source.indexOf('\n} as const;', open);
+  return asConst >= 0 && (plain < 0 || asConst < plain) ? '\n} as const;' : '\n};';
+}
+
 const unknownShape = (path: string, code: string): ScriptError =>
   new ScriptError({
     code: 'X_NEW_ERROR_CODE_PATTERN_UNKNOWN',
@@ -149,7 +177,7 @@ export function registerIn(errorsTs: string, path: string, input: NewErrorCode):
     const next = insertBefore(
       errorsTs,
       titles.index,
-      '\n};',
+      titlesClose(errorsTs, titles.index),
       entry(input.code, tsString(input.title)),
     );
     if (next === undefined) throw unknownShape(path, input.code);
@@ -171,8 +199,53 @@ export function registerIn(errorsTs: string, path: string, input: NewErrorCode):
   return registered;
 }
 
+/**
+ * A package that types one fix per code beside its registration, and where: `@ultimat3/cli`'s
+ * `CLI_FIXES` is a `Record<CliErrorCode, string>`, so a code registered without its row there is a
+ * type error in the package one command after "the one edit". A second such table is a row here.
+ */
+export const FIX_TABLES: ReadonlyMap<string, string> = new Map([
+  ['cli', 'packages/cli/src/mcp-errors.ts'],
+]);
+
+/** The `--fix` line as the code's row, at the END of the file's `…_FIXES` object literal. */
+export function fixRowIn(table: string, path: string, input: NewErrorCode): string {
+  if (new RegExp(`\\b${input.code}\\b`).test(table)) {
+    throw new ScriptError({
+      code: 'X_NEW_ERROR_CODE_EXISTS',
+      cause: `${path} already names ${input.code}`,
+      fix: `x errors explain ${renderFixShellArg(input.code, '<CODE>')} --json — then pick a new code, or edit its existing row in ${path}`,
+    });
+  }
+  const literal = /const\s+\w*_FIXES\b[^=]*=\s*\{/.exec(table);
+  const added =
+    literal === null
+      ? undefined
+      : insertBefore(table, literal.index, '\n};', entry(input.code, tsString(input.fix)));
+  if (added === undefined) {
+    throw invalid(
+      `${path} no longer holds a "const …_FIXES = { … };" literal, so there is no table to add the fix of ${input.code} to`,
+      `edit ${path} to add the fix of ${input.code} by hand, then: bun test scripts/new-error-code-fixes.test.ts`,
+    );
+  }
+  return added;
+}
+
 /** A wiki table cell: a `|` would end it early, a newline would end the row. */
 const cell = (value: string): string => value.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+
+/**
+ * The fix as the page writes one: the command in backticks, the way every neighbouring row has it.
+ * `--fix` is the registered line — `x db gen`, or `x secrets show --json   # what it confirms` —
+ * and pasted as it stands it read as prose between rows whose commands are code. A fix that
+ * already carries a backtick was formatted by its author and is left exactly as written.
+ */
+export function fixCell(fix: string): string {
+  if (fix.includes('`')) return fix;
+  const [command = fix, ...comment] = fix.split(/\s+#\s+/);
+  const note = comment.join(' # ').trim();
+  return note.length === 0 ? `\`${command.trim()}\`` : `\`${command.trim()}\` — ${note}`;
+}
 
 /** The row, appended to the first `| Code | …` table under the section's `## ` heading. */
 export function rowIn(wiki: string, input: NewErrorCode): string {
@@ -214,7 +287,75 @@ export function rowIn(wiki: string, input: NewErrorCode): string {
       `rerun with --section '<a ## heading whose table lists codes>': ${RERUN}`,
     );
   }
-  const row = `| \`${input.code}\` | ${cell(input.title)} | ${cell(input.meaning ?? input.title)} | ${cell(input.fix)} |`;
+  const row = `| \`${input.code}\` | ${cell(input.title)} | ${cell(input.cause)} | ${cell(fixCell(input.fix))} |`;
   lines.splice(last + 1, 0, row);
   return lines.join('\n');
+}
+
+/**
+ * The row that answers `status` for the code, added at the END of the status table's literal with
+ * a comment naming its owner. Before the table's own closing note where there is one, so that note
+ * stays the last thing a reader sees.
+ */
+export function statusRowIn(
+  table: string,
+  path: string,
+  input: NewErrorCode,
+  status: number,
+): string {
+  if (new RegExp(`\\b${input.code}\\b`).test(table)) {
+    throw new ScriptError({
+      code: 'X_NEW_ERROR_CODE_EXISTS',
+      cause: `${path} already names ${input.code}`,
+      fix: `x errors explain ${renderFixShellArg(input.code, '<CODE>')} --json — then pick a new code, or edit its existing row in ${path}`,
+    });
+  }
+  const close = table.lastIndexOf('\n} satisfies');
+  if (close < 0) {
+    throw invalid(
+      `${path} no longer ends its table with "} satisfies …", so there is no literal to add a row to`,
+      `edit ${path} to add \`${input.code}: ${status},\` by hand, then: bun run scripts/error-map.ts --json`,
+    );
+  }
+  // The trailing comment block, when the literal ends with one: the row goes above it.
+  let at = close;
+  const lines = table.slice(0, close).split('\n');
+  let cut = lines.length;
+  while (cut > 0 && /^\s*\/\//.test(lines[cut - 1] ?? '')) cut -= 1;
+  if (cut < lines.length) at = lines.slice(0, cut).join('\n').length;
+  const row = `\n  // @ultimat3/${input.pkg} — ${input.title.replace(/\s*\n\s*/g, ' ')}\n  ${input.code}: ${status},`;
+  return `${table.slice(0, at)}${row}${table.slice(at)}`;
+}
+
+/**
+ * The pin that says "this code answers no request": the code joins its package's group in the
+ * backlog, or opens one. A group is a multi-line array, a one-line array, or absent.
+ */
+export function backlogPinIn(backlog: string, path: string, input: NewErrorCode): string {
+  if (backlog.includes(`'${input.code}'`)) {
+    throw new ScriptError({
+      code: 'X_NEW_ERROR_CODE_EXISTS',
+      cause: `${path} already pins ${input.code}`,
+      fix: `x errors explain ${renderFixShellArg(input.code, '<CODE>')} --json — then pick a new code, or edit its existing pin in ${path}`,
+    });
+  }
+  const multi = new RegExp(`\\n  ${input.pkg}: \\[\\n`).exec(backlog);
+  if (multi !== null) {
+    const added = insertBefore(backlog, multi.index, '\n  ],', `    '${input.code}',`);
+    if (added !== undefined) return added;
+  }
+  const single = new RegExp(`\\n  ${input.pkg}: \\[([^\\]\\n]*)\\],`).exec(backlog);
+  if (single !== null) {
+    const held = (single[1] ?? '').trim();
+    const line = `\n  ${input.pkg}: [${held.length === 0 ? '' : `${held}, `}'${input.code}'],`;
+    return `${backlog.slice(0, single.index)}${line}${backlog.slice(single.index + single[0].length)}`;
+  }
+  const close = backlog.indexOf('\n};');
+  if (close < 0) {
+    throw invalid(
+      `${path} has no object literal to add a group for @ultimat3/${input.pkg} to`,
+      `edit ${path} to pin ${input.code} under ${input.pkg} by hand, then: bun run scripts/error-map.ts --json`,
+    );
+  }
+  return `${backlog.slice(0, close)}\n  ${input.pkg}: ['${input.code}'],${backlog.slice(close)}`;
 }
