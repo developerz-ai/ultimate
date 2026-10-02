@@ -20,6 +20,7 @@ import { memoryRepo } from './memory-repo';
 import { clearRegistry } from './registry';
 import type { Repo } from './repo';
 import { sealedFields } from './sealed';
+import { makeTextColumn } from './sealed-column';
 import { sealedRepo } from './sealed-repo';
 
 afterAll(() => {
@@ -132,6 +133,30 @@ describe('unit · the sealing seam', () => {
     expect(await codeOf(() => sealing.upsertAll([row], { onConflict: ['password'] }))).toBe(
       'X_ENTITY_SEALED_PREDICATE',
     );
+  });
+
+  test('a lookup value that is not a string is refused, never sent to match nothing', async () => {
+    const { repo, seen } = recording();
+    const sealing = sealedRepo(connections, repo);
+    // A stored value is ciphertext or NULL, so a number reached the driver and matched no row: a
+    // caller could not tell the mistake from "nobody has that email".
+    for (const where of [
+      [{ column: 'email', op: 'eq', value: 42 }],
+      [{ column: 'email', op: 'in', value: ['a@example.com', 42] }],
+    ] as const) {
+      const thrown = await sealing.findMany({ where }).catch((error: unknown) => error);
+      expect(isUltimateError(thrown) && thrown.code).toBe('X_ENTITY_SEALED_PREDICATE');
+      expect(isUltimateError(thrown) && thrown.fix).toContain('String(value)');
+      expect(isUltimateError(thrown) && String(thrown.cause)).not.toContain('42');
+    }
+    expect(seen).toEqual([]);
+    // NULL is not a value that is sealed: it asks `is null`, in `eq` and inside an `in` list.
+    await sealing.findMany({ where: [{ column: 'email', op: 'eq', value: null }] });
+    await sealing.findMany({ where: [{ column: 'email', op: 'in', value: [null] }] });
+    expect(seen).toEqual([
+      { where: [{ column: 'email', op: 'eq', value: null }] },
+      { where: [{ column: 'email', op: 'in', value: [null] }] },
+    ]);
   });
 
   test('an entity with no sealed column gets its repository back untouched', () => {
@@ -252,6 +277,17 @@ describe('unit · what a sealed column may not be', () => {
     ]) {
       expect(code(declare)).toStartWith('X_INVARIANT_VIOLATED');
     }
+  });
+
+  test('a CHECK that is not the length bound is refused, never dropped in silence', () => {
+    // `text({ max })`'s CHECK goes with its length — `$parse` still holds the bound. Any other
+    // CHECK would run against ciphertext, and dropping it would delete a rule no one could see go.
+    const meta = { ...text().$meta, check: (name: string) => `${name} <> ''` };
+    const parse = (value: unknown): string => String(value);
+    expect(code(() => makeTextColumn(meta, parse, false).sealed())).toStartWith(
+      'X_INVARIANT_VIOLATED',
+    );
+    expect(text({ max: 12 }).sealed().$meta).not.toHaveProperty('check');
   });
 
   test('a composite key, an index and an invariant that name one', () => {
