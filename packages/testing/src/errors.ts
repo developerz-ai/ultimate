@@ -47,6 +47,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_POLICY_EXPECTED',
   'X_TEST_OPENAPI_EXPECTED',
   'X_TEST_NUMBER_EXPECTED',
+  'X_TEST_ISLAND_STATE_UNKNOWN',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -85,6 +86,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_POLICY_EXPECTED: 'a matcher expected a policy and got something else',
   X_TEST_OPENAPI_EXPECTED: 'a matcher expected an OpenAPI document and got something else',
   X_TEST_NUMBER_EXPECTED: 'a matcher expected a finite number and got something else',
+  X_TEST_ISLAND_STATE_UNKNOWN: 'an island state manifest declares no state with that id',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

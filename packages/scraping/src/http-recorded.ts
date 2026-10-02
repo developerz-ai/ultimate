@@ -15,6 +15,7 @@ import type { HttpRecording } from './recording';
 import type { NetworkRing } from './rings';
 import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
+import type { UsageMeter } from './usage';
 
 export type HttpRecordingLookup = (
   method: string,
@@ -36,6 +37,8 @@ export interface RecordedHttpInit {
   readonly maxAgeMs?: number | undefined;
   /** The SAME bag the live leg holds, so a recorded 4xx body redacts the way a real one does. */
   readonly secrets?: ScrapeSecrets | undefined;
+  /** The SAME meter the live leg counts into, so a fixture run reports the usage a real one would. */
+  readonly usage?: UsageMeter | undefined;
 }
 
 /** `GET https://api.example.com/v1/orders?page=2` -> `http-get-api-example-com-v1-orders-page-2`. */
@@ -70,6 +73,7 @@ export function recordedHttp(init: RecordedHttpInit): ScrapeHttp {
         resourceType: 'fetch',
         at: init.clock.now().getTime(),
       });
+      init.usage?.httpRequest(new TextEncoder().encode(found.body).length);
       return responseOver(
         url,
         found.status,

@@ -25,6 +25,13 @@ export interface UltimateMatchers<T> {
   toRejectInput(input: unknown): Promise<T>;
   toAcceptInput(input: unknown): Promise<T>;
   /**
+   * `toEqual` for a repository ROW. A `.sealed()` column is an own property a row does not
+   * ENUMERATE, so `toEqual({ …, password })` fails with an empty diff and `toEqual(otherRow)`
+   * cannot see a wrong secret. This compares every own property, and its message names what
+   * differs — a server-only property by shape, never by value.
+   */
+  toEqualRow(expected: unknown): T;
+  /**
    * The one matcher that WAITS. Retries `isVisible()` to a budget — 5000ms every 100ms unless
    * narrowed — and `.not.toBeVisible()` waits for the element to GO rather than inverting one look.
    * Point-in-time is `expect(await locator.isVisible()).toBe(true)`, and it is a different

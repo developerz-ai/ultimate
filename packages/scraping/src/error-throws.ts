@@ -12,6 +12,8 @@ import {
 } from '@ultimat3/core';
 import type { CaptureClip } from './capture-clip';
 import { ScrapeError } from './errors';
+import { SECRET_PLACEHOLDER } from './secrets';
+import { endpointLabel, urlSecretValues } from './url-secrets';
 
 /**
  * Two shapes of the same failure, one code. `name` is the driver a definition ASKED for; `scrape`
@@ -34,12 +36,43 @@ export const driverUnknown = (
     meta: { driver: name ?? 'none', ...(scrape === undefined ? {} : { scrape }) },
   });
 
+/**
+ * The launcher's own words with every credential-bearing part of `url` cut out. A library's
+ * connect error repeats the URL it was handed — `Unexpected server response: 401 for wss://…
+ * ?token=…` — so naming scheme and host in the cause is not enough on its own.
+ */
+const renderWithout = (thrown: unknown, url: string): string => {
+  let text = renderThrowable(thrown);
+  const values = [...urlSecretValues(url)].sort((a, b) => b.length - a.length);
+  for (const value of values) text = text.split(value).join(SECRET_PLACEHOLDER);
+  return text;
+};
+
+/**
+ * SCHEME AND HOST ONLY, for every CDP URL — a fixed one included. A provider's connect URL carries
+ * its access token in the query or the path, this error's cause is written to the dead-letter row
+ * and printed by `x jobs show`, and a `cdpUrl` read from the environment is that same URL. The
+ * host is what tells a reader which endpoint refused; nothing after it is theirs to print.
+ */
 export const cdpAttachFailed = (cdpUrl: string, thrown: unknown): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_CDP_ATTACH_FAILED',
-    cause: `the CDP endpoint ${cdpUrl} refused the attach: ${renderThrowable(thrown)}`,
+    cause: `the CDP endpoint ${endpointLabel(cdpUrl)} refused the attach: ${renderWithout(thrown, cdpUrl)}`,
     fix: 'curl "$CDP_URL/json/version" to confirm the endpoint answers, then pass that webSocketDebuggerUrl to remoteBrowser({ cdpUrl })',
-    meta: { cdpUrl },
+    meta: { cdpUrl: endpointLabel(cdpUrl) },
+  });
+
+/**
+ * The resolver itself failed — the provider's API, not the browser it would have handed over. The
+ * same code and the same retryable classification: "no browser to attach to yet" is one fact,
+ * whichever call discovered it.
+ */
+export const cdpResolveFailed = (scrape: string, thrown: unknown): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_CDP_ATTACH_FAILED',
+    cause: `the CdpResolver on remoteBrowser({ cdpUrl }) could not rent a browser for scrape "${scrape}": ${renderThrowable(thrown)}`,
+    fix: "run the resolver's own request by hand against the provider to see its answer, then correct the credential or the endpoint the resolver passed to remoteBrowser({ cdpUrl }) uses",
+    meta: { scrape },
   });
 
 /**

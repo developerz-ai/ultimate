@@ -11,7 +11,16 @@
 
 import type { Ctx } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
-import type { JobHandle, JobTenant, RetryPolicy, StepApi } from '@ultimat3/jobs';
+import type {
+  JobCompleted,
+  JobConcurrency,
+  JobFailed,
+  JobHandle,
+  JobTenant,
+  ProgressFn,
+  RetryPolicy,
+  StepApi,
+} from '@ultimat3/jobs';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { StorageDriver } from '@ultimat3/storage';
@@ -29,6 +38,8 @@ import type { ResourceType } from './rings';
 import type { RobotsPolicy } from './robots';
 import { runScrape } from './scrape-run';
 import type { ScrapeSecrets } from './secrets';
+import type { ScrapeUsage } from './usage';
+import { takeFailedUsage } from './usage';
 
 export interface ScrapeRunArgs<I> {
   readonly input: I;
@@ -47,11 +58,16 @@ export interface ScrapeRunArgs<I> {
   readonly secrets: ScrapeSecrets;
   readonly artifact: ArtifactWriter;
   readonly attempt: number;
+  /** The job's own: true when a failure of this attempt is not retried for want of attempts. */
+  readonly finalAttempt: boolean;
+  /** The job's own `progress(done, total, note?)` — what `x jobs show` and a dashboard read. */
+  readonly progress: ProgressFn;
   readonly runId: string;
 }
 
 export interface ScrapeArtifacts {
-  readonly storage?: StorageDriver | undefined;
+  /** A thunk, read per write — `() => disk('artifacts')`: the app's disk exists only after boot. */
+  readonly storage?: (() => StorageDriver) | undefined;
   /** Save the page's HTML when the run fails. On by default — it is the only forensic left. */
   readonly onFailure?: boolean | undefined;
   readonly prefix?: string | undefined;
@@ -93,9 +109,26 @@ export interface ScrapeDefinition<I, Row> {
    * primary case, so this is declared rather than hand-rolled per app. See `auth.ts`.
    */
   readonly auth?: ScrapeAuth<I> | undefined;
-  /** Where an out-of-band code comes from, for a site that asks for one after the password. */
-  readonly prompt?: PromptHandler | undefined;
+  /**
+   * Where an out-of-band code comes from, for a site that asks for one after the password. The
+   * request carries the run's `input` and `runId`: what a handler ties the prompt to.
+   */
+  readonly prompt?: PromptHandler<I> | undefined;
   readonly driver?: ScrapeDriver | undefined;
+  /**
+   * The exit THIS run leaves through — a proxy URL, credentials included — RESOLVED IN THE WORKER,
+   * under the job's tenant: `async ({ connectionId }) => (await repo.connectionById(connectionId))
+   * ?.exit`. The input names the row; the row (a `.sealed()` column) holds the exit. An exit whose
+   * credential is ALSO in the input rode the queue payload and sits in `x_jobs` in the clear, and
+   * is refused before the browser opens (`X_SCRAPE_EGRESS_IN_PAYLOAD`).
+   *
+   * It reaches the driver as `SessionInit.proxy` and wins over the driver's own `proxy`; both legs
+   * and the robots read dial it. `undefined` leaves the driver's exit in force. A driver that
+   * cannot dial it refuses with `X_SCRAPE_EGRESS_UNSUPPORTED` rather than dialling another.
+   */
+  readonly egress?:
+    | ((input: I, ctx: Ctx) => string | undefined | Promise<string | undefined>)
+    | undefined;
   readonly retry?: RetryPolicy | undefined;
   /** Per attempt, whole-run. `'5m'` or ms. */
   readonly timeout?: string | number | undefined;
@@ -103,11 +136,32 @@ export interface ScrapeDefinition<I, Row> {
   readonly pageTimeout?: string | number | undefined;
   /** Kill the browser after this much silence from it. See `watchdog.ts`. */
   readonly watchdog?: { readonly idleMs?: number; readonly graceMs?: number } | undefined;
-  readonly concurrency?: number | undefined;
+  /** The job's own field, unchanged: a number, or `{ key, limit, whenBusy }` for a cap per key. */
+  readonly concurrency?: JobConcurrency<I> | undefined;
   readonly queue?: string | undefined;
+  /**
+   * Pins this definition's clock. Omit it: a run waits on the process's (`scrapeClock()`), which
+   * is the system clock and what a test replaces with `setScrapeClock()`.
+   */
   readonly clock?: ScrapeClock | undefined;
   run(args: ScrapeRunArgs<I>): Promise<readonly unknown[]>;
+  /**
+   * The job's own `onSettled`, with what a scrape adds: a `completed` run hands over its
+   * `ScrapeReport` — rows, artifacts and `usage` — and a run that ended any other way carries the
+   * `usage` of its last attempt (`undefined` for a `refused` one, whose body never ran). Same
+   * guarantees as the job's: after the row is settled, under the job's tenant, AT MOST ONCE
+   * across a crash, and a hook that throws changes nothing.
+   */
+  onSettled?(settled: ScrapeSettled<I, Row>): Promise<void>;
 }
+
+/** How one scrape run ended, as `ScrapeDefinition.onSettled` is told. */
+export type ScrapeSettled<I, Row> =
+  | JobCompleted<I, ScrapeReport<Row>>
+  | (JobFailed<I> & {
+      /** What the last attempt used. A failed run has no report and was billed all the same. */
+      readonly usage: ScrapeUsage | undefined;
+    });
 
 /** What one completed scrape reports — bounded, so `x jobs show` can print it. */
 export interface ScrapeReport<Row> {
@@ -124,6 +178,8 @@ export interface ScrapeReport<Row> {
    * "you are not seeing it all": `refused` was counted from what survived the bound.
    */
   readonly networkDropped: number;
+  /** What this run used. A measurement: no quota is read from it and none is enforced. */
+  readonly usage: ScrapeUsage;
 }
 
 export function scrape<I, Row>(definition: ScrapeDefinition<I, Row>): JobHandle<I> {
@@ -145,7 +201,8 @@ export function scrape<I, Row>(definition: ScrapeDefinition<I, Row>): JobHandle<
   if (definition.expect?.maxDrop !== undefined && definition.history === undefined) {
     throw yieldHistoryMissing(definition.name);
   }
-  return job<I>({
+  const onSettled = definition.onSettled?.bind(definition);
+  return job<I, ScrapeReport<Row>>({
     name: definition.name,
     input: definition.input,
     idempotencyKey: definition.idempotencyKey,
@@ -155,5 +212,15 @@ export function scrape<I, Row>(definition: ScrapeDefinition<I, Row>): JobHandle<
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     ...(definition.concurrency === undefined ? {} : { concurrency: definition.concurrency }),
     run: (args) => runScrape(definition, args),
+    ...(onSettled === undefined
+      ? {}
+      : {
+          onSettled: (settled) => {
+            // Read on EVERY ending, the completed one too: a run that failed an attempt and then
+            // completed must not leave that attempt's counts behind in this process.
+            const usage = takeFailedUsage(settled.runId);
+            return onSettled(settled.outcome === 'completed' ? settled : { ...settled, usage });
+          },
+        }),
   });
 }

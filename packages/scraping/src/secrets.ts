@@ -14,6 +14,14 @@ export interface ScrapeSecrets {
   readonly names: readonly string[];
   /** The boxed value. Reading it out is `revealSecret()`, one greppable call site. */
   get(name: string): Secret;
+  /**
+   * Add a value this run learned MID-RUN to the redaction set: a prompt answer, the credentials
+   * of the exit it dials, the connect URL of the browser it rented, a bearer the body read off a
+   * page. It has no name and cannot be read back — it exists only so `page.html()`, the rings and
+   * the failure artifact never carry it. The same floor applies: shorter than
+   * `MIN_REDACTABLE_LENGTH` is not redacted.
+   */
+  conceal(value: string): void;
 }
 
 /**
@@ -30,6 +38,7 @@ export function createSecretBag(
   resolve: SecretResolver = fromEnvironment,
 ): ScrapeSecrets {
   const boxed = new Map<string, Secret>();
+  const learned = new Set<string>();
   for (const name of names) {
     const value = resolve(name);
     if (value === undefined || value === '') {
@@ -42,8 +51,11 @@ export function createSecretBag(
     }
     boxed.set(name, secret(value, name));
   }
-  return {
+  const bag: ScrapeSecrets = {
     names: [...names],
+    conceal(value: string): void {
+      if (value !== '') learned.add(value);
+    },
     get(name: string): Secret {
       const found = boxed.get(name);
       if (found === undefined) {
@@ -57,7 +69,16 @@ export function createSecretBag(
       return found;
     },
   };
+  concealed.set(bag, learned);
+  return bag;
 }
+
+/**
+ * The values `conceal()` was handed, by bag — module-private, so the only way out of a bag is
+ * still `revealSecret(secrets.get(name))` for a DECLARED name. A `ScrapeSecrets` built by hand has
+ * no entry here and redacts its declared names alone.
+ */
+const concealed = new WeakMap<ScrapeSecrets, ReadonlySet<string>>();
 
 export const SECRET_PLACEHOLDER = '[redacted]';
 
@@ -93,9 +114,13 @@ export const MIN_REDACTABLE_LENGTH = 4;
  * Longest first, so a secret that contains another one does not leave its tail behind.
  */
 export function redactSecrets(text: string, secrets: ScrapeSecrets | undefined): string {
-  if (secrets === undefined || secrets.names.length === 0) return text;
-  const values = secrets.names
-    .map((name) => revealSecret(secrets.get(name)))
+  if (secrets === undefined) return text;
+  const learned = concealed.get(secrets);
+  if (secrets.names.length === 0 && (learned === undefined || learned.size === 0)) return text;
+  const values = [
+    ...secrets.names.map((name) => revealSecret(secrets.get(name))),
+    ...(learned ?? []),
+  ]
     .filter((value) => value.length >= MIN_REDACTABLE_LENGTH)
     .sort((a, b) => b.length - a.length);
   let out = text;

@@ -34,6 +34,8 @@ const runArgs = (orgId: string | undefined): JobRunArgs<{ page: number }> => ({
     ...(orgId === undefined ? {} : { actor: userActor({ id: 'u-1', orgId }) }),
   }),
   attempt: 1,
+  finalAttempt: false,
+  progress: () => undefined,
   jobId: 'job-1',
   runId: 'run-1',
 });

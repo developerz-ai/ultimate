@@ -154,6 +154,24 @@ export function restoreCapturedDeterminism(snapshot: DeterminismSnapshot): void 
 
 export const isDeterminismInstalled = (): boolean => installed;
 
+/**
+ * Told each time a test MOVES the clock — `advanceClock` and `setFrozenClock`. A frozen clock that
+ * nothing can hear move is one a timer can only ignore: `frozen-scheduler.ts` is the listener, and
+ * it is how the `runJobs` fixture renews a lease when time passes instead of on the wall clock.
+ */
+const clockMoved = new Set<() => void>();
+
+export function onClockMoved(listener: () => void): () => void {
+  clockMoved.add(listener);
+  return () => {
+    clockMoved.delete(listener);
+  };
+}
+
+const announceMove = (): void => {
+  for (const listener of [...clockMoved]) listener();
+};
+
 /** Move the frozen clock forward. The only legal way for time to pass inside a test. */
 export function advanceClock(ms: number): Date {
   // A required parameter with no default, so no `??` and no ratchet can see it — and it writes the
@@ -161,6 +179,7 @@ export function advanceClock(ms: number): Date {
   // process, which no later `advance` and no later `set` undoes. Negative is legal: a test may
   // move the clock backwards.
   frozenAt += finiteOption('advanceClock', 'ms', ms);
+  announceMove();
   return new RealDate(frozenAt);
 }
 
@@ -168,6 +187,7 @@ export const frozenNow = (): Date => new RealDate(frozenAt);
 
 export function setFrozenClock(now: string | number): void {
   frozenAt = instantMs('setFrozenClock', now);
+  announceMove();
 }
 
 /** Run `body` with the clock frozen at `now`, then restore whatever was there before. */
