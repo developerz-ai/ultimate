@@ -46,12 +46,64 @@ export function headerComment(source: string): string {
   return lines.join(' ').trim();
 }
 
-/** The members of `export interface <name> { … }`, generics and all. */
-export function parseProps(source: string, interfaceName: string): PropDoc[] {
-  const body = interfaceBody(source, interfaceName);
-  if (body === undefined) return [];
+/**
+ * Every prop a caller may write for `<name>`: the members of `interface <name>`, its bases' first,
+ * or — where `<name>` is `type <name> = A | B`, one interface per mode — the modes merged.
+ */
+export function parseProps(source: string, typeName: string): PropDoc[] {
+  const modes = unionMembers(source, typeName);
+  if (modes === undefined) return interfaceProps(source, typeName);
+  return mergeModes(modes.map((mode) => interfaceProps(source, mode)));
+}
 
-  const props: PropDoc[] = [];
+/** `GridLinkProps<Row>` names the interface `GridLinkProps`. */
+const withoutTypeArguments = (name: string): string => name.replace(/<[^>]*>/, '').trim();
+
+/** `A`, `B` out of `export type <name> = A | B;`. `undefined` when `<name>` is not such an alias. */
+function unionMembers(source: string, typeName: string): string[] | undefined {
+  const alias = new RegExp(`export type ${typeName}(?:<[^>]*>)?\\s*=\\s*([\\w\\s|<>]+);`).exec(
+    source,
+  );
+  return alias?.[1]
+    ?.split('|')
+    .map((member) => withoutTypeArguments(member))
+    .filter((member) => member !== '');
+}
+
+/**
+ * One row per prop across modes. Required only when EVERY mode requires it — a prop one mode
+ * forbids is optional to a reader choosing between them — and typed as each mode types it.
+ */
+function mergeModes(modes: readonly (readonly PropDoc[])[]): PropDoc[] {
+  const merged = new Map<string, PropDoc>();
+  for (const props of modes) {
+    for (const prop of props) {
+      const seen = merged.get(prop.name);
+      if (seen === undefined) {
+        merged.set(prop.name, prop);
+        continue;
+      }
+      merged.set(prop.name, {
+        name: prop.name,
+        type: seen.type === prop.type ? seen.type : `${seen.type} | ${prop.type}`,
+        required: seen.required && prop.required,
+        doc: seen.doc === '' ? prop.doc : seen.doc,
+      });
+    }
+  }
+  return [...merged.values()].map((prop) => ({
+    ...prop,
+    required: prop.required && modes.every((props) => props.some((p) => p.name === prop.name)),
+  }));
+}
+
+/** The members of `interface <name> { … }`, generics and all, after those of every base. */
+function interfaceProps(source: string, interfaceName: string): PropDoc[] {
+  const declared = interfaceDeclaration(source, interfaceName);
+  if (declared === undefined) return [];
+  const { body, bases } = declared;
+
+  const own: PropDoc[] = [];
   let doc: string[] = [];
   let buffer = '';
   let depth = 0;
@@ -68,11 +120,16 @@ export function parseProps(source: string, interfaceName: string): PropDoc[] {
     // A member ends at a `;` that is not inside a function type or an inline object type.
     if (depth > 0 || !buffer.endsWith(';')) continue;
     const prop = toProp(buffer, doc.join(' ').trim());
-    if (prop !== undefined) props.push(prop);
+    if (prop !== undefined) own.push(prop);
     buffer = '';
     doc = [];
   }
-  return props;
+
+  const names = new Set(own.map((prop) => prop.name));
+  const inherited = bases
+    .flatMap((base) => interfaceProps(source, base))
+    .filter((prop) => !names.has(prop.name));
+  return [...inherited, ...own];
 }
 
 function isComment(line: string): boolean {
@@ -105,9 +162,13 @@ function toProp(declaration: string, doc: string): PropDoc | undefined {
   const match = /^(?:readonly\s+)?('[^']+'|"[^"]+"|\w+)(\?)?:\s*([\s\S]+);$/.exec(declaration);
   if (match === null) return undefined;
   const [, rawName = '', optional, rawType = ''] = match;
+  const type = normaliseType(rawType);
+  // `hrefFor?: undefined` is how one mode of a union forbids another mode's prop: a member that
+  // exists so the prop CANNOT be written is not a prop.
+  if (type === '' || type === 'never') return undefined;
   return {
     name: rawName.replace(/^['"]|['"]$/g, ''),
-    type: normaliseType(rawType),
+    type,
     required: optional === undefined,
     doc,
   };
@@ -126,17 +187,29 @@ function normaliseType(type: string): string {
   );
 }
 
-/** Brace-matched so a nested object type does not end the interface early. */
-function interfaceBody(source: string, interfaceName: string): string | undefined {
-  const header = new RegExp(`export interface ${interfaceName}(?:<[^>]*>)?\\s*\\{`).exec(source);
+/**
+ * Brace-matched so a nested object type does not end the interface early. `export` is optional:
+ * a base shared by two modes is a detail of the file, and its members are still the component's.
+ */
+function interfaceDeclaration(
+  source: string,
+  interfaceName: string,
+): { readonly body: string; readonly bases: readonly string[] } | undefined {
+  const header = new RegExp(
+    `(?:export )?interface ${interfaceName}(?:<[^>]*>)?(?:\\s+extends\\s+([\\w\\s,<>]+?))?\\s*\\{`,
+  ).exec(source);
   if (header === null) return undefined;
+  const bases = (header[1] ?? '')
+    .split(',')
+    .map((base) => withoutTypeArguments(base))
+    .filter((base) => base !== '');
   const start = header.index + header[0].length;
   let depth = 1;
   for (let i = start; i < source.length; i += 1) {
     const char = source[i];
     if (char === '{') depth += 1;
     if (char === '}') depth -= 1;
-    if (depth === 0) return source.slice(start, i);
+    if (depth === 0) return { body: source.slice(start, i), bases };
   }
   return undefined;
 }

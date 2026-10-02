@@ -148,6 +148,17 @@ export function expandPermissions(granted: readonly string[]): readonly string[]
 }
 
 /**
+ * The admin permissions whose grant carries `permission` — `admin:write` is carried by
+ * `admin:destroy`. The inverse of `expandPermissions`, so an authz that decides one name at a time
+ * (`roleAuthz`) answers exactly what a grant-list authz answers for the same grants.
+ */
+export function impliersOf(permission: string): readonly string[] {
+  return Object.keys(ADMIN_PERMISSION_SPEC).filter(
+    (candidate) => candidate !== permission && expandPermissions([candidate]).includes(permission),
+  );
+}
+
+/**
  * A grant-list authz for tests, seeds, and `x dev --actor`. Production always goes through
  * `policyAuthz()` so the app's real rules (ownership, org scoping) are the ones evaluated.
  */

@@ -19,7 +19,7 @@
   }
 
   .tab[aria-selected='true'] {
-    box-shadow: inset -2px 0 0 0 t.role('accent');
+    box-shadow: inset calc(-1 * #{t.stroke(thick)}) 0 0 0 t.role('accent');
   }
 }
 
@@ -32,7 +32,7 @@
 }
 
 .tab {
-  @include t.focus-ring(('accent'), 2px, -2px);
+  @include t.focus-ring('accent', t.stroke(thick), calc(-1 * #{t.stroke(thick)}));
   @include t.transition(color, box-shadow, background);
   padding-block: t.space(2);
   padding-inline: t.space(3);
@@ -54,7 +54,7 @@
   &[aria-selected='true'] {
     color: t.role('accent');
     // Inset shadow instead of a border, so the tab does not shift on select.
-    box-shadow: inset 0 -2px 0 0 t.role('accent');
+    box-shadow: inset 0 calc(-1 * #{t.stroke(thick)}) 0 0 t.role('accent');
   }
 }
 
@@ -62,7 +62,7 @@
   min-inline-size: 0;
 
   &:focus-visible {
-    outline: 2px solid t.role('accent');
-    outline-offset: 2px;
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: t.stroke(thick);
   }
 }

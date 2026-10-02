@@ -115,8 +115,8 @@
 
 // Themed keyboard focus for anything the component layer forgot.
 :where(:focus-visible) {
-  outline: 2px solid t.role('accent');
-  outline-offset: 2px;
+  outline: t.stroke(thick) solid t.role('accent');
+  outline-offset: t.stroke(thick);
 }
 
 :where(:focus:not(:focus-visible)) {
@@ -153,9 +153,9 @@ html:has(dialog:modal) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: t.$still !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: t.$still !important;
     scroll-behavior: auto !important;
   }
 }

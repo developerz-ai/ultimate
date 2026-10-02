@@ -30,9 +30,9 @@
   inset-inline-end: t.space(3);
   inline-size: 0.4rem;
   block-size: 0.4rem;
-  border-inline-end: 2px solid t.role('fg-muted');
-  border-block-end: 2px solid t.role('fg-muted');
-  transform: translateY(-2px) rotate(45deg);
+  border-inline-end: t.stroke(thick) solid t.role('fg-muted');
+  border-block-end: t.stroke(thick) solid t.role('fg-muted');
+  transform: translateY(t.rem(-2px)) rotate(45deg);
   pointer-events: none;
 }
 

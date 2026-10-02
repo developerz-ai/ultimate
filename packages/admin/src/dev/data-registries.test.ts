@@ -21,7 +21,7 @@ import {
   t,
   task,
 } from '@ultimat3/jobs';
-import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
+import { clearRoutes, defineRoute, registerMountedRoutes, registerRoute } from '@ultimat3/render';
 import { defaultDevSources } from './data';
 
 const widget = entity('dev_facts_widget', {
@@ -86,6 +86,37 @@ describe('routes()', () => {
       budget: { js: '12kb', lcp: 2_000 },
       // Already flattened to cache keys by the descriptor; `revalidate.tags` is not a shape it has.
       revalidateTags: ['dev_facts_widget'],
+      // A FILE route: nobody mounted it. `null`, never `{ by: '', permissions: [] }`.
+      mount: null,
+    });
+  });
+
+  test('a mounted route says who mounted it and every permission that gates it', async () => {
+    clearRoutes();
+    registerMountedRoutes(
+      { key: '/admin', by: 'defineAdmin', file: '@ultimat3/admin', surface: 'app' },
+      [
+        {
+          path: '/admin/widgets',
+          config: defineRoute({
+            render: 'ssr',
+            offline: 'network-only',
+            hydrate: 'never',
+            policy: { permission: 'admin:read' },
+            meta: () => ({ title: 'Widgets' }),
+          }),
+          permissions: ['admin:read', 'dev_facts_widget:read'],
+        },
+      ],
+    );
+
+    const fact = (await defaultDevSources().routes()).find(
+      (candidate) => candidate.path === '/admin/widgets',
+    );
+    expect(fact?.handler).toBe('@ultimat3/admin');
+    expect(fact?.mount).toEqual({
+      by: 'defineAdmin',
+      permissions: ['admin:read', 'dev_facts_widget:read'],
     });
   });
 
@@ -104,6 +135,7 @@ describe('jobDefs()', () => {
       input: t.object({ orgId: t.string }),
       idempotencyKey: (input: { orgId: string }) => `digest:${input.orgId}`,
       retry: { attempts: 5, backoff: 'linear', delay: 1_000 },
+      concurrency: { key: (input: { orgId: string }) => input.orgId, limit: 1 },
       run: () => Promise.resolve(),
     });
 
@@ -121,6 +153,9 @@ describe('jobDefs()', () => {
     // `job()` refuses a definition with no `idempotencyKey`, so every registered job is safe to
     // replay. The panel read the DEFINITION's key off the descriptor and called all of them unsafe.
     expect(fact.idempotent).toBe(true);
+    // The declared cap, and that it holds PER KEY — the key is a run's fact, never the job's.
+    expect(fact.concurrency).toEqual({ limit: 1, keyed: true, whenBusy: 'wait' });
+    expect(fact.onSettled).toBe(false);
   });
 });
 
@@ -189,6 +224,13 @@ describe('queues() and jobRuns()', () => {
     expect(mail.running).toBe(1);
     expect(mail.failed).toBe(0);
     expect(mail.deadLetter).toBe(0);
+    expect(mail.paused).toBe(false);
+
+    // Paused, and the panel says so: its depth is work waiting on an operator, not on a worker.
+    await driver.introspect?.pauseQueue('mail');
+    const held = (await defaultDevSources().queues()).find((queue) => queue.name === 'mail');
+    expect(held?.paused).toBe(true);
+    await driver.introspect?.resumeQueue('mail');
   });
 
   test('a run carries its step trace, which is the panel’s whole question', async () => {
@@ -213,6 +255,8 @@ describe('queues() and jobRuns()', () => {
     if (withStep === undefined) return;
 
     expect(withStep.queue).toBe('mail');
+    // `concurrency.key(input)` for this run: which lease it waits on, read off its own payload.
+    expect(['org-1', 'org-2']).toContain(withStep.concurrencyKey ?? '');
     // The queue's vocabulary is `ready|running|…`; the panel's is four words. A claimed job is
     // `running` in both, and the mapping is what this pins.
     expect(['running', 'ok', 'failed', 'dead']).toContain(withStep.status);

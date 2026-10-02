@@ -118,12 +118,13 @@ describe('assertReadOnly', () => {
   });
 
   test('a refusal never sends the developer to a flag that cannot fix it', () => {
-    // `x db psql --write` grants writes; it does not close a delimiter. Asserting the shape of
-    // the sentence, never another package's prose — only that this panel stopped claiming the
-    // write flag IS the fix.
+    // A write client grants writes; it does not close a delimiter. Asserting the shape of the
+    // sentence, never another package's prose — only that this panel never claims writing IS the
+    // fix, and that the way out it names is a command that exists (`x db` has no `psql`).
     const refusal = refusalOf("select '; delete from members") ?? '';
     expect(refusal).toContain('Fix the statement, or');
-    expect(refusal).toContain('x db psql --write');
+    expect(refusal).toContain('psql "$DATABASE_URL"');
+    expect(refusal).not.toContain('x db psql');
   });
 });
 
@@ -168,6 +169,18 @@ describe('dbPanel.data', () => {
     expect(data.readOnly).toBe(true);
     // Nothing was typed, so nothing was executed — an empty box is not a query.
     expect(fixture.ran).toEqual([]);
+  });
+
+  // On both answers the panel gives — the idle one and the one with a statement — because the
+  // dump is where the schema is READ, and a link that vanished once a query was typed would send
+  // the reader back to the table list at the moment they are looking something up.
+  test('it says where the schema dump is and what rewrites it, with or without a statement', async () => {
+    const fixture = sources();
+    const idle = await dbPanel.data(fixture.sources, new URLSearchParams());
+    const queried = await dbPanel.data(fixture.sources, new URLSearchParams({ sql: 'select 1' }));
+    for (const data of [idle, queried]) {
+      expect(data.schemaDump).toEqual({ directory: 'packages/db/schema', regenerate: 'x db gen' });
+    }
   });
 
   // `null`, never `[]`. An empty drift list is the answer a checker that RAN gives, and printing
@@ -241,7 +254,7 @@ describe('dbPanel.data', () => {
     // Phrased for both classes that arrive through one code: a write, and a delimiter that never
     // closes. `--write` grants writes; it does not close a quote.
     expect(data.refused).toContain('Fix the statement');
-    expect(data.refused).toContain('x db psql --write');
+    expect(data.refused).toContain('psql "$DATABASE_URL"');
     // The statement the operator typed is still on screen for them to edit.
     expect(data.sql).toBe('delete from members');
   });

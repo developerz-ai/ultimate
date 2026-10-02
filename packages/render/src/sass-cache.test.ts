@@ -9,7 +9,12 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { compileStylesheet } from './css-modules';
-import { cachedSassCompile, type SassOutput, setSassCacheDir } from './sass-cache';
+import {
+  cachedSassCompile,
+  type SassOutput,
+  sassCompilations,
+  setSassCacheDir,
+} from './sass-cache';
 
 let dir = '';
 
@@ -46,6 +51,23 @@ describe('unit · the Sass compile cache', () => {
     const second = counting('.never{}', [dep]);
     expect(cachedSassCompile('k', second.compile).css).toBe('.a{color:red}');
     expect([first.calls(), second.calls()]).toEqual([1, 0]);
+  });
+
+  test('sassCompilations counts the compiles this process ran, and a hit is not one', () => {
+    const cache = join(dir, 'count');
+    const dep = join(dir, 'count-tokens.scss');
+    writeFileSync(dep, '$a: 1;');
+    setSassCacheDir(cache);
+    const before = sassCompilations();
+    cachedSassCompile('counted', counting('.a{}', [dep]).compile);
+    expect(sassCompilations() - before).toBe(1);
+    cachedSassCompile('counted', counting('.never{}', [dep]).compile);
+    expect(sassCompilations() - before).toBe(1);
+    // Off is every call compiling, and every one of them is counted: a pod with no cache at all
+    // is the case the count exists to report.
+    setSassCacheDir(null);
+    cachedSassCompile('counted', counting('.a{}', [dep]).compile);
+    expect(sassCompilations() - before).toBe(2);
   });
 
   test('a changed file the compilation read is a miss — an edited token recompiles', () => {

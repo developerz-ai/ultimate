@@ -7,7 +7,14 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, money, newId, text, timestamp, uuid } from '@ultimat3/entity';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
-import { adminCreate, adminDestroy, adminList, adminUpdate, type CrudCtx } from './crud';
+import {
+  adminCreate,
+  adminDestroy,
+  adminList,
+  adminUpdate,
+  type CrudCtx,
+  permissionsForOperation,
+} from './crud';
 import { confirmationToken } from './permissions';
 import type { AdminRow } from './registry';
 import { type AdminResource, adminResource } from './resource';
@@ -122,7 +129,7 @@ describe('admin mutations are audited with a before/after diff', () => {
     });
 
     expect(result.ok).toBe(true);
-    const entry = ctx.audit.entries()[0];
+    const entry = (await ctx.audit.entries())[0];
     expect(entry?.operation).toBe('update');
     expect(entry?.entityId).toBe(POST_ID);
     expect(entry?.actor.id).toBe('u_1');
@@ -191,7 +198,7 @@ describe('admin mutations are audited with a before/after diff', () => {
 
     expect(result.ok).toBe(false);
     expect(store.get(POST_ID)).toEqual({ id: POST_ID, title: 'Draft' });
-    expect(ctx.audit.entries()[0]?.outcome).toBe('denied');
+    expect((await ctx.audit.entries())[0]?.outcome).toBe('denied');
   });
 });
 
@@ -207,7 +214,7 @@ describe('destructive operations re-confirm', () => {
       expect(refused.decision.reason).toBe('admin.error.confirmation-required');
     }
     expect(store.has(POST_ID)).toBe(true);
-    expect(ctx.audit.entries()[0]?.outcome).toBe('denied');
+    expect((await ctx.audit.entries())[0]?.outcome).toBe('denied');
   });
 
   test('delete with the token removes the row and logs the before state', async () => {
@@ -217,7 +224,7 @@ describe('destructive operations re-confirm', () => {
 
     expect(result.ok).toBe(true);
     expect(store.has(POST_ID)).toBe(false);
-    const entry = ctx.audit.entries()[0];
+    const entry = (await ctx.audit.entries())[0];
     expect(entry?.outcome).toBe('allowed');
     expect(entry?.diff).toEqual([
       { field: 'id', before: POST_ID, after: undefined },
@@ -257,7 +264,7 @@ describe('a repo that throws leaves a failed entry and the error intact', () => 
     await expect(adminUpdate(resource, ctx, POST_ID, { title: 'Published' })).rejects.toThrow(
       /duplicate key/,
     );
-    const entries = ctx.audit.entries();
+    const entries = await ctx.audit.entries();
     expect(entries.map((entry) => [entry.operation, entry.outcome])).toEqual([
       ['update', 'failed'],
     ]);
@@ -279,7 +286,7 @@ describe('a repo that throws leaves a failed entry and the error intact', () => 
         createdAt: '2026-07-01T00:00:00.000Z',
       }),
     ).rejects.toThrow(/duplicate key/);
-    expect(ctx.audit.entries().map((entry) => [entry.operation, entry.outcome])).toEqual([
+    expect((await ctx.audit.entries()).map((entry) => [entry.operation, entry.outcome])).toEqual([
       ['create', 'failed'],
     ]);
   });
@@ -291,7 +298,7 @@ describe('a repo that throws leaves a failed entry and the error intact', () => 
     await expect(
       adminDestroy(resource, ctx, POST_ID, confirmationToken('admin_crud_post', POST_ID)),
     ).rejects.toThrow(/duplicate key/);
-    expect(ctx.audit.entries().map((entry) => [entry.operation, entry.outcome])).toEqual([
+    expect((await ctx.audit.entries()).map((entry) => [entry.operation, entry.outcome])).toEqual([
       ['delete', 'failed'],
     ]);
   });
@@ -350,5 +357,17 @@ describe('a direct write on an operation the resource does not offer', () => {
     expect(created.ok).toBe(false);
     expect(store.size).toBe(1);
     expect(store.get(POST_ID)?.['title']).toBe('Kept');
+  });
+});
+
+describe('unit · permissionsForOperation', () => {
+  test('the admin gate, then the entity’s own', () => {
+    expect(permissionsForOperation('posts', 'list')).toEqual(['admin:read', 'posts:read']);
+    expect(permissionsForOperation('posts', 'delete')).toEqual(['admin:destroy', 'posts:delete']);
+  });
+
+  test('the dashboard and the search name ONE permission, not `admin:read` twice', () => {
+    expect(permissionsForOperation('admin', 'list')).toEqual(['admin:read']);
+    expect(permissionsForOperation('admin', 'search')).toEqual(['admin:read']);
   });
 });

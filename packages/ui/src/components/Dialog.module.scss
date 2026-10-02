@@ -3,7 +3,7 @@
 @keyframes ultimate-dialog-in {
   from {
     opacity: 0;
-    translate: 0 8px;
+    translate: 0 t.space(2);
   }
 }
 
@@ -22,7 +22,7 @@
     animation: ultimate-dialog-in t.duration(base) t.easing(out);
   }
 
-  @include t.scrim-backdrop($blur: 2px);
+  @include t.scrim-backdrop($blur: t.rem(2px));
 }
 
 .size-sm {

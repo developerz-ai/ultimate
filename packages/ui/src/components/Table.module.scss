@@ -10,8 +10,8 @@
   background: t.role('surface');
 
   &:focus-visible {
-    outline: 2px solid t.role('accent');
-    outline-offset: -2px;
+    outline: t.stroke(thick) solid t.role('accent');
+    outline-offset: calc(-1 * #{t.stroke(thick)});
   }
 }
 

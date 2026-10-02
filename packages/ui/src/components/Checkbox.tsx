@@ -12,6 +12,11 @@ export interface CheckboxProps {
   id?: string | undefined;
   name?: string | undefined;
   value?: string | undefined;
+  /**
+   * The id of the `<form>` this box submits with, when it cannot sit inside it — a row checkbox in
+   * a table whose page already holds another form. The platform's own association, no script.
+   */
+  form?: string | undefined;
   checked?: boolean | undefined;
   /** Tri-state for "some children selected". The ONLY thing mirrored to `aria-checked`. */
   indeterminate?: boolean | undefined;
@@ -33,6 +38,7 @@ export function Checkbox(props: CheckboxProps): JSX.Element {
         id={props.id}
         name={props.name}
         value={props.value}
+        form={props.form}
         checked={props.checked === true}
         disabled={props.disabled === true}
         required={props.required === true}

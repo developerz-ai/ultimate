@@ -74,4 +74,12 @@ export const jobsPanel: DevPanel<JobsPanelData> = {
       backfillsInFlight: backfills.filter((pass) => pass.status === 'running').length,
     };
   },
+  /**
+   * One jobs UI: the tab draws the admin's own overview component over this process's queue.
+   * Dynamic, so `/_x`'s mount graph loads no view until this tab is opened.
+   */
+  async html(params, tabPath) {
+    const { jobsTabHtml } = await import('../jobs/overview-tab');
+    return jobsTabHtml(tabPath, params);
+  },
 };
