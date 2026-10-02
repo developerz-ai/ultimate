@@ -365,6 +365,7 @@ export async function startServices(
       installRetentionSweep({
         idempotency: queue.idempotency,
         rateLimit: rateLimitStore,
+        events,
         inboxRetention: await loadInboxRetention(services.root),
       }),
     );

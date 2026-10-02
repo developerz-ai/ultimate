@@ -95,7 +95,8 @@ export function createAdmission(options: AdmissionOptions): Admit {
     try {
       grant = await fleetSlots.acquire(job);
     } catch (error) {
-      lease.release();
+      // Never started: the slot AND the rate stamp go back (`Lease.abandon`).
+      lease.abandon();
       // This job and every one behind it go BACK, unburned — rethrowing alone stranded them in
       // `running` with an attempt spent on work that never started.
       await handBack(driver, [job, ...behind], back);
@@ -106,7 +107,9 @@ export function createAdmission(options: AdmissionOptions): Admit {
     // refusal before the body: it fails as an attempt, never as a round.
     if (grant.outcome === 'undecidable') return { kind: 'run', lease, refusal: grant.error };
 
-    lease.release();
+    // Over the fleet cap, so this run does not start: `abandon`, never `release`, or a tenant
+    // waiting behind a full `job.concurrency` pays one `ratePerTenant` start per poll interval.
+    lease.abandon();
     try {
       // The two `whenBusy` answers. `'fail'` settles the run here, its body never started.
       if (grant.outcome === 'fail') {
@@ -119,7 +122,8 @@ export function createAdmission(options: AdmissionOptions): Admit {
           context: options.context,
           ...(options.clock === undefined ? {} : { clock: options.clock }),
         });
-        return { kind: 'refused', execution };
+        // No execution: the nack did not land, so the row is not this worker's to have refused.
+        return execution === undefined ? { kind: 'waiting' } : { kind: 'refused', execution };
       }
       const keyed = grant.key === undefined ? '' : `, key ${grant.key}`;
       await shed(job, queue, `job concurrency (${grant.limit}${keyed})`);

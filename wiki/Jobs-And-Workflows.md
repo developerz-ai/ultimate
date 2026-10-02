@@ -30,7 +30,7 @@ Every projection is a method on the job — `onboardOrg.enqueue({ orgId })`, nev
 
 | Member | Is | Rule |
 |---|---|---|
-| `onboardOrg.enqueue(input, options?)` | the enqueue | resolves the ambient jobs facade, so it **joins the caller's transaction** when the app installed the outbox. One call site works in a request handler, a job, a script and a test. Answers `{ id, runId, deduped }` — the job's own ids, allocated when the row is staged, so an action can name the run it started without leaving the transaction. `options.runId` names the run instead |
+| `onboardOrg.enqueue(input, options?)` | the enqueue | resolves the ambient jobs facade, so it **joins the caller's transaction** when the app installed the outbox. One call site works in a request handler, a job, a script and a test. Answers `{ id, runId, deduped }` — the job's own ids, allocated when the row is staged, so an action can name the run it started without leaving the transaction. `options.runId` names the run instead: a lowercase uuid, or the enqueue is refused with `X_ID_INVALID` before anything is staged or queued |
 | `.as(actor, input, options?)` | the same enqueue, on someone's behalf | fills `tenantId` from the actor's org, so per-tenant concurrency and rate limits apply. `null` — or an actor with no org — leaves `tenantId` unset: the limiter's own shared bucket, not a fake org id on the row. It **queues; it never runs inline** |
 | `.run(args)` | the handler itself | the worker calls it. App code does not — see below |
 | `.parse(raw)` | the payload check | a raw queue payload against the declared `input` |
@@ -74,7 +74,7 @@ External brokers are not exempted: the outbox table stays the transactional reco
 |---|---|
 | `step.run(name, fn)` | executes `fn` once ever. Result persisted under `(jobId, name)`. On replay, returns the stored result without calling `fn`. `fn` receives an `AbortSignal` — this step's ceiling and the run's cancellation, whichever fires first |
 | `step.sleep(duration)` | persists a wake time, releases the worker, and the job resumes in a fresh process. No held connection, no timer in memory. `'3d'` is safe |
-| `step.waitForEvent(name, { match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the event payload or `null` |
+| `step.waitForEvent(name, event, { match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the event payload, or `undefined` on a timeout. "After the wait began" is read off the event bus's own clock — the database's, on the stored bus — so a worker whose clock runs ahead still sees an event published a moment later |
 
 **The step is the retry unit, not the job.** A failure in `nudge` re-enters `run`, replays `provision` and `welcome-email` from storage in microseconds, and retries only `nudge`. That is why an onboarding flow can retry on day 3 without re-provisioning or re-emailing.
 
@@ -148,7 +148,7 @@ export const syncCrm = job({
 | `concurrency: 4` | max simultaneous runs of **this job**, fleet-wide | one `x_job_leases` row per **held slot**, keyed `(lease_key, slot)` — the primary key is what serialises two workers reaching for the same slot. A driver with no `LeaseStore` refuses the job at worker start (`X_JOB_CONCURRENCY_UNENFORCEABLE`) rather than capping per process |
 | `concurrency: { key, limit }` | max simultaneous runs **sharing one key** — "one run per account" | the same lease rows, one set per `key(input)`. `key` answers a non-empty string of at most 200 characters; `limit` is a whole number, 1 or more |
 | `concurrency.whenBusy` | what a claim over the cap does. `'wait'` (default): the run stays queued, no attempt burned. `'fail'`: the run settles **`failed`** with `X_JOB_KEY_BUSY`, its body never runs, nothing retries it, and it is not a dead letter | the worker, at claim. A plain number always waits |
-| rate limits | starts per window, per tenant | `createLimiter({ ratePerTenant })` on the worker — **per process**, never a `job()` field. There is no `rateLimit:` on a job, `As of 2026-10` |
+| rate limits | starts per window, per tenant | `createLimiter({ ratePerTenant })` on the worker — **per process**, never a `job()` field. There is no `rateLimit:` on a job, `As of 2026-10`. A start is a body that ran: a claim handed back over `job.concurrency`, or refused by its key, spends none |
 | `queue` | named pool; the `worker` role runs one pool per config (`WORKER_QUEUES=default,integrations`) | worker pool sizing, see [Deployment](Deployment) |
 | `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'` | driver scheduler |
 | `retry.jitter` | **equal** jitter — half fixed, half rolled — and `true` by default. Never `full`: a job that has already failed twice must not be handed a near-zero wait | driver scheduler |
@@ -194,7 +194,9 @@ Every operator capability is a member of `JobIntrospection` (`driver.introspect`
 |---|---|---|
 | paged listing | `list({ queue, name, state, idPrefix, createdFrom, createdTo, tenantId, limit, after \| before })` — keyset, newest first: `after: jobCursor(lastRow)` is the next page, `before: jobCursor(firstRow)` the previous one; `tenantId` keeps one org's rows | `MAX_JOB_PAGE` 200 rows a page; more, or a cursor no page produced, is `X_JOB_PAGE_INVALID`; `after` with `before` is `X_INVARIANT` |
 | delete | `remove(id)`; `removeMany({ state, queue?, name?, tenantId? })` | a running job is `X_JOB_NOT_REMOVABLE`; bulk touches `MAX_BULK_ROWS` 1,000 and answers `{ affected, remaining }` |
-| bulk retry | `requeueMany({ state, queue?, name?, tenantId? })` | the same bound; a row whose key a live job holds stays |
+| bulk retry | `requeueMany({ state, queue?, name?, tenantId? })` | the same bound, spent only on rows it can move; a row whose key a live job holds stays and is not counted in `remaining`, so calling until it is zero ends |
+| retry one | `requeue(id, { fromStep? })` — a finished job only | a live job is `X_JOB_NOT_REQUEUEABLE`, a key a live job holds `X_JOB_DUPLICATE`, an id nobody queued `X_JOB_NOT_FOUND`; `fromStep` drops that step and the later ones with the row's own move |
+| cancel | `cancel(id, reason?)` — a live job only (ready, delayed, running, suspended) | a done, failed, dead or cancelled row is left as it ended; `cancelJob` / `x jobs cancel` answer `X_JOB_NOT_CANCELLABLE` |
 | run a delayed job now | `promote(id)`; `promoteMany({ state, queue?, name?, tenantId? })` | only a job waiting on its `runAt` — `state` is one of `PROMOTABLE_STATES` (`delayed`, or `ready` backing off before a retry); the bulk bound as above |
 | queue pause | `pauseQueue(q)` / `resumeQueue(q)` / `pausedQueues()` | a paused queue is never claimed, fleet-wide, within one poll; enqueues still land |
 | task pause | `pauseTask(t)` / `resumeTask(t)` / `pausedTasks()` | on resume the task's own `catchUp` decides what it missed |
@@ -243,6 +245,7 @@ export const syncAccount = job({
 |---|---|
 | the counter moves in the settling statement | one round trip per settle, and a count that cannot disagree with the rows. A shed, a suspension and a drained attempt are handed back uncounted |
 | `QueueStats.failed` | rows that ended `failed`: refused by a busy concurrency key, or exhausted on a `retry.deadLetter: false` job (settled `failed`, outcome `dropped` — that job used to be re-queued forever) |
+| a job whose worker dies on every attempt is dead-lettered | a lease that lapses on a row's FINAL attempt is settled `dead` by the next claim itself — `lastError` says the lease lapsed — and never handed out again. It reaches the dead-letter queue after `retry.attempts` claims; it used to take a worker per visibility timeout, forever. Logged `jobs.claim.exhausted`; `onSettled` is told `dead-lettered`, and `WorkerStats.deadLettered` counts it. A job declaring `retry.deadLetter: false` is buried `failed` instead and told `dropped` — the worker names those jobs to the claim; `x jobs drain`, which holds no registry, buries every such row `dead` |
 | settles are fenced on the claim | `{ workerId, claim }`: a body whose lease lapsed cannot settle, renew or report on the run that replaced it — whether another worker claimed it or the same one did. The miss is logged `jobs.settle.unowned` |
 | `x jobs drain` | settles the rows it moved without counting them: a moved job is not a completed one |
 | a scheduled occurrence fires in one statement | the watermark and the occurrence's jobs move together, so a crash between them cannot fire it twice |

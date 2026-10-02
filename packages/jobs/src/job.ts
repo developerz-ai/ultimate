@@ -8,7 +8,7 @@
 // deletes that class of bug: there is no way to define a job that cannot be deduped.
 
 import type { Ctx } from '@ultimat3/core';
-import { assert } from '@ultimat3/core';
+import { assert, finiteCount } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
@@ -266,11 +266,10 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     throw new JobDeclarationInvalidError({ job: name, missing });
   }
   assertJobTenant(name, definition.tenant);
-  assert(
-    definition.retry.attempts >= 1,
-    `job "${name}" needs retry.attempts >= 1, got ${String(definition.retry.attempts)}`,
-    `set retry: { attempts: 1 } or higher on job("${name}") — 0 attempts means the job is never executed at all, not that it never retries`,
-  );
+  // A COUNT, so whole and finite as well as at least 1: `>= 1` alone admitted `Infinity` and
+  // `1.5`, which the memory driver ran and Postgres refused at the first enqueue (`$7::int`).
+  // Zero is not "never retries" — that is `attempts: 1` — it is a job that never executes at all.
+  finiteCount(`job "${name}"`, 'retry.attempts', definition.retry.attempts, 1);
   // `concurrency: 0` is not "no cap" — it is a fleet slot table that grants nothing, and the job
   // is permanently unrunnable with no log line. Refused where it is written, plain or keyed.
   const concurrency = resolveConcurrency(name, definition.concurrency);

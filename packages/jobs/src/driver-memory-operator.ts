@@ -134,7 +134,7 @@ export function createMemoryOperator(state: MemoryQueueState): MemoryOperator {
       const before =
         filter.before === undefined
           ? undefined
-          : parseJobCursor(filter.before, 'the memory driver list');
+          : parseJobCursor(filter.before, 'the memory driver list', 'before');
       const { idPrefix, createdFrom, createdTo, tenantId } = filter;
       const matching = [...jobs.values()]
         .filter((record) => filter.queue === undefined || record.queue === filter.queue)
@@ -168,16 +168,38 @@ export function createMemoryOperator(state: MemoryQueueState): MemoryOperator {
         `requeueMany was asked for ${filter.state} jobs, and only a finished job can be requeued`,
         "pass state: 'dead', 'failed', 'cancelled' or 'done' to requeueMany",
       );
-      const result = await bulk(filter, (record) => {
-        // A key a live job holds stays where it is — the single requeue's `X_JOB_DUPLICATE`,
-        // answered as "not this one" so one conflict does not fail a thousand rows.
-        if (state.liveHolder(record) !== undefined) return false;
-        state.settle(record.id, { state: 'ready', attempt: 0, runAt: nowMs(clock) });
-        return true;
-      });
+      // A key a live job holds stays where it is — the single requeue's `X_JOB_DUPLICATE`,
+      // answered as "not this one" so one conflict does not fail a thousand rows.
+      const free = (record: JobRecord): boolean => state.liveHolder(record) === undefined;
+      // `SQL_JOB_REQUEUE_MANY`'s candidates: no live holder, and ONE row per idempotency namespace
+      // — the oldest — both decided BEFORE the bound. Decided inside `apply`, a held row spent a
+      // slot of `MAX_BULK_ROWS` and was then skipped: a thousand held rows ahead of one free row
+      // answered `affected: 0` here and `affected: 1` on Postgres.
+      const oldest = new Map<string, JobRecord>();
+      for (const record of jobs.values()) {
+        if (!inBulk(record, filter) || !free(record)) continue;
+        const key = JSON.stringify([record.name, record.tenantId ?? '', record.idempotencyKey]);
+        const seen = oldest.get(key);
+        if (seen === undefined || newerThan(seen, record)) oldest.set(key, record);
+      }
+      const candidates = new Set([...oldest.values()].map((record) => record.id));
+      const result = await bulk(
+        filter,
+        (record) => {
+          if (!free(record)) return false;
+          state.settle(record.id, { state: 'ready', attempt: 0, runAt: nowMs(clock) });
+          return true;
+        },
+        (record) => candidates.has(record.id),
+      );
       // The pg driver's `SQL_WAKE`, in-process: an operator's repair starts now.
       if (result.affected > 0) signalEnqueued(filter.queue);
-      return result;
+      // What a second call could still move: rows of the filter whose key no live job holds. A
+      // row requeued just now holds its key, so its dead siblings left with it.
+      const remaining = [...jobs.values()].filter(
+        (record) => inBulk(record, filter) && free(record),
+      ).length;
+      return { affected: result.affected, remaining };
     },
 
     async promoteMany(filter) {

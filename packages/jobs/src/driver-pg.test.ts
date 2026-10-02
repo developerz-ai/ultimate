@@ -82,7 +82,7 @@ describe('pg queue SQL', () => {
 });
 
 describe('pg driver', () => {
-  test('claim passes the queue list, limit, worker id and visibility timeout in order', async () => {
+  test('claim passes the queue list, limit, worker id, visibility timeout and dropped names in order', async () => {
     const executor = recordingExecutor();
     const driver = createPgDriver({ executor });
     await driver.claim({
@@ -90,9 +90,16 @@ describe('pg driver', () => {
       limit: 7,
       visibilityTimeoutMs: 30_000,
       workerId: 'worker-a',
+      dropExhausted: ['unkept'],
     });
     expect(executor.calls[0]?.sql).toBe(SQL_CLAIM);
-    expect(executor.calls[0]?.params).toEqual([['default', 'mail'], 7, 'worker-a', 30_000]);
+    expect(executor.calls[0]?.params).toEqual([
+      ['default', 'mail'],
+      7,
+      'worker-a',
+      30_000,
+      ['unkept'],
+    ]);
   });
 
   test('a deduped enqueue reports the existing live row instead of inserting', async () => {
@@ -314,9 +321,9 @@ describe('pg enqueue, ack and nack', () => {
     await expect(enqueue).rejects.toThrow(/job-9/);
   });
 
-  test('a refused insert with NO live row is X_DRIVER_UNAVAILABLE pointing at the index', async () => {
-    // The only way both statements answer nothing is a missing partial unique index, so the fix
-    // has to be the migration — not "retry", which would refuse forever.
+  test('an insert refused TWICE with no live row is X_DRIVER_UNAVAILABLE pointing at the index', async () => {
+    // One miss is the race below. Both statements answering nothing twice running is a missing
+    // partial unique index, so the fix is the migration — and it is a command, nothing else.
     const executor = recordingExecutor([]);
     const enqueue = createPgDriver({ executor }).enqueue({
       name: 'onboardOrg',
@@ -327,6 +334,49 @@ describe('pg enqueue, ack and nack', () => {
     });
     await expect(enqueue).rejects.toThrow(DriverUnavailableError);
     await expect(enqueue).rejects.toThrow(/no live row holds its idempotency key/);
+    await expect(enqueue).rejects.toMatchObject({ fix: 'x db migrate' });
+    // Insert, lookup, insert, lookup — and it stops: a retry that never ended would hang a request.
+    expect(executor.calls.map((call) => call.sql)).toEqual([
+      SQL_ENQUEUE,
+      SQL_FIND_LIVE_BY_KEY,
+      SQL_ENQUEUE,
+      SQL_FIND_LIVE_BY_KEY,
+    ]);
+  });
+
+  test('the holder settling between the insert and the lookup is a key that came free: the insert is sent again', async () => {
+    // The insert met a live holder (`do nothing`), the holder acked, the lookup found nobody.
+    // That was `X_DRIVER_UNAVAILABLE` telling the caller to run a migration.
+    const sql: string[] = [];
+    const params: (readonly unknown[])[] = [];
+    let inserts = 0;
+    const executor: PgExecutor = {
+      query<R>(text: string, values: readonly unknown[]): Promise<readonly R[]> {
+        sql.push(text);
+        params.push(values);
+        if (text !== SQL_ENQUEUE) return Promise.resolve([] as readonly R[]);
+        inserts += 1;
+        const rows: readonly unknown[] = inserts === 1 ? [] : [{ id: 'job-2', run_id: 'run-2' }];
+        return Promise.resolve(rows as readonly R[]);
+      },
+    };
+    for (const onConflict of ['dedupe', 'error'] as const) {
+      inserts = 0;
+      sql.length = 0;
+      params.length = 0;
+      const result = await createPgDriver({ executor }).enqueue({
+        name: 'onboardOrg',
+        queue: 'default',
+        input: { orgId: 'org-1' },
+        idempotencyKey: 'onboard:org-1',
+        maxAttempts: 5,
+        onConflict,
+      });
+      expect(result).toEqual({ id: 'job-2', runId: 'run-2', deduped: false });
+      expect(sql).toEqual([SQL_ENQUEUE, SQL_FIND_LIVE_BY_KEY, SQL_ENQUEUE]);
+      // The SAME row both times — the ids minted for the first insert, not a second pair.
+      expect(params[2]).toEqual(params[0]);
+    }
   });
 
   test('a claimed row carries the claim time and a visibility deadline derived from it', async () => {

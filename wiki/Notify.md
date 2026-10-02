@@ -42,7 +42,7 @@ await commentPosted.enqueue({ params: { postId, orgId, author } });
 | `inbox` | none — `X_NOTIFY_STORE_MISSING` | `createPgInboxStore({ executor })` |
 | `digest` | none — `X_NOTIFY_STORE_MISSING` | `createMemoryDigestStore()` |
 
-The hourly `x.purge` job sweeps the Postgres ledger and inbox. The inbox is swept only when your
+The hourly `x.purge` job sweeps the Postgres ledger and inbox — and, in the same pass, `x_job_events`, the stored bus `step.waitForEvent` reads. The inbox is swept only when your
 `app.config.ts` sets `notify.inboxReadRetentionMs` / `notify.inboxUnreadRetentionMs` — when an unread
 message disappears is your decision ([Configuration](Configuration)).
 

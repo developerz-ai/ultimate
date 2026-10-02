@@ -87,4 +87,6 @@ export const TIER_3_ERROR_STATUS = {
   X_MUTATOR_NOT_IDEMPOTENT: 500,
   // @ultimat3/action — an idempotent action's reservation was taken over before its transaction could settle it
   X_IDEMPOTENCY_RESERVATION_LOST: 409,
+  // @ultimat3/jobs — the queue holds no job with this id
+  X_JOB_NOT_FOUND: 404,
 } satisfies Readonly<Record<string, number>>;

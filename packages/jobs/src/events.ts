@@ -6,6 +6,7 @@ import type { Clock } from '@ultimat3/core';
 import { finiteOption, logger, systemClock, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
+import type { PurgeTarget } from './purge';
 import type { EventLookup } from './steps';
 
 export interface JobEvent {
@@ -31,16 +32,14 @@ export interface EventBus extends EventLookup {
    * split asks, and the reason `eventPrompt()` refuses the in-memory bus outside development.
    */
   readonly stored: boolean;
-  /**
-   * The bus's OWN clock, in epoch ms: what a publish issued now would be stamped with. A consumer
-   * that wants "published after I asked" takes its "asked at" from here and never from its own
-   * process — `publishedAt` is this clock's, and two clocks compared is a skew between pods
-   * deciding which answers count.
-   */
-  now(): Promise<number>;
   publish(name: string, payload: unknown, options?: PublishOptions): Promise<JobEvent>;
   list(name?: string): Promise<readonly JobEvent[]>;
-  purgeExpired(): number;
+  /**
+   * Delete every event past its expiry and answer how many went. Measured on the bus's own clock,
+   * like every other instant it holds. The memory bus also sweeps on each publish; the stored one
+   * has no caller but the retention sweep (`eventsPurgeTarget`).
+   */
+  purgeExpired(): Promise<number>;
   size(): number;
 }
 
@@ -136,9 +135,21 @@ export function createMemoryEventBus(options: MemoryEventBusOptions = {}): Event
       return Promise.resolve(all);
     },
 
-    purgeExpired,
+    purgeExpired: () => Promise.resolve(purgeExpired()),
     size: () => events.size,
   };
+}
+
+/** The table the stored bus keeps — the sweep's durable step key, log field and report name. */
+export const EVENTS_PURGE_TARGET = 'x_job_events';
+
+/**
+ * The bus as one table of the retention sweep (`purge()`). `x_job_events` takes a row per publish
+ * and an expired one is only FILTERED by `find`, so with no sweep the table grows for the life of
+ * the deployment. The sweep's `nowMs` is not passed on: a bus holds its own clock.
+ */
+export function eventsPurgeTarget(bus: EventBus): PurgeTarget {
+  return { name: EVENTS_PURGE_TARGET, purgeExpired: () => bus.purgeExpired() };
 }
 
 let ambientBus: EventBus = createMemoryEventBus();

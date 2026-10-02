@@ -43,6 +43,7 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_JOB_NOT_PROMOTABLE',
   'X_JOB_PAGE_INVALID',
   'X_JOB_ON_SETTLED_FAILED',
+  'X_JOB_NOT_FOUND',
 ] as const;
 
 /**
@@ -100,6 +101,7 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_JOB_NOT_PROMOTABLE: 'the job is not waiting on its run time',
   X_JOB_PAGE_INVALID: 'a job list page was asked for outside its bounds',
   X_JOB_ON_SETTLED_FAILED: 'the onSettled hook failed after the run was settled',
+  X_JOB_NOT_FOUND: 'the queue holds no job with this id',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws

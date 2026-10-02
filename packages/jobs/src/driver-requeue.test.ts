@@ -157,7 +157,8 @@ describe('pg: the same two refusals, before the statement', () => {
     expect(await codeOf(pg(executor).introspect?.requeue('job-1') ?? Promise.resolve())).toBe(
       'X_JOB_NOT_REQUEUEABLE',
     );
-    expect(sql.some((text) => text.startsWith('update x_jobs'))).toBe(false);
+    expect(sql.some((text) => text.includes('update x_jobs'))).toBe(false);
+    expect(sql.some((text) => text.includes('delete from x_job_steps'))).toBe(false);
   });
 
   test('a key a live row holds is X_JOB_DUPLICATE, not a raw 23505', async () => {
@@ -170,5 +171,23 @@ describe('pg: the same two refusals, before the statement', () => {
   test('the update is fenced to finished states and releases the claim', () => {
     expect(SQL_JOB_REQUEUE).toContain("state in ('dead', 'cancelled', 'done', 'failed')");
     expect(SQL_JOB_REQUEUE).toContain('claimed_by = null');
+  });
+
+  test('a refused requeue from a step deletes no step: the refusal comes before the statement', async () => {
+    const { executor, sql } = executorAnswering('running');
+    expect(
+      await codeOf(
+        pg(executor).introspect?.requeue('job-1', { fromStep: 'charge' }) ?? Promise.resolve(),
+      ),
+    ).toBe('X_JOB_NOT_REQUEUEABLE');
+    expect(sql.some((text) => text.includes('delete from x_job_steps'))).toBe(false);
+  });
+
+  test('the steps are dropped by the statement that moves the row, off the row it moved', () => {
+    // One statement: a delete sent first had already run when the update matched nothing.
+    expect(SQL_JOB_REQUEUE).toContain('delete from x_job_steps s');
+    expect(SQL_JOB_REQUEUE).toContain('using requeued r');
+    expect(SQL_JOB_REQUEUE).toContain('s.run_id = r.run_id');
+    expect(SQL_JOB_REQUEUE).toContain('$2::text is not null');
   });
 });

@@ -262,7 +262,13 @@ export function keyedConcurrencyScenarios(label: string, harness: KeyedHarness):
 
   test(`${label}: a holder that dies frees its key by lease expiry, with no cleanup call`, async () => {
     const driver = await harness.driver();
-    const probe = accountJob({ concurrency: keyed(), hold: true });
+    // Two attempts: the orphaned run is re-delivered, where a lease that lapsed on a row's LAST
+    // attempt is buried by the claim and would leave the key with nobody to take it.
+    const probe = accountJob({
+      concurrency: keyed(),
+      hold: true,
+      retry: { attempts: 2, jitter: false },
+    });
     await enqueueRun(driver, probe, 'acct-1');
     await enqueueRun(driver, probe, 'acct-1');
     const dead = workerOn(harness, driver, 'worker-dead');

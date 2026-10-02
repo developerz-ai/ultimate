@@ -3,7 +3,9 @@
 // Apart from `worker.ts` because the claim loop's question is "may I start this one?" — which job
 // holds which slot, and who gives it back, is bookkeeping of its own.
 
+import type { Clock } from '@ultimat3/core';
 import { logger, renderThrowable } from '@ultimat3/core';
+import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { ConcurrencyUnenforceableError } from './errors-concurrency';
 import { getJob, registeredJobs } from './job';
@@ -11,12 +13,6 @@ import type { HeldLease, LeaseStore } from './leases';
 import { jobLeaseKey } from './leases';
 import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
 
-/**
- * A renewal that REJECTED is not a lost slot: there is a TTL behind it and the interval gets
- * several tries inside it, exactly as `heartbeat.ts` treats a failed `driver.heartbeat`. The
- * heartbeat cannot cover for this one either way — it renews `x_jobs.visible_at`, a different row
- * on a different clock, and knows nothing about `x_job_leases`.
- */
 const noop = (): void => undefined;
 
 export interface FleetSlotOptions {
@@ -33,6 +29,8 @@ export interface FleetSlotOptions {
   readonly renewIntervalMs: number;
   /** What every renewal runs on (`renewal-timer.ts`). Default: a real, unrefed interval. */
   readonly schedule?: IntervalScheduler;
+  /** What "a whole TTL without a renewal landing" is measured on. Default: the system clock. */
+  readonly clock?: Clock;
 }
 
 /**
@@ -97,8 +95,14 @@ export interface FleetSlots {
 }
 
 export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
-  /** The fleet slot each in-flight job holds, so the renewal finds it and the drain frees it. */
-  const held = new Map<string, HeldLease>();
+  /**
+   * The fleet slots each in-flight job holds, OLDEST FIRST, so the renewal finds one and the
+   * settle frees one. A list, because one worker can hold the same job twice: a claim that lapsed
+   * while its body kept running, and this worker's own re-claim of the row. One entry per job id
+   * let the second overwrite the first — the first run's settle then released the second's slot,
+   * and the first's was never released at all.
+   */
+  const held = new Map<string, HeldLease[]>();
 
   return {
     async acquire(claimed) {
@@ -127,7 +131,7 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
         slotHolder(options.workerId, claimed.id),
       );
       if (slot !== undefined) {
-        held.set(claimed.id, slot);
+        held.set(claimed.id, [...(held.get(claimed.id) ?? []), slot]);
         return GRANTED;
       }
       if (handle.whenBusy !== 'fail' || key === undefined) return { outcome: 'wait', limit, key };
@@ -144,47 +148,77 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
     },
 
     startRenewal(jobId, onLost) {
-      const slot = held.get(jobId);
+      // The NEWEST: a run arms its renewal right behind its own acquire.
+      const slot = held.get(jobId)?.at(-1);
       if (slot === undefined) return noop;
-      // Renewed on the lease heartbeat's own interval and released in the same `finally`: one
-      // clock for "this worker still owns the job" and "this worker still owns the slot" is one
-      // fewer way for them to disagree — and `timer.stopped()` is the same latch `heartbeat.ts`
-      // reads, for the same reason.
-      const timer = startRenewalTimer(
-        options.renewIntervalMs,
-        () =>
-          options.leases
-            ?.renew(slot, options.ttlMs)
-            .then((renewed) => {
-              // `=== false`, never `!renewed`, for the reason `heartbeat.ts` reads `held` that way:
-              // a store written before this return value existed resolves `undefined`, and treating
-              // that as a loss would cancel every job on every renewal. Only an explicit no is one.
-              //
-              // `stopped()` re-read AFTER the await for the other half: the run settles, this timer
-              // is stopped and `worker.ts` releases the slot — so the renewal already on the wire
-              // finds the row gone and answers `false` for a job that FINISHED. Reported, that is
-              // `jobs.worker.slot-lost` at error and an abort on a controller `runSignal.dispose()`
-              // has already torn down: noise about a run nobody lost.
-              if (renewed !== false || timer.stopped()) return;
-              timer.stop();
-              logger.error('jobs.worker.slot-lost', {
-                workerId: options.workerId,
-                jobId,
-                leaseKey: slot.key,
-                slot: slot.slot,
-              });
-              onLost?.(slot);
-            })
-            .catch(noop),
-        options.schedule,
-      );
+      // Renewed on the lease heartbeat's own interval and released in the same `finally` — and
+      // LOST by the same two facts `heartbeat.ts` loses a job's lease by: the store saying "not
+      // yours", or a whole TTL on this process's clock with no renewal landing. The heartbeat
+      // cannot cover for this one: it renews `x_jobs.visible_at`, a different row.
+      const now = (): number => nowMs(options.clock);
+      let renewedAt = now();
+      let renewing = false;
+      let lost = false;
+      const lapsed = (): boolean => now() - renewedAt >= options.ttlMs;
+
+      /** Once, then renewal stops: extending a slot this worker no longer holds pushes out another's. */
+      const reportLost = (reason: 'expired' | 'not-ours', error?: unknown): void => {
+        // `stopped()` for the run that FINISHED: its release deletes the row, so the renewal
+        // already on the wire answers `false` for a slot nobody lost.
+        if (lost || timer.stopped()) return;
+        lost = true;
+        timer.stop();
+        logger.error('jobs.worker.slot-lost', {
+          workerId: options.workerId,
+          jobId,
+          leaseKey: slot.key,
+          slot: slot.slot,
+          reason,
+          ...(error === undefined ? {} : { error: renderThrowable(error) }),
+        });
+        onLost?.(slot);
+      };
+
+      const renew = async (): Promise<void> => {
+        if (lost || timer.stopped() || options.leases === undefined) return;
+        // Decided BEFORE the store is asked: a renewal hung on a dead connection never rejects.
+        if (lapsed()) return reportLost('expired');
+        // One in flight at a time, on the connection that is already the thing failing.
+        if (renewing) return;
+        renewing = true;
+        try {
+          const renewed = await options.leases.renew(slot, options.ttlMs);
+          if (timer.stopped()) return;
+          // `=== false`, never `!renewed`: a store written before this answer existed resolves
+          // `undefined`, and reading that as a loss would cancel every job on every renewal.
+          if (renewed === false) return reportLost('not-ours');
+          // A renewal that lands LATE is still late: the slot may already be another worker's.
+          if (lapsed()) return reportLost('expired');
+          renewedAt = now();
+        } catch (error) {
+          // One failed renewal is not a lost slot: the TTL gives the interval several tries.
+          logger.warn('jobs.worker.slot-renewal-failed', {
+            workerId: options.workerId,
+            jobId,
+            leaseKey: slot.key,
+            error: renderThrowable(error),
+          });
+          if (lapsed()) reportLost('expired', error);
+        } finally {
+          renewing = false;
+        }
+      };
+      const timer = startRenewalTimer(options.renewIntervalMs, renew, options.schedule);
       return () => timer.stop();
     },
 
     async release(jobId) {
-      const slot = held.get(jobId);
+      // The OLDEST: the run that settles first is, bar a race nobody loses by, the superseded one
+      // — and if it is not, the superseded run's next renewal answers `false` and cancels it.
+      const [slot, ...rest] = held.get(jobId) ?? [];
       if (slot === undefined) return;
-      held.delete(jobId);
+      if (rest.length === 0) held.delete(jobId);
+      else held.set(jobId, rest);
       // Never lets a settle fail over bookkeeping: an unreleased slot expires on its own TTL.
       await options.leases?.release(slot).catch((error: unknown) => {
         logger.warn('jobs.worker.lease-release-failed', {

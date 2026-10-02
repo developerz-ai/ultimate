@@ -144,6 +144,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     handle: TaskHandle,
     occurrenceMs: number,
     catchUp: boolean,
+    watermarkMs?: number,
   ): Promise<DispatchedOccurrence | undefined> => {
     // The occurrence, not `at`: a catch-up dispatch runs long after the instant it fires for,
     // and the payload has to describe the occurrence the email/report claims to be about.
@@ -166,6 +167,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     const results = await schedulerState.fire(options.driver, {
       task: handle.name,
       occurrenceMs,
+      ...(watermarkMs === undefined ? {} : { watermarkMs }),
       jobs: requests,
     });
     if (results === undefined) {
@@ -323,16 +325,13 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
         if (handle.catchUp === 'run-once') {
           const first = due[0];
           if (first !== undefined) {
-            const ran = fired(await dispatch(handle, first, due.length > 1));
-            // `dispatch` leaves the watermark on the occurrence it RAN — the earliest missed one
-            // here — so the next round found occurrences 2..n still due and fired the second, then
-            // the third, one per tick until the backlog drained: 24 nightly digests a second apart
-            // after a day down. "One catch-up" means the rest are DROPPED, and dropping an
-            // occurrence is moving the watermark past it. `at` rather than the last element of
-            // `due`, which `maxCatchUp` truncates: every occurrence at or before `at` is missed by
-            // definition, and this policy fires none of them.
-            if (first !== at) await schedulerState.markFired(handle.name, at);
-            if (ran) remember(handle, Math.max(first, at));
+            // "One catch-up" means the rest are DROPPED, and dropping an occurrence is moving the
+            // watermark past it: left on the occurrence that RAN, the next round found 2..n still
+            // due and fired one per tick — 24 nightly digests a second apart after a day down.
+            // `at` rather than the last element of `due`, which `maxCatchUp` truncates. It rides
+            // the FIRE (`watermarkMs`): a `markFired` behind it was a second write, and a scheduler
+            // that died between the two handed its successor another catch-up.
+            if (fired(await dispatch(handle, first, due.length > 1, at))) remember(handle, at);
           }
           continue;
         }

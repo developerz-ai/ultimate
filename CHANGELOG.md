@@ -14,14 +14,14 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slices 01–06 have landed: `schema` and
+a later slice appends its group below the last one. `As of 2026-10` slices 01–07 have landed: `schema` and
 `core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
 and `cli`; then slice 04, complete — tier 2's `entity`, `policy` and `http`. A browser-launcher
 repair in `testing` rode along with it. Slice 05 is `auth`: **a deployment with MFA-enrolled
 users has an operator step — the first `auth` entry under Changed.** Slice 06 is complete:
 `query` with `entity`'s comparison rule, `mcp` and `admin`, then `action` with what it changed in
-`http`, `db` and `cli`.
+`http`, `db` and `cli`. Slice 07 is `jobs`; no DDL changed.
 
 ### Added
 
@@ -129,6 +129,14 @@ Repository scripts (slice 06).
 
 - **scripts:** `new-error-code` writes the code's status into its tier's slice and refuses a code
   another slice names.
+
+Tier 3 — jobs (slice 07).
+
+- **jobs:** `announceExhausted` (answers `{ deadLettered, dropped }`), `LEASE_LAPSED_FINAL_ATTEMPT`,
+  `LIVE_STATES`, `JobNotFoundError` (`X_JOB_NOT_FOUND`, HTTP 404), `EVENTS_PURGE_TARGET`,
+  `eventsPurgeTarget`, and the types `AnnounceExhaustedOptions`, `ExhaustedCounts`, `StepFence`.
+  `ClaimOptions` gains optional `onExhausted` and `dropExhausted`; `ScheduledFire` an optional
+  `watermarkMs`.
 
 Tier 5 — cli.
 
@@ -573,6 +581,43 @@ Tier 5 — cli (slice 06).
   skipped when only `openapi.json` is committed. `x manifest --check` on an app with no
   `x.manifest.json` reports `X_MANIFEST_MISSING`, was `X_MANIFEST_DRIFT`.
 
+Tier 3 — jobs.
+
+- **BREAKING — a lease that lapses on a row's final attempt is buried by the next claim.** The row
+  becomes `dead` — or `failed` for a job declaring `retry.deadLetter: false` — and is never handed
+  out again; a job whose worker died on every attempt was re-claimed forever. `lastError` is
+  `LEASE_LAPSED_FINAL_ATTEMPT`; the worker logs `jobs.claim.exhausted`, runs `onSettled` once and
+  counts it. A job that relied on `retry.attempts: 1` being re-run after its worker died raises
+  `retry.attempts`.
+- **BREAKING — `SQL_CLAIM` takes a fifth parameter and also returns buried rows; `SQL_SCHEDULER_FIRE`
+  takes `$4`.** A custom `JobDriver.claim` buries and reports the same way, through
+  `ClaimOptions.onExhausted` and `dropExhausted`. `run-once` moves its watermark in the fire
+  statement on both stores, so a custom `SchedulerState.fire` lands `ScheduledFire.watermarkMs`. A
+  hand-built `Lease` adds `abandon()`.
+- **BREAKING — `cancel` refuses every finished state.** `dead`, `failed`, `done` and `cancelled`
+  are `X_JOB_NOT_CANCELLABLE`; cancelling a dead letter used to destroy its record. To delete a
+  dead letter: `x jobs rm <id>`.
+- **BREAKING — a step write is fenced on the claim.** `StepStore.put(record, by?)`: a write whose
+  claim no longer holds the row is `X_JOB_LEASE_LOST`, so a job body that outlives its lease now
+  fails its step writes with that code instead of writing over the re-claimer's.
+- **BREAKING — `enqueue(..., { runId })` refuses anything but a lowercase uuid** (`X_ID_INVALID`),
+  before anything is staged. The memory driver took any string.
+- **BREAKING — `EventBus.purgeExpired()` returns `Promise<number>`, and `EventLookup.now()` is
+  required.** The purge is awaited, counted, and rejects on failure; it used to fire, answer 0
+  and swallow the failure. A custom bus returns the promise; a custom lookup adds
+  `now(): Promise<number>`.
+- **BREAKING — jobs refuses an id or a count that is not one.** A list cursor's id must be a uuid
+  (`X_JOB_PAGE_INVALID`, which now names `after` or `before`; fix: `x jobs ls --limit 200 --json`).
+  `backfills.list({ runId })` refuses a non-uuid (`X_ID_INVALID`). `retry.attempts` must be a
+  whole finite number of at least 1; `Infinity` and `1.5` were admitted.
+
+Tier 5 — cli (slice 07).
+
+- **BREAKING — the hourly `x.purge` sweeps `x_job_events`.** `RetentionStores.events` is required
+  and `PurgeReport.swept` has a sixth entry; the table only grew before. A hand-built
+  `RetentionStores` passes the bus.
+- **cli:** `x jobs drain` logs `jobs.claim.exhausted` for a row its claim buries.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -803,6 +848,30 @@ Tier 3 — action (slice 06).
   a transition on a non-uuid key changes.
 - **action:** `.contract()`'s OpenAPI assertion reads the registry-wide document. An unregistered
   `.named()` twin whose route another registered action owns fails `X_CONTRACT_DRIFT`.
+
+Tier 3 — jobs (slice 07).
+
+- **jobs:** `requeue` of an unknown id is `X_JOB_NOT_FOUND` (404) on both drivers; it was
+  `X_INVARIANT` on memory and `X_DRIVER_UNAVAILABLE` on Postgres. `requeue({ fromStep })` is one
+  statement.
+- **jobs:** `BulkResult.remaining` counts only what a second call would move; `requeueMany` no
+  longer counts rows whose key a live job holds. `stats()` orders queues by code unit on both
+  drivers. `X_JOB_ROW_STATUS_UNKNOWN` names the real tables.
+- **jobs:** `enqueueInTx` always rejects, never throws synchronously. `enqueue` on Postgres retries
+  its insert once before `X_DRIVER_UNAVAILABLE`.
+- **jobs:** `step.waitForEvent` stamps a new wait from the bus's clock and asks the bus before
+  timing out; a worker whose clock ran ahead missed events and timed out early. A step whose
+  failure record cannot be written still rejects with the step's own error
+  (`jobs.step.failure-unrecorded`).
+- **jobs:** the claim loop retries a failed pass at `pollIntervalMs`. After a wake during a
+  database outage it spun — 452 passes in 500 ms from a 250 ms floor, as recorded in
+  `docs/history/jobs.md`.
+- **jobs:** `ratePerTenant` no longer counts a claim that never started. A fleet slot is lost
+  after a whole TTL with no renewal landing (`X_JOB_SLOT_LOST`; new log
+  `jobs.worker.slot-renewal-failed`). A refusal whose nack missed is not counted. A SIGTERM
+  teardown abandons a registry `forgetWorker` that outlives the drain budget. A job held twice
+  keeps its id in the registry row, and its fleet slot, until the second run ends.
+- **jobs:** a redelivered completed backfill pass reports `{ skipped: false, batches, rows }`.
 
 ## 23.0.0 - 2026-10-02
 

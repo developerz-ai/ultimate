@@ -41,7 +41,13 @@ export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegis
   const startedAt = nowMs(options.clock);
   const host = options.host ?? Bun.env['HOSTNAME'] ?? 'unknown';
 
-  const announce = (): Promise<void> =>
+  /**
+   * Every announce still on the wire. `stop()` waits them out before it forgets: the row an
+   * announce writes after the forget is a stopped worker listed as serving for a whole TTL.
+   */
+  const announcing = new Set<Promise<void>>();
+
+  const send = (): Promise<void> =>
     registry
       .announceWorker(
         {
@@ -63,6 +69,13 @@ export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegis
         });
       });
 
+  const announce = (): Promise<void> => {
+    const sent = send().finally(() => announcing.delete(sent));
+    announcing.add(sent);
+    return sent;
+  };
+
+  // Not awaited — a worker serves whether or not its row has landed — and held in `announcing`.
   void announce();
   const timer = startRenewalTimer(
     options.intervalMs,
@@ -75,6 +88,8 @@ export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegis
   return {
     async stop() {
       timer.stop();
+      // `send` never rejects (it logs), so neither does this.
+      await Promise.all(announcing);
       await registry.forgetWorker(options.workerId).catch((error: unknown) => {
         logger.warn('jobs.worker.forget-failed', {
           workerId: options.workerId,

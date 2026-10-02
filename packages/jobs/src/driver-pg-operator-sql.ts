@@ -15,15 +15,18 @@ const bulkMatch = (alias = ''): string =>
   `${alias}state = $1 and ($2::text is null or ${alias}queue = $2) and ($3::text is null or ${alias}name = $3) and ($5::text is null or ${alias}tenant_id = $5)`;
 
 /**
- * Re-queue up to $4 finished rows. `distinct on` the idempotency namespace, because two dead rows
- * of one key would both go `ready` and the second would break the live index — and `not exists`
- * a live holder, the single requeue's `X_JOB_DUPLICATE`, answered here as "not this row".
- * `matching` is counted in the same statement, before the update, so the caller's `remaining` is
- * `matching - affected` with no second read.
+ * Re-queue up to $4 finished rows. `eligible` is every row of the filter no LIVE job holds the key
+ * of — the single requeue's `X_JOB_DUPLICATE`, answered here as "not this row" — and `distinct on`
+ * the idempotency namespace picks one of them per key, because two dead rows of one key would both
+ * go `ready` and the second would break the live index.
+ *
+ * `remaining` is what a second call could still move, counted in the same statement off the same
+ * snapshot: the eligible rows whose key this call did not just take. A held row was counted too,
+ * so a caller told to "call again until it is zero" never stopped.
  */
 export const SQL_JOB_REQUEUE_MANY = `
-with candidates as (
-  select distinct on (j.name, coalesce(j.tenant_id, ''), j.idempotency_key) j.id
+with eligible as (
+  select j.id, j.name, coalesce(j.tenant_id, '') as tenant, j.idempotency_key, j.created_at
     from x_jobs j
    where ${bulkMatch('j.')}
      and not exists (
@@ -33,7 +36,10 @@ with candidates as (
           and l.idempotency_key = j.idempotency_key
           and l.state in ${LIVE}
      )
-   order by j.name, coalesce(j.tenant_id, ''), j.idempotency_key, j.created_at
+), candidates as (
+  select distinct on (name, tenant, idempotency_key) id, name, tenant, idempotency_key
+    from eligible
+   order by name, tenant, idempotency_key, created_at
    limit $4
 ), moved as (
   update x_jobs
@@ -43,7 +49,13 @@ with candidates as (
   returning id
 )
 select (select count(*) from moved)::int as affected,
-       (select count(*) from x_jobs where ${bulkMatch()})::int as matching
+       (select count(*) from eligible e
+         where not exists (
+           select 1 from candidates c
+             join moved m on m.id = c.id
+            where c.name = e.name and c.tenant = e.tenant
+              and c.idempotency_key = e.idempotency_key
+         ))::int as remaining
 `.trim();
 
 /** Delete up to $4 rows and their step records. `running` is refused before this is sent. */
@@ -267,17 +279,25 @@ select task_name,
  * `woken` announces each queue that received a job, once, when the statement commits — read in
  * the final select because a plain-select CTE nothing reads is never run.
  *
- * $1 task, $2 occurrence (ms), $3 the jobs as a JSON array.
+ * The fence is the OCCURRENCE and the watermark may land past it: `run-once` runs the earliest
+ * missed occurrence and drops the rest, and dropping is the watermark moving beyond them. That was
+ * a second statement behind this one, and a crash between the two fired a second "one catch-up".
+ * `greatest` ignores a null, so with no `$4` the watermark lands on the occurrence — and a `$4`
+ * behind the occurrence can never leave the watermark short of what just fired.
+ *
+ * $1 task, $2 occurrence (ms), $3 the jobs as a JSON array, $4 where the watermark lands (ms) or
+ * null for the occurrence itself.
  */
 export const SQL_SCHEDULER_FIRE = `
 with moved as (
   insert into x_scheduler_state
     (task_name, last_fired_at, updated_at, fired_occurrence_at, fired_at)
-  values ($1, to_timestamp($2::bigint / 1000.0), now(), to_timestamp($2::bigint / 1000.0), now())
+  values ($1, to_timestamp(greatest($2::bigint, $4::bigint) / 1000.0), now(),
+          to_timestamp($2::bigint / 1000.0), now())
   on conflict (task_name) do update
      set last_fired_at = excluded.last_fired_at, updated_at = now(),
          fired_occurrence_at = excluded.fired_occurrence_at, fired_at = excluded.fired_at
-   where x_scheduler_state.last_fired_at < excluded.last_fired_at
+   where x_scheduler_state.last_fired_at < excluded.fired_occurrence_at
   returning task_name
 ), queued as (
   insert into x_jobs

@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 45
-current_focus: "PR 7 — jobs (07-jobs.md)"
+percent: 52
+current_focus: "PR 8 — realtime (08-realtime.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -39,8 +39,9 @@ slices:
     evidence: "PR 6a (#623, 5dcb2ff7): query, with entity's comparison rule, admin and mcp. PR 6b (fix/101-06b-action): action; the audit-redaction row dropped as already satisfied by PR 1. Mutators refuse at declaration without idempotent: true. The bust and the idempotency settle ride the transaction, on both stores. action gained a db dependency, one file, recorded in docs/history/tier-decisions.md - the plan's 'no slice adds an import edge' is departed from there, on purpose. x verify's manifest step and x manifest --check are one check. Codes: X_MUTATOR_NOT_IDEMPOTENT, X_IDEMPOTENCY_RESERVATION_LOST."
   - file: 07-jobs.md
     tier: 3
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    evidence: "PR 7 (fix/101-07-jobs): every row fixed, none dropped. The poison claim is buried in the claim statement on both drivers and announced by the worker; a deadLetter: false job is buried failed through ClaimOptions.dropExhausted, with no DDL. Step writes are fenced on the claim. The event purge is wired into the cli sweep here, not in slice 12. From the four unaudited worker files: six defects found and fixed (fleet slots and the registry row keyed by job id, an unbounded registry stop, a counted refusal that never landed, a throwing context after a nack, silent slot-renewal failures). waitForEvent's timeout is asked of the bus only when the runner thinks time is up; a runner behind the bus still times out late by the skew. Code: X_JOB_NOT_FOUND."
   - file: 08-realtime.md
     tier: 3
     status: not_started
@@ -165,6 +166,11 @@ notes: >-
   declared would.
   developerz-ai[bot] published v23.0.1 again, on PR 5's merge commit; deleted with its tag.
   For the cli PR: configureIdempotency({ scope: 'shared' }) on more than one replica is an
-  instruction with no check - x doctor or boot should refuse the default scope there. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  instruction with no check - x doctor or boot should refuse the default scope there.
+  Also for the cli PR: packages/cli/src/role-start.test.ts 'the sync node answers the upgrade on
+  the web role's own port' failed once in a batch and passed alone three times - cause unknown.
+  For the testing PR: a custom JobDriver.claim that ignores onExhausted / dropExhausted compiles
+  and re-claims forever - a driver conformance suite in @ultimat3/testing would enforce the burial.
+  PR 6b merged as #624 (880bbd87); the bot's v23.0.1 on it was deleted again. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02

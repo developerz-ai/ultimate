@@ -10,8 +10,9 @@ import {
   SQL_EVENT_LIST,
   SQL_EVENT_NOW,
   SQL_EVENT_PUBLISH,
-  SQL_EVENT_PURGE,
+  SQL_EVENT_PURGE_COUNTED,
 } from './driver-pg-sql';
+import { eventsPurgeTarget } from './events';
 import { createPgEventBus } from './events-pg';
 
 function recorder(rows: readonly unknown[] = []) {
@@ -71,7 +72,12 @@ describe('the pg event bus', () => {
   test("every event statement reads the STATEMENT's time, never the transaction's", () => {
     // `now()` is when the transaction began: a bus on a long transaction's connection stamped an
     // event at its start (`events-pg.live.test.ts` proves it on a server).
-    for (const statement of [SQL_EVENT_PUBLISH, SQL_EVENT_NOW, SQL_EVENT_FIND, SQL_EVENT_PURGE]) {
+    for (const statement of [
+      SQL_EVENT_PUBLISH,
+      SQL_EVENT_NOW,
+      SQL_EVENT_FIND,
+      SQL_EVENT_PURGE_COUNTED,
+    ]) {
       expect(statement).not.toContain('now()');
       expect(statement).toContain('statement_timestamp()');
     }
@@ -147,31 +153,33 @@ describe('the pg event bus, read back and swept', () => {
     expect(calls[0]?.params).toEqual([null, 1_000]);
   });
 
-  test('purgeExpired fires the DELETE and answers 0 — this bus keeps no count', async () => {
-    const { executor, calls } = recorder([]);
+  test('purgeExpired is ONE counted DELETE, awaited, and answers what the database removed', async () => {
+    const { executor, calls } = recorder([{ removed: '3' }]);
     const bus = createPgEventBus({ executor });
-    expect(bus.purgeExpired()).toBe(0);
-    // Synchronous by signature, a round trip in fact: the statement is issued, not awaited.
-    await Promise.resolve();
-    expect(calls.map((call) => call.sql)).toEqual([SQL_EVENT_PURGE]);
+    expect(await bus.purgeExpired()).toBe(3);
+    expect(calls.map((call) => call.sql)).toEqual([SQL_EVENT_PURGE_COUNTED]);
     expect(calls[0]?.params).toEqual([]);
+    // Counted in the statement: a bare `returning` ships every deleted row back to be counted.
+    expect(SQL_EVENT_PURGE_COUNTED).toContain('count(*)');
   });
 
-  test('a failed purge never rejects into a caller — housekeeping does not break a publish', async () => {
+  test('a failed purge REJECTS: the sweep step that asked retries, nothing is swallowed', async () => {
     const executor: PgExecutor = {
-      query<R>(sql: string): Promise<readonly R[]> {
-        return sql === SQL_EVENT_PURGE
-          ? Promise.reject(new Error('deadlock detected'))
-          : Promise.resolve([] as readonly R[]);
-      },
+      query: () => Promise.reject(new Error('deadlock detected')),
     };
-    const bus = createPgEventBus({ executor });
-    expect(bus.purgeExpired()).toBe(0);
-    // An unhandled rejection here would fail the process, not this call: the assertion is that a
-    // publish issued in the same turn still settles normally.
-    await expect(bus.publish('invoice.paid', { invoice: 'in_2' })).resolves.toMatchObject({
-      name: 'invoice.paid',
-    });
+    const outcome = await createPgEventBus({ executor })
+      .purgeExpired()
+      .catch((error: unknown) => error);
+    expect((outcome as Error).message).toBe('deadlock detected');
+  });
+
+  test('the bus is a PurgeTarget named for its table, on its own clock', async () => {
+    const { executor, calls } = recorder([{ removed: 2 }]);
+    const target = eventsPurgeTarget(createPgEventBus({ executor }));
+    expect(target.name).toBe('x_job_events');
+    // The sweep's instant is the job's process clock; this table's is the database's.
+    expect(await target.purgeExpired(1)).toBe(2);
+    expect(calls[0]?.params).toEqual([]);
   });
 
   test('size() is -1, the honest "not a number this bus keeps" — never 0, which reads as empty', async () => {

@@ -2,7 +2,7 @@
 // it is the only command here that WRITES to two drivers at once, and the ordering rule that makes
 // that safe — lease, copy steps, enqueue, then ack — has to be readable in one screen.
 
-import { uuid } from '@ultimat3/core';
+import { logger, uuid } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver, JobRecord, JobState } from '@ultimat3/jobs';
 import { claimOf, inspectJobList } from '@ultimat3/jobs';
 import type { Finding } from './output';
@@ -64,6 +64,22 @@ function leaseCandidates(
     limit: candidates.length,
     visibilityTimeoutMs: DRAIN_LEASE_MS,
     workerId: `x-jobs-drain:${uuid()}`,
+    // A claim BURIES a row whose lease lapsed on its final attempt, whoever makes it — this one
+    // too. The drain is an operator's tool with no worker context, so it runs no `onSettled`
+    // (at most once across a crash, as documented) and names no `dropExhausted`: said out loud
+    // here, because an unlistened burial is a row that went `dead` with nothing anywhere saying so.
+    onExhausted: (dead) => {
+      for (const row of dead) {
+        logger.error('jobs.claim.exhausted', {
+          workerId: 'x-jobs-drain',
+          job: row.name,
+          jobId: row.id,
+          attempt: row.attempt,
+          maxAttempts: row.maxAttempts,
+          error: row.lastError ?? '',
+        });
+      }
+    },
   });
 }
 

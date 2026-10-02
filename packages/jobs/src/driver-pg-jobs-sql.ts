@@ -104,14 +104,35 @@ select ${JOB_ROW_COLUMNS}
  * (`driver.ts`) is the same set; a row this matches nothing for was refused before it was sent,
  * or raced to live in between. `woke` announces the row in the statement that made it claimable
  * (`driver-pg-wake-sql.ts`): `x jobs retry` is a job starting now, not at an idle worker's poll.
+ *
+ * $2 is `fromStep`, or null — and the steps are dropped HERE, off the row this statement moved.
+ * They were a statement of their own, sent first: a requeue that then matched nothing (the row
+ * raced to live) had already deleted a running job's steps, and a crash between the two left a
+ * dead letter with its steps gone and no retry queued.
+ *
+ * "From that step onward": the step `fromStep` names and every step that started AFTER it.
+ * Deleting the named step alone left later steps replaying results computed from the old run.
+ * Strictly after, plus the step itself: a step sharing the target's millisecond is not provably
+ * later, and re-running an EARLIER step — the charge before the receipt — is the worse mistake.
  */
 export const SQL_JOB_REQUEUE = `
-update x_jobs
-   set state = 'ready', attempt = 0, run_at = now(), updated_at = now(),
-       claimed_by = null, visible_at = null
- where id = $1 and state in ('dead', 'cancelled', 'done', 'failed')
-returning ${JOB_ROW_COLUMNS},
-          pg_notify('${JOBS_WAKE_CHANNEL}', queue)::text as woke
+with requeued as (
+  update x_jobs
+     set state = 'ready', attempt = 0, run_at = now(), updated_at = now(),
+         claimed_by = null, visible_at = null
+   where id = $1 and state in ('dead', 'cancelled', 'done', 'failed')
+  returning ${JOB_ROW_COLUMNS},
+            pg_notify('${JOBS_WAKE_CHANNEL}', queue)::text as woke
+), dropped as (
+  delete from x_job_steps s
+   using requeued r
+   where $2::text is not null
+     and s.run_id = r.run_id
+     and (s.name = $2::text
+          or s.started_at > (select t.started_at from x_job_steps t
+                              where t.run_id = r.run_id and t.name = $2::text))
+)
+select ${JOB_ROW_NAMES}, woke from requeued
 `.trim();
 
 /**
@@ -123,17 +144,4 @@ select id from x_jobs
  where name = $1 and coalesce(tenant_id, '') = coalesce($2, '') and idempotency_key = $3
    and id <> $4 and state in ('ready', 'delayed', 'running', 'suspended')
  limit 1
-`.trim();
-
-/**
- * "From that step onward": the step `fromStep` names and every step that started AFTER it.
- * Deleting the named step alone left later steps replaying results computed from the old run.
- * Strictly after, plus the step itself: a step sharing the target's millisecond is not provably
- * later, and re-running an EARLIER step — the charge before the receipt — is the worse mistake.
- */
-export const SQL_STEPS_FROM = `
-delete from x_job_steps
- where run_id = $1
-   and (name = $2
-        or started_at > (select started_at from x_job_steps where run_id = $1 and name = $2))
 `.trim();

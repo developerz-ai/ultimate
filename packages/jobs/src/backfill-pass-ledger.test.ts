@@ -96,6 +96,50 @@ describe('the x_backfills ledger', () => {
     expect(await ledger.list()).toHaveLength(1);
   });
 
+  test('a completed pass REDELIVERED under its own run id replays, and reports what it swept', async () => {
+    // The worker died between `ledger.finish` and the ack: the queue hands the same run back, and
+    // the only completed row is this run's own. It answered `{ skipped: true, previousRunId:
+    // <itself> }` — a pass that swept ten rows recorded as one that swept nothing.
+    const ledger = installLedger();
+    const pass = harness({ batch: 3 });
+    const first = await pass.run();
+    const reads = pass.watch.reads;
+
+    const redelivered = await pass.run();
+
+    expect(redelivered).toEqual(first);
+    expect(redelivered).toMatchObject({ skipped: false, batches: 4, rows: 10 });
+    // Replayed from its checkpoints: no page read again, no batch handled again.
+    expect(pass.watch.reads).toBe(reads);
+    expect(pass.seen).toHaveLength(4);
+    const runs = await ledger.list({ name: 'rewrite-titles' });
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ runId: RUN_ID, status: 'completed', rows: 10, cursor: null });
+  });
+
+  test('a redelivered pass that sweeps nothing leaves its completed row alone', async () => {
+    const ledger = installLedger();
+    let matching = 0;
+    let counted = 0;
+    const pass = harness({
+      batch: 3,
+      count: () => {
+        counted += 1;
+        return matching;
+      },
+    });
+    await pass.run();
+    expect(counted).toBe(1);
+    // Rows that started matching AFTER the pass finished are the next sweep's, not a stall of
+    // this one: re-asking would mark a completed pass failed over work it was never handed.
+    matching = 5;
+
+    expect(await pass.run()).toMatchObject({ skipped: false, rows: 10 });
+
+    expect(counted).toBe(1);
+    expect((await ledger.list({ name: 'rewrite-titles' }))[0]?.status).toBe('completed');
+  });
+
   test('force sweeps again and writes a NEW row, keeping the one it reruns', async () => {
     const ledger = installLedger();
     const pass = harness({ batch: 3 });

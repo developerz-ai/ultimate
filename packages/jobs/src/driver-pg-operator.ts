@@ -126,7 +126,14 @@ export function pgOperator(
       );
       const limit = pageLimit('the pg driver list', filter.limit);
       const raw = filter.before ?? filter.after;
-      const cursor = raw === undefined ? undefined : parseJobCursor(raw, 'the pg driver list');
+      const cursor =
+        raw === undefined
+          ? undefined
+          : parseJobCursor(
+              raw,
+              'the pg driver list',
+              filter.before === undefined ? 'after' : 'before',
+            );
       const rows = await exec().query<JobRow>(
         filter.before === undefined ? SQL_JOB_LIST : SQL_JOB_LIST_BEFORE,
         [
@@ -162,7 +169,16 @@ export function pgOperator(
         `requeueMany was asked for ${filter.state} jobs, and only a finished job can be requeued`,
         "pass state: 'dead', 'failed', 'cancelled' or 'done' to requeueMany",
       );
-      const result = await bulk(SQL_JOB_REQUEUE_MANY, filter);
+      // Its own read, not `bulk`: the statement answers `remaining` itself — the rows a second
+      // call could move — where `matching - affected` counted the held rows it never will.
+      const rows = await exec().query<{ affected: Count; remaining: Count }>(SQL_JOB_REQUEUE_MANY, [
+        filter.state,
+        filter.queue ?? null,
+        filter.name ?? null,
+        MAX_BULK_ROWS,
+        filter.tenantId ?? null,
+      ]);
+      const result = { affected: num(rows[0]?.affected), remaining: num(rows[0]?.remaining) };
       if (result.affected > 0) await wake(filter.queue);
       return result;
     },

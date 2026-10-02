@@ -26,7 +26,7 @@ describe('the memory event bus', () => {
 
     clock.advance(1_000);
     // Exactly at the expiry, not past it: `expiresAt <= at` is the boundary a step's wait sits on.
-    expect(bus.purgeExpired()).toBe(1);
+    expect(await bus.purgeExpired()).toBe(1);
     expect(bus.size()).toBe(1);
     expect((await bus.list()).map((event) => event.payload)).toEqual([{ id: 'in_2' }]);
   });

@@ -13,6 +13,15 @@ import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
 import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
 import { createRunSignal } from './run-signal';
+import {
+  isStepSuspension,
+  isWaitTimedOut,
+  StepSuspension,
+  WAIT_TIMED_OUT,
+} from './steps-suspension';
+import { withStepTimeout } from './steps-timeout';
+
+export { isStepSuspension, StepSuspension } from './steps-suspension';
 
 /**
  * The runtime list is the declaration and `StepStatus` is derived from it, the shape
@@ -45,9 +54,23 @@ export interface StepRecord {
   readonly error?: string;
 }
 
+/** The claim a step write is made under: `claimOf(claimed)`, plus the row it names. */
+export interface StepFence {
+  readonly job: string;
+  readonly jobId: string;
+  readonly workerId: string;
+  readonly claim: number;
+}
+
 export interface StepStore {
   get(runId: string, name: string): Promise<StepRecord | undefined>;
-  put(record: StepRecord): Promise<void>;
+  /**
+   * With `by`, the write lands only while that claim still holds the row (`running`, same worker,
+   * same claim ordinal — `SQL_ACK`'s fence) and is `X_JOB_LEASE_LOST` otherwise: the in-process
+   * signal cannot stop a body in ANOTHER process whose lease lapsed. Without it the write is
+   * unfenced — a transfer (`x jobs drain`) or a runner driven by hand, with no row to hold.
+   */
+  put(record: StepRecord, by?: StepFence): Promise<void>;
   list(runId: string): Promise<readonly StepRecord[]>;
   del(runId: string, name: string): Promise<void>;
   clear(runId: string): Promise<void>;
@@ -55,6 +78,13 @@ export interface StepStore {
 
 /** The slice of the event bus a waiting step needs. Implemented by `events.ts`. */
 export interface EventLookup {
+  /**
+   * The bus's OWN clock, in epoch ms: what a publish issued now would be stamped with. A consumer
+   * that wants "published after I asked" takes its "asked at" from here and never from its own
+   * process — `publishedAt` is this clock's, and two clocks compared is a skew between pods
+   * deciding which answers count. `waitForEvent` stamps a NEW wait with it.
+   */
+  now(): Promise<number>;
   find(
     event: string,
     correlationKey: string | undefined,
@@ -90,53 +120,12 @@ export interface StepApi {
   ): Promise<T | undefined>;
 }
 
-/**
- * Control flow, not a failure: it must never be logged as an error or counted as an attempt.
- * Branded by string rather than `instanceof` so two copies of this module still agree.
- */
-export class StepSuspension extends Error {
-  static readonly brand = 'ultimate.jobs.suspension';
-  readonly brand: string = StepSuspension.brand;
-  readonly step: string;
-  readonly resumeAt: number;
-  readonly reason: 'sleep' | 'event';
-
-  constructor(input: { step: string; resumeAt: number; reason: 'sleep' | 'event' }) {
-    super(`step "${input.step}" suspended until ${new Date(input.resumeAt).toISOString()}`);
-    this.name = 'StepSuspension';
-    this.step = input.step;
-    this.resumeAt = input.resumeAt;
-    this.reason = input.reason;
-  }
-}
-
-/**
- * What a timed-out `waitForEvent` persists, and maps back to `undefined` on replay. `undefined`
- * itself cannot survive a store — the pg driver writes `JSON.stringify(output ?? null)` — so the
- * timeout replayed as `null` and `evt === undefined` read as "an event arrived". A namespaced key
- * rather than a bare `{ timedOut: true }`, so no event payload can be mistaken for the marker.
- */
-const WAIT_TIMED_OUT = Object.freeze<Record<string, true>>({
-  '~ultimate.waitTimedOut': true,
-});
-
-function isWaitTimedOut(output: unknown): boolean {
-  return (
-    typeof output === 'object' &&
-    output !== null &&
-    Object.keys(output).length === 1 &&
-    (output as Record<string, unknown>)['~ultimate.waitTimedOut'] === true
-  );
-}
-
-export function isStepSuspension(error: unknown): error is StepSuspension {
-  return error instanceof Error && (error as { brand?: unknown }).brand === StepSuspension.brand;
-}
-
 export interface StepRunnerOptions {
   readonly runId: string;
   readonly jobName: string;
   readonly store: StepStore;
+  /** The claim this attempt runs under — every write is fenced on it. `executeJob` passes it. */
+  readonly fence?: StepFence;
   readonly clock?: Clock;
   readonly events?: EventLookup;
   /** How long a waiting step stays parked between event polls. Default 30s. */
@@ -256,7 +245,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const persist = (record: StepRecord): Promise<void> =>
     expectedQueryLoop(
       'a durable step is written the instant it completes, one statement per step by design',
-      () => store.put(record),
+      () => store.put(record, options.fence),
     );
 
   /**
@@ -331,8 +320,16 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
           attempts,
           error: renderThrowable(error),
         };
-        await persist(failure);
-        remember(failure);
+        try {
+          await persist(failure);
+          remember(failure);
+        } catch (unwritten) {
+          logger.warn('jobs.step.failure-unrecorded', {
+            job: jobName,
+            step: name,
+            error: renderThrowable(unwritten),
+          });
+        }
       }
       throw error;
     } finally {
@@ -389,7 +386,9 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     }
 
     const at = now();
-    const startedAt = existing?.startedAt ?? at;
+    // A NEW wait is stamped by the bus, whose clock stamps every `publishedAt` it is compared
+    // with; the runner's own only when there is no bus to ask. A re-poll keeps what it persisted.
+    const startedAt = existing?.startedAt ?? (await options.events?.now()) ?? at;
     const deadline =
       startedAt +
       finiteDurationMs(waitOptions.timeout ?? 86_400_000, 'step.waitForEvent', 'timeout');
@@ -411,7 +410,13 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
       return hit.payload as T;
     }
 
-    if (at >= deadline) {
+    // `deadline` is on the BUS's clock, so the bus calls the timeout: asked only once this runner
+    // believes the time is up, which costs a wait one statement at its end. A runner AHEAD of the
+    // bus used to give up early by the skew — on an answer still inside its window. (A runner
+    // BEHIND waits the skew longer; knowing that sooner would cost a round trip on every poll.)
+    let remaining = deadline - at;
+    if (remaining <= 0) remaining = deadline - ((await options.events?.now()) ?? at);
+    if (remaining <= 0) {
       if (waitOptions.required === true) {
         throw new JobTimeoutError({
           job: jobName,
@@ -437,7 +442,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
       return undefined;
     }
 
-    const resumeAt = Math.min(deadline, at + pollMs);
+    const resumeAt = at + Math.min(remaining, pollMs);
     await put({
       runId,
       name,
@@ -462,35 +467,4 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     usedNames: () => [...used],
     replayedNames: () => [...replayed],
   };
-}
-
-/**
- * A step's own ceiling. It ABORTS before it rejects, in that order: `run()` fails the step on this
- * rejection and the job retries, so a body still holding a socket open past the deadline would be
- * racing the attempt that replaced it. Cancelling first is the only thing that can stop it.
- */
-function withStepTimeout<T>(
-  work: Promise<T> | T,
-  timeoutMs: number | undefined,
-  deadline: AbortController,
-  error: () => Error,
-): Promise<T> {
-  if (timeoutMs === undefined || timeoutMs <= 0) return Promise.resolve(work);
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const failure = error();
-      deadline.abort(failure);
-      reject(failure);
-    }, timeoutMs);
-    Promise.resolve(work).then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (cause) => {
-        clearTimeout(timer);
-        reject(cause);
-      },
-    );
-  });
 }

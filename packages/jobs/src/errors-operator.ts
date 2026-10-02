@@ -77,14 +77,22 @@ export class JobOnSettledFailedError extends UltimateError {
  * walks past it. `MAX_JOB_PAGE` is passed in — `introspection.ts` owns it and imports this file.
  */
 export class JobPageInvalidError extends UltimateError {
-  constructor(input: { subject: string; maxPage: number; limit?: number }) {
+  constructor(input: {
+    subject: string;
+    maxPage: number;
+    limit?: number;
+    /** Which cursor was refused. Default `after`. */
+    cursor?: 'after' | 'before';
+  }) {
+    const cursor = input.cursor ?? 'after';
+    const source = cursor === 'after' ? 'jobCursor(lastRow)' : 'jobCursor(firstRow)';
     super({
       code: 'X_JOB_PAGE_INVALID',
       cause:
         input.limit === undefined
-          ? `${input.subject} was handed an after cursor that no previous page produced`
-          : `${input.subject} limit is ${input.limit}, over MAX_JOB_PAGE (${input.maxPage}) — the rows one page may answer`,
-      fix: `list({ limit: ${input.maxPage}, after: jobCursor(lastRow) })   # lastRow is the last row of the page before; omit after for the first page, and stop at a page shorter than its limit`,
+          ? `${input.subject} was handed ${cursor === 'after' ? 'an after' : 'a before'} cursor that no page produced — ${cursor}: ${source} of a page this driver answered is the only one it reads; omit it for the first page`
+          : `${input.subject} limit is ${input.limit}, over MAX_JOB_PAGE (${input.maxPage}) — the rows one page may answer; walk further with after: jobCursor(lastRow), and stop at a page shorter than its limit`,
+      fix: `x jobs ls --limit ${renderFixShellArg(String(input.maxPage), '200')} --json`,
       meta: {
         maxPage: input.maxPage,
         ...(input.limit === undefined ? {} : { limit: input.limit }),

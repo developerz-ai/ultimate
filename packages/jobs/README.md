@@ -196,7 +196,13 @@ The event bus has ONE clock. `createPgEventBus({ executor })` stamps `publishedA
 with the database's `now()` — it takes no `clock` — and `bus.now()` answers that same clock. A
 consumer that wants "published after I asked" (`@ultimat3/scraping`'s `eventPrompt`) reads its
 "asked at" from `bus.now()`, never from its own process: a skew between two pods must not decide
-which answers count.
+which answers count. `step.waitForEvent` stamps a new wait from the same clock
+(`EventLookup.now()`), so a worker running ahead of the database still matches an event published
+after it asked.
+`step.waitForEvent` stamps a new wait from that clock (`EventLookup.now()`, required) and asks it
+again before declaring a timeout, so a worker running ahead of the database still matches an event
+published after it asked and does not give up early. `eventsPurgeTarget(bus)` is the bus as a
+`purge()` target: `purgeExpired()` is awaited and answers the rows it removed.
 
 Step names are the replay key, so they must be deterministic and unique in a run — a
 duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control flow
@@ -404,6 +410,11 @@ export const hourly = task({
 | one clock reading per pass | `postgresRateLimitStore.purgeExpired(nowMs)` needs the CALLER's clock — the server's read a 20,000,000-second refill against a frozen one and deleted a live bucket |
 | at least once is safe here | a replayed delete removes rows that are already gone, and a row a purge deleted answers exactly as one that was never there |
 | two targets under one name | `X_INVARIANT`, before the first delete — `step.run` would raise `X_STEP_DUPLICATE` after one table was already empty |
+
+The stored event bus is a target too: `eventsPurgeTarget(bus)` answers
+`{ name: EVENTS_PURGE_TARGET, purgeExpired }` over `bus.purgeExpired()`, which is awaited and
+answers the rows it removed — `x_job_events` only grew while nothing called it. Add it to
+`targets`: `targets: () => [eventsPurgeTarget(eventBus())]`.
 
 `@ultimat3/cli`'s boot declares both halves over the three tables it owns, so an app gets the sweep
 without writing any of the above. It needs a `worker` to run it and a `scheduler` to fire it: a
@@ -730,6 +741,20 @@ between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driv
 
 The pg SQL is exported verbatim (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …) so an agent
 debugging a stuck queue can read and run the exact statement.
+
+**A lease that lapses on a row's final attempt is buried by the claim.** `claim` re-takes a
+`running` row whose lease lapsed — the worker died — but one already at `attempt >= maxAttempts`
+is settled `dead` in the claim statement itself (`SQL_CLAIM`'s second arm; `isFinalAttempt` on the
+memory driver), with `lastError` set to `LEASE_LAPSED_FINAL_ATTEMPT`, counted `dead`, and never
+handed out: a job that kills its worker reaches the dead-letter queue after `retry.attempts`
+claims instead of taking a worker per visibility timeout, forever. The pass is told through
+`ClaimOptions.onExhausted(rows)` — at most once per pass, once per row — and `announceExhausted`
+(`claim-exhausted.ts`) is what a claim round does with them: `jobs.claim.exhausted` at `error`, and
+the job's `onSettled`, and the worker's claim round does exactly that. The row carries
+`maxAttempts` and not the policy, so the CALLER names the jobs declaring `retry.deadLetter: false`
+(`ClaimOptions.dropExhausted` — the worker reads them off its registry): those rows are buried
+`failed` and announced `dropped`, every other one `dead` / `dead-lettered`. A caller that names
+none (`x jobs drain`) buries every such row `dead`.
 
 A driver you write reads a nack's target state through `nackState(options)` — `dead`
 (`deadLetter`), `failed` (`fail`, terminal and out of the dead-letter queue), `suspended` (`park`)
@@ -1071,7 +1096,9 @@ the pg and the memory driver alike. `x jobs`, `/_x` and a dashboard read nothing
 |---|---|---|
 | `list(filter)` | one page, newest first; `filter.after = jobCursor(lastRow)` for the next, `filter.before = jobCursor(firstRow)` for the previous (the rows nearest the cursor, still newest first; never both). Filters: `queue`, `name`, `state`, `tenantId`, `idPrefix`, `createdFrom`, `createdTo` | `MAX_JOB_PAGE` = 200 rows; `DEFAULT_JOB_PAGE` = 100. A page shorter than its limit is the last. A larger `limit`, or a cursor no page produced, is `X_JOB_PAGE_INVALID` |
 | `remove(id)` | delete one job and its steps. A running one is `X_JOB_NOT_REMOVABLE` | — |
-| `requeueMany({ state, queue?, name?, tenantId? })` | re-queue finished rows; a row whose key a live job holds stays | `MAX_BULK_ROWS` = 1,000 per call; answers `{ affected, remaining }` |
+| `requeue(id, { fromStep? })` | re-queue ONE finished job (`REQUEUEABLE_STATES`). A live one is `X_JOB_NOT_REQUEUEABLE`, a key a live job holds `X_JOB_DUPLICATE`, an id nobody queued `X_JOB_NOT_FOUND` — on both drivers. `fromStep` drops that step and every later one in the statement that moves the row | — |
+| `cancel(id, reason?)` | stop a LIVE job (`LIVE_STATES`: ready, delayed, running, suspended). A done, failed, dead or cancelled row is left exactly as it ended and answers `undefined` — `cancelJob` turns that into `X_JOB_NOT_CANCELLABLE` | — |
+| `requeueMany({ state, queue?, name?, tenantId? })` | re-queue finished rows; a row whose key a live job holds stays, and of several finished rows sharing one key the oldest is requeued | `MAX_BULK_ROWS` = 1,000 per call, spent only on rows it can move; answers `{ affected, remaining }`, where `remaining` is what a second call could still move — a held row is not counted, so "call until zero" ends |
 | `removeMany({ state, queue?, name?, tenantId? })` | delete rows in any state but `running` | the same |
 | `promoteMany({ state, queue?, name?, tenantId? })` | `promote` over a set: every row still waiting on its `runAt` is due now. `state` is `delayed` or `ready` (`PROMOTABLE_STATES`) | the same; `remaining` is the rows still waiting |
 | `promote(id)` | a job waiting on its `runAt` — delayed, or backing off — is due now | — |
@@ -1133,6 +1160,7 @@ export const syncAccountWatched = job({
 |---|---|---|---|
 | the body returned and the ack landed | `completed` | `input`, `result` — what `run` returned, typed from it | `done` |
 | failed for good, parked in the dead-letter queue | `dead-lettered` | `input` (or `undefined`: the stored payload no longer parses), `error`, `code` | `dead` |
+| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown | `dead` |
 | failed for good on `retry.deadLetter: false` | `dropped` | the same | `failed` |
 | `whenBusy: 'fail'` over a busy key — the body never ran | `refused` | the same, `code: 'X_JOB_KEY_BUSY'` | `failed` |
 
@@ -1198,13 +1226,14 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 | `X_ABORTED` | a cancelled attempt tried to write a step — core's code, not a second name for it |
 | `X_JOB_LEASE_LOST` | the job was cancelled, or its lease lapsed and the queue re-delivered it, while this worker was still running it |
 | `X_JOB_SLOT_LOST` | the fleet `concurrency` slot this run held was taken by another worker — a different row on a different clock from the lease above |
-| `X_JOB_NOT_CANCELLABLE` | `cancelJob` reached a job that already finished, or a driver with no `cancel` |
+| `X_JOB_NOT_CANCELLABLE` | `cancelJob` reached a job that is not live — done, failed, dead or already cancelled — an id no queue holds, or a driver with no `cancel` |
+| `X_JOB_NOT_FOUND` | `requeue` was asked for an id the queue does not hold — one answer on both drivers. Fix: `x jobs ls --json` |
 | `X_JOB_CONCURRENCY_UNENFORCEABLE` | a registered job declares `concurrency`, plain or keyed, and the driver has no lease store |
 | `X_JOB_KEY_BUSY` | a run claimed under `whenBusy: 'fail'` while its key already held `limit` runs. Classified `terminal`. Fix: `x jobs ls --name <job> --state running --json` |
 | `X_JOB_DECLARATION_INVALID` | `job()` is missing a required field, declares a `concurrency` no worker can honour (plain or keyed), or its `concurrency.key` answered an empty, non-string or over-long key at enqueue |
 | `X_JOB_NOT_REMOVABLE` | `remove` / `removeMany` reached a running job. Fix: `x jobs cancel <id> --json` |
 | `X_JOB_NOT_PROMOTABLE` | `promote` reached a job not waiting on its run time |
-| `X_JOB_PAGE_INVALID` | `list()` was asked for more than `MAX_JOB_PAGE` rows, or handed a cursor no page produced. Fix: `list({ limit: 200, after: jobCursor(lastRow) })` |
+| `X_JOB_PAGE_INVALID` | `list()` was asked for more than `MAX_JOB_PAGE` rows, or handed a cursor no page produced. The cause names which cursor (`after` / `before`). Fix: `x jobs ls --limit 200 --json` |
 | `X_JOB_ON_SETTLED_FAILED` | a declared `onSettled` threw on every one of its tries; logged and reported, never thrown |
 | `X_NOT_IMPLEMENTED` | redis / nats driver |
 
@@ -1240,6 +1269,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `JobMaxAttemptsError` | `X_JOB_MAX_ATTEMPTS` | `src/errors.ts` |
 | `JobNameTakenError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
 | `JobNotCancellableError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
+| `JobNotFoundError` | `X_JOB_NOT_FOUND` | `src/errors-requeue.ts` |
 | `JobNotPromotableError` | `X_JOB_NOT_PROMOTABLE` | `src/errors-operator.ts` |
 | `JobNotRemovableError` | `X_JOB_NOT_REMOVABLE` | `src/errors-operator.ts` |
 | `JobNotRequeueableError` | `X_JOB_NOT_REQUEUEABLE` | `src/errors-requeue.ts` |

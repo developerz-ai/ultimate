@@ -176,6 +176,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         'x_auth',
         'x_notify_deliveries',
         'x_notify_inbox',
+        'x_job_events',
       ]);
       // Three dead rows gone, the live attempt kept: the purge measures against the caller's
       // clock, so a sweep that read `now()` on the server would take a different set. The two
@@ -271,6 +272,36 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       } finally {
         resetNotifyStores();
       }
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  // `x_job_events` takes a row per `publishEvent` and an expired one was only ever FILTERED by
+  // `find`: the bus's purge had no caller, so the table grew for the life of the deployment.
+  test(
+    'x_job_events shrinks: expired events go, a live one stays matchable',
+    async () => {
+      const started = await boot();
+      await started.events.publish('otp.entered', { code: 1 }, { ttl: '1h' });
+      // Expired on the DATABASE's clock, which is the only one this table is measured on. Written
+      // directly, because getting there through the bus means waiting out a ttl.
+      for (const code of [2, 3]) {
+        await on(
+          probeUrl(),
+          `insert into x_job_events (id, name, payload, published_at, expires_at)
+           values (gen_random_uuid(), 'otp.entered', '{"code":${code}}',
+                   now() - interval '2 hours', now() - interval '1 hour')`,
+        );
+      }
+      expect(await countIn('x_job_events')).toBe(3);
+
+      const report = await runSweep();
+
+      expect(report.swept.find((sweep) => sweep.name === 'x_job_events')?.removed).toBe(2);
+      expect(await countIn('x_job_events')).toBe(1);
+      expect((await started.events.find('otp.entered', undefined, 0))?.payload).toEqual({
+        code: 1,
+      });
     },
     BOOT_TIMEOUT_MS,
   );

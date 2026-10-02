@@ -5,12 +5,14 @@
 
 import type { ShutdownReason } from '@ultimat3/core';
 import { beginWork, logger, onShutdown, recordJob, renderThrowable, uuid } from '@ultimat3/core';
+import { announceExhausted } from './claim-exhausted';
 import { nowMs } from './clock';
 import { createDrainBudget, settleAllBy } from './drain-wait';
-import type { ClaimedJob } from './driver';
+import type { ClaimedJob, JobRecord } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import { JobDrainedError } from './errors';
 import type { JobExecution } from './execute';
+import { registeredJobs } from './job';
 import { createLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';
 import { claimAsks, createAdmission } from './worker-admit';
@@ -43,6 +45,7 @@ export function createWorker(options: WorkerOptions): Worker {
     ttlMs: visibilityTimeoutMs,
     renewIntervalMs: heartbeatIntervalMs,
     ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
 
   const admit = createAdmission({
@@ -94,8 +97,12 @@ export function createWorker(options: WorkerOptions): Worker {
   let interrupted = 0;
   let refused = 0;
   let dropped = 0;
-  /** The ids this worker holds right now — what its registry row reports. */
-  const holding = new Set<string>();
+  /**
+   * The ids this worker holds right now, with how many RUNS hold each — what its registry row
+   * reports. A count, because one worker can hold a job twice (a claim that lapsed under a body
+   * still running, then its own re-claim): a set dropped the id when the first run ended.
+   */
+  const holding = new Map<string, number>();
   let registration: WorkerRegistration | undefined;
   /** `queue_depth` and its two siblings, republished on their own interval (`worker-queue-depth.ts`). */
   const publishQueueDepth = createQueueDepthPublisher({
@@ -147,8 +154,36 @@ export function createWorker(options: WorkerOptions): Worker {
       // claiming" now, not at the next tick. What this round already holds still runs to the end
       // — that is the drain, and `stop()` waits for it.
       if (!claiming()) break;
-      const claimed = await options.driver.claim({ ...ask, visibilityTimeoutMs, workerId });
+      // A lease that lapsed on a row's final attempt is settled by the claim itself and handed to
+      // `onExhausted`, never out as work: this round is the only thing that can count it, log it
+      // and tell the job. `dropExhausted` is the policy the row does not carry.
+      const buried: JobRecord[] = [];
+      const claimed = await options.driver.claim({
+        ...ask,
+        visibilityTimeoutMs,
+        workerId,
+        dropExhausted: registeredJobs()
+          .filter((handle) => handle.retry.deadLetter === false)
+          .map((handle) => handle.name),
+        onExhausted: (dead) => {
+          buried.push(...dead);
+        },
+      });
       if (claimed.length > 0) found = true;
+      if (buried.length > 0) {
+        found = true;
+        const ended = await announceExhausted({
+          exhausted: buried,
+          workerId,
+          context: options.context,
+        });
+        deadLettered += ended.deadLettered;
+        dropped += ended.dropped;
+        for (const row of buried) {
+          const label = JOB_OUTCOME_LABELS[row.state === 'failed' ? 'dropped' : 'dead-lettered'];
+          if (label !== null) recordJob(row.queue, label);
+        }
+      }
 
       for (const [index, job] of claimed.entries()) {
         const queue = job.queue;
@@ -170,7 +205,7 @@ export function createWorker(options: WorkerOptions): Worker {
         // core's own in-flight wait sits between `accept` and `inflight` and exists for exactly
         // this. Counted nowhere, the worker had to wait for its own jobs inside a hook.
         const finishWork = beginWork();
-        holding.add(job.id);
+        holding.set(job.id, (holding.get(job.id) ?? 0) + 1);
         const running = runClaimed(job, admission.refusal)
           .then((execution) => {
             if (execution.outcome === 'completed') processed += 1;
@@ -193,7 +228,9 @@ export function createWorker(options: WorkerOptions): Worker {
             return execution;
           })
           .finally(async () => {
-            holding.delete(job.id);
+            const held = (holding.get(job.id) ?? 1) - 1;
+            if (held === 0) holding.delete(job.id);
+            else holding.set(job.id, held);
             lease.release();
             // The slot is free NOW. A full worker asks the queue for nothing, so its loop backs
             // off like an idle one — and waiting that out with a backlog behind the job that
@@ -335,9 +372,15 @@ export function createWorker(options: WorkerOptions): Worker {
           fix: 'raise the drain budget past the slowest job — configureLifecycle({ deadlineMs: 600_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
         });
       }
-      // Before the close, and awaited: the row is deleted through the driver being closed.
-      await registration?.stop();
+      // Before the close, and awaited: the row is deleted through the driver being closed. Under
+      // the SAME budget as the jobs: `forgetWorker` is a statement on the pool that may be the
+      // thing failing, and unbounded it held a SIGTERM teardown open with the driver never closed.
+      // Abandoned, the row expires on its own TTL — what a killed worker's does.
+      const registered = registration;
       registration = undefined;
+      if (registered !== undefined && !(await settleAllBy([registered.stop()], budget))) {
+        logger.warn('jobs.worker.registry-abandoned', { workerId, reason });
+      }
       await options.driver.close?.();
     } finally {
       // Whatever the close did, this worker is done: a state left at 'draining' is a drain that
@@ -395,7 +438,7 @@ export function createWorker(options: WorkerOptions): Worker {
         host: options.host,
         queues,
         concurrency: queues.reduce((slots, queue) => slots + slotsFor(queue), 0),
-        inFlight: () => [...holding],
+        inFlight: () => [...holding.keys()],
         // The visibility timeout, renewed on the heartbeat interval: a killed worker leaves the
         // registry on exactly the schedule the queue takes its jobs back.
         ttlMs: visibilityTimeoutMs,

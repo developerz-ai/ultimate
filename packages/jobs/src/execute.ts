@@ -151,6 +151,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     runId: claimed.runId,
     jobName: handle.name,
     store: driver.steps,
+    fence: { job: handle.name, jobId: claimed.id, ...claimOf(claimed) },
     signal,
     // The DECLARED per-step ceiling and event poll. Passed here or nowhere: this is the only
     // production construction of a runner, so a `StepRunnerOptions` field it omits is a feature

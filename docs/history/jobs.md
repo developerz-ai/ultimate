@@ -1248,3 +1248,54 @@ caller-allocated id needed `SQL_ENQUEUE` to refuse a second row under it — a p
 violation would have wedged the relay on a repeated publish — and that refusal also closes the
 "re-publish after the first job finished runs the handler twice" window the README documented.
 
+
+## Moved 2026-10-02 — how a row ends
+
+Plan 101, slice 07. Each row is a rule `packages/jobs/CLAUDE.md` now states in a line, and what it
+replaced.
+
+| Rule | What it was, and what that cost |
+|---|---|
+| the claim BURIES a lease that lapsed on the final attempt | `SQL_CLAIM` re-took any `running` row past `visible_at` and added one to `attempt`; nothing compared it with `max_attempts`. A job that killed its worker was re-delivered every visibility timeout, forever — attempts 1..8 against `maxAttempts: 3` on the memory driver — and never reached the dead-letter queue. The second arm settles it `dead` in the claim statement, writes `LEASE_LAPSED_FINAL_ATTEMPT`, counts it, and answers it through `ClaimOptions.onExhausted`; `announceExhausted` logs `jobs.claim.exhausted` and runs `onSettled` |
+| always `dead`, `retry.deadLetter: false` included | the row carries `max_attempts` and not the policy; a statement cannot read a declaration |
+| `cancel` is fenced on `LIVE_STATES` | the fence was `state <> 'done'`: `cancelJob(driver, <dead id>, 'oops wrong id')` rewrote `dead / "card declined"` into `cancelled / "oops wrong id"` and took the row out of `deadLetters()` |
+| `requeue` of an unknown id is `X_JOB_NOT_FOUND` | memory raised `X_INVARIANT`, pg `X_DRIVER_UNAVAILABLE` — from a driver answering perfectly well |
+| `requeue({ fromStep })` is one statement | the steps were deleted first, in their own statement: a requeue that then matched nothing had already dropped a live job's steps |
+| `enqueue` sends its insert twice at most | insert-then-lookup: a holder that settled between the two left the lookup empty, and the refusal told the caller to run a migration |
+| `BulkResult.remaining` is what a second call would move | `requeueMany` counted rows whose key a live job holds, so "call again until it is zero" never ended; the memory driver also spent `MAX_BULK_ROWS` on those rows before skipping them |
+| `stats()` orders queues by code unit | `localeCompare` on memory, the database collation on pg |
+| a list cursor's id is a uuid | `123:not-a-uuid` was an empty page on memory and a raw `22P02` on pg |
+| `backfills.list({ runId })` refuses a non-uuid (`X_ID_INVALID`) | the same pair of answers, on the ledger |
+| `retry.attempts` is `finiteCount`, min 1 | `>= 1` admitted `Infinity` and `1.5`, which met `$7::int` at the first enqueue |
+| the fire's fence is the occurrence, and `$4` is where the watermark lands | `run-once` marked `at` in a second statement; a crash between the two fired a second catch-up |
+
+Moved out of `CLAUDE.md` for its size ceiling, unchanged in the code:
+
+- A settle is fenced on the CLAIM because a worker id alone let a worker's own earlier body settle
+  its re-claim.
+- A boot-supplied service actor was considered for a job's tenant and rejected: the job declares it.
+- `createLimiter`'s five screened numbers are `perTenant`, `perQueue`, `global`,
+  `ratePerTenant.limit` and `ratePerTenant.windowMs`.
+- The durable tables `SQL_JOBS_TABLE` installs: `x_jobs`, `x_job_steps`, `x_backfills`, `x_outbox`,
+  `x_scheduler_state`, `x_scheduler_leader`, `x_job_leases`, `x_job_events`, `x_job_pauses`,
+  `x_job_workers`, `x_job_counters`.
+- The row counts screened with `finiteCount` (min 0): `list`, `deadLetters`, the backfill ledger's
+  `list`, `assertClaimBounds`.
+
+## Moved 2026-10-02 — the runtime half of plan 101, slice 07
+
+| Rule | What it was, and what that cost |
+|---|---|
+| the worker LISTENS to a burial | the drivers buried a poison row and handed it to `onExhausted`, and `claimRound` passed no listener: nothing logged, no `onSettled`, `stats().deadLettered` unmoved |
+| a burial honours `retry.deadLetter: false` (`ClaimOptions.dropExhausted`) | always `dead`: the row carries `max_attempts` and not the policy. The caller holds the registry, so the caller names the jobs — no column |
+| a step write is fenced on the claim (`StepFence`) | `SQL_STEP_PUT` was fenced only by the in-process signal, which cannot stop a body in another process: a worker stalled past its lease wrote its step over the re-claimer's |
+| a failed pass re-arms at the floor | a wake cut the wait to 0 and only `passed()` raised it again, which a rejecting pass never reaches: 452 passes in 500 ms from a 250 ms floor during an outage |
+| a wait is stamped, and timed out, by the bus | `startedAt` was the worker's clock against the database's `published_at`: a worker ahead never matched an event published inside the skew, and gave up early by the same amount |
+| a lease for a run that never started is `abandon()`ed | `ratePerTenant` stamped at `tryAcquire` and `release()` kept the stamp: a job shed over `job.concurrency` spent a start per poll interval |
+| a fleet slot is lost at a TTL of failed renewals | a rejecting `renew` was swallowed with no line, so the cap was exceeded in silence; one job held twice shared one map entry and released the wrong slot |
+| the registry stop is under the drain budget, after the announce on the wire | a hung `forgetWorker` held a SIGTERM teardown open with the driver never closed; an announce landing after the forget listed a stopped worker for a TTL |
+| a refusal whose nack missed is no refusal | `refuseKeyBusy` answered and counted `refused` for a row another worker owned, and a throwing `context()` failed the round over a refusal already written |
+| `enqueue({ runId })` is a lowercase uuid (`X_ID_INVALID`) | memory took any string, pg raised a raw `22P02` — on the staged path, the caller's whole transaction |
+| a redelivered completed backfill replays | it answered `{ skipped: true, previousRunId: <itself> }`; it now leaves its completed row alone unless a body runs |
+| `x_job_events` is swept | the stored bus's `purgeExpired()` was fire-and-forget with no caller: the table only grew |
+
