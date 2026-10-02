@@ -128,3 +128,41 @@ describe('unit · the scaffolded chart boots, drains and scales honestly', () =>
     }
   });
 });
+
+// The sync node admits a socket from the host and port it was reached on (and that host's https
+// spelling, TLS having ended at the Ingress) — so the chart works with no `APP_URL` exactly as long
+// as ONE host rule serves both the pages and `/_x/sync`. Two rules, or a second host, and every
+// websocket of a fresh install is 403 X_SOCKET_ORIGIN_REFUSED.
+describe('unit · the scaffolded chart serves the pages and the socket on one origin', () => {
+  test('one host rule carries both /_x/sync and /', () => {
+    const ingress = fileAt('docker/helm/templates/ingress.yaml');
+    expect(ingress.match(/- host: /g)).toHaveLength(1);
+    const rule = ingress.slice(ingress.indexOf('- host: '));
+    expect(rule.indexOf('path: /_x/sync')).toBeGreaterThan(-1);
+    expect(rule.indexOf('path: /\n')).toBeGreaterThan(rule.indexOf('path: /_x/sync'));
+  });
+
+  // Undeclared, a node reached over plain http behind the TLS ingress admits both spellings of
+  // its host. The chart knows the public origin, so it declares it.
+  test('the sync role is handed APP_URL from the ingress host, https when the ingress has TLS', () => {
+    const helpers = fileAt('docker/helm/templates/_helpers.tpl');
+    expect(helpers).toContain(
+      '{{- if and (eq $role "sync") $root.Values.ingress.enabled (not (hasKey $root.Values.env "APP_URL")) }}',
+    );
+    expect(helpers).toContain(
+      'value: {{ printf "%s://%s" (ternary "https" "http" $root.Values.ingress.tls) $root.Values.ingress.host | quote }}',
+    );
+    // Before the operator's own `env`, which therefore never renders a duplicate key beside it.
+    expect(helpers).toContain('- name: APP_URL');
+    expect(helpers).toContain('range $key, $value := $root.Values.env');
+    expect(helpers.indexOf('- name: APP_URL')).toBeLessThan(
+      helpers.indexOf('range $key, $value := $root.Values.env'),
+    );
+  });
+
+  test('values.yaml says when APP_URL is needed, by name', () => {
+    const text = fileAt('docker/helm/values.yaml');
+    expect(text).toContain('APP_URL');
+    expect(text).toContain('X_SOCKET_ORIGIN_REFUSED');
+  });
+});

@@ -6,54 +6,26 @@
 // policy is never sent to that actor — it arrives as a `delete` if they hold it, and is dropped
 // otherwise.
 
-import { type Actor, type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
+import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
-import { type LiveCursor, makeCursor, type ReconnectBudget, type ResumeSource } from './cursor';
+import { type LiveCursor, makeCursor } from './cursor';
 import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import { type FanoutDeps, fanoutChange, snapshotFrame } from './live-fanout';
+import { floorAfterRead } from './live-floor';
+import { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
 import { refuseSubscription } from './live-refusal';
 import { resumeOnto } from './live-resume';
 import { liveTenantOf, windowId } from './live-tenant';
 import { createEntry, fillWindow, type QueryEntry } from './query-window';
 import type { SyncSocket } from './socket';
-import { type Subscriber, SubscriberGate, type SubscriberGateOptions } from './subscriber-gate';
+import { type Subscriber, SubscriberGate } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
 import type { Frame } from './sync-protocol';
-import type { Scheduler } from './thundering-herd';
 
-export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
-  readonly source: ResumeSource;
-  readonly budget?: ReconnectBudget;
-  readonly clock?: Clock;
-  readonly maxPerSocket?: number;
-  readonly maxPerTenant?: number;
-  readonly tenantOf?: (actor: Actor | null) => string | null;
-  /**
-   * Distinct `(query, input)` pairs this node will hold at once. A `qid` derives from
-   * client-chosen input, so without a ceiling one socket mints entries — a matcher, a row window,
-   * a `WindowLock` and a fanout target each — until the process dies.
-   */
-  readonly maxEntries?: number;
-  /**
-   * How long one entry's SHARED snapshot read may hold its slot. Defaults to
-   * `DEFAULT_READ_DEADLINE_MS`. Without it a `definition.snapshot` that never settles pinned the
-   * slot for the life of the process and every later cold subscriber joined a promise nothing
-   * would resolve — one wedged read taking every future subscriber of that query id with it.
-   */
-  readonly readDeadlineMs?: number;
-  /** Injected so that deadline is provable without waiting for one. Production uses `setTimeout`. */
-  readonly schedule?: Scheduler;
-}
-
-/**
- * Live `(query, input)` pairs one node holds. Reached, the next NEW pair is refused with
- * `X_SUBSCRIPTION_LIMIT`; subscribing to a pair that already exists keeps working, because the
- * cost this bounds is the entry, not the subscriber.
- */
-export const DEFAULT_MAX_ENTRIES = 10_000;
+export { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
 
 export class LiveQueryRegistry {
   readonly #definitions = new Map<string, LiveQueryDefinition>();
@@ -67,6 +39,11 @@ export class LiveQueryRegistry {
   /** What one lane needs, and nothing this class holds beyond it. */
   readonly #fanout: FanoutDeps;
   #lastLsn = '';
+  /**
+   * This node's mark for a window read before it held any position: unique to the process, and
+   * `!` sorts below every hex digit, so every real change is above it.
+   */
+  readonly #origin = `!${uuid()}`;
   #staleChanges = 0;
 
   constructor(options: LiveQueryRegistryOptions) {
@@ -166,7 +143,15 @@ export class LiveQueryRegistry {
     // dispatched concurrently, N of them reading a count nothing had grown yet.
     const slot = this.#book.reserve(args.socket, sid);
     try {
-      return await this.#subscribeReserved(definition, sid, args);
+      for (;;) {
+        // `authorize`, the read and the row pass all await, and a re-auth that lands under them
+        // re-decides only what is ATTACHED. So a subscription seated for an actor the socket no
+        // longer carries is taken back and served again under the one it does.
+        const actor = args.socket.actor;
+        const served = await this.#subscribeReserved(definition, sid, args);
+        if (args.socket.actor === actor) return served;
+        this.unsubscribe(args.socket.id, sid);
+      }
     } finally {
       // After the attach on every path, so the slot is only ever given back to a count that has
       // already grown — or, on a failure, to one that never will.
@@ -223,7 +208,10 @@ export class LiveQueryRegistry {
     // replays. One that names another window — the same browser, signed in to another org, or a
     // forged frame — is not a position in this one: it is a cold start, never a replay of a ring
     // this subscriber's window does not own.
-    if (args.cursor && args.cursor.qid === qid) {
+    //
+    // Nor is ANY cursor a position in a window known to have missed a change: the ring still
+    // answers a delta for it, and that delta is the hole. A stale entry serves cold starts only.
+    if (args.cursor && args.cursor.qid === qid && !entry.stale) {
       const who = { sid, actor: args.socket.actor };
       const resumed = await resumeOnto(
         {
@@ -319,6 +307,9 @@ export class LiveQueryRegistry {
       } catch (error) {
         if (isPolicyDenial(error)) {
           this.unsubscribe(socket.id, subscription.sid);
+          // Said under the sid, as a refused subscribe is: unsaid, the client kept the rows on
+          // screen in state `live` for a subscription this node no longer serves.
+          refuseSubscription(socket, subscription.sid, error);
           dropped.push(subscription.sid);
           continue;
         }
@@ -433,6 +424,10 @@ export class LiveQueryRegistry {
     cursor: LiveCursor,
   ): LiveSubscription {
     const subscription = this.#attach(entry, socket, sid, cursor);
+    // The policy pass ran outside the lane, so a change may have been folded into the window
+    // between the rows this subscriber was served and this attach: it is in neither their frame
+    // nor their patch stream. Marked, so the next delivery re-snapshots them out of the window.
+    if (entry.lsn !== cursor.lsn) socket.markDesynced(sid);
     if (socket.closed) this.unsubscribe(socket.id, sid);
     return subscription;
   }
@@ -495,6 +490,10 @@ export class LiveQueryRegistry {
    */
   async #read(entry: QueryEntry, who: Subscriber): Promise<SnapshotResult> {
     const window = await fillWindow(entry);
-    return { rows: await this.#gate.filterRows(entry, who, window.rows), lsn: window.lsn };
+    const lsn = floorAfterRead(this.#options.source, entry, window, {
+      lastLsn: this.#lastLsn,
+      origin: this.#origin,
+    });
+    return { rows: await this.#gate.filterRows(entry, who, window.rows), lsn };
   }
 }

@@ -1226,3 +1226,194 @@ before quoting.
 | `useMutation` | 21,725 (after the outbox left islands) |
 | `useQuery` | 47,696 |
 | `useChannel` | 45,585 |
+
+## 2026-10-02 — the replication pipeline (plan 101, slice 08)
+
+Seven decisions, each with what was rejected.
+
+**A dead stream is the replicator's to bring back.** `#die` recorded `stats().failure`; nothing
+read it, `running` stayed `true`, the advisory lock stayed held, and every live window in the fleet
+froze until the pod was restarted. `ChangeFeed.start` now takes `onEnd(reason)` and
+`createReplicator` clears `running`, stops the feed, releases the lock and redials on
+`retryDelayMs`. Rejected: retrying `transport.publish` in place — a second recovery path beside the
+restart, and the restart already redelivers the refused change, because the walsender resumes at
+the last CONFIRMED transaction and the replicator's own `from` drops what it already published.
+Rejected: a readiness check alone — it fails the pod, and a pod that restarts is a slower spelling
+of the same loop with a cold process in the middle. The listener is called, never awaited: it calls
+`stop()`, which awaits the very pump that is calling it.
+
+**Bus rows are revived by the column that declared them.** The alternative was tagging values on
+the wire (`{ $x: 'date', v }`, as a cursor's sort key does). Tags decide by shape, so a `jsonb`
+value that happens to look like a tag has to be escaped, forever; the entity's own `$parse` decides
+by declaration and is the decoder the replicator used one hop earlier. `bytes()` is the one kind
+with no text form its column reads back, so it crosses as base64, keyed off the column's kind. A
+value a column refuses is kept as it arrived: a change that crosses unrevived is the old behaviour,
+a change dropped is a window that silently diverges.
+
+**`ChangeEvent.omitted` is entity property names**, not physical columns: the consumer compares it
+against a projection and has never seen a physical name. Filled from the old tuple under FULL only
+— a key-only old tuple carries NULL placeholders for every other column, and copying one across
+would publish `null` for a value nobody touched.
+
+**A ring's floor at birth is its first patch**, raised earlier by `floorAt(qid, lsn)` when a window
+read lands. Rejected: floor-on-read alone — a snapshot with no position (`lsn: ''`) floors nothing,
+and a ring born unfloored is the defect. The tombstone table (`#forgotten`) went with it: a ring
+that always has a floor needs no memory of the ring before it.
+
+**A new producer after a known one is a gap.** The comment said it was not, because a restart
+legitimately rewinds `seq`. But a new producer exists only because the run before it died, and the
+tail of a dead stream has no later sequence number to be missed against.
+
+**Weak auth is decided by `sslmode`, with no new knob.** `require` and `verify-*` guarantee the
+session is encrypted; `disable` is the operator saying it is not, which is the opt-in. `prefer` and
+`allow` guarantee nothing, so a session that DID negotiate TLS under `prefer` is refused too: the
+mode is strippable, and what was negotiated this time is not what an attacker on the path allows.
+
+**The params-channel identity warning is a log event, not an `X_*` code**
+(`replication.channel_identity_partial`). It is never thrown, and `X_LIVE_REPLICA_IDENTITY` means
+"no replica identity at all" — reusing it would have changed a shipped code's meaning.
+
+**`ByteWriter.uint8` lost the byte that caused a growth.** `this.#bytes[this.#room(1)] = v` reads
+`#bytes` before `#room` replaces it, so the byte landed in the buffer being discarded. Found by a
+fixture tuple over 128 bytes; harmless in production only because every growth-time `uint8` there
+was a `cstring` terminator, and a fresh buffer is zero-filled. Every other writer already took its
+offset first.
+
+**A lost lock ends the stream.** The lock is a session; a session that dies while the replication
+stream stays up is a lock Postgres grants to the next process that asks. `AdvisoryLock.onLost` is
+REQUIRED, `PgAdvisoryLock` watches its idle session (`PgConnection.watchIdle`: one parked read
+between statements, which a `query()` takes over rather than races), and the replicator answers a
+loss as it answers a dead stream. Rejected: polling `SELECT 1` — a second timer, a statement per
+interval, and a window as wide as the interval; the socket closing is observable for free.
+
+**A `fix:` is one command, and `x doctor` has no `db` subcommand.** Nine fix lines in the Postgres
+client read `x doctor db — <advice>`. The advice moved to the cause and the fix is `x doctor --json`.
+
+**`replicator.ts` was split along the seam nobody else imports**: `advisory-lock.ts` took the lock
+contract and its in-memory implementation. The consume side (`parseEnvelope`, `SeqGapDetector`)
+stayed until `sync-node.ts` could change its import in the same edit — a re-export would be a
+shim — and moved the same day to `replicator-envelope.ts`, with `ChangeEnvelope` and `parseChange`:
+the bus envelope's read side is one file, the publisher another.
+
+## 2026-10-02 — the outbox is at-least-once, and the server makes it exactly-once
+
+An outbox entry leaves the disk when its ack is written, so an entry whose 200 arrived in a
+document that was being replaced is still queued for the next one. That document resends it ONCE,
+under the same idempotency key, and is answered from the idempotency store: at-least-once delivery,
+exactly-once application. A replay that arrives while the first attempt is still running gets 409
+`X_IDEMPOTENCY_CONFLICT`, which the page treats as retryable and keeps queued.
+
+A trace of four POSTs for one key, as observed: the offline refusal, the real send, a refused
+connection during a server restart, the reconnect replay.
+
+A `rescope` (a principal change within one page) calls `OfflineQueue.abandon()` synchronously,
+before anything is awaited: a pass parked inside `send` would otherwise resume into the next
+principal's session. Abandoned, it sends nothing more and writes nothing back.
+
+Moved here from `packages/realtime/CLAUDE.md` the same day, for room: the two options
+`bun run finite-bounds` missed were `SubscriptionBook`'s `maxPerTenant` and `openNatsClient`'s
+`maxReconnectAttempts`; the foreign-error fixtures are `PoolTimeout`, `Denied` and
+`ThirdPartySdkError`; the one `backoffDelay` is described under "Moved 2026-10-01".
+
+## 2026-10-02 — the beat is the node's to name, and the origin rule meets a proxy
+
+**`hello.heartbeatMs`.** The client beat was a constant (15 s, then 10 s) against a presence ttl
+and an idle budget only the node knows. The node now names it on its `hello` reply —
+`min(ttl / 3, idle / 4)`, floored at 1 s — and `Heartbeat.follow` re-arms on it for the life of
+that socket; the next socket starts on the default until its own node speaks. `0` stays off. The
+SharedWorker engine follows it on the real socket, each tab hears the same `hello` on its next
+beat, and the engine reaps a port on the LONGER of its own figure and the node's: reaping on the
+shorter closed every healthy tab of an app with a long ttl.
+
+**A queue whose principal left refuses.** `OfflineQueue.enqueue` on an abandoned queue throws
+`X_OFFLINE_QUEUE_ABANDONED` (before and after its store read) instead of holding the write in
+memory where nothing sends it. `useMutation` drops the twin and rejects — for this and for a disk
+that refused the write, which used to leave the twin painted forever.
+
+**The upgrade's origin, behind TLS.** Exact scheme, host and port admitted `http://host` and
+refused `https://host` on every deployment whose TLS ends at a proxy (a PaaS, the chart's
+Ingress), because the node is reached over plain http there and a browser sends no
+`sec-fetch-site` on a websocket handshake (measured, Chrome: `Origin` only). So a node reached
+over http admits the https spelling of the same host and port — core's own "more than one when the
+scheme is not knowable here". A node that terminates TLS admits https alone, and `APP_URL` on the
+node's host still replaces both. The port stays exact, which is what the Compose rung trips on
+(`:3000` / `:3001`): its compose files require `APP_URL` on `sync` (`${APP_URL:?…}`).
+`packages/cli/src/role-sync-two-ports.test.ts` boots both listeners and shows it on the wire.
+
+Moved here from `packages/realtime/CLAUDE.md` for room: read the field's line in `decode` before
+claiming a frame-field removal is free.
+
+## 2026-10-02 — review round
+
+**The replicator's success signal.** "Started" was the replicator's only success signal, and three
+defects hung off it: a lock lost mid-dial was dropped (the listener required `running`), every
+death restarted at the base delay, and a poisoned change read as ready between two of its deaths.
+Progress is now a PUBLISHED change. Rejected for the fence: dropping a late change silently — the
+stream would confirm it. Rejected for the lost path: a deadline on `feed.stop()`. It would bound
+the wait but keep an asynchronous teardown, and with it the window in which a `start()` is
+answered over a run still being torn down. Abandoning synchronously removes the window instead of
+shortening it.
+
+**The principal fence.** Three reviewers found the principal fence one await short in four places:
+`enqueue` resolved its queue after the persister flush; `useMutation` handed a write to the outbox
+after its POST had crossed a rescope; an `open` that finished after its principal left published
+that queue; and the single-flight slot outlived the principal, so the next one's trigger joined an
+abandoned pass and was handed its report. The rule now: whose queue is decided before the first
+await, by an epoch the rescope handler bumps synchronously.
+
+**A replay is not bound to its principal on the server — designed, not built.** The in-page fence
+(abandon, refuse, wipe) cannot reach a second tab whose pass is already past its store read when
+another tab changes the cookie. The design: (1) `sendOverHttp` sends `x-ultimate-scope: <queue
+scope>` on replays only — on every write it would refuse a sign-out posted from a page whose
+session expired; (2) `@ultimat3/auth` exports `clientScopeStable()`, true only when
+`SESSION_SECRET` is configured; (3) `packages/action/src/http.ts` compares the header with
+`clientScopeOf(ctx.actor)` when stable and refuses with a new `X_REPLAY_PRINCIPAL_MISMATCH` at
+412 — not 409, which the page treats as retryable and would block the queue; (4) the outbox
+already treats that status as terminal: entry failed, twin dropped; (5) boot warns once when the
+secret is unset and an entity is `persist: true`. Not built because the scope id is keyed by an
+optional `SESSION_SECRET`: with the per-process fallback key a legitimate replay after a restart,
+or to another replica, would mismatch and be dropped, so the check would have to switch itself off
+exactly there. It also needs an `action → auth` edge that does not exist. `wiki/Known-Gaps.md`
+carries the row.
+
+**The ring floor's origin mark.** A node that has received no change holds no position, so its
+first read has no lsn to floor the ring at. Rejected: skipping the floor while the node holds no
+position — a ring with no floor answers every foreign cursor, each being "above" nothing, for a
+history this node never held. The read is marked with the node's own origin instead
+(`LiveQueryRegistry`'s `#origin`, which sorts below every real lsn) and the ring answers that one
+cursor alone below its first patch (`sole`). That kept three resume tests' deltas — a subscriber
+resuming with the cursor this node minted still gets patches, not a snapshot — and still refuses
+a cursor minted anywhere else.
+
+**A declared origin is the whole list, and `x dev` adds its own.** The `Host`-derived origin was
+admitted beside `allowedOrigins`; with a `Domain=`-wide session cookie a sibling subdomain pointed
+at the node is "its own origin" by that reading, so a declaration now replaces it. The cost landed
+on dev: both tracked apps and the scaffold ship `APP_URL=http://localhost:3000`, so `x dev --port
+4000` (or dev opened as `127.0.0.1` / `[::1]`) was a page on an origin nothing named and every
+socket was `403`. `packages/cli/src/role-sync.ts` (`devOrigins`) adds the web role's own origin
+and its three loopback spellings to a DECLARED list when the binding is dev (`WebBinding.dev`, the
+signal `x dev` and the container already differ by). Rejected: adding them to an empty list — one
+entry ends the `Host`-derived rule, which is what a forwarded dev host (a Codespace, a tunnel)
+relies on. Rejected: adding the bound origin in a container — a wrong `APP_URL` there must refuse,
+and the refusal now names the origin that asked and the list, with the `export` that admits it.
+Dev behind a forwarded host (a Codespace, a tunnel) WITH `APP_URL` declared for localhost was
+still refused by that alone, so the dev binding also passes `admitReachedOrigin: true`: the
+`Host`-derived origin stays admitted beside the list. Dev may and a container may not, because
+`x dev` binds loopback — a `Host` reaches it only through a forward its own user set up.
+
+Moved here from `packages/realtime/CLAUDE.md` for room (2026-10-02), verbatim:
+
+- **`@ultimat3/realtime/server` needs its own `paths` entry in `tsconfig.base.json`** (the wildcard
+  maps it to a directory that does not exist; `scripts/**` reports `TS2307` without it).
+- **Only a table with NO replica identity is warned**, before the slot; keyed DEFAULT is correct
+  for a live query. A params channel's `records` table not FULL is warned too
+  (`replication.channel_identity_partial`): its DELETE names no topic.
+- A write's name rides the WAL: read off the transaction's opening `pg_logical_emit_message`
+  (`WRITE_ORIGIN_WAL_PREFIX`; `START_REPLICATION` asks `messages 'true'`, Postgres ≥ 14).
+- **A test fixture standing in for a FOREIGN error extends `Error` on purpose**: the rule governs
+  what this package **throws**, never what a test hands it.
+- **`ChangeEvent.omitted`** names properties an UPDATE's untouched TOAST columns left out of `after`
+  (filled from `before` under FULL). A consumer re-reads, never adopts.
+- **A fix handing over `REPLICATION` carries `REPLICATION_GRANT_WARNING`** (cluster-wide grant).
+- **Every `SyncSocket` ceiling is reachable from `createSyncNode`**, forwarded as
+  `...(x === undefined ? {} : { x })`.

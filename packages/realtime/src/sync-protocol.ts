@@ -80,6 +80,12 @@ export interface HelloFrame {
   /** Server-assigned on the reply, `null` on the client's opening frame. */
   readonly sessionId: string | null;
   readonly actorId: string | null;
+  /**
+   * On the NODE's reply only: how often this client must beat, in ms — a third of the node's real
+   * presence ttl, and never slower than the node's idle budget allows. Additive and optional, so
+   * no version bump: a node that says nothing leaves the client on its own default.
+   */
+  readonly heartbeatMs?: number;
 }
 
 export interface SubscribeFrame {
@@ -193,14 +199,18 @@ export function decode(raw: string | Uint8Array): Frame {
   }
   const kind = parsed['type'];
   switch (kind) {
-    case 'hello':
-      return {
+    case 'hello': {
+      const hello = {
         type: 'hello',
         v: PROTOCOL_VERSION,
         buildId: str(parsed, 'buildId'),
         sessionId: nullableStr(parsed, 'sessionId'),
         actorId: nullableStr(parsed, 'actorId'),
-      };
+      } as const;
+      return parsed['heartbeatMs'] === undefined
+        ? hello
+        : { ...hello, heartbeatMs: num(parsed, 'heartbeatMs') };
+    }
     case 'subscribe':
       return {
         type: 'subscribe',

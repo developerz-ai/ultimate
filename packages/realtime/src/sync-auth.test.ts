@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { GrantBook, type SyncGrant, sweepGrants } from './sync-auth';
+import type { Scheduler } from './thundering-herd';
 
 const alice: Actor = userActor({ id: 'alice', orgId: 'o1' });
 const aliceDemoted: Actor = userActor({ id: 'alice', orgId: 'o1', roles: [] });
@@ -125,5 +126,110 @@ describe('grant expiry', () => {
 
     expect(log.revoked).toEqual([]);
     expect(book.size).toBe(1);
+  });
+});
+
+describe('a socket that closes while its grant is being refreshed', () => {
+  test('is not written back into the book, and nothing is re-decided for it', async () => {
+    const book = new GrantBook();
+    let release!: (grant: SyncGrant) => void;
+    const refreshing = new Promise<SyncGrant>((settle) => {
+      release = settle;
+    });
+    book.set('s1', { actor: alice, expiresAt: 1_000, refresh: () => refreshing });
+    const log = recorder();
+
+    const pass = sweepGrants(deps(book, 5_000, log));
+    // The close callback runs while the token service is answering.
+    book.delete('s1');
+    release({ actor: aliceDemoted, expiresAt: 9_000 });
+    const result = await pass;
+
+    expect(book.size).toBe(0);
+    expect(log.reauthorized).toEqual([]);
+    expect(result).toEqual({ refreshed: 0, revoked: 0, failed: 0 });
+  });
+
+  test('a refresh answering null for a socket already gone revokes nothing twice', async () => {
+    const book = new GrantBook();
+    let release!: (grant: SyncGrant | null) => void;
+    const refreshing = new Promise<SyncGrant | null>((settle) => {
+      release = settle;
+    });
+    book.set('s1', { actor: alice, expiresAt: 1_000, refresh: () => refreshing });
+    const log = recorder();
+
+    const pass = sweepGrants(deps(book, 5_000, log));
+    book.delete('s1');
+    release(null);
+    await pass;
+
+    expect(log.revoked).toEqual([]);
+  });
+});
+
+// The pass is serial and memoised by the node, so one token-service call that never settles used
+// to park it for good: no grant behind it was renewed or revoked on that node again.
+describe('a refresh that never answers', () => {
+  /** Timers fired by hand: a deadline proved by sleeping is a deadline no test proves. */
+  const timers = (): { schedule: Scheduler; fire: () => void; armed: () => number } => {
+    let armed: { fn: () => void; live: boolean }[] = [];
+    return {
+      schedule: (fn) => {
+        const entry = { fn, live: true };
+        armed.push(entry);
+        return () => {
+          entry.live = false;
+        };
+      },
+      fire: () => {
+        const due = armed.filter((entry) => entry.live);
+        armed = [];
+        for (const entry of due) entry.fn();
+      },
+      armed: () => armed.filter((entry) => entry.live).length,
+    };
+  };
+
+  test('is timed out, reported, kept expired — and the grants behind it are still decided', async () => {
+    const book = new GrantBook();
+    book.set('stuck', { actor: alice, expiresAt: 1_000, refresh: () => new Promise(() => {}) });
+    book.set('gone', { actor: alice, expiresAt: 1_000, refresh: async () => null });
+    const log = recorder();
+    const failures: unknown[] = [];
+    const clock = timers();
+
+    const pass = sweepGrants({
+      ...deps(book, 5_000, log),
+      onRefreshFailed: (_socketId, error) => failures.push(error),
+      schedule: clock.schedule,
+    });
+    await Promise.resolve();
+    clock.fire();
+    // The second grant's own deadline is armed and never needed.
+    const result = await pass;
+
+    expect(result).toEqual({ refreshed: 0, revoked: 1, failed: 1 });
+    expect(log.revoked).toEqual(['gone']);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeUltimateError('X_TIMEOUT');
+    // Still in the book and still expired, so the next pass asks again.
+    expect(book.expired(5_000).map(([socketId]) => socketId)).toEqual(['stuck']);
+    expect(clock.armed()).toBe(0);
+  });
+
+  test('a refresh that answers disarms its deadline', async () => {
+    const book = new GrantBook();
+    book.set('s1', {
+      actor: alice,
+      expiresAt: 1_000,
+      refresh: async () => ({ actor: aliceDemoted, expiresAt: 9_000 }),
+    });
+    const clock = timers();
+
+    await sweepGrants({ ...deps(book, 5_000, recorder()), schedule: clock.schedule });
+    await Promise.resolve();
+
+    expect(clock.armed()).toBe(0);
   });
 });

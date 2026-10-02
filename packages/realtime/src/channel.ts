@@ -16,7 +16,8 @@ import type { ChangeEvent } from './changefeed';
 import { authorizeChannel } from './channel-authz';
 import { type Bridge, unsubscribeWhenOpen } from './channel-bridge';
 import type { Channel, Topic } from './channel-decl';
-import { ChannelLogs } from './channel-logs';
+import { DenialLatch } from './channel-latch';
+import { ChannelLogs, type ChannelTopic } from './channel-logs';
 import { getChannel, registeredChannels } from './channel-registry';
 import type { ChannelEventsFrame, ChannelSubscribeTarget } from './channel-wire';
 import {
@@ -52,6 +53,12 @@ export interface ChannelHubOptions {
   readonly ringSize?: number;
 }
 
+/** The longest value one channel param may carry — a uuid is 36. */
+export const MAX_CHANNEL_PARAM_LENGTH = 128;
+
+/** `#settle`'s "nobody has decided this seat yet": distinct from `null`, which is an actor. */
+const UNDECIDED = Symbol('undecided');
+
 /** Distinct topics one node bridges before `X_SUBSCRIPTION_LIMIT`. */
 export const DEFAULT_MAX_TOPICS_PER_NODE = 10_000;
 
@@ -80,12 +87,13 @@ export class ChannelHub {
   readonly #only: ReadonlyMap<string, Channel> | null;
   readonly #logs: ChannelLogs;
   readonly #ctx: Ctx;
+  /** Topics a socket's policy refused, until its actor changes (`channel-latch.ts`). */
+  readonly #latched: DenialLatch;
   /**
-   * Topics a socket's policy refused, latched until its actor changes: a denial is a decision, so
-   * a client re-asking in a loop is answered without re-running the policy each time — and only
-   * THAT channel is refused, every other one on the socket keeps flowing.
+   * Topics whose guard could not DECIDE on a re-auth. Not a denial, so the seat and its bridge
+   * reference are kept; not a pass either, so nothing is delivered until one succeeds.
    */
-  readonly #latched = new WeakMap<SyncSocket, Set<string>>();
+  readonly #suspended = new WeakMap<SyncSocket, Set<Topic>>();
 
   constructor(options: ChannelHubOptions) {
     this.#transport = options.transport;
@@ -100,6 +108,7 @@ export class ChannelHub {
       'maxTopicsPerNode',
       options.maxTopicsPerNode ?? DEFAULT_MAX_TOPICS_PER_NODE,
     );
+    this.#latched = new DenialLatch(this.#maxTopicsPerSocket, 'maxTopicsPerSocket');
     this.#ctx = options.ctx ?? createContext();
     this.#logs = new ChannelLogs(options.sockets, options.ringSize);
     this.#only =
@@ -123,29 +132,91 @@ export class ChannelHub {
     }
     const params: Record<string, string> = {};
     for (const param of declared.params) {
-      params[param] = Object.hasOwn(target.params, param) ? (target.params[param] ?? '') : '';
+      const value = Object.hasOwn(target.params, param) ? (target.params[param] ?? '') : '';
+      // A topic is retained (the bridge table, the latch, the client's sid), and `topic()` checks
+      // a segment's alphabet, never its size — so a param is the client's to grow only this far.
+      if (value.length > MAX_CHANNEL_PARAM_LENGTH) {
+        throw new TopicForbiddenError({
+          topic: target.channel,
+          actorId: socket.actorId,
+          reason: `param "${param}" is ${value.length} characters; the limit is ${MAX_CHANNEL_PARAM_LENGTH}`,
+        });
+      }
+      params[param] = value;
     }
     const name = declared.topic(params);
-    if (this.#latched.get(socket)?.has(name) === true) {
+    if (this.#latched.has(socket, name)) {
       throw new TopicForbiddenError({
         topic: name,
         actorId: socket.actorId,
         reason: 'denied earlier on this connection; it is re-decided when the session changes',
       });
     }
+    this.#latched.assertRoom(socket);
+    const seat: ChannelTopic = { channel: declared, params };
+    // A suspended seat asked for again (the client's beat) is the next pass, never a second seat.
+    if (this.#suspended.get(socket)?.has(name) === true) {
+      await this.#settle(socket, name, seat, UNDECIDED);
+      return name;
+    }
     // Asked before the join seats it: a repeated `add` (the presence beat) is not a fresh seat.
     const fresh = !socket.topics.has(name);
+    // Captured, because the guard awaits and a re-auth may land under it: the verdict below is
+    // about THIS actor, and `onActorChange` cannot re-decide a seat that does not exist yet.
+    const actor = socket.actor;
     await this.#join(socket, name, async () => {
       try {
-        await authorizeChannel(declared, this.#ctx, socket.actor, name, params);
+        await authorizeChannel(declared, this.#ctx, actor, name, params);
       } catch (error) {
-        if (error instanceof TopicForbiddenError) this.#latch(socket, name);
+        if (error instanceof TopicForbiddenError && socket.actor === actor) {
+          this.#latched.add(socket, name);
+        }
         throw error;
       }
     });
-    this.#logs.open(name, { channel: declared, params });
+    // The socket died while the guard or the bridge was answering: `#join` gave the seat back, so
+    // there is no member to open a ring for or to resume.
+    if (!socket.topics.has(name)) return name;
+    this.#logs.open(name, seat);
+    await this.#settle(socket, name, seat, actor);
+    // Dropped is a throw; suspended is a seat nothing is delivered on, the resume included.
+    if (!socket.topics.has(name)) return name;
     this.#logs.resume(socket, name, target.since, fresh);
     return name;
+  }
+
+  /**
+   * Decide a seat under the socket's CURRENT actor until the actor it was decided for is still the
+   * one on the socket. A seat granted to the actor a re-auth has since replaced was kept until the
+   * next grant expiry; a re-ask on a suspended seat ignored a denial and answered success.
+   */
+  async #settle(
+    socket: SyncSocket,
+    name: Topic,
+    seat: ChannelTopic,
+    decidedFor: Actor | null | typeof UNDECIDED,
+  ): Promise<void> {
+    let actor = decidedFor;
+    while (actor === UNDECIDED || socket.actor !== actor) {
+      actor = socket.actor;
+      if ((await this.#decide(socket, name, seat, actor)) !== 'denied') continue;
+      if (socket.actor === actor) this.#latched.add(socket, name);
+      throw new TopicForbiddenError({
+        topic: name,
+        actorId: socket.actorId,
+        reason: `channel "${seat.channel.name}" policy denied the subscribe`,
+      });
+    }
+  }
+
+  /**
+   * Every open records topic is presumed to have missed a change: a new epoch, and every member
+   * told `replay-gap`. The `sync` node calls it beside `LiveQueryRegistry.invalidate()` — seq is
+   * minted here from the changes this node SEES, so a change the bus dropped leaves a hole the
+   * ring cannot detect and would replay as complete history.
+   */
+  invalidate(): number {
+    return this.#logs.invalidate();
   }
 
   /**
@@ -178,6 +249,9 @@ export class ChannelHub {
    * a topic a caller spelled; every `Topic` comes from a declaration.
    */
   async emit(name: Topic, event: JsonObject): Promise<void> {
+    // A topic this node holds open on a channel declared without `events` carries none: a
+    // presence leave for it was an event on a channel whose members were promised records only.
+    if (this.#logs.target(name)?.channel.events === false) return;
     const frame: ChannelEventsFrame = { type: 'events', v: PROTOCOL_VERSION, channel: name, event };
     await this.#transport.publish(`${CHANNEL_SUBJECT_PREFIX}.${name}`, JSON.stringify(frame));
   }
@@ -187,12 +261,6 @@ export class ChannelHub {
     name: Topic,
   ): { readonly channel: Channel; readonly params: Readonly<Record<string, string>> } | undefined {
     return this.#logs.target(name);
-  }
-
-  #latch(socket: SyncSocket, name: string): void {
-    const latched = this.#latched.get(socket) ?? new Set<string>();
-    latched.add(name);
-    this.#latched.set(socket, latched);
   }
 
   /** Sockets this node will deliver `name` to. The metric the fanout reads. */
@@ -222,7 +290,8 @@ export class ChannelHub {
   async #join(socket: SyncSocket, name: Topic, authorize: () => Promise<void>): Promise<void> {
     if (socket.topics.has(name)) return;
     const claimed = this.#claimed.get(socket) ?? 0;
-    if (socket.topics.size + claimed >= this.#maxTopicsPerSocket) {
+    const held = socket.topics.size + (this.#suspended.get(socket)?.size ?? 0);
+    if (held + claimed >= this.#maxTopicsPerSocket) {
       throw new SubscriptionLimitError({
         scope: 'socket',
         id: socket.id,
@@ -263,49 +332,79 @@ export class ChannelHub {
     // fanout reads are one fact, and two call sites for one fact is the drift that makes an index
     // wrong. The registry owns it because it is the only thing that sees a socket die.
     this.#sockets.joinTopic(socket, name);
+    // The socket closed while this subscribe was parked: its teardown has already walked its
+    // topics, so a seat taken now is a bridge pinned with no member and nothing left to release it.
+    if (socket.closed) this.unsubscribe(socket, name);
   }
 
   unsubscribe(socket: SyncSocket, name: Topic): void {
-    if (!socket.topics.has(name)) return;
-    this.#sockets.leaveTopic(socket, name);
+    const suspended = this.#suspended.get(socket)?.delete(name) === true;
+    if (!suspended && !socket.topics.has(name)) return;
+    if (!suspended) this.#sockets.leaveTopic(socket, name);
     this.#release(name);
+  }
+
+  /** Every topic this socket holds a seat on — the delivered ones and the suspended ones. */
+  topicsOf(socket: SyncSocket): readonly Topic[] {
+    return [...socket.topics, ...(this.#suspended.get(socket) ?? [])] as Topic[];
   }
 
   /**
    * Called when a socket's session changes (login, logout, role change, token refresh).
    *
-   * A denial drops the topic; anything else keeps it. A guard is app code and may reach a database,
-   * so `catch { unsubscribe }` reported a store that timed out as a revoked grant — during one
-   * outage, every topic on every re-authenticated socket on the node, silently, with the client
-   * never told to resubscribe. The same split `LiveQueryRegistry.reauthorize` already makes, and
-   * for the same reason: a failure is not a decision.
+   * A denial drops the topic. Anything else is not a decision — a guard is app code and may reach
+   * a database, and reading a store that timed out as a revoked grant dropped every topic on every
+   * re-authenticated socket during one outage. It is not a pass either: the seat is kept and
+   * SUSPENDED, so nothing is delivered on it until a later pass (the next re-auth, or the client's
+   * own beat) decides. Returns the topics dropped — denials and nothing else.
    */
   async onActorChange(socket: SyncSocket, actor: Actor | null): Promise<readonly Topic[]> {
     socket.actor = actor;
     // A new session re-decides everything, the latched denials included.
-    this.#latched.delete(socket);
+    this.#latched.clear(socket);
     const dropped: Topic[] = [];
-    for (const name of [...socket.topics] as Topic[]) {
-      try {
-        const target = this.#logs.target(name);
-        if (target !== undefined) {
-          await authorizeChannel(target.channel, this.#ctx, actor, name, target.params);
-        }
-      } catch (error) {
-        if (isPolicyDenial(error) || error instanceof TopicForbiddenError) {
-          this.unsubscribe(socket, name);
-          dropped.push(name);
-          continue;
-        }
-        this.#guardFailures += 1;
-        logger.warn('channel.guard_failed', {
-          topic: name,
-          socketId: socket.id,
-          error: renderThrowable(error),
-        });
-      }
+    for (const name of this.topicsOf(socket)) {
+      const target = this.#logs.target(name);
+      if (target === undefined) continue;
+      if ((await this.#decide(socket, name, target, actor)) === 'denied') dropped.push(name);
     }
     return dropped;
+  }
+
+  /** One seat, re-decided: dropped on a denial, suspended on a failure, delivered on a pass. */
+  async #decide(
+    socket: SyncSocket,
+    name: Topic,
+    target: ChannelTopic,
+    actor: Actor | null,
+  ): Promise<'allowed' | 'denied' | 'undecided'> {
+    try {
+      await authorizeChannel(target.channel, this.#ctx, actor, name, target.params);
+    } catch (error) {
+      if (isPolicyDenial(error) || error instanceof TopicForbiddenError) {
+        this.unsubscribe(socket, name);
+        return 'denied';
+      }
+      this.#guardFailures += 1;
+      logger.warn('channel.guard_failed', {
+        topic: name,
+        socketId: socket.id,
+        error: renderThrowable(error),
+      });
+      if (socket.topics.has(name)) {
+        this.#sockets.leaveTopic(socket, name);
+        const suspended = this.#suspended.get(socket) ?? new Set<Topic>();
+        this.#suspended.set(socket, suspended.add(name));
+      }
+      return 'undecided';
+    }
+    // Still suspended, and still open: a socket that closed meanwhile gave the seat back already.
+    if (this.#suspended.get(socket)?.delete(name) === true) {
+      this.#sockets.joinTopic(socket, name);
+      // What the suspension withheld is unknown to the client, so a records channel is re-read.
+      this.#logs.resume(socket, name, undefined, true);
+    }
+    return 'allowed';
   }
 
   async close(): Promise<void> {

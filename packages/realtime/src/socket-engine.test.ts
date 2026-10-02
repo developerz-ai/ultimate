@@ -9,7 +9,7 @@ import { FakeSocket } from './hooks-fixture';
 import { RecordStore } from './record-store';
 import { REAP_AFTER_BEATS, SocketEngine } from './socket-engine';
 import { openHost, type SocketHost } from './socket-host';
-import { PROTOCOL_VERSION, type SubscribeFrame } from './sync-protocol';
+import { type Frame, PROTOCOL_VERSION, type SubscribeFrame } from './sync-protocol';
 import type { Scheduler } from './thundering-herd';
 
 const target = { url: 'ws://node.test/_x/sync', buildId: 'b1' };
@@ -124,12 +124,46 @@ describe('SocketEngine — one socket for every tab', () => {
     expect(b.client.connected).toBe(true);
   });
 
-  test('two tabs wanting one channel are ONE subscribe on the socket', async () => {
+  // One membership: to the node the second tab's add is the seat it already holds, repeated — a
+  // beat, with no `since` — and never a drop followed by an add.
+  test('two tabs wanting one channel are ONE membership on the socket', async () => {
     const { servers, a, b } = await upAndRunning();
     a.client.holdChannel(orgFeed, { orgId: 'o1' });
     b.client.holdChannel(orgFeed, { orgId: 'o1' });
     await settle();
-    expect(channelFrames(servers[0]).map((frame) => frame.op)).toEqual(['add']);
+    const frames = channelFrames(servers[0]);
+    expect(frames.map((frame) => frame.op)).toEqual(['add', 'add']);
+    expect(new Set(frames.map((frame) => frame.sid)).size).toBe(1);
+    expect(frames[1]?.target.kind === 'channel' && frames[1].target.since).toBeUndefined();
+  });
+
+  // An events-only channel is answered with nothing but its roster, and the node sends that to a
+  // seat that asks. A second tab's add used to stop at the engine, so it read `joining` until the
+  // next beat happened to re-roster.
+  test('a second tab on an events-only channel is answered: it leaves `joining` at once', async () => {
+    const { servers, a, b } = await upAndRunning();
+    const typing = { ...orgFeed, name: 'typing', topic: () => 'typing.o1' };
+    a.client.holdChannel(typing, { orgId: 'o1' });
+    await settle();
+    const roster: Frame = {
+      type: 'events',
+      v: PROTOCOL_VERSION,
+      channel: 'typing.o1',
+      event: { presence: 'sync', members: [], total: 0 },
+    };
+    servers[0]?.deliver(roster);
+    await settle();
+
+    const held = b.client.holdChannel(typing, { orgId: 'o1' });
+    await settle();
+    // The node answers an add it HEARS, the way it answers a beat: the roster. One per add after
+    // the first — so an engine that swallowed tab b's add leaves it unanswered, and `joining`.
+    const heard = channelFrames(servers[0]);
+    for (const _add of heard.slice(1)) servers[0]?.deliver(roster);
+    await settle();
+
+    expect(held.state()).toBe('live');
+    expect(heard.map((frame) => frame.op)).toEqual(['add', 'add']);
   });
 
   test('a frame reaches only the tabs that want its channel — routed, never broadcast', async () => {
@@ -176,7 +210,9 @@ describe('SocketEngine — one socket for every tab', () => {
     b.client.holdChannel(orgFeed, { orgId: 'o1' });
     await settle();
     expect(reads).toEqual(['orgFeed']);
-    expect(channelFrames(r.servers[0]).map((frame) => frame.op)).toEqual(['add']);
+    // Its add reaches the node as a beat (the roster is the node's to answer); the re-read verdict
+    // is the engine's, because a beat is never answered with a `replay-gap`.
+    expect(channelFrames(r.servers[0]).map((frame) => frame.op)).toEqual(['add', 'add']);
   });
 
   test('one tab leaving keeps the channel; the last one leaving drops it', async () => {
@@ -186,10 +222,11 @@ describe('SocketEngine — one socket for every tab', () => {
     await settle();
     a.host.bye();
     await settle();
-    expect(channelFrames(servers[0]).map((frame) => frame.op)).toEqual(['add']);
+    // The second tab's join was a beat; one tab leaving sends nothing.
+    expect(channelFrames(servers[0]).map((frame) => frame.op)).toEqual(['add', 'add']);
     b.host.bye();
     await settle();
-    expect(channelFrames(servers[0]).map((frame) => frame.op)).toEqual(['add', 'drop']);
+    expect(channelFrames(servers[0]).map((frame) => frame.op)).toEqual(['add', 'add', 'drop']);
   });
 
   test('two tabs holding one live query get their own rows back, by their own sids', async () => {
@@ -247,6 +284,44 @@ describe('SocketEngine — one socket for every tab', () => {
     expect(ops.at(-1)).toBe('drop');
     expect(ops.filter((op) => op === 'drop')).toHaveLength(1);
     expect(servers).toHaveLength(1);
+  });
+
+  // The node names the beat; a tab that follows it beats SLOWER than the engine's own option when
+  // the node's ttl is long. Reaping on the option's figure closed every healthy tab of that app.
+  test('a tab is reaped on the beat the node named, never on a shorter one', async () => {
+    const { servers, b, clock, engineTimers, engine } = await upAndRunning();
+    servers[0]?.deliver({
+      type: 'hello',
+      v: PROTOCOL_VERSION,
+      buildId: 'b1',
+      sessionId: 's1',
+      actorId: null,
+      heartbeatMs: 5_000,
+    });
+    await settle();
+    // Tab a says nothing for four of the engine's own 1 s beats — inside ONE of the node's.
+    for (let beat = 0; beat <= REAP_AFTER_BEATS; beat += 1) {
+      clock.advance(1_000);
+      b.client.connect();
+      await settle();
+      engineTimers.fire();
+    }
+    expect(engine.ports).toBe(2);
+    // …and three of the node's beats later it is gone.
+    clock.advance(REAP_AFTER_BEATS * 5_000);
+    b.client.connect();
+    // The node is still answering: this is about a silent TAB, not a silent socket.
+    servers[0]?.deliver({
+      type: 'hello',
+      v: PROTOCOL_VERSION,
+      buildId: 'b1',
+      sessionId: 's1',
+      actorId: null,
+      heartbeatMs: 5_000,
+    });
+    await settle();
+    engineTimers.fire();
+    expect(engine.ports).toBe(1);
   });
 
   test('a lost socket closes every tab; each resubscribes from its OWN cursor on the new one', async () => {

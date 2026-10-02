@@ -69,6 +69,7 @@ function gatedTransport(base: Transport): {
       name: base.name,
       publish: (subject, payload) => base.publish(subject, payload),
       subscribe: (subject, handler) => base.subscribe(subject, handler),
+      onReconnect: (listener) => base.onReconnect(listener),
       close: () => base.close(),
       shared: {
         put: (key, member, value, ttlMs) => base.shared.put(key, member, value, ttlMs),

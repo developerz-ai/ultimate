@@ -8,7 +8,7 @@ to skip.
 
 | Concern | Module |
 |---|---|
-| server lifecycle, drain, `/healthz` + `/readyz` | `server.ts`, `health-disclosure.ts` |
+| server lifecycle, drain, `/healthz` + `/readyz` | `server.ts`; `health-disclosure.ts` owns the `healthDetailPeers` key, its screen and the proxy half — the body rule is `@ultimat3/core`'s |
 | route table, matcher, `describeRoutes()` | `router.ts` |
 | the ordered request lifecycle | `pipeline.ts` |
 | typed request (params, query, body) | `request.ts` |

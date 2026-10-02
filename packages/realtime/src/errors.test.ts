@@ -9,6 +9,7 @@ import {
   isClientFault,
   isPolicyDenial,
   LiveQueryUnknownError,
+  LiveRowUnidentifiedError,
   NotImplementedError,
   POLICY_DENIAL_CODES,
   REALTIME_BORROWED_ERROR_CODES,
@@ -61,6 +62,8 @@ const ADDED_SINCE = [
   // 22.1.0: a TLS failure on the replicator's own connection, and a socket from a foreign page.
   'X_REPLICATION_TLS',
   'X_SOCKET_ORIGIN_REFUSED',
+  // Plan 101 (2026-10-02), slice 08: a write queued after its page changed principal is refused.
+  'X_OFFLINE_QUEUE_ABANDONED',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */
@@ -244,5 +247,30 @@ describe('the refusals with a fixed next step', () => {
       'advisory lock 42 is held — one database has exactly one replicator',
     );
     expect(unknown.fix).toContain('--replicas=1');
+  });
+});
+
+describe('LiveRowUnidentifiedError', () => {
+  test('a missing id names the projection; a non-text id names its type and a command', () => {
+    const missing = new LiveRowUnidentifiedError({ query: 'slugFeed', keys: ['slug'] });
+    expect(missing.cause).toContain('no id (columns: slug)');
+
+    const typed = new LiveRowUnidentifiedError({ query: 'feed', keys: ['id'], idType: 'boolean' });
+    expect(typed.cause).toContain('whose id is a boolean');
+    expect(typed.fix).toBe('x queries describe feed --json');
+    // A query name is client-reachable data in a command position: it goes through the screen.
+    const hostile = new LiveRowUnidentifiedError({ query: '$(id)', keys: [], idType: 'object' });
+    expect(hostile.fix).toBe('x queries list --json');
+  });
+});
+
+describe('OfflineQueueAbandonedError', () => {
+  test('names the write, never its key, and carries a runnable fix', async () => {
+    const { OfflineQueueAbandonedError } = await import('./errors');
+    const refusal = new OfflineQueueAbandonedError({ name: 'likePost' });
+    expect(refusal.code).toBe('X_OFFLINE_QUEUE_ABANDONED');
+    expect(refusal.cause).toContain('"likePost"');
+    expect(refusal.fix).toBe('x errors explain X_OFFLINE_QUEUE_ABANDONED --json');
+    expect(hasErrorCode('X_OFFLINE_QUEUE_ABANDONED')).toBe(true);
   });
 });

@@ -7,11 +7,13 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import type { AdvisoryLock } from './advisory-lock';
+import { InMemoryAdvisoryLock } from './advisory-lock';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { formatLsn, InMemoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
-import type { AdvisoryLock } from './replicator';
-import { createReplicator, InMemoryAdvisoryLock, normalize, parseChange } from './replicator';
+import { createReplicator, normalize } from './replicator';
+import { parseChange } from './replicator-envelope';
 import { defaultBackoff } from './thundering-herd';
 
 let keyCounter = 0;
@@ -140,6 +142,10 @@ describe('start is memoised while it is in flight', () => {
       release: async () => {
         releases += 1;
       },
+      abandon: () => {
+        releases += 1;
+      },
+      onLost: () => () => undefined,
       calls: () => calls,
       releases: () => releases,
     };
@@ -159,6 +165,7 @@ describe('start is memoised while it is in flight', () => {
       stop: async () => {
         stops += 1;
       },
+      abandon: () => undefined,
       lastLsn: () => null,
       starts: () => starts,
       stops: () => stops,
@@ -205,6 +212,7 @@ describe('start is memoised while it is in flight', () => {
       source: 'failing',
       start: () => Promise.reject(new Error('replication slot is in use')),
       stop: async () => undefined,
+      abandon: () => undefined,
       lastLsn: () => null,
     };
     const replicator = createReplicator({
@@ -234,6 +242,7 @@ describe('start is memoised while it is in flight', () => {
         source: 'failing',
         start: () => Promise.reject(new Error('slot busy')),
         stop: async () => undefined,
+        abandon: () => undefined,
         lastLsn: () => null,
       },
       lock,
@@ -264,6 +273,7 @@ describe('lastLsn', () => {
     source: 'resumed',
     start: async () => undefined,
     stop: async () => undefined,
+    abandon: () => undefined,
     lastLsn: () => at,
   });
 
@@ -311,24 +321,30 @@ describe('stats separate "nothing to send" from "already sent" from "sent"', () 
   test('counts published, skipped and out-of-order apart', async () => {
     const key = freshKey();
     const { replicator, feed } = rig(key);
-    expect(replicator.stats()).toEqual({ published: 0, skipped: 0, outOfOrder: 0 });
+    expect(replicator.stats()).toEqual({
+      published: 0,
+      skipped: 0,
+      outOfOrder: 0,
+      restarts: 0,
+      failure: null,
+    });
     await replicator.start();
 
     await feed.emit(event({ lsn: formatLsn(10) }));
-    expect(replicator.stats()).toEqual({ published: 1, skipped: 0, outOfOrder: 0 });
+    expect(replicator.stats()).toMatchObject({ published: 1, skipped: 0, outOfOrder: 0 });
 
     // No row at all: nothing to fan out, and not a failure either.
     await feed.emit(event({ lsn: formatLsn(11), before: null, after: null }));
-    expect(replicator.stats()).toEqual({ published: 1, skipped: 1, outOfOrder: 0 });
+    expect(replicator.stats()).toMatchObject({ published: 1, skipped: 1, outOfOrder: 0 });
 
     // At-least-once delivery: the feed repeating an lsn it already sent is expected.
     await feed.emit(event({ lsn: formatLsn(10) }));
     await feed.emit(event({ lsn: formatLsn(9) }));
-    expect(replicator.stats()).toEqual({ published: 1, skipped: 1, outOfOrder: 2 });
+    expect(replicator.stats()).toMatchObject({ published: 1, skipped: 1, outOfOrder: 2 });
 
     // And the stream continues past the repeat rather than being wedged by it.
     await feed.emit(event({ lsn: formatLsn(12) }));
-    expect(replicator.stats()).toEqual({ published: 2, skipped: 1, outOfOrder: 2 });
+    expect(replicator.stats()).toMatchObject({ published: 2, skipped: 1, outOfOrder: 2 });
 
     await replicator.stop();
   });

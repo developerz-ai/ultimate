@@ -8,10 +8,15 @@
 import { expect, test } from 'bun:test';
 import { arrayOf, entity, entityForTable, text, timestamp } from '@ultimat3/entity';
 import { match, type QueryShape } from '@ultimat3/query';
+import { InMemoryAdvisoryLock } from './advisory-lock';
+import { InMemoryChangeFeed } from './changefeed';
+import { InProcessTransport } from './fanout';
 import type { Row } from './json';
 import { entityRow } from './pg-entity-row';
 import { insert, POSTS_OID, relation, update } from './pg-replication-fixture';
 import { PgOutputDecoder } from './pgoutput';
+import { createReplicator } from './replicator';
+import { parseEnvelope } from './replicator-envelope';
 
 const TIMESTAMPTZ = 1184;
 const TEXT_ARRAY = 1009;
@@ -146,4 +151,53 @@ test('a column named __proto__ is a column, never the row prototype', () => {
   // the decode still has `Object.prototype` behind it and inherits nothing the tuple carried.
   expect(Object.getPrototypeOf({})).toBe(Object.prototype);
   expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
+});
+
+// The same edit, across the bus. Every case above hands the decoded row to the matcher directly —
+// which is what `live-replicator.ts` does and why every in-process suite was green. A deployment
+// has a transport in between, the transport carries text, and the row came out the other side
+// with its `Date` an ISO string: `compareRows` then ordered a string against the window's `Date`.
+test('an edit keeps its place after the row crosses the replicator bus as text', async () => {
+  const decoder = seeded();
+  const message = decoder.decode(
+    update(
+      POSTS_OID,
+      ['b', 'B', '{y}', '2026-08-09 11:00:00+00'],
+      ['b', 'B (edited)', '{y}', '2026-08-09 11:00:00+00'],
+    ),
+  );
+  if (message.kind !== 'update' || message.before === null) return expect.unreachable();
+
+  const wire: string[] = [];
+  const transport = new InProcessTransport();
+  await transport.subscribe('x.change.>', (payload) => void wire.push(payload));
+  const feed = new InMemoryChangeFeed();
+  const replicator = createReplicator({
+    feed,
+    transport,
+    lock: new InMemoryAdvisoryLock('x:replicator:parity'),
+  });
+  await replicator.start();
+  await feed.push('feed_posts', 'update', {
+    before: entityRow(message.relation, message.before, 'before') as Row,
+    after: entityRow(message.relation, message.after, 'after') as Row,
+  });
+  await replicator.stop();
+
+  const change = parseEnvelope(wire[0] ?? '')?.change;
+  if (change === undefined || change.after === null || change.before === null) {
+    return expect.unreachable();
+  }
+  // A `Date` again, on both images — not the ISO text the wire carried it as.
+  expect((change.after as Record<string, unknown>)['createdAt']).toBeInstanceOf(Date);
+  expect((change.before as Record<string, unknown>)['createdAt']).toBeInstanceOf(Date);
+
+  const patches = match<Row>('feed', FEED, WINDOW, {
+    entity: 'posts',
+    op: 'update',
+    row: change.after,
+    before: change.before,
+  });
+  expect(patches.map((patch) => patch.kind)).toEqual(['update']);
+  expect(patches[0]).toMatchObject({ kind: 'update', position: 1 });
 });

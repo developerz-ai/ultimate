@@ -4,7 +4,8 @@
 #   IMAGE=ghcr.io/you/app:1.2.3 docker compose --env-file .env.production -f docker/docker-compose.prod.yml run --rm migrate
 #   IMAGE=ghcr.io/you/app:1.2.3 docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d web sync worker scheduler
 #
-# Always with `--env-file .env.production`, before `-f`: Compose fills `${SYNC_URL:?…}` below from the
+# Always with `--env-file .env.production`, before `-f`: Compose fills `${SYNC_URL:?…}` and
+# `${APP_URL:?…}` (where a page dials the socket, and where the pages are served) below from the
 # shell and `--env-file` only, NEVER from `env_file:`, so a value set only in that file reads as
 # missing and the parse fails. `x deploy` passes it on every step (packages/cli/src/cmd-deploy.ts).
 #
@@ -131,7 +132,11 @@ services:
   # Naming 3001 would bind 3002 and publish a port nothing in the container ever opened.
   sync:
     <<: *common
-    environment: { ROLE: sync, PORT: 3000 }
+    # The page is :3000 and this socket :3001 — two origins — and the node admits an upgrade from
+    # APP_URL's origin and no other once declared (scheme, host and port, exactly); undeclared, from
+    # the origin it was reached on. Unset, every websocket is 403 X_SOCKET_ORIGIN_REFUSED, so it is
+    # required: the same value web builds its links from.
+    environment: { ROLE: sync, PORT: 3000, APP_URL: '${APP_URL:?set APP_URL=http://<host>:3000 — the origin the pages are served on, see wiki/Deployment.md}' }
     depends_on: { migrate: { condition: service_completed_successfully } }
     ports: ['3001:3001']
     # ...which is why the image's own HEALTHCHECK cannot be inherited here. It fetches $PORT —

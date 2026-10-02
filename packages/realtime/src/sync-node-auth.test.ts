@@ -117,6 +117,7 @@ function upgradeTarget(node: SyncNode): UpgradeTarget & { data: WsData | null; w
       node.websocket.open(ws as unknown as SyncWs);
       return true;
     },
+    requestIP: () => null,
   };
 }
 

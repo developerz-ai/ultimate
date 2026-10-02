@@ -1,8 +1,9 @@
-// Single responsibility: which tables `x db gen` must grant `REPLICA IDENTITY FULL`, read off the
-// live queries' DECLARED `subscribes:` — and the refusal for a declared name no entity's table
-// matches. This tier is the only one holding both registries, so it is the only one that can ask.
+// Single responsibility: which tables `x db gen` must grant `REPLICA IDENTITY FULL` — the live
+// queries' DECLARED `subscribes:` plus the `records` tables of every channel with params — and the
+// refusal for a declared name no entity's table matches. Only this tier holds all the registries.
 
 import { UltimateError } from '@ultimat3/core';
+import { paramsChannelTables } from '@ultimat3/realtime/server';
 
 /**
  * The two fields this reads, and nothing else. Structurally satisfied by `QueryDescriptor` (whose
@@ -63,12 +64,19 @@ export class QuerySubscribesUnknownError extends UltimateError {
  * Every name is checked against `tables` BEFORE any of them is returned: a run that emitted the
  * good half and refused afterwards would leave an author with a migration that is right for one
  * table and silently absent for the other.
+ *
+ * `channelTables` defaults to what the declared channels need (`paramsChannelTables()`): a channel
+ * with params routes a DELETE to the topic the OLD row names, and under the default identity that
+ * image is the key alone — no topic, no `remove`, and members keep the deleted record. They are
+ * derived from entity projections rather than typed by an author, so one outside `tables` is
+ * dropped, not refused: there is no declaration to send anyone back to.
  */
 export function replicaIdentityTables(
   queries: readonly SubscribingQuery[],
   tables: ReadonlySet<string>,
+  channelTables: readonly string[] = paramsChannelTables(),
 ): readonly string[] {
-  const wanted = new Set<string>();
+  const wanted = new Set<string>(channelTables.filter((table) => tables.has(table)));
   for (const query of queries) {
     for (const table of query.subscribes ?? []) {
       if (!tables.has(table)) {

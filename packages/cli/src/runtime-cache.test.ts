@@ -330,6 +330,7 @@ function slowTransport(): {
     shared: inner.shared,
     publish: (subject, payload) => inner.publish(subject, payload),
     close: () => inner.close(),
+    onReconnect: () => inner.onReconnect(),
     async subscribe(subject, handler) {
       const real = await inner.subscribe(subject, handler);
       await roundTrip;

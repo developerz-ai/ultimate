@@ -25,6 +25,11 @@ export const composeProdFile = (
 #
 #   docker compose --env-file ${PROD_ENV_FILE} -f docker/docker-compose.prod.yml up -d
 #
+# Two origins the file cannot know, so ${PROD_ENV_FILE} states them: SYNC_URL, where a page dials
+# the socket (ws://<host>:3001/_x/sync), and APP_URL, where the pages are served
+# (http://<host>:3000) — the sync node admits a socket from APP_URL's origin and no other once
+# declared; undeclared, from the origin it was reached on.
+#
 # A published host port has exactly one binder, so \`web\` and \`sync\` run at 1 here. Compose is one
 # box; horizontal scaling of those two belongs to an orchestrator — \`docker/helm\`, beside this
 # file, is the chart \`x deploy --method helm\` installs. To scale them on one box anyway, drop
@@ -129,7 +134,11 @@ services:
 
   sync:
     <<: *image
-    environment: [ROLE=sync]
+    # The page is :3000 and this socket :3001 — two origins — and the node admits an upgrade from
+    # APP_URL's origin and no other once declared (scheme, host and port, exactly); undeclared, from
+    # the origin it was reached on. Unset, every websocket is 403 X_SOCKET_ORIGIN_REFUSED, so it is
+    # required: the same value web builds its links from.
+    environment: [ROLE=sync, 'APP_URL=\${APP_URL:?set APP_URL=http://<host>:3000 — the origin the pages are served on, see wiki/Deployment.md}']
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }

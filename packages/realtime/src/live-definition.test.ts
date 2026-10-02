@@ -359,6 +359,36 @@ describe('a declared live query is subscribable, per subscriber', () => {
     ).rejects.toBeUltimateError('X_LIVE_ROW_UNIDENTIFIED');
   });
 
+  // The WAL path stringifies a safe-integer id (`pg-replication.ts`'s `toRow`), so the snapshot has
+  // to agree with it: refused, an `integer()` key was "unidentified" at its first subscribe.
+  test('a numeric id is normalised to text, exactly as the change feed normalises it', async () => {
+    const target = registerQuery(
+      'numberFeed',
+      query({
+        input: t.object({ orgId: t.string }),
+        policy: { ...ownRowsOnly, run: () => ({ allowed: true }) },
+        live: true,
+        sql: () =>
+          from<{ id: number; title: string }>('posts', [{ id: 42, title: 'hello' }])
+            .orderBy('id')
+            .limit(10),
+      }),
+    );
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
+      liveQueryDefinition(target, { ctx: nodeCtx() }),
+    );
+    const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));
+
+    const { frame } = await registry.subscribe({
+      socket: alice.socket,
+      name: 'numberFeed',
+      input: INPUT,
+    });
+
+    if (frame.type !== 'snapshot') expect.unreachable('expected a snapshot');
+    else expect(frame.rows).toEqual([{ id: '42', title: 'hello' }]);
+  });
+
   test('a withheld row is a metric, never a frame and never an error', async () => {
     const events: RowDenied[] = [];
     const registry = registryFor(ownRowsOnly, (event) => events.push(event));

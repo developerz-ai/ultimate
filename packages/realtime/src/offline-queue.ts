@@ -11,6 +11,7 @@
 
 import { renderThrowable, stringField } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
+import { OfflineQueueAbandonedError } from './page-errors';
 import type { WireError } from './sync-protocol';
 
 export type MutationStatus = 'pending' | 'inflight' | 'acked' | 'failed';
@@ -91,6 +92,8 @@ export class OfflineQueue {
    * is parked inside `send`. Bumped by every loss so a pass that resumes afterwards claims nothing.
    */
   #epoch = 0;
+  /** Set by `abandon`, never cleared: this queue's principal is gone. */
+  #abandoned = false;
 
   private constructor(store: QueueStore, state: QueueState) {
     this.#store = store;
@@ -103,8 +106,10 @@ export class OfflineQueue {
    *
    * An `inflight` entry on disk belonged to a page that is gone, so it goes back to `pending`. Left
    * as it was, `#sendable` skipped it forever — no ack was coming to a page that no longer exists —
-   * and every later write overtook it. The replay carries its idempotency key, so a write the old
-   * page did get through is answered from the action's idempotency store, never applied twice.
+   * and every later write overtook it. The replay carries its idempotency key, and a `mutator()`
+   * is REQUIRED to declare `idempotent: true` (`X_MUTATOR_NOT_IDEMPOTENT` at declaration), so a
+   * write the old page did get through is answered from the action's idempotency store and is
+   * never applied twice. That requirement is what makes this resend safe, not the key alone.
    */
   static async open(store: QueueStore): Promise<OfflineQueue> {
     const queue = new OfflineQueue(store, await store.load());
@@ -119,6 +124,7 @@ export class OfflineQueue {
    * other pass can have one on the wire.
    */
   async reload(): Promise<void> {
+    if (this.#abandoned) return;
     const state = await this.#store.load();
     this.#mutations = state.mutations.map((mutation) => ({ ...mutation }));
     this.#nextSeq = Math.max(this.#nextSeq, state.nextSeq);
@@ -167,6 +173,17 @@ export class OfflineQueue {
     input: JsonValue;
     at?: number;
   }): Promise<QueuedMutation> {
+    // Read BEFORE the key is looked up, never between the lookup and the push: with the await in
+    // between, two enqueues of one key both found nothing and both pushed — one intent, two
+    // entries under one sequence number. Another tab of the same user may have taken sequence
+    // numbers since this one loaded, which is what the read is for.
+    //
+    // An abandoned queue REFUSES, before the read and after it (the principal can leave during
+    // it): a write accepted here would sit in memory, shown as queued, with nothing to send it.
+    if (this.#abandoned) throw new OfflineQueueAbandonedError({ name: args.name });
+    const floor = (await this.#store.load()).nextSeq;
+    if (this.#abandoned) throw new OfflineQueueAbandonedError({ name: args.name });
+    this.#nextSeq = Math.max(this.#nextSeq, floor);
     const existing = this.find(args.key);
     if (existing && existing.status !== 'failed') {
       this.#collapsed += 1;
@@ -178,8 +195,6 @@ export class OfflineQueue {
     // entry is dropped and this one takes a new sequence at the back of the queue.
     // By identity: `existing` IS the entry for this key, found above — no second key comparison.
     if (existing) this.#mutations = this.#mutations.filter((entry) => entry !== existing);
-    // Another tab of the same user may have taken sequence numbers since this one loaded.
-    this.#nextSeq = Math.max(this.#nextSeq, (await this.#store.load()).nextSeq);
     const mutation: QueuedMutation = {
       key: args.key,
       seq: this.#nextSeq,
@@ -248,6 +263,22 @@ export class OfflineQueue {
     return returned;
   }
 
+  /**
+   * The principal this queue belongs to is gone (`page-outbox.ts` calls it on a `rescope`), and it
+   * is final: nothing more is SENT, WRITTEN or ACCEPTED (`enqueue` refuses). The epoch bump stops a pass parked
+   * inside `send` before its next entry — which would otherwise leave under the next principal's
+   * session — and the flag stops a pass that starts later, and every write-back: the store was
+   * wiped for this principal, and a pass that then saved what it touched put the writes back.
+   */
+  abandon(): void {
+    this.#epoch += 1;
+    this.#abandoned = true;
+  }
+
+  get abandoned(): boolean {
+    return this.#abandoned;
+  }
+
   /** Server acknowledged: the mutation leaves the queue and its rebase entry can be committed. */
   async ack(key: string): Promise<void> {
     const mutation = this.find(key);
@@ -294,7 +325,7 @@ export class OfflineQueue {
   /** One drain pass. Never called concurrently with itself — `drain` owns that. */
   async #pass(send: MutationSender): Promise<DrainReport> {
     const epoch = this.#epoch;
-    const sendable = this.#sendable();
+    const sendable = this.#abandoned ? [] : this.#sendable();
     // Nothing to do: a pass chained behind one that already sent everything must not rewrite the
     // durable state for the privilege of reporting zero.
     if (sendable.length === 0) {
@@ -326,6 +357,12 @@ export class OfflineQueue {
         // `WebSocket.send` on a CLOSING socket discards it and returns normally — so calling that
         // an ack drops the mutation on exactly the socket death this queue exists to survive.
         // Only `ack`/`fail` (the server) or `requeueInflight` (a lost connection) moves it on.
+        //
+        // A sender may settle the write itself before it returns — the page outbox does, over
+        // HTTP. One it REFUSED keeps the error `fail` just recorded and is not counted as sent:
+        // clearing it here put `{ status: 'failed', error: null }` on disk and reported a refused
+        // write as a sent one.
+        if (statusOf(mutation) === 'failed') continue;
         mutation.error = null;
         sent += 1;
       } catch (error) {
@@ -364,12 +401,18 @@ export class OfflineQueue {
    * queue: a second tab's entries are not this tab's to overwrite or delete.
    */
   async #persist(puts: readonly QueuedMutation[], deletes: readonly string[] = []): Promise<void> {
+    if (this.#abandoned) return;
     await this.#store.write({
       puts: puts.map((mutation) => ({ ...mutation })),
       deletes,
       nextSeq: this.#nextSeq,
     });
   }
+}
+
+/** Read through a call: `send` awaited in between, and the compiler still narrows to `inflight`. */
+function statusOf(mutation: QueuedMutation): MutationStatus {
+  return mutation.status;
 }
 
 /** A thrown value as the queue records it — `code`, `cause`, `fix`, never a throw of its own. */

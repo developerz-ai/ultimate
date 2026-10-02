@@ -9,11 +9,12 @@ import {
   clientTransport,
   isSuperseded,
   isUltimateError,
+  pageClient,
   uuid,
 } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
 import { type OutboxHandle, peekOutbox } from './outbox-slot';
-import { ServerRenderLiveError } from './page-errors';
+import { OfflineQueueAbandonedError, ServerRenderLiveError } from './page-errors';
 import { type PageWrites, pageRealtime } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
 import { carriedBy } from './record-store';
@@ -127,6 +128,7 @@ export function useMutation(mutator: MutatorLike): Mutate {
   const call = async (input: JsonValue): Promise<unknown> => {
     if (writes === undefined) throw new ServerRenderLiveError({ operation: 'useMutation()' });
     const page = pageRealtime();
+    const issued = pageClient().scope.epoch;
     const key = `${mutator.name}:${uuid()}`;
     const local = mutator.local;
     // Called back through the mutator: `local` may be a method, and an unbound one loses `this`.
@@ -138,9 +140,31 @@ export function useMutation(mutator: MutatorLike): Mutate {
     // them over HTTP — a like queued offline and the unlike made once the network was back could
     // otherwise land swapped. The replay sends the queue in order, this write last, under its key.
     const queued = peekOutbox();
+    // The outbox may REFUSE: its queue's principal left mid-write (`X_OFFLINE_QUEUE_ABANDONED`),
+    // or the disk would not take it. Nothing will ever send this write then, so its twin comes
+    // off the screen and the caller is told — a rejected `mutate`, by code.
+    //
+    // And the hook has an await of its own — the POST — so WHOSE write this is was decided at the
+    // call (`issued`): asked for after a principal change, the outbox is the next principal's, and
+    // a write handed to it then would be queued, and sent, as them.
+    const enqueue = async (outbox: OutboxHandle): Promise<void> => {
+      try {
+        if (pageClient().scope.epoch !== issued) {
+          throw new OfflineQueueAbandonedError({ name: mutator.name });
+        }
+        await outbox.enqueue({ key, name: mutator.name, input });
+      } catch (error) {
+        page.store.drop(key);
+        // A principal change is nobody's failure to report; a disk that refused the write is.
+        if (!isUltimateError(error) || error.code !== 'X_OFFLINE_QUEUE_ABANDONED') {
+          writes.failed += 1;
+        }
+        throw error;
+      }
+    };
     if (queued !== undefined && queued.pending().length > 0) {
       try {
-        await queued.enqueue({ key, name: mutator.name, input });
+        await enqueue(queued);
         void queued.replay().catch(() => undefined);
         return undefined;
       } finally {
@@ -160,13 +184,17 @@ export function useMutation(mutator: MutatorLike): Mutate {
       });
     } catch (error) {
       const failure = transportFailure(error);
-      // No response at all: the write is the outbox's now, under the SAME idempotency key, and its
-      // overlay stays on screen until the replay settles or refuses it. Only a page the boot opened
+      // No response at all — which is NOT "the write did not land": the POST may have committed
+      // and lost its answer. The write is the outbox's now, under the SAME idempotency key, and
+      // that replay is safe only because `mutator()` refuses a declaration without
+      // `idempotent: true` (`X_MUTATOR_NOT_IDEMPOTENT`): the server reads the key and answers the
+      // replay from its idempotency store, so the handler never runs twice. The overlay stays on
+      // screen until the replay settles or refuses it. Only a page the boot opened
       // an outbox on can promise that; with none (no boot, so nothing on this page persists) the
       // write is refused like any other, never held in a memory queue a reload would silently lose.
       const outbox = failure === 'network' ? await bootedOutbox(page) : undefined;
       if (outbox !== undefined) {
-        await outbox.enqueue({ key, name: mutator.name, input });
+        await enqueue(outbox);
         return undefined;
       }
       if (failure === 'body') {

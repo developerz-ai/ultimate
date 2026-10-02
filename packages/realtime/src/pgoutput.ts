@@ -1,9 +1,7 @@
-// Decodes pgoutput logical-replication messages (protocol version 1, Postgres >= 12) into typed
-// PgOutputMessage values. Pure byte decoding: no sockets, no I/O. A decoder instance owns the
-// per-connection relation cache that later Insert/Update/Delete/Truncate messages reference by oid.
-//
-// What a tuple's TEXT means is `pg-values.ts`'s: this file frames messages, that one owns the type
-// catalogue that turns postgres' text into the value a repository row holds.
+// Decodes pgoutput logical-replication messages (protocol version 1) into typed PgOutputMessage
+// values; the stream asks `messages 'true'`, which needs Postgres >= 14. Pure byte decoding, no
+// I/O: a decoder owns the per-connection relation cache later tuples reference by oid. What a
+// tuple's TEXT means is `pg-values.ts`'s — this file frames messages, that one owns the types.
 
 import { isWriteDigest, WRITE_ORIGIN_WAL_PREFIX } from '@ultimat3/core';
 import { ReplicationProtocolError } from './errors';
@@ -48,6 +46,12 @@ export type PgOutputMessage =
       readonly relation: PgRelation;
       readonly before: PhysicalRow | null;
       readonly after: PhysicalRow;
+      /**
+       * Physical columns the new tuple sent as `'u'`: an out-of-line (TOAST) value the UPDATE did
+       * not touch, for which Postgres logs no bytes. They are absent from `after`, and this list is
+       * what tells "absent" apart from "the whole row".
+       */
+      readonly unchanged: readonly string[];
     }
   | { readonly kind: 'delete'; readonly relation: PgRelation; readonly before: PhysicalRow }
   | { readonly kind: 'truncate'; readonly relations: readonly PgRelation[] }
@@ -67,7 +71,11 @@ export type PgOutputMessage =
  * `'u'` standing in for the columns a key-only tuple leaves out — so the column count always
  * matches the relation, and only the per-column byte tells us whether a value is actually there.
  */
-function decodeTupleData(reader: ByteReader, relation: PgRelation): PhysicalRow {
+function decodeTupleData(
+  reader: ByteReader,
+  relation: PgRelation,
+  unchanged?: string[],
+): PhysicalRow {
   const count = reader.int16();
   if (count !== relation.columns.length) {
     throw new ReplicationProtocolError({
@@ -90,6 +98,7 @@ function decodeTupleData(reader: ByteReader, relation: PgRelation): PhysicalRow 
     if (kind === 'u') {
       // Omitted, not nulled: "unchanged" and "set to null" are different facts about the row,
       // and a missing key is the only encoding that keeps those two facts distinguishable.
+      unchanged?.push(column.name);
       continue;
     }
     if (kind === 't') {
@@ -245,8 +254,9 @@ export class PgOutputDecoder {
         detail: `expected the new-tuple marker "N" but got "${marker}"`,
       });
     }
-    const after = decodeTupleData(reader, relation);
-    return { kind: 'update', relation, before, after };
+    const unchanged: string[] = [];
+    const after = decodeTupleData(reader, relation, unchanged);
+    return { kind: 'update', relation, before, after, unchanged };
   }
 
   #decodeDelete(reader: ByteReader): PgOutputMessage {

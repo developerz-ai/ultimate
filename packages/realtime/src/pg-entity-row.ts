@@ -58,3 +58,19 @@ export function entityRow(
   for (const field of sealedFields(entity)) delete row[field.property];
   return row;
 }
+
+/**
+ * The entity properties a decoded `after` image does not carry — what an UPDATE's unchanged TOAST
+ * columns become once the tuple is an entity row. Asked only when the tuple said it left columns
+ * out, and answered in the row's own vocabulary: a consumer compares these against the properties
+ * it projects, and it has never seen a physical column name. A sealed column is never listed: no
+ * change names one, so its absence says nothing.
+ */
+export function omittedProperties(relation: PgRelation, row: PhysicalRow): readonly string[] {
+  const entity = entityForTable(relation.name);
+  if (entity === undefined) return [];
+  const sealed = new Set(sealedFields(entity).map((field) => field.property));
+  return Object.keys(entity.$columns)
+    .filter((property) => !Object.hasOwn(row, property) && !sealed.has(property))
+    .sort();
+}

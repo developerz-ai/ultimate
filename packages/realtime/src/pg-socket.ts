@@ -189,8 +189,8 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
   const connectFailure = (error: Error): ReplicationFailedError =>
     new ReplicationFailedError({
       stage: 'connect',
-      detail: error.message,
-      fix: `open the route to ${target.host}:${target.port}, then: x doctor db`,
+      detail: `${error.message} — no route to ${target.host}:${target.port} from this process`,
+      fix: 'x doctor --json',
     });
 
   const handlers: SocketHandlers = {
@@ -229,8 +229,10 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
       if (written < 0) {
         throw new ReplicationFailedError({
           stage: 'write',
-          detail: `the socket refused a ${rest.length}-byte write`,
-          fix: 'the replicator reconnects on its own; confirm the host is up with: x doctor db',
+          detail:
+            `the socket refused a ${rest.length}-byte write — the replicator reconnects on its ` +
+            'own once the host is back',
+          fix: 'x doctor --json',
         });
       }
       if (written > 0) rest = rest.subarray(written);

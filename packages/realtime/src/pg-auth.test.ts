@@ -67,10 +67,9 @@ describe('scramSession — hard failures', () => {
       .then(() => undefined)
       .catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ReplicationProtocolError);
-    // The fix has to open with a command an operator can run, not with a description of the state.
-    expect((error as { fix?: string }).fix).toBe(
-      'x doctor db — the server did not echo the client nonce; check for a proxy on the replication URL',
-    );
+    // The fix is ONE command an operator can run; what to look for rides the cause.
+    expect((error as { fix?: string }).fix).toBe('x doctor --json');
+    expect((error as { cause?: string }).cause).toContain('check for a proxy');
   });
 
   test('a wrong v= in server-final is refused with X_REPLICATION_FAILED', async () => {

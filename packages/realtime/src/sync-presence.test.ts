@@ -215,6 +215,52 @@ describe('the sync node speaks presence', () => {
     expect((await app.presence.list(ROOM)).map((member) => member.id)).toEqual(['s1']);
   });
 
+  test('a beat renews the member, announces no join, and is answered with the roster', async () => {
+    const app = harness();
+    const watcher = app.connect('s1');
+    await app.join(watcher);
+    const ws = app.connect('s2');
+    await app.join(ws);
+    const joins = watcher.frames('join').length;
+    const rosters = ws.frames('sync').length;
+
+    app.tick(20_000);
+    await app.join(ws);
+    app.tick(20_000);
+
+    // Renewed: 40 s after its join and still a member of a 30 s room.
+    expect((await app.presence.list(ROOM)).map((member) => member.id)).toContain('s2');
+    // Nobody is told a member joined who never left...
+    expect(watcher.frames('join')).toHaveLength(joins);
+    // ...and the beat brings the whole set back, which is what repairs a lost delta.
+    expect(ws.frames('sync')).toHaveLength(rosters + 1);
+  });
+
+  test('a beat from a member that already expired is a join again', async () => {
+    const app = harness();
+    const ws = app.connect('s1');
+    await app.join(ws);
+
+    app.tick(31_000);
+    await app.join(ws);
+
+    expect((await app.presence.list(ROOM)).map((member) => member.id)).toEqual(['s1']);
+    expect(ws.frames('sync')).toHaveLength(2);
+  });
+
+  test('a roster the socket refused is sent again on its next beat', async () => {
+    const app = harness();
+    const ws = app.connect('s1');
+    ws.buffered = 4 * 1024 * 1024;
+    await app.join(ws);
+    expect(ws.frames('sync')).toHaveLength(0);
+
+    ws.buffered = 0;
+    await app.join(ws);
+
+    expect(ws.frames('sync')).toHaveLength(1);
+  });
+
   test('a sweep turns silent expiry into the leave frame nobody else would send', async () => {
     const app = harness();
     const watcher = app.connect('s1');

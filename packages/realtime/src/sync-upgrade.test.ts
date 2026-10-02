@@ -43,6 +43,8 @@ function rig(options: { accepts: boolean; authenticate?: SyncAuthenticator }): R
       expect(upgradeOptions.data.socketId).toBe(SOCKET_ID);
       return options.accepts;
     },
+    // The box itself: the peer the readiness test below reads the check names as.
+    requestIP: () => ({ address: '127.0.0.1' }),
   };
   const deps: UpgradeDeps = {
     path: '/_x/sync',
@@ -53,6 +55,7 @@ function rig(options: { accepts: boolean; authenticate?: SyncAuthenticator }): R
     ready: () => true,
     socketCount: () => 0,
     newSocketId: () => SOCKET_ID,
+    healthDetailPeers: ['loopback'],
     ...(options.authenticate ? { authenticate: options.authenticate } : {}),
     onGranted: (socketId, grant) => {
       granted.set(socketId, grant);
@@ -120,6 +123,7 @@ describe('the connection cap is re-asked after authenticate, not only before it'
         sockets += 1;
         return true;
       },
+      requestIP: () => null,
     };
     const deps: UpgradeDeps = {
       path: '/_x/sync',
@@ -130,6 +134,7 @@ describe('the connection cap is re-asked after authenticate, not only before it'
       ready: () => true,
       socketCount: () => sockets,
       newSocketId: () => `sock-${sockets}`,
+      healthDetailPeers: ['loopback'],
       authenticate: async (): Promise<SyncGrant> => {
         await parked;
         return { actor: alice };
@@ -163,6 +168,7 @@ describe('the upgrade records ?build= when the dial carries one', () => {
         data = upgradeOptions.data;
         return true;
       },
+      requestIP: () => null,
     };
     return handleUpgrade(rig({ accepts: true }).deps, new Request(url), server).then(() => data);
   }

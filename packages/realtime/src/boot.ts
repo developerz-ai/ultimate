@@ -15,9 +15,8 @@ import type { RecordStore } from './record-store';
  * The types the document marks persisted, read back off disk, then the page's outbox opened. None
  * marked is no record disk.
  */
-async function restoreFromDisk(store: RecordStore, principal: Principal): Promise<void> {
+async function restoreFromDisk(store: RecordStore, principal: () => Principal): Promise<void> {
   const types = persistedTypes();
-  const keep = scopeKey(principal);
   let persister: RecordPersister | undefined;
   try {
     // A sign-out by full navigation (a form post and a redirect) never calls `rescope()`, so the
@@ -26,7 +25,12 @@ async function restoreFromDisk(store: RecordStore, principal: Principal): Promis
     // restored. An unscoped page (rendered for nobody) wipes nothing — it knows no principal.
     // Trade-off: two principals in two tabs of one browser — the newer boot wipes the other's
     // disk; that tab keeps its records in memory and re-persists them on its next write.
-    if (keep !== undefined) await (await pageLocalStore()).wipeOthers(keep);
+    //
+    // WHOSE disk is kept is decided AT the wipe, after the store has opened: decided before that
+    // await, a `rescope()` during it kept the principal that left and wiped the one that arrived.
+    const disk = await pageLocalStore();
+    const keep = scopeKey(principal());
+    if (keep !== undefined) await disk.wipeOthers(keep);
     if (types.size > 0) {
       persister = recordPersister({ store, local: await pageLocalStore(), types });
       await persister.restore();
@@ -50,16 +54,17 @@ type Principal = ClientScope['principal'];
  * scope is the page's own — a parameter only so a test can boot an unscoped page (an OBJECT, so an
  * explicit `undefined` principal is not mistaken for "use the default").
  */
-export function bootPage(
-  scope: { readonly principal: Principal } = pageClient().scope,
-): Promise<void> {
+export function bootPage(scope?: { readonly principal: Principal }): Promise<void> {
   const host = globalThis as BootHost;
   const started = host[BOOT_KEY];
   const waiting = host[BOOT_RELEASE_KEY];
   // Already booting — unless what sits there is an island's placeholder, which this boot claims.
   if (started !== undefined && waiting === undefined) return started;
   Reflect.deleteProperty(host, BOOT_RELEASE_KEY);
-  const booted = restoreFromDisk(pageRealtime().store, scope.principal);
+  // Asked each time, never captured: the page's principal is whatever `rescope()` last said.
+  const principal = (): Principal =>
+    scope === undefined ? pageClient().scope.principal : scope.principal;
+  const booted = restoreFromDisk(pageRealtime().store, principal);
   if (started !== undefined && waiting !== undefined) {
     void booted.then(waiting);
     return started;

@@ -6,12 +6,12 @@
 import { type Clock, finiteOption, logger, renderThrowable, systemClock } from '@ultimat3/core';
 import type { ChangeEvent, ChangeOp, PgLogicalReplicationOptions } from './changefeed';
 import { ReplicationProtocolError } from './errors';
-import { isRow, type Row } from './json';
 import { ByteReader, ByteWriter, epochMsToPgTimestamp, printLsn } from './pg-bytes';
 import { PgConnection } from './pg-connection';
-import { entityRow } from './pg-entity-row';
 import { assertIdentifier } from './pg-identifier';
+import { paramsChannelTables } from './pg-identity-tables';
 import { preflight } from './pg-preflight';
+import { replicatedImages, tenantOf } from './pg-replication-row';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 import type { PhysicalRow } from './pg-values';
 import { keyedWrite, PgOutputDecoder, type PgOutputMessage, type PgRelation } from './pgoutput';
@@ -52,10 +52,7 @@ export interface ReplicationStreamStats {
    * reporting it. Reset by the first confirm that lands.
    */
   readonly confirmFailures: number;
-  /**
-   * Why the pump stopped, or `null` while it is live. The read loop cannot throw into a caller —
-   * nothing awaits it — so this is the one place `/readyz` and a test can see that it died at all.
-   */
+  /** Why the pump stopped, or `null` while live. Recorded here and ANNOUNCED through `onEnd`. */
   readonly failure: string | null;
 }
 
@@ -88,6 +85,8 @@ export const commitPositionOf = (lsn: string): bigint => BigInt(`0x${lsn.slice(0
 export interface ReplicationStreamHandlers {
   readonly from?: string | undefined;
   onChange(event: ChangeEvent): void | Promise<void>;
+  /** Called once when the pump dies on its own; never for a `stop()`. */
+  readonly onEnd?: ((reason: string) => void) | undefined;
 }
 
 /**
@@ -115,6 +114,7 @@ export class PgReplicationStream {
   #partialBefore = 0;
   #confirmFailures = 0;
   #failure: string | null = null;
+  #onEnd: ((reason: string) => void) | undefined;
 
   constructor(options: PgLogicalReplicationOptions) {
     this.#options = options;
@@ -166,10 +166,12 @@ export class PgReplicationStream {
       replication: 'database',
       applicationName: `ultimate-replicator:${slot}`,
       rng: this.#options.rng,
+      ssl: target.ssl,
     });
     this.#connection = connection;
     try {
-      await preflight(connection, slot, publication, this.#entities);
+      const full = this.#options.fullIdentityTables ?? paramsChannelTables();
+      await preflight(connection, slot, publication, this.#entities, new Set(full));
       const from = handlers.from;
       this.#confirmed = from === undefined ? 0n : commitPositionOf(from);
       await connection.startCopyBoth(
@@ -183,10 +185,10 @@ export class PgReplicationStream {
       throw failure;
     }
     this.#running = true;
-    // A restart that kept the last death in `stats()` reports a live stream as failed, and the
-    // supervisor that reads it never sees the replicator come back.
+    // A restart that kept the last death in `stats()` would report a live stream as failed.
     this.#failure = null;
     this.#confirmFailures = 0;
+    this.#onEnd = handlers.onEnd;
     this.#timer = setInterval(
       () => {
         void this.#confirmOnTimer();
@@ -242,6 +244,20 @@ export class PgReplicationStream {
   }
 
   /**
+   * `stop()` without the goodbye: no confirm, no `CopyDone`, no `Terminate`, nothing awaited — on a
+   * black-holed walsender each of those is a write nothing settles. The unconfirmed tail is
+   * re-sent to the next stream and dropped by its `from`.
+   */
+  abandon(): void {
+    this.#running = false;
+    this.#onEnd = undefined;
+    this.#clearTimer();
+    const connection = this.#connection;
+    this.#connection = null;
+    connection?.destroy();
+  }
+
+  /**
    * The pump's only way out, however it ended — a decode error, or a walsender that said goodbye.
    * The four things it owns go together or not at all, because each one left behind is a dead
    * replicator claiming to be a live one: a `null` failure for a loop that stopped reading, a
@@ -256,14 +272,21 @@ export class PgReplicationStream {
     this.#clearTimer();
     const connection = this.#connection;
     this.#connection = null;
-    // The supervisor reads /readyz, so the loop records, reports and ends rather than throwing
-    // into a promise nothing awaits.
+    // The loop records, reports and ends rather than throwing into a promise nothing awaits.
     logger.error('replication stream ended', { slot: this.#options.slot, error: reason });
     try {
       await connection?.close();
     } catch {
       // The socket is already unusable and `failure` above is the report that matters — a
       // goodbye that throws must not become the rejection `#drain` promised never to produce.
+    }
+    // Last, so whoever restarts finds the socket already let go. Called, never awaited.
+    const onEnd = this.#onEnd;
+    this.#onEnd = undefined;
+    try {
+      onEnd?.(reason);
+    } catch (failure) {
+      logger.error('replication onEnd listener threw', { error: renderThrowable(failure) });
     }
   }
 
@@ -330,19 +353,21 @@ export class PgReplicationStream {
         if (message.endLsn > this.#confirmed) this.#confirmed = message.endLsn;
         return;
       case 'insert':
-        await this.#deliver('insert', message.relation, null, message.after, handlers);
+        await this.#deliver('insert', message.relation, null, message.after, [], handlers);
         return;
-      case 'update':
-        await this.#deliver('update', message.relation, message.before, message.after, handlers);
+      case 'update': {
+        const { relation, before, after, unchanged } = message;
+        await this.#deliver('update', relation, before, after, unchanged, handlers);
         return;
+      }
       case 'delete':
-        await this.#deliver('delete', message.relation, message.before, null, handlers);
+        await this.#deliver('delete', message.relation, message.before, null, [], handlers);
         return;
       case 'truncate':
         // One change per truncated relation, rowless. It was decoded and DROPPED here, and with the
         // recommended `FOR ALL TABLES` publication every window and every client kept the rows.
         for (const relation of message.relations) {
-          await this.#deliver('truncate', relation, null, null, handlers);
+          await this.#deliver('truncate', relation, null, null, [], handlers);
         }
         return;
       default:
@@ -356,6 +381,7 @@ export class PgReplicationStream {
     relation: PgRelation,
     oldTuple: PhysicalRow | null,
     newTuple: PhysicalRow | null,
+    unchanged: readonly string[],
     handlers: ReplicationStreamHandlers,
   ): Promise<void> {
     const transaction = this.#transaction;
@@ -386,8 +412,7 @@ export class PgReplicationStream {
     if ((op === 'update' || op === 'delete') && relation.replicaIdentity !== 'f') {
       this.#partialBefore += 1;
     }
-    const before = toRow(relation, oldTuple, 'before');
-    const after = toRow(relation, newTuple, 'after');
+    const { before, after, omitted } = replicatedImages(relation, oldTuple, newTuple, unchanged);
     const event: ChangeEvent = {
       entity: relation.name,
       op,
@@ -398,6 +423,7 @@ export class PgReplicationStream {
       orgId: tenantOf(after ?? before),
       at: transaction.commitAt,
       ...(transaction.write === undefined ? {} : { write: transaction.write }),
+      ...(omitted.length === 0 ? {} : { omitted }),
     };
     await handlers.onChange(event);
     this.#lastLsn = lsn;
@@ -470,30 +496,3 @@ export class PgReplicationStream {
     await attempt;
   }
 }
-
-/** A physical tuple becomes the row the matcher's predicates are written against, or nothing. */
-function toRow(
-  relation: PgRelation,
-  physical: PhysicalRow | null,
-  image: 'before' | 'after',
-): Row | null {
-  if (physical === null) return null;
-  const row = entityRow(relation, physical, image);
-  // A bigserial id decodes as a number inside `Number.isSafeInteger` range and as text outside it,
-  // so the same table would otherwise identify small rows by number and large ones by string.
-  // `Row.id`, `RowPatch.id` and every cursor are text: the identity is normalised once, here.
-  const id = row['id'];
-  if (typeof id === 'number' && Number.isSafeInteger(id)) row['id'] = String(id);
-  if (isRow(row)) return row;
-  throw new ReplicationProtocolError({
-    stage: 'stream',
-    detail: `table "${relation.name}" replicated a row with no text id column`,
-    fix: `give ${relation.name} an id column, or drop it from the publication and the entity list`,
-  });
-}
-
-/** The tenant, hoisted out of the row so fanout filters without parsing it. */
-const tenantOf = (row: Row | null): string | null => {
-  const orgId = row?.['orgId'];
-  return typeof orgId === 'string' ? orgId : null;
-};

@@ -1,7 +1,7 @@
 // Realtime's X_* codes. Every throw in this package goes through one of these classes so
 // the same string renders in the terminal, the browser overlay, and `--json`.
 
-import { registerErrorCodes } from '@ultimat3/core';
+import { isFixShellSafe, registerErrorCodes, renderFixShellArg } from '@ultimat3/core';
 import { RealtimeError } from './realtime-error';
 
 /** Codes this package declares and owns. */
@@ -36,6 +36,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REALTIME_TOPOLOGY',
   'X_REPLICATION_TLS',
   'X_SOCKET_ORIGIN_REFUSED',
+  'X_OFFLINE_QUEUE_ABANDONED',
 ] as const;
 
 /**
@@ -60,6 +61,24 @@ export const POLICY_DENIAL_CODES: ReadonlySet<string> = new Set([
   'X_FORBIDDEN',
   'X_UNAUTHENTICATED',
 ]);
+
+/**
+ * `@ultimat3/entity`'s tenant guard refusing a read FOR THIS ACTOR: it carries no org, names
+ * another one, or reached across tenants without the capability. Verdicts about who is asking, so
+ * a channel's row loader raising one is a denial. `X_TENANCY_UNSCOPED` is deliberately absent —
+ * that is a query written without a tenant predicate, which is the app's defect and no decision.
+ * Spelled by name, never matched by prefix: a code's meaning is its owner's, not its shape's.
+ */
+export const TENANCY_DENIAL_CODES: ReadonlySet<string> = new Set([
+  'X_TENANCY_ACTOR_ORG_REQUIRED',
+  'X_TENANCY_ACTOR_MISMATCH',
+  'X_TENANCY_CROSS_DENIED',
+]);
+
+/** True when the tenant guard decided against the actor — see `TENANCY_DENIAL_CODES`. */
+export function isTenancyDenial(error: unknown): boolean {
+  return TENANCY_DENIAL_CODES.has(codeOf(error) ?? '');
+}
 
 /**
  * The sync protocol's answer to "which of these is a 4xx". A denied topic, a subscription cap, a
@@ -146,6 +165,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REALTIME_TOPOLOGY: 'a sync node boots on a real database with no reachable change feed',
   X_REPLICATION_TLS: 'the replication connection failed TLS',
   X_SOCKET_ORIGIN_REFUSED: 'the websocket upgrade came from another origin',
+  X_OFFLINE_QUEUE_ABANDONED: 'a write was queued after its page changed principal',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -159,6 +179,7 @@ registerErrorCodes(
 export {
   CursorStaleError,
   LocalStoreUnavailableError,
+  OfflineQueueAbandonedError,
   ProtocolVersionError,
   RealtimeUninstalledError,
   RebaseConflictError,
@@ -300,17 +321,33 @@ export class TransportProtocolError extends RealtimeError {
 }
 
 /**
- * A subscribable read projected a row with no `id`. Patches, cursors and the local store all
- * address a row by `id`, so such a row cannot be delivered — and delivering it anyway produces a
- * subscription that looks correct until the first update nobody can apply.
+ * A subscribable read projected a row with no usable `id`. Patches, cursors and the local store all
+ * address a row by a text `id`, so such a row cannot be delivered — and delivering it anyway
+ * produces a subscription that looks correct until the first update nobody can apply.
+ *
+ * `idType` is set when the row HAS an id that is neither text nor a safe integer (the one numeric
+ * shape the change feed and the snapshot both stringify): "select the primary key" is then the
+ * wrong instruction, because the key is selected.
  */
 export class LiveRowUnidentifiedError extends RealtimeError {
-  constructor(args: { query: string; keys: readonly string[] }) {
-    super({
-      code: 'X_LIVE_ROW_UNIDENTIFIED',
-      cause: `live query "${args.query}" returned a row with no id (columns: ${args.keys.join(', ') || 'none'})`,
-      fix: `select the primary key in ${args.query}'s sql(), or drop live: true from it`,
-    });
+  constructor(args: { query: string; keys: readonly string[]; idType?: string }) {
+    const columns = args.keys.join(', ') || 'none';
+    super(
+      args.idType === undefined
+        ? {
+            code: 'X_LIVE_ROW_UNIDENTIFIED',
+            cause: `live query "${args.query}" returned a row with no id (columns: ${columns})`,
+            fix: `select the primary key in ${args.query}'s sql(), or drop live: true from it`,
+          }
+        : {
+            code: 'X_LIVE_ROW_UNIDENTIFIED',
+            cause: `live query "${args.query}" returned a row whose id is a ${args.idType}, not text or a safe integer — a live row is addressed by a text id, so project the key as text (a uuid or text column) or drop live: true from the query`,
+            // A name the shell would not read verbatim does not travel: the list names it instead.
+            fix: isFixShellSafe(args.query)
+              ? `x queries describe ${renderFixShellArg(args.query, 'name')} --json`
+              : 'x queries list --json',
+          },
+    );
   }
 }
 
@@ -363,11 +400,21 @@ export class SocketUnauthenticatedError extends RealtimeError {
  * the accept budget, so a hostile page costs neither.
  */
 export class SocketOriginRefusedError extends RealtimeError {
-  constructor(args: { reason: string }) {
+  constructor(args: { reason: string; asked: string | null; admitted: readonly string[] }) {
+    // The asking origin is a request header: it travels only as the origin a URL parser read out
+    // of it AND only when the shell screen carries it verbatim, so neither the cause nor the
+    // pasted `export` can hold anything the client wrote beyond a scheme, a host and a port.
+    const parsed = URL.parse(args.asked ?? '')?.origin;
+    const asked = isFixShellSafe(parsed) ? parsed : null;
+    const { admitted } = args;
+    const list =
+      admitted.length === 0
+        ? 'only the origin it was reached on (no APP_URL declared)'
+        : `only ${admitted.join(', ')}`;
     super({
       code: 'X_SOCKET_ORIGIN_REFUSED',
-      cause: `the websocket upgrade was refused: ${args.reason}`,
-      fix: 'export APP_URL="https://www.example.com"   # on the sync role: the origin the page is served on (or createSyncNode({ allowedOrigins }))',
+      cause: `the websocket upgrade was refused: ${args.reason} — asked from ${asked ?? 'an origin that cannot be rendered'}; this node admits ${list}`,
+      fix: `export APP_URL=${asked ?? 'https://www.example.com'}   # on the sync role, and only when that is the origin your pages are served on (or createSyncNode({ allowedOrigins }))`,
     });
   }
 }
@@ -401,6 +448,21 @@ export class WindowReadTimeoutError extends RealtimeError {
       code: 'X_TIMEOUT',
       cause: `the shared snapshot read for live query "${args.qid}" did not answer within ${args.afterMs}ms, so the window slot it held was released`,
       fix: 'x doctor --json   # then raise readDeadlineMs on the live query registry, or fix the snapshot read that stopped answering',
+    });
+  }
+}
+
+/**
+ * A grant's `refresh()` — the app's token service — did not answer inside its deadline. The grant
+ * is NOT renewed and NOT revoked: it stays expired and the next re-auth pass asks again. What the
+ * deadline buys is the rest of the pass, which one call that never settles used to park forever.
+ */
+export class GrantRefreshTimeoutError extends RealtimeError {
+  constructor(args: { socketId: string; afterMs: number }) {
+    super({
+      code: 'X_TIMEOUT',
+      cause: `refresh() for the grant of socket ${args.socketId} did not answer within ${args.afterMs}ms, so the re-auth pass moved on; the grant stays expired and is asked again on the next pass`,
+      fix: 'x doctor --json',
     });
   }
 }

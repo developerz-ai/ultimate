@@ -54,11 +54,29 @@ export interface SyncNodeOptions {
    */
   readonly authenticate?: SyncAuthenticator;
   /**
-   * Exact origins a page may open a socket from, besides this node's own host name — the page's
-   * origin when it is served on another host (`SYNC_URL` on a separate domain). Anything else is
+   * Exact origins a page may open a socket from — the app's public origin (`APP_URL`). Declared,
+   * they are the WHOLE list; with none, the node admits the origin it was reached on (its `Host`
+   * and port, and that host's https spelling when reached over plain http). Anything else is
    * refused `X_SOCKET_ORIGIN_REFUSED` before `authenticate` runs.
    */
   readonly allowedOrigins?: readonly string[];
+  /**
+   * Also admit the origin the node was reached on BESIDE a declared list. For a loopback dev
+   * server reached through a forwarded host; never a container, where `Host` is the caller's.
+   */
+  readonly admitReachedOrigin?: boolean;
+  /**
+   * Peers this node's own `/healthz` and `/readyz` tell the whole report to: address classes
+   * (`loopback`, `private`, …) or exact IP literals — the app's `http.healthDetailPeers`. Defaults
+   * to core's `DEFAULT_HEALTH_DETAIL_PEERS` (the box itself); anyone else, and any request that
+   * says it was forwarded, gets `{ state, ready, role }`.
+   */
+  readonly healthDetailPeers?: readonly string[];
+  /**
+   * How long one grant's `refresh()` may hold the re-auth pass before it is reported and skipped
+   * (`DEFAULT_GRANT_REFRESH_DEADLINE_MS`). The grant stays expired and is asked again next pass.
+   */
+  readonly grantRefreshDeadlineMs?: number;
   /** How often an expired grant is re-decided. The clock a socket's authority runs on. */
   readonly reauthenticateIntervalMs?: number;
   readonly clock?: Clock;

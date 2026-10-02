@@ -366,7 +366,7 @@ describe('responseFields / describeFields / serverError', () => {
     // and `UltimateError` then ran `singleLine(fn)`, whose `.replace` does not exist: a TypeError
     // thrown from inside the constructor of the error that exists to explain the failure, so the
     // caller lost `X_REPLICATION_FAILED` and its instruction both. Same shape as `schema/errors.ts`.
-    const generic = 'x doctor db — the postgres message above names the object to change';
+    const generic = 'x doctor --json';
     for (const sqlstate of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
       const error = serverError(
         'auth',
@@ -381,7 +381,7 @@ describe('responseFields / describeFields / serverError', () => {
     }
   });
 
-  test('serverError falls back to the generic x doctor db fix for an unknown SQLSTATE', () => {
+  test('serverError falls back to the generic fix, one runnable command, for an unknown SQLSTATE', () => {
     const error = serverError(
       'auth',
       errorBody([
@@ -389,6 +389,6 @@ describe('responseFields / describeFields / serverError', () => {
         ['M', 'boom'],
       ]),
     );
-    expect(error.fix).toBe('x doctor db — the postgres message above names the object to change');
+    expect(error.fix).toBe('x doctor --json');
   });
 });

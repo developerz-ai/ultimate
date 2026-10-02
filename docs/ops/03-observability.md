@@ -36,6 +36,7 @@ exactly one emitter:
 | `queue_dead_jobs` | gauge | `queue` | the worker, beside `queue_depth` — dead-lettered jobs still on the table |
 | `channel_frames_dropped_total` | counter | none | the sync node, per channel frame a socket's backpressure dropped (`packages/realtime/src/socket.ts`) |
 | `channel_replay_gaps_total` | counter | none | the sync node, per `replay-gap` a socket took (`packages/realtime/src/channel-gaps.ts`) |
+| `channel_removals_skipped_total` | counter | none | the sync node, per channel record removal it could not route: the old row image lacked the channel's params, i.e. the table is not `REPLICA IDENTITY FULL` (`packages/realtime/src/channel-records.ts`). Logged as `channel.removal_skipped` with the channel and table |
 | `deprecated_calls_total` | counter | primitive, `name` | a call served by a declaration marked deprecated (`packages/action/src/deprecation.ts`) |
 | `process_resident_memory_bytes`, `process_heap_used_bytes`, `process_heap_total_bytes`, `process_external_memory_bytes` | gauge | none | every role, read at scrape time (`packages/core/src/process-metrics.ts`) |
 | `process_cpu_seconds_total` | counter | none | every role, fed once a second; the boot's CPU is counted at start |
@@ -292,7 +293,7 @@ rate: each point is a job the queue re-delivered while this process was still ru
 | `worker` | `queue_oldest_ready_seconds`, not queue length; `queue_dead_jobs` above zero | length says nothing about whether anything is draining, and a dead-letter table that filled overnight is a rate of zero |
 | `sync` | connections per pod against the per-pod ceiling; any `channel_frames_dropped_total` rate | a websocket costs memory while idle; request rate is blind to it. Dropped frames are clients re-reading |
 | `replicator` | replication slot lag, and slot inactive — from postgres (`pg_replication_slots`, e.g. postgres_exporter), not from the app | an inactive slot silently accumulates WAL until the database's disk fills |
-| `web` | `/readyz` check failures by check name | the body names each check — to a peer `configureHttp({ healthDetailPeers })` lists. A blackbox prober in the cluster is not loopback: list `'private'` (or its address) for it, or it reads `{ state, ready, role }` and can alert on the status alone |
+| `web`, `sync` | `/readyz` check failures by check name | the body names each check — to a peer `configureHttp({ healthDetailPeers })` lists. A blackbox prober in the cluster is not loopback: list `'private'` (or its address) for it, or it reads `{ state, ready, role }` and can alert on the status alone |
 | all | build-ID skew across live pods — from kube-state-metrics' pod labels (`app.kubernetes.io/version`, which the chart sets) | a half-finished rollout serving two versions is the shape most version-skew bugs take |
 
 There is **no scheduler-leadership alert**: the app emits no series for who holds the lease (the

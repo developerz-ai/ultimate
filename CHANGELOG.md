@@ -14,14 +14,15 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slices 01–07 have landed: `schema` and
+a later slice appends its group below the last one. `As of 2026-10` slices 01–08 have landed: `schema` and
 `core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
 and `cli`; then slice 04, complete — tier 2's `entity`, `policy` and `http`. A browser-launcher
 repair in `testing` rode along with it. Slice 05 is `auth`: **a deployment with MFA-enrolled
 users has an operator step — the first `auth` entry under Changed.** Slice 06 is complete:
 `query` with `entity`'s comparison rule, `mcp` and `admin`, then `action` with what it changed in
-`http`, `db` and `cli`. Slice 07 is `jobs`; no DDL changed.
+`http`, `db` and `cli`. Slice 07 is `jobs`; no DDL changed. Slice 08 is
+`realtime`: **three operator steps — the first three `realtime` entries under Changed.**
 
 ### Added
 
@@ -137,6 +138,17 @@ Tier 3 — jobs (slice 07).
   `eventsPurgeTarget`, and the types `AnnounceExhaustedOptions`, `ExhaustedCounts`, `StepFence`.
   `ClaimOptions` gains optional `onExhausted` and `dropExhausted`; `ScheduledFire` an optional
   `watermarkMs`.
+
+Tier 0 — core. Tier 3 — realtime (slice 08).
+
+- **core:** `healthBody`, `healthPeerListed`, `DEFAULT_HEALTH_DETAIL_PEERS` and the
+  `PublicHealthBody` type — the health-body rule, one definition for the web and sync roles.
+- **realtime:** `X_OFFLINE_QUEUE_ABANDONED` (`OfflineQueueAbandonedError`), `OfflineQueue.abandon()`
+  and `.abandoned` — see Changed.
+- **realtime:** `ReplicatorStats` gains `restarts` and `failure`; `ChangeFeedStartOptions` an
+  optional `onEnd(reason)`; `ChangeEvent` an optional `omitted`. Server exports
+  `paramsChannelTables`, `CHANNEL_IDENTITY_EVENT`, `answersWeakAuth`. New log event
+  `replication.channel_identity_partial`.
 
 Tier 5 — cli.
 
@@ -618,6 +630,87 @@ Tier 5 — cli (slice 07).
   `RetentionStores` passes the bus.
 - **cli:** `x jobs drain` logs `jobs.claim.exhausted` for a row its claim buries.
 
+Tier 3 — realtime.
+
+- **BREAKING — OPERATOR ACTION: on the sync websocket, a declared origin is the whole
+  allow-list.** When `APP_URL` (or `createSyncNode({ allowedOrigins })`) is set, only the declared
+  origins are admitted — the origin the node was reached on is not admitted beside them.
+  Undeclared, the node admits the origin it was reached on, and its `https` spelling when reached
+  over plain http. It admitted the node's host name at any port or scheme. A deployment whose
+  `APP_URL` on the `sync` role is not the origin its pages are served on has every socket
+  refused: `403 X_SOCKET_ORIGIN_REFUSED`, whose cause names the origin that asked and the declared
+  list, and whose `fix:` is the `export APP_URL=…` that admits it. The shipped and scaffolded
+  compose files require `APP_URL` on `sync` (`${APP_URL:?…}`); the Helm chart sets it from
+  `ingress.host`; an app's own older compose file adds it to `.env.production`. `x dev` adds its
+  own web role's origin — with its `localhost`, `127.0.0.1` and `[::1]` spellings and the
+  `Host`-derived origin — to a declared list, so dev works with the scaffold's `.env`.
+  `SocketOriginRefusedError`'s constructor requires `{ reason, asked, admitted }`.
+- **BREAKING — OPERATOR ACTION: `x db gen` grants `REPLICA IDENTITY FULL` to the `records` tables of
+  every channel declared with params.** An app that already declares one runs
+  `x db gen "replica identity full"`, then `x db migrate`. Until then the replicator logs
+  `replication.channel_identity_partial` and deletes on those channels are not announced.
+- **BREAKING — OPERATOR ACTION: the replication connection refuses a cleartext or md5 password
+  request under `sslmode=prefer` (the default) and `allow`.** `X_REPLICATION_FAILED`. Set
+  `?sslmode=require` (or `verify-full`), move the role to scram-sha-256, or state
+  `?sslmode=disable`.
+  `require` encrypts to whoever answered and verifies no certificate: it protects the password
+  from a passive listener only. `verify-ca` and `verify-full` stop an attacker on the path.
+- **BREAKING — rows cross the bus revived.** `parseEnvelope` and `parseChange` return `Date` and
+  `Uint8Array` for `timestamp()` and `bytes()` columns; they arrived as strings, so a
+  timestamp-ordered live window mis-sorted. `bytes()` is base64 on the wire. **Replicator and
+  sync nodes must run the same major** — roll them together.
+- **BREAKING — five interfaces gain required members.** A custom transport adds
+  `Transport.onReconnect(listener): () => void`; a custom lock adds
+  `AdvisoryLock.onLost(listener): () => void` and `AdvisoryLock.abandon(): void`; a custom feed
+  adds `ChangeFeed.abandon(): void`; `UpgradeTarget` requires `requestIP(request)` and
+  `UpgradeDeps` requires `healthDetailPeers`. A dead stream or a lost lock abandons the feed, then
+  the lock, synchronously, with no goodbye written; `stop()` gives each goodbye
+  `STOP_DEADLINE_MS`, 5 s.
+- **BREAKING — the sync role's `/healthz` and `/readyz` tell a stranger only the verdict.**
+  `{ state, ready, role }` to a peer not in `healthDetailPeers`, and to any request carrying one
+  of six forwarding headers: `Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`,
+  `X-Forwarded-Proto`, `X-Real-IP`, `Via`. This completes the web role's change above; status
+  codes are unchanged.
+- **BREAKING — channel re-authorization denies more, and a failing guard suspends.** A `null`
+  actor on a channel that declares `row`, and the tenancy refusals
+  `X_TENANCY_ACTOR_ORG_REQUIRED`, `X_TENANCY_ACTOR_MISMATCH` and `X_TENANCY_CROSS_DENIED`, are
+  denials (`X_TOPIC_FORBIDDEN`). A guard that fails rather than denies suspends the seat: kept,
+  silent until a later pass, then a records channel gets `replay-gap`; it used to keep
+  delivering. A re-auth denial is announced under its sid (`ack` with `ref` = sid), for live
+  queries (`X_FORBIDDEN`) and channels.
+  A subscribe is decided again under the actor on the socket when its guard resolves; one racing
+  a grant change kept the old verdict. A denied re-ask on a suspended seat is refused and latched.
+  `subscribeChannel` refuses a param value over 128 characters, and refuses new topics once a
+  socket holds `maxTopicsPerSocket` latched denials. The re-auth sweep bounds each grant refresh
+  (`grantRefreshDeadlineMs`, default 10,000): a timeout keeps the grant expired and is retried,
+  where one refresh that never settled stalled every later grant on the node.
+- **BREAKING — queued offline writes are never sent under the next principal.** A `rescope`
+  abandons the queue at once; a write enqueued as the principal changes rejects with
+  `X_OFFLINE_QUEUE_ABANDONED`, and `useMutation` takes its optimistic twin back as for any outbox
+  refusal.
+  `mutate` also rejects with that code when the request fails after the principal changed, and
+  when the principal changes during the pre-queue flush; those writes used to be queued and sent
+  under the next principal. `replay()` after a principal change never returns the previous
+  principal's pass or report. **Known gap, not fixed here:** a replayed write is not bound to its
+  principal on the server — `wiki/Known-Gaps.md` carries the row.
+- **BREAKING — decoded `records.adopt`, `records.remove` and channel `params` are null-prototype
+  objects.** `value.hasOwnProperty(key)` throws; write `Object.hasOwn(value, key)`.
+- **realtime:** a replication stream that ends is restarted. `createReplicator` clears `running`,
+  releases the advisory lock and redials on `retryDelayMs`; one rejected publish restarts the
+  stream and the refused change is delivered; a lost advisory-lock session ends the stream the
+  same way, so there are never two producers. The `replicator` role registers a `replicator`
+  readiness check: a web+replicator process answers `/readyz` 503 while its stream is down.
+  `replicator.running` is also false while a change is still being refused by the bus, so that
+  check stays 503 through a publish-refusal loop. The restart backoff resets on a published
+  change, not on a stream coming up; `stats().failure` names the entity and lsn that keep
+  failing. A lock lost mid-dial fails the start.
+- **realtime:** the page socket beats every 10 s by default, was 15 s, and the node names the real
+  beat in `hello.heartbeatMs` — `min(presence ttl / 3, idle budget / 4)`. Silence close, tab
+  reaping and host re-make follow it.
+- **examples/dummy:** the `/runs` route budget is raised `129kb` → `130.5kb`; the measured numbers
+  and the reason are in the comment above the budget in
+  `examples/dummy/apps/web/app/runs/page.tsx`, which is where `bun run budget-raises` reads them.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -872,6 +965,39 @@ Tier 3 — jobs (slice 07).
   teardown abandons a registry `forgetWorker` that outlives the drain budget. A job held twice
   keeps its id in the registry row, and its fleet slot, until the second run ends.
 - **jobs:** a redelivered completed backfill pass reports `{ skipped: false, batches, rows }`.
+
+Tier 3 — realtime (slice 08).
+
+- **realtime:** an UPDATE that leaves a TOASTed column untouched on a non-FULL table no longer
+  reads as the whole row (`ChangeEvent.omitted`); a live-query add patch lacking a projected
+  column marks the entry stale.
+- **realtime:** a `RingChangeBuffer` ring has a floor from birth (`floorAt(qid, lsn)`): a cursor
+  older than the ring's first patch re-snapshots instead of resuming with a partial delta. Only a
+  read that landed moves the floor, a forced re-read exclusively. A snapshot on a node that has
+  received no change carries a node-unique mark (`!<uuid>`) as its cursor `lsn`, not `''`. A
+  resume onto a window that was re-read after a missed change is a snapshot — cursors minted by
+  that re-read included — until the next relevant change.
+- **realtime:** a new `producer` after a known one is a gap, and a bus reconnect is announced. A
+  reconnect or a sequence gap sends `replay-gap` on every open records channel; it repaired live
+  queries only. A TOAST-partial update on a channel's entity is a `replay-gap` on its topic, not
+  a `records` frame.
+- **realtime:** an outbox whose store cannot be opened or wiped no longer rejects `ready`,
+  `enqueue` and `replay` for the rest of the tab: it warns `X_LOCAL_STORE_UNAVAILABLE` and queues
+  in memory (`createOutbox({ warn })`). The page boot decides which principal's stored scope to
+  keep at the wipe, not at boot start.
+- **realtime:** `parseNatsUrl` no longer echoes the URL; the cause names `NATS_URL`. Nine
+  Postgres-client `fix:` lines are `x doctor --json`; they named `x doctor db`, which is not a
+  subcommand. `ByteWriter.uint8` lost a byte written at a buffer-growth boundary.
+- **realtime:** a channel seat is keyed by topic. A subscribe `sid` longer than 512 characters is
+  `X_PROTOCOL_VERSION`. A resubscribe that is already current is answered with a `records` frame
+  at the client's cursor carrying no rows. A live query whose `id` is a safe integer is served,
+  id as text, instead of refused.
+- **realtime:** presence. The leader's lease carries its roster, so a takeover announces a dead
+  leader's members; teardown sends `presence.leave` only for `events: true` channels. A node
+  without presence answers an events-only channel with an empty roster, and `useChannel()` reads
+  `live` on the first `events` frame.
+- **realtime:** `DrainReport.sent` no longer counts a write the sender refused; a refused entry
+  keeps its `error` on disk.
 
 ## 23.0.0 - 2026-10-02
 

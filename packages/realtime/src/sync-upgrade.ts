@@ -2,7 +2,14 @@
 // from `sync-node.ts` because deciding whether a request becomes a websocket is a different job
 // from what the socket then does — the same line `sync-frames.ts` and `sync-listen.ts` already draw.
 
-import { healthzPayload, readyzPayload, reportError } from '@ultimat3/core';
+import {
+  type HealthPayload,
+  healthBody,
+  healthPeerListed,
+  healthzPayload,
+  readyzPayload,
+  reportError,
+} from '@ultimat3/core';
 import {
   SocketAuthUnavailableError,
   SocketOriginRefusedError,
@@ -31,6 +38,11 @@ export interface WsData {
 /** Structural view of `Bun.serve`'s server object; keeps this module free of a Bun import. */
 export interface UpgradeTarget {
   upgrade(request: Request, options: { data: WsData }): boolean;
+  /**
+   * The peer's SOCKET address, as `Bun.serve`'s server answers it — what decides who is told the
+   * health detail. `null` when the host cannot say, which is told the verdict only.
+   */
+  requestIP(request: Request): { readonly address: string } | null;
 }
 
 /**
@@ -49,10 +61,18 @@ export interface UpgradeDeps {
   newSocketId(): string;
   readonly authenticate?: SyncAuthenticator | undefined;
   /**
-   * Exact origins a page may dial from besides the node's own host name — `APP_URL`'s, when the
-   * page is served on another host than the node (`sync-origin.ts`).
+   * Exact origins a page may dial from — `APP_URL`'s. Declared, they are the WHOLE list: the
+   * origin the node sees is `Host`-derived and is admitted only when nothing is declared
+   * (`sync-origin.ts`).
    */
   readonly allowedOrigins?: readonly string[] | undefined;
+  /** The `Host`-derived origin admitted beside a declared list too — `x dev` only. */
+  readonly admitReachedOrigin?: boolean | undefined;
+  /**
+   * Peers told the whole health report — address classes or exact IP literals, the app's
+   * `http.healthDetailPeers`. Everyone else gets `{ state, ready, role }`.
+   */
+  readonly healthDetailPeers: readonly string[];
   /**
    * Recorded BEFORE `server.upgrade`, because Bun runs `websocket.open` synchronously inside it
    * (measured on bun 1.4.0) and `open` is where the node reads this grant to build the socket's
@@ -83,16 +103,21 @@ export async function handleUpgrade(
   const url = new URL(request.url);
   // Health is the process's, readiness is this node's: a draining node stays healthy while it hands
   // its sockets to the rest of the fleet.
-  if (url.pathname === '/healthz') return json(healthzPayload());
+  if (url.pathname === '/healthz') return health(deps, request, server, healthzPayload());
   if (url.pathname === '/readyz') {
     const payload = readyzPayload({ deep: url.searchParams.get('deep') === '1' });
-    return deps.ready() ? json(payload) : json({ status: 503, body: payload.body });
+    return health(deps, request, server, deps.ready() ? payload : { ...payload, status: 503 });
   }
   if (url.pathname !== deps.path) return new Response('not found', { status: 404 });
   // First, and before anything is spent: a foreign page is refused whatever the node's load.
-  const origin = upgradeOrigin(request, url, deps.allowedOrigins ?? []);
-  if (!origin.ok)
-    return wireErrorResponse(403, new SocketOriginRefusedError({ reason: origin.reason }));
+  const origin = upgradeOrigin(request, url, deps.allowedOrigins ?? [], deps.admitReachedOrigin);
+  if (!origin.ok) {
+    const asked = { asked: request.headers.get('origin'), admitted: admittedList(deps) };
+    return wireErrorResponse(
+      403,
+      new SocketOriginRefusedError({ reason: origin.reason, ...asked }),
+    );
+  }
   // The count and readiness. Decided before `authenticate` so a full node costs no token service
   // call.
   if (deps.socketCount() >= deps.maxConnections || !deps.ready()) return shed(deps);
@@ -177,12 +202,55 @@ export async function handleUpgrade(
   return undefined;
 }
 
+/**
+ * What a proxy writes. Any one of them means the socket's address is the proxy's, not the
+ * caller's — and a proxy that writes none of them is indistinguishable from a direct peer, so a
+ * header-less proxy must not route the health paths at all.
+ */
+const FORWARDED_HEADERS = [
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'x-real-ip',
+  'via',
+] as const;
+
+/**
+ * The STATUS is everyone's, which is all a probe reads. The body beyond the verdict is for a peer
+ * the app listed, on a DIRECT socket: these paths answer before the origin check, the accept
+ * budget and `authenticate`. This node declares no trusted proxy, so a request that says it was
+ * forwarded is never told the detail — a proxy on this box makes every caller's socket loopback.
+ */
+function health(
+  deps: UpgradeDeps,
+  request: Request,
+  server: UpgradeTarget,
+  payload: HealthPayload,
+): Response {
+  const forwarded = FORWARDED_HEADERS.some((header) => request.headers.has(header));
+  const detailed =
+    !forwarded &&
+    healthPeerListed(deps.healthDetailPeers, server.requestIP(request)?.address ?? null);
+  return new Response(JSON.stringify(healthBody(payload.body, 'sync', detailed)), {
+    status: payload.status,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+  });
+}
+
 /** Load shedding with a delay attached: refusing without one just moves the herd next door. */
 function shed(deps: UpgradeDeps): Response {
   return new Response('retry', {
     status: 503,
     headers: { 'retry-after-ms': String(deps.accept.retryAfterMs(deps.rng)) },
   });
+}
+
+/** What the refusal says this node admits: the declared list, and under `x dev` the reached-on origin. */
+function admittedList(deps: UpgradeDeps): readonly string[] {
+  const declared = deps.allowedOrigins ?? [];
+  if (declared.length === 0 || deps.admitReachedOrigin !== true) return declared;
+  return [...declared, 'the origin it was reached on'];
 }
 
 function wireErrorResponse(status: number, error: unknown): Response {

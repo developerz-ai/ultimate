@@ -116,6 +116,7 @@ describe('presence at all-hands size', () => {
       shared: counting,
       publish: (subject, payload) => transport.publish(subject, payload),
       subscribe: (subject, handler) => transport.subscribe(subject, handler),
+      onReconnect: () => transport.onReconnect(),
       close: () => transport.close(),
     };
     const fleet = ['node-a', 'node-b', 'node-c'].map(
@@ -178,5 +179,53 @@ describe('the two numbers a client is told to beat by', () => {
     const presence = new PresenceRegistry({ transport: new InProcessTransport() });
     expect(presence.ttlMs).toBe(30_000);
     expect(presence.heartbeatMs).toBe(10_000);
+  });
+});
+
+// The leader's node dies and takes its own members with it. A follower that skipped every sweep
+// held only its own members, so on takeover it had nobody to report as gone.
+describe('a sweep leader that dies', () => {
+  test('its members are announced as left by the node that takes over', async () => {
+    const clock = frozenClock(0);
+    const transport = new InProcessTransport({ clock });
+    const leader = new PresenceRegistry({ transport, clock, nodeId: 'node-a' });
+    const follower = new PresenceRegistry({ transport, clock, nodeId: 'node-z' });
+    await leader.join(room, { id: 'm1', actorId: 'alice' });
+    await follower.join(room, { id: 'm2', actorId: 'bob' });
+    await leader.sweepAll();
+    await follower.sweepAll();
+
+    // node-a is killed: m1 stops beating and node-a stops claiming. node-z and m2 carry on.
+    clock.advance(20_000);
+    expect(await follower.heartbeat(room, 'm2')).toBe(true);
+    expect(await follower.sweepAll()).toEqual([]);
+    clock.advance(11_000);
+
+    const gone = await follower.sweepAll();
+
+    expect(gone.map((member) => member.id)).toEqual(['m1']);
+    // Once: the next pass has nothing left to say.
+    expect(await follower.sweepAll()).toEqual([]);
+  });
+
+  test('a follower forgets a member the live leader already announced', async () => {
+    const clock = frozenClock(0);
+    const transport = new InProcessTransport({ clock });
+    const leader = new PresenceRegistry({ transport, clock, nodeId: 'node-a' });
+    const follower = new PresenceRegistry({ transport, clock, nodeId: 'node-z' });
+    await leader.join(room, { id: 'm1', actorId: 'alice' });
+    await follower.join(room, { id: 'm2', actorId: 'bob' });
+    await leader.sweepAll();
+    await follower.sweepAll();
+
+    await leader.leave(room, 'm1');
+    await leader.sweepAll();
+    await follower.sweepAll();
+    // The leader goes; the follower takes over a room it knows m1 already left.
+    clock.advance(20_000);
+    await follower.heartbeat(room, 'm2');
+    clock.advance(11_000);
+
+    expect(await follower.sweepAll()).toEqual([]);
   });
 });

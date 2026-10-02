@@ -76,6 +76,17 @@ export interface ResumeSource {
    * the entry, which is the only moment anything knows the window is unreachable.
    */
   forget?(qid: string): void;
+  /**
+   * The window behind `qid` was read at `lsn`, so what is retained for it is complete from there
+   * and from nowhere earlier; `exclusive` refuses a cursor exactly at it (a forced re-read), `sole`
+   * answers that cursor and no other below the first patch (a read with no position behind it).
+   * Optional for `forget`'s reason. When it is called, and why, is one rule: `change-buffer.ts`.
+   */
+  floorAt?(
+    qid: string,
+    lsn: string,
+    options?: { readonly exclusive?: boolean; readonly sole?: boolean },
+  ): void;
 }
 
 export type ResumeResult<R extends Row = Row> =

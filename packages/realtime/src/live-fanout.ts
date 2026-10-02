@@ -8,7 +8,7 @@ import type { ChangeEvent } from './changefeed';
 import { advance, type LiveCursor, makeCursor, type ResumeSource } from './cursor';
 import type { Row, RowPatch } from './json';
 import type { LiveSubscription } from './live-contract';
-import { applyToWindow, bridgeChange } from './matcher-bridge';
+import { applyToWindow, bridgeChange, type Projection, projectionOf } from './matcher-bridge';
 import { type QueryEntry, refillWindowInLane } from './query-window';
 import { type Subscriber, type SubscriberGate, windowIndex } from './subscriber-gate';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
@@ -50,6 +50,8 @@ export async function fanoutChange(
   const reread = entry.stale;
   if (reread) {
     await refillWindowInLane(entry);
+    // What was retained before this read has a hole exactly where the staleness came from.
+    deps.source.floorAt?.(entry.qid, entry.lsn, { exclusive: true });
     // Every subscriber was fed from the rows this read just replaced, so each is owed a snapshot —
     // not only the ones `invalidate()` marked: a read that failed or timed out stales the window
     // and marks nobody.
@@ -72,19 +74,26 @@ export async function fanoutChange(
   if (!bridged) return { sent: reread ? await resnapshotAll(deps, entry) : 0, stale: 0 };
   // Keyed ONCE, here, before the retained window stores them: a resume replays the same key.
   const result = { ...bridged, patches: keyPatches(entry, change, bridged.patches) };
+  // Asked of the window as it stood BEFORE this change: the partial row must not teach it a shape.
+  const partial = lacksOmitted(change, result.patches, projectionOf(entry.rows));
   entry.lsn = change.lsn;
   entry.rows = applyToWindow(entry.rows, result.patches);
-  // The window lost its tail, so what it holds is a guess — the next delivery re-reads it rather
-  // than patching a guess, and every subscriber below is re-snapshotted out of what that returns.
-  if (result.refill) entry.stale = true;
-  // The retained window holds the pre-policy patch; resume re-filters it per subscriber.
-  for (const patch of result.patches) deps.source.append(entry.qid, patch);
+  // The window lost its tail — or adopted a row the change could not carry whole — so what it
+  // holds is a guess: the next delivery re-reads it rather than patching a guess, and every
+  // subscriber below is re-snapshotted out of what that returns.
+  const guessed = result.refill || partial;
+  if (guessed) entry.stale = true;
+  // The retained window holds the pre-policy patch; resume re-filters it per subscriber. A partial
+  // row is never retained: replayed, it is the same missing column on a resuming client.
+  if (!partial) for (const patch of result.patches) deps.source.append(entry.qid, patch);
+  // And the ring says so now, not at the re-read: a resume in between got a delta lacking it.
+  else deps.source.floorAt?.(entry.qid, change.lsn, { exclusive: true });
 
   let sent = 0;
   // Indexed once for every subscriber below, never searched per subscriber per patch.
   const index = windowIndex(entry.rows);
   for (const subscription of entry.subscribers.values()) {
-    if (result.refill) {
+    if (guessed) {
       // The window lost its tail: guessing is how a sync engine silently diverges. Checked BEFORE
       // the mark, because a repair reads `entry.rows` — which this fanout has just declared a
       // guess — and then CLEARS the mark. A subscriber already diverged would be recorded as
@@ -140,6 +149,32 @@ export async function fanoutChange(
 }
 
 /**
+ * Whether a row ENTERS the window without a column the change did not carry
+ * (`ChangeEvent.omitted`: an unchanged out-of-line value Postgres logged no bytes for). An update
+ * patch is safe — it merges onto a window row that already holds the column — but an add adopts
+ * the row as the whole row, into the window, every later snapshot and the retained ring. An
+ * unread projection (an empty window) cannot rule a column out, so every omitted one counts.
+ */
+function lacksOmitted(
+  change: ChangeEvent,
+  patches: readonly RowPatch[],
+  projection: Projection,
+): boolean {
+  const omitted = change.omitted;
+  if (omitted === undefined || omitted.length === 0) return false;
+  return patches.some(
+    (patch) =>
+      patch.op === 'insert' &&
+      patch.row !== null &&
+      omitted.some(
+        (column) =>
+          (projection === undefined || projection.has(column)) &&
+          !Object.hasOwn(patch.row ?? {}, column),
+      ),
+  );
+}
+
+/**
  * Every row of a relation this window reads is gone. There is nothing to patch from — a truncate
  * names no row — so the window is re-read now, in the lane, and every subscriber is re-snapshotted
  * out of what came back: a window that kept the truncated rows until its next change would serve
@@ -153,6 +188,7 @@ async function truncated(
   if (!entry.shape.entities.includes(change.entity)) return { sent: 0, stale: 0 };
   await refillWindowInLane(entry);
   if (change.lsn > entry.lsn) entry.lsn = change.lsn;
+  deps.source.floorAt?.(entry.qid, entry.lsn, { exclusive: true });
   for (const subscription of entry.subscribers.values()) {
     subscription.socket.markDesynced(subscription.sid);
   }

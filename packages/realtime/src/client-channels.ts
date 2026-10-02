@@ -208,6 +208,10 @@ export class ChannelBook {
   event(frame: ChannelEventsFrame): void {
     const entry = this.#byTopic.get(frame.channel);
     const presence = readPresence(frame.event);
+    // The node delivers an event only to a member it has seated, and for an events-only channel
+    // (no rows, so no `records` and no `replay-gap`) the roster is the one answer a subscribe
+    // gets. Only from `joining`: a read in flight, a refusal and a dead socket are not undone.
+    if (entry?.state === 'joining') this.#set(entry, 'live');
     for (const holder of entry?.holders ?? []) {
       if (presence !== null) holder.onPresence?.(presence);
       else holder.onEvent?.(frame.event);
@@ -230,7 +234,12 @@ export class ChannelBook {
     const contiguous = entry.contiguous ?? frame.seq - 1;
     // A duplicate is dropped; a replayed seq filling a hole is new. A numeric hole on its own is
     // never a gap — a row this socket may not see is skipped for it; only `replay-gap` is.
-    if (frame.seq <= contiguous || entry.above.has(frame.seq)) return;
+    if (frame.seq <= contiguous || entry.above.has(frame.seq)) {
+      // Still a frame of THIS epoch on THIS seat — and the whole of the node's answer to a resume
+      // that was already current (`ChannelLogs.resume`): nothing to apply, and no longer joining.
+      if (entry.state !== 'live') this.#set(entry, 'live');
+      return;
+    }
     const store = this.#deps.store;
     store.batch(() => {
       for (const [type, rows] of Object.entries(frame.adopt ?? {})) store.adopt(type, rows);

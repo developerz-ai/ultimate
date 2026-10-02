@@ -57,6 +57,14 @@ construct none — their only socket is the metrics listener
 probe at all. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
 probe meaningless; leaving them with no probe is how a wedged worker was never restarted.
 
+**The replicator restarts its own stream, and says when it is not replicating** (`As of 2026-10-02`).
+A stream that ends — a failover, `wal_sender_timeout`, a rejected publish — or an advisory-lock
+session that dies clears `replicator.running`, releases the lock and redials on a jittered backoff;
+no pod restart is needed. The role registers a `replicator` readiness check over `running`, read by
+`/readyz` wherever the process also runs a server (`x dev`, a combined-role process). A dedicated
+`replicator` container still binds only the metrics listener, so the chart gives it no readiness
+probe: alert on the `replicator.stream_ended` and `replicator.restart_failed` log events instead.
+
 A non-leader `scheduler` stands by: it holds no lease, dispatches nothing, and reports the same
 liveness as the leader — there is no readiness signal to distinguish them. A second replica is
 harmless and idle, and also wasted money, so leave both at 1.
@@ -85,7 +93,7 @@ channel). To turn realtime on:
 | 1 | Declare the bus in `app.config.ts` — `realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' }` — then run NATS (JetStream on) and set the **same** `NATS_URL` for `web`, `sync` and the replicator. Both halves or neither: since 22.0.0 `'nats'` with the variable unset, and a `NATS_URL` under `'memory'`, each refuse the boot with `X_CONFIG_INVALID`; `enabled: false` starts no `sync` node and no replicator |
 | 2 | Start Postgres with `wal_level=logical`. The replicator's role needs `REPLICATION` — read [the grant is cluster-wide](#replication-is-a-cluster-wide-grant) first. The publication is the replicator's own: at boot it creates `x_changes` (`REPLICATION_PUBLICATION` overrides) `FOR TABLE` every registered entity table, and adds any entity table an existing one lacks — never removing one. `FOR TABLE`, because a table's owner may publish it without a superuser, so the role that ran the migrations can. A role that owns none of them is refused with `X_REPLICATION_FAILED` and the statement to run as one that does. TLS on the replicator's connection follows libpq's `sslmode`: `?sslmode=require` encrypts against a private-CA server (CNPG) without verifying it; `?sslmode=verify-full&sslrootcert=/path/ca.crt` verifies against the CA you mount — a failure is `X_REPLICATION_TLS`, naming the check |
 | 3 | Enable exactly one replicator per database: `roles.replicator.enabled: true` (chart) or a `ROLE=replicator` service (Compose) |
-| 4 | Enable sync: `roles.sync.enabled: true`, or `replicas: 1` on the Compose `sync` service. The chart's Ingress routes `/_x/sync` only while sync is enabled. The node refuses a socket from a page on another host name (`X_SOCKET_ORIGIN_REFUSED`); when `SYNC_URL` puts it on its own domain, set `APP_URL` on the `sync` role to the page's origin |
+| 4 | Enable sync: `roles.sync.enabled: true`, or `replicas: 1` on the Compose `sync` service. The chart's Ingress routes `/_x/sync` only while sync is enabled. The node refuses a socket from a page on another ORIGIN — scheme, host and port, compared exactly (`X_SOCKET_ORIGIN_REFUSED`); a socket is refused when its origin is not `APP_URL`'s when one is declared; with none declared, not the origin the node was reached on. With the Ingress enabled the chart sets `APP_URL` on the sync role from `ingress.host` (`https` when `ingress.tls`), and a declared origin is the whole list. `env.APP_URL` wins when set: state the page's origin there when the pages are served on another host than `ingress.host` |
 
 ### Replication is a cluster-wide grant
 

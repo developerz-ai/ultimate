@@ -62,6 +62,24 @@ export function parseSsl(params: URLSearchParams): SslSettings {
 /** Whether a mode asks the runtime for the verification at all. */
 export const verifies = (ssl: SslMode): boolean => ssl === 'verify-ca' || ssl === 'verify-full';
 
+/**
+ * Whether a cleartext or md5 password request is answered. Cleartext IS the password; md5 is
+ * replayable. What each mode actually protects against:
+ *
+ * - `verify-ca` / `verify-full`: the session is encrypted to a server whose certificate was
+ *   checked. The only modes that stop an ON-PATH attacker.
+ * - `require`: encrypted, to whoever answered. No certificate is verified, so this stops a PASSIVE
+ *   listener and nothing else — an attacker on the path can terminate the TLS session itself and
+ *   ask for the password. Answered anyway: it is libpq's behaviour, and managed databases whose
+ *   CA an app does not hold depend on it. An operator who needs more names a `verify-*` mode.
+ * - `disable`: the operator SAYING the session is cleartext — the opt-in.
+ * - `allow` / `prefer` (the default, and what an unstated mode is): refused. They do not even
+ *   promise encryption — a stripped upgrade falls back to cleartext without a word — so they stop
+ *   neither kind of attacker, and nobody chose that.
+ */
+export const answersWeakAuth = (ssl: SslMode | undefined): boolean =>
+  ssl === 'disable' || ssl === 'require' || (ssl !== undefined && verifies(ssl));
+
 /** OpenSSL's code for a certificate whose chain verified but whose names do not include the host. */
 const HOST_MISMATCH = 'ERR_TLS_CERT_ALTNAME_INVALID';
 

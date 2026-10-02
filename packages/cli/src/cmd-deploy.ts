@@ -176,10 +176,10 @@ export function planDeploy(
       command: [
         'docker',
         'compose',
-        // Compose interpolates `${SYNC_URL:?…}` and `${POSTGRES_PASSWORD:?…}` from the shell and
-        // `--env-file` only — never from a service's `env_file:`. Without this an operator who put
-        // them in `.env.production`, the one file the compose file tells them to fill, had every
-        // step die on a parse error. Global flag, so it precedes `-f`; the shell still wins over it.
+        // Compose interpolates `${SYNC_URL:?…}`, `${APP_URL:?…}` and `${POSTGRES_PASSWORD:?…}` from
+        // the shell and `--env-file` only — never from a service's `env_file:`. Without this an
+        // operator who put them in `.env.production`, the one file the compose file tells them to
+        // fill, had every step die on a parse error. Global flag, so it precedes `-f`; the shell still wins over it.
         '--env-file',
         join(root, PROD_ENV_FILE),
         '-f',

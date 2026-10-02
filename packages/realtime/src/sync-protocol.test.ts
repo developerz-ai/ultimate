@@ -200,6 +200,22 @@ describe('sync-protocol', () => {
    * the whitelist is what makes that true, and this is the test that says so. Re-adding a `resume`
    * to the hello case fails on `'resume' in decoded`.
    */
+  // Additive and optional: the node's reply may name the beat, and a reply that does not decodes
+  // to a frame with no such key — the client's own default stands.
+  test("a node's hello carries heartbeatMs through the round trip; without it there is no key", () => {
+    const told: Frame = {
+      type: 'hello',
+      v: PROTOCOL_VERSION,
+      buildId: 'build-1',
+      sessionId: 's1',
+      actorId: 'alice',
+      heartbeatMs: 3_000,
+    };
+    expect(decode(encode(told))).toEqual(told);
+    expect('heartbeatMs' in decode(encode(fixtures.hello))).toBe(false);
+    expect(() => decode(JSON.stringify({ ...fixtures.hello, heartbeatMs: 'soon' }))).toThrow();
+  });
+
   test('a hello from a client one deploy behind decodes, and its resume list is dropped', () => {
     const legacy = JSON.stringify({ ...fixtures.hello, resume: [cursor] });
     const decoded = decode(legacy);

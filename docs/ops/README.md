@@ -58,8 +58,15 @@ front to route between them, so write `SYNC_URL=ws://<host>:3001/_x/sync` (or `w
 fills that from the shell and `--env-file` only, never from `env_file:`: run
 `docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d`, as `x deploy`
 does. Without the value, Compose refuses to start `web`. A value that is not `ws:`/`wss:` is `X_CONFIG_INVALID` at boot. Add a reverse proxy
-that routes `/_x/sync` to `sync`, and the default works with no variable. Rung 3's ingress
-already does that.
+that routes `/_x/sync` to `sync`, and the default works with no variable.
+
+**And `APP_URL`**, the origin the pages are served on (`http://<host>:3000` here). The sync node
+admits a websocket from `APP_URL`'s origin and no other once one is declared (scheme, host and
+port exactly); with none declared, from the origin it was reached on. On this rung the page and
+the socket are two origins: without it every upgrade is `403 X_SOCKET_ORIGIN_REFUSED`. The shipped
+compose file requires it on `sync` the same way (`${APP_URL:?…}`). A PaaS serving both on one host
+needs none: the node admits the `https` spelling of the host and port it was reached on. Rung 3's
+chart sets `APP_URL` on the sync role from `ingress.host`.
 
 The framework ships neither proxy. A proxy image in `docker-compose.prod.yml` would be a dependency
 every app inherits and a second answer to "how does traffic reach a role" beside the chart's

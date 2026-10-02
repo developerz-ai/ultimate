@@ -42,6 +42,8 @@ const SLOT = 'x_live_slot';
 const RESUME_SLOT = 'x_live_resume_slot';
 const WIRED_SLOT = 'x_live_wired_slot';
 const WRITE_SLOT = 'x_live_write_slot';
+const SUPERVISED_SLOT = 'x_live_supervised_slot';
+const TOAST_SLOT = 'x_live_toast_slot';
 const PUBLICATION = 'x_live_pub';
 
 /**
@@ -119,7 +121,8 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
   const dropSlots = async (): Promise<void> => {
     await sql.query(
       `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots ` +
-        `WHERE slot_name IN ('${SLOT}', '${RESUME_SLOT}', '${WIRED_SLOT}', '${WRITE_SLOT}')`,
+        `WHERE slot_name IN ('${SLOT}', '${RESUME_SLOT}', '${WIRED_SLOT}', '${WRITE_SLOT}', ` +
+        `'${SUPERVISED_SLOT}', '${TOAST_SLOT}')`,
     );
   };
 
@@ -352,6 +355,108 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     expect(change.op).toBe('insert');
     expect(change.after?.['id']).toBe('w1');
     expect(change.orgId).toBe('org-1');
+  }, 60_000);
+
+  /**
+   * Postgres logs no bytes for an out-of-line value an UPDATE did not touch. The scripted walsender
+   * can only replay the `'u'` this file's author believes the server sends; this is the server
+   * sending it — and, under FULL, sending the old tuple the value is carried over from.
+   */
+  test('a large column an update did not touch survives it', async () => {
+    const events: ChangeEvent[] = [];
+    const feed = new PgLogicalReplicationFeed({
+      url: url ?? '',
+      slot: TOAST_SLOT,
+      publication: PUBLICATION,
+      entities: [TABLE],
+      statusIntervalMs: 250,
+    });
+    await feed.start({ onChange: (event) => void events.push(event) });
+    try {
+      // 12,800 characters of hex: far over the ~2 kB threshold even after compression, so the
+      // value is stored out of line — the only kind an UPDATE leaves out of the new tuple.
+      await sql.query(
+        `INSERT INTO ${TABLE} (id, title, org_id) SELECT 't1', string_agg(md5(i::text), ''), ` +
+          `'org-1' FROM generate_series(1, 400) AS i`,
+      );
+      await sql.query(`UPDATE ${TABLE} SET view_count = 1 WHERE id = 't1'`);
+      await sql.query(`ALTER TABLE ${TABLE} REPLICA IDENTITY DEFAULT`);
+      await sql.query(`UPDATE ${TABLE} SET view_count = 2 WHERE id = 't1'`);
+      await waitFor(() => events.length >= 3);
+    } finally {
+      await feed.stop();
+      // The identity every other case in this file was written against.
+      await sql.query(`ALTER TABLE ${TABLE} REPLICA IDENTITY FULL`);
+    }
+
+    expect(events.map((event) => event.op)).toEqual(['insert', 'update', 'update']);
+    const title = events[0]?.after?.['title'];
+    expect(typeof title === 'string' ? title.length : 0).toBe(12_800);
+    // FULL: the old tuple carries the value, so the change is the whole row.
+    expect(events[1]?.after?.['title']).toBe(title ?? null);
+    expect(events[1]?.after?.['viewCount']).toBe(1);
+    expect(Object.hasOwn(events[1] ?? {}, 'omitted')).toBe(false);
+    // DEFAULT: there is no old value to read, so the change NAMES what it could not carry.
+    expect(events[2]?.omitted).toEqual(['title']);
+    expect(Object.hasOwn(events[2]?.after ?? {}, 'title')).toBe(false);
+    expect(events[2]?.after?.['viewCount']).toBe(2);
+  }, 60_000);
+
+  /**
+   * The death nothing saw. A walsender that goes away — a failover, `wal_sender_timeout`, an
+   * operator's `pg_terminate_backend` — ended the stream, and the replicator went on reporting
+   * itself running with the advisory lock held: every live window frozen until the pod restarted.
+   * The scripted walsender proves the bookkeeping; only a real one proves the server lets the slot
+   * be taken again and resumes it where the first stream stopped.
+   */
+  test('a terminated walsender is replaced, and a row written after it reaches the bus', async () => {
+    const selection = selectChangeFeed(
+      {
+        DATABASE_URL: url,
+        REPLICATION_SLOT: SUPERVISED_SLOT,
+        REPLICATION_PUBLICATION: PUBLICATION,
+      },
+      { entities: [TABLE] },
+    );
+    const transport = new InProcessTransport();
+    const ids: unknown[] = [];
+    await transport.subscribe(`${CHANGE_SUBJECT_PREFIX}.>`, (payload) => {
+      ids.push((JSON.parse(payload) as ChangeEvent).after?.['id']);
+    });
+    const replicator = createReplicator({
+      feed: selection.feed,
+      transport,
+      lock: selection.lock,
+      // The restart waits this long; the default base is for a fleet, not for a test.
+      backoff: { baseMs: 50, maxMs: 200, factor: 2, jitter: 'none' },
+    });
+    expect(await replicator.start()).toBe(true);
+    try {
+      await sql.query(`INSERT INTO ${TABLE} (id, title, org_id) VALUES ('s1', 'before', 'org-1')`);
+      await waitFor(() => ids.includes('s1'));
+
+      const killed = await sql.query(
+        `SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots ` +
+          `WHERE slot_name = '${SUPERVISED_SLOT}' AND active_pid IS NOT NULL`,
+      );
+      expect(killed[0]?.[0]).toBe('t');
+
+      // Counted, not observed in passing: the restart can land between two polls, so `running`
+      // going false is not something a poll is entitled to see.
+      await waitFor(() => replicator.stats().restarts >= 1 && replicator.running);
+      expect(replicator.stats()).toMatchObject({ failure: null });
+      expect(replicator.stats().restarts).toBeGreaterThanOrEqual(1);
+
+      await sql.query(`INSERT INTO ${TABLE} (id, title, org_id) VALUES ('s2', 'after', 'org-1')`);
+      await waitFor(() => ids.includes('s2'));
+    } finally {
+      await replicator.stop();
+      await transport.close();
+    }
+
+    // Both rows, each once: the second stream resumed after the first row rather than replaying it.
+    expect(ids.filter((id) => id === 's1')).toHaveLength(1);
+    expect(ids.filter((id) => id === 's2')).toHaveLength(1);
   }, 60_000);
 });
 

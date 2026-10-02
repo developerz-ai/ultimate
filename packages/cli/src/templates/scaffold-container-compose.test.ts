@@ -65,3 +65,29 @@ describe('unit · the scaffolded compose file is hardened and rotates its logs',
     }
   });
 });
+
+// On this rung the page is `:3000` and the socket `:3001` — two origins — and the sync node admits
+// an upgrade from `APP_URL`'s origin and no other once declared. A compose file that does not hand the
+// page origin to `sync` is one whose every websocket is `403 X_SOCKET_ORIGIN_REFUSED`.
+describe('unit · the scaffolded compose file hands the page origin to sync', () => {
+  const environment = (service: string): readonly string[] => {
+    const parsed = Bun.YAML.parse(composeProdFile(names('shop'))) as {
+      services: Record<string, { environment?: readonly string[] }>;
+    };
+    return parsed.services[service]?.environment ?? [];
+  };
+
+  test('sync requires APP_URL, the way web requires SYNC_URL — by name, with the value to set', () => {
+    const appUrl = environment('sync').find((entry) => entry.startsWith('APP_URL='));
+    expect(appUrl).toMatch(/^APP_URL=\$\{APP_URL:\?[^}]*http:\/\/<host>:3000[^}]*\}$/);
+    expect(environment('web').some((entry) => entry.startsWith('SYNC_URL=${SYNC_URL:?'))).toBe(
+      true,
+    );
+  });
+
+  test('the header names both variables the env file must carry', () => {
+    const header = composeProdFile(names('shop')).split('\nservices:')[0] ?? '';
+    expect(header).toContain('APP_URL');
+    expect(header).toContain('SYNC_URL');
+  });
+});

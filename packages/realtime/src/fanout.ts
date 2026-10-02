@@ -36,6 +36,14 @@ export interface Transport {
   publish(subject: string, payload: string): Promise<void>;
   subscribe(subject: string, handler: TransportHandler): Promise<TransportSubscription>;
   readonly shared: TransportSet;
+  /**
+   * Told each time the connection behind this transport comes back from a drop. Fanout is
+   * at-most-once, so whatever was published in between never arrived — and with no later message
+   * there is no sequence number to notice it by. A subscriber that keeps derived state (a `sync`
+   * node's windows) invalidates it here. Returns the unsubscribe. A transport with no connection
+   * to lose never calls the listener.
+   */
+  onReconnect(listener: () => void): () => void;
   close(): Promise<void>;
 }
 
@@ -123,6 +131,11 @@ export class InProcessTransport implements Transport {
         }
       }
     }
+  }
+
+  /** One process, no connection: there is nothing to come back from, so nothing is ever said. */
+  onReconnect(): () => void {
+    return () => undefined;
   }
 
   async subscribe(subject: string, handler: TransportHandler): Promise<TransportSubscription> {

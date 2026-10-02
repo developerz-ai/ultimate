@@ -6,6 +6,7 @@
 // reads false — so `maxConnections: NaN` is a node that accepts without limit and says nothing.
 
 import { finiteOption } from '@ultimat3/core';
+import { DEFAULT_HEARTBEAT_MS } from './client-heartbeat';
 
 const SUBJECT = 'the sync node';
 
@@ -127,3 +128,17 @@ export function socketCeilings(options: SocketCeilings): SocketCeilings {
 /** Per CALL, not per node: `drain({ graceMs })` is an argument, so it is refused where it arrives. */
 export const drainGraceMs = (graceMs: number | undefined): number =>
   finiteOption('the sync node drain', 'graceMs', graceMs ?? DEFAULT_DRAIN_GRACE_MS);
+
+/**
+ * The beat a client is TOLD (`hello.heartbeatMs`): a third of the node's real presence ttl, so one
+ * lost beat is never a false leave — and never slower than a quarter of the idle budget, or a
+ * long ttl would have this node evict a healthy socket for the silence it asked for. With no
+ * presence there is no ttl, and the client's own default is the starting point.
+ */
+export function clientHeartbeatMs(
+  presenceBeatMs: number | undefined,
+  idleTimeoutMs: number,
+): number {
+  const idleBound = Math.max(1_000, Math.floor(idleTimeoutMs / 4));
+  return Math.min(presenceBeatMs ?? DEFAULT_HEARTBEAT_MS, idleBound);
+}

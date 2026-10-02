@@ -468,6 +468,8 @@ export { createFlightGate, gateOverloaded } from './flight-gate';
 export { formatBytes } from './format-bytes';
 export type { GenerationFence } from './generation-fence';
 export { createFence, isSuperseded } from './generation-fence';
+export type { PublicHealthBody } from './health-disclosure';
+export { DEFAULT_HEALTH_DETAIL_PEERS, healthBody, healthPeerListed } from './health-disclosure';
 export type { HostDecision, HostRule } from './host-rules';
 export { ANY_HOST, hostDecision, hostMatches } from './host-rules';
 export type { Brand, Id } from './ids';

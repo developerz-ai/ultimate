@@ -13,7 +13,7 @@ export interface OriginEvidence {
   readonly secFetchSite: string | null;
   /** An EXACT allowance for a sibling origin — never a wildcard, never a suffix match. */
   readonly listed: (origin: string) => boolean;
-  /** Where the operator adds an origin, named in the refusal: `http.cors.origins`, `SYNC_ORIGINS`. */
+  /** Where the operator adds an origin, named in the refusal: `http.cors.origins`, `APP_URL`. */
   readonly listName: string;
 }
 

@@ -12,6 +12,7 @@ import { type ChangeEvent, formatLsn } from './changefeed';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
+import { windowId } from './live-tenant';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
 import { decode, type Frame } from './sync-protocol';
@@ -310,5 +311,120 @@ describe('the position a registry has been handed', () => {
     await registry.deliver({ ...change, lsn: formatLsn(9) });
     await registry.deliver({ ...change, lsn: formatLsn(4) });
     expect(registry.lastLsn).toBe(formatLsn(9));
+  });
+});
+
+// The per-row policy pass runs outside the query's lane. A change folded into the window while one
+// subscriber's pass is parked is in neither that subscriber's snapshot nor its patch stream.
+describe('a change folded in while a cold subscriber is being decided', () => {
+  test('marks that subscriber desynced, so the next delivery re-snapshots it', async () => {
+    const parked = deferred<void>();
+    const reached = deferred<void>();
+    const target = feed(async () => ({ rows, lsn: formatLsn(1) }));
+    const definition: LiveQueryDefinition = {
+      ...target.definition,
+      visible: async ({ actor: who }) => {
+        if (who?.id === 'bob') {
+          reached.resolve();
+          await parked.promise;
+        }
+        return true;
+      },
+    };
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(definition);
+    const alice = socketFor('sock-a', actor('alice', 'o1'));
+    const bob = socketFor('sock-b', actor('bob', 'o1'));
+    await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input, sid: 'sid-a' });
+
+    const pending = registry.subscribe({
+      socket: bob.socket,
+      name: 'liveFeed',
+      input,
+      sid: 'sid-b',
+    });
+    // Bob's policy pass is parked on the window as it stood at lsn 1; this change lands under it.
+    await reached.promise;
+    await registry.deliver(change);
+    parked.resolve();
+    const { frame } = await pending;
+
+    expect(frame.type).toBe('snapshot');
+    expect(bob.socket.desynced.has('sid-b')).toBe(true);
+
+    await registry.deliver({ ...change, lsn: formatLsn(3), txid: '3' });
+    const last = bob.ws.frames.at(-1);
+    expect(last?.type).toBe('snapshot');
+    expect(bob.socket.desynced.has('sid-b')).toBe(false);
+  });
+
+  test('a subscriber whose window did not move is not marked', async () => {
+    const target = feed(async () => ({ rows, lsn: formatLsn(1) }));
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
+      target.definition,
+    );
+    const alice = socketFor('sock-a', actor('alice', 'o1'));
+    await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input, sid: 'sid-a' });
+    expect(alice.socket.desynced.has('sid-a')).toBe(false);
+  });
+});
+
+// `reauthorize` walks the subscriptions a socket HOLDS. One still awaiting its own `authorize` is
+// not among them, so it was seated under the verdict of an actor the socket no longer carries.
+describe('an actor that changes while a subscribe is still being decided', () => {
+  const queryHashOf = (org: string): string => windowId(queryHash('liveFeed', input), org);
+  const guarded = (parked: Promise<void>): LiveQueryDefinition => ({
+    ...feed(async () => ({ rows, lsn: formatLsn(1) })).definition,
+    authorize: async ({ actor: who }) => {
+      await parked;
+      if (who?.id !== 'alice') throw Object.assign(new Error('denied'), { code: 'X_FORBIDDEN' });
+    },
+  });
+
+  test('is decided again under the current actor, and refused when that one may not read', async () => {
+    const parked = deferred<void>();
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
+      guarded(parked.promise),
+    );
+    const alice = socketFor('sock-a', actor('alice', 'o1'));
+
+    const pending = registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input,
+      sid: 's1',
+    });
+    // The grant is reduced mid-flight; nothing is attached yet for `reauthorize` to find.
+    alice.socket.actor = actor('mallory', 'o1');
+    await expect(registry.reauthorize(alice.socket)).resolves.toEqual([]);
+    parked.resolve();
+
+    await expect(pending).rejects.toMatchObject({ code: 'X_FORBIDDEN' });
+    expect(registry.subscription('sock-a', 's1')).toBeUndefined();
+    expect(registry.subscriberCount(queryHashOf('o1'))).toBe(0);
+  });
+
+  test('an actor that moved org is seated on its CURRENT tenant’s window', async () => {
+    const parked = deferred<void>();
+    const definition: LiveQueryDefinition = {
+      ...guarded(parked.promise),
+      authorize: async () => {
+        await parked.promise;
+      },
+    };
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(definition);
+    const alice = socketFor('sock-a', actor('alice', 'o1'));
+
+    const pending = registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input,
+      sid: 's1',
+    });
+    alice.socket.actor = actor('alice', 'o2');
+    parked.resolve();
+    const { subscription } = await pending;
+
+    expect(subscription.qid).toBe(queryHashOf('o2'));
+    expect(registry.subscriberCount(queryHashOf('o1'))).toBe(0);
   });
 });

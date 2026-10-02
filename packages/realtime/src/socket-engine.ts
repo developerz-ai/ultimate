@@ -173,6 +173,9 @@ export class SocketEngine {
     switch (frame.type) {
       case 'hello':
         this.#hello = frame;
+        // The node names the beat. Every tab hears the same number on its next beat (this frame is
+        // what `#helloReply` answers with), so the socket and the ports keep one rhythm.
+        if (frame.heartbeatMs !== undefined) this.#heartbeat.follow(frame.heartbeatMs);
         return;
       case 'snapshot':
       case 'patch':
@@ -301,12 +304,21 @@ export class SocketEngine {
     if (this.#reaper !== null) return;
     this.#reaper = this.#schedule(() => {
       this.#reaper = null;
-      const cutoff = this.#now() - REAP_AFTER_BEATS * this.#beatMs;
+      const cutoff = this.#now() - REAP_AFTER_BEATS * this.#portBeatMs();
       for (const attached of [...this.#ports.values()]) {
         if (attached.lastSeen < cutoff) this.#reap(attached);
       }
       if (this.#ports.size > 0) this.#armReaper();
-    }, this.#beatMs);
+    }, this.#portBeatMs());
+  }
+
+  /**
+   * The slowest a healthy tab can be beating: its own default until it hears the node's `hello`,
+   * the node's figure after. The LONGER of the two — a tab is never reaped for keeping a beat the
+   * node asked for, nor for not having heard a shorter one yet.
+   */
+  #portBeatMs(): number {
+    return Math.max(this.#beatMs, this.#heartbeat.intervalMs);
   }
 
   #beat(): void {

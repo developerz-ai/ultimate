@@ -5,7 +5,8 @@
 import { logger } from '@ultimat3/core';
 import type { ChannelHub } from './channel';
 import type { Topic } from './channel-decl';
-import { FrameRateLimitError } from './errors';
+import { ChannelSids } from './channel-sids';
+import { FrameRateLimitError, ProtocolVersionError } from './errors';
 import { FrameLanes, laneKeyOf } from './frame-lanes';
 import type { LiveQueryRegistry } from './live-query';
 import { type PresenceRegistry, presenceFrame } from './presence';
@@ -17,7 +18,19 @@ export interface FrameRouterOptions {
   readonly registry: LiveQueryRegistry;
   readonly buildId: string;
   readonly presence?: PresenceRegistry | undefined;
+  /** What the `hello` reply tells a client to beat at — `clientHeartbeatMs` on a real node. */
+  readonly heartbeatMs?: number | undefined;
+  /** Shared with the node, which names a seat's sid when a re-auth drops it. */
+  readonly channelSids?: ChannelSids | undefined;
 }
+
+/**
+ * The longest `sid` a subscribe frame may carry. A sid is retained — in the subscription book, in
+ * `ChannelSids`, and echoed in every ack — so its size is the client's to choose only up to here.
+ * The bundled client sends a uuid for a live query and `channel:<topic>` for a channel, so the
+ * ceiling sits well above a topic of several uuid params.
+ */
+export const MAX_SID_LENGTH = 512;
 
 export type FrameRouter = (socket: SyncSocket, frame: Frame) => Promise<void>;
 
@@ -29,26 +42,39 @@ export type FrameRouter = (socket: SyncSocket, frame: Frame) => Promise<void>;
  */
 export function ackRefOf(frame: Frame | null, socketId: string): string {
   if (frame === null) return socketId;
-  if (frame.type === 'subscribe') return frame.sid;
+  // An oversized sid is the refusal's reason, never its echo.
+  if (frame.type === 'subscribe' && frame.sid.length <= MAX_SID_LENGTH) return frame.sid;
   return socketId;
 }
 
 export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
   const presence = options.presence;
-  /** Per socket: the topic each channel sid was joined under. Dies with the socket. */
-  const channelTopics = new WeakMap<SyncSocket, Map<string, Topic>>();
+  const channelSids = options.channelSids ?? new ChannelSids();
 
   /**
    * Subscribing to a channel declared `events: true` IS joining its presence set: presence has no
    * frame of its own (it rides that channel's `events`), so a second round trip saying "and I am
-   * here" would be a second way to do one thing. A records-only channel has no roster. Repeating the
-   * frame is therefore also the heartbeat — `join` re-`put`s the member. The roster's answer is
-   * read though nothing here can repair it: a dropped roster costs one heartbeat of blank room, and
-   * the log is the only trace it leaves anywhere.
+   * here" would be a second way to do one thing. A records-only channel has no roster.
+   *
+   * Repeating the frame is the heartbeat. A beat renews the member's TTL (`heartbeat`) instead of
+   * joining again — that was a KV put and a fleet-wide `join` event per member per beat — and is
+   * still answered with the whole roster: a presence delta is an ephemeral frame, so the roster a
+   * beat brings back is what repairs a client that lost one. A member that had already expired is
+   * joined again in full.
+   *
+   * A node built WITHOUT presence still answers: an events-only channel is sent nothing else, so
+   * unanswered its subscriber read `joining` until the first app event. The answer is the roster
+   * this node can vouch for — nobody.
    */
-  const joinPresence = async (socket: SyncSocket, name: Topic): Promise<void> => {
-    if (!presence || options.hub.channelOf(name)?.channel.events !== true) return;
-    const roster = await presence.join(name, { id: socket.id, actorId: socket.actorId });
+  const joinPresence = async (socket: SyncSocket, name: Topic, beat: boolean): Promise<void> => {
+    if (options.hub.channelOf(name)?.channel.events !== true) return;
+    const roster = !presence
+      ? { members: [], total: 0 }
+      : beat && (await presence.heartbeat(name, socket.id))
+        ? await presence.roster(name)
+        : await presence.join(name, { id: socket.id, actorId: socket.actorId });
+    // Read, though nothing here can repair it: the next beat re-sends the set, and the log is the
+    // only trace a dropped one leaves anywhere.
     if (!socket.send(presenceFrame(name, 'sync', roster.members, roster.total))) {
       logger.warn('sync.presence_roster_dropped', { topic: name, socketId: socket.id });
     }
@@ -90,6 +116,9 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
           // The actor the upgrade resolved, so a client can render who the server thinks it is
           // rather than who it thinks it sent.
           actorId: socket.actorId,
+          // The beat this node's REAL presence ttl and idle budget need. A client cannot read
+          // either, and one beating on its own default under a shorter ttl is a false leave.
+          ...(options.heartbeatMs === undefined ? {} : { heartbeatMs: options.heartbeatMs }),
         });
         if (socket.skewed) {
           socket.send({ type: 'update-available', v: PROTOCOL_VERSION, buildId: options.buildId });
@@ -97,23 +126,47 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
         return;
       }
       case 'subscribe': {
+        if (frame.sid.length > MAX_SID_LENGTH) {
+          throw new ProtocolVersionError({
+            got: PROTOCOL_VERSION,
+            expected: PROTOCOL_VERSION,
+            detail: `subscribe.sid is ${frame.sid.length} characters; the limit is ${MAX_SID_LENGTH}`,
+          });
+        }
         if (frame.target.kind === 'channel') {
-          // The topic is the DECLARATION's to spell (`channel.topic(params)`), so a drop finds it
-          // by the sid its add was answered under — never by re-deriving it from client data.
-          const topics = channelTopics.get(socket) ?? new Map<string, Topic>();
-          channelTopics.set(socket, topics);
           if (frame.op === 'drop') {
-            const name = topics.get(frame.sid);
+            // The topic is the DECLARATION's to spell (`channel.topic(params)`), so a drop finds
+            // it by the sid its add was answered under — never by re-deriving it from client data.
+            const name = channelSids.topicOf(socket, frame.sid);
             if (name === undefined) return;
-            topics.delete(frame.sid);
+            channelSids.delete(socket, name);
             const events = options.hub.channelOf(name)?.channel.events === true;
             options.hub.unsubscribe(socket, name);
             if (presence && events) await presence.leave(name, socket.id);
             return;
           }
-          const name = await options.hub.subscribeChannel(socket, frame.target);
-          topics.set(frame.sid, name);
-          await joinPresence(socket, name);
+          // A seat this sid already names may be DENIED by this ask (a suspended seat re-decided):
+          // the hub drops it, and the sid and the presence member must not outlive it.
+          const held = channelSids.topicOf(socket, frame.sid);
+          const room = held !== undefined && options.hub.channelOf(held)?.channel.events === true;
+          let name: Topic;
+          try {
+            name = await options.hub.subscribeChannel(socket, frame.target);
+          } catch (error) {
+            if (held !== undefined && !options.hub.topicsOf(socket).includes(held)) {
+              channelSids.delete(socket, held);
+              if (presence && room) await presence.leave(held, socket.id);
+            }
+            throw error;
+          }
+          // Not seated: the socket died while the guard was answering (a presence member written
+          // now is one no close will ever remove), or the seat is SUSPENDED — its guard could not
+          // decide — and a roster is exactly the delivery a suspension withholds.
+          if (socket.closed || !socket.topics.has(name)) return;
+          // A seat this socket already held makes the frame its beat, never a second join.
+          const beat = channelSids.sidOf(socket, name) !== undefined;
+          channelSids.set(socket, name, frame.sid);
+          await joinPresence(socket, name, beat);
           return;
         }
         if (frame.op === 'drop') {
