@@ -44,11 +44,21 @@ export interface LimitKey {
   readonly tenantId?: string;
 }
 
-/** Returned on success; `release()` is idempotent so a double-release cannot leak slots. */
+/**
+ * Returned on success. Handed back exactly once, by whichever of the two is called first — the
+ * other, and any repeat, is a no-op, so a double hand-back cannot leak a slot or pop two stamps.
+ */
 export interface Lease {
   readonly queue: string;
   readonly tenantId: string;
+  /** The run ENDED: the slot is free, and the start stays counted against `ratePerTenant`. */
   release(): void;
+  /**
+   * The run never STARTED — shed over a fleet cap, refused by its key: the slot is free and the
+   * rate stamp `tryAcquire` wrote goes with it. `ratePerTenant` is starts per window, and a job
+   * handed back unrun every poll interval otherwise spent its tenant's whole window on sheds.
+   */
+  abandon(): void;
 }
 
 export type LimitReason = 'per-tenant' | 'per-queue' | 'global' | 'rate';
@@ -261,16 +271,32 @@ export function createLimiter(
       maybeSweep(at);
 
       let released = false;
+      /** `false` when this lease was already handed back. */
+      const free = (): boolean => {
+        if (released) return false;
+        released = true;
+        global = Math.max(0, global - 1);
+        bump(byQueue, key.queue, -1);
+        bump(byTenant, tenant, -1);
+        bump(byQueueTenant, refusalKey, -1);
+        return true;
+      };
       return {
         queue: key.queue,
         tenantId: tenant,
         release() {
-          if (released) return;
-          released = true;
-          global = Math.max(0, global - 1);
-          bump(byQueue, key.queue, -1);
-          bump(byTenant, tenant, -1);
-          bump(byQueueTenant, refusalKey, -1);
+          free();
+        },
+        abandon() {
+          if (!free() || config.ratePerTenant === undefined) return;
+          // ONE stamp of this lease's own instant: two leases taken in the same millisecond wrote
+          // equal stamps, and either is this one. Absent when a sweep already dropped the window.
+          const stamps = starts.get(tenant);
+          const index = stamps?.lastIndexOf(at) ?? -1;
+          if (stamps === undefined || index === -1) return;
+          const rest = stamps.filter((_stamp, position) => position !== index);
+          if (rest.length === 0) starts.delete(tenant);
+          else starts.set(tenant, rest);
         },
       };
     },

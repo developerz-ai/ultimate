@@ -127,10 +127,10 @@ export async function showJob(driver: JobDriver, id: string): Promise<JobTrace> 
 // ── retry ─────────────────────────────────────────────────────────────────
 
 /**
- * Existence is checked up front so an unknown id always surfaces as `X_JOB_UNKNOWN`: the
- * concrete drivers (pg, memory) throw their own error from inside `requeue()` for a missing
- * row, and that error is not this command's contract — `retryFromStep`'s documented `undefined`
- * return is, and the driver never reaches it once the row is already known absent.
+ * Existence is checked up front so an unknown id always surfaces as `X_JOB_UNKNOWN`: both
+ * drivers answer `X_JOB_NOT_FOUND` from inside `requeue()` for a missing row, and that code is
+ * the driver's contract, not this command's — `retryFromStep`'s documented `undefined` return
+ * is, and the driver never reaches it once the row is already known absent.
  */
 export async function retryJob(
   driver: JobDriver,

@@ -6,7 +6,7 @@
 // Stored and not broadcast, exactly as the memory bus is: a step that suspends at 12:00 and
 // resumes at 12:00:30 must still see an event published at 12:00:10.
 
-import { finiteOption, logger, renderThrowable, uuid } from '@ultimat3/core';
+import { finiteOption, logger, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
 import type { PgExecutor } from './driver-pg';
@@ -15,7 +15,7 @@ import {
   SQL_EVENT_LIST,
   SQL_EVENT_NOW,
   SQL_EVENT_PUBLISH,
-  SQL_EVENT_PURGE,
+  SQL_EVENT_PURGE_COUNTED,
 } from './driver-pg-sql';
 import type { EventBus } from './events';
 
@@ -40,13 +40,6 @@ export interface PgEventBusOptions {
   readonly listLimit?: number;
 }
 
-/**
- * `purgeExpired()` is SYNCHRONOUS in `EventBus` because the memory bus can be — it walks a Map.
- * Over SQL the delete is a round trip, so this fires it and answers 0: the count is a diagnostic
- * the memory bus offers and this one cannot, and blocking a step's resume on a housekeeping
- * DELETE would be a far worse trade than an unanswered number. The index on `(name, published_at)`
- * plus `expires_at > now()` in `find` means an unpurged row costs a filter, never a wrong answer.
- */
 export function createPgEventBus(options: PgEventBusOptions): EventBus {
   // TWO screens, for the reason `events.ts` states: `defaultTtl` is the constructor's knob and
   // `ttl` is the publish call's, so one screen over `ttl ?? defaultTtl` names the wrong one for
@@ -59,14 +52,11 @@ export function createPgEventBus(options: PgEventBusOptions): EventBus {
   const listLimit = finiteOption('the pg event bus', 'listLimit', options.listLimit ?? 1_000);
   const exec = options.executor;
 
-  const purgeExpired = (): number => {
-    void exec.query(SQL_EVENT_PURGE, []).catch((error: unknown) => {
-      // Housekeeping never costs a publish: an unpurged row is filtered out of every read.
-      logger.warn('jobs.event.purge-failed', {
-        error: renderThrowable(error),
-      });
-    });
-    return 0;
+  // Awaited and never fired-and-forgotten: it was `void`ed with nothing calling it, so the table
+  // only grew. A failure REJECTS — the caller is the retention sweep's step, which retries.
+  const purgeExpired = async (): Promise<number> => {
+    const rows = await exec.query<{ removed: number | string }>(SQL_EVENT_PURGE_COUNTED, []);
+    return Number(rows[0]?.removed ?? 0);
   };
 
   return {

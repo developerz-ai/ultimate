@@ -1,7 +1,7 @@
-// Single responsibility: the two refusals `requeue` — `x jobs retry` — gives before it moves a
+// Single responsibility: the three refusals `requeue` — `x jobs retry` — gives before it moves a
 // row. Its own module because `errors.ts` sits at the size ceiling; the codes are registered there.
 
-import { renderFixShellArg, UltimateError } from '@ultimat3/core';
+import { renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core';
 import { JobDuplicateError } from './errors';
 
 /**
@@ -15,6 +15,23 @@ export class JobNotRequeueableError extends UltimateError {
       cause: `job ${input.jobId} is ${input.state}, and only a dead, cancelled, failed or done job can be requeued — a live one would run twice`,
       fix: `x jobs cancel ${renderFixShellArg(input.jobId, '<job id>')} first, then x jobs retry ${renderFixShellArg(input.jobId, '<job id>')}`,
       meta: { jobId: input.jobId, state: input.state },
+    });
+  }
+}
+
+/**
+ * `requeue` of an id the queue does not hold. ONE answer for both drivers: memory raised
+ * `X_INVARIANT` and pg `X_DRIVER_UNAVAILABLE` — a driver that is perfectly available — so a caller
+ * could not tell a mistyped id from an outage, and tested against one answer on `x dev` and met
+ * the other in production.
+ */
+export class JobNotFoundError extends UltimateError {
+  constructor(input: { jobId: string; driver: string }) {
+    super({
+      code: 'X_JOB_NOT_FOUND',
+      cause: `the "${input.driver}" queue holds no job with id ${renderCauseValue(input.jobId)} — a mistyped id, a job removed since, or an id from another environment`,
+      fix: 'x jobs ls --json',
+      meta: { jobId: input.jobId },
     });
   }
 }

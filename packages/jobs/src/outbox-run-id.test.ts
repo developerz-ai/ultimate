@@ -4,13 +4,14 @@
 // stage time and carried through the outbox, and the relay publishes under them.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { claimOf } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
-import { createJobsFacade, createMemoryOutboxStore, resetJobsFacade } from './outbox';
+import { createJobsFacade, createMemoryOutboxStore, enqueueInTx, resetJobsFacade } from './outbox';
 import { createOutboxRelay } from './outbox-relay';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -128,5 +129,73 @@ describe('an enqueue names its run on every path', () => {
     // not — instead of inserting a second one the idempotency index no longer covers.
     expect(second).toEqual({ id: queued.id, runId: queued.runId, deduped: true });
     expect((await driver.introspect?.list())?.length).toBe(1);
+  });
+});
+
+/**
+ * `run_id` is a `uuid` column. The memory driver took any string and Postgres raised a raw
+ * `22P02` from the insert, so the same call passed under `x dev` and failed in production — and on
+ * the staged path it failed the caller's whole TRANSACTION, at the outbox insert.
+ */
+describe('a named run is a uuid on every path, refused before anything is written', () => {
+  const codeOf = async (call: () => Promise<unknown>): Promise<string> => {
+    try {
+      await call();
+    } catch (error) {
+      return isUltimateError(error) ? error.code : `not coded: ${String(error)}`;
+    }
+    return 'did-not-throw';
+  };
+  const NOT_UUIDS: readonly unknown[] = [
+    'order-42',
+    '',
+    '00000000-0000-4000-8000-0000000000B1',
+    '{00000000-0000-4000-8000-0000000000b1}',
+    '00000000000040008000000000000b1',
+    42,
+    null,
+  ];
+
+  test('direct: the driver is never asked', async () => {
+    const driver = createMemoryDriver();
+    const jobs = createJobsFacade({ store: createMemoryOutboxStore(), driver }, () => undefined);
+    for (const runId of NOT_UUIDS) {
+      const options = { runId } as { runId: string };
+      expect(await codeOf(() => jobs.enqueue(sync, { requestId: 'r1' }, options))).toBe(
+        'X_ID_INVALID',
+      );
+    }
+    expect(await driver.introspect?.list()).toEqual([]);
+  });
+
+  test('staged: nothing reaches the outbox, through the facade or enqueueInTx', async () => {
+    const driver = createMemoryDriver();
+    const store = createMemoryOutboxStore();
+    const tx = fakeTx();
+    const jobs = createJobsFacade({ store, driver }, () => tx);
+    for (const runId of NOT_UUIDS) {
+      const options = { runId } as { runId: string };
+      expect(await codeOf(() => jobs.enqueue(sync, { requestId: 'r1' }, options))).toBe(
+        'X_ID_INVALID',
+      );
+      expect(
+        await codeOf(() => enqueueInTx({ store, driver }, tx, sync, { requestId: 'r1' }, options)),
+      ).toBe('X_ID_INVALID');
+    }
+    expect(await store.commit(tx)).toEqual([]);
+  });
+
+  test('the refusal names the option and never echoes the value', async () => {
+    const jobs = createJobsFacade(
+      { store: createMemoryOutboxStore(), driver: createMemoryDriver() },
+      () => undefined,
+    );
+    const thrown = await jobs
+      .enqueue(sync, { requestId: 'r1' }, { runId: 'sk_live_not_a_run' })
+      .catch((error: unknown) => error);
+    if (!isUltimateError(thrown)) return expect.unreachable('expected a coded refusal');
+    expect(thrown.cause).toContain('runId');
+    expect(thrown.cause).not.toContain('sk_live_not_a_run');
+    expect(thrown.fix).toContain('uuid()');
   });
 });

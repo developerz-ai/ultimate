@@ -277,9 +277,31 @@ describe('a status column is validated, never cast', () => {
       if (!isUltimateError(error)) throw error;
       expect(error.cause).toContain('compensated');
       expect(error.cause).toContain('status');
-      expect(error.cause).toContain('ultimate_job_steps');
+      expect(error.cause).toContain('x_job_steps.status');
       expect(error.fix).toContain('x jobs');
     }
+  });
+
+  // The table an operator will `select` from: these said `ultimate_jobs`, `ultimate_job_steps`
+  // and `ultimate_backfills`, three tables no database has.
+  test('each decoder names the table its row really came from', () => {
+    const causeOf = (run: () => unknown): string => {
+      try {
+        run();
+      } catch (error) {
+        if (isUltimateError(error)) return String(error.cause);
+      }
+      return expect.unreachable('expected a refusal');
+    };
+    expect(causeOf(() => toJobRecord(jobRowFor({ state: 'paused' })))).toStartWith(
+      'x_jobs.state holds "paused"',
+    );
+    expect(causeOf(() => toStepRecord(stepRowFor({ status: 'paused' })))).toStartWith(
+      'x_job_steps.status holds "paused"',
+    );
+    expect(causeOf(() => toBackfillRun(backfillRowFor({ status: 'paused' })))).toStartWith(
+      'x_backfills.status holds "paused"',
+    );
   });
 });
 

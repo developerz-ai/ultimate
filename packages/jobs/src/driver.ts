@@ -44,6 +44,27 @@ export const REQUEUEABLE_STATES: ReadonlySet<JobState> = new Set<JobState>([
   'failed',
 ]);
 
+/**
+ * The states a row is still WORK in — queued, held or parked. One set, read by the idempotency
+ * namespace (a key is taken only while a live row holds it) and by `cancel`, which stops live work
+ * and refuses everything else: cancelling a dead letter rewrote the record of a failure into the
+ * record of an operator's decision. The pg statements spell the same four.
+ */
+export const LIVE_STATES: ReadonlySet<JobState> = new Set<JobState>([
+  'ready',
+  'delayed',
+  'running',
+  'suspended',
+]);
+
+/**
+ * What a row's `lastError` says when the CLAIM buried it: its lease lapsed on the attempt that was
+ * its last, so nothing ever settled it and nothing may run it again. Fixed text, written by the
+ * claim statement itself — no apostrophe, because it is spliced into SQL as a literal.
+ */
+export const LEASE_LAPSED_FINAL_ATTEMPT =
+  'the lease lapsed on the final attempt: the worker holding this job stopped renewing it and never settled it, and no attempts remain';
+
 /** Narrows a state read back off a queue row. Never a cast — the list decides. */
 export const isJobState = (value: string): value is JobState =>
   (JOB_STATES as readonly string[]).includes(value);
@@ -144,6 +165,21 @@ export interface ClaimOptions {
   /** Lease length. A worker that dies without ack makes the job claimable again after this. */
   readonly visibilityTimeoutMs: number;
   readonly workerId: string;
+  /**
+   * Told the rows this pass BURIED instead of claiming: a lease that lapsed on the row's final
+   * attempt is settled `dead` by the claim itself (`LEASE_LAPSED_FINAL_ATTEMPT`) and is never
+   * handed out, so a job whose worker dies on every attempt reaches the dead-letter queue rather
+   * than killing a worker per lease, forever. Called at most once per pass, after the statement
+   * landed, with the rows as they now stand — what the claim round announces `onSettled` from
+   * (`announceExhausted`). Omit it and the rows are buried all the same.
+   */
+  readonly onExhausted?: (dead: readonly JobRecord[]) => void;
+  /**
+   * Job NAMES whose final failure is `failed`, never `dead` — the ones declaring
+   * `retry.deadLetter: false`. The row carries `max_attempts` and not the policy, so the caller
+   * that holds the registry says which rows a burial DROPS; a name not listed is dead-lettered.
+   */
+  readonly dropExhausted?: readonly string[];
 }
 
 export interface ClaimedJob extends JobRecord {

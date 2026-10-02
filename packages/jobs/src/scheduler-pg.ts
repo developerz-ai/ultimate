@@ -62,6 +62,8 @@ export function pgSchedulerState(executor: PgExecutor): SchedulerState {
             max_attempts: request.maxAttempts,
           })),
         ),
+        // Where the watermark lands when that is past the occurrence (`run-once`): ONE statement.
+        fire.watermarkMs ?? null,
       ]);
       if (Number(rows[0]?.fired ?? 0) === 0) return undefined;
       const queued = new Map(

@@ -87,61 +87,66 @@ Because `steps` is a driver member, step persistence works identically on all fo
 
 ## The pg claim loop
 
+`SQL_CLAIM`, [`packages/jobs/src/driver-pg-sql.ts`](../../packages/jobs/src/driver-pg-sql.ts) — one statement, abbreviated:
+
 ```sql
--- packages/jobs/src/drivers/pg/claim.sql
-WITH claimed AS (
-  SELECT id
-  FROM x_jobs
-  WHERE queue = $1
-    AND state = 'ready'
-    AND run_at <= now()
-  ORDER BY priority DESC, run_at ASC
-  FOR UPDATE SKIP LOCKED
-  LIMIT $2
+with picked as (
+  select id, (state = 'running' and attempt >= max_attempts) as exhausted
+    from x_jobs
+   where queue = any($1::text[]) and run_at <= now()
+     and not exists (select 1 from x_job_pauses p where p.kind = 'queue' and p.name = x_jobs.queue)
+     and (state in ('ready', 'delayed', 'suspended')
+          or (state = 'running' and visible_at <= now()))
+   order by run_at limit $2
+     for update skip locked
+), buried as (          -- a lease that lapsed on the row's FINAL attempt
+  update x_jobs j
+     set state = case when j.name = any($5::text[]) then 'failed' else 'dead' end,
+         visible_at = null, claimed_by = null, last_error = '<lease lapsed on the final attempt>'
+    from picked p where j.id = p.id and p.exhausted
+  returning …
+), claimed as (
+  update x_jobs j
+     set state = 'running', attempt = j.attempt + 1, claims = j.claims + 1,
+         claimed_by = $3, visible_at = now() + ($4::bigint * interval '1 millisecond')
+    from picked p where j.id = p.id and not p.exhausted
+  returning …
 )
-UPDATE x_jobs j
-SET state       = 'running',
-    lease_until = now() + ($3 || ' milliseconds')::interval,
-    attempt     = j.attempt + 1,
-    worker_id   = $4,
-    claimed_at  = now()
-FROM claimed c
-WHERE j.id = c.id
-RETURNING j.id, j.name, j.input, j.attempt, j.tenant_id, j.trace, j.idempotency_key;
+select … from claimed union all select … from buried
 ```
 
 | Element | Why |
 |---|---|
-| `FOR UPDATE SKIP LOCKED` | N workers claim disjoint batches with no coordination, no advisory locks, no lost wakeups. A row locked by another worker is skipped, not waited on |
-| CTE then `UPDATE ... FROM` | claim and mark in **one statement, one round trip** — no window where a row is locked but unmarked |
-| `ORDER BY priority DESC, run_at` | fair within a queue; deterministic in tests |
-| `run_at <= now()` | backoff, `step.sleep`, and rate-limit deferral all express as a future `run_at`. One mechanism, three features |
-| `attempt` incremented at claim | a worker that dies mid-run has still burned an attempt, so a poison job cannot loop forever |
-| Partial index | `CREATE INDEX ON x_jobs (queue, priority DESC, run_at) WHERE state = 'ready'` — the ready set stays small even with millions of terminal rows |
+| `for update skip locked` | N workers claim disjoint batches with no coordination, no advisory locks, no lost wakeups. A row locked by another worker is skipped, not waited on |
+| pick, then `update … from` | claim and mark in **one statement, one round trip** — no window where a row is locked but unmarked |
+| `order by run_at` | oldest due first; there is no `priority` column `As of 2026-10` |
+| `run_at <= now()` | backoff, `step.sleep` and a shed all express as a future `run_at`. One mechanism |
+| `attempt` incremented at claim | a worker that dies mid-run has still burned an attempt |
+| `claims` incremented at claim, never reset | with `claimed_by` it is the identity every settle, heartbeat, progress write and **step write** is fenced on (`claimOf(claimed)`) |
+| the `buried` arm | a `running` row is picked only with a lapsed lease; one already at `attempt >= max_attempts` is settled in the claim and never handed out, so a job that kills its worker ends after `retry.attempts` claims. `dead`, or `failed` when the caller named the job in `dropExhausted` (`retry.deadLetter: false` — the row carries no policy, the worker holds the registry). Counted in the same statement, reported through `ClaimOptions.onExhausted`; the claim round logs `jobs.claim.exhausted` and runs `onSettled` (`announceExhausted`) |
+| `x_job_pauses` | a pause is a row the claim reads, never a column on `x_jobs` |
+| Index | `x_jobs_claim_idx` — see `SQL_JOBS_TABLE` in `driver-pg-ddl.ts` |
 | Wakeup | `LISTEN x_jobs_wake` / `x_outbox_wake` on one session per worker pod (`startQueueWake`); the enqueue and the outbox stage carry the `pg_notify`. Polling is the guarantee underneath — see [Idle cost](#idle-cost) |
 
 ## Visibility timeout
 
-A claimed job is invisible until its lease expires. `lease_until` **is** the visibility timeout.
-
-```sql
--- reaper, runs on every worker tick
-UPDATE x_jobs
-SET state = 'ready', run_at = now(), lease_until = NULL, worker_id = NULL
-WHERE state = 'running' AND lease_until < now()
-RETURNING id, name, attempt;
-```
+A claimed job is invisible until its lease expires. `visible_at` **is** the visibility timeout, and
+there is no reaper: the claim's own predicate (`state = 'running' and visible_at <= now()`) re-takes
+a lapsed row, or buries it on its final attempt.
 
 | Rule | Detail |
 |---|---|
-| Default lease | 30s, `leaseMs` per job for long steps |
-| Heartbeat | the executor calls `driver.heartbeat` on an interval of `leaseMs / 3`, extending `lease_until` |
+| Default lease | `jobs.visibilityTimeoutMs`, 30s |
+| Heartbeat | the worker calls `driver.heartbeat` on its heartbeat interval, pushing `visible_at` out; fenced on the claim |
 | Failed renewal | one failure is not a lost lease — `jobs.heartbeat.failed` (warn) and the next try inside the same window |
 | Lost lease | a whole window with no renewal landing: `jobs.lease.lost` (error) + `job_leases_lost_total{queue}`, and this worker stops renewing. Decided on the WORKER's clock from the last renewal that landed, because a hung `heartbeat` never rejects and a rejection-only check would never fire |
-| Long step | heartbeats keep it alive; a step exceeding `maxStepMs` is killed and retried, never left leased forever |
-| SIGKILL | no heartbeat → the lease expires → the reaper requeues. Completed steps are memoized, so recovery resumes at the failed step |
+| Fleet slot | the same two losses, on `x_job_leases`: `jobs.worker.slot-renewal-failed` (warn) per failure, `jobs.worker.slot-lost` + `X_JOB_SLOT_LOST` at an explicit "not yours" or a whole TTL with no renewal landing |
+| Step writes | `SQL_STEP_PUT` is fenced on the claim as `SQL_ACK` is: a body that outlives its lease writes nothing, `X_JOB_LEASE_LOST` |
+| Cancel | `SQL_CANCEL` is fenced on the four live states — a `dead`, `failed`, `done` or `cancelled` row is refused (`X_JOB_NOT_CANCELLABLE`), never rewritten |
+| SIGKILL | no heartbeat → the lease lapses → the next claim re-takes the row. Completed steps are memoized, so recovery resumes at the failed step |
 | Clock | `now()` is the **database's** clock, so a skewed worker cannot steal or hold leases |
-| Reaped job | `logger.error('jobs.lease.lost', …)` (`packages/jobs/src/heartbeat.ts:71`); the run itself fails as `X_JOB_LEASE_LOST`. Repeated reaping is the signal for a stuck external call |
+| Event clock | `step.waitForEvent` stamps a new wait from the event bus's clock (`EventLookup.now()` — the database's, on the stored bus), the clock every `published_at` is on; the bus is asked again before a wait is declared timed out, so a worker running ahead neither misses an answer nor gives up early |
+| Lost-lease run | `logger.error('jobs.lease.lost', …)` (`packages/jobs/src/heartbeat.ts`); the run itself fails as `X_JOB_LEASE_LOST` |
 
 ## Scheduler leader election
 
@@ -194,7 +199,7 @@ export const onboardOrg = job({
 
 | Behavior | Rule |
 |---|---|
-| Enforcement | unique partial index: `CREATE UNIQUE INDEX ON x_jobs (idempotency_key) WHERE state <> 'done'` |
+| Enforcement | unique partial index `x_jobs_name_tenant_idempotency_live_idx` on `(name, coalesce(tenant_id, ''), idempotency_key)` over the four LIVE states (`ready`, `delayed`, `running`, `suspended`) |
 | Duplicate enqueue with a live key | the insert conflicts; `enqueue` returns the existing handle, no new row, no error |
 | Key must be | deterministic from `input` only. No timestamps, no randomness, no `ctx`. **A convention, not a rule** — `As of 2026-08` nothing checks it: no code, no step, no lint. A non-deterministic key is a duplicate charge the unique index cannot see |
 | Uniqueness window | `retention` per queue; default 24h after terminal state |
@@ -219,7 +224,7 @@ export const syncCrm = job({
 | Control | Mechanism | On breach |
 |---|---|---|
 | `concurrency: 4` / `concurrency: { key, limit }` | one row per HELD SLOT in `x_job_leases`, taken after the claim by `SQL_LEASE_ACQUIRE` — the `(lease_key, slot)` primary key serialises two workers. Lease key `job:<name>`, or `job-key:<encoded name>:<key(input)>` for a keyed cap. TTL is the worker's `visibilityTimeoutMs`, renewed on the heartbeat interval. There is no `concurrency_key` column and no count inside the claim | `whenBusy: 'wait'` (default, and always for a plain number): nacked back `ready`, attempt uncounted. `whenBusy: 'fail'`: settled `failed` with `X_JOB_KEY_BUSY`, body never run — unless the only holder is this run's own earlier claim (`SQL_LEASE_HOLDERS`), which waits |
-| `createLimiter({ perTenant, perQueue, global, ratePerTenant })` | three `Map`s in the worker's heap (`limits.ts`). **Per process**: multiplied by the replica count. There is no `rateLimit:` on a job and no `x_rate_buckets` table, `As of 2026-10` | handed straight back: `ready`, attempt uncounted, `jobs.worker.shed` |
+| `createLimiter({ perTenant, perQueue, global, ratePerTenant })` | three `Map`s in the worker's heap (`limits.ts`). **Per process**: multiplied by the replica count. `ratePerTenant` stamps a START and the stamp is a reservation: a lease handed back for a run that never started (`Lease.abandon()` — shed over `job.concurrency`, refused by its key) takes its stamp with it. There is no `rateLimit:` on a job and no `x_rate_buckets` table, `As of 2026-10` | handed straight back: `ready`, attempt uncounted, `jobs.worker.shed` |
 | `queue` | named pool; `WORKER_QUEUES=default,integrations` selects pools per replica | a queue with no worker is visible in `x jobs ls --json`, not silently stalled |
 | `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, in the driver scheduler. The curve is `@ultimat3/core`'s `backoffDelay` since 2026-08-23; what stays here is `DurationInput` (`'30s'`), the `DEFAULT_RETRY` fallbacks, and this package's public `jitter: boolean` | after `attempts`, dead-letter with the full step trace |
 | `retry.jitter` | **equal** jitter — half fixed, half rolled — and `true` by default. Never `full`: a job that has already failed twice must not be handed a near-zero wait | a burst of failures retries spread out rather than in lockstep |

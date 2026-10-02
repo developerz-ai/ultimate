@@ -82,7 +82,8 @@ export function operatorSettleScenarios(label: string, harness: OperatorHarness)
   test(`${label}: a settle from a worker that no longer owns the row lands on nothing`, async () => {
     const driver = await harness.driver();
     const operator = operatorOf(driver);
-    const handle = itemJob({ run: () => Promise.resolve() });
+    // Two attempts: a lease that lapses on a row's LAST one is buried by the claim, never re-taken.
+    const handle = itemJob({ run: () => Promise.resolve(), retry: { attempts: 2, jitter: false } });
     const id = await enqueueItem(driver, handle);
     const claim = (workerId: string) =>
       driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: TTL_MS, workerId });
@@ -113,7 +114,7 @@ export function operatorSettleScenarios(label: string, harness: OperatorHarness)
   test(`${label}: a worker's own EARLIER claim cannot settle, renew or report on the one that replaced it`, async () => {
     const driver = await harness.driver();
     const operator = operatorOf(driver);
-    const handle = itemJob({ run: () => Promise.resolve() });
+    const handle = itemJob({ run: () => Promise.resolve(), retry: { attempts: 2, jitter: false } });
     const id = await enqueueItem(driver, handle);
     const claim = async () => {
       const [claimed] = await driver.claim({

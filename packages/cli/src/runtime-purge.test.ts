@@ -1,4 +1,4 @@
-// What the boot actually declares: one `job`, one `task` on the shipped cron, and five targets
+// What the boot actually declares: one `job`, one `task` on the shipped cron, and six targets
 // that reach the stores this boot installed. Everything here is a claim about WIRING — the
 // sweeping itself is `@ultimat3/jobs`' `purge.test.ts`, and the auth half is the seam's own live
 // test against real Postgres.
@@ -17,8 +17,9 @@ import {
 } from '@ultimat3/auth';
 import { createContext } from '@ultimat3/core';
 import type { PostgresRateLimitStore, RateLimitDecision } from '@ultimat3/http';
-import type { PurgeReport } from '@ultimat3/jobs';
+import type { EventBus, PurgeReport } from '@ultimat3/jobs';
 import {
+  createMemoryEventBus,
   createMemoryStepStore,
   createStepRunner,
   getJob,
@@ -52,8 +53,14 @@ function stubStores(): RetentionStores & { readonly at: number[] } {
       return Promise.resolve(3);
     },
   };
-  return { idempotency, rateLimit, at };
+  return { idempotency, rateLimit, events: eventsRemoving(0), at };
 }
+
+/** The boot's event bus, answering a fixed row count: only the sweep is under test. */
+const eventsRemoving = (removed: number): EventBus => ({
+  ...createMemoryEventBus(),
+  purgeExpired: (): Promise<number> => Promise.resolve(removed),
+});
 
 /**
  * A limiter over nothing that answers a fixed row count, plus the `defineAuth` that BUILDS one:
@@ -117,7 +124,7 @@ describe('installRetentionSweep', () => {
   test('sweeps every framework table in one pass, against one clock reading', async () => {
     const stores = stubStores();
     installAuthLimiter(4);
-    installRetentionSweep(stores);
+    installRetentionSweep({ ...stores, events: eventsRemoving(5) });
 
     const report = await runSweep();
 
@@ -129,10 +136,13 @@ describe('installRetentionSweep', () => {
       'x_auth',
       'x_notify_deliveries',
       'x_notify_inbox',
+      'x_job_events',
     ]);
     // The two notify targets answer 0 here: no boot in this test installed a Postgres notify
     // store, which is exactly the state of an app that never wired one.
-    expect(report.removed).toBe(9);
+    expect(report.removed).toBe(14);
+    // `x_job_events` is the bus THIS boot built, swept through its own `purgeExpired`.
+    expect(report.swept.at(-1)).toEqual({ name: 'x_job_events', removed: 5 });
     // The rate-limit store is the one that takes a clock, and it must be the JOB's: `last_ms` is
     // written by whichever process took the token, so a purge measured against `now()` in Postgres
     // computes a refill from the offset between two clocks.
@@ -169,6 +179,7 @@ describe('installRetentionSweep', () => {
       'x_auth',
       'x_notify_deliveries',
       'x_notify_inbox',
+      'x_job_events',
     ]);
   });
 

@@ -68,7 +68,12 @@ export interface JobFilter {
   readonly tenantId?: string;
 }
 
-const CURSOR = /^(\d{1,16}):([0-9A-Za-z-]{1,64})$/;
+/**
+ * `<createdAt ms>:<job id>`, and the id is a UUID in its one canonical shape. The group accepted
+ * any 1-64 letters, digits and hyphens, which the memory driver compared as text and the pg
+ * statement CAST: `123:not-a-uuid` was an empty page here and a raw `22P02` there.
+ */
+const CURSOR = /^(\d{1,16}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
 /** The cursor a page's LAST row yields. A page shorter than its limit is the last page. */
 export function jobCursor(record: Pick<JobRecord, 'createdAt' | 'id'>): string {
@@ -76,11 +81,12 @@ export function jobCursor(record: Pick<JobRecord, 'createdAt' | 'id'>): string {
 }
 
 export function parseJobCursor(
-  after: string,
+  raw: string,
   subject = 'the job list',
+  cursor: 'after' | 'before' = 'after',
 ): { readonly createdAt: number; readonly id: string } {
-  const match = CURSOR.exec(after);
-  if (match === null) throw new JobPageInvalidError({ subject, maxPage: MAX_JOB_PAGE });
+  const match = CURSOR.exec(raw);
+  if (match === null) throw new JobPageInvalidError({ subject, maxPage: MAX_JOB_PAGE, cursor });
   return { createdAt: Number(match[1]), id: match[2] ?? '' };
 }
 
@@ -108,7 +114,11 @@ export const PROMOTABLE_STATES: ReadonlySet<JobState> = new Set<JobState>(['read
 export interface BulkResult {
   /** Rows this call changed — at most `MAX_BULK_ROWS`. */
   readonly affected: number;
-  /** Rows still matching the filter afterwards. Call again until it is zero. */
+  /**
+   * Rows the SAME call would still act on afterwards — so "call again until it is zero" ends. A
+   * row the verb leaves where it is (a requeue whose key a live job holds, a promote of a row
+   * already due) is not counted: it will be skipped on every later call too.
+   */
   readonly remaining: number;
 }
 
@@ -183,16 +193,17 @@ export interface JobIntrospection {
   list(filter?: JobFilter): Promise<readonly JobRecord[]>;
   deadLetters(limit?: number): Promise<readonly JobRecord[]>;
   /**
-   * Re-queue a finished job (`REQUEUEABLE_STATES`); a live one is `X_JOB_NOT_REQUEUEABLE`, and a
-   * key a live job holds is `X_JOB_DUPLICATE`. `fromStep` drops that step and every step that
-   * started after it.
+   * Re-queue a finished job (`REQUEUEABLE_STATES`); a live one is `X_JOB_NOT_REQUEUEABLE`, a key a
+   * live job holds is `X_JOB_DUPLICATE`, and an id nobody queued is `X_JOB_NOT_FOUND`. `fromStep`
+   * drops that step and every step that started after it, with the row's own move.
    */
   requeue(jobId: string, options?: { readonly fromStep?: string }): Promise<JobRecord>;
   /**
    * Stop a job from outside. Terminal for a queued row immediately; a RUNNING one stops at its
    * next heartbeat, which no longer matches its own row and cancels the attempt. Answers
-   * `undefined` for a job id it does not hold or one that already finished. Optional, as it
-   * shipped: a driver may have no way to address a single running row.
+   * `undefined` for a job id it does not hold or one that is not LIVE (`LIVE_STATES`) — a done,
+   * failed, dead or already cancelled row is left exactly as it ended. Optional, as it shipped: a
+   * driver may have no way to address a single running row.
    */
   cancel?(jobId: string, reason?: string): Promise<JobRecord | undefined>;
   /**
@@ -203,7 +214,8 @@ export interface JobIntrospection {
   remove(jobId: string): Promise<JobRecord | undefined>;
   /**
    * Re-queue up to `MAX_BULK_ROWS` finished jobs. `filter.state` must be a requeueable state. A
-   * row whose key a live job holds is left where it is and counted in `remaining`.
+   * row whose key a live job holds is left where it is and is NOT counted in `remaining`; of
+   * several finished rows sharing one key, the oldest is the one requeued.
    */
   requeueMany(filter: BulkFilter): Promise<BulkResult>;
   /** Delete up to `MAX_BULK_ROWS` jobs. `filter.state` may be any state but `running`. */

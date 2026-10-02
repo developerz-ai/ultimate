@@ -3,7 +3,7 @@
 // real claim/ack/nack paths rather than a mock that always succeeds.
 
 import type { Clock } from '@ultimat3/core';
-import { assert, finiteCount, systemClock, uuid } from '@ultimat3/core';
+import { finiteCount, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { createMemoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -25,17 +25,20 @@ import {
   assertClaimBounds,
   assertClaimQueues,
   DEFAULT_QUEUE,
+  LEASE_LAPSED_FINAL_ATTEMPT,
+  LIVE_STATES,
   nackState,
   REQUEUEABLE_STATES,
 } from './driver';
 import { createMemoryOperator } from './driver-memory-operator';
 import { signalEnqueued } from './enqueue-signal';
-import { JobDuplicateError } from './errors';
-import { JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
+import { JobDuplicateError, LeaseLostError } from './errors';
+import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { JobIntrospection } from './introspection';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
 import type { LeaseStore } from './leases';
 import { createMemoryLeaseStore } from './leases';
+import { isFinalAttempt } from './retry';
 import type { StepStore } from './steps';
 import { createMemoryStepStore } from './steps-memory';
 
@@ -47,8 +50,6 @@ export interface MemoryDriverOptions {
   /** Injectable so two drivers in one test can share one set of fleet slots. */
   readonly leases?: LeaseStore;
 }
-
-const LIVE_STATES = new Set(['ready', 'delayed', 'running', 'suspended']);
 
 /**
  * The in-memory driver's own type: `JobDriver` with `close` REQUIRED.
@@ -63,7 +64,21 @@ export type MemoryJobDriver = JobDriver & { close(): Promise<void> };
 
 export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJobDriver {
   const clock = options.clock ?? systemClock;
-  const steps = options.steps ?? createMemoryStepStore();
+  const stepStore = options.steps ?? createMemoryStepStore();
+  // `SQL_STEP_PUT`'s fence: a write made under a claim lands only while that claim holds the row.
+  const steps: StepStore = {
+    ...stepStore,
+    put(record, by) {
+      const row = by === undefined ? undefined : jobs.get(by.jobId);
+      if (
+        by !== undefined &&
+        !(row?.state === 'running' && row.claimedBy === by.workerId && row.claim === by.claim)
+      ) {
+        return Promise.reject(new LeaseLostError({ job: by.job, jobId: by.jobId }));
+      }
+      return stepStore.put(record);
+    },
+  };
   const backfills = options.backfills ?? createMemoryBackfillLedger(clock);
   const leases =
     options.leases ?? createMemoryLeaseStore(options.clock === undefined ? {} : { clock });
@@ -104,11 +119,19 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
    * lease deadline — which `x jobs show` prints, and which is the very pair the claim scan's
    * lease-expiry branch reads to decide a row was abandoned.
    */
-  const settle = (id: string, patch: Partial<JobRecord>): void => {
+  const settle = (id: string, patch: Partial<JobRecord>, drop?: 'stack'): void => {
     const existing = jobs.get(id);
     if (existing === undefined) return;
     const { visibleAt: _visibleAt, claimedBy: _claimedBy, ...released } = existing;
-    jobs.set(id, { ...released, ...patch, updatedAt: nowMs(clock) });
+    // `drop: 'stack'` is `SQL_NACK`'s `case when $5 is null then last_error_stack else $7 end`
+    // with no stack bound: a NEW failure replaces the old one's stack even with nothing — the key
+    // is removed, never set to `undefined`, as a null column is absent from a pg record.
+    const { lastErrorStack: _stack, ...unstacked } = released;
+    jobs.set(id, {
+      ...(drop === 'stack' ? unstacked : released),
+      ...patch,
+      updatedAt: nowMs(clock),
+    });
   };
 
   const operator = createMemoryOperator({
@@ -145,13 +168,9 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       return rows;
     },
     async requeue(jobId, requeueOptions) {
-      const existing = jobs.get(jobId);
-      assert(
-        existing !== undefined,
-        `no job ${jobId} in the memory driver`,
-        'requeue a job id returned by enqueue() or stats() — the memory driver holds no state across processes, so an id from another run will not resolve',
-      );
-      const record = existing;
+      const record = jobs.get(jobId);
+      // The one answer both drivers give an id nobody queued — it was `X_INVARIANT` here.
+      if (record === undefined) throw new JobNotFoundError({ jobId, driver: 'memory' });
       // The two refusals `SQL_JOB_REQUEUE` and `SQL_JOB_LIVE_HOLDER` give, before anything moves.
       if (!REQUEUEABLE_STATES.has(record.state)) {
         throw new JobNotRequeueableError({ jobId, state: record.state });
@@ -161,7 +180,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         throw requeueKeyTaken({ ...record, holderId: holder.id });
       }
       if (requeueOptions?.fromStep !== undefined) {
-        // The target step and every step that started AFTER it — `SQL_STEPS_FROM`, whose header
+        // The target step and every step that started AFTER it — `SQL_JOB_REQUEUE`, whose header
         // says why a tie is kept. Earlier steps stay memoized; a later one replaying the old run's
         // result is what this prevents.
         const all = await steps.list(record.runId);
@@ -182,9 +201,12 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
     },
     cancel(jobId, reason) {
       const existing = jobs.get(jobId);
-      // `state !== 'done'`, mirroring `SQL_CANCEL`: a job that already finished has nothing to
-      // stop, and cancelling it would rewrite a terminal row an operator is reading as success.
-      if (existing === undefined || existing.state === 'done') return Promise.resolve(undefined);
+      // LIVE rows only, mirroring `SQL_CANCEL`: a job that already finished has nothing to stop.
+      // The fence was `state !== 'done'`, which let a cancel REWRITE a dead letter — the record of
+      // a failure, and its `lastError`, became the record of an operator's typo.
+      if (existing === undefined || !LIVE_STATES.has(existing.state)) {
+        return Promise.resolve(undefined);
+      }
       // `settle`, not `update`: a cancellation RELEASES the claim, and `SQL_CANCEL` writes
       // `visible_at = null, claimed_by = null` with the state. Left stamped, a cancelled row named
       // the worker still holding it and carried that attempt's lease deadline — the pair
@@ -276,7 +298,24 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         .slice(0, claimOptions.limit);
 
       const out: ClaimedJob[] = [];
+      const buried: JobRecord[] = [];
       for (const record of claimable) {
+        // `SQL_CLAIM`'s second arm. A `running` row reaches this loop only with a lapsed lease, and
+        // one that lapsed on its FINAL attempt has nothing left to be re-delivered for: handing
+        // it out was an attempt past `maxAttempts`, every lease, forever — a job that kills its
+        // worker took one per visibility timeout and never reached the dead-letter queue.
+        if (
+          record.state === 'running' &&
+          isFinalAttempt({ attempts: record.maxAttempts }, record.attempt)
+        ) {
+          // `$5` of the statement: a job declaring `retry.deadLetter: false` is dropped.
+          const state = claimOptions.dropExhausted?.includes(record.name) ? 'failed' : 'dead';
+          settle(record.id, { state, lastError: LEASE_LAPSED_FINAL_ATTEMPT }, 'stack');
+          operator.counters.add(record.name, state, 0, at);
+          const dead = jobs.get(record.id);
+          if (dead !== undefined) buried.push(dead);
+          continue;
+        }
         const claimed: ClaimedJob = {
           ...record,
           state: 'running',
@@ -290,7 +329,8 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         jobs.set(record.id, claimed);
         out.push(claimed);
       }
-      return Promise.resolve(out);
+      if (buried.length > 0) claimOptions.onExhausted?.(buried);
+      return out;
     },
 
     // Both settlements are FENCED on `running` AND on the claimer, as `SQL_ACK`/`SQL_NACK` are: an
@@ -323,11 +363,12 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         // being read as the only one.
         attempt: counts ? record.attempt : Math.max(0, record.attempt - 1),
         ...(nackOptions.error === undefined ? {} : { lastError: nackOptions.error }),
-        ...(nackOptions.stack === undefined
+        // The stack belongs to the ERROR beside it, as `SQL_NACK` binds it: no error, no stack.
+        ...(nackOptions.error === undefined || nackOptions.stack === undefined
           ? {}
           : { lastErrorStack: nackOptions.stack.slice(0, MAX_ERROR_STACK_LENGTH) }),
       };
-      settle(jobId, patch);
+      settle(jobId, patch, nackOptions.error === undefined ? undefined : 'stack');
       const outcome = nackOutcome(nackOptions);
       if (outcome !== undefined) {
         operator.counters.add(record.name, outcome, nackOptions.durationMs ?? 0, at);
@@ -382,7 +423,11 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         else if (record.state === 'dead') next.dead += 1;
         byQueue.set(record.queue, next);
       }
-      return Promise.resolve([...byQueue.values()].sort((a, b) => a.queue.localeCompare(b.queue)));
+      // Code units, as `collate "C"` orders them in `SQL_STATS` — never `localeCompare`, which
+      // answers by the runtime's locale and so differently from the database on the same names.
+      return Promise.resolve(
+        [...byQueue.values()].sort((a, b) => (a.queue < b.queue ? -1 : a.queue > b.queue ? 1 : 0)),
+      );
     },
 
     close(): Promise<void> {

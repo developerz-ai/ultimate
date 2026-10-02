@@ -164,7 +164,13 @@ export async function backfillPass<Row>(
   // refusing it — the same degradation `introspect` already has.
   const ledger = jobDriver()?.backfills;
 
-  const previous = await completedRun(ledger, name);
+  const completed = await completedRun(ledger, name);
+  // Its OWN row is not a previous pass: a worker that died between `ledger.finish` and the ack is
+  // handed the same run again, and skipping there reported `{ skipped: true, previousRunId:
+  // <itself> }` for a pass that swept. It falls through and replays — every batch is served from
+  // its checkpoint, nothing is read or handled twice, and the report is the one it first made.
+  const redelivered = completed?.runId === runId;
+  const previous = redelivered ? undefined : completed;
   const verdict = decideBackfill(previous, checksum, args.input.force === true);
   if (!verdict.run) {
     if (verdict.changed) {
@@ -196,7 +202,14 @@ export async function backfillPass<Row>(
     definition.tenant,
     args.ctx,
     async (ctx): Promise<BackfillReport> => {
-      await ledger?.start({ runId, name, checksum, appVersion: appVersion() });
+      // A redelivered pass leaves its completed row ALONE until a batch body actually runs (an
+      // operator's `retryFromStep` re-opens one): replaying checkpoints sweeps nothing, so there is
+      // nothing to record and no convergence to re-ask — rows that started matching since would
+      // otherwise turn a finished pass into a failed one.
+      let recording = !redelivered;
+      const open = (): Promise<void> | undefined =>
+        ledger?.start({ runId, name, checksum, appVersion: appVersion() });
+      if (recording) await open();
 
       let cursor: string | null = null;
       let rows = 0;
@@ -242,6 +255,10 @@ export async function backfillPass<Row>(
               const iteration = await iterate();
               const next = await iteration.pull.next();
               if (next.done === true) return { cursor: null, rows: 0 };
+              if (!recording) {
+                recording = true;
+                await open();
+              }
               await definition.handle({ rows: next.value, ctx, signal, index });
               swept = true;
               return { cursor: iteration.batches.cursor, rows: next.value.length };
@@ -271,10 +288,10 @@ export async function backfillPass<Row>(
         // this converge", asked once, where the answer is finally decidable. Inside the `try` so the
         // ledger records the attempt as `failed`: a pass that left rows behind must not write the
         // completed row that stops the next deploy re-running it.
-        await assertConverged(definition, ctx, rows);
+        if (recording) await assertConverged(definition, ctx, rows);
       } catch (error) {
         // Control flow, not a failure: a suspended run is parked and will be back on this step.
-        if (!isStepSuspension(error)) await markFailed(ledger, runId, rows);
+        if (!isStepSuspension(error) && recording) await markFailed(ledger, runId, rows);
         throw error;
       } finally {
         // Whatever the iteration holds belongs to this attempt, and an attempt that failed, was
@@ -282,7 +299,7 @@ export async function backfillPass<Row>(
         await live?.batches.close();
       }
 
-      await ledger?.finish(runId, { status: 'completed', rows });
+      if (recording) await ledger?.finish(runId, { status: 'completed', rows });
       return { name, batches, rows, skipped: false };
     },
   );

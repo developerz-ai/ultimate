@@ -5,8 +5,9 @@
 // they run against in `driver-pg-ddl.ts`, and the row-to-record decoding in `driver-pg-rows.ts`.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, systemClock, uuid } from '@ultimat3/core';
+import { finiteCount, renderCauseValue, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
+import { listedRunId } from './backfill-ledger';
 import { nowMs } from './clock';
 import { nackOutcome } from './counters';
 import type {
@@ -57,11 +58,10 @@ import {
   SQL_STEP_GET,
   SQL_STEP_LIST,
   SQL_STEP_PUT,
-  SQL_STEPS_FROM,
   SQL_TRY_ADVISORY_LOCK,
 } from './driver-pg-sql';
-import { DriverUnavailableError, JobDuplicateError } from './errors';
-import { JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
+import { DriverUnavailableError, JobDuplicateError, LeaseLostError } from './errors';
+import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { JobIntrospection } from './introspection';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
 import type { HeldLease, LeaseStore } from './leases';
@@ -83,6 +83,9 @@ import type { StepStore } from './steps';
 export interface PgExecutor {
   query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]>;
 }
+
+/** How often `enqueue` sends its insert before it calls a refusal an index fault, not a race. */
+const ENQUEUE_ATTEMPTS = 2;
 
 export interface PgDriverOptions {
   readonly executor?: PgExecutor;
@@ -107,8 +110,8 @@ function pgStepStore(exec: () => PgExecutor): StepStore {
       const row = rows[0];
       return row === undefined ? undefined : toStepRecord(row);
     },
-    async put(record) {
-      await exec().query(SQL_STEP_PUT, [
+    async put(record, by) {
+      const written = await exec().query(SQL_STEP_PUT, [
         record.runId,
         record.name,
         record.status,
@@ -120,7 +123,14 @@ function pgStepStore(exec: () => PgExecutor): StepStore {
         record.correlationKey ?? null,
         record.attempts,
         record.error ?? null,
+        by?.jobId ?? null,
+        by?.workerId ?? null,
+        by?.claim ?? null,
       ]);
+      // No row back is the fence refusing: the claim this write was made under is gone.
+      if (by !== undefined && written.length === 0) {
+        throw new LeaseLostError({ job: by.job, jobId: by.jobId });
+      }
     },
     async list(runId) {
       const rows = await exec().query<StepRow>(SQL_STEP_LIST, [runId]);
@@ -147,10 +157,12 @@ function pgBackfillLedger(exec: () => PgExecutor): BackfillLedger {
       await exec().query(SQL_BACKFILL_FINISH, [runId, at.status, at.rows]);
     },
     async list(filter = {}) {
+      // Before the statement: `$3::uuid` raises a raw 22P02 for anything the screen refuses.
+      const runId = listedRunId('the pg ledger', filter.runId);
       const rows = await exec().query<BackfillRow>(SQL_BACKFILL_LIST, [
         filter.name ?? null,
         filter.status ?? null,
-        filter.runId ?? null,
+        runId ?? null,
         finiteCount('the pg driver list', 'limit', filter.limit ?? 100),
       ]);
       return rows.map(toBackfillRun);
@@ -226,13 +238,9 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
     },
     async requeue(jobId, requeueOptions) {
       const current = await job(jobId);
-      if (current === undefined) {
-        throw new DriverUnavailableError({
-          driver: 'pg',
-          cause: `job ${jobId} does not exist`,
-          fix: 'x jobs ls --state dead --json',
-        });
-      }
+      // The one answer both drivers give an id nobody queued — it was `X_DRIVER_UNAVAILABLE`
+      // here, from a driver that was answering perfectly well.
+      if (current === undefined) throw new JobNotFoundError({ jobId, driver: 'pg' });
       // Both refusals BEFORE anything is deleted or updated — a refused requeue changes nothing.
       if (!REQUEUEABLE_STATES.has(current.state)) {
         throw new JobNotRequeueableError({ jobId, state: current.state });
@@ -245,10 +253,12 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
       ]);
       const holder = holders[0];
       if (holder !== undefined) throw requeueKeyTaken({ ...current, holderId: holder.id });
-      if (requeueOptions?.fromStep !== undefined) {
-        await exec().query(SQL_STEPS_FROM, [current.runId, requeueOptions.fromStep]);
-      }
-      const rows = await exec().query<JobRow>(SQL_JOB_REQUEUE, [jobId]);
+      // ONE statement moves the row and drops its steps: nothing is deleted for a requeue that
+      // did not land.
+      const rows = await exec().query<JobRow>(SQL_JOB_REQUEUE, [
+        jobId,
+        requeueOptions?.fromStep ?? null,
+      ]);
       const row = rows[0];
       // Read as finished a moment ago and live now: another requeue won the race.
       if (row === undefined) throw new JobNotRequeueableError({ jobId, state: 'live' });
@@ -270,7 +280,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
 
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
       const runAt = request.runAt ?? nowMs(clock);
-      const rows = await exec().query<{ id: string; run_id: string }>(SQL_ENQUEUE, [
+      const params = [
         request.id ?? uuid(),
         request.name,
         request.queue || DEFAULT_QUEUE,
@@ -282,49 +292,56 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         request.tenantId ?? null,
         request.traceparent ?? null,
         request.enqueuedBy ?? null,
-      ]);
-      const inserted = rows[0];
-      if (inserted !== undefined) {
-        return { id: inserted.id, runId: inserted.run_id, deduped: false };
-      }
+      ];
+      // TWICE at most. The insert and the lookup below are two statements, and the live holder
+      // of the key can settle between them: the insert met it, the lookup did not. That is a key
+      // that just came free, so the insert is sent once more and lands. A second miss is not a
+      // race any more — see the refusal.
+      for (let attempt = 1; attempt <= ENQUEUE_ATTEMPTS; attempt += 1) {
+        const rows = await exec().query<{ id: string; run_id: string }>(SQL_ENQUEUE, params);
+        const inserted = rows[0];
+        if (inserted !== undefined) {
+          return { id: inserted.id, runId: inserted.run_id, deduped: false };
+        }
 
-      // Nothing inserted under an id the CALLER allocated: the outbox publishing one staged row a
-      // second time. The job its first publish made is the answer, whatever state it has reached.
-      if (request.id !== undefined) {
-        const published = await exec().query<{ id: string; run_id: string }>(
-          SQL_OUTBOX_PUBLISHED_JOB,
-          [request.id],
-        );
-        const made = published[0];
-        if (made !== undefined) return { id: made.id, runId: made.run_id, deduped: true };
-      }
+        // Nothing inserted under an id the CALLER allocated: the outbox publishing one staged row
+        // a second time. The job its first publish made is the answer, whatever state it reached.
+        if (request.id !== undefined) {
+          const published = await exec().query<{ id: string; run_id: string }>(
+            SQL_OUTBOX_PUBLISHED_JOB,
+            [request.id],
+          );
+          const made = published[0];
+          if (made !== undefined) return { id: made.id, runId: made.run_id, deduped: true };
+        }
 
-      // `do nothing` fired: a live job OF THIS NAME, IN THIS TENANT, already owns this idempotency
-      // key. Both are in the lookup because both are in the index — without the name this returned
-      // whichever other job derived the same natural key; without the tenant it returned another
-      // TENANT's row, so the caller's work silently never ran AND the caller was handed an id it
-      // has no right to, on a surface (`cancel`) that takes an id with no tenant predicate.
-      const existing = await exec().query<{ id: string; run_id: string }>(SQL_FIND_LIVE_BY_KEY, [
-        request.name,
-        request.idempotencyKey,
-        request.tenantId ?? null,
-      ]);
-      const found = existing[0];
-      if (found === undefined) {
-        throw new DriverUnavailableError({
-          driver: 'pg',
-          cause: `enqueue of "${request.name}" was rejected but no live row holds its idempotency key`,
-          fix: 'x db migrate   # reapplies SQL_JOBS_TABLE, whose x_jobs_name_tenant_idempotency_live_idx is what this lookup reads',
-        });
+        // `do nothing` fired: a live job OF THIS NAME, IN THIS TENANT, already owns this
+        // idempotency key. Both are in the lookup because both are in the index — without the
+        // name this returned whichever other job derived the same natural key; without the tenant
+        // it returned another TENANT's row, so the caller's work silently never ran AND the caller
+        // was handed an id it has no right to, on a surface (`cancel`) that takes an id with no
+        // tenant predicate.
+        const existing = await exec().query<{ id: string; run_id: string }>(SQL_FIND_LIVE_BY_KEY, [
+          request.name,
+          request.idempotencyKey,
+          request.tenantId ?? null,
+        ]);
+        const found = existing[0];
+        if (found === undefined) continue;
+        if (request.onConflict === 'error') {
+          throw new JobDuplicateError({
+            job: request.name,
+            idempotencyKey: request.idempotencyKey,
+            existingId: found.id,
+          });
+        }
+        return { id: found.id, runId: found.run_id, deduped: true };
       }
-      if (request.onConflict === 'error') {
-        throw new JobDuplicateError({
-          job: request.name,
-          idempotencyKey: request.idempotencyKey,
-          existingId: found.id,
-        });
-      }
-      return { id: found.id, runId: found.run_id, deduped: true };
+      throw new DriverUnavailableError({
+        driver: 'pg',
+        cause: `enqueue of ${renderCauseValue(request.name)} was rejected ${ENQUEUE_ATTEMPTS} times running and no live row holds its idempotency key either time — one miss is a holder that settled between the insert and the lookup, and is retried; two is an index the lookup does not agree with, and x db migrate reapplies SQL_JOBS_TABLE, whose x_jobs_name_tenant_idempotency_live_idx is what the lookup reads`,
+        fix: 'x db migrate',
+      });
     },
 
     async claim(claimOptions: ClaimOptions): Promise<readonly ClaimedJob[]> {
@@ -335,18 +352,23 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         claimOptions.limit,
         claimOptions.workerId,
         claimOptions.visibilityTimeoutMs,
+        claimOptions.dropExhausted ?? [],
       ]);
       const at = nowMs(clock);
-      return rows.map((row) => {
-        const record = toJobRecord(row);
-        return {
+      // Both arms of the statement answer, told apart by the state each wrote: `running` is a
+      // claim, `dead` a row the claim buried — reported, never handed out as work.
+      const records = rows.map(toJobRecord);
+      const buried = records.filter((record) => record.state !== 'running');
+      if (buried.length > 0) claimOptions.onExhausted?.(buried);
+      return records
+        .filter((record) => record.state === 'running')
+        .map((record) => ({
           ...record,
           claimedBy: claimOptions.workerId,
           claim: record.claim ?? 0,
           claimedAt: at,
           visibleAt: record.visibleAt ?? at + claimOptions.visibilityTimeoutMs,
-        };
-      });
+        }));
     },
 
     // Both settles answer whether they LANDED: no row back is a settle from a worker that no

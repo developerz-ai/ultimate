@@ -10,7 +10,7 @@
 // become — the checkpoints are transactional with the work, and this row is not.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, systemClock } from '@ultimat3/core';
+import { describeValue, finiteCount, systemClock, UltimateError } from '@ultimat3/core';
 import { nowMs } from './clock';
 
 /**
@@ -54,6 +54,27 @@ export interface BackfillFilter {
    */
   readonly runId?: string | undefined;
   readonly limit?: number | undefined;
+}
+
+/** What Postgres prints for a `uuid` — the one spelling both ledgers store identically. */
+const RUN_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * `BackfillFilter.runId`, refused by BOTH ledgers' `list` when it is not a uuid. `run_id` is a
+ * `uuid` column: Postgres raised a raw `22P02` where the memory ledger answered an empty page, so
+ * a mistyped id read as "no such pass" under `x dev` and as a database fault in production. The
+ * shape `outbox.ts` holds an enqueue's `runId` to — lowercase, so the two never disagree on case.
+ */
+export function listedRunId(subject: string, runId: unknown): string | undefined {
+  if (runId === undefined) return undefined;
+  if (typeof runId === 'string' && RUN_ID_SHAPE.test(runId)) return runId;
+  throw new UltimateError({
+    code: 'X_ID_INVALID',
+    // `describeValue`, never the value: what arrives here wrong is as often a key as a typo.
+    cause: `${subject} backfills.list was filtered by runId ${describeValue(runId)}, and a run id is a lowercase uuid (8-4-4-4-12 hex) — x_backfills.run_id is a uuid column`,
+    fix: 'x db backfill --list --json',
+    meta: { option: 'runId' },
+  });
 }
 
 /**
@@ -169,6 +190,7 @@ export function createMemoryBackfillLedger(clock: Clock = systemClock): Backfill
     },
     // `async`, so a refused limit REJECTS here as it does on the pg ledger — see `driver-memory.ts`.
     async list(filter = {}) {
+      const runId = listedRunId('the memory ledger', filter.runId);
       // Reversed BEFORE the sort: the test clock is frozen, so two rows share a `startedAt` and a
       // stable sort would hand back the oldest of them first under a "newest first" contract.
       const rows = [...runs.values()]
@@ -176,7 +198,7 @@ export function createMemoryBackfillLedger(clock: Clock = systemClock): Backfill
         .sort((a, b) => b.startedAt - a.startedAt)
         .filter((run) => filter.name === undefined || run.name === filter.name)
         .filter((run) => filter.status === undefined || run.status === filter.status)
-        .filter((run) => filter.runId === undefined || run.runId === filter.runId)
+        .filter((run) => runId === undefined || run.runId === runId)
         .slice(0, finiteCount('the backfill ledger list', 'limit', filter.limit ?? 100));
       return rows;
     },

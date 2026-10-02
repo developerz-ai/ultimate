@@ -1,10 +1,10 @@
 // The retention sweep this boot owns: the framework tables that grow with traffic, the `purge()`
 // job that empties them and the `task` that fires it hourly.
 //
-// FIVE TARGETS over five tables, `As of 2026-10-02` — `x_idempotency`, `x_rate_limit`, the
-// `x_auth` limiter's table, `x_notify_deliveries` and `x_notify_inbox`. Counted nowhere in
-// prose but here: this header said "three" for two releases after the notify tables joined the
-// boot's DDL, which is how `x_notify_inbox` became the one framework table nothing swept.
+// SIX TARGETS over six tables, `As of 2026-10-02` — `x_idempotency`, `x_rate_limit`, the
+// `x_auth` limiter's table, `x_notify_deliveries`, `x_notify_inbox` and `x_job_events`. Counted
+// nowhere in prose but here: this header said "three" for two releases after the notify tables
+// joined the boot's DDL, which is how `x_notify_inbox` became the one framework table nothing swept.
 //
 // WHY here and not in the packages that own the tables: `postgresIdempotencyStore` (tier 3),
 // `postgresRateLimitStore` (tier 2) and `postgresAuthLimiter` (tier 2) cannot see each other and
@@ -20,8 +20,15 @@
 import type { PostgresIdempotencyStore } from '@ultimat3/action';
 import { purgeAuthLimits } from '@ultimat3/auth';
 import type { PostgresRateLimitStore } from '@ultimat3/http';
-import type { JobHandle, PurgeInput, PurgeTarget } from '@ultimat3/jobs';
-import { DEFAULT_PURGE_CRON, getJob, getTask, purge, task } from '@ultimat3/jobs';
+import type { EventBus, JobHandle, PurgeInput, PurgeTarget } from '@ultimat3/jobs';
+import {
+  DEFAULT_PURGE_CRON,
+  eventsPurgeTarget,
+  getJob,
+  getTask,
+  purge,
+  task,
+} from '@ultimat3/jobs';
 import { purgeNotifyDeliveries, purgeNotifyInbox } from '@ultimat3/notify';
 import type { InboxRetention } from './runtime-notify-retention';
 import { NO_INBOX_RETENTION } from './runtime-notify-retention';
@@ -32,7 +39,7 @@ export const PURGE_JOB_NAME = 'x.purge';
 export const PURGE_TASK_NAME = 'x.purge.hourly';
 
 /**
- * The two stores this boot BUILT, handed over rather than rebuilt here. A second
+ * The stores this boot BUILT, handed over rather than rebuilt here. A second
  * `postgresIdempotencyStore({ executor })` would sweep on the default window even where the boot
  * had configured another — two answers to "how long is a record kept", and the shorter one
  * deletes reservations a retry is still entitled to.
@@ -44,6 +51,12 @@ export const PURGE_TASK_NAME = 'x.purge.hourly';
 export interface RetentionStores {
   readonly idempotency: PostgresIdempotencyStore;
   readonly rateLimit: PostgresRateLimitStore;
+  /**
+   * The bus this boot installed for `step.waitForEvent`. REQUIRED: `x_job_events` takes a row per
+   * publish and `find` only filters an expired one, so a boot that left it out is the table
+   * growing for the life of the deployment — which it did until this member existed.
+   */
+  readonly events: EventBus;
   /**
    * The app's own answer to "how long is an unread message kept", loaded from `app.config.ts` by
    * `loadInboxRetention`. Absent windows mean the inbox is never swept, which is the default and a
@@ -120,6 +133,8 @@ function retentionTargets(stores: RetentionStores): readonly PurgeTarget[] {
     },
     authTarget,
     ...notifyTargets(stores.inboxRetention ?? NO_INBOX_RETENTION),
+    // Its own clock, and so no `nowMs`: every instant in that table is the database's.
+    eventsPurgeTarget(stores.events),
   ];
 }
 

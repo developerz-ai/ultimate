@@ -15,7 +15,27 @@ export interface ClaimLoopOptions {
   /** One pass. It reports what it found through `passed()`, so a manual `tick()` counts too. */
   readonly round: () => Promise<unknown>;
   readonly onError: (error: unknown) => void;
+  /** What every wait is armed on. Default: real, unrefed timeouts; a test hands in its own. */
+  readonly timers?: LoopTimers;
 }
+
+/** The two calls the loop makes on a timer. The handle is whatever `set` answered. */
+export interface LoopTimers {
+  set(run: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+/** Unrefed: never the thing keeping a drained process alive — the hooks stop this loop. */
+const REAL_TIMERS: LoopTimers = {
+  set(run, ms) {
+    const handle = setTimeout(run, ms);
+    handle.unref?.();
+    return handle;
+  },
+  clear(handle) {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
+};
 
 export interface ClaimLoop {
   start(): void;
@@ -47,23 +67,30 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     floorMs: floor,
     ...(options.ceilingMs === undefined ? {} : { ceilingMs: options.ceilingMs }),
   });
+  const timers = options.timers ?? REAL_TIMERS;
   let delayMs = floor;
   let active = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: unknown;
   /** The timer's own pass is in flight. A wake landing now asks for ONE more, never a second chain. */
   let passing = false;
   let again = false;
   let unsubscribe: (() => void) | undefined;
   /** One timer per floor-wide bucket of due times, so a burst of retries holds a bounded few. */
-  const due = new Map<number, ReturnType<typeof setTimeout>>();
+  const due = new Map<number, unknown>();
 
   const arm = (): void => {
-    timer = setTimeout(() => {
+    timer = timers.set(() => {
       timer = undefined;
       passing = true;
       void options
         .round()
-        .catch(options.onError)
+        .catch((error: unknown) => {
+          // A failed pass never reached `passed()`, so the wait in hand is whatever cut the last
+          // one short — 0 after a wake — and re-arming on it is a loop that spins for as long as
+          // the database is down. Not an idle pass either: try again at the floor.
+          delayMs = backoff.next(true);
+          options.onError(error);
+        })
         .finally(() => {
           passing = false;
           if (!active) return;
@@ -72,8 +99,6 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
           arm();
         });
     }, delayMs);
-    // Never the thing keeping a drained process alive: the hooks stop this loop.
-    timer.unref?.();
   };
 
   /** The next pass, now — or right behind the one in flight, whose snapshot may predate the news. */
@@ -84,7 +109,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
       return;
     }
     if (timer === undefined) return;
-    clearTimeout(timer);
+    timers.clear(timer);
     delayMs = 0;
     arm();
   };
@@ -115,9 +140,9 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     stop() {
       active = false;
       again = false;
-      if (timer !== undefined) clearTimeout(timer);
+      if (timer !== undefined) timers.clear(timer);
       timer = undefined;
-      for (const hint of due.values()) clearTimeout(hint);
+      for (const hint of due.values()) timers.clear(hint);
       due.clear();
       unsubscribe?.();
       unsubscribe = undefined;
@@ -134,11 +159,10 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
       const step = Math.max(floor, DUE_MARGIN_MS);
       const bucket = Math.ceil((performance.now() + wait) / step);
       if (due.has(bucket)) return;
-      const hint = setTimeout(() => {
+      const hint = timers.set(() => {
         due.delete(bucket);
         kick();
       }, wait);
-      hint.unref?.();
       due.set(bucket, hint);
     },
   };

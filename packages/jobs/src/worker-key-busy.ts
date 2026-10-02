@@ -4,7 +4,7 @@
 // would be counted, reported and parked as a fault the author declared was an answer.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { logger } from '@ultimat3/core';
+import { logger, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { claimOf } from './driver';
@@ -33,7 +33,9 @@ export interface RefuseKeyBusyOptions {
  * Not `reportError`ed: the error tracker is for failures somebody has to look at, and this one
  * was asked for by the declaration. The row and this log line carry it.
  */
-export async function refuseKeyBusy(options: RefuseKeyBusyOptions): Promise<JobExecution> {
+export async function refuseKeyBusy(
+  options: RefuseKeyBusyOptions,
+): Promise<JobExecution | undefined> {
   const { driver, claimed, key, limit } = options;
   const startedAt = nowMs(options.clock);
   const refusal = new JobKeyBusyError({ job: claimed.name, key, limit });
@@ -47,6 +49,17 @@ export async function refuseKeyBusy(options: RefuseKeyBusyOptions): Promise<JobE
     countsAsAttempt: false,
     fail: true,
   });
+  if (!settled) {
+    // The claim lapsed and the row is another worker's now, or it was cancelled: nothing was
+    // refused HERE, so there is no execution to count — `executeJob`'s own line for the same miss.
+    logger.warn('jobs.settle.unowned', {
+      job: claimed.name,
+      jobId: claimed.id,
+      workerId: options.workerId,
+      settling: 'refused',
+    });
+    return undefined;
+  }
   logger.info('jobs.attempt.refused', {
     workerId: options.workerId,
     job: claimed.name,
@@ -55,15 +68,30 @@ export async function refuseKeyBusy(options: RefuseKeyBusyOptions): Promise<JobE
     limit,
   });
   // The one ending no body is there to record: "a second run was refused" exists for the app only
-  // if the job is told. After the settle and only when it landed, like every other announcement.
+  // if the job is told. After the settle, like every other announcement.
   const handle = getJob(claimed.name);
-  if (settled && handle !== undefined) {
-    await announceSettled({
-      handle,
-      claimed,
-      ctx: options.context(),
-      settlement: { outcome: 'refused', error, code: refusal.code },
-    });
+  if (handle !== undefined) {
+    let ctx: Ctx | undefined;
+    try {
+      ctx = options.context();
+    } catch (raised) {
+      // `context()` is the app's own function. The row is already settled `failed`: a throw from
+      // here failed the whole claim ROUND over a refusal that had landed.
+      logger.error('jobs.attempt.refused-unannounced', {
+        workerId: options.workerId,
+        job: claimed.name,
+        jobId: claimed.id,
+        error: renderThrowable(raised),
+      });
+    }
+    if (ctx !== undefined) {
+      await announceSettled({
+        handle,
+        claimed,
+        ctx,
+        settlement: { outcome: 'refused', error, code: refusal.code },
+      });
+    }
   }
   return {
     outcome: 'refused',

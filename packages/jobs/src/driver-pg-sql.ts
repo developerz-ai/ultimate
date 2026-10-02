@@ -19,7 +19,6 @@ export {
   SQL_JOB_LIST,
   SQL_JOB_LIVE_HOLDER,
   SQL_JOB_REQUEUE,
-  SQL_STEPS_FROM,
 } from './driver-pg-jobs-sql';
 
 export {
@@ -32,8 +31,23 @@ export {
 } from './driver-pg-outbox-sql';
 export { SQL_ACK, SQL_NACK } from './driver-pg-settle-sql';
 
+import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
 import { JOB_ROW_COLUMNS } from './driver-pg-jobs-sql';
 import { notifyJobReady } from './driver-pg-wake-sql';
+import { COUNTER_BUCKET_MS } from './introspection';
+
+/** What both arms of the claim return: a `JobRow`, read off the updated row `j`. */
+const CLAIM_ROW_COLUMNS = `j.id, j.name, j.queue, j.input, j.idempotency_key, j.run_id, j.attempt,
+          j.max_attempts, j.state, j.tenant_id, j.last_error, j.claimed_by, j.claims,
+          j.traceparent, j.enqueued_by,
+          (extract(epoch from j.run_at)     * 1000)::bigint as run_at,
+          (extract(epoch from j.visible_at) * 1000)::bigint as visible_at,
+          (extract(epoch from j.created_at) * 1000)::bigint as created_at,
+          (extract(epoch from j.updated_at) * 1000)::bigint as updated_at`;
+
+const CLAIM_ROW_NAMES = `id, name, queue, input, idempotency_key, run_id, attempt, max_attempts,
+       state, tenant_id, last_error, claimed_by, claims, traceparent, enqueued_by, run_at,
+       visible_at, created_at, updated_at`;
 
 /**
  * The insert, and its wake: `woke` is the notification's own column, evaluated once per inserted
@@ -85,10 +99,19 @@ select id, run_id from x_jobs
  * lock and throughput collapses to one worker. `visible_at` in the predicate reclaims leases
  * abandoned by a crashed worker. `cancelled` is absent from every branch by construction — a
  * cancelled row is terminal, so it is never handed to a worker again.
+ *
+ * TWO arms over one pick. A `running` row is picked only with a lapsed lease, and one that lapsed
+ * on its FINAL attempt (`attempt >= max_attempts` — `isFinalAttempt`, `retry.ts`) is `buried`:
+ * settled `dead` here, counted, and answered with its new state so the driver reports it instead
+ * of handing it out. Re-claimed, it was an attempt past `max_attempts` every lease, forever — a
+ * job that kills its worker took one per visibility timeout and never reached the dead letters.
+ * `claimed_by` is cleared with the lease, so the body that stalled rather than died cannot settle
+ * the row it lost. A buried row spends a slot of `$2`: the pass after it claims what it displaced.
+ * `$5` names the jobs declaring `retry.deadLetter: false`: their rows are buried `failed`.
  */
 export const SQL_CLAIM = `
-with claimed as (
-  select id
+with picked as (
+  select id, (state = 'running' and attempt >= max_attempts) as exhausted
     from x_jobs
    where queue = any($1::text[])
      and run_at <= now()
@@ -102,35 +125,56 @@ with claimed as (
    order by run_at
    limit $2
      for update skip locked
+), buried as (
+  update x_jobs j
+     set state            = case when j.name = any($5::text[]) then 'failed' else 'dead' end,
+         visible_at       = null,
+         claimed_by       = null,
+         last_error       = '${LEASE_LAPSED_FINAL_ATTEMPT}',
+         last_error_stack = null,
+         updated_at       = now()
+    from picked p
+   where j.id = p.id and p.exhausted
+  returning ${CLAIM_ROW_COLUMNS}
+), counted as (
+  insert into x_job_counters (job, bucket_ms, bucket_start, dead, failed, duration_ms)
+  select name, ${COUNTER_BUCKET_MS}, date_trunc('minute', now()),
+         (count(*) filter (where state = 'dead'))::int,
+         (count(*) filter (where state = 'failed'))::int, 0
+    from buried
+   group by name
+  on conflict (job, bucket_ms, bucket_start) do update
+     set dead   = x_job_counters.dead + excluded.dead,
+         failed = x_job_counters.failed + excluded.failed
+), claimed as (
+  update x_jobs j
+     set state      = 'running',
+         attempt    = j.attempt + 1,
+         claims     = j.claims + 1,
+         claimed_by = $3,
+         visible_at = now() + ($4::bigint * interval '1 millisecond'),
+         updated_at = now()
+    from picked p
+   where j.id = p.id and not p.exhausted
+  returning ${CLAIM_ROW_COLUMNS}
 )
-update x_jobs j
-   set state      = 'running',
-       attempt    = j.attempt + 1,
-       claims     = j.claims + 1,
-       claimed_by = $3,
-       visible_at = now() + ($4::bigint * interval '1 millisecond'),
-       updated_at = now()
-  from claimed c
- where j.id = c.id
-returning j.id, j.name, j.queue, j.input, j.idempotency_key, j.run_id, j.attempt,
-          j.max_attempts, j.state, j.tenant_id, j.last_error, j.claimed_by, j.claims,
-          j.traceparent, j.enqueued_by,
-          (extract(epoch from j.run_at)     * 1000)::bigint as run_at,
-          (extract(epoch from j.visible_at) * 1000)::bigint as visible_at,
-          (extract(epoch from j.created_at) * 1000)::bigint as created_at,
-          (extract(epoch from j.updated_at) * 1000)::bigint as updated_at
+select ${CLAIM_ROW_NAMES} from claimed
+union all
+select ${CLAIM_ROW_NAMES} from buried
 `.trim();
 
 /**
- * Stop a job from outside. `state <> 'done'` and not `state = 'ready'`: the runaway backfill this
- * exists for is `running`, and a job that already finished has nothing to stop. The worker holding
- * it learns on its next heartbeat, which no longer matches `state = 'running'`.
+ * Stop a job from outside — a LIVE one. The runaway backfill this exists for is `running`; the
+ * worker holding it learns on its next heartbeat, which no longer matches `state = 'running'`.
+ * Fenced on the four live states and not on `state <> 'done'`, which let a cancel REWRITE a dead
+ * letter: `dead / "card declined"` became `cancelled / "oops wrong id"` and left the dead-letter
+ * queue. A finished row is how the job ended, and stays that.
  */
 export const SQL_CANCEL = `
 update x_jobs
    set state = 'cancelled', visible_at = null, claimed_by = null,
        last_error = coalesce($2, last_error), updated_at = now()
- where id = $1 and state <> 'done'
+ where id = $1 and state in ('ready', 'delayed', 'running', 'suspended')
 returning ${JOB_ROW_COLUMNS}
 `.trim();
 
@@ -167,7 +211,7 @@ select queue,
          (where state in ('ready', 'delayed') and run_at <= now()), 0) * 1000   as oldest_ready_ms
   from x_jobs
  group by queue
- order by queue
+ order by queue collate "C"
 `.trim();
 
 /**
@@ -324,7 +368,17 @@ select id, name, payload, correlation_key,
  limit $2
 `.trim();
 
-export const SQL_EVENT_PURGE = `delete from x_job_events where expires_at <= statement_timestamp()`;
+/**
+ * The sweep, COUNTED in the statement: `PgExecutor` answers rows and never a command tag, and
+ * `returning` alone would ship every deleted id back to count them. The statement's own time, as
+ * every other event statement reads — an unpurged row costs `find` a filter, never a wrong answer.
+ */
+export const SQL_EVENT_PURGE_COUNTED = `
+with gone as (
+  delete from x_job_events where expires_at <= statement_timestamp() returning 1
+)
+select count(*)::int as removed from gone
+`.trim();
 
 export const SQL_STEP_GET = `
 select run_id, name, status, output, attempts, error,
@@ -351,18 +405,33 @@ select run_id, name, status, output, attempts, error,
   from x_job_steps where run_id = $1 order by started_at
 `.trim();
 
+/**
+ * FENCED on the claim when one is given, exactly as `SQL_ACK` is: `running`, the same worker, the
+ * same claim ordinal. The runner's own fence is an in-process signal, and it cannot stop a body in
+ * ANOTHER process — a worker stalled past its lease wrote its step over the re-claimer's. A null
+ * `$12` is an unfenced write: a transfer between drivers, with no row on this one to hold yet.
+ * Answers one row when the write landed, none when the fence refused it.
+ *
+ * $12 the job id or null, $13 the worker, $14 the claim.
+ */
 export const SQL_STEP_PUT = `
 insert into x_job_steps
   (run_id, name, status, output, started_at, completed_at, wake_at, event,
    correlation_key, attempts, error)
-values ($1, $2, $3, $4::jsonb, to_timestamp($5 / 1000.0),
-        case when $6::bigint is null then null else to_timestamp($6 / 1000.0) end,
-        case when $7::bigint is null then null else to_timestamp($7 / 1000.0) end,
-        $8, $9, $10, $11)
+select $1::uuid, $2, $3, $4::jsonb, to_timestamp($5::bigint / 1000.0),
+       case when $6::bigint is null then null else to_timestamp($6::bigint / 1000.0) end,
+       case when $7::bigint is null then null else to_timestamp($7::bigint / 1000.0) end,
+       $8, $9, $10::int, $11
+ where $12::uuid is null
+    or exists (
+      select 1 from x_jobs
+       where id = $12::uuid and state = 'running' and claimed_by = $13 and claims = $14::int
+    )
 on conflict (run_id, name) do update
    set status = excluded.status, output = excluded.output,
        completed_at = excluded.completed_at, wake_at = excluded.wake_at,
        attempts = excluded.attempts, error = excluded.error
+returning 1 as written
 `.trim();
 
 /**

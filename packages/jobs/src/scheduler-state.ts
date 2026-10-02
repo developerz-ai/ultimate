@@ -9,6 +9,13 @@ import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
 export interface ScheduledFire {
   readonly task: string;
   readonly occurrenceMs: number;
+  /**
+   * Where the watermark LANDS, when that is past the occurrence: `run-once` runs the earliest
+   * missed occurrence and drops the rest, and dropping is moving the watermark past them — in the
+   * same write, or a crash between the two fires a second "one catch-up". The fence is still the
+   * occurrence. Omitted, the watermark lands on the occurrence.
+   */
+  readonly watermarkMs?: number;
   readonly jobs: readonly EnqueueRequest[];
 }
 
@@ -44,7 +51,7 @@ export async function fireThroughDriver(
   if (last !== undefined && last >= fire.occurrenceMs) return undefined;
   const results: EnqueueResult[] = [];
   for (const request of fire.jobs) results.push(await driver.enqueue(request));
-  await state.markFired(fire.task, fire.occurrenceMs);
+  await state.markFired(fire.task, fire.watermarkMs ?? fire.occurrenceMs);
   // What an operator reads as "last fired". After the watermark, so a record never names an
   // occurrence a crash would fire again.
   await driver.introspect?.recordTaskFire({ task: fire.task, occurrenceMs: fire.occurrenceMs });

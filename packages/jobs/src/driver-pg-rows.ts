@@ -94,7 +94,7 @@ export function toJobRecord(row: JobRow): JobRecord {
     attempt: row.attempt,
     maxAttempts: row.max_attempts,
     state: statusIn<JobState>(JOB_STATES, isJobState, {
-      table: 'ultimate_jobs',
+      table: 'x_jobs',
       column: 'state',
       value: row.state,
     }),
@@ -146,7 +146,7 @@ export function toStepRecord(row: StepRow): StepRecord {
     runId: row.run_id,
     name: row.name,
     status: statusIn<StepStatus>(STEP_STATUSES, isStepStatus, {
-      table: 'ultimate_job_steps',
+      table: 'x_job_steps',
       column: 'status',
       value: row.status,
     }),
@@ -168,7 +168,7 @@ export function toBackfillRun(row: BackfillRow): BackfillRun {
     name: row.name,
     checksum: row.checksum,
     status: statusIn(BACKFILL_STATUSES, isBackfillStatus, {
-      table: 'ultimate_backfills',
+      table: 'x_backfills',
       column: 'status',
       value: row.status,
     }),

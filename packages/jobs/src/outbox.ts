@@ -24,7 +24,13 @@
 // test and `x dev` must enqueue with nothing wired — but it is a fallback, not the guarantee.
 
 import type { Clock } from '@ultimat3/core';
-import { currentSpanContext, traceparent, uuid } from '@ultimat3/core';
+import {
+  currentSpanContext,
+  describeValue,
+  traceparent,
+  UltimateError,
+  uuid,
+} from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
@@ -238,6 +244,27 @@ function ambientTraceparent(): string | undefined {
   return traceparent(context);
 }
 
+/** What Postgres prints for a `uuid`, and so the only spelling both drivers store identically. */
+const RUN_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * `EnqueueOptions.runId`, refused HERE when it is not a uuid — the one screen both enqueue paths
+ * read. `run_id` is a `uuid` column: the memory driver took any string, Postgres raised a raw
+ * `22P02`, and on the staged path that was the caller's whole transaction failing at the outbox
+ * insert. Any version, lowercase: an uppercase one would come back from Postgres re-spelled.
+ */
+function namedRunId(job: string, runId: unknown): string | undefined {
+  if (runId === undefined) return undefined;
+  if (typeof runId === 'string' && RUN_ID_SHAPE.test(runId)) return runId;
+  throw new UltimateError({
+    code: 'X_ID_INVALID',
+    // `describeValue`, never the value: what arrives here wrong is as often a key as a typo.
+    cause: `enqueue of job "${job}" was given runId ${describeValue(runId)}, and a run id is a lowercase uuid (8-4-4-4-12 hex) — the queue stores it in a uuid column`,
+    fix: "pass { runId: uuid() } to enqueue(), with import { uuid } from '@ultimat3/core'",
+    meta: { job, option: 'runId' },
+  });
+}
+
 export interface OutboxDeps {
   readonly store: OutboxStore;
   readonly driver: JobDriver;
@@ -247,18 +274,19 @@ export interface OutboxDeps {
 }
 
 /** Stage a job inside `tx`. Returns the row that the relay will publish after commit. */
-export function enqueueInTx<I>(
+export async function enqueueInTx<I>(
   deps: OutboxDeps,
   tx: Tx,
   handle: JobHandle<I>,
   input: I,
   options: EnqueueOptions = {},
 ): Promise<OutboxRecord> {
+  const runId = namedRunId(handle.name, options.runId);
   const at = nowMs(deps.clock);
   const trace = options.traceparent ?? ambientTraceparent();
   const record: OutboxRecord = {
     id: uuid(),
-    runId: options.runId ?? uuid(),
+    runId: runId ?? uuid(),
     job: handle.name,
     queue: options.queue ?? handle.queue ?? DEFAULT_QUEUE,
     input,
@@ -272,11 +300,10 @@ export function enqueueInTx<I>(
     ...(trace === undefined ? {} : { traceparent: trace }),
     ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
   };
-  return deps.store.stage(tx, record).then(() => {
-    // Wakes a relay in THIS process that has backed off; a relay elsewhere polls on its own.
-    signalStaged();
-    return record;
-  });
+  await deps.store.stage(tx, record);
+  // Wakes a relay in THIS process that has backed off; a relay elsewhere polls on its own.
+  signalStaged();
+  return record;
 }
 
 export interface JobsFacade {
@@ -304,6 +331,7 @@ export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
         if (deps.mode === 'required' && options.outbox !== false) {
           throw new OutboxNoTxError({ job: handle.name });
         }
+        const runId = namedRunId(handle.name, options.runId);
         const trace = options.traceparent ?? ambientTraceparent();
         const result = await deps.driver.enqueue({
           name: handle.name,
@@ -312,7 +340,7 @@ export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
           idempotencyKey: handle.idempotencyKeyFor(input),
           maxAttempts: handle.retry.attempts,
           runAt: options.runAt ?? nowMs(deps.clock),
-          ...(options.runId === undefined ? {} : { runId: options.runId }),
+          ...(runId === undefined ? {} : { runId }),
           ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
           ...(trace === undefined ? {} : { traceparent: trace }),
           ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),

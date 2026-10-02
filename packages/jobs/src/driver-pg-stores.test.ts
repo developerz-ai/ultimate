@@ -19,7 +19,7 @@ import {
   SQL_STEP_LIST,
   SQL_STEP_PUT,
 } from './driver-pg-sql';
-import { DriverUnavailableError } from './errors';
+import { JobNotFoundError } from './errors-requeue';
 
 interface Call {
   readonly sql: string;
@@ -142,7 +142,7 @@ describe('the pg step store', () => {
     });
   });
 
-  test('put binds all eleven columns in the order the statement declares, output as JSON', async () => {
+  test('put binds the eleven columns in the order the statement declares, output as JSON', async () => {
     const executor = executorFor();
     await driverWith(executor).steps?.put({
       runId: 'run-1',
@@ -165,6 +165,10 @@ describe('the pg step store', () => {
       null,
       null,
       3,
+      null,
+      // The fence, absent: an unfenced write (a transfer) names no job.
+      null,
+      null,
       null,
     ]);
   });
@@ -403,18 +407,21 @@ describe('the pg driver`s introspection', () => {
     expect(executor.calls.map((call) => call.sql.trim().split(/\s/)[0])).toEqual([
       'select',
       'select',
-      'update',
+      'with',
     ]);
     expect(executor.calls[2]?.sql).toContain("set state = 'ready', attempt = 0");
+    // No step named: the statement's delete arm is switched off by its own parameter.
+    expect(executor.calls[2]?.params).toEqual(['job-1', null]);
     expect(record?.state).toBe('ready');
   });
 
   test('requeue --from-step deletes from THAT step onward, keyed by the job`s run id', async () => {
     // The delete has to name the run, not the job: steps are keyed by run_id, and a requeue that
     // dropped nothing would replay straight past the step the operator asked to redo.
+    // In the SAME statement as the row's move, off the row it moved: sent first as its own
+    // statement, the delete had already run when the update matched nothing.
     const executor = executorFor({
       'idempotency_key = $3': [],
-      'delete from x_job_steps': [],
       'update x_jobs': [row({ state: 'ready' })],
       'where id = $1': [row({ run_id: 'run-9', state: 'dead' })],
     });
@@ -422,21 +429,24 @@ describe('the pg driver`s introspection', () => {
     expect(executor.calls.map((call) => call.sql.trim().split(/\s/)[0])).toEqual([
       'select',
       'select',
-      'delete',
-      'update',
+      'with',
     ]);
+    expect(executor.calls[2]?.sql).toContain('delete from x_job_steps');
+    expect(executor.calls[2]?.sql).toContain('s.run_id = r.run_id');
     expect(executor.calls[2]?.sql).toContain('started_at >');
-    expect(executor.calls[2]?.params).toEqual(['run-9', 'charge']);
+    expect(executor.calls[2]?.params).toEqual(['job-1', 'charge']);
   });
 
-  test('requeueing an id that does not exist is X_DRIVER_UNAVAILABLE, never a silent undefined', async () => {
+  test('requeueing an id that does not exist is X_JOB_NOT_FOUND, never a silent undefined', async () => {
     const executor = executorFor();
     await expect(driverWith(executor).introspect?.requeue('job-404')).rejects.toThrow(
-      DriverUnavailableError,
+      JobNotFoundError,
     );
     await expect(driverWith(executor).introspect?.requeue('job-404')).rejects.toThrow(
-      /job job-404 does not exist/,
+      /the "pg" queue holds no job with id "job-404"/,
     );
+    // The lookup, and nothing after it.
+    expect(executor.calls).toHaveLength(2);
   });
 
   test('cancel answers the cancelled row, and undefined for a job no longer cancellable', async () => {

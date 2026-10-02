@@ -84,6 +84,8 @@ export {
   isBackfill,
   registeredBackfills,
 } from './backfill-registry';
+export type { AnnounceExhaustedOptions, ExhaustedCounts } from './claim-exhausted';
+export { announceExhausted } from './claim-exhausted';
 export type { JobConcurrency, KeyedConcurrency, WhenBusy } from './concurrency';
 export { MAX_CONCURRENCY_KEY_LENGTH, WHEN_BUSY } from './concurrency';
 export type { JobConcurrencyDescriptor, JobDescriptor } from './describe';
@@ -112,6 +114,8 @@ export {
   isJobState,
   JOB_STATES,
   jobDriver,
+  LEASE_LAPSED_FINAL_ATTEMPT,
+  LIVE_STATES,
   nackState,
   resetJobDriver,
   setJobDriver,
@@ -210,11 +214,13 @@ export {
   JobOnSettledFailedError,
   JobPageInvalidError,
 } from './errors-operator';
-export { JobNotRequeueableError } from './errors-requeue';
+export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export {
   createMemoryEventBus,
+  EVENTS_PURGE_TARGET,
   eventBus,
+  eventsPurgeTarget,
   publishEvent,
   resetEventBus,
   setEventBus,
@@ -377,6 +383,7 @@ export { ON_SETTLED_ATTEMPTS } from './settled';
 export type {
   EventLookup,
   StepApi,
+  StepFence,
   StepRecord,
   StepRunner,
   StepRunnerOptions,

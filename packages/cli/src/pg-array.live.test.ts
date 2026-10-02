@@ -43,6 +43,8 @@ const QUEUES = [`q-${RUN}-a`, `q-${RUN}-b`] as const;
 const UNCLAIMED_QUEUE = `q-${RUN}-c`;
 const ID = crypto.randomUUID();
 const MISS_ID = crypto.randomUUID();
+const DROPPED_JOB = `probe-dropped-${RUN}`;
+const KEPT_JOB = `probe-kept-${RUN}`;
 
 let client: PostgresClient | undefined;
 let executor: PgExecutor | undefined;
@@ -68,7 +70,8 @@ describeLive('live · postgres · the shipped statements that bind an array', ()
   // a real Postgres never claimed anything and every job sat in the queue forever.
   test('SQL_CLAIM executes — the loop every ROLE=worker container runs', async () => {
     expect(SQL_CLAIM).toContain('any($1::text[])');
-    const rows = await executor?.query(SQL_CLAIM, [[...QUEUES], 1, `w-${RUN}`, 30_000]);
+    expect(SQL_CLAIM).toContain('any($5::text[])');
+    const rows = await executor?.query(SQL_CLAIM, [[...QUEUES], 1, `w-${RUN}`, 30_000, []]);
     expect(rows).toEqual([]);
   });
 
@@ -100,6 +103,7 @@ describeLive('live · postgres · the shipped statements that bind an array', ()
         5,
         `w-match-${RUN}`,
         30_000,
+        [],
       ]);
       expect(claimed?.map((row) => row.id)).toEqual([ID]);
     } finally {
@@ -116,10 +120,51 @@ describeLive('live · postgres · the shipped statements that bind an array', ()
       [MISS_ID, MISS_ID, UNCLAIMED_QUEUE],
     );
     try {
-      const claimed = await executor?.query(SQL_CLAIM, [[...QUEUES], 5, `w-miss-${RUN}`, 30_000]);
+      const claimed = await executor?.query(SQL_CLAIM, [
+        [...QUEUES],
+        5,
+        `w-miss-${RUN}`,
+        30_000,
+        [],
+      ]);
       expect(claimed).toEqual([]);
     } finally {
       await executor?.query('delete from x_jobs where id = $1', [MISS_ID]);
+    }
+  });
+
+  // The statement's SECOND array, `$5`: the job names a burial drops (`retry.deadLetter: false`).
+  // Two rows whose lease lapsed on their final attempt, one named in the array and one not — an
+  // encoder that bound it as a wildcard, or as nothing, gets one of the two states wrong.
+  test('the names array decides how an exhausted row is buried: failed when named, dead when not', async () => {
+    const lapsed = (id: string, name: string): Promise<unknown> | undefined =>
+      executor?.query(
+        `insert into x_jobs
+           (id, name, queue, input, idempotency_key, run_id, state, attempt, max_attempts,
+            claimed_by, visible_at)
+         values ($1, $3, $4, '{}'::jsonb, $2, $1, 'running', 1, 1, 'gone',
+                 now() - interval '1 minute')`,
+        [id, id, name, QUEUES[0]],
+      );
+    await lapsed(ID, DROPPED_JOB);
+    await lapsed(MISS_ID, KEPT_JOB);
+    try {
+      const rows = await executor?.query<{ id: string; state: string }>(SQL_CLAIM, [
+        [...QUEUES],
+        5,
+        `w-bury-${RUN}`,
+        30_000,
+        [DROPPED_JOB, 'never-queued'],
+      ]);
+      const states = new Map(rows?.map((row) => [row.id, row.state]));
+      expect(states.get(ID)).toBe('failed');
+      expect(states.get(MISS_ID)).toBe('dead');
+    } finally {
+      await executor?.query('delete from x_jobs where id = any($1::uuid[])', [[ID, MISS_ID]]);
+      // The burial counts itself in the same statement: those two rows are this run's as well.
+      await executor?.query('delete from x_job_counters where job = any($1::text[])', [
+        [DROPPED_JOB, KEPT_JOB],
+      ]);
     }
   });
 });

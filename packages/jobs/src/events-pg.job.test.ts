@@ -8,7 +8,10 @@ import { frozenClock } from '@ultimat3/core';
 import type { EmbeddedPg } from './embedded-pg-fixture';
 import { embeddedPg } from './embedded-pg-fixture';
 import type { EventBus } from './events';
+import { eventsPurgeTarget } from './events';
 import { createPgEventBus } from './events-pg';
+import { createStepRunner, isStepSuspension } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 let pg: EmbeddedPg;
 
@@ -83,5 +86,58 @@ describe('the stored event bus keeps one clock', () => {
     expect((await publisher.find('otp', undefined, 0))?.payload).toEqual({ code: 2 });
     await pg.age(5_000);
     expect(await publisher.find('otp', undefined, 0)).toBeUndefined();
+  });
+});
+
+describe('a wait against the stored bus is stamped by the database', () => {
+  test('a worker whose clock is 5 s ahead still resumes on an event published after it asked', async () => {
+    const at = await databaseNow();
+    const events = createPgEventBus({ executor: pg.executor });
+    const store = createMemoryStepStore();
+    // The worker pod: 5 s ahead of the database that stamps every `published_at`.
+    const attempt = (aheadMs: number): Promise<unknown> =>
+      createStepRunner({
+        runId: 'run-skew',
+        jobName: 'awaitOtp',
+        store,
+        clock: frozenClock(at + aheadMs),
+        events,
+      }).step.waitForEvent('otp', 'otp.entered', { timeout: '1h' });
+
+    expect(isStepSuspension(await attempt(5_000).catch((error: unknown) => error))).toBe(true);
+    expect((await store.get('run-skew', 'otp'))?.startedAt).toBe(at);
+    // Published at the database's `at`: 5 s BEFORE the instant the worker believed it asked at.
+    await events.publish('otp.entered', { code: 42 });
+    expect(await attempt(35_000)).toEqual({ code: 42 });
+  });
+});
+
+describe('the retention sweep shrinks x_job_events', () => {
+  const stored = async (): Promise<number> => {
+    const rows = await pg.executor.query<{ n: number }>(
+      'select count(*)::int as n from x_job_events',
+      [],
+    );
+    return Number(rows[0]?.n);
+  };
+
+  test('expired rows are deleted and counted, live ones stay matchable', async () => {
+    const bus = createPgEventBus({ executor: pg.executor });
+    await bus.publish('otp', { code: 1 }, { ttl: 5_000 });
+    await bus.publish('otp', { code: 2 }, { ttl: 5_000 });
+    await bus.publish('otp', { code: 3 }, { ttl: '1h' });
+    const target = eventsPurgeTarget(bus);
+
+    expect(await target.purgeExpired(0)).toBe(0);
+    expect(await stored()).toBe(3);
+
+    await pg.age(5_000);
+    // A publish is not a sweep on this bus: the table shrinks only when the target is run.
+    await bus.publish('otp', { code: 4 }, { ttl: '1h' });
+    expect(await stored()).toBe(4);
+    expect(await target.purgeExpired(0)).toBe(2);
+    expect(await stored()).toBe(2);
+    expect(await target.purgeExpired(0)).toBe(0);
+    expect((await bus.find('otp', undefined, 0))?.payload).toEqual({ code: 3 });
   });
 });

@@ -140,10 +140,12 @@ describe('cancelling a job', () => {
 });
 
 describe('the cancel SQL', () => {
-  test('every settlement is fenced on `running`, and cancel on "not done"', () => {
+  test('every settlement is fenced on `running`, and cancel on the four live states', () => {
     expect(SQL_ACK).toContain("where id = $1 and state = 'running'");
     expect(SQL_NACK).toContain("where id = $1 and state = 'running'");
-    expect(SQL_CANCEL).toContain("where id = $1 and state <> 'done'");
+    expect(SQL_CANCEL).toContain(
+      "where id = $1 and state in ('ready', 'delayed', 'running', 'suspended')",
+    );
     expect(SQL_CANCEL).toContain("set state = 'cancelled'");
     // Returns the row, so the caller can tell "cancelled it" from "there was nothing to cancel" —
     // as a PROJECTION, never `returning *`: `PgExecutor` is any client, and one without a type map
