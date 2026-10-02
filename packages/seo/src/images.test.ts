@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { ModernFormat } from './images';
 import {
+  DEFAULT_FORMATS,
+  FORMAT_ORDER,
   IMAGE_QUERY_KEYS,
+  MAX_IMAGE_WIDTH,
   parseImageQuery,
   renderPicture,
   responsiveImage,
@@ -18,11 +21,19 @@ describe('responsiveImage', () => {
     expect(image.img.style).toContain('aspect-ratio:1200/630');
   });
 
-  test('offers AVIF before WebP before the original', () => {
+  test('by default offers only what the built-in driver encodes: WebP, then the original', () => {
+    // AVIF first was a `<source>` the default driver answers with `X_IMAGE_UNSUPPORTED`: a
+    // browser that picked it got an error and does NOT fall back to the next source.
     const image = responsiveImage(INPUT);
+    expect(DEFAULT_FORMATS).toEqual(['webp']);
+    expect(image.sources.map((source) => source.type)).toEqual(['image/webp']);
+    expect(image.img.srcset).not.toContain(`${IMAGE_QUERY_KEYS.format}=`);
+  });
+
+  test('a caller with a driver that encodes AVIF asks for it, AVIF before WebP', () => {
+    const image = responsiveImage(INPUT, { formats: FORMAT_ORDER });
     expect(image.sources.map((source) => source.type)).toEqual(['image/avif', 'image/webp']);
     expect(image.sources[0]?.srcset).toContain(`${IMAGE_QUERY_KEYS.format}=avif`);
-    expect(image.img.srcset).not.toContain(`${IMAGE_QUERY_KEYS.format}=`);
   });
 
   test('a format the MIME table does not carry gets image/<format>, never a prototype member', () => {
@@ -41,6 +52,40 @@ describe('responsiveImage', () => {
   test('never upscales past the intrinsic width', () => {
     expect(usableWidths(640, [320, 640, 1280])).toEqual([320, 640]);
     expect(usableWidths(500, [320, 640])).toEqual([320, 500]);
+  });
+
+  test('never mints a width its own reader refuses', () => {
+    // `width: 10000` produced `?w=10000`, and `parseImageQuery` answers that URL with
+    // `X_IMAGE_QUERY_INVALID … 8192 or less`: the widest candidate of the srcset was a 4xx.
+    expect(usableWidths(10_000, [320, 9000])).toEqual([320, MAX_IMAGE_WIDTH]);
+    expect(usableWidths(10_000, [])).toEqual([MAX_IMAGE_WIDTH]);
+    expect(usableWidths(MAX_IMAGE_WIDTH, [320])).toEqual([320, MAX_IMAGE_WIDTH]);
+    const image = responsiveImage({ ...INPUT, width: 10_000, height: 5000 });
+    const minted = [
+      image.img.src,
+      ...image.img.srcset.split(', '),
+      ...image.sources.flatMap((source) => source.srcset.split(', ')),
+    ];
+    for (const candidate of minted) {
+      const url = new URL(candidate.split(' ')[0] ?? '', 'https://ultimate.dev');
+      expect(() => parseImageQuery(url.searchParams)).not.toThrow();
+    }
+    // The box the browser reserves is still the image's own.
+    expect(image.img.width).toBe(10_000);
+  });
+
+  test('a candidate that is not a positive whole number is never minted either', () => {
+    expect(usableWidths(1200, [0, -320, 320.5, Number.NaN, 640])).toEqual([640, 1200]);
+    expect(usableWidths(1200.7, [640])).toEqual([640, 1200]);
+  });
+
+  test('an intrinsic width that is not a size is refused, never minted as ?w=NaN', () => {
+    for (const intrinsic of [Number.NaN, Number.POSITIVE_INFINITY, 0, -640, 0.4]) {
+      expect(caught(() => usableWidths(intrinsic, [320]))).toBeUltimateError('X_INVARIANT');
+    }
+    expect(caught(() => responsiveImage({ ...INPUT, width: Number.NaN }))).toBeUltimateError(
+      'X_INVARIANT',
+    );
     expect(responsiveImage(INPUT).img.srcset).not.toContain('1536w');
   });
 
@@ -79,7 +124,8 @@ describe('responsiveImage', () => {
 
   test('renderPicture emits width, height, and alt on the img', () => {
     const html = renderPicture(responsiveImage(INPUT));
-    expect(html).toContain('<source type="image/avif"');
+    expect(html).toContain('<source type="image/webp"');
+    expect(html).not.toContain('image/avif');
     expect(html).toContain('width="1200"');
     expect(html).toContain('height="630"');
     expect(html).toContain('alt="Ultimate dashboard"');
@@ -101,7 +147,7 @@ describe('parseImageQuery', () => {
     const image = responsiveImage(INPUT);
     const firstEntry = image.sources[0]?.srcset.split(', ')[0]?.split(' ')[0] ?? '';
     const url = new URL(firstEntry, 'https://x.test');
-    expect(parseImageQuery(url.searchParams)).toEqual({ width: 320, format: 'avif' });
+    expect(parseImageQuery(url.searchParams)).toEqual({ width: 320, format: 'webp' });
   });
 
   test('a URL with none of the three keys is a plain asset read, not a transform', () => {

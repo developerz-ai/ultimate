@@ -14,6 +14,7 @@ import type { RedisLike } from './redis';
 import { createRedisTier, REDIS_INVALIDATE_SCRIPT } from './redis';
 import { tag } from './tags';
 import type { CacheTier } from './tiers';
+import { createCacheStack } from './tiers';
 
 const url = Bun.env['TEST_REDIS_URL'];
 const hasRedis = typeof url === 'string' && url.length > 0;
@@ -220,6 +221,48 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
       expect(await survivors(redis, 'livecoll')).toEqual(await survivors(lru, 'livecoll'));
       expect(await survivors(redis, 'livecoll')).toEqual([]);
       expect([...cleared.keys].sort()).toEqual(['livecoll-1', 'livecoll-2', 'livecoll-feed']);
+    });
+  });
+  describe('the fleet-wide fence, against a server that really expires keys', () => {
+    // `redis-fence.test.ts` proves the interleavings on the recording fake. What only a server
+    // can say is that the generation is a LEASED key two separate connections both read.
+    test('a bust on one connection withdraws a fill another connection had in flight', async () => {
+      const replicaA = createCacheStack([createLruTier({ rng: () => 0 }), tierOn(raw())]);
+      const replicaB = tierOn(raw());
+      let release: (value: string) => void = () => undefined;
+      const gate = new Promise<string>((resolve) => {
+        release = resolve;
+      });
+      let started: () => void = () => undefined;
+      const entered = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+
+      const read = replicaA.read(
+        'livefence-feed',
+        () => {
+          started();
+          return gate;
+        },
+        { ttlMs: 60_000, tags: [tag('livefence', '1')] },
+      );
+      await entered;
+      await replicaB.invalidateTags([tag('livefence', '1')]);
+      release('pre-write rows');
+
+      expect(await read).toBe('pre-write rows');
+      expect(await replicaB.get('livefence-feed')).toBeUndefined();
+    });
+
+    test('a generation carries a lease, so a write-heavy entity cannot grow the keyspace forever', async () => {
+      const client = raw();
+      await tierOn(client).invalidateTags([tag('livelease', '1')]);
+
+      for (const key of [`${PREFIX}:g:{livelease}:r:1`, `${PREFIX}:g:{livelease}:a`]) {
+        const pttl = await count(client, 'PTTL', key);
+        expect(pttl).toBeGreaterThan(0);
+        expect(pttl).toBeLessThanOrEqual(120_000);
+      }
     });
   });
 });

@@ -78,6 +78,23 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   `head-seo.ts` had to write down that it binds no `renderLd` half on purpose. Deleted
   `As of 2026-08`. Never add it back: an app that found it on the public surface and called it from
   `meta` emitted its graph twice, which is exactly the duplicate that comment was defending against.
+- **`responsiveImage` never mints what its own reader or the default driver refuses.**
+  `usableWidths` caps at `min(intrinsic, MAX_IMAGE_WIDTH)` and keeps whole positive widths only
+  (`?w=10000` was `X_IMAGE_QUERY_INVALID`). `DEFAULT_FORMATS` is `FORMAT_ORDER` filtered through
+  core's `canEncode` — `webp` — because a browser does not fall back from a `<source>` that
+  errors; AVIF is opt-in (`formats: FORMAT_ORDER`) for an app whose driver encodes it.
+  `image-driver.test.ts` runs every default format through `builtinImageDriver`.
+- **`seo.robots.disallow` goes into EVERY group**, and a `*` group is appended when none is
+  declared: a crawler obeys only the group naming it. De-duplicated per group.
+- **The brand test in `applyTitleTemplate` is a WORD match** (`containsWord`, Unicode letters and
+  digits), never `includes`: `Ultimately fast` still gets its brand.
+- **`ogLocaleTag` is `Intl.Locale` language + region** — `zh_TW`, never `zh_Hant_TW`.
+- **Feed authors**: Atom takes `<author>` (name, email, uri), `<rights>`, `<icon>`. An RSS item
+  author is `<author>email (name)</author>` or, with no email, `<dc:creator>`. An item `image` is
+  Atom `<link rel="enclosure">` and RSS `<media:content>` — never RSS `<enclosure>`, which
+  requires a byte length. `xmlns:dc`/`xmlns:media` are declared only when used.
+- **`usableWidths` refuses an intrinsic width that is not a size** — core's `finiteCount`
+  (`X_INVARIANT`) on the floored value, so `NaN`, `Infinity`, `0` and negatives never reach a URL.
 - **`builtinImageDriver({ read })` takes its reader.** `TransformRequest.src` is a string, and
   whether that string is a path, a storage key or a URL is the app's fact, not seo's — never add
   a filesystem fallback. Pixels come from `@ultimat3/core`'s pipeline; seo owns no second scaler,
@@ -132,7 +149,7 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 | `rss.ts` | `buildFeed()` — the three feed formats; owns markup, never a date |
 | `feed-dates.ts` | all timestamp parsing and formatting for feeds. Never `Date.parse` in another module |
 | `images.ts` | what the markup promises: `srcset` widths, `<picture>` order, inlined dimensions — plus `IMAGE_QUERY_KEYS` and `parseImageQuery`, the contract that reads a minted URL back. Decodes nothing |
-| `image-driver.ts` | the bytes behind that promise: `ImageTransformDriver` + `builtinImageDriver({ read })` over core's pipeline — png/jpeg only |
+| `image-driver.ts` | the bytes behind that promise: `ImageTransformDriver` + `builtinImageDriver({ read })` over core's pipeline — encodes png/jpeg/webp |
 
 ## Commands
 

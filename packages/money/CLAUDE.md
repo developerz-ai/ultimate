@@ -154,6 +154,14 @@ the wide shape and answer with the row type.
   `currencyCodes()` is what this process accepts, registrations included, and it is the list
   `X_CURRENCY_UNKNOWN`'s fix line names — so it must include them or that fix is the dead end it
   used to be.
+- **`trimZeroFraction` is `trailingZeroDisplay: 'stripIfInteger'`, never `minimumFractionDigits:
+  0`.** Min = max = the amount's scale, always; the min-0 form trimmed EVERY trailing zero and
+  rendered 1250 cents as `$12.5`. `trim` is in the formatter cache key because it no longer changes
+  the digit count.
+- **Every bound a caller names is screened before a built-in sees it.** `fractionDigits` outside
+  0…`MAX_FRACTION_DIGITS` is `X_MONEY_SCALE_INVALID` (`Intl` raised a bare `RangeError`), and
+  `allocate(m, parts)` past `MAX_ALLOCATION_PARTS` is `X_ALLOCATION_INVALID` (`new Array(1e10)`
+  did). Defaults are taken on `=== undefined`, never `??`, so a blanked `null` is refused.
 - Adding a currency to the *shipped* rows: one row in `currency.ts` with its correct exponent, plus
   a format test. An app never needs this — that is what `registerCurrency` is for.
 

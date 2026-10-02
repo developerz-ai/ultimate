@@ -187,7 +187,7 @@ documents, keyed with the query sorted and without the fragment.
 
 | The cache is emptied by | |
 |---|---|
-| any POST the router sends | |
+| any POST the router sends — when it is sent, and again when it settles, landed or failed: a prefetch sent while it was in flight may have rendered the old state | |
 | any write through the framework's client (`rpc`, a mutation, an upload — `@ultimat3/core`'s `onClientWrite`) | |
 | a principal change: `onRescope`, a load for another principal, a POST answered for one, and every hand-over of the very URL asked for (the server's principal check answers that way, and the router cannot tell it from a `'document'` page — so it forgets either way) | |
 | a `BroadcastChannel('ultimate:navigation')` message from another tab — each of the above posts one | |

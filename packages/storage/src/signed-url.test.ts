@@ -212,3 +212,82 @@ describe('an explicitly null bound is refused, never defaulted', () => {
     ).rejects.toThrow(/expiresInMs/);
   });
 });
+
+describe('an absolute base verifies what it minted', () => {
+  // `parseConstraints` compared the URL's PATHNAME against the whole base, origin included, so
+  // every URL minted under `baseUrl: 'https://cdn.example.com/_storage/local'` was `malformed`.
+  const BASE = 'https://cdn.example.com/_storage/local';
+
+  test('the URL verifies under its own absolute base, with or without a trailing slash', async () => {
+    const clock = frozenClock(START);
+    const url = await buildSignedUrl({ secret: SECRET, key: KEY, baseUrl: BASE, clock });
+    expect(url.startsWith(`${BASE}/org/org-1/`)).toBe(true);
+    for (const baseUrl of [BASE, `${BASE}/`, '/_storage/local']) {
+      const result = await verifySignedUrl({ url, secret: SECRET, baseUrl, clock });
+      expect(result.ok ? result.constraints.key : result).toBe(KEY);
+    }
+    // The route sees the path alone, and that is the same request.
+    const relative = url.slice('https://cdn.example.com'.length);
+    const result = await verifySignedUrl({ url: relative, secret: SECRET, baseUrl: BASE, clock });
+    expect(result.ok ? result.constraints.key : result).toBe(KEY);
+  });
+
+  test('a URL outside an absolute base is still malformed', async () => {
+    const clock = frozenClock(START);
+    const url = await buildSignedUrl({ secret: SECRET, key: KEY, baseUrl: BASE, clock });
+    const result = await verifySignedUrl({
+      url,
+      secret: SECRET,
+      baseUrl: 'https://cdn.example.com/_storage/other',
+      clock,
+    });
+    expect(result.ok ? '' : result.reason).toBe('malformed');
+  });
+});
+
+describe('the base a URL was minted under is inside its signature', () => {
+  // Every local disk signs with the one `STORAGE_SIGNING_SECRET`, and the canonical string named
+  // the key and not the disk — so a URL for `uploads/<key>` verified, unedited but for the path
+  // segment, as a grant for `private/<key>`.
+  test('a URL minted for one disk does not verify on another holding the same secret', async () => {
+    const clock = frozenClock(START);
+    const url = await buildSignedUrl({
+      secret: SECRET,
+      key: KEY,
+      method: 'PUT',
+      maxBytes: 1024,
+      contentType: 'image/png',
+      baseUrl: '/_storage/uploads',
+      clock,
+    });
+    const moved = url.replace('/_storage/uploads/', '/_storage/private/');
+    expect(moved).not.toBe(url);
+
+    const own = await verifySignedUrl({ url, secret: SECRET, baseUrl: '/_storage/uploads', clock });
+    expect(own.ok).toBe(true);
+    const other = await verifySignedUrl({
+      url: moved,
+      secret: SECRET,
+      baseUrl: '/_storage/private',
+      clock,
+    });
+    expect(other.ok ? 'verified' : other.reason).toBe('signature-mismatch');
+  });
+
+  test('the origin is NOT signed — the route that verifies sees only a path', async () => {
+    const clock = frozenClock(START);
+    const url = await buildSignedUrl({
+      secret: SECRET,
+      key: KEY,
+      baseUrl: 'https://a.example.com/_storage/local',
+      clock,
+    });
+    const result = await verifySignedUrl({
+      url: url.replace('a.example.com', 'b.example.com'),
+      secret: SECRET,
+      baseUrl: '/_storage/local',
+      clock,
+    });
+    expect(result.ok).toBe(true);
+  });
+});

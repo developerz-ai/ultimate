@@ -88,6 +88,7 @@ function fakeStorage(seed: Readonly<Record<string, string>> = {}): StorageDriver
       objects.delete(key);
       return Promise.resolve();
     },
+    stat: unsupported('stat'),
     stream: unsupported('stream'),
     copy: unsupported('copy'),
     exists: unsupported('exists'),

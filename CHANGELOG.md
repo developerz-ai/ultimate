@@ -14,8 +14,10 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slices 01 and 02 have landed: `schema`
-and `core` with the gate's step deadline in `cli`, then tier 1 — `i18n`, `time`, `db`, `flags`.
+a later slice appends its group below the last one. `As of 2026-10` slices 01–03 have landed: `schema` and
+`core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
+rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
+and `cli`.
 
 ### Added
 
@@ -47,6 +49,27 @@ Tier 1 — time, db.
   references, naming the constraints; and a new key over a column the same migration adds with no
   default, or a `null` one — add and backfill the column first, the key in the next migration. A
   `<table>_pkey` name over 63 bytes — a table name over 58 — is `X_INVARIANT`.
+
+Tier 1 — money, cache, seo, storage.
+
+- **money:** `MAX_FRACTION_DIGITS` (100) and `MAX_ALLOCATION_PARTS` (1,000,000).
+- **cache:** `surrogateKeys(tags)` — the keys a response carries at the edge; `cacheHeaders()`
+  writes the same list.
+- **cache:** a fleet fence for a shared tier. `CacheTier` gains an optional `fence?(scope)`
+  (`TierFence`, `FenceVerdict`); `createRedisTier` implements it with leased generation keys, so a
+  bust another replica ran stops a fill this process is mid-way through. In-process tiers omit it.
+  Cost on a ladder with the Redis tier: one round trip before each `load()` and one after the
+  `SET`; a bust writes two generation keys per busted tag. A fill whose `load()` outlives 60 s is
+  not written to Redis.
+- **seo:** `DEFAULT_FORMATS` and `MAX_IMAGE_WIDTH` (8192).
+- **seo:** feeds. Atom carries the channel's `<author>`, `<rights>` and `<icon>`, and an entry
+  author's `<email>` / `<uri>`. RSS carries an item author — `<author>` with an e-mail,
+  `dc:creator` without. An item `image` is an Atom enclosure link and an RSS `<media:content>`.
+  The `dc` and `media` namespaces are declared only when used.
+- **storage:** `X_STORAGE_KEY_CONFLICT` (HTTP 409), `X_STORAGE_PUT_FAILED` and
+  `X_STORAGE_READ_FAILED` (both 500), with `keyConflict`, `putFailed`, `readFailed` and
+  `getTooLarge`; `assertPutOptions` and `assertListOptions` for a driver written outside the
+  package; `signedUrlBasePath`; `maxGetBytes` on all three drivers — see Changed and Fixed.
 
 Tier 5 — cli.
 
@@ -219,6 +242,69 @@ Tier 1 — flags.
   fraction** (`X_INVARIANT`). `NaN` removed the rate limit; `Infinity` muted the report. `0` is
   legal.
 
+Tier 1 — cache.
+
+- **BREAKING — a tagged response carries an entity index key at the edge.** `cacheHeaders()` and
+  `surrogateKeys()` add one `e:<entity>` per distinct entity to `Surrogate-Key` and `Cache-Tag`:
+  tags `post:1`, `post:2` go out as `post:1 e:post post:2`. A row bust purges `<entity>:<id>` and
+  `<entity>`; a collection bust purges `e:<entity>` and `<entity>` — it used to miss every detail
+  page. Growth is `len(entity) + 3` bytes per entity per header: 14 bytes a response for `post`.
+  A test that asserts the header value adds the key. An edge copy cached before the upgrade lacks
+  the index key until its `s-maxage` passes; a collection bust does not reach it until then.
+- **BREAKING — a tag with whitespace or a comma is refused where it is emitted.** `cacheHeaders()`
+  and `surrogateKeys()` throw `X_CACHE_PURGE_FAILED`; a CDN splits such a key into keys nothing
+  purges. The CDN tier refuses the same bust before any purge driver is called. Rename the tag in
+  its `declareTags(...)` call.
+
+Tier 1 — seo.
+
+- **BREAKING — `responsiveImage()` offers WebP only by default**, was AVIF then WebP. The built-in
+  pipeline cannot encode AVIF, so the first `<source>` a browser picked answered
+  `X_IMAGE_UNSUPPORTED`. An app whose image driver encodes AVIF passes
+  `responsiveImage(input, { formats: FORMAT_ORDER })`. `usableWidths` caps at `MAX_IMAGE_WIDTH`
+  (a 10,000-wide source's widest candidate is 8192, was 10000), drops a candidate that is not a
+  whole number of at least 1, and refuses an intrinsic width that is not one (`X_INVARIANT`; `NaN`
+  went out as `?w=NaN`).
+
+Tier 1 — storage.
+
+- **BREAKING — `promoteAttachment` requires `policy`.** It measures the pending object with
+  `stat()` and refuses one over `policy.maxBytes` (`X_STORAGE_TOO_LARGE`); on a bucket-backed disk
+  nothing had measured it. Pass the policy the upload was granted under:
+  `promoteAttachment({ disk, key, orgId, target, policy })`.
+- **BREAKING — `StorageDriver` gains a required `stat(key)`**: the object without its bytes, or
+  `undefined`. A driver written outside the package implements it; the three shipped ones do.
+- **BREAKING — `lastModified` is optional on `StorageListEntry` and `StorageObject`.** Absent when
+  the provider reported none; it was epoch 0, which `sweepOrphans` read as older than every window
+  and deleted. `sweepOrphans` now spares such an object. A reader handles `undefined`.
+- **BREAKING — `get()` has a ceiling on every driver.** An object over `maxGetBytes` — default the
+  disk's `maxPutBytes`, 10 MB unless set — is `X_STORAGE_TOO_LARGE`. Read it with
+  `disk.stream(key)`, or raise the ceiling: `s3Driver({ bucket, maxGetBytes })`.
+- **BREAKING — variant keys keep the source's extension.** `photos/hero.png@w640.webp`, was
+  `photos/hero@w640.webp`: `hero.png` and `hero.jpg` shared one variant. Variants stored under the
+  old shape are never read again and nothing sweeps them; the Upgrading entry has the listing
+  commands.
+- **BREAKING — `variantKey` and `fitDimensions` refuse a width or height that is not a whole number
+  of at least 1** (`X_INVARIANT`); `{ width: NaN }` minted `a@wNaN.webp`. `fitDimensions` never
+  upscales under `contain` — a 40×20 source asked for 400×400 is 40×20, was 400×200 — and never
+  returns a zero edge.
+- **BREAKING — signed URLs are `v2` and name their disk.** The canonical string includes the
+  disk's base path; a URL signed for one local disk verified on another. Every local- and
+  memory-disk signed URL outstanding at deploy stops verifying — the default lifetime is 15
+  minutes. `canonicalRequest(constraints, basePath)` and
+  `signConstraints(secret, constraints, basePath)` take the path; `signedUrlBasePath(baseUrl)`
+  derives it.
+- **BREAKING — ISO base media files are sniffed by major brand.** AVIF, HEIC, MOV, M4A and 3GP
+  sniff as their own types; each was `video/mp4`. A policy that allowed `video/mp4` and accepted
+  those under that label now rejects them: add the real types to `allowedContentTypes`.
+- **storage:** `DEV_SIGNING_SECRET`, `STORAGE_SIGNING_SECRET_KEY` and `usesDevStorageSecret` live
+  in `signing-secret.ts`. The barrel exports are unchanged; a deep import of `driver-local` moves.
+
+Tier 4 — render.
+
+- **BREAKING — a `revalidate.tags` entry that cannot be a purge key is refused at registration.**
+  `X_ROUTE_MODE_INVALID`, naming the route file, for a tag with whitespace or a comma. The tag now goes out on every response of the route — see Fixed. Rename the tag.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -282,6 +368,53 @@ Tier 1 — i18n, time, db.
 - **db:** `refuseDependentViews` considers only tables visible on the search path.
 - **db:** a `ROLLBACK TO SAVEPOINT` that fails marks the root aborted, so its `COMMIT` is refused
   rather than storing a scope its caller was told had rolled back.
+
+Tier 1 — money, cache, seo, storage.
+
+- **money:** `trimZeroFraction` keeps the fraction of a non-whole amount: 1250 USD is `$12.50`,
+  was `$12.5`. It also applies beside `fractionDigits`, which used to override it.
+- **money:** `fractionDigits` outside 0…100, a fraction or `NaN` is `X_MONEY_SCALE_INVALID`, and
+  `allocate(m, parts)` over 1,000,000 parts is `X_ALLOCATION_INVALID`. Both were a bare
+  `RangeError`.
+- **cache:** `createCacheStack` deletes the key in a tier whose `set` refused; the tier went on
+  answering with the value the fill superseded.
+- **cache:** `estimateBytes` walks a `Map` and a `Set`. Each measured 2 bytes, so a byte-budgeted
+  tier never evicted them.
+- **seo:** `buildRobots({ disallow })` appends to every group and emits a `User-agent: *` group
+  when none is declared. A crawler obeys only the group naming it, so a named group skipped the
+  list.
+- **seo:** `applyTitleTemplate` matches the brand as a whole word: `Ultimately fast` gets its
+  brand suffix. `ogLocaleTag` is language and region only: `zh-hant-tw` is `zh_TW`, was
+  `zh_Hant_TW`.
+- **storage:** a retried `promoteAttachment` whose source is gone and whose destination exists
+  returns the attached object, not `X_STORAGE_NOT_FOUND`.
+- **storage:** local disk. A `put` or `copy` onto a key that is a path prefix of another is
+  `X_STORAGE_KEY_CONFLICT`, was a bare `ENOTDIR` / `EISDIR`. A write commits through a pending
+  marker, `.meta/<key>.json.pending`, so a crash leaves no torn bytes/sidecar pair; a pair in
+  doubt answers `application/octet-stream` with the bytes' own etag.
+- **storage:** coded I/O on the local disk and `s3`. A refused write is `X_STORAGE_PUT_FAILED`, a
+  refused read `X_STORAGE_READ_FAILED`; they were bare filesystem errors and `S3Error`. A
+  non-string key is `X_STORAGE_PATH_UNSAFE`; a non-bytes body, wrong-typed `put` options and a
+  non-string `list` prefix or cursor are `X_INVARIANT`.
+- **storage:** `isWithinOrg` never throws. An empty org is inside no org: a read under it is
+  `X_STORAGE_ORG_MISMATCH` (404), was `X_STORAGE_PATH_UNSAFE` (400).
+- **storage:** `uploadPolicy()` normalises `allowedContentTypes` — `audio/x-m4a` is `audio/mp4`,
+  `video/x-m4v` is `video/mp4` — so an allowlist spelling an alias matches. The bad-grant-TTL
+  `fix:` names `grantUpload`.
+
+Tier 2 — http. Tier 4 — render. Tier 5 — cli.
+
+- **render:** an ISR document with `revalidate.tags` carries `Surrogate-Key` and `Cache-Tag`. No
+  shipped response carried a purge key before, so a CDN purge matched nothing and the edge held
+  the document for its whole `s-maxage`.
+- **http:** `applyCacheHeaders` removes `surrogate-key` and `cache-tag` from a response it marks
+  `private` or `no-store`.
+- **render:** the client router empties its prefetch cache again when its own POST settles, landed
+  or not. Router script +20 B raw.
+- **cli:** `/media/<key>?w=` stores a variant only for a width `usableWidths(intrinsic,
+  DEFAULT_WIDTHS)` mints. A default width wider than the source is served and not stored; a source
+  wider than 8192 stores its 8192 variant, which was decoded on every request.
+- **cli:** `GET /_storage/:disk/*key` omits `Last-Modified` when the disk reports no date.
 
 ## 23.0.0 - 2026-10-02
 

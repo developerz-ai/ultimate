@@ -5,6 +5,7 @@ export {
   allocateByPercentages,
   allocateByRatios,
   assertAllocationSums,
+  MAX_ALLOCATION_PARTS,
 } from './allocate';
 export {
   absolute,
@@ -71,6 +72,7 @@ export {
   formatMoney,
   formatMoneyDecimal,
   formatMoneyParts,
+  MAX_FRACTION_DIGITS,
 } from './format';
 export {
   currencyOf,

@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 17
-current_focus: "PR 3 — cache, seo, storage, money (03-tier1-services.md, second half)"
+percent: 24
+current_focus: "PR 4 — entity, policy, http, auth (04-entity-policy-http.md, 05-auth.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -19,9 +19,9 @@ slices:
     evidence: "PR 2 (fix/101-02-tier1): every row fixed, none dropped, together with the 2026-09-28 plan's slice 02 (a rolled-back transaction reported committed; savepoints not LIFO) and the ambiguous-COMMIT row. Three codes: X_DB_TRANSACTION_ABORTED, X_DB_COMMIT_UNKNOWN, X_DB_SIBLING_SCOPE_TIMEOUT. 1160 db tests on PGlite and Postgres 17."
   - file: 03-tier1-services.md
     tier: 1
-    status: in_progress
-    percent: 45
-    evidence: "PR 2 landed the time, i18n and flags rows (none dropped; the cron row follows Vixie's wildcard rule because the plan's literal fix cannot satisfy its own step-1 proof). cache, seo, storage and the 2026-09-28 money/storage rows are PR 3."
+    status: done
+    percent: 100
+    evidence: "PR 2 (#617) landed the time, i18n and flags rows (the cron row follows Vixie's wildcard rule because the plan's literal fix cannot satisfy its own step-1 proof). PR 3 (fix/101-03-tier1-services) landed cache, seo, storage and the 2026-09-28 plan's money and storage rows; none dropped. Found on the way: no shipped response carried a surrogate key, so a CDN purge matched nothing - ISR documents with revalidate.tags now carry them. The CDN key scheme is an e:<entity> index key, not the plan's bare entity key, which would have made a row bust clear its sibling rows. Local prefix keys are a coded refusal (X_STORAGE_KEY_CONFLICT), not a layout change. Residuals recorded in wiki/Known-Gaps.md."
   - file: 04-entity-policy-http.md
     tier: 2
     status: not_started
@@ -95,6 +95,17 @@ notes: >-
   an unbounded busy loop.
   PR 1 merged as #616 (43a80b4f). Tier 1 is two PRs to stay under the cap. Local live suites run
   against Postgres 17 and NATS only: ports 6379, 5433 and 9000 on the build machine belong to other
-  projects, so the Redis, logical-replication and S3 live suites are proven in CI alone. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  projects, so the Redis, logical-replication and S3 live suites are proven in CI alone.
+  PR 2 merged as #617 (ee692a08). The unit-shard hang named itself on its CI run:
+  packages/cli/src/templates/emitted-contract.test.ts, a worker blocked in Bun.spawnSync of Biome.
+  The stall did not reproduce in about 200 starved runs, so the cause stays unproven; every
+  synchronous spawn in a test (14 sites) now awaits its child. main went red once on ee692a08 from
+  packages/cli/e2e/client-navigation-cache.e2e.test.ts: the test slept 400 ms and assumed a 65 ms
+  hover timer had fired; under a renderer stall the prefetch left after the write and rightly
+  answered the click. The test now waits on events; PR 3 carries it.
+  Carried forward: three drift fix lines (changedColumn, missingCheck, changedForeignKey) still
+  pair SQL with a shell comment and are duplicated in entity - PR 4. One unexplained single failure
+  of packages/scraping/src/session-seal.test.ts in a batch run - tier-5 PR. A guard refusing an
+  un-timed spawnSync in a test - scripts PR. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02

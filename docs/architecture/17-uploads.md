@@ -38,8 +38,13 @@ names.
 
 ## What the signature covers, and what it cannot
 
-`v1 \n METHOD \n key \n expiresAt \n maxBytes \n contentType` — six fields, newline-separated and
+`v2 \n basePath \n METHOD \n key \n expiresAt \n maxBytes \n contentType` — seven fields, newline-separated and
 order-fixed. Editing `?x-max=` invalidates it, so a client cannot widen what it was granted.
+
+`basePath` is the disk — the PATH of the base the URL was minted under, `/_storage/<registered
+name>`. Every local disk signs with the one `STORAGE_SIGNING_SECRET`, so without it a URL for one
+disk verified on its sibling with only the path segment edited. The origin is not signed (the
+verifying route is handed a path), and an absolute `baseUrl` is compared by its pathname.
 
 What it cannot cover is the bytes, which is why hop 3 re-counts them and re-sniffs them.
 `Content-Type` is attacker-controlled at every hop: the header must equal the signed type
@@ -134,8 +139,21 @@ never touches this route.
 ## Orphans
 
 An upload happens before the row it belongs to exists, so it lands under `pending/` and is
-promoted by `promoteAttachment` once there is an id — copy first, delete second, because a delete
-that ran first loses the bytes on a failed write.
+promoted by `promoteAttachment({ disk, key, orgId, target, policy })` once there is an id —
+measured, then copy first, delete second, because a delete that ran first loses the bytes on a
+failed write.
+
+**Promotion is where a direct upload is measured.** `policy` is required: the object's size is read
+with the driver's `stat()` (required on `StorageDriver`; no bytes move) and one over
+`policy.maxBytes` is `X_STORAGE_TOO_LARGE`, left under `pending/` for the sweep. On an s3 disk this
+is the first thing that measures the upload at all — a provider presign carries no size. A retry
+whose source is already gone and whose destination is there answers the destination, so a row
+write that rolled back after the move does not turn into `X_STORAGE_NOT_FOUND`.
+
+`get()` buffers, so every driver holds it to `maxGetBytes` (default: its `maxPutBytes`) on the
+disk's own size before a byte is read; past it, `stream()`. A listing or `stat()` whose provider
+reported no `LastModified` carries **no** `lastModified`, and `sweepOrphans` spares an object
+whose age it cannot prove.
 
 That makes an orphan a fact about the key rather than a join nobody runs: anything still under
 `org/<orgId>/pending/` past the window is unclaimed. `sweepOrphans` can reach only that prefix, of

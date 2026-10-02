@@ -43,6 +43,17 @@ interface LruNode {
 
 const encoder = new TextEncoder();
 
+/**
+ * `JSON.stringify` renders a `Map` or a `Set` as `{}` — two bytes for a collection of any size, so
+ * a tier budgeted at 64 MiB held gigabytes of them without evicting once. Walked as their entries
+ * instead; a replacer is applied to what it returns, so a nested one is walked too.
+ */
+const widenCollections = (_key: string, value: unknown): unknown => {
+  if (value instanceof Map) return [...value.entries()];
+  if (value instanceof Set) return [...value];
+  return value;
+};
+
 /** Cheap, deterministic size estimate. Exact heap cost is unknowable; consistency matters. */
 export function estimateBytes(value: unknown): number {
   if (value === undefined) return 0;
@@ -50,7 +61,7 @@ export function estimateBytes(value: unknown): number {
   if (value instanceof ArrayBuffer) return value.byteLength;
   if (ArrayBuffer.isView(value)) return value.byteLength;
   try {
-    return encoder.encode(JSON.stringify(value) ?? '').byteLength;
+    return encoder.encode(JSON.stringify(value, widenCollections) ?? '').byteLength;
   } catch {
     return 1024;
   }

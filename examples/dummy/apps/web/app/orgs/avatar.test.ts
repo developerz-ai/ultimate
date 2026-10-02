@@ -169,6 +169,29 @@ describe('the rendered avatar', () => {
     expect((await signedAvatarUrl(ORG, MEMBER)) ?? '').toContain('b-second.png');
   });
 
+  test('a disk that reports no dates still answers one avatar — the key decides', async () => {
+    const target = avatarTarget(MEMBER);
+    await put(attachmentKey(ORG, target, 'a-first.png'), 'old');
+    await put(attachmentKey(ORG, target, 'b-second.png'), 'new');
+
+    // A provider whose listing carries no LastModified: the entries have no date at all.
+    const inner = disk();
+    const undated: StorageDriver = {
+      ...inner,
+      async list(options?: ListOptions): Promise<ListPage> {
+        const page = await inner.list(options);
+        return {
+          ...page,
+          objects: page.objects.map(({ lastModified: _unreported, ...entry }) => entry),
+        };
+      },
+    };
+    resetStorage();
+    defineStorage({ disks: { local: undated }, default: 'local' });
+
+    expect((await signedAvatarUrl(ORG, MEMBER)) ?? '').toContain('b-second.png');
+  });
+
   test('is the last upload, and never another member’s', async () => {
     const target = avatarTarget(MEMBER);
     // Written in ascending key order so the assertion holds whatever the disk reports for

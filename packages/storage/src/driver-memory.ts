@@ -7,6 +7,8 @@
 
 import { type Clock, finiteCount, systemClock } from '@ultimat3/core';
 import {
+  assertListOptions,
+  assertPutOptions,
   DEFAULT_CONTENT_TYPE,
   etagOf,
   type ListOptions,
@@ -22,11 +24,11 @@ import {
   toBytes,
 } from './driver';
 import type { LocalDriverOptions } from './driver-local';
-import { resolveSigningSecret } from './driver-local';
-import { checksumMismatch, objectNotFound, storageNotImplemented } from './errors';
+import { checksumMismatch, getTooLarge, objectNotFound, storageNotImplemented } from './errors';
 import { assertSafeKey } from './path';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
+import { resolveSigningSecret } from './signing-secret';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 'memory';
@@ -54,7 +56,9 @@ interface Stored {
  */
 const snapshot = (object: StorageObject): StorageObject => ({
   ...object,
-  lastModified: new Date(object.lastModified.getTime()),
+  ...(object.lastModified === undefined
+    ? {}
+    : { lastModified: new Date(object.lastModified.getTime()) }),
   ...(object.metadata === undefined ? {} : { metadata: { ...object.metadata } }),
 });
 
@@ -63,6 +67,12 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
     'the memory disk driver',
     'maxPutBytes',
     options.maxPutBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : options.maxPutBytes,
+    1,
+  );
+  const maxGetBytes = finiteCount(
+    'the memory disk driver',
+    'maxGetBytes',
+    options.maxGetBytes === undefined ? maxPutBytes : options.maxGetBytes,
     1,
   );
   const clock = options.clock ?? systemClock;
@@ -101,6 +111,7 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
           'drop serverSideEncryption from put(), and encrypt the disk itself — an s3Driver over a bucket with a default KMS rule',
         );
       }
+      assertPutOptions(DRIVER_NAME, putOptions);
       const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });
       const claimed = putOptions?.checksum;
       if (claimed !== undefined) {
@@ -123,8 +134,18 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
       return snapshot(object);
     },
 
+    async stat(key: string): Promise<StorageObject | undefined> {
+      const hit = stored.get(assertSafeKey(key));
+      return hit && snapshot(hit.object);
+    },
+
     async get(key: string): Promise<StorageRead> {
-      const hit = found(assertSafeKey(key));
+      const safe = assertSafeKey(key);
+      const hit = found(safe);
+      // The local disk's refusal, so a suite on this disk meets the ceiling production has.
+      if (hit.bytes.byteLength > maxGetBytes) {
+        throw getTooLarge(DRIVER_NAME, safe, hit.bytes.byteLength, maxGetBytes);
+      }
       return { object: snapshot(hit.object), bytes: hit.bytes.slice() };
     },
 
@@ -134,8 +155,10 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
     },
 
     async copy(from: string, to: string): Promise<StorageObject> {
-      const source = found(assertSafeKey(from));
-      const destination = assertSafeKey(to);
+      // Both keys before either lookup, as the other two disks do: an unsafe destination is the
+      // refusal whether or not the source exists.
+      const [from_, destination] = [assertSafeKey(from), assertSafeKey(to)];
+      const source = found(from_);
       const object: StorageObject = {
         ...source.object,
         key: destination,
@@ -155,6 +178,7 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
 
     async list(listOptions?: ListOptions): Promise<ListPage> {
       const prefix = listOptions?.prefix ?? '';
+      assertListOptions(listOptions);
       const limit = resolveListLimit(listOptions?.limit);
       const cursor = listOptions?.cursor;
       // Code-unit order and "the cursor is the last key of the page before" — the local disk's own.

@@ -37,6 +37,11 @@ add(price, money(500, 'USD'));               // throws X_CURRENCY_MISMATCH
 `fromDecimal` scales by it (`'1.234'` KWD → 1234), `toDecimalString` reverses it, and
 `formatMoney` sets the fraction digits from it. Hardcoding `/ 100` is a JPY bug and a KWD bug.
 
+`formatMoney(amount, locale, { trimZeroFraction: true })` drops the fraction of a WHOLE amount and
+nothing else — 1200 USD is `$12`, 1250 USD is `$12.50`, never `$12.5` (`trailingZeroDisplay:
+'stripIfInteger'`, with min = max = the amount's scale). `fractionDigits` is a whole number from 0
+to `MAX_FRACTION_DIGITS` (100, `Intl`'s own ceiling); anything else is `X_MONEY_SCALE_INVALID`.
+
 ## A currency the shipped rows do not carry
 
 `As of 2026-08`, 53 ISO-4217 rows ship. They are a *convention* — one useful subset — so an app
@@ -100,6 +105,9 @@ fiction. The alternative was a second money type.
 then hand out the leftover units one at a time, biggest fractional remainder first.
 `round(100 / 3)` either loses a cent or invents one, and an invoice that does that fails
 reconciliation forever. `allocateByRatios` does the same for revenue shares and line splits.
+A part count is a positive integer of at most `MAX_ALLOCATION_PARTS` (1,000,000) — every part is a
+`Money` held at once, so `allocate(m, 1e10)` is `X_ALLOCATION_INVALID`, where it was a bare
+`RangeError` out of `new Array`. More parts than minor units is fine: the surplus parts are zero.
 
 ## Rounding is never implicit
 

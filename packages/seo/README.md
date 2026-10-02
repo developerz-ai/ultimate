@@ -48,10 +48,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `validate.ts` | the build gate — `validateMeta()` (`--json`-shaped) and `assertMeta()` |
 | `ld.ts` | typed JSON-LD builders; required fields are required in the **input type** |
 | `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates, automatic index splitting past 50k |
-| `robots.ts` | `buildRobots()`, environment-aware and fail-closed |
-| `rss.ts` | `buildFeed()` → RSS 2.0 + Atom + JSON Feed from one item list |
+| `robots.ts` | `buildRobots()`, environment-aware and fail-closed; `disallow` reaches **every** group, and a `User-agent: *` group is emitted for it when none is declared |
+| `rss.ts` | `buildFeed()` → RSS 2.0 + Atom + JSON Feed from one item list. Channel `author`/`copyright`/`icon` → Atom `<author>`/`<rights>`/`<icon>`; an item `author` → Atom `<author>`, RSS `<author>` when it has an email, `<dc:creator>` when it does not; an item `image` → Atom `<link rel="enclosure">`, RSS `<media:content medium="image">`. Extra RSS namespaces are declared only when used |
 | `feed-dates.ts` | the one place a feed timestamp is parsed or formatted — an item date that will not parse is *absent*, never `Invalid Date` and never a crash |
-| `images.ts` | `srcset` widths, AVIF → WebP → original, inlined intrinsic dimensions, and `parseImageQuery()` — reads a minted URL back into a transform request |
+| `images.ts` | `srcset` widths (never past the intrinsic width or `MAX_IMAGE_WIDTH`, 8192), modern formats before the original — `DEFAULT_FORMATS` is what the built-in driver encodes (`webp`); pass `formats: FORMAT_ORDER` for AVIF behind a CDN driver — inlined intrinsic dimensions, and `parseImageQuery()` — reads a minted URL back into a transform request |
 | `image-driver.ts` | `ImageTransformDriver` + `builtinImageDriver()`: the variant bytes and the blur placeholder |
 
 ## Type-level enforcement
@@ -88,27 +88,32 @@ const images = builtinImageDriver({ read: (src) => Bun.file(`public${src}`).byte
 
 // a 1200x630 source
 await images.transform({ src: '/img/hero.png', width: 640 });
-// → { bytes, contentType: 'image/jpeg', width: 640, height: 336 }
+// → { bytes, contentType: 'image/png', width: 640, height: 336 }
 await images.blurPlaceholder('/img/hero.png');
 // → 'data:image/png;base64,…'
 ```
 
 | | |
 |---|---|
-| decodes | `png`, `jpeg` |
-| encodes | `png`, `jpeg` |
-| probes only | `webp`, `avif`, `gif`, `svg` — intrinsic size, never a transform |
+| decodes | `png`, `jpeg`, `webp`, `gif` |
+| encodes | `png`, `jpeg`, `webp` |
+| probes only | `avif`, `svg` — intrinsic size, never a transform |
+
+The two lists are `@ultimat3/core`'s `DECODABLE_FORMATS` and `ENCODABLE_FORMATS`
+(`packages/core/src/image/pipeline.ts`), `As of 2026-10`.
 
 - **`read` is required.** `src` is a string and only the app knows whether it is a path, a
   storage key or a URL. Guessing would mean a filesystem read off a URL-shaped string.
-- **No `format` → the pixels decide:** PNG when the raster has alpha, JPEG otherwise. A logo
-  never grows a black background because nobody passed a format.
-- **`format: 'avif'` or `'webp'` → `X_IMAGE_UNSUPPORTED`,** with the fix line. Those `<source>`
-  entries need a CDN driver; the framework will not pretend to encode what it cannot.
+- **No `format` → the source's format is kept** when the pipeline can write it, PNG otherwise. A
+  logo never grows a black background because nobody passed a format.
+- **`format: 'avif'` → `X_IMAGE_UNSUPPORTED`,** with the fix line. That `<source>` needs a CDN
+  driver, so `responsiveImage()` does not offer it unless asked (`formats: FORMAT_ORDER`): a
+  browser picks the first `<source>` it supports and does not fall back from an error.
 - **`width`/`height` are probed off the output bytes,** never echoed from the request. A width
   above the intrinsic one clamps to the source and reports the source's size, so the box the
   browser reserves is the box the bytes fill.
-- `blurPlaceholder()` returns a 16px-wide PNG `data:` URI, ready for `ImageInput.blurDataUrl`.
+- `blurPlaceholder()` returns a PNG `data:` URI at most 32px on its long edge, ready for
+  `ImageInput.blurDataUrl`.
 
 ### Reading the URL back
 

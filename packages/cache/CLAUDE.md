@@ -27,6 +27,14 @@ Tier 1. Tagged caching + THE invalidation graph.
   second mechanism. `cover()` widens a fence for joiners' tags (`createCacheStack.read` only). A
   fence never fails a read — it declines to publish. The one process-global here with no `isolate*()`
   seam, structurally: a fence samples the current generation.
+- **The Redis tier keeps a second fence, for the FLEET** (`CacheTier.fence`, `tier-fence.ts`,
+  `redis-fence.ts`): a bust `SET`s a leased generation BEFORE it reads its buckets; `stack.read`
+  samples before `load()` and asks AFTER the tier's `set`. `busted` withdraws the whole fill,
+  `unprovable` (Redis unreachable, past `FENCE_PROOF_WINDOW_MS`, an unsampled joiner tag) skips
+  that tier only. Plain `SET`/`GET`, never a script — so `redis-fence.test.ts` proves it on the
+  fake. Tags only; `drop`/`write` by key still fence one process.
+- **A refused `set` in `fill` is followed by a `del` in that tier.** `LruCache.set` called
+  directly still leaves the entry it refused to replace.
 - One graph. `graph.ts` exports functions over module state and **no constructor**; no second registry.
 - Tag order is `TIER_ORDER`, never registration order. `sortTiers()` enforces it.
 - **The rung NAMES are `@ultimat3/core`'s (`CACHE_TIERS`); the ladder is this package's.** `TierName`
@@ -111,7 +119,16 @@ Tier 1. Tagged caching + THE invalidation graph.
   from `tiers` + `isr` + `liveQueries`, never `cdn`.
 - A purge driver is selected by `selectPurgeDriver` from the environment, never `app.config.ts`. Two
   CDN credentials, or half a pair, is refused. The token never reaches a printed string.
-- `assertPurgeableKeys` refuses whitespace or a comma in a key **before** the request.
+- `assertPurgeableKeys` refuses whitespace or a comma in a key **before** the request — and at
+  EMISSION (`surrogateKeys`, `cacheHeaders`), where an unpurgeable key would otherwise be tagged.
+- **The edge speaks `tagMatches` through two key lists in `cdn.ts`**: a response carries each wire
+  tag plus `e:<entity>`; a row bust purges `<entity>:<id>` + `<entity>`, a collection bust
+  `e:<entity>` + `<entity>`. Never purge `e:` for a row. `tag-parity.test.ts` runs one fixture
+  table through memo, LRU, Redis and CDN.
+- **The one shipped emitter of surrogate keys is `toResult` in `packages/render/src/render-isr.ts`**
+  (`surrogateKeys(tags, 'isr')`, `As of 2026-10-02`). `cacheHeaders` has no production caller, and
+  `@ultimat3/http`'s `applyCacheHeaders` joins `CacheHint.tags` verbatim — a caller hands it
+  `surrogateKeys` output. Render screens `revalidate.tags` at registration with this function.
 - `retryable` on `X_CACHE_PURGE_FAILED` is core's `isRetryableStatus` (re-exported by
   `purge-http.ts`), plus any request with no status, and `CachePurgeFailedError` passes it through
   as a per-instance `retry` — never `registerErrorRetry`, one code covers a 401 and a 429.
@@ -133,13 +150,15 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `graph.ts` | tag → dependents (cache keys, ISR routes, CDN paths, live queries) |
 | `tiers.ts` | `CacheTier`, `TIER_ORDER`, `TierLabel`, `assertTtl`, read-through stack |
 | `fence.ts` | the invalidation fence a fill (here or in `query`) checks before it publishes |
+| `tier-fence.ts` | `TierFence`/`FenceVerdict`, and how a fill samples and asks a shared tier's fence |
+| `redis-fence.ts` | the leased generation keys a bust writes and a fill watches |
 | `set-options.ts` | how two callers' `CacheSetOptions` combine, and the `null`-load TTL |
 | `tier-failures.ts` | `bestEffort()`, and the bounded log of refusals it absorbs |
 | `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `redis.ts` | `Bun.redis` tier, build-namespaced keys, hash-tagged buckets, one script call per tag |
 | `single-flight.ts` | the door onto `@ultimat3/core`'s `createSingleFlight` — one in-flight `load()` per key, shared by every concurrent miss. No implementation of its own since 2026-08-23 |
-| `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, the `PurgeDriver` seam, `noopPurgeDriver` |
+| `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, `surrogateKeys`, the purge key list, the `PurgeDriver` seam |
 | `purge-http.ts` | the HTTP half both remote drivers share: one POST, batching, key guard, and core's retryable table re-exported |
 | `purge-fastly.ts` | `fastlyPurgeDriver`: surrogate-key batch purge, `purge_all` |
 | `purge-cloudflare.ts` | `cloudflarePurgeDriver`: cache-tag purge, `purge_everything` |

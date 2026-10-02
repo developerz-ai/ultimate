@@ -19,9 +19,9 @@ export interface RobotsConfig {
   environment?: Environment | undefined;
   groups?: readonly RobotsGroup[];
   /**
-   * Paths every crawler is kept out of — `app.config.ts`'s `seo.robots.disallow`. Added to the
-   * default `User-agent: *` group, or to each declared group that names `*`. Production only: a
-   * non-production `robots.txt` already disallows everything.
+   * Paths every crawler is kept out of — `app.config.ts`'s `seo.robots.disallow`. Added to EVERY
+   * group, and a `User-agent: *` group is emitted to carry it when none is declared. Production
+   * only: a non-production `robots.txt` already disallows everything.
    */
   disallow?: readonly string[];
   /** Sitemap paths or absolute URLs. Only emitted in production. */
@@ -67,12 +67,19 @@ export function buildRobots(config: RobotsConfig): string {
     config.groups === undefined || config.groups.length === 0
       ? [{ userAgent: '*', allow: ['/'] }]
       : config.groups;
+  // A crawler obeys the ONE group that names it most specifically and never reads `*` beside it,
+  // so "every crawler" means every group. Appending to `*` alone left the list out of exactly
+  // the groups an app had written for a named crawler — and out of the file when no group named `*`.
   const extra = config.disallow ?? [];
-  const groups = declared.map((group) =>
-    extra.length === 0 || !agents(group.userAgent).includes('*')
-      ? group
-      : { ...group, disallow: [...(group.disallow ?? []), ...extra] },
-  );
+  const everywhere = declared.map((group) => ({
+    ...group,
+    disallow: [...new Set([...(group.disallow ?? []), ...extra])],
+  }));
+  const namesEveryone = declared.some((group) => agents(group.userAgent).includes('*'));
+  const groups: readonly RobotsGroup[] =
+    extra.length === 0 || namesEveryone
+      ? everywhere
+      : [...everywhere, { userAgent: '*', disallow: extra }];
 
   for (const group of groups) {
     for (const agent of agents(group.userAgent)) lines.push(`User-agent: ${agent}`);

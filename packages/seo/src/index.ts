@@ -31,10 +31,12 @@ export type {
   ResponsiveImageOptions,
 } from './images';
 export {
+  DEFAULT_FORMATS,
   DEFAULT_WIDTHS,
   FORMAT_ORDER,
   IMAGE_QUERY_KEYS,
   inlineBlur,
+  MAX_IMAGE_WIDTH,
   MIME_TYPES,
   parseImageQuery,
   renderPicture,

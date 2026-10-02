@@ -93,4 +93,17 @@ describe('automatic hreflang', () => {
     expect(hreflangTag('not a tag')).toBe('not a tag');
     expect(ogLocaleTag('pt-br')).toBe('pt_BR');
   });
+
+  test('og:locale is language_TERRITORY and nothing else', () => {
+    // Open Graph has no slot for a script: `zh_Hant_TW` is a value no consumer recognises, so
+    // the tag was dropped and the page fell back to `en_US`.
+    expect(ogLocaleTag('zh-hant-tw')).toBe('zh_TW');
+    expect(ogLocaleTag('sr-Latn-RS')).toBe('sr_RS');
+    expect(ogLocaleTag('de-DE-1996')).toBe('de_DE');
+    expect(ogLocaleTag('en-US-u-ca-gregory')).toBe('en_US');
+    expect(ogLocaleTag('en')).toBe('en');
+    expect(ogLocaleTag('zh-Hant')).toBe('zh');
+    // Total, like `hreflangTag`: this runs per render.
+    expect(ogLocaleTag('not a tag')).toBe('not a tag');
+  });
 });

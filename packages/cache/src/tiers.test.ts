@@ -262,7 +262,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
     const value = await stack.read('k', () => Promise.resolve('loaded'));
 
     expect(value).toBe('loaded');
-    expect(calls).toEqual(['get:lru:k', 'get:redis:k', 'set:lru:k', 'set:redis:k']);
+    expect(calls).toEqual(['get:lru:k', 'get:redis:k', 'set:lru:k', 'del:lru:k', 'set:redis:k']);
     expect(recentTierFailures().length).toBe(1);
   });
 
@@ -325,7 +325,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
 
     await stack.write('k', 'v');
 
-    expect(calls).toEqual(['set:lru:k', 'set:redis:k']);
+    expect(calls).toEqual(['set:lru:k', 'del:lru:k', 'set:redis:k']);
     expect(recentTierFailures()[0]).toMatchObject({ tier: 'lru', op: 'set' });
   });
 

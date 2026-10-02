@@ -119,6 +119,32 @@ describe('unit · dev storage · the served object', () => {
     expect((await again.arrayBuffer()).byteLength).toBe(0);
   });
 
+  test('Last-Modified is the disk’s own date, and is OMITTED when the disk reported none', async () => {
+    const dated = await call(storageRoutes({ storage }));
+    expect(new Date(dated.headers.get('last-modified') ?? '').getTime()).toBeGreaterThan(0);
+
+    // A provider that sends no LastModified: the object carries no date at all, and a header
+    // invented for it (`Invalid Date`, or 1970) is a validator every cache would then trust.
+    const inner = storage.disk();
+    resetStorage();
+    const undated = defineStorage({
+      disks: {
+        local: {
+          ...inner,
+          async get(key: string) {
+            const read = await inner.get(key);
+            const { lastModified: _unreported, ...object } = read.object;
+            return { object, bytes: read.bytes };
+          },
+        },
+      },
+    });
+    const response = await call(storageRoutes({ storage: undated }));
+    expect(response.status).toBe(200);
+    expect(response.headers.has('last-modified')).toBe(false);
+    expect(response.headers.get('etag')).toBe(dated.headers.get('etag'));
+  });
+
   test('the route declares a private cache posture that varies on identity', () => {
     const [route] = storageRoutes({ storage });
     // Declared, not applied here: the pipeline's `cache-headers` stage is what writes the header.

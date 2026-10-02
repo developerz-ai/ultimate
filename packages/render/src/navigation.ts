@@ -172,12 +172,11 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     signal: AbortSignal,
   ) => {
     if (method === 'POST') {
+      // Before AND once it settles, landed or not: a guess sent while the write was in flight
+      // may have rendered the old state, and a write that failed here may still have committed.
       forget();
-      return request(url, 'soft', {
-        method,
-        ...(options.body === undefined ? {} : { body: options.body }),
-        signal,
-      });
+      const body = options.body === undefined ? {} : { body: options.body };
+      return request(url, 'soft', { method, ...body, signal }).finally(forget);
     }
     const held = cache.peek(url);
     cache.delete(url);

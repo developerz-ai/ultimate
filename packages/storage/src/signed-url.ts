@@ -12,7 +12,8 @@ import { assertSafeKey, isSafeKey } from './path';
  * implementation now lives in `@ultimat3/core`, shared with `@ultimat3/auth`. */
 export { timingSafeEqual };
 
-export const SIGNED_URL_VERSION = 'v1';
+/** `v2` since the canonical string carries the base path: a `v1` signature names no disk. */
+export const SIGNED_URL_VERSION = 'v2';
 export const DEFAULT_SIGNED_URL_TTL_MS = 900_000;
 /** The dev server mounts the download/upload route here; S3 disks never use it. */
 export const DEFAULT_SIGNED_URL_BASE = '/_storage';
@@ -70,10 +71,34 @@ export type SignedUrlVerification =
   | { readonly ok: true; readonly constraints: SignedUrlConstraints }
   | { readonly ok: false; readonly reason: SignedUrlFailure; readonly detail: string };
 
-/** Newline-separated and order-fixed: an ambiguous canonical form is a forgeable one. */
-export function canonicalRequest(constraints: SignedUrlConstraints): string {
+const trimBase = (base: string): string => base.replace(/\/+$/, '');
+
+/**
+ * The PATH a base mounts at — what a route sees, and so the only part of a base both halves can
+ * agree on. An absolute `baseUrl` (`https://cdn.example.com/_storage/local`) names an origin too,
+ * and the verifier compared a request's pathname against the whole string: every URL minted under
+ * one was `malformed`. Never throws — a base `URL` cannot parse is compared as written.
+ */
+export function signedUrlBasePath(baseUrl: string): string {
+  try {
+    return trimBase(new URL(baseUrl, 'http://storage.invalid').pathname);
+  } catch {
+    return trimBase(baseUrl);
+  }
+}
+
+/**
+ * Newline-separated and order-fixed: an ambiguous canonical form is a forgeable one.
+ *
+ * `basePath` is the disk: `/_storage/<registered name>`. Every local disk signs with the one
+ * `STORAGE_SIGNING_SECRET`, so without it a URL for `uploads/<key>` verified on `private/<key>`
+ * with only the path segment edited — a grant for one disk was a grant for all of them. The
+ * origin is deliberately outside it: the verifying route is handed a path.
+ */
+export function canonicalRequest(constraints: SignedUrlConstraints, basePath: string): string {
   return [
     SIGNED_URL_VERSION,
+    basePath,
     constraints.method,
     constraints.key,
     String(constraints.expiresAt),
@@ -87,6 +112,7 @@ const encoder = new TextEncoder();
 export async function signConstraints(
   secret: string,
   constraints: SignedUrlConstraints,
+  basePath: string,
 ): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw',
@@ -95,11 +121,14 @@ export async function signConstraints(
     false,
     ['sign'],
   );
-  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(canonicalRequest(constraints)));
+  const mac = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    encoder.encode(canonicalRequest(constraints, basePath)),
+  );
   return [...new Uint8Array(mac)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-const trimBase = (base: string): string => base.replace(/\/+$/, '');
 const encodeKey = (key: string): string => key.split('/').map(encodeURIComponent).join('/');
 
 /**
@@ -148,8 +177,11 @@ export async function buildSignedUrl(input: SignedUrlInput): Promise<string> {
   if (constraints.contentType !== undefined) {
     params.set(SIGNED_URL_PARAMS.contentType, constraints.contentType);
   }
-  params.set(SIGNED_URL_PARAMS.signature, await signConstraints(input.secret, constraints));
   const base = trimBase(input.baseUrl ?? DEFAULT_SIGNED_URL_BASE);
+  params.set(
+    SIGNED_URL_PARAMS.signature,
+    await signConstraints(input.secret, constraints, signedUrlBasePath(base)),
+  );
   return `${base}/${encodeKey(key)}?${params.toString()}`;
 }
 
@@ -222,10 +254,11 @@ export async function verifySignedUrl(input: VerifySignedUrlInput): Promise<Sign
   }
   const signature = url.searchParams.get(SIGNED_URL_PARAMS.signature);
   if (signature === null) return fail('malformed', `no ${SIGNED_URL_PARAMS.signature} parameter`);
-  const parsed = parseConstraints(url, trimBase(input.baseUrl ?? DEFAULT_SIGNED_URL_BASE));
+  const basePath = signedUrlBasePath(input.baseUrl ?? DEFAULT_SIGNED_URL_BASE);
+  const parsed = parseConstraints(url, basePath);
   if (typeof parsed === 'string') return fail(parsed, `${url.pathname} is not a signable request`);
 
-  const expected = await signConstraints(input.secret, parsed);
+  const expected = await signConstraints(input.secret, parsed, basePath);
   if (!timingSafeEqual(expected, signature)) {
     return fail('signature-mismatch', 'the constraints do not match the signature');
   }

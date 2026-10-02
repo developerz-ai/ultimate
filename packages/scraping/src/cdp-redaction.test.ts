@@ -66,6 +66,7 @@ const capture = (): Captured => {
       return Promise.resolve(object(key));
     },
     get: unsupported('get'),
+    stat: unsupported('stat'),
     delete: unsupported('delete'),
     stream: unsupported('stream'),
     copy: unsupported('copy'),

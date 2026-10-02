@@ -153,3 +153,111 @@ describe('buildFeed dates', () => {
     });
   });
 });
+
+describe('authors, rights and icon reach every format that has a place for them', () => {
+  const AUTHORED: FeedChannel = {
+    ...CHANNEL,
+    author: { name: 'Ada & Co', email: 'ada@ultimate.dev', url: 'https://ultimate.dev/ada' },
+    copyright: '© 2026 Ultimate <dev>',
+    icon: 'https://ultimate.dev/icon.png',
+  };
+
+  test('Atom carries the feed author — RFC 4287 §4.1.1 requires one', () => {
+    const { atom } = buildFeed(AUTHORED, ITEMS);
+    expect(atom).toContain(
+      '  <author><name>Ada &amp; Co</name><email>ada@ultimate.dev</email><uri>https://ultimate.dev/ada</uri></author>',
+    );
+  });
+
+  test('an author with only a name emits only a name', () => {
+    const { atom } = buildFeed({ ...CHANNEL, author: { name: 'Ada' } }, ITEMS);
+    expect(atom).toContain('  <author><name>Ada</name></author>');
+    expect(atom).not.toContain('<email>');
+    expect(atom).not.toContain('<uri>');
+  });
+
+  test('Atom carries rights and icon', () => {
+    const { atom } = buildFeed(AUTHORED, ITEMS);
+    expect(atom).toContain('  <rights>© 2026 Ultimate &lt;dev&gt;</rights>');
+    expect(atom).toContain('  <icon>https://ultimate.dev/icon.png</icon>');
+  });
+
+  test('a channel with none of them emits none of them', () => {
+    const { atom } = buildFeed(CHANNEL, ITEMS);
+    for (const element of ['<author>', '<rights>', '<icon>']) expect(atom).not.toContain(element);
+  });
+
+  test('an Atom entry author carries email and uri too', () => {
+    const first = ITEMS[0];
+    if (first === undefined) expect.unreachable('the fixture has an item');
+    const { atom } = buildFeed(CHANNEL, [
+      { ...first, author: { name: 'Lin', email: 'lin@ultimate.dev', url: 'https://l.in' } },
+    ]);
+    expect(atom).toContain(
+      '      <author><name>Lin</name><email>lin@ultimate.dev</email><uri>https://l.in</uri></author>',
+    );
+  });
+
+  test('an RSS item author with an email is <author>, in the form RSS 2.0 asks for', () => {
+    const first = ITEMS[0];
+    if (first === undefined) expect.unreachable('the fixture has an item');
+    const { rss } = buildFeed(CHANNEL, [
+      { ...first, author: { name: 'Lin & Co', email: 'lin@ultimate.dev' } },
+    ]);
+    expect(rss).toContain('      <author>lin@ultimate.dev (Lin &amp; Co)</author>');
+    expect(rss).not.toContain('dc:creator');
+    expect(rss).not.toContain('xmlns:dc');
+  });
+
+  test('an RSS item author with no email is dc:creator, and the namespace is declared', () => {
+    // RSS 2.0's <author> is an e-mail address by definition; a bare name there fails validation.
+    const first = ITEMS[0];
+    if (first === undefined) expect.unreachable('the fixture has an item');
+    const { rss } = buildFeed(CHANNEL, [{ ...first, author: { name: 'Lin' } }]);
+    expect(rss).toContain('      <dc:creator>Lin</dc:creator>');
+    expect(rss).toContain('xmlns:dc="http://purl.org/dc/elements/1.1/"');
+    expect(rss).not.toContain('<author>');
+  });
+
+  test('an RSS feed with no authored item declares no namespace it does not use', () => {
+    expect(buildFeed(CHANNEL, ITEMS).rss).not.toContain('xmlns:dc');
+  });
+});
+
+describe('an item image reaches every format, not JSON Feed alone', () => {
+  const pictured = (): FeedItem => {
+    const first = ITEMS[0];
+    if (first === undefined) return expect.unreachable('the fixture has an item');
+    return { ...first, image: 'https://ultimate.dev/img/a.png?w=640&f=webp' };
+  };
+
+  test('Atom links it as an enclosure', () => {
+    const { atom } = buildFeed(CHANNEL, [pictured()]);
+    expect(atom).toContain(
+      '      <link rel="enclosure" href="https://ultimate.dev/img/a.png?w=640&amp;f=webp"/>',
+    );
+  });
+
+  test('RSS carries it as media:content, and declares the namespace', () => {
+    // Not <enclosure>: RSS 2.0 requires a byte `length` there, and nothing here knows one.
+    const { rss } = buildFeed(CHANNEL, [pictured()]);
+    expect(rss).toContain(
+      '      <media:content url="https://ultimate.dev/img/a.png?w=640&amp;f=webp" medium="image"/>',
+    );
+    expect(rss).toContain('xmlns:media="http://search.yahoo.com/mrss/"');
+    expect(rss).not.toContain('<enclosure');
+  });
+
+  test('a site-relative image is made absolute, as the feed URL is', () => {
+    const { atom, rss } = buildFeed(CHANNEL, [{ ...pictured(), image: '/img/a.png' }]);
+    expect(atom).toContain('href="https://ultimate.dev/img/a.png"');
+    expect(rss).toContain('url="https://ultimate.dev/img/a.png"');
+  });
+
+  test('a feed with no pictured item declares no media namespace and links no enclosure', () => {
+    const { atom, rss } = buildFeed(CHANNEL, ITEMS);
+    expect(rss).not.toContain('xmlns:media');
+    expect(rss).not.toContain('media:content');
+    expect(atom).not.toContain('rel="enclosure"');
+  });
+});

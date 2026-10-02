@@ -224,8 +224,7 @@ runtime, so one image deploys to every environment.
 | `FASTLY_API_TOKEN` + `FASTLY_SERVICE_ID` | Fastly | batch surrogate-key purge, 256 keys per call |
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` | Cloudflare | cache-tag purge, 30 tags per call, Enterprise zones |
 
-The surrogate keys are the tags — `post`, `post:1` — sent on every `public`/`immutable` response as `Surrogate-Key` (space-separated, what Fastly reads) and `Cache-Tag` (comma-separated, what Cloudflare reads), so the edge purges exactly what
-`invalidates: [tag.post]` busts. `As of 2026-09-23`; `x-cache-tags`, which neither edge reads, is gone.
+The surrogate keys are built from the tags by `@ultimat3/cache`'s `surrogateKeys()` — `post`, `post:1`, plus one `e:<entity>` index key per entity ([Caching](Caching-And-Invalidation#the-cdn-leg)). They are sent on every `isr` document whose route declares `revalidate.tags`, as `Surrogate-Key` (space-separated, what Fastly reads) and `Cache-Tag` (comma-separated, what Cloudflare reads), so the edge purges what `invalidates: [tag.post]` busts. `As of 2026-10-02` — before it no shipped response carried either header; `x-cache-tags`, which neither edge reads, is gone.
 
 | Failure | Code | Raised by | Lands |
 |---|---|---|---|
@@ -258,7 +257,7 @@ seo: {
 | field | type | default | notes |
 |---|---|---|---|
 | `site.origin` | `string \| null` | `null` | scheme + host (+ port) only; a path, query or fragment is `X_CONFIG_INVALID`. Canonical, `og:url`, hreflang and the sitemap are absolute against the first of `APP_URL`, `SITE_ORIGIN`, `site.origin`; with none, the request's own origin (served) or `https://localhost` (static build, which warns on stderr when `ULTIMATE_ENV=production`) |
-| `seo.robots.disallow` | `string[]` | `[]` | each starts with `/`. Added to the production `User-agent: *` group. Any other environment still emits `Disallow: /` alone |
+| `seo.robots.disallow` | `string[]` | `[]` | each starts with `/`. Added to **every** production group — a crawler obeys only the group that names it — with a `User-agent: *` group emitted when none is declared. Any other environment still emits `Disallow: /` alone |
 | `seo.sitemap.extra` | `string[]` | `[]` | public pages outside `site/` to list — a path (`/verificar`) answered by an `app/` route with no `policy`; listed per routed locale with hreflang alternates like a `site/` page. No origin, query or fragment (`X_CONFIG_INVALID`); a path no ungated `app/` route answers is `X_SITEMAP_EXTRA_INVALID` when the sitemap is built. `As of 22.10` |
 | `seo.sitemap.lastmod` | `'none' \| 'git' \| 'mtime' \| 'build'` | `'none'` | each `<lastmod>`: `'git'` the last commit touching the route's source file (its mtime where there is no work tree — a container image), `'mtime'` the file's mtime, `'build'` one timestamp for every URL. Read once per file per process. `As of 22.10` |
 
@@ -381,7 +380,7 @@ An **embedder** that builds its own server — `createServer({ routes, config: d
 
 | Call | Options | Notes |
 |---|---|---|
-| `buildRobots(config)` | `baseUrl`, `environment?`, `groups?`, `sitemaps?`, `extra?` | **fail-closed**: only the exact string `production` opts a deploy into indexing, so staging, a laptop, a typo and an unset `ULTIMATE_ENV` all emit `Disallow: /` — a branch deploy that gets indexed outranks and cannibalises the real site. `environment` omitted resolves from `ULTIMATE_ENV`, and an unreadable one falls back to core's default rather than 500ing a `robots.txt` |
+| `buildRobots(config)` | `baseUrl`, `environment?`, `groups?`, `disallow?`, `sitemaps?`, `extra?` | **fail-closed**: only the exact string `production` opts a deploy into indexing, so staging, a laptop, a typo and an unset `ULTIMATE_ENV` all emit `Disallow: /` — a branch deploy that gets indexed outranks and cannibalises the real site. `environment` omitted resolves from `ULTIMATE_ENV`, and an unreadable one falls back to core's default rather than 500ing a `robots.txt` |
 | `buildSitemap(routes, options)` | `baseUrl`, `locales?`, `localizePath?`, `defaultLocale?`, `maxUrls?`, `lastmod?` | splits into an index past `SITEMAP_MAX_URLS` (50,000). `maxUrls` must be a positive integer — `0` never advances the chunk cursor and used to allocate empty slices until the box ran out of memory |
 
 `baseUrl` is the argument every one of them takes, so the canonical origin stays an env key the app reads (`APP_URL`) and never a config field. There is no `seo.lighthouse` gate and no `seo.ogImage` renderer `As of 2026-08-22`.

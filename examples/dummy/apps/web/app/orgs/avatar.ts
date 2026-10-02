@@ -81,11 +81,15 @@ export const mintAvatarGrant = (input: AvatarGrantInput): Promise<UploadGrant> =
  * ambiguous. Earlier uploads stay on the disk; reclaiming them needs the key on the member row,
  * a column this app deliberately does not have, so the prefix is the record and this picks.
  */
+/** A disk that reported no date sorts before every dated object; the key still breaks the tie. */
+const modifiedAt = (object: StorageListEntry): number =>
+  object.lastModified?.getTime() ?? Number.NEGATIVE_INFINITY;
+
 const newest = (objects: readonly StorageListEntry[]): StorageListEntry | undefined =>
   objects.reduce<StorageListEntry | undefined>((best, object) => {
     if (best === undefined) return object;
-    const delta = object.lastModified.getTime() - best.lastModified.getTime();
-    return delta > 0 || (delta === 0 && object.key > best.key) ? object : best;
+    const [at, bestAt] = [modifiedAt(object), modifiedAt(best)];
+    return at > bestAt || (at === bestAt && object.key > best.key) ? object : best;
   }, undefined);
 
 /**

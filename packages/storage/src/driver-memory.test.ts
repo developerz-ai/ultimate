@@ -78,18 +78,18 @@ describe('the memory disk answers as the local disk does', () => {
       const put = await driver.put('org/o1/m.json', bytes('{}'), { metadata });
       metadata['owner'] = 'mallory';
       (put.metadata as Record<string, string>)['owner'] = 'eve';
-      put.lastModified.setTime(0);
+      put.lastModified?.setTime(0);
       const read = await driver.get('org/o1/m.json');
       (read.object.metadata as Record<string, string>)['owner'] = 'eve';
-      read.object.lastModified.setTime(0);
+      read.object.lastModified?.setTime(0);
       const [listed] = (await driver.list({ prefix: 'org/o1/' })).objects;
-      listed?.lastModified.setTime(0);
+      listed?.lastModified?.setTime(0);
       const copied = await driver.copy('org/o1/m.json', 'org/o1/n.json');
       (copied.metadata as Record<string, string>)['owner'] = 'eve';
       for (const key of ['org/o1/m.json', 'org/o1/n.json']) {
         const again = (await driver.get(key)).object;
         // The local disk's `lastModified` is the file's mtime, so "never the epoch" is the claim.
-        expect([name, key, again.metadata, again.lastModified.getTime() > 0]).toEqual([
+        expect([name, key, again.metadata, (again.lastModified?.getTime() ?? 0) > 0]).toEqual([
           name,
           key,
           { owner: 'ada' },

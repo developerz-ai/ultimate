@@ -23,10 +23,12 @@ import {
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { deleteFailed, isStorageError } from './errors';
+import { uploadPolicy } from './upload';
 
 const ORG = 'org-1';
 const TARGET = { entity: 'post', id: 'p-1', field: 'cover' } as const;
 const START = '2026-07-26T12:00:00.000Z';
+const POLICY = uploadPolicy();
 
 let root = '';
 let disk: StorageDriver;
@@ -87,7 +89,13 @@ describe('promoteAttachment', () => {
     const key = pendingKey(ORG, 'u-1.png');
     await disk.put(key, bytesOf('cover-bytes'), { contentType: 'image/png' });
 
-    const object = await promoteAttachment({ disk, key, orgId: ORG, target: TARGET });
+    const object = await promoteAttachment({
+      disk,
+      key,
+      orgId: ORG,
+      target: TARGET,
+      policy: POLICY,
+    });
     expect(object.key).toBe('org/org-1/post/p-1/cover/u-1.png');
     expect(object.contentType).toBe('image/png');
     expect(await disk.exists(key)).toBe(false);
@@ -99,7 +107,7 @@ describe('promoteAttachment', () => {
     await disk.put(key, bytesOf('x'), { contentType: 'image/png' });
     let caught: unknown;
     try {
-      await promoteAttachment({ disk, key, orgId: ORG, target: TARGET });
+      await promoteAttachment({ disk, key, orgId: ORG, target: TARGET, policy: POLICY });
     } catch (error) {
       caught = error;
     }
@@ -236,7 +244,7 @@ describe('quarantine', () => {
 
     let caught: unknown;
     try {
-      await promoteAttachment({ disk, key, orgId: ORG, target: TARGET });
+      await promoteAttachment({ disk, key, orgId: ORG, target: TARGET, policy: POLICY });
     } catch (error) {
       caught = error;
     }
@@ -257,7 +265,13 @@ describe('quarantine', () => {
     expect(isQuarantinedKey(released, ORG)).toBe(false);
     expect(await disk.exists(key)).toBe(false);
 
-    const object = await promoteAttachment({ disk, key: released, orgId: ORG, target: TARGET });
+    const object = await promoteAttachment({
+      disk,
+      key: released,
+      orgId: ORG,
+      target: TARGET,
+      policy: POLICY,
+    });
     expect(object.key).toBe(attachmentKey(ORG, TARGET, 'u-1.png'));
     expect(object.contentType).toBe('image/png');
   });
@@ -292,7 +306,7 @@ describe('promoteAttachment takes a PENDING key and nothing else', () => {
 
     let caught: unknown;
     try {
-      await promoteAttachment({ disk, key: victim, orgId: ORG, target: TARGET });
+      await promoteAttachment({ disk, key: victim, orgId: ORG, target: TARGET, policy: POLICY });
     } catch (error) {
       caught = error;
     }

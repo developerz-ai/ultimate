@@ -6,12 +6,14 @@
 import type { CacheTierName, Clock, Scheduler } from '@ultimat3/core';
 import { CACHE_TIERS, systemClock } from '@ultimat3/core';
 import { CacheJitterInvalidError, CacheLimitInvalidError, CacheTtlInvalidError } from './errors';
-import type { CacheFence } from './fence';
+import type { CacheFence, FenceScope } from './fence';
 import { markInvalidated, sampleFence } from './fence';
 import { mergeSetOptions, tagsAddedSince, ttlOptionsFor } from './set-options';
 import { createSingleFlight } from './single-flight';
 import type { CacheTag } from './tags';
 import { bestEffort } from './tier-failures';
+import type { TierFence, TierFences } from './tier-fence';
+import { sampleTierFences, verdictOf } from './tier-fence';
 
 /**
  * The rungs, spelled in `@ultimat3/core` and nowhere else. Tier 0 owns the NAMES because
@@ -188,6 +190,12 @@ export interface CacheTier {
   set<T>(key: string, value: T, options?: CacheSetOptions): Promise<void>;
   del(key: string): Promise<void>;
   invalidateTags(tags: readonly CacheTag[]): Promise<TierInvalidation>;
+  /**
+   * A fence held in the tier's OWN store, for a tier other processes write too. Sampled before
+   * `load()` and asked after this tier's `set`, so a bust another replica ran — one this process
+   * may never be told about — still stops the fill (`tier-fence.ts`). Omitted by in-process tiers.
+   */
+  fence?(scope: FenceScope): Promise<TierFence>;
 }
 
 export interface CacheStack {
@@ -289,6 +297,7 @@ export function createCacheStack(
     value: T,
     setOptions?: CacheSetOptions,
     fence?: CacheFence,
+    shared?: TierFences,
   ): Promise<void> => {
     const resolved = ttlOptionsFor(value, setOptions);
     const written: CacheTier[] = [];
@@ -297,8 +306,28 @@ export function createCacheStack(
         await rollback(written, key);
         return;
       }
-      await bestEffort(tier.name, 'set', key, () => tier.set(key, value, resolved));
+      // A refused `set` leaves whatever the tier held before — the value this fill supersedes —
+      // and `bestEffort` swallows the refusal, so that tier would go on answering with it for its
+      // whole lease. The refusal is still the one recorded failure; the `del` is the repair.
+      let refused = false;
+      await bestEffort(tier.name, 'set', key, async () => {
+        try {
+          await tier.set(key, value, resolved);
+        } catch (error) {
+          refused = true;
+          throw error;
+        }
+      });
+      if (refused) await bestEffort(tier.name, 'del', key, () => tier.del(key));
       written.push(tier);
+      // Asked AFTER the set: the other replica's bust either moved the generation by now, or
+      // read its buckets late enough to find what was just written.
+      const verdict = await verdictOf(tier, key, shared);
+      if (verdict === 'busted') {
+        await rollback(written, key);
+        return;
+      }
+      if (verdict === 'unprovable') await bestEffort(tier.name, 'del', key, () => tier.del(key));
     }
   };
 
@@ -372,12 +401,21 @@ export function createCacheStack(
             key,
             ...(setOptions?.tags === undefined ? {} : { tags: setOptions.tags }),
           });
+          // The same sample, taken in each tier other replicas also write. One round trip, and
+          // only when such a tier is on the ladder.
+          const fleet = await sampleTierFences(ordered, key, {
+            key,
+            ...(setOptions?.tags === undefined ? {} : { tags: setOptions.tags }),
+          });
           const value = await load();
           // Joiners merged their own tags into the load they shared; covering is retroactive, so
           // a tag that arrived mid-load is fenced back to the sample rather than from now.
           const publish = async (options: CacheSetOptions | undefined): Promise<void> => {
-            if (options?.tags !== undefined) fence.cover({ tags: options.tags });
-            await fill(key, value, options, fence);
+            if (options?.tags !== undefined) {
+              fence.cover({ tags: options.tags });
+              for (const tierFence of fleet.values()) tierFence.cover({ tags: options.tags });
+            }
+            await fill(key, value, options, fence, fleet);
           };
           const merged = shared() ?? setOptions;
           await publish(merged);

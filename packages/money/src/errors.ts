@@ -165,6 +165,18 @@ export function digitsInvalid(digits: number): MoneyError {
   });
 }
 
+/**
+ * A `formatMoney` digit count `Intl.NumberFormat` cannot be built with. Never echoes the rejected
+ * value into the `fix:` — an instruction that raises the error it is answering is not one.
+ */
+export function fractionDigitsInvalid(digits: number, max: number): MoneyError {
+  return new MoneyError({
+    code: 'X_MONEY_SCALE_INVALID',
+    cause: `fractionDigits must be a whole number between 0 and ${max}, got ${String(digits)}`,
+    fix: "formatMoney(amount, locale, { fractionDigits: 2 }) — or omit fractionDigits and take the amount's own scale",
+  });
+}
+
 /** A scale outside 0…MAX_MONEY_SCALE names no decimal place a `minor` could count in. */
 export function scaleInvalid(scale: number): MoneyError {
   return new MoneyError({

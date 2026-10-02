@@ -2,7 +2,12 @@
 // rejected upload must tell the caller which constraint fired and where that constraint is
 // configured, or the caller retries the same bytes forever.
 
-import { registerErrorCodes, renderThrowable, UltimateError } from '@ultimat3/core';
+import {
+  registerErrorCodes,
+  renderFixLiteral,
+  renderThrowable,
+  UltimateError,
+} from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const STORAGE_OWNED_ERROR_CODES = [
@@ -21,6 +26,9 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_LIST_FAILED',
   'X_STORAGE_QUARANTINED',
   'X_STORAGE_NOT_PENDING',
+  'X_STORAGE_KEY_CONFLICT',
+  'X_STORAGE_PUT_FAILED',
+  'X_STORAGE_READ_FAILED',
 ] as const;
 
 /**
@@ -57,6 +65,9 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_LIST_FAILED: 'the objects could not be listed',
   X_STORAGE_QUARANTINED: 'the object is still in quarantine',
   X_STORAGE_NOT_PENDING: 'the key is not a pending upload',
+  X_STORAGE_KEY_CONFLICT: 'the key collides with another key on the local disk',
+  X_STORAGE_PUT_FAILED: 'the object could not be written',
+  X_STORAGE_READ_FAILED: 'the object could not be read',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws
@@ -161,6 +172,47 @@ export const putTooLarge = (
     meta: { disk, key, bytes, maxBytes },
   });
 
+/**
+ * The SERVER-side `get()` ceiling — `putTooLarge`'s twin. `get()` buffers the whole object, and an
+ * object's size is not this process's to choose: a presigned PUT lands in the bucket unmeasured,
+ * so a later `get()` of it was heap growth the uploader picked.
+ */
+export const getTooLarge = (
+  disk: string,
+  key: string,
+  bytes: number,
+  maxBytes: number,
+): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_TOO_LARGE',
+    cause: `"${key}" is ${bytes}B against the ${disk} disk's get ceiling of ${maxBytes}B, and get() buffers the whole object`,
+    fix:
+      `read it with disk.stream(key) instead of get(), or raise the ceiling: ` +
+      (disk === 's3'
+        ? `s3Driver({ bucket, maxGetBytes: ${bytes} })`
+        : disk === 'memory'
+          ? `memoryDriver({ maxGetBytes: ${bytes} })`
+          : `localDriver({ root, maxGetBytes: ${bytes} })`),
+    meta: { disk, key, bytes, maxBytes },
+  });
+
+/**
+ * The local disk stores an object as a FILE at its key, so a key cannot also be the directory of
+ * another: `put('a')` then `put('a/b')`, or the reverse, or the same pair one tree over in the
+ * sidecars (`a` and `a.json/b`). It surfaced as a bare `ENOTDIR` / `EISDIR`. S3 and the memory
+ * disk hold both — this is the local disk's own limit, refused by name rather than hidden.
+ *
+ * The `fix` lists what is in the way: the remedy is storing one of the two under another key, and
+ * which one is only decidable by a reader who can see both.
+ */
+export const keyConflict = (key: string, blocking: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_KEY_CONFLICT',
+    cause: `the local disk cannot store "${key}": "${blocking}" is already on it, and a POSIX path is a file or a directory, never both — so one key cannot be a path prefix of another here. Store one of the two under a different key; an s3 disk holds both`,
+    fix: `disk('local').list({ prefix: ${renderFixLiteral(blocking, "'a/'")} })`,
+    meta: { key, blocking },
+  });
+
 /** The declared type is not on the allowlist at all. */
 export const contentTypeNotAllowed = (
   key: string,
@@ -253,6 +305,43 @@ export const deleteFailed = (
   return new StorageError({
     code: 'X_STORAGE_DELETE_FAILED',
     cause: `disk "${disk}" refused DELETE "${key}": ${reason}`,
+    fix,
+    meta: { disk, key, reason },
+  });
+};
+
+/**
+ * A write the disk REFUSED — `deleteFailed`'s twin for `put()` and `copy()`. The local disk's
+ * `EACCES` / `ENOSPC` / `EROFS` left as a bare filesystem `Error`, and a provider's refused PUT as
+ * a bare `S3Error`: no code, no fix, nothing for the http error map to render but an anonymous 500.
+ * The `fix` is the driver's, for `deleteFailed`'s reason.
+ */
+export const putFailed = (disk: string, key: string, error: unknown, fix: string): StorageError => {
+  const reason = renderThrowable(error);
+  return new StorageError({
+    code: 'X_STORAGE_PUT_FAILED',
+    cause: `disk "${disk}" refused to write "${key}": ${reason}`,
+    fix,
+    meta: { disk, key, reason },
+  });
+};
+
+/**
+ * A read the disk REFUSED — `putFailed`'s read-side twin, for `get`, `stat`, `exists`, `stream` and
+ * the read half of `copy`. A denied `s3:GetObject`, a throttle, `EACCES`, `EIO`. An object that is
+ * simply absent is `objectNotFound`, never this: "not there" and "could not look" need opposite
+ * answers from a caller. The `fix` is the driver's, for `deleteFailed`'s reason.
+ */
+export const readFailed = (
+  disk: string,
+  key: string,
+  error: unknown,
+  fix: string,
+): StorageError => {
+  const reason = renderThrowable(error);
+  return new StorageError({
+    code: 'X_STORAGE_READ_FAILED',
+    cause: `disk "${disk}" refused to read "${key}": ${reason}`,
     fix,
     meta: { disk, key, reason },
   });

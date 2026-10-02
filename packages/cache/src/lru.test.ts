@@ -271,3 +271,34 @@ describe('LruCache refuses a byte budget that is not a budget', () => {
     expect(new LruCache({ maxBytes: 1 }).stats().maxBytes).toBe(1);
   });
 });
+
+describe('estimateBytes walks a Map and a Set', () => {
+  // `JSON.stringify(new Map(...))` is `{}`: two bytes for a collection of any size, so a tier
+  // budgeted in bytes held as many of them as memory allowed and never evicted one.
+  test('a Map costs its entries, not two bytes', () => {
+    const map = new Map([['key', 'x'.repeat(1000)]]);
+    expect(estimateBytes(map)).toBeGreaterThan(1000);
+  });
+
+  test('a Set costs its members', () => {
+    expect(estimateBytes(new Set(['x'.repeat(1000)]))).toBeGreaterThan(1000);
+  });
+
+  test('one nested inside an object, an array or another collection is walked too', () => {
+    const big = 'x'.repeat(1000);
+    expect(estimateBytes({ rows: new Map([['a', big]]) })).toBeGreaterThan(1000);
+    expect(estimateBytes([new Set([big])])).toBeGreaterThan(1000);
+    const nested = new Map([['outer', new Map([['inner', new Set([big])]])]]);
+    expect(estimateBytes(nested)).toBeGreaterThan(1000);
+  });
+
+  test('a Map over the budget is refused by the cache that used to take it', () => {
+    const cache = new LruCache({ maxBytes: 100 });
+    expect(() => cache.set('k', new Map([['a', 'x'.repeat(500)]]))).toThrow(CacheTooLargeError);
+  });
+
+  test('a plain value still measures what it always did', () => {
+    expect(estimateBytes({ a: 1 })).toBe(7);
+    expect(estimateBytes(undefined)).toBe(0);
+  });
+});

@@ -15,8 +15,9 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
   wrap it in its own `action()` with its own policy. See `docs/architecture/17-uploads.md`.
 
 - **Every byte ceiling and every TTL is screened where it is DECLARED, through core's
-  `finiteCount` and nothing else** — `uploadPolicy({ maxBytes })`, both drivers' `maxPutBytes`,
-  `createUploadGrant({ expiresInMs })`, `buildSignedUrl` and the s3 presign TTL. No private copy:
+  `finiteCount` and nothing else** — `uploadPolicy({ maxBytes })`, every driver's `maxPutBytes`
+  and `maxGetBytes`, variant `width`/`height`, `grantUpload({ expiresInMs })`, `buildSignedUrl`
+  and the s3 presign TTL. No private copy:
   `size > NaN` is false, so an unscreened `NaN` ceiling stops deciding anything. Variant `quality`
   is core's `assertFiniteImageQuality`, not a second screen.
 - **The default is taken on `undefined` and on nothing else** — `x === undefined ? D : x`, never
@@ -37,14 +38,19 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 
 | File | Owns |
 |---|---|
-| `driver.ts` | `StorageDriver` contract (8 methods) + bounded `toBytes`/`sha256Base64`/`etagOf` |
+| `driver.ts` | `StorageDriver` contract (9 methods; `registerAs`/`verifySigned` optional), `assertPutOptions`, + bounded `toBytes`/`sha256Base64`/`etagOf` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
-| `driver-memory.ts` | `memoryDriver()` — a test's disk over a `Map`: `localDriver`'s contract and refusals, `objects()` for an assertion about the bucket. `driver-memory.test.ts` runs each claim on BOTH disks. Signs through `resolveSigningSecret` (`driver-local.ts`), the one rule both share |
+| `driver-local-write.ts` | the local WRITE: staged under `.meta/.tmp/`, renamed marker → sidecar → bytes, `X_STORAGE_KEY_CONFLICT` / `X_STORAGE_PUT_FAILED`, the per-key queue |
+| `driver-local-read.ts` | `headObject`: sidecar + pending marker → trusted, re-checked, or untyped |
+| `driver-local-sidecar.ts` | the sidecar shape and its one parser |
+| `signing-secret.ts` | `DEV_SIGNING_SECRET`, `usesDevStorageSecret`, `resolveSigningSecret` |
+| `driver-memory.ts` | `memoryDriver()` — a test's disk over a `Map`: `localDriver`'s contract and refusals, `objects()` for an assertion about the bucket. `driver-memory.test.ts` runs each claim on BOTH disks. Signs through `resolveSigningSecret` (`signing-secret.ts`), the one rule both share |
 | `driver-s3.ts` | `Bun.S3Client`, built lazily (import must never open a socket) |
 | `driver-s3-region.ts` | a provider's wrong-region refusal → `X_CONFIG_INVALID` whose fix names `S3_REGION` |
 | `path.ts` | key validation + `META_DIR` + `scopedKey`/`isWithinOrg`/`isTenantScoped` tenant boundary |
 | `signed-url.ts` | HMAC over the constraint tuple, constant-time verify |
 | `upload.ts` | magic-byte sniff + size/allowlist/checksum policy |
+| `iso-bmff.ts` | the `ftyp` MAJOR BRAND → media type (AVIF, HEIC, MOV, M4A, MP4, 3GP) |
 | `image.ts` | deterministic variant keys; byte path over core's pipeline (png/jpeg encode only) |
 | | `VARIANT_FORMATS` — what a variant KEY can carry — and NOT `IMAGE_FORMATS`, which is core's and means what core can PROBE. See below |
 | | `variantKey` is the cache identity `@ultimat3/cli`'s `/media/*` route looks a variant up by — derived, never stored, so a request that misses transforms once and every later one is a disk read |
@@ -60,6 +66,33 @@ bun run typecheck
 ```
 
 Gotchas:
+- **The local disk refuses a key that is another key's path, and that is pinned, not fixed**
+  (`As of 2026-10`). `put('a')` then `put('a/b')` — or the reverse, or `a` beside `a.json/b` in the
+  sidecar tree — is `X_STORAGE_KEY_CONFLICT`, decided by `claim()` for BOTH paths before either is
+  touched. Suffixed on-disk names would lift it and orphan every existing root's objects without a
+  migration; do not change the layout without one. `driver-contract.test.ts` runs the claim on all
+  three disks.
+- **The local commit order is marker → sidecar → bytes → clear marker. Do not reorder**
+  (`As of 2026-10`). Bytes-first serves new bytes under the old type; sidecar-first alone serves
+  old bytes under the new one. The marker holds the new etag, so `headObject` knows the one state
+  in which the sidecar may not describe the bytes: `get`/`stat`/`copy` re-check against the bytes,
+  `list` reports no type and `etag: ''`. A fresh key is absent until its bytes land.
+  `driver-local-crash.test.ts` dies at every step through `WriteSteps`. Writers and `get()` of one
+  key also queue in-process (`keyedQueue`) — unqueued, two puts interleaved 3/3.
+- **A refused write is `X_STORAGE_PUT_FAILED` and a refused read `X_STORAGE_READ_FAILED`**, on
+  local and s3 (both were bare throws); a 404 mid-read stays `X_STORAGE_NOT_FOUND`; `assertPutOptions` holds `metadata`/`cacheControl`/`contentType` to their types on
+  all three drivers before a byte moves.
+- **`get()` has a ceiling on every disk** (`maxGetBytes`, default `maxPutBytes`), decided on the
+  disk's own size before a byte is read. `promoteAttachment` REQUIRES the policy and measures with
+  `stat()`, which is a REQUIRED driver method — on s3 it is the first measurement of a direct upload.
+- **`lastModified` is optional — absent when the provider sent none**, never epoch 0 and never an
+  invalid `Date`. `sweepOrphans` spares an object with no proven age.
+- **The base PATH is inside the signature** (`SIGNED_URL_VERSION` `v2`): every local disk shares
+  one secret, so the canonical string must name the disk. Path, not origin — the verifying route
+  sees a path — and `signedUrlBasePath` is how an absolute `baseUrl` is compared.
+- **`isWithinOrg` never throws**: an org id that cannot be one contains nothing.
+- **A variant key keeps the whole source key** (`hero.png@w640.webp`), so two sources differing
+  only by extension are two cache identities.
 - **A driver's semantics are pinned in ONE test with the other driver beside them.**
   `driver-parity.test.ts` drives `localDriver` over a temp dir and `s3Driver` over `FakeS3Client`
   in a single `test()` per claim, so neither disk can move alone. Where the two genuinely cannot
@@ -214,9 +247,7 @@ Gotchas:
   happens to be named `local`. An explicit `baseUrl` on `localDriver` outranks the registration
   (the operator saying where the route is mounted); an unregistered driver still mints under
   `local`. One driver instance under two disk names is refused at `defineStorage`
-  (`X_CONFIG_INVALID`) — it could only mint under one of them. Before that, the base was stated
-  twice (`/_storage/local` in the driver, `/_storage` in `verifySignedUrl`'s default) and NO
-  genuine URL verified at all: the key parsed as `local/<key>`. `@ultimat3/cli`'s
+  (`X_CONFIG_INVALID`) — it could only mint under one of them. `@ultimat3/cli`'s
   `STORAGE_BASE_PATH` is a third statement of the mount prefix and should import
   `DEFAULT_SIGNED_URL_BASE` instead.
 - **`accept.ts` asks the `isTenantScoped`/`isWithinOrg` PAIR, exactly as `dev-storage.ts` does.**

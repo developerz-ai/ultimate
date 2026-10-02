@@ -131,6 +131,7 @@ Allowed, total, and typed. `As of 2026-08` the package ships the currency table,
 | `convert(m, 'EUR')` with no rate | throws `X_RATE_MISSING`. There is no default rate provider, because a wrong rate is worse than a missing one |
 | A code this process does not know | throws `X_CURRENCY_UNKNOWN` — use one `currencyCodes()` lists, or add it with `registerCurrency({ code, exponent, name })` |
 | `allocate(m, [0, 0])` or a negative ratio | throws `X_ALLOCATION_INVALID` |
+| `allocate(m, parts)` with more than 1,000,000 parts (`MAX_ALLOCATION_PARTS`) | throws `X_ALLOCATION_INVALID` — every part is held at once, and `1e10` was a bare `RangeError` |
 
 Total across a currency boundary requires a conversion first. Silent coercion is how a marketplace bills in the wrong currency for a quarter.
 
@@ -259,6 +260,8 @@ import { formatMoney } from '@ultimat3/money';
 | Locale | explicit, from the request context. Never the process default |
 | Currency | explicit, from the `Money` value. Never a template-literal `$` |
 | Digits | `minimumFractionDigits` / `maximumFractionDigits` from the currency exponent |
+| `trimZeroFraction: true` | drops the fraction of a **whole** amount and nothing else: 1200 USD is `$12`, 1250 USD is `$12.50` — never `$12.5`. Price lists, never invoices |
+| `fractionDigits` | a whole number from 0 to 100 (`MAX_FRACTION_DIGITS`); anything else is `X_MONEY_SCALE_INVALID`, never `Intl`'s bare `RangeError` |
 | Formatter cache | one per (locale, currency, options) — constructing per row is measurable |
 | Never | string concatenation, `toFixed(2)`, a hand-written thousands separator |
 

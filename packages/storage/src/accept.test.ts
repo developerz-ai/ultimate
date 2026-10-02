@@ -64,6 +64,9 @@ async function reasonOf(fn: () => Promise<unknown>): Promise<Record<string, unkn
   return { code: 'no-error-thrown' };
 }
 
+/** The path every disk in this suite mints under — the base is inside the signature. */
+const BASE_PATH = '/_storage/local';
+
 /** A query string over constraints we signed ourselves, so only the checks after the HMAC apply. */
 async function paramsFor(constraints: SignedUrlConstraints): Promise<string> {
   return new URLSearchParams({
@@ -71,7 +74,7 @@ async function paramsFor(constraints: SignedUrlConstraints): Promise<string> {
     [SIGNED_URL_PARAMS.expires]: String(constraints.expiresAt),
     [SIGNED_URL_PARAMS.maxBytes]: String(constraints.maxBytes),
     [SIGNED_URL_PARAMS.contentType]: String(constraints.contentType),
-    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints),
+    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints, BASE_PATH),
   }).toString();
 }
 
@@ -187,7 +190,7 @@ describe('acceptSignedUpload', () => {
       maxBytes: 1024,
       contentType: 'image/png',
     };
-    expect(canonicalRequest(constraints)).toContain(key);
+    expect(canonicalRequest(constraints, BASE_PATH)).toContain(key);
     // `%2E%2E` does not survive `new URL()`: the path collapses to `/_storage/local/etc/passwd`,
     // so the key that gets verified is NOT the key that was signed, and the HMAC fires. The
     // traversal can therefore never reach a driver, whichever of the two gates gets there first.
@@ -355,7 +358,7 @@ async function forgedGet(key: string, encodeWhole = false): Promise<string> {
   const params = new URLSearchParams({
     [SIGNED_URL_PARAMS.method]: 'GET',
     [SIGNED_URL_PARAMS.expires]: String(constraints.expiresAt),
-    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints),
+    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints, BASE_PATH),
   });
   const path = encodeWhole
     ? encodeURIComponent(key)

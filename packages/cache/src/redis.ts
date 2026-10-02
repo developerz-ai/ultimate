@@ -6,6 +6,8 @@
 import type { Clock } from '@ultimat3/core';
 import { appVersion, logger, systemClock } from '@ultimat3/core';
 import { CacheDriverUnavailableError } from './errors';
+import type { FenceScope } from './fence';
+import { bumpGenerations, sampleGenerations } from './redis-fence';
 import type { CacheTag } from './tags';
 import { parseTag, serializeTag } from './tags';
 import type {
@@ -339,6 +341,9 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       await conn().send('DEL', [valueKey(key)]);
     },
 
+    /** The fleet-wide half of the fill fence: generations other replicas' busts move. */
+    fence: (scope: FenceScope) => sampleGenerations(conn(), ns, clock, scope),
+
     /**
      * ONE script call per tag, never one for the batch. Every key a call is handed comes from a
      * single tag and therefore carries the same `{entity}` hash tag, so it is one slot on Redis
@@ -356,6 +361,10 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
         if (read.length > 0) perTag.push({ read, sweep: [...read, ...sweepBucketsFor(owned)] });
       }
       if (perTag.length === 0) return { tier: 'redis', keys: [] };
+      // Before the buckets are read, and awaited: see `bumpGenerations` for why the order is the
+      // guarantee. A refusal here rejects the bust into `report.errors` with nothing deleted, so
+      // the retry it asks for repeats the whole thing.
+      await bumpGenerations(conn(), ns, tags);
       const replies = await Promise.all(
         perTag.map(({ read }) =>
           conn().send('EVAL', [INVALIDATE_SCRIPT, String(read.length), ...read]),

@@ -485,6 +485,12 @@ export const ERROR_STATUS = {
   X_DB_COMMIT_UNKNOWN: 500,
   // @ultimat3/db — a nested transaction scope waited too long for its sibling
   X_DB_SIBLING_SCOPE_TIMEOUT: 500,
+  // @ultimat3/storage — the key collides with another key on the local disk
+  X_STORAGE_KEY_CONFLICT: 409,
+  // @ultimat3/storage — the object could not be written
+  X_STORAGE_PUT_FAILED: 500,
+  // @ultimat3/storage — the object could not be read
+  X_STORAGE_READ_FAILED: 500,
   // The keys are LITERAL — deliberately not `Readonly<Record<string, number>>`, which is what the
   // annotation used to say. This table is the closed one, so `ERROR_STATUS.X_QUERY_NOT_PAGABLE`
   // has to be a compile error rather than an `undefined` a test then asserts `toBeNumber()` on.
