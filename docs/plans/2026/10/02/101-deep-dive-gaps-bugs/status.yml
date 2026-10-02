@@ -1,0 +1,82 @@
+plan: 101-deep-dive-gaps-bugs
+title: "Deep dive: gaps, problems, bugs"
+status: not_started        # not_started | in_progress | blocked | complete | superseded
+created_by: sebi
+worked_by: ""              # executor fills with their git user.name
+owner: sebi
+percent: 0
+current_focus: "01-core-schema.md; pull forward 12-cli.md step 1 (ISR attach) and 09-render-pwa-ui.md step 1 (QR) — neither depends on anything"
+slices:
+  - file: 01-core-schema.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 02-db.md
+    tier: 1
+    status: not_started
+    percent: 0
+  - file: 03-tier1-services.md
+    tier: 1
+    status: not_started
+    percent: 0
+  - file: 04-entity-policy-http.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 05-auth.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 06-action-query.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 07-jobs.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 08-realtime.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 09-render-pwa-ui.md
+    tier: 4
+    status: not_started
+    percent: 0
+  - file: 10-ai-mcp-mail-notify-manifest.md
+    tier: 4
+    status: not_started
+    percent: 0
+  - file: 11-admin-scraping-testing.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 12-cli.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 13-scripts-ci.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 14-unify-and-delete.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 15-owner-decisions-docs.md
+    tier: 5
+    status: not_started
+    percent: 0
+evidence: []
+notes: >-
+  Audited at 2ea5eb17 (23.0.0) on 2026-10-02 by three read-only sweeps, 22 auditor runs, findings
+  in findings/ (20 files). Sweep 1: seven auditors (four tier-scoped correctness hunts, concurrency,
+  security, architecture). Sweep 2: ten auditors over the files sweep 1 listed as unread. Sweep 3:
+  two falsification passes and a row-by-row re-read of the 2026-09-28 audit plan. Sweep 3 refuted
+  two lows (manifest diff-routes, notify channel-mail), narrowed about a dozen rows and corrected
+  about fifteen citations; its files win over sweeps 1-2. No live Postgres, Redis, NATS, S3 or
+  browser was used by any sweep. Rows owned by docs/plans/2026/09/28/101-audit-bugs-and-gaps
+  (slices 01, 02, 03, 05-09 still open there) are listed per slice under "Owned elsewhere" and are
+  not re-planned here. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  2026-09-28. Unaudited areas are listed at the end of each findings file.
+last_updated: 2026-10-02
