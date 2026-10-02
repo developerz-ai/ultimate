@@ -7,8 +7,13 @@ import { describe, expect, test } from 'bun:test';
 // imports have to be RELATIVE paths: a bare `@ultimat3/ui` from `bun -e` resolves against
 // `[eval]`, which is not a file and walks no node_modules.
 import { join } from 'node:path';
-import { dateTimeView } from '@ultimat3/ui';
-import { formatCalendarDate } from './widgets';
+
+// `widgets.tsx` and `@ultimat3/ui` are JSX: loaded after `@ultimat3/render/server` installs its
+// `.tsx` loader, never statically — a static import compiles them to the classic factory first, and
+// every screen a later file in this process renders through them dies with `React is not defined`.
+await import('@ultimat3/render/server');
+const { dateTimeView } = await import('@ultimat3/ui');
+const { formatCalendarDate } = await import('./widgets');
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 

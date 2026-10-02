@@ -115,9 +115,10 @@ jobs:
         run: |
           bunx x verify --only '${{ matrix.only }}' \
             ${{ matrix.shard && format('--shard {0}', matrix.shard) || '' }} \
-            --json > part.json || true
+            --json > "$RUNNER_TEMP/part.json" || true
+      # Outside the checkout: the file is open and empty while the part runs, and `lint` walks the tree.
       - uses: actions/upload-artifact@v4
-        with: { name: 'part-${{ matrix.name }}', path: part.json }
+        with: { name: 'part-${{ matrix.name }}', path: '${{ runner.temp }}/part.json' }
 
   check: # the one required status check
     needs: part

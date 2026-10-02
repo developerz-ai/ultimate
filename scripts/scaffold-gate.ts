@@ -29,7 +29,13 @@ import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { GateStep } from './reference-app-gate';
-import { declaredStepIssues, parseStepPayloads, parseSteps, redSteps } from './reference-app-gate';
+import {
+  declaredStepIssues,
+  parseStepPayloads,
+  parseSteps,
+  redSteps,
+  stepLines,
+} from './reference-app-gate';
 
 const SCRIPT = 'scaffold-gate';
 
@@ -254,12 +260,9 @@ if (import.meta.main) {
           ? `${dir}: ${SETUP_SCRIPT} in ${run.setupMs}ms, ${CHECK_SCRIPT} green in ${run.checkMs}ms — ${total - red.length} of ${total} steps pass`
           : `${findings.length} scaffold finding(s) — ${total - red.length} of ${total} steps pass`,
       findings,
-      lines: [
-        ...(run.steps ?? []).map(
-          (step) => `  ${step.skipped ? '-' : step.ok ? '✓' : '✗'} ${step.name}`,
-        ),
-        ...timingLines(run.timings),
-      ],
+      // The tracked apps' renderer: a red step brings its own findings and captured output, so a
+      // CI log names WHY package-shape is red rather than only that it is. Nothing is pinned here.
+      lines: [...stepLines(run.steps ?? [], {}), ...timingLines(run.timings)],
       data: { dir, red, setupMs: run.setupMs, checkMs: run.checkMs, timings: run.timings },
     },
     args.json,

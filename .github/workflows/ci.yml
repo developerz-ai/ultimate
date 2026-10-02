@@ -163,22 +163,26 @@ jobs:
       # The part's `--json` document is the artifact `verify` merges, so it is written to a file
       # first and printed after — and the step table is rendered from it for the person reading a
       # red run, because a 60 kB JSON line is not something anyone scans for a failing step.
+      #
+      # Written under $RUNNER_TEMP, never in the checkout: the file is open and EMPTY while the
+      # part's own steps run, and `lint` (biome walks the tree) failed the `live` part on it once.
       - name: x verify --only ${{ matrix.only }} ${{ matrix.shard && format('--shard {0}', matrix.shard) || '' }}
         env:
           PART: ${{ matrix.part }}
           ONLY: ${{ matrix.only }}
           SHARD: ${{ matrix.shard }}
         run: |
-          mkdir -p parts
+          parts="$RUNNER_TEMP/parts"
+          mkdir -p "$parts"
           status=0
           bun run scripts/verify.ts --only "$ONLY" ${SHARD:+--shard "$SHARD"} --json \
-            > "parts/${PART}.json" || status=$?
-          cat "parts/${PART}.json"
+            > "$parts/${PART}.json" || status=$?
+          cat "$parts/${PART}.json"
           jq -r '
             (.steps // [])[]
             | "\(if .skipped then "-" elif .ok then "✓" else "✗" end) \(.name)  \(.durationMs)ms\(if .tests then "  \(.tests.ran) ran, \(.tests.skipped) skipped\(if .tests.errors then ", \(.tests.errors) errored" else "" end)" else "" end)",
               (.findings[]? | "    \(.code)\(if .at then " (\(.at))" else "" end)\n      cause: \(.cause)\n      fix:   \(.fix)")
-          ' "parts/${PART}.json" || true
+          ' "$parts/${PART}.json" || true
           exit "$status"
       # Uploaded when the part is RED too: the verdict is the merge's, and a part that failed
       # without a document would read there as a step nobody ran rather than a step that failed.
@@ -186,7 +190,7 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: verify-part-${{ matrix.part }}
-          path: parts/${{ matrix.part }}.json
+          path: ${{ runner.temp }}/parts/${{ matrix.part }}.json
           if-no-files-found: error
           retention-days: 7
 
@@ -218,12 +222,12 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           pattern: verify-part-*
-          path: parts
+          path: ${{ runner.temp }}/parts
           merge-multiple: true
       # The human render, not `--json`: this is the one table a person reads to learn what the
       # gate said, with every finding from every part under the step that raised it.
       - name: x verify merge — every step, from exactly one part, green
-        run: bun run scripts/verify.ts merge parts/*.json
+        run: bun run scripts/verify.ts merge ${{ runner.temp }}/parts/*.json
 
   # Each tracked app — `examples/dummy` and the deployed `dummy/social-media-clone` — on its own
   # runner: BUILT (`x build --target static`, as a generated app's `bin/check` does, because

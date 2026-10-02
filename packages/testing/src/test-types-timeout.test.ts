@@ -52,8 +52,9 @@ test('a test given timeoutMs is held to it by bun, and one given longer passes',
     const helpers = ['unitTest', 'contractTest', 'liveTest', 'jobTest', 'evalTest', 'fixtureTest'];
     for (const helper of helpers) {
       expect(output).toMatch(new RegExp(`\\(fail\\) \\w+ · ${helper} short`));
-      // Bun prints a passing test's line only to a terminal; the counts below are the witness.
-      expect(output).not.toContain(`${helper} long`);
+      // Whether Bun prints a PASSING line depends on where it runs (a terminal, or GitHub Actions'
+      // annotations); a failing one it always prints. The counts below are the witness.
+      expect(output).not.toMatch(new RegExp(`\\(fail\\) \\w+ · ${helper} long`));
     }
     expect(output).toContain('timed out after 20ms');
     expect(output).toContain(' 6 pass');
