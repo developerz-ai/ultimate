@@ -14,19 +14,15 @@
  * on documents whose surface opted in (`navigation: { client: [...] }` in `app.config.ts`).
  */
 
-import {
-  CLIENT_BUILD_META,
-  CLIENT_SCOPE_META,
-  onClientWrite,
-  onRescope,
-} from '@ultimat3/core/page';
+import { CLIENT_BUILD_META, CLIENT_SCOPE_META } from '@ultimat3/core/page';
 import { navigationCache } from './navigation-cache';
 import {
   anchorOf,
   announcer,
-  fieldText,
   focusMain,
+  formAction,
   formFields,
+  formPairs,
   handOver,
   linkFacts,
   type RunningTransition,
@@ -37,7 +33,6 @@ import {
   type EntryState,
   entryOf,
   STATE_KEY,
-  saveEntryScroll,
   scrollAfter,
   withoutFragment,
 } from './navigation-history';
@@ -60,6 +55,7 @@ import {
   responseVerdict,
   reusable,
 } from './navigation-rules';
+import { scrollKeeper } from './navigation-scroll';
 import {
   documentHead,
   loadStylesheets,
@@ -68,6 +64,7 @@ import {
   runScripts,
   swapDocument,
 } from './navigation-swap';
+import { tabSync } from './navigation-tabs';
 
 export interface NavigateOptions {
   readonly method?: 'GET' | 'POST';
@@ -83,9 +80,6 @@ export interface NavigationRouter {
   prefetch(url: string): void;
   stop(): void;
 }
-
-/** One channel per origin: a principal change or a write in one tab empties every tab's cache. */
-const CHANNEL = 'ultimate:navigation';
 
 interface RouterWindow extends Window {
   __xNavigation?: NavigationRouter;
@@ -122,28 +116,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   const live = announcer(doc);
   const owned = documentHead(doc);
   notePersisted(doc);
-  win.history.scrollRestoration = 'manual';
-
-  const channel = 'BroadcastChannel' in win ? new BroadcastChannel(CHANNEL) : undefined;
-  if (channel !== undefined) channel.onmessage = () => cache.clear();
-  /** This tab and every other: a write or a new principal makes every held page suspect. */
-  const forget = (): void => {
-    cache.clear();
-    channel?.postMessage('clear');
-  };
-  const offWrite = onClientWrite(forget);
-  const offRescope = onRescope(forget);
-
-  const saveScroll = (): void => saveEntryScroll(win, rendered);
-
-  saveScroll();
-  // Saved as the visitor scrolls, once the scroll settles — so FORWARD restores too, and a
-  // browser's cap on `replaceState` calls is never approached.
-  let settle: number | undefined;
-  const onScroll = (): void => {
-    win.clearTimeout(settle);
-    settle = win.setTimeout(saveScroll, 150);
-  };
+  const tabs = tabSync(win, () => cache.clear());
+  const forget = tabs.forget;
+  const scroll = scrollKeeper(win, () => rendered);
 
   const request = (url: string, purpose: 'soft' | 'prefetch', init?: RequestInit) =>
     fetchDocument(win, doc, url, purpose, init);
@@ -211,7 +186,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     inflight = mine;
     win.clearTimeout(intent);
     navigatingTo = withoutFragment(url);
-    if (options.history !== 'none') saveScroll();
+    if (options.history !== 'none') scroll.save();
     const progress = win.setTimeout(
       () => doc.documentElement.setAttribute(NAVIGATING_ATTRIBUTE, ''),
       NAVIGATION_PROGRESS_DELAY_MS,
@@ -273,11 +248,15 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       if (next === null) return;
       const landed = `${withoutFragment(url)}${new URL(url).hash}`;
       try {
-        await loadStylesheets(doc, missingStylesheets(doc, next));
+        // Owned from the moment they are appended: a navigation aborted after this point left its
+        // sheets in the head for good, styling every page after it — the next swap retires an
+        // owned sheet its page does not link.
+        await loadStylesheets(doc, missingStylesheets(doc, next), owned);
         if (mine.signal.aborted) return;
         let swapped: ReturnType<typeof swapDocument> | undefined;
-        const track = (running: RunningTransition | undefined): void => {
-          animating = running;
+        const track = (running: RunningTransition, finished: boolean): void => {
+          if (!finished) animating = running;
+          else if (animating === running) animating = undefined;
         };
         await transition(
           win,
@@ -374,7 +353,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     const say = (attr: string, fallback: string): string =>
       submitter?.getAttribute(`form${attr}`) ?? form.getAttribute(attr) ?? fallback;
     const facts: FormFacts = {
-      action: new URL(say('action', win.location.href) || win.location.href, doc.baseURI).href,
+      action: formAction(say('action', ''), win.location.href, doc.baseURI),
       current: win.location.href,
       method: say('method', 'get').toLowerCase(),
       enctype: say('enctype', 'application/x-www-form-urlencoded').toLowerCase(),
@@ -387,9 +366,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       hasFile: [...fields.values()].some(
         (value: unknown) => value instanceof File && value.name !== '',
       ),
-      fields: [...fields].map(
-        ([name, value]: [string, unknown]) => [name, fieldText(value)] as const,
-      ),
+      fields: formPairs(fields),
     };
     const verdict = formVerdict(facts);
     if (verdict.kind === 'native') return;
@@ -437,8 +414,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
    * screen it is fetched; when it is, only the scroll moves — the app keeps its own history.
    */
   const onPop = (event: PopStateEvent): void => {
-    // A save still pending belongs to the entry just left.
-    win.clearTimeout(settle);
+    scroll.cancel();
     const url = win.location.href;
     const entry = entryOf(event.state);
     const wanted = entry?.doc ?? withoutFragment(url);
@@ -463,7 +439,6 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   // had its chance to `preventDefault`, which the rules then honour.
   win.addEventListener('click', onClick);
   win.addEventListener('submit', onSubmit);
-  win.addEventListener('scroll', onScroll, { passive: true });
   doc.addEventListener('pointerover', onIntent, { passive: true });
   doc.addEventListener('pointerout', onLeave, { passive: true });
   doc.addEventListener('focusin', onIntent);
@@ -479,7 +454,6 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     stop() {
       win.removeEventListener('click', onClick);
       win.removeEventListener('submit', onSubmit);
-      win.removeEventListener('scroll', onScroll);
       doc.removeEventListener('pointerover', onIntent);
       doc.removeEventListener('pointerout', onLeave);
       doc.removeEventListener('focusin', onIntent);
@@ -488,9 +462,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       doc.removeEventListener('pointerdown', onPress, { capture: true });
       doc.removeEventListener('pointerup', onRelease, { capture: true });
       doc.removeEventListener('pointercancel', onRelease, { capture: true });
-      offWrite();
-      offRescope();
-      channel?.close();
+      scroll.stop();
+      tabs.stop();
       delete win.__xNavigation;
     },
   };

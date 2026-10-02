@@ -4,7 +4,9 @@
  * that are no route: content-addressed chunks, cached the first time a page asks for one.
  */
 
+import { routeRank } from '@ultimat3/core';
 import { SwScopeInvalidError } from './errors';
+import type { PersonalPages } from './pages-cache-source';
 import type { PwaRoute, StrategyName } from './strategies';
 import { strategyFor } from './strategies';
 
@@ -23,35 +25,8 @@ const segmentsOf = (path: string): readonly string[] =>
   path.split('/').filter((segment) => segment.length > 0);
 
 /**
- * How specifically a path claims a URL: a literal segment beats a `:param`, which beats a `*`.
- * The weights are `@ultimat3/render`'s `compilePattern`, verbatim (100 / 10 / 1), so the service
- * worker and the server rank the same pathname the same way.
- *
- * DUPLICATED, not imported: `render` and `pwa` are both tier 4 and a sideways import is a build
- * error. The shared home is `@ultimat3/core`'s `route-vocabulary.ts` — tier 0, already the owner of
- * `RENDER_MODES` / `OFFLINE_STRATEGIES` / `HYDRATE_STRATEGIES` for exactly this reason — and moving
- * it there is the follow-up this comment exists to name.
- */
-function specificityOf(path: string): number {
-  return segmentsOf(path).reduce((total, segment) => {
-    if (segment.startsWith('*')) return total + 1;
-    if (segment.startsWith(':')) return total + 10;
-    return total + 100;
-  }, 0);
-}
-
-/**
- * A catch-all is a FALLBACK, and it sorts behind every rule that is not one — a second key, because
- * a sum over segments cannot say it. `/` has no segments and so scores 0, while `/*rest` scores 1:
- * on specificity alone a single root catch-all outranks the home page, and with it every precached
- * entry in the table. The rule this expresses is the one a reader already assumes — a pattern that
- * matches everything answers only what nothing else claimed.
- */
-const hasWildcard = (path: string): boolean =>
-  segmentsOf(path).some((segment) => segment.startsWith('*'));
-
-/**
- * Ordered MOST SPECIFIC FIRST, because the emitted `ruleFor` returns the first pattern that
+ * Ordered MOST SPECIFIC FIRST — `@ultimat3/core`'s `routeRank`, the one rule `@ultimat3/render` and
+ * the request router share — because the emitted `ruleFor` returns the first pattern that
  * matches and has no notion of specificity of its own. Sorted alphabetically it did not: `:` (0x3A)
  * and `*` (0x2A) both sort before every letter, so `/posts/:id` shadowed `/posts/new` and a single
  * `/*` catch-all shadowed the entire table — every entry in `PRECACHE_MANIFEST` downloaded at
@@ -66,17 +41,21 @@ const hasWildcard = (path: string): boolean =>
  */
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-export function routeRules(routes: readonly PwaRoute[]): readonly RouteRule[] {
+/**
+ * `personalPages: 'last-member'` routes a personal page by its render mode again — the pages facade
+ * partitions it per member. `'never'` (the default) leaves it `network-only`.
+ */
+export function routeRules(
+  routes: readonly PwaRoute[],
+  personalPages: PersonalPages = 'never',
+): readonly RouteRule[] {
   return [...routes]
     .filter((route) => route.surface !== 'api')
-    .sort(
-      (a, b) =>
-        Number(hasWildcard(a.path)) - Number(hasWildcard(b.path)) ||
-        specificityOf(b.path) - specificityOf(a.path) ||
-        byCodeUnit(a.path, b.path),
-    )
+    .sort((a, b) => routeRank(b.path) - routeRank(a.path) || byCodeUnit(a.path, b.path))
     .map((route) => {
-      const strategy = strategyFor(route);
+      const strategy = strategyFor(
+        personalPages === 'last-member' ? { ...route, personal: false } : route,
+      );
       return {
         pattern: toPattern(route.path),
         strategy,
@@ -85,27 +64,53 @@ export function routeRules(routes: readonly PwaRoute[]): readonly RouteRule[] {
     });
 }
 
+/**
+ * A personal page that reaches a cache at all goes to `pages`, never `precache`: it is never in the
+ * precache manifest (fetched anonymously at install it is a sign-in redirect), so a `precache` rule
+ * was a cache that always missed — and only the pages facade files a member's page by member.
+ */
 function cacheFor(route: PwaRoute, strategy: StrategyName): 'precache' | 'runtime' | 'pages' {
   if (strategy === 'network-only') return 'runtime';
+  if (route.personal === true) return 'pages';
   if (route.offline === 'precache' && route.dynamic !== true) return 'precache';
   return 'pages';
 }
 
+const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * A literal segment as the browser's `url.pathname` spells it — the WHATWG serializer itself, so a
+ * route path (the DECODED directory name) matches the PERCENT-ENCODED pathname `ruleFor` tests:
+ * `/precios-españa` and `/a b` were never handled. Not `encodeURI`, which also escapes `|`, `[`,
+ * `^` and `%` where a browser leaves them literal. A `%XX` escape matches either hex case, as a
+ * hand-typed link may carry one.
+ */
+function literal(segment: string): string {
+  const url = new URL('https://x.invalid/');
+  url.pathname = `/${segment}`;
+  return escapeRegex(url.pathname.slice(1)).replace(
+    /%([0-9A-Fa-f]{2})/g,
+    (_, hex: string) =>
+      `%${[...hex].map((c) => (/[A-Fa-f]/.test(c) ? `[${c.toUpperCase()}${c.toLowerCase()}]` : c)).join('')}`,
+  );
+}
+
 /**
  * A trailing slash is dropped before the pattern is built, because the pattern allows one anyway:
- * a locale's home is spelled `/en/`, and `^/en//?$` matched `/en/` and missed `/en`.
+ * a locale's home is spelled `/en/`, and `^/en//?$` matched `/en/` and missed `/en`. A catch-all
+ * takes its leading slash with it, `(?:/.*)?`, so `/docs/*path` matches the bare `/docs` that
+ * `@ultimat3/render`'s static export writes for an empty `path`.
  */
 function toPattern(path: string): string {
-  const bare = path.replace(/\/+$/, '');
-  if (bare === '') return '^/$';
-  const body = bare
-    .split('/')
+  const segments = segmentsOf(path);
+  if (segments.length === 0) return '^/$';
+  const body = segments
     .map((segment) => {
-      if (segment.startsWith(':')) return '[^/]+';
-      if (segment.startsWith('*')) return '.*';
-      return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (segment.startsWith(':')) return '/[^/]+';
+      if (segment.startsWith('*')) return '(?:/.*)?';
+      return `/${literal(segment)}`;
     })
-    .join('/');
+    .join('');
   return `^${body}/?$`;
 }
 
@@ -125,7 +130,7 @@ export function assetRules(prefixes: readonly string[], scope: string): readonly
       );
     }
     return {
-      pattern: `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+      pattern: `^${escapeRegex(prefix)}`,
       strategy: 'cache-first',
       cache: 'runtime',
       asset: true,

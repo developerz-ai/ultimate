@@ -263,7 +263,7 @@ describe('rule order is specificity, not the alphabet', () => {
       expect(resolve(output.rules, path)?.cache).toBe('precache');
     }
     // ...and the catch-all still answers what nothing else claims.
-    expect(resolve(output.rules, '/anything/else')?.pattern).toBe('^/.*/?$');
+    expect(resolve(output.rules, '/anything/else')?.pattern).toBe('^(?:/.*)?/?$');
   });
 
   test('a deeper static path outranks a shallower dynamic one', () => {

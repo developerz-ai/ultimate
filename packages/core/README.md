@@ -44,6 +44,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the shape screens that run before any rule reads a value — section, list, boolean, closed set, path, locale list | `config-shape.ts` |
 | the `pwa` block — what an install needs, and the boot refusal when it is not there | `config-pwa.ts` |
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
+| which of two route patterns wins a pathname (`routeRank`) | `route-rank.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |

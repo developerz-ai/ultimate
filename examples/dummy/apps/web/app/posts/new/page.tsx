@@ -63,8 +63,17 @@ export const config = defineRoute({
    * why: the router's input fixes (22.8.1) — a click the view transition aimed at `<html>` is given
    * to the element under the pointer, a press skips the running transition, and a press or click
    * cancels the pending prefetch, so a fast click sends one request, not two (+795 B).
+   *
+   * measured: 22,508 B (2026-10-02; `x build --target static`'s `budgets` step), against 22,528
+   * (`22kb`).
+   * why: the router's plan-101 slice 09 fixes (+774 B, router 19,269 → 20,043 B) — a reload or a
+   * Back after a full load lands where the visitor left, the channel closes on `pagehide` so the
+   * page can enter the back/forward cache, a form's line breaks go as CRLF, an aborted navigation's
+   * sheets are retired, a finished older view transition no longer forgets the running one, and
+   * `<a href="#">` and an unparsable href stay the browser's. The other +198 B is the router's
+   * growth on main between 22.8.1's statement and this slice (19,071 → 19,269 B), unstated until now.
    */
-  budget: { js: '21.5kb', lcp: 1200 },
+  budget: { js: '22kb', lcp: 1200 },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 

@@ -4,7 +4,7 @@
  * the precache revision in `sw.js`, and the asset filename suffix.
  */
 
-import { renderThrowable, useContext } from '@ultimat3/core';
+import { renderCauseValue, renderThrowable, useContext } from '@ultimat3/core';
 import { PrerenderFailedError, RouteModeInvalidError } from './errors';
 import type { RouteEntry } from './registry';
 import type { RenderResult, RouteParams } from './route';
@@ -86,18 +86,30 @@ export async function enumeratePrerender(entry: RouteEntry): Promise<readonly Ro
   }
 
   const keys = entry.pattern.keys;
-  return produced.map((item) => {
-    if (typeof item !== 'string') return item;
+  return produced.map((item: unknown) => {
+    if (typeof item !== 'string') return paramsOf(entry, item);
     const only = keys[0];
     if (keys.length !== 1 || only === undefined) {
       throw new PrerenderFailedError(
-        `prerender() for ${entry.path} returned the bare string ${JSON.stringify(item)} ` +
+        `prerender() for ${entry.path} returned the bare string ${renderCauseValue(item)} ` +
           `but the route has ${keys.length} dynamic params (${keys.join(', ')})`,
         `return objects from prerender in ${entry.file}, e.g. { ${keys.join(': …, ')}: … }`,
       );
     }
     return { [only]: item };
   });
+}
+
+/**
+ * One `prerender()` item that is not a bare string: a params object, or a coded refusal. A `null`
+ * reached `Object.hasOwn` in `static-path.ts` and left the build as a bare `TypeError`.
+ */
+function paramsOf(entry: RouteEntry, item: unknown): RouteParams {
+  if (typeof item === 'object' && item !== null && !Array.isArray(item)) return item as RouteParams;
+  throw new PrerenderFailedError(
+    `prerender() for ${entry.path} returned ${renderCauseValue(item)} as one of its items, which is neither a params object nor a string`,
+    `return an array of params objects (or strings, for a one-param route) from prerender in ${entry.file}`,
+  );
 }
 
 export interface StaticBuildOptions {

@@ -29,6 +29,8 @@ import {
 import type { RouteConfig, RouteData } from './route';
 import { isRouteConfig, tagKeys } from './route';
 import type { RouteComponent } from './route-component';
+import type { CompiledPattern } from './route-pattern';
+import { compilePattern } from './route-pattern';
 import type { Surface } from './surfaces';
 import { locateSurface } from './surfaces';
 
@@ -102,14 +104,6 @@ export interface RouteDescriptor {
 }
 
 export type { MountedRouteInput, RouteMount, RouteMountInput } from './mounted-routes';
-
-export interface CompiledPattern {
-  readonly source: string;
-  readonly regex: RegExp;
-  readonly keys: readonly string[];
-  /** Higher wins when two patterns match the same pathname. */
-  readonly specificity: number;
-}
 
 /**
  * `apps/web/site/blog/[slug]/page.tsx` → `{ surface: 'site', path: '/blog/:slug' }`.
@@ -210,34 +204,6 @@ function toUrlSegment(segment: string): string {
   const dynamic = /^\[(.+)\]$/.exec(segment);
   if (dynamic?.[1] !== undefined) return `:${dynamic[1]}`;
   return segment;
-}
-
-export function compilePattern(path: string): CompiledPattern {
-  const keys: string[] = [];
-  let specificity = 0;
-  const segments = path.split('/').filter((s) => s.length > 0);
-
-  const parts = segments.map((segment) => {
-    if (segment.startsWith('*')) {
-      keys.push(segment.slice(1));
-      specificity += 1;
-      return '(.*)';
-    }
-    if (segment.startsWith(':')) {
-      keys.push(segment.slice(1));
-      specificity += 10;
-      return '([^/]+)';
-    }
-    specificity += 100;
-    return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  });
-
-  return {
-    source: path,
-    regex: new RegExp(`^/${parts.join('/')}/?$`),
-    keys,
-    specificity,
-  };
 }
 
 const routes = new Map<string, RouteEntry>();

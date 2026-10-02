@@ -93,6 +93,35 @@ describe('generateWebManifest', () => {
  * request data, so this is the lower-severity half of the same class as `appleTouchLinks` — and
  * the same one-line repair, through the same escaper. `assertValid` only checks non-empty.
  */
+/**
+ * `display_override` is read BEFORE `display`, so a fixed `['standalone','minimal-ui']` opened an app
+ * that declared `browser` in its own window and an app that declared `fullscreen` with browser UI.
+ */
+describe('display_override follows display', () => {
+  test.each([
+    ['fullscreen', ['fullscreen', 'standalone', 'minimal-ui']],
+    ['standalone', ['standalone', 'minimal-ui']],
+    ['minimal-ui', ['minimal-ui']],
+  ] as const)('%s → %p', (display, chain) => {
+    const { manifest } = generateWebManifest({ ...base, display });
+    expect(manifest.display).toBe(display);
+    expect(manifest.display_override).toEqual(chain);
+  });
+
+  test('browser carries no override at all — every override is an app window', () => {
+    const { manifest } = generateWebManifest({ ...base, display: 'browser' });
+    expect(manifest.display).toBe('browser');
+    expect('display_override' in manifest).toBe(false);
+  });
+
+  test('the default is unchanged: standalone, then minimal-ui', () => {
+    expect(generateWebManifest(base).manifest.display_override).toEqual([
+      'standalone',
+      'minimal-ui',
+    ]);
+  });
+});
+
 describe('renderThemeColorMeta escapes what it interpolates', () => {
   test('a quote in a token value cannot open a second attribute', () => {
     const html = renderThemeColorMeta([

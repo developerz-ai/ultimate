@@ -62,6 +62,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never a second env var |
 | what this process does | `roles.ts` (`ROLE`) | |
 | how a route renders, caches offline and hydrates | `route-vocabulary.ts` (`RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it |
+| which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments. Read by `@ultimat3/render`'s `compilePattern` and `@ultimat3/pwa`'s rule order — both tier 4, so the one copy lives here. `@ultimat3/http`'s trie encodes the same order by its walk, not by this number. Never a sum: 100/10/1 ranked `/:a/b/c` above `/a/:x/:y` |
 | which rungs a cache ladder has | `cache-vocabulary.ts` (`CACHE_TIERS`) | `@ultimat3/cache`'s `TIER_ORDER` IS this array. `isr` is a `RenderMode`, never a tier |
 | which build of the APP this is | `app-version.ts` (`APP_VERSION`) | one reader, `dev` by default |
 | the values | `env.ts` | `checkEnv().values` holds REAL secrets — printing goes through `maskedEnvValues()` |

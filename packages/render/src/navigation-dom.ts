@@ -39,6 +39,28 @@ export function anchorOf(target: EventTarget | null): HTMLAnchorElement | HTMLAr
 export const fieldText = (value: unknown): string =>
   value instanceof File ? value.name : String(value);
 
+/** Every lone CR, lone LF and CRLF in `text`, as CRLF. */
+const crlf = (text: string): string => text.replace(/\r\n|\r|\n/g, '\r\n');
+
+/**
+ * The fields as a GET query or a urlencoded body carries them — names and values with their line
+ * breaks normalised to CRLF, as the browser's own submit does (HTML's "convert to a list of
+ * name-value pairs"). A `<textarea>`'s value holds bare LFs; sent as they were, the router's
+ * submit and a native one delivered two different bodies for one form. A multipart body needs
+ * none of this: `fetch` encodes a `FormData` with the same normalisation.
+ */
+export const formPairs = (fields: FormData): readonly (readonly [string, string])[] =>
+  [...fields].map(([name, value]: [string, unknown]) => [crlf(name), crlf(fieldText(value))]);
+
+/**
+ * A form's action, resolved against the document — or the raw text when it does not resolve, which
+ * `formVerdict` leaves to the browser (`'unparsable'`) rather than throwing from a submit handler.
+ */
+export function formAction(raw: string, fallback: string, base: string): string {
+  const action = raw || fallback;
+  return URL.canParse(action, base) ? new URL(action, base).href : action;
+}
+
 /** The submitted fields, the submitter's own name/value included, as the browser would send. */
 export function formFields(form: HTMLFormElement, submitter: HTMLElement | null): FormData {
   try {
@@ -59,7 +81,7 @@ const hush = (): void => undefined;
 export async function transition(
   win: Window,
   apply: () => void,
-  track?: (running: RunningTransition | undefined) => void,
+  track?: (running: RunningTransition, finished: boolean) => void,
 ): Promise<void> {
   const doc = win.document as Document & {
     startViewTransition?: (update: () => void) => RunningTransition;
@@ -70,12 +92,12 @@ export async function transition(
     return;
   }
   const running = doc.startViewTransition(apply);
-  track?.(running);
+  track?.(running, false);
   running.ready.catch(hush);
-  running.finished.then(
-    () => track?.(undefined),
-    () => track?.(undefined),
-  );
+  // The transition itself, never "whichever is running": an older one finishing after a newer one
+  // started must not clear the newer one (the caller compares by identity).
+  const done = (): void => track?.(running, true);
+  running.finished.then(done, done);
   await running.updateCallbackDone;
 }
 

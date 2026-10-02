@@ -18,11 +18,19 @@ const DURATION_UNITS: ReadonlyMap<string, number> = new Map([
 /** `'5m'` → 300000. Numbers pass through as milliseconds. */
 export function parseTtlMs(ttl: string | number | null | undefined): number | null {
   if (ttl === null || ttl === undefined) return null;
-  if (typeof ttl === 'number') return Number.isFinite(ttl) && ttl > 0 ? ttl : null;
+  if (typeof ttl === 'number') return positiveMs(ttl);
+  // Typed away, reachable from JS: `modes.ts` asks this of an unvalidated `revalidate.ttl`.
+  if (typeof ttl !== 'string') return null;
   const match = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/.exec(ttl.trim());
   const amount = match?.[1];
   const unit = match?.[2];
   if (amount === undefined || unit === undefined) return null;
   const factor = DURATION_UNITS.get(unit);
-  return factor === undefined ? null : Number(amount) * factor;
+  return factor === undefined ? null : positiveMs(Number(amount) * factor);
 }
+
+/**
+ * Both arms end here, so `'0s'` and `0` cannot disagree: a zero-length TTL registered, and
+ * `entryTtlMs` then read the stored `0` as tag-only — a page declared to expire never did.
+ */
+const positiveMs = (ms: number): number | null => (Number.isFinite(ms) && ms > 0 ? ms : null);

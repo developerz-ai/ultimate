@@ -46,6 +46,11 @@ describe('linkVerdict — what the browser keeps', () => {
     ['another port is another origin', { href: 'https://app.test:8443/plazos' }, 'cross-origin'],
     ['mailto:', { href: 'mailto:a@app.test' }, 'cross-origin'],
     ['a fragment on this page', { href: 'https://app.test/casos?page=2#vencidos' }, 'hash'],
+    // `<a href="#">`: the URL's `hash` is '' for an EMPTY fragment, so only the href says it is one.
+    ['an empty fragment on this page', { href: 'https://app.test/casos?page=2#' }, 'hash'],
+    // What `a.href` answers for `href="http://"`: the attribute itself, which no URL parses.
+    ['an href no URL parses', { href: 'http://' }, 'unparsable'],
+    ['an href with a bad port', { href: 'https://app.test:99999/x' }, 'unparsable'],
   ] as const)('%s', (_name, patch, reason) => {
     expect(linkVerdict(link(patch))).toEqual({ kind: 'native', reason });
   });
@@ -95,6 +100,7 @@ describe('formVerdict', () => {
     ['another origin', { action: 'https://pay.test/checkout', method: 'post' }, 'cross-origin'],
     ['a POST carrying a file', { method: 'post', hasFile: true }, 'file'],
     ['a text/plain POST', { method: 'post', enctype: 'text/plain' }, 'encoding'],
+    ['an action no URL parses', { action: 'http://', method: 'post' }, 'unparsable'],
   ] as const)('the browser keeps %s', (_name, patch, reason) => {
     expect(formVerdict(form(patch))).toEqual({ kind: 'native', reason });
   });

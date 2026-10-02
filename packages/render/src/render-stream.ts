@@ -117,7 +117,9 @@ export function renderStreamHtml(
   const encoder = new TextEncoder();
   const tail = plan.tail ?? '</body></html>';
   const errorFallback =
-    options.errorFallback ?? ((id) => `<div data-x-hole-error="${id}" hidden></div>`);
+    // Escaped as `holeMarker` escapes the same id: it lands inside an attribute either way.
+    options.errorFallback ??
+    ((id) => `<div data-x-hole-error="${escapeAttribute(id)}" hidden></div>`);
   // A deadline is the bound a non-finite value does not disable but MOVES: `setTimeout(fn, NaN)`
   // is `setTimeout(fn, 0)`, so every hole would miss a deadline nobody set and the document would
   // be all fallbacks. `null` is the declared opt-out; there is no spelling that means "immediately".

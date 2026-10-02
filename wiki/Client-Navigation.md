@@ -93,12 +93,13 @@ a handler that calls `preventDefault()` keeps the event.
 | Taken (soft) | Left to the browser (native) |
 |---|---|
 | left click on a same-origin `<a href>` / `<area href>` | a modifier key or another button; `target` other than `_self`; `download`; `rel="external"`; `data-x-reload`; another origin or scheme |
-| a link to another page, or another query on this page | a fragment on the page already shown: the browser scrolls, nothing is fetched |
+| a link to another page, or another query on this page | a fragment on the page already shown, `href="#"` included: the browser scrolls, nothing is fetched. An `href` or form `action` no URL parses (`http://`): the browser decides |
 | `<form method="get">`: navigates to its query, like the browser | `method="dialog"`; a `target`; another origin; `data-x-reload` on the form or its submitter |
 | `<form method="post">`, url-encoded or multipart | a POST with a chosen file (the browser's own upload progress); `enctype="text/plain"` |
 
 The submitter's `formaction`, `formmethod`, `formenctype`, `formtarget` and its own name/value are
-honoured.
+honoured. A GET query and a url-encoded body carry every line break as CRLF, as a native submit does
+(`As of 2026-10-02`): a `<textarea>` sends the same bytes with the router as without it.
 
 ### What happens to the answer
 
@@ -168,7 +169,7 @@ click after a swap is never lost.
 | Concern | Behaviour |
 |---|---|
 | history | `pushState` per navigation, each entry naming the document it shows; `replaceState` for the same URL. Back/forward to an entry whose document is not the one on screen swaps it in; an entry an app pushed shows the document of its path |
-| scroll | top on a new page; the fragment's element for `#id`; back AND forward restore the saved position (saved as the visitor scrolls). Always `instant`, whatever `scroll-behavior` says |
+| scroll | top on a new page; the fragment's element for `#id`; back AND forward restore the saved position (saved as the visitor scrolls), and so do a reload and a Back that is a full document load (`As of 2026-10-02`). Always `instant`, whatever `scroll-behavior` says |
 | focus | moved to the new page's `<main>` (else its first `<h1>`), `tabindex="-1"` added if needed |
 | announcement | the new `document.title`, in a polite `aria-live` region the router owns |
 | progress | `data-x-navigating` on `<html>` once a navigation runs past 150 ms. No bundled UI: style it, e.g. `html[data-x-navigating] main { opacity: 0.6 }` inside `prefers-reduced-motion: no-preference` |
@@ -191,6 +192,7 @@ documents, keyed with the query sorted and without the fragment.
 | any write through the framework's client (`rpc`, a mutation, an upload — `@ultimat3/core`'s `onClientWrite`) | |
 | a principal change: `onRescope`, a load for another principal, a POST answered for one, and every hand-over of the very URL asked for (the server's principal check answers that way, and the router cannot tell it from a `'document'` page — so it forgets either way) | |
 | a `BroadcastChannel('ultimate:navigation')` message from another tab — each of the above posts one | |
+| the page's return from the back/forward cache: the channel is closed on `pagehide` (an open one keeps a page out of that cache), so every message sent meanwhile was missed | |
 
 Never prefetched at all: a link with `data-x-no-prefetch`, anything the click rules leave to the
 browser, anything on `Save-Data` or a `2g`/`slow-2g` connection, and the page a navigation is

@@ -36,6 +36,19 @@ const checked = (pattern: string, param: string, segment: string): string => {
 };
 
 /**
+ * A param as text, `undefined` when absent. Typed `string` but filled from app data at runtime:
+ * `{ id: 7 }` reached `.split()` and `for…of` as a number and left the build as a bare `TypeError`.
+ */
+const paramText = (pattern: string, name: string, params: RouteParams): string | undefined => {
+  if (typeof params !== 'object' || params === null) {
+    return refuse(pattern, name, params, 'is missing — the params are not an object');
+  }
+  const value: unknown = Object.hasOwn(params, name) ? params[name] : undefined;
+  if (value === undefined || typeof value === 'string') return value;
+  return refuse(pattern, name, value, 'is not text — a path segment is a string');
+};
+
+/**
  * The raw (decoded) segments, validated. `:name` must be present and one segment; `*name` may span
  * several (`a/b`) and may be absent, but none of its parts may be a dot segment or unsafe.
  */
@@ -45,7 +58,7 @@ export function filledSegments(pattern: string, params: RouteParams): readonly s
     if (segment === '') continue;
     if (segment.startsWith(':')) {
       const name = segment.slice(1);
-      const value = Object.hasOwn(params, name) ? params[name] : undefined;
+      const value = paramText(pattern, name, params);
       if (value === undefined || value === '') {
         return refuse(
           pattern,
@@ -59,7 +72,7 @@ export function filledSegments(pattern: string, params: RouteParams): readonly s
     }
     if (segment.startsWith('*')) {
       const name = segment.slice(1);
-      const value = Object.hasOwn(params, name) ? (params[name] ?? '') : '';
+      const value = paramText(pattern, name, params) ?? '';
       for (const part of value.split('/')) if (part !== '') out.push(checked(pattern, name, part));
       continue;
     }

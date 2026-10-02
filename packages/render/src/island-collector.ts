@@ -5,6 +5,7 @@
  */
 
 import type { HydrateStrategy } from '@ultimat3/core';
+import { renderCauseValue } from '@ultimat3/core';
 import { IslandInvalidError, IslandNotHydratedError } from './errors';
 import type { IslandDirective } from './hydrate';
 import { DEFAULT_REPLAY_EVENTS } from './hydrate';
@@ -131,7 +132,7 @@ function assertHydrates(strategy: HydrateStrategy, spec: IslandSpec, file: strin
 function assertEntry(entry: string, spec: IslandSpec, file: string): void {
   if (isEmittableSpecifier(entry)) return;
   throw new IslandInvalidError(
-    `the resolver returned ${JSON.stringify(entry)} for the ${spec.moduleId} island in ${file}, ` +
+    `the resolver returned ${renderCauseValue(entry)} for the ${spec.moduleId} island in ${file}, ` +
       'which cannot be emitted as a module URL',
     'fix the resolve() passed to createIslandCollector — it must return a plain URL path',
   );

@@ -50,6 +50,33 @@ describe('real input', () => {
     expect(link.clicks).toBe(1);
   });
 
+  test('an older transition finishing does not forget the one still painting', async () => {
+    const skipped: string[] = [];
+    const finish: (() => void)[] = [];
+    const { win, doc } = tab({ '/b': answers.b, '/c': answers.c });
+    doc.startViewTransition = (update) => {
+      update();
+      const name = doc.title;
+      return {
+        updateCallbackDone: Promise.resolve(),
+        ready: Promise.resolve(),
+        finished: new Promise<void>((resolve) => finish.push(resolve)),
+        skipTransition: () => {
+          skipped.push(name);
+        },
+      } as ReturnType<NonNullable<FakeDocument['startViewTransition']>>;
+    };
+    click(win, 'to-b');
+    await settle();
+    click(win, 'to-c');
+    await settle();
+    // B's transition ends while C's is still on screen.
+    finish[0]?.();
+    await settle();
+    fire(doc, 'pointerdown', doc.documentElement);
+    expect(skipped).toEqual(['C']);
+  });
+
   test('no guess for the page a navigation is already fetching', async () => {
     let release = (_r: Response): void => undefined;
     const { win, doc, calls } = tab({

@@ -123,13 +123,12 @@ export function generateServiceWorker(
 
   const fallback = requireOfflineFallback(config.offline);
   const capabilities = resolveCapabilities(config.capabilities);
-  // `last-member` routes a personal page by its render mode again — the pages facade partitions it.
-  // The precache below still skips it: fetched anonymously at install, it is a sign-in redirect.
-  const routed =
-    fallback.personalPages === 'last-member'
-      ? routes.map((route) => ({ ...route, personal: false }))
-      : routes;
-  const rules = [...assetRules(config.runtimeAssets ?? [], scope), ...routeRules(routed)];
+  // The precache below skips a personal page in both modes: fetched anonymously at install, it is a
+  // sign-in redirect. `routeRules` decides where `last-member` keeps it instead — the pages facade.
+  const rules = [
+    ...assetRules(config.runtimeAssets ?? [], scope),
+    ...routeRules(routes, fallback.personalPages),
+  ];
 
   const precache = buildPrecacheManifest({
     buildId,
@@ -278,7 +277,9 @@ self.addEventListener('install',(event)=>{
         const e=PRECACHE_MANIFEST[i++];
         try{
           const r=await fetch(new Request(e.url+(e.url.indexOf('?')<0?'?':'&')+'v='+e.revision,{cache:'reload'}));
-          if(r.ok)await cache.put(new Request(e.url),r);
+          // Mid-rollout an OLD pod may answer: its document is not this build's offline copy.
+          const b=r.headers.get(BUILD_HEADER);
+          if(r.ok&&(b===null||b===BUILD_ID))await cache.put(new Request(e.url),r);
         }catch(err){}
       }
     };

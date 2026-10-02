@@ -62,13 +62,22 @@ describe('stylesheets', () => {
     expect(missingStylesheets(dom(doc), dom(next))).toEqual(['https://app.test/b.css']);
   });
 
-  test('a sheet that fails to load does not hang the navigation', async () => {
+  test('a sheet that fails to load does not hang the navigation; each one is owned', async () => {
     const doc = new FakeDocument();
-    await loadStylesheets(dom(doc), ['https://app.test/ok.css', 'https://app.test/fail.css']);
-    expect(doc.head.querySelectorAll('link').map((l) => l.getAttribute('href'))).toEqual([
+    const owned = new WeakSet<Element>();
+    await loadStylesheets(
+      dom(doc),
+      ['https://app.test/ok.css', 'https://app.test/fail.css'],
+      owned,
+    );
+    const links = doc.head.querySelectorAll('link');
+    expect(links.map((l) => l.getAttribute('href'))).toEqual([
       'https://app.test/ok.css',
       'https://app.test/fail.css',
     ]);
+    // Owned as appended: a navigation aborted before its swap leaves nothing the next swap
+    // cannot retire.
+    expect(links.map((l) => owned.has(l as unknown as Element))).toEqual([true, true]);
   });
 });
 

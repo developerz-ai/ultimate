@@ -25,7 +25,7 @@ const UNSAFE_SPECIFIER = /["'`<>\s\\]/;
 
 /** The same test the resolver's output has to pass: one rule, applied at both ends of the seam. */
 export function isEmittableSpecifier(value: string): boolean {
-  return value.length > 0 && !UNSAFE_SPECIFIER.test(value);
+  return typeof value === 'string' && value.length > 0 && !UNSAFE_SPECIFIER.test(value);
 }
 
 export interface IslandDeclaration<TKeys extends readonly string[] = readonly string[]> {

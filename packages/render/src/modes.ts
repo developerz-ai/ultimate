@@ -6,7 +6,7 @@
  */
 
 import type { HydrateStrategy, RenderMode } from '@ultimat3/core';
-import { HYDRATE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
+import { HYDRATE_STRATEGIES, RENDER_MODES, renderCauseValue } from '@ultimat3/core';
 import { parseTtlMs } from './duration';
 import { RouteModeInvalidError } from './errors';
 import type { RouteConfig } from './route';
@@ -84,14 +84,14 @@ export function assertModeShape(config: RouteShape): void {
     : undefined;
   if (spec === undefined) {
     throw new RouteModeInvalidError(
-      `render: ${JSON.stringify(config.render)} is not a render mode`,
+      `render: ${renderCauseValue(config.render)} is not a render mode`,
       `use one of ${RENDER_MODES.join(' | ')}`,
     );
   }
 
   if (!HYDRATE_STRATEGIES.includes(config.hydrate)) {
     throw new RouteModeInvalidError(
-      `hydrate: ${JSON.stringify(config.hydrate)} is not a hydration strategy`,
+      `hydrate: ${renderCauseValue(config.hydrate)} is not a hydration strategy`,
       `use one of ${HYDRATE_STRATEGIES.join(' | ')}`,
     );
   }

@@ -243,6 +243,12 @@ describe('isr revalidate trigger', () => {
     expect(() => isrRoute({ ttl: -1 })).toThrow(RouteModeInvalidError);
   });
 
+  test('refuses a zero-length ttl string, as it refuses the number 0', () => {
+    for (const ttl of ['0s', '0ms', '0m']) {
+      expect(() => isrRoute({ ttl })).toThrow(RouteModeInvalidError);
+    }
+  });
+
   test('tags alone are still a trigger, with no ttl at all', () => {
     expect(isrRoute({ tags: [tag('post')] }).render).toBe('isr');
   });

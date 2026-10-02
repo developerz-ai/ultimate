@@ -22,7 +22,8 @@ repair in `testing` rode along with it. Slice 05 is `auth`: **a deployment with 
 users has an operator step — the first `auth` entry under Changed.** Slice 06 is complete:
 `query` with `entity`'s comparison rule, `mcp` and `admin`, then `action` with what it changed in
 `http`, `db` and `cli`. Slice 07 is `jobs`; no DDL changed. Slice 08 is
-`realtime`: **three operator steps — the first three `realtime` entries under Changed.**
+`realtime`: **three operator steps — the first three `realtime` entries under Changed.** Slice 09's
+first half is `render` and `pwa`, with what they changed in `http`; its `ui` half follows.
 
 ### Added
 
@@ -149,6 +150,19 @@ Tier 0 — core. Tier 3 — realtime (slice 08).
   optional `onEnd(reason)`; `ChangeEvent` an optional `omitted`. Server exports
   `paramsChannelTables`, `CHANNEL_IDENTITY_EVENT`, `answersWeakAuth`. New log event
   `replication.channel_identity_partial`.
+
+Tier 0 — core (slice 09).
+
+- **core:** `routeRank(pattern)` — the request router's order as one integer (segment by
+  segment: literal over `:param` over `*catch-all`; an ended pattern over a catch-all). The
+  one rank render's `CompiledPattern.specificity` and pwa's worker rule order both read.
+
+Tier 4 — render, pwa (slice 09).
+
+- **render:** `createIsrController({ regenerateDeadlineMs, schedule })` and
+  `DEFAULT_ISR_REGENERATE_DEADLINE_MS` (30,000), from `@ultimat3/render/server` — see Fixed.
+- **pwa:** `routeRules(routes, personalPages)` takes an optional second parameter, default
+  `'never'` — see Fixed.
 
 Tier 5 — cli.
 
@@ -711,6 +725,48 @@ Tier 3 — realtime.
   and the reason are in the comment above the budget in
   `examples/dummy/apps/web/app/runs/page.tsx`, which is where `bun run budget-raises` reads them.
 
+Tier 2 — http. Tier 4 — render, pwa (slice 09).
+
+- **BREAKING — a catch-all route matches an empty rest.** `/docs` and `/docs/` reach `/docs/*path`
+  with `path: ''`; both were 404. A static route at `/docs` still wins the bare prefix, and a
+  `:param` beside the catch-all keeps its one segment. It is the path `@ultimat3/render`'s static
+  build writes for an empty rest (`fillPath`). A handler that assumed a non-empty rest handles
+  `path === ''`, or the app declares the static `/docs`.
+- **BREAKING — a zero-length `revalidate.ttl` string is no trigger.** `'0s'`, `'0ms'`, `'0m'` and
+  the rest parse to `null` (`parseTtlMs`), as the number `0` already did. An `isr` route whose only
+  trigger it was is `X_ROUTE_MODE_INVALID` at registration; it registered, and its page never
+  expired. Write a positive `ttl`, or `tags`. Beside `tags` the route is tag-only, which is how it
+  already behaved.
+- **BREAKING — `NativeReason` gains `'unparsable'`.** `linkVerdict` answers it for an `href` no URL
+  parses (`href="http://"`), `formVerdict` for such an action; the client router leaves both to the
+  browser, where its click and submit handlers threw a bare `TypeError`. An exhaustive `switch` over
+  `NativeReason` adds `case 'unparsable':`.
+- **BREAKING — a CSS module scopes a class only where it is a selector, and every scoped name
+  changes once.** Only a rule's prelude is rewritten; a declaration (`src: local(Inter.Regular)`), a
+  comment and an at-rule's prelude are left as written, and their words are no longer keys of
+  `classes`. An escaped class is one class: `.w-1\.5` was a scoped `w-1` and a stray `.5`, and is
+  now `styles['w-1.5']`. The suffix hashes the file's basename and its compiled CSS, was its source:
+  two `page.module.scss` with one source and different `@use`d partials shared one class name and
+  the later sheet won on both pages. Rebuild; update a snapshot holding a scoped name; read an
+  escaped class by its unescaped name.
+- **BREAKING — `CompiledPattern.specificity` is a positional rank.** `compilePattern` — moved to
+  `route-pattern.ts`, still exported by name from `@ultimat3/render` — ranks as `@ultimat3/http`'s
+  router walks: the first segment where two patterns differ decides, a literal 3, a `:param` 2, a
+  `*catch-all` 1, and 4 where the pattern has ended, packed in base 5 over 22 segments. It was a
+  100/10/1 sum, which ranked `/:a/b/c` above `/a/:x/:y`. Higher still wins; every value changed.
+  Compare two patterns' `specificity`, never a stored number. The regex also matches a catch-all's
+  bare prefix (`/docs` for `/docs/*path`), and a literal segment raw or percent-encoded in either
+  hex case (`/precios-espa%C3%B1a` for `/precios-españa`).
+- **BREAKING — a notification tap opens this app only.** The service worker's `notificationclick`
+  opens the payload's `url` when it resolves to the worker's own origin, else the app root; it
+  opened any URL. A sender that deep-linked to another host links to a page of the app instead. The
+  handler is emitted only when `generateServiceWorker` is handed a `vapid` key — `x build` never
+  is.
+- **examples/dummy:** the `/posts/new` route budget is raised `21.5kb` → `22kb` and `/settings`
+  `58.5kb` → `59kb`, for the client router's fixes below (router 19,269 → 20,043 B raw). The
+  measured numbers and the reason are in the comment above each budget, where
+  `bun run budget-raises` reads them.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -998,6 +1054,59 @@ Tier 3 — realtime (slice 08).
   `live` on the first `events` frame.
 - **realtime:** `DrainReport.sent` no longer counts a write the sender refused; a refused entry
   keeps its `error` on disk.
+
+Tier 2 — http. Tier 4 — render, pwa (slice 09).
+
+- **http:** a static route outside ASCII matches its request. A segment is looked up raw, then
+  decoded, so `/precios-espa%C3%B1a` — how `URL.pathname` spells it — reaches `/precios-españa`;
+  it was a 404. A server declaring such a route starts: `Bun.serve` threw a bare `TypeError` on the
+  non-ASCII key, and the native route table is now keyed by `encodeURI`.
+- **render:** a hung ISR render no longer pins its path. `createIsrController` holds one
+  regeneration per path through core's `createSingleFlight`, with a deadline:
+  `regenerateDeadlineMs`, default 30,000 — `@ultimat3/http`'s default `requestTimeoutMs` — a whole
+  number ≥ 1, else `X_INVARIANT`. A render that never settled held its path for the life of the
+  process: a missed page hung every later request, a stale one was served stale forever. At the
+  deadline the path is freed and the next request renders again; the hung render itself is not
+  cancelled, and when it settles its page is stored only if no newer regeneration of the path has
+  started.
+- **render:** an ISR path is filed under the most specific route that matches it, in the request
+  router's order; it took the first in table order, so `/docs/7` got `/docs/*path`'s TTL and tags
+  over `/docs/:id`'s. A catch-all's bare prefix and a percent-encoded non-ASCII path find their
+  route.
+- **render:** the client router. A reload, or a Back that is a full load, lands at the saved offset
+  — the first save overwrote it with the top of the page. The tab channel closes on `pagehide` and
+  reopens, cache emptied, on a back/forward-cache `pageshow`; an open channel kept the page out of
+  that cache. `<a href="#">` is the browser's (it was soft-navigated and re-fetched). A GET query
+  and a urlencoded POST body carry line breaks as CRLF, as a native submit does. A stylesheet an
+  aborted navigation appended is retired by the next swap; it stayed for good. An older view
+  transition finishing no longer clears the running one. Router script +774 B raw.
+- **render:** coded refusals where a value from app code was a bare `TypeError`. A `prerender()`
+  item that is neither text nor an object, a param that is not text, and `fillPath` given `null`
+  params are `X_PRERENDER_FAILED`; `asset()` of a non-string `X_ASSET_MISSING`; an island resolver
+  answering a non-string `X_ISLAND_INVALID`. `parseTtlMs` answers `null` for a value that is not a
+  string or a number. Causes render the value through core's `renderCauseValue`, and the default
+  hole error fallback escapes the hole id as `holeMarker` does.
+- **pwa:** `display_override` starts where `display` does — `fullscreen` is
+  `['fullscreen', 'standalone', 'minimal-ui']`, `minimal-ui` is `['minimal-ui']`, `browser` has
+  none; `standalone`, the default, is unchanged. The fixed `['standalone', 'minimal-ui']` opened a
+  `browser` app in its own window and gave a `fullscreen` one browser UI.
+- **pwa:** the push handler reads the payload inside `waitUntil`. A body that is not JSON is the
+  notification's text, JSON that is not an object reads as `{}`, and `actions` that are not a list
+  are `[]`; each threw, and nothing was shown.
+- **pwa:** the install fill does not store an answer stamped with another build's
+  `X-Ultimate-Build` — mid-rollout an old pod's document became the new worker's offline copy. An
+  unstamped answer is stored.
+- **pwa:** a route rule matches the pathname the browser sends: a literal segment is
+  percent-encoded as `URL.pathname` spells it, a catch-all matches its bare prefix, and rules are
+  ordered by the request router's rule — the rank `CompiledPattern.specificity` now carries, kept
+  as a copy because `pwa` and `render` share a tier. `sw.js` changes once for an app with such
+  routes.
+- **pwa:** `personalPages: 'last-member'` keeps a personal page declaring `offline: 'precache'` in
+  the member's own partition; it got a `precache` rule, and a personal page is never precached, so
+  it was never kept.
+- **pwa:** the wiki's `push` and `shareTarget` capability rows say what is generated: the two
+  service-worker handlers only with a `vapid` key, which `x build` never passes; the
+  `share_target` manifest member only.
 
 ## 23.0.0 - 2026-10-02
 

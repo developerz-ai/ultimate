@@ -6,6 +6,7 @@
  * `island({ src })` does. The table is the CLI's (`site-assets.ts`); this file holds only the seam.
  */
 
+import { renderCauseValue } from '@ultimat3/core';
 import { AssetMissingError } from './errors';
 
 /**
@@ -48,6 +49,8 @@ const EXTENSIONS: ReadonlySet<string> = new Set(ASSET_EXTENSIONS);
  * refused here, before any disk is asked.
  */
 export function assetPathProblem(path: string): string | undefined {
+  // Typed, but a JS caller or a Sass `asset()` can still hand over anything: a refusal, not a crash.
+  if (typeof path !== 'string') return `${renderCauseValue(path)} is not a path`;
   if (path.includes('\\')) return `"${path}" contains a backslash`;
   const segments = path.split('/');
   if (segments[0] !== ASSET_DIR || segments.length < 2) {
@@ -94,14 +97,14 @@ export function asset(path: AssetPath): string {
   const problem = assetPathProblem(path);
   if (problem !== undefined) {
     throw new AssetMissingError(
-      `asset(${JSON.stringify(path)}): ${problem}`,
+      `asset(${renderCauseValue(path)}): ${problem}`,
       `name a file under apps/web/site/${ASSET_DIR}/ with one of: ${ASSET_EXTENSIONS.join(', ')}`,
     );
   }
   const resolver = holder[RESOLVER_SLOT];
   if (resolver === undefined) {
     throw new AssetMissingError(
-      `asset(${JSON.stringify(path)}) ran with no site asset table installed — in a browser (an island), or in a test that never loaded the app`,
+      `asset(${renderCauseValue(path)}) ran with no site asset table installed — in a browser (an island), or in a test that never loaded the app`,
       'call asset() in the page and pass the URL to the island as a prop; a unit test installs a table with setAssetResolver((path) => "/" + path)',
     );
   }

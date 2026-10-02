@@ -3,7 +3,6 @@ import { UltimateError } from '@ultimat3/core';
 import { RouteDuplicateError, RouteFileInvalidError, SurfaceBoundaryError } from './errors';
 import {
   clearRoutes,
-  compilePattern,
   decodeSegment,
   describeRoutes,
   registerRoute,
@@ -13,6 +12,7 @@ import {
 } from './registry';
 import type { RouteMetaFn } from './route';
 import { defineRoute } from './route';
+import { compilePattern } from './route-pattern';
 import type { Surface } from './surfaces';
 
 /** The thrown error itself, so a test can assert on `code`, `cause` and `fix` together. */

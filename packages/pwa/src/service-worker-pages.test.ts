@@ -181,6 +181,23 @@ describe("personalPages: 'last-member'", () => {
     expect(await (await sw.request('/feed')).text()).not.toBe('feed for kenji');
   });
 
+  // Declared `precache`, it got a `precache` rule — a cache the manifest never fills and whose
+  // guard drops a private answer — so `/dashboard` was never kept for offline, unlike `runtime`.
+  test('a personal page declared precache is kept for its member offline, in a partition', async () => {
+    const sw = swHarness();
+    const declared: readonly PwaRoute[] = [
+      { path: '/dashboard', surface: 'app', mode: 'ssr', offline: 'precache', personal: true },
+    ];
+    sw.load(generateServiceWorker(declared, lastMember, 'build-1').source);
+    as(sw, () => 'kenji');
+    await sw.install();
+    expect(await (await sw.request('/dashboard')).text()).toBe('feed for kenji');
+    sw.goOffline();
+    expect(await (await sw.request('/dashboard')).text()).toBe('feed for kenji');
+    expect(sw.caches.get('x-precache-build-1')?.entries.has(`${SW_ORIGIN}/dashboard`)).toBe(false);
+    expect([...sw.caches.keys()].filter((name) => name.includes('~'))).toHaveLength(1);
+  });
+
   test('still never precaches a personal page', () => {
     const precached = generateServiceWorker(
       [{ path: '/panel', surface: 'app', mode: 'ssr', offline: 'precache', personal: true }],

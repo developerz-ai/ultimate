@@ -299,7 +299,7 @@ export function defineRoute<TData = RouteData>(
   }
   if (!OFFLINE_STRATEGIES.includes(def.offline)) {
     throw new RouteOfflineMissingError(
-      `offline: ${JSON.stringify(def.offline)} is not a known strategy`,
+      `offline: ${renderCauseValue(def.offline)} is not a known strategy`,
       `use one of ${OFFLINE_STRATEGIES.join(' | ')}`,
     );
   }
@@ -312,7 +312,7 @@ export function defineRoute<TData = RouteData>(
 
   if (def.load !== undefined && typeof def.load !== 'function') {
     throw new RouteLoadInvalidError(
-      `load: ${JSON.stringify(def.load)} is not a function`,
+      `load: ${renderCauseValue(def.load)} is not a function`,
       'make load a function of ({ params, url }) returning the page data, or remove it',
     );
   }

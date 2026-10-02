@@ -155,7 +155,6 @@ export {
 export type { ClientNavigationHead } from './navigation-tags';
 export { clientNavigationTags } from './navigation-tags';
 export type {
-  CompiledPattern,
   MountedRouteInput,
   RegisterRouteInput,
   RouteDescriptor,
@@ -165,7 +164,6 @@ export type {
 } from './registry';
 export {
   clearRoutes,
-  compilePattern,
   describeRoutes,
   ROUTE_FILENAME,
   registerMountedRoutes,
@@ -205,6 +203,8 @@ export {
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';
+export type { CompiledPattern } from './route-pattern';
+export { compilePattern } from './route-pattern';
 export { routeStatusOf, withStatus } from './route-status';
 export type { SpeculationRules } from './speculation-rules';
 export {

@@ -171,28 +171,46 @@ export function pushSource(options: PushSourceOptions = {}): string {
   const badging = options.badging === true;
 
   return `
+// Parsed INSIDE waitUntil: json() on a body that is not JSON threw out of the listener before it
+// was extended, and nothing was shown. Plain text is the body; JSON that is no object reads as {}.
+function pushData(event){
+  if(!event.data)return {};
+  let v;
+  try{v=event.data.json()}catch(e){return {body:event.data.text()}}
+  return v!==null&&typeof v==='object'&&!Array.isArray(v)?v:{}
+}
 self.addEventListener('push',(event)=>{
-  const d=event.data?event.data.json():{};
-  // renotify needs the tag: showNotification rejects with a TypeError when the flag is set and
-  // the tag is empty, and the device shows nothing. renderPushPayload refuses the pair too, but a
-  // push body is composed by whatever holds the VAPID key, so this is the last guard there is.
-  // A NON-EMPTY STRING, never truthiness: WebIDL converts every tag to a DOMString, and [] and {}
-  // are truthy in JS while converting to '' and '[object Object]'. !!d.tag therefore enabled
-  // renotify for a JSON [] whose converted tag is empty — the rejection this line exists to avoid.
-  const tg=typeof d.tag==='string'&&d.tag!==''?d.tag:undefined;
-  const opts={body:d.body||'',icon:d.icon||${icon},badge:d.badge||${badge},
-    tag:tg,renotify:!!d.renotify&&tg!==undefined,requireInteraction:!!d.requireInteraction,
-    lang:d.lang||undefined,actions:d.actions||[],data:{url:d.url||'/'}};
-  event.waitUntil(self.registration.showNotification(d.title||'',opts)${
-    badging ? '.then(()=>navigator.setAppBadge&&navigator.setAppBadge())' : ''
-  });
+  event.waitUntil((async()=>{
+    const d=pushData(event);
+    // renotify needs the tag: showNotification rejects with a TypeError when the flag is set and
+    // the tag is empty, and the device shows nothing. renderPushPayload refuses the pair too, but a
+    // push body is composed by whatever holds the VAPID key, so this is the last guard there is.
+    // A NON-EMPTY STRING, never truthiness: WebIDL converts every tag to a DOMString, and [] and {}
+    // are truthy in JS while converting to '' and '[object Object]'. !!d.tag therefore enabled
+    // renotify for a JSON [] whose converted tag is empty — the rejection this line exists to avoid.
+    const tg=typeof d.tag==='string'&&d.tag!==''?d.tag:undefined;
+    const opts={body:d.body||'',icon:d.icon||${icon},badge:d.badge||${badge},
+      tag:tg,renotify:!!d.renotify&&tg!==undefined,requireInteraction:!!d.requireInteraction,
+      lang:d.lang||undefined,actions:Array.isArray(d.actions)?d.actions:[],data:{url:d.url||'/'}};
+    await self.registration.showNotification(d.title||'',opts);${
+      badging ? '\n    if(navigator.setAppBadge)await navigator.setAppBadge();' : ''
+    }
+  })());
 });
+// A tap opens THIS app only: the URL comes from the push body, whoever composed it. Another host, a
+// non-http scheme, a malformed URL or a non-string opens the app's root instead.
+function tapTarget(raw){
+  const root=new URL('/',self.location.origin).href;
+  if(typeof raw!=='string')return root;
+  try{const u=new URL(raw,self.location.origin);return u.origin===self.location.origin?u.href:root}
+  catch(e){return root}
+}
 self.addEventListener('notificationclick',(event)=>{
   event.notification.close();
   // PushPayload.url is a PATH and WindowClient.url is absolute, so the comparison below is only
   // ever true after resolving — unresolved it matched no client at all and every tap opened a
   // second window on an app the user already had open. Same resolve as the fetch block's.
-  const url=new URL((event.notification.data&&event.notification.data.url)||'/',self.location.origin).href;
+  const url=tapTarget(event.notification.data&&event.notification.data.url);
   event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then((ws)=>{
     for(const w of ws){if(w.url===url&&'focus'in w)return w.focus()}
     return clients.openWindow(url)
