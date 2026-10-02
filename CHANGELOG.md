@@ -45,8 +45,8 @@ Tier 1 — time, db.
   column is dropped, `down` carries the old key as a `-- backfill …, then:` comment, not a
   statement. Two refusals, both `X_MIGRATION_IRREVERSIBLE`: a key that a recorded foreign key
   references, naming the constraints; and a new key over a column the same migration adds with no
-  default — add and backfill the column first, the key in the next migration. A `<table>_pkey`
-  name over 63 bytes — a table name over 58 — is `X_INVARIANT`.
+  default, or a `null` one — add and backfill the column first, the key in the next migration. A
+  `<table>_pkey` name over 63 bytes — a table name over 58 — is `X_INVARIANT`.
 
 Tier 5 — cli.
 

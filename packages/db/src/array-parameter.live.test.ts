@@ -128,4 +128,21 @@ describeLive('live · postgres · an array bound as a statement parameter', () =
     );
     expect(rows[0]).toEqual({ n: 2, hex: '0102ff' });
   });
+
+  // The deeper refusal, checked against the server: branches rectangular on their own and
+  // different from each other are one malformed literal, and the 3-dimensional rectangle parses.
+  test('a literal whose branches differ one level down is one Postgres refuses to read', async () => {
+    await expect(on('select $1::text[] as a', ['{{{a}},{{b,c}}}'])).rejects.toThrow(
+      /malformed array literal|matching dimensions/,
+    );
+    const rows = await run<{ n: number }>('select array_ndims($1::text[]) as n', [
+      [[['a', 'b']], [['c', 'd']]],
+    ]);
+    expect(rows[0]?.n).toBe(3);
+  });
+
+  test('the empty nest this module renders is one Postgres reads', async () => {
+    const rows = await run<{ n: number | null }>('select cardinality($1::text[]) as n', [[[], []]]);
+    expect(rows[0]?.n).toBe(0);
+  });
 });

@@ -84,4 +84,33 @@ describe('unit · pgArrayLiteral', () => {
     }
     expect(thrown?.code).toBe('X_INVARIANT');
   });
+
+  // Each branch is rectangular on its own and the two differ one level down: comparing only the
+  // siblings at ONE level rendered `{{{a}},{{b,c}}}`, which Postgres refuses (22P02).
+  test('branches that differ in a deeper extent are refused, at every depth', () => {
+    expect(() => pgArrayLiteral([[['a']], [['b', 'c']]])).toThrow(/ragged/);
+    expect(() => pgArrayLiteral([[['a'], ['b']], [['c']]])).toThrow(/ragged/);
+    // Mixed depth below the first level: a scalar in one branch where the other holds a row.
+    expect(() => pgArrayLiteral([[['a']], ['b']])).toThrow(/ragged|mixes scalars and arrays/);
+  });
+
+  test('a rectangular 3-dimensional array is rendered', () => {
+    expect(
+      pgArrayLiteral([
+        [
+          ['a', 'b'],
+          ['c', 'd'],
+        ],
+        [
+          ['e', 'f'],
+          ['g', 'h'],
+        ],
+      ]),
+    ).toBe('{{{a,b},{c,d}},{{e,f},{g,h}}}');
+  });
+
+  test('empty inner arrays of one shape are rendered; an empty beside a filled one is ragged', () => {
+    expect(pgArrayLiteral([[], []])).toBe('{{},{}}');
+    expect(() => pgArrayLiteral([[], ['a']])).toThrow(/ragged/);
+  });
 });

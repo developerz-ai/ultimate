@@ -60,6 +60,13 @@ function element(value: unknown): string {
   return `"${text.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
+/** The extents along a value's FIRST path, `2x3` for two rows of three — `''` for a scalar. */
+function extentsOf(value: unknown): string {
+  if (!Array.isArray(value)) return '';
+  const inner = extentsOf(value[0]);
+  return inner === '' ? String(value.length) : `${value.length}x${inner}`;
+}
+
 /**
  * The array literal for one parameter: `{a,b,c}`, elements escaped.
  *
@@ -90,6 +97,16 @@ export function pgArrayLiteral(values: readonly unknown[]): string {
     nested.every((row) => row.length === width),
     `a nested array parameter is ragged — its rows are ${nested.map((row) => row.length).join(', ')} long, and Postgres has no jagged array`,
     'give every row the same length, or bind one array per row',
+  );
+  // Every extent, not only this level's: `[[['a']], [['b', 'c']]]` is two rows of one element each,
+  // each rectangular on its own, and `{{{a}},{{b,c}}}` is the same 22P02 — measured on 17. Each
+  // row is checked against itself by the recursion below, so comparing one path's extents per row
+  // is comparing all of them.
+  const depth = extentsOf(nested[0]);
+  assert(
+    nested.every((row) => extentsOf(row) === depth),
+    `a nested array parameter is ragged below its first level — its rows have the extents ${nested.map((row) => extentsOf(row)).join(' | ')}, and Postgres has no jagged array`,
+    'give every branch the same length at every depth, or bind one array per row',
   );
   return `{${values.map((value) => (Array.isArray(value) ? pgArrayLiteral(value) : element(value))).join(',')}}`;
 }

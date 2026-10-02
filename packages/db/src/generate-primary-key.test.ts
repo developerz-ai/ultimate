@@ -172,4 +172,20 @@ describe('a changed primary key', () => {
     expect(migration.up).not.toContain('drop not null');
     expect(migration.down).not.toContain('drop not null');
   });
+
+  // `.default(null)` renders the expression `null`, which fills nothing: every existing row
+  // still holds NULL there and the key cannot be added.
+  test('a key over a new column whose default is the literal NULL is refused like no default', () => {
+    const nulled = {
+      org_id: { hasDefault: true, default: { kind: 'value', value: null } },
+    } as const;
+    const thrown = refusal(() =>
+      generate(
+        [posts(['id', 'org_id'], ['id', 'slug', 'org_id'], nulled)],
+        snapshotOf([posts(['id'])]),
+      ),
+    );
+    expect(thrown.code).toBe('X_MIGRATION_IRREVERSIBLE');
+    expect(thrown.cause).toContain('"org_id"');
+  });
 });

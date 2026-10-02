@@ -59,6 +59,13 @@ export function dropPrimaryKey(table: string, constraint: string, ifExists: bool
 const dropNotNull = (table: string, column: string): string =>
   `alter table ${identifier(table).text} alter column ${identifier(column).text} drop not null;`;
 
+/**
+ * No default, or the default `null` — `.default(null)` renders that expression, and it fills an
+ * added column with exactly what no default does.
+ */
+const fillsNothing = (expression: string | null): boolean =>
+  expression === null || expression === 'null';
+
 /** Two column lists, equal in ORDER — the one copy; `drift.ts` compares the live key through it. */
 export const sameColumns = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((column, index) => column === b[index]);
@@ -133,7 +140,8 @@ export function dropChangedKey(
  * The second half, after the table's last column statement — the `drop column`s included: every
  * column the new key names exists by now, and none it no longer names is still in the way.
  *
- * Refused when the key names a column this same migration ADDS with nothing to fill it: `add
+ * Refused when the key names a column this same migration ADDS with nothing to fill it (no
+ * default, or the default `null`): `add
  * column` lands NULL in every existing row and a primary key refuses a NULL, so the generated `up`
  * could not apply to any table holding a row. A default or a generation expression fills it.
  */
@@ -150,12 +158,12 @@ export function addChangedKey(
       entity.primaryKey.includes(column.column) &&
       !recorded.has(column.column) &&
       !isGenerated(column) &&
-      defaultExpression(column) === null,
+      fillsNothing(defaultExpression(column)),
   );
   if (empty.length > 0) {
     const names = empty.map((column) => `"${column.column}"`).join(', ');
     throw migrationIrreversible(
-      `the new primary key of "${entity.table}" names ${names}, which this same migration adds with no default: every existing row would hold NULL there, and a primary key cannot be added over a NULL`,
+      `the new primary key of "${entity.table}" names ${names}, which this same migration adds with no default that fills it: every existing row would hold NULL there, and a primary key cannot be added over a NULL`,
       `x db gen "${migration}"   # with ${names} declared but left OUT of primaryKey — apply it, backfill the column, then put it in the key and run x db gen again`,
     );
   }

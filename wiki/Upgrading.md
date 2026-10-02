@@ -143,7 +143,7 @@ Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16). Tier 1 — `@u
 | OTLP export | an endpoint with a query string keeps it after the signal path; a `NaN` or infinite attribute is dropped |
 | `X_VERIFY_STEP_TIMEOUT` | names the test file still running and its `fix:` runs it; `--json` findings gain `meta` |
 | `fix:` lines | `X_REGISTRAR_MISSING` / `X_REGISTRAR_CONFLICT` name the owning package; `X_SECRETS_KEY_INVALID` names the key file when the file is what is wrong |
-| `x db gen` and a changed `primaryKey` | the migration is written — drop `<table>_pkey`, add the new key, `drop not null` for a declared-nullable column leaving it. `X_MIGRATION_IRREVERSIBLE` for a key another table's foreign key references, and for a new key over a column the same migration adds with no default: add and backfill the column in one migration, change the key in the next |
+| `x db gen` and a changed `primaryKey` | the migration is written — drop `<table>_pkey`, add the new key, `drop not null` for a declared-nullable column leaving it. `X_MIGRATION_IRREVERSIBLE` for a key another table's foreign key references, and for a new key over a column the same migration adds with no default, or a `null` one: add and backfill the column in one migration, change the key in the next |
 | `x tasks` | `next`, `last` and `upcoming` are unchanged in form; they come from `isoInZone` in `@ultimat3/time` |
 | db error codes | a syscall error (`EPIPE`, `E2BIG`) is `X_DB_UNAVAILABLE`, was `X_DB_STATEMENT_FAILED`; a ragged array or Invalid Date parameter is `X_INVARIANT` on both drivers, was `X_DB_UNAVAILABLE` |
 | `addBusinessDays`, `businessDaysBetween` | the wall time survives a DST day; a date the zone skipped is not counted |
