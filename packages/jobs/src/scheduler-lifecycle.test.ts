@@ -16,8 +16,9 @@ import { DriverUnavailableError } from './errors';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
-import type { CronResolver, LeaderElection, Scheduler } from './scheduler';
+import type { CronResolver, Scheduler } from './scheduler';
 import { createScheduler } from './scheduler';
+import type { LeaderElection } from './scheduler-leader';
 import type { TaskHandle } from './task';
 import { resetTasks, task } from './task';
 
@@ -94,6 +95,8 @@ function countingLeader(release?: () => Promise<void>): CountingLeader {
   let releases = 0;
   return {
     leader: {
+      // No trusted window: the election is asked on every round, which is what `acquires` counts.
+      renewEveryMs: 0,
       acquire: () => {
         acquires += 1;
         return Promise.resolve(true);

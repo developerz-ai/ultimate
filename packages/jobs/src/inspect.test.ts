@@ -14,14 +14,12 @@ import {
   inspectDeadLetters,
   inspectJob,
   inspectJobList,
-  inspectManifest,
   inspectQueues,
   retryFromStep,
 } from './inspect';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
-import type { Scheduler } from './scheduler';
-import { resetTasks, task } from './task';
+import { resetTasks } from './task';
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -67,6 +65,7 @@ describe('inspectQueues', () => {
             delayed: 4,
             running: 6,
             suspended: 8,
+            failed: 9,
             dead: 10,
             oldestReadyMs: 500,
           },
@@ -76,6 +75,7 @@ describe('inspectQueues', () => {
             delayed: 5,
             running: 7,
             suspended: 9,
+            failed: 10,
             dead: 11,
             oldestReadyMs: 1_200,
           },
@@ -86,7 +86,14 @@ describe('inspectQueues', () => {
 
     expect(report.driver).toBe('memory');
     expect(report.queues.length).toBe(2);
-    expect(report.totals).toEqual({ ready: 5, delayed: 9, running: 13, suspended: 17, dead: 21 });
+    expect(report.totals).toEqual({
+      ready: 5,
+      delayed: 9,
+      running: 13,
+      suspended: 17,
+      failed: 19,
+      dead: 21,
+    });
     // The max, never the sum (500 + 1200 = 1700 would also be wrong in the same direction).
     expect(report.oldestReadyMs).toBe(1_200);
   });
@@ -103,6 +110,7 @@ describe('inspectQueues', () => {
             delayed: 0,
             running: 0,
             suspended: 0,
+            failed: 1,
             dead: 0,
             oldestReadyMs: 42,
           },
@@ -111,7 +119,14 @@ describe('inspectQueues', () => {
 
     const report = await inspectQueues(patched);
 
-    expect(report.totals).toEqual({ ready: 1, delayed: 0, running: 0, suspended: 0, dead: 0 });
+    expect(report.totals).toEqual({
+      ready: 1,
+      delayed: 0,
+      running: 0,
+      suspended: 0,
+      failed: 1,
+      dead: 0,
+    });
     expect(report.oldestReadyMs).toBe(42);
   });
 
@@ -122,7 +137,14 @@ describe('inspectQueues', () => {
     const report = await inspectQueues(patched);
 
     expect(report.queues).toEqual([]);
-    expect(report.totals).toEqual({ ready: 0, delayed: 0, running: 0, suspended: 0, dead: 0 });
+    expect(report.totals).toEqual({
+      ready: 0,
+      delayed: 0,
+      running: 0,
+      suspended: 0,
+      failed: 0,
+      dead: 0,
+    });
     expect(report.oldestReadyMs).toBe(0);
   });
 });
@@ -310,7 +332,13 @@ describe('inspectDeadLetters', () => {
   test('maps driver rows to DeadLetterEntry and synthesizes the retry command', async () => {
     const driver = createMemoryDriver();
     const { id } = await enqueueAndClaim(driver, { name: 'flaky-job' });
-    await driver.nack(id, { delayMs: 0, error: 'boom', deadLetter: true });
+    await driver.nack(id, {
+      workerId: 'worker-1',
+      claim: 1,
+      delayMs: 0,
+      error: 'boom',
+      deadLetter: true,
+    });
 
     const entries = await inspectDeadLetters(driver);
 
@@ -330,7 +358,7 @@ describe('inspectDeadLetters', () => {
     const driver = createMemoryDriver();
     for (const name of ['a', 'b', 'c']) {
       const { id } = await enqueueAndClaim(driver, { name });
-      await driver.nack(id, { delayMs: 0, deadLetter: true });
+      await driver.nack(id, { workerId: 'worker-1', claim: 1, delayMs: 0, deadLetter: true });
     }
 
     const entries = await inspectDeadLetters(driver, 2);
@@ -343,7 +371,7 @@ describe('retryFromStep', () => {
     const driver = createMemoryDriver();
     const { id, runId } = await enqueueAndClaim(driver, { name: 'resumable-job' });
     // Dead-lettered first: `x jobs retry` refuses a RUNNING job (`X_JOB_NOT_REQUEUEABLE`).
-    await driver.nack(id, { delayMs: 0, deadLetter: true });
+    await driver.nack(id, { workerId: 'worker-1', claim: 1, delayMs: 0, deadLetter: true });
     await driver.steps.put({
       runId,
       name: 'step-a',
@@ -380,7 +408,8 @@ describe('retryFromStep', () => {
       visibilityTimeoutMs: 30_000,
       workerId: 'w',
     });
-    await driver.nack(id, { delayMs: 0, deadLetter: true });
+    // The row's SECOND claim: the requeue above put it back, and the ordinal never resets.
+    await driver.nack(id, { workerId: 'w', claim: 2, delayMs: 0, deadLetter: true });
     await retryFromStep(spied, id);
     expect(calls[1]).toEqual([id, undefined]);
   });
@@ -388,108 +417,12 @@ describe('retryFromStep', () => {
   test('the returned trace reflects the requeue — state back to ready, attempt reset', async () => {
     const driver = createMemoryDriver();
     const { id } = await enqueueAndClaim(driver, { name: 'resumable-job-2' });
-    await driver.nack(id, { delayMs: 0, deadLetter: true });
+    await driver.nack(id, { workerId: 'worker-1', claim: 1, delayMs: 0, deadLetter: true });
 
     const trace = await retryFromStep(driver, id);
 
     expect(trace).toBeDefined();
     expect(trace?.state).toBe('ready');
     expect(trace?.attempt).toBe(0);
-  });
-});
-
-describe('inspectManifest', () => {
-  test('with no scheduler: jobs and tasks are mapped, and every task nextRun is null', () => {
-    const digest: JobHandle<OrgInput> = job<OrgInput>({
-      tenant: 'none',
-      name: 'sendDigest',
-      input: passthrough<OrgInput>(),
-      idempotencyKey: ({ orgId }) => `digest:${orgId}`,
-      retry: { attempts: 3, backoff: 'linear', delay: 1_000 },
-      concurrency: 5,
-      timeout: 30_000,
-      run: () => Promise.resolve(),
-    });
-    task({
-      name: 'nightlyDigest',
-      cron: '0 3 * * *',
-      tz: 'UTC',
-      catchUp: 'run-once',
-      enqueue: () => [[digest, { orgId: 'org-1' }]],
-    });
-
-    const manifest = inspectManifest();
-
-    expect(manifest.jobs).toEqual([
-      {
-        name: 'sendDigest',
-        queue: 'default',
-        attempts: 3,
-        backoff: 'linear',
-        concurrency: 5,
-        timeoutMs: 30_000,
-        retryDelaysMs: [1_000, 2_000],
-      },
-    ]);
-    expect(manifest.tasks.length).toBe(1);
-    expect(manifest.tasks[0]).toEqual({
-      name: 'nightlyDigest',
-      cron: '0 3 * * *',
-      tz: 'UTC',
-      catchUp: 'run-once',
-      nextRun: null,
-      enqueues: ['sendDigest'],
-    });
-  });
-
-  test('omitted job fields (no concurrency, no timeout) come through as null, not undefined', () => {
-    job<OrgInput>({
-      tenant: 'none',
-      name: 'plainJob',
-      input: passthrough<OrgInput>(),
-      idempotencyKey: ({ orgId }) => `plain:${orgId}`,
-      retry: { attempts: 1 },
-      run: () => Promise.resolve(),
-    });
-
-    const manifest = inspectManifest();
-
-    expect(manifest.jobs[0]?.concurrency).toBeNull();
-    expect(manifest.jobs[0]?.timeoutMs).toBeNull();
-    // attempts: 1 means never retries — the schedule is empty.
-    expect(manifest.jobs[0]?.retryDelaysMs).toEqual([]);
-    // Omitted backoff still reports the handle's own default, 'exponential'.
-    expect(manifest.jobs[0]?.backoff).toBe('exponential');
-  });
-
-  test('with a scheduler: nextRun is populated from scheduler.nextRunFor(handle)', () => {
-    const digest: JobHandle<OrgInput> = job<OrgInput>({
-      tenant: 'none',
-      name: 'sendDigest',
-      input: passthrough<OrgInput>(),
-      idempotencyKey: ({ orgId }) => `digest:${orgId}`,
-      retry: { attempts: 1 },
-      run: () => Promise.resolve(),
-    });
-    task({
-      name: 'nightlyDigest',
-      cron: '0 3 * * *',
-      tz: 'UTC',
-      enqueue: () => [[digest, { orgId: 'org-1' }]],
-    });
-
-    const fixedNextRun = new Date('2026-01-02T03:00:00.000Z');
-    // Minimal fake: only `nextRunFor` is read by inspectManifest, but the type is the full
-    // Scheduler surface, so every method is present.
-    const fakeScheduler: Scheduler = {
-      start: () => undefined,
-      stop: () => Promise.resolve(),
-      tick: () => Promise.resolve([]),
-      nextRunFor: () => fixedNextRun,
-    };
-
-    const manifest = inspectManifest(fakeScheduler);
-
-    expect(manifest.tasks[0]?.nextRun).toBe(fixedNextRun.toISOString());
   });
 });

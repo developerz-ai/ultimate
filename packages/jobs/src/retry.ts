@@ -77,10 +77,18 @@ export interface RetryDecision {
   readonly nextAttempt: number;
 }
 
+/**
+ * Whether `attempt` is the last one the policy allows — the ONE comparison, read twice: by
+ * `nextRetry` below to stop retrying, and by `executeJob` to hand the body `finalAttempt`. Two
+ * spellings of it is how a body cleans up on an attempt the runner then retries.
+ */
+export function isFinalAttempt(policy: RetryPolicy, attempt: number): boolean {
+  return attempt >= policy.attempts;
+}
+
 /** The one place that decides retry vs dead-letter. Drivers never re-derive this. */
 export function nextRetry(policy: RetryPolicy, attempt: number, random?: Random): RetryDecision {
-  const exhausted = attempt >= policy.attempts;
-  if (exhausted) {
+  if (isFinalAttempt(policy, attempt)) {
     return {
       retry: false,
       delayMs: 0,

@@ -42,6 +42,22 @@ export function diffJobs(
       ),
     );
     changes.push(...diffRetry(path, job, next));
+    // A cap decides how much runs at once and what a claim over it does; neither is the shape an
+    // enqueuer or a queued payload depends on. Declared, removed and edited alike.
+    if (canonicalJson(job.concurrency ?? null) !== canonicalJson(next.concurrency ?? null)) {
+      changes.push({
+        kind: 'internal',
+        path: `${path}.concurrency`,
+        detail: 'concurrency changed; runs already in flight keep the slots they hold',
+      });
+    }
+    if ((job.onSettled ?? false) !== (next.onSettled ?? false)) {
+      changes.push({
+        kind: 'internal',
+        path: `${path}.onSettled`,
+        detail: next.onSettled === true ? 'onSettled hook declared' : 'onSettled hook removed',
+      });
+    }
     if (canonicalJson(job.steps) !== canonicalJson(next.steps)) {
       changes.push({
         kind: 'internal',

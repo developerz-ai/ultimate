@@ -28,16 +28,37 @@ export function isJsxNode(value: unknown): value is JsxNode {
  * component reading `props.children` behaves the same whether its children came from the classic
  * factory's rest arguments or from an explicit `children` prop.
  */
+export function h(type: string, props: JsxProps | null, ...children: readonly unknown[]): JsxNode;
+/**
+ * A component, with the props IT declares. `JsxComponent` takes any record, so a component typed
+ * for its own props — an `island()`, a page's `Shell` — is not one under `strictFunctionTypes`,
+ * and a hand-written `h(Toggle, { label })` was refused where the `.tsx` loader's own call is not.
+ * The props are checked against the component here; `children` rides as the rest arguments.
+ */
+export function h<Props extends object>(
+  type: (props: Props) => unknown,
+  props: Omit<Props, 'children'> | null,
+  ...children: readonly unknown[]
+): JsxNode;
 export function h(
   type: string | JsxComponent,
   props: JsxProps | null,
   ...children: readonly unknown[]
+): JsxNode;
+export function h(
+  // `never` is the one parameter type every component's props satisfy.
+  type: string | ((props: never) => unknown),
+  props: object | null,
+  ...children: readonly unknown[]
 ): JsxNode {
-  const base = props ?? {};
-  if (children.length === 0) return { [JSX_NODE]: true, type, props: base };
+  // The overloads above are where a call is checked; a node carries the pair erased, which is all
+  // `render-html.ts` ever reads — it hands `props` back to the `type` it arrived with.
+  const erased = type as string | JsxComponent;
+  const base = (props ?? {}) as JsxProps;
+  if (children.length === 0) return { [JSX_NODE]: true, type: erased, props: base };
   return {
     [JSX_NODE]: true,
-    type,
+    type: erased,
     props: { ...base, children: children.length === 1 ? children[0] : children },
   };
 }

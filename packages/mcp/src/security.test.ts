@@ -6,8 +6,8 @@
 // make it enforced rather than documented. Every test here fails loudly if an outcome starts
 // answering like another one — which is precisely how an enumeration oracle is born.
 
-import { describe, expect, spyOn, test } from 'bun:test';
-import { agentActor, UltimateError } from '@ultimat3/core';
+import { describe, expect, test } from 'bun:test';
+import { agentActor, setLogSink, UltimateError } from '@ultimat3/core';
 import { McpScopeDeniedError } from './errors';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
@@ -336,19 +336,14 @@ describe('every outcome is audited', () => {
   };
   const server = createMcpServer({ tools: [hidden] });
 
-  /** Reads the process logger's real output — the sink production uses, not a stand-in. */
+  /** What the PROCESS logger wrote, through its own sink seam — never a patched `process.stdout`. */
   async function captureLines(run: () => Promise<unknown>): Promise<Record<string, unknown>[]> {
     const lines: Record<string, unknown>[] = [];
-    const spy = spyOn(process.stdout, 'write').mockImplementation(((chunk: string) => {
-      for (const line of String(chunk).split('\n')) {
-        if (line.trim().length > 0) lines.push(JSON.parse(line) as Record<string, unknown>);
-      }
-      return true;
-    }) as never);
+    const previous = setLogSink((line) => lines.push(JSON.parse(line) as Record<string, unknown>));
     try {
       await run();
     } finally {
-      spy.mockRestore();
+      setLogSink(previous);
     }
     return lines;
   }

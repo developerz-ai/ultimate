@@ -5,18 +5,22 @@
 
 import type { ShutdownReason } from '@ultimat3/core';
 import { beginWork, logger, onShutdown, recordJob, renderThrowable, uuid } from '@ultimat3/core';
+import { nowMs } from './clock';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob } from './driver';
 import { DEFAULT_QUEUE } from './driver';
-import { ConcurrencyUnenforceableError, JobDrainedError } from './errors';
+import { JobDrainedError } from './errors';
 import type { JobExecution } from './execute';
-import { getJob, registeredJobs } from './job';
 import { createLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';
-import { createFleetSlots } from './worker-fleet-slots';
-import { handBack } from './worker-hand-back';
+import { claimAsks, createAdmission } from './worker-admit';
+import { assertConcurrencyEnforceable, createFleetSlots } from './worker-fleet-slots';
+import type { ClaimLoop } from './worker-loop';
+import { createClaimLoop } from './worker-loop';
 import { resolveWorkerTimings } from './worker-options';
 import { createQueueDepthPublisher } from './worker-queue-depth';
+import type { WorkerRegistration } from './worker-registry';
+import { reportUnregisteredQueues, startWorkerRegistry } from './worker-registry';
 import { runClaimedJob } from './worker-run';
 import type { Worker, WorkerOptions, WorkerStats } from './worker-types';
 
@@ -38,6 +42,17 @@ export function createWorker(options: WorkerOptions): Worker {
     workerId,
     ttlMs: visibilityTimeoutMs,
     renewIntervalMs: heartbeatIntervalMs,
+    ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
+  });
+
+  const admit = createAdmission({
+    driver: options.driver,
+    limiter,
+    fleetSlots,
+    workerId,
+    pollIntervalMs,
+    context: options.context,
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
 
   const inFlight = new Set<Promise<unknown>>();
@@ -64,7 +79,6 @@ export function createWorker(options: WorkerOptions): Worker {
    */
   let budget = createDrainBudget();
   let state: WorkerStats['state'] = 'idle';
-  let loop: ReturnType<typeof setTimeout> | undefined;
   /**
    * The two `onShutdown` registrations this worker holds while it runs, both handed back by
    * `stop()`. Two, because they answer different questions in different PHASES — the split
@@ -78,7 +92,11 @@ export function createWorker(options: WorkerOptions): Worker {
   let suspended = 0;
   let deadLettered = 0;
   let interrupted = 0;
-
+  let refused = 0;
+  let dropped = 0;
+  /** The ids this worker holds right now — what its registry row reports. */
+  const holding = new Set<string>();
+  let registration: WorkerRegistration | undefined;
   /** `queue_depth` and its two siblings, republished on their own interval (`worker-queue-depth.ts`). */
   const publishQueueDepth = createQueueDepthPublisher({
     driver: options.driver,
@@ -87,10 +105,11 @@ export function createWorker(options: WorkerOptions): Worker {
   });
 
   /** One claimed job, run under its lease, its slot and its span. `worker-run.ts` owns the wiring. */
-  const runClaimed = (claimed: ClaimedJob): Promise<JobExecution> =>
+  const runClaimed = (claimed: ClaimedJob, refusal?: unknown): Promise<JobExecution> =>
     runClaimedJob({
       driver: options.driver,
       claimed,
+      ...(refusal === undefined ? {} : { refusal }),
       context: options.context,
       fleetSlots,
       workerId,
@@ -98,28 +117,9 @@ export function createWorker(options: WorkerOptions): Worker {
       heartbeatIntervalMs,
       drain: drainSignal.signal,
       ...(options.clock === undefined ? {} : { clock: options.clock }),
+      ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
       ...(options.events === undefined ? {} : { events: options.events }),
     });
-
-  /**
-   * A claimed job handed straight back over a cap. It is NOT a suspension and NOT a failure: no
-   * `park`, so the row stays where `queue_depth` and `queue_oldest_ready_seconds` can see it, and
-   * no `error`, so `x jobs show` does not report a `lastError` for a job that never ran. It was
-   * both of those until 2026-08 — parked beside a 3-day `step.sleep`, and stamped with a failure
-   * it never had — which is why the two sheds go through one function now.
-   */
-  const shed = async (
-    claimed: ClaimedJob,
-    detail: { readonly queue: string; readonly reason: string },
-  ): Promise<void> => {
-    logger.debug('jobs.worker.shed', {
-      workerId,
-      job: claimed.name,
-      jobId: claimed.id,
-      ...detail,
-    });
-    await options.driver.nack(claimed.id, { delayMs: pollIntervalMs, countsAsAttempt: false });
-  };
 
   /** The drain's one question: may this worker still take work off the queue? */
   const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
@@ -134,113 +134,71 @@ export function createWorker(options: WorkerOptions): Worker {
   const claimRound = async (): Promise<readonly Promise<JobExecution>[]> => {
     await publishQueueDepth();
     const started: Promise<JobExecution>[] = [];
+    let found = false;
 
-    for (const queue of queues) {
-      // Re-read per queue, not once at the top: a `stop()` between two queues means "stop
+    const asks = claimAsks(
+      queues,
+      (queue) => slotsFor(queue) - limiter.inFlight({ queue }),
+      loop.idle(),
+    );
+
+    for (const ask of asks) {
+      // Re-read per claim, not once at the top: a `stop()` between two queues means "stop
       // claiming" now, not at the next tick. What this round already holds still runs to the end
       // — that is the drain, and `stop()` waits for it.
       if (!claiming()) break;
-      const free = Math.max(0, slotsFor(queue) - limiter.inFlight({ queue }));
-      if (free === 0) continue;
-
-      const claimed = await options.driver.claim({
-        queues: [queue],
-        limit: free,
-        visibilityTimeoutMs,
-        workerId,
-      });
+      const claimed = await options.driver.claim({ ...ask, visibilityTimeoutMs, workerId });
+      if (claimed.length > 0) found = true;
 
       for (const [index, job] of claimed.entries()) {
-        const lease = limiter.tryAcquire({
-          queue,
-          ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }),
-        });
-        if (lease === undefined) {
-          // Over a tenant/queue/global cap: hand it straight back for another worker. No `park`
-          // and no `error` — the row stays in the ready bucket the depth gauge reads, and nothing
-          // about this job failed, so `x jobs show` must not report a `lastError` for it. The
-          // reason is a log FIELD instead, where it costs nothing when nobody is asking.
-          try {
-            await shed(job, {
-              queue,
-              reason:
-                limiter.blockedBy({
-                  queue,
-                  ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }),
-                }) ?? 'unknown',
-            });
-          } catch (error) {
-            // The nack itself failed: the jobs BEHIND it go back before the round reports.
-            await handBack(options.driver, claimed.slice(index + 1), {
-              delayMs: pollIntervalMs,
-              workerId,
-            });
-            throw error;
-          }
+        const queue = job.queue;
+        // Both caps, and what becomes of a job that passes neither — `worker-admit.ts`.
+        const admission = await admit(job, queue, claimed.slice(index + 1));
+        if (admission.kind === 'waiting') continue;
+        if (admission.kind === 'refused') {
+          // Settled without a body: counted and returned with the pass, the one job this loop
+          // itself finishes.
+          refused += 1;
+          const label = JOB_OUTCOME_LABELS[admission.execution.outcome];
+          if (label !== null) recordJob(queue, label);
+          started.push(Promise.resolve(admission.execution));
           continue;
         }
-
-        // `job.concurrency`, at last enforced. The limiter above counts slots in THIS heap, which
-        // twenty pods multiply by twenty; this one is a row every replica sees. Taken after the
-        // in-process lease so the cheap refusal happens first, and released in the same `finally`.
-        //
-        // The `try` is the whole of a bug this had: taking a fleet slot is a WRITE to
-        // `x_job_leases`, so a failover, a pool timeout or a `57P01` REJECTS here — between the
-        // in-process lease above and the `.finally` below that gives it back. The slot was burned
-        // permanently, and four of them on a concurrency-4 worker is the whole role dead, silent
-        // but for `jobs.worker.tick-failed` and a queue depth that climbs forever.
-        let granted: boolean;
-        try {
-          granted = await fleetSlots.acquire(job);
-        } catch (error) {
-          lease.release();
-          // This job and every one behind it in the batch go BACK, unburned — rethrowing alone
-          // stranded them in `running` with an attempt spent on work that never started. Then the
-          // round's own catch reports it, once.
-          await handBack(options.driver, claimed.slice(index), {
-            delayMs: pollIntervalMs,
-            workerId,
-          });
-          throw error;
-        }
-        if (!granted) {
-          lease.release();
-          try {
-            await shed(job, {
-              queue,
-              reason: `job concurrency (${getJob(job.name)?.concurrency ?? 0})`,
-            });
-          } catch (error) {
-            await handBack(options.driver, claimed.slice(index + 1), {
-              delayMs: pollIntervalMs,
-              workerId,
-            });
-            throw error;
-          }
-          continue;
-        }
+        const { lease } = admission;
 
         // The claimed job is the process's in-flight work, counted where the DRAIN can see it:
         // core's own in-flight wait sits between `accept` and `inflight` and exists for exactly
         // this. Counted nowhere, the worker had to wait for its own jobs inside a hook.
         const finishWork = beginWork();
-        const running = runClaimed(job)
+        holding.add(job.id);
+        const running = runClaimed(job, admission.refusal)
           .then((execution) => {
             if (execution.outcome === 'completed') processed += 1;
             else if (execution.outcome === 'suspended') suspended += 1;
             else if (execution.outcome === 'retried') failed += 1;
             else if (execution.outcome === 'interrupted') interrupted += 1;
-            else deadLettered += 1;
+            else if (execution.outcome === 'dead-lettered') deadLettered += 1;
+            else if (execution.outcome === 'dropped') dropped += 1;
             // The other half of this package's metrics contract: `queue_depth` says how much work
             // is waiting, `jobs_total` says whether any of it is succeeding. Depth alone cannot
             // tell a drained queue from a queue nothing ever claimed. Labelled by QUEUE and
             // OUTCOME only — a label per job name is unbounded in an app's own vocabulary.
             const label = JOB_OUTCOME_LABELS[execution.outcome];
             if (label !== null) recordJob(queue, label);
+            // Handed back with a time on it — a retry's backoff, a sleep's wake: this worker
+            // knows when the row is due, so it need not wait for a backed-off poll to find out.
+            if (execution.resumeAt !== undefined) {
+              loop.dueIn(execution.resumeAt - nowMs(options.clock));
+            }
             return execution;
           })
           .finally(async () => {
+            holding.delete(job.id);
             lease.release();
+            // The slot is free NOW. A full worker asks the queue for nothing, so its loop backs
+            // off like an idle one — and waiting that out with a backlog behind the job that
+            // just finished is throughput lost to a timer.
+            loop.kick();
             // AWAITED, never `void`: the slot is a row in `x_job_leases`, so the DELETE was still
             // on the wire when the teardown's `allSettled` returned and `driver.close()` took the
             // connection out from under it — a `concurrency: 1` job unclaimable by the pod
@@ -278,6 +236,9 @@ export function createWorker(options: WorkerOptions): Worker {
       }
     }
 
+    // The loop's next wait: the floor while passes find work, doubling to the ceiling while they
+    // do not (`idle-backoff.ts`). Reported by the pass itself, so `tick()` and the timer agree.
+    loop.passed(found);
     return started;
   };
 
@@ -305,22 +266,18 @@ export function createWorker(options: WorkerOptions): Worker {
   /**
    * The claim loop re-arms on the PASS, not on the jobs: polling is how a free slot gets refilled,
    * and a loop that waited for the last job of the previous pass could not refill one until the
-   * whole batch was done.
+   * whole batch was done. `worker-loop.ts` owns the timer and everything that cuts its wait short.
    */
-  const schedule = (): void => {
-    loop = setTimeout(() => {
-      void round()
-        .catch((error: unknown) => {
-          logger.error('jobs.worker.tick-failed', {
-            workerId,
-            error: renderThrowable(error),
-          });
-        })
-        .finally(() => {
-          if (state === 'running') schedule();
-        });
-    }, pollIntervalMs);
-  };
+  const loop: ClaimLoop = createClaimLoop({
+    subject: 'createWorker',
+    floorMs: pollIntervalMs,
+    ...(options.idlePollMaxMs === undefined ? {} : { ceilingMs: options.idlePollMaxMs }),
+    queues,
+    round,
+    onError: (error) => {
+      logger.error('jobs.worker.tick-failed', { workerId, error: renderThrowable(error) });
+    },
+  });
 
   /**
    * The whole of the `accept` phase: stop taking work, tell the work already held, and nothing
@@ -342,8 +299,7 @@ export function createWorker(options: WorkerOptions): Worker {
   const stopAccepting = (shutdown?: ShutdownReason): void => {
     if (state === 'stopped') return;
     state = 'draining';
-    if (loop !== undefined) clearTimeout(loop);
-    loop = undefined;
+    loop.stop();
     if (shutdown === undefined) return;
     budget.bind(shutdown.deadlineAt);
     if (drainSignal.signal.aborted) return;
@@ -379,6 +335,9 @@ export function createWorker(options: WorkerOptions): Worker {
           fix: 'raise the drain budget past the slowest job — configureLifecycle({ deadlineMs: 600_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
         });
       }
+      // Before the close, and awaited: the row is deleted through the driver being closed.
+      await registration?.stop();
+      registration = undefined;
       await options.driver.close?.();
     } finally {
       // Whatever the close did, this worker is done: a state left at 'draining' is a drain that
@@ -425,18 +384,25 @@ export function createWorker(options: WorkerOptions): Worker {
       // Refused HERE, at the earliest decidable point, and refused rather than logged: an agent
       // reads "max in-flight runs of THIS job across the fleet", writes `concurrency: 1` on
       // `rebuildSearchIndex`, ships, and two workers run it on the first deploy — while
-      // `x jobs show` and the manifest both confirm a guarantee that does not exist. A driver
-      // with no `leases` can only hold the cap per process, so it does not get to claim it.
-      if (driverLeases === undefined) {
-        const capped = registeredJobs()
-          .filter((handle) => handle.concurrency !== undefined)
-          .map((handle) => handle.name);
-        if (capped.length > 0) {
-          throw new ConcurrencyUnenforceableError({ driver: options.driver.name, jobs: capped });
-        }
-      }
+      // `x jobs show` and the manifest both confirm a guarantee that does not exist.
+      assertConcurrencyEnforceable(options.driver);
       state = 'running';
       logger.info('jobs.worker.started', { workerId, queues });
+      reportUnregisteredQueues(workerId, queues);
+      registration = startWorkerRegistry({
+        driver: options.driver,
+        workerId,
+        host: options.host,
+        queues,
+        concurrency: queues.reduce((slots, queue) => slots + slotsFor(queue), 0),
+        inFlight: () => [...holding],
+        // The visibility timeout, renewed on the heartbeat interval: a killed worker leaves the
+        // registry on exactly the schedule the queue takes its jobs back.
+        ttlMs: visibilityTimeoutMs,
+        intervalMs: heartbeatIntervalMs,
+        ...(options.clock === undefined ? {} : { clock: options.clock }),
+        ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
+      });
       // TWO hooks, for the two phases that answer two questions. `accept` stops claiming, aborts
       // every held run's `ctx.signal` and returns, so every hook behind it — the HTTP server's
       // "stop listening", the sync node's "stop upgrading" — runs while the budget is still whole;
@@ -457,7 +423,7 @@ export function createWorker(options: WorkerOptions): Worker {
           }),
         ];
       }
-      schedule();
+      loop.start();
     },
     tick,
     stop,
@@ -472,6 +438,9 @@ export function createWorker(options: WorkerOptions): Worker {
         suspended,
         deadLettered,
         interrupted,
+        refused,
+        dropped,
+        pollDelayMs: loop.delayMs(),
         queueDepth: [...(await options.driver.stats())],
       };
     },

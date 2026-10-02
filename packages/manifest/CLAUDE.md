@@ -13,6 +13,7 @@ by the CLI, not imported.
 | `schema.ts` | the manifest's typed shape + `MANIFEST_VERSION` |
 | `build.ts` | `buildManifest` — pure, deterministic, stably sorted |
 | `sources.ts` | wires `describe*` from entity/action/query/jobs into `ManifestSources` |
+| `sources-admin.ts` | the declared admins, read off `Symbol.for('ultimate.admin.mounts')` through each one's own `describe()` — never an import of `@ultimat3/admin`. `unknown` in, field by field: a description this build does not understand is skipped whole |
 | `diff.ts` | `diffManifest` — the orchestrator: one classifier per section, nothing else |
 | `diff-change.ts` | the shared vocabulary: `ManifestChange`, `index`, `diffNamedSet`, `diffScalar` |
 | `diff-operations.ts` | actions, queries and the permissions they require |
@@ -20,6 +21,7 @@ by the CLI, not imported.
 | `diff-entities.ts` | tables, columns, keys, invariants |
 | `diff-work.ts` | jobs and tasks — the two things that fail by silently not happening |
 | `diff-routes.ts` | a URL's surface and its delivery facts |
+| `diff-admin.ts` | the `admin` section: a filter, sort, scope, resource or mounted route removed is breaking; a default scope moving or a row scope appearing is breaking; a route's permissions are judged like an operation's |
 | `diff-registries.ts` | policies and error codes |
 | `diff-fixtures.ts` | TEST-ONLY: one fully-populated `ManifestSources`. Never in `index.ts` |
 | `verify.ts` | `verifyContract` — the major-bump gate |

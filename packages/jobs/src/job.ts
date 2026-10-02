@@ -13,6 +13,8 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
+import type { JobConcurrency, WhenBusy } from './concurrency';
+import { resolveConcurrency } from './concurrency';
 import type { JobDescriptor } from './describe';
 import { describeJob } from './describe';
 import type { EnqueueResult } from './driver';
@@ -22,8 +24,10 @@ import { JobDeclarationInvalidError } from './errors-declaration';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
+import type { ProgressFn } from './progress';
 import type { RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
+import type { JobSettled } from './settled';
 import type { StepApi } from './steps';
 import type { JobTenant } from './tenant';
 import { assertJobTenant, jobTenantFor } from './tenant';
@@ -40,11 +44,29 @@ export interface JobRunArgs<I> {
   readonly ctx: Ctx;
   /** 1-based. Assume at-least-once: never branch on `attempt === 1` for correctness. */
   readonly attempt: number;
+  /**
+   * True when a failure of THIS attempt is not retried for want of attempts — the same boolean
+   * the runner dead-letters on (`isFinalAttempt` in `retry.ts`), so a body never re-derives it
+   * from `retry.attempts`. The place to release what a retry would have reused. REQUIRED: a test
+   * that drives a body by hand states it, `isFinalAttempt(handle.retry, attempt)` being the
+   * runner's own answer.
+   *
+   * Not "this body runs once more at most": a `terminal` error stops an earlier attempt, and an
+   * attempt handed back UNCOUNTED — a `step.sleep`, a drain — is presented again under the same
+   * number, so the last attempt of a job that sleeps sees `true` on every resume.
+   */
+  readonly finalAttempt: boolean;
+  /**
+   * `progress(done, total, note?)` — how far this run has got, shown by `x jobs show` and the
+   * dashboard. Call it as often as the loop turns: it is written to the row at most once a
+   * second, and the last call before the run settles is always written.
+   */
+  readonly progress: ProgressFn;
   readonly jobId: string;
   readonly runId: string;
 }
 
-export interface JobDefinition<I> {
+export interface JobDefinition<I, R = unknown> {
   /**
    * Omit it: `defineApi({ jobs })` assigns the export name. Set it only to pin a queue key the
    * export name must not decide — a framework job like `mail.send`, or a name rows already carry.
@@ -73,13 +95,17 @@ export interface JobDefinition<I> {
   /**
    * Max in-flight runs of THIS job across the fleet. Omit for the queue-wide cap.
    *
+   * A number is one cap for the job. `{ key, limit, whenBusy }` is that cap PER KEY — "one run
+   * per account" — and says what a claim over it does: `'wait'` (default) leaves the run queued,
+   * `'fail'` settles it `failed` with `X_JOB_KEY_BUSY` without running its body (`concurrency.ts`).
+   *
    * Enforced by `JobDriver.leases` — a row every replica can see — and NOT by `limits.ts`, which
    * counts one process's heap. A driver with no lease store cannot hold this cap, so
    * `createWorker().start()` refuses to boot rather than let it pass silently
    * (`X_JOB_CONCURRENCY_UNENFORCEABLE`): this field was declared, documented and in the manifest
    * while nothing read it, which is exactly what axiom 3 exists to prevent.
    */
-  readonly concurrency?: number;
+  readonly concurrency?: JobConcurrency<I>;
   readonly timeout?: DurationInput;
   /**
    * Ceiling for ONE `step.run`, where `timeout` is the ceiling for the whole attempt. Folded into
@@ -97,7 +123,19 @@ export interface JobDefinition<I> {
    * of the resume, never a busy loop.
    */
   readonly eventPoll?: DurationInput;
-  run(args: JobRunArgs<I>): Promise<unknown>;
+  run(args: JobRunArgs<I>): Promise<R>;
+  /**
+   * How the run ENDED, once: `completed` with what `run` returned, `dead-lettered`, `dropped`
+   * (`retry.deadLetter: false`) or `refused` (`whenBusy: 'fail'` over a busy key — the body never
+   * ran). Called after the row is settled, by the worker whose settle landed, under the job's
+   * tenant. Not called for a retry, a suspension, a drain, or a row an operator cancelled.
+   *
+   * AT MOST ONCE across a crash: a worker killed between the settle and this call never makes it.
+   * In one process it gets `ON_SETTLED_ATTEMPTS` tries; if all throw, the failure is logged and
+   * reported (`X_JOB_ON_SETTLED_FAILED`) and the row is untouched. What must be recorded for
+   * certain belongs in the body, inside a `step.run`.
+   */
+  onSettled?(settled: JobSettled<I, R>): Promise<void>;
 }
 
 /**
@@ -129,7 +167,14 @@ export interface JobHandle<I = unknown> {
   readonly name: string;
   readonly queue: string;
   readonly retry: RetryPolicy;
+  /** The declared cap, resolved: the plain number, or a keyed declaration's `limit`. */
   readonly concurrency: number | undefined;
+  /**
+   * What a claim over the cap does — set exactly when the cap is KEYED, `undefined` for a plain
+   * number and for no cap. A resolved field and never the declaration itself: `key` is a function
+   * of `I`, and a function-typed property would break `AnyJobHandle` — see `tenantFor`.
+   */
+  readonly whenBusy: WhenBusy | undefined;
   readonly timeoutMs: number | undefined;
   /** The declared per-step ceiling in ms; `executeJob` hands it to the step runner. */
   readonly stepTimeoutMs: number | undefined;
@@ -145,7 +190,21 @@ export interface JobHandle<I = unknown> {
    * registry, the worker and a task's enqueue list could no longer hold heterogeneous handles.
    */
   tenantFor(input: I): string | undefined;
+  /**
+   * The concurrency key THIS payload's run counts under — `undefined` when the cap is not keyed.
+   * Refuses an empty key (`X_JOB_DECLARATION_INVALID`): the facade asks it at enqueue so the
+   * refusal reaches the caller, and the worker asks it again at claim.
+   */
+  concurrencyKeyFor(input: I): string | undefined;
   run(args: JobRunArgs<I>): Promise<unknown>;
+  /** Whether the definition declared `onSettled` — published by `describe()`. */
+  readonly declaresOnSettled: boolean;
+  /**
+   * The declared hook; a no-op when there is none. A method, for `tenantFor`'s variance reason,
+   * and `unknown`-typed on both sides for the same one: the handle carries no result generic, so
+   * the definition's own `onSettled` is where `result` and `input` are typed.
+   */
+  onSettled(settled: JobSettled<unknown>): Promise<void>;
   /**
    * Put this job on the queue. Joins the caller's transaction when the app installed the
    * outbox — same call site in a request handler, a job, a script or a test.
@@ -192,7 +251,7 @@ function missingJobFields(definition: object): string[] {
   return missing;
 }
 
-export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
+export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<I> {
   anonymous += 1;
   const name = definition.name ?? `anonymous-job-${anonymous}`;
 
@@ -212,16 +271,9 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     `job "${name}" needs retry.attempts >= 1, got ${String(definition.retry.attempts)}`,
     `set retry: { attempts: 1 } or higher on job("${name}") — 0 attempts means the job is never executed at all, not that it never retries`,
   );
-  // `concurrency: 0` is not "no cap" — it is a fleet slot table that grants nothing.
-  // `createFleetSlots.acquire` reads `limit === undefined` as uncapped, so a declared `0` reaches
-  // `leases.acquire(key, 0, …)`, answers `false` forever with no log line, and the job is
-  // permanently unrunnable. Refused where it is written, the way `createPacer` refuses `rate: 0`.
-  assert(
-    definition.concurrency === undefined ||
-      (Number.isInteger(definition.concurrency) && definition.concurrency >= 1),
-    `job "${name}" declares concurrency ${String(definition.concurrency)}, which no worker can ever fill`,
-    `set a whole concurrency of 1 or more on job("${name}"), or omit the field for no cap at all`,
-  );
+  // `concurrency: 0` is not "no cap" — it is a fleet slot table that grants nothing, and the job
+  // is permanently unrunnable with no log line. Refused where it is written, plain or keyed.
+  const concurrency = resolveConcurrency(name, definition.concurrency);
 
   const stepTimeoutMs =
     definition.stepTimeout === undefined
@@ -255,7 +307,8 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     name,
     queue: definition.queue ?? DEFAULT_QUEUE,
     retry: { ...DEFAULT_RETRY, ...definition.retry },
-    concurrency: definition.concurrency,
+    concurrency: concurrency.limit,
+    whenBusy: concurrency.whenBusy,
     timeoutMs:
       definition.timeout === undefined
         ? undefined
@@ -278,8 +331,18 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     tenantFor(input: I): string | undefined {
       return jobTenantFor(name, definition.tenant, input);
     },
+    // `handle.name`, never the captured `name`: `registerJob` rebinds it in place.
+    concurrencyKeyFor(input: I): string | undefined {
+      return concurrency.keyFor(handle.name, input);
+    },
     run(args: JobRunArgs<I>): Promise<unknown> {
       return definition.run(args);
+    },
+    declaresOnSettled: typeof definition.onSettled === 'function',
+    onSettled(settled: JobSettled<unknown>): Promise<void> {
+      // The runner hands back this job's own parsed input and this body's own return value, so
+      // the cast restores exactly the types the declaration wrote.
+      return definition.onSettled?.(settled as JobSettled<I, R>) ?? Promise.resolve();
     },
     enqueue(input: I, options?: EnqueueOptions): Promise<EnqueueResult> {
       return jobsFacade().enqueue(handle, input, options);

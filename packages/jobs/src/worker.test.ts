@@ -35,6 +35,7 @@ const queue = (name: string, ready: number): QueueStats => ({
   delayed: 0,
   running: 0,
   suspended: 0,
+  failed: 0,
   dead: 0,
   oldestReadyMs: 0,
 });

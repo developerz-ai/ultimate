@@ -2,37 +2,66 @@
 //
 // `void renew()` let it. `worker-fleet-slots.ts` guards the promise CHAIN with `.catch(noop)` and
 // cannot guard this — `LeaseStore.renew` is an injected seam, and a store that throws on a closed
-// pool throws on the call, before any chain exists. Nothing sits above a `setInterval` callback, so
-// that throw is an uncaught exception thrown by the very timer that was keeping the lease alive.
+// pool throws on the call, before any chain exists. Nothing sits above a timer callback, so that
+// throw is an uncaught exception thrown by the very timer that was keeping the lease alive. Driven
+// through the scheduler seam: no test here waits on the wall clock.
 
 import { describe, expect, spyOn, test } from 'bun:test';
 import { logger } from '@ultimat3/core';
-import { startRenewalTimer } from './renewal-timer';
+import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
 
-async function until(condition: () => boolean, label: string): Promise<void> {
-  for (let waited = 0; waited < 2_000; waited += 2) {
-    if (condition()) return;
-    await Bun.sleep(2);
-  }
-  expect.unreachable(`timed out waiting for ${label}`);
+/** The seam a test hands in: nothing fires until the test says a tick happened. */
+function manualScheduler(): IntervalScheduler & {
+  tick(): void;
+  readonly armed: () => number;
+  readonly everyMs: () => number | undefined;
+} {
+  const ticks = new Set<() => void>();
+  let every: number | undefined;
+  const schedule = (tick: () => void, intervalMs: number): (() => void) => {
+    every = intervalMs;
+    ticks.add(tick);
+    return () => {
+      ticks.delete(tick);
+    };
+  };
+  return Object.assign(schedule, {
+    tick: () => {
+      for (const tick of [...ticks]) tick();
+    },
+    armed: () => ticks.size,
+    everyMs: () => every,
+  });
 }
+
+/** Lets the renewal each tick queued settle — it runs in a `.then`, never on the tick itself. */
+const settled = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 describe('unit · a renewal that raises', () => {
   test('a synchronous throw is caught, said out loud, and does not stop the interval', async () => {
     const errors = spyOn(logger, 'error').mockImplementation(() => undefined);
+    const schedule = manualScheduler();
     let calls = 0;
-    const timer = startRenewalTimer(1, () => {
-      calls += 1;
-      // A `LeaseStore.renew` on a closed pool: the seam breaks its contract, on the call.
-      throw new TypeError('the pool is closed');
-    });
+    const timer = startRenewalTimer(
+      1,
+      () => {
+        calls += 1;
+        // A `LeaseStore.renew` on a closed pool: the seam breaks its contract, on the call.
+        throw new TypeError('the pool is closed');
+      },
+      schedule,
+    );
 
     try {
-      await until(() => calls >= 2, 'the timer to survive its first throw');
+      schedule.tick();
+      await settled();
+      schedule.tick();
+      await settled();
+      expect(calls).toBe(2);
       const raised = errors.mock.calls.filter((call) => call[0] === 'jobs.renewal.raised');
       // Said out loud, because a lease that stops renewing with nothing anywhere saying so is the
       // silence this whole file exists to remove.
-      expect(raised.length).toBeGreaterThanOrEqual(1);
+      expect(raised.length).toBe(2);
       expect(raised[0]?.[1]).toEqual({ error: 'TypeError: the pool is closed' });
     } finally {
       timer.stop();
@@ -42,14 +71,16 @@ describe('unit · a renewal that raises', () => {
 
   test('a rejected promise is caught the same way', async () => {
     const errors = spyOn(logger, 'error').mockImplementation(() => undefined);
-    let calls = 0;
-    const timer = startRenewalTimer(1, () => {
-      calls += 1;
-      return Promise.reject(new TypeError('connection reset'));
-    });
+    const schedule = manualScheduler();
+    const timer = startRenewalTimer(
+      1,
+      () => Promise.reject(new TypeError('connection reset')),
+      schedule,
+    );
 
     try {
-      await until(() => calls >= 2, 'the timer to survive its first rejection');
+      schedule.tick();
+      await settled();
       const raised = errors.mock.calls.filter((call) => call[0] === 'jobs.renewal.raised');
       expect(raised[0]?.[1]).toEqual({ error: 'TypeError: connection reset' });
     } finally {
@@ -60,19 +91,47 @@ describe('unit · a renewal that raises', () => {
 
   test('a renewal that lands says nothing, and stop() is terminal', async () => {
     const errors = spyOn(logger, 'error').mockImplementation(() => undefined);
+    const schedule = manualScheduler();
     let calls = 0;
-    const timer = startRenewalTimer(1, () => {
-      calls += 1;
-    });
+    const timer = startRenewalTimer(
+      1,
+      () => {
+        calls += 1;
+      },
+      schedule,
+    );
 
-    await until(() => calls >= 2, 'two clean renewals');
+    schedule.tick();
+    schedule.tick();
+    await settled();
+    expect(calls).toBe(2);
     timer.stop();
     expect(timer.stopped()).toBe(true);
-    const seen = calls;
-    await Bun.sleep(20);
-    expect(calls).toBe(seen);
+    // Disarmed, not merely ignored: a stopped renewal leaves nothing on the scheduler.
+    expect(schedule.armed()).toBe(0);
+    schedule.tick();
+    await settled();
+    expect(calls).toBe(2);
     expect(errors.mock.calls.filter((call) => call[0] === 'jobs.renewal.raised')).toEqual([]);
     errors.mockRestore();
+  });
+});
+
+describe('unit · the scheduler is a seam', () => {
+  test('an injected scheduler arms the renewal at its interval, and no real timer exists', () => {
+    // The `runJobs` fixture renews on the test clock through this: a real interval there was a
+    // renewal every millisecond of wall time for the length of every job test.
+    const intervals = spyOn(globalThis, 'setInterval');
+    const schedule = manualScheduler();
+    try {
+      const timer = startRenewalTimer(10_000, () => undefined, schedule);
+      expect(schedule.armed()).toBe(1);
+      expect(schedule.everyMs()).toBe(10_000);
+      expect(intervals).not.toHaveBeenCalled();
+      timer.stop();
+    } finally {
+      intervals.mockRestore();
+    }
   });
 });
 

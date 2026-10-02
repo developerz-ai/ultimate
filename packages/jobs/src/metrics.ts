@@ -21,7 +21,10 @@ import type { JobOutcome } from './execute';
  * is deliberately unmapped: parking a run is control flow, so counting it would make every
  * `step.sleep` read as a finished job and make the failure ratio meaningless. `interrupted` for
  * the same reason: a deploy cutting a job short is the process's doing, and a failure ratio that
- * spikes on every rollout is a page nobody answers. Read by the worker's one `recordJob` site.
+ * spikes on every rollout is a page nobody answers. `refused` is `failed` because the ROW is: the
+ * counter says what `x jobs ls --state failed` says, and never `dead` — a key refusal is not in
+ * the dead-letter queue, so it must not move the gauge beside this one. Read by the worker's
+ * `recordJob` sites.
  */
 export const JOB_OUTCOME_LABELS = Object.freeze<
   Record<JobOutcome, 'ok' | 'failed' | 'dead' | null>
@@ -30,7 +33,9 @@ export const JOB_OUTCOME_LABELS = Object.freeze<
   suspended: null,
   retried: 'failed',
   'dead-lettered': 'dead',
+  dropped: 'failed',
   interrupted: null,
+  refused: 'failed',
 });
 
 /** Seconds and not milliseconds: every Prometheus duration is seconds, and the alert is `> 300`. */

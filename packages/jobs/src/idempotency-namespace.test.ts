@@ -53,7 +53,7 @@ describe('the idempotency namespace', () => {
     const driver = createMemoryDriver();
     const first = await driver.enqueue(enqueue('sendWelcomeEmail', 'user:42'));
     await driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 1000, workerId: 'w' });
-    await driver.ack(first.id);
+    await driver.ack(first.id, { workerId: 'w', claim: 1 });
 
     const second = await driver.enqueue(enqueue('sendWelcomeEmail', 'user:42'));
     expect(second.deduped).toBe(false);

@@ -76,6 +76,11 @@ export interface Stylesheet {
   readonly file: string;
   /** The surface that owns it, or `null` for a package stylesheet shared by both graphs. */
   readonly surface: Surface | null;
+  /**
+   * A PACKAGE's sheet whose surface came from `claimStylesheets`, not from where the file sits.
+   * It is carried by that one surface and still ordered with the library — see `stylesheetOrder`.
+   */
+  readonly claimed: boolean;
   /** A plain (non-module) stylesheet: the tokens and the reset, which the cascade needs first. */
   readonly global: boolean;
   /**
@@ -118,8 +123,46 @@ export function registeredStylesheets(): readonly Stylesheet[] {
  */
 let stylesheetRoot: string | undefined;
 
+/**
+ * Directories a package claimed for ONE surface, longest first. A package's sheet has no surface
+ * of its own and rides both graphs — right for a design system, and the reason an app's static
+ * `site/` documents carried the admin's stylesheet for screens only `app/` serves (axiom 6).
+ */
+const claims: { readonly dir: string; readonly surface: Surface }[] = [];
+
+const claimedSurface = (path: string): Surface | undefined =>
+  claims.find((claim) => path.startsWith(`${claim.dir}/`))?.surface;
+
 const surfaceOfSheet = (path: string): Surface | null =>
-  surfaceUnder(stylesheetRoot ?? process.cwd(), path);
+  claimedSurface(path) ?? surfaceUnder(stylesheetRoot ?? process.cwd(), path);
+
+/** Every registered sheet, classified again; the revision moves only when an answer does. */
+const reclassify = (): void => {
+  for (const [path, sheet] of stylesheets) {
+    const surface = surfaceOfSheet(path);
+    const claimed = claimedSurface(path) !== undefined;
+    if (surface === sheet.surface && claimed === sheet.claimed) continue;
+    stylesheets.set(path, { ...sheet, surface, claimed });
+    revision += 1;
+  }
+};
+
+/**
+ * A package says its own stylesheets belong to one surface: every sheet below `dir` is carried by
+ * documents of `surface` and by no other. Called by the package that OWNS the directory, with its
+ * own `import.meta.dir` — a sheet loads when its module is linked, which is before the claiming
+ * module's body runs, so a claim re-classifies what is already registered.
+ *
+ * A claim is a fact about a package's source, made once per process: `clearStylesheets()` leaves
+ * it standing, because the module that made it is cached and will not make it again.
+ */
+export function claimStylesheets(dir: string, surface: Surface): void {
+  const claimed = resolve(dir);
+  if (claims.some((claim) => claim.dir === claimed && claim.surface === surface)) return;
+  claims.push({ dir: claimed, surface });
+  claims.sort((a, b) => b.dir.length - a.dir.length);
+  reclassify();
+}
 
 /**
  * Names the app root the registry classifies against; `loadApp` calls it before importing a module.
@@ -132,12 +175,7 @@ const surfaceOfSheet = (path: string): Surface | null =>
 export function setStylesheetRoot(root: string | undefined): void {
   // Resolved: `loadApp('.')` is a legal call, and `.` is a prefix of no absolute path.
   stylesheetRoot = root === undefined ? undefined : resolve(root);
-  for (const [path, sheet] of stylesheets) {
-    const surface = surfaceOfSheet(path);
-    if (surface === sheet.surface) continue;
-    stylesheets.set(path, { ...sheet, surface });
-    revision += 1;
-  }
+  reclassify();
 }
 
 /** Test seam: the registry is process-global because the module cache it mirrors is too. */
@@ -180,7 +218,8 @@ export function stylesFor(surface: Surface | null): string {
 }
 
 const OWNER_RANK = (sheet: Stylesheet): number =>
-  sheet.surface === null ? 0 : sheet.surface === 'shared' ? 1 : 2;
+  // A claimed sheet is a package's whichever surface carries it: library first.
+  sheet.surface === null || sheet.claimed ? 0 : sheet.surface === 'shared' ? 1 : 2;
 
 /** Relative to the app root, so a container at `/app` and a laptop order one app alike. */
 const orderPath = (sheet: Stylesheet): string => {
@@ -233,6 +272,7 @@ export function loadStylesheet(
     stylesheets.set(path, {
       file: path,
       surface: surfaceOfSheet(path),
+      claimed: claimedSurface(path) !== undefined,
       global: isGlobalStylesheet(path),
       island,
       css: compiled.css,

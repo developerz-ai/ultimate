@@ -8,7 +8,7 @@ import { logger, recordLeaseLost, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { LeaseLostError } from './errors';
-import { startRenewalTimer } from './renewal-timer';
+import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
 
 export interface LeaseHeartbeatOptions {
   /** Only `heartbeat` is used — a lease renews itself and settles nothing. */
@@ -18,6 +18,8 @@ export interface LeaseHeartbeatOptions {
   readonly intervalMs: number;
   readonly workerId: string;
   readonly clock?: Clock;
+  /** What every renewal runs on (`renewal-timer.ts`). Default: a real, unrefed interval. */
+  readonly schedule?: IntervalScheduler;
 }
 
 export interface LeaseHeartbeat {
@@ -97,7 +99,11 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     if (renewing) return;
     renewing = true;
     try {
-      const held = await options.driver.heartbeat(claimed.id, { visibilityTimeoutMs, workerId });
+      const held = await options.driver.heartbeat(claimed.id, {
+        visibilityTimeoutMs,
+        workerId,
+        claim: claimed.claim,
+      });
       // Re-read AFTER the await, never only before it: the whole point of the flag is the answer
       // that lands past `stop()`. Every branch below decides something about a lease this process
       // may no longer be running under.
@@ -140,7 +146,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     }
   };
 
-  const timer = startRenewalTimer(options.intervalMs, renew);
+  const timer = startRenewalTimer(options.intervalMs, renew, options.schedule);
 
   return { renew, lost: () => lost, signal: gone.signal, stop: () => timer.stop() };
 }

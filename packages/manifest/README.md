@@ -20,7 +20,8 @@ verifyContract({ before: committed, after: manifest });
 | `entities` | table, columns (type, nullability, PK, FK), named invariants |
 | `actions` | input + output schema, policy label, **required permissions**, cache invalidations, declared rate limit, MCP exposure, `mutator` when it is one |
 | `queries` | input schema, policy label, **required permissions**, live, cache tags |
-| `jobs` | input schema, queue, retry policy, step names |
+| `admin` | one entry per `defineAdmin()`: `basePath`; each resource's `filters`, `sorts`, `scopes` (`name`, `default`, `count`) and `rowScoped`; each mounted route's `url`, `view`, `entity` and `permissions`. `[]` for an app with no admin. Read off the process's own declarations — the one section the CLI does not inject |
+| `jobs` | input schema, queue, retry policy, step names, and — only when the job declares a cap — `concurrency: { limit, keyed, whenBusy }` |
 | `tasks` | cron, tz, jobs enqueued |
 | `policies` | permission, where enforced |
 | `permissions` | **derived** from policies + each operation's own list, never declared twice |
@@ -59,9 +60,9 @@ whole mechanism.
 
 | Class | Examples |
 |---|---|
-| **breaking** | action/query/route/job/**task**/entity/**policy**/**error code** removed; input or output schema changed; policy changed; **an operation gained a required permission**; **a policy gained an enforcement site**; **a rate limit was tightened or introduced**; MCP exposure withdrawn; column removed, retyped, or made NOT NULL; **a column's `primaryKey` or `references` changed in either direction**; **an entity's `table` renamed**; **an invariant added**; **a job's `queue` moved or its `retry.attempts` lowered**; **a route's `surface` changed**; live query became non-live |
-| **additive** | primitive added; nullable column added; **a column that lost NOT NULL**; a required permission dropped; an enforcement site dropped; **an invariant dropped**; a rate limit loosened or removed; **more retry attempts**; MCP exposure granted; locale added |
-| **internal** | cache tags changed (actions **and queries**); render mode changed; **a route's `offline`/`hydrate`/`budget`/`revalidateTags`**; **a task's `cron`/`tz`/`enqueues`**; **a job's `retry.backoff`**; job steps reordered; **an error code's owning package**; `buildId` |
+| **breaking** | action/query/route/job/**task**/entity/**policy**/**error code** removed; input or output schema changed; policy changed; **an operation gained a required permission**; **a policy gained an enforcement site**; **a rate limit was tightened or introduced**; MCP exposure withdrawn; column removed, retyped, or made NOT NULL; **a column sealed, unsealed, or moved from `lookup` to opaque** (sealing removes the field from every output; unsealing leaves stored values ciphertext); **a column's `primaryKey` or `references` changed in either direction**; **an entity's `table` renamed**; **an invariant added**; **a job's `queue` moved or its `retry.attempts` lowered**; **a route's `surface` changed**; live query became non-live; **an admin, an admin resource or an admin route removed; an admin list's filter, sort or scope removed; its default scope moved; a row scope introduced** |
+| **additive** | primitive added; nullable column added; **a column that lost NOT NULL**; **a sealed column moved from opaque to `lookup`** (reported: equal values now store equal strings); a required permission dropped; an enforcement site dropped; **an invariant dropped**; a rate limit loosened or removed; **more retry attempts**; MCP exposure granted; locale added; an admin, resource, route, filter, sort or scope added; a row scope removed |
+| **internal** | cache tags changed (actions **and queries**); render mode changed; **a route's `offline`/`hydrate`/`budget`/`revalidateTags`**; **a task's `cron`/`tz`/`enqueues`**; **a job's `retry.backoff`**; **a job's `concurrency`, declared, edited or removed**; job steps reordered; **an error code's owning package**; `buildId` |
 
 Every top-level section is classified, and that is checked rather than promised:
 `diff.test.ts` walks `ARRAY_SECTIONS` from `schema.ts` and fails on a section nothing reads. Two
@@ -70,7 +71,7 @@ every scheduled task reported `internal buildId: content changed` and passed the
 
 One classifier per section, each in its own file: `diff-operations.ts` (actions, queries,
 permissions), `diff-rate-limit.ts`, `diff-entities.ts`, `diff-work.ts` (jobs, tasks),
-`diff-routes.ts`, `diff-registries.ts` (policies, error codes), over the shared vocabulary in
+`diff-routes.ts`, `diff-admin.ts`, `diff-registries.ts` (policies, error codes), over the shared vocabulary in
 `diff-change.ts`. `diff.ts` is the orchestrator and nothing else.
 
 `verifyContract()` is the gate: a breaking change fails unless the app's **major** version

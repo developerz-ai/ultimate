@@ -19,6 +19,8 @@ export { formatBytes, HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } fro
 /** `asset('assets/x.avif')` → the content-hashed URL the site asset surface serves it at. */
 export type { AssetExtension, AssetPath, AssetResolver } from './asset';
 export { ASSET_DIR, ASSET_EXTENSIONS, asset, assetPathProblem, setAssetResolver } from './asset';
+/** The `<meta name="ultimate-path-style">` core's `actionPath` reads — a non-default style only. */
+export { CLIENT_PATH_STYLE_META, clientPathStyleTags } from './client-path-style-tag';
 /** The `<meta name="ultimate-scope">` core's `pageClient()` reads, on private documents only. */
 export {
   CLIENT_PERSIST_META,
@@ -154,15 +156,19 @@ export type { ClientNavigationHead } from './navigation-tags';
 export { clientNavigationTags } from './navigation-tags';
 export type {
   CompiledPattern,
+  MountedRouteInput,
   RegisterRouteInput,
   RouteDescriptor,
   RouteEntry,
+  RouteMount,
+  RouteMountInput,
 } from './registry';
 export {
   clearRoutes,
   compilePattern,
   describeRoutes,
   ROUTE_FILENAME,
+  registerMountedRoutes,
   registerRoute,
   routeEntries,
   routeFor,

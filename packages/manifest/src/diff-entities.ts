@@ -110,6 +110,7 @@ function diffColumns(
     }
     changes.push(...diffKey(at, 'primaryKey', keyOf(column), keyOf(next)));
     changes.push(...diffKey(at, 'references', column.references, next.references));
+    changes.push(...diffSealed(`${at}.sealed`, column.sealed, next.sealed));
   }
 
   const beforeColumns = index(before.columns, (c) => c.name);
@@ -130,6 +131,63 @@ function diffColumns(
     }
   }
   return changes;
+}
+
+/**
+ * How a column is sealed is a WIRE fact as much as a storage one: `.sealed()` emits no DDL and
+ * leaves the column's type alone, so nothing else in the file moves — while the field leaves every
+ * action output, query row, record and live frame the app sends. Absence is a statement here, not
+ * missing evidence: the field is written only for a sealed column, and a manifest older than the
+ * feature had none.
+ *
+ * Three of the four moves break a consumer. Sealing removes a field every client read. Unsealing
+ * puts it back AND leaves every stored value a ciphertext no read opens any more. `lookup` to
+ * opaque refuses the equality filters and the unique rule that were legal. Opaque to `lookup` is
+ * the one that only widens — reported all the same, because equal values now store equal strings,
+ * and rows written before are found only once they are re-sealed.
+ */
+function diffSealed(
+  path: string,
+  before: ColumnFact['sealed'],
+  after: ColumnFact['sealed'],
+): readonly ManifestChange[] {
+  if (before === after) return [];
+  if (before === undefined) {
+    return [
+      {
+        kind: 'breaking',
+        path,
+        detail: `became sealed (${after}); the field is removed from every output`,
+      },
+    ];
+  }
+  if (after === undefined) {
+    return [
+      {
+        kind: 'breaking',
+        path,
+        detail:
+          'no longer sealed; stored values stay ciphertext until rewritten, and the field joins every output',
+      },
+    ];
+  }
+  return after === 'lookup'
+    ? [
+        {
+          kind: 'additive',
+          path,
+          detail:
+            'sealed opaque -> lookup; equal values now store equal strings, and existing rows match only after a re-seal',
+        },
+      ]
+    : [
+        {
+          kind: 'breaking',
+          path,
+          detail:
+            'sealed lookup -> opaque; an equality filter or a unique rule on it is now refused',
+        },
+      ];
 }
 
 /** `primaryKey` is optional in the file, so absence is the same statement as `false`. */
