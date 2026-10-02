@@ -16,43 +16,48 @@ bunx x g resource todo --dry-run
   + apps/web/app/todo/entity.ts
   + apps/web/app/todo/entity.test.ts
   + apps/web/app/todo/repo.ts
+  + apps/web/app/todo/repo.test.ts
   + apps/web/app/todo/policy.ts
   + apps/web/app/todo/policy.test.ts
-  + apps/web/app/todo/errors.ts
   + apps/web/app/todo/actions/create-todo.ts
   + apps/web/app/todo/actions/create-todo.test.ts
   + apps/web/app/todo/actions/create-todo.contract.test.ts
+  + apps/web/app/todo/errors.ts
+  + packages/i18n/catalogs/en.json
   + apps/web/app/todo/actions/archive-todo.ts
   + apps/web/app/todo/actions/archive-todo.test.ts
   + apps/web/app/todo/actions/archive-todo.contract.test.ts
   + apps/web/app/todo/live/todo-list.ts
   + apps/web/app/todo/live/todo-list.live.test.ts
+  + apps/web/app/todo/live/todo-list.test.ts
   + apps/web/app/todo/jobs/reindex-todo.ts
   + apps/web/app/todo/jobs/reindex-todo.job.test.ts
+  + apps/web/app/todo/jobs/reindex-todo.test.ts
   + apps/web/app/todo/service.ts
   + apps/web/app/todo/service.test.ts
   + apps/web/app/todo/ui.tsx
+  + apps/web/app/todo/ui.test.ts
   + apps/web/app/todo/ui.module.scss
   + apps/web/app/todo/ui/todo-card.tsx
   + apps/web/app/todo/todo-form.island.tsx
+  + apps/web/app/todo/todo-form.island.states.ts
   + apps/web/app/todo/todo-form.island.test.ts
-  + packages/i18n/catalogs/en.json
   + apps/web/app/todos/page.tsx
   + apps/web/app/todos/page.module.scss
   + apps/web/app/todos/page.test.ts
   + apps/web/app/todos/page.e2e.test.ts
-✓ would write 29 file(s) for resource todo — nothing written
+✓ would write 33 file(s) for resource todo — nothing written
 ```
 
 **The form is an island, not a `ui/` component** — `todo-form.island.tsx` beside the slice rather than under `ui/`. A `createSignal` needs the browser, `.island.tsx` is what puts a module in the client bundle graph, and the route's `budget.js` is what bounds it. Everything under `ui/` renders on the server and ships no JS.
 
-Drop `--dry-run` to write them. `x g` never clobbers — an existing file is `X_GENERATE_CONFLICT`; the i18n catalog is merged key-by-key rather than overwritten; and a **slice module** (`entity.ts`, `repo.ts`, `policy.ts`, `errors.ts`) the slice already has is skipped, `--force` included, because it belongs to the slice rather than to the generator that needed it. **A `resource` run whose catalog merge gains no key writes 27**: a merge that changes nothing is skipped rather than counted, and the catalog is the one mergeable file in the list.
+Drop `--dry-run` to write them. `x g` never clobbers — an existing file is `X_GENERATE_CONFLICT`; the i18n catalog is merged key-by-key rather than overwritten; and a **slice module** (`entity.ts`, `repo.ts`, `policy.ts`, `errors.ts`) the slice already has is skipped, `--force` included, because it belongs to the slice rather than to the generator that needed it. **A `resource` run whose catalog merge gains no key writes 32**: a merge that changes nothing is skipped rather than counted, and the catalog is the one mergeable file in the list.
 
 **No migration is in that list.** `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource todo` and then the two steps below.
 
 | Generator | Emits |
 |---|---|
-| `x g resource <n>` | the whole slice above — 29 files, 31 with `--admin` |
+| `x g resource <n>` | the whole slice above — 33 files, 35 with `--admin` (`As of 2026-10`) |
 | `x g entity` / `policy` / `action` / `mutator` / `query` / `job` / `task` | that primitive plus its test — **and the slice modules its own source imports**, when the slice has none: `x g job` is 5 files into a bare slice, `x g action` 8. Which ones differ per generator, so a job plants no `policy.ts` ([CLI reference § x g](CLI-Reference)) |
 | `x g route <path> --surface site\|app` | `page.tsx`, its stylesheet, its test, its catalog keys |
 

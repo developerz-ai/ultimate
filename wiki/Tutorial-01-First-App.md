@@ -204,8 +204,8 @@ myapp/
 │   └── ui/                  app components on semantic tokens
 ├── docker/                  Dockerfile, .dockerignore, dev + prod compose, helm/
 ├── guards/                  one rule per file, run by `x verify`'s boundaries step.
-│                            Four ship: bare-error, raw-colour, untranslated-string,
-│                            unzoned-date. Delete one by deleting its file
+│                            Every name in SHIPPED_GUARD_NAMES ships; `x doctor`
+│                            lists any missing. Delete one by deleting its file
 ├── bin/                     setup, dev, check
 └── AGENTS.md  CLAUDE.md     the two files an agent reads first
 ```
@@ -237,22 +237,21 @@ That is the scaffold **with** the example slice, which declares one entity. `x n
 
 ## The routes are clean
 
-`x routes` on a fresh scaffold reports four routes and no findings — the scaffold writes `apps/admin/app/admin/page.tsx` rather than claiming `/` twice, and no page declares `render: 'stream'` without a boundary:
+`x routes` on a fresh scaffold reports four file routes and no findings, plus the admin's
+screens. `As of 2026-10`, read off the templates `x new` writes:
 
-```bash
-bunx x routes
-```
+| path | surface | render | hydrate | offline | declared by |
+|---|---|---|---|---|---|
+| `/` | site | static | never | precache | `apps/web/site/page.tsx` |
+| `/offline` | site | static | never | precache | `apps/web/site/offline/page.tsx` |
+| `/dashboard` | app | ssr | visible | runtime | `apps/web/app/dashboard/page.tsx` |
+| `/posts` | app | ssr | visible | runtime | `apps/web/app/posts/page.tsx` |
 
-```text
-  path        surface  render  hydrate  offline       file
-  /           site     static  never    precache      apps/web/site/page.tsx
-  /admin      app      ssr     idle     network-only  apps/admin/app/admin/page.tsx
-  /dashboard  app      ssr     visible  runtime       apps/web/app/dashboard/page.tsx
-  /posts      app      ssr     visible  runtime       apps/web/app/posts/page.tsx
-✓ 4 routes
-```
-
-`--no-example` drops `/posts` and reports three. `x routes` is not a gate step either way, so a finding here never fails `x verify` — run it after scaffolding and after every `x g route`.
+The admin has no page file: `apps/admin/app/admin/admin.ts` declares `defineAdmin()`, which mounts
+`/admin` and a list, detail and form per entity. Those rows name the call and the permissions that
+gate them instead of a file — `defineAdmin() · admin:read + posts:read` — and their `--json` rows
+carry `mount`. `--no-example` drops `/posts`. `x routes` is not a gate step either way, so a finding
+here never fails `x verify` — run it after scaffolding and after every `x g route`.
 
 If you do hit `X_ROUTE_MODE_INVALID` on a page you wrote, its `fix:` offers two edits and only the second works: set `render: 'ssr'`. Solid's `<Suspense>` throws under this renderer at any version, and async data needs no boundary — `await` it in the component ([Known gaps](Known-Gaps)).
 

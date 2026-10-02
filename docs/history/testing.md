@@ -202,3 +202,28 @@ the day it was written. A fixture that silently no-opped would make the assertio
 proof — `offline()` followed by "the fallback rendered" is the app's ONLINE page passing an offline
 test — so an `E2eBrowserPage` that declares no `offline` still gets the refusal, now naming the
 method the double is missing rather than a capability the framework does not have.
+
+## The e2e driver, in brief (moved 2026-10-01)
+
+Moved verbatim out of `packages/testing/CLAUDE.md`, which sat 97 bytes under its 24 KB cap.
+
+**Raw CDP over Bun, no dependency.** A launched Chrome is driven over its debugging PIPE
+(`cdp-pipe.ts`); a remote one over Bun's `WebSocket` (`cdpConnect`). `x shot` and the dev MCP
+server's `ui.*` tools launch on the same `launchChrome` since 22.0.0
+(`packages/cli/src/cdp-shot-driver.ts`) — one launcher, one wire. A CDP event listener is handed
+the event's `sessionId` (`CdpEventListener`), so a subscriber owning one page ignores the rest.
+
+**The load EVENT is the completion signal, never `Page.navigate`'s reply** — Chrome drops the reply
+when a navigation swaps the render process. The waiter goes up before the send; the reply is read
+only for `errorText`.
+
+**Every call is deadlined, and a close settles every call in flight.** Four codes, four repairs:
+`X_CDP_BROWSER_MISSING` (install one), `X_CDP_LAUNCH_FAILED` (read its stderr, in the cause),
+`X_CDP_CALL_FAILED` (look at the page), `X_CDP_TIMEOUT` (raise the deadline).
+
+**`evaluate` is the lossy edge.** Only `Function.prototype.toString()` crosses: a zero-parameter
+closure over page globals works; native, bound, parameterised and method-shorthand closures are
+refused statically; a missing binding comes back named from the page's own `ReferenceError`.
+
+**`update()` still refuses** — a second build under a new build id is a SERVER fact no page port
+can speak for. `offline()`/`online()` forward to `E2eBrowserPage.offline`.

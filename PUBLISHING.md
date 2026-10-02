@@ -41,6 +41,25 @@ The counts are a snapshot and go stale on the next release; that the list is der
 does not. Read the state — `bun run scripts/release-workflow.ts --json` for the order,
 `npm view <pkg> version` for what the registry holds — never this paragraph.
 
+## Facts, as commands
+
+No page in this repository states a release fact as a number. Each one is a command: run the
+right-hand column, never quote the left. The root `CLAUDE.md` carries the commands alone; this is
+what each answer means.
+
+| Fact | Read it yourself |
+|---|---|
+| what this tree is stamped at, per workspace | `bun run scripts/list-workspaces.ts --json` — `.data[].version`; one value across every workspace, or the tree is out of lockstep |
+| the whole repository is stamped at one version | `bun run scripts/release.ts --check <version>` — exits 1 and names every finding when it is not |
+| the release workflow names every publishable workspace | `bun run scripts/release-workflow.ts --json` |
+| every one of them is on npm at that version, attested | `bun run scripts/registry-audit.ts --json` — also names a new package owing its one bootstrap publish (step 1 of the bootstrap below) |
+| what npm serves, and what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
+| provenance on a release | `npm view @ultimat3/core@<version> dist.attestations _npmUser` — `GitHub Actions` is the workflow; a person's name is a hand publish with no attestation |
+| the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — the ref **and** its peeled `^{}` line. Not `git tag --list`, which reads the local repository. `git tag -a` only: `--follow-tags` never pushes a lightweight tag |
+| the GitHub Release exists — the Release triggers the workflow | `gh release view v<version> --json tagName,isDraft,publishedAt` |
+| the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
+| which majors have shipped, and what each one breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
+
 ## Lockstep versioning — the rule
 
 **Every published package moves to the same version in one commit.** The packages import each
@@ -346,8 +365,9 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
    any ref that is not `refs/tags/v*`.
 4. The workflow's **`check` job** runs first, with no environment and no `id-token`: the ref must
    be `refs/tags/v*`, the tree must be stamped at the tag's version (`release.ts --check`), and
-   ci.yml's `verify` job must have concluded `success` on the tagged commit — read, never re-run,
-   waiting up to 20 minutes for a run still in flight. A Release cut before the bump (the
+   ci.yml's `verify` job — the one that merges every part of the gate — must have concluded
+   `success` on the tagged commit: read, never re-run, waiting up to 20 minutes for a run still
+   in flight. A Release cut before the bump (the
    `developerz-ai[bot]` shape) fails here, before any `npm-publish` deployment is requested.
 5. Only then does the **`publish` job** start behind `environment: npm-publish` — nobody approves
    anything today, the environment has no reviewers (step 2 above) — and publish each tier over
@@ -419,7 +439,7 @@ published is the signal; `bun run scripts/registry-audit.ts --json` names each g
 | a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
 | `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version — see below |
-| ci.yml's `verify` job `success` on the tagged commit | nothing reaches the registry unverified — and verified by the job that has Postgres, NATS and Redis. The workflow used to re-run `verify` itself with none of them: the 21.0.0 run executed 10 of 342 live tests |
+| ci.yml's `verify` job `success` on the tagged commit | nothing reaches the registry unverified. `verify` is the merge of every `gate` part (`x verify merge`, red for a step no part ran), and the `live` part is the one with Postgres, NATS, Redis and S3. The workflow used to re-run `verify` itself with none of them: the 21.0.0 run executed 10 of 342 live tests |
 | a package already on npm at the version is skipped | a failed publish is resumable (`gh run rerun <run-id> --failed`) |
 
 ### Why `--check` is a separate gate from `verify`

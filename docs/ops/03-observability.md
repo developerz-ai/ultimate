@@ -37,6 +37,30 @@ exactly one emitter:
 | `channel_frames_dropped_total` | counter | none | the sync node, per channel frame a socket's backpressure dropped (`packages/realtime/src/socket.ts`) |
 | `channel_replay_gaps_total` | counter | none | the sync node, per `replay-gap` a socket took (`packages/realtime/src/channel-gaps.ts`) |
 | `deprecated_calls_total` | counter | primitive, `name` | a call served by a declaration marked deprecated (`packages/action/src/deprecation.ts`) |
+| `process_resident_memory_bytes`, `process_heap_used_bytes`, `process_heap_total_bytes`, `process_external_memory_bytes` | gauge | none | every role, read at scrape time (`packages/core/src/process-metrics.ts`) |
+| `process_cpu_seconds_total` | counter | none | every role, fed once a second; the boot's CPU is counted at start |
+| `process_event_loop_lag_seconds` | histogram | none | every role: how late a 1,000 ms timer fired, one sample a second |
+| `process_start_time_seconds` | gauge | none | every role |
+| `process_info` | gauge | `role` | every role; always 1 — join on it to split any `process_*` series by role |
+| `db_pool_max`, `db_pool_in_use`, `db_pool_waiting` | gauge | none | every role that opened a pool, derived from demand (`packages/db/src/pool-gauge.ts`) |
+| `queue_wake_live` | gauge | none | the worker: 1 while its `LISTEN` session is proven, 0 while jobs start on the poll alone (`packages/cli/src/role-wake.ts`) |
+
+**What a pod costs, and what is growing.** `As of 2026-10` every role answers the `process_*`
+series, so memory is a query rather than a `kubectl top`:
+
+| Question | Query |
+|---|---|
+| RSS per role | `process_resident_memory_bytes * on (pod) group_left (role) process_info` |
+| is it the JS heap? | `process_heap_used_bytes` rising with RSS — a retained structure. Flat while RSS rises: memory outside the heap |
+| CPU per role | `rate(process_cpu_seconds_total[5m]) * on (pod) group_left (role) process_info` |
+| is the loop stalling? | `histogram_quantile(0.99, rate(process_event_loop_lag_seconds_bucket[5m]))` |
+| is the pool saturated? | `db_pool_waiting > 0` for more than a scrape; `db_pool_in_use / db_pool_max` is utilisation |
+| how often does it restart? | `changes(process_start_time_seconds[1h])` |
+
+`worker` and `scheduler` import the API index and every app module that brings no component or
+stylesheet with it — never the pages. A job the manifest names that such a load did not register
+is answered by importing everything and logged as `X_ROLE_LOAD_INCOMPLETE`: the role still runs
+every job, and costs what the web role costs until the `fix:` is applied.
 
 Labels are deliberately low-cardinality: the route **pattern** and the status **class**, never a
 concrete path, a user id or a job name. A label an attacker chooses is a label that decides how

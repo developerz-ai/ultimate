@@ -15,6 +15,8 @@
 //
 //   bun run scripts/scaffold-admin.ts <app dir> [--json]
 
+import { DEV_BINDING } from '@ultimat3/cli';
+import { renderThrowable } from '@ultimat3/core';
 import type { AdminStep, AdminWalk, Fetcher } from './lib/admin-walk';
 import { adminFindings, walkAdmin } from './lib/admin-walk';
 import { parseScriptArgs } from './lib/args';
@@ -95,18 +97,27 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
   }
 
   const port = io.port();
-  const walk: AdminWalk = { base: `http://127.0.0.1:${String(port)}`, resource, roleCookie };
+  // The NAME `x dev` binds, never a literal address: Bun binds `localhost` as `[::1]` alone on a
+  // host whose hosts file maps it to both loopbacks (GitHub's Ubuntu runner), and a dial at
+  // `127.0.0.1` there is refused for the whole budget while `x dev` reports itself ready.
+  const base = `http://${DEV_BINDING.hostname}:${String(port)}`;
+  const walk: AdminWalk = { base, resource, roleCookie };
   const started = io.now();
   const server = io.boot(dir, port);
   let steps: readonly AdminStep[] = [];
   let bootMs = 0;
   let up = false;
   let output = '';
+  /** Why the last dial failed: a boot log that ends "ready" is no evidence of WHY nothing answered. */
+  let lastDial = 'no dial was made';
   try {
     while (!up && !server.exited() && io.now() - started < BOOT_BUDGET_MS) {
-      up = await io.fetcher(`${walk.base}/admin`, { redirect: 'manual' }).then(
+      up = await io.fetcher(`${base}/admin`, { redirect: 'manual' }).then(
         () => true,
-        () => false,
+        (error: unknown) => {
+          lastDial = renderThrowable(error);
+          return false;
+        },
       );
       if (!up) await io.sleep(100);
     }
@@ -118,7 +129,7 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
   if (!up) {
     return refused(
       `x dev did not answer in ${dir}`,
-      `x dev --port ${String(port)} answered no request in ${String(bootMs)} ms: ${tail(output)}`,
+      `x dev --port ${String(port)} answered no request in ${String(bootMs)} ms — the last dial at ${base}/admin: ${lastDial} — it printed: ${tail(output)}`,
       `cd ${dir} && bin/dev --port ${String(port)}`,
       dir,
     );
@@ -160,9 +171,14 @@ const realIo: AdminCheckIo = {
     };
   },
   fetcher: fetch,
-  // A port nothing holds right now. `x dev` takes the next one up for its sync node.
+  // A port nothing holds right now, on the address `x dev` will bind — `dev-lock.ts`'s rule: probe
+  // what the server binds. `x dev` takes the next one up for its sync node.
   port: () => {
-    const probe = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data: () => undefined } });
+    const probe = Bun.listen({
+      hostname: DEV_BINDING.hostname,
+      port: 0,
+      socket: { data: () => undefined },
+    });
     const { port } = probe;
     probe.stop(true);
     return port;
