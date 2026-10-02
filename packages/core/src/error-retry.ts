@@ -61,6 +61,14 @@ const CORE_ERROR_RETRY: ReadonlyMap<string, ErrorRetry> = new Map(
     // The principal fence's twin of `X_SUPERSEDED`, listed for the same reason: re-sending a read
     // from the previous principal's scope is refused identically every time.
     X_CLIENT_SCOPE_CHANGED: 'terminal',
+    // `seal.ts`'s three, listed for `X_NOT_IMPLEMENTED`'s reason: a missing key, an undeclared
+    // key and a value that failed its tag are each the same answer on attempt five, and left
+    // unclassified a job opening a sealed column would spend its whole retry policy re-proving it.
+    // Here rather than through `registerErrorRetry` because they are core's own codes, which that
+    // function refuses, and a module-scope call would make `seal-errors.ts` a side-effect anchor.
+    X_SEAL_INVALID: 'terminal',
+    X_SEAL_KEY_MISSING: 'terminal',
+    X_SEAL_KEY_UNKNOWN: 'terminal',
   } as const),
 );
 

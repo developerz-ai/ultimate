@@ -135,6 +135,11 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `deleteSessionsForUser`, `deleteSessionsForOrg`, `deleteSessionsCreatedBefore`); callers throw
   `X_NOT_IMPLEMENTED` naming the method.
 - An api key's scopes are the agent actor's scopes. Never union them with the owner's roles.
+- **`apiKeyResolver(() => store)` is the ONE token → caller mapping** (`api-key-resolver.ts`):
+  `verifyApiKey` → `apiKeyActor`, `X_API_KEY_INVALID` → `null`, everything else rethrown. Its
+  `ApiKeyCaller` is structurally http's `BearerCaller` and mcp's `ResolvedToken` — declared here
+  because tier 2 imports neither. The store is a thunk (a mount is declared before boot installs
+  the database client). No second in-memory key store: `MemoryAdapter` IS an `ApiKeyStore`.
 - Rotate the session id on any privilege change (`rotateSession`, called by `updatePrivileges` in
   `privileges.ts`), never patch the row.
 - **Every argon2 call goes through `kdfGate()`** — width 8, queue 64, `X_OVERLOADED` past it

@@ -15,12 +15,14 @@ import { narrowRow } from './columns';
 import { countsFrom, groupColumnOf } from './count-by';
 import { cursorFor, kindOf, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
-import { notFound } from './errors';
+import { invariantViolated, notFound } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { compareByKind, matchesPredicate } from './memory-match';
 import { uniqueClash, uniqueViolation } from './memory-unique';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { FindManyArgs, MemoryRepo, RepoOptions, Transactor, Tx } from './repo';
+import { sealedFields } from './sealed';
+import { sealedRepo } from './sealed-repo';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
 import type { RowWrite } from './types';
@@ -95,6 +97,15 @@ export const memoryRepo = <Row>(
   /** The same key, from the id a caller named rather than from a row it has in hand. */
   const idStoreKey = (id: unknown, operation: string): string =>
     keyOf(kindOf(entity, singleKeyOf(entity, operation)) ?? '', id);
+  // Seed rows are stored as given, and sealing is asynchronous: a seeded sealed entity would hold
+  // plaintext every read then refuses to open. Refused here, with the call that seals.
+  if (seed.length > 0 && sealedFields(entity).length > 0) {
+    throw invariantViolated(
+      entity.$name,
+      'seed',
+      'declares a sealed column, and memoryRepo(entity, seed) stores seed rows unsealed — pass no seed and write them with insertAll(rows)',
+    );
+  }
   const rows = new Map<string, Row>(seed.map((row) => [storeKey(row), row]));
 
   const rowsOf = (plan: QueryPlan, args: FindManyArgs): Row[] => {
@@ -193,7 +204,7 @@ export const memoryRepo = <Row>(
 
   // Every method is async: a repository call that fails must reject, never throw
   // synchronously, or half the call sites would need two error paths.
-  return {
+  const repo: MemoryRepo<Row> = {
     async findById(id, options) {
       const { found } = select(
         { ...options, where: [{ column: singleKeyOf(entity, 'findById'), op: 'eq', value: id }] },
@@ -414,6 +425,9 @@ export const memoryRepo = <Row>(
       for (const row of seed) rows.set(storeKey(row), row);
     },
   };
+  // The memory driver seals too: it stores what Postgres would, so a test that passes here is not
+  // passing over plaintext production never holds.
+  return sealedRepo<Row, MemoryRepo<Row>>(entity, repo);
 };
 
 let txCounter = 0;

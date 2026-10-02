@@ -53,6 +53,7 @@ import {
 } from './pg-write-sql';
 import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
 import type { FindManyArgs, Repo, UpsertArgs } from './repo';
+import { sealedRepo } from './sealed-repo';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
 import type { RowWrite } from './types';
@@ -205,7 +206,7 @@ export const postgresRepo = <Row>(
     return written;
   };
 
-  return {
+  const repo: Repo<Row> = {
     async findById(id, options) {
       const op = 'findById';
       const plan = idPlan(entity, id, options, op);
@@ -471,6 +472,8 @@ export const postgresRepo = <Row>(
       return Number.isFinite(estimate) && estimate >= 0 ? estimate : null;
     },
   };
+  // The one sealing seam, shared with `memoryRepo()`: sealed on the way in, opened on the way out.
+  return sealedRepo(entity, repo);
 };
 
 /**

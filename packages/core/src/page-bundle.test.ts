@@ -90,9 +90,18 @@ describe('the browser path to the page seam', () => {
     expect(modules).toContain('core/src/errors.ts');
   }, 60_000);
 
-  test('the handle, the fence and UltimateError stay under 4 kB minified (3,789 B as of 2026-09-22)', async () => {
+  // measured: 4,096 B (2026-10-01), against 4,403. It was 3,789 on 2026-09-22 and 4,010 at 22.15.0.
+  // why: +307 B, every byte of it in the modules `UltimateError` retains. +221 B before this
+  // change — 21.0.0's client store (`03904536`) and the caller-facing fix renderers (`e82f562d`).
+  // +86 B in it: three `X_SEAL_*` rows in `error-retry.ts`'s classification map (85 B — a job
+  // opening a sealed column must not spend its retry policy on a missing key) and one `@` in
+  // `error-render.ts`'s shell-safe set (a scoped package name is one word). The ceiling moves by
+  // the measured growth and keeps the headroom it had: 4,096 + 307. The map is ONE table for the
+  // server and the browser, so the browser carries rows for codes it never throws — the 85 B are
+  // function on a worker and none in an island, and splitting the table is `error-retry.ts`'s to do.
+  test('the handle, the fence and UltimateError stay under 4,403 B minified (4,096 B as of 2026-10-01)', async () => {
     const { bytes } = await build('throws-min', '', true, THROWING_PAGE);
-    expect(bytes).toBeLessThan(4_096);
+    expect(bytes).toBeLessThan(4_403);
   }, 60_000);
 
   // Everything the entry exports at once — the transport, the URL rule, the fence and the helpers a

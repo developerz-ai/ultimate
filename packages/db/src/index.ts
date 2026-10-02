@@ -112,6 +112,8 @@ export {
   uniqueColumns,
 } from './invariant-ddl';
 export { constraintExpressionUnsafe, constraintNameUnsafe } from './invariant-errors';
+export type { DbSubscription, ListeningClient } from './listen';
+export { canListen } from './listen';
 export type {
   AppliedMigration,
   LedgerRow,
@@ -166,6 +168,8 @@ export {
 } from './pglite';
 export type { PgliteBranchInfo, PgliteBranchOptions } from './pglite-branch';
 export { branchPglite, pgliteBranchDir } from './pglite-branch';
+export type { LinkedExtensions, PgliteExtensionLoader } from './pglite-extensions';
+export { linkPgliteExtensions } from './pglite-extensions';
 export type { PoolProfile } from './pool-profile';
 export { POOL_MAX_ENV, POOL_PROFILES, poolProfileFor } from './pool-profile';
 export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query';

@@ -132,6 +132,11 @@ export type { RowBulkChange, RowChange, RowChangeOp, RowObserver } from './row-o
 export { observedRepo, rowObserver, setRowObserver } from './row-observer';
 export type { RecordsByKey, RecordsByType } from './rows-of';
 export { hasEntityRows, projectionsIn, rowsOf } from './rows-of';
+// Sealed columns. `sealedFields` is what a manifest or `x doctor` reads to say which columns are
+// sealed; `sealedRepo` is the seam a driver written outside this package returns through.
+export type { SealedField } from './sealed';
+export { sealedFields } from './sealed';
+export { sealedRepo } from './sealed-repo';
 // Full-text search. The LANGUAGE set and the weights are values an app reads to build a form;
 // `SEARCH_PROPERTY` is what a `matches` predicate names, which a hand-built `QueryPlan` needs.
 export type { SearchInit, SearchLanguage, SearchSource, SearchVector } from './search';
@@ -194,10 +199,15 @@ export type {
   RowOf,
   RowPatch,
   RowWrite,
+  SealedColumn,
+  SealedMeta,
+  SealedOptions,
   SearchWeight,
+  TextColumn,
   TimestampColumn,
   TypeOf,
   UuidColumn,
+  WireRow,
 } from './types';
 export { COLUMN_KINDS } from './types';
 // `viewFor` stays internal: a view is reached through the entity, as `posts.$view([...])`.

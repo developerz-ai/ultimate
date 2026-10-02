@@ -136,6 +136,43 @@ describe('renderMeta', () => {
    *   escape off. Spell that attribute differently and render silently downgrades a JSON body to
    *   the rule for executable code — no test would fail, and `meta.ld` is built from route data.
    */
+  test('a document that is not indexed carries no social tags, declared or derived', () => {
+    const tags = renderMeta(
+      {
+        ...META,
+        twitter: { site: '@ultimate', image: '/og/ship-it.png' },
+        robots: { index: false },
+      },
+      {
+        baseUrl: 'https://ultimate.dev',
+        localization: {
+          locale: 'en',
+          defaultLocale: 'en',
+          alternates: [
+            { locale: 'en', path: '/blog/ship-it' },
+            { locale: 'es', path: '/es/blog/ship-it' },
+          ],
+        },
+      },
+    );
+    const social = tags.filter((tag) =>
+      /^(?:og|article|twitter):/.test(tag.attrs['property'] ?? tag.attrs['name'] ?? ''),
+    );
+    expect(social).toEqual([]);
+    // Everything that is not a card survives: the page still has a title, a robots line, its
+    // canonical and its hreflang cluster.
+    expect(tags.some((tag) => tag.tag === 'title')).toBe(true);
+    expect(find(tags, 'name', 'robots')[0]?.attrs['content']).toBe('noindex,follow');
+    expect(find(tags, 'rel', 'canonical')).toHaveLength(1);
+    expect(find(tags, 'rel', 'alternate').length).toBeGreaterThan(0);
+  });
+
+  test('`follow: false` alone keeps the card: only `index: false` withdraws it', () => {
+    const tags = renderMeta({ ...META, robots: { follow: false } });
+    expect(find(tags, 'property', 'og:title')).toHaveLength(1);
+    expect(find(tags, 'name', 'twitter:card')).toHaveLength(1);
+  });
+
   test('an ld node is emitted as DATA: raw JSON under a ld+json type, escaped by nobody here', () => {
     const injected = '</script><img src=x onerror=alert(1)>';
     const tags = renderMeta({ title: 'A & B', ld: [{ '@type': 'Thing', name: injected }] });

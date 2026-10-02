@@ -27,7 +27,10 @@ export type DriftKind =
   | 'changed-index'
   | 'missing-check'
   | 'missing-foreign-key'
-  | 'changed-foreign-key';
+  | 'changed-foreign-key'
+  // Constructed in `object-drift.ts`: a trigger, function, view, type or sequence in the live
+  // database that replaying the migrations does not create.
+  | 'unexpected-object';
 
 export interface DriftDifference {
   readonly kind: DriftKind;

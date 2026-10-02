@@ -31,6 +31,12 @@ export interface RecordProjection {
    * default `false`. Realtime's persister reads it here, never off the declaration.
    */
   readonly persist: boolean;
+  /**
+   * The row's SEALED properties — the ones `schema` omits. `rowsOf` drops them from every row it
+   * collects, so a record never carries one whatever object the handler returned. Empty for almost
+   * every entity.
+   */
+  readonly sealed: readonly string[];
 }
 
 /** What `entity()` hands the projection: everything but the row node, which the schema builds. */
@@ -39,14 +45,23 @@ export interface ProjectionIdentity {
   readonly table: string;
   readonly primaryKey: readonly string[];
   readonly persist: boolean;
+  /** Absent means none: a projection built before sealing existed reads the same. */
+  readonly sealed?: readonly string[];
 }
 
 /** Built once per `entity()`, frozen: the brand, `recordProjection` and `rowsOf` share one object. */
 export const createProjection = (
-  { name, table, primaryKey, persist }: ProjectionIdentity,
+  { name, table, primaryKey, persist, sealed }: ProjectionIdentity,
   schema: SchemaNode,
 ): RecordProjection =>
-  Object.freeze({ type: name, table, key: recordKeyOf(name, primaryKey), schema, persist });
+  Object.freeze({
+    type: name,
+    table,
+    key: recordKeyOf(name, primaryKey),
+    schema,
+    persist,
+    sealed: Object.freeze([...(sealed ?? [])]),
+  });
 
 /**
  * The projection a schema node is branded with, or `undefined`. Own and non-enumerable: an

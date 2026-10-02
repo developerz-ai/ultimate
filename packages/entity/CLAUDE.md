@@ -87,37 +87,13 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   (`close()` = `AsyncGenerator.return()`), `.cursor` is advanced before the yield, no empty batch, and
   three refusals on the chain (size, `limit()` alongside, an order no cursor can carry — judged by
   exported `totalOrder`).
-- **A grouped count means one thing in both drivers, and `count-by.ts` is where that one thing is
-  written.** `countBy(column)` is the aggregate a `count()` per row is the N+1 of, so both drivers
-  call `groupColumnOf` before their statement exists and `countsFrom` after their rows are in — a
-  rule added to `pg-driver.ts` or to `memory-repo.ts` alone is exactly the drift that file exists
-  to prevent. **Groupable kinds are a closed set**: `uuid`, `text`, `char`, `boolean`, `integer`,
-  `bigint`. A `timestamptz` is a `Date`, a `jsonb` is an object and `money` is two physical columns
-  — a `Map` compares a non-primitive key by identity, so any of those would file rows under a key
-  no caller can look up again and the result would be a map that only ever answers `undefined`. The
-  refusal is `X_INVARIANT_VIOLATED` naming a column of *this* entity that is groupable, never
-  `x entity explain`: what repairs it is one edit to the call, and the entity is the only place the
-  replacement column lives. **The bound is a refusal, not a truncation.** The statement asks for
-  `MAX_GROUPS + 1` groups — the trick a page already uses when it reads one row past its limit — and
-  that extra group is what says the answer was never going to fit, so `countsFrom` throws with the
-  `andWhere(…, 'in', <values>)` that bounds it. Truncating would hand back a map that reads exactly
-  like a complete one, and a caller recounting from it would write the wrong number to every row it
-  missed. **Absent is not `0`**: a value nothing matched has no entry, because that is what
-  `group by` returns and it is the only way a caller can tell "none" from "never asked" — the
-  `?? 0` is theirs to write, and inventing it here would answer for keys the table has never seen.
-  **NULL is one group**, keyed `null`: the memory driver reads the property as `?? null` so it lands
-  where Postgres puts its NULL rows, while `0`, `''` and `false` stay the values they are. **The
-  order is applied after the rows are in, never in SQL** — a hash aggregate returns groups in
-  whatever order it built them and a `Map` filled row by row returns insertion order, so an
-  `order by` in the statement would let the two drivers disagree about a result they agree on;
-  sorting groups (never rows) costs nothing at this size and is what puts the largest bucket at the
-  front. **Both output names are fixed aliases** — `group_value` and `group_count` in
-  `countByStatement` (`pg-sql.ts`) — because an entity is free to declare a column called `count`,
-  and the un-aliased form would then return two outputs of one name; the grouped value is re-parsed
-  by the column that declared it, since `int8` arrives as a string and would otherwise key the map
-  by text where memory keys it by a `bigint`. **Nothing new to declare**: no `groupBy()` builder and
-  no error code of its own — it is a terminal on the chain that already exists, over exactly the
-  rows `count()` counts.
+- **A grouped count means one thing in both drivers, written in `count-by.ts`**: both call
+  `groupColumnOf` before the statement and `countsFrom` after the rows. Groupable kinds are a closed
+  set (`uuid`, `text`, `char`, `boolean`, `integer`, `bigint`); the bound is a REFUSAL at
+  `MAX_GROUPS + 1`, never a truncation; absent is not `0`; NULL is one group keyed `null`; the order
+  is applied after the rows are in, never in SQL; `group_value` / `group_count` are fixed aliases.
+  The refusal names a groupable column of THIS entity, never `x entity explain`.
+  The argument for each: [`docs/history/entity.md`](../../docs/history/entity.md).
 - **The codec is `@ultimat3/core`'s**, reached through `cursorFor(entity, plan, row, id)` and
   `seekFrom(entity, plan)`; **`assertSeekable` runs in `planFor`**, before a statement exists. A
   `timestamptz` sort key is refused when its `<column>$US` alias would pass 63 bytes. A cursor is bound
@@ -247,6 +223,35 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `from` in the predicate (`pg-transition.live.test.ts`: 1 winner of 20); `X_STATE_CONFLICT` is read
   after the refusal from a tenant-scoped `findById`; no DDL beyond `enumerated()`'s CHECK; a machine
   column may not be nullable; `whyNot` asks unknown → terminal → legal list.
+
+## Do not regress — sealed columns
+
+- **`sealed-repo.ts` is the ONE seam**: `memoryRepo()` and `postgresRepo()` both return through
+  `sealedRepo(entity, repo)`, which seals rows and patches going in, opens rows coming out and
+  rewrites or refuses every predicate. A driver never seals for itself; an entity with no sealed
+  column gets its repository back untouched. The cipher is core's (`scripts/seal-calls.ts`).
+- **A sealed column's `$parse` passes a sealed string and judges a plaintext**; `decodeRow` parses
+  none. `sealValue` runs the plaintext parser BEFORE sealing — nothing after can.
+- **No reading of an unsealed value.** Not sealed is `X_SEAL_INVALID`; existing plaintext is
+  expand → `backfill()` → contract (README). No `legacy` option.
+- **Purpose is `entity:<table>.<column>`, physical names** (`sealed.ts`). **Sealing is not on
+  `$describe()`**: it changes no DDL, so it must not move the drift hash — the manifest and
+  `x doctor` read `sealedFields(entity)`. Only `check`/`length` leave the description.
+- **A sealed property on a repository row is SERVER-ONLY** — own, readable, writable, NOT
+  enumerable (`serverOnly`, `sealed.ts`; set by `openRow`). Every generic serialiser omits it, which
+  is what holds a `query`'s rows, a loose `output`, a log line, an island prop, a job payload and a
+  cache tier — none of them parses a row. So ABOVE the seam a row is copied with `copyRow` /
+  `pickRow` (descriptors), never `{ ...row }`, `Object.assign({}, row)` or `out[k] = row[k]`:
+  `preload.ts`, `select()` and `touch()` in `query.ts`. `sealRow` reads each sealed property BY NAME,
+  so a row passed back whole is written whole. A required one missing on insert is `sealedMissing`
+  (`X_INVARIANT_VIOLATED`, from `$parse` and from the seam), naming the spread. `sealed.test.ts`.
+- **Nothing sealed leaves**: `$schema` (node and parsed value; typed `WireRow` on `Entity`,
+  `unknown` on `EntityCore`), `$view` (`X_ENTITY_SEALED_IN_VIEW`), `rowsOf`, the row observer, and
+  the repository row itself (above). `sealed-egress.test.ts` here and one per consuming package.
+- **Opaque: NULL tests only. `lookup`: also `eq` / `in`, `.unique()`, an unordered index.**
+  Refused at the type (`SealedKeysOf<C>` on `ReadBuilder`, `type-pins.ts`) AND at runtime
+  (`X_ENTITY_SEALED_PREDICATE`). A filtered write's FILTER refuses both kinds. Declaration rules
+  are `sealed-column.ts` (the chain) and `sealed-declaration.ts` (the entity).
 
 ## Do not regress — records and tests
 

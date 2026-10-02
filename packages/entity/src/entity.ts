@@ -19,10 +19,13 @@ import { recordProjection } from './record-projection';
 import type { EntityDescription, ReferenceDescription } from './registry';
 import { registerEntity } from './registry';
 import { rowSchema } from './row-schema';
+import { sealedFields } from './sealed';
+import { assertSealedDeclaration } from './sealed-declaration';
+import { sealedInView, sealedMissing } from './sealed-errors';
 import type { SearchInit, SearchSource, SearchVector } from './search';
 import { searchVectorOf } from './search';
 import { resolveTenantColumn } from './tenancy';
-import type { AnyColumn, ColumnMap, ColumnMeta, IndexDef, RowOf } from './types';
+import type { AnyColumn, ColumnMap, ColumnMeta, IndexDef, RowOf, WireRow } from './types';
 import type { EntityView } from './view';
 import { viewFor } from './view';
 
@@ -123,8 +126,13 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
    * (bare or wrapped: `t.array(posts.$schema)`) is a row the client store adopts, because its node
    * carries the `recordProjection` brand. A `$view` or a `.pick()` carries none: a partial row is
    * never a record.
+   *
+   * Typed `unknown` HERE and precisely on `Entity`: the parsed value is the row WITHOUT its sealed
+   * columns (`WireRow`), which is not `Row`, and a conditional over `C` in this interface would
+   * stop every `EntityCore<Row, C>` being an `EntityCore<Row>`. A row-agnostic consumer never read
+   * the output type; the one that does holds the `entity()` result.
    */
-  readonly $schema: Schema<unknown, Row>;
+  readonly $schema: Schema<unknown, unknown>;
   /** `entity:<name>:<id>` — row-level invalidation for live queries. */
   $tagFor(id: string): string;
   /** Fills declared defaults, then validates every column. Throws on a bad value. */
@@ -149,7 +157,14 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   $references(): readonly ReferenceDescription[];
 }
 
-export type Entity<Row, C extends ColumnMap = ColumnMap> = EntityCore<Row, C> & C;
+/**
+ * What `entity()` returns. `$schema` is restated with its real output: the row as it leaves the
+ * server, without the sealed columns — so `output: users.$schema` types a client that cannot read
+ * `password`, which is the value it will not be sent. `$parse` and `$row` are the whole row.
+ */
+export type Entity<Row, C extends ColumnMap = ColumnMap> = Omit<EntityCore<Row, C>, '$schema'> & {
+  readonly $schema: Schema<unknown, WireRow<Row, C>>;
+} & C;
 
 const MONEY_PARTS = new Set(['minor', 'currency']);
 
@@ -341,6 +356,19 @@ export const entity = <const C extends ColumnMap>(
       declared.findIndex((other) => identity(other) === identity(index)) === position,
   );
 
+  const sealed = sealedFields({ $name: name, $table: table, $columns: init.columns });
+  assertSealedDeclaration({
+    name,
+    fields: sealed,
+    primaryKey,
+    tenantColumn,
+    indexes,
+    invariants,
+  });
+  const sealedKeys = new Set(sealed.map((field) => field.property));
+  /** The columns that leave the server: every one that is not sealed. */
+  const wireEntries = entries.filter(([property]) => !sealedKeys.has(property));
+
   const tags = [cacheTag, ...(init.tags ?? [])];
   const describe = (): EntityDescription =>
     describeEntity({
@@ -377,7 +405,11 @@ export const entity = <const C extends ColumnMap>(
       const given = raw === undefined ? defaultValue(column.$meta) : raw;
       if (given === undefined || given === null) {
         if (column.$meta.notNull) {
-          throw invariantViolated(name, property, 'is required and has no default');
+          // A required sealed column ABSENT from a row is nearly always a spread of a repository
+          // row, which does not enumerate it — so the refusal names that, and the rewrite.
+          throw given === undefined && sealedKeys.has(property)
+            ? sealedMissing(name, property)
+            : invariantViolated(name, property, 'is required and has no default');
         }
         row[property] = null;
         continue;
@@ -387,6 +419,39 @@ export const entity = <const C extends ColumnMap>(
     // Every property was validated by its own column above, so the shape is the derived row.
     return row as Row;
   };
+
+  /**
+   * The row as `$schema` validates it: the sealed columns are neither required nor returned, so a
+   * handler's row — which holds their plaintext — parses to a value that does not.
+   */
+  const parseWire = (value: unknown): WireRow<Row, C> => {
+    if (sealedKeys.size === 0) return parse(value) as WireRow<Row, C>;
+    if (typeof value !== 'object' || value === null) {
+      throw invariantViolated(name, 'row', `expected an object, got ${describeValue(value)}`);
+    }
+    const input = value as Readonly<Record<string, unknown>>;
+    const row: Record<string, unknown> = {};
+    for (const [property, column] of wireEntries) {
+      const raw = input[property];
+      const given = raw === undefined ? defaultValue(column.$meta) : raw;
+      if (given === undefined || given === null) {
+        if (column.$meta.notNull) {
+          throw invariantViolated(name, property, 'is required and has no default');
+        }
+        row[property] = null;
+        continue;
+      }
+      row[property] = column.$parse(given);
+    }
+    // Every wire property was validated by its own column, and no sealed one was copied.
+    return row as WireRow<Row, C>;
+  };
+
+  const schema = rowSchema<WireRow<Row, C>>(
+    { name, table, primaryKey, persist: init.persist === true, sealed: [...sealedKeys] },
+    wireEntries,
+    parseWire,
+  );
 
   const core: EntityCore<Row, C> = {
     $name: name,
@@ -400,19 +465,19 @@ export const entity = <const C extends ColumnMap>(
     $softDelete: softDelete,
     $tenantColumn: tenantColumn,
     $search: search,
-    $schema: rowSchema<Row>(
-      { name, table, primaryKey, persist: init.persist === true },
-      entries,
-      parse,
-    ),
+    $schema: schema,
     get $row(): Row {
       // Type-only. Reading it means someone expected a value where a type was meant.
       throw invariantViolated(name, '$row', '$row is a type, not a value — use typeof x.$row');
     },
     $tagFor: (id) => `${cacheTag}:${id}`,
     $parse: parse,
-    $view: <K extends keyof Row & string>(keys: readonly K[]) =>
-      viewFor<Row, K>(name, init.columns, keys),
+    $view: <K extends keyof Row & string>(keys: readonly K[]) => {
+      // Before the view exists: a view is an `output`, and a sealed column is in none.
+      const named = keys.find((key) => sealedKeys.has(key));
+      if (named !== undefined) throw sealedInView(name, named);
+      return viewFor<Row, K>(name, init.columns, keys);
+    },
     $assert: (row) => assertInvariants(name, invariants, row),
     $describe: describe,
     $references: references,
@@ -429,5 +494,6 @@ export const entity = <const C extends ColumnMap>(
   });
   // The columns land on the entity itself so `orgs.id` is a column reference; every framework
   // member is `$`-prefixed, which is why a column may be called `name`.
-  return Object.assign(core, init.columns);
+  // `$schema` is restated so the result carries its real output type; it is the same object.
+  return Object.assign(core, init.columns, { $schema: schema });
 };

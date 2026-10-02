@@ -8,6 +8,7 @@ import {
   SecretsKeyInvalidError,
   SecretsKeyMismatchError,
   SecretsPlaintextInvalidError,
+  SecretsRingKeyInvalidError,
   SecretsTamperedError,
 } from './secrets-errors';
 
@@ -65,14 +66,15 @@ function decodeHex(hex: string): Uint8Array<ArrayBuffer> {
 }
 
 // `btoa`/`atob` rather than node:buffer — both are standard globals, and a chunk loop avoids the
-// stack blow-up `String.fromCharCode(...bytes)` hits on a spread of any size.
-function encodeBase64(bytes: Uint8Array<ArrayBuffer>): string {
+// stack blow-up `String.fromCharCode(...bytes)` hits on a spread of any size. Exported for
+// `seal.ts`, which writes the same bytes in the URL-safe alphabet — one codec, never a second.
+export function encodeBase64(bytes: Uint8Array<ArrayBuffer>): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
 }
 
-function decodeBase64(text: string): Uint8Array<ArrayBuffer> {
+export function decodeBase64(text: string): Uint8Array<ArrayBuffer> {
   const binary = atob(text);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
@@ -84,15 +86,22 @@ export function generateMasterKey(): string {
   return encodeHex(crypto.getRandomValues(new Uint8Array(SECRETS_KEY_BYTES)));
 }
 
-/** 64 lowercase hex characters, or `X_SECRETS_KEY_INVALID`. Whitespace is trimmed, never repaired. */
-export function parseMasterKey(raw: string, at: string): Uint8Array<ArrayBuffer> {
+/**
+ * 64 lowercase hex characters, or `X_SECRETS_KEY_INVALID`. Whitespace is trimmed, never repaired.
+ * `variable` names the variable a key OTHER than the current one was read from, so the refusal's
+ * fix edits that variable instead of re-exporting a current key that is fine.
+ */
+export function parseMasterKey(
+  raw: string,
+  at: string,
+  variable?: string,
+): Uint8Array<ArrayBuffer> {
   const hex = raw.trim();
   if (hex.length !== SECRETS_KEY_HEX_LENGTH || !HEX_KEY.test(hex)) {
-    throw new SecretsKeyInvalidError({
-      at,
-      found: hex.length,
-      expected: SECRETS_KEY_HEX_LENGTH,
-    });
+    const shape = { at, found: hex.length, expected: SECRETS_KEY_HEX_LENGTH };
+    throw variable === undefined
+      ? new SecretsKeyInvalidError(shape)
+      : new SecretsRingKeyInvalidError({ ...shape, variable });
   }
   return decodeHex(hex);
 }
@@ -119,7 +128,8 @@ export async function masterKeyId(key: Uint8Array<ArrayBuffer>): Promise<string>
 const additionalData = (header: Omit<SecretsEnvelope, 'iv' | 'ct'>): Uint8Array<ArrayBuffer> =>
   encoder.encode(`ultimate.secrets|v=${header.v}|alg=${header.alg}|kid=${header.kid}`);
 
-const importKey = (key: Uint8Array<ArrayBuffer>): Promise<CryptoKey> =>
+/** The AES-256-GCM key object, non-extractable. Shared with `seal-keys.ts`: one import, one usage set. */
+export const importKey = (key: Uint8Array<ArrayBuffer>): Promise<CryptoKey> =>
   crypto.subtle.importKey('raw', key, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 
 /**

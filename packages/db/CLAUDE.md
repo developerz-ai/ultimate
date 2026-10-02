@@ -14,7 +14,7 @@ Tier 1 — it imports `@ultimat3/core` and nothing else. That placement is load-
 | SQLSTATE | one reader, `sqlState()` (`sqlstate.ts`). Never read `error.code` for a SQLSTATE |
 | Reading a caught value | `renderThrowable()` from core (`checkDb` backs `/readyz`) |
 | Errors | subclass `DbError`; never `throw new Error` in source. A test simulating a database failure throws `dbUnavailable()`; one simulating the caller's body failing throws a bare `Error` on purpose |
-| New code | add to `DB_ERROR_CODES` **and** `DB_ERROR_TITLES` in `errors.ts`, whichever file holds the constructor (`migration-errors.ts`, `invariant-errors.ts`, `drift-errors.ts`); `src/index.ts` re-exports all |
+| New code | `bun run new-error-code <CODE> --package db --title '…' --fix '…'` writes `DB_OWNED_ERROR_CODES`, `DB_ERROR_TITLES` and the wiki row together; then add it to `errors.test.ts`'s pinned list. The constructor lives where its imports allow (`migration-errors.ts`, `invariant-errors.ts`, `drift-errors.ts`, `dump-drift.ts`); `src/index.ts` re-exports all |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from core — never `new AsyncLocalStorage`. Three scopes: `transaction.ts`, `attribution.ts`, `expected-loop.ts` |
 | Exports | explicit in `src/index.ts`; no `export *` |
 | Files | < 200 LOC (the `packages/db/src/**/*.ts` path instruction), one responsibility, `kebab-case.ts`, test beside source |
@@ -58,7 +58,14 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `drainTimeoutMs: 0` sends no option; the verdict is elapsed time on `performance.now()`
   (`X_DB_DRAIN_TIMEOUT`). `pool-drain.test.ts`, `pool-drain.live.test.ts`. `close()` clears the cached
   driver before awaiting the teardown.
+- **`client.listen` is ONE session beside the pool** (`listen.ts`; `Bun.SQL.listen`, PGlite's
+  `listen` under a turn), never a reserved pin. `onListening` fires on every re-dial; a channel is
+  refused unless it is a plain identifier. `listen.test.ts`, `listen.live.test.ts`.
 - `execute()` trusts the command tag only when `> 0`, in both drivers (`rowsOf`, `affectedBy`).
+- **`pool-gauge.ts` derives `db_pool_max` / `db_pool_in_use` / `db_pool_waiting` from DEMAND** —
+  `Bun.SQL` publishes no occupancy. `client.ts` is the one counter: `run()` from send to settle, a
+  pin from the ask to its (idempotent) release; a statement ON a pin is not counted again. Declared
+  on the first tracked pool, never at import. `pool-gauge.test.ts`.
 - **`client.ts` connects, holds the client and the ambient `db()`**, and opens no socket at import;
   `pool-profile.ts`, `connection-url.ts`, `bun-sql.ts`, `pool-reserve.ts`, `db-health.ts` (`checkDb`)
   and `statement-funnel.ts` (`sendOn`/`runOn`) hold the rest.
@@ -219,6 +226,36 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `packages/entity/src/errors.test.ts`. `errors.ts` registers `DB_ERROR_TITLES` unconditionally.
 - `drift-findings.ts` holds every `DriftDifference` constructor and `DriftKind`; `drift.ts` keeps the
   comparisons.
+
+## The schema dump
+
+- **Its own entry: `@ultimat3/db/schema-dump`** (`schema-dump-entry.ts`). The barrel is in every
+  role's boot graph and must evaluate none of this family — `schema-dump-entry.test.ts`.
+- **Two readings of one catalog, never mixed.** `introspect()` → `SchemaDescription`, the entity
+  vocabulary a snapshot is diffed in. `introspectCatalog()` (`catalog.ts`; queries in `catalog-relations.ts` and
+  `catalog-objects.ts`; the pure fold in `catalog-fold.ts`) → `CatalogDescription`, Postgres' own `pg_get_*def` text, compared only to
+  itself. A catalog spelling on a `SchemaDescription` field is the `checks`/`checkNames` mistake.
+- **Sorted in JS** (`byCodeUnit`), never `order by` and never `localeCompare`: collations differ.
+- **`renderSchemaDump()` is pure**; `schema-dump-table.ts` spells one table. `quoted()` escapes any
+  catalog name — `identifier()` refuses whitespace and `"`, which a migration may have created.
+- **`x_` owner → `framework/` twin** (`FRAMEWORK_TABLE_PREFIX`). No list is handed in.
+- **What cannot be rendered is named** (`unrenderedRows`, a closed list → `unrendered.sql`). A kind
+  rendered later leaves that list in the same diff. Never render a partition as a plain table.
+- **`loadSchemaDump()`**: one transaction, `check_function_bodies` off, a savepoint per file, and
+  only `42P01`/`42883`/`42704` are retried. Its refusal is `X_SCHEMA_DUMP_DRIFT` (`dump-drift.ts`).
+- **`object-drift.ts`**: `unexpectedObjects(live, expected)` compares IDENTITY (kind, table, name,
+  arguments). The live side is the operator's Postgres, the expected side a PGlite replay.
+- **No app path here.** Where the dump lives, which engine replays, and when it is written are
+  `@ultimat3/cli`'s (`db-schema-dump.ts`). `schema-load.contract.test.ts` reads the reference app's
+  migrations as text and runs on Postgres when `TEST_DATABASE_URL` is set.
+- **`pglite-extensions.ts` is the one linker** (`linkPgliteExtensions` → `{ linked, missing }`):
+  `contrib/<name>` then the package root; the name is data (read from migration text), screened
+  by `pgliteExtensionExport` before it reaches a specifier; `plpgsql` is built in, never missing.
+- **`pglite-snapshot.ts`**: `snapshotDir` makes a `memory://` boot a restore. Key = PGlite version
+  (read off its `package.json`; unreadable = no cache), never the extension set. One file, checksum in its
+  header; unsound or unopenable → deleted and rebuilt. Temp name + `rename`. Uncompressed by
+  measurement: gzip taxes the boot that writes, and a CI checkout always writes.
+- **One embedded boot** serves every database-backed dump test: `schema-dump.test.ts`.
 
 ## Branches, replicas, read-only
 

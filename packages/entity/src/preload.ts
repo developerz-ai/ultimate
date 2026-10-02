@@ -13,6 +13,7 @@ import type { EntityCore } from './entity';
 import { EntityError } from './errors';
 import type { Relation } from './relations';
 import type { Repo } from './repo';
+import { copyRow } from './sealed';
 import type { Predicate } from './tenancy';
 
 /** The other side of a relation: the entity, and where its rows live. */
@@ -170,7 +171,8 @@ export const preloaded = async <Source, Row>(
   );
   // A copy per row: the in-memory driver hands back the row it stores, and attaching to that one
   // would write a relation into the table itself.
-  const attached = rows.map((row) => ({ ...row }) as Record<string, unknown>);
+  // `copyRow`, never a spread: a spread drops every server-only (sealed) property of the row.
+  const attached = rows.map((row) => copyRow(row as object) as Record<string, unknown>);
   for (const { relation, kind, keys, index } of resolved) {
     for (const [position, row] of attached.entries()) {
       const key = keys[position];

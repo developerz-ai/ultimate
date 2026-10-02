@@ -17,6 +17,8 @@ export type {
   UserStore,
   VerificationStore,
 } from './adapter';
+export type { ApiKeyCaller, ApiKeyResolverOptions } from './api-key-resolver';
+export { apiKeyResolver } from './api-key-resolver';
 export type { ApiKeySummary, IssueApiKeyInput, IssuedApiKey, ParsedApiKey } from './api-keys';
 export {
   API_KEY_NAMESPACE,

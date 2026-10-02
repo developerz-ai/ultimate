@@ -16,14 +16,39 @@ defineStorage({
 await disk('media').put(scopedKey(orgId, 'avatars', 'a.png'), bytes, { contentType: 'image/png' });
 ```
 
-Swapping `local` for `s3` in `app.config.ts` changes no call site. `x dev` needs no MinIO.
+Swapping `local` for `s3` in `app.config.ts` changes no call site. `x dev` needs no S3 server.
 
 ## Drivers
 
 | Driver | Backing | For | Signed URLs |
 |---|---|---|---|
 | `localDriver` | `Bun.file`/`Bun.write`, one root dir | dev, tests, single-node | HMAC + dev route |
-| `s3Driver` | `Bun.s3` | prod: MinIO, R2, AWS | provider presign |
+| `s3Driver` | `Bun.s3` | prod: any S3-compatible endpoint — AWS, R2, a self-hosted gateway | provider presign |
+| `memoryDriver` | a `Map` in this process | a TEST's disk — never a deployment's: a restart is every object gone | HMAC, the local disk's own |
+
+`memoryDriver()` is what a suite holds instead of a temp directory or a hand-written fake: it
+answers every method `localDriver` does, refuses what it refuses (an unsafe key, a wrong checksum,
+a body past `maxPutBytes`, `serverSideEncryption`), and signs under the same rule — the published
+development key in `development` and `test` only. `objects()` hands back a COPY of every stored
+object's bytes by key, for the assertion a test makes about the bucket itself.
+
+```ts
+import { defineStorage, disk, memoryDriver, resetStorage } from '@ultimat3/storage';
+
+const sessions = memoryDriver();
+defineStorage({ disks: { sessions } });
+
+await disk('sessions').put('org/o1/session.json', new TextEncoder().encode('{"sealed":"x1.…"}'));
+const stored = [...sessions.objects().values()].map((bytes) => new TextDecoder().decode(bytes));
+
+resetStorage(); // afterEach
+```
+
+Server-side only, like both other drivers: nothing an island imports reaches it.
+
+`region` is what requests are signed for; unset, that is `auto`. An endpoint that expects another
+region refuses the first write, list or delete with `X_CONFIG_INVALID`, and the fix names the
+`S3_REGION` to set.
 
 `copy(from, to)` is on the contract so a promotion is not a download-and-reupload:
 `promoteAttachment` used to `get()` the whole object into the app and `put()` it back, a gigabyte

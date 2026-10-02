@@ -663,6 +663,35 @@ const actor = apiKeyActor(await verifyApiKey(auth.adapter, plaintext));  // kind
 
 An api key's scopes become **exactly** the agent actor's scopes — never the owning user's roles.
 
+### The resolver a mount takes
+
+`apiKeyResolver(() => store)` is that last line as the `resolveToken` a bearer mount
+(`defineApi({ http: { mounts } })`) and an MCP endpoint (`defineAppMcp`) both take — one resolver
+for both doors.
+
+```ts
+import type { ApiKeyStore } from '@ultimat3/auth';
+import { apiKeyResolver, BuiltinAdapter } from '@ultimat3/auth';
+
+let keys: ApiKeyStore | undefined;
+
+/** `resolveToken: resolveKey` — on the mount, and on `defineAppMcp()`. */
+export const resolveKey = apiKeyResolver(() => {
+  keys ??= new BuiltinAdapter();
+  return keys;
+});
+```
+
+| Presented | Answer |
+|---|---|
+| a live key | `{ actor, scopes }` — the agent actor for the key's org, and its scopes as a `Set` |
+| malformed, unknown, wrong secret, revoked, expired | `null`, all five alike: the mount answers one indistinguishable 401 |
+| a store that FAILS | the throw, untouched — a database that is down is not a wrong key |
+
+The store is a THUNK, read when a token is presented: a mount is declared when its module is
+evaluated, and `new BuiltinAdapter()` takes the process's database client, which boot installs
+later. In a test the store is `new MemoryAdapter()` — every `AuthAdapter` is an `ApiKeyStore`.
+
 ## Errors
 
 | Code | When |

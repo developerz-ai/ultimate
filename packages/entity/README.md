@@ -113,9 +113,120 @@ never runs, while the subpath retains the projection, the key and the registry a
 | `text({ max })`, `integer()`, `boolean()`, `url()` | `text`/`integer`/`boolean` + CHECK | format is enforced by the database too |
 
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
-`.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)`.
+`.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)` ·
+`.sealed()` (`text()` only).
 Physical names are derived from the property key (`orgId` → `org_id`); a name is written once, or
 never — `.column()` is the exception, and it exists for tables this framework did not create.
+
+## A sealed column
+
+A credential column is declared `.sealed()`. The row type stays `string`; the database never sees
+the plaintext.
+
+```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+export const connections = entity('connections', {
+  columns: {
+    id: uuid().primaryKey(),
+    label: text({ max: 80 }),
+    password: text({ max: 200 }).sealed(), // opaque: read and written, never compared
+    token: text().nullable().sealed(),
+    email: text().sealed({ lookup: true }).unique(), // deterministic: equality only
+  },
+});
+
+const db = database({ connections });
+
+export async function passwordFor(email: string): Promise<string | null> {
+  const row = await db.connections.where({ email }).one();
+  return row?.password ?? null; // the plaintext — on the server, and nowhere else
+}
+```
+
+| Fact | |
+|---|---|
+| Builder | `text()` only — `text().sealed()`, in any order with `.nullable()`, `.unique()`, `.column()`. A sealed number or date does not compile |
+| Stored | `x1.<keyId>.<iv>.<ciphertext+tag>` from `@ultimat3/core`'s `seal()`, in a plain `text` column. No new SQL type; a `text({ max })` bound is checked against the plaintext before sealing and emits no CHECK |
+| Key | the master key `x secrets` manages. No key is `X_SEAL_KEY_MISSING` — the plaintext is never stored instead |
+| Purpose | derived: `entity:<table>.<column>`, physical names. Never stated, so two columns cannot share one; a value copied between sealed columns does not open. Renaming the table or the column is a re-seal — pin the name with `.column()` |
+| Both drivers | `memoryDriver()` seals too; `memoryRepo(entity, seed)` refuses a seed for a sealed entity (`insertAll` instead) |
+| The seam | `sealedRepo(entity, repo)` — both driver factories return through it, so `database()`'s handle and a hand-held `postgresRepo(entity)` agree. A driver written outside this package returns through it too |
+| Cost | the key ring is resolved ONCE per repository call, however many values it seals or opens — a 500-row page is one resolution, not a thousand |
+| Retry | `X_ENTITY_SEALED_PREDICATE` and `X_ENTITY_SEALED_IN_VIEW` are registered `terminal` (`ENTITY_ERROR_RETRY`): a job stops on its first attempt |
+
+**What leaves the server: nothing.**
+
+| Path | Sealed column |
+|---|---|
+| `entity.$schema` (an action's or query's `output`) | absent from the node and from the parsed value; the type is `WireRow` — the row without it |
+| `entity.$view([...])` | `X_ENTITY_SEALED_IN_VIEW` |
+| a record (`rowsOf`, `recordProjection`, the `persist: true` browser store) | dropped from every collected row; `projection.sealed` lists them |
+| a change reported to `setRowObserver` | dropped from `before` and `after` |
+| `decodeRow` on a write-ahead-log row | the stored string, never the plaintext (`@ultimat3/realtime` drops the property before a change leaves) |
+| a repository row serialised whole — a `query`'s rows, a loose `output`, a log line, an error's `meta`, an island prop, a job payload, a cache tier | absent: the property is **server-only** (below) |
+| `{ token: row.token }` — the secret named by hand | leaves. Naming it is the one read there is |
+| `$parse`, `$row`, the repository | the whole row, plaintext included — server code only |
+
+**A sealed property is server-only**, `As of 2026-10`: own, readable and writable, **not
+enumerable**. `row.password` is the plaintext; nothing that walks the row sees it.
+
+| | |
+|---|---|
+| Reads it | `row.password`, `const { password } = row`, `update(id, row)` and `insert(row)` with the row passed whole |
+| Does not | `JSON.stringify(row)`, `{ ...row }`, `Object.keys` / `entries` / `assign`, `structuredClone(row)` |
+| Prints it | `console.log(row)` / `Bun.inspect(row)` — log through `logger` |
+| A spread patch | `update(id, { ...row, label })` leaves the stored secret alone |
+| A spread insert, required column | `X_INVARIANT_VIOLATED` naming the column and the rewrite: `insert({ ...row, password: row.password })` |
+| A spread insert, **nullable** column | stores NULL — silent; an absent nullable column is a legal insert. Name it: `{ ...row, token: row.token }` |
+| `select({ password: true })`, `preload()` | the row keeps it, still server-only |
+
+**Testing a sealed row.** `toEqual` walks enumerable properties, so it cannot see the secret:
+`expect(row).toEqual({ …, password })` fails with an empty diff, and `expect(a).toEqual(b)` passes
+over a wrong one. Write one of:
+
+| Assertion | Compares |
+|---|---|
+| `expect(row).toEqualRow({ id, label: 'primary', password: 'hunter2' })` | every own property (`@ultimat3/testing`) |
+| `expect(row.password).toBe('hunter2')` | the one property, by name |
+| `expect(row).toMatchObject({ password: 'hunter2' })` | the named subset |
+
+`toEqualRow` compares every own property and names what differs — a server-only one by name,
+never by value. No key is needed in a test: `@ultimat3/testing/preload` installs a throwaway one
+when the app supplied none.
+
+**What the database may compare: nothing, or equality.**
+
+| Use | `.sealed()` | `.sealed({ lookup: true })` |
+|---|---|---|
+| `where` / `andWhere` `eq`, `in` | compile error; `X_ENTITY_SEALED_PREDICATE` at runtime | allowed — rewritten to the stored string |
+| `andWhere(column, 'is-null')` / `'is-not-null'` | allowed — `null` is stored as NULL, never sealed, so presence is not a secret | allowed |
+| any other operator, `orderBy`, `countBy`, an aggregate, a cursor | refused | refused |
+| `deleteWhere` / `updateWhere` **filter** | refused | refused — find the row, then write by id |
+| `.unique()`, a unique index, an upsert conflict target | refused | allowed |
+| a plain index | refused | allowed, unordered |
+| an invariant other than `unique` | refused | refused — a CHECK would read ciphertext |
+| `.default()`, `.primaryKey()`, `.tenant()`, `.references()`, `.searchable()` | refused on the chain | refused on the chain |
+
+`lookup` **reveals equality**: two rows holding one value store one string. Never for a low-entropy
+value — a boolean, a status, a PIN.
+
+**During a key rotation** a lookup value has one stored form per declared key, so equality reads
+through `in (…)` over `sealAll()` and `.unique()` holds per key. `x doctor` reports
+`X_SEAL_RESEAL_PENDING` until every row is rewritten (`update(id, { column: row.column })` seals
+under the current key) and the retired key is dropped (`x secrets rotate --drop <keyId>`).
+
+**A column that already holds plaintext is migrated, never tolerated.** A stored value that is not
+a sealed value is `X_SEAL_INVALID`, always. Expand, backfill, contract:
+
+| # | Step | Edit |
+|---|---|---|
+| 1 | expand | add `passwordSealed: text().nullable().sealed()` beside `password`; `x db gen "add sealed password"`; `x db migrate` |
+| 2 | backfill | a `backfill()` over `db.connections.andWhere('passwordSealed', 'is-null')` — only the rows still to seal — whose `handle` runs `update(row.id, { passwordSealed: row.password })` per row. Idempotent, so a replayed page is harmless |
+| 3 | switch | readers and writers use `passwordSealed` |
+| 4 | contract | delete `password`; declare `password: text().sealed().column('password_sealed')` — the purpose follows the physical name, so nothing is re-sealed; `x db gen "drop plaintext password"` |
+
+The full recipe with the `backfill()` declaration: [Entities and migrations](../../wiki/Entities-And-Migrations.md#sealing-a-column-that-already-holds-data).
 
 ## Wide columns
 
@@ -888,7 +999,7 @@ database from its boot code has decided to, and a library that overruled that wo
 `X_TENANCY_ACTOR_MISMATCH` · `X_TENANCY_ACTOR_ORG_REQUIRED` · `X_TENANCY_CROSS_DENIED` ·
 `X_DB_DRIFT` · `X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` ·
 `X_PRELOAD_UNKNOWN_RELATION` · `X_N_PLUS_ONE_QUERY` · `X_N_PLUS_ONE_WRITE` ·
-`X_RECORD_KEY_MISSING`
+`X_RECORD_KEY_MISSING` · `X_ENTITY_SEALED_PREDICATE` · `X_ENTITY_SEALED_IN_VIEW`
 
 ### Error classes
 

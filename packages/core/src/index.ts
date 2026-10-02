@@ -585,6 +585,9 @@ export type { Direction } from './locale-direction';
 export { directionOf, isRtl } from './locale-direction';
 export type { LocalePathSplit } from './locale-path';
 export { localeSegment, localizePath, splitLocalePath } from './locale-path';
+// The process logger's test seam, beside nothing it groups with: where a default-writer line goes.
+export type { LogSink } from './logger';
+export { setLogSink } from './logger';
 export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
 export type { MeasurementActorFactory } from './measurement-actor';
 export {
@@ -604,12 +607,15 @@ export {
   CLIENT_NAVIGATION_LOCATION_HEADER,
   CLIENT_NAVIGATION_SCOPE_HEADER,
   CLIENT_NAVIGATION_SURFACE_HEADER,
+  CLIENT_PATH_STYLE_META,
   CLIENT_PERSIST_META,
   CLIENT_SCOPE_HEADER,
   CLIENT_SCOPE_META,
   CLIENT_SYNC_META,
   CLIENT_SYNC_WORKER_META,
 } from './page-meta';
+export type { ProcessMetricsOptions, ProcessReading } from './process-metrics';
+export { readProcess, resetProcessMetrics, startProcessMetrics } from './process-metrics';
 export { type CappedBody, readWithinLimit } from './read-capped';
 export type { RecordEnvelope, RecordRows } from './record-envelope';
 export { decodeRecordEnvelope, encodeRecordEnvelope, RECORDS_HEADER } from './record-envelope';
@@ -648,6 +654,20 @@ export {
   type OriginVerdict,
   proveSameOrigin,
 } from './same-origin';
+export type { SealOptions, SealPurposeOptions } from './seal';
+export { isSealed, open, openText, SEAL_VERSION, seal, sealAll, sealedKeyId } from './seal';
+export type { SealInvalidReason } from './seal-errors';
+export { SealInvalidError, SealKeyMissingError, SealKeyUnknownError } from './seal-errors';
+export type { SealKeyRing, SealKeySource } from './seal-keys';
+export {
+  resolveSealKeys,
+  SECRETS_RETIRED_KEYS_ENV,
+  sealKeyIds,
+  splitRetiredKeys,
+} from './seal-keys';
+// Beside the ring it is raised for, not in the `exports/secrets` group: same code as
+// `SecretsKeyInvalidError`, a different variable to repair.
+export { SecretsRingKeyInvalidError } from './secrets-errors';
 export {
   defineService,
   installedServices,

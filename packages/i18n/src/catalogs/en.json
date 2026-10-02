@@ -143,10 +143,14 @@
     "actions": {
       "label": "Actions",
       "confirm": {
-        "title": "Confirm before this runs",
-        "body": "Type {token} to confirm. Nothing happens until it matches.",
-        "label": "Confirmation",
-        "submit": "Run it"
+        "body": "Type {token} to confirm. Nothing happens until it matches."
+      },
+      "none": "No resource is available to this account.",
+      "unknown": "That action is not one this dashboard declares.",
+      "back": "Back to the row",
+      "subject": {
+        "row": "Runs on {id}.",
+        "app": "Runs once, for the whole app."
       }
     },
     "ai": {
@@ -172,7 +176,8 @@
         "allowed": "Allowed",
         "denied": "Denied",
         "failed": "Failed"
-      }
+      },
+      "older": "Older entries"
     },
     "brand": {
       "name": "Admin"
@@ -185,17 +190,30 @@
     },
     "detail": {
       "edit": "Edit",
-      "loading": "Loading…",
       "not-found": {
         "cause": "No {entity} with that id.",
         "fix": "Go back to the list and open a row that still exists."
-      }
+      },
+      "delete": "Delete"
     },
     "error": {
       "action-failed": "The action threw before it finished.",
       "confirmation-required": "This is destructive: echo the confirmation token first.",
       "invalid-input": "Some fields did not pass the entity's own schema.",
-      "operation-not-offered": "This resource does not offer that operation."
+      "operation-not-offered": "This resource does not offer that operation.",
+      "row-missing": "No row has that id.",
+      "secret-required": "A value is required: this column is sealed and has no default.",
+      "action-not-applicable": "This action does not apply to the row as it is now.",
+      "row-out-of-scope": "The row this write would leave is outside the rows this account may see.",
+      "batch-not-offered": "This action does not run over a selection of rows."
+    },
+    "filter": {
+      "any": "Any",
+      "apply": "Filter",
+      "clear": "Clear filters",
+      "find": "Find…",
+      "from": "{field}, from",
+      "to": "{field}, to"
     },
     "form": {
       "cancel": "Cancel",
@@ -203,21 +221,75 @@
       "edit": "Edit {entity}",
       "issues": "Check the highlighted fields",
       "save": "Save",
-      "saving": "Saving…"
+      "secret-unchanged": "Leave empty to keep the stored value."
     },
     "group": {
-      "data": "Data"
+      "data": "Data",
+      "jobs": "Jobs"
     },
     "jobs": {
-      "title": "Jobs"
+      "title": "Jobs",
+      "scoped": "Queues, workers and throughput are every organisation's, so they are a platform operator's view. Your organisation's jobs:",
+      "ms": "{ms} ms",
+      "seconds": "{seconds} s",
+      "tile": {
+        "ready": "Ready",
+        "running": "Running",
+        "delayed": "Delayed",
+        "suspended": "Suspended",
+        "dead": "Dead",
+        "workers": "Workers",
+        "oldestReady": "Oldest ready"
+      },
+      "range": {
+        "label": "Range",
+        "1h": "Last hour",
+        "24h": "Last 24 hours",
+        "7d": "Last 7 days",
+        "30d": "Last 30 days"
+      },
+      "chart": {
+        "title": "Done and failed",
+        "label": "Runs done and failed, {range}",
+        "done": "done",
+        "failed": "failed"
+      },
+      "byName": {
+        "caption": "By job name",
+        "name": "Job",
+        "volume": "Runs",
+        "failureRate": "Failure rate",
+        "meanMs": "Mean duration",
+        "empty": "No job ended in this range."
+      },
+      "scope": {
+        "all": "All",
+        "ready": "Ready",
+        "delayed": "Delayed",
+        "running": "Running",
+        "suspended": "Suspended",
+        "done": "Done",
+        "failed": "Failed",
+        "dead": "Dead",
+        "cancelled": "Cancelled"
+      },
+      "section": {
+        "run": "Run",
+        "failure": "Failure",
+        "work": "Input, progress and steps",
+        "trace": "Tenant and trace"
+      },
+      "hint": {
+        "id": "Paste the first characters of a job id."
+      }
     },
     "list": {
       "empty": "Nothing here yet.",
-      "loading": "Loading…",
-      "next": "Next",
-      "open": "Open",
-      "pagination": "Pagination",
-      "previous": "Previous"
+      "open": "Open"
+    },
+    "lookup": {
+      "title": "Find {entity}",
+      "placeholder": "Search by name"
     },
     "nav": {
       "label": "Sections"
@@ -243,6 +315,10 @@
       "missing": "no policy is registered for this permission",
       "not-granted": "the grant list does not contain this permission"
     },
+    "scope": {
+      "label": "Scopes",
+      "all": "All"
+    },
     "search": {
       "title": "Search",
       "label": "Search",
@@ -256,7 +332,149 @@
     "value": {
       "empty": "—",
       "true": "Yes",
-      "false": "No"
+      "false": "No",
+      "sealed": "Sealed",
+      "currency": "Currency"
+    },
+    "actor": {
+      "anonymous": "not signed in",
+      "signedIn": "{id} — roles: {roles}"
+    },
+    "backToApp": "← Back to the app",
+    "matrix": {
+      "operation": "Operation",
+      "permissions": "Permissions required",
+      "verdict": "Verdict",
+      "allowed": "allowed",
+      "deniedBy": "denied —"
+    },
+    "section": {
+      "other": "Other"
+    },
+    "related": {
+      "all": "See all"
+    },
+    "batch": {
+      "action": "Action",
+      "over": "Run over",
+      "checked": "The checked rows",
+      "all": "Every row this list matches",
+      "run": "Run",
+      "select": "Select",
+      "select-row": "Select {id}",
+      "done": "Done",
+      "refused": "Refused",
+      "failed": "Failed",
+      "queued": "Queued",
+      "remaining": "Not reached yet",
+      "continue": "Run on the next {count}",
+      "back": "Back to the list",
+      "subject": {
+        "checked": "Runs on {count} checked rows.",
+        "all": "Runs on every row this list matches.",
+        "count": "Runs on {count} rows."
+      },
+      "matching": "Ran once over every matching row"
+    },
+    "x_jobs": {
+      "title": "Job runs",
+      "field": {
+        "id": "Id",
+        "name": "Job",
+        "queue": "Queue",
+        "state": "State",
+        "attempt": "Attempt",
+        "maxAttempts": "Max attempts",
+        "runAt": "Runs at",
+        "createdAt": "Queued",
+        "updatedAt": "Updated",
+        "tenantId": "Tenant",
+        "lastError": "Last error",
+        "lastErrorStack": "Stack",
+        "progress": "Progress",
+        "input": "Input",
+        "steps": "Steps",
+        "traceparent": "Trace",
+        "enqueuedBy": "Queued by",
+        "claimedBy": "Claimed by"
+      },
+      "column": {
+        "completed": "Progress",
+        "error": "Last error"
+      }
+    },
+    "x_job_queues": {
+      "title": "Queues",
+      "field": {
+        "name": "Queue",
+        "ready": "Ready",
+        "delayed": "Delayed",
+        "running": "Running",
+        "suspended": "Suspended",
+        "failed": "Failed",
+        "dead": "Dead",
+        "oldestReadyMs": "Oldest ready (ms)",
+        "paused": "Paused",
+        "pausedAt": "Paused at"
+      },
+      "column": {
+        "oldest": "Oldest ready",
+        "jobs": "Jobs"
+      }
+    },
+    "x_job_tasks": {
+      "title": "Scheduled tasks",
+      "field": {
+        "name": "Task",
+        "cron": "Schedule",
+        "tz": "Time zone",
+        "catchUp": "Catch-up",
+        "enqueues": "Queues",
+        "lastFireAt": "Last fire",
+        "nextFireAt": "Next fire",
+        "paused": "Paused"
+      }
+    },
+    "x_job_workers": {
+      "title": "Workers",
+      "field": {
+        "id": "Worker",
+        "host": "Host",
+        "queues": "Queues",
+        "concurrency": "Slots",
+        "inFlight": "In flight",
+        "startedAt": "Started",
+        "heartbeatAt": "Heartbeat"
+      },
+      "column": {
+        "heartbeat": "Last heartbeat",
+        "running": "Running jobs"
+      }
+    },
+    "action": {
+      "job": {
+        "retry": "Retry",
+        "retry-from-step": "Retry from a step",
+        "run-now": "Run now",
+        "cancel": "Cancel",
+        "remove": "Remove",
+        "queue": {
+          "pause": "Pause queue",
+          "resume": "Resume queue"
+        },
+        "task": {
+          "pause": "Pause task",
+          "resume": "Resume task",
+          "run-now": "Run now"
+        }
+      }
+    },
+    "input": {
+      "job": {
+        "retry-from-step": {
+          "step": "Step"
+        }
+      }
     }
   },
   "dev": {

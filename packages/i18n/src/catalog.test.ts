@@ -166,8 +166,10 @@ describe('framework catalog', () => {
     // it is pinned on a key those views actually pass to `t()`. This assertion used to name
     // `admin.nav.jobs`, from a block describing an admin UI that no longer existed — the shipped
     // panel rendered ⟦admin.list.loading⟧ and this test was green. `scripts/i18n-catalog.ts` is
-    // what now holds the whole namespace to the source, in both directions.
-    expect(FRAMEWORK_CATALOG['admin.list.loading']).toBe('Loading…');
+    // what now holds the whole namespace to the source, in both directions. The list became
+    // server-rendered on 2026-10-01 and has no loading state, so the pin moved to the empty one,
+    // which `list.tsx`, `detail.tsx` and two screens all render.
+    expect(FRAMEWORK_CATALOG['admin.list.empty']).toBe('Nothing here yet.');
   });
 });
 

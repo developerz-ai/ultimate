@@ -57,9 +57,65 @@ export const pgInstantMicros = (text: unknown): bigint | undefined => {
 };
 
 /**
- * The microsecond epoch of whatever a sort key is holding: a decoded row's `Date` (milliseconds,
- * so the last three digits are zero), a value already counted in microseconds, or the decimal a
- * cursor carries. `undefined` for anything else, so a caller decides rather than guessing at `0`.
+ * An instant as TEXT that names its own zone — what `toISOString()` writes and what a URL, a JSON
+ * body or a hand-kept keyset position holds: `2026-01-01T00:00:03.000Z`, `…+02:00`, `… 00:00:03+00`.
+ * A fraction past six digits is truncated, as the column would.
+ *
+ * The zone is REQUIRED. Postgres reads a zoneless text in the session's `TimeZone`, which this
+ * process cannot know, so such a text is not an instant here — the same rule `timestamp()` holds a
+ * written value to.
+ */
+const ISO_INSTANT_TEXT =
+  /^(\d{4,})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6})\d*)?\s*(Z|[+-]\d{2}(?::?\d{2})?)$/i;
+
+const MICROS_PER_MINUTE = 60_000_000n;
+
+/** `Z`, `+02`, `+02:00`, `-0430` → minutes east of UTC. */
+const offsetMinutes = (zone: string): bigint => {
+  if (zone.toUpperCase() === 'Z') return 0n;
+  const digits = zone.slice(1).replace(':', '');
+  const minutes = BigInt(digits.slice(0, 2)) * 60n + BigInt(digits.slice(2) || '0');
+  return zone.startsWith('-') ? -minutes : minutes;
+};
+
+/**
+ * The exact microsecond epoch an ISO instant text names, or `undefined` when the text is not one —
+ * no zone, or a date the calendar does not have (`2026-13-45` is an error in Postgres, never the
+ * 14th of February).
+ */
+const isoInstantMicros = (text: string): bigint | undefined => {
+  const match = ISO_INSTANT_TEXT.exec(text);
+  if (match === null) return undefined;
+  const [, year = '', month = '', day = '', hour = '', minute = '', second = '', fraction] = match;
+  const parts = [year, month, day, hour, minute, second].map(Number);
+  const millis = utcSecondMillis(parts);
+  const built = new Date(millis);
+  const [, wantMonth = 0, wantDay = 0, wantHour = 0, wantMinute = 0, wantSecond = 0] = parts;
+  // A field the calendar rolled over was never that date: 13 months, 45 days, 25 hours.
+  if (
+    built.getUTCMonth() + 1 !== wantMonth ||
+    built.getUTCDate() !== wantDay ||
+    built.getUTCHours() !== wantHour ||
+    built.getUTCMinutes() !== wantMinute ||
+    built.getUTCSeconds() !== wantSecond
+  ) {
+    return undefined;
+  }
+  const local = BigInt(millis) * MICROS_PER_MILLI + BigInt((fraction ?? '').padEnd(6, '0'));
+  // The text is wall-clock time AT its offset, so the instant is that many minutes earlier.
+  return local - offsetMinutes(match[8] ?? 'Z') * MICROS_PER_MINUTE;
+};
+
+/**
+ * The microsecond epoch of whatever a sort key or an operand is holding: a decoded row's `Date`
+ * (milliseconds, so the last three digits are zero), a value already counted in microseconds, the
+ * decimal a cursor carries, or an ISO instant as text. `undefined` for anything else, so a caller
+ * decides rather than guessing at `0`.
+ *
+ * The ISO text is the half Postgres always had: a `"created_at" < $1` bound to
+ * `2026-01-01T00:00:03.000Z` is parsed there as an instant, while the in-memory driver compared it
+ * to the stored `Date` by CHARACTERS — so a hand-kept keyset answered an empty page two in memory
+ * and the right one in production.
  */
 export const instantMicros = (value: unknown): bigint | undefined => {
   if (typeof value === 'bigint') return value;
@@ -67,8 +123,8 @@ export const instantMicros = (value: unknown): bigint | undefined => {
     const millis = value.getTime();
     return Number.isNaN(millis) ? undefined : BigInt(millis) * MICROS_PER_MILLI;
   }
-  if (typeof value === 'string' && /^-?\d+$/.test(value)) return BigInt(value);
-  return undefined;
+  if (typeof value !== 'string') return undefined;
+  return /^-?\d+$/.test(value) ? BigInt(value) : isoInstantMicros(value);
 };
 
 /**

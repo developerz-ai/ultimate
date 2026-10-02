@@ -155,7 +155,9 @@ export const putTooLarge = (
       `send it direct with grantUpload({ disk, orgId, request }) instead of put(), or raise the ceiling: ` +
       (disk === 's3'
         ? `s3Driver({ bucket, maxPutBytes: ${bytes} })`
-        : `localDriver({ root, maxPutBytes: ${bytes} })`),
+        : disk === 'memory'
+          ? `memoryDriver({ maxPutBytes: ${bytes} })`
+          : `localDriver({ root, maxPutBytes: ${bytes} })`),
     meta: { disk, key, bytes, maxBytes },
   });
 
@@ -352,12 +354,12 @@ export const signedUrlUnverifiable = (diskName: string): StorageError =>
     meta: { disk: diskName },
   });
 
-export const signingSecretMissing = (environment: string): StorageError =>
+export const signingSecretMissing = (environment: string, disk = 'local'): StorageError =>
   new StorageError({
     code: 'X_ENV_MISSING',
     // The environment names what `resolveEnvironment()` resolved, which may have come from
     // NODE_ENV — naming ULTIMATE_ENV here reported a variable the process never set.
-    cause: `the local disk has no usable signing secret (no signingSecret option, and STORAGE_SIGNING_SECRET is unset, empty or the published development key) and the resolved environment is "${environment}", so it would sign URLs with the shipped development key`,
+    cause: `the ${disk} disk has no usable signing secret (no signingSecret option, and STORAGE_SIGNING_SECRET is unset, empty or the published development key) and the resolved environment is "${environment}", so it would sign URLs with the shipped development key`,
     fix: 'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
     meta: { key: 'STORAGE_SIGNING_SECRET', environment },
   });

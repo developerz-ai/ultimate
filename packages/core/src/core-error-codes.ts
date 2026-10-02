@@ -54,6 +54,11 @@ const CORE_CODE_TITLES = {
   X_REGISTRAR_CONFLICT: 'two different registrars are loaded for one primitive kind',
   X_REGISTRAR_MISSING: 'no registrar is loaded for a primitive kind',
   X_ROLE_INVALID: 'ROLE is not a known runtime role',
+  // `seal.ts`'s three. Titled here, not registered beside their classes the way the X_SECRETS_*
+  // set is, so `seal-errors.ts` runs nothing at import and is no `sideEffects` anchor.
+  X_SEAL_INVALID: 'a sealed value did not authenticate, or is not a sealed value',
+  X_SEAL_KEY_MISSING: 'no master key to seal or open a value with',
+  X_SEAL_KEY_UNKNOWN: 'a sealed value names a master key this process does not declare',
   X_SERVICE_DUPLICATE: 'a service name is registered twice',
   X_SERVICE_MISSING: 'service is not registered on the request context',
   X_SHUTDOWN_TIMEOUT: 'graceful shutdown exceeded its deadline',

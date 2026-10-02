@@ -15,10 +15,21 @@ import { preloaded } from './preload';
 import type { Relation } from './relations';
 import { relationNamed } from './relations';
 import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
+import { copyRow, pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import { transitionRow } from './transition';
-import type { ColumnMap, IdOf, Insertable, MoneyValue, RowPatch } from './types';
+import type {
+  ColumnMap,
+  Filterable,
+  IdOf,
+  Insertable,
+  MoneyValue,
+  NoSealedKeys,
+  RowPatch,
+  SealedKeySet,
+  SealedKeysOf,
+} from './types';
 
 /**
  * What a preloaded relation adds to a row. `unknown` because the name is a string resolved at
@@ -27,10 +38,24 @@ import type { ColumnMap, IdOf, Insertable, MoneyValue, RowPatch } from './types'
  */
 export type Preloaded<Name extends string> = { readonly [K in Name]: unknown };
 
-export interface ReadBuilder<Row> {
+/**
+ * `S` names the entity's sealed columns, so naming one in a filter or an order is a COMPILE error
+ * and not only `X_ENTITY_SEALED_PREDICATE` at runtime. It defaults to none.
+ */
+export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys> {
   /** Equality on the columns given. `where({ orgId })` is what satisfies the tenancy guard. */
-  where(filter: RowPatch<Row>): ReadBuilder<Row>;
-  andWhere(column: keyof Row & string, op: Operator, value: unknown): ReadBuilder<Row>;
+  where(filter: RowPatch<Filterable<Row, S>>): ReadBuilder<Row, S>;
+  // NULL is never sealed, so its tests take ANY column. First: `Parameters<…>` reads the last.
+  andWhere(
+    column: keyof Row & string,
+    op: 'is-null' | 'is-not-null',
+    value?: unknown,
+  ): ReadBuilder<Row, S>;
+  andWhere(
+    column: Exclude<keyof Row & string, S['opaque']>,
+    op: Operator,
+    value: unknown,
+  ): ReadBuilder<Row, S>;
   /**
    * Full-text search over the entity's generated `tsvector` — every `.searchable()` column at
    * once, one GIN index, one predicate. `posts.where({ orgId }).search(input.q).limit(20).page()`.
@@ -47,14 +72,17 @@ export interface ReadBuilder<Row> {
    * stays the one the caller declared. An entity with no searchable column is `X_SEARCH_UNDECLARED`
    * and the in-memory driver is `X_SEARCH_IN_MEMORY` — never a different answer from the two.
    */
-  search(term: string): ReadBuilder<Row>;
-  orderBy(column: keyof Row & string, direction?: SortDirection): ReadBuilder<Row>;
-  limit(rows: number): ReadBuilder<Row>;
+  search(term: string): ReadBuilder<Row, S>;
+  orderBy(
+    column: Exclude<keyof Row & string, S['sealed']>,
+    direction?: SortDirection,
+  ): ReadBuilder<Row, S>;
+  limit(rows: number): ReadBuilder<Row, S>;
   /** The cursor from the previous page. */
-  after(cursor: string | null): ReadBuilder<Row>;
+  after(cursor: string | null): ReadBuilder<Row, S>;
   select<K extends keyof Row & string>(
     fields: { readonly [P in K]: true },
-  ): ReadBuilder<Pick<Row, K>>;
+  ): ReadBuilder<Pick<Row, K>, S>;
   /**
    * One relation, read for the whole page in one extra `where <key> in (…)` and attached to every
    * row under its own name — the eager form of the batching a point lookup does for itself, and
@@ -66,7 +94,7 @@ export interface ReadBuilder<Row> {
    * author" never reads like "nobody preloaded the author". Attached after the projection: a
    * `select()` narrows the columns, never the relations.
    */
-  preload<Name extends string>(relation: Name): ReadBuilder<Row & Preloaded<Name>>;
+  preload<Name extends string>(relation: Name): ReadBuilder<Row & Preloaded<Name>, S>;
   /**
    * Every row the chain matches, `size` at a time and one statement per batch — the terminal a
    * `for await` consumes instead of holding a whole table in memory. A batch is the page `page()`
@@ -106,7 +134,9 @@ export interface ReadBuilder<Row> {
    * Refused rather than answered: a column whose values a map cannot be keyed by (a timestamp, a
    * jsonb, money), and a chain matching more distinct values than one statement should answer with.
    */
-  countBy<K extends keyof Row & string>(column: K): Promise<ReadonlyMap<Row[K], number>>;
+  countBy<K extends Exclude<keyof Row & string, S['sealed']>>(
+    column: K,
+  ): Promise<ReadonlyMap<Row[K], number>>;
   /**
    * The four SQL aggregates, over exactly the rows `count()` counts — the chain's filters, its
    * tenancy and its soft-delete visibility, never its page. "Total spend this month" is
@@ -147,7 +177,8 @@ export interface ReadBuilder<Row> {
   plan(): QueryPlan;
 }
 
-export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder<Row> {
+export interface Table<Row, C extends ColumnMap = ColumnMap>
+  extends ReadBuilder<Row, SealedKeysOf<C>> {
   /**
    * Move one row through the state machine `column` declares, in ONE statement.
    *
@@ -285,7 +316,8 @@ const builder = <Source, Row>(
         ],
       }),
 
-    andWhere: (column, op, value) => next({ where: [...state.where, { column, op, value }] }),
+    andWhere: (column: string, op: Operator, value?: unknown) =>
+      next({ where: [...state.where, { column, op, value }] }),
 
     // Refused HERE as well as at the statement, because this is the line the author wrote: a chain
     // over an entity that declares nothing searchable can never produce a match, and the repair is
@@ -318,12 +350,8 @@ const builder = <Source, Row>(
         entity,
         repo,
         { ...state, select: keys },
-        (row) => {
-          const source = pick(row);
-          const picked = {} as Pick<Row, K>;
-          for (const key of keys) picked[key] = source[key];
-          return picked;
-        },
+        // By DESCRIPTOR, never by assignment: a sealed column named here stays server-only.
+        (row) => pickRow(pick(row) as Row & object, keys),
         related,
       );
     },
@@ -425,7 +453,8 @@ const touch = <Row, Patch>(entity: EntityCore<Row>, patch: Patch): Patch => {
   for (const [property, column] of Object.entries(entity.$columns)) {
     if (column.$meta.onUpdate !== undefined) stamped[property] = entityNow();
   }
-  return Object.assign({}, patch, stamped);
+  // `copyRow`, never `Object.assign({}, patch)`: a row passed back whole keeps its sealed properties.
+  return Object.assign(copyRow(patch as object), stamped) as Patch;
 };
 
 // Every write is `async`, matching the repository contract: a failing call rejects and never
@@ -437,7 +466,11 @@ export const tableFor = <Row, C extends ColumnMap>(
   /** How this table reaches another — `database()` passes it; a table built by hand has none. */
   related?: RelatedTables,
 ): Table<Row, C> => ({
-  ...builder<Row, Row>(entity, repo, EMPTY, (row) => row, related),
+  // One cast: `sealed-repo.ts` refuses at runtime, `SealedKeysOf<C>` is the same rule as a type.
+  ...(builder<Row, Row>(entity, repo, EMPTY, (row) => row, related) as ReadBuilder<
+    Row,
+    SealedKeysOf<C>
+  >),
   insert: async (values, options) => repo.insert(entity.$parse(values), options),
   insertAll: async (rows, options) =>
     repo.insertAll(

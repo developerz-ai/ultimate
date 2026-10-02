@@ -41,6 +41,7 @@ describe('DB_OWNED_ERROR_CODES', () => {
       'X_MIGRATION_IRREVERSIBLE',
       'X_MIGRATION_SNAPSHOT_MISSING',
       'X_MIGRATION_VIEW_DEPENDS',
+      'X_SCHEMA_DUMP_DRIFT',
       'X_SQL_UNSAFE',
     ]);
   });
