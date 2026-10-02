@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 23.0.0 - 2026-10-02
+
 **23.0.0 in progress: platform readiness for big systems**
 ([`docs/plans/2026/10/01/101-platform-readiness-for-big-systems/`](docs/plans/2026/10/01/101-platform-readiness-for-big-systems/overview.md)).
 Every breaking entry below has a manual edit in the
@@ -581,6 +585,12 @@ Scaffold and generator output — new apps and new slices; nothing rewrites a fi
 
 - **jobs:** the wiki's `rateLimit:` job field and the architecture doc's `concurrency_key` SQL —
   neither ever existed in code.
+
+### Commits
+
+- docs(upgrading): 23.0.0 is released
+- feat: platform readiness for big systems — plan 101 (#600)
+- docs(plans): platform readiness for big systems (#598)
 
 ## 22.15.0 - 2026-10-01
 
