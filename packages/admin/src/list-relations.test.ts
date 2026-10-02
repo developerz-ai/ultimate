@@ -34,6 +34,7 @@ const previousPermissions = knownPermissions();
 const statements: string[] = [];
 
 const counting = (inner: Driver): Driver => ({
+  transactor: () => inner.transactor(),
   repo: (declared) =>
     new Proxy(inner.repo(declared), {
       get(target, property, receiver) {

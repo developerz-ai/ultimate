@@ -7,6 +7,8 @@ import { text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
+import { MAX_PAGE_SIZE } from './plan';
+import { MAX_PRELOADED_ROWS } from './preload-ceiling';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
 
@@ -237,6 +239,92 @@ describe('the refusals', () => {
         .all(),
     ).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
   });
+});
+
+describe('a preload is bounded', () => {
+  // A `hasMany` paged until the relation was exhausted: one parent with a million children was a
+  // million rows in the process, from a chain that named no number at all.
+  test('a declared ceiling is refused past it, and met exactly is not', async () => {
+    const page = () => db.members.where({ orgId: ORG }).orderBy('id');
+    // Three posts hang off the two members of this page.
+    expect(await page().preload(BY_AUTHOR, { max: 3 }).all()).toHaveLength(2);
+    let error: unknown;
+    try {
+      await page().preload(BY_AUTHOR, { max: 2 }).all();
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    const { cause, fix } = error as { cause: string; fix: string };
+    expect(cause).toContain('more than 2');
+    // The EDIT is in the cause: it is code on a chain whose variable this error cannot name.
+    expect(cause).toContain(`.preload('${BY_AUTHOR}', { max: 4 })`);
+    // The fix is a command that runs as written, naming the real entity — never `db.<entity>…`
+    // spelled as though the entity name were the caller's variable, or an undefined `ids`.
+    expect(fix).toStartWith('x entities describe preload_test_members --json   # ');
+    expect(fix).not.toContain('ids');
+  });
+
+  test('a ceiling that is not a count is refused with a runnable fix too', () => {
+    let error: unknown;
+    try {
+      db.members.preload(BY_AUTHOR, { max: 0 });
+    } catch (thrown) {
+      error = thrown;
+    }
+    const { cause, fix } = error as { cause: string; fix: string };
+    expect(cause).toContain(`.preload('${BY_AUTHOR}', { max: ${MAX_PRELOADED_ROWS} })`);
+    expect(fix).toStartWith('x entities describe preload_test_members --json   # ');
+  });
+
+  // A relation named twice is one statement, and `max` is one setting: the later call that STATES
+  // it replaces the earlier, exactly as a second `.limit()` does. Name-only dedup kept the first
+  // and silently dropped a stricter ceiling written after it.
+  test('a repeated preload: the later stated ceiling replaces the earlier, in both orders', async () => {
+    const page = () => db.posts.where({ orgId: ORG }).orderBy('id');
+    // Two distinct authors on this page.
+    await expect(
+      page().preload('author', { max: 3 }).preload('author', { max: 1 }).all(),
+    ).rejects.toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(
+      await page().preload('author', { max: 1 }).preload('author', { max: 3 }).all(),
+    ).toHaveLength(3);
+  });
+
+  test('a repeat that states no ceiling leaves the one already declared', async () => {
+    const page = () => db.posts.where({ orgId: ORG }).orderBy('id');
+    await expect(
+      page().preload('author', { max: 1 }).preload('author').all(),
+    ).rejects.toBeUltimateError('X_INVARIANT_VIOLATED');
+    await expect(
+      page().preload('author').preload('author', { max: 1 }).all(),
+    ).rejects.toBeUltimateError('X_INVARIANT_VIOLATED');
+  });
+
+  test('the ceiling bounds a belongsTo by the same rule', async () => {
+    const page = () => db.posts.where({ orgId: ORG }).orderBy('id');
+    expect(await page().preload('author', { max: 2 }).all()).toHaveLength(3);
+    await expect(page().preload('author', { max: 1 }).all()).rejects.toBeUltimateError(
+      'X_INVARIANT_VIOLATED',
+    );
+  });
+
+  test('with none declared the ceiling is one page of rows', () => {
+    expect(MAX_PRELOADED_ROWS).toBe(MAX_PAGE_SIZE);
+  });
+
+  test.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '5', null])(
+    'a ceiling of %p is refused on the chain',
+    (max) => {
+      let error: unknown;
+      try {
+        db.members.preload(BY_AUTHOR, { max: max as number });
+      } catch (thrown) {
+        error = thrown;
+      }
+      expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    },
+  );
 });
 
 describe('the scope the page was read under', () => {

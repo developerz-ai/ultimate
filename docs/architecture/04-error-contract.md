@@ -155,12 +155,12 @@ one written FIRST is the one printed — put the case an author meets first ther
 // packages/entity/src/errors.ts — one file per package, no codes declared inline
 import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-/** Codes this package declares and owns. Borrowed codes go in a second list, never titled twice. */
-export const ENTITY_OWNED_ERROR_CODES = ['X_INVARIANT_VIOLATED', 'X_TENANCY_UNSCOPED'] as const;
+/** Every code this package throws, and it owns each one. A borrowed code is never titled twice. */
+export const ENTITY_ERROR_CODES = ['X_INVARIANT_VIOLATED', 'X_TENANCY_UNSCOPED'] as const;
 
-export type EntityOwnedErrorCode = (typeof ENTITY_OWNED_ERROR_CODES)[number];
+export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
 
-export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>> = {
+export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_INVARIANT_VIOLATED: 'a domain invariant rejected this row',
   X_TENANCY_UNSCOPED: 'a tenant-scoped query has no org predicate',
 };

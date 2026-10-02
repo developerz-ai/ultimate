@@ -103,6 +103,9 @@ export const posts = entity('posts', {
 — the name becomes the constraint name (`posts_post_title_present_check`), which is what makes a
 violation point at a rule instead of at a column. `c` is typed from the `columns` above it, so
 `c.titel` is a compile error naming `title`, never a `ColumnExpr | undefined` to assert away.
+`trimmed()` strips leading and trailing **spaces** only, exactly as the `btrim(col)` it emits, so a
+tab-only title passes `post_title_present` on both sides; `c.title.matches(/[^ \t\n\r\f\v]/)`
+refuses a title that is all whitespace (`\S` is refused — the two regex engines disagree on it).
 
 | Aspect | Rule |
 |---|---|

@@ -279,10 +279,10 @@ describe('composition', () => {
    * repository built with `client:` sends every statement straight to that client, which is a
    * different connection and, on a sharded app, a different database. So the write commits
    * whatever the transaction decides and survives its rollback, and the read cannot see what the
-   * transaction has already written. Refused rather than resolved: a `DbTx` does not name the
-   * client it was opened on, so "are these the same database" is not a question this layer can ask.
+   * transaction has already written. Refused rather than resolved — and only THIS case: the
+   * transaction below was opened on the ambient client, not on the shard (`tx.origin`).
    */
-  test('a repo pinned to its own client refuses to run inside a transaction', async () => {
+  test('a repo pinned to its own client refuses a transaction opened on another one', async () => {
     const shard = createRecordingClient();
     const pinned = postgresRepo(invoices, { client: shard });
 
@@ -301,6 +301,27 @@ describe('composition', () => {
     expect(shard.statements).toHaveLength(1);
     expect(client.texts.filter((text) => text.startsWith('insert into'))).toHaveLength(0);
     expect(client.texts).toContain('ROLLBACK');
+  });
+
+  /**
+   * The other half, and the case the refusal was never meant to cover: the transaction was opened
+   * ON the pinned client (`tx.origin`), so the repository and the `BEGIN` are one database and one
+   * reservation. It joins — which is also what lets a seed dry run roll a pinned driver back.
+   */
+  test('a repo pinned to the client the transaction was opened on joins it', async () => {
+    const shard = createRecordingClient();
+    shard.on('insert into', { rows: [physical()] });
+    const pinned = postgresRepo(invoices, { client: shard });
+
+    await postgresTransactor({ client: shard }).run(async () => {
+      await pinned.insert(ROW);
+    });
+
+    expect(shard.texts[0]).toBe('BEGIN');
+    expect(shard.texts[1]).toStartWith('insert into "pg_test_invoices"');
+    expect(shard.texts.at(-1)).toBe('COMMIT');
+    // Nothing went to the ambient client: this scope was the shard's alone.
+    expect(client.texts.filter((text) => text.startsWith('insert into'))).toHaveLength(0);
   });
 
   test('the refusal names the seam that does join a transaction', async () => {

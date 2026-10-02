@@ -79,6 +79,8 @@ const idOf = (row: unknown): string | undefined => {
  */
 const capturingDriver = (base: Driver, rows: Map<string, SeedRow>): Driver => {
   return {
+    // The rows live in `base`, so its transactor is the one that can undo a write to them.
+    transactor: () => base.transactor(),
     repo: <Row>(entity: EntityCore<Row>): Repo<Row> => {
       const inner = base.repo(entity);
       const capture = (row: unknown): void => {

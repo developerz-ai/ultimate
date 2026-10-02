@@ -312,7 +312,7 @@ A separate Postgres **schema** is still not a third path `As of 2026-08`, for on
 |---|---|---|
 | `X_DB_DRIFT` | `unexpected-table` | add an `entity()` for the table `cause` names, then re-run `x db gen` |
 | `X_DB_DRIFT` | `unexpected-column` | add the column to that entity — `.column('<physical>')` when the property name differs — then re-run `x db gen` |
-| `X_DB_DRIFT` | `changed-column` | the `fix:` is the exact `alter table … alter column …` to put in a new migration |
+| `X_DB_DRIFT` | `changed-column` | the `fix:` is one command — `psql "$DATABASE_URL" -c 'alter table … alter column … set not null;'` (or `drop not null`) — run against that database, then `x db migrate` re-checks |
 | `X_DB_DRIFT` | `unknown-schema` | the newest applied migration wrote no snapshot. The `fix:` names both remedies, in order |
 | `X_MIGRATION_SNAPSHOT_MISSING` | — | the same condition from the other side. Take the `fix:` verbatim |
 | `X_MIGRATION_DESTRUCTIVE` | — | **⛔ STOP.** A committed `up` drops, truncates or retypes. Do not add `-- destructive: true` and do not pass `--allow-destructive` |

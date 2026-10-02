@@ -1,18 +1,10 @@
-// Single responsibility: what a schema difference is CALLED and what its `fix:` line says — one
-// constructor per `DriftKind`, and nothing that compares anything. Split out of `drift.ts` at the
-// 500-line ceiling, along the seam that file already drew: comparison decides *whether* two
-// schemas disagree, and this decides how the disagreement reads.
-//
-// The rendered `X_DB_DRIFT` output is byte-for-byte pinned by the framework contract and
-// duplicated in `@ultimat3/entity` — do not reword a `cause` without changing both.
-//
-// Two rules run through every one of them. A `fix:` is a command the reader can RUN: `x db
-// migrate` where the migration has not been applied, and the statement itself where it has, since
-// re-running the migrator applies nothing a ledger row already claims. And a difference names the
-// declared side's own spelling, never the catalog's, because the catalog's is Postgres' rewriting.
+// Single responsibility: what a schema difference is CALLED and what its `fix:` says — one
+// constructor per `DriftKind`, and nothing that compares anything (`drift.ts` decides whether two
+// schemas disagree). A `fix:` is ONE command a shell runs, and a difference names the declared
+// side's spelling, never the catalog's — which is Postgres' rewriting.
 
 import { psqlCommand } from './dependent-view';
-import { onDeleteRule, rebuildForeignKey } from './foreign-key';
+import { addForeignKey, dropForeignKey, onDeleteRule } from './foreign-key';
 import type { CheckDescription, ForeignKeyDescription } from './introspect';
 import type { Migration } from './migrate';
 import { addPrimaryKey, dropPrimaryKey } from './primary-key';
@@ -47,6 +39,66 @@ export interface DriftReport {
   readonly ok: boolean;
   readonly differences: readonly DriftDifference[];
 }
+
+const RE_CHECK = 'then x db migrate, which re-checks';
+
+/** `set not null` is refused by the server while a row still holds NULL, and says so here. */
+const NULLS_FIRST = `refused while a row holds NULL there, so backfill those first; ${RE_CHECK}`;
+
+const CARRIES =
+  'a name in this difference carries a backtick, a dollar sign, a quote, a backslash or whitespace';
+
+const UNSPELLABLE = `${CARRIES}, so no statement here can spell it`;
+
+/**
+ * `x db migrate` is the fix where a migration has not been applied. Where it has, re-running the
+ * migrator applies nothing a ledger row already claims, so the fix is the statement itself —
+ * a repair made against THIS database, as one line a shell runs: the statement is `psql`'s
+ * argument (`psqlCommand`), never bare DDL beside a `#` — `#` is not a comment to Postgres and
+ * `alter` is not a program to a shell, so neither reader could run that line (axiom 4). Against
+ * this database and never "in a new migration": drift means this database left the migrations,
+ * and a migration would re-apply the repair to every database that is already right.
+ */
+const repair = (path: string, statements: string, note = RE_CHECK): string =>
+  `${psqlCommand(`${path}${statements}`)}   # ${note}`;
+
+/**
+ * The same repair when no statement can be written — a name the screen refuses. Still a command
+ * that runs: a psql session, with what to do in it as the comment. No name rides in it, hostile
+ * or not; the `cause` holds them, and nobody pastes a cause.
+ */
+export const byHand = (steps: string, why = UNSPELLABLE): string =>
+  `psql "$DATABASE_URL"   # ${steps}, \\q, ${RE_CHECK} — ${why}`;
+
+/** The schema Postgres resolves an unqualified name in when a session sets nothing. */
+const DEFAULT_SCHEMA = 'public';
+
+/**
+ * What puts a statement in the schema its table was READ from: nothing for the default one — the
+ * text every app has seen — and `set search_path` in the same psql word for any other, so the
+ * table, and every table the statement references, resolves there. A `psql "$DATABASE_URL"`
+ * session starts on its own search_path: unqualified, `alter table "posts"` for a table in
+ * `tenant_a` fails, or lands on a same-named table in `public`. `null` for a schema no statement
+ * can spell.
+ */
+const pathTo = (schema: string): string | null => {
+  if (schema === DEFAULT_SCHEMA) return '';
+  const name = shellInertIdentifier(schema);
+  return name === null ? null : `set search_path = ${name}; `;
+};
+
+/** A table as a psql PATTERN or a statement outside `pathTo`: qualified unless the default schema. */
+const qualified = (schema: string, table: string): string | null => {
+  const name = shellInertIdentifier(table);
+  if (name === null) return null;
+  if (schema === DEFAULT_SCHEMA) return name;
+  const space = shellInertIdentifier(schema);
+  return space === null ? null : `${space}.${name}`;
+};
+
+/** Every name inert in a shell AND writable as an identifier — the one screen, asked of each. */
+const spellable = (names: readonly string[]): boolean =>
+  names.every((name) => shellInertIdentifier(name) !== null);
 
 /**
  * The one `fix:` here whose second layer no quoting closes. `x db gen "add C"` puts the column
@@ -96,13 +148,16 @@ export function missingColumn(table: string, column: string): DriftDifference {
  *
  * `x db gen` is deliberately not the fix: it diffs types and indexes and has never emitted a
  * `set not null`, so naming it would send a reader to a command that generates an empty migration.
+ * The fix is the statement, run against this database (`repair`).
  */
 export function changedColumn(
+  schema: string,
   table: string,
   column: string,
   liveNullable: boolean,
 ): DriftDifference {
   const clause = liveNullable ? 'set not null' : 'drop not null';
+  const path = pathTo(schema);
   const relation = shellInertIdentifier(table);
   const attribute = shellInertIdentifier(column);
   return {
@@ -112,16 +167,15 @@ export function changedColumn(
     cause: liveNullable
       ? `table "${table}" allows NULL in column "${column}" that migrations declare not null`
       : `table "${table}" forbids NULL in column "${column}" that migrations declare nullable`,
-    // Both identifiers are the catalog's, so both go through the one screen. A refusal names the
-    // column as the thing it could not spell, which is what tells this line apart from
-    // `missingCheck`'s refusal in a report that carries both.
+    // Both identifiers are the catalog's, so both go through the one screen.
     fix:
-      relation === null || attribute === null
-        ? `${clause} on the column named in this difference, in a new migration, then ` +
-          'x db migrate — its table or column name carries a backtick, a dollar sign, a quote, ' +
-          'a backslash or whitespace, so no statement here can spell it'
-        : `alter table ${relation} alter column ${attribute} ${clause};   # in a new migration` +
-          (liveNullable ? ' — backfill the existing NULLs first' : ''),
+      path === null || relation === null || attribute === null
+        ? byHand(`alter column … ${clause} on the column this difference names`)
+        : repair(
+            path,
+            `alter table ${relation} alter column ${attribute} ${clause};`,
+            liveNullable ? NULLS_FIRST : RE_CHECK,
+          ),
   };
 }
 
@@ -137,22 +191,32 @@ export function changedColumn(
  * the relation is already there, and `x db migrate` then accepts a table its own SQL creates), or
  * nothing owns it and it should not be in this schema. No migration PATH is named: where an app
  * keeps its migrations is the CLI's fact, not this package's.
+ *
+ * Two repairs and one line, so the line leads with the command neither repair can skip — `\\d` on
+ * the table, through `psqlCommand`, which is what keeps a `'` in the name inside its shell word.
  */
-export function unexpectedTable(table: string): DriftDifference {
-  const name = shellInertIdentifier(table);
+export function unexpectedTable(schema: string, table: string): DriftDifference {
+  const name = qualified(schema, table);
+  // The comment repeats the name only when it holds no `'`: a shell that does not read `#` as a
+  // comment (interactive zsh, by default) would open a quote on one. The command is safe either
+  // way — `psqlCommand` escapes it inside its own word.
+  const spoken = name === null || name.includes("'") ? 'this table' : name;
   return {
     kind: 'unexpected-table',
     table,
     column: null,
     cause: `table "${table}" is not present in any migration`,
+    // The command is the harmless one — it SHOWS the table, which either repair needs first — and
+    // the two repairs are its comment.
     fix:
       name === null
-        ? 'claim it in a migration with create table if not exists, or drop it by hand — its ' +
-          'table name carries a backtick, a dollar sign, a quote, a backslash or whitespace, so ' +
-          'no statement here can spell it'
-        : `put a create table if not exists ${name} (…) statement in a migration — x db migrate ` +
-          'then accepts a table its own SQL creates — or, if nothing owns it, run ' +
-          `drop table ${name}; inside psql "$DATABASE_URL"`,
+        ? byHand(
+            `inspect the table this difference names with \\d, then claim it in a migration ` +
+              'with create table if not exists or drop it',
+          )
+        : `${psqlCommand(`\\d ${name}`)}   # nothing declares it: put create table if not exists ` +
+          `${spoken} (…) in a migration, then x db migrate — or, if nothing owns it, run ` +
+          `drop table ${spoken}; here`,
   };
 }
 
@@ -179,7 +243,7 @@ export function unknownSchema(migrations: readonly Migration[]): DriftDifference
   // id off the file and derives the name from it — so whoever can add a file to the migrations
   // directory picks what a reader pastes, and `$(…)` and a backtick substitute before `git` or `x`
   // is reached. The same screen `unexpectedColumn` and `changedColumn` already ran, on the one
-  // finding in this file that skipped it. Degraded to prose rather than escaped: a glob is not an
+  // finding in this file that skipped it. Degraded to a read-only command rather than escaped: a glob is not an
   // identifier and a migration description is not one either, so neither has a quoted form that
   // makes a hostile name safe. An EMPTY id is inert by construction and keeps its glob — that is
   // "no migrations at all", not a name this function refused to spell.
@@ -199,10 +263,10 @@ export function unknownSchema(migrations: readonly Migration[]): DriftDifference
     fix: spellable
       ? `git checkout -- "*${id}.snapshot.json"   # or, if it was never written: ` +
         `delete migration "${id}" and rerun x db gen "${name}"`
-      : 'restore the .snapshot.json committed beside the newest migration, or delete that ' +
-        'migration and rerun x db gen with its description — the migration named in this ' +
-        "difference's cause carries a backtick, a dollar sign, a quote, a backslash or " +
-        'whitespace in its file name, so no command here can spell it',
+      : 'git status --short -- "*.snapshot.json"   # shows the sidecar that is gone: git ' +
+        'checkout it, or delete that migration and rerun x db gen with its description — the ' +
+        "migration named in this difference's cause carries a backtick, a dollar sign, a " +
+        'quote, a backslash or whitespace in its file name, so no command here can spell it',
   };
 }
 
@@ -235,12 +299,17 @@ export function changedIndex(table: string, index: string, detail: string): Drif
  * 'published'::text])))` — so a text comparison reports drift on a correct database forever, and
  * normalising it is an expression parser competing with the server's. Presence is not text.
  *
- * The `fix` is the statement, not `x db migrate`: the migration that declares this constraint is
- * already in the ledger, so re-running the migrator applies nothing. Same reasoning as
- * `changedColumn` and `changedForeignKey` — the declared side holds the author's own spelling of
- * the predicate, which is what makes an executable fix possible at all.
+ * The `fix` is the statement (`repair`), not `x db migrate`: the migration that declares this
+ * constraint is already in the ledger, so re-running the migrator applies nothing. Same reasoning
+ * as `changedColumn` and `changedForeignKey` — the declared side holds the author's own spelling
+ * of the predicate, which is what makes an executable fix possible at all.
  */
-export function missingCheck(table: string, check: CheckDescription): DriftDifference {
+export function missingCheck(
+  schema: string,
+  table: string,
+  check: CheckDescription,
+): DriftDifference {
+  const path = pathTo(schema);
   const relation = shellInertIdentifier(table);
   const constraint = shellInertIdentifier(check.name);
   return {
@@ -248,23 +317,18 @@ export function missingCheck(table: string, check: CheckDescription): DriftDiffe
     table,
     column: null,
     cause: `table "${table}" is missing check constraint "${check.name}" that migrations declare`,
-    // The command rides on the same line as the statement, and not only because `check` is a
-    // banned advice word the `errors` gate demands a command beside: writing the migration is half
-    // the repair and applying it is the other half, and `changedColumn`'s bare `# in a new
-    // migration` leaves the second half to be guessed.
-    //
     // Both NAMES go through the one screen; the EXPRESSION deliberately does not, and cannot. It
     // is a predicate, so no screen could accept `status in ('draft', 'published')` and reject a
     // second statement — and it is the DECLARED side's own text, out of the author's migration,
-    // where both names are the catalog's and a sidecar's. Narrower than "this line is safe", and
-    // it is the honest claim.
+    // where both names are the catalog's and a sidecar's. What `psqlCommand` does close is the
+    // shell layer: the statement is one single-quoted word, so nothing in the predicate expands.
     fix:
-      relation === null || constraint === null
-        ? 'add the constraint named in this difference back in a new migration, then ' +
-          'x db migrate — its table or constraint name carries a backtick, a dollar sign, a ' +
-          'quote, a backslash or whitespace, so no statement here can spell it'
-        : `alter table ${relation} add constraint ${constraint} ` +
-          `check (${check.expression});   # in a new migration, then x db migrate`,
+      path === null || relation === null || constraint === null
+        ? byHand('add the check constraint this difference names back')
+        : repair(
+            path,
+            `alter table ${relation} add constraint ${constraint} check (${check.expression});`,
+          ),
   };
 }
 
@@ -285,35 +349,64 @@ export function missingForeignKey(table: string, key: ForeignKeyDescription): Dr
  * — reported apart from `missing-foreign-key` because it is a different repair: the constraint is
  * there, and what changed is what happens to the child rows.
  *
- * The `fix` is the pair, not `x db migrate`: a rule cannot be altered in place, `add constraint`
- * alone is `42710` on a name already taken, and no `x db gen` diff emits either statement, so
- * naming a command would send a reader to one that generates an empty migration. Same reasoning
- * as `changedColumn`.
+ * The `fix` is the pair (`repair`), not `x db migrate`: a rule cannot be altered in place, `add
+ * constraint` alone is `42710` on a name already taken, and no `x db gen` diff emits either
+ * statement. Same reasoning as `changedColumn`.
+ *
+ * `held` is the **live catalog's** and `declared` is a `.snapshot.json`'s, so every name is
+ * screened and the two writers are ASKED whether they can write the pair — never a second copy of
+ * their rules beside them. `identifier()` refuses a name holding a quote, a space or a backslash
+ * and `addForeignKey` refuses an `on delete` rule Postgres does not have: right for DDL this
+ * package SENDS, wrong for a `fix:`. `diffSchema` is documented pure and total, so a pair it
+ * cannot write is a psql session and a sentence, never a throw.
+ *
+ * The CAUSE names the constraint the database holds, whatever it is called: a refused name is out
+ * of the command, and the cause is where a reader still finds which key this is.
  */
 export function changedForeignKey(
+  schema: string,
   table: string,
   declared: ForeignKeyDescription,
   held: ForeignKeyDescription,
 ): DriftDifference {
   const rule = onDeleteRule(held.onDelete);
+  const rebuilt = (): string => {
+    const steps =
+      'drop the foreign key this difference names and add it back with the on delete rule ' +
+      'migrations declare';
+    const names = [
+      table,
+      held.name,
+      declared.name,
+      declared.referencedTable,
+      ...declared.columns,
+      ...declared.referencedColumns,
+    ];
+    const path = pathTo(schema);
+    if (path === null || !spellable(names)) return byHand(steps);
+    try {
+      return repair(path, `${dropForeignKey(table, held.name)} ${addForeignKey(table, declared)}`);
+    } catch {
+      return byHand(steps, 'the rule migrations declare is not one Postgres has');
+    }
+  };
   return {
     kind: 'changed-foreign-key',
     table,
     column: null,
     cause:
-      `foreign key on "${table}" (${declared.columns.join(', ')}) to ` +
+      `foreign key "${held.name}" on "${table}" (${declared.columns.join(', ')}) to ` +
       `"${declared.referencedTable}" ` +
       `${rule === null ? 'declares no on delete rule' : `is on delete ${rule}`}, not what ` +
       'migrations declare',
-    fix: `${rebuildForeignKey(table, declared, held)}   # in a new migration`,
+    fix: rebuilt(),
   };
 }
 
-const PRIMARY_KEY_BY_HAND =
-  'psql "$DATABASE_URL"   # drop the primary key this database holds, add the one migrations ' +
-  'declare, \\q, then x db migrate — a table, column or constraint name in this difference ' +
-  'carries a backtick, a dollar sign, a quote, a backslash or whitespace, or is too long, so no ' +
-  'statement here can spell it';
+const PRIMARY_KEY_BY_HAND = byHand(
+  'drop the primary key this database holds, add the one migrations declare',
+  `${CARRIES} or is too long, so no statement here can spell it`,
+);
 
 const keyText = (columns: readonly string[]): string =>
   columns.length === 0 ? 'no primary key' : `primary key (${columns.join(', ')})`;
@@ -324,18 +417,15 @@ const keyText = (columns: readonly string[]): string =>
  * is `x db migrate`, and the migration declaring this key is already in the ledger, so re-running
  * the migrator applies nothing.
  *
- * The fix is ONE command a shell runs — the pair as `psql`'s argument, the form
- * `dependent-view.ts` writes and for its reason: bare DDL beside a `#` is run by nobody, since `#`
- * is not a comment to Postgres and `alter` is not a program to a shell. Against THIS database,
- * never "in a new migration": drift means this database left the migrations, and a migration
- * would re-key every database that is already right.
+ * The fix is ONE command a shell runs — the pair as `psql`'s argument (`repair`).
  *
  * `held` is the constraint the DATABASE holds — the live primary index's name, which is the
  * constraint's — because that is the one a `drop constraint` has to spell. The writers are asked
  * whether they can write each statement and a refusal degrades the whole line to prose, the rule
- * `rebuildForeignKey` states: every name on the live side is the catalog's.
+ * `changedForeignKey` states: every name on the live side is the catalog's.
  */
 export function changedPrimaryKey(
+  schema: string,
   table: string,
   live: readonly string[],
   held: string | undefined,
@@ -343,12 +433,13 @@ export function changedPrimaryKey(
 ): DriftDifference {
   const statements = (): string => {
     const names = [table, ...declared, ...(held === undefined ? [] : [held])];
-    if (names.some((name) => shellInertIdentifier(name) === null)) return PRIMARY_KEY_BY_HAND;
+    const path = pathTo(schema);
+    if (path === null || !spellable(names)) return PRIMARY_KEY_BY_HAND;
     try {
       const parts: string[] = [];
       if (held !== undefined) parts.push(dropPrimaryKey(table, held, false));
       if (declared.length > 0) parts.push(addPrimaryKey(table, declared));
-      return `${psqlCommand(parts.join(' '))}   # then x db migrate, which re-checks`;
+      return repair(path, parts.join(' '));
     } catch {
       return PRIMARY_KEY_BY_HAND;
     }
@@ -358,7 +449,8 @@ export function changedPrimaryKey(
     table,
     column: null,
     cause:
-      `table "${table}" has ${keyText(live)}, and migrations declare ` +
+      `table "${table}" has ${keyText(live)}${held === undefined ? '' : ` as constraint "${held}"`}, ` +
+      'and migrations declare ' +
       (declared.length === 0 ? 'none' : `(${declared.join(', ')})`),
     fix: statements(),
   };

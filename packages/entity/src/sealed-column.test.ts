@@ -3,7 +3,13 @@
 // the database never holds it, and nothing the database would have to compare may name it.
 
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { generateMasterKey, isSealed, isUltimateError } from '@ultimat3/core';
+import {
+  generateMasterKey,
+  isSealed,
+  isUltimateError,
+  resolveSealKeys,
+  seal,
+} from '@ultimat3/core';
 import {
   createPgliteClient,
   generateMigration,
@@ -118,6 +124,28 @@ describe.each(DRIVERS)('unit · a sealed column on %s', (name, driver) => {
     expect(await codeOf(() => repo.insert({ ...long, id: crypto.randomUUID(), token: null }))).toBe(
       'X_INVARIANT_VIOLATED',
     );
+  });
+
+  test('a plaintext SHAPED like a sealed value is still judged as the plaintext it is', async () => {
+    // The column's `$parse` passes a sealed string — a driver hands it one — and `sealValue` used
+    // that same parser, so a lookalike skipped `max` and a 100-character value landed in a
+    // `text({ max: 12 })` column.
+    const lookalike = await seal('x'.repeat(40), {
+      purpose: 'elsewhere',
+      keys: await resolveSealKeys(),
+    });
+    expect(isSealed(lookalike)).toBe(true);
+    expect([...lookalike].length).toBeGreaterThan(12);
+    const table = db().connections;
+    const row = { label: 'shaped', password: lookalike, email: mail('shaped') };
+    expect(await codeOf(() => table.insert(row))).toBe('X_INVARIANT_VIOLATED');
+    const made = await table.insert({ ...row, password: 'short' });
+    expect(await codeOf(() => table.update(made.id, { password: lookalike }))).toBe(
+      'X_INVARIANT_VIOLATED',
+    );
+    // Where no bound refuses it, it is a plaintext like any other: sealed again, read back whole.
+    const kept = await table.update(made.id, { token: lookalike });
+    expect(kept.token).toBe(lookalike);
   });
 
   test('an opaque column is refused wherever the database would compare it', async () => {

@@ -113,6 +113,9 @@ export const transitionRow = async <Row, C extends ColumnMap>(
   // Keyed on the entity's OWN primary key, never the literal `id`: a `code`-keyed entity has no
   // `id` column, so the filter matched nothing in memory (a false `X_STATE_CONFLICT`) and named a
   // column Postgres does not have (`X_INVARIANT_VIOLATED`).
+  // An absent id names no row, and is refused HERE: `namedColumns` drops an `undefined` filter
+  // value, so the predicate below would be the from-state alone and move every row in it.
+  if (id === undefined || id === null) throw notFound(entity.$name, String(id));
   const key = singleKeyOf(entity, 'transition');
   const filter = { [key]: id, [property]: move.from } as unknown as RowPatch<Row>;
   const values = { [property]: move.to } as unknown as RowPatch<Row>;

@@ -1,7 +1,8 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { describeErrorCode, isUltimateError, type UltimateError } from '@ultimat3/core';
 import type { PolicyError } from './errors';
 import { clearPermissions, definePermissions } from './permissions';
-import { can } from './policy';
+import { can, denied } from './policy';
 import { clearRoles, defineRoles } from './roles';
 import {
   assertAllowed,
@@ -97,10 +98,66 @@ describe('assertAllowed', () => {
     expect(assertAllowed(policy, { input, actor: editor }).allowed).toBe(true);
   });
 
+  const thrown = (run: () => unknown): UltimateError => {
+    try {
+      run();
+    } catch (error) {
+      if (isUltimateError(error)) return error;
+      return expect.unreachable('not an UltimateError');
+    }
+    return expect.unreachable('nothing was refused');
+  };
+
   test('throws X_FORBIDDEN carrying the same reason the adapters report', () => {
-    expect(() => assertAllowed(policy, { input, actor: guest })).toThrow(
-      /X_FORBIDDEN|actor lacks post:publish/,
-    );
+    const error = thrown(() => assertAllowed(policy, { input, actor: guest }));
+    expect(error.code).toBe('X_FORBIDDEN');
+    expect(error.cause).toBe('post:publish denied: actor lacks post:publish');
+  });
+
+  // It always threw X_FORBIDDEN: an anonymous caller read "denied" where every adapter reports
+  // X_UNAUTHENTICATED, the code a sign-in redirect and a 401 both key on.
+  test('throws the code the DECISION carries — an anonymous caller is X_UNAUTHENTICATED', () => {
+    const error = thrown(() => assertAllowed(policy, { input, actor: null }));
+    expect(error.code).toBe('X_UNAUTHENTICATED');
+    expect(error.code).toBe(enforceHttp(policy, { input, actor: null })?.problem.code ?? '');
+    expect(error.cause).toBe('post:publish denied: no actor for post:publish');
+    expect(error.fix).not.toBe('');
+  });
+
+  test('a code a predicate chose is the code thrown', () => {
+    const frozen = can<Input>('post:publish', () => denied('account frozen', 'X_ACCOUNT_FROZEN'));
+    const error = thrown(() => assertAllowed(frozen, { input, actor: editor }));
+    expect(error.code).toBe('X_ACCOUNT_FROZEN');
+    expect(error.cause).toContain('account frozen');
+  });
+});
+
+describe('an http denial states the status its code means', () => {
+  test('no actor is 401, in both places the status is written', () => {
+    const denial = enforceHttp(policy, { input, actor: null });
+    expect(denial?.status).toBe(401);
+    expect(denial?.problem).toEqual({
+      title: describeErrorCode('X_UNAUTHENTICATED').title,
+      status: 401,
+      detail: 'no actor for post:publish',
+      code: 'X_UNAUTHENTICATED',
+    });
+  });
+
+  test("a signed-in actor who may not is still 403, and so is a code of the app's own", () => {
+    expect(enforceHttp(policy, { input, actor: guest })?.status).toBe(403);
+    const frozen = can<Input>('post:publish', () => denied('account frozen', 'X_ACCOUNT_FROZEN'));
+    const denial = enforceHttp(frozen, { input, actor: editor });
+    expect([denial?.status, denial?.problem.status, denial?.problem.code]).toEqual([
+      403,
+      403,
+      'X_ACCOUNT_FROZEN',
+    ]);
+  });
+
+  test('through enforce() too', () => {
+    const denial = enforce('http', policy, { input, actor: null });
+    expect(denial?.surface === 'http' ? denial.status : 0).toBe(401);
   });
 });
 

@@ -84,11 +84,33 @@ const record = (
   return decision;
 };
 
-const asDecision = (result: boolean | PolicyDecision, label: string): PolicyDecision => {
-  if (typeof result === 'boolean') {
-    return result ? ALLOWED : denied(`${label} predicate returned false`);
-  }
-  return result;
+/**
+ * A value that IS a decision, by its shape and nothing looser: `allowed` exactly `true`, or
+ * exactly `false` with the reason and code a denial carries. `{ allowed: 'yes' }` is not one —
+ * read as a decision it was truthy, and every surface took it for ALLOWED.
+ */
+export const isDecision = (value: unknown): value is PolicyDecision => {
+  if (typeof value !== 'object' || value === null) return false;
+  const { allowed, reason, code } = value as Readonly<Record<string, unknown>>;
+  return (
+    allowed === true ||
+    (allowed === false && typeof reason === 'string' && typeof code === 'string')
+  );
+};
+
+/**
+ * `true` allows. Everything that is not `true` and not a decision DENIES: a predicate is typed
+ * `boolean | PolicyDecision`, but a JS caller, an `as` and a forgotten `return` all hand back
+ * something else, and passing it through made `decision.allowed` a bare `TypeError` out of `run`.
+ */
+const asDecision = (result: unknown, label: string): PolicyDecision => {
+  if (result === true) return ALLOWED;
+  if (isDecision(result)) return result;
+  return denied(
+    result === false
+      ? `${label} predicate returned false`
+      : `${label} predicate returned neither a boolean nor a decision`,
+  );
 };
 
 /**

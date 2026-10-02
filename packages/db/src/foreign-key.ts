@@ -130,37 +130,3 @@ export function unrestorableNote(table: string, constraint: string, gone: string
     `cannot be restored; ${identifier(gone).text} is gone`
   );
 }
-
-/**
- * The drop/add pair that moves a key's `on delete` rule — a rebuild, because Postgres has no
- * `alter constraint` for it — for a `fix:` line an author pastes into a new migration.
- *
- * It lives here, beside the two writers, because it is the one caller reading values neither of
- * them may assume: `held` is the **live catalog's** and `declared` is a `.snapshot.json`'s. Both
- * writers refuse rather than guess — `identifier()` on a name holding a quote, a space or a
- * backslash (all three legal inside a quoted Postgres name), and `addForeignKey` on an `on delete`
- * rule Postgres does not have. That is exactly right for DDL this package SENDS and wrong for a
- * `fix:` line: `diffSchema` is documented pure and total, so a pair it cannot write is a sentence,
- * never a throw — a drift check that raises in place of its report hands the caller an exception
- * where a verdict was asked for. The constraint is still named, because it is the only thing
- * identifying which one, quoted by `JSON.stringify`, which escapes rather than refuses; nothing
- * runs this string either way.
- */
-export function rebuildForeignKey(
-  table: string,
-  declared: ForeignKeyDescription,
-  held: ForeignKeyDescription,
-): string {
-  // The writers are ASKED whether they can write the pair — never a second copy of their rules
-  // beside them, which is the copy that drifts. A refusal is the answer, and nothing here reads
-  // the thrown value.
-  try {
-    return `${dropForeignKey(table, held.name)} ${addForeignKey(table, declared)}`;
-  } catch {
-    return (
-      `drop constraint ${JSON.stringify(held.name)} on table ${JSON.stringify(table)} and add ` +
-      'it back with the on delete rule the migrations declare — by hand: x db gen cannot ' +
-      'write this pair'
-    );
-  }
-}

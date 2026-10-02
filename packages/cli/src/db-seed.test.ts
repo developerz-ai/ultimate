@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Seed, SeedRun } from '@ultimat3/entity';
+import { memoryDriver } from '@ultimat3/entity';
 import { REQUIRED_BUN } from './app-root';
 import { dbCommand } from './cmd-db';
 import type { CommandContext } from './command';
@@ -247,7 +248,7 @@ describe('unit · x db seed · one transaction per seed', () => {
           }),
         ),
       ],
-      driver: { repo: () => ({}) as never },
+      driver: memoryDriver(),
       dryRun: false,
       transaction: (work) => work(),
     });
@@ -261,7 +262,7 @@ describe('unit · x db seed · one transaction per seed', () => {
     let opened = 0;
     await runSeeds({
       seeds: [entryFor(fakeSeed('a', 'dev')), entryFor(fakeSeed('b', 'reference'))],
-      driver: { repo: () => ({}) as never },
+      driver: memoryDriver(),
       dryRun: false,
       transaction: async (work) => {
         opened += 1;

@@ -136,15 +136,36 @@ describe.skipIf(!hasPostgres)('live · postgres · a CHECK the catalog no longer
       `table "${TABLE}" is missing check constraint "${TABLE}_status_check" that migrations declare`,
     );
     expect(report.differences[0]?.fix).toBe(
-      `alter table "${TABLE}" add constraint "${TABLE}_status_check" ` +
-        `check (status in ('draft', 'published'));   # in a new migration, then x db migrate`,
+      // The table lives outside the default schema, so the statement is told where to look.
+      `psql "$DATABASE_URL" -c 'set search_path = "${SCHEMA}"; alter table "${TABLE}" add ` +
+        `constraint "${TABLE}_status_check" ` +
+        `check (status in ('\\''draft'\\'', '\\''published'\\''));'   ` +
+        '# then x db migrate, which re-checks',
     );
   });
 
-  test('and the fix is a statement that RUNS — after it, the report is clean again', async () => {
+  test('and the fix is a COMMAND that runs — after it, the report is clean again', async () => {
     const [difference] = diffSchema(await live(), declared).differences;
-    const statement = (difference?.fix ?? '').split('#')[0] ?? '';
-    await client.execute(raw(statement));
+    const fix = difference?.fix ?? '';
+    if (Bun.which('psql') !== null) {
+      // As written, through a real shell: the line is one command, and its quoting is the shell's.
+      const shell = Bun.spawn(['sh', '-c', fix], {
+        // The PLAIN url and no `PGOPTIONS`: nothing but the fix itself may put this schema on the
+        // search_path, which is the whole claim.
+        env: { ...Bun.env, DATABASE_URL: url ?? '', PGOPTIONS: '' },
+        stdout: 'ignore',
+        stderr: 'pipe',
+      });
+      const said = await new Response(shell.stderr).text();
+      expect([await shell.exited, said]).toEqual([0, '']);
+    } else {
+      // No psql on this machine: the statement it would be handed, the shell's quoting undone.
+      const word = /^psql "\$DATABASE_URL" -c 'set search_path = "[a-z_]+"; (.*)' {3}# /s.exec(
+        fix,
+      )?.[1];
+      expect(word).toBeDefined();
+      await client.execute(raw((word ?? '').replaceAll(`'\\''`, `'`)));
+    }
     expect(diffSchema(await live(), declared).ok).toBe(true);
   });
 

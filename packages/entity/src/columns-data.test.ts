@@ -81,6 +81,45 @@ describe('unit · bigint()', () => {
   });
 });
 
+describe('unit · bigint() holds int8 and nothing wider', () => {
+  const external = bigint();
+
+  test('both ends of the int8 range are stored, in every spelling a driver hands over', () => {
+    expect(external.$parse('9223372036854775807')).toBe('9223372036854775807');
+    expect(external.$parse('-9223372036854775808')).toBe('-9223372036854775808');
+    expect(external.$parse(9223372036854775807n)).toBe('9223372036854775807');
+    expect(external.$parse('0009223372036854775807')).toBe('9223372036854775807');
+  });
+
+  test('one past either end is refused — Postgres answers 22003 for it', () => {
+    for (const over of ['9223372036854775808', '-9223372036854775809', '1'.padEnd(40, '0')]) {
+      expect(caught(() => external.$parse(over))).toContain('int8');
+    }
+    expect(caught(() => external.$parse(2n ** 63n))).toContain('int8');
+    // The shape of the value, never its digits: a column message reaches the log line.
+    expect(caught(() => external.$parse('9223372036854775808'))).not.toContain(
+      '9223372036854775808',
+    );
+  });
+});
+
+describe('unit · decimal() counts a lone leading zero as no digit', () => {
+  test('numeric(p, p) stores every value below one', () => {
+    const share = decimal({ precision: 2, scale: 2 });
+    expect(share.$parse('0.5')).toBe('0.50');
+    expect(share.$parse('-0.99')).toBe('-0.99');
+    expect(share.$parse('0')).toBe('0.00');
+    expect(share.$parse(0.25)).toBe('0.25');
+    expect(caught(() => share.$parse('1.00'))).toContain('numeric(2, 2)');
+  });
+
+  test('and the whole part still overflows where Postgres overflows', () => {
+    const rate = decimal({ precision: 5, scale: 2 });
+    expect(rate.$parse('0999.5')).toBe('999.50');
+    expect(caught(() => rate.$parse('1000'))).toContain('numeric(5, 2)');
+  });
+});
+
 describe('unit · decimal()', () => {
   const rate = decimal({ precision: 18, scale: 8 });
 

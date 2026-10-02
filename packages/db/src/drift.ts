@@ -147,7 +147,7 @@ function compareForeignKeys(live: TableDescription, expected: TableDescription):
       continue;
     }
     if (onDeleteRule(counterpart.onDelete) !== onDeleteRule(key.onDelete)) {
-      differences.push(changedForeignKey(live.name, key, counterpart));
+      differences.push(changedForeignKey(live.schema, live.name, key, counterpart));
     }
   }
   return differences;
@@ -177,7 +177,7 @@ function compareChecks(live: TableDescription, expected: TableDescription): Drif
   const present = new Set(held);
   return declared
     .filter((check) => !present.has(check.name))
-    .map((check) => missingCheck(live.name, check));
+    .map((check) => missingCheck(live.schema, live.name, check));
 }
 
 /**
@@ -188,7 +188,7 @@ function compareChecks(live: TableDescription, expected: TableDescription): Drif
 function comparePrimaryKey(live: TableDescription, expected: TableDescription): DriftDifference[] {
   if (sameColumns(live.primaryKey, expected.primaryKey)) return [];
   const held = live.indexes.find((index) => index.primary)?.name;
-  return [changedPrimaryKey(live.name, live.primaryKey, held, expected.primaryKey)];
+  return [changedPrimaryKey(live.schema, live.name, live.primaryKey, held, expected.primaryKey)];
 }
 
 function compareTable(live: TableDescription, expected: TableDescription): DriftDifference[] {
@@ -215,7 +215,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
     // `retypeColumn` already owns that question where both sides are generated.
     if (keyColumns.has(column.name)) continue;
     if (column.nullable !== counterpart.nullable) {
-      differences.push(changedColumn(live.name, column.name, counterpart.nullable));
+      differences.push(changedColumn(live.schema, live.name, column.name, counterpart.nullable));
     }
   }
   differences.push(...comparePrimaryKey(live, expected));
@@ -230,7 +230,7 @@ export function diffSchema(live: SchemaDescription, expected: SchemaDescription)
   const differences: DriftDifference[] = [];
   for (const table of live.tables) {
     const counterpart = findTable(expected, table.name);
-    if (counterpart === undefined) differences.push(unexpectedTable(table.name));
+    if (counterpart === undefined) differences.push(unexpectedTable(table.schema, table.name));
     else differences.push(...compareTable(table, counterpart));
   }
   for (const table of expected.tables) {

@@ -164,7 +164,14 @@ describe('planFor', () => {
     expect(refused(Number.NaN)).toBeUltimateError('X_INVARIANT_VIOLATED');
     expect(refused(Number.POSITIVE_INFINITY)).toBeUltimateError('X_INVARIANT_VIOLATED');
     // The way out of it is the call that reads every row without holding them all.
-    expect(String(refused(5_000_000)?.fix)).toContain('inBatches(1000)');
+    // …and it is in the CAUSE, as the call to write: the chain's variable is the caller's, so a
+    // fix spelled `<entity name>.limit(50)` was code against a name the author never typed.
+    expect(String(refused(5_000_000)?.cause)).toContain('.inBatches(1000)');
+    expect(String(refused(5_000_000)?.cause)).toContain('.limit(50)');
+    // The fix is a command that runs as written, naming the real entity.
+    expect(String(refused(5_000_000)?.fix)).toStartWith(
+      `x entities describe ${posts.$name} --json   # `,
+    );
   });
 
   test('the ceiling itself, the default and one row all still build a plan', () => {

@@ -11,11 +11,13 @@ import {
   setDbClient,
   statementsOf,
 } from '@ultimat3/db';
+import { t } from '@ultimat3/schema';
 import { integer, text, timestamp, url, uuid } from './columns';
-import { bigint, decimal } from './columns-data';
+import { arrayOf, bigint, decimal, json } from './columns-data';
 import { type Driver, database, memoryDriver } from './database';
 import { entity } from './entity';
 import { enumerated } from './enum-column';
+import { invariant } from './invariants';
 import { postgresDriver } from './pg-driver';
 import { clearRegistry } from './registry';
 import { defineSeed } from './seed';
@@ -76,7 +78,18 @@ const links = entity('wp_links', {
   },
 });
 
-const ENTITIES = { notes, tags, coupons, rates, countries, links };
+/** A unique declared as an INVARIANT, a jsonb to key-test and an array whose elements may be NULL. */
+const docs = entity('wp_docs', {
+  columns: {
+    id: uuid().primaryKey(),
+    slug: text({ max: 40 }),
+    data: json(t.record(t.string)).nullable(),
+    marks: arrayOf(text({ max: 20 }).nullable()).nullable(),
+  },
+  invariants: (c) => [invariant('slug_unique', c.unique(['slug']))],
+});
+
+const ENTITIES = { notes, tags, coupons, rates, countries, links, docs };
 const client = createPgliteClient();
 
 beforeAll(async () => {
@@ -120,6 +133,8 @@ const both = async (
 };
 
 const ID = '00000000-0000-7000-8000-000000000001';
+const idAt = (n: number): string =>
+  `00000000-0000-7000-8000-0000000000${String(n).padStart(2, '0')}`;
 
 describe('a — an undefined patch value is not a NULL', () => {
   test(
@@ -211,6 +226,105 @@ describe('c — a transition on an entity keyed by another column', () => {
   });
 });
 
+describe('c2 — a transition handed no id', () => {
+  test.each([undefined, null])('%p moves no row in either driver', async (missing) => {
+    const [memory, pg] = await both(async (db) => {
+      await db.coupons.insert({ code: 'A', status: 'draft' });
+      await db.coupons.insert({ code: 'B', status: 'draft' });
+      const refused = await outcome(() =>
+        db.coupons.transition('status', missing as unknown as string, {
+          from: 'draft',
+          to: 'live',
+        }),
+      );
+      return [refused, (await db.coupons.all()).map((row) => row.status)];
+    });
+    expect(memory).toEqual({ ok: [{ code: 'X_NOT_FOUND' }, ['draft', 'draft']] });
+    expect(pg).toEqual(memory);
+  });
+});
+
+describe('b2 — a unique declared as an invariant is a unique', () => {
+  test('a second row with the same value is refused', async () => {
+    const [memory, pg] = await both(async (db) => {
+      await db.docs.insert({ id: idAt(1), slug: 'one' });
+      await db.docs.insert({ id: idAt(2), slug: 'one' });
+    });
+    expect(pg).toEqual({ code: 'X_DB_UNIQUE_VIOLATION' });
+    expect(memory).toEqual(pg);
+  });
+
+  test("so is a patch moving a row onto another row's value, and a batch holding the pair", async () => {
+    const [memory, pg] = await both(async (db) => {
+      await db.docs.insert({ id: idAt(1), slug: 'one' });
+      await db.docs.insert({ id: idAt(2), slug: 'two' });
+      const patched = await outcome(() => db.docs.update(idAt(2), { slug: 'one' }));
+      const batched = await outcome(() =>
+        db.docs.insertAll([
+          { id: idAt(3), slug: 'three' },
+          { id: idAt(4), slug: 'three' },
+        ]),
+      );
+      return [patched, batched, (await db.docs.all()).map((row) => row.slug).sort()];
+    });
+    expect(pg).toEqual({
+      ok: [{ code: 'X_DB_UNIQUE_VIOLATION' }, { code: 'X_DB_UNIQUE_VIOLATION' }, ['one', 'two']],
+    });
+    expect(memory).toEqual(pg);
+  });
+});
+
+describe('m — a predicate reads the same rows in both', () => {
+  const slugs = async (
+    db: ReturnType<typeof database<typeof ENTITIES>>,
+    column: 'slug' | 'data' | 'marks',
+    op: 'like' | 'has-key' | 'contains' | 'contained-by' | 'overlaps',
+    value: unknown,
+  ): Promise<readonly string[]> =>
+    (await db.docs.andWhere(column, op, value).all()).map((row) => row.slug).sort();
+
+  test('LIKE counts characters: _ is one, astral or not', async () => {
+    const [memory, pg] = await both(async (db) => {
+      for (const [at, slug] of ['a', 'b', 'c', '😀', 'ab'].entries()) {
+        await db.docs.insert({ id: idAt(at + 1), slug });
+      }
+      return [await slugs(db, 'slug', 'like', '_'), await slugs(db, 'slug', 'like', '%_%_%')];
+    });
+    expect(pg).toEqual({ ok: [['a', 'b', 'c', '😀'], ['ab']] });
+    expect(memory).toEqual(pg);
+  });
+
+  test('has-key takes a STRING key; any other operand matches no row', async () => {
+    const [memory, pg] = await both(async (db) => {
+      await db.docs.insert({ id: idAt(1), slug: 'digit', data: { '1': 'x' } });
+      await db.docs.insert({ id: idAt(2), slug: 'word', data: { a: 'x', null: 'y' } });
+      const answers: (readonly string[])[] = [];
+      for (const key of ['1', 1, ['a'], null, undefined, true]) {
+        answers.push(await slugs(db, 'data', 'has-key', key));
+      }
+      return answers;
+    });
+    expect(pg).toEqual({ ok: [['digit'], [], [], [], [], []] });
+    expect(memory).toEqual(pg);
+  });
+
+  test('a NULL array element matches nothing, on either side of @>, <@ and &&', async () => {
+    const [memory, pg] = await both(async (db) => {
+      await db.docs.insert({ id: idAt(1), slug: 'holed', marks: ['red', null] });
+      await db.docs.insert({ id: idAt(2), slug: 'whole', marks: ['red'] });
+      return [
+        await slugs(db, 'marks', 'contains', [null]),
+        await slugs(db, 'marks', 'contains', ['red', null]),
+        await slugs(db, 'marks', 'overlaps', [null]),
+        await slugs(db, 'marks', 'overlaps', [null, 'red']),
+        await slugs(db, 'marks', 'contained-by', ['red', null]),
+      ];
+    });
+    expect(pg).toEqual({ ok: [[], [], [], ['holed', 'whole'], ['whole']] });
+    expect(memory).toEqual(pg);
+  });
+});
+
 describe('d — decimals are one canonical string', () => {
   test.each([
     ['007.5', '7.50'],
@@ -281,6 +395,20 @@ describe('e — a seed upsert on a table whose id the table owns', () => {
       await seed.run({ driver });
       const second = await seed.run({ driver });
       expect(second.metrics).toEqual({ inserted: 0, updated: 0, skipped: 1 });
+    }
+  });
+
+  test('a dry run reports what the real run then does, and stores nothing', async () => {
+    const seed = defineSeed('countries_dry', async ({ upsert }) => {
+      await upsert(countries, { by: ['iso'] }, { iso: 'NZ', name: 'New Zealand' });
+      await upsert(countries, { by: ['iso'] }, { iso: 'NZ', name: 'New Zealand' });
+    });
+    for (const driver of [memoryDriver(), postgresDriver()]) {
+      const dry = await seed.run({ driver, dryRun: true });
+      expect(dry.metrics).toEqual({ inserted: 1, updated: 0, skipped: 1 });
+      expect((await driver.repo(countries).findMany({})).rows).toEqual([]);
+      expect((await seed.run({ driver })).metrics).toEqual(dry.metrics);
+      await client.execute(raw('delete from "wp_countries"'));
     }
   });
 

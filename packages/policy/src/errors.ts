@@ -111,6 +111,47 @@ export const forbidden = (label: string, reason: string): PolicyError =>
     callerFix: deniedCallerFix(BARE_PERMISSION.test(label) ? label : undefined),
   });
 
+/**
+ * The codes a DENIAL may carry that this package does not own. `X_UNAUTHENTICATED` is
+ * `@ultimat3/auth`'s — a sibling tier, so it is named here and titled there — and it is the one
+ * `can()` itself decides with, for a null actor.
+ */
+export const POLICY_BORROWED_ERROR_CODES = ['X_UNAUTHENTICATED'] as const;
+
+/**
+ * A denial thrown under the code its DECISION carries, when that code is not `X_FORBIDDEN`: the
+ * borrowed `X_UNAUTHENTICATED`, or one an app's own predicate chose with `denied(reason, code)`.
+ * Not a `PolicyError` — that class is closed over the codes this package owns.
+ */
+export class PolicyDenialError extends UltimateError {
+  override readonly name = 'PolicyDenialError';
+}
+
+/**
+ * The error a denial is thrown as: `X_FORBIDDEN` through `forbidden()`, anything else under its
+ * own code. `assertAllowed` threw `X_FORBIDDEN` for every denial, so an anonymous caller read
+ * "denied" where every adapter reports `X_UNAUTHENTICATED` — the code a 401 and a sign-in
+ * redirect key on.
+ */
+export const denialError = (label: string, reason: string, code: string): UltimateError => {
+  if (code === 'X_FORBIDDEN') return forbidden(label, reason);
+  const subject = BARE_PERMISSION.test(label)
+    ? `x policy explain ${label} --json`
+    : 'x policy list --json';
+  return new PolicyDenialError({
+    code,
+    cause: `${label} denied: ${reason}`,
+    fix:
+      code === 'X_UNAUTHENTICATED'
+        ? `${subject}   # the rule needs an actor: evaluate it with the request's actor, after the caller has signed in`
+        : `${subject}   # shows which clause decided and why`,
+    callerFix:
+      code === 'X_UNAUTHENTICATED'
+        ? 'sign in, or send a session cookie or an Authorization header, then call again'
+        : deniedCallerFix(BARE_PERMISSION.test(label) ? label : undefined),
+  });
+};
+
 export const policyMissing = (subject: string): PolicyError =>
   new PolicyError({
     code: 'X_POLICY_MISSING',

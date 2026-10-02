@@ -64,13 +64,14 @@ describe('drift', () => {
     const report = diffSchema(schema(table('drafts', ['id'])), schema(table('posts', ['id'])));
     const fix = report.differences.find((d) => d.kind === 'unexpected-table')?.fix ?? '';
     expect(fix).not.toContain('x db gen');
-    // The keep branch: a migration claims it, and `x db migrate` accepts a table its own SQL
-    // creates (`acceptCreatedTables`). `if not exists`, because the relation is already there.
-    expect(fix).toContain('create table if not exists "drafts"');
-    expect(fix).toContain('x db migrate');
-    // The drop branch, for a table nothing owns — named as a command, with the table in it.
-    expect(fix).toContain('psql');
-    expect(fix).toContain(`drop table "drafts"`);
+    // ONE command a shell runs, and a harmless one: it shows the table, which is what either
+    // repair needs first. The two repairs are the comment — the keep branch (a migration claims it
+    // with `if not exists`, and `x db migrate` accepts a table its own SQL creates) and the drop.
+    expect(fix).toBe(
+      `psql "$DATABASE_URL" -c '\\d "drafts"'   # nothing declares it: put create table if not ` +
+        'exists "drafts" (…) in a migration, then x db migrate — or, if nothing owns it, run ' +
+        'drop table "drafts"; here',
+    );
   });
 
   /**
@@ -90,21 +91,28 @@ describe('drift', () => {
     expect(fix).not.toContain(hostile);
     // The finding is still reported, and the machine-readable field still carries the real name.
     expect(report.differences.find((d) => d.kind === 'unexpected-table')?.table).toBe(hostile);
+    // Degraded, and still a command that runs: a psql session, with the steps as its comment.
+    expect(fix).toStartWith('psql "$DATABASE_URL"   # ');
   });
 
   /**
    * The second layer, and the one a quoted identifier does not close. `'` is legal in a Postgres
-   * identifier and `identifier()` accepts it, so a name inside a `psql -c '…'` payload ended the
-   * shell's own quoting and everything after it was a command the shell ran — a strictly worse
-   * outcome than the SQL above, because it never reaches a database to be refused. The name is
-   * therefore never placed inside a shell-quoted string at all.
+   * identifier and `identifier()` accepts it, so a name spliced raw into a `psql -c '…'` payload
+   * ended the shell's own quoting and everything after it was a command the shell ran. The
+   * payload is written by `psqlCommand`, which escapes it — asked of a real shell here, because
+   * "it looks quoted" is exactly the claim that was wrong.
    */
-  test('a table name carrying a quote is never put inside a shell-quoted psql payload', () => {
+  test('a table name carrying a quote stays inside the one shell word psql is handed', async () => {
     const report = diffSchema(schema(table("a';id;'", ['id'])), schema());
-
     const fix = report.differences.find((d) => d.kind === 'unexpected-table')?.fix ?? '';
-    expect(fix).toContain(`drop table "a';id;'"`);
-    expect(fix).not.toContain("-c '");
+    const head = 'psql "$DATABASE_URL" -c ';
+    expect(fix).toStartWith(head);
+    // The same line with the program swapped for one that prints each word it was handed.
+    const probe = Bun.spawn(['sh', '-c', fix.replace(head, 'printf "%s|" ')], { stdout: 'pipe' });
+    expect(await new Response(probe.stdout).text()).toBe(`\\d "a';id;'"|`);
+    expect(await probe.exited).toBe(0);
+    // And the comment does not repeat a name holding a quote: not every shell reads `#` as one.
+    expect(fix.split('   # ')[1]).not.toContain("'");
   });
 
   /**
@@ -192,9 +200,12 @@ describe('nullability', () => {
     expect(report.differences[0]?.kind).toBe('changed-column');
     expect(report.differences[0]?.column).toBe('org_id');
     expect(report.differences[0]?.cause).toContain('allows NULL');
+    // ONE command a shell runs — the statement is psql's argument, never bare DDL beside a `#`,
+    // which neither a shell nor Postgres can run.
     expect(report.differences[0]?.fix).toBe(
-      'alter table "posts" alter column "org_id" set not null;   # in a new migration' +
-        ' — backfill the existing NULLs first',
+      `psql "$DATABASE_URL" -c 'alter table "posts" alter column "org_id" set not null;'   ` +
+        '# refused while a row holds NULL there, so backfill those first; then x db migrate, ' +
+        'which re-checks',
     );
   });
 
@@ -206,7 +217,10 @@ describe('nullability', () => {
 
     expect(report.differences[0]?.kind).toBe('changed-column');
     expect(report.differences[0]?.cause).toContain('forbids NULL');
-    expect(report.differences[0]?.fix).toContain('drop not null');
+    expect(report.differences[0]?.fix).toBe(
+      `psql "$DATABASE_URL" -c 'alter table "posts" alter column "org_id" drop not null;'   ` +
+        '# then x db migrate, which re-checks',
+    );
   });
 
   /**
@@ -226,6 +240,9 @@ describe('nullability', () => {
     expect(difference?.fix).not.toContain('drop table users');
     expect(difference?.fix).not.toContain(hostile);
     expect(difference?.column).toBe(hostile);
+    // Degraded, and still a command that runs: a psql session, with the steps in its comment.
+    expect(difference?.fix).toStartWith('psql "$DATABASE_URL"   # ');
+    expect(difference?.fix).not.toContain('alter table');
   });
 
   test('agreeing sides report nothing', () => {
@@ -268,13 +285,16 @@ describe('unit · diffSchema stays total when the catalog name is unwritable', (
     expect(report.differences.map((difference) => difference.kind)).toEqual([
       'changed-foreign-key',
     ]);
-    // The name still reaches the reader — it is the only thing that identifies which constraint —
-    // and the instruction says outright that the statement has to be written by hand rather than
-    // handing over DDL built by the splicing this package spent a release removing.
-    expect(report.differences[0]?.fix).toContain(
-      'drop constraint "fk posts org" on table "posts" and add it back',
-    );
+    // Degraded to a psql SESSION with the steps in its comment — still one command that runs —
+    // rather than DDL built by the splicing this package spent a release removing. The name is
+    // out of it: the cause already says which key, by its table, columns and target.
+    expect(report.differences[0]?.fix).toStartWith('psql "$DATABASE_URL"   # ');
+    expect(report.differences[0]?.fix).not.toContain('fk posts org');
     expect(report.differences[0]?.fix).not.toContain('alter table');
+    // …and the finding still NAMES it, where nobody pastes: the cause.
+    expect(report.differences[0]?.cause).toContain(
+      'foreign key "fk posts org" on "posts" (org_id)',
+    );
   });
 
   test('a rule no Postgres has, out of a hand-edited snapshot, reports rather than throwing', () => {
@@ -290,13 +310,14 @@ describe('unit · diffSchema stays total when the catalog name is unwritable', (
     ]);
     expect(report.differences[0]?.fix).not.toContain('drop table posts');
     expect(report.differences[0]?.fix).not.toContain('alter table');
+    expect(report.differences[0]?.fix).toStartWith('psql "$DATABASE_URL"   # ');
   });
 
   test('a writable name still gets the drop/add pair as runnable DDL', () => {
     const live: SchemaDescription = { tables: [withKey('fk_posts_org', 'c')] };
     const expected: SchemaDescription = { tables: [withKey('posts_org_id_fkey', null)] };
-    expect(diffSchema(live, expected).differences[0]?.fix).toContain(
-      'alter table "posts" drop constraint "fk_posts_org"; alter table "posts" add constraint',
+    expect(diffSchema(live, expected).differences[0]?.fix).toStartWith(
+      `psql "$DATABASE_URL" -c 'alter table "posts" drop constraint "fk_posts_org"; alter table "posts" add constraint`,
     );
   });
 });

@@ -17,7 +17,7 @@ error or an `X_*` error that names the rewrite. Entries are grouped by package, 
 a later slice appends its group below the last one. `As of 2026-10` slices 01–03 have landed: `schema` and
 `core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
-and `cli`.
+and `cli`; then tier 2's `entity` and `policy`.
 
 ### Added
 
@@ -70,6 +70,13 @@ Tier 1 — money, cache, seo, storage.
   `X_STORAGE_READ_FAILED` (both 500), with `keyConflict(disk, key, blocking)`, `putFailed`, `readFailed` and
   `getTooLarge`; `assertPutOptions` and `assertListOptions` for a driver written outside the
   package; `signedUrlBasePath`; `maxGetBytes` on all three drivers — see Changed and Fixed.
+
+Tier 2 — entity, policy.
+
+- **entity:** `preload(relation, { max })`, `PreloadOptions` and `MAX_PRELOADED_ROWS` (10,000) —
+  see Changed.
+- **policy:** `PolicyDenialError`, `denialError(label, reason, code)`,
+  `POLICY_BORROWED_ERROR_CODES` and the `DenialStatus` type — see Changed.
 
 Tier 5 — cli.
 
@@ -305,6 +312,40 @@ Tier 4 — render.
 - **BREAKING — a `revalidate.tags` entry that cannot be a purge key is refused at registration.**
   `X_ROUTE_MODE_INVALID`, naming the route file, for a tag with whitespace or a comma. The tag now goes out on every response of the route — see Fixed. Rename the tag.
 
+Tier 2 — entity.
+
+- **BREAKING — `Driver` gains a required `transactor()`, and `SealedMeta` a required `plaintext`.**
+  A hand-built driver adds the method; a wrapper delegates:
+  `transactor: () => inner.transactor()`. A seed dry run rolls back through it. `plaintext` is the
+  parser the column had before `.sealed()`.
+- **BREAKING — `dbDrift` is no longer exported from `@ultimat3/entity`.** Drift is db's:
+  `import { dbDrift } from '@ultimat3/db'`. `ENTITY_ERROR_CODES` and `EntityErrorCode` no longer
+  contain `X_DB_DRIFT`.
+- **BREAKING — `preload(relation)` has a ceiling.** At most `max` related rows per page, default
+  `MAX_PRELOADED_ROWS`, 10,000; past it `X_INVARIANT_VIOLATED`, never a truncated list. Declare the
+  relation's own bound: `posts.preload('comments', { max: 50000 })`. A repeated
+  `preload(name, { max })` replaces the ceiling with the later stated one, as a second `.limit()`
+  does; a repeat that states no `max` leaves it. The refusal's `fix:` is
+  `x entities describe <entity> --json`, with the `{ max }` edit in the cause.
+- **entity:** a repository pinned with `postgresDriver({ client })` joins a transaction opened on
+  that same client. `X_REPO_CLIENT_PINNED` remains for a transaction on a different client.
+- **entity:** a seed `dryRun` executes every verb inside a transaction and rolls it back. Its
+  metrics equal a real run's: a key another tenant holds is `skipped`, a second verb sees the
+  first one's rows, and a seed that would fail fails.
+
+Tier 2 — policy.
+
+- **BREAKING — `assertAllowed` throws the decision's code.** `X_UNAUTHENTICATED` for no actor —
+  it was `X_FORBIDDEN` for every denial — and the app's own code for `denied(reason, code)`, as a
+  `PolicyDenialError`. A `catch` that matches `X_FORBIDDEN` for an anonymous caller matches
+  `X_UNAUTHENTICATED`.
+- **BREAKING — `HttpDenial.status` and `problem.status` are `401 | 403`** (`DenialStatus`), was the
+  literal `403`: 401 when the code is `X_UNAUTHENTICATED`. `problem.title` is the code's
+  registered title, was `policy denied this actor`.
+- **BREAKING — a predicate or `definePolicy` `check` that returns anything but `true` or a
+  well-formed decision denies.** `{ allowed: 'yes' }` read as allowed; a forgotten `return` was a
+  bare `TypeError`. Return `true`, `false`, or `denied(reason, code)`.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -419,6 +460,49 @@ Tier 2 — http. Tier 4 — render. Tier 5 — cli.
   DEFAULT_WIDTHS)` mints. A default width wider than the source is served and not stored; a source
   wider than 8192 stores its 8192 variant, which was decoded on every request.
 - **cli:** `GET /_storage/:disk/*key` omits `Last-Modified` when the disk reports no date.
+
+Tier 1 — db (slice 04). Tier 2 — entity.
+
+- **db:** every drift finding's `fix:` is one command a shell runs. `changed-column`,
+  `missing-check`, `changed-foreign-key`, `unexpected-table`, `unexpected-object` and the
+  `unknown-schema` refusal changed text — mostly `psql "$DATABASE_URL" -c '…'   # then x db
+  migrate`. The `cause` of `changed-foreign-key` and `changed-primary-key` names the constraint
+  the database holds. For a table outside `public` the command carries
+  `set search_path = "<schema>";` ahead of its statement, inside the same `psql -c`;
+  `unexpected-table` and every `unexpected-object` target are schema-qualified. An unexpected
+  domain says `domain` and is inspected with `\dD+`; an enum stays `\dT+`. The function lookup
+  matches on the schema, not on visibility. The internal `rebuildForeignKey` is deleted; it was
+  never on the index.
+- **entity:** the page-size and asserted-rows refusals' `fix:` is a runnable
+  `x entities describe <entity> --json`, with the code to write in the cause.
+- **entity:** `transition(column, id, move)` with an `undefined` or `null` id is `X_NOT_FOUND` and
+  moves no row. On Postgres it moved every row in the `from` state.
+- **entity:** on Postgres, `update` / `updateWhere` on an entity with an app-only invariant run
+  inside a transaction — a `SAVEPOINT` inside an open one — so a write the invariant refuses is
+  rolled back. It used to stay written.
+- **entity:** `c.col.trimmed()` strips U+0020 only in the app, as `btrim(col)` always did in the
+  CHECK; the app approved a row with a tab or a newline that the CHECK refused as a raw `23514`.
+  To refuse an all-whitespace value: `matches(/[^ \t\n\r\f\v]/)` — not `matches(/\S/)`, which is
+  refused at declaration.
+- **entity:** `atLeast` and `eq(<number>)` compare by the column's declared kind. A `bigint()` or
+  `decimal()` row is judged by its digits, was always refused; `eq(5n)` matches an `integer()` 5;
+  `eq('1.5')` on a decimal matches `'1.50'`. A `NaN` or infinite operand is refused at declaration.
+- **entity:** `bigint()` refuses a value outside int8, as Postgres does (`22003`).
+  `decimal({ precision: p, scale: p })` accepts a value below one.
+- **entity:** `url()` refuses leading whitespace, a tab inside the scheme and `https:/host` — text
+  the column's CHECK refused.
+- **entity:** `memoryDriver()` enforces a unique declared as `invariant(name, c.unique([...]))`
+  (`X_DB_UNIQUE_VIOLATION`, as Postgres). In `like`, `_` matches one code point, and a run of
+  wildcards no longer backtracks without bound.
+- **entity:** `has-key` with a non-string operand matches no row on both drivers; Postgres bound
+  `String(value)` and found a key named `"null"`. `contains`, `contained-by` and `overlaps` on an
+  array column never match a NULL element in memory, as on Postgres.
+- **entity:** a bad table name is refused as one, with the repair at
+  `entity(name, { table: '…' })`; it was called "not a physical column name".
+- **entity:** a plaintext shaped like a sealed value is judged by the column's own bound
+  (`text({ max })`) before it is sealed.
+- **entity:** `X_AGGREGATE_MIXED_CURRENCY` tells one currency at two scales ("N scales of USD")
+  from a mix of currencies; each has its own `fix:`.
 
 ## 23.0.0 - 2026-10-02
 

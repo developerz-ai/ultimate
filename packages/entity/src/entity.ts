@@ -6,7 +6,7 @@
 import type { IndexMethod } from '@ultimat3/db';
 import { describeValue, type Schema } from '@ultimat3/schema';
 import { entityNow } from './clock';
-import { assertColumnName, bindColumn, columnName, moneyColumns } from './column';
+import { assertTableName, bindColumn, columnName, moneyColumns } from './column';
 import { newId } from './columns';
 import { describeEntity, describeReferences } from './describe';
 import { invariantViolated } from './errors';
@@ -186,7 +186,7 @@ export const entity = <const C extends ColumnMap>(
   // Both branches. The declared table was checked and the fallback — which is every entity that
   // does not rename its table — was not, so an entity NAME closed the identifier in the same way a
   // column name could: `entity('t" (x int); drop table u; --')` emitted that `drop table` verbatim.
-  const table = assertColumnName(init.table ?? name);
+  const table = assertTableName(name, init.table ?? name);
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
   const tenantColumn = resolveTenantColumn(name, init.columns, init.tenant);
@@ -242,10 +242,7 @@ export const entity = <const C extends ColumnMap>(
     return part === 'minor' ? parts.minor : parts.currency;
   };
 
-  const columnsExpr = invariantColumns<C>(
-    name,
-    entries.map(([property]) => property),
-  );
+  const columnsExpr = invariantColumns<C>(name, init.columns);
   // Through the one resolver, so a soft-delete column the table spells differently is still the
   // column every partial index excludes rows by.
   const partialWhere = softDelete ? `${resolve([SOFT_DELETE_COLUMN])} is null` : undefined;

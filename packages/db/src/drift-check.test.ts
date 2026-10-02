@@ -38,12 +38,15 @@ describe('a CHECK migrations declare, against the ones the catalog holds', () =>
     expect(report.differences[0]?.cause).toBe(
       'table "posts" is missing check constraint "posts_status_check" that migrations declare',
     );
-    // The declared side carries the predicate, so the repair is the statement itself: the
-    // migration that declares this constraint is already in the ledger, so running the migrator
-    // alone applies nothing — it is the migration the reader writes that it then applies.
+    // The declared side carries the predicate, so the repair is the statement itself, run against
+    // THIS database: the migration that declares the constraint is already in the ledger, so
+    // running the migrator alone applies nothing.
+    // ONE command a shell runs. The predicate's own quotes are escaped for the shell word the
+    // statement rides in — `'\\''` — so `'draft'` cannot end it.
     expect(report.differences[0]?.fix).toBe(
-      `alter table "posts" add constraint "posts_status_check" ` +
-        `check (status in ('draft', 'published'));   # in a new migration, then x db migrate`,
+      `psql "$DATABASE_URL" -c 'alter table "posts" add constraint "posts_status_check" ` +
+        `check (status in ('\\''draft'\\'', '\\''published'\\''));'   ` +
+        '# then x db migrate, which re-checks',
     );
   });
 
@@ -72,6 +75,7 @@ describe('a CHECK migrations declare, against the ones the catalog holds', () =>
     expect(difference?.kind).toBe('missing-check');
     expect(difference?.fix).not.toContain('drop table users');
     expect(difference?.fix).not.toContain(hostile.name);
+    expect(difference?.fix).toStartWith('psql "$DATABASE_URL"   # ');
     // Reported, and the name is still readable where nobody pastes it.
     expect(difference?.cause).toContain(hostile.name);
   });

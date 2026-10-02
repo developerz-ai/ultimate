@@ -62,6 +62,8 @@ export const seededIds = async (seed: Seed): Promise<ReadonlyMap<string, Readonl
   // and what nothing else can tell us — `Driver` has no "list what you hold".
   const touched = new Map<string, () => Promise<readonly string[]>>();
   const recording: Driver = {
+    // The store is `base`'s, so undoing a write is `base`'s too.
+    transactor: () => base.transactor(),
     repo<Row>(entity: EntityCore<Row>): Repo<Row> {
       const repo = base.repo(entity);
       touched.set(entity.$name, () => idsIn(entity, repo));

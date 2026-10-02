@@ -5,7 +5,13 @@
 
 import { assertSeekable } from './cursor';
 import type { EntityCore } from './entity';
-import { EntityError, invariantViolated, patchEmpty, writeUnfiltered } from './errors';
+import {
+  describeCommand,
+  EntityError,
+  invariantViolated,
+  patchEmpty,
+  writeUnfiltered,
+} from './errors';
 import type { FindManyArgs, RepoOptions } from './repo';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { scopedPlan } from './tenancy';
@@ -92,8 +98,8 @@ export const assertFinitePageSize = (entityName: string, rows: number): number =
   if (Number.isSafeInteger(rows) && rows >= 1 && rows <= MAX_PAGE_SIZE) return rows;
   throw new EntityError({
     code: 'X_INVARIANT_VIOLATED',
-    cause: `${entityName}.limit(${String(rows)}) — a page is a whole number of rows, at least one and at most ${MAX_PAGE_SIZE}`,
-    fix: `${entityName}.limit(${DEFAULT_PAGE_SIZE})   # or, to visit every row the filter matches, ${entityName}.inBatches(1000) — one page per statement, and never a table in memory`,
+    cause: `${entityName}.limit(${String(rows)}) — a page is a whole number of rows, at least one and at most ${MAX_PAGE_SIZE}. Write .limit(${DEFAULT_PAGE_SIZE}) on that chain, or .inBatches(1000) to visit every row the filter matches — one page per statement, and never a table in memory`,
+    fix: `${describeCommand(entityName)}   # the entity whose chain names the page: correct its limit(), or read it with inBatches()`,
   });
 };
 

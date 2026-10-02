@@ -5,7 +5,8 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { oneOf } from './column-values';
-import { text } from './columns';
+import { integer, text } from './columns';
+import { bigint, decimal } from './columns-data';
 import { iff, invariantColumns } from './expr';
 import { clearRegistry } from './registry';
 
@@ -17,9 +18,9 @@ afterAll(() => {
 // to its `ColumnMap` constraint — an index signature — so `c.slug` was a possibly-`undefined`
 // `ColumnExpr` reached through a string key, which is the shape `InvariantColumns<C>` was made a
 // mapped type to stop being. The runtime list is `Object.keys` of the same map, so a column can
-// never be declared to one half and not the other.
+// never be declared to one half and not the other — and the map is what tells a rule its column's KIND.
 const columns = { slug: text(), title: text() };
-const c = invariantColumns<typeof columns>('expr_test_posts', Object.keys(columns));
+const c = invariantColumns<typeof columns>('expr_test_posts', columns);
 /** Physical names are the entity's job; here the property name IS the column. */
 const resolve = (path: readonly string[]): string => path.join('_');
 
@@ -85,6 +86,22 @@ describe('minLength counts what Postgres counts', () => {
     // `char_length('é')` for `e` + U+0301 is 2 — Postgres counts characters, not graphemes, and so
     // does this. Agreeing with the database beats agreeing with a human's idea of a letter.
     expect(c.title.minLength(2).holds({ title: 'é' })).toBe(true);
+  });
+});
+
+describe('trimmed() strips what btrim() strips', () => {
+  test('SPACES only — a tab or a newline is a character to Postgres, so it is one here', () => {
+    // `.trim()` removed every whitespace character while `btrim(col)` removes U+0020 alone, so
+    // `'\tx'` passed the app and met the CHECK as a raw 23514.
+    const rule = c.title.trimmed().eq('x');
+    expect(rule.toSql(resolve)).toBe("btrim(title) = 'x'");
+    expect(rule.holds({ title: '  x ' })).toBe(true);
+    expect(rule.holds({ title: '\tx' })).toBe(false);
+    expect(rule.holds({ title: 'x\n' })).toBe(false);
+    expect(rule.holds({ title: '\u00a0x' })).toBe(false);
+    // And the other direction: a lone tab is ONE character after btrim, so `minLength(1)` holds.
+    expect(c.title.trimmed().minLength(1).holds({ title: '\t' })).toBe(true);
+    expect(c.title.trimmed().minLength(1).holds({ title: '   ' })).toBe(false);
   });
 });
 
@@ -167,7 +184,7 @@ describe('iff is the biconditional, and it is one node in both halves', () => {
    */
   test('the unique refusal it hands back parses, whatever the column is called', () => {
     const odd = { "o'brien": text(), 'a\\b': text() };
-    const q = invariantColumns<typeof odd>('expr_test_quotes', Object.keys(odd));
+    const q = invariantColumns<typeof odd>('expr_test_quotes', odd);
     const fix = fixOf(() => iff(q.unique(["o'brien", 'a\\b']), q["o'brien"].isNotNull()));
     const pasted = fix.split('   #')[0] ?? '';
     expect(pasted).toBe('invariant("o\'brien_a\\\\b_unique", c.unique(["o\'brien", "a\\\\b"]))');
@@ -238,5 +255,64 @@ describe('every declared string reaches SQL through @ultimat3/db, never a local 
     expect(c.slug.eq(0).toSql(resolve)).toBe('slug = 0');
     expect(c.slug.eq(10n).toSql(resolve)).toBe('slug = 10');
     expect(c.slug.eq(true).toSql(resolve)).toBe('slug = true');
+  });
+});
+
+describe('a numeric rule compares the NUMBER the column holds, whatever JS type carries it', () => {
+  // `bigint()` and `decimal()` rows are decimal TEXT, so a `typeof value === 'number'` test failed
+  // every row while the CHECK beside it accepted them: the table was unwritable through `$assert`.
+  const ledger = { total: bigint(), rate: decimal(), count: integer(), label: text() };
+  const n = invariantColumns<typeof ledger>('expr_test_ledger', ledger);
+
+  test('atLeast on a bigint() or decimal() column reads the digits', () => {
+    expect(n.total.atLeast(0).holds({ total: '5' })).toBe(true);
+    expect(n.total.atLeast(0).holds({ total: '-1' })).toBe(false);
+    expect(n.total.atLeast(0).toSql(resolve)).toBe('total >= 0');
+    // Past 2^53, where a `Number` would have rounded the row onto the bound.
+    expect(n.total.atLeast(9007199254740993n).holds({ total: '9007199254740992' })).toBe(false);
+    expect(n.total.atLeast(9007199254740992n).holds({ total: '9007199254740993' })).toBe(true);
+    expect(n.rate.atLeast(0.5).holds({ rate: '0.50' })).toBe(true);
+    expect(n.rate.atLeast(0.5).holds({ rate: '0.49' })).toBe(false);
+  });
+
+  test('eq(<number>) on a decimal column is numeric equality, as `rate = 1.5` is', () => {
+    expect(n.rate.eq(1.5).holds({ rate: '1.5' })).toBe(true);
+    expect(n.rate.eq(1.5).holds({ rate: '1.50' })).toBe(true);
+    expect(n.rate.eq(1.5).holds({ rate: '1.6' })).toBe(false);
+    expect(n.total.eq(7n).holds({ total: '7' })).toBe(true);
+    // A quoted operand on a numeric column is still coerced by Postgres: `rate = '1.5'`.
+    expect(n.rate.eq('1.5').holds({ rate: '1.50' })).toBe(true);
+  });
+
+  test('a number column still compares as a number, across number and bigint operands', () => {
+    expect(n.count.atLeast(0).holds({ count: 5 })).toBe(true);
+    expect(n.count.atLeast(0).holds({ count: -1 })).toBe(false);
+    expect(n.count.eq(5n).holds({ count: 5 })).toBe(true);
+    expect(n.count.eq(5).holds({ count: 6 })).toBe(false);
+    // Never by shape: a string in an integer column is not a number the column could hold.
+    expect(n.count.atLeast(0).holds({ count: '5' })).toBe(false);
+  });
+
+  test('a TEXT column holding digits is still text — Postgres compares it as text', () => {
+    expect(n.label.eq('1.5').holds({ label: '1.50' })).toBe(false);
+    expect(n.label.eq('1.5').holds({ label: '1.5' })).toBe(true);
+  });
+
+  test('two decimal columns are equal when their numbers are', () => {
+    expect(n.total.eq(n.rate).holds({ total: '2', rate: '2.00' })).toBe(true);
+    expect(n.total.eq(n.rate).holds({ total: '2', rate: '2.01' })).toBe(false);
+    expect(n.count.eq(n.total).holds({ count: 2, total: '2' })).toBe(true);
+  });
+
+  test('a NULL operand satisfies none of them', () => {
+    expect(n.total.atLeast(0).holds({ total: null })).toBe(false);
+    expect(n.rate.eq(1.5).holds({})).toBe(false);
+  });
+
+  test('a bound no CHECK can spell is refused where it is written', () => {
+    for (const bound of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(codeOf(() => n.total.atLeast(bound))).toBe('X_INVARIANT_VIOLATED');
+      expect(codeOf(() => n.count.eq(bound))).toBe('X_INVARIANT_VIOLATED');
+    }
   });
 });

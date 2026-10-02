@@ -11,10 +11,13 @@ export type { DefinePolicyInput } from './define';
 export { definePolicy } from './define';
 export type { PolicyErrorCode } from './errors';
 export {
+  denialError,
   emptyClauseList,
   forbidden,
+  POLICY_BORROWED_ERROR_CODES,
   POLICY_ERROR_CODES,
   POLICY_ERROR_TITLES,
+  PolicyDenialError,
   PolicyError,
   permissionUnknown,
   policyMissing,
@@ -72,6 +75,7 @@ export {
   rolesGranting,
 } from './roles';
 export type {
+  DenialStatus,
   HttpDenial,
   JobDenial,
   LiveDenial,

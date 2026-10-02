@@ -57,7 +57,18 @@ const docs = entity('pg_contain_docs', {
 
 type Doc = typeof docs.$row;
 
-const DROP = 'drop table if exists "pg_contain_docs" cascade';
+/** An array whose ELEMENTS may be NULL — the one place a SQL NULL sits inside a row value. */
+const marks = entity('pg_contain_marks', {
+  columns: {
+    id: uuid().primaryKey(),
+    label: text({ max: 20 }),
+    marks: arrayOf(text({ max: 20 }).nullable()),
+  },
+});
+
+type Mark = typeof marks.$row;
+
+const DROP = 'drop table if exists "pg_contain_docs", "pg_contain_marks" cascade';
 
 const id = (index: number): string =>
   `00000000-0000-7000-8000-0000000005${String(index).padStart(2, '0')}`;
@@ -77,7 +88,7 @@ describe.skipIf(!hasPostgres)('live · postgres · containment', () => {
     setDbClient(client);
     await client.execute(raw(DROP));
     const migration = generateMigration({
-      entities: [docs.$describe()],
+      entities: [docs.$describe(), marks.$describe()],
       name: 'live containment',
       now: new Date('2026-08-24T00:00:00.000Z'),
     });
@@ -145,6 +156,41 @@ describe.skipIf(!hasPostgres)('live · postgres · containment', () => {
     await agrees('data', 'has-key', 'extra', ['d']);
     await agrees('data', 'has-key', 'a', ['a', 'b', 'd']);
     await agrees('data', 'has-key', 'missing', []);
+  });
+
+  test('has-key with an operand that is not a string matches no row, in either driver', async () => {
+    // `String(['a'])` is `a` and `String(null)` is `null`: bound as text, both named real keys.
+    for (const operand of [['a'], 1, null, undefined, true])
+      await agrees('data', 'has-key', operand, []);
+  });
+
+  test('a NULL array ELEMENT equals nothing, on either side of the three array operators', async () => {
+    const holed: Mark = { id: id(21), label: 'holed', marks: ['red', null] };
+    const whole: Mark = { id: id(22), label: 'whole', marks: ['red'] };
+    await postgresRepo(marks).insertAll([holed, whole]);
+    const labels = async (op: Operator, value: unknown): Promise<readonly [string[], string[]]> => {
+      const args = {
+        where: [{ column: 'marks', op, value }],
+        orderBy: [{ column: 'label' as const, direction: 'asc' as const }],
+        limit: 50,
+      };
+      return [
+        (await postgresRepo(marks).findMany(args)).rows.map((row) => row.label),
+        (await memoryRepo(marks, [holed, whole]).findMany(args)).rows.map((row) => row.label),
+      ];
+    };
+    for (const [op, value, expected] of [
+      ['contains', [null], []],
+      ['contains', ['red', null], []],
+      ['contains', ['red'], ['holed', 'whole']],
+      ['overlaps', [null], []],
+      ['overlaps', [null, 'red'], ['holed', 'whole']],
+      ['contained-by', ['red', null], ['whole']],
+    ] as const) {
+      const [pg, memory] = await labels(op, value);
+      expect(pg).toEqual([...expected]);
+      expect(memory).toEqual(pg);
+    }
   });
 
   test('a declared GIN index is the one the containment operators actually use', async () => {

@@ -147,10 +147,10 @@ describe('the app runs the same rules', () => {
   test('a JS caller reaching the proxy untyped still gets the naming error', () => {
     // The compile error is unavailable to a plain-JS app and to a rule built dynamically, so the
     // Proxy stays: it names the columns that do exist instead of `undefined is not a function`.
-    const columns = invariantColumns('invariants_test_js', ['title', 'slug']) as unknown as Record<
-      string,
-      unknown
-    >;
+    const columns = invariantColumns('invariants_test_js', {
+      title: text(),
+      slug: text(),
+    }) as unknown as Record<string, unknown>;
     expect(() => columns['titel']).toThrow(/no column "titel"; declared columns are title, slug/);
     expect(columns['title']).toBeDefined();
   });

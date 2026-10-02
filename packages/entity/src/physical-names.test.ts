@@ -111,7 +111,7 @@ describe('unit · the table an entity is bound to', () => {
           columns: { id: uuid().primaryKey() },
         }),
       ),
-    ).toContain('physical column name');
+    ).toContain('physical table name');
     expect(caught(() => text().column(''))).toContain('physical column name');
     expect(caught(() => text().column('Mixed_Case'))).toContain('physical column name');
     expect(caught(() => text().column('a'.repeat(64)))).toContain('physical column name');

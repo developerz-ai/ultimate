@@ -4,7 +4,7 @@
 // `column`, and at declaration time there is no entity at all. A fix line that raises a second
 // error is worse than none, because the reader debugs the wrong subsystem.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import {
@@ -20,7 +20,13 @@ import {
   uuid,
 } from './columns';
 import { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
+import { entity } from './entity';
 import { iff, invariantColumns } from './expr';
+import { clearRegistry } from './registry';
+
+afterAll(() => {
+  clearRegistry();
+});
 
 const refusal = (
   run: () => unknown,
@@ -37,7 +43,7 @@ const refusal = (
 };
 
 const columns = { slug: text(), title: text() };
-const c = invariantColumns<typeof columns>('refuse_test_posts', Object.keys(columns));
+const c = invariantColumns<typeof columns>('refuse_test_posts', columns);
 
 /**
  * `sameAs`'s refusal in `expr.ts` has no thunk here because no call can reach it: `eq` dispatches
@@ -81,10 +87,12 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   ['money currency', () => money().$parse({ minor: 1234, currency: 'euro' })],
   ['money scale', () => money().$parse({ minor: 1234, currency: 'EUR', scale: 99 })],
   ['column name', () => text().column('Created At')],
+  ['table name', () => entity('probeA', { columns: { id: uuid().primaryKey() } })],
   ['column default', () => json(t.object({ a: t.string })).default({ a: 'x' })],
   ['json value', () => json(t.object({ seats: t.number })).$parse({ seats: 'four' })],
   ['bigint past 2^53', () => bigint().$parse(9007199254740994)],
   ['bigint digits', () => bigint().$parse('1.5')],
+  ['bigint past int8', () => bigint().$parse('9223372036854775808')],
   ['decimal precision without scale', () => decimal({ precision: 18 })],
   ['decimal precision range', () => decimal({ precision: 0, scale: 0 })],
   ['decimal scale range', () => decimal({ precision: 5, scale: 9 })],
@@ -100,6 +108,8 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   ['invariant matches construct', () => c.slug.matches(/\bfoo/)],
   // A column list where a predicate belongs — the one operand `iff` cannot render.
   ['invariant iff unique', () => iff(c.unique(['slug']), c.title.isNotNull())],
+  // `col >= NaN` names a column Postgres does not have, so the bound is refused where written.
+  ['invariant non-finite operand', () => c.slug.atLeast(Number.NaN)],
   ['searchable kind', () => uuid().searchable()],
   // A JS caller reaching the weight refusal — the union makes it unwritable in TypeScript, and
   // `.searchable(input.weight)` from parsed JSON is exactly how it arrives anyway.
@@ -227,6 +237,27 @@ describe('unit · every column and invariant refusal hands back an edit', () => 
     const fix = refusal(() => c.slug.matches(/\bfoo/)).fix;
     expect(fix).toContain('matches((value) => /\\bfoo/.test(value))');
     expect(fix).toContain('sql: null');
+  });
+
+  /**
+   * A TABLE name is not a column: the refusal said "not a physical column name" and handed back
+   * `.column('created_at')`, an edit to a column that was never the problem.
+   */
+  test('a bad entity or table name is repaired at entity(name, { table }), never at .column()', () => {
+    const derived = refusal(() => entity('probeA', { columns: { id: uuid().primaryKey() } }));
+    expect(derived.cause).toContain('"probeA" is not a physical table name');
+    expect(derived.fix).toContain("entity('probeA', { table: 'probe_a', columns })");
+    expect(derived.fix).not.toContain('.column(');
+    const declared = refusal(() =>
+      entity('refuse_test_named', { table: 'Bad Name', columns: { id: uuid().primaryKey() } }),
+    );
+    expect(declared.cause).toContain('"Bad Name" is not a physical table name');
+    expect(declared.fix).toContain("entity('refuse_test_named', { table: 'bad_name', columns })");
+    // A name that closes a quote is never pasted back: the fix must still parse.
+    const hostile = refusal(() => entity("it's", { columns: { id: uuid().primaryKey() } }));
+    expect(() =>
+      new Bun.Transpiler({ loader: 'ts' }).transformSync(hostile.fix.split('   #')[0] ?? ''),
+    ).not.toThrow();
   });
 
   test('the cause names the construct and where it sits, so the author can find it', () => {

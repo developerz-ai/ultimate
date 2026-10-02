@@ -110,7 +110,7 @@ never runs, while the subpath retains the projection, the key and the registry a
 | `money()` | `<name>_minor bigint` + `<name>_currency char(3)` + `<name>_scale integer null` | never a float, never one implied currency. The row value is `@ultimat3/schema`'s `MoneyValue` — the same declaration `@ultimat3/money`'s `Money` is — so a decoded row goes straight to `add()`/`formatMoney()`. A writer may hand a `bigint` — `Insertable` says so on a table, `RowWrite<Row>` at a repository, and every whole-row write narrows it at its own entry, before an invariant or a statement sees it; a minor unit past ±2^53 is refused there and on read, never rounded. `scale` is the decimal exponent `minor` counts in when it is not the currency's own (`{ minor: 2, currency: 'USD', scale: 6 }` is $0.000002); NULL in the column means "the currency's own minor unit" and round-trips as an ABSENT key, never as `0` |
 | `enumerated(v)` | `text` + CHECK | a variant is a one-line migration, not `ALTER TYPE` |
 | `tz(zones)`, `locale(tags)` | `text` + CHECK, `Intl`-validated at declaration | an offset is not a time zone |
-| `text({ max })`, `integer()`, `boolean()`, `url()` | `text`/`integer`/`boolean` + CHECK | format is enforced by the database too |
+| `text({ max })`, `integer()`, `boolean()`, `url()` | `text`/`integer`/`boolean` + CHECK | format is enforced by the database too. `url()` judges the STORED text against its CHECK (`^https?://`), so leading whitespace, a tab inside the scheme and `https:/a.b` are refused here rather than by a raw `23514` |
 
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
 `.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)` ·
@@ -236,9 +236,9 @@ for a table it was going to create; these are the shapes a table already has, `A
 | Builder | Emits | Row type, and why |
 |---|---|---|
 | `json(schema)` | `jsonb` | the schema is **required**: a `json()` returning `unknown` is the `any` hole this framework forbids, and a column is the worst place for one — the value arrives from the database as often as from a caller. The object is bound as an object, never as JSON text |
-| `decimal({ precision, scale })` | `numeric(p, s)` | a `string`, the exact digits. Money is the one decimal with an opinion (integer minor units + a currency); this is every other one, and a value with more decimal places than the column stores is refused rather than rounded |
+| `decimal({ precision, scale })` | `numeric(p, s)` | a `string`, the exact digits. Money is the one decimal with an opinion (integer minor units + a currency); this is every other one, and a value with more decimal places than the column stores is refused rather than rounded. A whole part of `0` counts no digit, so `numeric(2, 2)` holds `0.50` |
 | `date()` | `date` | `@ultimat3/time`'s `PlainDate` — a calendar date, no time, no zone. `effective_on` is the date a rate applies, and as a `timestamptz` it is a different date on either side of midnight for half the planet |
-| `bigint()` | `bigint` | a decimal `string`. A JS `bigint` is what `JSON.stringify` throws on and a `number` loses digits past 2^53 — which is exactly where a legacy `int8` key lives. Both driver spellings (a string from Bun's `sql`, a `bigint` from PGlite) arrive as one |
+| `bigint()` | `bigint` | a decimal `string`. A JS `bigint` is what `JSON.stringify` throws on and a `number` loses digits past 2^53 — which is exactly where a legacy `int8` key lives. Both driver spellings (a string from Bun's `sql`, a `bigint` from PGlite) arrive as one. Bounded at `int8` (−2^63 … 2^63−1): one past either end is refused where Postgres answers `22003` |
 | `bytes()` | `bytea` | a plain `Uint8Array`, normalised: Bun's `sql` returns a `Buffer` and PGlite a `Uint8Array`, and the two do not serialise alike |
 | `arrayOf(column)` | `<element>[]` | `readonly T[]`, each member parsed by the element column it was given. Money and nested arrays are refused — an element is one scalar column |
 
@@ -487,7 +487,10 @@ written schema-qualified as `operator(pg_catalog.?)` — the function form `json
 the same test and the planner will not match a GIN index to it. Their
 meaning is Postgres', to the letter, in both drivers — including that the array-contains-a-primitive
 exception applies at the **top level only** and to **primitives only**, and that `&&`'s empty
-operand overlaps nothing where `@>`'s is contained by everything.
+operand overlaps nothing where `@>`'s is contained by everything. Two more rules both drivers hold:
+a NULL **array element** equals nothing, itself included, on either side of `@>`, `<@` and `&&`
+(a `jsonb` `null` is a value and still equals itself); and `has-key` takes a **string** key — any
+other operand matches no row, never `String(operand)`.
 
 There is no jsonpath expression operator: `contains` already matches nested structure, and a path
 language inside the query language would be a second way to ask one question. `&&` on a `jsonb`
@@ -599,6 +602,7 @@ const shipped = await db.orders.transition('status', id, { from: 'paid', to: 'sh
 | `onUpdateNow()` moves, because a transition is an update | the audit of *when* it moved, with no second mechanism beside it |
 | the CHECK comes from `enumerated()` | the machine emits no DDL of its own — one declaration of what a legal value is |
 | `memoryDriver()` answers it exactly as Postgres does | a compare-and-set over a map is the same question; unlike a `tsvector` match, there is nothing to fake |
+| an `undefined` or `null` id is `X_NOT_FOUND`, and moves no row | an absent id names no row — it is refused before the statement, where it used to drop out of the filter and move every row in the `from` state |
 
 What is deliberately **not** here: who may make a move, what happens on arrival, an approval chain,
 a reason code. Those differ per app — wrap `transition()` in your own function and put them there.
@@ -659,7 +663,7 @@ and never unwritten.
 | Tenancy | the plan a read builds, through `scopedPlan` — the actor's org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row. The patch is judged too, through `assertRowTenant`: a filter bounds which rows are written, never what they become |
 | Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
-| Rows read back | **only when something can still refuse them.** A `check` or a `unique` invariant is a constraint Postgres enforced on the statement, so the answer is a count and the statement carries no `returning *`. Only a JS-only rule (`kind: 'assert'`, `sql: null`) has to be judged on the result — and then the match is counted first and refused past `MAX_ASSERTED_ROWS` (50,000), naming `inBatches(1000)`, because a refusal issued after `returning *` is already holding what it is refusing |
+| Rows read back | **only when something can still refuse them.** A `check` or a `unique` invariant is a constraint Postgres enforced on the statement, so the answer is a count and the statement carries no `returning *`. Only a JS-only rule (`kind: 'assert'`, `sql: null`) has to be judged on the result — and then the match is counted first and refused past `MAX_ASSERTED_ROWS` (50,000), naming `inBatches(1000)`, because a refusal issued after `returning *` is already holding what it is refusing. On Postgres the statement and that judgement share one transaction (a SAVEPOINT inside an open one), for `update(id, patch)` too, so a refused write is rolled back rather than left committed |
 
 ## Writing many rows
 
@@ -756,6 +760,7 @@ page.rows[0].author;        // the member row, or null — always present
 | Unknown name | `X_PRELOAD_UNKNOWN_RELATION` at `preload()` itself, not a page later |
 | Shape | `belongsTo` attaches the row or `null`; `hasMany` an array — always present |
 | Statements | one extra per relation, resolved concurrently; naming one twice is one statement |
+| Ceiling | `preload('<relation>', { max })` — the most related rows one relation may attach to one page. Default `MAX_PRELOADED_ROWS` (10,000, the largest page a read may ask for). Past it the read is **refused** (`X_INVARIANT_VIOLATED`), never truncated, and it reads at most one row past the ceiling to know. Naming a relation twice is still one statement: a later call that states `max` replaces the earlier one, as a second `.limit()` does, and one that states none leaves it. The refusal's cause spells the call to write (`.preload('<relation>', { max: n })`); its fix is `x entities describe <entity> --json` |
 | Tenancy | carried onto the related read only when the other entity's tenant column shares the name; otherwise `X_TENANCY_UNSCOPED` refuses the related read rather than guess |
 | Terminals | `page()`, `all()`, `one()` preload; `count()`, `countBy()` and `plan()` don't — none reads a row to attach one to |
 
@@ -777,7 +782,9 @@ database({ orgs, posts }, { driver: postgresDriver() });   // production
 Both answer the same predicate the same way, and the kind is what decides — never the JS type of
 the value: `bigint()`/`decimal()` hold decimal STRINGS and order by their digits (`2, 9, 10, 100`),
 a `uuid` compares case-insensitively because Postgres compares it as a value, `\` escapes a `%` or
-a `_` inside a `like`, and `in` takes a list or nothing (a scalar matches no rows; a list carrying
+a `_` inside a `like` (whose `_` is one CHARACTER, astral or not, and whose match is bounded by
+pattern × value — never a backtracking regex), a unique declared as `invariant(name, c.unique([…]))`
+is enforced by memory exactly as an index is, and `in` takes a list or nothing (a scalar matches no rows; a list carrying
 a `null` also matches the NULL rows, which `col = null` never does).
 
 `database()` called with no driver takes the process default, and `defaultDriver()` is that same
@@ -803,14 +810,13 @@ returns the open transaction when there is one, so a repository call inside `wit
 joins it without being told — which is how a job's outbox row lands atomically with the write
 that enqueued it.
 
-`postgresDriver({ client })` pins one instead, for a test harness or `x db branch` — and a pinned
-repository used while a transaction is open is `X_REPO_CLIENT_PINNED`, `As of 2026-08`.
-`withTransaction` reserved a connection and ran `BEGIN` on it; a pinned repository sends straight
-to its own client, so the write would commit whatever the transaction decides and the read would
-miss what the transaction has written, both silently. It is refused rather than resolved because a
-`DbTx` does not name the client it was opened on: on a sharded app "the same connection" and "the
-same database" are two different questions and this layer can answer neither. `setDbClient(client)`
-plus an unpinned repository is the shape that joins.
+`postgresDriver({ client })` pins one instead, for a test harness or `x db branch`. A pinned
+repository joins a transaction that was opened ON its own client — `withTransaction(fn, { client })`,
+`postgresTransactor({ client })`, `driver.transactor()` — because `tx.origin` says it is the same
+database and the same reservation (`As of 2026-10-02`). Inside any OTHER open transaction it is
+`X_REPO_CLIENT_PINNED`: a statement sent to the pinned client would commit whatever that
+transaction decides and miss what it has written, both silently. `setDbClient(client)` plus an
+unpinned repository is the shape that joins the ambient one.
 
 Every value is bound to `$n` and every identifier is resolved through the entity, so a column
 name can only be one the entity declared and a row value can never become SQL.
@@ -977,11 +983,11 @@ Two write verbs, because only the author knows which key identifies a row:
 
 | Context member | Use it when | A replay |
 |---|---|---|
-| `insert(entity, rows)` | the seed chose the ids — `id('post:tenancy')` is a UUID v5 of the label, so the same graph gets the same ids on every machine | one `on conflict … do nothing` statement per call; a stored row is left alone and counted `skipped` |
+| `insert(entity, rows)` | the seed chose the ids — `id('post:tenancy')` is a UUID v5 of the label, so the same graph gets the same ids on every machine | one `on conflict … do nothing` statement per call; a stored row is left alone and counted `skipped`. |
 | `upsert(entity, { by, preserve? }, values)` | the table owns the id and only a natural key identifies the row | reads first, so an unchanged row is `'skipped'` with no statement; otherwise one `on conflict … do update`, which settles the race between two containers booting at once |
 | `exists(entity, where?)` / `count(entity, where?)` | bulk volume data, where the FILE is the unit of idempotency | the sentinel returns early and nothing is written |
 | `deleteWhere(entity, where)` | a scoped wipe before a regenerate | **refused on a soft-deleting entity**: the stamp keeps the row's unique key and no replay can clear it |
-| `id`, `now`, `environment`, `tier`, `dryRun`, `metrics` | — | `now` is one instant per run; `metrics` is `{ inserted, updated, skipped }` and `run()` returns it |
+| `id`, `now`, `environment`, `tier`, `dryRun`, `metrics` | — | `now` is one instant per run; `metrics` is `{ inserted, updated, skipped }` and `run()` returns it. A **dry run is the real run, rolled back**: every verb writes inside one transaction from the driver's `transactor()`, so the metrics are what a real run reports — a key another tenant holds is skipped, a later verb sees an earlier one's rows — and nothing is kept. `Driver.transactor()` is required, so a hand-built driver that cannot undo does not compile; one that wraps another delegates (`transactor: () => inner.transactor()`) |
 
 Rules worth knowing before the first seed: `upsert` never overwrites `createdAt` (`preserve` names
 other columns to spare); `upsert` on a tenant-scoped entity needs the tenant column inside `by`,
@@ -997,7 +1003,7 @@ database from its boot code has decided to, and a library that overruled that wo
 
 `X_ENTITY_DUPLICATE` · `X_INVARIANT_VIOLATED` · `X_TENANCY_UNSCOPED` ·
 `X_TENANCY_ACTOR_MISMATCH` · `X_TENANCY_ACTOR_ORG_REQUIRED` · `X_TENANCY_CROSS_DENIED` ·
-`X_DB_DRIFT` · `X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` ·
+`X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` ·
 `X_PRELOAD_UNKNOWN_RELATION` · `X_N_PLUS_ONE_QUERY` · `X_N_PLUS_ONE_WRITE` ·
 `X_RECORD_KEY_MISSING` · `X_ENTITY_SEALED_PREDICATE` · `X_ENTITY_SEALED_IN_VIEW`
 

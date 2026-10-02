@@ -30,9 +30,9 @@ export interface SealedField {
   /** NOT NULL — and a sealed column takes no default, so a row to insert must carry it. */
   readonly required: boolean;
   /**
-   * The column's own parser, which judges a PLAINTEXT — `text({ max })` included. Run before a
-   * value is sealed, because nothing after that point can: the driver only ever sees the sealed
-   * string, which is longer than any bound the author wrote.
+   * The parser the column had before `.sealed()`, which judges a PLAINTEXT — `text({ max })`
+   * included. Run before a value is sealed, because nothing after that point can: the driver only
+   * ever sees the sealed string, which is longer than any bound the author wrote.
    */
   readonly parse: (value: unknown) => unknown;
 }
@@ -50,7 +50,9 @@ const describeField = (table: string, property: string, column: AnyColumn): Seal
       purpose: sealedPurpose(table, physical),
       lookup: sealed.lookup,
       required: column.$meta.notNull,
-      parse: column.$parse,
+      // The UNWRAPPED parser: `column.$parse` passes anything shaped like a sealed value, so a
+      // lookalike plaintext skipped `text({ max })` on its way to being sealed.
+      parse: sealed.plaintext,
     },
   ];
 };

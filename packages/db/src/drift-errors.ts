@@ -10,9 +10,9 @@ import { DbError } from './errors';
 import { shellInertIdentifier } from './sql';
 
 /**
- * The contract's pinned wording. Mirror of `@ultimat3/entity`'s `dbDrift()` — keep in sync; that
- * one screens the column through the same `@ultimat3/db` export, so the two lines are the same
- * text on both sides of the tier seam.
+ * The contract's pinned wording, and the ONE definition of it: `@ultimat3/entity` carried a second
+ * `dbDrift()` held in step by a comment and a test, deleted `As of 2026-10-02`. Drift is this
+ * package's to raise.
  *
  * The column name is the CATALOG's, so it is data: whoever can add a column picks the text that
  * lands here, and `x db gen "add C"` puts it inside SHELL DOUBLE QUOTES, where `$(…)` and a

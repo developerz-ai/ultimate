@@ -24,10 +24,14 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   Both are the bar.
 - **`write-parity.test.ts` runs every write against memory AND PGlite**: a patch property present with
   `undefined` is ABSENT (only `null` clears); memory refuses a duplicate PK, a duplicate non-partial
-  `unique` and a PK patch onto another row with `X_DB_UNIQUE_VIOLATION` (`memory-unique.ts`; partial
-  uniques are not checked in memory); `.transition()` filters on `singleKeyOf(entity)`;
+  unique — index OR `c.unique([…])` invariant, the one list in `unique-constraints.ts` — and a PK
+  patch onto another row with `X_DB_UNIQUE_VIOLATION` (partial uniques are not checked in memory);
+  `.transition()` filters on `singleKeyOf(entity)` and refuses an absent id (`X_NOT_FOUND`, no row
+  moved);
   `decimal()`/`bigint()` store Postgres's spelling (never rounded); a seed `upsert` compares only named
-  columns; `text({ max })` counts code points; `integer()` holds int4; `url()` lower-cases its scheme.
+  columns; `text({ max })` counts code points; `integer()` holds int4, `bigint()` int8; a whole part
+  of `0` is no `numeric` digit; `url()` lower-cases its scheme and judges the STORED text.
+  `invariant-parity.test.ts` asks the app, the driver and the raw CHECK the same question.
 - **`min`/`max` over a `timestamptz` crosses as epoch ms** (`aggregate-time-parity.test.ts`). A whole
   row read under a non-UTC session still fails on PGlite — recorded, not fixed.
 - **Text ordering: byte (`C`) order is the parity target** — a linguistic production collation is a
@@ -38,9 +42,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   narrows at each write method's ENTRY, before `$assert`/`upsertPlan`. `pg-money-write.live.test.ts`,
   `money-write-parity.test.ts`, `type-pins.ts`.
 - **A PREDICATE's meaning is decided by the column's KIND** (`memory-match.ts`): decimal-text columns
-  compare through core's `compareDecimalText` (`DECIMAL_TEXT` decides who asks); a `uuid` is a value
-  stored lower-case (`keyOf`, `parseUuid`, `narrowUuid`; text is never narrowed); `LIKE` uses
-  Postgres' default `\` escape and refuses a trailing escape; a run of `%` is one `.*`; `in` takes a
+  compare through core's `compareDecimalText` (`DECIMAL_TEXT`, `numeric-compare.ts`); a `uuid` is a value
+  stored lower-case (`keyOf`, `parseUuid`, `narrowUuid`; text is never narrowed); `LIKE` (`like.ts`)
+  uses Postgres' default `\` escape, refuses a trailing escape, counts CHARACTERS and is a bounded
+  two-pointer walk — never a regex; `in` takes a
   list or nothing, and a NULL in it emits `(col in (…) or col is null)`; a column the row never NAMED
   is NULL for `eq`/`neq`/`in`.
 - **The Postgres driver is proved against a real Postgres** (`pg-driver.live.test.ts`, skipped without
@@ -48,9 +53,9 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **A repository call rejects, never throws synchronously** (`tableFor`'s writes are `async`).
 - **`defaultDriver()`** is the process default; `Driver.reset?()` is optional (memory only), resets
   repositories in place. Test seam only.
-- **A repository pinned to its own client refuses to run inside a transaction**
-  (`X_REPO_CLIENT_PINNED`, in `client()` in `pg-driver.ts`); the fix names `setDbClient(client)` plus
-  an unpinned repository.
+- **A repository pinned to its own client joins a transaction opened ON that client** (`tx.origin`)
+  **and refuses any other** (`X_REPO_CLIENT_PINNED`, in `client()` in `pg-driver.ts`); the fix names
+  `setDbClient(client)` plus an unpinned repository.
 
 ## Do not regress — reading
 
@@ -63,7 +68,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `writing()`), keyed by id, bounded (`MAX_SIBLING_KEYS`, oldest page first). One switch:
   `postgresDriver({ jitPreload: false })` — never an `app.config.ts` key. Shared pieces live in
   `batch-read.ts`.
-- **`preload(name)` shares `batch-read.ts` and keeps no request cache.** Tenancy is CARRIED only when
+- **`preload(name, { max })` shares `batch-read.ts`, keeps no request cache and is BOUNDED**
+  (`preload-ceiling.ts`: default `MAX_PRELOADED_ROWS`, refused past it, never truncated). Tenancy is CARRIED only when
   both entities are scoped by a column of that same name, else the related read refuses
   (`X_TENANCY_UNSCOPED`). Reach is the `database()` call's `RelatedTables`; `select()` widens with each
   preloaded relation's local key; attachment copies (`{ ...row }`); only `page()`/`all()`/`one()`
@@ -108,12 +114,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **The four aggregates** (`sum`, `avg`, `min`, `max`) share `aggregate.ts`
   (`aggregate-fold.ts` memory, `aggregate-decode.ts` Postgres): never a float; `avg` at `AVG_SCALE` (6),
   half away from zero; `null` for an empty set. Refused: `min`/`max` on text, `avg` over money
-  (`X_AGGREGATE_UNSUPPORTED`), mixed currency or scale (`X_AGGREGATE_MIXED_CURRENCY`), a money total
+  (`X_AGGREGATE_UNSUPPORTED`), mixed currency or scale (`X_AGGREGATE_MIXED_CURRENCY`, two causes, two fixes), a money total
   past ±2^53. **`approximateCount()` is `reltuples`**; a filtered chain or tenant-scoped entity is
   `X_APPROXIMATE_COUNT_FILTERED`; `null` for an unanalysed table.
 - **`json()` / `arrayOf()` are filterable** (`contains`, `contained-by`, `overlaps`, `has-key`) with
-  Postgres' measured meaning in `containment.ts`; `has-key` emits `operator(pg_catalog.?)` (indexable),
-  pinned by `pg-sql.test.ts`. No jsonpath operator.
+  Postgres' measured meaning in `containment.ts`; `has-key` emits `operator(pg_catalog.?)` (indexable)
+  and takes a STRING key, else no rows; a NULL array element equals nothing. No jsonpath operator.
 - **A GIN index is declarable** (`using: 'gin'`; the set is `@ultimat3/db`'s `INDEX_METHODS`); absent
   is `btree` byte for byte; the method joins the name discriminator only when declared; GIN cannot be
   unique or ordered (refused here). `pg-containment.live.test.ts`.
@@ -145,7 +151,9 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   local renderers are deleted). An untranslatable predicate is `kind: 'assert'`, `sql: null`.
   **`InvariantDescription.columns` is projected** (`describe-invariant.test.ts`).
 - **The two halves must AGREE, term by term** (`expr.ts`): `matches(/…/i)` is `~*`, other flags are
-  refused (`matchOperator`); `minLength` counts code points. **`isNull()`/`isNotNull()` are the only
+  refused (`matchOperator`); `minLength` counts code points; `trimmed()` strips U+0020 only (`btrim`);
+  `atLeast`/`eq(<number>)` judge by the column's KIND (`invariantColumns(name, columns)`), so a
+  `bigint()`/`decimal()` row compares by its digits. **`isNull()`/`isNotNull()` are the only
   total members**; `iff(a, b)` renders `(a) = (b)` — measured as the safe direction
   (`pg-invariant-null.live.test.ts`); `iff` is a function, and a `unique` operand is refused with the
   `c.unique([…])` fix built through `JSON.stringify`. One app-only operand makes the whole rule
@@ -200,7 +208,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **`deleteWhere` / `updateWhere` are the only filtered writes**: empty filter `X_WRITE_UNFILTERED`,
   empty patch `X_PATCH_EMPTY` (undefined values dropped first); soft delete respected; both return a
   count; rows come back only when a JS-only invariant needs them (`hasJsOnlyInvariant`), counted first
-  and refused past `MAX_ASSERTED_ROWS` (50,000) in BOTH drivers. `updateStatement`'s `returning` is
+  and refused past `MAX_ASSERTED_ROWS` (50,000) in BOTH drivers; on Postgres that statement and its
+  judgement share a transaction (`judged-write.ts`, `update` too), so a refusal rolls back. `updateStatement`'s `returning` is
   required.
 - **Every instant the write path stamps comes from `entityNow()`** (`clock.ts`, `ctx.clock`).
   **`touch()` in `query.ts` is the ONE place `onUpdateNow()` columns are stamped.**
@@ -214,7 +223,9 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **A seed is replayable**: `SeedContext.insert` is one `upsertAll(…, { onMatch: 'nothing' })` per
   call; a generated PK the row does not name is refused. `upsert(entity, { by }, values)` keys on a
   natural key, reads first for the report, writes one `on conflict … do update`, preserves `createdAt`.
-  **The environment guard is the CLI's** (`seedTiersFor`; `run()` stays permissive).
+  **The environment guard is the CLI's** (`seedTiersFor`; `run()` stays permissive). **A dry run is
+  the real run rolled back** through `Driver.transactor()` (REQUIRED on the interface) — one rule,
+  never a per-verb lookup.
 - **`setRowObserver` reports committed row changes above the driver** — one per process (returns the
   replaced one), applied by `database()`, one comparison per write when unset, `before` only when the PK
   is `id`, a filtered write is `onBulk`. Not a second change-feed path.
@@ -231,7 +242,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   rewrites or refuses every predicate. A driver never seals for itself; an entity with no sealed
   column gets its repository back untouched. The cipher is core's (`scripts/seal-calls.ts`).
 - **A sealed column's `$parse` passes a sealed string and judges a plaintext**; `decodeRow` parses
-  none. `sealValue` runs the plaintext parser BEFORE sealing — nothing after can.
+  none. `sealValue` runs the UNWRAPPED plaintext parser (`$meta.sealed.plaintext`) BEFORE sealing — nothing
+  after can, and the column's own `$parse` would pass a sealed-shaped lookalike.
 - **No reading of an unsealed value.** Not sealed is `X_SEAL_INVALID`; existing plaintext is
   expand → `backfill()` → contract (README). No `legacy` option.
 - **Purpose is `entity:<table>.<column>`, physical names** (`sealed.ts`). **Sealing is not on
@@ -261,7 +273,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `persist` defaults `false`, read only off the projection. **The browser path is
   `@ultimat3/entity/record`**, whose modules import `entity-error.ts`, never `errors.ts`
   (`record-bundle.test.ts`).
-- Never throw a bare `Error` — use `errors.ts`.
+- Never throw a bare `Error` — use `errors.ts`. `X_DB_DRIFT` is `@ultimat3/db`'s, factory included.
 - **Tests restore the registry with a FILE-scope `afterAll(() => { clearRegistry(); })`** — matched on
   exact text by `live-registry-cleanup.test.ts`; never inside a skippable suite's teardown.
 
@@ -273,9 +285,11 @@ Each file's header states its one job. The map, by area: `types.ts` (derivation;
 `entity.ts` / `describe.ts` / `index-name.ts` / `search.ts`, `state-machine.ts` / `transition.ts`,
 `feature-errors.ts`, `view.ts` / `row-schema.ts` / `record-projection.ts` / `record-key.ts` /
 `rows-of.ts` / `record-table.ts` / `record.ts`, `entity-error.ts` / `errors.ts`, `query.ts` /
-`database.ts` / `clock.ts`, `memory-match.ts` / `repo.ts` / `memory-repo.ts` / `tenancy.ts` /
+`database.ts` / `clock.ts`, `memory-match.ts` / `like.ts` / `numeric-compare.ts` / `unique-constraints.ts` / `repo.ts` /
+`memory-repo.ts` / `tenancy.ts` /
 `cross-tenant.ts`, `plan.ts` / `cursor.ts` / `batch.ts`, `pg-driver.ts` / `coalesce.ts` /
-`batch-read.ts` / `bulk-write.ts` / `count-by.ts` / `jit-preload.ts` / `preload.ts` / `pg-sql.ts` /
+`batch-read.ts` / `bulk-write.ts` / `count-by.ts` / `jit-preload.ts` / `preload.ts` /
+`preload-ceiling.ts` / `judged-write.ts` / `pg-sql.ts` /
 `pg-row.ts`, `row-observer.ts` / `write-tag.ts` (a keyed request's write names itself in the WAL via
 `pg_logical_emit_message`), `registry.ts` / `relations.ts` / `n-plus-one.ts` / `seed.ts`,
 `type-pins.ts`, `live-registry-cleanup.test.ts`.

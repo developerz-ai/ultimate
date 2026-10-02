@@ -1332,3 +1332,14 @@ string (a `lookup` column's is equal for equal values).
 | `seed.ts` | `defineSeed` — the replayable fixture graph: `insert` (the seed's own ids), `upsert` (a natural key), the sentinel reads, and the tier table `x db seed` refuses from |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy, `Invariant` variance, the branded id |
 | `live-registry-cleanup.test.ts` | the build error behind the registry rule above: a live suite that registers on import clears unconditionally, in a top-level hook a skip cannot swallow |
+
+## 2026-10-02 — `dbDrift()` left this package
+
+`errors.ts` no longer imports `@ultimat3/db` for `dbDrift`, and the passage above that gives that
+import as the reason the browser path avoids `errors.ts` describes the tree before this date. The
+function was a second copy of `@ultimat3/db`'s — same cause, same shell-screened fix — with no
+caller in the repository, either tracked app or the wiki. It is deleted with its export, its test
+and `ENTITY_BORROWED_ERROR_CODES`; `ENTITY_ERROR_CODES` is now exactly the codes this package owns.
+The record modules still import `entity-error.ts` and never `errors.ts`
+(`record-bundle.test.ts`): the rule stands on its own, since `errors.ts` is where a future
+`@ultimat3/db` import would land.

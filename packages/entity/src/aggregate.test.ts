@@ -16,6 +16,7 @@ import {
 import { boolean, integer, money, text, timestamp, uuid } from './columns';
 import { decimal } from './columns-data';
 import { entity } from './entity';
+import type { EntityError } from './errors';
 import { clearRegistry } from './registry';
 
 const ledger = entity('aggregate_test_ledger', {
@@ -161,6 +162,33 @@ describe('one amount is one unit', () => {
         ]),
       ),
     ).toBeUltimateError('X_AGGREGATE_MIXED_CURRENCY');
+  });
+
+  test('a scale mix says SCALES, and its fix does not filter on the currency it already shares', () => {
+    const error = caught(() =>
+      assertOneUnit(ledger, 'sum', 'amount', [
+        { currency: 'USD', scale: null },
+        { currency: 'USD', scale: 6 },
+      ]),
+    ) as EntityError;
+    // It read "covers 2 currencies (USD, USD@6)" and filtered on `'USD'` — which keeps both rows.
+    expect(error.cause).toContain('2 scales of USD');
+    expect(error.cause).not.toContain('currencies');
+    expect(error.fix).not.toContain("'amount.currency', 'eq'");
+    expect(error.fix).toContain('inBatches');
+  });
+
+  test('a currency mix filters on a CURRENCY, never on a unit label', () => {
+    const error = caught(() =>
+      assertOneUnit(ledger, 'sum', 'amount', [
+        { currency: 'EUR', scale: 6 },
+        { currency: 'USD', scale: null },
+        { currency: 'EUR', scale: 6 },
+      ]),
+    ) as EntityError;
+    expect(error.cause).toContain('2 currencies (EUR, USD)');
+    expect(error.fix).toContain("andWhere('amount.currency', 'eq', 'EUR')");
+    expect(error.fix).not.toContain('@');
   });
 
   test('one unit, however many rows carried it', () => {

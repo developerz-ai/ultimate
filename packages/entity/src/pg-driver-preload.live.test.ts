@@ -178,6 +178,16 @@ describe.skipIf(!hasPostgres)('live · postgres · preload', () => {
     ).toEqual([p2]);
   });
 
+  test('a declared ceiling refuses a hasMany past it, and one that meets it exactly reads', async () => {
+    const { org } = await seed('ceiling');
+    const page = () => db().members.where({ orgId: org }).orderBy('email');
+    // Two members, three posts between them.
+    expect(await page().preload(BY_AUTHOR, { max: 3 }).all()).toHaveLength(2);
+    await expect(page().preload(BY_AUTHOR, { max: 2 }).all()).rejects.toBeUltimateError(
+      'X_INVARIANT_VIOLATED',
+    );
+  });
+
   test('exactly one extra statement per relation, over the distinct keys the page carried', async () => {
     const { org } = await seed('one-statement');
 
