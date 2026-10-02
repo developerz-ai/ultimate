@@ -251,9 +251,10 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`pglite-extensions.ts` is the one linker** (`linkPgliteExtensions` → `{ linked, missing }`):
   `contrib/<name>` then the package root; the name is data (read from migration text), screened
   by `pgliteExtensionExport` before it reaches a specifier; `plpgsql` is built in, never missing.
+  Only a not-found import is `missing`; a bundle that throws is `X_DB_UNAVAILABLE`.
 - **`pglite-snapshot.ts`**: `snapshotDir` makes a `memory://` boot a restore. Key = PGlite version
   (read off its `package.json`; unreadable = no cache), never the extension set. One file, checksum in its
-  header; unsound or unopenable → deleted and rebuilt. Temp name + `rename`. Uncompressed by
+  header; unsound or unopenable → deleted and rebuilt; unreadable → a miss. Temp name + `rename`. Uncompressed by
   measurement: gzip taxes the boot that writes, and a CI checkout always writes.
 - **One embedded boot** serves every database-backed dump test: `schema-dump.test.ts`.
 
