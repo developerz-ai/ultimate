@@ -1,8 +1,7 @@
-// Single responsibility: the schema dump's FIDELITY for the objects it used to get wrong in
-// silence — a virtual generated column dumped `stored`, a trigger filed for a table the dump does
-// not create, and four catalog facts absent from both the dump and `unrendered.sql`. Each is a
-// statement about what Postgres answers, so it is asked of the real embedded database; its own
-// boot rather than `schema-dump.test.ts`'s, which is at the file-size ceiling.
+// Single responsibility: the schema dump's FIDELITY for what it used to get wrong in silence — a
+// virtual generated column dumped `stored`, a trigger filed for a table the dump does not create,
+// four catalog facts absent from both the dump and `unrendered.sql`. Asked of the real embedded
+// database; its own boot, because `schema-dump.test.ts` is at the file-size ceiling.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { introspectCatalog } from './introspect-catalog';

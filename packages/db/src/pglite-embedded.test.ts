@@ -220,4 +220,16 @@ describe('the real embedded database', () => {
     },
     PGLITE_BOOT_MS,
   );
+
+  test(
+    'a five-letter custom SQLSTATE is the server refusing the statement, not an errno',
+    async () => {
+      const caught = (await client
+        .execute(sql`do $$ begin raise exception 'custom' using errcode = 'ABCDE'; end $$`)
+        .catch((error: unknown) => error)) as { code?: string; cause?: string };
+      expect(caught.code).toBe('X_DB_STATEMENT_FAILED');
+      expect(caught.cause).toContain('SQLSTATE ABCDE');
+    },
+    PGLITE_BOOT_MS,
+  );
 });

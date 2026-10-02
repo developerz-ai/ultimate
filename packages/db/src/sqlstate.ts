@@ -31,17 +31,6 @@ export const SQLSTATE = Object.freeze({
   outOfMemory: '53200',
 } as const);
 
-/**
- * Five characters, digits and uppercase letters, AT LEAST ONE A DIGIT — `42P01`, never
- * `ERR_POSTGRES_SERVER_ERROR`, and never `EPIPE`. Five uppercase letters is what a socket errno
- * looks like, and every SQLSTATE the standard or Postgres defines carries a digit; without the
- * lookahead a dead socket was "the database refused the statement", fix: "fix the SQL".
- */
-const SQLSTATE_SHAPE = /^(?=.*[0-9])[0-9A-Z]{5}$/;
-
-/** How deep a wrap may nest before we stop looking. `DbError` adds exactly one level. */
-const MAX_WRAPS = 4;
-
 /** A field off a value that may fight being read — `stringField`'s shape, for a non-string. */
 function unknownField(value: unknown, key: string): unknown {
   if (typeof value !== 'object' || value === null) return undefined;
@@ -51,6 +40,32 @@ function unknownField(value: unknown, key: string): unknown {
     return undefined;
   }
 }
+
+/** Five characters, digits and uppercase letters — `42P01`, never `ERR_POSTGRES_SERVER_ERROR`. */
+const SQLSTATE_SHAPE = /^[0-9A-Z]{5}$/;
+
+/**
+ * Whether five characters of that shape are a SQLSTATE, decided by where the object CAME FROM —
+ * the shape alone cannot say. `EPIPE` and `E2BIG` are errno names of exactly that shape, and
+ * `raise exception … using errcode = 'ABCDE'` is a legal state with no digit in it, so a rule
+ * about letters and digits is wrong in both directions.
+ *
+ * Measured on Bun.SQL against Postgres 17 and on PGlite: a server ErrorResponse carries
+ * `severity` on both drivers, and nothing the socket layer throws does. A syscall error carries
+ * `syscall` and a NUMERIC `errno`. An object marked as neither — a fake, a wrapper, a driver this
+ * package has not measured — keeps the old reading only for a state that carries a digit, which
+ * is every state Postgres itself defines and no bare errno name this package has been handed.
+ */
+function isState(holder: unknown, candidate: string): boolean {
+  if (!SQLSTATE_SHAPE.test(candidate)) return false;
+  if (stringField(holder, 'severity') !== undefined) return true;
+  if (stringField(holder, 'syscall') !== undefined) return false;
+  if (typeof unknownField(holder, 'errno') === 'number') return false;
+  return /[0-9]/.test(candidate);
+}
+
+/** How deep a wrap may nest before we stop looking. `DbError` adds exactly one level. */
+const MAX_WRAPS = 4;
 
 /**
  * The SQLSTATE a driver error carries, unwrapping `DbError.sourceError` on the way, or `undefined`
@@ -62,17 +77,17 @@ function unknownField(value: unknown, key: string): unknown {
  * has no `errno` at all. Reading `code` alone is correct on the embedded driver and wrong on every
  * production one, which is exactly the split `isLedgerMissing` was living on.
  *
- * The shape test is what keeps the two apart: `ERR_POSTGRES_SERVER_ERROR` and `X_DB_UNAVAILABLE`
- * are not five characters of `[0-9A-Z]`, and no SQLSTATE contains an underscore.
+ * The shape test keeps `ERR_POSTGRES_SERVER_ERROR` and `X_DB_UNAVAILABLE` out — neither is five
+ * characters of `[0-9A-Z]` — and `isState` keeps an errno NAME out, which the shape cannot.
  */
 export function sqlState(error: unknown): string | undefined {
   let value = error;
   for (let depth = 0; depth < MAX_WRAPS; depth += 1) {
     if (value === undefined || value === null) return undefined;
     const errno = stringField(value, 'errno');
-    if (errno !== undefined && SQLSTATE_SHAPE.test(errno)) return errno;
+    if (errno !== undefined && isState(value, errno)) return errno;
     const code = stringField(value, 'code');
-    if (code !== undefined && SQLSTATE_SHAPE.test(code)) return code;
+    if (code !== undefined && isState(value, code)) return code;
     value = unknownField(value, 'sourceError');
   }
   return undefined;

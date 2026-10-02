@@ -24,13 +24,28 @@ const column = (
   ...overrides,
 });
 
-const posts = (primaryKey: readonly string[], columns = ['id', 'slug']): EntityDescriptionLike => ({
+const posts = (
+  primaryKey: readonly string[],
+  columns = ['id', 'slug'],
+  overrides: Readonly<Record<string, Partial<ColumnDescriptionLike>>> = {},
+): EntityDescriptionLike => ({
   name: 'Post',
   table: 'posts',
   primaryKey,
-  columns: columns.map((name) => column(name, { primaryKey: primaryKey.includes(name) })),
+  columns: columns.map((name) =>
+    column(name, { primaryKey: primaryKey.includes(name), ...overrides[name] }),
+  ),
   indexes: [],
 });
+
+const refusal = (run: () => unknown): { code?: string; cause?: string; fix?: string } => {
+  try {
+    run();
+  } catch (error) {
+    return error as { code?: string; cause?: string; fix?: string };
+  }
+  return expect.unreachable('the key change was generated');
+};
 
 const comments: EntityDescriptionLike = {
   name: 'Comment',
@@ -68,9 +83,12 @@ describe('a changed primary key', () => {
     expect(generate([posts(['id'])], snapshotOf([posts(['id'])])).up).toBe('');
   });
 
-  test('a key column added by the same migration exists before the key is', () => {
+  test('a key column added by the same migration, WITH a default, exists before the key is', () => {
+    const filled = {
+      org_id: { hasDefault: true, default: { kind: 'value', value: 'acme' } },
+    } as const;
     const migration = generate(
-      [posts(['id', 'org_id'], ['id', 'slug', 'org_id'])],
+      [posts(['id', 'org_id'], ['id', 'slug', 'org_id'], filled)],
       snapshotOf([posts(['id'])]),
     );
     const up = migration.up.split('\n');
@@ -90,11 +108,12 @@ describe('a changed primary key', () => {
       'alter table "posts" drop column "org_id";',
       add('"id"'),
     ]);
-    // Reversed: the column is back before the two-column key is asked for again.
+    // Reversed — and the old key is NOT asked for again: `org_id` comes back empty, so `add
+    // primary key` over it fails on every populated table. Named as the follow-up instead.
     expect(migration.down.split('\n')).toEqual([
       DROP,
       'alter table "posts" add column "org_id" text; -- data is not restored',
-      add('"id", "org_id"'),
+      `-- backfill "org_id", then: ${add('"id", "org_id"')}`,
     ]);
   });
 
@@ -115,5 +134,42 @@ describe('a changed primary key', () => {
     expect(thrown?.code).toBe('X_MIGRATION_IRREVERSIBLE');
     expect(thrown?.cause).toContain('comments_post_id_fkey');
     expect(thrown?.fix).toContain('x db gen');
+  });
+
+  // `add column` with no default lands NULL in every existing row, and a primary key refuses a
+  // NULL: the generated `up` could not apply to any table holding a row.
+  test('a key over a column this migration adds with no default is refused, naming the two steps', () => {
+    const thrown = refusal(() =>
+      generate([posts(['id', 'org_id'], ['id', 'slug', 'org_id'])], snapshotOf([posts(['id'])])),
+    );
+    expect(thrown.code).toBe('X_MIGRATION_IRREVERSIBLE');
+    expect(thrown.cause).toContain('"org_id"');
+    expect(thrown.fix).toStartWith('x db gen "rekey"');
+    expect(thrown.fix).toContain('backfill');
+  });
+
+  // Postgres marks every key column NOT NULL and dropping the key does not undo it, so a column
+  // the declaration allows NULL in would stay NOT NULL after it left the key — in either direction.
+  test('a nullable column leaving the key gets its NOT NULL dropped, up and down', () => {
+    const nullable = { slug: { notNull: false }, id: { notNull: false } } as const;
+    const before = posts(['id'], ['id', 'slug'], nullable);
+    const after = posts(['slug'], ['id', 'slug'], nullable);
+    const migration = generate([after], snapshotOf([before]));
+    expect(migration.up.split('\n')).toEqual([
+      DROP,
+      'alter table "posts" alter column "id" drop not null;',
+      add('"slug"'),
+    ]);
+    expect(migration.down.split('\n')).toEqual([
+      DROP,
+      'alter table "posts" alter column "slug" drop not null;',
+      add('"id"'),
+    ]);
+  });
+
+  test('a column declared NOT NULL keeps it when it leaves the key', () => {
+    const migration = generate([posts(['slug'])], snapshotOf([posts(['id'])]));
+    expect(migration.up).not.toContain('drop not null');
+    expect(migration.down).not.toContain('drop not null');
   });
 });

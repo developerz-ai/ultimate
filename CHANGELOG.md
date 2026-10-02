@@ -40,9 +40,13 @@ Tier 1 — time, db.
   `siblingScopeTimeout`; `TransactionOptions.siblingWaitMs` and `SIBLING_SCOPE_WAIT_MS` — see
   Changed.
 - **db:** `x db gen` writes a changed `primaryKey`: drop `<table>_pkey`, add the new key, around the
-  table's column statements, reversed in `down`. It wrote nothing for a key change before. A key
-  that a recorded foreign key references is `X_MIGRATION_IRREVERSIBLE`, naming the constraints; a
-  `<table>_pkey` name over 63 bytes — a table name over 58 — is `X_INVARIANT`.
+  table's column statements, reversed in `down`. It wrote nothing for a key change before. A
+  declared-nullable column leaving the key gets `drop not null`, in `up` and `down`. When a key
+  column is dropped, `down` carries the old key as a `-- backfill …, then:` comment, not a
+  statement. Two refusals, both `X_MIGRATION_IRREVERSIBLE`: a key that a recorded foreign key
+  references, naming the constraints; and a new key over a column the same migration adds with no
+  default — add and backfill the column first, the key in the next migration. A `<table>_pkey`
+  name over 63 bytes — a table name over 58 — is `X_INVARIANT`.
 
 Tier 5 — cli.
 
@@ -174,7 +178,8 @@ Tier 1 — db.
   server answers with `ROLLBACK` is this code, on both drivers.
 - **BREAKING — a `COMMIT` that rejects with no SQLSTATE is `X_DB_COMMIT_UNKNOWN`**, not
   `X_DB_UNAVAILABLE`. The transaction is durable or it is not, so neither `onCommit` nor
-  `onRollback` runs; `onRollback` used to. Read a row the transaction wrote before re-running it.
+  `onRollback` runs; `onRollback` used to. The `fix:` is a `psql "$DATABASE_URL"` session: select a
+  row the transaction wrote, and re-run only when it is absent.
 - **BREAKING — a nested `withTransaction` refuses options a savepoint cannot honour**
   (`X_INVARIANT`): `isolation`, `readOnly: true`, `deferrable: true`, or a `client` other than the
   root's. They were ignored — `{ readOnly: true }` wrapped writes that committed. State them on
@@ -189,7 +194,8 @@ Tier 1 — db.
   Await the scopes in sequence, or pass `{ siblingWaitMs }`.
 - **BREAKING — `DriftKind` gains `'changed-primary-key'`.** A table whose live key differs from
   the declared one — columns, order, or a key on one side only — is reported; it read `ok: true`.
-  The finding's `fix:` is the drop/add pair for a new migration. An exhaustive `switch` needs the
+  The finding's `fix:` is one `psql "$DATABASE_URL" -c '…'` command — the drop/add pair, run
+  against the drifted database; `x db migrate` then re-checks. An exhaustive `switch` needs the
   case. Nullability is excused for the declared key's columns only.
 - **BREAKING — `introspect()` reports the type and the index keys the catalog holds.**
   `ColumnDescription.dataType` is `format_type` output: `numeric(12,2)`, `text[]`, an enum's name —
@@ -265,10 +271,13 @@ Tier 1 — i18n, time, db.
   `X_TIMEZONE_INVALID` from every public zoned function, and so is a formatter called with no
   options object. Each was a bare `TypeError`. `configureTime({ defaultZone: undefined })` no
   longer overwrites the zone in force.
-- **db:** a five-letter all-caps `code` such as `EPIPE` is not a SQLSTATE — every SQLSTATE carries
-  a digit. A dead socket is `X_DB_UNAVAILABLE`, not `X_DB_STATEMENT_FAILED`.
-- **db:** a ragged array or an Invalid Date parameter is `X_INVARIANT` on both drivers; it was
-  `X_DB_UNAVAILABLE`. A `Uint8Array` inside a bound array is one `bytea` element, not its bytes as
+- **db:** whether a five-character `code` is a SQLSTATE is decided by where the error came from,
+  not its shape. A syscall error (`syscall`, or a numeric `errno`) such as `EPIPE` or `E2BIG` is
+  `X_DB_UNAVAILABLE`; it was `X_DB_STATEMENT_FAILED`. A server error (it carries `severity`) with a
+  letters-only state such as `ABCDE` is still `X_DB_STATEMENT_FAILED`. With neither marker a code
+  counts only if it carries a digit.
+- **db:** a ragged array or an Invalid Date parameter is `X_INVARIANT`, by one shape rule on
+  Bun.SQL and PGlite alike; it was `X_DB_UNAVAILABLE`. A `Uint8Array` inside a bound array is one `bytea` element, not its bytes as
   separate elements.
 - **db:** `refuseDependentViews` considers only tables visible on the search path.
 - **db:** a `ROLLBACK TO SAVEPOINT` that fails marks the root aborted, so its `COMMIT` is refused

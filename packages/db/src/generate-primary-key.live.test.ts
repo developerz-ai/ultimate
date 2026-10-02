@@ -137,4 +137,44 @@ describe.skipIf(!hasPostgres)('live · postgres · changing a primary key', () =
     // `dependent_objects_still_exist` — the statement `dropChangedKey` never emits.
     expect(sqlState(refused)).toBe('2BP01');
   });
+
+  // Postgres marks a key column NOT NULL and leaves it so when the key is dropped — measured:
+  // without the `drop not null` in `down`, `slug` came back NOT NULL and the two reads differed.
+  test('up then down returns the exact prior schema, nullability included', async () => {
+    const NULLABLE = 'pk_nullable';
+    const shape = (primaryKey: readonly string[]): EntityDescriptionLike => ({
+      name: 'PkNullable',
+      table: NULLABLE,
+      primaryKey,
+      columns: [
+        column('id', { primaryKey: primaryKey.includes('id'), notNull: false }),
+        column('slug', { primaryKey: primaryKey.includes('slug'), notNull: false }),
+      ],
+      indexes: [],
+    });
+    const read = async () =>
+      (await introspect({ client })).tables.find((table) => table.name === NULLABLE);
+
+    await client.execute(raw(`drop table if exists "${NULLABLE}"`));
+    await apply(generateMigration({ entities: [shape(['id'])], name: 'init', now: at }).up);
+    await client.execute(raw(`insert into "${NULLABLE}" ("id", "slug") values ('1', 'a')`));
+    const before = await read();
+    expect(before?.columns.find((each) => each.name === 'slug')?.nullable).toBe(true);
+
+    const migration = generateMigration({
+      entities: [shape(['slug'])],
+      current: snapshotOf([shape(['id'])]),
+      name: 'rekey nullable',
+      now: at,
+    });
+    await apply(migration.up);
+    const keyed = await read();
+    expect(keyed?.primaryKey).toEqual(['slug']);
+    // `id` left the key and is declared nullable: its NOT NULL went with the constraint.
+    expect(keyed?.columns.find((each) => each.name === 'id')?.nullable).toBe(true);
+
+    await apply(migration.down);
+    expect(await read()).toEqual(before);
+    await client.execute(raw(`drop table "${NULLABLE}"`));
+  });
 });

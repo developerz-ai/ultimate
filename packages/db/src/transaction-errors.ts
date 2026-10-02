@@ -58,7 +58,9 @@ export const siblingScopeTimeout = (
 export const commitUnknown = (sourceError: unknown): DbError =>
   new DbError({
     code: 'X_DB_COMMIT_UNKNOWN',
-    cause: `the connection failed while COMMIT was in flight, so the transaction is either durable or rolled back and this process cannot tell which; neither onCommit effects nor onRollback undos ran: ${renderThrowable(sourceError)}`,
-    fix: 'psql "$DATABASE_URL" -c "<select a row this transaction wrote>"   # present: it committed, do not re-run; absent: re-run the unit of work',
+    cause: `the connection failed while COMMIT was in flight, so the transaction is either durable or rolled back and this process cannot tell which; neither onCommit effects nor onRollback undos ran. Only the data can say which — a row the transaction wrote is present if it committed and absent if it did not: ${renderThrowable(sourceError)}`,
+    // A session, never a `-c "<placeholder>"`: which row proves it is the caller's knowledge, and
+    // a placeholder inside a command is a command that does not run.
+    fix: 'psql "$DATABASE_URL"   # a session on that database: select a row the transaction wrote, and re-run the unit of work only when it is absent',
     sourceError,
   });

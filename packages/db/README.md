@@ -77,7 +77,7 @@ trusted to remember the difference between a value and a fragment. So:
 - scalars (`string`, `number`, `boolean`, `bigint`, `Date`, `Uint8Array`, arrays, `null`) become
   `$1..$n` and never touch `.text`. A value that cannot be SENT — an Invalid Date, a ragged array —
   is `X_INVARIANT` before the driver is called, never `X_DB_UNAVAILABLE`; a `Uint8Array` inside an
-  array is one `bytea` element;
+  array is one `bytea` element. Both drivers refuse alike;
 - a nested fragment is spliced and its parameters are renumbered;
 - **anything else throws `X_SQL_UNSAFE`** — including an object shaped like a `SqlFragment` that
   `sql`/`raw` did not produce;
@@ -254,7 +254,7 @@ X_DB_DRIFT: schema differs from migrations
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
 | index rebuilt differently | `index "I" on "T" covers (…)` / `is unique` / `is descending` / `is partial`, `not what migrations declare` | `x db migrate` |
 | foreign key, rule moved | `foreign key on "T" (C) to "R" is on delete cascade, not what migrations declare` | the `drop constraint` + `add constraint` pair, in a new migration |
-| primary key differs (`changed-primary-key`, `As of 2026-10-02`) | `table "T" has primary key (id), and migrations declare (slug)` — compared in column ORDER; `has no primary key` when the database holds none | `alter table "T" drop constraint "<the live key>"; alter table "T" add constraint "T_pkey" primary key (…);` in a new migration, then `x db migrate`. Nullability is skipped for the DECLARED key's columns only |
+| primary key differs (`changed-primary-key`, `As of 2026-10-02`) | `table "T" has primary key (id), and migrations declare (slug)` — compared in column ORDER; `has no primary key` when the database holds none | `psql "$DATABASE_URL" -c '<drop constraint "<the live key>"; add constraint "T_pkey" primary key (…)>'` — one command, against the drifted database — then `x db migrate`. Nullability is skipped for the DECLARED key's columns only |
 
 `checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` renders
 them all as findings and exits non-zero; a `ROLE=migrate` container throws the first one

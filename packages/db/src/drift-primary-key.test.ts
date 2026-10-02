@@ -41,9 +41,10 @@ describe('drift · primary key', () => {
     expect(difference?.cause).toBe(
       'table "posts" has primary key (id), and migrations declare (slug)',
     );
+    // ONE command a shell runs: the pair is psql's argument, never bare DDL beside a `#`.
     expect(difference?.fix).toBe(
-      'alter table "posts" drop constraint "posts_pkey"; alter table "posts" add constraint ' +
-        '"posts_pkey" primary key ("slug");   # in a new migration, then x db migrate',
+      `psql "$DATABASE_URL" -c 'alter table "posts" drop constraint "posts_pkey"; alter table ` +
+        `"posts" add constraint "posts_pkey" primary key ("slug");'   # then x db migrate, which re-checks`,
     );
   });
 
@@ -59,7 +60,7 @@ describe('drift · primary key', () => {
       'table "posts" has no primary key, and migrations declare (id)',
     );
     expect(report.differences[0]?.fix).toBe(
-      'alter table "posts" add constraint "posts_pkey" primary key ("id");   # in a new migration, then x db migrate',
+      `psql "$DATABASE_URL" -c 'alter table "posts" add constraint "posts_pkey" primary key ("id");'   # then x db migrate, which re-checks`,
     );
   });
 
@@ -71,6 +72,13 @@ describe('drift · primary key', () => {
     const report = diffSchema(schema(held(['id'], 'pk`rm -rf`')), schema(keyed(['slug'])));
     expect(report.differences[0]?.fix).not.toContain('`');
     expect(report.differences[0]?.fix).not.toContain('alter table');
+    // Prose still leads with a command that runs.
+    expect(report.differences[0]?.fix).toStartWith('psql "$DATABASE_URL"');
+  });
+
+  test("a ' in a name cannot close the shell word the statements ride in", () => {
+    const report = diffSchema(schema(held(['id'], "o'pk")), schema(keyed(['slug'])));
+    expect(report.differences[0]?.fix).toContain(`drop constraint "o'\\''pk";`);
   });
 
   // Postgres forces NOT NULL onto a key column, so only the DECLARED key excuses a nullable

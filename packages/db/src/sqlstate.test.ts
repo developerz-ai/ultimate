@@ -110,16 +110,46 @@ describe('sqlStateCode', () => {
   });
 });
 
-describe('the SQLSTATE shape', () => {
-  // Five uppercase LETTERS is what a socket errno looks like, and every SQLSTATE carries a digit.
-  // Read as a state, `EPIPE` became `X_DB_STATEMENT_FAILED` — "fix the SQL" — for a dead socket,
-  // and the replica fallback, which keys on unavailability, never ran.
-  test.each(['EPIPE', 'EINTR', 'EPERM', 'ENXIO'])('%s is an errno, never a SQLSTATE', (errno) => {
-    expect(sqlState({ code: errno })).toBeUndefined();
-    expect(sqlState({ errno })).toBeUndefined();
+describe('a SQLSTATE is told from an errno by PROVENANCE', () => {
+  // What a server ErrorResponse looks like on each driver, measured against Postgres 17 and
+  // PGlite: both carry `severity`, and only a server error does.
+  const fromServer = (field: 'errno' | 'code', state: string): unknown => ({
+    [field]: state,
+    severity: 'ERROR',
+    routine: 'exec_stmt_raise',
+  });
+  /** What the socket layer throws: a NAME on `code`, a NUMBER on `errno`, and the syscall. */
+  const fromSocket = (name: string): unknown => ({ code: name, errno: -32, syscall: 'write' });
+
+  // `raise exception … using errcode = 'ABCDE'` is legal, and so is every five-LETTER state: a
+  // shape rule demanding a digit turned the server's own refusal into "cannot reach the database".
+  test('a five-letter state the SERVER sent is the server refusal, on either field', () => {
+    expect(sqlState(fromServer('errno', 'ABCDE'))).toBe('ABCDE');
+    expect(sqlState(fromServer('code', 'ABCDE'))).toBe('ABCDE');
+    expect(
+      sqlState({ code: 'X_DB_STATEMENT_FAILED', sourceError: fromServer('code', 'EPIPE') }),
+    ).toBe('EPIPE');
   });
 
-  test.each(['42P01', 'XX000', 'P0001', 'HV00A', '0A000'])('%s is still read', (state) => {
+  // Five uppercase letters with nothing saying a server sent them is what an errno NAME looks
+  // like. Read as a state, `EPIPE` became `X_DB_STATEMENT_FAILED` — "fix the SQL" — for a dead
+  // socket, and the replica fallback, which keys on unavailability, never ran.
+  test.each(['EPIPE', 'EINTR', 'EPERM', 'ENXIO'])(
+    '%s with no provenance is not a state',
+    (name) => {
+      expect(sqlState({ code: name })).toBeUndefined();
+      expect(sqlState({ errno: name })).toBeUndefined();
+      expect(sqlState(fromSocket(name))).toBeUndefined();
+    },
+  );
+
+  // `E2BIG` carries a digit, so a digit alone proves nothing: the syscall beside it does.
+  test('an errno that happens to carry a digit is still the socket layer', () => {
+    expect(sqlState(fromSocket('E2BIG'))).toBeUndefined();
+    expect(sqlState({ code: 'E2BIG', syscall: 'spawn' })).toBeUndefined();
+  });
+
+  test.each(['42P01', 'XX000', 'P0001', 'HV00A', '0A000'])('%s is still read unmarked', (state) => {
     expect(sqlState({ code: state })).toBe(state);
   });
 });

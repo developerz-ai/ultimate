@@ -1512,7 +1512,11 @@ the same slice and the current one is in that file.
 - **`sqlstate.ts`**: `errno` first, `code` second, both shape-tested (`^[0-9A-Z]{5}$`).
   **Superseded**: the shape now also requires a digit (`^(?=.*[0-9])[0-9A-Z]{5}$`) — five uppercase
   letters is what a socket errno looks like, and `EPIPE` read as a SQLSTATE became
-  `X_DB_STATEMENT_FAILED`, "fix the SQL", for a dead socket.
+  `X_DB_STATEMENT_FAILED`, "fix the SQL", for a dead socket. **Superseded again, same PR**: the
+  digit rule rejected a legal server state (`raise … using errcode = 'ABCDE'`) and let `E2BIG`
+  through, so the reading is by provenance (`isState`): `severity` marks a server ErrorResponse on
+  both drivers, `syscall` or a numeric `errno` marks the socket layer, and only an object marked
+  as neither falls back to "carries a digit".
 - **`withTransaction(fn, { retry })` re-runs `fn` only on `40001`/`40P01`**, default 0; each attempt
   its own pin, `BEGIN` and undo list (`runRoot`); a nested `retry` is `X_INVARIANT`. A re-run waits
   (`transaction-backoff.ts`: core's `backoffDelay`, 10 ms → 500 ms, full jitter; `{ sleep, random }`

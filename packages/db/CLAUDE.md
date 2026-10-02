@@ -38,8 +38,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `release()` is idempotent on both; `DbConnection` and `Turn` are `Disposable`.
 - **A pin is held by `using`, never a hand-rolled `try/finally`** (`withTransaction`,
   `readOnlyQuery`); `BEGIN` lives inside the guarded scope.
-- **`sqlstate.ts`**: `errno` first, `code` second, both shape-tested (five of `[0-9A-Z]`, one a
-  digit: `EPIPE` is an errno). `DB_SQLSTATE_CODES` is closed; `driverError()` is its one consumer, `sendOn` its one caller.
+- **`sqlstate.ts`**: `errno` first, `code` second, shape AND provenance (`isState`: `severity` =
+  server; `syscall`/numeric `errno` = socket; else needs a digit). `DB_SQLSTATE_CODES` is closed; `driverError()` is its one consumer, `sendOn` its one caller.
 - **`DbTx.origin` is the client the scope was opened on**, never the pin (entity's pinned-repository
   check reads it); a nested scope reports the root's.
 - **`withTransaction(fn, { retry })` re-runs `fn` only on `40001`/`40P01`**, default 0; each attempt
@@ -58,7 +58,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `isolation`/`readOnly`/`deferrable`/foreign `client` is `X_INVARIANT`.
 - **`close()` is BOUNDED by the driver's own `{ timeout }` in SECONDS** (`drainTimeoutMs / 1000`; `0`
   sends none); the verdict is elapsed `performance.now()` (`X_DB_DRAIN_TIMEOUT`). It clears the
-  cached driver before awaiting the teardown. `pool-drain.test.ts`, `pool-drain.live.test.ts`.
+  cached driver before awaiting the teardown. `pool-drain{,.live}.test.ts`.
 - **`client.listen` is ONE session beside the pool** (`listen.ts`; `Bun.SQL.listen`, PGlite's
   `listen` under a turn), never a reserved pin. `onListening` fires on every re-dial; a channel is
   refused unless it is a plain identifier. `listen.test.ts`, `listen.live.test.ts`.
@@ -200,8 +200,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   by `@ultimat3/cli`'s `runMigrations`), returned never thrown. The OTHER `X_DB_DRIFT` is the CLI's
   `checkSourceDrift`. Neither grows the other's half.
 - `compareTable` compares existence, **nullability** (the DECLARED key's columns excluded) and the
-  **primary key** in column order (`changed-primary-key`, fix = the drop/add pair; `primary-key.ts`
-  also holds `x db gen`'s arm and its inbound-foreign-key refusal). The type is not compared.
+  **primary key** in column order (`changed-primary-key`, fix = one `psql -c` of the pair; `primary-key.ts`
+  holds `x db gen`'s arm, its `drop not null`s, its two refusals). The type is not compared.
 - **A missing CHECK is drift, compared by NAME**: `TableDescription.checks` (declared: name and
   expression) vs `TableDescription.checkNames` (catalog: `conname` for `contype = 'c'`, always written
   by `introspect()`, `[]` included). Only the declared side is judged; no `changed-check`, ever.

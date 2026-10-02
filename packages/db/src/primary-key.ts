@@ -4,8 +4,10 @@
 // snapshot beside it recorded the new key, and drift had no comparison to notice with.
 
 import { assert } from '@ultimat3/core';
+import { defaultExpression } from './column-default';
 import type { EntityDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
+import { isGenerated } from './generated-column';
 import type { SchemaDescription, TableDescription } from './introspect';
 import { MAX_IDENTIFIER_BYTES } from './invariant-ddl';
 import { migrationIrreversible } from './migration-errors';
@@ -49,6 +51,13 @@ export function dropPrimaryKey(table: string, constraint: string, ifExists: bool
     `${ifExists ? 'if exists ' : ''}${identifier(constraint).text};`
   );
 }
+
+/**
+ * Postgres marks every key column NOT NULL and dropping the key does not undo it (measured on 17),
+ * so a column the declaration allows NULL in needs the constraint taken off by name.
+ */
+const dropNotNull = (table: string, column: string): string =>
+  `alter table ${identifier(table).text} alter column ${identifier(column).text} drop not null;`;
 
 /** Two column lists, equal in ORDER — the one copy; `drift.ts` compares the live key through it. */
 export const sameColumns = (a: readonly string[], b: readonly string[]): boolean =>
@@ -99,19 +108,65 @@ export function dropChangedKey(
     );
   }
   plan.up.push(dropPrimaryKey(entity.table, primaryKeyName(entity.table), true));
-  plan.down.push(addPrimaryKey(entity.table, live.primaryKey));
+  const declared = new Map(entity.columns.map((column) => [column.column, column]));
+  const kept = new Set(entity.primaryKey);
+  for (const name of live.primaryKey) {
+    // Leaving the key, still on the table, and declared nullable: the key's NOT NULL goes with it.
+    if (!kept.has(name) && declared.get(name)?.notNull === false) {
+      plan.up.push(dropNotNull(entity.table, name));
+    }
+  }
+  // A key column this migration DROPS comes back empty on the way down (`-- data is not
+  // restored`), and a primary key over NULLs cannot be added to a table holding a row. The
+  // statement is named as the follow-up rather than emitted as one that cannot apply — the form
+  // `diffTable` already uses for a NOT NULL add.
+  const restored = live.primaryKey.filter((name) => !declared.has(name));
+  const restore = addPrimaryKey(entity.table, live.primaryKey);
+  plan.down.push(
+    restored.length === 0
+      ? restore
+      : `-- backfill ${restored.map((name) => identifier(name).text).join(', ')}, then: ${restore}`,
+  );
 }
 
 /**
  * The second half, after the table's last column statement — the `drop column`s included: every
  * column the new key names exists by now, and none it no longer names is still in the way.
+ *
+ * Refused when the key names a column this same migration ADDS with nothing to fill it: `add
+ * column` lands NULL in every existing row and a primary key refuses a NULL, so the generated `up`
+ * could not apply to any table holding a row. A default or a generation expression fills it.
  */
 export function addChangedKey(
   entity: EntityDescriptionLike,
   live: TableDescription,
   plan: Plan,
+  migration: string,
 ): void {
   if (!keyChanged(entity, live) || entity.primaryKey.length === 0) return;
+  const recorded = new Map(live.columns.map((column) => [column.name, column]));
+  const empty = entity.columns.filter(
+    (column) =>
+      entity.primaryKey.includes(column.column) &&
+      !recorded.has(column.column) &&
+      !isGenerated(column) &&
+      defaultExpression(column) === null,
+  );
+  if (empty.length > 0) {
+    const names = empty.map((column) => `"${column.column}"`).join(', ');
+    throw migrationIrreversible(
+      `the new primary key of "${entity.table}" names ${names}, which this same migration adds with no default: every existing row would hold NULL there, and a primary key cannot be added over a NULL`,
+      `x db gen "${migration}"   # with ${names} declared but left OUT of primaryKey — apply it, backfill the column, then put it in the key and run x db gen again`,
+    );
+  }
   plan.up.push(addPrimaryKey(entity.table, entity.primaryKey));
+  const old = new Set(live.primaryKey);
+  for (const name of entity.primaryKey) {
+    // Pushed BEFORE the drop so it runs AFTER it on the way down: a column that was nullable
+    // before this migration keyed it is nullable again once the key is gone.
+    if (!old.has(name) && recorded.get(name)?.nullable === true) {
+      plan.down.push(dropNotNull(entity.table, name));
+    }
+  }
   plan.down.push(dropPrimaryKey(entity.table, primaryKeyName(entity.table), true));
 }

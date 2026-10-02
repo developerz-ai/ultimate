@@ -11,6 +11,7 @@
 // re-running the migrator applies nothing a ledger row already claims. And a difference names the
 // declared side's own spelling, never the catalog's, because the catalog's is Postgres' rewriting.
 
+import { psqlCommand } from './dependent-view';
 import { onDeleteRule, rebuildForeignKey } from './foreign-key';
 import type { CheckDescription, ForeignKeyDescription } from './introspect';
 import type { Migration } from './migrate';
@@ -309,9 +310,9 @@ export function changedForeignKey(
 }
 
 const PRIMARY_KEY_BY_HAND =
-  'drop the primary key the database holds and add the one migrations declare, in a new ' +
-  'migration, then x db migrate — a table, column or constraint name in this difference carries ' +
-  'a backtick, a dollar sign, a quote, a backslash or whitespace, or is too long, so no ' +
+  'psql "$DATABASE_URL"   # drop the primary key this database holds, add the one migrations ' +
+  'declare, \\q, then x db migrate — a table, column or constraint name in this difference ' +
+  'carries a backtick, a dollar sign, a quote, a backslash or whitespace, or is too long, so no ' +
   'statement here can spell it';
 
 const keyText = (columns: readonly string[]): string =>
@@ -321,7 +322,13 @@ const keyText = (columns: readonly string[]): string =>
  * The two sides key the table differently — a different column list, a different ORDER, or a key
  * on one side only. Its own kind rather than `changed-index` on `<table>_pkey`: that finding's fix
  * is `x db migrate`, and the migration declaring this key is already in the ledger, so re-running
- * the migrator applies nothing. The fix is the pair, as `changedForeignKey`'s is.
+ * the migrator applies nothing.
+ *
+ * The fix is ONE command a shell runs — the pair as `psql`'s argument, the form
+ * `dependent-view.ts` writes and for its reason: bare DDL beside a `#` is run by nobody, since `#`
+ * is not a comment to Postgres and `alter` is not a program to a shell. Against THIS database,
+ * never "in a new migration": drift means this database left the migrations, and a migration
+ * would re-key every database that is already right.
  *
  * `held` is the constraint the DATABASE holds — the live primary index's name, which is the
  * constraint's — because that is the one a `drop constraint` has to spell. The writers are asked
@@ -341,7 +348,7 @@ export function changedPrimaryKey(
       const parts: string[] = [];
       if (held !== undefined) parts.push(dropPrimaryKey(table, held, false));
       if (declared.length > 0) parts.push(addPrimaryKey(table, declared));
-      return `${parts.join(' ')}   # in a new migration, then x db migrate`;
+      return `${psqlCommand(parts.join(' '))}   # then x db migrate, which re-checks`;
     } catch {
       return PRIMARY_KEY_BY_HAND;
     }

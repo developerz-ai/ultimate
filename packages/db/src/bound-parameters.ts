@@ -18,13 +18,17 @@ const needsEncoding = (value: unknown): boolean => Array.isArray(value) || value
  * failure and read "cannot reach the database".
  */
 /**
- * The refusal alone, for a driver that does its own encoding. PGlite renders an array and a `Date`
- * correctly, so `pglite.ts` sends the caller's values untouched — but its serializer answers an
- * Invalid Date with the same bare `RangeError`, and the two funnels must refuse alike.
+ * The refusals alone, for a driver that does its own encoding. PGlite renders an array and a
+ * `Date` correctly, so `pglite.ts` sends the caller's values untouched — but what cannot be sent
+ * must be refused alike on both funnels: an Invalid Date (its serializer answers a bare
+ * `RangeError`) and a ragged or mixed-depth array, which the pooled path refuses in
+ * `pgArrayLiteral`. That function IS the shape rule, so it is asked and its literal discarded
+ * rather than restated here; only a statement that binds an array pays for it.
  */
 export function refuseUnsendable(values: readonly unknown[]): void {
   for (const [index, value] of values.entries()) {
     if (value instanceof Date) instantText(value, index + 1);
+    else if (Array.isArray(value)) pgArrayLiteral(value);
   }
 }
 

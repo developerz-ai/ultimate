@@ -753,16 +753,20 @@ generator's diff base in the entity's vocabulary. Layout, the engine rule and li
 
 ### What the catalog diff compares
 
-Twelve `DriftKind` values a snapshot comparison raises, `As of 2026-10-02` — the executable list is `DriftKind` in
+Thirteen `DriftKind` values, `As of 2026-10-02` — the executable list is `DriftKind` in
 [`packages/db/src/drift-findings.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/drift-findings.ts).
-**Only the declared side is judged**: a live index or key no snapshot names is not drift, because
-Postgres creates one for every primary key and every unique constraint and an index a DBA added is a
-planner decision.
+Twelve are raised by the snapshot comparison in the table below; the thirteenth, `unexpected-object`,
+by the schema-dump comparison ([Migrations and backfills](Migrations-And-Backfills#the-schema-dump)).
+**For indexes, CHECKs and foreign keys only the declared side is judged**: a live index or foreign
+key no snapshot names is not drift, because Postgres creates an index for every primary key and
+every unique constraint and an index a DBA added is a planner decision. **The primary key is the
+exception — both sides are compared**: a key the database holds and the snapshot does not, or the
+reverse, is `changed-primary-key`.
 
 | Kind | Raised when |
 |---|---|
 | `unexpected-column` · `missing-column` · `changed-column` | a modelled table's columns disagree with the snapshot. A column of the **declared** primary key reads as `NOT NULL` whether or not anything declared it; a column only the database keys does not, `As of 2026-10-02` |
-| `changed-primary-key` | new `As of 2026-10-02`. The two key column lists differ — a different column, a different **order**, or a key on one side only. Its `fix:` is the `drop constraint` / `add constraint … primary key (…)` pair naming the constraint the database holds, in a new migration. Until this kind existed a re-keyed table read `ok: true` |
+| `changed-primary-key` | new `As of 2026-10-02`. The two key column lists differ — a different column, a different **order**, or a key on one side only. Its `fix:` is one command — `psql "$DATABASE_URL" -c '<the drop constraint / add constraint … primary key (…) pair>'`, naming the constraint the database holds — run against the drifted database, then `x db migrate` to re-check. Until this kind existed a re-keyed table read `ok: true` |
 | `unexpected-table` · `missing-table` · `unknown-schema` | a modelled table is absent, or a table outside `x_` is present that no migration declares |
 | `missing-index` | the snapshot names an index the catalog does not hold |
 | `missing-check` | the snapshot names a CHECK constraint the catalog does not hold. Compared **by name only** — `pg_get_constraintdef` answers Postgres' own rewriting (`status in ('draft','published')` comes back as `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))`), so the predicate's text can never be compared, exactly as an index's `where` cannot. Only the **declared** side is judged, so a `NOT NULL`, an `enumerated()` column's old anonymous constraint and an extension's own are all silent |
@@ -783,7 +787,7 @@ answer both.
 |---|---|
 | Every migration has a `down` | `x db gen` writes both halves of one file, split by a lone `-- down` line |
 | A generated drop | refuses with `X_MIGRATION_IRREVERSIBLE` — its `down` cannot restore the rows. Re-run with `x db gen "<name>" --allow-destructive` |
-| A changed primary key | `As of 2026-10-02`: `alter table … drop constraint if exists "<table>_pkey"` ahead of the table's column statements and `add constraint "<table>_pkey" primary key (…)` after them, reversed in `down`. Until then it wrote **no statement** and `x db gen` re-recorded the hash sidecar as if nothing had changed. A key another table's foreign key is written against refuses with `X_MIGRATION_IRREVERSIBLE` naming those constraints: drop the keys in one migration, change the key in the next, restore them in a third |
+| A changed primary key | `As of 2026-10-02`: `alter table … drop constraint if exists "<table>_pkey"` ahead of the table's column statements and `add constraint "<table>_pkey" primary key (…)` after them, reversed in `down`. Until then it wrote **no statement** and `x db gen` re-recorded the hash sidecar as if nothing had changed. A key another table's foreign key is written against refuses with `X_MIGRATION_IRREVERSIBLE` naming those constraints: drop the keys in one migration, change the key in the next,  restore them in a third. A key over a column the same migration adds with no default refuses the same way — every existing row would hold `NULL` there: add the column, backfill it, then key it. A nullable column leaving the key gets `drop not null`, in `up` and in `down`, because Postgres keeps a key column `NOT NULL` after the key is gone |
 | A destructive `up` | must carry `-- destructive: true` as a line in the file. `x db gen` writes it for you; an unmarked one fails `x verify`'s `drift` step with `X_MIGRATION_DESTRUCTIVE` |
 | What counts as destructive | `drop table`, `drop column`, `truncate`, `alter column … type` — a closed list. `drop constraint`, `drop default`, `drop not null` and `drop index` do not: the database rebuilds those. A truncate is a statement that **starts with** `TRUNCATE`. `create trigger … before truncate` and `grant`/`revoke … truncate` only name the operation to guard or permit it, and are not truncates (`As of 2026-09-24`, #522) |
 | Only `up` is judged | reversing a `create table` is a `drop table`, so a rail that read `down` would mark every migration ever generated |

@@ -347,7 +347,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
           ' -- data is not restored',
       );
     }
-    addChangedKey(entity, live, plan);
+    addChangedKey(entity, live, plan, options.name);
   }
 
   const order = dropOrder(current.tables.filter((table) => !wanted.has(table.name)));

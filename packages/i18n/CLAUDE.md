@@ -59,7 +59,8 @@ Imported by every package that renders a string.
   (plural forms for a client island) calls `t.raw(key)`. **Breaking.**
 - **`defineCatalogs` runs `assertLocale` over every tag BEFORE the register loop.**
   `configureLocales` validated them after it, so `X_LOCALE_INVALID` arrived with the bad tag
-  already in `registeredLocales()`.
+  already in `registeredLocales()`. That code is `@ultimat3/core`'s, raised by its `assertLocale` —
+  never add it to `I18N_ERROR_CODES` (a second claim is `X_ERROR_CODE_DUPLICATE`).
 - **A `q` that is not a plain decimal is 0**, so the range is dropped. A digits-only capture meant
   `en;q=abc` never matched and kept the default quality of 1.
 - Only an **own** property of `vars` is a variable — `interpolate` guards with `Object.hasOwn`.
