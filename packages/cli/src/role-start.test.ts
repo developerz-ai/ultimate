@@ -136,6 +136,7 @@ describe('unit · x dev --role', () => {
     let claims = 0;
     const record: OutboxRecord = {
       id: 'row-1',
+      runId: 'run-1',
       job: 'staged-job',
       queue: 'default',
       input: {},

@@ -18,6 +18,7 @@ import {
   pluralVariantsOf,
   registeredLocales,
 } from '@ultimat3/i18n';
+import { mountedAdminKeys } from './admin-catalog-keys';
 import { loadApp } from './app-load';
 import type { DuplicateProbe } from './duplicate-packages';
 import { duplicateCause, duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
@@ -50,6 +51,8 @@ export interface RegistrationInput {
   readonly load?: AppLoader;
   /** The duplicate-install probe; `findDuplicateInstalls` is the production value. */
   readonly duplicates?: DuplicateProbe;
+  /** Keys a mounted admin derives, read after the load; `mountedAdminKeys` is the production value. */
+  readonly adminKeys?: () => Promise<readonly string[]>;
 }
 
 export interface RegistrationReport {
@@ -126,6 +129,18 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
     }
   }
 
+  // A key `defineAdmin` derives is spelled in no source file, so the source audit cannot see it.
+  // Judged against the REGISTRY — the framework's base layer answers `admin.group.data` in `en` —
+  // and only for a locale that registered: an unregistered one is already a finding above.
+  const unregisteredSet = new Set(gaps.map((gap) => gap.locale));
+  const adminKeys = await (input.adminKeys ?? mountedAdminKeys)();
+  for (const locale of Object.keys(input.catalogs)
+    .filter((tag) => !unregisteredSet.has(tag))
+    .sort()) {
+    const missing = unanswered(catalogFor(locale), adminKeys);
+    if (missing.length > 0) findings.push(adminKeysFinding(locale, missing));
+  }
+
   return {
     ok: findings.length === 0,
     // The load's own findings ride along ONLY when something is unregistered, and that condition is
@@ -137,6 +152,27 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
     locales,
     unregisteredLocales: gaps.map((gap) => gap.locale),
     registered: registeredLocales(),
+  };
+}
+
+/** Keys the catalog does not define, or defines with a placeholder. Labels are never plurals. */
+const unanswered = (catalog: Catalog, keys: readonly string[]): readonly string[] =>
+  keys.filter((key) => !Object.hasOwn(catalog, key) || isLoudMiss(catalog[key]));
+
+/**
+ * `X_CATALOG_MISSING_KEYS` — the same fact, a catalog without keys it is asked for — with the
+ * cause naming who asks and a fix that is an EDIT: `x i18n sync`, the code's own fix, seeds the
+ * keys SOURCE uses and cannot know these.
+ */
+function adminKeysFinding(locale: Locale, missing: readonly string[]): Finding {
+  const path = catalogPath(locale);
+  const shown = missing.slice(0, 12).map((key) => `"${key}"`);
+  const more = missing.length > shown.length ? `, +${missing.length - shown.length} more` : '';
+  return {
+    ...findingFrom(catalogMissingKeys(locale, missing)),
+    cause: `${path} is missing ${missing.length} key(s) the mounted admin renders (defineAdmin derives them, so no source file names one): ${shown.join(', ')}${more}`,
+    fix: `add to ${path}, each with its real label: ${shown.join(', ')}${more} — then x i18n check --json`,
+    at: path,
   };
 }
 

@@ -29,12 +29,17 @@ import {
 import type { SyncWs } from '@ultimat3/realtime/server';
 import { errorPageHook } from './error-pages';
 import { BadFlagError, PortInvalidError, RuntimeDriverSplitError } from './errors';
-import { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
+import {
+  DEFAULT_METRICS_PORT,
+  startMetricsEndpoint,
+  whenMetricsPortTaken,
+} from './metrics-endpoint';
 import { rolesUnderRealtime } from './role-realtime';
 import { startReplicator } from './role-replicator';
 import type { RunningRoles, StartRolesOptions } from './role-start-types';
 import { DEV_ROLES } from './role-start-types';
 import { prepareSync, type RunningSync } from './role-sync';
+import { startWorkerWake } from './role-wake';
 import type { Env } from './runtime-bindings';
 import { devHooks } from './runtime-hooks';
 import { workerOptionsFor } from './runtime-jobs';
@@ -304,6 +309,9 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       startMetricsEndpoint({
         port: options.metricsPort ?? (options.port === 0 ? 0 : DEFAULT_METRICS_PORT),
         hostname: binding.hostname,
+        // `x dev` is one process running several roles: its `process_info` says which.
+        role: selected.join('+'),
+        whenTaken: whenMetricsPortTaken(binding.dev, options.env),
       });
     started.push(async () => metrics.stop());
 
@@ -349,6 +357,13 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // Returned, not called-and-discarded: `stop()` waits out the pass in flight, and an unawaited
     // one hands the failure rollback the same window a dropped `await` gives the teardown below.
     if (relay !== null) started.push(() => relay.stop());
+
+    // The cross-process wake: one LISTEN session, so a job another pod committed starts now
+    // instead of at the next poll. On `worker` alone — it is the role whose two loops (the claim
+    // and the relay above) hear it; a web or scheduler pod holding a session would pin a
+    // connection per replica to wake nothing (`role-wake.ts`).
+    const wake = selected.includes('worker') ? startWorkerWake(options.runtime.db) : null;
+    if (wake !== null) started.push(() => wake.stop());
 
     // `state` and `leader`, not the defaults. `createMemorySchedulerState` forgets every watermark
     // on restart, so a rolling deploy re-fires or skips whatever was due across it, and
@@ -413,6 +428,8 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
         // and AWAITED, because a pass is a `driver.enqueue` followed by a `markPublished`. Dropped,
         // this returns between the two and the lines below close the pool under the row it was
         // about to mark: re-published next boot at best, a rejection against a closed pool at worst.
+        // The session first: a notification arriving after this wakes a loop that is about to stop.
+        await wake?.stop();
         await relay?.stop();
         await worker?.stop('x dev stopped');
         await sync?.stop();

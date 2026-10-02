@@ -45,6 +45,13 @@ describe('unit · a generator name is a safe directory and a valid identifier', 
 
   test('every generator writes its slice at the kebab-case directory resource uses', () => {
     const entity = generate({ kind: 'entity', name: 'BlogPost' });
-    expect(entity.every((file) => file.path.startsWith('apps/web/app/blog-post/'))).toBe(true);
+    // The slice's own files — the catalog the entity's admin labels merge into is the app's, and
+    // lives where every catalog does.
+    const slice = entity.filter((file) => file.merge !== 'json');
+    expect(slice.length).toBeGreaterThanOrEqual(4);
+    expect(slice.filter((file) => !file.path.startsWith('apps/web/app/blog-post/'))).toEqual([]);
+    expect(entity.filter((file) => file.merge === 'json').map((file) => file.path)).toEqual([
+      'packages/i18n/catalogs/en.json',
+    ]);
   });
 });

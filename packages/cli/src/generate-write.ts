@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { GenerateJsonInvalidError, ScaffoldPathEscapeError } from './errors';
-import { mergeJsonDeep } from './json-merge';
+import { mergeJsonDeep, mergeJsonInPlace, sortJsonDeep } from './json-merge';
 import type { Finding } from './output';
 import type { GeneratedFile } from './templates';
 
@@ -28,33 +28,18 @@ function parseJsonObject(text: string): Record<string, unknown> | undefined {
 }
 
 /**
- * Every key of every level, sorted. A catalog is authored NESTED (`{ nav: { home: … } }`) and this
- * sorted the top level only, so the keys INSIDE `app` kept the order their generators ran in —
- * `x g route zebra` then `x g route alpha` wrote different bytes from the same two runs in the
- * other order, which is the reordering diff the sort exists to prevent. Arrays keep their order:
- * a list's order is its content.
+ * A generator's OWN catalog bytes: every key of every level sorted, 2-space indent, trailing
+ * newline. A catalog is authored NESTED (`{ nav: { home: … } }`) and sorting the top level only
+ * left the keys inside `app` in the order their generators ran — `x g route zebra` then
+ * `x g route alpha` wrote different bytes from the same two runs in the other order. The sort is
+ * `json-merge.ts`'s `sortJsonDeep`, by code unit: `localeCompare` is `Intl`-backed, so the bytes
+ * would move with the machine's locale and its ICU version.
  *
- * CODE UNIT, never `localeCompare`: it is `Intl`-backed, so the bytes a catalog is written with
- * moved with the machine's locale and its ICU version — `x g route` on a `tr-TR` box and the same
- * command in CI produced two orderings of one file, which is exactly the reordering diff this sort
- * exists to prevent, one layer down. `@ultimat3/render` states the same rule as `byCodeUnit`; the
- * comparison is inlined rather than imported because that one is package-internal and this is the
- * whole of it.
+ * For a fresh file and for `dedupe`, where every contributor is a generator. A file already on
+ * disk is merged in ITS order (`mergeJsonInPlace`), never re-sorted.
  */
-function sortDeep(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortDeep);
-  if (typeof value !== 'object' || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, entry]) => [key, sortDeep(entry)]),
-  );
-}
-
-/** Deterministic catalog bytes: sorted keys, 2-space indent, trailing newline — a diff shows only
- * the keys a run actually changed, never a reordering. */
 function prettyJson(value: Record<string, unknown>): string {
-  return `${JSON.stringify(sortDeep(value), null, 2)}\n`;
+  return `${JSON.stringify(sortJsonDeep(value), null, 2)}\n`;
 }
 
 /**
@@ -156,10 +141,13 @@ async function planJsonMerge(
   }
   // An existing key wins because it may hold a human translation; only the new keys are added.
   // Deep, so a nested catalog gains `site.blog.title` without losing the rest of `site`.
-  const { merged, gained } = mergeJsonDeep(existing, generated);
+  const { gained } = mergeJsonDeep(existing, generated);
   // Every key the generator wants is already there — leave the file untouched and unclaimed.
   if (!gained) return { kind: 'skip' };
-  return { kind: 'write', file, absolute, contents: prettyJson(merged) };
+  // In the file's OWN order: the diff a run leaves is the keys it added, never a re-sort of a
+  // catalog somebody keeps grouped by screen.
+  const merged = mergeJsonInPlace(existing, generated);
+  return { kind: 'write', file, absolute, contents: `${JSON.stringify(merged, null, 2)}\n` };
 }
 
 /**

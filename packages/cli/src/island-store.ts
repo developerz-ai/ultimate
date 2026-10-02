@@ -1,21 +1,22 @@
-// The island chunks a container serves, built ONCE by `x build --target docker` into
-// `.x/islands/` and read back at boot. Without it every role's boot ran `Bun.build` — Babel, the
-// JSX transform, a minifier — for every island, in the image, on every start, and a chunk whose
-// URL is a hash of its sources was rebuilt from sources that could not have changed.
+// The island chunks a container serves, built ONCE inside the image build by
+// `x build --target prebuilt` and read back at boot. Without it every web pod's boot ran
+// `Bun.build` — Babel, the JSX transform, a minifier — for every island, on every start, and a
+// chunk whose URL is a hash of its sources was rebuilt from sources that could not have changed.
 //
 // Load-and-VERIFY, never load-and-trust: a store written by another framework or Bun version, one
 // that names a different set of islands than the app has, or a chunk whose bytes do not hash to
-// what the index recorded is refused, and the boot builds instead — with the reason logged.
+// what the index recorded is refused, and the boot builds instead — and says so.
 
 import { join, relative, sep } from 'node:path'; // why: Bun ships no path-join primitive.
-import { frameworkVersion, logger } from '@ultimat3/core';
+import { frameworkVersion } from '@ultimat3/core';
 import { contentHash, loadStylesheet } from '@ultimat3/render/server';
 import type { IslandBundle, IslandChunk, SharedChunk } from './island-bundle';
 import { buildIslands, discoverIslands, islandBundle } from './island-bundle';
 import { islandStylesheets } from './island-styles';
+import { PREBUILT_ISLANDS_DIR } from './serve-prebuilt-paths';
 
-/** App-root-relative: `COPY . .` carries it into the image with the rest of `.x/`. */
-export const ISLAND_STORE_DIR = '.x/islands';
+/** App-root-relative, inside the image's prebuilt store (`serve-prebuilt-paths.ts` says why there). */
+export const ISLAND_STORE_DIR = PREBUILT_ISLANDS_DIR;
 const INDEX = 'index.json';
 
 interface StoredChunk {
@@ -200,16 +201,23 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
   return { bundle: islandBundle(chunks, shared) };
 }
 
+/** The container's islands, and — when this boot had to build them — why and how many. */
+export interface LoadedIslands {
+  readonly bundle: IslandBundle;
+  readonly built?: { readonly chunks: number; readonly reason: string };
+}
+
 /**
  * The container's islands: the verified store, or a build when there is none to trust. A build is
- * correct and only slower, so a stale store is a warning with its reason, never a refusal.
+ * correct and only slower, so a stale store is never a refusal — the caller is handed the reason,
+ * and `serve-boot.ts` logs it once with everything else the boot built (`X_IMAGE_NOT_PREBUILT`).
  */
-export async function loadOrBuildIslands(root: string): Promise<IslandBundle> {
+export async function loadOrBuildIslands(root: string): Promise<LoadedIslands> {
   const read = await readIslandStore(root);
-  if (read.bundle !== undefined) return read.bundle;
-  logger.warn('islands built at boot', {
-    reason: read.stale,
-    fix: 'x build --target docker',
-  });
-  return buildIslands(root);
+  if (read.bundle !== undefined) return { bundle: read.bundle };
+  const bundle = await buildIslands(root);
+  return {
+    bundle,
+    built: { chunks: bundle.chunks.length + bundle.shared.length, reason: read.stale },
+  };
 }
