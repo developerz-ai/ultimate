@@ -61,8 +61,8 @@ export const forgetSnapshot = (key: string): void => {
 };
 
 /**
- * The tarball, or `undefined` — for a file that is absent, short, mislabelled or whose bytes do
- * not hash to what its header says. A file that fails any of those is DELETED: it will never
+ * The tarball, or `undefined` — for a file that is absent, unreadable, short, mislabelled or whose
+ * bytes do not hash to what its header says. A file that fails any of those is DELETED: it will never
  * verify, and leaving it costs every later boot the same read.
  */
 export async function readSnapshot(file: string, key: string): Promise<Blob | undefined> {
@@ -70,7 +70,15 @@ export async function readSnapshot(file: string, key: string): Promise<Blob | un
   if (held !== undefined) return held;
   const onDisk = Bun.file(file);
   if (!(await onDisk.exists())) return undefined;
-  const bytes = new Uint8Array(await onDisk.arrayBuffer());
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    bytes = new Uint8Array(await onDisk.arrayBuffer());
+  } catch {
+    // `exists()` and the read are two calls: a racing `discardSnapshot` (ENOENT) or a file this
+    // user cannot read (EACCES) lands between them. A cache that cannot be read is a miss, never
+    // a failed boot — and it is not deleted, since this process could not read it to judge it.
+    return undefined;
+  }
   const header = new TextDecoder().decode(bytes.subarray(0, HEADER_BYTES));
   const body = bytes.subarray(HEADER_BYTES);
   const sound =
