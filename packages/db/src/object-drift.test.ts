@@ -85,7 +85,23 @@ describe('unexpectedObjects', () => {
   test('an overload the migrations do not create is its own object', () => {
     const expected = catalog({ functions: [fn('add', 'a integer')] });
     const live = catalog({ functions: [fn('add', 'a integer'), fn('add', 'a text')] });
-    expect(unexpectedObjects(live, expected)).toHaveLength(1);
+    const [difference, ...rest] = unexpectedObjects(live, expected);
+    expect(rest).toEqual([]);
+    // `drop function "add";` is `42725 function name is not unique` while both live: the fix
+    // names the overload it means.
+    expect(difference?.fix).toStartWith('run drop function "add"(a text); inside psql');
+  });
+
+  test('a function with no arguments is dropped by its empty list', () => {
+    const [difference] = unexpectedObjects(catalog({ functions: [fn('touch')] }), emptyCatalog());
+    expect(difference?.fix).toStartWith('run drop function "touch"(); inside psql');
+  });
+
+  test('a signature no statement can spell is left out of the fix, never escaped into it', () => {
+    const live = catalog({ functions: [fn('add', 'a "$(id)"')] });
+    const [difference] = unexpectedObjects(live, emptyCatalog());
+    expect(difference?.fix).not.toContain('$(id)');
+    expect(difference?.fix).toStartWith('drop it by hand');
   });
 
   test('one direction: an object the database lacks is the ledger’s to report', () => {

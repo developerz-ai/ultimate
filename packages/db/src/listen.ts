@@ -40,11 +40,13 @@ const CHANNEL = /^[a-z_][a-z0-9_]{0,62}$/;
 /**
  * Refused before it reaches a driver: PGlite quotes the name and `Bun.SQL` validates it, and two
  * drivers reading one string two ways is a channel that works under `x dev` and not in production.
+ * `X_SQL_UNSAFE`, the code an identifier that cannot be spliced already answers with
+ * (`identifierUnsafe`): the argument is the fix, never the database's reachability.
  */
 export function assertListenChannel(channel: string): void {
   if (CHANNEL.test(channel)) return;
   throw new DbError({
-    code: 'X_DB_UNAVAILABLE',
+    code: 'X_SQL_UNSAFE',
     cause: 'the LISTEN channel is not a lower-case identifier of at most 63 characters',
     fix: "pass a channel matching [a-z_][a-z0-9_]*, e.g. client.listen('x_jobs_wake', onNotify)",
   });
