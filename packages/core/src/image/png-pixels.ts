@@ -3,6 +3,14 @@
 // safe zone `@ultimat3/pwa` promises is a composite. So this file exists for exactly that one hop:
 // Bun re-encodes to PNG, this reads the pixels back, `canvas.ts` blits, this writes them again.
 
+// why: `Bun.inflateSync` takes no output bound — measured, it ignores `maxOutputLength` and
+// returns the whole stream — and `DecompressionStream` is async where this seam is synchronous.
+// `node:zlib` is the one inflate here that can be told when to stop. A NAMESPACE import, never a
+// named one: the browser polyfill of this module has no `inflateRawSync`, and a named import of a
+// missing export fails the BUNDLE of every browser graph that reaches the barrel
+// (`async-context.test.ts` builds one) — for a function no browser ever calls.
+import * as zlib from 'node:zlib';
+import { stringField } from '../error-render';
 import { imageDecodeFailed, imageUnsupported } from './errors';
 import {
   adler32,
@@ -14,7 +22,7 @@ import {
   unshared,
   writeU32,
 } from './png-bytes';
-import { type Raster, rasterFrom } from './raster';
+import { assertPixelBudget, type Raster, rasterFrom } from './raster';
 
 /** Truecolour with alpha, 8 bits per channel — the ONE shape `Raster` is. */
 const RGBA_COLOR_TYPE = 8 << 4;
@@ -105,8 +113,13 @@ function readHeader(bytes: Uint8Array): PngHeader {
   return { width: readU32(bytes, 16), height: readU32(bytes, 20) };
 }
 
-/** Every IDAT concatenated: a PNG may split its stream across any number of them. */
-function idatStream(bytes: Uint8Array): Uint8Array {
+/**
+ * Every IDAT concatenated — a PNG may split its stream across any number of them — and inflated
+ * to AT MOST `limit` bytes, which is what the header says the pixels need. Inflating first and
+ * measuring after is the decompression bomb: deflate packs zeros ~1000:1, so a file of a few
+ * hundred kilobytes declaring 1x1 allocated hundreds of megabytes before anything compared it to 5.
+ */
+function idatStream(bytes: Uint8Array, limit: number): Uint8Array {
   const parts: Uint8Array[] = [];
   let at = 8;
   while (at + 12 <= bytes.length) {
@@ -123,8 +136,16 @@ function idatStream(bytes: Uint8Array): Uint8Array {
   try {
     // The 2-byte zlib header and the 4-byte Adler-32 trailer are PNG's envelope, stripped here
     // so the payload inflates as RAW deflate — see the encoder above for the mirror image.
-    return Bun.inflateSync(unshared(stream.subarray(2, stream.length - 4)), { windowBits: -15 });
-  } catch {
+    return zlib.inflateRawSync(unshared(stream.subarray(2, stream.length - 4)), {
+      maxOutputLength: limit,
+    });
+  } catch (error) {
+    if (stringField(error, 'code') === 'ERR_BUFFER_TOO_LARGE') {
+      throw imageDecodeFailed(
+        `the PNG IDAT stream inflates to more than the ${limit} bytes its header's size needs`,
+        { length: stream.length, limit },
+      );
+    }
     throw imageDecodeFailed(`the PNG IDAT stream (${stream.length} bytes) could not be inflated`, {
       length: stream.length,
     });
@@ -171,8 +192,10 @@ function unfilter(raw: Uint8Array, width: number, height: number): Uint8ClampedA
 /** PNG bytes to RGBA pixels. Refuses anything but 8-bit RGBA, naming the pipeline that reads it. */
 export function decodeImage(bytes: Uint8Array): Raster {
   const { width, height } = readHeader(bytes);
-  const raw = idatStream(bytes);
+  // From the HEADER, before the stream is touched: it bounds `expected`, which bounds the inflate.
+  assertPixelBudget(width, height, 'PNG');
   const expected = (width * BYTES_PER_PIXEL + 1) * height;
+  const raw = idatStream(bytes, expected);
   if (raw.length !== expected) {
     throw imageDecodeFailed(
       `the PNG inflates to ${raw.length} bytes but ${width}x${height} RGBA needs ${expected}`,

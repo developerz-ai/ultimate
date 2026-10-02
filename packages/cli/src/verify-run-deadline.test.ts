@@ -75,6 +75,9 @@ describe('a step past its deadline', () => {
     expect(lint?.findings.map((finding) => finding.code)).toEqual(['X_VERIFY_STEP_TIMEOUT']);
     expect(lint?.findings[0]?.cause).toContain('step "lint" did not finish within its 400 ms');
     expect(lint?.findings[0]?.cause).toMatch(/[2-9] process\(es\) it had started were killed/);
+    // The call the step was waiting on is named — registered when it started, so no race decides it.
+    expect(lint?.findings[0]?.cause).toEndWith('; it was waiting on: sh -c sleep 300 & sleep 300');
+    expect(lint?.findings[0]?.meta?.['step']).toBe('lint');
     expect(lint?.findings[0]?.fix).toStartWith('bun run verify --only lint --json');
     expect(lint?.durationMs).toBeGreaterThanOrEqual(400);
     expect(lint?.durationMs).toBeLessThan(5_000);

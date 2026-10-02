@@ -2,12 +2,19 @@
 // that turns a check function plus an IR node into a Standard-Schema-conforming object.
 
 import { describeValue } from './describe-value';
-import { SchemaError, ValidationFailedError, type ValidationIssue } from './errors';
+import {
+  DefaultInvalidError,
+  SchemaError,
+  ValidationFailedError,
+  type ValidationIssue,
+} from './errors';
 import type { SchemaNode, SchemaRefinement } from './node';
 import {
+  formatIssues,
   formatPath,
   type InferInput,
   type InferOutput,
+  isThenable,
   type StandardIssue,
   type StandardResult,
   type StandardSchemaV1,
@@ -43,9 +50,19 @@ export function failWith(issues: readonly StandardIssue[]): CheckErr {
   return { ok: false, issues };
 }
 
-/** An object with own keys — not null, not an array. The gate every object-ish check opens with. */
+/**
+ * A record of own keys: an object literal, or a null-prototype one (what this package's own
+ * object and record parsers answer). The gate every object-ish check opens with.
+ *
+ * The PROTOTYPE is the test, not "an object that is not an array": a `Map`, a `Date` and a class
+ * instance are all that, and each has no own enumerable keys the schema declared — so
+ * `t.record(t.number)` parsed a `Map` of anything to `{}` and an all-optional `t.object` parsed a
+ * `Date` to `{}`, a success carrying none of what was sent.
+ */
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 /**
@@ -146,6 +163,22 @@ function defaultFactory<Out>(fallback: Out): () => Out {
   return () => structuredClone(fallback);
 }
 
+/**
+ * A fallback the schema itself refuses, refused where it is WRITTEN. `t.number.min(5).default(1)`
+ * parsed an omitted field to 1 — a value the same schema rejects when a caller sends it — and
+ * published `minimum: 5, default: 1` to every generated client. Wrong for every parse that omits
+ * the field, so the first import of the authoring file says so, as `defaultFactory` does.
+ */
+function assertDefaultValid<Out>(check: Check<Out>, fallback: Out): void {
+  const result = check(fallback, []);
+  if (result.ok) return;
+  throw new DefaultInvalidError({
+    // The issue text is the RULE (`describeValue` never echoes content), so quoting it is safe.
+    cause: `default() received ${describeValue(fallback)}, which this schema refuses — ${formatIssues(result.issues).join('; ')}`,
+    fix: 'edit the .default(…) named in the stack so its value satisfies the rule quoted in cause, or relax that rule on the schema',
+  });
+}
+
 /** The default declaration, dropped — for a wrapper that can no longer reach it. */
 function withoutDefault(node: SchemaNode): SchemaNode {
   const { hasDefault: _hasDefault, default: _default, ...rest } = node;
@@ -196,6 +229,8 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
       );
     },
     default(fallback: Out): Schema<In | undefined, Out> {
+      // Rule before copy: a refused fallback has to be replaced, so its clone problem is moot.
+      assertDefaultValid(check, fallback);
       const fresh = defaultFactory(fallback);
       return makeSchema<In | undefined, Out>(
         // The node keeps the DECLARATION, never a copy: `node.default` is what OpenAPI, the MCP
@@ -234,7 +269,7 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
 export function checkOf<In, Out>(schema: Schema<In, Out>): Check<Out> {
   return (value, path) => {
     const result = schema['~standard'].validate(value);
-    if (result instanceof Promise) {
+    if (isThenable(result)) {
       return fail(path, 'expected a synchronous schema, received an async one');
     }
     if (result.issues === undefined) return pass(result.value);

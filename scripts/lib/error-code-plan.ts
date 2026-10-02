@@ -154,15 +154,16 @@ function titlesClose(source: string, open: number): string {
 const unknownShape = (path: string, code: string): ScriptError =>
   new ScriptError({
     code: 'X_NEW_ERROR_CODE_PATTERN_UNKNOWN',
-    cause: `${path} has no …TITLES object and no literal registerErrorCodes({ … }) this planner can add to, so there is no shape to add ${code} to without guessing`,
+    cause: `${path} has no …TITLES object, no literal registerErrorCodes({ … }) and no frozen …ERROR_CODES declarations this planner can add to, so there is no shape to add ${code} to without guessing`,
     fix: `edit ${path} to register ${code} by hand, and add its row to wiki/Error-Codes.md in the same change`,
   });
 
 /**
- * The registration, in whichever of the two shapes the package uses:
+ * The registration, in whichever of the three shapes the package uses:
  *   - a `…TITLES` object literal (`X_A: 'title',`), plus the `…OWNED_ERROR_CODES` / `…ERROR_CODES`
  *     literal array beside it when there is one — the titles are typed by that array's union;
- *   - a literal `registerErrorCodes({ X_A: { title: '…' } })` (`@ultimat3/seo`).
+ *   - a literal `registerErrorCodes({ X_A: { title: '…' } })` (`@ultimat3/seo`);
+ *   - frozen declarations, `Object.freeze({ X_A: { title: '…' } })` (`@ultimat3/schema`).
  */
 export function registerIn(errorsTs: string, path: string, input: NewErrorCode): string {
   if (new RegExp(`\\b${input.code}\\b`).test(errorsTs)) {
@@ -188,7 +189,7 @@ export function registerIn(errorsTs: string, path: string, input: NewErrorCode):
   const literal = /\bregisterErrorCodes\(\{/.exec(errorsTs);
   const registered =
     literal === null
-      ? undefined
+      ? frozenDeclarationIn(errorsTs, input)
       : insertBefore(
           errorsTs,
           literal.index,
@@ -197,6 +198,21 @@ export function registerIn(errorsTs: string, path: string, input: NewErrorCode):
         );
   if (registered === undefined) throw unknownShape(path, input.code);
   return registered;
+}
+
+/**
+ * The third shape: `const …ERROR_CODES… = Object.freeze({ X_A: { title: '…' } })`, declarations as
+ * DATA. `@ultimat3/schema` is tier 0 and cannot call `registerErrorCodes()`; core reads this object
+ * and registers it. One level deeper than the other two, so the entry is written at four spaces
+ * and wrapped as Biome wraps an object that does not fit.
+ */
+function frozenDeclarationIn(errorsTs: string, input: NewErrorCode): string | undefined {
+  const frozen = /const\s+\w*ERROR_CODES\b[^=]*=\s*Object\.freeze\(\{/.exec(errorsTs);
+  if (frozen === null) return undefined;
+  const title = tsString(input.title);
+  const flat = `    ${input.code}: { title: ${title} },`;
+  const line = flat.length <= 100 ? flat : `    ${input.code}: {\n      title: ${title},\n    },`;
+  return insertBefore(errorsTs, frozen.index, '\n  });', line);
 }
 
 /**

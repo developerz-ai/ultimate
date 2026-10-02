@@ -189,3 +189,74 @@ describe('postOtlp', () => {
     });
   });
 });
+
+describe('otlp · the generic endpoint is joined on the PATH', () => {
+  test('a query string no longer swallows the signal path', () => {
+    // String concatenation produced `http://collector:4318/?tenant=a/v1/traces` — a request to
+    // `/` whose query happens to end in the path the collector serves.
+    const env = { [OTLP_ENDPOINT_KEY]: 'http://collector:4318?tenant=a' };
+    expect(otlpEndpoint('traces', undefined, env)).toBe('http://collector:4318/v1/traces?tenant=a');
+  });
+
+  test('a base path and its trailing slashes are kept, once', () => {
+    const env = { [OTLP_ENDPOINT_KEY]: 'https://gw.example/otlp//?k=v#frag' };
+    expect(otlpEndpoint('metrics', undefined, env)).toBe(
+      'https://gw.example/otlp/v1/metrics?k=v#frag',
+    );
+  });
+});
+
+describe('otlpHeaders · a per-signal variable is honoured, as the endpoint and protocol are', () => {
+  const env = {
+    [OTLP_HEADERS_KEY]: 'api-key=generic',
+    OTEL_EXPORTER_OTLP_TRACES_HEADERS: 'api-key=traces-only,x-scope=t',
+  };
+
+  test('the signal-specific value replaces the generic one for that signal only', () => {
+    expect(otlpHeaders(undefined, env, 'traces')).toEqual({
+      'content-type': 'application/json',
+      'api-key': 'traces-only',
+      'x-scope': 't',
+    });
+    expect(otlpHeaders(undefined, env, 'metrics')['api-key']).toBe('generic');
+  });
+
+  test('a malformed escape names the variable it was read from', () => {
+    const bad = { OTEL_EXPORTER_OTLP_METRICS_HEADERS: 'api-key=%zz' };
+    try {
+      otlpHeaders(undefined, bad, 'metrics');
+      expect.unreachable();
+    } catch (thrown) {
+      expect(isUltimateError(thrown) && thrown.code).toBe('X_OTLP_HEADERS_INVALID');
+      expect(isUltimateError(thrown) && thrown.cause).toContain(
+        'OTEL_EXPORTER_OTLP_METRICS_HEADERS',
+      );
+      expect(isUltimateError(thrown) && thrown.cause).not.toContain('%zz');
+    }
+  });
+});
+
+describe('otlpAttributes · a number the wire cannot spell', () => {
+  test('intValue only for a safe integer; a larger integral number is a double', () => {
+    // `String(1e21)` is "1e+21", which is not an int64 — a validating collector rejects the batch.
+    expect(otlpAttributes({ big: 1e21, edge: Number.MAX_SAFE_INTEGER, neg: -3 })).toEqual([
+      { key: 'big', value: { doubleValue: 1e21 } },
+      { key: 'edge', value: { intValue: '9007199254740991' } },
+      { key: 'neg', value: { intValue: '-3' } },
+    ]);
+  });
+
+  test('a non-finite number is dropped, never `{"doubleValue":null}`', () => {
+    const attributes = otlpAttributes({
+      nan: Number.NaN,
+      inf: Number.POSITIVE_INFINITY,
+      keep: 1.5,
+      list: [1, Number.NaN, 2] as readonly number[],
+    });
+    expect(attributes).toEqual([
+      { key: 'keep', value: { doubleValue: 1.5 } },
+      { key: 'list', value: { arrayValue: { values: [{ intValue: '1' }, { intValue: '2' }] } } },
+    ]);
+    expect(JSON.stringify(attributes)).not.toContain('null');
+  });
+});

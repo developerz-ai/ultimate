@@ -46,6 +46,15 @@ namespace member (`t.nullable`) and a free function (`nullableSchema`) — symme
 
 Unknown object keys are **dropped**, never forwarded — an action cannot be mass-assigned.
 
+Refused at the boundary rather than guessed at (`As of 2026-10`):
+
+| Schema | Refuses | Because |
+|---|---|---|
+| `t.date` | a day its month does not have — `2026-02-30`, `2026-04-31`, month `13` | `new Date` rolls it over to March 2nd; `@ultimat3/time`'s `plainDate` already refused it |
+| `t.url` | leading / trailing spaces and C0 controls, a tab or newline anywhere | the URL parser strips them in silence and the validator returns the string as written. Trim before parsing |
+| `t.object` `t.record` `t.money` | anything whose prototype is not `Object.prototype` or `null` — a `Map`, a `Date`, a class instance | none has the own keys the schema declared, so it parsed to `{}` |
+| `.default(v)` | a `v` the schema itself rejects — `X_SCHEMA_DEFAULT_INVALID`, thrown where it is declared | an omitted field parsed to a value the same schema refuses when sent |
+
 Every string-backed schema (`string` `uuid` `email` `url` `timezone` `locale` `slug` `cursor`, with
 any `.min/.max/.pattern`) and every `t.record` key **refuses U+0000** — the one character Postgres
 `text` and `jsonb` cannot store, so a NUL that passed reached the row write as a 500. Tabs, newlines
@@ -146,8 +155,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
+| `DefaultInvalidError` (extends `SchemaError`) | `X_SCHEMA_DEFAULT_INVALID` | `src/errors.ts` |
 | `DiscriminantInvalidError` (extends `SchemaError`) | `X_SCHEMA_DISCRIMINANT_INVALID` | `src/errors.ts` |
-| `SchemaError` | any schema code; the base of the three that extend it. Extends `Error`, not core's `UltimateError` — schema imports nothing — and carries the same `Symbol.for('ultimate.error')` brand so `isUltimateError` answers `true` | `src/errors.ts` |
+| `SchemaError` | any schema code; the base of the four that extend it. Extends `Error`, not core's `UltimateError` — schema imports nothing — and carries the same `Symbol.for('ultimate.error')` brand so `isUltimateError` answers `true` | `src/errors.ts` |
 | `SchemaUnsupportedError` (extends `SchemaError`) | `X_SCHEMA_UNSUPPORTED` | `src/errors.ts` |
 | `ValidationFailedError` (extends `SchemaError`) | `X_VALIDATION_FAILED` | `src/errors.ts` |
 
@@ -180,4 +190,8 @@ parse(publishPost, coerceQuery(publishPost, url.searchParams));
 
 Coercion is separate from validation on purpose: only the HTTP layer has strings that mean
 numbers. `coerceQuery` promotes repeated params to arrays and leaves anything ambiguous
-untouched so validation still produces the real error.
+untouched so validation still produces the real error. It never invents data: only a **decimal**
+numeral becomes a number (`0x10` stays text), only a plain object is read as one (an array is never
+spread into `{ 0: … }`), and a union tries **every** member in declaration order — a string some
+member already accepts is left alone, and a union of objects coerces through the member whose
+literal fields the value carries.

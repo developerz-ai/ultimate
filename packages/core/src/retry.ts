@@ -6,6 +6,7 @@
 import { type BackoffCurve, backoffDelay, type JitterMode, type Random } from './backoff';
 import { systemClock } from './clock';
 import { classifyThrown, type ErrorRetry, statedDelayMs } from './error-retry';
+import { finiteCount, finiteOption } from './finite-option';
 
 export interface RetryPolicy {
   /** Total attempts INCLUDING the first. `attempts: 1` means no retry. */
@@ -63,6 +64,9 @@ export function retryDecision(
   error: unknown,
   random?: Random,
 ): RetryDecision {
+  // Screened HERE and not only in `retry()`: this function is exported so a caller can write its
+  // own loop, and `attempt >= NaN` is false for every attempt — the loop that asks it never ends.
+  const attempts = finiteCount('a retry policy', 'attempts', policy.attempts);
   const classification = classifyThrown(error);
   const stop = (stoppedBy: RetryStopReason): RetryDecision => ({
     retry: false,
@@ -74,7 +78,7 @@ export function retryDecision(
   });
 
   if (classification === 'terminal') return stop('terminal');
-  if (attempt >= policy.attempts) return stop('attempts-exhausted');
+  if (attempt >= attempts) return stop('attempts-exhausted');
 
   const computed = backoffDelay({
     attempt,
@@ -111,6 +115,16 @@ export async function retry<T>(
   policy: RetryPolicy,
   deps: RetryDeps,
 ): Promise<T> {
+  // Both bounds are refused BEFORE the first try: a policy that cannot stop the loop is a defect in
+  // the call, and running the work once first would report it as the work's own failure.
+  // `finiteOption` for the budget, not `finiteCount`: it is a duration a caller computes from a
+  // monotonic clock, so a fraction is real and a spent (negative) one means "do not wait at all".
+  // Zero stays legal and means what it always did — one try, no retry (`retry.test.ts` pins it).
+  finiteCount('a retry policy', 'attempts', policy.attempts);
+  const budget =
+    policy.timeBudgetMs === undefined
+      ? undefined
+      : finiteOption('a retry policy', 'timeBudgetMs', policy.timeBudgetMs);
   const now = deps.now ?? ((): number => systemClock.monotonic());
   // Read once even when no budget is set: a clock call per attempt would be a cost the common case
   // does not owe. `startedAt` is only compared against when `timeBudgetMs` is present.
@@ -122,7 +136,6 @@ export async function retry<T>(
     } catch (error) {
       const decision = retryDecision(policy, attempt, error, deps.random);
       if (!decision.retry) throw error;
-      const budget = policy.timeBudgetMs;
       // Decided BEFORE the wait, never after: a loop that sleeps and then discovers it is out of
       // budget has already spent the caller's deadline on a wait nobody could use.
       if (budget !== undefined && now() - startedAt + decision.delayMs > budget) throw error;

@@ -73,3 +73,35 @@ describe('unit · the decision fails CLOSED', () => {
     });
   });
 });
+
+describe('unit · a wildcard never admits an address inside the network', () => {
+  // `*` is "any SITE", and the header of this module names the request it exists to stop: an
+  // injected `<img src="http://169.254.169.254/…">`. A name-only match let `['*']` through to it.
+  test.each([
+    'http://169.254.169.254/latest/meta-data/',
+    'http://127.0.0.1:9229/json',
+    'http://10.0.0.5/',
+    'http://192.168.1.1/',
+    'http://[::1]:5432/',
+    'http://2130706433/',
+    'http://0x7f.1/',
+  ])(`%s is refused under ${ANY_HOST}`, (url) => {
+    expect(hostDecision(url, [ANY_HOST]).allowed).toBe(false);
+  });
+
+  test('a public address literal and every hostname still pass the wildcard', () => {
+    expect(hostDecision('http://93.184.216.34/', [ANY_HOST]).allowed).toBe(true);
+    expect(hostDecision('https://shop.example/', [ANY_HOST]).allowed).toBe(true);
+    expect(hostDecision('http://localhost:3000/', [ANY_HOST]).allowed).toBe(true);
+  });
+
+  test('the opt-out is NAMING the address — an exact rule, visible in review', () => {
+    expect(hostDecision('http://127.0.0.1:3000/', [ANY_HOST, '127.0.0.1'])).toEqual({
+      allowed: true,
+      host: '127.0.0.1',
+    });
+    expect(hostDecision('http://[::1]:3000/', ['[::1]']).allowed).toBe(true);
+    expect(hostDecision('http://10.0.0.5/', ['10.0.0.5']).allowed).toBe(true);
+    expect(hostDecision('http://10.0.0.6/', [ANY_HOST, '10.0.0.5']).allowed).toBe(false);
+  });
+});

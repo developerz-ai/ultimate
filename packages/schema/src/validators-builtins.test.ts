@@ -347,3 +347,30 @@ describe('builtinT.cursor', () => {
     expect(validate(builtinT.cursor, 'abc+123').issues).toBeDefined();
   });
 });
+
+describe('builtinT.url takes only what the URL parser reads as written', () => {
+  // `URL.canParse` strips these in silence, so the string that validated and was stored is not the
+  // URL that was validated: `' https://a.b'` in an `href` is a relative path.
+  test.each([
+    ' https://example.com',
+    'https://example.com ',
+    '\thttps://example.com',
+    'https://example.com\n',
+    'https://exa\nmple.com/path',
+    'https://example.com/pa\tth',
+    'https://example.com/\r',
+    '\u0000https://example.com',
+  ])('refuses %j', (value) => {
+    expect(validate(builtinT.url, value).issues).toBeDefined();
+  });
+
+  test.each([
+    'https://example.com',
+    'https://example.com/path?q=a%20b#frag',
+    'HTTPS://Example.com/Path',
+    'https://example.com/a b',
+    'mailto:someone@example.com',
+  ])('still accepts %j, returned as written', (value) => {
+    expect(validate(builtinT.url, value)).toEqual({ value });
+  });
+});

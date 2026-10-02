@@ -196,7 +196,7 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 | field | type | default | notes |
 |---|---|---|---|
 | `cache.defaultTtlMs` | `number` | `60000` | milliseconds, not a duration string |
-| `cache.tiers` | `CacheTierName[]` | `['request-memo', 'lru']` | `'request-memo' \| 'lru' \| 'redis' \| 'cdn'`; order is fixed regardless of listing order, and a rung the environment cannot supply refuses the boot |
+| `cache.tiers` | `CacheTierName[]` | `['request-memo', 'lru']` | `'request-memo' \| 'lru' \| 'redis' \| 'cdn'`; order is fixed regardless of listing order, an EMPTY list is refused (`X_CONFIG_INVALID`), and a rung the environment cannot supply refuses the boot |
 | ~~`cache.driver`~~ | — | — | **Deleted in 9.0.0.** It was the second way to ask for Redis and the losing one: the ladder is built from `cache.tiers`, so `driver: 'redis'` beside `tiers: ['request-memo', 'lru']` asked for a rung nothing built. Name `redis` in `tiers` |
 | ~~`cache.urlEnv`~~ | — | — | **Deleted in 9.0.0**, `database.urlEnv`'s defect verbatim: the Redis tier reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS` |
 
@@ -449,8 +449,8 @@ Two disks may not share one driver **instance**: a driver learns its disk name a
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP **JSON** only, port `:4318`. Absent = spans still recorded, exported nowhere. Invalid → `X_OTLP_ENDPOINT_INVALID` |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `..._METRICS_ENDPOINT` | per-signal override |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | anything but `http/json` → `X_OTLP_PROTOCOL_UNSUPPORTED`, naming `:4318`. gRPC (`:4317`) needs HTTP/2 and protobuf and is out of scope |
-| `OTEL_EXPORTER_OTLP_HEADERS` | percent-decoded, so `%zz` is `X_OTLP_HEADERS_INVALID` rather than a bare `URIError` at exporter construction. The header **key** appears in the cause and the fix; the **value** never does — it is the collector's credential |
-| `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` | read at the **first span**, never at module scope. `configureTelemetry({ sampler })` is the programmatic form |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `OTEL_EXPORTER_OTLP_TRACES_HEADERS` / `..._METRICS_HEADERS` REPLACES it for that signal. Percent-decoded, so `%zz` is `X_OTLP_HEADERS_INVALID` rather than a bare `URIError` at exporter construction. The header **key** appears in the cause and the fix; the **value** never does — it is the collector's credential |
+| `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` | read at the **first span**, never at module scope. `parentbased_always_on` takes no arg and ignores one. `configureTelemetry({ sampler })` is the programmatic form |
 
 An empty `spanId` means "no inbound decision" and every reader honours it: a synthesised parent used to make the ratio sampler inherit a bit nobody sent, which exported **every HTTP root span at every ratio**.
 
@@ -529,7 +529,7 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `REDIS_URL` | any tier-3 cache user | if `redis` in `cache.tiers` | |
 | `BUILD_ID` | all | set by `x build` | content hash. Never a timestamp, never `latest` |
 | `DRAIN_TIMEOUT` | all | no — default `30s` | must be <= the orchestrator's `stop_grace_period` |
-| `LOG_LEVEL` | all | no — default `info` | `debug \| info \| warn \| error` |
+| `LOG_LEVEL` | all | no — unset or empty is `info` | `trace \| debug \| info \| warn \| error \| fatal \| silent`, lowercase. Any other value — `DEBUG`, `verbose` — is REFUSED at import (`X_INVARIANT`), never read as `info` |
 | `TRUSTED_PROXY_HOPS` | `web`, `sync` | no — unset trusts no proxy header | how many proxies **append** to `x-forwarded-for` between the client and this process: 1 for a single ingress or ALB, 2 for a CDN in front of one. Integer 1–16; anything else is `X_PORT_INVALID`, refused rather than defaulted, because reading the header at the wrong index is trusting a value the client typed. Unset means `ctx.ip` is the socket address, `ctx.peer` is `null` and no inbound `x-request-id` is echoed |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | all | no | the OTLP collector. There is no `otel` config block for it to override — see [`otel`](#otel) |
 
@@ -539,7 +539,7 @@ Rules:
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
 | `env.X` reads through `defineEnv`'s schema | a declared key that is missing or malformed is `X_ENV_MISSING` at boot, every offender in one error. A `process.env` read outside the schema is a lint error, never a runtime one |
-| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `jobs.concurrency < 1`, a `realtime.transport` other than `memory` with no `realtime.urlEnv`, a `cache.tiers` entry the environment cannot supply — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
+| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale or two spellings of one, an unknown time zone, a section or list of the wrong shape (`jobs: null`), a value outside its closed set (`roles`, `jobs.backoff`, `theme.defaultMode`), a switch that is not a boolean (`database.ssl: 'false'`), `jobs.concurrency < 1`, a `realtime.transport` other than `memory` with no `realtime.urlEnv`, a `cache.tiers` entry the environment cannot supply — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
 | `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |

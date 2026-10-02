@@ -3,6 +3,8 @@
 import { describe, expect, test } from 'bun:test';
 import { coerceNode } from './coerce';
 import { isIsoDateTime } from './iso-date';
+import { validate } from './standard';
+import { t } from './t';
 
 const REFUSED = [
   'March 14, 2026',
@@ -25,6 +27,64 @@ const ACCEPTED = [
   '2026-03-14T09:00:00-0400',
   '2026-03-14 09:00:00Z',
 ];
+
+/**
+ * The calendar rule, as a table. **Twin: `packages/time/src/plain-date.test.ts` holds the same rows
+ * against `isPlainDate`** — schema is tier 0 and cannot import `time`, so the month table is
+ * restated in `iso-date.ts` and these rows are what keeps the two copies answering alike. Edit both.
+ */
+const CALENDAR_PARITY: readonly (readonly [string, boolean])[] = [
+  ['2026-01-31', true],
+  ['2026-01-32', false],
+  ['2026-02-28', true],
+  ['2026-02-29', false],
+  ['2026-02-30', false],
+  ['2024-02-29', true],
+  ['2024-02-30', false],
+  ['2000-02-29', true],
+  ['1900-02-29', false],
+  ['2026-03-31', true],
+  ['2026-04-30', true],
+  ['2026-04-31', false],
+  ['2026-05-31', true],
+  ['2026-06-30', true],
+  ['2026-06-31', false],
+  ['2026-07-31', true],
+  ['2026-08-31', true],
+  ['2026-09-30', true],
+  ['2026-09-31', false],
+  ['2026-10-31', true],
+  ['2026-11-30', true],
+  ['2026-11-31', false],
+  ['2026-12-31', true],
+  ['2026-12-32', false],
+  ['2026-00-10', false],
+  ['2026-13-01', false],
+  ['2026-03-00', false],
+];
+
+describe('isIsoDateTime checks the day against the month', () => {
+  test.each(CALENDAR_PARITY)('%p -> %p', (value, real) => {
+    expect(isIsoDateTime(value)).toBe(real);
+  });
+
+  test.each(CALENDAR_PARITY)('%p with a clock time -> %p', (value, real) => {
+    expect(isIsoDateTime(`${value}T09:00:00Z`)).toBe(real);
+    expect(isIsoDateTime(`${value}T23:30:00-05:00`)).toBe(real);
+  });
+
+  test('t.date refuses a day the month does not have instead of rolling it over', () => {
+    // `new Date('2026-02-30')` answers March 2nd: the caller's typo became a stored instant.
+    expect(validate(t.date, '2026-02-30').issues).toBeDefined();
+    expect(() => t.date.parse('2026-02-30')).toThrow(/X_VALIDATION_FAILED/);
+    expect(validate(t.date, '2026-04-31T10:00:00Z').issues).toBeDefined();
+    expect(t.date.parse('2024-02-29').toISOString()).toBe('2024-02-29T00:00:00.000Z');
+  });
+
+  test('coercion leaves an impossible day a string, so validation states the refusal', () => {
+    expect(coerceNode({ kind: 'date' }, '2026-02-30')).toBe('2026-02-30');
+  });
+});
 
 describe('isIsoDateTime', () => {
   test.each(REFUSED)('refuses %p', (value) => {

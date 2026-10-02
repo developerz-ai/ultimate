@@ -79,6 +79,8 @@ top-level `UltimateError` use in `error-codes.ts`.
 | which row survives a conflict | `conflict-policy.ts` (`ConflictPolicy`, `resolveConflict`, `Row`) | read by `action`'s mutator and `realtime`'s rebase |
 | the four shapes of an async region | `async-state.ts` (`AsyncState`) | `realtime` returns it, `ui` renders it. `bun run render-modes` refuses a second status union sharing three members |
 | is this `unknown` a keyed record? | `json-object.ts` (`isJsonObject`) | narrows a shape; does not certify provenance |
+| may a caller read this 5xx `cause`? | `public-cause.ts` (`hasPublicCause`) | one table for http, mcp, ai. `registerPublicCause` is `@ultimat3/http`'s `registerProblemMeta` writing it — never an app's door |
+| is this field a credential? | `logger.ts` (`isRedactedKey`) | exact keys + `CREDENTIAL_NAME`; a bare `token` suffix is NOT one (`idempotencyToken`, `maxTokens`). Log line, monitor envelope and `action`'s audit ask it |
 | a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one, greppable, way out |
 | an `Intl` formatter cache, and the screen in front of it | `intl-cache.ts` (`cachedFormatter`, `canonicalLocale`, `assertLocale`, `MAX_CACHED_FORMATTERS`, `MAX_LOCALE_EXCERPT`) | a locale arrives from a header: refuse a non-tag (`X_LOCALE_INVALID`), key canonically AND bound the cache — never a copy of any of the three. The cause quotes at most `MAX_LOCALE_EXCERPT` (35) code points; the whole tag rides in `meta.locale` |
 | the text direction of a locale | `locale-direction.ts` (`directionOf`, `isRtl`, `Direction`) | re-exported by `@ultimat3/i18n`; lives here so `@ultimat3/ui` need not reach the i18n barrel |

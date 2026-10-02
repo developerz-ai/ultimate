@@ -4,9 +4,9 @@
 // other suite rather than here. Value rendering has its own file: `describe-value.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { checkOf, fail, failWith, makeSchema, pass } from './builder';
+import { checkOf, fail, failWith, isPlainObject, makeSchema, pass } from './builder';
 import { expected } from './describe-value';
-import { ValidationFailedError } from './errors';
+import { SchemaError, ValidationFailedError } from './errors';
 import type { SchemaNode } from './node';
 
 describe('pass', () => {
@@ -254,5 +254,80 @@ describe('checkOf', () => {
     const check = checkOf(wrapped);
     const result = check('anything', ['root']);
     expect(result).toEqual(fail(['root'], 'expected a synchronous schema, received an async one'));
+  });
+});
+
+describe('checkOf / a thenable is async whatever built it', () => {
+  test('a non-native thenable is refused, not read as a success', () => {
+    const thenable = {
+      // biome-ignore lint/suspicious/noThenProperty: a non-native thenable is the input under test.
+      then: (resolve: (value: unknown) => void) => resolve({ value: 1 }),
+    };
+    const wrapped = {
+      ...makeNumberSchema(),
+      '~standard': { version: 1 as const, vendor: 'fake', validate: () => thenable },
+    } as unknown as ReturnType<typeof makeNumberSchema>;
+    expect(checkOf(wrapped)('anything', ['root'])).toEqual(
+      fail(['root'], 'expected a synchronous schema, received an async one'),
+    );
+  });
+});
+
+describe('isPlainObject', () => {
+  test('a literal and a null-prototype object are plain', () => {
+    expect(isPlainObject({})).toBe(true);
+    expect(isPlainObject(Object.create(null))).toBe(true);
+  });
+
+  test('anything carrying another prototype is not', () => {
+    class Row {}
+    for (const value of [new Map(), new Set(), new Date(0), new Row(), /x/, [], null, 'a', 1]) {
+      expect(isPlainObject(value)).toBe(false);
+    }
+    expect(isPlainObject(Object.create({ inherited: 1 }))).toBe(false);
+  });
+});
+
+describe('.default() runs its fallback through the schema where it is declared', () => {
+  const atLeastFive = (): ReturnType<typeof makeNumberSchema> =>
+    makeSchema<number, number>({ kind: 'number', minimum: 5 }, (value, path) =>
+      typeof value === 'number' && value >= 5 ? pass(value) : fail(path, 'expected a number >= 5'),
+    );
+
+  test('a fallback its own schema refuses throws at declaration', () => {
+    try {
+      atLeastFive().default(1);
+      expect.unreachable('a default the schema refuses must not be declarable');
+    } catch (error) {
+      if (!(error instanceof SchemaError)) throw error;
+      expect(error.code).toBe('X_SCHEMA_DEFAULT_INVALID');
+      expect(error.cause).toContain('expected a number >= 5');
+      // Shape, never content: the fallback is not echoed.
+      expect(error.cause).not.toContain(' 1 ');
+    }
+  });
+
+  test('a fallback that is both refused and uncopyable reports the RULE first', () => {
+    // The value has to change to satisfy the rule anyway, so naming the clone problem first sends
+    // the author to fix a copy of something they are about to replace.
+    const refused = { onMiss: (): number => 1 };
+    const declare = (): unknown => atLeastFive().default(refused as unknown as number);
+    expect(declare).toThrow(/X_SCHEMA_DEFAULT_INVALID/);
+  });
+
+  test('a fallback the schema accepts still declares and still parses', () => {
+    const schema = atLeastFive().default(7);
+    expect(schema.parse(undefined)).toBe(7);
+    expect(schema.node.default).toBe(7);
+  });
+
+  test('a refinement counts: the fallback has to pass the whole schema', () => {
+    const even = atLeastFive().refine({
+      name: 'even',
+      message: 'must be even',
+      check: (value) => value % 2 === 0,
+    });
+    expect(() => even.default(7)).toThrow(/X_SCHEMA_DEFAULT_INVALID/);
+    expect(even.default(8).parse(undefined)).toBe(8);
   });
 });

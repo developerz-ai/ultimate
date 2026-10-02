@@ -165,3 +165,81 @@ describe('coerceQuery', () => {
     expect(() => parse(record, coerced)).toThrow(/X_VALIDATION_FAILED/);
   });
 });
+
+describe('coerceNode never invents data', () => {
+  test('an array is not an object: it reaches validation as the array it is', () => {
+    // `{ ...['x'] }` is `{ 0: 'x' }`, which an all-optional object schema then accepted as `{}`.
+    const input = t.object({ a: t.number.optional() });
+    const coerced = coerceInput(input, ['x'] as unknown as Record<string, unknown>);
+    expect(Array.isArray(coerced)).toBe(true);
+    expect(validate(input, coerced).issues).toBeDefined();
+    expect(coerceNode(input.node, ['x'])).toEqual(['x']);
+  });
+
+  test('an array is not a record or a money value either', () => {
+    expect(coerceNode(t.record(t.number).node, ['1'])).toEqual(['1']);
+    expect(Array.isArray(coerceNode(t.record(t.number).node, ['1']))).toBe(true);
+    expect(Array.isArray(coerceNode(t.money.node, ['1']))).toBe(true);
+  });
+
+  test('a class instance is not spread into an empty object', () => {
+    const when = new Date(0);
+    expect(coerceNode(t.object({ a: t.number.optional() }).node, when)).toBe(when);
+    const map = new Map([['a', '1']]);
+    expect(coerceNode(t.record(t.number).node, map)).toBe(map);
+  });
+
+  test('only a DECIMAL numeral is a number: hex, octal and binary stay text', () => {
+    for (const raw of ['0x10', '0b11', '0o17', '0X1F', '1_000', 'Infinity', '1e', '.', '+', '']) {
+      expect(coerceNode({ kind: 'number' }, raw)).toBe(raw);
+      expect(coerceNode({ kind: 'literal', literal: 16 }, raw)).toBe(raw);
+    }
+    expect(coerceNode(t.money.node, { minor: '0x10', currency: 'EUR' })).toEqual({
+      minor: '0x10',
+      currency: 'EUR',
+    });
+    expect(coerceNode({ kind: 'number' }, '16')).toBe(16);
+    expect(coerceNode({ kind: 'number' }, '-1.5')).toBe(-1.5);
+    expect(coerceNode({ kind: 'number' }, '.5')).toBe(0.5);
+    expect(coerceNode({ kind: 'number' }, '1e3')).toBe(1000);
+    expect(coerceNode({ kind: 'number' }, ' 12 ')).toBe(12);
+  });
+
+  test('every union member is tried, not only the first', () => {
+    const mixed = t.object({ size: t.union(t.literal('auto'), t.literal(2)) });
+    expect(parse(mixed, coerceQuery(mixed, new URLSearchParams('size=2')))).toEqual({ size: 2 });
+    expect(parse(mixed, coerceQuery(mixed, new URLSearchParams('size=auto')))).toEqual({
+      size: 'auto',
+    });
+    const wide = t.object({ size: t.union(t.literal('auto'), t.number) });
+    expect(parse(wide, coerceQuery(wide, new URLSearchParams('size=12')))).toEqual({ size: 12 });
+    expect(parse(wide, coerceQuery(wide, new URLSearchParams('size=auto')))).toEqual({
+      size: 'auto',
+    });
+  });
+
+  test('a string a member already accepts is never converted behind its back', () => {
+    // A postcode: `number | string` must not turn `01234` into 1234.
+    const node = t.union(t.number, t.string).node;
+    expect(coerceNode(node, '01234')).toBe('01234');
+    expect(coerceNode(t.union(t.literal(1), t.literal(2)).node, 'abc')).toBe('abc');
+  });
+
+  test('a union of objects coerces through the member the value names', () => {
+    const event = t.discriminatedUnion(
+      'kind',
+      t.object({ kind: t.literal('text'), body: t.string }),
+      t.object({ kind: t.literal('count'), body: t.number }),
+    );
+    const coerced = coerceNode(event.node, { kind: 'count', body: '5' });
+    expect(coerced).toEqual({ kind: 'count', body: 5 });
+    expect(parse(event, coerced)).toEqual({ kind: 'count', body: 5 });
+    expect(coerceNode(event.node, { kind: 'text', body: '5' })).toEqual({
+      kind: 'text',
+      body: '5',
+    });
+    // No member claims it: untouched, so validation names the real problem.
+    const stray = { kind: 'other', body: '5' };
+    expect(coerceNode(event.node, stray)).toBe(stray);
+  });
+});

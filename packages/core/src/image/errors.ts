@@ -55,7 +55,9 @@ export const imageTooLarge = (
 ): ImageTooLargeError =>
   new ImageTooLargeError(
     cause,
-    'downscale the source before it reaches the pipeline, or raise MAX_IMAGE_PIXELS deliberately',
+    // No "or lift the ceiling": `MAX_IMAGE_PIXELS` is a constant, so a fix naming it as a knob
+    // sent a reader looking for a setting that does not exist.
+    'downscale the source below the 64-megapixel ceiling before it reaches the pipeline, or route it through an ImageTransformDriver (a CDN or an external encoder) — MAX_IMAGE_PIXELS is fixed, not a setting',
     meta,
   );
 

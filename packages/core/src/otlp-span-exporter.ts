@@ -126,7 +126,7 @@ export interface OtlpSpanExporter extends SpanExporter {
  */
 export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpanExporter {
   const url = otlpEndpoint('traces', options.endpoint);
-  const headers = otlpHeaders(options.headers);
+  const headers = otlpHeaders(options.headers, process.env, 'traces');
   const maxBatchSize = assertFiniteOtlpBound('maxBatchSize', options.maxBatchSize ?? 512);
   const maxQueueSize = assertFiniteOtlpBound('maxQueueSize', options.maxQueueSize ?? 2048);
   const timeoutMs = assertFiniteOtlpBound('timeoutMs', options.timeoutMs ?? 10_000);

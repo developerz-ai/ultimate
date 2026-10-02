@@ -3,6 +3,7 @@
 // for a zone because it cannot answer without one, and one that names UTC in its own name.
 
 import { describe, expect, test } from 'bun:test';
+import { isIsoDateTime } from '@ultimat3/schema';
 import { fromIso } from './instant';
 import {
   addPlainDays,
@@ -134,5 +135,59 @@ describe('unit · plainDate arithmetic', () => {
     expect(comparePlainDates('2026-02-28' as PlainDate, '2026-12-01' as PlainDate)).toBe(-1);
     expect(comparePlainDates('2026-02-28' as PlainDate, '2026-02-28' as PlainDate)).toBe(0);
     expect(comparePlainDates('2027-01-01' as PlainDate, '2026-12-31' as PlainDate)).toBe(1);
+  });
+});
+
+/**
+ * The calendar rule, as a table. **Twin: `packages/schema/src/iso-date.test.ts` holds the same rows
+ * against `isIsoDateTime`** — schema is tier 0 and cannot import `time`, so `daysInMonth` is
+ * restated there. `time` may import schema, so this copy also asks both predicates the same
+ * question directly: a row added on one side only still fails here.
+ */
+const CALENDAR_PARITY: readonly (readonly [string, boolean])[] = [
+  ['2026-01-31', true],
+  ['2026-01-32', false],
+  ['2026-02-28', true],
+  ['2026-02-29', false],
+  ['2026-02-30', false],
+  ['2024-02-29', true],
+  ['2024-02-30', false],
+  ['2000-02-29', true],
+  ['1900-02-29', false],
+  ['2026-03-31', true],
+  ['2026-04-30', true],
+  ['2026-04-31', false],
+  ['2026-05-31', true],
+  ['2026-06-30', true],
+  ['2026-06-31', false],
+  ['2026-07-31', true],
+  ['2026-08-31', true],
+  ['2026-09-30', true],
+  ['2026-09-31', false],
+  ['2026-10-31', true],
+  ['2026-11-30', true],
+  ['2026-11-31', false],
+  ['2026-12-31', true],
+  ['2026-12-32', false],
+  ['2026-00-10', false],
+  ['2026-13-01', false],
+  ['2026-03-00', false],
+];
+
+describe('unit · plainDate and t.date agree on which days exist', () => {
+  test.each(CALENDAR_PARITY)('%p -> %p', (value, real) => {
+    expect(isPlainDate(value)).toBe(real);
+    expect(isIsoDateTime(value)).toBe(real);
+  });
+
+  test('every day of a leap year and a common year, asked of both', () => {
+    for (const year of [2024, 2026, 1900, 2000]) {
+      for (let month = 1; month <= 12; month += 1) {
+        for (let day = 0; day <= 32; day += 1) {
+          const value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          expect([value, isIsoDateTime(value)]).toEqual([value, isPlainDate(value)]);
+        }
+      }
+    }
   });
 });

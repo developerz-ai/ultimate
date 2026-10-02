@@ -2,6 +2,8 @@
 // per section and key by key. Carries no config KEY on purpose: `config-readers` counts a property
 // access outside `config.ts` as a reader, so this file only ever sees sections as opaque records.
 
+import { isJsonObject } from './json-object';
+
 /** A section's patch: every key optional, and an explicit `undefined` meaning "not said". */
 export type Input<T> = { readonly [K in keyof T]?: T[K] | undefined };
 
@@ -11,6 +13,12 @@ export type Input<T> = { readonly [K in keyof T]?: T[K] | undefined };
  */
 export function section<T extends object>(base: T, patch: Input<T> | undefined): T {
   if (patch === undefined) return base;
+  // A layer that wrote something other than an object (`null`, a string, a list) has no key to
+  // merge, and `Object.entries(null)` below was a native `TypeError` out of the validator's own
+  // caller. It is carried through AS WRITTEN — and stays, whatever later layers say — so the shape
+  // screen refuses it by name; dropped here, the app would run on defaults it believed it replaced.
+  if (!isJsonObject(base)) return base;
+  if (!isJsonObject(patch)) return patch as T;
   const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
   for (const [key, value] of Object.entries(patch)) {
     if (value !== undefined) out[key] = value;

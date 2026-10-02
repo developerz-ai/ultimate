@@ -3,6 +3,7 @@
 // Split from `config.ts` for `config-pwa.ts`' reason: that file sits at its 500-line ceiling.
 
 import { type Input, layered } from './config-merge';
+import { describeValue } from './error-render';
 
 export interface SiteConfig {
   /**
@@ -108,10 +109,20 @@ export function siteIssues(config: SiteSections, issues: string[]): void {
     const issue = originIssue(origin);
     if (issue !== undefined) issues.push(issue);
   }
-  for (const path of config.seo.robots.disallow) {
-    if (!path.startsWith('/')) issues.push(`seo.robots.disallow entry "${path}" must start with /`);
+  // `unknown` entries: an untyped config reaches here with whatever it listed, and `5.startsWith`
+  // was a native `TypeError` thrown by the validator itself.
+  for (const path of config.seo.robots.disallow as readonly unknown[]) {
+    if (typeof path !== 'string') {
+      issues.push(`seo.robots.disallow entry must be a path string, not ${describeValue(path)}`);
+    } else if (!path.startsWith('/')) {
+      issues.push(`seo.robots.disallow entry "${path}" must start with /`);
+    }
   }
-  for (const path of config.seo.sitemap.extra) {
+  for (const path of config.seo.sitemap.extra as readonly unknown[]) {
+    if (typeof path !== 'string') {
+      issues.push(`seo.sitemap.extra entry must be a path string, not ${describeValue(path)}`);
+      continue;
+    }
     // A PATH, never a URL: every `<loc>` is built against the one declared origin, and a query or
     // a fragment names a variant of a page, which a sitemap lists by its canonical URL alone.
     if (!path.startsWith('/') || path.startsWith('//') || /[?#]/.test(path)) {

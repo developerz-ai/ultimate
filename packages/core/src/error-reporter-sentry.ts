@@ -7,7 +7,7 @@ import { renderThrowable } from './error-render';
 import type { ErrorReport, ErrorReporter, ErrorSeverity } from './error-reporter';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { traceId } from './ids';
-import { logger } from './logger';
+import { logger, redactFields } from './logger';
 
 export class ErrorReporterDsnInvalidError extends UltimateError {
   static readonly code = 'X_ERROR_REPORTER_DSN_INVALID';
@@ -108,6 +108,10 @@ function payloadOf(report: ErrorReport, eventId: string): Record<string, unknown
           },
         }),
     extra: {
+      // The caller's two records go through `redactFields`, and FIRST. Spread raw and last, a
+      // `bigint` or a cycle in `meta` made `JSON.stringify` throw — that error was never reported
+      // — `meta: { fix, stack }` replaced the framework's own, and `meta.password` left the box.
+      ...redactFields(report.scope.extra ?? {}),
       // The whole point of reporting the framework's contract instead of a message: whoever is
       // paged reads the runnable fix next to the failure.
       fix: report.fix,
@@ -115,8 +119,8 @@ function payloadOf(report: ErrorReport, eventId: string): Record<string, unknown
       ...(report.scope.requestId === undefined ? {} : { requestId: report.scope.requestId }),
       ...(report.scope.actorId === undefined ? {} : { actorId: report.scope.actorId }),
       ...(report.stack === undefined ? {} : { stack: report.stack }),
-      ...(report.meta ?? {}),
-      ...(report.scope.extra ?? {}),
+      // Under its own key, so no name an error author picks can collide with one above.
+      ...(report.meta === undefined ? {} : { meta: redactFields(report.meta) }),
     },
     exception: { values: [{ type: report.code, value: `${report.title} — ${report.cause}` }] },
   };

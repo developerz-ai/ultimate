@@ -4,6 +4,8 @@
 // read. In core because two tier-5 packages drive a browser (`scraping`, and `cli`'s `x shot`) and
 // neither may import the other; two copies of this rule would be two answers to "may it leave".
 
+import { classifyAddress } from './address-class';
+
 export type HostRule = string;
 
 /** The one spelling that means "every host", written out so it is visible in review. */
@@ -51,6 +53,31 @@ export function hostMatches(host: string, rule: HostRule): boolean {
   return normalised === cleaned;
 }
 
+/** A rule that names a CLASS of hosts rather than one — the two spellings `hostMatches` widens. */
+const isWildcard = (rule: HostRule): boolean => {
+  const cleaned = rule.trim();
+  return cleaned === ANY_HOST || cleaned.startsWith('*.');
+};
+
+/**
+ * The address-class FLOOR. A wildcard means "any site", and an address literal inside the network
+ * — loopback, RFC 1918, link-local, the metadata endpoint — is not a site: it is the request this
+ * module's header names. So a wildcard never admits one, and the opt-out is NAMING it: an exact
+ * rule (`'127.0.0.1'`, `'[::1]'`) is a line a reviewer can see, which `'*'` is not.
+ *
+ * What this cannot do is see through a NAME. `allowHosts: ['*']` still admits a hostname that
+ * resolves inward, because this function is synchronous and has no resolver — pinning the
+ * resolved address belongs to the driver that opens the connection, as `@ultimat3/jobs`'
+ * `webhook-target.ts` does for a webhook. The URL parser has already folded the numeric
+ * spellings (`2130706433`, `0x7f.1`) to dotted form, so they are classified as what they are.
+ */
+function admits(host: string, rule: HostRule): boolean {
+  if (!hostMatches(host, rule)) return false;
+  if (!isWildcard(rule)) return true;
+  const kind = classifyAddress(host);
+  return kind === undefined || kind === 'public';
+}
+
 /**
  * Fails CLOSED: a URL that cannot be parsed is refused. A driver handed a malformed request has
  * no way to know where it would have gone, and "we could not tell, so we let it through" is the
@@ -67,5 +94,5 @@ export function hostDecision(url: string, allowHosts: readonly HostRule[]): Host
     return { allowed: false, host: '' };
   }
   if (host === '') return { allowed: false, host };
-  return { allowed: allowHosts.some((rule) => hostMatches(host, rule)), host };
+  return { allowed: allowHosts.some((rule) => admits(host, rule)), host };
 }

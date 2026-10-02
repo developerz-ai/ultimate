@@ -12,6 +12,10 @@
 // it was. Measured need: an app's `X_SESSION_CHECKOUT_BUSY` carried `{ sessionId, title, state }`
 // in `meta` and its island recovered the id by running a UUID regex over `cause`.
 
+// The public-cause predicate and both of its tables are `@ultimat3/core`'s (`public-cause.ts`): the
+// MCP error data and the agent `tool_result` ask the question this package's problem document
+// does. This file only WRITES the app half — a reader imports `hasPublicCause` from core.
+import { registerPublicCause, resetPublicCauses } from '@ultimat3/core';
 import { ERROR_STATUS } from './error-map';
 import { problemMetaInvalid } from './errors';
 
@@ -46,20 +50,6 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set(['issues', '__proto__']);
 
 /** Per app-owned code, the `meta` keys its documents carry. A `Map`, for `APP_ERROR_STATUS`'s reason. */
 const DECLARED = new Map<string, readonly string[]>();
-
-/**
- * The 5xx codes whose `cause` a caller may read. Every other 5xx document carries the code and the
- * request id and a fixed sentence: `X_DB_STATEMENT_FAILED` has a status row, so the old "blank only
- * what nobody classified" rule served the Postgres message and the SQL statement in a production
- * 500. The framework's four are refusals whose cause IS the instruction — back off, retry.
- */
-const FRAMEWORK_PUBLIC_CAUSE: ReadonlySet<string> = new Set([
-  'X_DRAINING',
-  'X_OVERLOADED',
-  'X_FLIGHT_GATE_OVERLOADED',
-  'X_TIMEOUT',
-]);
-const APP_PUBLIC_CAUSE = new Set<string>();
 
 /** Per code: the `meta` keys, a public cause, or both. A bare list is the keys alone. */
 export type ProblemMetaDeclaration =
@@ -98,7 +88,7 @@ export const registerProblemMeta = (
       : ((declaration as { keys?: readonly string[] }).keys ?? []);
     const publicCause = !listed && (declaration as { publicCause?: boolean }).publicCause === true;
     if (!listed && keys.length === 0 && publicCause) {
-      APP_PUBLIC_CAUSE.add(code);
+      registerPublicCause(code);
       continue;
     }
     if (keys.length === 0) {
@@ -122,19 +112,15 @@ export const registerProblemMeta = (
       throw problemMetaInvalid(code, `already declared as [${existing.join(', ')}] by this app`);
     }
     DECLARED.set(code, [...keys]);
-    if (publicCause) APP_PUBLIC_CAUSE.add(code);
+    if (publicCause) registerPublicCause(code);
   }
 };
 
 /** Test seam. Production registers once at boot and never unregisters. */
 export const resetProblemMeta = (): void => {
   DECLARED.clear();
-  APP_PUBLIC_CAUSE.clear();
+  resetPublicCauses();
 };
-
-/** Whether a 5xx document for `code` may carry its authored `cause`. */
-export const hasPublicCause = (code: string): boolean =>
-  FRAMEWORK_PUBLIC_CAUSE.has(code) || APP_PUBLIC_CAUSE.has(code);
 
 /** The keys declared for a code, or `undefined` when nothing was — which is every framework code. */
 export const problemMetaKeysFor = (code: string): readonly string[] | undefined =>

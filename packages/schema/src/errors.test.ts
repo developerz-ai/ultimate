@@ -123,3 +123,63 @@ describe('docs', () => {
     expect(error.docs).toBe('https://example.com/handbook');
   });
 });
+
+describe('SchemaError reproduces the rest of UltimateError', () => {
+  const error = new SchemaError({
+    code: 'X_SCHEMA_UNSUPPORTED',
+    cause: 'no coercion',
+    fix: 'x doctor --json',
+  });
+
+  test('format() is 3 lines, and 4 with { docs: true }', () => {
+    expect(error.format().split('\n')).toHaveLength(3);
+    expect(error.format({ docs: true }).split('\n')).toEqual([
+      'X_SCHEMA_UNSUPPORTED: the active schema provider cannot do this',
+      '  cause: no coercion',
+      '  fix:   x doctor --json',
+      `  docs:  ${error.docs}`,
+    ]);
+  });
+
+  test('retry is always present, and terminal: a refused value is refused on attempt five too', () => {
+    expect(error.retry).toBe('terminal');
+    expect(error.toJSON().retry).toBe('terminal');
+    expect(new ValidationFailedError([]).toJSON().retry).toBe('terminal');
+  });
+
+  test('a meta that JSON cannot carry degrades by key instead of throwing at --json', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    const hostile = new SchemaError({
+      code: 'X_SCHEMA_UNSUPPORTED',
+      cause: 'no coercion',
+      fix: 'x doctor --json',
+      meta: { vendor: 'zod', big: 10n, cyclic, fn: () => 1 },
+    });
+    const json = JSON.parse(JSON.stringify(hostile)) as { meta: Record<string, unknown> };
+    expect(json.meta['vendor']).toBe('zod');
+    expect(typeof json.meta['big']).toBe('string');
+    expect(typeof json.meta['cyclic']).toBe('string');
+  });
+
+  test('a meta that serialises is returned as it is, identity included', () => {
+    const meta = { vendor: 'zod', issues: [{ path: 'a' }] };
+    const plain = new SchemaError({ code: 'X_SCHEMA_UNSUPPORTED', cause: 'c', fix: 'f', meta });
+    expect(plain.toJSON().meta).toBe(meta);
+    expect(error.toJSON().meta).toBeUndefined();
+  });
+
+  test('a meta whose getter throws still renders', () => {
+    const meta = Object.defineProperty({ ok: 1 }, 'bad', {
+      enumerable: true,
+      get: () => {
+        throw new TypeError('no');
+      },
+    });
+    const thrown = new SchemaError({ code: 'X_SCHEMA_UNSUPPORTED', cause: 'c', fix: 'f', meta });
+    expect(JSON.parse(JSON.stringify(thrown)).meta).toEqual({
+      ok: 1,
+      bad: 'a value that cannot be read',
+    });
+  });
+});

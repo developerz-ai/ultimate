@@ -68,6 +68,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_SCHEMA_DISCRIMINANT_INVALID',
     'X_SCHEMA_UNSUPPORTED',
     'X_VALIDATION_FAILED',
+    'X_SCHEMA_DEFAULT_INVALID',
   ],
   // tier 1 — cache driver and declaration faults; a cache miss is not an answer to a caller.
   cache: [

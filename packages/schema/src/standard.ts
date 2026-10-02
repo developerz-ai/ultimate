@@ -96,11 +96,22 @@ export function toValidationIssues(issues: readonly StandardIssue[]): readonly V
   }));
 }
 
+/**
+ * Async by the rule `await` itself uses — a callable `then` — never `instanceof Promise`. A
+ * library's own promise class, a polyfill or a Promise from another realm fails that test, and was
+ * then read as a RESULT: no `issues` key, so a success, with `value` undefined. `parse` returned
+ * `undefined` for input nothing had validated.
+ */
+export function isThenable(value: unknown): value is PromiseLike<unknown> {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return false;
+  return typeof (value as { then?: unknown }).then === 'function';
+}
+
 function assertSync<Output>(
   result: StandardResult<Output> | Promise<StandardResult<Output>>,
   vendor: string,
 ): StandardResult<Output> {
-  if (result instanceof Promise) {
+  if (isThenable(result)) {
     throw new SchemaUnsupportedError({
       cause: `${vendor} validated asynchronously in a synchronous call site`,
       fix: 'call validateAsync()/parseAsync() instead of validate()/parse()',

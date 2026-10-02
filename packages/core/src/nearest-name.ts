@@ -27,7 +27,16 @@ const distance = (a: string, b: string): number => {
 const MAX_EDITS = 3;
 
 /**
- * The nearest candidate within `MAX_EDITS`, or `undefined` when nothing is close enough. Ties keep
+ * The cutoff for one pair: `MAX_EDITS`, but never as many edits as the longer name has
+ * characters. A fixed 3 is a typo in `migrate` and a different word in `db` — replacing ALL of a
+ * one- or two-letter input costs at most its length, so `nearestName('a', ['db', 'gen'])`
+ * answered `db` with nothing typed in common.
+ */
+const cutoff = (input: string, candidate: string): number =>
+  Math.min(MAX_EDITS, Math.max(input.length, candidate.length) - 1);
+
+/**
+ * The nearest candidate within its cutoff, or `undefined` when nothing is close enough. Ties keep
  * the FIRST candidate, which is the order the caller declared them in — `definePermissions([...])`
  * and a `CommandSpec` list are both authored orders, and a stable answer is what lets a test pin one.
  */
@@ -36,7 +45,7 @@ export const nearestName = (input: string, candidates: readonly string[]): strin
   let bestScore = MAX_EDITS + 1;
   for (const candidate of candidates) {
     const score = distance(input, candidate);
-    if (score < bestScore) {
+    if (score < bestScore && score <= cutoff(input, candidate)) {
       best = candidate;
       bestScore = score;
     }

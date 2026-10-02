@@ -101,10 +101,31 @@ describe('the three git checkout lines', () => {
 describe('X_SECRETS_KEY_INVALID', () => {
   const shape = { at: 'ULTIMATE_SECRETS_KEY', found: 3, expected: 64 };
 
-  test('the current key keeps its shipped line', () => {
+  test('a bad key in the VARIABLE is repaired by exporting the file again', () => {
+    // `$(…)` strips the newline `writeMasterKeyFile` ends the file with, so the comment may not
+    // claim the file has none — an operator who checks with `wc -c` reads 65 and distrusts it.
     expect(new SecretsKeyInvalidError(shape).fix).toBe(
-      'export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"   # the key file holds the 64 characters verbatim, no newline of its own',
+      'export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"   # the key file holds the 64 characters on one line',
     );
+  });
+
+  test('a bad key read FROM THE FILE never tells the operator to export that same file', () => {
+    // The fix was the export line whatever `at` said: the truncated file was read into the
+    // variable, the same 63 characters were refused again, and the line had been followed exactly.
+    const error = new SecretsKeyInvalidError({ ...shape, at: '/srv/app/.secrets.key' });
+    expect(error.fix).not.toContain('$(cat');
+    // ONE runnable command: the measurement that says whether the restored file is whole.
+    expect(error.fix).toBe(
+      'wc -c /srv/app/.secrets.key   # 65 is a whole key and its newline; any other count is the truncated or padded file to restore',
+    );
+    // What no command can do is said in the cause, not the fix.
+    expect(error.cause).toContain('a lost key cannot be recovered');
+  });
+
+  test('a key-file path a shell would read is named by placeholder, never spliced', () => {
+    const error = new SecretsKeyInvalidError({ ...shape, at: '/srv/$(rm -rf ~)/.secrets.key' });
+    expect(error.fix).not.toContain('rm -rf');
+    expect(error.fix).toStartWith('wc -c <the key file the cause names>   # ');
   });
 
   test('a key read from a ring variable gets a fix that edits THAT variable', () => {
@@ -116,6 +137,9 @@ describe('X_SECRETS_KEY_INVALID', () => {
     expect(error.code).toBe('X_SECRETS_KEY_INVALID');
     expect(error.fix).toStartWith('x secrets edit   # ULTIMATE_SECRETS_RETIRED_KEYS holds');
     expect(error.fix).not.toContain('export');
+    // The ring is a line of the sealed file, so `x secrets edit` is where it is corrected — and
+    // the real environment wins over that file, which the fix says rather than leaves to be found.
+    expect(error.fix).toContain('a platform that ALSO sets it wins');
     expect(error.cause).toContain('ULTIMATE_SECRETS_RETIRED_KEYS (entry 2)');
   });
 

@@ -72,11 +72,13 @@ describe('imageDecodeFailed', () => {
 });
 
 describe('imageTooLarge', () => {
-  test('points at the ceiling by name, so raising it is a deliberate act', () => {
+  test('names the ceiling, and never tells a reader to raise a constant nobody can set', () => {
     const error = imageTooLarge('80000000 pixels, over the ceiling');
     expect(error).toBeInstanceOf(ImageTooLargeError);
     expect(error.code).toBe('X_IMAGE_TOO_LARGE');
     expect(error.fix).toContain('MAX_IMAGE_PIXELS');
+    expect(error.fix).not.toContain('raise');
+    expect(error.fix).toContain('ImageTransformDriver');
   });
 });
 

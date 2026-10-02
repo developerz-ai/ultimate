@@ -5,6 +5,7 @@
 import {
   ERROR_DOCS_URL,
   FRAMEWORK_CODE,
+  hasPublicCause,
   isUltimateError,
   renderCauseValue,
   singleLine,
@@ -13,7 +14,7 @@ import {
 import type { ValidationIssue } from '@ultimat3/schema';
 import { declaredStatusFor, statusFor } from './error-status';
 import { HTTP_ERROR_TITLES } from './errors';
-import { hasPublicCause, type ProblemMeta, problemMetaKeysFor, wireMeta } from './problem-meta';
+import { type ProblemMeta, problemMetaKeysFor, wireMeta } from './problem-meta';
 
 /** Everything a renderer (problem+json, overlay, terminal) needs from a throwable. */
 export interface ErrorFacts {

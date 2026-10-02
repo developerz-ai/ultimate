@@ -2,16 +2,25 @@
 // HTTP layer has strings that "mean" numbers. Actions, jobs and MCP calls receive real JSON and
 // must never get this leniency.
 
+import { isPlainObject } from './builder';
 import { isIsoDateTime } from './iso-date';
 import type { SchemaNode } from './node';
+import { fits } from './node-fits';
 import { tryIntrospect } from './provider';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const FALSE_VALUES = new Set(['0', 'false', 'no', 'off', '']);
 
+/**
+ * A DECIMAL numeral, and nothing else `Number()` reads: it also takes `0x10`, `0b11` and `0o17`,
+ * so `?page=0x10` arrived as page 16 — a number the caller never wrote in the only notation a
+ * query string, a form field and the published `type: number` have in common.
+ */
+const DECIMAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+
 /** A numeric string as a number, or `undefined` for anything that is not confidently one. */
 function numeric(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  if (typeof raw !== 'string' || !DECIMAL.test(raw.trim())) return undefined;
   const value = Number(raw);
   return Number.isFinite(value) ? value : undefined;
 }
@@ -38,9 +47,7 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
 
   switch (node.kind) {
     case 'number': {
-      if (typeof raw !== 'string') return raw;
-      const value = Number(raw);
-      return raw.trim() !== '' && Number.isFinite(value) ? value : raw;
+      return numeric(raw) ?? raw;
     }
     case 'boolean':
       return booleanish(raw);
@@ -72,20 +79,23 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
       return itemNode === undefined ? items : items.map((item) => coerceNode(itemNode, item));
     }
     case 'record': {
-      if (typeof raw !== 'object' || node.valueNode === undefined) return raw;
+      if (!isPlainObject(raw) || node.valueNode === undefined) return raw;
       // A null prototype for the reason `recordSchema` uses one: on a `{}` literal, assigning
       // `out['__proto__']` hits the `Object.prototype` SETTER and the key vanishes, so the
       // record validator's deliberate refusal of it never ran — the key was reported absent
       // rather than rejected, on the one path (HTTP query) where it is caller-controlled.
       const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-      for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      for (const [key, value] of Object.entries(raw)) {
         out[key] = coerceNode(node.valueNode, value);
       }
       return out;
     }
     case 'object': {
-      if (typeof raw !== 'object' || node.properties === undefined) return raw;
-      const source = raw as Record<string, unknown>;
+      // A plain object or nothing: `{ ...['x'] }` is `{ 0: 'x' }` and `{ ...new Date() }` is `{}`,
+      // so spreading anything else MADE an object the caller never sent — and an all-optional
+      // schema then accepted it. Untouched, validation says "expected an object".
+      if (!isPlainObject(raw) || node.properties === undefined) return raw;
+      const source = raw;
       const out: Record<string, unknown> = { ...source };
       for (const [key, child] of Object.entries(node.properties)) {
         // `Object.hasOwn`, never `key in source`: `{ ...source }` above already dropped what a
@@ -96,8 +106,8 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
       return out;
     }
     case 'money': {
-      if (typeof raw !== 'object') return raw;
-      const source = raw as Record<string, unknown>;
+      if (!isPlainObject(raw)) return raw;
+      const source = raw;
       // Through `numeric` for the same reason `scale` is: `Number('')` is 0, so a blank amount
       // field converted here would reach the validator as a legitimate zero and book an empty
       // price input as free. A blank stays a blank and fails validation, which is the real error.
@@ -110,11 +120,18 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
       return { ...source, minor, ...(scale === undefined ? {} : { scale }) };
     }
     case 'union': {
-      // Only unambiguous single-kind unions (e.g. `number | undefined`) are safe to coerce.
-      const kinds = new Set((node.anyOf ?? []).map((member) => member.kind));
-      if (kinds.size !== 1) return raw;
-      const [member] = node.anyOf ?? [];
-      return member === undefined ? raw : coerceNode(member, raw);
+      const members = node.anyOf ?? [];
+      // A string some member takes AS A STRING is never converted behind its back: under
+      // `number | string` a postcode `01234` must not arrive as 1234.
+      if (typeof raw === 'string' && members.some((member) => fits(member, raw))) return raw;
+      // Every member is tried, in declaration order, and the first whose coercion FITS it wins.
+      // The first member alone used to decide: `'auto' | 2` left `"2"` a string because `'auto'`
+      // needs no conversion, and a union of objects coerced every value by its first branch.
+      for (const member of members) {
+        const coerced = coerceNode(member, raw);
+        if (fits(member, coerced)) return coerced;
+      }
+      return raw;
     }
     default:
       return raw;

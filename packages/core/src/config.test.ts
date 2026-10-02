@@ -385,3 +385,96 @@ describe('notify retention', () => {
 // installable, serve every page, pass the gate and never be installable in any browser. Now that
 // `packages/cli/src/pwa-artifacts.ts` reads it, the block has to be able to SAY what an install
 // needs — and the boot is where a missing title has to surface, not `x build`.
+
+/**
+ * The validator IS the boundary an untyped `app.config.ts` crosses, so its one job is turning a
+ * wrong value into `X_CONFIG_INVALID` naming the key. Each row below either crashed it with a
+ * native `TypeError` — `null.length`, `Object.entries(null)`, `5.startsWith` — or walked through
+ * it into a frozen config nothing downstream re-checks.
+ */
+describe('defineConfig · a mistyped value is X_CONFIG_INVALID naming its key, never a TypeError', () => {
+  const refusal = (input: Record<string, unknown>): { code: string; cause: string } => {
+    try {
+      defineConfig({ name: 'myapp', ...input } as never);
+    } catch (error) {
+      if (isUltimateError(error)) return { code: error.code, cause: error.cause };
+      return { code: `native ${String(error)}`, cause: '' };
+    }
+    return { code: 'accepted', cause: '' };
+  };
+
+  test.each([
+    ['locales', { locales: null }],
+    ['roles', { roles: null }],
+    ['jobs', { jobs: null }],
+    ['jobs.queues', { jobs: { queues: null } }],
+    ['cache.tiers', { cache: { tiers: null } }],
+    ['seo.robots.disallow', { seo: { robots: { disallow: [5] } } }],
+    ['seo.robots', { seo: { robots: null } }],
+    ['seo.sitemap.extra', { seo: { sitemap: { extra: [null] } } }],
+    ['cache', { cache: 'redis' }],
+    ['pwa', { pwa: null }],
+    ['pwa.offline', { pwa: { offline: 7 } }],
+    ['theme.tokens', { theme: { tokens: null } }],
+  ])('%s of the wrong shape used to crash the validator', (key, input) => {
+    const { code, cause } = refusal(input);
+    expect(code).toBe('X_CONFIG_INVALID');
+    expect(cause).toContain(key);
+  });
+
+  test.each([
+    ['roles', { roles: ['websrv'] }],
+    ['jobs.backoff', { jobs: { backoff: 'linear' } }],
+    ['database.ssl', { database: { ssl: 'false' } }],
+    ['realtime.enabled', { realtime: { enabled: 'false' } }],
+    ['database.driver', { database: { driver: 'mysql' } }],
+    ['theme', { theme: 'dark' }],
+    ['theme.defaultMode', { theme: { defaultMode: 'blue' } }],
+    ['auth.signInPath', { auth: { signInPath: 'login' } }],
+    ['ai.mcp.path', { ai: { mcp: { path: 'mcp' } } }],
+    ['ai.mcp.expose', { ai: { mcp: { expose: 'no' } } }],
+    ['cache.tiers', { cache: { tiers: [] } }],
+    ['jobs.queues', { jobs: { queues: ['', 5] } }],
+    ['locales', { locales: ['EN', 'en'] }],
+  ])('%s mistyped used to be accepted into a frozen config', (key, input) => {
+    const { code, cause } = refusal(input);
+    expect(code).toBe('X_CONFIG_INVALID');
+    expect(cause).toContain(key);
+  });
+
+  test('a truthy STRING is not a boolean: "false" switched the thing on', () => {
+    expect(refusal({ realtime: { enabled: 'false' } }).cause).toContain(
+      'realtime.enabled must be true or false',
+    );
+  });
+
+  test('every value the types allow is still accepted', () => {
+    const config = defineConfig({
+      name: 'myapp',
+      locales: ['en', 'pt-BR'],
+      roles: ['web', 'worker'],
+      theme: { defaultMode: 'dark', tokens: { brand: 'primary' } },
+      auth: { signInPath: '/sign-in' },
+      database: { ssl: true },
+      cache: { tiers: ['request-memo'] },
+      jobs: { queues: ['mail', 'default'], backoff: 'fixed' },
+      realtime: { enabled: false },
+      ai: { mcp: { expose: false, path: '/agents/mcp' } },
+      seo: { robots: { disallow: ['/panel'] }, sitemap: { extra: ['/verificar'] } },
+    });
+    expect(config.roles).toEqual(['web', 'worker']);
+    expect(config.jobs.backoff).toBe('fixed');
+    expect(config.realtime.enabled).toBe(false);
+    expect(config.auth.signInPath).toBe('/sign-in');
+  });
+
+  test('an overlay cannot smuggle the wrong shape past the base either', () => {
+    try {
+      defineConfig({ name: 'myapp', jobs: { concurrency: 2 } }, { jobs: null } as never);
+      expect.unreachable();
+    } catch (error) {
+      expect(isUltimateError(error) && error.code).toBe('X_CONFIG_INVALID');
+      expect(isUltimateError(error) && error.cause).toContain('jobs must be an object');
+    }
+  });
+});

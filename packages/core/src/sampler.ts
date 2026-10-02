@@ -136,9 +136,13 @@ export function samplerFromEnv(
       return ratioSampler(ratio);
     case 'parentbased_always_off':
       return parentBasedRatioSampler(0);
+    case 'parentbased_always_on':
+      // Its own case because it takes NO arg: sharing the ratio branch let a leftover
+      // `OTEL_TRACES_SAMPLER_ARG=0.1` thin the roots of a sampler whose name says always.
+      return parentBasedRatioSampler(1);
     default:
-      // `parentbased_always_on`, `parentbased_traceidratio` and the unset case are one sampler:
-      // honour the parent, else the ratio — which is 1 when nothing set an arg.
+      // `parentbased_traceidratio` and the unset case are one sampler: honour the parent, else
+      // the ratio — which is 1 when nothing set an arg.
       return parentBasedRatioSampler(ratio);
   }
 }

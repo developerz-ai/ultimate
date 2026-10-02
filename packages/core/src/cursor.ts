@@ -49,7 +49,10 @@ let configured: string | undefined;
  * warned and nothing failed.
  */
 function currentSecret(): string {
-  return configured ?? Bun.env['ULTIMATE_CURSOR_SECRET'] ?? DEV_SECRET;
+  // `||`, never `??`: `ULTIMATE_CURSOR_SECRET=` (a blank compose or chart value) is the EMPTY
+  // string, which `??` keeps — an HMAC keyed by '' that anyone can forge, while
+  // `usesDevCursorSecret()` answered `false` and the boot check passed. Empty is unset.
+  return configured || Bun.env['ULTIMATE_CURSOR_SECRET'] || DEV_SECRET;
 }
 
 /**

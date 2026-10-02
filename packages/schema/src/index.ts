@@ -30,9 +30,11 @@ export { SCHEMA_ERROR_CODES } from './error-codes';
 export type {
   SchemaErrorInit,
   SchemaErrorJSON,
+  SchemaFormatOptions,
   ValidationIssue,
 } from './errors';
 export {
+  DefaultInvalidError,
   DiscriminantInvalidError,
   isSchemaError,
   SchemaError,

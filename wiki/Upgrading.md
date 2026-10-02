@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 23.x → 24.0.0 | **16** so far, and **unreleased** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, and an empty cursor secret counted as unset | the `23.x → 24.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
@@ -69,12 +70,78 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
+## 23.x → 24.0.0, entry by entry — **unreleased**
+
+**Sixteen entries so far** — 24.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+`[Unreleased]` entries in their order: grouped by package, lowest tier first. No legacy path, no
+codemod, no compatibility shim — every break is a build error or an `X_*` error naming the rewrite.
+`As of 2026-10` slice 01 has landed: `@ultimat3/schema` and `@ultimat3/core`. A later slice appends
+its rows below the last one and never renumbers.
+
+### The upgrade, top to bottom
+
+| # | Do | What you see until you do | Entries |
+|---|---|---|---|
+| 1 | pin every `@ultimat3/*` to the one new version, `bun install` | nothing yet — a mixed install is untested | — |
+| 2 | `bun run typecheck`, then `x verify --only typecheck,unit` | `X_SCHEMA_DEFAULT_INVALID` or `X_CONFIG_INVALID` at the first import of the file that declares it | 4, 6 |
+| 3 | read the deploy environment: `LOG_LEVEL`, `ULTIMATE_CURSOR_SECRET`, `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, `OTEL_EXPORTER_OTLP_METRICS_HEADERS`, `OTEL_TRACES_SAMPLER` | a boot that exits on `X_INVARIANT` or `X_CURSOR_SECRET_DEV`; a collector that rejects one signal; every root trace sampled where a leftover ratio thinned them | 7, 13, 14, 16 |
+| 4 | `x verify --only unit,contract,e2e` and fix the tests it fails | a date, URL, object or query number that validated and is now refused; a redacted field a test read | 1–3, 5, 8–11 |
+| 5 | repoint error-monitor rules from `extra.<key>` to `extra.meta.<key>`; add an exact host rule for each internal address a wildcard used to admit | a saved search that matches nothing; a refused request to `127.0.0.1` | 12, 15 |
+| 6 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+
+### Entry by entry
+
+Tier 0 — `@ultimat3/schema` (1–5), `@ultimat3/core` (6–16).
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `t.date`, `isIsoDateTime`, `fromIso`, `timestamp()` columns, feed dates, `DateTime` | a fixture, seed, import or client sends a day its month does not have (`'2026-02-30'`, `'2026-04-31'`), month `00`/`13`, day `00`/`32`. Refused at validation; it used to roll over into the next month. Correct the date at its source |
+| 2 | `t.url` | a value has a leading or trailing space or control character, or a tab, CR or LF anywhere. `value.trim()` before validating; an interior tab, CR or LF survives `.trim()` — strip or percent-encode it at the source. A stored row that already holds one fails the next time it is validated |
+| 3 | `t.object`, `t.record`, `t.money` | you pass a `Map`, a `Date` or a class instance. Pass a plain object: `{ ...instance }`, `Object.fromEntries(map)`. Null-prototype objects are still accepted |
+| 4 | `.default(v)` | `v` fails the schema it is declared on (`t.number.min(5).default(1)`). `X_SCHEMA_DEFAULT_INVALID` at the first import of the file; the cause quotes the rule. Edit the default, or relax the rule |
+| 5 | HTTP query and form coercion | a client sends `0x10`, `0b11` or `0o17` for a number. It stays a string and fails as `expected a number`. Send decimal |
+| 6 | `defineConfig` | `app.config.ts` or an overlay holds: an unknown `roles` entry, `jobs.backoff`, `database.driver` or `theme.defaultMode`; a non-boolean `database.ssl`, `realtime.enabled` or `ai.mcp.expose` (`'false'` from an env variable read as on — write `process.env.X === 'true'`); `auth.signInPath` or `ai.mcp.path` with no leading `/`; `cache.tiers: []`; an empty or non-string `jobs.queues` entry; one locale twice (`['EN', 'en']`); a section set to `null`. `X_CONFIG_INVALID` names each key |
+| 7 | `LOG_LEVEL` | a deploy sets a value that is not `trace`, `debug`, `info`, `warn`, `error`, `fatal` or `silent`, lower-case — `DEBUG` and `verbose` included. The process exits at import (`X_INVARIANT`); it used to log at `info`. Unset and empty are unchanged |
+| 8 | `retry()`, `retryDecision()` | `attempts` can be `NaN`, infinite, negative or a fraction, or `timeBudgetMs` `NaN` or infinite — typically `Number(process.env.X)` on an unset variable. `X_INVARIANT` before the first try. Parse and default the value before passing it. `attempts: 0` still runs once |
+| 9 | `createFlightGate` | `maxConcurrent` or `maxQueued` is `NaN`, infinite, negative or a fraction (`X_INVARIANT` at construction), or `maxConcurrent` is `0` and you expected callers to wait: each is refused with `X_FLIGHT_GATE_OVERLOADED` |
+| 10 | `withChildContext({ signal })` | the child's work was meant to survive the request. The child's signal now aborts when the parent's does. Move that work to a job |
+| 11 | redaction: logs, audit rows, the error monitor | a test, a log query or an audit reader expects the value of a field named like a credential — `currentPassword`, `mfaSecret`, `resetToken`, `recoveryCode`, `webhookSecret`, `passwordHash`, `tokenHash`, `keyHash`. It reads `[redacted]`. A name ending in `token` (`NPM_TOKEN`, `confirmationToken`), qualified key material (`privateKey`, `AWS_ACCESS_KEY_ID`) and a value embedding a credential (`connectionString`, `databaseUrl`) read `[redacted]` too. Ask `isRedactedKey('<name>')` for any other name. `idempotencyToken`, `continuationToken`, `maxTokens`, `cacheKey` and `code` are unchanged |
+| 12 | the Sentry envelope | a monitor rule, alert or saved search reads an error's `meta` key at `extra.<key>`. It is `extra.meta.<key>`. `scope.extra` keys stay at `extra.<key>`, except `fix`, `docs`, `stack`, `requestId` and `actorId`, which the framework's own values now win |
+| 13 | `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, `OTEL_EXPORTER_OTLP_METRICS_HEADERS` | a deploy sets either one and also `OTEL_EXPORTER_OTLP_HEADERS`. The per-signal variable was ignored; it now replaces the generic one for that signal. Put every header the signal needs in it, or unset it |
+| 14 | `OTEL_TRACES_SAMPLER=parentbased_always_on` | `OTEL_TRACES_SAMPLER_ARG` is also set. The ratio is ignored and every root is sampled. For a ratio: `OTEL_TRACES_SAMPLER=parentbased_traceidratio` |
+| 15 | `hostDecision`, every `allowHosts` list | a `'*'` or `'*.suffix'` rule was how a request reached a loopback, private, link-local or metadata address literal. Add the exact rule: `allowHosts: ['*', '127.0.0.1']`. Hostnames are unaffected, including one that resolves inward |
+| 16 | `ULTIMATE_CURSOR_SECRET` | a compose file or chart sets it to the empty string. Outside local development the boot is `X_CURSOR_SECRET_DEV`: `x secrets set ULTIMATE_CURSOR_SECRET`. Cursors issued under the empty key stop verifying — clients restart from page one |
+
+### Not breaking, but you will see it
+
+| Surface | What changed |
+|---|---|
+| a union in HTTP coercion | every member is tried: `t.union(t.literal('auto'), t.number)` reads `'12'` as `12`. A string a member accepts as a string is never converted |
+| `SchemaError#toJSON()` | carries `retry: 'terminal'`; a `bigint` or a cycle in `meta` no longer throws |
+| image errors | a header declaring a zero, negative, fractional or `NaN` size is `X_IMAGE_DECODE_FAILED`, was `X_IMAGE_TOO_LARGE`. A HEIC (`mif1` only) is no longer sniffed as AVIF |
+| OTLP export | an endpoint with a query string keeps it after the signal path; a `NaN` or infinite attribute is dropped |
+| `X_VERIFY_STEP_TIMEOUT` | names the test file still running and its `fix:` runs it; `--json` findings gain `meta` |
+| `fix:` lines | `X_REGISTRAR_MISSING` / `X_REGISTRAR_CONFLICT` name the owning package; `X_SECRETS_KEY_INVALID` names the key file when the file is what is wrong |
+
+### Where the sites are
+
+```sh
+grep -rnE "\.default\(" apps packages --include=*.ts --include=*.tsx
+grep -rnE "retry\(|retryDecision\(|createFlightGate\(|withChildContext\(|allowHosts" apps packages --include=*.ts --include=*.tsx
+grep -rnE "LOG_LEVEL|ULTIMATE_CURSOR_SECRET|OTEL_(EXPORTER_OTLP_(TRACES|METRICS)_HEADERS|TRACES_SAMPLER)" docker .github apps packages
+grep -rnE "(ssl|enabled|expose): *process\.env" apps packages --include=*.ts
+```
+
+The `typecheck` step finds none of these — every entry is a value, not a type. A typed
+`app.config.ts` already refused most of entry 6 at compile time; the ones it did not are
+`'/'`-less paths, empty lists and a locale spelled twice. Entries 4 and 6 throw at the first import;
+7 and 16 at boot; 8 and 9 where the call is made. Entries 1–3, 5, 10 and 11 need the unit,
+contract and e2e suites; 12–15 need a read of the deploy environment and the monitor.
+
 ## 22.x → 23.0.0, entry by entry
 
-**Sixty-six entries so far** — 23.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
-`[Unreleased]` entries in their order, which is the order an existing app meets them. `As of
-2026-10` every slice of the plan has landed, the admin's detail, form, action and jobs screens
-included.
+**Sixty-six entries**, the `23.0.0` section of `CHANGELOG.md`, in its order — which is the order
+an existing app meets them.
 
 ### What changed for an agent
 
@@ -237,7 +304,7 @@ path.
 | 9 | `ChangeOp` | you `switch` over it exhaustively. Add `case 'truncate':` — a rowless change: a `TRUNCATE` empties the affected live windows and starts a new epoch on every open channel topic |
 | 10 | `Result`, `Ok`, `Err`, `ok`, `err`, `map`, `mapErr`, `isOk`, `isErr`, `tryCatch`, `unwrap`, `unwrapOr` from `@ultimat3/core` | you import any of them. Gone: `throw` an `UltimateError` and `try`/`catch` it |
 | 11 | `X_USERS_TABLE`, `X_SESSIONS_TABLE`, `X_ACCOUNTS_TABLE`, `X_VERIFICATIONS_TABLE`, `X_API_KEYS_TABLE`, `X_USERS_MIGRATION_1_3` from `@ultimat3/auth` | you import them, or pasted them into a migration. Delete both: every boot applies `AUTH_TABLES` (the 1.3 upgrade included, as `add column if not exists`) |
-| 12 | internals removed from package barrels | you import a runtime value that no other package used — `CHANGELOG.md`'s `[Unreleased]` lists them per package (auth, ui, core, http, entity, query, mcp, ai, mail, notify, pwa, render, scraping, manifest). None is an error class, a code table or a documented API. Copy the constant into your app, or use the documented API it served |
+| 12 | internals removed from package barrels | you import a runtime value that no other package used — `CHANGELOG.md`'s `22.0.0` section lists them per package (auth, ui, core, http, entity, query, mcp, ai, mail, notify, pwa, render, scraping, manifest). None is an error class, a code table or a documented API. Copy the constant into your app, or use the documented API it served |
 | 13 | the e2e driver: `installE2eDriver`, `e2eFixtures`, `startE2eApp`, `e2eApp`, `e2eBaseUrl`, `e2eBrowser`, `openE2eBrowser`, `cdpConnect`, `cdpE2eTab`, `findChrome`, `launchChrome`, the `Cdp*Error` / `E2e*Error` classes and their types, from `@ultimat3/cli` | you import any of them. Import them from `@ultimat3/testing`; the test preload is `@ultimat3/testing/e2e-preload`. `FRAMEWORK_SCRIPTS` and `FRAMEWORK_INLINE_SCRIPTS` stay on `@ultimat3/cli`. The `X_E2E_*` / `X_CDP_*` codes are unchanged |
 | 14 | `entityRow`, `camel` from `@ultimat3/realtime/server` | you decode WAL tuples yourself. `entityRow(physical)` → `entityRow(relation, physical, 'before' \| 'after')`; it decodes through the registered entity (`decodeRow`, `.column()` renames and money included) and refuses a table with no registered entity (`X_REPLICATION_PROTOCOL`). `camel` is gone |
 | 15 | a `sync` role on a real database | it has no reachable change feed. It refuses to boot with `X_REALTIME_TOPOLOGY`; it used to come up healthy and deliver nothing. Set `NATS_URL` on `web`, `sync` and one `replicator`, or leave `sync` off. (`x dev --role sync,replicator` runs both in one process, for development.) The scaffolded chart (`roles.sync.enabled: false`) and Compose file (`replicas: 0`) ship `sync` off, with the enable recipe beside the switch; a chart or compose file you copied earlier keeps whatever it had |

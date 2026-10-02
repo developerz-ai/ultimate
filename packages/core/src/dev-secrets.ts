@@ -19,7 +19,7 @@ export class CursorSecretDevError extends UltimateError {
     super({
       code: CursorSecretDevError.code,
       cause:
-        'ULTIMATE_CURSOR_SECRET is unset, so this process signs cursors with the development key the framework ships — anyone can forge a page position',
+        'ULTIMATE_CURSOR_SECRET is unset or empty, so this process signs cursors with the development key the framework ships — anyone can forge a page position',
       fix: "x secrets set ULTIMATE_CURSOR_SECRET — or export ULTIMATE_CURSOR_SECRET from the platform's secret store",
       meta: { variable: 'ULTIMATE_CURSOR_SECRET' },
     });
