@@ -15,8 +15,9 @@ export const JOBS_WAKE_CHANNEL = 'x_jobs_wake';
 export const OUTBOX_WAKE_CHANNEL = 'x_outbox_wake';
 
 /**
- * One notification per queue per slot, at most — whatever the enqueue rate. It equals the
- * worker's default poll floor on purpose: a woken worker polls again one floor later, so a row
+ * One notification per queue per slot, whatever the enqueue rate — save the first commits of a
+ * slot racing each other, which may each send one (`notifyJobReady`). It equals the worker's
+ * default poll floor on purpose: a woken worker polls again one floor later, so a row
  * that stayed silent because its slot had already spoken is found by that pass. Enqueue latency
  * is therefore never worse than the fixed 250 ms poll this replaced.
  */
@@ -31,20 +32,30 @@ export const WAKE_DUE_WITHIN_MS = 1_000;
 
 const SLOTS_PER_SECOND = 1_000 / WAKE_SLOT_MS;
 
+/** A row due this soon is one that notified when it was written — the test both sides share. */
+const dueSoon = (alias: string): string =>
+  `${alias}.run_at <= now() + interval '${WAKE_DUE_WITHIN_MS} milliseconds'`;
+
 /**
  * `pg_notify` for the row `alias` names, or nothing: the row must be (about to be) due, and no
- * OTHER row of its queue may have been created in the current slot. The statement's own insert
- * is invisible to this read — a CTE's writes are not in its statement's snapshot — so the row
- * never silences itself. Read over `x_jobs_created_idx`, newest first, stopping at the slot.
+ * OTHER row of its queue that was itself due soon may have been created in the current slot. Only
+ * such a row sent a wake — a far-future one sent none, so it silences nothing. The statement's own
+ * insert is invisible to this read — a CTE's writes are not in its statement's snapshot — so the
+ * row never silences itself. Read over `x_jobs_created_idx`, newest first, stopping at the slot.
+ *
+ * A read, not a reservation: two first-of-slot enqueues committing together can both notify. A
+ * spare wake costs one commit behind the NOTIFY lock; a slot row to reserve would put EVERY enqueue
+ * behind one row lock, which is the serialisation this exists to avoid.
  */
 export const notifyJobReady = (alias: string): string => `
        (select pg_notify('${JOBS_WAKE_CHANNEL}', ${alias}.queue)
-         where ${alias}.run_at <= now() + interval '${WAKE_DUE_WITHIN_MS} milliseconds'
+         where ${dueSoon(alias)}
            and not exists (
              select 1 from x_jobs o
               where o.queue = ${alias}.queue
                 and o.created_at >= to_timestamp(
                       floor(extract(epoch from now()) * ${SLOTS_PER_SECOND}) / ${SLOTS_PER_SECOND})
+                and ${dueSoon('o')}
            ))`;
 
 /**

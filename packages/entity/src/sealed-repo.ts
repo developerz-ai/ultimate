@@ -17,7 +17,7 @@ import {
   serverOnly,
 } from './sealed';
 import type { SealedUse } from './sealed-errors';
-import { sealedMissing, sealedPredicate } from './sealed-errors';
+import { sealedLookupValue, sealedMissing, sealedPredicate } from './sealed-errors';
 import type { Predicate } from './tenancy';
 
 type Loose = Readonly<Record<string, unknown>>;
@@ -98,6 +98,13 @@ const rewrite = async (
   const { op, value } = predicate;
   if (op === 'is-null' || op === 'is-not-null') return predicate;
   if (!field.lookup) throw sealedPredicate(entity.$name, field.property, 'a filter', false);
+  // A stored value is ciphertext or NULL, so anything but a string or a NULL would reach the driver
+  // and match nothing — indistinguishable from "no such row". Refused instead.
+  const sealable = (one: unknown): boolean =>
+    typeof one === 'string' || one === null || one === undefined;
+  if ((op === 'eq' || op === 'in') && !(Array.isArray(value) ? value : [value]).every(sealable)) {
+    throw sealedLookupValue(entity.$name, field.property, op === 'in' ? 'list' : 'value');
+  }
   if (op === 'eq') {
     if (typeof value !== 'string') return predicate;
     const candidates = await lookupCandidates(field, value, keys);
