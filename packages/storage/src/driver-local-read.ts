@@ -3,7 +3,7 @@
 // between its renames leaves a sidecar describing bytes that never landed; this is where that is
 // read as "type unknown" instead of served as the truth.
 
-import { stringField } from '@ultimat3/core';
+import { renderFixShellArg, stringField } from '@ultimat3/core';
 import type { StorageListEntry } from './driver';
 import { parseSidecar, type Sidecar } from './driver-local-sidecar';
 import { pendingPathOf, sidecarPathOf } from './driver-local-write';
@@ -38,7 +38,12 @@ const refusedRead =
     if (isStorageError(error)) throw error;
     throw stringField(error, 'code') === 'ENOENT'
       ? objectNotFound('local', key)
-      : readFailed('local', key, error, `ls -l ${root}/${key}`);
+      : readFailed(
+          'local',
+          key,
+          error,
+          `ls -l ${renderFixShellArg(`${root}/${key}`, '<the object file>')}`,
+        );
   };
 
 /** The whole object, buffered — `get()`'s one read. */

@@ -67,7 +67,7 @@ Tier 1 — money, cache, seo, storage.
   `dc:creator` without. An item `image` is an Atom enclosure link and an RSS `<media:content>`.
   The `dc` and `media` namespaces are declared only when used.
 - **storage:** `X_STORAGE_KEY_CONFLICT` (HTTP 409), `X_STORAGE_PUT_FAILED` and
-  `X_STORAGE_READ_FAILED` (both 500), with `keyConflict`, `putFailed`, `readFailed` and
+  `X_STORAGE_READ_FAILED` (both 500), with `keyConflict(disk, key, blocking)`, `putFailed`, `readFailed` and
   `getTooLarge`; `assertPutOptions` and `assertListOptions` for a driver written outside the
   package; `signedUrlBasePath`; `maxGetBytes` on all three drivers — see Changed and Fixed.
 
@@ -389,9 +389,13 @@ Tier 1 — money, cache, seo, storage.
 - **storage:** a retried `promoteAttachment` whose source is gone and whose destination exists
   returns the attached object, not `X_STORAGE_NOT_FOUND`.
 - **storage:** local disk. A `put` or `copy` onto a key that is a path prefix of another is
-  `X_STORAGE_KEY_CONFLICT`, was a bare `ENOTDIR` / `EISDIR`. A write commits through a pending
-  marker, `.meta/<key>.json.pending`, so a crash leaves no torn bytes/sidecar pair; a pair in
-  doubt answers `application/octet-stream` with the bytes' own etag.
+  `X_STORAGE_KEY_CONFLICT`, was a bare `ENOTDIR` / `EISDIR`; its `fix:` names the disk as
+  registered. A write commits through a pending marker, `.meta/<key>.json.pending`, so a crash
+  leaves no torn bytes/sidecar pair; a pair in doubt answers `application/octet-stream` with the
+  bytes' own etag. A marker that cannot be cleared after the three renames is not a failed `put`:
+  the write succeeded, and readers re-check.
+- **storage:** on the local disk, `stat()`, each `list()` entry and a `copy()`'s measurement of its
+  source wait for an in-flight write of the same key, as `get()` does. In-process only.
 - **storage:** coded I/O on the local disk and `s3`. A refused write is `X_STORAGE_PUT_FAILED`, a
   refused read `X_STORAGE_READ_FAILED`; they were bare filesystem errors and `S3Error`. A
   non-string key is `X_STORAGE_PATH_UNSAFE`; a non-bytes body, wrong-typed `put` options and a

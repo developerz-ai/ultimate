@@ -1,3 +1,6 @@
+// Pins the ISO-BMFF sniff: the `ftyp` major brand decides the media type, so AVIF, HEIC, MOV and
+// M4A each pass `validateUpload` under a policy that allows them and a contradicting brand is refused.
+
 import { describe, expect, test } from 'bun:test';
 import { isStorageError } from './errors';
 import { sniffIsoBmff } from './iso-bmff';

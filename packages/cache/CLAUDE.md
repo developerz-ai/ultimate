@@ -126,7 +126,7 @@ Tier 1. Tagged caching + THE invalidation graph.
   `e:<entity>` + `<entity>`. Never purge `e:` for a row. `tag-parity.test.ts` runs one fixture
   table through memo, LRU, Redis and CDN.
 - **The one shipped emitter of surrogate keys is `toResult` in `packages/render/src/render-isr.ts`**
-  (`surrogateKeys(tags, 'isr')`, `As of 2026-10-02`). `cacheHeaders` has no production caller, and
+  (`surrogateKeys(tags, 'isr')`, `As of 2026-10-02`; http strips them on a rewrite to private). `cacheHeaders` has no production caller, and
   `@ultimat3/http`'s `applyCacheHeaders` joins `CacheHint.tags` verbatim — a caller hands it
   `surrogateKeys` output. Render screens `revalidate.tags` at registration with this function.
 - `retryable` on `X_CACHE_PURGE_FAILED` is core's `isRetryableStatus` (re-exported by

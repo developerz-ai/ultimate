@@ -86,6 +86,20 @@ describe('a key that is a prefix of another key', () => {
     expect(rendered).toContain('.list({ prefix: ');
   });
 
+  test('the fix names the disk as it was REGISTERED, not the driver kind', async () => {
+    // `disk('local')` on a disk registered as `uploads` lists some other disk, or none at all.
+    const uploads = localDriver({ root, signingSecret: 'test-secret', clock });
+    uploads.registerAs?.('uploads');
+    await uploads.put('a', bytesOf('file'));
+    const refused = await catchError(() => uploads.put('a/b', bytesOf('x')));
+    expect(isUltimateError(refused) ? refused.fix : '').toBe(
+      'disk("uploads").list({ prefix: "a" })',
+    );
+    // Unregistered, the driver's own name is the only one there is.
+    const bare = await catchError(() => local.put('a/b', bytesOf('x')));
+    expect(isUltimateError(bare) ? bare.fix : '').toBe('disk("local").list({ prefix: "a" })');
+  });
+
   test('a copy onto a colliding key is the same refusal, and the source survives', async () => {
     await local.put('a', bytesOf('file'));
     await local.put('src', bytesOf('copy-me'));

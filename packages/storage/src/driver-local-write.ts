@@ -5,7 +5,7 @@
 // why: Bun has no `rename` and no `mkdir` — `Bun.write` creates parents and replaces in place,
 // which is exactly the non-atomic write this file exists to stop. Delete both the day Bun ships them.
 import { mkdir, rename } from 'node:fs/promises';
-import { stringField } from '@ultimat3/core';
+import { renderFixShellArg, stringField } from '@ultimat3/core';
 import type { Sidecar } from './driver-local-sidecar';
 import { isStorageError, keyConflict, putFailed } from './errors';
 import { META_DIR } from './path';
@@ -46,13 +46,14 @@ async function fileInTheWay(root: string, relative: string): Promise<string | un
  * is touched: the sidecar tree collides where the object tree does not (`a` and `a.json/b`), and a
  * put() that wrote its bytes and then failed on its sidecar left an object nobody had recorded.
  */
-async function claim(root: string, key: string, relative: string): Promise<void> {
+async function claim(write: ObjectWrite, relative: string): Promise<void> {
+  const { root, key } = write;
   const target = `${root}/${relative}`;
   try {
     await mkdir(target.slice(0, target.lastIndexOf('/')), { recursive: true });
   } catch (error) {
     const blocking = isPathConflict(error) ? await fileInTheWay(root, relative) : undefined;
-    throw blocking === undefined ? error : keyConflict(key, blocking);
+    throw blocking === undefined ? error : keyConflict(write.disk, key, blocking);
   }
   let directory = false;
   try {
@@ -64,7 +65,7 @@ async function claim(root: string, key: string, relative: string): Promise<void>
   const beneath = relative.startsWith(`${META_DIR}/`)
     ? relative.slice(META_DIR.length + 1)
     : relative;
-  if (directory) throw keyConflict(key, `${beneath}/`);
+  if (directory) throw keyConflict(write.disk, key, `${beneath}/`);
 }
 
 const discard = async (path: string): Promise<void> => {
@@ -76,6 +77,8 @@ const discard = async (path: string): Promise<void> => {
 export interface ObjectWrite {
   readonly root: string;
   readonly key: string;
+  /** The name the disk was REGISTERED under — what a refusal's `disk('…')` call must name. */
+  readonly disk: string;
   /** A `BunFile` is a `Blob`: a copy hands the source file over and no byte crosses the heap. */
   readonly body: Uint8Array | Blob;
   /** `etag` MUST be the body's own: it is what the pending marker announces. */
@@ -112,15 +115,15 @@ const REAL_STEPS: WriteSteps = {
 async function commit(write: ObjectWrite, steps: WriteSteps): Promise<void> {
   const sidecarPath = sidecarPathOf(write.key);
   const pendingPath = pendingPathOf(write.key);
-  await claim(write.root, write.key, write.key);
-  await claim(write.root, write.key, sidecarPath);
-  await claim(write.root, write.key, pendingPath);
+  await claim(write, write.key);
+  await claim(write, sidecarPath);
+  await claim(write, pendingPath);
   const staged = `${write.root}/${STAGING_DIR}/${crypto.randomUUID()}`;
   // A second writer can make the colliding key between `claim` and the rename; only a RENAME's
   // refusal is that, never a failed staging write.
   const settle = async (suffix: string, relative: string): Promise<void> => {
     await steps.rename(`${staged}.${suffix}`, `${write.root}/${relative}`).catch((error) => {
-      throw isPathConflict(error) ? keyConflict(write.key, write.key) : error;
+      throw isPathConflict(error) ? keyConflict(write.disk, write.key, write.key) : error;
     });
   };
   try {
@@ -134,7 +137,10 @@ async function commit(write: ObjectWrite, steps: WriteSteps): Promise<void> {
     for (const suffix of ['object', 'sidecar', 'pending']) await discard(`${staged}.${suffix}`);
     throw error;
   }
-  await steps.unlink(`${write.root}/${pendingPath}`);
+  // The object is COMMITTED: all three renames landed. A marker that will not clear is not a
+  // failed put — reporting one told the caller to retry a write every reader can already see.
+  // What it leaves is exactly the crash-at-step-4 state, which `headObject` re-checks.
+  await steps.unlink(`${write.root}/${pendingPath}`).catch(() => undefined);
 }
 
 /**
@@ -150,7 +156,8 @@ export async function commitObject(
     await commit(write, steps);
   } catch (error) {
     if (isStorageError(error)) throw error;
-    throw putFailed('local', write.key, error, `ls -ld ${write.root} && df -h ${write.root}`);
+    const at = renderFixShellArg(write.root, '<the disk root>');
+    throw putFailed(write.disk, write.key, error, `ls -ld ${at} && df -h ${at}`);
   }
 }
 

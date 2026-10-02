@@ -106,6 +106,8 @@ notes: >-
   Carried forward: three drift fix lines (changedColumn, missingCheck, changedForeignKey) still
   pair SQL with a shell comment and are duplicated in entity - PR 4. One unexplained single failure
   of packages/scraping/src/session-seal.test.ts in a batch run - tier-5 PR. A guard refusing an
-  un-timed spawnSync in a test - scripts PR. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  un-timed spawnSync in a test - scripts PR.
+  X_STORAGE_NOT_FOUND's fix names the driver kind, not the registered disk, on all three drivers
+  (pre-existing; the s3 and memory drivers do not know their registered name) - unify PR, slice 14. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02

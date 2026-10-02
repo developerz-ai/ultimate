@@ -80,7 +80,10 @@ sidecar, renames the bytes, removes the marker. What a reader sees if the proces
 | the bytes rename | absent (a sidecar alone is no object) | the previous BYTES; `get`/`stat` answer `application/octet-stream` and the bytes' own etag, `list` no type and `etag: ''` — never the new type |
 | clearing the marker | the new object to `get`/`stat` (re-checked against the bytes); `list` reports it untyped until the next put | same |
 
-No row serves a content type or an etag the bytes were not checked against. Writers and `get()` of
+No row serves a content type or an etag the bytes were not checked against. A marker that
+cannot be cleared after the renames landed is not a failed put — the object is committed and the
+last row is what it leaves. `stat()`, `list()` and a copy's source read queue behind the key's
+writer exactly as `get()` does. Writers and `get()` of
 ONE key are also serialised inside a process, so two concurrent puts cannot interleave; across
 processes the marker is what covers the window. `stream()` hands back bytes with no metadata and
 checks nothing. The layout is otherwise unchanged — an existing root needs no migration.
@@ -99,7 +102,8 @@ handed back: that is the stream's own error.
 **A key cannot be another key's path on the local disk.** A POSIX path is a file or a directory:
 `put('a')` then `put('a/b')` — or the reverse, or `a` beside `a.json/b`, which collide in the
 sidecar tree — is `X_STORAGE_KEY_CONFLICT`, refused before a byte moves, where it used to be a
-bare `ENOTDIR` / `EISDIR`. `s3Driver` and `memoryDriver` hold both keys; `driver-contract.test.ts`
+bare `ENOTDIR` / `EISDIR`. Its `fix` names the disk as `defineStorage` registered it, not the
+driver kind. `s3Driver` and `memoryDriver` hold both keys; `driver-contract.test.ts`
 pins the divergence.
 
 `stat(key)` answers what a read would — size, type, etag, age — **without the bytes**, and

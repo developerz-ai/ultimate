@@ -69,6 +69,24 @@ describe('a provider refusal on an s3 read', () => {
     );
     // The write itself landed: the refusal is about reading it back, and says so.
     expect(fake.store.has('org/o1/c.txt')).toBe(true);
+
+    // The copy's SOURCE must still stat, so only the destination's HEAD is refused.
+    fake.failStatFor = 'org/o1/d.txt';
+    expect(codeOf(await catchError(() => s3.copy(KEY, 'org/o1/d.txt')))).toBe(
+      'X_STORAGE_READ_FAILED',
+    );
+    expect(fake.store.has('org/o1/d.txt')).toBe(true);
+  });
+
+  test('a body read refused AFTER exists() and the HEAD succeeded is coded too', async () => {
+    await s3.put(KEY, bytesOf('x'));
+    fake.failBodyWith = s3Error('SlowDown', 503, KEY);
+    const refused = await catchError(() => s3.get(KEY));
+    expect(codeOf(refused)).toBe('X_STORAGE_READ_FAILED');
+    expect(isUltimateError(refused) ? refused.cause : '').toContain('SlowDown');
+    // Only the body: the object is still there to every call that does not read it.
+    expect(await s3.exists(KEY)).toBe(true);
+    expect((await s3.stat(KEY))?.size).toBe(1);
   });
 
   test('a provider 404 between exists() and the read is X_STORAGE_NOT_FOUND, never a read failure', async () => {

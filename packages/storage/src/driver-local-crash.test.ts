@@ -58,6 +58,7 @@ const write = (text: string, type: string, step: number): Promise<unknown> =>
       {
         root,
         key: KEY,
+        disk: 'local',
         body: bytesOf(text),
         sidecar: { contentType: type, etag: etagOf(bytesOf(text)) },
       },
@@ -136,7 +137,8 @@ describe('a write to a FRESH key that dies', () => {
   });
 
   test('at step 4 — both files in place, the marker not yet cleared — is the whole object to a read, and untyped to a listing', async () => {
-    expect(await write('new-bytes', 'text/new', 4)).toBeDefined();
+    // Step 4 clears the marker, and a marker that will not clear is not a failed put.
+    await write('new-bytes', 'text/new', 4);
     // A listing never reads bytes, so it cannot tell this from the torn state one step earlier.
     expect(await observe()).toEqual({
       ...whole('new-bytes', 'text/new'),
@@ -144,6 +146,36 @@ describe('a write to a FRESH key that dies', () => {
       listEtag: '',
     });
   });
+
+  test.each(['EACCES', 'ENOENT'])(
+    'whose marker cannot be cleared (%s) still SUCCEEDED — the object is committed',
+    async (errno) => {
+      // All three renames landed, so the put happened: reporting X_STORAGE_PUT_FAILED here told the
+      // caller to retry a write that is already visible to every reader.
+      const outcome = await catchError(() =>
+        commitObject(
+          {
+            root,
+            key: KEY,
+            disk: 'local',
+            body: bytesOf('new-bytes'),
+            sidecar: { contentType: 'text/new', etag: etagOf(bytesOf('new-bytes')) },
+          },
+          {
+            rename: (from, to) => rename(from, to),
+            unlink: () => Promise.reject(Object.assign(new Error(errno), { code: errno })),
+          },
+        ),
+      );
+      expect(outcome).toBeUndefined();
+      // Exactly the state a crash at step 4 leaves, which every reader already handles.
+      expect(await observe()).toEqual({
+        ...whole('new-bytes', 'text/new'),
+        listType: undefined,
+        listEtag: '',
+      });
+    },
+  );
 
   test('that completes is the whole object everywhere', async () => {
     expect(await write('new-bytes', 'text/new', 5)).toBeUndefined();
@@ -179,7 +211,8 @@ for (const [before, after] of [
     });
 
     test(`"${before}" → "${after}" at step 4 is the new object to a read, and untyped to a listing`, async () => {
-      expect(await write(after, 'text/new', 4)).toBeDefined();
+      // Step 4 clears the marker, and a marker that will not clear is not a failed put.
+      await write(after, 'text/new', 4);
       expect(await observe()).toEqual({
         ...whole(after, 'text/new'),
         listType: undefined,

@@ -517,7 +517,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
   dependents and the revalidator slot, the latter only while it is still this controller's.
   The default store (`memoryIsrStore`) is capped at `DEFAULT_ISR_MAX_ENTRIES` (1,000) pages,
   least recently generated evicted first.
-- **A tag-revalidated ISR document carries its purge keys**, `As of 2026-10-02`: `Surrogate-Key`
+- **A tag-revalidated ISR document carries its purge keys while it is shared-cacheable**,
+  `As of 2026-10-02` — `@ultimat3/http`'s `cache-headers` stage rewrites the response to `private`
+  for a signed-in visitor and strips both headers: `Surrogate-Key`
   (space-joined) and `Cache-Tag` (comma-joined) from `@ultimat3/cache`'s `surrogateKeys()` over
   the route's `revalidate.tags` — `revalidate: { tags: [tag.post] }` answers `post e:post` — on a
   miss, a hit and a served-stale response alike. That is what lets the same `invalidates` purge

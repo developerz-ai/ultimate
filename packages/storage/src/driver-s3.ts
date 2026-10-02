@@ -4,7 +4,13 @@
 // The client is built lazily on first use so importing this module never opens a socket, and
 // credentials arrive as env var NAMES: a literal key in app.config.ts is a key in git.
 
-import { ConfigInvalidError, EnvMissingError, finiteCount, stringField } from '@ultimat3/core';
+import {
+  ConfigInvalidError,
+  EnvMissingError,
+  finiteCount,
+  renderFixShellArg,
+  stringField,
+} from '@ultimat3/core';
 import {
   assertListOptions,
   assertPutOptions,
@@ -275,7 +281,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         DRIVER_NAME,
         key,
         error,
-        `aws s3api get-bucket-policy --bucket ${options.bucket}`,
+        `aws s3api get-bucket-policy --bucket ${renderFixShellArg(options.bucket, '<bucket>')}`,
       );
     };
 
@@ -293,7 +299,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         DRIVER_NAME,
         key,
         error,
-        `aws s3api head-object --bucket ${options.bucket} --key ${key}`,
+        `aws s3api head-object --bucket ${renderFixShellArg(options.bucket, '<bucket>')} --key ${renderFixShellArg(key, '<key>')}`,
       );
     };
   const present = (key: string): Promise<boolean> =>

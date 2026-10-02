@@ -78,6 +78,33 @@ describe('two concurrent puts of one key', () => {
   });
 });
 
+describe('stat(), list() and copy() queue behind a key’s writer', () => {
+  // Unqueued, a measurement interleaved with a commit: the size of one generation read before the
+  // commit, the sidecar of the next read after it. Issued while a put() is committing, each of
+  // these must answer the object that put() leaves — which only waiting its turn can do.
+  test('a measurement issued mid-commit answers the committed object, whole', async () => {
+    const key = 'org/o1/measured.bin';
+    const large = big('d');
+    await disk.put(key, bytesOf('small'), { contentType: 'text/small' });
+
+    const write = disk.put(key, large, { contentType: 'text/large' });
+    // One macrotask: the put has hashed its body and its commit holds the key's queue.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const [stat, page, copied] = await Promise.all([
+      disk.stat(key),
+      disk.list({ prefix: key }),
+      disk.copy(key, 'org/o1/measured-copy.bin'),
+    ]);
+    await write;
+
+    const whole = [large.byteLength, etagOf(large), 'text/large'];
+    expect([stat?.size, stat?.etag, stat?.contentType]).toEqual(whole);
+    const listed = page.objects[0];
+    expect([listed?.size, listed?.etag, listed?.contentType]).toEqual(whole);
+    expect([copied.size, copied.etag, copied.contentType]).toEqual(whole);
+  });
+});
+
 describe('what a put() stages never becomes an object', () => {
   test('nothing but the key is listed, and the staging directory is empty afterwards', async () => {
     await disk.put('org/o1/a.txt', bytesOf('one'));
@@ -102,8 +129,16 @@ describe('what a put() stages never becomes an object', () => {
     await disk.put('org/o1/src.txt', bytesOf('source'));
     const slow = disk.put('org/o1/dst.txt', big('c'));
     const copy = disk.copy('org/o1/src.txt', 'org/o1/dst.txt').catch((error: unknown) => error);
+    let destinationBusy = true;
+    const settled = slow.then(() => {
+      destinationBusy = false;
+    });
     await disk.delete('org/o1/src.txt');
-    await slow;
+    // The claim this test makes: the source was measured (it queued on the source's key ahead of
+    // the delete) and the copy's write had NOT started when the source went — the destination's
+    // queue was still held. If this is false the test took the ordinary not-found path instead.
+    expect(destinationBusy).toBe(true);
+    await settled;
     const refused = await copy;
     expect(isStorageError(refused) ? refused.code : refused).toBe('X_STORAGE_NOT_FOUND');
     expect(await readdir(`${root}/.meta/.tmp`)).toEqual([]);

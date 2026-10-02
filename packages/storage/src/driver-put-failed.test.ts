@@ -46,6 +46,7 @@ describe('a filesystem refusal on the local disk', () => {
           {
             root,
             key: 'org/o1/a.txt',
+            disk: 'local',
             body: bytesOf('x'),
             sidecar: { contentType: 't/x', etag: 'e' },
           },
@@ -63,7 +64,26 @@ describe('a filesystem refusal on the local disk', () => {
     },
   );
 
-  test('a root that is a FILE refuses put() and copy() by code, through the driver', async () => {
+  test('a staging directory the disk cannot use refuses put() AND copy() by code', async () => {
+    // A FILE where `.meta/.tmp/` must be a directory: every staged write is refused by the OS, and
+    // the source of the copy was stored before the disk went bad.
+    await local.put('org/o1/src.txt', bytesOf('source'));
+    await rm(`${root}/.meta/.tmp`, { recursive: true, force: true });
+    await Bun.write(`${root}/.meta/.tmp`, 'not a directory');
+
+    for (const write of [
+      () => local.put('org/o1/a.txt', bytesOf('x')),
+      () => local.copy('org/o1/src.txt', 'org/o1/a.txt'),
+    ]) {
+      const refused = await catchError(write);
+      expect(anyCodeOf(refused)).toBe('X_STORAGE_PUT_FAILED');
+      expect(isUltimateError(refused) ? refused.fix : '').toBe(`ls -ld ${root} && df -h ${root}`);
+    }
+    expect(await local.exists('org/o1/a.txt')).toBe(false);
+    expect(textOf((await local.get('org/o1/src.txt')).bytes)).toBe('source');
+  });
+
+  test('a root that is a FILE refuses put() by code, through the driver', async () => {
     const file = `${root}/not-a-directory`;
     await Bun.write(file, 'x');
     const onAFile = localDriver({ root: file, signingSecret: 'test-secret' });

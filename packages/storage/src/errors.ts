@@ -205,12 +205,14 @@ export const getTooLarge = (
  * The `fix` lists what is in the way: the remedy is storing one of the two under another key, and
  * which one is only decidable by a reader who can see both.
  */
-export const keyConflict = (key: string, blocking: string): StorageError =>
+export const keyConflict = (disk: string, key: string, blocking: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_KEY_CONFLICT',
-    cause: `the local disk cannot store "${key}": "${blocking}" is already on it, and a POSIX path is a file or a directory, never both — so one key cannot be a path prefix of another here. Store one of the two under a different key; an s3 disk holds both`,
-    fix: `disk('local').list({ prefix: ${renderFixLiteral(blocking, "'a/'")} })`,
-    meta: { key, blocking },
+    cause: `the "${disk}" disk is a local one and cannot store "${key}": "${blocking}" is already on it, and a POSIX path is a file or a directory, never both — so one key cannot be a path prefix of another here. Store one of the two under a different key; an s3 disk holds both`,
+    // The REGISTERED name, never the driver kind: `disk('local')` on a disk registered as
+    // `uploads` lists another disk, or answers X_STORAGE_DISK_UNKNOWN.
+    fix: `disk(${renderFixLiteral(disk, "'local'")}).list({ prefix: ${renderFixLiteral(blocking, "'a/'")} })`,
+    meta: { disk, key, blocking },
   });
 
 /** The declared type is not on the allowlist at all. */

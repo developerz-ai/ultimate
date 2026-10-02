@@ -119,6 +119,8 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   );
   const clock = options.clock ?? systemClock;
   const oneAtATime = keyedQueue();
+  // What `defineStorage` registered this driver as — the name a refusal's `disk('…')` must use.
+  let registered = DRIVER_NAME;
   // The segment is the disk's REGISTERED name, learned from `defineStorage` at boot — the driver
   // kind is not a mount point, and minting under it made every disk not literally named `local`
   // 404 its own URLs. An explicit `baseUrl` outranks the registration: that is the operator
@@ -129,11 +131,14 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   const filePath = (key: string): string => `${root}/${key}`;
   const metaPath = (key: string): string => `${root}/${sidecarPathOf(key)}`;
 
+  // Both QUEUED behind the key's writers, as `get()` is: unqueued, a measurement read the size of
+  // one generation before a commit and the sidecar of the next after it.
   /** A listing's view: no bytes read, so a pair in doubt reports no type and no etag. */
-  const head = (key: string): Promise<StorageListEntry | undefined> => headObject(root, key);
+  const head = (key: string): Promise<StorageListEntry | undefined> =>
+    oneAtATime(key, () => headObject(root, key));
   /** The same, settled against the bytes on disk — streamed through a hasher, never buffered. */
   const measured = (key: string): Promise<StorageListEntry | undefined> =>
-    headObject(root, key, () => etagOfFile(root, key));
+    oneAtATime(key, () => headObject(root, key, () => etagOfFile(root, key)));
 
   /** Removes one path, or reports WHY it could not — a swallowed refusal is a false erasure. */
   const removeIfPresent = async (path: string, key: string): Promise<void> => {
@@ -159,6 +164,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     },
 
     registerAs(diskName: string): void {
+      registered = diskName;
       if (options.baseUrl === undefined) baseUrl = signedUrlBaseFor(diskName);
     },
 
@@ -178,7 +184,9 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         cacheControl: putOptions?.cacheControl,
         metadata: putOptions?.metadata,
       };
-      await oneAtATime(safe, () => commitObject({ root, key: safe, body: bytes, sidecar }));
+      await oneAtATime(safe, () =>
+        commitObject({ root, key: safe, disk: registered, body: bytes, sidecar }),
+      );
       return {
         key: safe,
         size: bytes.byteLength,
@@ -238,7 +246,13 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         metadata: entry.metadata,
       };
       await oneAtATime(destination, () =>
-        commitObject({ root, key: destination, body: Bun.file(filePath(source)), sidecar }),
+        commitObject({
+          root,
+          key: destination,
+          disk: registered,
+          body: Bun.file(filePath(source)),
+          sidecar,
+        }),
       ).catch(async (error: unknown) => {
         // The source was deleted while this copy waited its turn on the destination.
         if (!(await Bun.file(filePath(source)).exists())) throw objectNotFound(DRIVER_NAME, source);

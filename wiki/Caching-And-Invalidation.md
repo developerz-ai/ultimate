@@ -136,7 +136,7 @@ Which responses carry keys, `As of 2026-10-02`:
 
 | Response | `Surrogate-Key` / `Cache-Tag` |
 |---|---|
-| an `isr` document whose route declares `revalidate.tags` | yes — those tags through `surrogateKeys()`, on a miss, a hit and a served-stale answer |
+| an `isr` document whose route declares `revalidate.tags`, answered as a shared (`public`) response | yes — those tags through `surrogateKeys()`, on a miss, a hit and a served-stale answer |
 | an `isr` document with `revalidate.ttl` only | no — nothing purges it; `s-maxage` is its whole lease |
 | the same `isr` document answered to a **signed-in** visitor | no — the `cache-headers` stage rewrites it to `private` and strips both headers |
 | `static`, `ssr`, `stream` documents; assets; action and query responses | no — none is a tagged shared response (`ssr`'s `cache` takes no `tags`; actions and queries are `no-store`) |

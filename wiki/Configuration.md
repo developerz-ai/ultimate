@@ -224,7 +224,7 @@ runtime, so one image deploys to every environment.
 | `FASTLY_API_TOKEN` + `FASTLY_SERVICE_ID` | Fastly | batch surrogate-key purge, 256 keys per call |
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` | Cloudflare | cache-tag purge, 30 tags per call, Enterprise zones |
 
-The surrogate keys are built from the tags by `@ultimat3/cache`'s `surrogateKeys()` — `post`, `post:1`, plus one `e:<entity>` index key per entity ([Caching](Caching-And-Invalidation#the-cdn-leg)). They are sent on every `isr` document whose route declares `revalidate.tags`, as `Surrogate-Key` (space-separated, what Fastly reads) and `Cache-Tag` (comma-separated, what Cloudflare reads), so the edge purges what `invalidates: [tag.post]` busts. `As of 2026-10-02` — before it no shipped response carried either header; `x-cache-tags`, which neither edge reads, is gone.
+The surrogate keys are built from the tags by `@ultimat3/cache`'s `surrogateKeys()` — `post`, `post:1`, plus one `e:<entity>` index key per entity ([Caching](Caching-And-Invalidation#the-cdn-leg)). They are sent on an `isr` document whose route declares `revalidate.tags` **while the response is shared-cacheable** — the same document answered to a signed-in visitor is rewritten to `private` and carries neither header — as `Surrogate-Key` (space-separated, what Fastly reads) and `Cache-Tag` (comma-separated, what Cloudflare reads), so the edge purges what `invalidates: [tag.post]` busts. `As of 2026-10-02` — before it no shipped response carried either header; `x-cache-tags`, which neither edge reads, is gone.
 
 | Failure | Code | Raised by | Lands |
 |---|---|---|---|
