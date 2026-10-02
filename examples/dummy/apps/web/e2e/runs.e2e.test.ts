@@ -78,7 +78,7 @@ describe.skipIf(noBrowser)('the run console', () => {
 
   afterAll(async () => {
     await tab?.close();
-    browser?.close();
+    await browser?.close();
     await app?.stop();
   });
 

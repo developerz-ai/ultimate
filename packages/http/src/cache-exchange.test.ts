@@ -127,3 +127,61 @@ describe('an exchange a shared cache cannot replay is never offered to one', () 
     expect(response.headers.get('pragma')).toBeNull();
   });
 });
+
+// RFC 9111 §3: a shared cache may store a response to a request with no `Authorization` whenever
+// it carries explicit freshness — `max-age` alone is enough. `public` and `s-maxage` were the only
+// directives read as an offer, so a per-user body under `max-age=3600` went to the CDN as written.
+describe('any freshness without private or no-store is an offer to a shared cache', () => {
+  const declared = (value: string, actor: 'member' | 'anonymous'): Promise<Response> =>
+    createPipeline({
+      table: createRouter([
+        {
+          method: 'GET',
+          path: '/me',
+          meta: { name: 'me', auth: 'public' },
+          handler: () => {
+            const response = text('hello, ada');
+            response.headers.set('cache-control', value);
+            response.headers.set('surrogate-key', 'me');
+            return response;
+          },
+        },
+      ]),
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null }),
+      hooks: { authenticate: () => (actor === 'member' ? ({ id: 'u1' } as never) : null) },
+    }).handle(new Request('http://localhost/me', { headers: { cookie: 'session=1' } }), {
+      role: 'web',
+    });
+
+  for (const value of [
+    'max-age=3600',
+    'MAX-AGE=3600',
+    'max-age=0, must-revalidate',
+    'must-revalidate',
+    'proxy-revalidate',
+    'no-cache, max-age=60',
+  ]) {
+    test(`a signed-in response declaring "${value}" goes out private`, async () => {
+      const response = await declared(value, 'member');
+      expect(response.headers.get('cache-control')).toBe('private, max-age=0');
+      expect(response.headers.get('surrogate-key')).toBeNull();
+    });
+  }
+
+  test('what already withholds it, and what is URL-addressed, is left as written', async () => {
+    for (const value of [
+      'private, max-age=3600',
+      'no-store',
+      'no-store, max-age=0',
+      'public, max-age=31536000, immutable',
+    ]) {
+      expect((await declared(value, 'member')).headers.get('cache-control')).toBe(value);
+    }
+  });
+
+  test('the same declaration for an anonymous visitor is kept, keyed on what the body varies by', async () => {
+    const response = await declared('max-age=3600', 'anonymous');
+    expect(response.headers.get('cache-control')).toBe('max-age=3600');
+    expect(response.headers.get('vary')?.split(', ')).toContain('cookie');
+  });
+});

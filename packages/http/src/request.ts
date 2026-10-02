@@ -203,7 +203,15 @@ export class UltimateRequest {
     // An EMPTY form is a form with no fields, never "no input": a button-only `<form>` posts
     // `content-length: 0`, and reading that as `undefined` failed every schema with 400.
     const form = type === 'application/x-www-form-urlencoded' || type === 'multipart/form-data';
-    if (type === '') return undefined;
+    // No declared type is only "no body" when there are no bytes. `{"a":1}` sent bare used to
+    // read as `undefined`, so a schema whose fields are all optional validated a request nobody
+    // parsed. `bodyBytes()` stays the door for a body that is bytes by design (a signed upload).
+    if (type === '') {
+      if (declared === 0 || (await this.bodyBytes()).byteLength === 0) return undefined;
+      throw bodyInvalid(this.pathname, [
+        'the request carries a body and no content-type header saying what it is',
+      ]);
+    }
     // A multipart body is only a FORM with the boundary its header must announce. Checked before
     // the empty-form shortcut below, so a zero-length body cannot launder a malformed header into
     // `{}` — without it the parser would have refused, and an empty body must refuse the same.

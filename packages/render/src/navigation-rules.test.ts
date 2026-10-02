@@ -144,6 +144,57 @@ const answer = (patch: Partial<ResponseFacts> = {}): ResponseFacts => ({
   ...patch,
 });
 
+// The router assigns a handed-over location to `window.location`. A scheme that runs in the page
+// would be script in the app's own origin, so only http(s) is ever a place to go — the mirror of
+// `@ultimat3/http`'s `locationFor`, for an answer some other server or proxy wrote.
+describe('responseVerdict — a handed-over location that is not http(s) is never navigated to', () => {
+  const hostile = [
+    'javascript:void(0)',
+    'data:text/html,x',
+    'vbscript:x',
+    'blob:https://app.test/1',
+    'http://',
+  ];
+
+  test('a GET loads the REQUESTED url as a document instead', () => {
+    for (const location of hostile) {
+      expect(responseVerdict(answer({ status: 204, location }))).toEqual({
+        kind: 'load',
+        url: 'https://app.test/plazos',
+        reason: 'a location that is not http(s)',
+      });
+    }
+  });
+
+  test('a POST is failed, never re-sent and never sent there', () => {
+    for (const location of hostile) {
+      expect(responseVerdict(answer({ method: 'POST', status: 204, location }))).toEqual({
+        kind: 'failed',
+        reason: 'a location that is not http(s)',
+      });
+    }
+  });
+
+  test('no verdict of any kind carries such a url, whatever the hop count', () => {
+    for (const location of hostile) {
+      for (const method of ['GET', 'POST'] as const) {
+        const verdict = responseVerdict(answer({ method, status: 204, location, hops: 99 }));
+        expect(JSON.stringify(verdict)).not.toContain(location);
+      }
+    }
+  });
+
+  test('http and https on this origin and on another are still handed over', () => {
+    expect(
+      responseVerdict(answer({ status: 204, location: 'https://pay.test/checkout' })),
+    ).toMatchObject({ kind: 'load', url: 'https://pay.test/checkout' });
+    expect(responseVerdict(answer({ status: 204, location: 'https://app.test/casos' }))).toEqual({
+      kind: 'follow',
+      url: 'https://app.test/casos',
+    });
+  });
+});
+
 describe('responseVerdict — a POST is never sent twice', () => {
   test('a redirect no framework server handed over: failed, never re-submitted', () => {
     expect(responseVerdict(answer({ method: 'POST', opaqueRedirect: true, status: 0 }))).toEqual({

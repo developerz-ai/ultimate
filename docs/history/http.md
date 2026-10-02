@@ -756,3 +756,24 @@ a current fact: the rules that still hold are in that file, and where the two di
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in
   `e2e/` and run with `bun test packages/http/e2e`, sealed: `start()` calls core's
   `markListening()`, so the seal treats our own port as self, not egress. Never unseal.
+
+## 2026-10-02 — plan 101 slice 04: what the edge stopped assuming
+
+A dated record; the rules above this heading describe the package as it was before it.
+
+| Was | Now | Why |
+|---|---|---|
+| anonymous callers exempt from `csrf` | an anonymous unsafe request carrying `Origin` or `sec-fetch-site` is judged like a signed-in one; exempt are an `Authorization` header and an anonymous request with neither header | login CSRF: a hostile page submits the sign-in form with the attacker's credentials. The no-evidence exemption stays because an inbound webhook and an RFC 8058 one-click unsubscribe are header-less anonymous POSTs — removing it failed 17 `@ultimat3/action` tests |
+| `x-forwarded-client-cert` read whenever `trustProxy` was set | read only with `trustClientCertHeader: true` | `trustProxy` says the proxy appends to `x-forwarded-for`, not that it strips a certificate header the client sent — and this header names an identity |
+| a failed `auth: 'required'` never metered | the `auth` stage spends `rateLimit.defaultBucket` under `unauthenticated\|ip:<address>` | the 401 leaves before `rate-limit`, so credential guessing — the bearer mount's included — was unbounded |
+| `/healthz`, `/readyz` answered the whole `HealthReport` to anyone | `{ state, ready, role }`, the rest for a `healthDetailPeers` peer | both answer outside the pipeline; the build id, the in-flight count and the dependency names were a stranger's to read |
+| a hidden 5xx kept its authored `fix:` | `callerFix`, else `x errors explain <CODE> --json` | the fix is written from the same statement, row or path the withheld cause was |
+| `public` / `s-maxage` were the only shared-cache offers | any `max-age`, `must-revalidate` or `proxy-revalidate` without `private`/`no-store` is one | RFC 9111 §3 lets a shared cache store on explicit freshness alone |
+| context headers merged with `headers.set` | `Set-Cookie` is appended | it is the one header that is a list of lines; only the last cookie survived |
+| a timed-out handler left the in-flight count with its response | held (`beginWork()`) until it settles | a drain closed the pool under work still running |
+| `requestTimeoutMs` up to `MAX_SAFE_INTEGER` | capped at 2^31−1 ms; a larger `x-request-timeout-ms` is ignored | a longer timer arms ~1 ms: every request answered `X_TIMEOUT` |
+| the default-locale redirect copied the path remainder | through `normalizePath` | `//host/x` after the prefix was a scheme-relative `Location` |
+| `locationFor` handed any other-origin target to the router | `http:`/`https:` only, else the requested path; `@ultimat3/render`'s `responseVerdict` holds the same rule | the router assigns the value to `window.location` |
+| a body with no `content-type` parsed as "no body" | `X_BODY_INVALID` | an all-optional schema validated a request nobody read |
+| `X_CSRF_BLOCKED` titled "a credentialed write arrived from an origin that is not allowed to make it" | "an unsafe request that did not prove same-origin" | the code and its status are unchanged; the title no longer says "credentialed", which stopped being the condition |
+

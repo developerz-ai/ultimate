@@ -59,7 +59,7 @@ describe.skipIf(noBrowser)('a like taken offline', () => {
   }, 240_000);
 
   afterAll(async () => {
-    browser?.close();
+    await browser?.close();
     await app?.stop();
   });
 

@@ -60,7 +60,8 @@ export async function startPostly(mode: 'dev' | 'serve' = 'dev'): Promise<E2eApp
 
 export interface AcceptanceBrowser {
   readonly session: E2eSession;
-  close(): void;
+  /** Awaited: it reaps the browser's processes and its profile directory. */
+  close(): Promise<void>;
 }
 
 /**

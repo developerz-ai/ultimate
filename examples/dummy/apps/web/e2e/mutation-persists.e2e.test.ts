@@ -40,7 +40,7 @@ describe.skipIf(noBrowser)('a like written through useMutation', () => {
 
       afterAll(async () => {
         await tab?.close();
-        browser?.close();
+        await browser?.close();
         await app?.stop();
       });
 

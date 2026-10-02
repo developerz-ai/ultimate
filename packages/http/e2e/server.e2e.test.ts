@@ -74,6 +74,52 @@ describe('real socket', () => {
     expect(body['state']).toBe('ready');
     expect((await fetch(`${handle.url()}/readyz`)).status).toBe(200);
   });
+
+  test('a loopback caller is told the build, the in-flight count and the checks', async () => {
+    for (const path of ['/healthz', '/readyz', '/readyz?deep=1']) {
+      const body = (await (await fetch(`${handle.url()}${path}`)).json()) as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(body).sort()).toEqual(
+        [
+          'buildId',
+          'checks',
+          'inflight',
+          'ready',
+          'registered',
+          'role',
+          'state',
+          'uptimeMs',
+        ].sort(),
+      );
+    }
+  });
+});
+
+describe('a health endpoint tells a peer nobody listed only the verdict', () => {
+  // An empty list, because a socket test can only ever arrive from loopback: the listed case is
+  // the describe above, and the address rule itself is `health-disclosure.test.ts`'s.
+  const quiet = createServer({
+    routes,
+    role: 'web',
+    config: defineHttpConfig({
+      rateLimit: { scope: 'process' },
+      port: 0,
+      hostname: '127.0.0.1',
+      dev: false,
+      healthDetailPeers: [],
+    }),
+  }).start();
+
+  test('healthz, readyz and readyz?deep=1 answer state, ready and role — and the same status', async () => {
+    for (const path of ['/healthz', '/readyz', '/readyz?deep=1']) {
+      const response = await fetch(`${quiet.url()}${path}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.json()).toEqual({ state: 'ready', ready: true, role: 'web' });
+    }
+  });
 });
 
 /**

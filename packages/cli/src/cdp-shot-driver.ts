@@ -91,7 +91,9 @@ export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
       throw new CdpBrowserMissingError({ tried: CHROME_CANDIDATES });
     }
     const launched = await launch(options.executablePath, timeoutMs);
-    return { connection: launched.connection, end: async () => launched.close() };
+    // Awaited by `close` below: `x shot` exits right after its last picture, and a reap still
+    // running then is a Chrome child left behind and a profile directory it re-creates.
+    return { connection: launched.connection, end: () => launched.close() };
   };
 
   return {

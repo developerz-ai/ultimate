@@ -5,7 +5,7 @@
 // never finish.
 
 import { REQUEST_TIMEOUT_HEADER, systemClock } from '@ultimat3/core';
-import type { HttpConfig } from './config';
+import { type HttpConfig, MAX_TIMER_MS } from './config';
 import { requestTimedOut } from './errors';
 
 /**
@@ -46,13 +46,18 @@ const NO_DEADLINE: Deadline = {
   clear: () => undefined,
 };
 
-/** The configured budget, or the caller's if theirs is shorter. `0` means "no deadline". */
+/**
+ * The configured budget, or the caller's if theirs is shorter. `0` means "no deadline".
+ *
+ * An ask above `MAX_TIMER_MS` is no ask: no timer can hold it — the runtime arms such a delay as
+ * ~1 ms, so "a very long deadline" was `X_TIMEOUT` within a tick — and a caller may only shorten.
+ */
 export const resolveTimeoutMs = (headers: Headers, config: HttpConfig): number => {
   const configured = config.requestTimeoutMs;
   const raw = headers.get(REQUEST_TIMEOUT_HEADER);
   if (raw === null) return configured;
   const asked = Number.parseInt(raw, 10);
-  if (!Number.isFinite(asked) || asked < 1) return configured;
+  if (!Number.isFinite(asked) || asked < 1 || asked > MAX_TIMER_MS) return configured;
   return configured > 0 ? Math.min(configured, asked) : asked;
 };
 

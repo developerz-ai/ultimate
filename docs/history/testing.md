@@ -136,8 +136,8 @@ lives beside the `PageLike` it implements. `cli` imports it over the declared `c
 | `e2e-errors.ts` | one constructor per refusal |
 | `e2e-dom-fixture.ts` | a document small enough to hold in a test and real enough to RUN the expressions above |
 | `cdp-browser.ts` | the two doors: `openE2eBrowserIfAvailable()` (undefined when there is no browser) and `openE2eBrowser()` (refuses by name), and the close that undoes both halves |
-| `cdp-launch.ts` | which Chrome, and starting it — the candidate list, the flags, and the endpoint read off its stderr |
-| `cdp-connection.ts` | CDP over Bun's own `WebSocket`: request framing, reply correlation by `id`, one-shot event waiters, the per-call deadline |
+| `cdp-launch.ts` | which Chrome, and starting it — the candidate list, the flags, the launch deadline and the one relaunch (one start is `cdp-launch-attempt.ts`) |
+| `cdp-connection.ts` | CDP over a transport (the launched Chrome's pipe, a remote one's `WebSocket`): request framing, reply correlation by `id`, one-shot event waiters, the per-call deadline |
 | `cdp-e2e-session.ts` | the BROWSER half, `E2eSession`: every target auto-attached at browser level and PAUSED until its Network domain is on (a SharedWorker opens its socket at start-up); `newTab()`, `addInitScript()`, `offline()` for every page and worker including later ones, `setCookie()`, and the log of every WebSocket (`sockets()`) and request (`requests()`) in any realm. A page's own workers attach under it UNPAUSED — paused there, the emitted service worker never took control (measured, `e2e/service-worker.e2e.test.ts`) |
 | `cdp-e2e-page.ts` | one TAB, `E2eTab`: `E2eBrowserPage`'s five methods plus `reload`, `waitFor`, `indexedDbNames`, `close`. `offline()` forwards to the session — the switch is browser-wide |
 | `e2e-app.ts` | `startE2eApp({ root, mode: 'dev' \| 'serve', seed })`: reset + seed + spawn on a THROWAWAY `ULTIMATE_STATE_DIR` (database, disk, dev lock) and a free web AND metrics port, `/readyz`-gated, `stop()` removes the directory. Never the developer's `.x/pgdata`; two apps and an `x dev` coexist. Measured: `examples/dummy` up in ~12 s |
@@ -152,7 +152,7 @@ no Chrome" until 2026-08-27, and that is false and was the reason issue #390's f
 — a real browser check — was recorded as out of reach: GitHub-hosted `ubuntu-latest` ships one at
 `/usr/bin/google-chrome`, preinstalled, with no download step and no new dependency.
 
-**The browser is RAW CDP over Bun's own `WebSocket`, and carries no dependency.**
+**The browser is RAW CDP — over its debugging pipe since 22.0.0, Bun's own `WebSocket` only for a remote one — and carries no dependency.**
 `packages/scraping/src/cdp-port.ts` declares a ~25-method port because `ScrapePage` is a full
 scraping surface and its intended implementation is `puppeteer-core`. `E2eBrowserPage` is FIVE
 methods, and CDP's wire format is one JSON object with an `id` — so the whole thing an e2e driver
@@ -227,3 +227,45 @@ refused statically; a missing binding comes back named from the page's own `Refe
 
 **`update()` still refuses** — a second build under a new build id is a SERVER fact no page port
 can speak for. `offline()`/`online()` forward to `E2eBrowserPage.offline`.
+
+## The launch deadline, the one relaunch and the group reap — `As of 2026-10-02`
+
+**What happened.** `scaffold-smoke (demoapp)`, run 37007059251 attempt 1: `X_CDP_LAUNCH_FAILED`
+quoting three D-Bus lines. Those lines are start-up noise — a healthy Chrome 150 prints them
+100-240 ms after spawn and answers at ~250 ms — so the browser was still STARTING when it was
+killed. The launcher had given the first call the per-call deadline (30 s).
+
+| Measured | Value |
+|---|---|
+| `e2e` step, warm (second pass of a job) | 5.5-8.8 s |
+| `e2e` step, cold first launch, 11 green jobs | 12.6-27.7 s — 5-19 s over warm |
+| the red job | 38.9 s: a warm step + 30 s + the 1 s exit wait, and the test never ran |
+| Chrome 3 s late against a 2.8 s deadline, locally | the same cause, the same three lines |
+
+**The wire.** Since 22.0.0 a launched Chrome is driven over `--remote-debugging-pipe`
+(`cdp-pipe.ts`); there is no `DevTools listening` line and nothing is parsed off stderr. The first
+answer to `Browser.getVersion` is readiness. `X_CDP_LAUNCH_FAILED`'s title still says "announced a
+DevTools endpoint" because a shipped title does not move.
+
+**The launch deadline is its own number.** `LAUNCH_TIMEOUT_MS` = 60 s: twice what the red job
+exceeded, three times the worst green cold penalty. `launchTimeoutMs` defaults to the larger of it
+and `timeoutMs`. Finite, and paid only by a browser alive and silent — one that exits closes its
+pipe and fails at once.
+
+**One relaunch, never a loop.** `LAUNCH_ATTEMPTS` = 2. A process start is the one step whose
+failure can be the machine's, and the second start of a cold binary is warm. The first is reaped
+before the second exists; a process that outlives SIGKILL gets no relaunch. Two unanswered starts
+are one error carrying both: `deadline` or `closed`, the exit code, each start's own stderr.
+
+**The group reap.** Chrome's network process outlives the browser process and flushes into the
+profile, re-creating a directory removed a moment before: 6 of 30 and 12 of 30 closes left one
+behind (Chrome 150), and one developer box held 2827 of them. Chrome now starts in its own process
+group (`detached: true`); the reap kills the group, waits for it to be EMPTY (signal 0 → `ESRCH`),
+then removes the profile — 0 of 30, twice. Chrome still ends with its parent: it exits when its
+fd 3 closes.
+
+**One `close()`, awaited.** `LaunchedBrowser.close()` and `E2eBrowser.close()` return a promise
+that settles when the reap has finished; the synchronous `close()` and the optional `closed()`
+beside it are gone. Every caller was already in an async hook, and the synchronous one was the
+leak: it removed the profile before the processes writing to it were gone. `x shot` awaits it too
+(`cdp-shot-driver.ts`), because the process exits after the last picture.

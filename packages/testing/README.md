@@ -678,6 +678,20 @@ This package still owns the vocabulary, the expansion and the refusals, and owns
 capture, the harness page and the crop are `@ultimat3/cli`'s, because `cli → testing` is the
 declared edge and the reverse is a `bun run boundaries` failure.
 
+## Launching Chrome
+
+`launchChrome({ executable, timeoutMs, launchTimeoutMs? })` — what the `e2e` step and `x shot` both
+start a browser with. Driven over `--remote-debugging-pipe`; the first answer is readiness.
+
+| Export | What it is |
+|---|---|
+| `LAUNCH_TIMEOUT_MS` | `60_000` — the first answer's deadline per start. `launchTimeoutMs` defaults to the larger of this and `timeoutMs`; every later call has `timeoutMs` |
+| `LAUNCH_ATTEMPTS` | `2` — an unanswered start is reaped and started once more on a fresh profile. Never more |
+| `CdpLaunchAttempt` | one unanswered start, in `X_CDP_LAUNCH_FAILED`'s `meta.attempts`: `why` (`deadline` \| `closed`), `waitedMs`, `exitCode` (`null` when killed), `stderr` (its last lines) |
+| `LaunchedBrowser.close()` · `E2eBrowser.close()` | THE close, a promise, always awaited: the process, its whole process group, its profile directory. There is no synchronous close |
+
+`As of 2026-10-02`.
+
 ## The one assertion that waits
 
 ```ts

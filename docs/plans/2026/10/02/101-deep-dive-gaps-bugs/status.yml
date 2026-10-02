@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 24
-current_focus: "PR 4 — entity, policy, http, auth (04-entity-policy-http.md, 05-auth.md)"
+percent: 31
+current_focus: "PR 5 — auth (05-auth.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -24,8 +24,9 @@ slices:
     evidence: "PR 2 (#617) landed the time, i18n and flags rows (the cron row follows Vixie's wildcard rule because the plan's literal fix cannot satisfy its own step-1 proof). PR 3 (fix/101-03-tier1-services) landed cache, seo, storage and the 2026-09-28 plan's money and storage rows; none dropped. Found on the way: no shipped response carried a surrogate key, so a CDN purge matched nothing - ISR documents with revalidate.tags now carry them. The CDN key scheme is an e:<entity> index key, not the plan's bare entity key, which would have made a row bust clear its sibling rows. Local prefix keys are a coded refusal (X_STORAGE_KEY_CONFLICT), not a layout change. Residuals recorded in wiki/Known-Gaps.md."
   - file: 04-entity-policy-http.md
     tier: 2
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    evidence: "PR 4a (#619, 521d0514): entity, policy and the db drift fixes, with the 2026-09-28 containment row; none dropped. PR 4b (fix/101-04b-http-launcher): the http rows, the 2026-09-28 plan's four http rows (login CSRF, non-http redirect targets, shared-cache offers, the timer overflow) and the parked 2026-09-22 Set-Cookie bug; none dropped. CSRF is narrower than the 09-28 wording: an anonymous unsafe request is checked only when it carries Origin or sec-fetch-site, because the strict rule breaks inbound webhooks and one-click unsubscribe. Health detail is limited on the web role only; the sync role is recorded for slice 08."
   - file: 05-auth.md
     tier: 2
     status: not_started

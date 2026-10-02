@@ -40,7 +40,7 @@ ROLE=replicator myapp
 | `/healthz` | "is this process alive?" | the lifecycle is `stopped`. Ignores the readiness checks on purpose: a database outage that failed liveness fleet-wide restarts every pod into the same outage, cold | liveness probe → restart |
 | `/readyz` | "should traffic come here?" | starting, **draining**, stopped, or any registered check answers `failing` | readiness probe → remove from rotation |
 
-The body is `{ state, ready, uptimeMs, inflight, buildId, checks, registered, role }`, where `checks` is a **map** of name → `ok` / `failing`.
+The body is `{ state, ready, role }` for everyone, and `{ state, ready, uptimeMs, inflight, buildId, checks, registered, role }` — `checks` a **map** of name → `ok` / `failing` — for a peer `configureHttp({ healthDetailPeers })` lists (default `['loopback']`: `kubectl exec`, a port-forward, the container's own healthcheck). The status code is the same for both, and is all a probe reads. A published container port is NOT loopback: the caller arrives from the bridge gateway, so list `'private'` to read the detail through `-p`.
 
 | Registered check | When it exists | What it reads |
 |---|---|---|

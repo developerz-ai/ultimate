@@ -78,7 +78,7 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
     const alive = !deployed && (await answersWithin(e2eBrowser().page, probeMs));
     if (alive) return;
     deployed = false;
-    browser.close();
+    await browser.close();
     browser = await deps.openBrowser();
     republishE2eBrowser(browser);
   });
@@ -86,7 +86,7 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
   deps.afterAll(async () => {
     setFailureContext(undefined);
     uninstall();
-    browser.close();
+    await browser.close();
     await app.stop();
   });
 }

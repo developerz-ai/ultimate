@@ -65,6 +65,28 @@ describe('locale prefix — refusals', () => {
     expect(response.headers.get('location')).toBe('/precios?plan=pro');
   });
 
+  // The remainder after the prefix is caller-written, and `//host/x` in a `Location` is a
+  // scheme-relative URL: the redirect — permanent, cacheable, answered before auth — left the
+  // site. The path is normalised the way the router normalises it, so it stays one.
+  test('the redirect stays on this origin whatever follows the prefix', async () => {
+    for (const path of ['/es-co//other.test/x', '/es-co///other.test/x', '/es-co//other.test']) {
+      const response = await get(path);
+      expect(response.status).toBe(301);
+      const location = response.headers.get('location') ?? '';
+      expect(location.startsWith('//')).toBe(false);
+      expect(new URL(location, 'http://localhost').origin).toBe('http://localhost');
+    }
+    expect((await get('/es-co//other.test/x?a=1')).headers.get('location')).toBe(
+      '/other.test/x?a=1',
+    );
+    // A backslash is a slash to a browser reading `Location`, and percent-encoded on the way in.
+    const slashed = (await get('/es-co/%5Cother.test')).headers.get('location') ?? '';
+    expect(new URL(slashed, 'http://localhost').origin).toBe('http://localhost');
+    expect((await get('/es-co//other.test', {}, 'POST')).headers.get('location')).toBe(
+      '/other.test',
+    );
+  });
+
   test('a non-GET on the default prefix is a 308, never a method-changing 301', async () => {
     const response = await get('/es-co/precios', {}, 'POST');
     expect(response.status).toBe(308);

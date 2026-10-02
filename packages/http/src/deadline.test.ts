@@ -2,7 +2,7 @@
 // threw a TypeError instead of unwinding, and a hung vendor call held its connection and its
 // pool slot until the process died. This is the timer that ends that.
 import { describe, expect, test } from 'bun:test';
-import { defineHttpConfig } from './config';
+import { defineHttpConfig, MAX_TIMER_MS } from './config';
 import { REQUEST_TIMEOUT_HEADER, resolveTimeoutMs, startDeadline } from './deadline';
 
 const config = (requestTimeoutMs: number) =>
@@ -34,6 +34,54 @@ describe('resolveTimeoutMs', () => {
     expect(resolveTimeoutMs(new Headers({ [REQUEST_TIMEOUT_HEADER]: '-5' }), config(30_000))).toBe(
       30_000,
     );
+  });
+});
+
+// A timer delay above 2^31-1 ms overflows to ~1 ms, so "a very long deadline" was `X_TIMEOUT`
+// within a tick. Past the ceiling there is no timer to arm: the ask is "no deadline".
+describe('a budget no timer can hold', () => {
+  const OVER = '3000000000';
+
+  test('a header above the timer ceiling is no ask at all — the configured budget stands', () => {
+    expect(resolveTimeoutMs(new Headers({ [REQUEST_TIMEOUT_HEADER]: OVER }), config(30_000))).toBe(
+      30_000,
+    );
+    expect(resolveTimeoutMs(new Headers({ [REQUEST_TIMEOUT_HEADER]: OVER }), config(0))).toBe(0);
+    // The ceiling itself is a timer Bun can hold, and is honoured.
+    expect(
+      resolveTimeoutMs(new Headers({ [REQUEST_TIMEOUT_HEADER]: String(MAX_TIMER_MS) }), config(0)),
+    ).toBe(MAX_TIMER_MS);
+    expect(
+      resolveTimeoutMs(
+        new Headers({ [REQUEST_TIMEOUT_HEADER]: String(MAX_TIMER_MS + 1) }),
+        config(0),
+      ),
+    ).toBe(0);
+  });
+
+  test('with requestTimeoutMs: 0 that header does not time the request out', async () => {
+    const deadline = startDeadline({
+      headers: new Headers({ [REQUEST_TIMEOUT_HEADER]: OVER }),
+      config: config(0),
+      method: 'GET',
+      pathname: '/slow',
+    });
+    await Bun.sleep(50);
+    expect(deadline.signal.aborted).toBe(false);
+    expect(deadline.expired).toBeUndefined();
+    expect(deadline.deadlineAt).toBeNull();
+    deadline.clear();
+  });
+
+  test('the config screen refuses a budget above it, naming the key', () => {
+    try {
+      config(MAX_TIMER_MS + 1);
+      expect.unreachable('a requestTimeoutMs no timer can hold was accepted');
+    } catch (error) {
+      expect((error as { code?: string }).code).toBe('X_CONFIG_INVALID');
+      expect((error as { cause?: string }).cause).toContain('requestTimeoutMs');
+    }
+    expect(config(MAX_TIMER_MS).requestTimeoutMs).toBe(MAX_TIMER_MS);
   });
 });
 

@@ -2,17 +2,21 @@
 // confident name for whatever the caller typed. The trust rule is the same `trustedProxyHops`
 // one `x-forwarded-for` uses — there is no second proxy-trust path to get wrong.
 import { describe, expect, test } from 'bun:test';
-import { defineHttpConfig } from './config';
+import { defineHttpConfig, type HttpConfigInput } from './config';
 import { peerIdentity } from './peer-identity';
+import { createPipeline } from './pipeline';
+import { json } from './response';
+import { createRouter } from './router';
 
 const SPIFFE =
   'By=spiffe://cluster.local/ns/default/sa/gateway;Hash=abc123;Subject="CN=checkout,OU=payments";URI=spiffe://cluster.local/ns/default/sa/checkout';
 
-const read = (header: string | undefined, hops: number | undefined) =>
+const read = (header: string | undefined, hops: number | undefined, certHeader = true) =>
   peerIdentity({
     headers: new Headers(header === undefined ? {} : { 'x-forwarded-client-cert': header }),
     config: defineHttpConfig({
       rateLimit: { scope: 'process' },
+      trustClientCertHeader: certHeader,
       ...(hops === undefined ? {} : { trustProxy: true, trustedProxyHops: hops }),
     }),
     socketAddress: '10.42.0.7',
@@ -32,6 +36,15 @@ describe('peerIdentity', () => {
   // and a certificate identity from an untrusted hop is worse than none: it authenticates.
   test('untrusted, it is null — never the value the caller supplied', () => {
     expect(read(SPIFFE, undefined)).toBeNull();
+  });
+
+  // `trustProxy` says the proxy APPENDS to `x-forwarded-for`. It says nothing about this header:
+  // an ingress that passes a client-sent `x-forwarded-client-cert` through would let the caller
+  // name its own certificate identity. Reading it is a second, separate declaration.
+  test('trustProxy alone reads nothing: the certificate header is its own opt-in', () => {
+    expect(read(SPIFFE, 1, false)).toBeNull();
+    expect(read(`URI=spiffe://forged/x,${SPIFFE}`, 2, false)).toBeNull();
+    expect(defineHttpConfig({ rateLimit: { scope: 'process' } }).trustClientCertHeader).toBe(false);
   });
 
   test('a chain shorter than declared is not the configured chain, so nothing is trusted', () => {
@@ -89,5 +102,38 @@ describe('a quoted value is unescaped once, after the pairs are split', () => {
     const peer = read('URI=spiffe://forged/x,Subject="O=Acme, Inc;CN=svc";URI=spiffe://ok/y', 1);
     expect(peer?.subject).toBe('O=Acme, Inc;CN=svc');
     expect(peer?.spiffeId).toBe('spiffe://ok/y');
+  });
+});
+
+describe('ctx.peer through the pipeline', () => {
+  const peerOf = async (input: HttpConfigInput): Promise<unknown> => {
+    const pipeline = createPipeline({
+      table: createRouter([
+        {
+          method: 'GET',
+          path: '/peer',
+          meta: { name: 'peer', auth: 'public' },
+          handler: (_request, ctx) => json({ peer: ctx.peer?.id ?? null }),
+        },
+      ]),
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, buildId: null, ...input }),
+    });
+    const response = await pipeline.handle(
+      new Request('http://app.test/peer', {
+        headers: { 'x-forwarded-client-cert': SPIFFE, 'x-forwarded-for': '203.0.113.9' },
+      }),
+      { role: 'web', ip: '10.42.0.7' },
+    );
+    return ((await response.json()) as { peer: unknown }).peer;
+  };
+
+  test('a deployment that declared only trustProxy gets no peer from a client-sent header', async () => {
+    expect(await peerOf({ trustProxy: true, trustedProxyHops: 1 })).toBeNull();
+  });
+
+  test('the opt-in beside trustProxy publishes it', async () => {
+    expect(
+      await peerOf({ trustProxy: true, trustedProxyHops: 1, trustClientCertHeader: true }),
+    ).toBe('spiffe://cluster.local/ns/default/sa/checkout');
   });
 });

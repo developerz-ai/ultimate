@@ -366,3 +366,38 @@ describe('defineHttpConfig refuses a limit that is not a number', () => {
     expect(config.trustedProxyHops).toBe(0);
   });
 });
+
+// `??` reads an explicit `null` as "unset", so `buildId: null` — the documented way to switch
+// skew detection off — was overruled by a `BUILD_ID` in the environment. And `HOSTNAME` is the
+// container id under Docker, never an address to bind.
+describe('a declaration is not overruled by the environment', () => {
+  const withEnv = <T>(patch: Record<string, string>, run: () => T): T => {
+    const before = Object.fromEntries(Object.keys(patch).map((key) => [key, Bun.env[key]]));
+    Object.assign(Bun.env, patch);
+    try {
+      return run();
+    } finally {
+      for (const [key, value] of Object.entries(before)) {
+        if (value === undefined) delete Bun.env[key];
+        else Bun.env[key] = value;
+      }
+    }
+  };
+
+  test('buildId: null disables skew detection whatever BUILD_ID says', () => {
+    withEnv({ BUILD_ID: 'from-env' }, () => {
+      const base = { rateLimit: { scope: 'process' as const } };
+      expect(defineHttpConfig({ ...base, buildId: null }).buildId).toBeNull();
+      expect(defineHttpConfig(base).buildId).toBe('from-env');
+      expect(defineHttpConfig({ ...base, buildId: 'declared' }).buildId).toBe('declared');
+    });
+  });
+
+  test('HOSTNAME is never the bind address: undeclared, the server binds every interface', () => {
+    withEnv({ HOSTNAME: '3f1c9a7be2d4' }, () => {
+      const base = { rateLimit: { scope: 'process' as const } };
+      expect(defineHttpConfig(base).hostname).toBe('0.0.0.0');
+      expect(defineHttpConfig({ ...base, hostname: '127.0.0.1' }).hostname).toBe('127.0.0.1');
+    });
+  });
+});

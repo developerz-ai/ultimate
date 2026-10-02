@@ -2,7 +2,7 @@
 // out of a BROWSER or off a spawned process's stderr, so every one is rendered rather than
 // interpolated — the rule `e2e-errors.ts` already states.
 
-import { renderCauseValue, UltimateError } from '@ultimat3/core';
+import { isFixShellSafe, renderCauseValue, UltimateError } from '@ultimat3/core';
 // Bare: the titles these constructors' codes render with are registered there.
 import './e2e-error-codes';
 
@@ -20,13 +20,50 @@ export class CdpBrowserMissingError extends UltimateError {
   }
 }
 
-/** The binary ran and never announced an endpoint — a crash, a bad flag, or a sandbox refusal. */
+/** One start of the browser that ended without an answer — what `cdp-launch-attempt.ts` reports. */
+export interface CdpLaunchAttempt {
+  /** `deadline`: alive and silent for `waitedMs`. `closed`: its pipe ended before any answer. */
+  readonly why: 'deadline' | 'closed';
+  readonly waitedMs: number;
+  /** The code it exited with on its own, or `null` when the launcher had to kill it. */
+  readonly exitCode: number | null;
+  /** The last lines it wrote to stderr; empty when it wrote none. */
+  readonly stderr: string;
+}
+
+const HAND_FLAGS =
+  '--headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --remote-debugging-port=0 about:blank';
+
+const attemptText = (attempt: CdpLaunchAttempt, index: number): string => {
+  const ended =
+    attempt.why === 'deadline'
+      ? `no answer inside ${String(attempt.waitedMs)}ms, so it was killed`
+      : attempt.exitCode === null
+        ? `closed its DevTools pipe after ${String(attempt.waitedMs)}ms without answering, and was killed`
+        : `exited with code ${String(attempt.exitCode)} after ${String(attempt.waitedMs)}ms without answering`;
+  const said = attempt.stderr === '' ? 'it printed nothing' : renderCauseValue(attempt.stderr);
+  return `launch ${String(index + 1)}: ${ended}; stderr: ${said}`;
+};
+
+/**
+ * The binary ran and never answered a DevTools call — a crash, a bad flag, a sandbox refusal, or a
+ * machine too loaded to start it inside the launch deadline. Every attempt is in the cause with its
+ * own stderr, because Chrome's start-up noise reads the same in a healthy browser and a dead one:
+ * what tells them apart is whether it EXITED or was still starting when the deadline passed.
+ */
 export class CdpLaunchFailedError extends UltimateError {
-  constructor(input: { readonly executable: string; readonly detail: string }) {
+  constructor(input: {
+    readonly executable: string;
+    readonly attempts: readonly CdpLaunchAttempt[];
+  }) {
+    // Run by hand, a healthy Chrome prints `DevTools listening on ws://…` and a broken one prints
+    // why. A path that is not shell-inert is the operator's own CHROME_PATH — every candidate is.
+    const binary = isFixShellSafe(input.executable) ? input.executable : '"$CHROME_PATH"';
     super({
       code: 'X_CDP_LAUNCH_FAILED',
-      cause: `${renderCauseValue(input.executable)} did not announce a DevTools endpoint: ${renderCauseValue(input.detail)}`,
-      fix: 'run the same binary by hand with --headless=new --remote-debugging-port=0 and read its stderr; inside a container add --no-sandbox --disable-dev-shm-usage, which this launcher already passes',
+      cause: `${renderCauseValue(input.executable)} did not announce a DevTools endpoint: it answered no DevTools call in ${String(input.attempts.length)} ${input.attempts.length === 1 ? 'launch' : 'launches, each on its own fresh profile'} — ${input.attempts.map(attemptText).join(' · ')}`,
+      fix: `${binary} ${HAND_FLAGS}`,
+      meta: { executable: input.executable, attempts: input.attempts },
     });
   }
 }

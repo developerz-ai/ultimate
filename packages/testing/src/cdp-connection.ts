@@ -20,8 +20,17 @@ export interface CdpResult {
 }
 
 export interface CdpConnection {
-  /** Send one command. `sessionId` targets an attached page rather than the browser itself. */
-  send(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<CdpResult>;
+  /**
+   * Send one command. `sessionId` targets an attached page rather than the browser itself.
+   * `deadlineMs` replaces the connection's per-call deadline for THIS call — the launcher's first
+   * call is a cold start, not a call, and is the only caller that passes one.
+   */
+  send(
+    method: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+    deadlineMs?: number,
+  ): Promise<CdpResult>;
   /**
    * Wait for the next occurrence of one CDP **event**, or for the deadline. Answers `true` when the
    * event arrived and `false` when it did not — it never throws, because every caller has a better
@@ -206,7 +215,7 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
   transport.listen({ message, closed: abandon });
 
   return {
-    send(method, params = {}, sessionId): Promise<CdpResult> {
+    send(method, params = {}, sessionId, deadlineMs = timeoutMs): Promise<CdpResult> {
       if (closed) {
         return Promise.reject(
           new CdpCallFailedError({ method, detail: 'the CDP connection is already closed' }),
@@ -217,8 +226,8 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
       return new Promise<CdpResult>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
-          reject(new CdpTimeoutError({ method, timeoutMs: timeoutMs }));
-        }, timeoutMs);
+          reject(new CdpTimeoutError({ method, timeoutMs: deadlineMs }));
+        }, deadlineMs);
         pending.set(id, { resolve, reject, timer });
         transport.send(
           JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) }),

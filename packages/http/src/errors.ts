@@ -100,7 +100,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN: 'the tenant allowance names a bucket nothing declares',
   X_TRUST_PROXY_UNSET: 'proxy headers are trusted without saying how many proxies are in front',
   X_OVERLOADED: 'in-flight requests are at the configured ceiling',
-  X_CSRF_BLOCKED: 'a credentialed write arrived from an origin that is not allowed to make it',
+  X_CSRF_BLOCKED: 'an unsafe request that did not prove same-origin',
   X_WEBHOOK_SIGNATURE_INVALID: 'the inbound webhook is not signed by the holder of this secret',
   X_WEBHOOK_SIGNATURE_STALE: 'the inbound webhook is signed correctly and is too old to accept',
   X_BEARER_MOUNT_INVALID: 'a bearer mount declaration cannot be served as written',

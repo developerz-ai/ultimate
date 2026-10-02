@@ -71,13 +71,24 @@ export interface ForwardedInput {
   readonly urlProtocol: string;
 }
 
-/** The address the rate limiter keys on and the audit trail records. */
-export const clientAddress = (input: ForwardedInput): string | null => {
-  const forwarded = forwardedValue(input.headers.get(FORWARDED_FOR), input.config.trustedProxyHops);
-  if (forwarded === undefined) return input.socketAddress;
+/**
+ * The caller a DECLARED proxy named, or `undefined` when none did — an undeclared deployment, no
+ * header, a chain shorter than the declaration. Split out for the one reader that must tell "the
+ * proxy named nobody" from "the socket is the caller" (`health-disclosure.ts`).
+ */
+export const forwardedClientAddress = (
+  headers: Headers,
+  config: HttpConfig,
+): string | undefined => {
+  const forwarded = forwardedValue(headers.get(FORWARDED_FOR), config.trustedProxyHops);
+  if (forwarded === undefined) return undefined;
   const address = withoutPort(forwarded);
-  return address.length > 0 ? address : input.socketAddress;
+  return address.length > 0 ? address : undefined;
 };
+
+/** The address the rate limiter keys on and the audit trail records. */
+export const clientAddress = (input: ForwardedInput): string | null =>
+  forwardedClientAddress(input.headers, input.config) ?? input.socketAddress;
 
 /**
  * Whether the CLIENT's leg of the connection was TLS. Read at the same hop index as the address,

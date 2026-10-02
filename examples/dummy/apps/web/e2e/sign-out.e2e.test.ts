@@ -43,7 +43,7 @@ describe.skipIf(noBrowser)('signing out', () => {
 
   afterAll(async () => {
     await tab?.close();
-    browser?.close();
+    await browser?.close();
     await app?.stop();
   });
 

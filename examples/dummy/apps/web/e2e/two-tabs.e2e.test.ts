@@ -62,7 +62,7 @@ describe.skipIf(noBrowser)('two tabs, one origin', () => {
 
       afterAll(async () => {
         await two?.close();
-        browser?.close();
+        await browser?.close();
         await app?.stop();
       });
 

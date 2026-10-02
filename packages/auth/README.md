@@ -103,7 +103,9 @@ exemption here — the token arrived in a header.
 
 **mTLS is out of scope.** TLS termination is the mesh's job ([axiom
 7](../../docs/idea/README.md)); the framework's part is reading a trusted
-`x-forwarded-client-cert` through `@ultimat3/http`'s trusted-proxy seam, which that package owns.
+`x-forwarded-client-cert` through `@ultimat3/http`'s trusted-proxy seam, which that package owns —
+and only once the app declares `configureHttp({ trustClientCertHeader: true })`: trusting the
+proxy's `x-forwarded-for` is not a promise that it strips a certificate header the client sent.
 
 `maxKeys` is not compared — it bounds one process' table, not a limit. A custom limiter therefore
 does **not** own its own configuration: the policy stays the app's single statement of the limits,
