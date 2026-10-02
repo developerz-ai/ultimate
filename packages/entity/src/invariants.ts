@@ -7,7 +7,7 @@
 // callback the typed column proxy once, so a rule is written against property keys (`c.likeCount`)
 // and `entity()` alone resolves them to physical names. A physical name is never typed twice.
 
-import { EntityError, invariantViolated } from './errors';
+import { describeCommand, EntityError, invariantViolated } from './errors';
 import type { Expr, Resolve, Row } from './expr';
 
 /** `assert` is a rule only the app can run — a JS predicate with no SQL translation. */
@@ -110,8 +110,8 @@ export const assertedRowsTooMany = (
 ): EntityError =>
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
-    cause: `${entityName}.${operation}() matches ${matched} rows and ${entityName} declares an invariant only the app can judge, so every one of them would be read back — past ${MAX_ASSERTED_ROWS} that is the whole table in memory`,
-    fix: `for await (const rows of ${entityName}.where(filter).inBatches(1000)) { … }   # one page per statement, judged one page at a time`,
+    cause: `${entityName}.${operation}() matches ${matched} rows and ${entityName} declares an invariant only the app can judge, so every one of them would be read back — past ${MAX_ASSERTED_ROWS} that is the whole table in memory. Read the same filter with .where(filter).inBatches(1000) and write each page: one page per statement, judged one page at a time`,
+    fix: `${describeCommand(entityName)}   # shows the invariant with sql: null that forces the read-back; then sweep the filter with inBatches()`,
   });
 
 /** Runs on every write. Reports every violation at once so one round trip fixes all. */

@@ -120,6 +120,20 @@ notes: >-
   scaffold-smoke (demoapp), X_CDP_LAUNCH_FAILED - Chrome started on the runner and did not announce
   a DevTools endpoint before the launcher's deadline (run 37007059251). Re-run requested. The
   launcher (packages/testing/src/cdp-launch.ts:200) is in the tier-5 PR's scope: establish its
-  deadline against a cold runner and whether a failed launch may be relaunched once. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  deadline against a cold runner and whether a failed launch may be relaunched once.
+  Tier 2 is three PRs: 4a entity, policy and the db drift fixes; 4b http plus the browser launcher
+  (that flake was fixed at once: a 60 s launch deadline, one relaunch after a full reap, Chrome in
+  its own process group, one awaited close()); 5 auth.
+  Review of 4a established that a fix: must be a command naming the real object. About 26 more
+  fixes in packages/entity/src splice the entity name into code written against a variable the
+  author never named (bulk-write, batch, aggregate, count-by, plan, errors, feature-errors,
+  memory-match) and the same shape exists in other packages. Repo-wide sweep plus a guard that
+  refuses a fix that is code rather than a command - its own PR beside slice 13.
+  Two test files leave state in a shared registry and break others when run in one process
+  (packages/cli/src/n-plus-one-detector.test.ts; packages/query beside packages/admin). The gate
+  isolates files, so it is green; fix in the cli and query PRs.
+  examples/dummy's own per-package typecheck script reports 351 errors (rootDir, @postly/mcp);
+  root tsc -b and the app gate are clean. Diagnose in the dev-experience PR.
+  Nothing in the build flags an unawaited promise - scripts PR. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02

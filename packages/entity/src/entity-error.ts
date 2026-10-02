@@ -2,7 +2,12 @@
 // raises — split from `errors.ts` so a module the BROWSER loads (the record key, the projection,
 // the registry) can raise one without importing `@ultimat3/db`.
 import type { ErrorRetry } from '@ultimat3/core';
-import { registerErrorCodes, registerErrorRetry, UltimateError } from '@ultimat3/core';
+import {
+  isFixShellSafe,
+  registerErrorCodes,
+  registerErrorRetry,
+  UltimateError,
+} from '@ultimat3/core';
 
 /**
  * Every code this package throws, and it owns each one. `X_DB_DRIFT` is `@ultimat3/db`'s and is
@@ -107,6 +112,18 @@ export class EntityError extends UltimateError {
     });
   }
 }
+
+/**
+ * The one command a BOUND refusal hands back — a page size, a preload ceiling, a judged write: it
+ * runs, and it names the real entity. The edit itself is code on a chain whose variable no error
+ * can know (`db.members`, not `preload_test_members`), so it is spelled in the `cause` as the call
+ * to write, never in the `fix` as though the entity name were that variable. A name a shell would
+ * read is not spliced.
+ */
+export const describeCommand = (entityName: string): string =>
+  isFixShellSafe(entityName)
+    ? `x entities describe ${entityName} --json`
+    : 'x entities list --json';
 
 /**
  * The entity name is a VALUE, never a literal — `entity.$name`, `table`, the `name` `entity()` was

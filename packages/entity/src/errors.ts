@@ -6,6 +6,7 @@ import { EntityError } from './entity-error';
 
 export type { EntityErrorCode } from './entity-error';
 export {
+  describeCommand,
   ENTITY_ERROR_CODES,
   ENTITY_ERROR_TITLES,
   EntityError,

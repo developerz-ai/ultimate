@@ -210,7 +210,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   uniqueness, predicate presence and direction; `asc` normalises to `null`); never the predicate text.
 - `compareForeignKeys` matches on where a key points (`foreignKeyTarget`, the one copy) and compares
   `onDelete` through `onDeleteRule` (`changed-foreign-key`; its fix, `changed-column`'s and
-  `missing-check`'s are one `psql -c` too — `repair()`).
+  `missing-check`'s are one `psql -c` too — `repair()`, schema-scoped off `public`).
 - `introspect()` reads index columns in key order (`indkey`) and a foreign key's two column lists
   together (`unnest(a, b) with ordinality`), pinned by `introspect-embedded.test.ts`.
 - **`appTables()`** excludes the whole `x_` namespace for drift; `introspect()` alone excludes

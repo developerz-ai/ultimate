@@ -154,7 +154,7 @@ Tier 2 — `@ultimat3/entity` (44–46), `@ultimat3/policy` (47–49).
 | 43 | a route's `revalidate.tags` | a tag holds whitespace or a comma. `X_ROUTE_MODE_INVALID` at registration, naming the file. Rename the tag |
 | 44 | a hand-built `Driver`, a hand-built `SealedMeta` | you ship or wrap an entity driver: add `transactor()` — a wrapper writes `transactor: () => inner.transactor()` (TS2741). A hand-built `SealedMeta` adds `plaintext`. A hand-built driver kept in a file under the app's own `packages/db/` moves the schema hash when it gains `transactor()`: `x verify` answers `X_DB_DRIFT`, and `x db gen "<name>"` re-records the hash and writes no migration |
 | 45 | `dbDrift`, `ENTITY_ERROR_CODES` from `@ultimat3/entity` | you import `dbDrift` from entity: `import { dbDrift } from '@ultimat3/db'` (TS2305). A list built from `ENTITY_ERROR_CODES` no longer holds `X_DB_DRIFT` |
-| 46 | `preload(relation)` | one page attaches more than 10,000 related rows. `X_INVARIANT_VIOLATED`; pass the bound the relation really has: `.preload('comments', { max: 50000 })`, or page the relation itself |
+| 46 | `preload(relation)` | one page attaches more than 10,000 related rows. `X_INVARIANT_VIOLATED`; pass the bound the relation really has: `.preload('comments', { max: 50000 })`, or page the relation itself. The last `{ max }` stated on a chain wins. The refusal's `fix:` is `x entities describe <entity> --json`; the edit is in its cause |
 | 47 | `assertAllowed` | a `catch` or a test expects `X_FORBIDDEN` for a caller with no actor, or for a `denied(reason, code)` with the app's own code. It is `X_UNAUTHENTICATED`, or that code, as a `PolicyDenialError` |
 | 48 | `HttpDenial.status`, `problem.status`, `problem.title` | you type either status as `403`, or assert on them: no actor is 401, and the title is the code's registered title. Type them `DenialStatus` |
 | 49 | policy predicates, `definePolicy({ check })` | one returns something other than a boolean or a `PolicyDecision` — `{ allowed: 'yes' }`, an object from another library, nothing. It denies now. Return `true`, `false` or `denied(reason, code)` |
@@ -199,7 +199,7 @@ aws s3 ls s3://<bucket> --recursive | grep -E '@(full|[whq][0-9]+|cover|contain)
 | entity tests on `memoryDriver()` | a unique declared as `invariant(name, c.unique([...]))` is enforced (`X_DB_UNIQUE_VIOLATION`); `bigint()` refuses a value outside int8; `trimmed()` strips spaces only; `url()` refuses what the column's CHECK refused — each as Postgres already did |
 | `update` / `updateWhere` under an app-only invariant | on Postgres a refused write is rolled back; it used to stay written |
 | seed `dryRun` | runs every verb in a transaction and rolls back, so its metrics are a real run's and a seed that would fail fails |
-| drift findings | each `fix:` is one runnable command, mostly `psql "$DATABASE_URL" -c '…'` then `x db migrate` |
+| drift findings | each `fix:` is one runnable command, mostly `psql "$DATABASE_URL" -c '…'` then `x db migrate`; for a table outside `public` it sets `search_path` first, and unexpected tables and objects are schema-qualified |
 | a zone that is not a string | `X_TIMEZONE_INVALID` from every zoned function in `@ultimat3/time`, was a bare `TypeError` |
 
 ### Where the sites are

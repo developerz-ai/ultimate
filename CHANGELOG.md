@@ -323,7 +323,10 @@ Tier 2 — entity.
   contain `X_DB_DRIFT`.
 - **BREAKING — `preload(relation)` has a ceiling.** At most `max` related rows per page, default
   `MAX_PRELOADED_ROWS`, 10,000; past it `X_INVARIANT_VIOLATED`, never a truncated list. Declare the
-  relation's own bound: `posts.preload('comments', { max: 50000 })`.
+  relation's own bound: `posts.preload('comments', { max: 50000 })`. A repeated
+  `preload(name, { max })` replaces the ceiling with the later stated one, as a second `.limit()`
+  does; a repeat that states no `max` leaves it. The refusal's `fix:` is
+  `x entities describe <entity> --json`, with the `{ max }` edit in the cause.
 - **entity:** a repository pinned with `postgresDriver({ client })` joins a transaction opened on
   that same client. `X_REPO_CLIENT_PINNED` remains for a transaction on a different client.
 - **entity:** a seed `dryRun` executes every verb inside a transaction and rolls it back. Its
@@ -464,7 +467,14 @@ Tier 1 — db (slice 04). Tier 2 — entity.
   `missing-check`, `changed-foreign-key`, `unexpected-table`, `unexpected-object` and the
   `unknown-schema` refusal changed text — mostly `psql "$DATABASE_URL" -c '…'   # then x db
   migrate`. The `cause` of `changed-foreign-key` and `changed-primary-key` names the constraint
-  the database holds. The internal `rebuildForeignKey` is deleted; it was never on the index.
+  the database holds. For a table outside `public` the command carries
+  `set search_path = "<schema>";` ahead of its statement, inside the same `psql -c`;
+  `unexpected-table` and every `unexpected-object` target are schema-qualified. An unexpected
+  domain says `domain` and is inspected with `\dD+`; an enum stays `\dT+`. The function lookup
+  matches on the schema, not on visibility. The internal `rebuildForeignKey` is deleted; it was
+  never on the index.
+- **entity:** the page-size and asserted-rows refusals' `fix:` is a runnable
+  `x entities describe <entity> --json`, with the code to write in the cause.
 - **entity:** `transition(column, id, move)` with an `undefined` or `null` id is `X_NOT_FOUND` and
   moves no row. On Postgres it moved every row in the `from` state.
 - **entity:** on Postgres, `update` / `updateWhere` on an entity with an app-only invariant run

@@ -760,7 +760,7 @@ page.rows[0].author;        // the member row, or null — always present
 | Unknown name | `X_PRELOAD_UNKNOWN_RELATION` at `preload()` itself, not a page later |
 | Shape | `belongsTo` attaches the row or `null`; `hasMany` an array — always present |
 | Statements | one extra per relation, resolved concurrently; naming one twice is one statement |
-| Ceiling | `preload('<relation>', { max })` — the most related rows one relation may attach to one page. Default `MAX_PRELOADED_ROWS` (10,000, the largest page a read may ask for). Past it the read is **refused** (`X_INVARIANT_VIOLATED`), never truncated, and it reads at most one row past the ceiling to know |
+| Ceiling | `preload('<relation>', { max })` — the most related rows one relation may attach to one page. Default `MAX_PRELOADED_ROWS` (10,000, the largest page a read may ask for). Past it the read is **refused** (`X_INVARIANT_VIOLATED`), never truncated, and it reads at most one row past the ceiling to know. Naming a relation twice is still one statement: a later call that states `max` replaces the earlier one, as a second `.limit()` does, and one that states none leaves it. The refusal's cause spells the call to write (`.preload('<relation>', { max: n })`); its fix is `x entities describe <entity> --json` |
 | Tenancy | carried onto the related read only when the other entity's tenant column shares the name; otherwise `X_TENANCY_UNSCOPED` refuses the related read rather than guess |
 | Terminals | `page()`, `all()`, `one()` preload; `count()`, `countBy()` and `plan()` don't — none reads a row to attach one to |
 

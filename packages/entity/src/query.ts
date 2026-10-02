@@ -11,7 +11,7 @@ import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import { preloaded, type RelatedTables } from './preload';
-import { type PreloadOptions, type PreloadRelation, preloadOf } from './preload-ceiling';
+import { type PreloadOptions, type PreloadRelation, preloadsWith } from './preload-ceiling';
 import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
 import { copyRow, pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
@@ -359,13 +359,12 @@ const builder = <Source, Row>(
 
     preload<Name extends string>(relation: Name, options?: PreloadOptions) {
       // Resolved here, so a name no foreign key produces fails on the chain rather than one page
-      // later — and naming one relation twice is one statement, not two identical ones.
-      const resolved = preloadOf(entity.$name, relation, options);
-      const already = state.preload.some((held) => held.name === resolved.name);
+      // later; naming one relation twice is one statement, under the ceiling stated last.
+      const preload = preloadsWith(state.preload, entity.$name, relation, options);
       return builder<Source, Row & Preloaded<Name>>(
         entity,
         repo,
-        { ...state, preload: already ? state.preload : [...state.preload, resolved] },
+        { ...state, preload },
         // The relation is attached after the projection, so `pick` is unchanged and the row type
         // is the only thing that grows — one cast, where a runtime name becomes a static one.
         pick as (row: Source) => Row & Preloaded<Name>,

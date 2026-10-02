@@ -10,7 +10,12 @@ import { byHand, type DriftDifference } from './drift-findings';
 import { literal, shellInertIdentifier } from './sql';
 
 interface ObjectIdentity {
-  /** The word `drop` takes: `trigger`, `function`, `view`, `materialized view`, `type`, `sequence`. */
+  /** The schema the catalog was read from — a new psql session's search_path need not hold it. */
+  readonly schema: string;
+  /**
+   * The word `drop` takes: `trigger`, `function`, `view`, `materialized view`, `type`, `domain`,
+   * `sequence`. A domain keeps its own word: it is inspected by a different psql command.
+   */
   readonly kind: string;
   readonly name: string;
   /** What tells two objects of one name apart: a function's arguments. */
@@ -28,13 +33,14 @@ interface ObjectIdentity {
  */
 function identities(catalog: CatalogDescription): readonly ObjectIdentity[] {
   const plain = (kind: string, name: string): ObjectIdentity => ({
+    schema: catalog.schema,
     kind,
     name,
     signature: '',
     table: null,
   });
   return [
-    ...catalog.types.map((type) => plain('type', type.name)),
+    ...catalog.types.map((type) => plain(type.kind === 'domain' ? 'domain' : 'type', type.name)),
     ...catalog.sequences.map((sequence) => plain('sequence', sequence.name)),
     ...catalog.views.map((view) =>
       plain(view.materialized ? 'materialized view' : 'view', view.name),
@@ -59,21 +65,26 @@ const SHOW = Object.freeze<Record<string, string>>({
   view: '\\d+',
   'materialized view': '\\d+',
   type: '\\dT+',
+  // `\dT+` LISTS a domain and shows none of it; its base type and CHECKs are `\dD+`'s (measured, 17).
+  domain: '\\dD+',
   sequence: '\\d',
   // A trigger has no command of its own: `\d` on its table lists it, definition included.
   trigger: '\\d',
 });
 
 /**
- * A function's definition, asked for by the two facts the catalog gave: its name and its identity
- * arguments. Not `\sf name(args)`: that parses a TYPE list, and the identity arguments carry the
- * parameter NAMES (`a text`), which it answers with a syntax error — measured on 17. Both values
- * are data, so both go through `literal()`.
+ * A function's definition, asked for by the three facts the catalog gave: its schema, its name and
+ * its identity arguments. Not `\\sf name(args)`: that parses a TYPE list, and the identity arguments
+ * carry the parameter NAMES (`a text`), which it answers with a syntax error — measured on 17. By
+ * NAMESPACE and never `pg_function_is_visible`: visibility is the session's search_path, which can
+ * hide this function or answer a same-named one from another schema. All three are data, so all
+ * three go through `literal()`.
  */
 const showFunction = (object: ObjectIdentity): string =>
-  'select pg_get_functiondef(oid) from pg_proc where pg_function_is_visible(oid) and ' +
-  `proname = ${literal(object.name).text} and ` +
-  `pg_get_function_identity_arguments(oid) = ${literal(object.signature).text}`;
+  'select pg_get_functiondef(p.oid) from pg_proc p join pg_namespace n on n.oid = ' +
+  `p.pronamespace where n.nspname = ${literal(object.schema).text} and ` +
+  `p.proname = ${literal(object.name).text} and ` +
+  `pg_get_function_identity_arguments(p.oid) = ${literal(object.signature).text}`;
 
 /**
  * The fix is ONE command a shell runs, and it is the harmless one: it prints the object's
@@ -83,6 +94,7 @@ const showFunction = (object: ObjectIdentity): string =>
  * no shell runs, whose first step destroyed the definition the second step needed.
  */
 function unexpectedObject(object: ObjectIdentity): DriftDifference {
+  const schema = shellInertIdentifier(object.schema);
   const name = shellInertIdentifier(object.name);
   const table = object.table === null ? null : shellInertIdentifier(object.table);
   const where = object.table === null ? '' : ` on table "${object.table}"`;
@@ -93,6 +105,7 @@ function unexpectedObject(object: ObjectIdentity): DriftDifference {
   // what a shell or a pasted line would read and never escaped.
   const args = object.kind === 'function' ? `(${object.signature})` : '';
   const spellable =
+    schema !== null &&
     name !== null &&
     (object.table === null || table !== null) &&
     !SIGNATURE_ACTIVE.test(object.signature);
@@ -105,19 +118,24 @@ function unexpectedObject(object: ObjectIdentity): DriftDifference {
       fix: byHand(
         'copy the definition of the object this difference names into a migration as a create ' +
           'statement, then drop it',
-        'its name or arguments carry a backtick, a dollar sign, a quote, a backslash or ' +
+        'its schema, name or arguments carry a backtick, a dollar sign, a quote, a backslash or ' +
           'whitespace, so no statement here can spell it',
       ),
     };
   }
-  const drop = `drop ${object.kind} ${name}${args}${table === null ? '' : ` on ${table}`};`;
+  // Every target is qualified by the catalog's schema: unqualified, `\d "posts"` in a session
+  // whose search_path lacks that schema answers "Did not find any relation" — and exits 0.
+  const drop =
+    table === null
+      ? `drop ${object.kind} ${schema}.${name}${args};`
+      : `drop ${object.kind} ${name} on ${schema}.${table};`;
   // The comment repeats the statement only when it holds no `'`: a shell that does not read `#`
   // as a comment would open a quote on one. The command is safe either way (`psqlCommand`).
   const spoken = drop.includes("'") ? `drop ${object.kind} on it` : drop;
   const show = psqlCommand(
     object.kind === 'function'
       ? showFunction(object)
-      : `${SHOW[object.kind] ?? '\\d'} ${table ?? name}`,
+      : `${SHOW[object.kind] ?? '\\d'} ${schema}.${table ?? name}`,
   );
   return {
     ...base,

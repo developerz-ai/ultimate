@@ -59,8 +59,8 @@ const UNSPELLABLE = `${CARRIES}, so no statement here can spell it`;
  * this database and never "in a new migration": drift means this database left the migrations,
  * and a migration would re-apply the repair to every database that is already right.
  */
-const repair = (statements: string, note = RE_CHECK): string =>
-  `${psqlCommand(statements)}   # ${note}`;
+const repair = (path: string, statements: string, note = RE_CHECK): string =>
+  `${psqlCommand(`${path}${statements}`)}   # ${note}`;
 
 /**
  * The same repair when no statement can be written — a name the screen refuses. Still a command
@@ -69,6 +69,32 @@ const repair = (statements: string, note = RE_CHECK): string =>
  */
 export const byHand = (steps: string, why = UNSPELLABLE): string =>
   `psql "$DATABASE_URL"   # ${steps}, \\q, ${RE_CHECK} — ${why}`;
+
+/** The schema Postgres resolves an unqualified name in when a session sets nothing. */
+const DEFAULT_SCHEMA = 'public';
+
+/**
+ * What puts a statement in the schema its table was READ from: nothing for the default one — the
+ * text every app has seen — and `set search_path` in the same psql word for any other, so the
+ * table, and every table the statement references, resolves there. A `psql "$DATABASE_URL"`
+ * session starts on its own search_path: unqualified, `alter table "posts"` for a table in
+ * `tenant_a` fails, or lands on a same-named table in `public`. `null` for a schema no statement
+ * can spell.
+ */
+const pathTo = (schema: string): string | null => {
+  if (schema === DEFAULT_SCHEMA) return '';
+  const name = shellInertIdentifier(schema);
+  return name === null ? null : `set search_path = ${name}; `;
+};
+
+/** A table as a psql PATTERN or a statement outside `pathTo`: qualified unless the default schema. */
+const qualified = (schema: string, table: string): string | null => {
+  const name = shellInertIdentifier(table);
+  if (name === null) return null;
+  if (schema === DEFAULT_SCHEMA) return name;
+  const space = shellInertIdentifier(schema);
+  return space === null ? null : `${space}.${name}`;
+};
 
 /** Every name inert in a shell AND writable as an identifier — the one screen, asked of each. */
 const spellable = (names: readonly string[]): boolean =>
@@ -125,11 +151,13 @@ export function missingColumn(table: string, column: string): DriftDifference {
  * The fix is the statement, run against this database (`repair`).
  */
 export function changedColumn(
+  schema: string,
   table: string,
   column: string,
   liveNullable: boolean,
 ): DriftDifference {
   const clause = liveNullable ? 'set not null' : 'drop not null';
+  const path = pathTo(schema);
   const relation = shellInertIdentifier(table);
   const attribute = shellInertIdentifier(column);
   return {
@@ -141,9 +169,10 @@ export function changedColumn(
       : `table "${table}" forbids NULL in column "${column}" that migrations declare nullable`,
     // Both identifiers are the catalog's, so both go through the one screen.
     fix:
-      relation === null || attribute === null
+      path === null || relation === null || attribute === null
         ? byHand(`alter column … ${clause} on the column this difference names`)
         : repair(
+            path,
             `alter table ${relation} alter column ${attribute} ${clause};`,
             liveNullable ? NULLS_FIRST : RE_CHECK,
           ),
@@ -166,8 +195,8 @@ export function changedColumn(
  * Two repairs and one line, so the line leads with the command neither repair can skip — `\\d` on
  * the table, through `psqlCommand`, which is what keeps a `'` in the name inside its shell word.
  */
-export function unexpectedTable(table: string): DriftDifference {
-  const name = shellInertIdentifier(table);
+export function unexpectedTable(schema: string, table: string): DriftDifference {
+  const name = qualified(schema, table);
   // The comment repeats the name only when it holds no `'`: a shell that does not read `#` as a
   // comment (interactive zsh, by default) would open a quote on one. The command is safe either
   // way — `psqlCommand` escapes it inside its own word.
@@ -275,7 +304,12 @@ export function changedIndex(table: string, index: string, detail: string): Drif
  * as `changedColumn` and `changedForeignKey` — the declared side holds the author's own spelling
  * of the predicate, which is what makes an executable fix possible at all.
  */
-export function missingCheck(table: string, check: CheckDescription): DriftDifference {
+export function missingCheck(
+  schema: string,
+  table: string,
+  check: CheckDescription,
+): DriftDifference {
+  const path = pathTo(schema);
   const relation = shellInertIdentifier(table);
   const constraint = shellInertIdentifier(check.name);
   return {
@@ -289,9 +323,10 @@ export function missingCheck(table: string, check: CheckDescription): DriftDiffe
     // where both names are the catalog's and a sidecar's. What `psqlCommand` does close is the
     // shell layer: the statement is one single-quoted word, so nothing in the predicate expands.
     fix:
-      relation === null || constraint === null
+      path === null || relation === null || constraint === null
         ? byHand('add the check constraint this difference names back')
         : repair(
+            path,
             `alter table ${relation} add constraint ${constraint} check (${check.expression});`,
           ),
   };
@@ -329,6 +364,7 @@ export function missingForeignKey(table: string, key: ForeignKeyDescription): Dr
  * of the command, and the cause is where a reader still finds which key this is.
  */
 export function changedForeignKey(
+  schema: string,
   table: string,
   declared: ForeignKeyDescription,
   held: ForeignKeyDescription,
@@ -346,9 +382,10 @@ export function changedForeignKey(
       ...declared.columns,
       ...declared.referencedColumns,
     ];
-    if (!spellable(names)) return byHand(steps);
+    const path = pathTo(schema);
+    if (path === null || !spellable(names)) return byHand(steps);
     try {
-      return repair(`${dropForeignKey(table, held.name)} ${addForeignKey(table, declared)}`);
+      return repair(path, `${dropForeignKey(table, held.name)} ${addForeignKey(table, declared)}`);
     } catch {
       return byHand(steps, 'the rule migrations declare is not one Postgres has');
     }
@@ -388,6 +425,7 @@ const keyText = (columns: readonly string[]): string =>
  * `changedForeignKey` states: every name on the live side is the catalog's.
  */
 export function changedPrimaryKey(
+  schema: string,
   table: string,
   live: readonly string[],
   held: string | undefined,
@@ -395,12 +433,13 @@ export function changedPrimaryKey(
 ): DriftDifference {
   const statements = (): string => {
     const names = [table, ...declared, ...(held === undefined ? [] : [held])];
-    if (!spellable(names)) return PRIMARY_KEY_BY_HAND;
+    const path = pathTo(schema);
+    if (path === null || !spellable(names)) return PRIMARY_KEY_BY_HAND;
     try {
       const parts: string[] = [];
       if (held !== undefined) parts.push(dropPrimaryKey(table, held, false));
       if (declared.length > 0) parts.push(addPrimaryKey(table, declared));
-      return repair(parts.join(' '));
+      return repair(path, parts.join(' '));
     } catch {
       return PRIMARY_KEY_BY_HAND;
     }

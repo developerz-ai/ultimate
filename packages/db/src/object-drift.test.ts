@@ -39,9 +39,9 @@ describe('unexpectedObjects', () => {
       // ONE command a shell runs, and the harmless one: it prints the definition a migration
       // would need, which a drop-first line destroyed before anyone could copy it.
       fix:
-        `psql "$DATABASE_URL" -c '\\d "posts"'   # no migration creates it: copy its definition ` +
-        'into a migration as a create statement, run drop trigger "posts_touch" on "posts"; ' +
-        'here, then x db migrate — or only drop it if nothing owns it',
+        `psql "$DATABASE_URL" -c '\\d "public"."posts"'   # no migration creates it: copy its ` +
+        'definition into a migration as a create statement, run drop trigger "posts_touch" on ' +
+        '"public"."posts"; here, then x db migrate — or only drop it if nothing owns it',
     });
     expect(driftError(difference ?? expect.unreachable()).code).toBe('X_DB_DRIFT');
   });
@@ -92,17 +92,17 @@ describe('unexpectedObjects', () => {
     // `drop function "add";` is `42725 function name is not unique` while both live: the fix
     // names the overload it means.
     expect(difference?.fix).toContain(
-      `pg_get_function_identity_arguments(oid) = '\\''a text'\\'''`,
+      `pg_get_function_identity_arguments(p.oid) = '\\''a text'\\'''`,
     );
-    expect(difference?.fix).toContain('run drop function "add"(a text); here');
+    expect(difference?.fix).toContain('run drop function "public"."add"(a text); here');
   });
 
   test('a function with no arguments is dropped by its empty list', () => {
     const [difference] = unexpectedObjects(catalog({ functions: [fn('touch')] }), emptyCatalog());
     expect(difference?.fix).toStartWith(
-      `psql "$DATABASE_URL" -c 'select pg_get_functiondef(oid) from pg_proc where `,
+      `psql "$DATABASE_URL" -c 'select pg_get_functiondef(p.oid) from pg_proc p join `,
     );
-    expect(difference?.fix).toContain('run drop function "touch"(); here');
+    expect(difference?.fix).toContain('run drop function "public"."touch"(); here');
   });
 
   test('a signature no statement can spell is left out of the fix, never escaped into it', () => {
@@ -114,18 +114,44 @@ describe('unexpectedObjects', () => {
 
   test('each kind is shown by the psql command that prints its definition', () => {
     const live = catalog({
-      types: [{ kind: 'enum', name: 'mood', labels: ['ok'] }],
+      schema: 'tenant_a',
+      types: [
+        { kind: 'enum', name: 'mood', labels: ['ok'] },
+        {
+          kind: 'domain',
+          name: 'email',
+          baseType: 'text',
+          notNull: false,
+          default: null,
+          checks: [],
+        },
+      ],
       views: [
         { name: 'report', materialized: false, options: null, definition: 'SELECT 1;' },
         { name: 'totals', materialized: true, options: null, definition: 'SELECT 1;' },
       ],
     });
+    const found = unexpectedObjects(live, emptyCatalog('tenant_a'));
     const head = (fix: string): string => fix.split('   # ')[0] ?? '';
-    expect(unexpectedObjects(live, emptyCatalog()).map((one) => head(one.fix))).toEqual([
-      `psql "$DATABASE_URL" -c '\\dT+ "mood"'`,
-      `psql "$DATABASE_URL" -c '\\d+ "report"'`,
-      `psql "$DATABASE_URL" -c '\\d+ "totals"'`,
+    // Qualified by the CATALOG's schema: a new psql session's search_path need not hold it. And a
+    // domain is `\\dD+` — `\\dT+` lists one and shows none of its definition.
+    expect(found.map((one) => head(one.fix))).toEqual([
+      `psql "$DATABASE_URL" -c '\\dT+ "tenant_a"."mood"'`,
+      `psql "$DATABASE_URL" -c '\\dD+ "tenant_a"."email"'`,
+      `psql "$DATABASE_URL" -c '\\d+ "tenant_a"."report"'`,
+      `psql "$DATABASE_URL" -c '\\d+ "tenant_a"."totals"'`,
     ]);
+    expect(found[1]?.cause).toBe(
+      'domain "email" exists in this database and no migration creates it',
+    );
+    expect(found[1]?.fix).toContain('run drop domain "tenant_a"."email"; here');
+  });
+
+  test('a schema no statement can spell degrades the fix to a psql session', () => {
+    const live = catalog({ schema: 'ten ant', functions: [fn('touch')] });
+    const [difference] = unexpectedObjects(live, emptyCatalog('ten ant'));
+    expect(difference?.fix).toStartWith('psql "$DATABASE_URL"   # ');
+    expect(difference?.fix).not.toContain('ten ant');
   });
 
   test("a ' in the arguments stays inside psql's one shell word, and out of the comment", async () => {
@@ -135,9 +161,9 @@ describe('unexpectedObjects', () => {
     const probe = Bun.spawn(['sh', '-c', fix.replace(head, 'printf "%s|" ')], { stdout: 'pipe' });
     // One word, and the SQL in it quotes the value twice over: `'x'` is `''x''` inside a literal.
     expect(await new Response(probe.stdout).text()).toBe(
-      'select pg_get_functiondef(oid) from pg_proc where pg_function_is_visible(oid) and ' +
-        `proname = 'add' and pg_get_function_identity_arguments(oid) = ` +
-        `'a text DEFAULT ''x''::text'|`,
+      'select pg_get_functiondef(p.oid) from pg_proc p join pg_namespace n on n.oid = ' +
+        `p.pronamespace where n.nspname = 'public' and p.proname = 'add' and ` +
+        `pg_get_function_identity_arguments(p.oid) = 'a text DEFAULT ''x''::text'|`,
     );
     expect(fix.split('   # ')[1]).not.toContain("'");
   });
