@@ -19,6 +19,21 @@ async function until(condition: () => boolean, budgetMs = 5_000): Promise<void> 
   }
 }
 
+/** `until` for a condition only the server can answer: polled, on the same bounded budget. */
+async function untilSettled<T>(
+  read: () => Promise<T>,
+  done: (value: T) => boolean,
+  budgetMs = 5_000,
+): Promise<T> {
+  const deadline = performance.now() + budgetMs;
+  let value = await read();
+  while (!done(value) && performance.now() <= deadline) {
+    await Bun.sleep(20);
+    value = await read();
+  }
+  return value;
+}
+
 describe.skipIf(!hasPostgres)('live · postgres · LISTEN on a session of its own', () => {
   const clients: PostgresClient[] = [];
   const fresh = (applicationName: string, max = 2): PostgresClient => {
@@ -94,7 +109,11 @@ describe.skipIf(!hasPostgres)('live · postgres · LISTEN on a session of its ow
     expect(got).toEqual(['after-the-kill']);
 
     await subscription.unlisten();
-    await until(() => true);
-    expect(await sessions(observer, 'x-listen-b')).toEqual([]);
+    // The backend can linger in `pg_stat_activity` after the UNLISTEN returns: poll the server.
+    const left = await untilSettled(
+      () => sessions(observer, 'x-listen-b'),
+      (rows) => rows.length === 0,
+    );
+    expect(left).toEqual([]);
   });
 });
