@@ -14,6 +14,7 @@ import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from '.
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import { type FanoutDeps, fanoutChange, snapshotFrame } from './live-fanout';
+import { refuseSubscription } from './live-refusal';
 import { resumeOnto } from './live-resume';
 import { liveTenantOf, windowId } from './live-tenant';
 import { createEntry, fillWindow, type QueryEntry } from './query-window';
@@ -299,7 +300,8 @@ export class LiveQueryRegistry {
    *
    * A survivor whose actor now belongs to ANOTHER tenant cannot stay where it is: its window is the
    * old org's. It is re-seated — dropped, subscribed again under the new tenant, and sent that
-   * window's snapshot under the same sid.
+   * window's snapshot under the same sid — or, when that cannot complete, refused on the socket
+   * under the sid (`refuseSubscription`), never kept on the old org's window.
    */
   async reauthorize(socket: SyncSocket): Promise<readonly string[]> {
     const dropped: string[] = [];
@@ -308,6 +310,7 @@ export class LiveQueryRegistry {
     // nobody updates is a count that drifts from the book for the rest of the process.
     this.#book.retenant(socket);
     for (const subscription of this.#book.ofSocket(socket.id)) {
+      let failed: { readonly error: unknown } | undefined;
       try {
         await subscription.definition.authorize?.({
           actor: socket.actor,
@@ -329,8 +332,9 @@ export class LiveQueryRegistry {
           { sid: subscription.sid, actor: socket.actor },
           error,
         );
+        failed = { error };
       }
-      if (await this.#reseat(socket, subscription)) continue;
+      if (await this.#reseat(socket, subscription, failed)) continue;
       socket.markDesynced(subscription.sid);
     }
     return dropped;
@@ -338,19 +342,32 @@ export class LiveQueryRegistry {
 
   /**
    * Move one subscription onto its actor's CURRENT tenant's window. `false` when it is already
-   * there. A re-seat that fails leaves the subscription dropped and reported — never attached to
-   * the window of an org its actor has left.
+   * there. A re-seat that cannot complete leaves the subscription dropped — never attached to the
+   * window of an org its actor has left — and REFUSED on the socket under its sid, the frame a
+   * refused subscribe gets, so the client's window renders `failed` instead of going quiet.
+   *
+   * `failed` is the `authorize` this pass already saw fail: it is not asked again — the store that
+   * just timed out is the one `subscribe` would ask — and it is not counted twice.
    */
-  async #reseat(socket: SyncSocket, subscription: LiveSubscription): Promise<boolean> {
+  async #reseat(
+    socket: SyncSocket,
+    subscription: LiveSubscription,
+    failed: { readonly error: unknown } | undefined,
+  ): Promise<boolean> {
     const { sid, input, definition } = subscription;
     const wanted = windowId(queryHash(definition.name, input), liveTenantOf(socket.actor));
     if (wanted === subscription.qid) return false;
     this.unsubscribe(socket.id, sid);
+    if (failed !== undefined) {
+      refuseSubscription(socket, sid, failed.error);
+      return true;
+    }
     try {
       const { frame } = await this.subscribe({ socket, name: definition.name, input, sid });
       if (!socket.send(frame)) socket.markDesynced(sid);
     } catch (error) {
       this.#gate.failedAuthorize(wanted, { sid, actor: socket.actor }, error);
+      refuseSubscription(socket, sid, error);
     }
     return true;
   }
