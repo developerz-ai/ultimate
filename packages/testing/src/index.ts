@@ -23,6 +23,10 @@ export {
 // `test` is OURS (fixture-injecting); everything else passes through. Re-exported so an app
 // test has one import line, and so `expect` carries this package's matchers already installed.
 export { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from 'bun:test';
+// The two arguments `hooks.authenticate` is handed, for a test of an app's own authenticator.
+// `@ultimat3/http` is imported inside the function.
+export type { AuthRequestInit } from './auth-request';
+export { authRequest } from './auth-request';
 // The browser-backed e2e driver and the raw-CDP browser under it — moved here from
 // `@ultimat3/cli` in 22.0.0. `installE2eDriver` is the ONE entry point an app's test preload calls;
 // `openE2eBrowserIfAvailable()` answers `undefined` on a machine with no Chrome, so a
@@ -167,7 +171,14 @@ export type {
   SharedChunkLike,
 } from './fixture-island';
 export { mountIsland } from './fixture-island';
-export type { JobRunTrace, RunJobs, StepTally } from './fixture-jobs';
+export type {
+  JobDrainAs,
+  JobEnqueueAs,
+  JobRunTrace,
+  RunJobs,
+  RunJobsOptions,
+  StepTally,
+} from './fixture-jobs';
 export { createRunJobs } from './fixture-jobs';
 export type { MailRef, TestMail } from './fixture-mail';
 export { createTestMail } from './fixture-mail';
@@ -201,6 +212,14 @@ export {
 // The file an error tells the reader to edit — the island's own name with `.states.ts` where
 // `.tsx` was. Exported so the command that takes the pictures names the same file the refusal does.
 export { islandStatesFile } from './island-state-errors';
+// One declared state, mounted: `describeIslandState` owns a block's mount and teardown,
+// `mountIslandState` is the one mount a single test asks for with `using`.
+export type { IslandStateMountOptions, IslandStateSuiteOptions } from './island-state-mount';
+export {
+  describeIslandState,
+  ISLAND_MOUNT_TIMEOUT_MS,
+  mountIslandState,
+} from './island-state-mount';
 export type {
   IslandRouteStub,
   IslandState,
@@ -254,6 +273,9 @@ export {
 export { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
 export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
 export { createLiveNode } from './live-node';
+// The store a mutator's `local()` half writes into under test — the Map every app hand-rolled.
+export type { LocalRows, MemoryLocalTx } from './local-tx';
+export { memoryLocalTx } from './local-tx';
 /**
  * The budget `toBeVisible(options?)` takes. Exported because it is in a public matcher's signature;
  * `retryUntil` and `RetryBudget` deliberately are NOT — nothing outside this package calls them,
@@ -272,6 +294,10 @@ export type { RegistryLeak, RegistrySample } from './registry-leak-guard';
 export { installRegistryLeakGuard, leakBetween, sampleRegistries } from './registry-leak-guard';
 export type { ProcessRegistrySnapshot } from './registry-snapshot';
 export { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
+// What the server renders, for a unit test. `@ultimat3/render` is imported inside the two
+// functions, so a tier-0 test importing this barrel for `expect` still loads no renderer.
+export type { RenderedRoute, RenderedView, RouteModule, RouteRequest } from './render-view';
+export { renderRoute, renderView } from './render-view';
 export type { DatabaseSnapshot } from './reusable-database';
 export { restoreDatabase, reusableDatabase, snapshotDatabase } from './reusable-database';
 export type { MockRoute, NetworkSnapshot, NetworkState } from './sealed-network';
@@ -308,12 +334,14 @@ export {
 } from './template-db';
 export type {
   E2eBody,
+  E2eDriver,
   E2eFixtures,
   EvalCase,
   EvalOptions,
   LocatorLike,
   OpenApiLike,
   PageLike,
+  TestOptions,
   TestType,
 } from './test-types';
 export {

@@ -3,9 +3,11 @@
 // job handle, an MCP tool and these tests; the generator writes the declaration and the tests.
 
 import type { FeatureTarget } from './entity';
+import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
-import { sliceExports, sliceFoundation } from './slice-foundation';
+import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
+import { sliceExports, sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
 import { wrapImport } from './wrap';
 
 /**
@@ -104,6 +106,10 @@ ${
 });
 `;
 
+/** The code the slice's `errors.ts` declares for a missing row. */
+const notFoundCode = (feature: NameSet): string =>
+  `X_${feature.kebab.toUpperCase().split('-').join('_')}_NOT_FOUND`;
+
 const ID = '00000000-0000-4000-8000-000000000001';
 const ORG = '00000000-0000-4000-8000-000000000002';
 const OTHER_ORG = '00000000-0000-4000-8000-000000000009';
@@ -160,20 +166,137 @@ const outsider = testActor('outsider', {
     : ''
 }`;
 
-const actionUnitTest = (
-  name: NameSet,
-  feature: NameSet,
-  isMutator: boolean,
-): string => `// ${name.camel}: its declared shape and the input it refuses. Both are answered by the declaration
-// alone, so they belong to the \`unit\` step — the contract projections are next door.
-${preamble(name, feature, isMutator, 'expect, unitTest', false)}
-${shapeTest(name, isMutator)}
+/** What the unit test may do with the slice the declaration lives in. */
+interface HandlerShape {
+  readonly isMutator: boolean;
+  /** The handler reads a row by id and throws `<Feature>NotFoundError` when there is none. */
+  readonly lookup: boolean;
+  /** The slice still takes the row `x g entity` scaffolds, so the test may store one. */
+  readonly storesRow: boolean;
+  readonly dbModule: string;
+}
+
+/**
+ * The optimistic half, run against the client store `@ultimat3/testing` ships. A twin is replayed
+ * on every rebase, so the two facts worth failing on are the row one application leaves and that a
+ * second leaves the same one — and that a row the store never held is not invented.
+ */
+const localTwinTests = (): string => `
+unitTest('the local twin marks the row pending, and a replay lands in the same place', () => {
+  const store = memoryLocalTx({ [TABLE]: { [id]: { id, title: 'before', pending: false } } });
+  target.local(store.tx, input);
+  const once = store.rows(TABLE);
+  expect(once).toEqual({ [id]: { id, title: 'a title', pending: true } });
+  // A rebase replays the queued write: twice through must equal once through.
+  target.local(store.tx, input);
+  expect(store.rows(TABLE)).toEqual(once);
+});
+
+unitTest('the local twin invents no row the store never held', () => {
+  const store = memoryLocalTx();
+  target.local(store.tx, input);
+  expect(store.rows(TABLE)).toEqual({});
+});
+`;
+
+/** The authoritative half's cases, refusal first, in the shape the slice earns. */
+const handlerTests = (feature: NameSet, shape: HandlerShape): string => {
+  const answer = shape.isMutator ? "{ id, title: 'a title' }" : '{ id }';
+  if (!shape.lookup) {
+    return `
+unitTest('an actor without the grant is refused before the handler runs', async () => {
+  const stranger = testActor('stranger', { orgId }).actor;
+  const refused = await target.as(stranger, input).catch((error: unknown) => error);
+  expect(refused).toBeUltimateError('X_FORBIDDEN');
+});
+
+unitTest('the handler answers a writer in the org', async () => {
+  expect(await target.as(writer, input)).toEqual(${answer});
+});
+`;
+  }
+  const found = shape.isMutator
+    ? "{ id: row.id, title: 'a title' }"
+    : "{ id: row.id, title: 'kept' }";
+  const call = shape.isMutator
+    ? "{ id: row.id, orgId, title: 'a title' }"
+    : '{ id: row.id, orgId }';
+  return `
+unitTest('the handler refuses an id nothing holds', async () => {
+  const refused = await target.as(writer, input).catch((error: unknown) => error);
+  expect(refused).toBeUltimateError('${notFoundCode(feature)}');
+});
+${
+  shape.storesRow
+    ? `
+unitTest('the handler answers the row it found', async () => {
+  const draft = { orgId, title: 'kept', price: { minor: 0, currency: 'USD' } };
+  const row = await runWithContext(createContext({ actor: writer }), () => repo.insert(draft));
+  const answer = await target.as(writer, ${call});
+  expect(answer).toEqual(${found});
+});
+`
+    : ''
+}`;
+};
+
+/**
+ * The unit test: the declaration's shape, the input it refuses, and the HANDLER — run through
+ * `.as()`, the one execution path, against the in-memory driver. A mutator's local twin runs
+ * against `memoryLocalTx`. The contract projections are next door, in their own suite.
+ *
+ * A row is stored only in a slice whose row this generator can spell (`sliceTakesScaffoldRow`): a
+ * slice an author reshaped has its own columns, and a test that inserted `{ title, price }` into
+ * it would be a guess about someone else's table.
+ */
+const actionUnitTest = (name: NameSet, feature: NameSet, shape: HandlerShape): string => {
+  const stores = shape.lookup && shape.storesRow;
+  const testing = [
+    ...(stores ? ['afterEach'] : []),
+    'expect',
+    ...(shape.isMutator ? ['memoryLocalTx'] : []),
+    'unitTest',
+  ].join(', ');
+  return `// ${name.camel}: its declared shape, the input it refuses, and what its handler answers — in
+// process, so all three belong to the \`unit\` step. The contract projections are next door.
+${sortedImports([
+  ...(stores ? ["import { createContext, runWithContext } from '@ultimat3/core';"] : []),
+  "import { testActor } from '@ultimat3/policy';",
+  `import { ${testing} } from '@ultimat3/testing';`,
+  ...(stores ? [`import { driver } from '${shape.dbModule}';`] : []),
+])}${stores ? "\nimport * as repo from '../repo';" : ''}
+import { ${name.camel} } from './${name.kebab}';
+
+const id = '${ID}';
+const orgId = '${ORG}';
+const input = { id, orgId${shape.isMutator ? ", title: 'a title'" : ''} };
+${shape.isMutator ? `\n// The client store's table: the entity's own, so the twin and the server row share one key.\nconst TABLE = '${feature.table}';\n` : ''}
+// Named here because every projection needs a stable name and this file does not boot the app.
+// At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
+// object, so \`${name.camel}.tool()\` works there with nothing to remember.
+const target = ${name.camel}.named('${name.camel}');
+
+// Holds the grant in the org the input names: past the policy, so what answers is the handler.
+const grant = ['${feature.kebab}:write'];
+const writer = testActor('writer', { orgId, permissions: grant }).actor;
+${
+  stores
+    ? `
+// One store per process: without this, one test's rows are the next test's fixtures.
+afterEach(() => {
+  driver.reset?.();
+});
+`
+    : ''
+}
+${shapeTest(name, shape.isMutator)}
 
 unitTest('${name.camel} rejects input that is not a uuid', async () => {
   await expect(target.input).toRejectInput({ ...input, id: 'not-a-uuid' });
   await expect(target.input).toAcceptInput(input);
 });
-`;
+${shape.isMutator ? localTwinTests() : ''}${handlerTests(feature, shape)}`;
+};
 
 const actionContractTest = (
   name: NameSet,
@@ -218,6 +341,8 @@ export interface ActionOptions extends FeatureTarget {
    * data. `x g resource` passes the entity it is writing in the same run.
    */
   readonly sliceEntity?: string;
+  /** The slice's `repo.ts` as it stands on disk, or absent alongside `sliceEntity`. */
+  readonly sliceRepo?: string;
 }
 
 export function actionFiles(rawName: string, target: ActionOptions): readonly GeneratedFile[] {
@@ -246,7 +371,15 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
     // suites: the input parse is a `unit` assertion and the three projections are `contract` ones.
     // Emitted as one file, the contract half ran under `unit` and `x test contract` answered
     // X_TEST_NO_FILES; renaming that one file would have put the `unitTest` in the same bind.
-    { path: `${dir}/${name.kebab}.test.ts`, contents: actionUnitTest(name, feature, isMutator) },
+    {
+      path: `${dir}/${name.kebab}.test.ts`,
+      contents: actionUnitTest(name, feature, {
+        isMutator,
+        lookup,
+        storesRow: sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo),
+        dbModule: target.dbModule ?? PLACEHOLDER_DB_MODULE,
+      }),
+    },
     {
       path: `${dir}/${name.kebab}.contract.test.ts`,
       contents: actionContractTest(name, feature, isMutator),

@@ -15,6 +15,7 @@ import {
   checkPackageShape,
   checkPublishShape,
   countLines,
+  FIXTURE_EXCLUSION,
   filesOf,
   frameworkDepsOf,
   hasWorkspacePackages,
@@ -51,7 +52,7 @@ beforeAll(async () => {
   // real one. That includes the publish contract — a manifest with no `files` ships the directory.
   await Bun.write(
     join(dir, 'packages/short/package.json'),
-    `{"name":"short","version":"1.2.3","files":["src","${TEST_EXCLUSION}","README.md","LICENSE"]}\n`,
+    `{"name":"short","version":"1.2.3","files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}","README.md","LICENSE"]}\n`,
   );
   await Bun.write(join(dir, 'packages/long/src/index.ts'), lines(LINE_CEILING + 1));
   await Bun.write(join(dir, 'packages/long/package.json'), '{"name":"long"}\n');
@@ -219,7 +220,7 @@ describe('unit · the package shape', () => {
     try {
       for (const file of PACKAGE_FILES) await Bun.write(join(bad, 'packages/p', file), '{}\n');
       const manifest = (extra: string): string =>
-        `{"name":"p","version":"1.0.0",${extra}"files":["src","${TEST_EXCLUSION}"]}\n`;
+        `{"name":"p","version":"1.0.0",${extra}"files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}"]}\n`;
       await Bun.write(join(bad, 'tsconfig.json'), '{"files":[],"references":[]}\n');
       await Bun.write(join(bad, 'packages/p/package.json'), manifest(''));
       const findings = await checkPackageShape(bad);
@@ -275,7 +276,7 @@ const pkg = (over: Partial<ManifestFacts> & { dir: string }): ManifestFacts => (
   version: '1.0.0',
   private: false,
   frameworkDeps: [],
-  files: ['src', TEST_EXCLUSION, 'README.md', 'LICENSE'],
+  files: ['src', TEST_EXCLUSION, FIXTURE_EXCLUSION, 'README.md', 'LICENSE'],
   ...over,
 });
 
@@ -424,7 +425,7 @@ describe('checkPublishShape', () => {
   // `files`, and shipped the text in none of them. npm drops a `files` entry with no file behind
   // it without a word, so every check upstream of the registry stayed green.
   test('a published package promising a file it does not have is a finding', () => {
-    const files = ['src', TEST_EXCLUSION, 'README.md', 'LICENSE', 'CHANGELOG.md'];
+    const files = [...pkg({ dir: 'short' }).files, 'CHANGELOG.md'];
     expect(checkPublishShape(dir, [pkg({ dir: 'short', files })])).toEqual([
       missingPublishedFileFinding('short', 'CHANGELOG.md'),
     ]);
@@ -446,12 +447,13 @@ describe('checkPublishShape', () => {
   // @ultimat3/cli's tarball, all of it run against a preloaded clock a consumer does not have.
   test('a published package that does not exclude its tests is a finding', () => {
     expect(checkPublishShape(dir, [pkg({ dir: 'short', files: ['src'] })])).toEqual([
-      publishesTestsFinding('short'),
+      publishesTestsFinding('short', TEST_EXCLUSION),
+      publishesTestsFinding('short', FIXTURE_EXCLUSION),
     ]);
   });
 
   test('a negation and a glob are never existence-checked — only a literal promises a file', () => {
-    const files = ['src', TEST_EXCLUSION, '!nothing-here', 'src/**/*.json'];
+    const files = ['src', TEST_EXCLUSION, FIXTURE_EXCLUSION, '!nothing-here', 'src/**/*.json'];
     expect(checkPublishShape(dir, [pkg({ dir: 'short', files })])).toEqual([]);
   });
 

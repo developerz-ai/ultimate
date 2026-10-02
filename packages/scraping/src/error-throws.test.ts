@@ -46,10 +46,12 @@ describe('unit · a thrown value from somebody else`s library is RENDERED, never
       new Error('ECONNREFUSED'),
     );
     expect(error.code).toBe('X_SCRAPE_CDP_ATTACH_FAILED');
+    // Scheme and host only: the path of a CDP URL is the browser's id, and a provider's carries
+    // its access token. `cdp-redaction.test.ts` holds the token half.
     expect(error.cause).toBe(
-      'the CDP endpoint ws://chrome:9222/devtools/browser/abc refused the attach: Error: ECONNREFUSED',
+      'the CDP endpoint ws://chrome:9222 refused the attach: Error: ECONNREFUSED',
     );
-    expect(error.meta).toEqual({ cdpUrl: 'ws://chrome:9222/devtools/browser/abc' });
+    expect(error.meta).toEqual({ cdpUrl: 'ws://chrome:9222' });
   });
 
   test('a non-Error throw still produces a readable cause rather than [object Object]', () => {

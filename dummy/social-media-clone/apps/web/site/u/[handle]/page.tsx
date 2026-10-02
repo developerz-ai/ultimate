@@ -11,10 +11,9 @@
 
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
-import { Icon } from '@ultimat3/ui';
+import { Icon, Link } from '@ultimat3/ui';
 import { iconArrowRight } from '@ultimat3/ui/icons/arrow-right';
 import { iconUserSearch } from '@ultimat3/ui/icons/user-search';
-import { ActionLink } from '../../../shared/ui/action';
 import { AppShell } from '../../../shared/ui/app-shell';
 import { EmptyState } from '../../../shared/ui/empty-state';
 import { PageHeading } from '../../../shared/ui/page-heading';
@@ -72,10 +71,9 @@ export function Page(props: { readonly data: ProfileData; readonly url?: string 
           lede={t('site.profile.notFound.description')}
         />
         {/* A dead end needs a door. The feed is the one page every visitor may open. */}
-        <ActionLink href="/feed" size="lg">
+        <Link appearance="button" size="lg" href="/feed" iconEnd={<Icon glyph={iconArrowRight} />}>
           {t('site.profile.notFound.cta')}
-          <Icon glyph={iconArrowRight} />
-        </ActionLink>
+        </Link>
       </AppShell>
     );
   }

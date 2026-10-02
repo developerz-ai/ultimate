@@ -19,8 +19,9 @@ import { createMemoryDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
-import type { CronResolver, LeaderElection, Scheduler } from './scheduler';
+import type { CronResolver, Scheduler } from './scheduler';
 import { createScheduler } from './scheduler';
+import type { LeaderElection } from './scheduler-leader';
 import type { TaskHandle } from './task';
 import { resetTasks, task } from './task';
 
@@ -82,6 +83,8 @@ async function rig(): Promise<Rig> {
   };
   let releases = 0;
   const leader: LeaderElection = {
+    // No trusted window: the election is asked on every round.
+    renewEveryMs: 0,
     acquire: () => Promise.resolve(true),
     release: () => {
       releases += 1;

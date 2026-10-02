@@ -4,6 +4,10 @@
 // a failure names the template that emitted them.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun ships no synchronous existence check and no recursive delete; the sandbox each lint run
+// writes is removed when it has answered, and one test asserts that it is.
+import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 // why: `node:` by necessity: Bun exposes no path-join primitive, and the Biome binary is found by
 // walking out of this file's directory to the repo root.
 import { join } from 'node:path';
@@ -72,17 +76,39 @@ describe('unit · every emitted file survives the linter the scaffold configures
    * which may be ahead of the one THIS repo has; that mismatch is an `info`, never an error, so it
    * cannot decide this test either way.
    */
+  /** Every sandbox a run wrote, so the cleanup below is something a test can look at. */
+  const sandboxes: string[] = [];
+
   const lintFindings = async (files: readonly EmittedText[], name: string): Promise<string> => {
-    const dir = join(
-      process.env['TMPDIR'] ?? '/tmp',
-      `x-emitted-biome-${Bun.randomUUIDv7()}`,
-      name.replaceAll(/[^a-z0-9]+/g, '-'),
-    );
-    for (const file of files) await Bun.write(join(dir, file.path), file.contents);
-    const biome = join(REPO_ROOT, 'node_modules', '.bin', 'biome');
-    const run = Bun.spawnSync([biome, 'check', '.'], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
-    return run.exitCode === 0 ? '' : `${run.stdout.toString()}${run.stderr.toString()}`;
+    const root = join(process.env['TMPDIR'] ?? '/tmp', `x-emitted-biome-${Bun.randomUUIDv7()}`);
+    const dir = join(root, name.replaceAll(/[^a-z0-9]+/g, '-'));
+    sandboxes.push(root);
+    try {
+      for (const file of files) await Bun.write(join(dir, file.path), file.contents);
+      const biome = join(REPO_ROOT, 'node_modules', '.bin', 'biome');
+      const run = Bun.spawnSync([biome, 'check', '.'], {
+        cwd: dir,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      return run.exitCode === 0 ? '' : `${run.stdout.toString()}${run.stderr.toString()}`;
+    } finally {
+      // The findings are already a string. Left behind, each run kept a whole scaffold under the
+      // temp root: 812 of them were sitting in /tmp on one workstation, measured 2026-10-01.
+      await rm(root, { recursive: true, force: true });
+    }
   };
+
+  test('a lint run leaves no sandbox behind, clean or not', async () => {
+    const clean = { variant: 'probe', path: 'clean.ts', contents: 'export const one = 1;\n' };
+    expect(await lintFindings([clean], 'clean')).toBe('');
+    expect(existsSync(sandboxes.at(-1) ?? '')).toBe(false);
+    // A file the formatter rewrites still answers — and is still removed.
+    const dirty = { variant: 'probe', path: 'dirty.ts', contents: 'export const  two=2\n' };
+    expect(await lintFindings([dirty], 'dirty')).toContain('dirty.ts');
+    expect(existsSync(sandboxes.at(-1) ?? '')).toBe(false);
+    expect(sandboxes.at(-1)).toContain('x-emitted-biome-');
+  });
 
   for (const variant of scaffoldVariants()) {
     test(`${variant.name} emits nothing biome check rejects`, async () => {
@@ -271,5 +297,27 @@ describe('unit · the emitted biome config and the emitted biome dependency name
     const declared = /"@biomejs\/biome":\s*"(?<range>[^"]+)"/.exec(pkg)?.groups?.['range'];
     expect(schema).toBeDefined();
     expect(declared).toBe(schema as string);
+  });
+});
+
+describe('unit · every generated test mints its actors one way', () => {
+  // `testActor(name, init).actor` is typed `Actor`, so a context takes it as it is; core's
+  // `userActor` beside it in the same app was a second idiom for one thing, copied by every agent
+  // reading the scaffold's tests as the model.
+  test('no emitted test imports userActor — testActor from @ultimat3/policy is the one builder', () => {
+    const generated = (['resource', 'entity', 'action', 'job', 'backfill'] as const).flatMap(
+      (kind) =>
+        generate({
+          kind,
+          name: kind === 'resource' ? 'invoice' : `${kind}-one`,
+          feature: 'invoice',
+        })
+          .filter((file) => typeof file.contents === 'string')
+          .map((file) => ({ variant: kind, path: file.path, contents: String(file.contents) })),
+    );
+    const tests = [...emitted(), ...generated].filter((file) => /\.test\.tsx?$/.test(file.path));
+    expect(tests.length).toBeGreaterThan(10);
+    const offenders = tests.filter((file) => /\buserActor\b/.test(file.contents)).map((f) => at(f));
+    expect(offenders).toEqual([]);
   });
 });

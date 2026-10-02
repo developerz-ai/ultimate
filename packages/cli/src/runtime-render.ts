@@ -16,6 +16,7 @@
 
 // why: Bun ships no path API; an island's file is its route file's directory joined to its `src`.
 import { posix } from 'node:path';
+import { actionPathStyle } from '@ultimat3/action';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx } from '@ultimat3/core';
 import { CLIENT_SCOPE_HEADER } from '@ultimat3/core';
@@ -30,6 +31,7 @@ import { currentLocale, localeConfig } from '@ultimat3/i18n';
 import type { IslandCollector, RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
 import {
   clientBootTags,
+  clientPathStyleTags,
   clientPersistTags,
   clientScopeTag,
   clientSyncTags,
@@ -130,6 +132,10 @@ const headFor = async (
         }),
         [
           ...(options.sync === undefined ? [] : clientSyncTags(options.sync)),
+          // Every document, shareable ones included: the style is the app's, not a visitor's, and
+          // it is the only way an island's `rpc()` learns it. Read per render — `defineApi` may run
+          // after these routes are built. `'resource'`, the default, is no tag.
+          ...clientPathStyleTags(actionPathStyle()),
           ...router,
           // The page boot rides the scope tag: its whole job — restoring a principal's persisted
           // records and replaying its queued writes — is per principal, and a shareable document

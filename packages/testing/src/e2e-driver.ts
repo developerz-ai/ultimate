@@ -6,6 +6,7 @@ import { test as bunTest } from 'bun:test';
 import type { E2eBrowserPage, E2ePageOptions } from './e2e-page';
 import { e2ePage } from './e2e-page';
 import { FixtureUnavailableError } from './errors';
+import { withFailureContext } from './failure-context';
 import { unavailableFixture } from './fixture-drivers';
 import { defineFixtures } from './fixtures';
 import type { E2eBody, E2eFixtures, PageLike } from './test-types';
@@ -97,8 +98,16 @@ export function installE2eDriver(options: E2eDriverOptions): () => void {
     page: () => page,
     ...(newBuild === undefined ? {} : { deploy: () => ({ newBuild }) }),
   });
-  useE2eDriver((name, body: E2eBody) => {
-    bunTest(name, () => body(e2eFixtures(page, options.page, newBuild)));
+  useE2eDriver((name, body: E2eBody, test) => {
+    // Through `withFailureContext`, as `fixtureTest` is: the failing test carries the app's log.
+    const run = async (): Promise<void> => {
+      try {
+        await body(e2eFixtures(page, options.page, newBuild));
+      } catch (error) {
+        throw withFailureContext(error);
+      }
+    };
+    bunTest(name, run, test?.timeoutMs);
   });
   return () => {
     // Both halves, because both were installed. Putting the DECLARATION back — rather than

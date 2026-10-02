@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// Generate `docs/architecture/guards.md` from the guards' own headers — command, what it refuses,
-// the codes it emits — and refuse a committed page that has drifted from them.
+// Generate `docs/architecture/guards.md` from the guards' own headers — command (in the form that
+// reports, never one that writes), what it refuses, the codes it emits — and refuse a committed
+// page that has drifted from them.
 //
 // Root `CLAUDE.md` carried ~30 hand-written guard rows, each restating a header that already said
 // the same thing, and each free to go stale on its own (the `catch-render` row named the wrong gate
@@ -71,6 +72,18 @@ async function commandsByFile(root: string): Promise<ReadonlyMap<string, string>
 }
 
 /**
+ * The form of `command` that REPORTS. A header whose usage line offers a bare optional `[--check]`
+ * is a script that WRITES without it (`schema-dumps` regenerates every tracked app's dump), and a
+ * page of guards that lists the writing form hands its reader a command that edits the tree. The
+ * usage line is the header's own `//   bun run …`; `[--check | --write]` and a required `--check`
+ * already report by default and are left as they are.
+ */
+export function reportingForm(command: string, source: string): string {
+  const usage = /^\/\/\s+bun run \S+(.*)$/m.exec(source)?.[1] ?? '';
+  return usage.includes('[--check]') ? `${command} --check` : command;
+}
+
+/**
  * A guard is a top-level runnable script (`import.meta.main`) that emits at least one code. Tests,
  * `lib/` helpers and pure libraries are excluded by that definition, never by a list.
  */
@@ -85,7 +98,7 @@ export async function collectGuards(root: string): Promise<readonly Guard[]> {
     const codes = codesIn(source);
     if (codes.length === 0) continue;
     guards.push({
-      command: commands.get(file) ?? `bun run ${file}`,
+      command: reportingForm(commands.get(file) ?? `bun run ${file}`, source),
       file,
       refuses: headerSentence(source) ?? '(no header comment)',
       codes,

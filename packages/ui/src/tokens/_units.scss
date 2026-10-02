@@ -1,0 +1,47 @@
+// Computed lengths: px → rem, and one fluid `clamp()` between two viewport widths. Functions only —
+// nothing here emits CSS. The scale maps restate a constant; these compute a value from one.
+
+@use 'sass:math';
+@use 'sass:meta';
+@use 'sass:string';
+
+/// The one conversion both functions read, so `fluid(16px, 32px)` and `rem(16px)` cannot disagree
+/// about what a px is — and so a refusal names the function the author actually called.
+@function -to-rem($value, $root, $caller, $example) {
+  @if meta.type-of($value) != 'number' or not (math.is-unitless($value) or math.unit($value) == 'px' or math.unit($value) == 'rem') {
+    @error string.unquote('X_UI_INVALID_VALUE: #{$caller}() expected px, rem or a unitless px count — got `#{meta.inspect($value)}`. fix: pass a px length, e.g. #{$example}');
+  }
+  @if math.is-unitless($value) {
+    @return math.div($value * 1px, $root) * 1rem;
+  }
+  @if math.unit($value) == 'rem' {
+    @return $value;
+  }
+  @return math.div($value, $root) * 1rem;
+}
+
+/// px → rem against the root size. Lengths are rem so a layout holds at 200% text zoom; a unit
+/// that cannot be converted is a build error rather than a size that is subtly off.
+@function rem($value, $root: 16px) {
+  @return -to-rem($value, $root, 'rem', 'rem(24px)');
+}
+
+/// One `clamp()` with a real slope and intercept: `$min` at a viewport `$from` wide, `$max` at
+/// `$to`, linear between and held outside. Type and space then scale with the viewport instead of
+/// stepping at a breakpoint. `$min` above `$max` is a size that shrinks, and is legal.
+@function fluid($min, $max, $from: 20rem, $to: 80rem) {
+  $min: -to-rem($min, 16px, 'fluid', 'fluid(16px, 32px)');
+  $max: -to-rem($max, 16px, 'fluid', 'fluid(16px, 32px)');
+  $from: -to-rem($from, 16px, 'fluid', 'fluid(16px, 32px)');
+  $to: -to-rem($to, 16px, 'fluid', 'fluid(16px, 32px)');
+
+  @if $from >= $to {
+    @error string.unquote('X_UI_INVALID_VALUE: fluid() needs $from below $to — got `#{$from}` and `#{$to}`. fix: pass the narrower viewport first, e.g. fluid(1rem, 2rem, 20rem, 80rem)');
+  }
+
+  $slope: math.div($max - $min, $to - $from);
+  $intercept: $min - $slope * $from;
+  // `clamp(MIN, VAL, MAX)` with MIN above MAX answers MIN at every width, so the bounds are
+  // ordered here rather than trusted to be.
+  @return clamp(math.min($min, $max), $intercept + $slope * 100vw, math.max($min, $max));
+}

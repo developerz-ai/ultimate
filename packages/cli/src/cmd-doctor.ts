@@ -22,8 +22,12 @@ import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import { DEFAULT_DOCTOR_PORT, doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
+import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
+import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
 import type { OfflineFallbackFact } from './doctor-offline';
 import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
+import type { SealedKeysFact } from './doctor-sealed';
+import { sealedKeyFindings, sealedKeysProbe } from './doctor-sealed';
 import { intFlagOr, PORT_RANGE, portPairAfter } from './flag-number';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
@@ -91,6 +95,12 @@ export interface DoctorProbe {
    * reaching the disk — the same split `drift()` makes one question over.
    */
   offlineFallback(): Promise<OfflineFallbackFact>;
+  /**
+   * The app's `.sealed()` columns and the master keys this environment declares. A FACT, for the
+   * reason `offlineFallback` is one: loading the app and opening the secrets file is IO, and what
+   * a retired key beside a sealed column means is `sealedKeyFindings`' pure rule.
+   */
+  sealedKeys(): Promise<SealedKeysFact>;
 }
 
 /** What `x doctor` reads about the embedded database, without opening it. */
@@ -281,6 +291,8 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // author reaches it from: `x db gen` throwing `X_MIGRATION_SNAPSHOT_MISSING` used to be a
   // condition this diagnostic could not see at all, so the fix line ran clean over a broken app.
   findings.push(...(await probe.snapshots()));
+  // Sealed columns against the key ring: no key at all, or a rotation whose re-seal is pending.
+  findings.push(...sealedKeyFindings(await probe.sealedKeys()));
   return findings;
 }
 
@@ -394,6 +406,8 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     // `runDoctor` returns on `X_NOT_IN_APP` before this can be asked.
     offlineFallback: async () =>
       root === undefined ? { fallback: null, routes: undefined } : offlineFallbackProbe(root),
+    sealedKeys: async () =>
+      root === undefined ? { columns: undefined, keys: undefined } : sealedKeysProbe(root),
   };
 }
 
@@ -401,16 +415,26 @@ export const doctorCommand: CliCommand = {
   spec: doctorSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const port = doctorPort(ctx.args);
-    const findings = await runDoctor(probeFor(ctx.cwd, ctx.bunVersion, port));
-    return {
-      ok: findings.length === 0,
-      command: 'doctor',
-      summary:
-        findings.length === 0
-          ? msg('cli.doctor.clean')
-          : msg('cli.doctor.findings', { count: findings.length }),
-      findings,
-      data: { count: findings.length, codes: findings.map((entry) => entry.code) },
-    };
+    const probe = probeFor(ctx.cwd, ctx.bunVersion, port);
+    const findings = await runDoctor(probe);
+    const listed = withGuardListing(
+      {
+        ok: findings.length === 0,
+        command: 'doctor',
+        summary:
+          findings.length === 0
+            ? msg('cli.doctor.clean')
+            : msg('cli.doctor.findings', { count: findings.length }),
+        findings,
+        data: { count: findings.length, codes: findings.map((entry) => entry.code) },
+      },
+      // A listing beside the verdict, never part of it (`doctor-guards.ts` says why).
+      probe.root === undefined ? [] : await shippedGuardsProbe(probe.root),
+    );
+    // The second listing: what the coverage floor does not see (`doctor-coverage.ts`).
+    return withCoverageExcludes(
+      listed,
+      probe.root === undefined ? [] : await coverageExcludesProbe(probe.root),
+    );
   },
 };

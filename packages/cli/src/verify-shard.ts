@@ -10,6 +10,7 @@ import { CryptoHasher } from 'bun';
 import type { ShardFacts } from './output';
 import { VerifyShardInvalidError } from './verify-errors';
 import type { VerifyStepName } from './verify-step';
+import { GATE_COMMAND } from './verify-step';
 
 /** The steps a shard may split: the parallel suites. `live` and `e2e` are serial by design. */
 export const SHARDABLE_STEPS: readonly VerifyStepName[] = ['unit', 'contract', 'job'];
@@ -20,18 +21,22 @@ export interface ShardSpec {
   readonly total: number;
 }
 
-/** `3/8` → `{ index: 3, total: 8 }`, refused unless `1 <= i <= n`. */
-export function parseShard(raw: string): ShardSpec {
+/**
+ * `3/8` → `{ index: 3, total: 8 }`, refused unless `1 <= i <= n`. `command` is the gate as the
+ * caller was invoked, so the refusal's fix runs where it was raised.
+ */
+export function parseShard(raw: string, command: string = GATE_COMMAND): ShardSpec {
   const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(raw);
   const index = match === null ? Number.NaN : Number(match[1]);
   const total = match === null ? Number.NaN : Number(match[2]);
   if (!Number.isSafeInteger(index) || !Number.isSafeInteger(total) || total < 1 || index < 1) {
-    throw new VerifyShardInvalidError({ reason: `"${raw}" is not i/n (e.g. 2/4)` });
+    throw new VerifyShardInvalidError({ reason: `"${raw}" is not i/n (e.g. 2/4)`, command });
   }
   if (index > total) {
     throw new VerifyShardInvalidError({
       reason: `shard ${String(index)} does not exist in a ${String(total)}-way split (1..${String(total)})`,
-      fix: `x verify --only unit --shard ${renderFixShellArg(`${String(total)}/${String(total)}`, '<i/n>')} --json`,
+      fix: `${command} --only unit --shard ${renderFixShellArg(`${String(total)}/${String(total)}`, '<i/n>')} --json`,
+      command,
     });
   }
   return { index, total };
@@ -41,11 +46,14 @@ export function parseShard(raw: string): ShardSpec {
  * The steps a shard run may name: every one must be shardable. Refused with the step named, and a
  * fix that keeps the shardable ones — `live`/`e2e` belong in a job of their own.
  */
-export function assertShardable(only: readonly VerifyStepName[] | undefined): void {
+export function assertShardable(
+  only: readonly VerifyStepName[] | undefined,
+  command: string = GATE_COMMAND,
+): void {
   if (only === undefined || only.length === 0) {
     throw new VerifyShardInvalidError({
       reason: 'a shard is one slice of ONE parallel step and needs --only to name it',
-      fix: 'x verify --only unit --shard 1/4 --json',
+      command,
     });
   }
   const refused = only.filter((step) => !SHARDABLE_STEPS.includes(step));
@@ -57,8 +65,9 @@ export function assertShardable(only: readonly VerifyStepName[] | undefined): vo
       } in a job of its own without --shard`,
       fix:
         kept.length === 0
-          ? `x verify --only ${renderFixShellArg(refused.join(','), '<step,step>')} --json`
-          : `x verify --only ${renderFixShellArg(kept.join(','), '<step,step>')} --shard 1/4 --json`,
+          ? `${command} --only ${renderFixShellArg(refused.join(','), '<step,step>')} --json`
+          : `${command} --only ${renderFixShellArg(kept.join(','), '<step,step>')} --shard 1/4 --json`,
+      command,
     });
   }
 }
@@ -116,12 +125,13 @@ export function shardFiles(
 }
 
 /** A timings file, or a refusal naming it — a CI job must not silently fall back to round-robin. */
-export async function readTimings(path: string): Promise<Timings> {
+export async function readTimings(path: string, command: string = GATE_COMMAND): Promise<Timings> {
   const file = Bun.file(path);
   if (!(await file.exists())) {
     throw new VerifyShardInvalidError({
       reason: `--timings ${path} does not exist`,
       fix: 'bun test --timings=timings.json --update-timings   # writes it, then commit or cache it',
+      command,
     });
   }
   let parsed: unknown;
@@ -139,6 +149,7 @@ export async function readTimings(path: string): Promise<Timings> {
     throw new VerifyShardInvalidError({
       reason: `--timings ${path} is not a JSON object of { "path": ms }`,
       fix: 'bun test --timings=timings.json --update-timings',
+      command,
     });
   }
   return parsed as Timings;

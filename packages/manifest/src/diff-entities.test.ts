@@ -105,6 +105,49 @@ describe('entity facts', () => {
     ).toBe('became NOT NULL');
   });
 
+  // `.sealed()` changes no DDL and no column type, so before this the diff said nothing at all —
+  // while the field left every action output, every query row and every record the app sends.
+  describe('a column changing how it is sealed', () => {
+    const at = 'entities.post.columns.note.sealed';
+    const from = (how: 'opaque' | 'lookup', to?: 'opaque' | 'lookup') =>
+      diffManifest(
+        fixtureManifest({ entities: withColumn('note', { sealed: how }) }),
+        fixtureManifest({
+          entities: to === undefined ? post() : withColumn('note', { sealed: to }),
+        }),
+      );
+
+    test('becoming sealed is breaking: the field is removed from every output', () => {
+      for (const how of ['opaque', 'lookup'] as const) {
+        const changed = diff(withColumn('note', { sealed: how }));
+        const change = changed.breaking.find((c) => c.path === at);
+        expect(change?.detail).toContain(`became sealed (${how})`);
+        expect(change?.detail).toContain('output');
+      }
+    });
+
+    test('unsealing is breaking too: stored values stay ciphertext, and the field joins every output', () => {
+      const change = from('opaque').breaking.find((c) => c.path === at);
+      expect(change?.detail).toContain('no longer sealed');
+    });
+
+    test('lookup -> opaque is breaking: equality filters and unique are now refused', () => {
+      expect(from('lookup', 'opaque').breaking.find((c) => c.path === at)?.detail).toBe(
+        'sealed lookup -> opaque; an equality filter or a unique rule on it is now refused',
+      );
+    });
+
+    test('opaque -> lookup is additive, and reported: equal values now store equal strings', () => {
+      const changed = from('opaque', 'lookup');
+      expect(changed.hasBreaking).toBe(false);
+      expect(changed.additive.find((c) => c.path === at)?.detail).toContain('opaque -> lookup');
+    });
+
+    test('a column sealed the same way on both sides reports nothing', () => {
+      expect(from('lookup', 'lookup').changes.filter((c) => c.path === at)).toEqual([]);
+    });
+  });
+
   test('an unchanged entity reports nothing of its own', () => {
     expect(diff(post()).changes.filter((c) => c.path.startsWith('entities.'))).toEqual([]);
   });

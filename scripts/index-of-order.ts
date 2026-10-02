@@ -43,6 +43,7 @@ import { parseScriptArgs } from './lib/args';
 import { balancedClose } from './lib/balanced-paren';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { siteList, siteTarget } from './lib/ratchet-sites';
 import { repoRoot } from './lib/run';
 
 const SCRIPT = 'index-of-order';
@@ -95,7 +96,8 @@ function enclosingTest(src: string, at: number): string {
   // this tree, and it degrades gracefully.
   const lines = src.split('\n');
   const atLine = src.slice(0, at).split('\n').length - 1;
-  const opener = /^(\s*)(?:test|it)(?:\.[A-Za-z]+)*\s*\(/;
+  // `unitTest(`/`liveTest(`/… are `@ultimat3/testing`'s typed openers, the form an app writes.
+  const opener = /^(\s*)(?:test|it|(?:unit|contract|live|job)Test)(?:\.[A-Za-z]+)*\s*\(/;
   let first = -1;
   let indent = '';
   for (let i = atLine; i >= 0; i -= 1) {
@@ -303,12 +305,16 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
     const pin = pinned.get(pkg);
     const allowed = pin?.count ?? 0;
     if (count <= allowed) continue;
-    const worst = input.sites.find((site) => !site.guarded && packageOfTest(site.file) === pkg);
-    const at = worst === undefined ? pkg : `${worst.file}:${String(worst.line)}`;
+    // EVERY unguarded site of the package: the first is usually one the pin already allows.
+    const over = input.sites.filter((site) => !site.guarded && packageOfTest(site.file) === pkg);
+    const gap = { kind: 'over', pkg, found: count, pinned: allowed, sites: over } as const;
+    const where = (site: OrderSite): string => `${site.file}:${String(site.line)}`;
+    const [worst] = over;
+    const at = worst === undefined ? pkg : where(worst);
     findings.push({
       code: 'X_INDEX_ORDER_UNGUARDED',
-      cause: `${pkg} has ${String(count)} ordering assertion(s) whose indexOf operand is never asserted present, above its pin of ${String(allowed)} — indexOf answers -1 for a needle it never found, and -1 passes ${worst?.matcher.startsWith('toBeGreaterThan') === true ? 'as the greater-than ARGUMENT' : 'as the less-than RECEIVER'}, so the assertion holds when the thing it orders is not emitted at all`,
-      fix: `assert presence first at ${at} — \`expect(<haystack>).toContain(<needle>)\`, or \`expect(<the index>).toBeGreaterThanOrEqual(0)\` — then compare. Prove it: delete what the assertion orders and watch the test go red`,
+      cause: `${pkg} has ${String(count)} ordering assertion(s) whose indexOf operand is never asserted present, above its pin of ${String(allowed)} — ${siteList(gap, where)} — indexOf answers -1 for a needle it never found, and -1 passes ${worst?.matcher.startsWith('toBeGreaterThan') === true ? 'as the greater-than ARGUMENT' : 'as the less-than RECEIVER'}, so the assertion holds when the thing it orders is not emitted at all`,
+      fix: `assert presence first at ${siteTarget(gap, where)} — \`expect(<haystack>).toContain(<needle>)\`, or \`expect(<the index>).toBeGreaterThanOrEqual(0)\` — then compare. Prove it: delete what the assertion orders and watch the test go red`,
       at,
     });
   }

@@ -2,8 +2,8 @@
 
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
-Deps: `core` (tier 0), plus `time`, `jobs`, `mail`, `db` and `entity` — imported **dynamically
-inside the fixture factories only**, so a test that never destructures `mail` never loads the mail
+Deps: `core` (tier 0), plus `time`, `jobs`, `mail`, `db`, `entity`, `render` and `http` — imported **dynamically
+inside the fixture factories only** (`render` inside `render-view.ts`, `http` inside `auth-request.ts`), so a test that never destructures `mail` never loads the mail
 package and a `packages/core` test never loads the entity registry. `entity` is a dependency for
 exactly one call: `nPlusOne()`, so the strict fixture reports the error `x dev` reports, with the
 `fix:` the schema's own relations spell. A second N+1 code owned here would be a second answer to
@@ -20,7 +20,11 @@ is its own entry point and not part of the barrel.
 | Self is not egress | a port core's `markListening()` announced passes through — a socket test never unseals |
 | Offline is a state, not a mock | `network.offline()` / `.drop()` fail every request as `X_TEST_NETWORK_OFFLINE`, ahead of the mocks — the app's own offline path runs |
 | One way offline | the `network` fixture. `setNetworkState` is the gate's only writer and is not exported — setting it from a test body skips the fixture's disposal and leaves every later file offline |
+| The seal key is a test process's, and nobody's export | `test-seal-key.ts`: installed by the preload only when `NODE_ENV === 'test'` and neither `ULTIMATE_SECRETS_KEY` nor `.secrets.key` exists; `startE2eApp` hands it to the child by VALUE (`testSealKeyEnv`), because the spawned app is a server and must never be able to install one. The constant is module-private and off the barrel (`test-seal-key.test.ts`). Never loosen the `NODE_ENV` check: the key is public |
+| `toEqualRow` never prints a server-only value | `matcher-row.ts` compares every OWN property (`toEqual` cannot see a `.sealed()` column — empty diff). A non-enumerable property that differs is NAMED; its value and its length stay out of the message, which lands in CI logs |
 | No retries | a flake is fixed or deleted the day it flakes; there is no `retry: 3` |
+| A mutator's `local()` runs against `memoryLocalTx()` | `local-tx.ts`: keyed rows with the record store's rules (update invents nothing, `undefined` leaves a column, rows frozen). Never a hand-rolled table per test |
+| A page test RENDERS, with no cast | `render-view.ts`: `renderRoute(module, { url, actor })` resolves `load` once and hands `meta` and the page that one object, as every render mode does; `renderView(Component, props)` is one component. `@ultimat3/render` is imported INSIDE both, never at module scope — the barrel is what a tier-0 test imports for `expect` |
 | `toBeUltimateError` reads THREE fields | an `X_` code plus a `cause` plus a `fix`, all through core's `stringField`. `typeof value.code === 'string'` alone passed a Node `ENOENT` |
 | One matcher WAITS, and it is `toBeVisible` | `await expect(locator).toBeVisible()` retries `isVisible()` to a budget — 5000ms every 100ms, Playwright's own default, narrowable per call. |
 | The budget is counted in LOOKS, not milliseconds | this package freezes `Date.now()`, so a deadline computed from the clock never expires and the loop spins forever. `attemptsFor(budget)` is `1 + floor(timeout / interval)` |
@@ -29,12 +33,18 @@ is its own entry point and not part of the barrel.
 | Wrong receiver throws, wrong value returns | a matcher handed a page where a locator belongs is not FALSE, it is unanswerable — `pass: false` would read as "the element was hidden". A wrong-shaped receiver is a coded throw |
 | A matcher MESSAGE is a thunk, and never `JSON.stringify` | `result(pass, () => …)` — `expect.extend` reads `message()` only on the wrong verdict, and the string used to be built EAGERLY. |
 | Every message thunk needs a test that PROVOKES it | a thunk is a function, so an unread message is an UNCOVERED function and `bun run scripts/coverage-gate.ts --package testing` is what says so |
-| Test names | the filename picks the step; `testName(type, name)` on the outer `describe` puts that type on every failure line under it. Never on the inner `test` too — the prefix would print twice |
-| `test` here is `fixtureTest`, and it takes no timeout | `(name, body)`, nothing else (`fixtures.ts:248`, exported as `test` by `index.ts:107`) |
+| Test names | the filename picks the step; a typed helper prefixes its own name. `testName(type, name)` is for an outer `describe` only — never on the inner `test` too, the prefix would print twice |
+| One body shape, five registrars | `test` (= `fixtureTest`), `unitTest`, `contractTest`, `liveTest`, `jobTest` all take `FixtureBody` + `{ timeoutMs }`: `unitTest('…', async ({ runJobs }) => …)`. Never `describe(testName('unit', …))` + `test` to get a fixture |
+| `runJobs` says who and what | `{ actor }` is the WORKER's identity (the org stays the job's declared tenant), `{ tenantId }` the enqueuer's row; `executions[n].result` is the body's return. A fresh event bus per fixture |
+| A `runJobs` pass is a real worker's `tick()` | `fixture-jobs.ts` builds an unstarted `createWorker` per pass, so admission runs: `concurrency` waits and `whenBusy: 'fail'` refuses (`X_JOB_KEY_BUSY`) exactly as in a fleet. Never `executeJob` on a bare `claim()`. The lease and slot renew every 1 ms of TEST time (`RENEW_MS`, `frozen-scheduler.ts` on `onClockMoved`), never on a wall-clock interval: cancel, `clock.advance(1)`, and the body hears `X_JOB_LEASE_LOST` — no hand-built worker |
+| Per-test state is `per-test-reset.ts` | the app preload's `beforeEach` resets the jobs event bus — only when `@ultimat3/jobs` is already loaded, so a core test never loads it |
+| An island test is `describeIslandState` | one block per declared state: mounted in `beforeAll` (60 s), disposed in `afterAll`, one build per file. `mountIslandState` + `using` for one test's own mount; an undeclared id is `X_TEST_ISLAND_STATE_UNKNOWN` |
+| An authenticator is tested with `authRequest()` | the hook's own two arguments, real — never `as unknown as Parameters<…>` |
+| `LOG_LEVEL` above `info` filters the TERMINAL | `quiet-logs.ts` pins the logger at `info` while core loads, so a collecting `setLogSink` still sees `warn` under `LOG_LEVEL=error`. It stays the preload's FIRST import |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
-| Fixtures | the preload registers the whole framework bag — an app registers only what the framework cannot know (`seed`, `actorFor`) |
-| e2e without a driver | `e2eTest` becomes `test.skip`, and the gate reports the step GREEN over it — `bun test` exits 0 on a skip and the exit code is the only channel between the step and the child that registers the driver. |
-| The seam has an inverse | `resetE2eDriver()`. `useE2eDriver` writes MODULE scope and `bun test` is one process, so a file that installs a browser must undo it |
+| Fixtures | the preload registers the framework bag — an app registers only what it alone knows (`seed`, `actorFor`) |
+| e2e without a driver | `e2eTest` becomes `test.skip`; the gate reports the step SKIPPED (or `X_VERIFY_SUITE_VANISHED` when `x.verify.json` requires it), never passed |
+| The seam has an inverse | `resetE2eDriver()`: `useE2eDriver` writes MODULE scope, so a file that installs a browser undoes it |
 | Built vs declared | `clock` `mail` `network` `runJobs` `statements` `subscribe` are built in-process; `page` `budget` `signIn` `deploy` are declared and wait for a driver (`X_TEST_FIXTURE_UNAVAILABLE`). |
 | `page` HAS a driver; `budget`, `signIn`, `deploy` do not | `installE2eDriver({ page, baseUrl })` registers `page` only. Byte counts, a sign-in route and a new build id are facts no page port can answer; a no-op would read as proof |
 | `network` is THIS process's fetch, and an e2e page is not in this process | `network.offline()` beside `page` is a no-op on the browser. `E2eFixtures.offline()` is the browser-side spelling and forwards to `E2eBrowserPage.offline()`; a page port with none refuses by name |
@@ -53,7 +63,7 @@ is its own entry point and not part of the barrel.
 | Leaks are the file's, not the next file's | `installRegistryLeakGuard()` runs from the preload and fails the run naming the FILE that left cache tags declared or a cache tier registered after its last test (`X_TEST_REGISTRY_LEAK`). |
 | The baseline is not a hook | measured on Bun 1.3.14 the order is onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload `beforeEach`, so a preload hook cannot sample before the file's own `beforeAll` |
 | Reported and restored are different sets | the guard also RESTORES, at the same file boundary, the registries whose module-scope declarations a neighbour's cleanup destroys |
-| A catalog restore is a MERGE, never a replace, `As of 2026-08-23` | the other three registries are replaced with the snapshot; the catalogs are not. `registerCatalog` has no inverse, so the only thing a file can cost its neighbour is a `resetCatalogs()` |
+| A catalog restore is a MERGE, never a replace | the other three registries are replaced with the snapshot. `registerCatalog` has no inverse, so all a file can cost its neighbour is a `resetCatalogs()` |
 | Permissions are still REPLACED at a file boundary, and it is measured | an app's `definePermissions()` reached only by a dynamic `loadApp()` is dropped at that file's boundary exactly as catalogs were; the union rule would leak `permissions.test.ts`'s declarations into every later file. Open, its own piece of work (history) |
 | Guarded state is boot state | only the two registries whose honest invariant is "clean when the file ends" — `declareTags` and `registerTier` are boot installs. |
 | Filled and CLEARED are different questions | and the row above answers only the first. "Idiomatic to leave filled" is about the leak REPORT |
@@ -64,37 +74,37 @@ is its own entry point and not part of the barrel.
 | A boot that rejects is its own teardown | `acquireWorkerDatabase`, `seed` or `boot` throwing returns no `BootedHarness`, so no caller can ever reach `close()` |
 | A found template is not a migrated one | `template-db.ts` tolerates "already exists" for the `CREATE DATABASE` alone. `config.migrate` runs unconditionally and un-swallowed |
 | Fixture teardown | a fixture that installs process-global state (the ambient job or mail driver) implements `Symbol.dispose` / `Symbol.asyncDispose` and restores what was there |
-| Building one by hand | `createRunJobs()` outside `fixtureTest` is not disposed for you — reset the driver in `afterEach`, or the next file in the process inherits your queue |
+| Building one by hand | `createRunJobs()` outside a fixture body is not disposed for you — dispose it in `afterEach`, or the next file inherits your queue and your event bus |
 | Factory strategy | an association is built with the strategy that asked for it: `build()` never reaches a database, `create()` writes the parent first. Never a third strategy |
 | One write seam | `usePersister` is the only place `create()` writes. A factory that took a repo argument would put the seam at every call site |
 | Factory seeds | derived from the table name unless given, so two entities never draw the same uuid stream. `reset()` cascades into associated parents — a half-reset row is worse than none |
 | Shared examples | `behavesLike` calls `describe`, so it goes at declaration scope; bun rejects a `describe` inside a test body |
 | An island needs a BUILDER, not an import | `buildIslands` is `@ultimat3/cli`'s and both packages are tier 5; the one declared edge is `cli → testing`, so the reverse is a `bun run boundaries` failure. |
 | `mountIsland` AWAITS `mount` | `IslandEntry['mount']` returns `unknown`, not `void`, and the call is awaited |
-| Dispose STOPS the island, then restores the globals | `mountIsland` keeps what `mount` resolved to and, when it is a function, calls it in `[Symbol.dispose]` BEFORE `restore()` |
+| Dispose STOPS the island, then restores the globals | when `mount` resolved to a function, `[Symbol.dispose]` calls it BEFORE `restore()` |
 | The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. `packages/ui/src/fake-dom.ts` is a second one for keyboard code, and `ui -> testing` is upward, so it is not a copy to collapse. `bun test` has no DOM and no DOM library may be added |
 | `style` and `classList` RECORD | `FakeStyle` is one declaration map behind all four spellings compiled Solid uses (static attribute, `setProperty`, `cssText`, `removeAttribute`), so a test can assert the component set `--form-gap` |
 | `classList` is the class attribute | not a list of its own, so `classList.toggle` — what the compiler emits INLINE for `classList={{ … }}`, with no runtime helper in front of it — and `className` can never answer one element two ways. |
 | A `document` listener is the documentElement's | no bubbling: `document.addEventListener` registers on `documentElement`, and `fire(mounted.documentElement, 'keydown', …)` drives it. One handler per type, last wins |
 | `querySelector` skips `this` | descendants only, as the DOM's does. Matching the element it is called on made a host `<div>` answer `find('div')` with the container the test built rather than the markup the island rendered |
 | The selector grammar is SMALL and REFUSES | `island-selector.ts`: compounds of tag, `#id`, `.class`, `[attr]`, `[attr="value"]`, joined by space or `>`. Anything else is `X_TEST_ISLAND_SELECTOR_UNSUPPORTED` with the offset, never an empty answer |
-| The box is 0 until a test writes it | `clientHeight`, `scrollTop`, `scrollHeight` and the rest are plain writable numbers, default 0, and `getBoundingClientRect()` derives from the offset box. |
+| The box is 0 until a test writes it | `clientHeight`, `scrollTop`, `scrollHeight` and the rest are writable numbers, default 0; `getBoundingClientRect()` derives from the offset box |
 | `ResizeObserver` records and never fires on its own | `island-observers.ts`, one registry PER DOCUMENT. |
-| A mount installs process globals | so `MountedIsland` is `Disposable` and a `mount` that THROWS restores before it rethrows. A fake `document` left installed reaches every later FILE in the run, and fails somewhere with no thread back |
+| A mount installs process globals | so `MountedIsland` is `Disposable` and a `mount` that THROWS restores before it rethrows. A fake `document` left installed reaches every later FILE in the run |
 | `fire` answers whether a handler ran | a selector matching nothing and an island that attached no handler are the same silence otherwise — the second is a bug, the first a typo. |
 | A states file is PURE DATA, and it is enforced | `defineIslandStates` declares the states an island can be photographed in — error, empty, over-quota, read-only |
-| The rule is the RELATIVENESS, not the extension, `As of 2026-08-23` | the scan refused `solid-js` and a specifier ENDING in `.tsx`/`.jsx`, and `import { X } from './settings.island'` resolves to `./settings.island.tsx` under Bun |
+| The rule is the RELATIVENESS, not the extension | `import { X } from './settings.island'` resolves to `./settings.island.tsx` under Bun, so any relative runtime import is refused |
 | `import type` is not an import, and it is the one way to name the component | `verbatimModuleSyntax` erases a statement that BEGINS `import type` / `export type` |
 | Unreadable is not pure | a computed specifier — ``import(`./${name}.island`)``, `require(SPEC)` — is refused as `IslandStatesOpaqueImportError` rather than passed. |
-| What the scan does NOT follow, stated rather than silent | a BARE specifier other than `solid-js`, an ABSOLUTE path specifier, and a specifier inside a string LITERAL (read as an import). The first two are holes; the third is a false refusal, the safe direction |
+| What the scan does NOT follow | a BARE specifier other than `solid-js`, an ABSOLUTE path (both holes), and a specifier inside a string LITERAL (a false refusal, the safe direction) |
 | Props are JSON or they are refused | they ride `data-x-props`, which `@ultimat3/render`'s `emitIslandProps` `JSON.stringify`s, so anything else is a prop the component never receives. |
 | The clock is pinned in the vocabulary, zone included | `timeZone` defaults to `ISLAND_SHOT_TIME_ZONE` (`UTC`) and `now` to this package's own `DEFAULT_NOW`, and both ride onto every `IslandShotTarget`. |
 | Loose in, strict out | `findIslandStates` resolves `Settings`, `settings`, `settings.island.tsx` and the full path to one manifest, and refuses a name nothing answers to by listing EVERY valid one |
 | The disk check is not in `defineIslandStates` | a declaration evaluates wherever it is imported from, so a rule that reads the filesystem at import time fails on the cwd rather than on the path. |
 | The island EXTENSION is not restated here | `.island.tsx` is `@ultimat3/render`'s `ISLAND_EXTENSION` and `render` is not a dependency of this package. |
 | The chunk is imported from a temp FILE | named by its SHA-256, so an edit is a new module and nothing is left in the app. Never a `data:` URL: `bun test --coverage` panics importing one past ~4 kB (Bun 1.4.0); `fixture-island.test.ts` pins it |
-| The scratch directory is lazy and removed, `As of 2026-08-22` | `mkdtempSync` ran at MODULE scope and nothing removed it, so every process importing `@ultimat3/testing` at all — this module is on the `.` barrel, so `expect` alone did it |
-| Attaching a node MOVES it | `appendChild`, `insertBefore` and `replaceChild` detach the node from its old parent first, and `removeChild` clears `parentNode` |
+| The scratch directory is lazy and removed | made on the first mount, deleted on `exit`; never at module scope — this module is on the `.` barrel |
+| Attaching a node MOVES it | `appendChild`, `insertBefore`, `replaceChild` detach it from its old parent first; `removeChild` clears `parentNode` |
 | Globals install all-or-nothing | `installGlobals` saves DESCRIPTORS, not values — a saved value cannot tell "no such global" from "a global holding `undefined`", and the teardown deleted both |
 | Which command shards | `bun test` is one process on one database, and that is still what a scaffolded app's `test` script runs. |
 
@@ -140,6 +150,7 @@ lives beside the `PageLike` it implements. `cli` imports it over the declared `c
 | `cdp-e2e-session.ts` | the BROWSER half, `E2eSession`: every target auto-attached at browser level and PAUSED until its Network domain is on (a SharedWorker opens its socket at start-up) |
 | `cdp-e2e-page.ts` | one TAB, `E2eTab`: `E2eBrowserPage`'s five methods plus `reload`, `waitFor`, `indexedDbNames`, `close`. `offline()` forwards to the session — the switch is browser-wide |
 | `e2e-app.ts` | `startE2eApp({ root, mode, seed })`: reset + seed + spawn on a THROWAWAY `ULTIMATE_STATE_DIR` and free ports, `/readyz`-gated, spawned through the app's own `@ultimat3/cli` bin (`xBin`); `stop()` removes the directory |
+| `failure-context.ts` | a FAILED test's message ends with the e2e app's last 40 log lines (≤ 4 kB): `e2e-run.ts` installs `app.log()`, `fixtureTest` and `e2eTest` append it. Never on a pass |
 | `e2e-preload.ts` + `e2e-browser-handle.ts` | the `e2e` step's preload (`@ultimat3/testing/e2e-preload`): with `ULTIMATE_E2E_ROOT` set it spawns the app, opens ONE browser, installs its first tab, and publishes `e2eBrowser()`, `e2eApp()`, `e2eBaseUrl()` |
 | `packages/cli/src/verify-e2e.ts` | `withE2eApp` (cli's): in an app on a machine with Chrome, the `e2e` step runs the suite with that preload; otherwise exactly as before |
 | `cdp-errors.ts` | one constructor per way the browser half refuses |
@@ -148,26 +159,8 @@ lives beside the `PageLike` it implements. `cli` imports it over the declared `c
 answers `false` and the gate's `e2e` step refuses rather than passing over a browser it lacks.
 GitHub-hosted `ubuntu-latest` ships Chrome at `/usr/bin/google-chrome`.
 
-**Raw CDP over Bun, no dependency.** A launched Chrome is driven over its debugging PIPE
-(`cdp-pipe.ts`); a remote one over Bun's `WebSocket` (`cdpConnect`). `x shot` and the dev MCP
-server's `ui.*` tools launch on the same `launchChrome` since 22.0.0
-(`packages/cli/src/cdp-shot-driver.ts`) — one launcher, one wire. A CDP event listener is handed
-the event's `sessionId` (`CdpEventListener`), so a subscriber owning one page ignores the rest.
-
-**The load EVENT is the completion signal, never `Page.navigate`'s reply** — Chrome drops the reply
-when a navigation swaps the render process. The waiter goes up before the send; the reply is read
-only for `errorText`.
-
-**Every call is deadlined, and a close settles every call in flight.** Four codes, four repairs:
-`X_CDP_BROWSER_MISSING` (install one), `X_CDP_LAUNCH_FAILED` (read its stderr, in the cause),
-`X_CDP_CALL_FAILED` (look at the page), `X_CDP_TIMEOUT` (raise the deadline).
-
-**`evaluate` is the lossy edge.** Only `Function.prototype.toString()` crosses: a zero-parameter
-closure over page globals works; native, bound, parameterised and method-shorthand closures are
-refused statically; a missing binding comes back named from the page's own `ReferenceError`.
-
-**`update()` still refuses** — a second build under a new build id is a SERVER fact no page port
-can speak for. `offline()`/`online()` forward to `E2eBrowserPage.offline`.
+How the raw-CDP driver behaves — the pipe, the load event, deadlines, the lossy `evaluate`, the
+refusing `update()` — is [`docs/history/testing.md`](../../docs/history/testing.md#the-e2e-driver-in-brief-moved-2026-10-01).
 
 The reasoning behind every rule above, verbatim, is [`docs/history/testing.md`](../../docs/history/testing.md).
 

@@ -48,6 +48,40 @@ export const systemScrapeClock: ScrapeClock = Object.freeze({
   },
 });
 
+/**
+ * The system clock with the waiting taken out: `now()` and `monotonic()` are real, and every
+ * `sleep` is ONE turn of the event loop whatever was asked for. For a test whose run waits on
+ * something that really happens in the same process — an answer the test publishes, a job another
+ * worker holds — where `testClock()`'s "sleeping is advancing" would run a five-minute budget out
+ * in microtasks before the test's next line. A deadline is still a real one.
+ */
+export const noWaitClock: ScrapeClock = Object.freeze({
+  now: () => systemScrapeClock.now(),
+  monotonic: () => systemScrapeClock.monotonic(),
+  sleep: (_ms: number, signal?: AbortSignal) => systemScrapeClock.sleep(0, signal),
+});
+
+let ambient: ScrapeClock | undefined;
+
+/**
+ * The clock every run in this process waits on, unless its definition pins one — the counterpart
+ * of `setScrapeDriver()`, and the seam a TEST takes: `setScrapeClock(noWaitClock)` in a
+ * `beforeEach`, and a declaration under test needs no `clock:` field written for the test's sake.
+ */
+export function setScrapeClock(clock: ScrapeClock): void {
+  ambient = clock;
+}
+
+/** The process's scrape clock: the installed one, or the system's. */
+export function scrapeClock(): ScrapeClock {
+  return ambient ?? systemScrapeClock;
+}
+
+/** Test seam: back to the system clock, so the next file runs on real time again. */
+export function resetScrapeClock(): void {
+  ambient = undefined;
+}
+
 /** The abort reason, unwrapped — a caller's `AbortSignal.reason` is whatever they put there. */
 export function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw signal.reason;

@@ -39,6 +39,22 @@ jobTest('jobTest runs the body it was given', () => {
   mark('job');
 });
 
+// The fixture bag, in the shape `test` hands it: a job-body test is a unit test that needs
+// `runJobs`, and it used to have to drop to `describe(testName('unit', …))` + `test` to get one.
+const fixturesSeen: Record<string, readonly string[]> = {};
+unitTest('unitTest hands its body the fixtures it destructures', ({ clock, network }) => {
+  fixturesSeen['unit'] = [typeof clock.advance, network.state()];
+});
+contractTest('contractTest hands its body the fixtures it destructures', ({ clock }) => {
+  fixturesSeen['contract'] = [typeof clock.advance];
+});
+liveTest('liveTest hands its body the fixtures it destructures', ({ clock }) => {
+  fixturesSeen['live'] = [typeof clock.advance];
+});
+jobTest('jobTest hands its body the fixtures it destructures', async ({ runJobs }) => {
+  fixturesSeen['job'] = [String(await runJobs.depth())];
+});
+
 // BEFORE any driver is registered: the body must never run. `e2eTest` reports a skip when nothing
 // drives a browser, and a skip that silently executed the body would run an app-less browser test
 // in every suite in the tree. This file goes red if that branch stops skipping.
@@ -104,6 +120,13 @@ describe(testName('unit', 'the e2e driver seam'), () => {
 afterAll(() => {
   // Each registrar registered exactly one test, and each of those bodies ran exactly once.
   expect(ran).toEqual({ unit: 1, contract: 1, live: 1, job: 1 });
+  // And each was handed what it destructured — built, not `undefined` off bun's `done` callback.
+  expect(fixturesSeen).toEqual({
+    unit: ['function', 'online'],
+    contract: ['function'],
+    live: ['function'],
+    job: ['0'],
+  });
   // This file installed a driver at MODULE scope and the seam is process-global, so without this
   // every later file in the run inherited an `e2eTest` that pushed into `driverCalls` above — a
   // leak with no thread back to here. `useE2eDriver` shipped without an inverse; this is it.

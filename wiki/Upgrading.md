@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 22.x → 23.0.0 | **66** so far — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the in-flight major, still [Unreleased] in `CHANGELOG.md` — the `22.x → 23.0.0` section below, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
 | 19.x → 20.0.0 | **2**, both `@ultimat3/ui` component behaviour and neither a type change — a `DataTable` that keeps its rows while reloading, and a `Button` whose `loading` no longer sets the native `disabled`. Nothing fails to compile; what changes is what a screen does | the `20.0.0` section, in order |
@@ -67,6 +68,148 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 22.x → 23.0.0, entry by entry
+
+**Sixty-six entries so far** — 23.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+`[Unreleased]` entries in their order, which is the order an existing app meets them. `As of
+2026-10` every slice of the plan has landed, the admin's detail, form, action and jobs screens
+included.
+
+### What changed for an agent
+
+Six things an agent-written app does differently from 23.0.0 on. Each is the idiom the
+generators now emit, so copying generated code copies it.
+
+| Do | Instead of | Read |
+|---|---|---|
+| read and write through the typed handle: `db.<table>.where({ id }).one()`, `repo.list(limit)` | `sql` template literals and an `orgId` argument in `repo.ts` — the handle scopes every read to the actor's org | [Entities and migrations → The repo](Entities-And-Migrations#the-repo) |
+| call the server from an island through `browserClient` / `browserQueries` (`apps/web/shared/browser-client.ts`) | `fetch(` — the gate refuses it | [Client data](Client-Data) |
+| store a credential in a `text().sealed()` column | a plaintext column, or a vault of your own | [Entities and migrations](Entities-And-Migrations) |
+| record a run's ending in `onSettled` | a status column written from the body, or a second job that polls | [Jobs and workflows](Jobs-And-Workflows) |
+| keep the tests `x g` emits, and raise the floor in `x.verify.json` when coverage rises | deleting an emitted test, or a floor nobody states | [Testing → Coverage](Testing#coverage) |
+| operate the queue at `/admin/jobs`, and give an operator a screen by declaring `resources:` / `actions:` (`when`, `batch`) on `defineAdmin()` | a hand-written jobs page, or an admin page per operation | [Admin dashboard](Admin-Dashboard) |
+
+### The upgrade, top to bottom
+
+Run each step; the entries it closes are in the last column.
+
+| # | Do | What you see until you do | Entries |
+|---|---|---|---|
+| 1 | pin every `@ultimat3/*` to the one new version, `bun install` | nothing yet — a mixed install is untested | — |
+| 2 | add `RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target prebuilt` to `docker/Dockerfile`, after the runtime stage's `COPY . .`, above `ENV NODE_ENV=production` | every web pod logs `X_IMAGE_NOT_PREBUILT` at boot and compiles every island and stylesheet | 1, 2 |
+| 3 | `x db gen`, then commit `packages/db/schema/` and `packages/db/.gitattributes` | the `drift` step is `X_SCHEMA_DUMP_DRIFT` | 3–6 |
+| 4 | `x verify --only unit --json`, then paste the `coverage` line its finding carries into `x.verify.json` | the `unit` step is `X_COVERAGE_FLOOR_UNSTATED` | 7–10 |
+| 5 | rewrite each raw request the `boundaries` step names (table under entry 11) | `X_BROWSER_TRANSPORT_BYPASS` / `X_BROWSER_SERVER_BARREL`, one finding per site | 11, 12 |
+| 6 | `git mv` a `defineAdmin()` under `apps/*/src/` to `apps/admin/app/admin/admin.ts`; then `x manifest` and commit `x.manifest.json` | the `manifest` step is `X_ADMIN_UNSCANNED`, then `X_MANIFEST_DRIFT` | 13, 14 |
+| 7 | `x doctor --json`, then `x g guard <name>` for each name in `data.guards.missing` you adopt, and fix what `x verify --only boundaries` reports | nothing — upgrading installs no guard | — |
+| 8 | drop `--feature <other>` from `x g resource` and `--live` from every `x g` but `query` in your scripts; read `x tasks --json` rows by key; `git mv apps/admin/src/pages apps/admin/app/admin/pages` | `X_CLI_BAD_FLAG` | 17–22 |
+| 9 | `bun run typecheck` and fix each job, driver, export, scraping, admin and type-union site it names | TS2741 / TS2345 / TS2339 / TS2353 at each hand-built literal, driver, store or option | 23–43, 55–57, 63, 64 |
+| 10 | delete the admin host: every `page.tsx` under an admin URL — `/admin/jobs` included — the `AdminRepo` adapter, the admin action routes, a hand-written jobs nav item; declare `defineAdmin({ entities, db })` | `X_ADMIN_REPO_UNBOUND` at load, `X_ROUTE_DUPLICATE` for each page file, `X_ADMIN_PAGE_PATH_INVALID` for a `pages:` entry under `/jobs` | 49–55 |
+| 11 | `x verify --only policy,i18n`, then grant every permission it names in the role map and add every admin key it names to each non-`en` catalog | `X_PERMISSION_UNGRANTED`, one per permission a mounted admin route asks for; `X_CATALOG_MISSING_KEYS` per locale | 15, 16 |
+| 12 | `x verify --only unit,job` and fix the tests it fails | a test that leaned on `runJobs` calling the body directly or on a lease that never renewed, an event published in `beforeAll`, a row action's old redirect, an admin write or action the row scope now refuses, a social tag on a `noindex` page | 44–46, 48, 58–61 |
+| 13 | `x secrets init` where no master key exists; correct any credential a site had refused before the first scrape | `X_SEAL_KEY_MISSING` before the browser opens; every stored session is logged in again | 62, 65, 66 |
+| 14 | `x verify` | green, or a finding whose `fix:` is the edit — `X_PACKAGE_SHAPE` for a published package's fixture | 47 |
+
+### Entry by entry
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | the app image | your `docker/Dockerfile` predates 23.0.0. `x build --target docker` no longer writes `.x/islands/`; the store is built inside the image. Add the step-2 line. `app.config.ts` must import with no deployment environment while `NODE_ENV` is unset — the line runs above `ENV NODE_ENV=production` |
+| 2 | `ROLE=worker`, `ROLE=scheduler` | a job reaches a `defineService`, `defineStorage` or `defineCatalogs` only through a module that also imports a component. Import that module from `apps/web/api/index.ts`. The image needs `x.manifest.json` and a stamped `BUILD_ID` for the smaller load; without either the role imports everything and logs the fix. A gap is `X_ROLE_LOAD_INCOMPLETE`, at boot and in the `manifest` step |
+| 3 | `packages/db/schema/` | the app has a migration. Step 3. A release that changes a framework table changes `framework/`, and this one does: `x_jobs`, `x_outbox`, `x_scheduler_state`, and four new tables (`x_job_pauses`, `x_job_workers`, `x_job_counters`, `x_admin_audit`). `x db gen` needs `@electric-sql/pglite`: `bun add -d @electric-sql/pglite   # then: x db gen` |
+| 4 | an extension the embedded database does not ship (`vector`, `postgis`) | a migration creates one. Set `TEST_DATABASE_URL` (or `DATABASE_URL`) to a server that has it, with a role that may create a database, in CI and wherever `x db gen` runs. Contrib extensions (`citext`, `pgcrypto`, …) need nothing |
+| 5 | `x db gen`'s exit code | a script treats exit 1 as "nothing written". It now exits 1 after writing the migration when the dump fails; the cause names the migration — keep it |
+| 6 | `x db migrate`, `DriftKind` | your dev database holds a trigger, function, view, type or sequence no migration creates (`unexpected-object`, `X_DB_DRIFT`) — add the migration or drop the object. An exhaustive `switch` over `DriftKind` adds `case 'unexpected-object':` |
+| 7 | `x.verify.json` `coverage` | always. Step 4. Under 95 the line needs a `"why"`; an `exclude` entry is `{ "glob": "…", "why": "…" }`. Keep the floor at the measured number — it is `X_COVERAGE_FLOOR_STALE` once the tree passes it by 1.5 points, and `X_COVERAGE_BELOW_FLOOR` names the ten worst files when it drops |
+| 8 | a slow gate step | a step runs past 8 minutes (`unit`, `contract`, `live`, `job`, `e2e`, `eval`) or 5 (every other): `X_VERIFY_STEP_TIMEOUT`. Raise one with `"stepTimeoutMs": { "unit": 900000 }` in `x.verify.json` |
+| 9 | `x verify --json` in a pipeline | you parse `2>&1` as JSON. Read stdout only; stderr carries one `{"step","ok","ms"}` line per finished step |
+| 10 | test-order dependence | a unit test relied on which files shared a `--parallel` worker. The step runs slices of at most 16 files, one process each |
+| 11 | `fetch(`, `new WebSocket(`, `new XMLHttpRequest(`, `new EventSource(` in browser code | any `*.island.tsx`, anything that calls `clientTransport`/`pageClient`, or anything they import holds one. The finding names the line; rewrite with the table below |
+| 12 | a value import of `@ultimat3/entity` / `@ultimat3/query` in browser code | import `@ultimat3/entity/record` or `@ultimat3/query/client`; `import type` is unaffected |
+| 13 | `x.manifest.json` | always: step 6. It gains an `admin` section (each resource's filters, sorts, scopes, row scope, `sections`, `formGroups`, `related`, `actions`, and the audit store's `kind`), a `concurrency` member on a job that declares one, `onSettled: true` on one that declares that |
+| 14 | `defineAdmin()` under `apps/*/src/` | your admin is declared there — the reference app's was. No boot imports that directory, so `/admin` was never mounted; the `manifest` step now says so: `X_ADMIN_UNSCANNED`. `git mv apps/admin/src/index.ts apps/admin/app/admin/admin.ts`, repoint its relative imports, `x verify --only manifest` |
+| 15 | the `policy` step and a mounted admin | a role should open the admin but the role map does not grant every permission its routes ask for. Each one is `X_PERMISSION_UNGRANTED`, one finding per permission per mount: grant `admin:read` and `<table>:read\|write\|delete` — and `job:read` / `job:manage` for the jobs dashboard, `audit:read` for the audit screen — in the role map |
+| 16 | the `i18n` step and a mounted admin | a locale lacks a key a mounted admin renders — resource titles, field labels, sections, scopes, columns, the nav, action labels (`admin.action.<name>` with no `labelKey`) and their input labels, the branding key: `AdminApp.catalogKeys()`. The step was green while the page drew `⟦admin.<table>.title⟧`; it is now `X_CATALOG_MISSING_KEYS` naming each. `en` is answered by the framework's catalog; a non-`en` app adds the framework admin keys to its own |
+| 17 | `x g entity`, `x g resource` | you generate after upgrading. New repos read through `db.<table>`, export `list(limit)` (was `listByOrg(orgId, limit)`), and refuse a read under an actor with no org (`X_TENANCY_ACTOR_ORG_REQUIRED`). Existing repos keep working. The first `x g entity` in an older app writes `packages/db/src/client.ts` and exits with `X_DB_HANDLE_UNREGISTERED` naming the line for `packages/db/src/index.ts` |
+| 18 | `x g resource <name> --feature <other>` | a script passes it. Drop the flag (`X_CLI_BAD_FLAG`) |
+| 19 | `x g <kind> --live` for any kind but `query` | a script passes it. It was ignored on a resource (whose list query is already live); it is `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live` |
+| 20 | a query `x g query` / `x g resource` generates | you generate after upgrading. The read takes `{ limit }` — no `orgId` input, no `.where({ orgId })`: the org is the actor's, scoped by the typed handle. The generated `can<X>Read` checks only that the actor has an org. Already-generated slices keep working; a caller of a newly generated one passes `{ limit }` |
+| 21 | `x g admin:page` | a script or doc expects `apps/admin/src/pages/`, which the app scan never imported. It writes `apps/admin/app/admin/pages/` by default: `git mv apps/admin/src/pages apps/admin/app/admin/pages`, then update the import in `apps/admin/app/admin/admin.ts` |
+| 22 | `x tasks` | a script runs it with no queue reachable, or reads `--json` rows by position. It opens the queue when a task is declared; rows gain `lastMs`, `last`, `lastFiredAtMs` |
+| 23 | `<job>.run({ … })` by hand | a test calls it. Add `finalAttempt: isFinalAttempt(<job>.retry, attempt)` and `progress: () => undefined` |
+| 24 | a hand-built job literal or exhaustive `switch` | over `JobOutcome` (`'refused'`, `'dropped'`), `QueueStats` (`failed`), `WorkerStats` (`refused`, `dropped`, `pollDelayMs`), `JobHandle`, `JobDescriptor`, `JobRecord`, `JobTrace`. Add the member the compiler names |
+| 25 | a hand-written `JobDriver` | you ship one. `ack`/`nack` take `{ workerId, claim }` and answer `Promise<boolean>`: `driver.ack(id, claimOf(claimed))`. Increment a claim ordinal in `claim()`, fence both settles on it, file a row `failed` when `nackState(options)` says so, and answer an existing `EnqueueRequest.id` with that job and `deduped: true` |
+| 26 | a hand-written `JobIntrospection`, or a caller of `list()` | you implement one: add every member TS2741 names — `promoteMany` among them, which the admin's jobs dashboard calls. A caller that asked `list()` for more than 200 rows walks pages with `list({ after: jobCursor(lastRow) })`; over 200 or a foreign cursor is `X_JOB_PAGE_INVALID` |
+| 27 | a hand-written `LeaseStore`, `SchedulerState`, `LeaderElection`, or `createFleetSlots` caller | add `holders(key)`; `fire(driver, { task, occurrenceMs, jobs })`; `renewEveryMs`; read `acquire`'s `SlotGrant` |
+| 28 | a custom `EventBus`, `createPgEventBus({ clock })` | add `stored` and `now()`; delete the `clock` option. `eventPrompt()` on a bus with `stored: false` is `X_DRIVER_UNAVAILABLE` outside development and test |
+| 29 | a staged `enqueue()` | you read its `id` or `runId`: they are now the job's own. A custom `OutboxStore` persists `runId` |
+| 30 | `retry: { deadLetter: false }` | a job declares it. An exhausted run is now `failed` (outcome `dropped`) instead of re-run forever — check what relied on the loop |
+| 31 | `concurrency: 0`, a negative, a fraction | caught as `X_INVARIANT`. It is `X_JOB_DECLARATION_INVALID` |
+| 32 | `lastError` | you compare it to a rendered message. It ends with ` — fix: …` now; compare a prefix |
+| 33 | the memory job driver | a test relied on a `Date`, an `undefined` member or a non-enumerable property surviving the queue. The payload is its JSON form, as on Postgres |
+| 34 | `exportRows({ sink })` | always: `sink` is a thunk, `sink: () => disk('exports')`, resolved per write. A value is a type error — at runtime `definition.sink is not a function` on the first part — and evaluated `disk()` at module load, before boot |
+| 35 | `rpc({ pathStyle })` in island code, a match on `X_ROUTE_NOT_FOUND` | delete the `pathStyle` — the document carries it. A wrong style is `X_CONTRACT_DRIFT` (still 404) |
+| 36 | a live query's source | it names an org by hand. Drop the argument: the source is read as the subscriber's tenant. `LiveQueryDefinition.snapshot` receives `{ input, tenant }` |
+| 37 | `EntityCore<Row>['$schema']`, a hand-built `RecordProjection` | read the type off the `entity()` result (`typeof posts.$schema`); add `sealed: []` to the projection |
+| 38 | `x secrets rotate` | something asserts on `secrets.enc.json`'s exact contents. It now keeps `ULTIMATE_SECRETS_RETIRED_KEYS`; drop a key with `x secrets rotate --drop <keyId>` once nothing is sealed under it |
+| 39 | `interface X extends LinkProps` / `PaginationProps` / `DataTableProps<Row>` | extend one member: `TextLinkProps`/`ButtonLinkProps`, `PaginationCallbackProps`/`PaginationLinkProps`, `DataTableCallbackProps<Row>`/`DataTableLinkProps<Row>` |
+| 40 | `guard.check(root)` in a test | pass `guardSources(root)` from `@ultimat3/cli` as the second argument |
+| 41 | `checkAppBoundaries`, a `switch` over `BuildTarget` | delete the import; add `case 'prebuilt':` |
+| 42 | a hand-written e2e driver | read the third argument, `{ timeoutMs }` |
+| 43 | a hand-written `E2eApp` double | you build one. `E2eApp` has a required `log(): string` — the spawned app's bounded output, which a failed e2e test now prints (its last 40 lines). Add `log: () => ''` |
+| 44 | `runJobs` in a test | a test relied on it calling the body directly. Each pass is a real worker's `tick()`: keyed `concurrency` waits, `whenBusy: 'fail'` refuses with `X_JOB_KEY_BUSY`, and runs claimed in one pass run concurrently. A test that expected two runs of one key to both complete sees a refusal or a wait |
+| 45 | `clock.advance()` past the visibility timeout in a `runJobs` test | a run is in flight while the test advances. `runJobs` renews its lease on the test clock as a real worker does, so the lapse is `X_JOB_LEASE_LOST`, as it would be in production. A test that cancels a running job then awaits `runJobs.drain()` adds `clock.advance(1)` after the cancel |
+| 46 | the jobs event bus in a test | a test published an event in `beforeAll` and read it in a test. The app's test preload resets the bus before every test: publish inside the test |
+| 47 | a non-private workspace package with a `src/**/*-fixture.ts` | you publish one. Its `files` must carry `!src/**/*-fixture.ts`, and a fixture reachable from an entry point is `X_PACKAGE_SHAPE` naming the file to rename. Private packages — every generated app's — are exempt |
+| 48 | `og:*` / `article:*` / `twitter:*` on a `robots: { index: false }` page | a test or a crawler expected them. A document that may not be indexed carries none |
+| 49 | `defineAdmin` | always: `defineAdmin({ entities, db })` (`adminEntitiesOf(db)` lists every entity on the handle). Delete each `page.tsx` under an admin URL, the `AdminRepo` adapter and the admin action routes. Without `db`: `X_ADMIN_REPO_UNBOUND`; a leftover page: `X_ROUTE_DUPLICATE` |
+| 50 | `guardedPage`, `AdminRouteConfig.component`, `RegisteredRepo`, `adminRouteConfig(route)` | `guardedScreen(app, route, body)` or `route.respond(…)`; `adminRouteConfig(app, route)`. The admin view components take no handlers and no `loading` |
+| 51 | `AdminList`, `pageRequestOf`, `adminList` | you render the list yourself: `hrefFor={(location) => listHref(basePath, resource, location)}` plus `request`, `scope`, `counts`. An unknown URL parameter is `X_ADMIN_FILTER_INVALID`, not ignored |
+| 52 | the tenant column in the admin | a form posted it. It is stamped from the actor; the posted value is ignored |
+| 53 | `describeRoutes()`, `Stylesheet` | you list routes or build a `Stylesheet` by hand: mounted routes carry `mount`, a stylesheet carries `claimed` |
+| 54 | `/admin/jobs/*`, a hand-written jobs page or nav item | always: every `defineAdmin()` now serves the jobs dashboard — resources `x_jobs`, `x_job_queues`, `x_job_tasks`, `x_job_workers` and the overview at `/admin/jobs`. Delete the page and the nav item; a `pages:` entry at those paths is `X_ADMIN_PAGE_PATH_INVALID`. A test that renders `/admin/jobs` installs a queue first: `setJobDriver(createMemoryDriver())` |
+| 55 | `defineAdmin({ jobs })`, `AdminApp.jobs` | delete both: the dashboard reads the queue itself. TS2353 names the site |
+| 56 | a hand-written `AuditLog`, or a caller of `entries()` | `entries(query)` is async and takes `AuditQuery` (`entity`, `entityId`, `actorId`, `orgId`, `limit`, `before`, `changes`): write `await log.entries(…)`. A custom log adds `atomic(run)` and `kind` |
+| 57 | `InvokeResult` | you read `decision` off a failure. Failures carry `kind: 'denied' \| 'not-applicable' \| 'invalid'`; narrow on `kind === 'denied'` first |
+| 58 | a posted row action's redirect | a test asserts its `Location`. It is the row (303), not the list |
+| 59 | a row-scoped resource's create and update | a write put a row outside the actor's `rows(actor)`. It is refused before the repo is called and audited as `admin.error.row-out-of-scope`. A text `gt`/`lt` row scope cannot be decided here and refuses every write |
+| 60 | an action on a row the actor cannot see | it ran. A row that is gone or outside `rows` is refused, `when` or none: `X_ADMIN_ACTION_NOT_APPLICABLE`, 409, the same over MCP |
+| 61 | `permissionsForOperation('admin', op)` | you read a second element. It answers one permission (`['admin:read']`), not the same one twice |
+| 62 | stored scraping sessions | always. Step 13. **Sessions and refusal markers stored before 23.0.0 are deleted on first load**, so every run logs in again, and a credential the site had already refused is presented once more. Correct it first on a site that locks an account after repeated failures |
+| 63 | `storageSessionStore(disk)`, `artifacts: { storage }` | pass a thunk: `storageSessionStore(() => disk('sessions'))` |
+| 64 | a hand-built `PromptRequest`, `AuthContext`, `ScrapeSecrets`, `ScrapeReport`, `SessionInit`, a `createPrompt` call | add the members TS2741 names; `createPrompt({ scrape, handler, page, runId, clock, … })` |
+| 65 | `meta.cdpUrl` of `X_SCRAPE_CDP_ATTACH_FAILED` | you read the full URL from it. It is `wss://host:port` |
+| 66 | `localBrowser({ proxy })` with credentials | your launcher's page has no `authenticate()` (`X_SCRAPE_EGRESS_UNSUPPORTED`). Upgrade the launcher or drop the credentials from the URL |
+
+Entry 11, the rewrite for each raw request:
+
+| It was | Write |
+|---|---|
+| `fetch('/api/…', { method: 'POST' })` — an action | `await browserClient.<action>(input)` |
+| `fetch('/_x/query/…')` — a read | `useQuery(<QUERY_REF>, input)`; outside a component, `await browserQueries.<query>(input)` |
+| `new WebSocket(…)` / `new EventSource(…)` | `useQuery(<QUERY_REF>, input)` for rows, `useChannel(<CHANNEL_REF>, params, { onEvent })` for events |
+| an upload, `fetch` or XHR to a signed URL | `await uploadFile({ file, grant, onProgress })` from `@ultimat3/storage` |
+| anything else | `await clientTransport({ method: 'GET', url })` from `@ultimat3/core/page` |
+
+An app scaffolded before 23.0.0 has no `apps/web/shared/browser-client.ts`; write it as
+[Client data](Client-Data) shows, and add `export type Api = typeof api` to `apps/web/api/index.ts`.
+
+### Where the sites are
+
+```sh
+grep -rnE "fetch\(|new (WebSocket|XMLHttpRequest|EventSource)\(" apps packages --include=*.tsx --include=*.ts | grep -v -E "route\.ts|\.test\.ts"
+grep -rnE "\.run\(\{|ack\(|nack\(|E2eApp|createPgEventBus|storageSessionStore\(|createPrompt\(|guardedPage|adminRouteConfig\(|checkAppBoundaries|pathStyle|exportRows\(|\.entries\(|InvokeResult|permissionsForOperation\('admin'" apps packages --include=*.ts --include=*.tsx
+grep -rlE "page\.tsx" apps/admin
+grep -rlE "defineAdmin\(" apps/*/src
+ls apps/admin/src/pages 2>/dev/null
+grep -rnE "x g [a-z:]+ .*--(live|feature)" scripts package.json .github 2>/dev/null
+```
+
+The `typecheck` step finds entries 23–29, 34, 37, 39–43, 50, 51, 55–57, 63 and 64. The gate finds
+3, 4, 7, 11–16, 47 and 54; `x db migrate` finds 6; `x g` finds 18 and 19. It does not find entry 2
+(a worker that misses a side-effect registration logs it at boot), 20, 21, 32, 33, 36, 44–46, 48,
+58–61 or 62 — run the unit, job, live and scraping suites, and read the first boot's log.
 
 ## 21.x → 22.0.0, entry by entry
 
@@ -196,8 +339,8 @@ measure a candidate before shipping it. AA and never APCA: APCA is not a standar
 operative legal benchmark.
 
 **Nothing else in this release costs an edit.** The five new app guards ship in `x new` only; an
-existing app gains them by copying the ones it wants out of a fresh scaffold into its own `guards/`,
-one file per rule, and deleting one drops that rule. `x shot --all-islands` is additive, and
+existing app gains one with `x g guard <name>` (since 23.0.0; `x doctor --json` lists the shipped
+ones it lacks in `data.guards.missing`), one file per rule, and deleting one drops that rule. `x shot --all-islands` is additive, and
 `x g island` / `x g resource` now write a `.island.states.ts` beside what they generate.
 
 ## 18.x → 19.0.0, entry by entry

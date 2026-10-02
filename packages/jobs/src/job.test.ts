@@ -84,9 +84,13 @@ describe('job() refuses a concurrency that can never be filled', () => {
       });
 
   test('zero, a negative and a fraction are all refused at declaration', () => {
-    expect(declare(0)).toThrow(/X_INVARIANT/);
-    expect(declare(-1)).toThrow(/X_INVARIANT/);
-    expect(declare(1.5)).toThrow(/X_INVARIANT/);
+    // The code the KEYED spelling raises for the same defect — one statement, one code. It was
+    // `X_INVARIANT` until keyed concurrency existed to disagree with.
+    expect(declare(0)).toThrow(/X_JOB_DECLARATION_INVALID/);
+    expect(declare(-1)).toThrow(/X_JOB_DECLARATION_INVALID/);
+    expect(declare(1.5)).toThrow(/X_JOB_DECLARATION_INVALID/);
+    expect(declare(Number.NaN)).toThrow(/X_JOB_DECLARATION_INVALID/);
+    expect(declare(Number.POSITIVE_INFINITY)).toThrow(/X_JOB_DECLARATION_INVALID/);
   });
 
   /**
@@ -223,6 +227,8 @@ describe('describe', () => {
         retry: { attempts: 5, backoff: 'linear' },
         steps: [],
         idempotent: true,
+        concurrency: null,
+        onSettled: false,
       },
       {
         name: 'notifySubscribers',
@@ -231,6 +237,8 @@ describe('describe', () => {
         retry: { attempts: 3, backoff: 'exponential' },
         steps: [],
         idempotent: true,
+        concurrency: null,
+        onSettled: false,
       },
     ]);
   });

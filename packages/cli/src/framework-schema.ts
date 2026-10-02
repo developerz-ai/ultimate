@@ -7,6 +7,7 @@
 // the one code path that needs it, and it surfaces as a Postgres `42P01` from inside a worker.
 
 import { SQL_AUDIT_TABLE, SQL_IDEMPOTENCY_TABLE } from '@ultimat3/action';
+import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from '@ultimat3/admin/schema';
 import { AUTH_TABLE_NAMES, AUTH_TABLES, SQL_AUTH_LIMIT_TABLES } from '@ultimat3/auth';
 import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
@@ -49,6 +50,9 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
       'x_scheduler_leader',
       'x_job_leases',
       'x_job_events',
+      'x_job_pauses',
+      'x_job_workers',
+      'x_job_counters',
     ]),
     ddl: Object.freeze([SQL_JOBS_TABLE]),
   }),
@@ -108,6 +112,17 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/notify',
     tables: Object.freeze(['x_notify_inbox']),
     ddl: Object.freeze([SQL_NOTIFY_INBOX_TABLE]),
+  }),
+  /**
+   * The admin's durable audit trail — what `postgresAuditLog()` writes and every detail page's
+   * history card reads. Without this row an app that chose the durable log met `42P01` on the
+   * first audited request. Imported through `@ultimat3/admin/schema`, a leaf module: the DDL is
+   * on every role's boot path, and not one admin screen is (`serve-graph.test.ts`).
+   */
+  Object.freeze({
+    pkg: '@ultimat3/admin',
+    tables: Object.freeze([ADMIN_AUDIT_TABLE]),
+    ddl: Object.freeze([SQL_ADMIN_AUDIT_TABLE]),
   }),
 ]);
 

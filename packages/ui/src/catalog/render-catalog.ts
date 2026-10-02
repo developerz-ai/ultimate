@@ -13,6 +13,7 @@ import {
   lineHeightTokens,
   radiusTokens,
   spaceTokens,
+  strokeTokens,
   zTokens,
 } from '../tokens/tokens';
 import type { ComponentDoc } from './parse-component';
@@ -99,6 +100,8 @@ ${scaleTable('Space — `--space-*`', spaceTokens)}
 
 ${scaleTable('Radius — `--radius-*`', radiusTokens)}
 
+${scaleTable('Stroke — `--stroke-*`', strokeTokens)}
+
 ${scaleTable('Font size — `--text-*`', fontSizeTokens)}
 
 ${scaleTable('Font weight — `--weight-*`', fontWeightTokens)}
@@ -111,6 +114,23 @@ ${scaleTable('Easing — `--easing-*`', easingTokens)}
 
 ${scaleTable('Z-index — `--z-*`', zTokens)}
 
-${scaleTable('Breakpoints — `@include t.respond-to(<name>)`', breakpointTokens)}
+${scaleTable('Breakpoints — `respond-to` · `respond-down` · `respond-between`', breakpointTokens)}
+
+\`@include t.respond-to(md)\` is \`md\` and wider, \`t.respond-down(md)\` is narrower than \`md\`, and
+\`t.respond-between(md, lg)\` is \`md\` up to \`lg\`. A max-width arm stops 0.02px under its rung, so
+no width matches two of them.
+
+### Computed lengths
+
+${table(
+  ['Function', 'Answers'],
+  [
+    ['`t.rem(24px)`', '`1.5rem` — px, rem or a unitless px count in, rem out'],
+    [
+      '`t.fluid(1rem, 2rem, 20rem, 80rem)`',
+      'one `clamp()`: the first size at a 20rem viewport, the second at 80rem, linear between',
+    ],
+  ],
+)}
 `;
 }

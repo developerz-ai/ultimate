@@ -19,13 +19,8 @@ import {
   roleDeclarationSites,
   roleDefinitions,
 } from '@ultimat3/policy';
-import { clearRoutes } from '@ultimat3/render';
-import {
-  ROLES_FILE,
-  requirements,
-  ungrantedFinding,
-  ungrantedRequirements,
-} from './permission-grants';
+import { clearRoutes, defineRoute, registerMountedRoutes } from '@ultimat3/render';
+import { requirements, ungrantedFinding, ungrantedRequirements } from './permission-grants';
 
 let permissions: readonly string[] = [];
 let roles: ReturnType<typeof roleDefinitions> = {};
@@ -74,9 +69,12 @@ describe('unit · a permission an action requires must be one some role grants',
 
     const ungranted = ungrantedRequirements();
     expect(ungranted).toEqual([{ permission: 'customer:write', by: 'action createCustomer' }]);
-    const finding = ungrantedFinding(ungranted[0] ?? { permission: '', by: '' });
+    const finding = ungrantedFinding(ungranted[0] ?? { permission: '', by: '' }, 'shared/roles.ts');
     expect(finding.code).toBe('X_PERMISSION_UNGRANTED');
-    expect(finding.fix).toContain(`add 'customer:write' to the grants of a role in ${ROLES_FILE}`);
+    expect(finding.at).toBe('shared/roles.ts');
+    expect(finding.fix).toContain(
+      `add 'customer:write' to the grants of a role in shared/roles.ts`,
+    );
   });
 
   test('a grant through inheritance or a wildcard counts, because can() counts it', () => {
@@ -102,6 +100,60 @@ describe('unit · a permission an action requires must be one some role grants',
     definePermissions(['customer:write']);
     declare('createCustomer', can('customer:write'));
     expect(requirements()).toEqual([{ permission: 'customer:write', by: 'action createCustomer' }]);
+    expect(ungrantedRequirements()).toEqual([]);
+  });
+});
+
+describe('unit · a permission a MOUNTED route asks must be one some role grants', () => {
+  const mountAdmin = (permissions: readonly string[]): void =>
+    registerMountedRoutes(
+      { key: '/admin', by: 'defineAdmin', file: '@ultimat3/admin', surface: 'app' },
+      ['/admin/widgets', '/admin/widgets/:id'].map((path) => ({
+        path,
+        config: defineRoute({
+          render: 'ssr',
+          offline: 'network-only',
+          hydrate: 'never',
+          policy: { permission: 'admin:read' },
+          meta: () => ({ title: 'Widgets' }),
+        }),
+        permissions,
+      })),
+    );
+
+  test('a hand-written entity with no grants is X_PERMISSION_UNGRANTED, not a 403 an operator reports', () => {
+    definePermissions(['admin:read', 'widgets:read']);
+    defineRoles({ admin: { description: 'runs it', grants: ['admin:read'] } });
+    mountAdmin(['admin:read', 'widgets:read']);
+
+    // EVERY permission of the mount, not only the coarse gate the route's `policy` carries — and
+    // one requirement per permission, however many of the mount's routes ask it.
+    expect(requirements()).toEqual([
+      {
+        permission: 'admin:read',
+        by: '/admin/widgets (mounted by defineAdmin, and 1 more of its routes)',
+      },
+      {
+        permission: 'widgets:read',
+        by: '/admin/widgets (mounted by defineAdmin, and 1 more of its routes)',
+      },
+    ]);
+    const ungranted = ungrantedRequirements();
+    expect(ungranted).toEqual([
+      {
+        permission: 'widgets:read',
+        by: '/admin/widgets (mounted by defineAdmin, and 1 more of its routes)',
+      },
+    ]);
+    expect(ungrantedFinding(ungranted[0] ?? { permission: '', by: '' }, 'roles.ts').fix).toContain(
+      `add 'widgets:read' to the grants of a role in roles.ts`,
+    );
+  });
+
+  test('granted through a wildcard, the mount is silent', () => {
+    definePermissions(['admin:read', 'widgets:read']);
+    defineRoles({ admin: { description: 'runs it', grants: ['admin:read', 'widgets:*'] } });
+    mountAdmin(['admin:read', 'widgets:read']);
     expect(ungrantedRequirements()).toEqual([]);
   });
 });

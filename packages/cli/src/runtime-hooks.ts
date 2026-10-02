@@ -1,8 +1,8 @@
-// The two seams `@ultimat3/http` leaves open, bound to the packages that own them. `authorize`
+// The seams `@ultimat3/http` leaves open, bound to the packages that own them. `authorize`
 // decides for pages only, from the SAME `Policy` object every other surface evaluates — the route
 // table's declared permission — so a denial in `x dev` is the one production produces.
 
-import { actorOf } from '@ultimat3/action';
+import { actorOf, explainActionPathMiss } from '@ultimat3/action';
 import type { AuthzDecision, ServerHooks } from '@ultimat3/http';
 import { asCtx, configuredAuthenticator } from '@ultimat3/http';
 import type { KnownPermission, Policy } from '@ultimat3/policy';
@@ -57,6 +57,9 @@ export function devHooks(options: DevHookOptions = {}): ServerHooks {
     ...(authenticate === undefined ? {} : { authenticate }),
     ...(devNotices === undefined ? {} : { devNotices }),
     ...(errorPage === undefined ? {} : { errorPage }),
+    // Every web role, `x dev` and the container alike: a caller that derived an action's URL under
+    // the wrong `pathStyle` is told which one this app serves, not that no route exists.
+    explainMiss: explainActionPathMiss,
     authorize: (route, _request, ctx): AuthzDecision => {
       // An action route never arrives here: it carries `enforcedBy: 'handler'`, so the pipeline
       // never asks. `invoke` is its one evaluation, and the only one holding the row a row-level

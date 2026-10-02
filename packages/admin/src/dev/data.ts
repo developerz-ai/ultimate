@@ -164,6 +164,12 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
         // `revalidateTags`, already flattened to keys — never `revalidate.tags`, a shape the
         // descriptor does not have and which answered `[]` for every ISR route in the app.
         revalidateTags: route.revalidateTags,
+        // Present only on a route a package mounted. Copied, never aliased: the fact is a panel
+        // payload, and the registry's own list must not be reachable through it.
+        mount:
+          route.mount === undefined
+            ? null
+            : { by: route.mount.by, permissions: [...route.mount.permissions] },
       }));
     },
 
@@ -211,24 +217,27 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
         // field on a descriptor that never carried it, so every job on the panel reported
         // non-idempotent — the opposite of what `job()` refuses to register without.
         idempotent: job.idempotent,
+        concurrency: job.concurrency,
+        onSettled: job.onSettled,
       }));
     },
 
     async queues(): Promise<readonly QueueFact[]> {
-      const { inspectJobList, inspectQueues, jobDriver } = await import('@ultimat3/jobs');
+      const { inspectQueues, jobDriver } = await import('@ultimat3/jobs');
       const driver = jobDriver();
       if (driver === undefined) throw unavailable('queues', 'jobs');
       const report = await inspectQueues(driver);
-      // `stats()` counts states, and a failed job is one of them only until it is retried or
-      // dead-lettered; the honest count comes from the job list, which needs introspection.
-      const failed =
-        driver.introspect === undefined ? [] : await inspectJobList(driver, { state: 'failed' });
+      // A driver with no introspection has nothing to pause a queue with.
+      const paused = new Set((await driver.introspect?.pausedQueues())?.map((entry) => entry.name));
       return report.queues.map((queue) => ({
         name: queue.queue,
         depth: queue.ready + queue.delayed,
         running: queue.running,
-        failed: failed.filter((record) => record.queue === queue.queue).length,
+        // `stats()` has its own `failed` bucket: it was counted off the job LIST, one page of it,
+        // so a queue with more failed rows than a page holds reported the page size.
+        failed: queue.failed,
         deadLetter: queue.dead,
+        paused: paused.has(queue.queue),
       }));
     },
 
@@ -248,6 +257,15 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
           queue: trace.queue,
           status: RUN_STATUS[trace.state],
           attempt: trace.attempt,
+          concurrencyKey: trace.concurrencyKey,
+          progress:
+            trace.progress === null
+              ? null
+              : {
+                  done: trace.progress.done,
+                  total: trace.progress.total,
+                  note: trace.progress.note ?? null,
+                },
           steps: trace.steps.map((step) => ({
             name: step.name,
             status: STEP_STATUS[step.status],

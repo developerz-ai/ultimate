@@ -2,7 +2,7 @@
 // values (imported by absolute path: a fixture outside the checkout has no node_modules), driven
 // over the mounted route handlers, so "the staff catalog never reaches a customer" is asserted on
 // the wire and not on a list. One fixture directory PER CASE: `import()` caches by path.
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no tmpdir(); a fixture lives outside the checkout, where a parallel worker
 // globbing the tree cannot meet it half-deleted.
@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; fixtures and the mcp source are joined to paths.
 import { join } from 'node:path';
 import type { Route, UltimateRequest } from '@ultimat3/http';
+import { clearPermissions } from '@ultimat3/policy';
 import { appMcpMount } from './app-mcp';
 
 const FIXTURES = join(tmpdir(), `x-app-mcp-endpoints-${process.pid}`);
@@ -18,6 +19,12 @@ const MCP_SOURCE = join(import.meta.dir, '../../mcp/src/index.ts');
 afterAll(async () => {
   await rm(FIXTURES, { recursive: true, force: true });
 });
+
+// Every fixture's `can()` names a permission no `definePermissions()` declares, which is legal
+// only while the set is EMPTY. A file that ran first in this process may have imported
+// `@ultimat3/admin`, whose module scope declares `admin:*` for good — so this file empties the set
+// itself; the file boundary (`registry-leak-guard.ts`) puts it back after.
+beforeAll(clearPermissions);
 
 const fixture = async (name: string, mcpTs: string, path = '/mcp'): Promise<string> => {
   const root = join(FIXTURES, name);

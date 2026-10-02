@@ -15,6 +15,7 @@ const route = (path: string, over: Partial<RouteFact> = {}): RouteFact => ({
   handler: `apps/web/site${path}/page.tsx`,
   budget: {},
   revalidateTags: [],
+  mount: null,
   ...over,
 });
 
@@ -44,5 +45,17 @@ describe('the routes panel', () => {
     ]);
     expect(panel.byRenderMode).toEqual({ static: 2, stream: 1 });
     expect(panel.overBudget).toEqual(['/feed', '/pricing']);
+    expect(panel.mountedBy).toEqual({});
+  });
+
+  test('counts mounted routes per mounting call, and each row keeps its permissions', async () => {
+    const mount = { by: 'defineAdmin', permissions: ['admin:read', 'posts:read'] };
+    const panel = await data([
+      route('/'),
+      route('/admin', { handler: '@ultimat3/admin', mount }),
+      route('/admin/posts', { handler: '@ultimat3/admin', mount }),
+    ]);
+    expect(panel.mountedBy).toEqual({ defineAdmin: 2 });
+    expect(panel.routes.find((row) => row.path === '/admin/posts')?.mount).toEqual(mount);
   });
 });

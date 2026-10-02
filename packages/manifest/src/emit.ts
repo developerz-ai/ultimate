@@ -33,6 +33,7 @@ export const KEY_ORDER = [
   'actions',
   'queries',
   'channels',
+  'admin',
   'jobs',
   'tasks',
   'policies',

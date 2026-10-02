@@ -77,7 +77,8 @@ const harness = (
       if (failOn.has(page)) throw new JobAbortedError({ job: `orders-${sequence}`, step: 'page' });
       return { id: record.id, title: record.title };
     },
-    sink,
+    // A thunk, as an app declares it: the disk is read when a part is written, never at import.
+    sink: () => sink,
     ...(options.batch === undefined ? {} : { batch: options.batch }),
     ...(options.maxPartBytes === undefined ? {} : { maxPartBytes: options.maxPartBytes }),
   });
@@ -108,6 +109,8 @@ const harness = (
         step,
         ctx,
         attempt: 1,
+        finalAttempt: false,
+        progress: () => undefined,
         jobId: `job-${sequence}`,
         runId: RUN_ID,
       });

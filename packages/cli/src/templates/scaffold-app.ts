@@ -20,7 +20,13 @@ import { siteFiles } from './scaffold-site';
 // strings through `@<app>/i18n`'s `useT()`, so the surface that renders a string DEPENDS on the
 // module that registers the catalogs. An undeclared workspace dependency resolves through the root
 // symlink and then breaks the day the app is built anywhere else.
-const webPackage = (app: NameSet): string => `{
+//
+// `@<app>/db` joins it with the example slice, whose repo.ts reads through the typed handle that
+// package exports. Under `--no-example` nothing here imports it yet, so it is not declared — the
+// first `x g entity` writes the line with the repo that needs it (`handle-registration.ts`).
+const webPackage = (app: NameSet, example: boolean): string => {
+  const db = example ? `\n    "@${app.kebab}/db": "0.0.0",` : '';
+  return `{
   "name": "@${app.kebab}/web",
   "version": "0.0.0",
   "private": true,
@@ -32,11 +38,12 @@ const webPackage = (app: NameSet): string => `{
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "dependencies": {
+  "dependencies": {${db}
     "@${app.kebab}/i18n": "0.0.0"
   }
 }
 `;
+};
 
 // The ambient \`*.module.scss\` declaration is not reachable through an import, so a program that
 // only sees this app's files would report TS2307 on every stylesheet. Naming it in \`include\`
@@ -47,27 +54,39 @@ const tsconfig = (): string => `{
 }
 `;
 
-const offlineTest =
-  (): string => `// The offline fallback has to render with nothing: no network, no session, no database, and no
+const offlineTest = (
+  app: NameSet,
+): string => `// The offline fallback has to render with nothing: no network, no session, no database, and no
 // JavaScript. Every one of those is a config field here, and every one of them rots the moment
 // someone adds an import or a policy — at which point the page the service worker precaches is a
 // page that cannot render when it is finally needed.
-import { metaContextFor, routeDataFor } from '@ultimat3/render';
-import { expect, unitTest } from '@ultimat3/testing';
-import { config } from './page';
+${sortedImports([
+  `import { useT } from '@${app.kebab}/i18n';`,
+  "import { expect, renderRoute, unitTest } from '@ultimat3/testing';",
+])}
+import * as page from './page';
 
-const ctx = { params: {}, url: 'https://example.test/offline' };
+const url = 'https://example.test/offline';
+
+unitTest('the offline fallback renders with no actor, and says the network is gone', async () => {
+  const t = useT();
+  // No actor and no context: exactly what the service worker has when it serves this.
+  const view = await renderRoute(page, { url });
+  expect(view.html.match(/<h1\\b/g)).toHaveLength(1);
+  expect(view.text).toBe(\`\${t('app.offline.title')} \${t('app.offline.description')}\`);
+  expect(view.islands).toEqual([]);
+});
 
 unitTest('the offline fallback is static, precached, and ships no JavaScript', async () => {
-  expect(config.render).toBe('static');
+  const view = await renderRoute(page, { url });
+  expect(page.config.render).toBe('static');
   // 'precache', or the document that answers a lost network is itself fetched over the network.
-  expect(config.offline).toBe('precache');
-  expect(config.hydrate).toBe('never');
-  expect(config.budget.js).toBe('0kb');
+  expect(page.config.offline).toBe('precache');
+  expect(page.config.hydrate).toBe('never');
+  expect(page.config.budget.js).toBe('0kb');
   // A cached error page has nothing to index, and an indexed one outranks the page it stood in for
   // on the day the crawler happened to be offline.
-  const meta = await config.meta(metaContextFor(ctx, await routeDataFor(config, ctx)));
-  expect(meta.robots?.index).toBe(false);
+  expect(view.meta.robots?.index).toBe(false);
 });
 `;
 
@@ -103,7 +122,7 @@ export const config = defineRoute({
   }),
 });
 
-export function OfflinePage() {
+export function Page() {
   const t = useT();
 
   return (
@@ -167,6 +186,25 @@ const sharedGlobalModule =
 import './global.scss';
 `;
 
+const sharedGlobalTest =
+  (): string => `// The global layer reaches this app's module graph through exactly one edge. Cut it and every
+// \`var(--…)\` a component emits resolves to nothing: the app renders unstyled, with every test of
+// every component still green.
+import { registeredStylesheets } from '@ultimat3/render/server';
+import { expect, unitTest } from '@ultimat3/testing';
+import './global';
+
+unitTest('importing shared/global registers the one global stylesheet', () => {
+  const sheets = registeredStylesheets().filter((sheet) => sheet.global);
+  expect(sheets.map((sheet) => sheet.file.split('/').slice(-3).join('/'))).toEqual([
+    'web/shared/global.scss',
+  ]);
+  // The custom properties themselves, declared once on the root — what \`tokens.role()\` refers to.
+  expect(sheets[0]?.css).toContain(':root{');
+  expect(sheets[0]?.css).toContain('--color-bg:');
+});
+`;
+
 const sharedActor =
   (): string => `// The actor type both surfaces agree on. Policies read this and nothing else, so authz cannot
 // disagree between HTTP, live queries, jobs and MCP.
@@ -208,8 +246,10 @@ unitTest('holds answers from the role map, and an anonymous actor holds nothing'
 });
 `;
 
-// Same one dependency as `apps/web`, and for the same reason: `app/admin/page.tsx` reads its
-// strings through `@<app>/i18n`'s `useT()`.
+// Two dependencies, and they are the edges this workspace has: `app/admin/admin.ts` reads the
+// app's typed handle from `@<app>/db`, and its test loads the role map from `@<app>/web`.
+// Undeclared, they exist only inside the root tsconfig's `paths`, where `bun --filter` and every
+// change-detection tool are blind to them.
 const adminPackage = (app: NameSet): string => `{
   "name": "@${app.kebab}/admin",
   "version": "0.0.0",
@@ -223,44 +263,122 @@ const adminPackage = (app: NameSet): string => `{
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@${app.kebab}/i18n": "0.0.0"
+    "@${app.kebab}/db": "0.0.0",
+    "@${app.kebab}/web": "0.0.0"
   }
 }
 `;
 
-const adminPage = (
+const adminDeclaration = (
   app: NameSet,
-): string => `// The generated admin dashboard. It ships an MCP surface over the app's own actions, so the
-// user's agents can drive the user's product with the user's permissions.
-
-// \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
+): string => `// The whole admin dashboard. \`defineAdmin()\` serves a list, a detail and a form for every entity
+// below at /admin/<entity> — the columns, filters, validation and labels are derived from the
+// entity, the rows are read through the app's own typed handle, and \`x dev\` mounts the screens.
+// There is no page file, no repo adapter and no screen glue to write.
+//
+// It also ships an MCP surface over the same resources, so the user's agents can drive the user's
+// product with the user's permissions (\`adminMcp\`).
 ${sortedImports([
-  `import { useT } from '@${app.kebab}/i18n';`,
-  `import { defineRoute } from '@ultimat3/render';`,
+  `import { db } from '@${app.kebab}/db';`,
+  `import { adminEntitiesOf, defineAdmin } from '@ultimat3/admin';`,
 ])}
 
-export const config = defineRoute({
-  render: 'ssr',
-  // Stated on a page whose body is one \`<h1>\`, and it costs nothing: the hydration runtime is
-  // emitted per island DIRECTIVE, so \`hydrateRuntime([])\` is \`''\` and this document ships 0 bytes
-  // (\`packages/render/src/hydrate.ts\`). It buys the first island being ONE file's edit —
-  // \`hydrate: 'never'\` beside an island is \`X_ISLAND_NOT_HYDRATED\`, which defineRoute refuses.
-  hydrate: 'idle',
-  offline: 'network-only',
-  // Behind auth, so the mode has to render per request: \`ssr\` and \`stream\` both do, and both take
-  // a \`policy\`. \`static\` and \`isr\` refuse one outright — a file on disk has no actor to decide
-  // against, and an ISR document is cached per URL, so the first actor's HTML would be served to
-  // every later one who passes the same policy.
-  policy: { permission: 'admin:read' },
-  budget: { js: '120kb' },
-  meta: ({ t }) => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
+export const admin = defineAdmin({
+  // Every entity the handle serves: \`x g entity\` adds one there, and it is an admin screen on
+  // the next boot. Name them one by one instead — \`entities: [post]\` — to leave a table out.
+  entities: adminEntitiesOf(db),
+  db,
+  // Who may do what is the app's role map (shared/roles.ts), asked permission by permission:
+  // \`admin:read\` + \`<table>:read\` to look, \`admin:write\` + \`<table>:write\` to create or edit,
+  // \`admin:destroy\` + \`<table>:delete\` to delete. \`x g entity\` grants a new table's three to
+  // the \`admin\` role; a role holding only the two \`:read\` grants is a view-only operator.
+  // Per-entity overrides — list columns, scopes, a row scope, which columns are sensitive — go in
+  // \`resources: { <entity>: … }\`. \`x g resource <name> --admin\` writes one and lists it here.
+});
+`;
+
+const adminDeclarationTest = (
+  app: NameSet,
+): string => `// The admin is one declaration, so what can go wrong is what it DERIVES: a route table with a
+// screen behind every path, each gated — and an authz that asks the role map for every permission,
+// so the admin role runs it and nobody else does.
+//
+// The role map is imported here because nothing else would load it: the boot scan reads
+// shared/roles.ts before the first request, and a test that reaches the admin directly has to say
+// so — without it the \`admin\` role grants nothing and every decision below is a refusal.
+${sortedImports([
+  `import { roles } from '@${app.kebab}/web/shared/roles';`,
+  `import { adminRoutes, permissionsForOperation } from '@ultimat3/admin';`,
+  `import { expect, unitTest } from '@ultimat3/testing';`,
+])}
+import { admin } from './admin';
+
+const ctxFor = (roles: readonly string[]) =>
+  admin.ctx({ actor: { id: 'a', roles }, requestId: 'test' });
+
+unitTest('every admin route is gated and has a screen', () => {
+  const routes = adminRoutes(admin);
+  expect(routes.map((route) => route.path)).toContain('/admin');
+  for (const route of routes) {
+    // The coarse gate is the first permission of the route's own pair: \`admin:read\` for a
+    // screen that reads, \`admin:write\` for a form. Never absent.
+    expect(route.config.policy?.permission).toBe(route.permissions[0] ?? '');
+    expect(route.config.policy?.permission.startsWith('admin:')).toBe(true);
+    expect(typeof route.respond).toBe('function');
+  }
 });
 
-export function AdminHome() {
-  const t = useT();
+unitTest('one resource per entity on the handle, each reading through it', () => {
+  for (const resource of admin.resources) {
+    expect(admin.routes.map((route) => route.path)).toContain(\`/admin\${resource.path}\`);
+    expect(resource.repo).toBeDefined();
+  }
+});
 
-  return <h1>{t('admin.home.title')}</h1>;
-}
+unitTest('the admin role holds every permission the admin derives, and a member none', () => {
+  // Every route's pair and every operation's — a delete has no route of its own, it is a POST at
+  // the row's URL — asked of the role map by name: a table the handle gained without its three
+  // grants in shared/roles.ts fails HERE, not as a 403 an operator reports.
+  const required = [
+    ...new Set([
+      ...admin.routes.flatMap((route) => route.permissions),
+      ...admin.resources.flatMap((resource) =>
+        resource.operations.flatMap((op) => permissionsForOperation(resource.permission, op)),
+      ),
+    ]),
+  ];
+  expect(required).toContain('admin:read');
+  for (const permission of required) {
+    const asked = { permission, subject: { entity: 'any' } };
+    const granted = admin.authz.decide({ ...asked, actor: ctxFor(['admin']).actor });
+    expect({ permission, allowed: granted.allowed }).toEqual({ permission, allowed: true });
+  }
+  // Held whether or not the app has a table yet: the first \`x g entity\` must find them here.
+  expect(roles.admin.grants).toContain('admin:write');
+  expect(roles.admin.grants).toContain('admin:destroy');
+  const refused = admin.authz.decide({
+    permission: 'admin:write',
+    actor: ctxFor(['member']).actor,
+  });
+  expect(refused.allowed).toBe(false);
+  expect(refused.permission).toBe('admin:write');
+});
+
+unitTest('the dashboard answers 200 for the admin role and 403 for anyone else', async () => {
+  const [home] = adminRoutes(admin);
+  const ask = (roles: readonly string[]) =>
+    home?.respond({
+      ctx: ctxFor(roles),
+      params: {},
+      url: 'http://localhost/admin',
+      method: 'GET',
+      form: null,
+    });
+  const allowed = await ask(['admin']);
+  expect(allowed?.kind === 'document' && allowed.status).toBe(200);
+  const denied = await ask(['member']);
+  expect(denied?.kind === 'document' && denied.status).toBe(403);
+});
 `;
 
 const placeholder = (surface: string, app: NameSet): string => `# ${surface}
@@ -280,7 +398,7 @@ restructure.
  * slice itself is written elsewhere. */
 export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile[] {
   return [
-    { path: 'apps/web/package.json', contents: webPackage(app) },
+    { path: 'apps/web/package.json', contents: webPackage(app, example) },
     { path: 'apps/web/tsconfig.json', contents: tsconfig() },
     // The process a container starts and the artifact a CDN is handed — `scaffold-entries.ts`.
     ...entryFiles(),
@@ -302,12 +420,13 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     // URL the generated service worker could not fall back to.
     { path: 'apps/web/site/offline/page.tsx', contents: offlineFallback(app) },
     { path: 'apps/web/site/offline/page.module.scss', contents: offlineStyle() },
-    { path: 'apps/web/site/offline/page.test.ts', contents: offlineTest() },
+    { path: 'apps/web/site/offline/page.test.ts', contents: offlineTest(app) },
     // The third surface, and the one call that registers what the app declares — `scaffold-api.ts`.
     ...apiFiles(example),
     { path: 'apps/web/shared/tokens.scss', contents: sharedTokens() },
     { path: 'apps/web/shared/global.scss', contents: sharedGlobalStyle() },
     { path: 'apps/web/shared/global.ts', contents: sharedGlobalModule() },
+    { path: 'apps/web/shared/global.test.ts', contents: sharedGlobalTest() },
     { path: 'apps/web/shared/actor.ts', contents: sharedActor() },
     { path: 'apps/web/shared/actor.test.ts', contents: sharedActorTest() },
     // The one org the dev actor, the seed and the dashboard all name — `scaffold-demo-org.ts`.
@@ -319,12 +438,13 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     ...rolesFiles(example),
     { path: 'apps/admin/package.json', contents: adminPackage(app) },
     { path: 'apps/admin/tsconfig.json', contents: tsconfig() },
-    // `apps/admin/app/admin/page.tsx`, not `apps/admin/app/page.tsx`: the directory IS the URL,
-    // relative to the surface root, so the shallower path resolves to `/` and collides with
-    // `apps/web/site/page.tsx` — `x dev` loads both surfaces into one route table and the
-    // scaffolded app failed its own `x routes` with X_ROUTE_DUPLICATE. `/admin` also matches
-    // @ultimat3/admin's own `basePath` default, so the two agree instead of merely not clashing.
-    { path: 'apps/admin/app/admin/page.tsx', contents: adminPage(app) },
+    // `apps/admin/app/admin/admin.ts`: a DECLARATION, not a page. `defineAdmin()` registers the
+    // admin and `x dev` mounts every screen it derives under `/admin` (`runtime-admin.ts`), so the
+    // app carries no route file for it. It sits under `app/` because that is where the boot scan
+    // looks — a module nothing imports declares nothing — and its test rides beside it, because
+    // generated source with no test is uncovered source in an app whose gate holds a floor.
+    { path: 'apps/admin/app/admin/admin.ts', contents: adminDeclaration(app) },
+    { path: 'apps/admin/app/admin/admin.test.ts', contents: adminDeclarationTest(app) },
     { path: 'apps/mobile/README.md', contents: placeholder('mobile', app) },
     { path: 'apps/desktop/README.md', contents: placeholder('desktop', app) },
   ];

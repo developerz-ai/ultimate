@@ -3,7 +3,15 @@
 // a human's nav, and a destructive tool always demands the same confirmation a human would.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
+import {
+  clearRegistry,
+  database,
+  entity,
+  memoryDriver,
+  text,
+  timestamp,
+  uuid,
+} from '@ultimat3/entity';
 import { type AdminApp, defineAdmin } from './admin';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, type AdminAuthz, staticAuthz } from './authz';
@@ -36,6 +44,7 @@ const actor: AdminActor = { id: 'u_1' };
 const appWith = (authz: AdminAuthz): AdminApp =>
   defineAdmin({
     entities: [post],
+    db: database({ post }, { driver: memoryDriver() }),
     actions: [publish],
     auth: { actor: (): AdminActor => actor, authz },
   });
@@ -134,6 +143,7 @@ describe('the MCP surface is the UI surface', () => {
     const authz = staticAuthz(['admin:destroy', 'admin_tool_post:read', 'admin_tool_post:purge']);
     const app = defineAdmin({
       entities: [post],
+      db: database({ post }, { driver: memoryDriver() }),
       actions: [destroy],
       auth: { actor: (): AdminActor => actor, authz },
     });
@@ -177,6 +187,7 @@ describe('a GLOBAL action — one bound to no entity — gets its own tool', () 
   const globalApp = (authz: AdminAuthz): AdminApp =>
     defineAdmin({
       entities: [post],
+      db: database({ post }, { driver: memoryDriver() }),
       actions: [reindex, hidden, undescribed],
       auth: { actor: (): AdminActor => actor, authz },
     });

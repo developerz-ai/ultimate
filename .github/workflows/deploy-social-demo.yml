@@ -45,8 +45,9 @@ jobs:
   # commit had already passed, holding back an image whose source was proven green.
   #
   # As of 2026-08 that gate covers THIS app: `ci.yml`'s `reference-app-verify` job runs
-  # `x verify` in dummy/social-media-clone against the ratchet in scripts/lib/gated-apps.ts. Until
-  # then the image published here was the only place the app was exercised at all.
+  # `x verify` in dummy/social-media-clone against the ratchet in scripts/lib/gated-apps.ts — on a
+  # runner of its own since 2026-10-01, so the check this workflow reads is that app's and no other
+  # app's. Until then the image published here was the only place the app was exercised at all.
   #
   # Covering the app is not the same as gating the image, and this workflow used to confuse the
   # two: a separate workflow is not a dependency, and `main` carries no branch protection (checked
@@ -91,18 +92,23 @@ jobs:
 
       # The gate's verdict on THIS commit, read once, before a single layer is pushed. Under
       # `workflow_run` ci.yml has already concluded, so the answer is final and this is the check
-      # that `reference-app-verify` in particular passed; under a dispatch it is the only gate, and
-      # a commit ci.yml never judged — an ungated ref — has no verdict and does not publish. No
-      # polling: nothing here is waiting for a run that might still be going.
+      # that this app's `reference-app-verify` in particular passed; under a dispatch it is the
+      # only gate, and a commit ci.yml never judged — an ungated ref — has no verdict and does not
+      # publish. No polling: nothing here is waiting for a run that might still be going.
+      #
+      # CHECK is the `name:` ci.yml gives the matrix job for this app, spaces and parentheses
+      # included, so it travels as a `-f` field: `gh api` URL-encodes a field and does not encode a
+      # query string written into the path. `scripts/ci-workflow-shape.test.ts` holds the two
+      # spellings to each other.
       - name: require the app gate's verdict for this commit
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.built.outputs.sha }}
-          CHECK: reference-app-verify
+          CHECK: reference-app-verify (dummy/social-media-clone)
         run: |
           set -euo pipefail
-          conclusion="$(gh api \
-            "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?check_name=${CHECK}" \
+          conclusion="$(gh api -X GET \
+            "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs" -f check_name="${CHECK}" \
             --jq '[.check_runs[] | select(.status == "completed")]
                     | sort_by(.completed_at) | last | .conclusion // ""' || true)"
           # `|| true`: a transient API failure is "no verdict", which the check below refuses by

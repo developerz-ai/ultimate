@@ -21,6 +21,7 @@ import type { PageSpeculation } from './page-speculation';
 import { loadSpeculation, pageSpeculation } from './page-speculation';
 import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
+import { adminMountRoutes } from './runtime-admin';
 import { assetRoutes } from './runtime-assets';
 import { appRoutes } from './runtime-render';
 import { servedStorage, storageRoutes } from './runtime-storage';
@@ -150,6 +151,14 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     ...sync.routes,
     ...navigation.routes,
     ...pagePostRoutes(),
+    // The app's generated admin, when it declared one (`defineAdmin`): every screen under its base
+    // path, served through the same document builder as the pages below. Nothing for an app with
+    // no admin — the registry is asked, the package is not imported.
+    ...adminMountRoutes({
+      buildId: input.buildId,
+      themeHead: theme.head,
+      ...(origin === undefined ? {} : { origin }),
+    }),
     ...appRoutes({
       buildId: input.buildId,
       ...(input.isr === undefined ? {} : { isr: input.isr }),

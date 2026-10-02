@@ -3,12 +3,16 @@
 // route table had no slot for a page, and `adminRoutes()` threw on the first route it built.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
+import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { defineAdmin } from './admin';
 import { type AdminActor, staticAuthz } from './authz';
 import type { CrudCtx } from './crud';
 import type { AdminCustomPage } from './pages';
-import { adminRoutes } from './routes';
+
+// Loaded after `@ultimat3/render/server` has installed its `.tsx` loader, and never statically:
+// `routes.ts` reaches the screens, and a static import compiles a `.tsx` before the plugin exists.
+await import('@ultimat3/render/server');
+const { adminRoutes } = await import('./routes');
 
 const post = entity('admin_page_post', {
   columns: { id: uuid().primaryKey(), title: text({ max: 120 }) },
@@ -32,6 +36,7 @@ const ops: AdminCustomPage = {
 
 const app = defineAdmin({
   entities: [post],
+  db: database({ post }, { driver: memoryDriver() }),
   resources: { admin_page_post: { path: '/posts' } },
   pages: [ops],
   auth,
@@ -79,17 +84,24 @@ describe('the guard cannot be omitted', () => {
     }
   });
 
-  test('the route table exposes the guarded component, never the raw one', async () => {
-    const emitted = adminRoutes(app).find((candidate) => candidate.path === '/admin/ops');
-    expect(emitted?.component).toBeDefined();
-    expect(emitted?.component).not.toBe(ops.component);
+  const ask = (target: typeof app, granted: readonly string[]) =>
+    adminRoutes(target)
+      .find((candidate) => candidate.path === '/admin/ops')
+      ?.respond({
+        ctx: ctxFor(granted),
+        params: {},
+        url: 'http://localhost/admin/ops',
+        method: 'GET',
+        form: null,
+      });
 
-    const allowed = await emitted?.component?.({
-      ctx: ctxFor(['admin:read', 'ops:read']),
-      params: {},
-      url: '/admin/ops',
-    });
-    expect(allowed).toBe('ops-body');
+  test('the route table exposes a SCREEN — the author’s component is not reachable from it', async () => {
+    const emitted = adminRoutes(app).find((candidate) => candidate.path === '/admin/ops');
+    // No `component` on the emitted route at all: the only way in is `respond`, which decides.
+    expect(emitted === undefined ? [] : Object.keys(emitted)).not.toContain('component');
+
+    const allowed = await ask(app, ['admin:read', 'ops:read']);
+    expect(allowed?.kind === 'document' && allowed.status).toBe(200);
   });
 
   test('a denied actor never reaches the author component', async () => {
@@ -107,14 +119,13 @@ describe('the guard cannot be omitted', () => {
       ],
       auth,
     });
-    const emitted = adminRoutes(spying)[0];
-    const rendered = await emitted?.component?.({
-      ctx: ctxFor(['admin:read']),
-      params: {},
-      url: '/admin/ops',
-    });
+    const refused = await ask(spying, ['admin:read']);
     expect(ran).toBe(false);
-    expect(rendered).not.toBe('ops-body');
+    expect(refused?.kind === 'document' && refused.status).toBe(403);
+
+    // The same screen, an actor who holds the grant: the component DOES run — the spy can fire.
+    await ask(spying, ['admin:read', 'ops:read']);
+    expect(ran).toBe(true);
   });
 
   test('a page declared with no permissions is refused at declaration', () => {
@@ -127,6 +138,7 @@ describe('the guard cannot be omitted', () => {
     expect(() =>
       defineAdmin({
         entities: [post],
+        db: database({ post }, { driver: memoryDriver() }),
         resources: { admin_page_post: { path: '/posts' } },
         pages: [{ ...ops, path: '/posts' }],
         auth,

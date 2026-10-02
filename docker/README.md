@@ -41,7 +41,9 @@ that was about to exit cleanly.
 | File | For |
 |---|---|
 | `Dockerfile` | the framework's **CLI** image: multi-stage → distroless, non-root, 189MB, one binary, no shell. Not an app image |
-| `docker-compose.dev.yml` | optional local Postgres + NATS + MinIO |
+| `docker-compose.dev.yml` | optional local Postgres + NATS + an S3 gateway (Versity), each on a volume |
+| `docker-compose.test.yml` | what the suites measure against: two Postgres servers, Redis, NATS and the same S3 gateway — in RAM, without fsync, silent. CI starts it; so does a laptop |
+| `test-services.env` | the `TEST_*_URL` each of those services is found at. The one place they are written |
 | `docker-compose.prod.yml` | the production topology: one service per role, one box. Point `IMAGE` at an app image |
 | `helm/` | Kubernetes chart with **per-role HPAs** — where `web` and `sync` actually scale out |
 | `deploy-proof/` | milestone 11's proof: `bash docker/deploy-proof/run.sh` scaffolds an app on this tree, installs it into kind with `x deploy --method helm`, and upgrades it under load, failing on one non-2xx. CI's `deploy-proof` job runs it on `main`. Test harness only — nothing here ships |
@@ -57,9 +59,45 @@ DATABASE_URL=postgres://ultimate:ultimate@localhost:5432/ultimate x dev
 ```
 
 Every port in that file binds `127.0.0.1`. The credentials are in the file, so the short
-`'5432:5432'` form put an open Postgres and an open MinIO on every interface the laptop had —
+`'5432:5432'` form put an open Postgres and an open object store on every interface the laptop had —
 and Docker publishes ports with DNAT rules, which a host firewall does not see. To reach the stack
 from another machine, tunnel to it (`ssh -L 5432:localhost:5432 …`) rather than widening the bind.
+
+The S3 service is [Versity S3 Gateway](https://github.com/versity/versitygw) over a directory. A
+directory under `/data` is a bucket, so the volume mounted at `/data/ultimate` is the bucket
+`ultimate`, ready on the first `up`:
+
+```sh
+S3_ENDPOINT=http://127.0.0.1:9000 S3_BUCKET=ultimate S3_FORCE_PATH_STYLE=1 \
+S3_ACCESS_KEY_ID=ultimate S3_SECRET_ACCESS_KEY=ultimate-dev x dev
+```
+
+No `S3_REGION`: the gateway checks the region a request was signed for, an unset region signs for
+`auto`, and `auto` is the region these files give the gateway (`VGW_REGION`). Against an endpoint
+that wants another one, the first write is `X_CONFIG_INVALID` naming the `S3_REGION` to set.
+Production is any S3-compatible endpoint — this file picks a server for a laptop, never for a
+deployment.
+
+## Test services
+
+The live suites skip unless their `TEST_*_URL` is set. To run them, and to run the whole gate as
+CI does:
+
+```sh
+docker compose -f docker/docker-compose.test.yml up -d --wait
+set -a; . docker/test-services.env; set +a
+bun run verify
+docker compose -f docker/docker-compose.test.yml down
+```
+
+| Rule | How |
+|---|---|
+| in RAM | every data directory is a tmpfs; `down` leaves nothing, and there is no volume to prune |
+| no durability | Postgres: `fsync`, `synchronous_commit`, `full_page_writes` off. Redis: no snapshot, no AOF |
+| silent | each server logs nothing it can be told not to, and the container log driver is `none` — `docker logs` has nothing to read. Watch one start with `docker compose -f docker/docker-compose.test.yml up postgres` |
+| one definition | CI's `gate` parts start these same services by name; `scripts/test-services-shape.test.ts` holds the three files to each other |
+
+Start fewer by naming them: `up -d --wait postgres` is all the `unit` step reads.
 
 ## Build and run
 

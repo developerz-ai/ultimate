@@ -5,6 +5,8 @@
 // Re-exported by name from `scripts/secret-compare.ts`, so the rule stays the one import a caller
 // needs and no test has to learn where the split fell.
 
+import { balancedClose } from './balanced-paren';
+
 /**
  * The camelCase SUFFIXES that make a comparison a credential check: `tokenHash`, `keyHash`,
  * `csrfToken`, `apiKey` and `mfaSecret` are each one of these wearing a prefix.
@@ -72,8 +74,47 @@ const isSecretName = (name: string): boolean => SECRET_SUFFIX.test(name) || SECR
 /** Every identifier in an operand's text — `sha256Hex(parsed.secret)` gives three. */
 const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
 
-export const namesASecret = (operand: string): string | undefined =>
-  [...operand.matchAll(IDENTIFIER)].map((one) => one[0]).find(isSecretName);
+/**
+ * The first secret-named identifier in an operand. `element`, when given, is a name that is NOT one
+ * here — an array predicate's own parameter (`predicateElementAt`) — and it is skipped as a bare
+ * identifier only: `entry.candidate` is a property that happens to share the word.
+ */
+export const namesASecret = (operand: string, element?: string): string | undefined =>
+  [...operand.matchAll(IDENTIFIER)].find(
+    (one) => isSecretName(one[0]) && !(one[0] === element && operand[one.index - 1] !== '.'),
+  )?.[0];
+
+/** The one name a predicate's parameter is excused under. Every other secret word still reports. */
+export const PREDICATE_ELEMENT = 'candidate';
+
+/**
+ * `.find((candidate) => …)` and its siblings — the array methods whose callback TESTS an element.
+ * `map`, `forEach` and `reduce` are not here: they build or do, and what they compare is theirs.
+ */
+const PREDICATE_CALL = new RegExp(
+  `\\.(?:find|findLast|findIndex|findLastIndex|filter|some|every)\\s*\\(\\s*\\(?\\s*${PREDICATE_ELEMENT}(?![\\w$])`,
+  'g',
+);
+
+/**
+ * Answers, for an offset in `code`, the name to excuse there: `candidate` inside the parentheses of
+ * a predicate call whose first parameter is named that, nothing anywhere else.
+ *
+ * `candidate` is in the vocabulary for `mfa.ts`'s recovery code. As a predicate's parameter it is
+ * the ELEMENT UNDER TEST — a route, a table, a waiter — and it was 20 of the tree's 22 `candidate`
+ * sites, each one a sentence in the pins table saying "not a secret". Only the name is excused:
+ * `codes.find((candidate) => candidate.hash === hash)` still reports, for `hash`.
+ */
+export function predicateElementAt(code: string): (at: number) => string | undefined {
+  const spans: (readonly [number, number])[] = [];
+  for (const match of code.matchAll(PREDICATE_CALL)) {
+    const open = code.indexOf('(', match.index);
+    const close = balancedClose(code, open);
+    if (close !== -1) spans.push([open, close]);
+  }
+  return (at) =>
+    spans.some(([open, close]) => at > open && at < close) ? PREDICATE_ELEMENT : undefined;
+}
 
 /**
  * An operand that carries no secret bytes, so the comparison against it leaks nothing: `undefined`,

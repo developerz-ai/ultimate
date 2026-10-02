@@ -159,8 +159,10 @@ describe('handle.enqueue through the installed facade', () => {
     setJobsFacade(createJobsFacade({ store, driver }, () => ambient));
 
     const staged = await notify.enqueue({ orgId: 'org-1' });
-    // No queue id yet: the row does not exist until COMMIT, and neither does the relay's work.
-    expect(staged.runId).toBe('');
+    // The ids are allocated at stage time; the ROW does not exist until COMMIT, and neither does
+    // the relay's work.
+    expect(staged.runId).not.toBe('');
+    expect(await driver.introspect?.job(staged.id)).toBeUndefined();
     expect(await relay.tick()).toBe(0);
     expect(((await driver.introspect?.list()) ?? []).length).toBe(0);
 
@@ -170,6 +172,7 @@ describe('handle.enqueue through the installed facade', () => {
     const rows = (await driver.introspect?.list()) ?? [];
     expect(rows.length).toBe(1);
     expect(rows[0]?.idempotencyKey).toBe('notify:org-1');
+    expect([rows[0]?.id, rows[0]?.runId]).toEqual([staged.id, staged.runId]);
 
     // Same call site, no transaction in scope: published directly, no outbox hop.
     ambient = undefined;
@@ -277,6 +280,7 @@ describe('the relay loop', () => {
     for (const key of ['first', 'second', 'third']) {
       await store.stage(tx, {
         id: `row-${key}`,
+        runId: `run-${key}`,
         job: 'notify',
         queue: 'default',
         input: {},
@@ -327,6 +331,7 @@ describe('the relay joins the tick it is stopping', () => {
     const tx = fakeTx();
     await store.stage(tx, {
       id: 'row-parked',
+      runId: 'run-parked',
       job: 'notify',
       queue: 'default',
       input: {},

@@ -72,6 +72,8 @@ export interface JobsListFilter {
   readonly state?: string | undefined;
   readonly name?: string | undefined;
   readonly limit?: string | undefined;
+  /** `jobCursor(lastRow)` of the page before — the keyset the next page seeks from. */
+  readonly after?: string | undefined;
 }
 
 export interface JobsListResult {
@@ -103,6 +105,7 @@ export async function listJobs(
     ...(filter.name === undefined ? {} : { name: filter.name }),
     ...(state === undefined ? {} : { state }),
     ...(limit === undefined ? {} : { limit }),
+    ...(filter.after === undefined ? {} : { after: filter.after }),
   };
   const [depth, rows, deadLetters, backfills] = await Promise.all([
     inspectQueues(driver),

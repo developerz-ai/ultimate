@@ -52,7 +52,7 @@ async function claimOne(
     ...base,
     async nack(jobId, nack) {
       nacks.push(nack);
-      await base.nack(jobId, nack);
+      return base.nack(jobId, nack);
     },
   };
   await driver.enqueue({
@@ -201,6 +201,10 @@ describe('the event poll actually paces a waiting step', () => {
     // `resumeAt - now`. Undeclared, this row would have parked for the whole 30 seconds.
     // `park: true` is what makes it a suspension; `countsAsAttempt: false` only says not to burn
     // an attempt on it, and a limiter shed passes that one alone.
-    expect(harness.nacks()[0]).toEqual({ delayMs: 1_000, countsAsAttempt: false, park: true });
+    expect(harness.nacks()[0]).toMatchObject({
+      delayMs: 1_000,
+      countsAsAttempt: false,
+      park: true,
+    });
   });
 });

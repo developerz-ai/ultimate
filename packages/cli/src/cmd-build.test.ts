@@ -41,7 +41,10 @@ test('every build target has an entry, and `x new` writes every one of them', ()
 
 test('the spawned command names the same file the entry check required', () => {
   const root = '/app';
-  for (const target of BUILD_TARGETS) {
+  // Every target but `prebuilt`, which spawns nothing: it IS the process the image build runs.
+  const spawned = BUILD_TARGETS.filter((target) => target !== 'prebuilt');
+  expect(spawned).toHaveLength(BUILD_TARGETS.length - 1);
+  for (const target of spawned) {
     expect(argsFor(target, { root, tag: 't', out: '/out' }).join(' ')).toContain(
       join(root, BUILD_ENTRY[target]),
     );

@@ -84,30 +84,35 @@ export {
   isBackfill,
   registeredBackfills,
 } from './backfill-registry';
-export type { JobDescriptor } from './describe';
+export type { JobConcurrency, KeyedConcurrency, WhenBusy } from './concurrency';
+export { MAX_CONCURRENCY_KEY_LENGTH, WHEN_BUSY } from './concurrency';
+export type { JobConcurrencyDescriptor, JobDescriptor } from './describe';
 export type {
+  AckOptions,
   ClaimedJob,
+  ClaimIdentity,
   ClaimOptions,
   ConflictPolicy,
   EnqueueRequest,
   EnqueueResult,
   HeartbeatOptions,
   JobDriver,
-  JobFilter,
-  JobIntrospection,
   JobRecord,
   JobState,
   NackOptions,
   QueueStats,
+  SettleBy,
 } from './driver';
 export {
   assertClaimBounds,
   assertClaimQueues,
+  claimOf,
   DEFAULT_QUEUE,
   DEFAULT_VISIBILITY_TIMEOUT_MS,
   isJobState,
   JOB_STATES,
   jobDriver,
+  nackState,
   resetJobDriver,
   setJobDriver,
 } from './driver';
@@ -117,6 +122,24 @@ export type { NatsDriverOptions } from './driver-nats';
 export { createNatsDriver } from './driver-nats';
 export type { PgDriverOptions, PgExecutor } from './driver-pg';
 export { createPgDriver, createPgLeader } from './driver-pg';
+export {
+  SQL_COUNTER_DROP,
+  SQL_COUNTER_FOLD,
+  SQL_COUNTER_TOTALS,
+  SQL_COUNTERS,
+  SQL_JOB_PROGRESS,
+  SQL_JOB_PROMOTE,
+  SQL_JOB_REMOVE,
+  SQL_JOB_REMOVE_MANY,
+  SQL_JOB_REQUEUE_MANY,
+  SQL_PAUSE,
+  SQL_PAUSED,
+  SQL_RESUME,
+  SQL_SCHEDULER_FIRE,
+  SQL_WORKER_ANNOUNCE,
+  SQL_WORKER_FORGET,
+  SQL_WORKERS,
+} from './driver-pg-operator-sql';
 export {
   SQL_ACK,
   SQL_ADVISORY_UNLOCK,
@@ -132,6 +155,7 @@ export {
   SQL_LEADER_ACQUIRE,
   SQL_LEADER_RELEASE,
   SQL_LEASE_ACQUIRE,
+  SQL_LEASE_HOLDERS,
   SQL_LEASE_RELEASE,
   SQL_LEASE_RENEW,
   SQL_NACK,
@@ -148,12 +172,12 @@ export {
 } from './driver-pg-sql';
 export type { RedisDriverOptions } from './driver-redis';
 export { createRedisDriver } from './driver-redis';
+export { signalEnqueued, signalStaged } from './enqueue-signal';
 export type { JobErrorCode } from './errors';
 export {
   ActionJobUnbridgedError,
   CancelUnsupportedError,
   ClaimQueuesEmptyError,
-  ConcurrencyUnenforceableError,
   DriverUnavailableError,
   IdempotencyRequiredError,
   JOB_ERROR_CODES,
@@ -173,10 +197,28 @@ export {
   OutboxNoTxError,
   StepDuplicateError,
 } from './errors';
+export {
+  ConcurrencyUnenforceableError,
+  JobConcurrencyInvalidError,
+  JobConcurrencyKeyInvalidError,
+  JobKeyBusyError,
+} from './errors-concurrency';
 export { JobDeclarationInvalidError } from './errors-declaration';
+export {
+  JobNotPromotableError,
+  JobNotRemovableError,
+  JobOnSettledFailedError,
+  JobPageInvalidError,
+} from './errors-operator';
 export { JobNotRequeueableError } from './errors-requeue';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
-export { createMemoryEventBus, eventBus, publishEvent, setEventBus } from './events';
+export {
+  createMemoryEventBus,
+  eventBus,
+  publishEvent,
+  resetEventBus,
+  setEventBus,
+} from './events';
 export type { PgEventBusOptions } from './events-pg';
 export { createPgEventBus } from './events-pg';
 export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
@@ -193,6 +235,7 @@ export {
   exportPartKey,
   memoryExportSink,
 } from './export-sink';
+export { IDLE_POLL_CEILING_MS } from './idle-backoff';
 export type {
   DeadLetterEntry,
   JobsManifest,
@@ -209,9 +252,45 @@ export {
   inspectQueues,
   retryFromStep,
 } from './inspect';
-export type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } from './job';
+export { pauseQueue, promoteJob, removeJob, resumeQueue } from './inspect-operator';
+export type {
+  BulkFilter,
+  BulkResult,
+  CounterBucketMs,
+  CounterOutcome,
+  CounterTotals,
+  JobCounter,
+  JobFilter,
+  JobIntrospection,
+  JobProgress,
+  PausedName,
+  TaskFire,
+  WorkerAnnouncement,
+  WorkerRecord,
+} from './introspection';
+export {
+  COUNTER_BUCKET_MS,
+  COUNTER_TIERS,
+  DEFAULT_JOB_PAGE,
+  jobCursor,
+  MAX_BULK_ROWS,
+  MAX_ERROR_STACK_LENGTH,
+  MAX_JOB_PAGE,
+  MAX_PROGRESS_NOTE_LENGTH,
+  MAX_TASK_FIRES,
+  MAX_WORKER_IN_FLIGHT,
+  PROGRESS_INTERVAL_MS,
+  PROMOTABLE_STATES,
+} from './introspection';
+export type {
+  AnyJobHandle,
+  JobActor,
+  JobDefinition,
+  JobHandle,
+  JobRunArgs,
+} from './job';
 export { describeJobs, getJob, isJobHandle, job, registeredJobs, resetJobs } from './job';
-export type { HeldLease, LeaseStore, MemoryLeaseStoreOptions } from './leases';
+export type { HeldLease, LeaseStore, MemoryLeaseStore, MemoryLeaseStoreOptions } from './leases';
 export { createMemoryLeaseStore, jobLeaseKey } from './leases';
 export type {
   Lease,
@@ -253,6 +332,7 @@ export type { PgOutboxOptions } from './outbox-pg';
 export { createPgOutboxStore } from './outbox-pg';
 export type { OutboxRelay, RelayOptions } from './outbox-relay';
 export { createOutboxRelay } from './outbox-relay';
+export type { ProgressFn } from './progress';
 export type {
   PurgeDefinition,
   PurgeInput,
@@ -261,26 +341,39 @@ export type {
   PurgeTarget,
 } from './purge';
 export { DEFAULT_PURGE_CRON, purge } from './purge';
+export type { PgListener, QueueWake, QueueWakeOptions } from './queue-wake';
+export { startQueueWake } from './queue-wake';
+export type { IntervalScheduler } from './renewal-timer';
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
-export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
+export { backoffDelayMs, DEFAULT_RETRY, isFinalAttempt, nextRetry, retrySchedule } from './retry';
 export type { JobRetryDecision, JobStopReason } from './retry-classification';
-export { classifyThrown, nextRetryForError } from './retry-classification';
+export { classifyThrown, failureForRow, nextRetryForError } from './retry-classification';
 export type {
   CronResolver,
   DispatchedOccurrence,
-  LeaderElection,
   Scheduler,
   SchedulerOptions,
-  SchedulerState,
 } from './scheduler';
-export { createMemorySchedulerState, createScheduler, soleLeader } from './scheduler';
+export {
+  COUNTER_ROLLUP_INTERVAL_MS,
+  createScheduler,
+  PAUSE_RECHECK_MS,
+} from './scheduler';
+export type { LeaderElection } from './scheduler-leader';
+export { soleLeader } from './scheduler-leader';
+export { nextTaskRun } from './scheduler-occurrences';
 export type { PgLeaseLeaderOptions } from './scheduler-pg';
 export {
   createPgLeaseLeader,
   currentLeader,
   DEFAULT_LEADER_TTL_MS,
+  LEASE_RENEWALS_PER_TTL,
   pgSchedulerState,
 } from './scheduler-pg';
+export type { ScheduledFire, SchedulerState } from './scheduler-state';
+export { createMemorySchedulerState, fireThroughDriver } from './scheduler-state';
+export type { JobCompleted, JobFailed, JobSettled } from './settled';
+export { ON_SETTLED_ATTEMPTS } from './settled';
 export type {
   EventLookup,
   StepApi,

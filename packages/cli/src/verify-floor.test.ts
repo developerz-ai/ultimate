@@ -346,3 +346,41 @@ describe('a floor problem carries the edit that repairs THAT problem', () => {
     expect(finding?.fix).toContain('tsc');
   });
 });
+
+describe('the coverage floor and the step deadlines a repository states', () => {
+  test('both are carried beside the steps, and absent means absent', () => {
+    const floor = parse(
+      '{"steps":["unit"],"coverage":{"lines":95,"funcs":95},"stepTimeoutMs":{"unit":900000}}',
+    );
+    expect(floor.problems).toEqual([]);
+    expect(floor.coverage).toEqual({ lines: 95, funcs: 95, exclude: [] });
+    expect(floor.stepTimeoutMs).toEqual({ unit: 900_000 });
+    const bare = parse('{"steps":["unit"]}');
+    expect(bare.coverage).toBeUndefined();
+    expect(bare.stepTimeoutMs).toBeUndefined();
+  });
+
+  test('a bad one is a problem whose fix names its own key — and survives missing steps', () => {
+    const findings = floorProblemFindings(
+      parse('{"coverage":{"lines":"95","funcs":95},"stepTimeoutMs":{"unit":"15m"}}'),
+    );
+    const fixes = findings.map((finding) => finding.fix);
+    expect(findings).toHaveLength(3);
+    expect(fixes.filter((fix) => fix.includes('"coverage" in x.verify.json'))).toHaveLength(1);
+    expect(fixes.filter((fix) => fix.includes('"stepTimeoutMs" in x.verify.json'))).toHaveLength(1);
+    for (const fix of fixes) expect(fix.startsWith('x verify')).toBe(true);
+  });
+
+  test('a deadline for a step the gate does not run is refused against the declared list', () => {
+    const floor = parseVerifyFloor('{"steps":[],"stepTimeoutMs":{"unit":5,"units":5}}', ['unit']);
+    expect(floor.stepTimeoutMs).toEqual({ unit: 5 });
+    expect(floor.problems).toEqual(['"stepTimeoutMs" names units, which x verify does not run']);
+  });
+
+  test('a vanished suite’s fix is spelled for the entry that raised it', () => {
+    expect(vanishedSuiteFinding('unit').fix.startsWith('x verify --json')).toBe(true);
+    expect(
+      vanishedSuiteFinding('unit', 'bun run verify').fix.startsWith('bun run verify --json'),
+    ).toBe(true);
+  });
+});

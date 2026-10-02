@@ -42,6 +42,10 @@ export {
 } from './errors';
 export type {
   ActionFact,
+  AdminFact,
+  AdminResourceFact,
+  AdminRouteFact,
+  AdminScopeFact,
   ChannelFact,
   ColumnFact,
   EntityFact,

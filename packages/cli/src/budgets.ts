@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
 import {
+  describeRoutes,
   formatBytes,
   parseByteBudget,
   SPECULATION_RULES_TYPE,
@@ -73,6 +74,25 @@ const chainOf = (stats: RouteStats): string =>
   stats.heaviestChain === undefined ? 'unknown import chain' : stats.heaviestChain.join(' -> ');
 
 const jsBudgetOf = (route: RouteFact): number | null => parseByteBudget(route.budget?.js);
+
+/** Which file declares a route, by URL — the loaded app's route table, read when the step runs. */
+export type RouteFileOf = (url: string) => string | undefined;
+
+const declaredFileOf: RouteFileOf = (url) =>
+  describeRoutes().find((route) => route.path === url && route.mount === undefined)?.file;
+
+const KB = 1024;
+
+/**
+ * The paste, not the advice: the file, the literal to set (the measured bytes rounded UP to a
+ * whole kb, so the raise is the smallest that clears) and the comment `bun run budget-raises`
+ * reads above it. The other way out stays beside it — a raise is axiom 9's to allow, not to force.
+ */
+function exceededJsFix(url: string, file: string | undefined, bytes: number): string {
+  const where = file ?? `the file declaring ${url}`;
+  const kb = Math.ceil(bytes / KB);
+  return `edit ${where} — set budget: { js: '${String(kb)}kb' } with // measured: ${String(bytes)} B (x build --target static) — why: <the function it buys> directly above it; or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'`;
+}
 
 /** Which budgets the route declared, for a cause line that names what went unmeasured. */
 function declaredBudgets(js: number | null, lcp: number | undefined): string {
@@ -169,11 +189,15 @@ function ownCodeFinding(url: string, unmeasured: readonly UnmeasuredRoute[]): Fi
  * each failure's code when it had one. Optional because the report is written beside the stats
  * and can be absent for the same reason; with it, a route whose measurement failed on a code in
  * `REPORTED_BY_OWN_CODE` is reported under that code, with the build's own cause and fix.
+ *
+ * `fileOf` names the file an `X_BUDGET_EXCEEDED` fix edits: the step runs after the app loaded,
+ * so render's route table already holds it. A test hands its own.
  */
 export function checkBudgets(
   manifest: Manifest,
   stats: BuildStats | undefined,
   unmeasured: readonly UnmeasuredRoute[] = [],
+  fileOf: RouteFileOf = declaredFileOf,
 ): readonly Finding[] {
   const byPath = new Map((stats?.routes ?? []).map((route) => [route.path, route]));
   // Routes no build can weigh by construction (`UnmeasuredRoute.weighable`): printed by the step,
@@ -205,7 +229,7 @@ export function checkBudgets(
       findings.push({
         code: 'X_BUDGET_EXCEEDED',
         cause: `${route.url} ships ${formatBytes(measured.jsBytes)} of JS (minified, uncompressed) over a ${formatBytes(js)} budget via ${chainOf(measured)}`,
-        fix: `x routes --json to see the chain, then move the heavy import behind hydrate: 'interaction'`,
+        fix: exceededJsFix(route.url, fileOf(route.url), measured.jsBytes),
         docs: ERROR_DOCS_URL,
         at: route.url,
       });

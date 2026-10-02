@@ -6,10 +6,8 @@ no ninth primitive, and no ordinal here to go stale when the next factory lands.
 
 ```ts
 import { t } from '@ultimat3/schema';
-import type { StorageDriver } from '@ultimat3/storage';
 import { scrape, storageSessionStore } from '@ultimat3/scraping';
-
-declare const disk: StorageDriver;
+import { disk } from '@ultimat3/storage';
 
 const orderPage = t.object({
   rows: t.array(t.object({ id: t.string, total: t.number })),
@@ -29,7 +27,8 @@ export const dailyOrders = scrape({
   secrets: ['SHOP_PASSWORD'],
   expect: { minRows: 1, maxDrop: 0.5 },
   auth: {
-    store: storageSessionStore(disk),
+    // A thunk: the app's disks exist once boot ran `defineStorage()`, after this module loaded.
+    store: storageSessionStore(() => disk('sessions')),
     login: async ({ page, secrets, prompt }) => {
       await page.goto('https://shop.example.com/login');
       await page.fill('#user', 'ops@example.com');
@@ -84,6 +83,168 @@ carry goes on the request, `http.request(url, { headers })`.
 Both legs replay from **one** fixture directory (`fixtureBrowser(dir)`), so a hybrid run — browser
 login, session handoff, HTTP bulk fetch — is tested end to end. Both legs apply the same robots
 gate, offline included.
+
+## A session a service is built on
+
+One connection, one run at a time, on its own exit, in a browser rented for that run — with a
+person or an OTP source answering the site mid-run and a `usage` block on the result. Every piece
+is a field on `scrape()` or on its driver; there is no second factory.
+
+```ts
+import { t } from '@ultimat3/schema';
+import type {
+  CdpLauncherLike,
+  CdpResolver,
+  PromptRequest,
+  ScrapeDriver,
+  ScrapeUsage,
+} from '@ultimat3/scraping';
+import {
+  answerPrompt,
+  eventPrompt,
+  fixtureBrowser,
+  remoteBrowser,
+  scrape,
+  storageSessionStore,
+} from '@ultimat3/scraping';
+import { disk } from '@ultimat3/storage';
+
+declare const puppeteer: CdpLauncherLike;
+/** Set where recordings stand in for the browser: `bun test`, `x dev`, the app's own gate. */
+declare const fixtures: string | undefined;
+/** The app's own provider client, and its own "a prompt is pending" row. Neither ships. */
+declare const provider: {
+  create(request: {
+    tag: string | undefined;
+    proxy: string | undefined;
+    signal: AbortSignal | undefined;
+  }): Promise<{ id: string; connectUrl: string; priceCents: number }>;
+  end(id: string): Promise<void>;
+};
+declare function promptPending(request: PromptRequest): Promise<void>;
+/** The app's own rows: the exit is a `.sealed()` column on the connection, read by id. */
+declare function exitOf(connectionId: string): Promise<string | undefined>;
+declare function recordRun(run: {
+  runId: string;
+  connectionId: string;
+  outcome: string;
+  code?: string | undefined;
+  usage?: ScrapeUsage | undefined;
+}): Promise<void>;
+
+// A browser rented per session. `release` runs exactly once, whatever the run did.
+const rent: CdpResolver = async ({ runId, egress, signal }) => {
+  const rented = await provider.create({ tag: runId, proxy: egress, signal });
+  return {
+    cdpUrl: rented.connectUrl,
+    release: () => provider.end(rented.id),
+    cost: { minor: rented.priceCents, currency: 'USD' },
+  };
+};
+
+const browser: ScrapeDriver =
+  fixtures === undefined
+    ? remoteBrowser({ launcher: puppeteer, cdpUrl: rent })
+    : fixtureBrowser(fixtures);
+
+const waitForAnswer = eventPrompt({ timeout: 300_000 });
+
+export const syncAccounts = scrape({
+  name: 'accounts.sync',
+  // IDS only. A proxy URL carries its account, and the input is the queue row.
+  input: t.object({ connectionId: t.uuid, orgId: t.uuid }),
+  extract: t.object({ id: t.string }),
+  idempotencyKey: ({ connectionId }) => `accounts:${connectionId}`,
+  tenant: ({ orgId }) => orgId,
+  allowHosts: ['bank.example'],
+  driver: browser,
+  // The exit THIS run leaves through, looked up IN THE WORKER under the job's tenant. Both legs
+  // and the robots read dial it.
+  egress: ({ connectionId }) => exitOf(connectionId),
+  // One session per connection: a second run of the same one is `failed`, X_JOB_KEY_BUSY.
+  concurrency: { key: ({ connectionId }) => connectionId, limit: 1, whenBusy: 'fail' },
+  auth: {
+    // Declaring a store IS what persists the session — sealed under the app's master key.
+    store: storageSessionStore(() => disk('sessions')),
+    key: ({ connectionId }) => connectionId,
+    login: async ({ page, prompt }) => {
+      await page.goto('https://bank.example/login');
+      await page.fill('#otp', await prompt('sms code'));
+    },
+  },
+  // Say a prompt is pending, then wait for its answer on the job event bus — browser open.
+  prompt: async (request) => {
+    await promptPending(request);
+    return waitForAnswer(request);
+  },
+  async run({ page, http }) {
+    await page.goto('https://bank.example/accounts');
+    const body = await (await http.request('https://bank.example/api/accounts')).parse(
+      t.object({ rows: t.array(t.object({ id: t.string })) }),
+    );
+    return body.rows;
+  },
+  // How the run ENDED, told once: the report with its usage, or the code it failed with.
+  async onSettled(settled) {
+    if (settled.input === undefined) return;
+    const run = { runId: settled.runId, connectionId: settled.input.connectionId };
+    await recordRun(
+      settled.outcome === 'completed'
+        ? { ...run, outcome: settled.outcome, usage: settled.result.usage }
+        : { ...run, outcome: settled.outcome, code: settled.code, usage: settled.usage },
+    );
+  },
+});
+
+/** The body of the app's own policy-checked action: the event name is not an authorization. */
+export const answer = (input: { runId: string; index: number; answer: string }) =>
+  answerPrompt(input);
+```
+
+| Field | Rule |
+|---|---|
+| `egress` | `(input, ctx) => string \| undefined`, sync or async, called in the WORKER under the job's tenant — so the input carries an id and a row carries the exit. An exit whose password is also in the input rode the queue payload and is refused before the browser opens: `X_SCRAPE_EGRESS_IN_PAYLOAD`, terminal. Reaches the driver as `SessionInit.proxy` and wins over the driver's `proxy`. A URL with credentials never reaches the process arguments: a launched browser answers the proxy through `page.authenticate()`, and a launcher without it is `X_SCRAPE_EGRESS_UNSUPPORTED` |
+| `remoteBrowser({ cdpUrl })` | a fixed URL, or a `CdpResolver`: called once per `open()` with `{ scrape, runId, egress, signal }`; `release()` runs once — in `close()` after the browser is quit, or at once when the attach fails. A `release()` that throws is logged `scrape.browser.release_failed` (`code`, `driver`, `origin` as scheme and host) through `SessionInit.logger`, which every driver now requires. A fixed URL handed a different exit is `X_SCRAPE_EGRESS_UNSUPPORTED` |
+| `concurrency` | the job's own field, passed through: a number, or `{ key, limit, whenBusy }` |
+| `auth.store` | `storageSessionStore(() => disk('sessions'), { prefix?, keySource? })` — a THUNK, read per call: a scrape is declared when its module loads and the app's disks exist after boot. Seals with core's `seal()`, purpose `SESSION_SEAL_PURPOSE`. Anything in the bucket that is not its own sealed record for that key is burned; no master key is `X_SEAL_KEY_MISSING` before the browser opens. `artifacts.storage` is the same thunk |
+| `onSettled` | the job's own hook (`@ultimat3/jobs`), with what a scrape adds: `completed` hands over the `ScrapeReport`; `dead-lettered` / `dropped` / `refused` carry `code` and the last attempt's `usage` (`undefined` for `refused` — the body never ran). After the row is settled, under the job's tenant, **at most once** across a crash, and a hook that throws changes nothing |
+| `run({ progress, finalAttempt })` | the job's own, passed through |
+| `prompt` | `eventPrompt({ timeout, pollMs?, bus?, keySource?, env? })` polls the event bus in process — never `step.waitForEvent`, which would close the browser. An in-memory bus (`stored: false`) is refused outside development and test (`X_DRIVER_UNAVAILABLE`): the answer comes from another process. Event `promptEventName(runId, index)`; answered by `answerPrompt({ runId, index, answer })`, sealed for that one name. Timeout is `X_SCRAPE_PROMPT_UNANSWERED` |
+| the bus | the **stored** one (`createPgEventBus`) wherever the worker and the answering process differ. Every `x` boot installs it |
+
+`PromptRequest` carries the run's `input` and `runId` — what ties a prompt to the app's own row
+for the run — and `index`, `clock`, `signal` and `keepAlive()` beside `label`, `scrape` and `url`:
+what any handler that waits needs: wait on the run's clock, stop on the run's
+signal, and call `keepAlive()` between polls so the wedge watchdog and a rented browser both keep
+seeing activity. `auth.login` and `auth.validate` are handed `runId` beside `input`.
+
+`ScrapeReport.usage` is `{ browserMs, navigations, httpRequests, bytesIn, promptsAnswered,
+browserCost? }`. `bytesIn` is the HTTP leg's response bodies; `browserCost` is the resolver's
+`cost`, a `Money` value parsed at the boundary, so a float is refused. The counts ride the
+`scrape.ok` and `scrape.failed` log lines too — a failed run has no report and was billed anyway,
+which is why `onSettled` hands a failed run its last attempt's `usage`. No quota reads them.
+
+### The clock, and a test's
+
+A run waits on the PROCESS's clock — `scrapeClock()`, the system's — unless its definition pins
+one with `clock:`. A test replaces it the way it replaces the queue driver:
+
+```ts
+import { noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
+
+setScrapeClock(noWaitClock); // in a beforeEach
+resetScrapeClock(); // in the afterEach
+```
+
+| Clock | Sleeping | For |
+|---|---|---|
+| `systemScrapeClock` | waits | production |
+| `noWaitClock` | one turn of the event loop, whatever was asked; `now()` and deadlines are real | a test whose run waits on something that really happens in the same process — an answer the test publishes |
+| `testClock()` | advances virtual time and yields a microtask | a test of a timeout: thirty seconds pass in none |
+
+A third-party driver takes part by reading three `SessionInit` fields: dial `proxy` or throw
+`egressUnsupported()`, pass `usage` to `pageOverTarget` and its HTTP transport, and answer
+`browserCost` on the session it returns.
 
 ## Reading elements, frames, and the network condition
 
@@ -199,14 +360,17 @@ on a machine with no browser — the case CI is.
 | `page.ts` / `page-over-target.ts` | the driver-blind vocabulary, implemented once |
 | `target.ts` / `driver.ts` | the two seams: what a driver answers, and what a session is |
 | `driver-cdp.ts` / `cdp-*.ts` | the real browser, over a structural CDP port |
-| `driver-fake.ts` / `driver-fixture.ts` / `html-*.ts` | the offline drivers, on Bun's `HTMLRewriter` |
+| `driver-fake.ts` / `driver-recorded.ts` / `html-*.ts` | the offline drivers, on Bun's `HTMLRewriter` |
 | `http.ts` / `http-recorded.ts` | the second transport, live and replayed |
-| `auth.ts` / `session-state.ts` | acquire → persist → reuse → validate → burn. The session key encodes each part (`<sanitised>.<digest>`), so two account names that differ only outside `[a-zA-Z0-9._-]` are two sessions |
-| `secrets.ts` / `browser-record.ts` | what may leave this package, and how a browser's own string map is read |
+| `auth.ts` / `session-state.ts` | acquire → persist → reuse → validate → burn. The session key encodes each part (`<sanitised>.<digest>`), so two account names that differ only outside `[a-zA-Z0-9._-]` are two sessions. A stored session is sealed |
+| `event-prompt.ts` | `eventPrompt()` and `answerPrompt()`: a prompt answered from another process, over the job event bus, with the browser open |
+| `cdp-resolver.ts` | a browser rented per session: acquired once, released once |
+| `usage.ts` | what one run used, counted where the work happens |
+| `secrets.ts` / `url-secrets.ts` / `browser-record.ts` | what may leave this package — declared secrets, values learned mid-run (`conceal`), the credential-bearing parts of a URL — and how a browser's own string map is read |
 | `expect.ts` | the silent-green alarm |
 | `watchdog.ts` | the wedge and zombie discipline |
 | `capture-clip.ts` | the one framing rule — crop, whole page, or a refusal — checked before any driver sees it |
-| `errors.ts` / `error-throws.ts` | this package's `X_*` codes and their retry classification |
+| `errors.ts` / `error-throws.ts` / `error-throws-session.ts` | this package's `X_*` codes and their retry classification |
 
 ## Extending it — there is no plugin API, and none is needed
 
@@ -247,6 +411,7 @@ export const myBrowser = (options: MyOptions): ScrapeDriver => ({
         secrets: init.secrets,
         robots: init.robots,
         signal: init.signal,
+        usage: init.usage,
       }),
       http: myHttp(target, init),
       close: () => target.close(),
@@ -260,10 +425,8 @@ export const myBrowser = (options: MyOptions): ScrapeDriver => ({
 ```ts
 // apps/web/shared/base/bank-scrape.ts — the app's convention, written once
 import type { JobHandle } from '@ultimat3/jobs';
-import type { StorageDriver } from '@ultimat3/storage';
 import { scrape, type ScrapeDefinition } from '@ultimat3/scraping';
-
-declare const disk: StorageDriver;
+import { disk } from '@ultimat3/storage';
 
 export const bankScrape = <I, R>(over: ScrapeDefinition<I, R>): JobHandle<I> =>
   scrape<I, R>({
@@ -271,7 +434,7 @@ export const bankScrape = <I, R>(over: ScrapeDefinition<I, R>): JobHandle<I> =>
     rate: 0.5,
     block: ['image', 'media', 'font'],
     expect: { minRows: 1, maxDrop: 0.5 },
-    artifacts: { storage: disk },
+    artifacts: { storage: () => disk('artifacts') },
     ...over,
   });
 ```
@@ -297,6 +460,15 @@ register-a-plugin call ([`docs/idea/19-mechanism-not-convention.md`](../../docs/
 Every code carries a cause, a runnable `fix:` and a retry classification — see `src/errors.ts`.
 `X_SCRAPE_YIELD_COLLAPSED`, `X_SCRAPE_AUTH_FAILED`, `X_SCRAPE_BLOCKED` and `X_SCRAPE_PAGE_CRASHED`
 are the four worth knowing by heart.
+
+`X_SCRAPE_EGRESS_IN_PAYLOAD` is the one that is about the DECLARATION rather than the site: the
+exit's password was readable out of the run's own input, so it is in `x_jobs` in the clear.
+Enqueue the id of the row that holds the exit, resolve it in `egress`, and rotate the credential.
+
+`X_SCRAPE_CDP_ATTACH_FAILED` names the endpoint by **scheme and host only**, for a fixed `cdpUrl` as
+for a resolved one, and cuts every credential-bearing part of the URL out of the launcher's own
+message: a provider's connect URL is its access token, and this cause is written to the dead-letter
+row.
 
 ### Error classes
 

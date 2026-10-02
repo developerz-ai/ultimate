@@ -151,7 +151,31 @@ export async function appModulePaths(root: string): Promise<readonly string[]> {
   return found.includes(index) ? [index, ...found.filter((path) => path !== index)] : found;
 }
 
-export async function loadApp(root: string): Promise<LoadedApp> {
+/** What one scan of the app's modules imported, and what would not. */
+export interface AppScan {
+  /** App-root-relative POSIX paths of every module that imported, sorted. */
+  readonly files: readonly string[];
+  /** Modules that would not import, and primitives that would not register. */
+  readonly findings: readonly Finding[];
+}
+
+export interface ScanOptions {
+  /**
+   * Records each module's bytes and pins so a LATER scan can evict what changed: a tool's and
+   * `x dev`'s. A container scans once per process, so its boot passes `false` and neither reads a
+   * module before importing it nor hashes one (`role-load.ts`).
+   */
+  readonly track: boolean;
+  /** `false` leaves a module out: neither read nor imported. Absent: every module is imported. */
+  readonly include?: (absolute: string) => boolean | Promise<boolean>;
+}
+
+/**
+ * The scan itself: every app module `options.include` admits, imported in `appModulePaths` order
+ * and registered. `loadApp` is this plus the facts a tool reads; a container role calls it through
+ * `loadAppForRole`, which decides what the role imports.
+ */
+export async function scanAppModules(root: string, options: ScanOptions): Promise<AppScan> {
   // Before any import: a stylesheet's surface is read below the app root, never off its absolute
   // path — under the container's `WORKDIR /app` that path's first segment is `app/`, and every
   // sheet, the site's included, classified as app CSS.
@@ -164,7 +188,7 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   const findings: Finding[] = [];
   // A rescan: whatever changed on disk since the last one, and everything importing it, leaves
   // Bun's module registry before the loop below imports it again.
-  if (registered.size > 0) await evictChanged(root);
+  if (options.track && registered.size > 0) await evictChanged(root);
 
   for (const absolute of await appModulePaths(root)) {
     // A SEGMENT, never a substring: an app checked out under
@@ -177,15 +201,19 @@ export async function loadApp(root: string): Promise<LoadedApp> {
     if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
       continue;
     }
+    if (options.include !== undefined && !(await options.include(absolute))) continue;
     // The source is read BEFORE the import, on the file's first pass and for every route module —
     // a rescan of any other registered module reads nothing here. What is recorded is bound to the
     // bytes the module was evaluated from, and a read AFTER the import cannot know which bytes
     // those were: a save landing between the two bound V1's component to V2's hash, so the next
     // scan saw nothing to do and served V1 until the save after. Read first, the worst case is one
-    // re-import the next tick, of a file that did change.
+    // re-import the next tick, of a file that did change. An untracked scan reads nothing here:
+    // no save lands in an image, so a route module's text is read after its import, once.
     const first = !registered.has(absolute) && !failures.has(absolute);
     const snapshot =
-      first || routeModules.has(absolute) ? await Bun.file(absolute).text() : undefined;
+      options.track && (first || routeModules.has(absolute))
+        ? await Bun.file(absolute).text()
+        : undefined;
     if (first && snapshot !== undefined) await trackModule(absolute, snapshot, root);
     let module: Record<string, unknown>;
     try {
@@ -195,16 +223,26 @@ export async function loadApp(root: string): Promise<LoadedApp> {
       continue;
     }
     files.push(file);
-    const finding = await register(absolute, file, module, snapshot);
+    const finding = await register(absolute, file, module, snapshot, options.track);
     if (finding !== undefined) findings.push(finding);
   }
 
   files.sort();
+  return { files, findings };
+}
+
+export async function loadApp(root: string): Promise<LoadedApp> {
+  const scan = await scanAppModules(root, { track: true });
+  // After the scan, because the scan is what mounts an admin: a declaration the globs above cannot
+  // reach is a finding here, owned by `manifest` like every other load finding. Imported here, not
+  // at the top: a container boots through `scanAppModules` and never asks (`serve-graph.test.ts`).
+  const { unscannedAdminFindings } = await import('./unscanned-admin');
+  const findings = [...scan.findings, ...(await unscannedAdminFindings(root))];
   await trackStylesheets(root);
   // An app that imported NOTHING and reported nothing is a registry every later step reads as
   // empty-and-fine. With an `app.config.ts` beside it, that is never what the author meant.
   if (
-    files.length === 0 &&
+    scan.files.length === 0 &&
     findings.length === 0 &&
     registersNothing() &&
     (await Bun.file(join(root, APP_CONFIG_FILE)).exists())
@@ -214,7 +252,7 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   // Read after the loop, never before it: `configureLocales` runs on the app's own import.
   return {
     root,
-    files,
+    files: scan.files,
     errorCodes: await appErrorCodes(root),
     defaultLocale: localeConfig().fallback,
     findings,
@@ -240,13 +278,15 @@ const emptyAppFinding = (root: string): Finding => ({
 /**
  * Registers a module once; every later call replays whatever the first one reported — except for
  * a route module, which a later call re-registers when the import handed back a new instance.
- * `snapshot` is the source read before this import: always for a first pass and a route module.
+ * `snapshot` is the source read before this import: always for a first pass and a route module of
+ * a TRACKED scan. An untracked one hands none, and a route module's text is read here instead.
  */
 async function register(
   absolute: string,
   file: string,
   module: Record<string, unknown>,
   snapshot: string | undefined,
+  track: boolean,
 ): Promise<Finding | undefined> {
   const previous = failures.get(absolute);
   if (previous !== undefined) return previous;
@@ -255,11 +295,15 @@ async function register(
   try {
     const config = module['config'];
     const route = isRouteConfig(config) ? config : undefined;
-    if (route !== undefined && snapshot !== undefined) {
-      registerRouteModule(file, module, route, snapshot);
+    if (route !== undefined) {
+      registerRouteModule(file, module, route, snapshot ?? (await Bun.file(absolute).text()));
       routeModules.set(absolute, module);
     }
-    if (definesPrimitive(module, route !== undefined) || file === API_INDEX) pinModule(absolute);
+    // A pin is the reload graph's: it stops an eviction a process that never rescans never runs,
+    // and deciding it walks every export of every module against the entity registry.
+    if (track && (definesPrimitive(module, route !== undefined) || file === API_INDEX)) {
+      pinModule(absolute);
+    }
     registerActions(module);
     registerQueries(module);
     return undefined;

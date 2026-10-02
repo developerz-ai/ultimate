@@ -200,7 +200,7 @@ describe('a fleet-slot renewal that answers false AFTER the run settled', () => 
       renewIntervalMs: 1,
     });
     const claimed = { id: 'job-1', name: 'settledJob' } as ClaimedJob;
-    expect(await slots.acquire(claimed)).toBe(true);
+    expect(await slots.acquire(claimed)).toEqual({ outcome: 'granted' });
 
     const error = spyOn(logger, 'error');
     let lost: HeldLease | undefined;

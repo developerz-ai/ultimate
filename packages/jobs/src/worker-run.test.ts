@@ -6,10 +6,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import type { ClaimedJob, JobDriver } from './driver';
+import type { ClaimedJob } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import type { HeldLease } from './leases';
+import type { IntervalScheduler } from './renewal-timer';
 import type { FleetSlots } from './worker-fleet-slots';
 import { runClaimedJob } from './worker-run';
 
@@ -29,7 +30,7 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
 class SlotStoreDown extends Error {}
 
 const slotsThatThrowOnRenewal = (): FleetSlots => ({
-  acquire: () => Promise.resolve(true),
+  acquire: () => Promise.resolve({ outcome: 'granted' }),
   startRenewal: (_jobId: string, _onLost?: (slot: HeldLease) => void): (() => void) => {
     throw new SlotStoreDown('lease store unreachable');
   },
@@ -51,23 +52,21 @@ const claimedOf = (id: string): ClaimedJob => ({
   updatedAt: 0,
   claimedAt: 0,
   visibleAt: 30_000,
+  claimedBy: 'worker-1',
+  claim: 1,
 });
 
-/** A driver that counts renewals, so a heartbeat nobody stopped is visible as ticks after the throw. */
-function countingDriver(): JobDriver & { beats: () => number } {
-  const driver = createMemoryDriver();
-  let beats = 0;
-  return {
-    ...driver,
-    beats: () => beats,
-    heartbeat: (jobId, options) => {
-      beats += 1;
-      return driver.heartbeat(jobId, options);
-    },
+/** The renewal seam, holding what is armed: a heartbeat nobody stopped is a tick left behind. */
+function armedTicks(): IntervalScheduler & { readonly armed: () => number } {
+  const ticks = new Set<() => void>();
+  const schedule: IntervalScheduler = (tick) => {
+    ticks.add(tick);
+    return () => {
+      ticks.delete(tick);
+    };
   };
+  return Object.assign(schedule, { armed: () => ticks.size });
 }
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 afterEach(() => {
   resetJobs();
@@ -83,24 +82,22 @@ describe('a run hands back everything it took', () => {
       retry: { attempts: 1, jitter: false },
       run: () => Promise.resolve(),
     });
-    const driver = countingDriver();
+    const schedule = armedTicks();
 
     await expect(
       runClaimedJob({
-        driver,
+        driver: createMemoryDriver(),
         claimed: claimedOf('job-1'),
         context,
         fleetSlots: slotsThatThrowOnRenewal(),
         workerId: 'worker-1',
         visibilityTimeoutMs: 30_000,
-        // Short enough that a leaked interval ticks several times inside the window below, and
-        // real time rather than the frozen clock — `startRenewalTimer` is `setInterval`.
         heartbeatIntervalMs: 5,
+        schedule,
       }),
     ).rejects.toBeInstanceOf(SlotStoreDown);
 
-    const afterThrow = driver.beats();
-    await sleep(60);
-    expect(driver.beats()).toBe(afterThrow);
+    // Asked of the seam, not of a wall-clock window: nothing the run armed is still armed.
+    expect(schedule.armed()).toBe(0);
   });
 });

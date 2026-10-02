@@ -18,17 +18,42 @@ export interface RenewalTimer {
   stop(): void;
 }
 
+/**
+ * Calls `tick` every `intervalMs` until the canceller it returns runs. The seam a lease, a fleet
+ * slot and a registry row renew through: `createWorker({ schedule })` hands one in, and the
+ * `runJobs` fixture's is driven by the frozen clock, so a test renews when time passes and never
+ * on the wall clock.
+ */
+export type IntervalScheduler = (tick: () => void, intervalMs: number) => () => void;
+
+/**
+ * The production seam: a real interval, UNREFED — never the thing keeping a drained process alive.
+ * This interval is armed from inside a job run, so a drain that ABANDONS the worker's hook leaves
+ * the run — and this timer — with nobody left to call `stop()`: refed, it holds the event loop open
+ * past every phase of the shutdown, and the kubelet's SIGKILL becomes the exit. `sync-node.ts`
+ * unrefs all three of its timers and `lifecycle-deadline.ts` its own for the same reason. A
+ * renewal is bookkeeping for work that is already over by then; nothing is lost by letting go.
+ */
+export const realIntervalScheduler: IntervalScheduler = (tick, intervalMs) => {
+  const timer = setInterval(tick, intervalMs);
+  timer.unref?.();
+  return () => {
+    clearInterval(timer);
+  };
+};
+
 export function startRenewalTimer(
   intervalMs: number,
   renew: () => void | Promise<void>,
+  schedule: IntervalScheduler = realIntervalScheduler,
 ): RenewalTimer {
   let stopped = false;
-  const timer = setInterval(() => {
+  const cancel = schedule(() => {
     // `Promise.resolve().then(renew)` and never `void renew()`: a `renew` that throws SYNCHRONOUSLY
     // escapes before any `.catch` its body chained exists. `worker-fleet-slots.ts` guards the
     // promise chain and cannot guard this — `LeaseStore.renew` is an injected seam, and a store
     // that throws on a closed pool throws on the call, not in the chain. Nothing sits above a
-    // `setInterval` callback, so that throw is an uncaught exception in the timer that was going
+    // timer callback, so that throw is an uncaught exception in the timer that was going
     // to keep the lease alive. The shape `outbox.ts`'s tick loop already uses.
     void Promise.resolve()
       .then(renew)
@@ -39,19 +64,12 @@ export function startRenewalTimer(
         logger.error('jobs.renewal.raised', { error: renderThrowable(error) });
       });
   }, intervalMs);
-  // Never the thing keeping a drained process alive. This interval is armed from inside a job run,
-  // so a drain that ABANDONS the worker's hook leaves the run — and this timer — with nobody left
-  // to call `stop()`: refed, it holds the event loop open past every phase of the shutdown, and
-  // the kubelet's SIGKILL becomes the exit. `sync-node.ts` unrefs all three of its timers and
-  // `lifecycle-deadline.ts` its own for the same reason. A renewal is bookkeeping for work that is
-  // already over by then; nothing is lost by letting the process go.
-  timer.unref?.();
   return {
     stopped: () => stopped,
     stop(): void {
       if (stopped) return;
       stopped = true;
-      clearInterval(timer);
+      cancel();
     },
   };
 }

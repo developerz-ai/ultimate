@@ -9,6 +9,7 @@ import {
   MissingSubcommandError,
   UnknownCommandError,
 } from './errors';
+import { quoteArg } from './shell-quote';
 import type { Surface } from './templates';
 import { camel, kebab } from './templates/naming';
 
@@ -46,6 +47,24 @@ export function assertSurfaceSupported(kind: Generator, surface: Surface, name: 
     // The caller's own name, not `<name>`: a `fix:` is copied and run verbatim, and `x g resource
     // <name>` is a shell redirect (`bash: name: No such file or directory`), not a command.
     fix: `x g resource ${name} && x g route ${name} --surface site`,
+  });
+}
+
+/**
+ * `--live` is the query generator's. A resource slice already ships a live list query, so the flag
+ * on any other generator changed nothing — and a flag accepted and ignored is a second spelling of
+ * the same command that an agent then believes did something.
+ */
+export function assertLiveSupported(kind: Generator, live: boolean, name: string): void {
+  if (!live || kind === 'query') return;
+  throw new BadFlagError({
+    flag: 'live',
+    command: `g ${kind}`,
+    reason:
+      kind === 'resource'
+        ? "--live is the query generator's: a resource slice already ships a live list query"
+        : "--live is the query generator's: it declares a query live",
+    fix: `x g query ${quoteArg(`${name}-feed`)} --feature ${quoteArg(name)} --live`,
   });
 }
 

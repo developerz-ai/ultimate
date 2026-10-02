@@ -9,7 +9,12 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'no
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
 
-/** Relative to the process's cwd — the app root for every `x` command. `.x/` is gitignored. */
+/**
+ * Relative to the process's cwd — the app root for every `x` command. `.x/` is gitignored, and in
+ * a container it is the STATE directory a topology mounts a tmpfs over, so an image's own entries
+ * live elsewhere: the image build points this cache at its prebuilt store through
+ * `setSassCacheDir`, and the container's boot points it back at the same place.
+ */
 export const SASS_CACHE_DIR = join('.x', 'cache', 'sass');
 
 /** Bumped when the entry shape changes, so an old entry is a miss and never a misread. */
@@ -153,11 +158,25 @@ export function cachedSassCompile(
   assetsValid: AssetCheck = () => false,
 ): SassOutput {
   const dir = cacheDir();
-  if (dir === null) return compile();
+  if (dir === null) return counted(compile);
   const file = join(dir, `${sha256(key)}.json`);
   const hit = readHit(file, assetsValid);
   if (hit !== undefined) return hit;
-  const output = compile();
+  const output = counted(compile);
   store(dir, file, output);
   return output;
 }
+
+let compilations = 0;
+
+const counted = (compile: () => SassOutput): SassOutput => {
+  compilations += 1;
+  return compile();
+};
+
+/**
+ * How many times this process ran Sass rather than reading a stored result. A container booted
+ * from a prebuilt image answers 0; anything else is a boot that compiled what the image build
+ * should have, and the number is what its log line reports.
+ */
+export const sassCompilations = (): number => compilations;

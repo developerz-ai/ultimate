@@ -1,23 +1,20 @@
 // `/admin/ops` — the page no generator would have written, declared as a `pages:` entry so the
 // frame owns its route and its authz. An ORDINARY component: there is no `defineRoute` here and no
 // permission check either, deliberately. `pages:` is what puts it in the admin's route table and
-// `guardedPage()` is what decides it, and `AdminPageProps.ctx` is required by the type, so the
+// `guardedScreen()` is what decides it, and `AdminPageProps.ctx` is required by the type, so the
 // wrapper cannot be stepped around by calling this function directly.
 //
-// It renders three facts a CRUD table cannot: the cron schedule with its zone, the uploads
-// breakdown the sweep acts on, and the demo-reset cadence. Nothing here re-derives anything — the
-// schedule is `registeredTasks()`, the exact table `x tasks list --json` prints, so the page and
-// the CLI can never disagree.
+// It renders the fact a CRUD table cannot: the uploads breakdown the hourly sweep acts on. The
+// schedule that sweep runs on is the jobs dashboard's tasks screen (`/admin/jobs/tasks`), which
+// every admin carries — it was drawn here too until the framework shipped one.
 
 import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';
 import { t } from '@ultimat3/i18n';
-import { registeredTasks } from '@ultimat3/jobs';
 import type { JSX } from 'solid-js';
 import styles from './ops.module.scss';
 import { uploadsFor } from './uploads';
 
 export async function OpsPage(props: AdminPageProps): Promise<JSX.Element> {
-  const tasks = registeredTasks().map((handle) => handle.describe());
   // Decided before it is counted — `uploads.ts` owns both halves, and `props.ctx` is where the
   // decision comes from. This page renders the answer; it does not re-derive it.
   const uploads = await uploadsFor(props.ctx);
@@ -44,24 +41,6 @@ export async function OpsPage(props: AdminPageProps): Promise<JSX.Element> {
           </dl>
         )}
         <p class={styles.hint}>{t('admin.ops.uploadsHint')}</p>
-      </section>
-
-      <section class={styles.card}>
-        <h2 class={styles.cardTitle}>{t('admin.ops.schedule')}</h2>
-        <ul class={styles.schedule}>
-          {tasks.map((descriptor) => (
-            <li class={styles.entry}>
-              <span class={styles.entryName}>{descriptor.name}</span>
-              <code class={styles.cron}>{descriptor.cron}</code>
-              {/* The zone is on screen because an unzoned cron is a bug waiting for March. */}
-              <span class={styles.zone}>{descriptor.tz}</span>
-              <span class={styles.enqueues}>
-                {t('admin.ops.enqueues', { jobs: descriptor.jobs.join(', ') })}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p class={styles.hint}>{t('admin.ops.scheduleHint')}</p>
       </section>
     </div>
   );

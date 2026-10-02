@@ -41,6 +41,77 @@ export interface RouteFact {
   readonly surface?: 'site' | 'app' | 'api';
 }
 
+/** One scope of an admin list: a tab, by name. */
+export interface AdminScopeFact {
+  readonly name: string;
+  /** What a bare list URL reads. At most one per resource. */
+  readonly default: boolean;
+  /** The tab shows a row count — one extra query per list page. */
+  readonly count: boolean;
+}
+
+/** One titled group of an admin detail page or form. `title` is an i18n key; `null` untitled. */
+export interface AdminSectionFact {
+  readonly title: string | null;
+  readonly fields: readonly string[];
+}
+
+/**
+ * One admin action: its button, its batch bar entry and its ONE MCP tool. `when` narrows which rows
+ * it applies to; `batch` puts it in the bar and gives the tool `ids`; past `threshold` rows a batch
+ * is queued as `admin.batch` jobs instead of run in the request.
+ */
+export interface AdminActionFact {
+  readonly name: string;
+  readonly permission: string;
+  readonly destructive: boolean;
+  readonly input: boolean;
+  readonly when: boolean;
+  readonly batch: boolean;
+  readonly threshold: number | null;
+}
+
+/** One resource of a generated admin: what its list answers, and whether a row scope narrows it. */
+export interface AdminResourceFact {
+  readonly entity: string;
+  /** Mount-relative: `/posts`. */
+  readonly path: string;
+  /** The fields a list URL's `f.<field>` and the MCP list tool's `where` may name, in bar order. */
+  readonly filters: readonly string[];
+  /** The fields `?sort=` may name. */
+  readonly sorts: readonly string[];
+  /** Tab order. */
+  readonly scopes: readonly AdminScopeFact[];
+  /** `rows` is declared: every read of the resource is narrowed per actor. */
+  readonly rowScoped: boolean;
+  /** The detail page's groups, drawing order; undeclared fields are the last, default one. */
+  readonly sections: readonly AdminSectionFact[];
+  /** The create and edit form's groups, the same way. */
+  readonly formGroups: readonly AdminSectionFact[];
+  /** `hasMany` relations drawn on the detail page as the related resource's own list. */
+  readonly related: readonly string[];
+  /** Declaration order — the order the buttons are drawn in. */
+  readonly actions: readonly AdminActionFact[];
+}
+
+/** One route `defineAdmin()` mounts — no page file declares it. */
+export interface AdminRouteFact {
+  readonly url: string;
+  readonly view: string;
+  readonly entity: string | null;
+  /** Every permission the screen decides on, coarse gate first. A pair, not a set. */
+  readonly permissions: readonly string[];
+}
+
+/** One generated admin, as `defineAdmin()` derived it. */
+export interface AdminFact {
+  readonly basePath: string;
+  /** The audit log the admin writes: `memory` forgets at every restart; `postgres` is the record. */
+  readonly audit: string;
+  readonly resources: readonly AdminResourceFact[];
+  readonly routes: readonly AdminRouteFact[];
+}
+
 export interface ColumnFact {
   readonly name: string;
   readonly type: string;
@@ -53,6 +124,13 @@ export interface ColumnFact {
    * is additive — every existing row takes the default — and was classed breaking without this.
    */
   readonly hasDefault?: boolean;
+  /**
+   * The column is `.sealed()`: stored as ciphertext, absent from every output. `'lookup'` is the
+   * deterministic form, matchable by equality. Written only when sealed, so a column that is not
+   * reads as it always did — and an agent reading the manifest can tell a field it will never be
+   * sent from one that is merely missing.
+   */
+  readonly sealed?: 'opaque' | 'lookup';
 }
 
 export interface EntityFact {
@@ -140,6 +218,19 @@ export interface JobFact {
   readonly queue: string;
   readonly retry: { readonly attempts: number; readonly backoff: string };
   readonly steps: readonly string[];
+  /**
+   * The job's fleet-wide cap, present only when it declares one. `keyed: true` says `limit` holds
+   * per `concurrency.key(input)` — "one run per account" — rather than for the whole job, and
+   * `whenBusy` is what a claim over it does (`null` for a plain number, which always waits).
+   * Optional for `channels`' reason: a manifest written before this existed is "no cap known".
+   */
+  readonly concurrency?: {
+    readonly limit: number;
+    readonly keyed: boolean;
+    readonly whenBusy: string | null;
+  };
+  /** Present, and `true`, only when the job declares an `onSettled` hook. */
+  readonly onSettled?: true;
 }
 
 export interface TaskFact {
@@ -185,6 +276,12 @@ export interface Manifest {
    * is "no channels", never an unreadable manifest. `buildManifest` always writes it.
    */
   readonly channels?: readonly ChannelFact[];
+  /**
+   * The generated admins the app declares, each with its resources and mounted routes. Optional to
+   * a READER only, exactly as `channels` is: a file written before admins were projected has none.
+   * `buildManifest` always writes it — `[]` for an app with no admin.
+   */
+  readonly admin?: readonly AdminFact[];
   readonly jobs: readonly JobFact[];
   readonly tasks: readonly TaskFact[];
   readonly policies: readonly PolicyFact[];
@@ -243,6 +340,7 @@ export function isManifest(value: unknown): value is Manifest {
   for (const section of ARRAY_SECTIONS) if (!Array.isArray(m[section])) return false;
   // Absent is a pre-channel file and readable; present and not an array is a damaged one.
   if (m['channels'] !== undefined && !Array.isArray(m['channels'])) return false;
+  if (m['admin'] !== undefined && !Array.isArray(m['admin'])) return false;
   return isAppIdentity(m['app']);
 }
 

@@ -163,19 +163,19 @@ export function semanticInteractive(files: readonly SourceFile[]): readonly Find
 
 export const guard: Guard = {
   summary: 'a click is answered by a control, never by a div with a handler',
-  async check(root) {
+  async check(_root, sources) {
     const files: SourceFile[] = [];
     // TWO globs, and the rule is that a brace ALTERNATIVE may not contain a \`/\`. Measured on Bun
     // 1.4.0 against \`examples/dummy\`: \`{apps/*/{site,app},packages/*/src}/**/*.tsx\` and
     // \`{apps/web,packages/ui}/**/*.tsx\` each match ZERO files, where \`apps/*/{site,app}/**/*.tsx\`
     // matches 17 — so folding these into one line silently turns the guard off, which is worse than
-    // the hole it closes. A LEADING group is fine and four guards here rely on it:
+    // the hole it closes. A LEADING group is fine and the stylesheet guards here rely on it:
     // \`{apps,packages}/**/*.scss\` matches all 15.
     for (const pattern of ['apps/*/{site,app}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
-      for await (const entry of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
-        const path = entry.split('\\\\').join('/');
-        if (path.includes('node_modules/') || /\\.test\\.tsx?$/.test(path)) continue;
-        files.push({ path, source: await Bun.file(\`\${root}/\${path}\`).text() });
+      // The run's ONE read: every guard asking for these two globs shares the walk.
+      for (const file of await sources.files(pattern)) {
+        if (/\\.test\\.tsx?$/.test(file.path)) continue;
+        files.push({ path: file.path, source: file.text });
       }
     }
     return semanticInteractive(files);

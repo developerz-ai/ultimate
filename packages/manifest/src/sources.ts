@@ -6,12 +6,20 @@
 // in `@ultimat3/render`, which is this same tier.
 
 import { describeActions } from '@ultimat3/action';
-import { describeEntities } from '@ultimat3/entity';
+import { describeEntities, registeredEntities, sealedFields } from '@ultimat3/entity';
 import { describeJobs } from '@ultimat3/jobs';
 import { describeQueries } from '@ultimat3/query';
 import { describeChannels } from '@ultimat3/realtime/server';
 import type { ManifestSources } from './build';
-import type { ErrorCodeFact, JsonValue, PolicyFact, RouteFact, TaskFact } from './schema';
+import type {
+  AdminFact,
+  ErrorCodeFact,
+  JsonValue,
+  PolicyFact,
+  RouteFact,
+  TaskFact,
+} from './schema';
+import { declaredAdmins } from './sources-admin';
 
 export interface FrameworkSourcesInput {
   readonly app: { readonly name: string; readonly version: string };
@@ -23,6 +31,11 @@ export interface FrameworkSourcesInput {
   readonly locales?: readonly string[];
   /** Each package's `*_ERROR_CODES`, flattened by the CLI. */
   readonly errorCodes?: readonly ErrorCodeFact[];
+  /**
+   * The app's generated admins. Omitted, they are read off the process's own declarations
+   * (`sources-admin.ts`) — the one section a caller does not have to inject.
+   */
+  readonly admin?: readonly AdminFact[];
 }
 
 /**
@@ -36,7 +49,33 @@ export interface FrameworkSourcesInput {
  */
 const asJson = (value: object): JsonValue => value as JsonValue;
 
+/** Absent stays absent: only a sealed column carries the field. */
+const sealedFact = (
+  how: 'opaque' | 'lookup' | undefined,
+): { readonly sealed?: 'opaque' | 'lookup' } => (how === undefined ? {} : { sealed: how });
+
+/**
+ * `<entity name>` -> `<physical column>` -> how it is sealed. Read off the declarations rather than
+ * `$describe()`, which is the DDL's projection: sealing changes no DDL, so it is not on it, and a
+ * column becoming sealed must not move the schema hash a migration is checked against.
+ */
+function sealedColumns(): ReadonlyMap<string, ReadonlyMap<string, 'opaque' | 'lookup'>> {
+  return new Map(
+    registeredEntities().map((entry) => [
+      entry.name,
+      new Map(
+        // `core` is absent on a hand-registered entry, which declares no columns to seal.
+        (entry.core === undefined ? [] : sealedFields(entry.core)).map((field) => [
+          field.column,
+          field.lookup ? ('lookup' as const) : ('opaque' as const),
+        ]),
+      ),
+    ]),
+  );
+}
+
 export function frameworkSources(input: FrameworkSourcesInput): ManifestSources {
+  const sealed = sealedColumns();
   return {
     app: input.app,
     routes: input.routes ?? [],
@@ -44,6 +83,7 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
     tasks: input.tasks ?? [],
     locales: input.locales ?? [],
     errorCodes: input.errorCodes ?? [],
+    admin: input.admin ?? declaredAdmins(),
     // Projected field by field, never cast: the primitive registries own richer shapes
     // than the manifest publishes, and a cast would silently rot when either side moves.
     entities: describeEntities().map((entity) => ({
@@ -56,6 +96,7 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
         primaryKey: column.primaryKey,
         ...(column.hasDefault ? { hasDefault: true } : {}),
         ...(column.references === null ? {} : { references: column.references }),
+        ...sealedFact(sealed.get(entity.name)?.get(column.column)),
       })),
       invariants: entity.invariants.map((invariant) => invariant.name),
     })),
@@ -108,6 +149,19 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       // `run()` at execution time, so no static reader can know it. `x jobs show` reports the
       // steps an actual run recorded.
       steps: job.steps,
+      // Absent, never `null`, for a job with no cap: a row gains the key the day its job declares
+      // one, so adding this fact moved no committed manifest but the ones it is a fact about.
+      ...(job.concurrency === null
+        ? {}
+        : {
+            concurrency: {
+              limit: job.concurrency.limit,
+              keyed: job.concurrency.keyed,
+              whenBusy: job.concurrency.whenBusy,
+            },
+          }),
+      // The same rule: only a job that declares the hook carries the key.
+      ...(job.onSettled ? { onSettled: true as const } : {}),
     })),
   };
 }

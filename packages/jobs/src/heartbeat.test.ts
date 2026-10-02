@@ -27,6 +27,8 @@ const claimed: ClaimedJob = {
   updatedAt: 0,
   claimedAt: 0,
   visibleAt: VISIBILITY_MS,
+  claimedBy: 'worker-1',
+  claim: 1,
 };
 
 const lostCount = (queue: string): number | undefined =>

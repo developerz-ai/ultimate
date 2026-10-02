@@ -26,6 +26,7 @@ import { resolveClaimLeaseMs } from './outbox-lease';
 
 interface OutboxRow {
   readonly id: string;
+  readonly run_id: string;
   readonly job: string;
   readonly queue: string;
   readonly input: unknown;
@@ -72,6 +73,7 @@ export interface PgOutboxOptions {
 function toRecord(row: OutboxRow): OutboxRecord {
   return {
     id: row.id,
+    runId: row.run_id,
     job: row.job,
     queue: row.queue,
     input: row.input,
@@ -116,6 +118,7 @@ export function createPgOutboxStore(options: PgOutboxOptions): OutboxStore {
           record.tenantId ?? null,
           record.traceparent ?? null,
           record.enqueuedBy ?? null,
+          record.runId,
         ]);
       const bucket = staged.get(key(tx)) ?? [];
       bucket.push(record);

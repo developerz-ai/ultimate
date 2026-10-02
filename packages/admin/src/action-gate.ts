@@ -3,6 +3,7 @@
 // authz, so a button that renders is a call that is allowed and a call that is denied had no
 // button. The admin's whole authz story is this file plus authz.ts.
 
+import { actionLabelKey } from './action-label';
 import { type AuditEntry, type AuditFieldDiff, type AuditLog, deniedDraft } from './audit';
 import {
   type AdminActor,
@@ -11,13 +12,15 @@ import {
   type AdminSubject,
   decideAll,
 } from './authz';
+import { AdminActionNotApplicableError } from './errors';
 import {
   ADMIN_DESTROY,
   ADMIN_WRITE,
   CONFIRMATION_REQUIRED_REASON,
   confirmationToken,
 } from './permissions';
-import type { AdminAction, AdminActionCtx } from './registry';
+import { type AdminAction, type AdminActionCtx, type AdminRow, computedRow } from './registry';
+import { type ValidationIssue, validateInput } from './validate';
 
 export interface AdminActionButton {
   readonly name: string;
@@ -25,6 +28,8 @@ export interface AdminActionButton {
   readonly destructive: boolean;
   readonly permission: string;
   readonly entity: string | null;
+  /** The action declares an input schema: its control is a link to its form, never a bare post. */
+  readonly form: boolean;
   /** Carried so the `/_x` policy panel can show why this button is on screen. */
   readonly decision: AdminDecision;
 }
@@ -34,6 +39,12 @@ export interface AdminActionButton {
  * a caught value, which is how a database message or an attacker's string reaches an audit log.
  */
 const ACTION_FAILED_REASON = 'admin.error.action-failed';
+
+/** The reason an action refused by its own `when()` is answered and audited with. */
+export const ACTION_NOT_APPLICABLE_REASON = 'admin.error.action-not-applicable';
+
+/** The reason an action whose input its own schema refused is audited with. */
+const ACTION_INVALID_REASON = 'admin.error.invalid-input';
 
 /** The permissions an action needs: the admin-level gate, then the action's own policy. */
 export function permissionsForAction<Input, Output>(
@@ -56,6 +67,37 @@ export interface ActionGateInput {
   readonly actor: AdminActor;
   readonly authz: AdminAuthz;
   readonly subject?: AdminSubject;
+  /** The resource's sealed column names: dropped from the row a `when` is handed. */
+  readonly sealed?: readonly string[];
+}
+
+const isRow = (value: unknown): value is AdminRow => typeof value === 'object' && value !== null;
+
+/**
+ * Whether `action` applies to the subject's row — the ONE evaluation of `when`, asked by the
+ * button and by the call behind it.
+ *
+ * A subject with no row at all (`undefined`: a toolbar, a batch bar) is not a row to refuse. A row
+ * that was looked for and not found (`null`) is refused, `when` or none — an action on a row is an
+ * action on THAT row, and a row the actor's scope leaves out is not there. No `when`: any row
+ * applies. A `when` that throws is a refusal too: the rule did not say yes.
+ */
+export function actionApplies<Input, Output>(
+  action: AdminAction<Input, Output>,
+  subject: AdminSubject | undefined,
+  sealed: readonly string[] = [],
+): boolean {
+  if (subject === undefined || subject.row === undefined) return true;
+  // Looked for and not there — or outside the actor's `rows` — is refused for EVERY action, not
+  // only one that declares `when`: an action with no rule about a row's state still acts on a row,
+  // and running its handler on an id the actor cannot see was a way round the row scope.
+  if (!isRow(subject.row)) return false;
+  if (action.when === undefined) return true;
+  try {
+    return action.when(computedRow(subject.row, sealed)) === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Every action with its decision — what the `/_x` policy panel and tests want to see. */
@@ -68,16 +110,21 @@ export function actionDecisions(
   }));
 }
 
-/** Only the buttons this actor may press. A denied action has no button, ever. */
+/**
+ * Only the buttons this actor may press ON THIS ROW. A denied action has no button, ever, and
+ * neither has one whose `when` excludes the row.
+ */
 export function actionButtons(input: ActionGateInput): readonly AdminActionButton[] {
   return actionDecisions(input)
     .filter(({ decision }) => decision.allowed)
+    .filter(({ action }) => actionApplies(action, input.subject, input.sealed))
     .map(({ action, decision }) => ({
       name: action.name,
-      labelKey: action.labelKey ?? `admin.action.${action.name}`,
+      labelKey: actionLabelKey(action),
       destructive: action.destructive === true,
       permission: action.permission,
       entity: action.entity ?? null,
+      form: action.input !== undefined,
       decision,
     }));
 }
@@ -86,8 +133,24 @@ export type InvokeResult<Output> =
   | { readonly ok: true; readonly value: Output; readonly audit: AuditEntry }
   | {
       readonly ok: false;
+      readonly kind: 'denied';
       readonly decision: AdminDecision;
       readonly confirmationRequired: boolean;
+      readonly audit: AuditEntry;
+    }
+  /** The action's `when()` excludes the row. `error` is `X_ADMIN_ACTION_NOT_APPLICABLE`. */
+  | {
+      readonly ok: false;
+      readonly kind: 'not-applicable';
+      readonly decision: AdminDecision;
+      readonly error: AdminActionNotApplicableError;
+      readonly audit: AuditEntry;
+    }
+  /** The action's own input schema refused what was sent: one issue per field. */
+  | {
+      readonly ok: false;
+      readonly kind: 'invalid';
+      readonly issues: readonly ValidationIssue[];
       readonly audit: AuditEntry;
     };
 
@@ -99,6 +162,8 @@ export interface InvokeInput<Input, Output> {
   readonly audit: AuditLog;
   readonly requestId: string;
   readonly subject?: AdminSubject;
+  /** The resource's sealed column names: dropped from the row a `when` is handed. */
+  readonly sealed?: readonly string[];
   /**
    * Echo of `confirmationToken(entity, subject.id)`. Required for a destructive action, and the
    * gate DERIVES the token it compares against — it took the caller's `expectedConfirmation`
@@ -116,8 +181,10 @@ export interface InvokeInput<Input, Output> {
 }
 
 /**
- * Run an admin action. The policy is consulted first, the confirmation second, the handler
- * last, and all three outcomes are audited before this function returns.
+ * Run an admin action on one subject. In this order: the policy, the action's own `when()` over
+ * the row as it is now, the confirmation, the action's input schema, the handler — and every one
+ * of the five outcomes is audited before this function returns. The button, the batch bar and the
+ * MCP tool all end here, so there is one ordering of those steps and not one per surface.
  */
 export async function invokeAdminAction<Input, Output>(
   args: InvokeInput<Input, Output>,
@@ -127,22 +194,40 @@ export async function invokeAdminAction<Input, Output>(
   const entityId = args.subject?.id ?? null;
   const decision = decideAction(action, actor, authz, args.subject);
 
+  const entry = {
+    requestId,
+    actor,
+    operation: action.name,
+    kind: 'action',
+    entity,
+    entityId,
+  } as const;
+
   if (!decision.allowed) {
     return {
       ok: false,
+      kind: 'denied',
       decision,
       confirmationRequired: false,
-      audit: await audit.append(
-        deniedDraft({
-          requestId,
-          actor,
-          operation: action.name,
-          kind: 'action',
-          entity,
-          entityId,
-          decision,
-        }),
-      ),
+      audit: await audit.append(deniedDraft({ ...entry, decision })),
+    };
+  }
+
+  // After the grant, before anything else: the same `when` that decided the button, asked of the
+  // row as it is NOW. A hidden button is not an authorization.
+  if (!actionApplies(action, args.subject, args.sealed)) {
+    const refused: AdminDecision = {
+      allowed: false,
+      permission: action.permission,
+      reason: ACTION_NOT_APPLICABLE_REASON,
+      trace: [`when: ${action.name} does not apply to ${entity} ${entityId ?? '(no row)'}`],
+    };
+    return {
+      ok: false,
+      kind: 'not-applicable',
+      decision: refused,
+      error: new AdminActionNotApplicableError({ action: action.name, entity, id: entityId }),
+      audit: await audit.append(deniedDraft({ ...entry, decision: refused })),
     };
   }
 
@@ -156,20 +241,34 @@ export async function invokeAdminAction<Input, Output>(
     };
     return {
       ok: false,
+      kind: 'denied',
       decision: refused,
       confirmationRequired: true,
-      audit: await audit.append(
-        deniedDraft({
-          requestId,
-          actor,
-          operation: action.name,
-          kind: 'action',
-          entity,
-          entityId,
-          decision: refused,
-        }),
-      ),
+      audit: await audit.append(deniedDraft({ ...entry, decision: refused })),
     };
+  }
+
+  // The action's own schema judges its own input. The row's `id` is the admin's envelope and is
+  // no property of that schema, so it rides around the parse and is put back for the handler.
+  let input = args.input;
+  if (action.input !== undefined) {
+    const { id, ...own } = { ...(args.input as Readonly<Record<string, unknown>>) };
+    const parsed = await validateInput(action.input, own);
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        kind: 'invalid',
+        issues: parsed.issues,
+        audit: await audit.append({
+          ...entry,
+          permission: action.permission,
+          outcome: 'failed',
+          reason: ACTION_INVALID_REASON,
+          diff: [],
+        }),
+      };
+    }
+    input = { ...parsed.value, ...(id === undefined ? {} : { id }) } as Input;
   }
 
   const ctx: AdminActionCtx = {
@@ -180,7 +279,7 @@ export async function invokeAdminAction<Input, Output>(
   };
 
   try {
-    const value = await action.handle({ input: args.input, ctx });
+    const value = await action.handle({ input, ctx });
     return {
       ok: true,
       value,
