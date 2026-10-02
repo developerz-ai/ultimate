@@ -80,6 +80,12 @@ let instruments: Instruments | undefined;
 // What the counter already holds, kept across a stop and a start so neither loses the CPU spent
 // before the first sample — a boot is where most of it goes — nor counts it twice.
 let cpuCounted = 0;
+// The start that owns `source` and the sampler, compared by identity: two starts may share a
+// reader (the default one), so the reader cannot say which start a stop belongs to.
+let active: { readonly stopTimer: () => void } | undefined;
+// The role `process_info` last said 1 for, so a start under another role sets it back to 0 —
+// one process, one role, even across a stop and a start.
+let infoRole: string | undefined;
 
 /** 0 while stopped: a scrape between a stop and a start reads a flat line, never a throw. */
 const observed = (pick: (reading: ProcessReading) => number) => (): number =>
@@ -138,8 +144,11 @@ const unrefInterval = (tick: () => void, intervalMs: number): (() => void) => {
 
 /** Test-only: forget the CPU already counted, beside `resetMetrics()` dropping the counter. */
 export function resetProcessMetrics(): void {
+  active?.stopTimer();
+  active = undefined;
   source = undefined;
   cpuCounted = 0;
+  infoRole = undefined;
 }
 
 /**
@@ -159,9 +168,15 @@ export function startProcessMetrics(options: ProcessMetricsOptions): () => void 
     1,
   );
   const declared = declare();
+  // A start that replaces a live one ends its sampler: two timers would sample twice.
+  active?.stopTimer();
   source = read;
   // Uptime subtracted from now: the process started before this module was asked.
   startedAtSeconds = Math.floor(clock.now().getTime() / 1000 - read().uptimeSeconds);
+  if (infoRole !== undefined && infoRole !== options.role) {
+    declared.info.record(0, { role: infoRole });
+  }
+  infoRole = options.role;
   declared.info.record(1, { role: options.role });
 
   const countCpu = (): void => {
@@ -180,8 +195,12 @@ export function startProcessMetrics(options: ProcessMetricsOptions): () => void 
     countCpu();
   }, sampleMs);
 
+  const owner = { stopTimer };
+  active = owner;
   return () => {
     stopTimer();
-    if (source === read) source = undefined;
+    if (active !== owner) return;
+    active = undefined;
+    source = undefined;
   };
 }
