@@ -103,6 +103,12 @@ export const ERROR_STATUS = {
   // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,
   // and the `error-map` stage reported the caller's mistake to the on-call monitor.
   X_INPUT_INVALID: 400,
+  // The one way a SERVER answers this code: a POST to the path an action has under a path style
+  // this app does not serve (`hooks.explainMiss`). 404 because it is still a miss — nothing is
+  // routed there and nothing ran, so the status a proxy or a monitor counts is the one the plain
+  // `X_ROUTE_NOT_FOUND` had; the code and the `fix:` are what changed. Every other raise of it is
+  // client-side or a contract test, and never reaches this table.
+  X_CONTRACT_DRIFT: 404,
   // A retried `Idempotency-Key` naming a different payload, or one still in flight. 409 because
   // that is what the action's own OpenAPI operation publishes for it — the runtime answered 500
   // while the document promised 409, and a client written against the spec read the framework
@@ -215,6 +221,10 @@ export const ERROR_STATUS = {
   // 500, the same shelf as `X_SEARCH_UNDECLARED`: a column with no machine is a declaration the
   // app has not written, and no request changes that.
   X_STATE_UNDECLARED: 500,
+  // A sealed column named where the database would compare it, or in a view. Both are the app's
+  // own declaration or call, never the caller's input — the same shelf as the two above.
+  X_ENTITY_SEALED_PREDICATE: 500,
+  X_ENTITY_SEALED_IN_VIEW: 500,
   // @ultimat3/db — the constraints a request trips, both 409. db's own `fix:` for the unique
   // violation says "answer 409, which is what a raced signup is", and `X_ENTITY_DUPLICATE` — the
   // same event one layer up — is 409 above; a foreign key rides with it because both halves of it
@@ -313,6 +323,12 @@ export const ERROR_STATUS = {
   // reaching `formatDate` / `formatMoney` / `describeCron`. Those raised it and answered 500,
   // paging the on-call for a string the caller typed.
   X_LOCALE_INVALID: 400,
+  // @ultimat3/core — `seal()` / `open()`. All three are reachable from a request (a sealed column
+  // read inside an action) and none is the caller's doing: the deploy has no key, the ring lost a
+  // retired key, or a stored value did not authenticate. 500, stated rather than defaulted.
+  X_SEAL_INVALID: 500,
+  X_SEAL_KEY_MISSING: 500,
+  X_SEAL_KEY_UNKNOWN: 500,
   // @ultimat3/money — a well-formed code this process carries no row for. The currency table is
   // OPEN (`registerCurrency`), and every surface between the wire and the throw accepts any
   // `^[A-Z]{3}$`: `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN`, the OpenAPI `pattern` emitted from
@@ -457,6 +473,12 @@ export const ERROR_STATUS = {
   X_RECORD_REJECTED: 500,
   X_SYNC_UNCONFIGURED: 500,
   X_INTERNAL: 500,
+  // @ultimat3/jobs — the job is running and cannot be removed
+  X_JOB_NOT_REMOVABLE: 409,
+  // @ultimat3/jobs — the job is not waiting on its run time
+  X_JOB_NOT_PROMOTABLE: 409,
+  // @ultimat3/jobs — a job list page was asked for outside its bounds
+  X_JOB_PAGE_INVALID: 400,
   // The keys are LITERAL — deliberately not `Readonly<Record<string, number>>`, which is what the
   // annotation used to say. This table is the closed one, so `ERROR_STATUS.X_QUERY_NOT_PAGABLE`
   // has to be a compile error rather than an `undefined` a test then asserts `toBeNumber()` on.

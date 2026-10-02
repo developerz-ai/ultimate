@@ -78,8 +78,17 @@ describe('a ttl that is not a duration is refused under the name the caller used
     expect(withTtl.expiresAt - withTtl.publishedAt).toBe(30_000);
     expect(withDefault.expiresAt - withDefault.publishedAt).toBe(3_600_000);
 
-    const pg = createPgEventBus({ executor, defaultTtl: 1_000 });
-    const event = await pg.publish('invoice.paid', { id: 3 });
-    expect(event.expiresAt - event.publishedAt).toBe(1_000);
+    // The pg bus sends the DURATION and the database does the arithmetic (`SQL_EVENT_PUBLISH`).
+    const sent: unknown[][] = [];
+    const recording: PgExecutor = {
+      query<R>(_sql: string, params: readonly unknown[]): Promise<readonly R[]> {
+        sent.push([...params]);
+        return Promise.resolve([] as readonly R[]);
+      },
+    };
+    const pg = createPgEventBus({ executor: recording, defaultTtl: 1_000 });
+    await pg.publish('invoice.paid', { id: 3 });
+    await pg.publish('invoice.paid', { id: 4 }, { ttl: '30s' });
+    expect(sent.map((params) => params[4])).toEqual([1_000, 30_000]);
   });
 });

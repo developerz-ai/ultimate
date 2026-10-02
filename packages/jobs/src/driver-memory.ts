@@ -7,22 +7,33 @@ import { assert, finiteCount, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { createMemoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
+import { nackOutcome } from './counters';
 import type {
+  AckOptions,
   ClaimedJob,
+  ClaimIdentity,
   ClaimOptions,
   EnqueueRequest,
   EnqueueResult,
   HeartbeatOptions,
   JobDriver,
-  JobFilter,
-  JobIntrospection,
   JobRecord,
   NackOptions,
   QueueStats,
 } from './driver';
-import { assertClaimBounds, assertClaimQueues, DEFAULT_QUEUE, REQUEUEABLE_STATES } from './driver';
+import {
+  assertClaimBounds,
+  assertClaimQueues,
+  DEFAULT_QUEUE,
+  nackState,
+  REQUEUEABLE_STATES,
+} from './driver';
+import { createMemoryOperator } from './driver-memory-operator';
+import { signalEnqueued } from './enqueue-signal';
 import { JobDuplicateError } from './errors';
 import { JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
+import type { JobIntrospection } from './introspection';
+import { MAX_ERROR_STACK_LENGTH } from './introspection';
 import type { LeaseStore } from './leases';
 import { createMemoryLeaseStore } from './leases';
 import type { StepStore } from './steps';
@@ -100,25 +111,32 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
     jobs.set(id, { ...released, ...patch, updatedAt: nowMs(clock) });
   };
 
+  const operator = createMemoryOperator({
+    jobs,
+    steps,
+    clock,
+    settle,
+    liveHolder: (record) => {
+      const holder = liveByKey(record.name, record.idempotencyKey, record.tenantId);
+      return holder === undefined || holder.id === record.id ? undefined : holder;
+    },
+  });
+
+  /** The row, when this worker still holds it `running` — the fence both settles share. */
+  const heldBy = (jobId: string, by: ClaimIdentity): JobRecord | undefined => {
+    const record = jobs.get(jobId);
+    return record?.state === 'running' &&
+      record.claimedBy === by.workerId &&
+      record.claim === by.claim
+      ? record
+      : undefined;
+  };
+
   const introspect: JobIntrospection = {
     job(jobId) {
       return Promise.resolve(jobs.get(jobId));
     },
-    // `async` for the reason `claim` is: a refused bound must REJECT here exactly as it does on the
-    // pg driver, and a synchronous throw out of a method typed `Promise<…>` is a second answer to
-    // one question.
-    async list(filter: JobFilter = {}) {
-      const rows = [...jobs.values()]
-        .filter((record) => filter.queue === undefined || record.queue === filter.queue)
-        .filter((record) => filter.name === undefined || record.name === filter.name)
-        .filter((record) => filter.state === undefined || record.state === filter.state)
-        // NEWEST first, as `createPgDriver`'s `order by created_at desc` is. Ascending here meant
-        // `x jobs ls` answered one thing against `x dev` and the opposite in production — and,
-        // because the limit is applied after the sort, a default page of the hundred OLDEST rows.
-        .sort((a, b) => b.createdAt - a.createdAt)
-        .slice(0, finiteCount('the memory driver list', 'limit', filter.limit ?? 100));
-      return rows;
-    },
+    ...operator.members,
     async deadLetters(limit = 100) {
       const rows = [...jobs.values()]
         .filter((record) => record.state === 'dead')
@@ -158,6 +176,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       }
       // `settle` releases the claim — `SQL_JOB_REQUEUE` writes `claimed_by = null` too.
       settle(jobId, { state: 'ready', attempt: 0, runAt: nowMs(clock) });
+      signalEnqueued(record.queue);
       const next = jobs.get(jobId);
       return next ?? record;
     },
@@ -190,6 +209,12 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
     // `Promise<…>` is a second answer to one question — caught by different code, and an
     // unhandled exception rather than a settled promise wherever the caller holds the promise.
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
+      // A caller-allocated id that already names a row is that row's publish, repeated: the same
+      // job, whatever state it has reached — `SQL_ENQUEUE`'s `not exists` is the pg half.
+      const published = request.id === undefined ? undefined : jobs.get(request.id);
+      if (published !== undefined) {
+        return { id: published.id, runId: published.runId, deduped: true };
+      }
       const existing = liveByKey(request.name, request.idempotencyKey, request.tenantId);
       if (existing !== undefined) {
         if (request.onConflict === 'error') {
@@ -205,10 +230,13 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       const at = nowMs(clock);
       const runAt = request.runAt ?? at;
       const record: JobRecord = {
-        id: uuid(),
+        id: request.id ?? uuid(),
         name: request.name,
         queue: request.queue || DEFAULT_QUEUE,
-        input: request.input,
+        // Through JSON, exactly as the pg driver binds it (`JSON.stringify(request.input ?? null)`):
+        // a live reference kept a `Date`, an `undefined` member and a non-enumerable property the
+        // queue in production never stores, so a job that read one passed here and failed there.
+        input: JSON.parse(JSON.stringify(request.input ?? null)) as unknown,
         idempotencyKey: request.idempotencyKey,
         runId: request.runId ?? uuid(),
         attempt: 0,
@@ -235,6 +263,8 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       const wanted = new Set(claimOptions.queues);
       const claimable = [...jobs.values()]
         .filter((record) => wanted.has(record.queue))
+        // A paused queue is never claimed — `SQL_CLAIM`'s `not exists` over `x_job_pauses`.
+        .filter((record) => !operator.isQueuePaused(record.queue))
         .filter((record) => {
           if (record.runAt > at) return false;
           if (record.state === 'ready' || record.state === 'delayed') return true;
@@ -252,6 +282,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
           state: 'running',
           attempt: record.attempt + 1,
           claimedBy: claimOptions.workerId,
+          claim: (record.claim ?? 0) + 1,
           claimedAt: at,
           visibleAt: at + claimOptions.visibilityTimeoutMs,
           updatedAt: at,
@@ -262,29 +293,29 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       return Promise.resolve(out);
     },
 
-    // Both settlements are FENCED on `running`, as `SQL_ACK`/`SQL_NACK` are: an ack from a worker
-    // whose job was cancelled — or whose lease lapsed and whose job another worker re-claimed —
-    // would otherwise overwrite a row it no longer owns.
-    ack(jobId: string): Promise<void> {
-      if (jobs.get(jobId)?.state !== 'running') return Promise.resolve();
+    // Both settlements are FENCED on `running` AND on the claimer, as `SQL_ACK`/`SQL_NACK` are: an
+    // ack from a worker whose job was cancelled — or whose lease lapsed and whose job another
+    // worker re-claimed — would otherwise overwrite a row it no longer owns. The counter moves in
+    // the same step as the row, so the two cannot disagree.
+    ack(jobId: string, by: AckOptions): Promise<boolean> {
+      const record = heldBy(jobId, by);
+      if (record === undefined) return Promise.resolve(false);
       settle(jobId, { state: 'done' });
-      return Promise.resolve();
+      if (by.counted !== false) {
+        operator.counters.add(record.name, 'done', by.durationMs ?? 0, nowMs(clock));
+      }
+      return Promise.resolve(true);
     },
 
-    nack(jobId: string, nackOptions: NackOptions): Promise<void> {
-      const record = jobs.get(jobId);
-      if (record === undefined || record.state !== 'running') return Promise.resolve();
+    nack(jobId: string, nackOptions: NackOptions): Promise<boolean> {
+      const record = heldBy(jobId, nackOptions);
+      if (record === undefined) return Promise.resolve(false);
       const at = nowMs(clock);
       const counts = nackOptions.countsAsAttempt !== false;
       const patch: Partial<JobRecord> = {
         // `park`, never `counts`: parking is what leaves the ready bucket, and burning an attempt
         // is a separate fact. A shed sets neither and stays `ready`, which is what it is.
-        state:
-          nackOptions.deadLetter === true
-            ? 'dead'
-            : nackOptions.park === true
-              ? 'suspended'
-              : 'ready',
+        state: nackState(nackOptions),
         runAt: at + nackOptions.delayMs,
         // A suspension must not burn an attempt, or a 3-day sleep dead-letters the run. Floored
         // where `SQL_NACK` floors it (`greatest(attempt - 1, 0)`): the fence above is what keeps
@@ -292,9 +323,16 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         // being read as the only one.
         attempt: counts ? record.attempt : Math.max(0, record.attempt - 1),
         ...(nackOptions.error === undefined ? {} : { lastError: nackOptions.error }),
+        ...(nackOptions.stack === undefined
+          ? {}
+          : { lastErrorStack: nackOptions.stack.slice(0, MAX_ERROR_STACK_LENGTH) }),
       };
       settle(jobId, patch);
-      return Promise.resolve();
+      const outcome = nackOutcome(nackOptions);
+      if (outcome !== undefined) {
+        operator.counters.add(record.name, outcome, nackOptions.durationMs ?? 0, at);
+      }
+      return Promise.resolve(true);
     },
 
     heartbeat(jobId: string, heartbeatOptions: HeartbeatOptions): Promise<boolean> {
@@ -304,7 +342,9 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       if (
         record === undefined ||
         record.state !== 'running' ||
-        (heartbeatOptions.workerId !== undefined && record.claimedBy !== heartbeatOptions.workerId)
+        (heartbeatOptions.workerId !== undefined &&
+          record.claimedBy !== heartbeatOptions.workerId) ||
+        (heartbeatOptions.claim !== undefined && record.claim !== heartbeatOptions.claim)
       ) {
         return Promise.resolve(false);
       }
@@ -322,6 +362,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
           delayed: 0,
           running: 0,
           suspended: 0,
+          failed: 0,
           dead: 0,
           oldestReadyMs: 0,
         };
@@ -337,6 +378,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         } else if (waiting) next.delayed += 1;
         else if (record.state === 'running') next.running += 1;
         else if (record.state === 'suspended') next.suspended += 1;
+        else if (record.state === 'failed') next.failed += 1;
         else if (record.state === 'dead') next.dead += 1;
         byQueue.set(record.queue, next);
       }

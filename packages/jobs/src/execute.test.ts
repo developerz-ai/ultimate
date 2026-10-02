@@ -83,15 +83,15 @@ async function claimOne(
   const nacks: NackOptions[] = [];
   const driver: JobDriver = {
     ...base,
-    async ack(jobId) {
+    async ack(jobId, by) {
       const failure = options.ackFails?.();
       if (failure !== undefined) throw failure;
-      await base.ack(jobId);
+      return base.ack(jobId, by);
     },
     async nack(jobId, nack) {
       nacks.push(nack);
       onNack?.(nack);
-      await base.nack(jobId, nack);
+      return base.nack(jobId, nack);
     },
   };
   await driver.enqueue({

@@ -22,20 +22,44 @@ export {
   SQL_STEPS_FROM,
 } from './driver-pg-jobs-sql';
 
-import { JOB_ROW_COLUMNS } from './driver-pg-jobs-sql';
+export {
+  SQL_OUTBOX_CLAIM,
+  SQL_OUTBOX_MARK_PUBLISHED,
+  SQL_OUTBOX_PENDING_COUNT,
+  SQL_OUTBOX_PUBLISHED_JOB,
+  SQL_OUTBOX_RELEASE,
+  SQL_OUTBOX_STAGE,
+} from './driver-pg-outbox-sql';
+export { SQL_ACK, SQL_NACK } from './driver-pg-settle-sql';
 
+import { JOB_ROW_COLUMNS } from './driver-pg-jobs-sql';
+import { notifyJobReady } from './driver-pg-wake-sql';
+
+/**
+ * The insert, and its wake: `woke` is the notification's own column, evaluated once per inserted
+ * row and absent when the conflict fired. `driver-pg-wake-sql.ts` says when it stays silent.
+ *
+ * `where not exists` is the outbox's half. A staged row is published under ITS OWN id
+ * (`EnqueueRequest.id`), so a publish repeated after a crash meets the job the first one made —
+ * in any state — and inserts nothing; the partial index below collapses a repeat only while that
+ * job is still live. A select over `values`, so each parameter carries its cast.
+ */
 export const SQL_ENQUEUE = `
-insert into x_jobs
-  (id, name, queue, input, idempotency_key, run_id, max_attempts, state, run_at, tenant_id,
-   traceparent, enqueued_by)
-values
-  ($1, $2, $3, $4::jsonb, $5, $6, $7,
-   case when to_timestamp($8 / 1000.0) > now() then 'delayed' else 'ready' end,
-   to_timestamp($8 / 1000.0), $9, $10, $11)
-on conflict (name, (coalesce(tenant_id, '')), idempotency_key)
-  where state in ('ready', 'delayed', 'running', 'suspended')
-  do nothing
-returning id, run_id
+with inserted as (
+  insert into x_jobs
+    (id, name, queue, input, idempotency_key, run_id, max_attempts, state, run_at, tenant_id,
+     traceparent, enqueued_by)
+  select $1::uuid, $2::text, $3::text, $4::jsonb, $5::text, $6::uuid, $7::int,
+         case when to_timestamp($8::bigint / 1000.0) > now() then 'delayed' else 'ready' end,
+         to_timestamp($8::bigint / 1000.0), $9::text, $10::text, $11::text
+   where not exists (select 1 from x_jobs published where published.id = $1::uuid)
+  on conflict (name, (coalesce(tenant_id, '')), idempotency_key)
+    where state in ('ready', 'delayed', 'running', 'suspended')
+    do nothing
+  returning id, run_id, queue, run_at
+)
+select i.id, i.run_id,${notifyJobReady('i')}::text as woke
+  from inserted i
 `.trim();
 
 /**
@@ -68,6 +92,9 @@ with claimed as (
     from x_jobs
    where queue = any($1::text[])
      and run_at <= now()
+     and not exists (
+       select 1 from x_job_pauses p where p.kind = 'queue' and p.name = x_jobs.queue
+     )
      and (
        state in ('ready', 'delayed', 'suspended')
        or (state = 'running' and visible_at <= now())
@@ -79,42 +106,19 @@ with claimed as (
 update x_jobs j
    set state      = 'running',
        attempt    = j.attempt + 1,
+       claims     = j.claims + 1,
        claimed_by = $3,
        visible_at = now() + ($4::bigint * interval '1 millisecond'),
        updated_at = now()
   from claimed c
  where j.id = c.id
 returning j.id, j.name, j.queue, j.input, j.idempotency_key, j.run_id, j.attempt,
-          j.max_attempts, j.state, j.tenant_id, j.last_error, j.claimed_by,
+          j.max_attempts, j.state, j.tenant_id, j.last_error, j.claimed_by, j.claims,
           j.traceparent, j.enqueued_by,
           (extract(epoch from j.run_at)     * 1000)::bigint as run_at,
           (extract(epoch from j.visible_at) * 1000)::bigint as visible_at,
           (extract(epoch from j.created_at) * 1000)::bigint as created_at,
           (extract(epoch from j.updated_at) * 1000)::bigint as updated_at
-`.trim();
-
-/**
- * `and state = 'running'` is a FENCE, not a filter. Without it an ack from the worker that was
- * cancelled — or from one whose lease lapsed and whose job another worker already re-claimed —
- * overwrites the row it no longer owns: `x jobs cancel` would be undone by the next settle, and
- * a re-delivered job would be marked done by the attempt that lost it.
- */
-export const SQL_ACK = `
-update x_jobs
-   set state = 'done', visible_at = null, claimed_by = null, updated_at = now()
- where id = $1 and state = 'running'
-`.trim();
-
-export const SQL_NACK = `
-update x_jobs
-   set state      = $2,
-       attempt    = case when $3::boolean then attempt else greatest(attempt - 1, 0) end,
-       run_at     = now() + ($4::bigint * interval '1 millisecond'),
-       visible_at = null,
-       claimed_by = null,
-       last_error = coalesce($5, last_error),
-       updated_at = now()
- where id = $1 and state = 'running'
 `.trim();
 
 /**
@@ -140,11 +144,12 @@ export const SQL_HEARTBEAT = `
 update x_jobs
    set visible_at = now() + ($2::bigint * interval '1 millisecond'), updated_at = now()
  where id = $1 and state = 'running' and ($3::text is null or claimed_by = $3)
+   and ($4::int is null or claims = $4)
 returning id
 `.trim();
 
 /**
- * Five buckets a queue depth is SUMMED from, so a row may land in exactly one. `run_at > now()`
+ * Six buckets a queue depth is SUMMED from, so a row may land in exactly one. `run_at > now()`
  * unqualified was every state's future row: a `step.sleep` job counted as `suspended` AND
  * `delayed`, a delayed dead-letter as `dead` AND `delayed`. The memory driver's `if/else if` chain
  * has always been exclusive, so `x jobs` reported one depth under `x dev` and a larger one in
@@ -156,6 +161,7 @@ select queue,
        count(*) filter (where state in ('ready', 'delayed') and run_at > now())  as delayed,
        count(*) filter (where state = 'running')                                as running,
        count(*) filter (where state = 'suspended')                              as suspended,
+       count(*) filter (where state = 'failed')                                 as failed,
        count(*) filter (where state = 'dead')                                   as dead,
        coalesce(max(extract(epoch from now() - run_at)) filter
          (where state in ('ready', 'delayed') and run_at <= now()), 0) * 1000   as oldest_ready_ms
@@ -254,9 +260,36 @@ export const SQL_LEASE_RELEASE = `
 delete from x_job_leases where lease_key = $1 and slot = $2::int and holder = $3
 `.trim();
 
+/**
+ * Who holds the LIVE slots of one key, in slot order. Read only after an acquire was refused, to
+ * tell a key another run holds from one this run's own previous claim still does — the acquire
+ * itself stays the one atomic decision, and this never grants anything.
+ */
+export const SQL_LEASE_HOLDERS = `
+select holder from x_job_leases
+ where lease_key = $1 and expires_at > now()
+ order by slot
+`.trim();
+
+/**
+ * Both instants are the DATABASE's: `published_at` is `now()` and the expiry is counted from it.
+ * They were bound from the publisher's process clock, and every reader compares them with
+ * something else — `now()` in `SQL_EVENT_FIND`, a consumer's "after" — so a pod whose clock was
+ * off wrote an event that had expired before it was inserted, or that came "before" a question
+ * asked a minute earlier. `floor`, never a rounding cast: a stamp is never later than the row.
+ *
+ * $1 id, $2 name, $3 payload, $4 correlation key, $5 ttl (ms).
+ */
 export const SQL_EVENT_PUBLISH = `
 insert into x_job_events (id, name, payload, correlation_key, published_at, expires_at)
-values ($1, $2, $3::jsonb, $4, to_timestamp($5 / 1000.0), to_timestamp($6 / 1000.0))
+values ($1, $2, $3::jsonb, $4, now(), now() + ($5::bigint * interval '1 millisecond'))
+returning floor(extract(epoch from published_at) * 1000)::bigint as published_at,
+          floor(extract(epoch from expires_at)   * 1000)::bigint as expires_at
+`.trim();
+
+/** The bus's clock — the instant a publish issued now would be stamped with. */
+export const SQL_EVENT_NOW = `
+select floor(extract(epoch from now()) * 1000)::bigint as now
 `.trim();
 
 /**
@@ -285,95 +318,6 @@ select id, name, payload, correlation_key,
 `.trim();
 
 export const SQL_EVENT_PURGE = `delete from x_job_events where expires_at <= now()`;
-
-export const SQL_OUTBOX_STAGE = `
-insert into x_outbox
-  (id, job, queue, input, idempotency_key, max_attempts, run_at, staged_at, tenant_id,
-   traceparent, enqueued_by)
-values ($1, $2, $3, $4::jsonb, $5, $6, to_timestamp($7 / 1000.0), to_timestamp($8 / 1000.0),
-        $9, $10, $11)
-`.trim();
-
-/**
- * The claim, and it has to be ONE statement. `for update skip locked` in a bare select holds its
- * row locks only until that statement ends — under autocommit, before `claim()` even resolves — so
- * two relays polling 200ms apart read the same unpublished rows and both hand them to `enqueue`.
- * `SQL_ENQUEUE` collapses the repeat only while the first job is still LIVE: its conflict target
- * is a partial index over the live states, so a second publish landing after that job reached a
- * terminal state inserts a second row and the handler runs again. (The mechanism is Postgres
- * semantics; how often the two orderings line up in a deployment was never measured.)
- *
- * So the lock and the claim commit together, the CTE shape `SQL_CLAIM` already uses, and
- * `claimed_at` is a LEASE: `$2` is the window after which a row a dead relay was holding is
- * claimable again, because a claim nothing can expire strands its rows forever.
- *
- * The outer `select ... order by staged_at, id` is not cosmetic. `update ... returning` has no
- * defined row order and the relay publishes in the order it is handed rows, so an app staging
- * `createInvoice` then `chargeCard` in one transaction depends on this line.
- *
- * `, id` is what makes that key TOTAL, and the CTE needs it as much as the projection does: every
- * row staged in one transaction shares a `staged_at`, so `staged_at` alone leaves the tie to the
- * planner — which rows a `limit` takes, and in which order they publish, then differ between two
- * relays and between two runs of one relay. No column was added for it: `id` is a UUIDv7 minted by
- * `uuid()`, monotonic and already the primary key, so the tiebreak IS stage order.
- */
-export const SQL_OUTBOX_CLAIM = `
-with claimable as (
-  select id
-    from x_outbox
-   where published_at is null
-     and (claimed_at is null
-          or claimed_at <= now() - ($2::bigint * interval '1 millisecond'))
-   order by staged_at, id
-   limit $1
-     for update skip locked
-), claimed as (
-  update x_outbox o
-     set claimed_at = now(), claimed_by = $3
-    from claimable c
-   where o.id = c.id
-  returning o.id, o.job, o.queue, o.input, o.idempotency_key, o.max_attempts, o.tenant_id,
-            o.traceparent, o.enqueued_by, o.claimed_by, o.run_at, o.staged_at
-)
-select id, job, queue, input, idempotency_key, max_attempts, tenant_id,
-       traceparent, enqueued_by, claimed_by,
-       (extract(epoch from run_at) * 1000)::bigint    as run_at,
-       (extract(epoch from staged_at) * 1000)::bigint as staged_at
-  from claimed
- order by staged_at, id
-`.trim();
-
-/**
- * Hand a claim back early. The relay stops its batch on the first publish that fails, and without
- * this the rows behind it would wait out the whole lease before any relay could retry them — a
- * pool blip during a failover becoming tens of seconds of unpublished, committed work.
- *
- * Fenced on `published_at is null` so it can never unclaim a row some other pass already
- * published, AND on `claimed_by` so it can never unclaim one a NEWER claimant now holds: a relay
- * whose lease lapsed while it stalled wakes into a world where its batch is another relay's, and
- * an unfenced release frees rows that relay is mid-publish on — a third relay claims them and
- * publishes them again, which is the duplicate the lease exists to prevent.
- */
-export const SQL_OUTBOX_RELEASE = `
-update x_outbox
-   set claimed_at = null, claimed_by = null
- where id = any($1::uuid[]) and published_at is null and claimed_by = $2
-`.trim();
-
-/**
- * Same fence, and here it is the more expensive one to miss: marking a row published is LOSING it,
- * so a lapsed claimant stamping a row the current one has not published yet drops that job with
- * nothing to notice. `published_at is null` makes the stamp first-writer-wins rather than a
- * rewrite of an audit timestamp.
- */
-export const SQL_OUTBOX_MARK_PUBLISHED = `
-update x_outbox set published_at = to_timestamp($2 / 1000.0)
- where id = $1 and published_at is null and claimed_by = $3
-`.trim();
-
-export const SQL_OUTBOX_PENDING_COUNT = `
-select count(*)::bigint as pending from x_outbox where published_at is null
-`.trim();
 
 export const SQL_STEP_GET = `
 select run_id, name, status, output, attempts, error,

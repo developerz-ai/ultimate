@@ -151,6 +151,8 @@ export const harness = (
         step: runner.step,
         ctx,
         attempt: 1,
+        finalAttempt: false,
+        progress: () => undefined,
         jobId: 'job-1',
         runId,
       });

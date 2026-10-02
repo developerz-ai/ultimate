@@ -138,6 +138,8 @@ describe('the x_backfills ledger', () => {
       step: runner.step,
       ctx,
       attempt: 1,
+      finalAttempt: false,
+      progress: () => undefined,
       jobId: 'job-3',
       runId: 'run-edited',
     });
@@ -173,6 +175,8 @@ describe('the x_backfills ledger', () => {
         step: runner.step,
         ctx,
         attempt: 1,
+        finalAttempt: false,
+        progress: () => undefined,
         jobId: 'job-4',
         runId: 'run-parked',
       }),

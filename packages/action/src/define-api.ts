@@ -50,16 +50,28 @@ type Registered<TModule, TKind extends string> = {
 };
 
 /**
- * Intersect a tuple of module namespaces. `{ createPost } & { inviteMember }` is the map the
+ * Intersect a list of module namespaces. `{ createPost } & { inviteMember }` is the map the
  * typed client indexes, so `rpc<Api['actions']>()` knows every action without a codegen step.
+ *
+ * Never by recursion over the tuple. `Registered<Head> & Merge<Rest>` is not a tail call, so the
+ * compiler spent one level of its instantiation depth per MODULE and answered TS2589 at the 48th
+ * entry of one list — whatever the number of actions inside them (measured: 30 modules of 10 pass,
+ * 48 modules of 1 fail). The list is read as a union and intersected in one step, so the depth is
+ * constant and `client-scale-pins.ts` holds it there.
  */
 type Merge<TModules, TKind extends string> = [TModules] extends [undefined]
   ? EmptyModule
-  : TModules extends readonly [infer THead, ...infer TRest]
-    ? Registered<THead, TKind> & Merge<TRest, TKind>
-    : TModules extends readonly []
-      ? EmptyModule
-      : Registered<TModules, TKind>;
+  : TModules extends readonly unknown[]
+    ? MergeAll<TModules[number], TKind>
+    : Registered<TModules, TKind>;
+
+/** An empty list has no members to intersect — and `unknown` is not a map `rpc` accepts. */
+type MergeAll<TModule, TKind extends string> = [TModule] extends [never]
+  ? EmptyModule
+  : Intersect<TModule extends unknown ? (map: Registered<TModule, TKind>) => void : never>;
+
+/** A union of one-parameter functions infers that parameter as the intersection of them all. */
+type Intersect<TFns> = [TFns] extends [(map: infer TMap) => void] ? TMap : never;
 
 type EmptyModule = Readonly<Record<never, never>>;
 

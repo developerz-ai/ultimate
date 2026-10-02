@@ -203,7 +203,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `navigation.ts` | the client router's server half: the gate `context` runs after the match (a prefetch to a route whose `meta.navigation` did not opt in → `204`; a soft GET to anything but a page of the router's `<app>:<surface>` → `204` + `x-ultimate-location`, before auth or app code) and the `response` stage's rewrite of a 3xx to a router request into the same hand-over, cookies kept |
 | `error-map.ts` | the code → status table, closed, plus the app's half (`registerErrorStatus`) |
 | `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document (including the issue list and the opacity rule over it), the three terminal lines |
-| `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices` + the app's `configureAuthenticator()` |
+| `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices`, `errorPage`, `explainMiss` (asked ONLY on a `not-found` match, synchronously, with the request line alone; its error replaces `X_ROUTE_NOT_FOUND`) + the app's `configureAuthenticator()` |
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |
 | `overlay-style.ts` | the overlay's one stylesheet, split out so `security-headers.ts` hashes it |

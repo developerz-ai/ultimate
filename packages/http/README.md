@@ -303,6 +303,9 @@ exactly three things. Apps declare it through `defineApi({ http: { mounts } })` 
 
 `RouteMeta.authenticate` is the mechanism: a route that states one is reached only through it.
 
+For API keys, `resolveToken` is `@ultimat3/auth`'s `apiKeyResolver(() => store)` — a live key is
+`{ actor, scopes }`, every wrong one is the same `null`, and a store fault stays a throw.
+
 ## Inbound webhooks
 
 `verifyWebhookSignature(request, { secret })` is the receiving half of the framework's webhook
@@ -439,3 +442,9 @@ Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n` and `@ult
 tiers 0 and 1, which is the whole rule. Authentication and policy evaluation arrive through
 `ServerHooks`, declared structurally, because `@ultimat3/policy` is a sibling tier. There is no
 plugin API: `Middleware` wraps a handler, the pipeline is everything else.
+
+`hooks.explainMiss(method, pathname)` is the same kind of seam for a request the router matched
+nothing for: the error it returns is thrown in place of `X_ROUTE_NOT_FOUND`, `undefined` keeps the
+plain miss. Synchronous, given only the request line, never asked about a matched route or a 405.
+`@ultimat3/action` answers it for a path that is one of its actions under a `pathStyle` this server
+does not serve (`X_CONTRACT_DRIFT`, 404).

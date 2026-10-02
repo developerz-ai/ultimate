@@ -4,6 +4,7 @@
 // `ack` is only ever a refusal.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import { defaultReconnectBudget, makeCursor, shouldResnapshot } from './cursor';
 import { liveFeed, type PostRow, pageHarness, querySid, resetPage } from './hooks-fixture';
 import { PROTOCOL_VERSION } from './sync-protocol';
@@ -100,7 +101,12 @@ describe('an ack carrying an error', () => {
     socket.deliver({ type: 'ack', v: PROTOCOL_VERSION, ref: sid, lsn: null, error: DENIED });
 
     expect(refused.state()).toBe('failed');
-    expect(refused.error()).toEqual(DENIED);
+    // The node's own error, BRANDED: a plain `{ code, cause, fix }` object fails `isUltimateError`,
+    // so an error screen rendered it as `X_INTERNAL` with the real error JSON-stringified into its
+    // cause and a fix telling the reader to throw the `UltimateError` it already was.
+    const error = refused.error();
+    expect(isUltimateError(error)).toBe(true);
+    expect(error).toMatchObject({ ...DENIED, meta: { origin: 'remote' } });
     expect(told).toBe(1);
     expect(fine.state()).toBe('loading');
   });
@@ -109,7 +115,9 @@ describe('an ack carrying an error', () => {
     const { socket, errors } = pageHarness();
     socket.open();
     socket.deliver({ type: 'ack', v: PROTOCOL_VERSION, ref: 'sock-1', lsn: null, error: DENIED });
-    expect(errors).toEqual([DENIED]);
+    expect(errors).toHaveLength(1);
+    expect(isUltimateError(errors[0])).toBe(true);
+    expect(errors[0]).toMatchObject(DENIED);
   });
 
   test('a refused subscription stays failed when the socket drops, not offline', () => {

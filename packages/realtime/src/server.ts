@@ -111,7 +111,7 @@ export {
   kvWrite,
 } from './nats-jetstream';
 export { decodeToken, encodeToken, NatsKvSet, type NatsKvSetOptions } from './nats-kv';
-export { openNatsClient } from './nats-lib-client';
+export { openNatsClient } from './nats-open';
 export { NatsTransport, type NatsTransportOptions } from './nats-transport';
 export { PgAdvisoryLock, type PgAdvisoryLockOptions } from './pg-advisory-lock';
 // ---- the postgres replication path ------------------------------------------------------------

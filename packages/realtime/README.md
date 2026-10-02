@@ -232,6 +232,32 @@ One authz system, never two: `policy` is evaluated **once per subscriber**, neve
 Two actors on one live query get two different result sets, and a row that leaves an actor's policy
 is delivered to them as a `delete` — never as silence.
 
+**The shared read is a TENANT's, never the node's.** One `(query, input)` is one window per org:
+its id is `windowId(queryHash(name, input), tenant)`, the tenant being the subscriber's
+`actor.orgId`, and its source is read in a context that carries that org and nothing else of any
+subscriber's. So a repo that leaves the tenant to the acting actor — what `x g query --live`
+generates — reads on a sync node exactly as it reads over HTTP, and no org predicate is written
+by hand.
+
+| On a sync node | Answer |
+|---|---|
+| two subscribers of one org, one `(query, input)` | one window, one read, one policy pass each |
+| two subscribers in two orgs, one `(query, input)` | two windows, two reads, two retained patch rings — a row of one is never in the other's, policy or not |
+| the source names no org (`db.posts.orderBy(…)`) | scoped to the window's tenant by `@ultimat3/entity`'s guard |
+| the source names ANOTHER org | `X_TENANCY_ACTOR_MISMATCH`, as over HTTP — it was answered, until 2026-10 |
+| a subscriber with no org reads a tenant-scoped table | `X_TENANCY_ACTOR_ORG_REQUIRED`, as over HTTP |
+| a reconnect presents a cursor minted in another org's window | a cold start: one snapshot, never a replay of that window's patches |
+| the actor changes org mid-connection | `reauthorize` re-seats the subscription on its new tenant's window and sends that snapshot |
+
+The read's actor is `serviceActor({ id: 'live-window', orgId })` — the shape a job run gets. Never
+a subscriber's: a window has many, and one subscriber's identity on a shared read is that
+subscriber's entitlements becoming the window's.
+
+**A refusal reaches the page as itself.** A subscription the node refuses is an `ack` carrying
+`{ code, cause, fix }`; the client revives it as a branded `UltimateError` (`meta.origin:
+'remote'`), so `useQuery`'s `failed` state and an `<ErrorState>` render that code and that fix.
+Handed over as the bare wire object it failed `isUltimateError` and rendered as `X_INTERNAL`.
+
 ## What one socket may cost
 
 Every ceiling on this node, and the option that moves it. Each one is a default, not a policy: an
@@ -401,6 +427,10 @@ wire twice by a reconnect that raced an ack.
   re-reads and re-snapshots. Both fields are optional on the bus, so a publisher that does not
   sequence simply detects nothing. Durable replay (JetStream) is a separate decision — retention,
   storage and replay window — and is deliberately not this mechanism.
+- **A bulk write re-reads only the windows over its entity.** `updateWhere`/`deleteWhere` name a
+  filter, not rows, so the in-process replicator calls `registry.invalidate(entity)`: windows whose
+  shape reads that entity go stale and their subscribers desynced. The next change re-reads the
+  window and re-snapshots every subscriber, whether or not that change matches the query.
 - **`desynced` has a reader.** A subscriber recorded as diverged — a dropped patch, a gate that
   failed, a window that lost its tail — is served a fresh snapshot out of the shared window on the
   next delivery, and only then is the mark cleared. A snapshot the socket refuses leaves it
@@ -443,9 +473,9 @@ wire twice by a reconnect that raced an ack.
   `subscribe` is one lane per sid, or per topic name; `hello` and
   the server-authored kinds are unlaned. A lane exists only while work is queued on it, because a
   lane keyed by a client-chosen sid that outlived its work is an unbounded map one socket can grow.
-- **`qid` is `@ultimat3/query`'s `queryHash(name, input)`** — `<name>:<first 16 hex of
-  SHA-256(canonicalJson(input))>`, 64 bits `As of 2026-08` where it was a 32-bit FNV-1a. It is a
-  *sharing* key: a hit is answered with the existing entry and the seated window, both holding the
+- **A window's `qid` is `@ultimat3/query`'s `queryHash(name, input)`, qualified by the tenant it
+  is read for** (`windowId`) — `<name>:<first 16 hex of SHA-256(canonicalJson(input))>`, 64 bits
+  `As of 2026-08` where it was a 32-bit FNV-1a. It is a *sharing* key: a hit is answered with the existing entry and the seated window, both holding the
   first subscriber's input and rows, and input is client-chosen, so a collision is one client served
   out of another's window. This package derives none of its own — `qidOf` was a second spelling of
   `queryHash` while `@ultimat3/query`'s `planResume` compares a cursor's `queryHash` against the

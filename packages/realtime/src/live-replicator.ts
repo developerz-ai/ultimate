@@ -125,14 +125,14 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
 
     /**
      * A filtered write names rows this seam never saw, so there is no event to shape. Every window
-     * on the node is marked stale instead and re-read on the next change — `invalidate()` is the
-     * node's own answer to "the change stream skipped something", used here for the one write that
-     * genuinely does. Silence would be the alternative, and a subscriber told nothing happened
-     * diverges with nobody ever asking again.
+     * over THAT entity is marked stale instead and re-read, its subscribers re-snapshotted, on the
+     * next change — `invalidate()` is the node's own answer to "the change stream skipped
+     * something", used here for the one write that genuinely does. Silence would be the
+     * alternative, and a subscriber told nothing happened diverges with nobody ever asking again.
      */
-    onBulk(_change: RowBulkChange): void {
+    onBulk(change: RowBulkChange): void {
       if (stopped) return;
-      registry.invalidate();
+      registry.invalidate(change.entity);
     },
   };
 

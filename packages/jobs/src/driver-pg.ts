@@ -8,19 +8,27 @@ import type { Clock } from '@ultimat3/core';
 import { finiteCount, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
+import { nackOutcome } from './counters';
 import type {
+  AckOptions,
   ClaimedJob,
   ClaimOptions,
   EnqueueRequest,
   EnqueueResult,
   HeartbeatOptions,
   JobDriver,
-  JobFilter,
-  JobIntrospection,
+  JobRecord,
   NackOptions,
   QueueStats,
 } from './driver';
-import { assertClaimBounds, assertClaimQueues, DEFAULT_QUEUE, REQUEUEABLE_STATES } from './driver';
+import {
+  assertClaimBounds,
+  assertClaimQueues,
+  DEFAULT_QUEUE,
+  nackState,
+  REQUEUEABLE_STATES,
+} from './driver';
+import { pgOperator } from './driver-pg-operator';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
 import {
@@ -37,13 +45,14 @@ import {
   SQL_HEARTBEAT,
   SQL_JOB_DEAD_LETTERS,
   SQL_JOB_GET,
-  SQL_JOB_LIST,
   SQL_JOB_LIVE_HOLDER,
   SQL_JOB_REQUEUE,
   SQL_LEASE_ACQUIRE,
+  SQL_LEASE_HOLDERS,
   SQL_LEASE_RELEASE,
   SQL_LEASE_RENEW,
   SQL_NACK,
+  SQL_OUTBOX_PUBLISHED_JOB,
   SQL_STATS,
   SQL_STEP_GET,
   SQL_STEP_LIST,
@@ -53,6 +62,8 @@ import {
 } from './driver-pg-sql';
 import { DriverUnavailableError, JobDuplicateError } from './errors';
 import { JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
+import type { JobIntrospection } from './introspection';
+import { MAX_ERROR_STACK_LENGTH } from './introspection';
 import type { HeldLease, LeaseStore } from './leases';
 import type { StepStore } from './steps';
 
@@ -183,6 +194,10 @@ function pgLeaseStore(exec: () => PgExecutor): LeaseStore {
       );
       return num(rows[0]?.n);
     },
+    async holders(key) {
+      const rows = await exec().query<{ holder: string }>(SQL_LEASE_HOLDERS, [key]);
+      return rows.map((row) => row.holder);
+    },
   };
 }
 
@@ -194,21 +209,15 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
     return executor;
   };
 
+  const job = async (jobId: string): Promise<JobRecord | undefined> => {
+    const rows = await exec().query<JobRow>(SQL_JOB_GET, [jobId]);
+    const row = rows[0];
+    return row === undefined ? undefined : toJobRecord(row);
+  };
+
   const introspect: JobIntrospection = {
-    async job(jobId) {
-      const rows = await exec().query<JobRow>(SQL_JOB_GET, [jobId]);
-      const row = rows[0];
-      return row === undefined ? undefined : toJobRecord(row);
-    },
-    async list(filter: JobFilter = {}) {
-      const rows = await exec().query<JobRow>(SQL_JOB_LIST, [
-        filter.queue ?? null,
-        filter.name ?? null,
-        filter.state ?? null,
-        finiteCount('the pg driver list', 'limit', filter.limit ?? 100),
-      ]);
-      return rows.map(toJobRecord);
-    },
+    job,
+    ...pgOperator(exec, job),
     async deadLetters(limit = 100) {
       const rows = await exec().query<JobRow>(SQL_JOB_DEAD_LETTERS, [
         finiteCount('the pg driver dead letters', 'limit', limit),
@@ -216,7 +225,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
       return rows.map(toJobRecord);
     },
     async requeue(jobId, requeueOptions) {
-      const current = await this.job(jobId);
+      const current = await job(jobId);
       if (current === undefined) {
         throw new DriverUnavailableError({
           driver: 'pg',
@@ -262,7 +271,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
       const runAt = request.runAt ?? nowMs(clock);
       const rows = await exec().query<{ id: string; run_id: string }>(SQL_ENQUEUE, [
-        uuid(),
+        request.id ?? uuid(),
         request.name,
         request.queue || DEFAULT_QUEUE,
         JSON.stringify(request.input ?? null),
@@ -277,6 +286,17 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
       const inserted = rows[0];
       if (inserted !== undefined) {
         return { id: inserted.id, runId: inserted.run_id, deduped: false };
+      }
+
+      // Nothing inserted under an id the CALLER allocated: the outbox publishing one staged row a
+      // second time. The job its first publish made is the answer, whatever state it has reached.
+      if (request.id !== undefined) {
+        const published = await exec().query<{ id: string; run_id: string }>(
+          SQL_OUTBOX_PUBLISHED_JOB,
+          [request.id],
+        );
+        const made = published[0];
+        if (made !== undefined) return { id: made.id, runId: made.run_id, deduped: true };
       }
 
       // `do nothing` fired: a live job OF THIS NAME, IN THIS TENANT, already owns this idempotency
@@ -321,33 +341,48 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         const record = toJobRecord(row);
         return {
           ...record,
+          claimedBy: claimOptions.workerId,
+          claim: record.claim ?? 0,
           claimedAt: at,
           visibleAt: record.visibleAt ?? at + claimOptions.visibilityTimeoutMs,
         };
       });
     },
 
-    async ack(jobId: string): Promise<void> {
-      await exec().query(SQL_ACK, [jobId]);
+    // Both settles answer whether they LANDED: no row back is a settle from a worker that no
+    // longer owns the job (`SQL_ACK` says why both fences exist), and the caller logs it.
+    async ack(jobId: string, by: AckOptions): Promise<boolean> {
+      const rows = await exec().query<{ name: string }>(SQL_ACK, [
+        jobId,
+        by.workerId,
+        Math.round(by.durationMs ?? 0),
+        by.claim,
+        by.counted !== false,
+      ]);
+      return rows.length > 0;
     },
 
-    async nack(jobId: string, nackOptions: NackOptions): Promise<void> {
+    async nack(jobId: string, nackOptions: NackOptions): Promise<boolean> {
       const counts = nackOptions.countsAsAttempt !== false;
-      // The same three-way the memory driver takes, and it reads `park` rather than `counts`: the
-      // attempt counter and the ready bucket are two facts, and a shed only ever meant the first.
-      const state =
-        nackOptions.deadLetter === true
-          ? 'dead'
-          : nackOptions.park === true
-            ? 'suspended'
-            : 'ready';
-      await exec().query(SQL_NACK, [
+      const outcome = nackOutcome(nackOptions);
+      // The reading the memory driver takes — `nackState` is the one definition — and it reads
+      // `park` rather than `counts`: the attempt counter and the ready bucket are two facts, and a
+      // shed only ever meant the first.
+      const rows = await exec().query<{ name: string }>(SQL_NACK, [
         jobId,
-        state,
+        nackState(nackOptions),
         counts,
         nackOptions.delayMs,
         nackOptions.error ?? null,
+        nackOptions.workerId,
+        nackOptions.stack?.slice(0, MAX_ERROR_STACK_LENGTH) ?? null,
+        outcome === 'retried' ? 1 : 0,
+        outcome === 'failed' ? 1 : 0,
+        outcome === 'dead' ? 1 : 0,
+        Math.round(nackOptions.durationMs ?? 0),
+        nackOptions.claim,
       ]);
+      return rows.length > 0;
     },
 
     async heartbeat(jobId: string, heartbeatOptions: HeartbeatOptions): Promise<boolean> {
@@ -355,6 +390,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         jobId,
         heartbeatOptions.visibilityTimeoutMs,
         heartbeatOptions.workerId ?? null,
+        heartbeatOptions.claim ?? null,
       ]);
       // No row means the job is no longer ours: cancelled from outside, or re-claimed after this
       // lease lapsed. Either way the caller has to stop running it.
@@ -368,6 +404,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         delayed: number | string;
         running: number | string;
         suspended: number | string;
+        failed: number | string;
         dead: number | string;
         oldest_ready_ms: number | string;
       }>(SQL_STATS, []);
@@ -377,6 +414,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         delayed: num(row.delayed),
         running: num(row.running),
         suspended: num(row.suspended),
+        failed: num(row.failed),
         dead: num(row.dead),
         oldestReadyMs: Math.round(num(row.oldest_ready_ms)),
       }));
@@ -402,10 +440,12 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
 export function createPgLeader(
   lockKey: number,
   options: PgDriverOptions = {},
-): { acquire(): Promise<boolean>; release(): Promise<void> } {
+): { acquire(): Promise<boolean>; release(): Promise<void>; readonly renewEveryMs: number } {
   const exec = (): PgExecutor => resolveExecutor(options.executor);
   let held = false;
   return {
+    // Asked every time: a held advisory lock answers from the flag below, at no cost.
+    renewEveryMs: 0,
     async acquire() {
       if (held) return true;
       const rows = await exec().query<{ locked: boolean }>(SQL_TRY_ADVISORY_LOCK, [lockKey]);

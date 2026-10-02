@@ -228,6 +228,40 @@ describe('a change the window already holds never reaches a subscriber', () => {
   });
 });
 
+describe('a stale window owes EVERY subscriber a snapshot of its re-read', () => {
+  // The rig's read answers `seated` with lsn '' — a definition with no feed position, so the lsn
+  // guard cannot decide whether the read already holds the change.
+  test('a change the shape does not read still repairs them: nothing else will', async () => {
+    const { entry, deps, reads } = rig(() => patched);
+    const alice = connect();
+    subscribe(entry, alice.socket, 's1');
+    entry.stale = true;
+
+    const result = await fanoutChange(deps, entry, { ...change('1'), entity: 'comments' });
+
+    expect(reads()).toBe(1);
+    expect(result.sent).toBe(1);
+    expect(alice.ws.frames[0]).toMatchObject({ type: 'snapshot', sid: 's1', rows: seated });
+    expect(alice.socket.desynced.has('s1')).toBe(false);
+  });
+
+  test('a subscriber nobody marked — the window went stale on a failed read — is repaired too', async () => {
+    const { entry, deps } = rig(() => patched);
+    const alice = connect();
+    subscribe(entry, alice.socket, 's1');
+    entry.stale = true;
+    entry.lsn = '1';
+
+    // A read with an lsn that claims the change: nothing to patch, and still a snapshot owed.
+    entry.definition.snapshot = async () => ({ rows: seated, lsn: '2' });
+    const result = await fanoutChange(deps, entry, change('2'));
+
+    expect(result).toEqual({ sent: 1, stale: 0 });
+    expect(alice.ws.frames).toHaveLength(1);
+    expect(alice.ws.frames[0]).toMatchObject({ type: 'snapshot', sid: 's1' });
+  });
+});
+
 describe('snapshotFrame is the one place the identity scope is decided', () => {
   test('an entry that names no entity ships no `entity` key at all', () => {
     const { entry } = rig(() => patched);

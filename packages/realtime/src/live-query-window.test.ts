@@ -12,6 +12,7 @@ import { makeCursor, type ResumeSource } from './cursor';
 import type { JsonValue, Row, RowPatch } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
+import { windowId } from './live-tenant';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
 import { decode, type Frame } from './sync-protocol';
@@ -322,7 +323,8 @@ describe('a delta resume decides about whole rows', () => {
         },
       }),
     );
-    const qid = queryHash('liveFeed', input);
+    // The window bob's org is served from — the id a cursor and the retained ring are keyed by.
+    const qid = windowId(queryHash('liveFeed', input), 'o1');
     // The retained window holds pre-policy patches, and an update patch is the changed column plus
     // the id — never the whole row. Nothing has read this entry, so the shared window is empty.
     source.append(qid, { op: 'update', id: 'p2', row: { id: 'p2', likes: 1 }, lsn: formatLsn(2) });

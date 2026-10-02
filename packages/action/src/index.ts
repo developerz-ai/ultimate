@@ -237,6 +237,11 @@ export {
   completeOpenApi,
   mountOpenApi,
 } from './openapi-complete';
+/**
+ * `@ultimat3/http`'s `hooks.explainMiss` for the action surface: a POST to an action's path under
+ * a `pathStyle` this app does not serve answers `X_CONTRACT_DRIFT` naming the style it does.
+ */
+export { explainActionPathMiss } from './path-style-miss';
 export type { ActionPolicy, PolicySubject, Surface } from './policy-gate';
 /**
  * `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on.

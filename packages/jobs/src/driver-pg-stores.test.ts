@@ -11,6 +11,7 @@ import type { JobRow } from './driver-pg-rows';
 import {
   SQL_CANCEL,
   SQL_LEASE_ACQUIRE,
+  SQL_LEASE_HOLDERS,
   SQL_LEASE_RELEASE,
   SQL_LEASE_RENEW,
   SQL_STATS,
@@ -269,6 +270,21 @@ describe('the pg lease store — fleet-wide slots', () => {
     const empty = executorFor();
     expect(await driverWith(empty).leases?.held('sendInvite')).toBe(0);
   });
+
+  test('holders names who holds the LIVE slots of one key, in slot order', async () => {
+    const executor = executorFor({
+      'select holder': [{ holder: 'w-1:job-1' }, { holder: 'w-2:job-2' }],
+    });
+    expect(await driverWith(executor).leases?.holders('job-key:sync:acct-1')).toEqual([
+      'w-1:job-1',
+      'w-2:job-2',
+    ]);
+    expect(executor.calls[0]?.sql).toBe(SQL_LEASE_HOLDERS);
+    expect(executor.calls[0]?.params).toEqual(['job-key:sync:acct-1']);
+    // A lapsed slot is nobody`s: read as held, it would refuse a run over a key that is free.
+    expect(SQL_LEASE_HOLDERS).toContain('expires_at > now()');
+    expect(SQL_LEASE_HOLDERS).toContain('order by slot');
+  });
 });
 
 const row = (overrides: Partial<JobRow> = {}): JobRow => ({
@@ -318,12 +334,25 @@ describe('the pg driver`s introspection', () => {
     }
   });
 
-  test('an unfiltered list passes three nulls and the default limit', async () => {
+  test('an unfiltered list passes a null for every predicate, and the default limit', async () => {
     // Every predicate is `$n::text is null or col = $n`, so a filter nobody set has to arrive as
     // null — an omitted parameter would make the statement fail rather than match everything.
     const executor = executorFor({ 'from x_jobs': [row()] });
     const jobs = await driverWith(executor).introspect?.list();
-    expect(executor.calls[0]?.params).toEqual([null, null, null, 100]);
+    // queue, name, state, limit — then id prefix, the created range, the keyset cursor's two and
+    // the tenant.
+    expect(executor.calls[0]?.params).toEqual([
+      null,
+      null,
+      null,
+      100,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
     expect(jobs?.map((job) => job.id)).toEqual(['job-1']);
   });
 
@@ -334,8 +363,24 @@ describe('the pg driver`s introspection', () => {
       name: 'sendInvite',
       state: 'dead',
       limit: 5,
+      idPrefix: '019f',
+      createdFrom: 1_000,
+      createdTo: 2_000,
+      after: '1500:019ff1c5-0000-7000-8000-000000000001',
+      tenantId: 'org-1',
     });
-    expect(executor.calls[0]?.params).toEqual(['mail', 'sendInvite', 'dead', 5]);
+    expect(executor.calls[0]?.params).toEqual([
+      'mail',
+      'sendInvite',
+      'dead',
+      5,
+      '019f',
+      1_000,
+      2_000,
+      1_500,
+      '019ff1c5-0000-7000-8000-000000000001',
+      'org-1',
+    ]);
   });
 
   test('deadLetters reads the dead state newest-first, defaulting to 100', async () => {
@@ -417,6 +462,7 @@ describe('the pg driver`s queue stats', () => {
           delayed: '1',
           running: 2,
           suspended: '0',
+          failed: '7',
           dead: '3',
           oldest_ready_ms: '1200.6',
         },
@@ -429,6 +475,7 @@ describe('the pg driver`s queue stats', () => {
         delayed: 1,
         running: 2,
         suspended: 0,
+        failed: 7,
         dead: 3,
         oldestReadyMs: 1201,
       },

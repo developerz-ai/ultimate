@@ -1,31 +1,26 @@
 // Tier 2: live queries. Registration, per-subscriber authz, snapshot, patch stream.
 //
 // The rule this file exists to enforce: **policy is evaluated once per subscriber, never once per
-// query**. The DB read is shared across subscribers of the same query id; the authz decision is
-// not. Two actors on one live query see two different result sets, and a row that fails an actor's
+// query**. The DB read is shared across subscribers of the same query id IN ONE TENANT
+// (`live-tenant.ts`); the authz decision is not shared at all. Two actors on one live query see two different result sets, and a row that fails an actor's
 // policy is never sent to that actor — it arrives as a `delete` if they hold it, and is dropped
 // otherwise.
 
 import { type Actor, type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
-import {
-  advance,
-  type LiveCursor,
-  makeCursor,
-  type ReconnectBudget,
-  type ResumeSource,
-  resumeFrom,
-} from './cursor';
+import { type LiveCursor, makeCursor, type ReconnectBudget, type ResumeSource } from './cursor';
 import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import { type FanoutDeps, fanoutChange, snapshotFrame } from './live-fanout';
+import { resumeOnto } from './live-resume';
+import { liveTenantOf, windowId } from './live-tenant';
 import { createEntry, fillWindow, type QueryEntry } from './query-window';
 import type { SyncSocket } from './socket';
 import { type Subscriber, SubscriberGate, type SubscriberGateOptions } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
-import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import type { Frame } from './sync-protocol';
 import type { Scheduler } from './thundering-herd';
 
 export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
@@ -111,10 +106,15 @@ export class LiveQueryRegistry {
    * whose lsn never moved, subscribers whose cursors never moved, and therefore nothing that would
    * ever ask for a re-snapshot. The repair lands on the next change to each query — which is the
    * event that proves the query is moving at all.
+   *
+   * `entity` narrows it to the windows that read that entity: a filtered write
+   * (`updateWhere`/`deleteWhere`) names its entity but no row, and staling every window on the node
+   * for it re-read every live query in the process on each bulk write to any table.
    */
-  invalidate(): number {
+  invalidate(entity?: string): number {
     let marked = 0;
     for (const entry of this.#entries.values()) {
+      if (entity !== undefined && !entry.shape.entities.includes(entity)) continue;
       entry.stale = true;
       for (const subscription of entry.subscribers.values()) {
         subscription.socket.markDesynced(subscription.sid);
@@ -188,8 +188,11 @@ export class LiveQueryRegistry {
     // may not subscribe is work an unauthorized client gets to schedule.
     await definition.prepare?.(args.input);
 
-    const qid = queryHash(args.name, args.input);
-    const entry = this.#entryFor(qid, definition, args.input);
+    // The window is the subscriber's TENANT's: two orgs on one `(query, input)` are two entries,
+    // two reads and two retained rings, so no shared row ever stands between them and a policy.
+    const tenant = liveTenantOf(args.socket.actor);
+    const qid = windowId(queryHash(args.name, args.input), tenant);
+    const entry = this.#entryFor(qid, definition, args.input, tenant);
     try {
       return await this.#serve(entry, sid, args);
     } catch (error) {
@@ -215,48 +218,27 @@ export class LiveQueryRegistry {
     const qid = entry.qid;
     const now = this.#clock.now().getTime();
 
-    if (args.cursor) {
-      const cursor = args.cursor;
-      const resumed = await resumeFrom(cursor, {
-        source: this.#options.source,
-        ...(this.#options.budget ? { budget: this.#options.budget } : {}),
-        clock: this.#clock,
-        snapshot: async () => await this.#read(entry, { sid, actor: args.socket.actor }),
-      });
-      if (resumed.kind === 'delta') {
-        // The gate decides about whole rows out of the shared window, and an entry nothing has read
-        // yet has none — every patch would meet an empty window and be withheld. Filling is
-        // conditional on purpose: a restart storm resumes onto entries that already hold a live
-        // window, and re-reading per resuming subscriber is the cost a delta resume exists to skip.
-        if (entry.lsn === '') await fillWindow(entry);
-        // The live entry on purpose: a resume runs outside the lane, so the window under it may
-        // have moved on — always forwards, and a row whose grant was revoked in the meantime is
-        // one this pass must refuse rather than replay from the state it had at the cursor's lsn.
-        const patches = await this.#gate.filterPatches(
-          entry,
-          { sid, actor: args.socket.actor },
-          resumed.patches,
-          new Set(cursor.ids),
-        );
-        // Advanced over the FILTERED list, never over `resumed.cursor` — which `resumeFrom` built
-        // by advancing across the retained window, and that window is PRE-POLICY. Seated as it
-        // came back, this subscriber's `cursor.ids` gained the id of every row inserted for every
-        // OTHER actor while it was away; `subscriber-gate` then reads `held.has(patch.id)` off it,
-        // takes the "the subscriber holds this row" branch, and delivers a `delete` frame carrying
-        // another tenant's row id and the instant it went. The leak that branch closes, re-opened
-        // one layer up. `live-fanout.ts` advances over `allowed` for exactly this reason.
-        const seated = advance(cursor, patches, resumed.cursor.lsn, now);
-        const subscription = this.#attachUnlessGone(entry, args.socket, sid, seated);
-        return {
-          subscription,
-          frame: { type: 'patch', v: PROTOCOL_VERSION, sid, patches, lsn: seated.lsn },
-        };
-      }
+    // A cursor is CLIENT data, and its `qid` names the window whose retained patches a resume
+    // replays. One that names another window — the same browser, signed in to another org, or a
+    // forged frame — is not a position in this one: it is a cold start, never a replay of a ring
+    // this subscriber's window does not own.
+    if (args.cursor && args.cursor.qid === qid) {
+      const who = { sid, actor: args.socket.actor };
+      const resumed = await resumeOnto(
+        {
+          source: this.#options.source,
+          budget: this.#options.budget,
+          clock: this.#clock,
+          gate: this.#gate,
+          read: () => this.#read(entry, who),
+        },
+        entry,
+        who,
+        args.cursor,
+        now,
+      );
       const subscription = this.#attachUnlessGone(entry, args.socket, sid, resumed.cursor);
-      return {
-        subscription,
-        frame: snapshotFrame(entry, sid, resumed.rows, resumed.cursor),
-      };
+      return { subscription, frame: resumed.frame };
     }
 
     const fresh = await this.#read(entry, { sid, actor: args.socket.actor });
@@ -314,6 +296,10 @@ export class LiveQueryRegistry {
    * what is no longer allowed. Survivors are marked desynced so the next flush re-snapshots them
    * under the new actor's row policy. Returns the sids that were dropped — a denial and nothing
    * else, so a caller may tell the client "you may no longer see this" and be right.
+   *
+   * A survivor whose actor now belongs to ANOTHER tenant cannot stay where it is: its window is the
+   * old org's. It is re-seated — dropped, subscribed again under the new tenant, and sent that
+   * window's snapshot under the same sid.
    */
   async reauthorize(socket: SyncSocket): Promise<readonly string[]> {
     const dropped: string[] = [];
@@ -344,9 +330,29 @@ export class LiveQueryRegistry {
           error,
         );
       }
+      if (await this.#reseat(socket, subscription)) continue;
       socket.markDesynced(subscription.sid);
     }
     return dropped;
+  }
+
+  /**
+   * Move one subscription onto its actor's CURRENT tenant's window. `false` when it is already
+   * there. A re-seat that fails leaves the subscription dropped and reported — never attached to
+   * the window of an org its actor has left.
+   */
+  async #reseat(socket: SyncSocket, subscription: LiveSubscription): Promise<boolean> {
+    const { sid, input, definition } = subscription;
+    const wanted = windowId(queryHash(definition.name, input), liveTenantOf(socket.actor));
+    if (wanted === subscription.qid) return false;
+    this.unsubscribe(socket.id, sid);
+    try {
+      const { frame } = await this.subscribe({ socket, name: definition.name, input, sid });
+      if (!socket.send(frame)) socket.markDesynced(sid);
+    } catch (error) {
+      this.#gate.failedAuthorize(wanted, { sid, actor: socket.actor }, error);
+    }
+    return true;
   }
 
   /**
@@ -437,7 +443,12 @@ export class LiveQueryRegistry {
     return subscription;
   }
 
-  #entryFor(qid: string, definition: LiveQueryDefinition, input: JsonValue): QueryEntry {
+  #entryFor(
+    qid: string,
+    definition: LiveQueryDefinition,
+    input: JsonValue,
+    tenant: string | null,
+  ): QueryEntry {
     const existing = this.#entries.get(qid);
     if (existing) return existing;
     // The node-wide ceiling, refused where the entry would be born. `qid` derives from
@@ -454,6 +465,7 @@ export class LiveQueryRegistry {
     const created = createEntry(qid, definition, input, definition.matcher(input), {
       readDeadlineMs: this.#options.readDeadlineMs,
       schedule: this.#options.schedule,
+      tenant,
     });
     this.#entries.set(qid, created);
     return created;

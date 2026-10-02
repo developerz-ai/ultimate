@@ -161,7 +161,7 @@ reappearing there is a failing test.
 | `surfaces.ts` | http/live/job/mcp adapters — the "one system" proof |
 | `roles.ts` | the role map: merge, conflict, inheritance, wildcards |
 | `grant-index.ts` | the per-actor flattened grant set, memoised against the role generation |
-| `test-kit.ts` | `policyMatrix()` for generated policy tests, and `testActor()` |
+| `test-kit.ts` | `policyMatrix()` for generated policy tests, and `testActor()` — whose `.actor` is typed `Actor`, never `null`, so it goes straight into `createContext({ actor })` |
 
 ## The hot path
 

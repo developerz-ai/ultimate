@@ -7,11 +7,12 @@
 // test in this repo run against, and `driver-pg.ts` is what production runs against.
 
 import { describe, expect, test } from 'bun:test';
-import type { JobDriver } from './driver';
+import type { JobDriver, NackOptions } from './driver';
+import { nackState } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
-import { SQL_CANCEL } from './driver-pg-sql';
+import { SQL_CANCEL, SQL_NACK } from './driver-pg-sql';
 
 const claimOne = (driver: JobDriver): Promise<unknown> =>
   driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 30_000, workerId: 'w1' });
@@ -105,5 +106,145 @@ describe('a cancelled job holds no lease either', () => {
     // The pg half, in the same test, so neither side can move alone.
     expect(SQL_CANCEL).toContain('visible_at = null');
     expect(SQL_CANCEL).toContain('claimed_by = null');
+  });
+});
+
+describe('a nack that FAILS the row files it `failed`, in both', () => {
+  /**
+   * `fail: true` is the terminal state that is not a dead letter — `whenBusy: 'fail'` over a busy
+   * concurrency key. Each driver wrote the state out as its own three-way, so a fourth branch
+   * could land in one and not the other: a `fail` the pg driver read as `ready` re-claims a
+   * refused run forever, while every test here — on the memory driver — stays green.
+   */
+  const refused: NackOptions = {
+    workerId: 'w1',
+    claim: 1,
+    delayMs: 0,
+    error: 'X_JOB_KEY_BUSY',
+    countsAsAttempt: false,
+    fail: true,
+  };
+
+  test('the memory driver settles it failed, uncounted, unclaimable and out of the dead letters', async () => {
+    const driver = createMemoryDriver();
+    const { id } = await driver.enqueue({
+      name: 'refused',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'refused:1',
+      maxAttempts: 3,
+    });
+    await claimOne(driver);
+    await driver.nack(id, refused);
+
+    const row = await driver.introspect?.job(id);
+    expect(row?.state).toBe('failed');
+    expect(row?.attempt).toBe(0);
+    expect(row?.claimedBy).toBeUndefined();
+    expect(await claimOne(driver)).toEqual([]);
+    expect(await driver.introspect?.deadLetters()).toEqual([]);
+  });
+
+  test('the pg driver binds the same state into SQL_NACK', async () => {
+    const calls: { readonly text: string; readonly params: readonly unknown[] }[] = [];
+    const executor: PgExecutor = {
+      query: <R>(text: string, params: readonly unknown[]): Promise<readonly R[]> => {
+        calls.push({ text, params });
+        return Promise.resolve([]);
+      },
+    };
+    await createPgDriver({ executor }).nack('job-1', refused);
+
+    expect(calls).toEqual([
+      {
+        text: SQL_NACK,
+        // id, state, counted, delay, error, the CLAIMER, stack, then retried/failed/dead, the
+        // duration and the CLAIM: a refusal is one `failed` in its job's bucket, written by the
+        // same statement.
+        params: ['job-1', 'failed', false, 0, 'X_JOB_KEY_BUSY', 'w1', null, 0, 1, 0, 0, 1],
+      },
+    ]);
+  });
+
+  test('one reading decides every nack: dead letter over fail, fail over park, else ready', () => {
+    expect(
+      nackState({ workerId: 'w1', claim: 1, delayMs: 0, deadLetter: true, fail: true, park: true }),
+    ).toBe('dead');
+    expect(nackState({ workerId: 'w1', claim: 1, delayMs: 0, fail: true, park: true })).toBe(
+      'failed',
+    );
+    expect(nackState({ workerId: 'w1', claim: 1, delayMs: 0, park: true })).toBe('suspended');
+    expect(nackState({ workerId: 'w1', claim: 1, delayMs: 0 })).toBe('ready');
+  });
+});
+
+describe('a queued payload is what JSON carries, in both', () => {
+  /**
+   * The pg driver binds `JSON.stringify(request.input ?? null)`, so a queued payload is a JSON
+   * value by construction. The memory driver kept the LIVE object: a `Date` stayed a `Date`, an
+   * `undefined` member stayed a key, and a non-enumerable property — a `.sealed()` entity column
+   * on a row handed in as input — stayed readable. A job reading any of them passed on memory and
+   * failed on Postgres, which is the one divergence a test suite on the memory driver cannot see.
+   */
+  const live = (): Record<string, unknown> => {
+    const input: Record<string, unknown> = {
+      at: new Date('2026-10-01T00:00:00.000Z'),
+      missing: undefined,
+      nested: { keep: 1, drop: undefined },
+    };
+    Object.defineProperty(input, 'sealed', { value: 'ciphertext', enumerable: false });
+    return input;
+  };
+  const stored = { at: '2026-10-01T00:00:00.000Z', nested: { keep: 1 } };
+
+  test('the memory driver stores the JSON form, and hands that to the claim', async () => {
+    const driver = createMemoryDriver();
+    const input = live();
+    const { id } = await driver.enqueue({
+      name: 'payload',
+      queue: 'default',
+      input,
+      idempotencyKey: 'payload:1',
+      maxAttempts: 1,
+    });
+    // Mutating the caller's object after the enqueue must not reach the queued row either.
+    input['at'] = 'mutated';
+
+    expect((await driver.introspect?.job(id))?.input).toEqual(stored);
+    const [claimed] = (await claimOne(driver)) as readonly { input: unknown }[];
+    expect(claimed?.input).toEqual(stored);
+    expect(Object.hasOwn(claimed?.input as object, 'sealed')).toBe(false);
+    expect(Object.hasOwn(claimed?.input as object, 'missing')).toBe(false);
+  });
+
+  test('the pg driver binds the same JSON text', async () => {
+    const calls: (readonly unknown[])[] = [];
+    const executor: PgExecutor = {
+      query: <R>(_text: string, params: readonly unknown[]): Promise<readonly R[]> => {
+        calls.push(params);
+        return Promise.resolve([{ id: 'job-1', run_id: 'run-1' }] as R[]);
+      },
+    };
+    await createPgDriver({ executor }).enqueue({
+      name: 'payload',
+      queue: 'default',
+      input: live(),
+      idempotencyKey: 'payload:1',
+      maxAttempts: 1,
+    });
+
+    expect(JSON.parse(String(calls[0]?.[3]))).toEqual(stored);
+  });
+
+  test('an absent payload is JSON null in both, never undefined', async () => {
+    const driver = createMemoryDriver();
+    const { id } = await driver.enqueue({
+      name: 'payload',
+      queue: 'default',
+      input: undefined,
+      idempotencyKey: 'payload:none',
+      maxAttempts: 1,
+    });
+    expect((await driver.introspect?.job(id))?.input).toBeNull();
   });
 });

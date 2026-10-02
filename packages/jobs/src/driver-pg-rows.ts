@@ -6,6 +6,7 @@
 import { BACKFILL_STATUSES, type BackfillRun, isBackfillStatus } from './backfill-ledger';
 import { isJobState, JOB_STATES, type JobRecord, type JobState } from './driver';
 import { JobRowStatusUnknownError } from './errors';
+import type { JobProgress } from './introspection';
 import { isStepStatus, STEP_STATUSES, type StepRecord, type StepStatus } from './steps';
 
 export interface StepRow {
@@ -47,12 +48,17 @@ export interface JobRow {
   readonly tenant_id: string | null;
   readonly last_error: string | null;
   readonly claimed_by: string | null;
+  /** Absent from a row an older statement projected. */
+  readonly claims?: number | string | null;
   readonly run_at: number | string;
   readonly visible_at: number | string | null;
   readonly created_at: number | string;
   readonly updated_at: number | string;
   readonly traceparent?: string | null;
   readonly enqueued_by?: string | null;
+  /** `jsonb`: an object from a client with a type map, its text from one without. */
+  readonly progress?: unknown;
+  readonly last_error_stack?: string | null;
 }
 
 /**
@@ -98,6 +104,7 @@ export function toJobRecord(row: JobRow): JobRecord {
     ...(row.tenant_id === null ? {} : { tenantId: row.tenant_id }),
     ...(row.last_error === null ? {} : { lastError: row.last_error }),
     ...(row.claimed_by === null ? {} : { claimedBy: row.claimed_by }),
+    ...(num(row.claims ?? 0) > 0 ? { claim: num(row.claims ?? 0) } : {}),
     ...(visibleAt === undefined ? {} : { visibleAt }),
     ...(row.traceparent === null || row.traceparent === undefined
       ? {}
@@ -105,7 +112,31 @@ export function toJobRecord(row: JobRow): JobRecord {
     ...(row.enqueued_by === null || row.enqueued_by === undefined
       ? {}
       : { enqueuedBy: row.enqueued_by }),
+    ...(row.last_error_stack === null || row.last_error_stack === undefined
+      ? {}
+      : { lastErrorStack: row.last_error_stack }),
+    ...progressOf(row.progress),
   };
+}
+
+/**
+ * The `progress` column, or nothing. Total: the value was written by `recordProgress` in whatever
+ * build was deployed then, and a row that carries something else has no progress, not a throw.
+ */
+function progressOf(raw: unknown): { readonly progress?: JobProgress } {
+  const value: unknown = typeof raw === 'string' ? parseJson(raw) : raw;
+  if (typeof value !== 'object' || value === null) return {};
+  const { done, total, note, at } = value as Readonly<Record<string, unknown>>;
+  if (typeof done !== 'number' || typeof total !== 'number' || typeof at !== 'number') return {};
+  return { progress: { done, total, at, ...(typeof note === 'string' ? { note } : {}) } };
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 export function toStepRecord(row: StepRow): StepRecord {

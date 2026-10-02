@@ -98,6 +98,11 @@ export const policyMatrix = <I, R = unknown>(
  * Going through `userActor()` closes that by construction rather than by keeping a second field
  * list in sync: a field added to `Actor` arrives here, and the result is FROZEN with frozen
  * arrays, exactly as the actor `@ultimat3/auth` resolves per request is.
+ *
+ * The return type says the actor is THERE. `NamedActor` keeps `null` for the matrix's signed-out
+ * row; a minted actor is never that, and while the type said it might be, `createContext({ actor })`
+ * refused it — so every fixture that built a context reached for core's `userActor` instead and a
+ * generated test held two idioms for one thing.
  */
 export const testActor = (
   name: string,
@@ -107,7 +112,7 @@ export const testActor = (
     scopes?: readonly string[];
     orgId?: string;
   } = {},
-): NamedActor => {
+): NamedActor & { readonly actor: Actor } => {
   const built = userActor({
     id: name,
     roles: init.roles ?? [],

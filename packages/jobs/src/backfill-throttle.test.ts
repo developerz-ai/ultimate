@@ -103,6 +103,8 @@ const throttled = (rate: number): Throttled => {
           step: createStepRunner({ runId: RUN_ID, jobName: 'paced', store }).step,
           ctx,
           attempt: 1,
+          finalAttempt: false,
+          progress: () => undefined,
           jobId: 'job-paced',
           runId: RUN_ID,
         },
@@ -192,6 +194,8 @@ describe('the rate throttle', () => {
       step: runner.step,
       ctx,
       attempt: 1,
+      finalAttempt: false,
+      progress: () => undefined,
       jobId: 'job-slow',
       runId: 'run-slow',
     });
