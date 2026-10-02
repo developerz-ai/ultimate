@@ -12,6 +12,7 @@ import type {
   AuthVerification,
   CreateUserInput,
   SessionPatch,
+  StoredMfaSecret,
   UserPatch,
   UserQuery,
 } from './adapter';
@@ -66,6 +67,8 @@ export class MemoryAdapter implements AuthAdapter {
    * what makes two spellings one address.
    */
   async createUser(input: CreateUserInput): Promise<AuthUser> {
+    // `id uuid primary key`: a `Map.set` over an existing id REPLACED the first account.
+    if (this.#users.has(input.id)) throw authUniqueViolation('createUser', 'x_users', 'id');
     for (const existing of this.#users.values()) {
       if (existing.email === input.email) {
         throw authUniqueViolation('createUser', 'x_users', 'email');
@@ -107,6 +110,15 @@ export class MemoryAdapter implements AuthAdapter {
   async updateUser(id: string, patch: UserPatch): Promise<AuthUser | null> {
     const user = this.#users.get(id);
     if (user === undefined) return null;
+    // `external_id text unique`, on the UPDATE as on the INSERT: every OTHER row, and only a
+    // value — NULLS DISTINCT, so clearing it never collides. `UserPatch` carries no `email`.
+    if (patch.externalId !== undefined && patch.externalId !== null) {
+      for (const other of this.#users.values()) {
+        if (other.id !== id && other.externalId === patch.externalId) {
+          throw authUniqueViolation('updateUser', 'x_users', 'external_id');
+        }
+      }
+    }
     const next: AuthUser = {
       ...user,
       passwordHash: patch.passwordHash === undefined ? user.passwordHash : patch.passwordHash,
@@ -123,6 +135,35 @@ export class MemoryAdapter implements AuthAdapter {
     };
     this.#users.set(id, next);
     return next;
+  }
+
+  async listUsersWithMfaSecret(): Promise<readonly StoredMfaSecret[]> {
+    const stored: StoredMfaSecret[] = [];
+    for (const user of this.#users.values()) {
+      if (user.mfaSecret !== null) stored.push({ userId: user.id, mfaSecret: user.mfaSecret });
+    }
+    return stored.sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0));
+  }
+
+  // No `await` between the check and the write: the two are one step, as the UPDATE is.
+  async replaceMfaSecret(userId: string, expected: string, next: string): Promise<boolean> {
+    const user = this.#users.get(userId);
+    if (user === undefined || user.mfaSecret === null) return false;
+    if (!timingSafeEqual(user.mfaSecret, expected)) return false;
+    this.#users.set(userId, { ...user, mfaSecret: next });
+    return true;
+  }
+
+  // No `await` between the check and the write: the two are one step, as the UPDATE is.
+  async consumeRecoveryCode(userId: string, codeHash: string): Promise<boolean> {
+    const user = this.#users.get(userId);
+    const held = (stored: string): boolean => timingSafeEqual(stored, codeHash);
+    if (user === undefined || !user.recoveryCodeHashes.some(held)) return false;
+    this.#users.set(userId, {
+      ...user,
+      recoveryCodeHashes: user.recoveryCodeHashes.filter((stored) => !held(stored)),
+    });
+    return true;
   }
 
   async findUserByExternalId(externalId: string): Promise<AuthUser | null> {

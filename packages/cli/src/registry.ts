@@ -7,6 +7,7 @@
 // dev server it never started (plan 101 slice 12 d).
 
 import { affectedSpec } from './cmd-affected-spec';
+import { authSpec } from './cmd-auth-spec';
 import { buildSpec } from './cmd-build-spec';
 import { ciSpec } from './cmd-ci-spec';
 import { dbSpec } from './cmd-db-spec';
@@ -85,6 +86,7 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(deploySpec, async () => (await import('./cmd-deploy')).deployCommand),
   lazy(envSpec, async () => (await import('./cmd-env')).envCommand),
   lazy(secretsSpec, async () => (await import('./cmd-secrets')).secretsCommand),
+  lazy(authSpec, async () => (await import('./cmd-auth')).authCommand),
   lazy(manifestSpec, async () => (await import('./cmd-manifest')).manifestCommand),
   lazy(routesSpec, async () => (await import('./cmd-routes')).routesCommand),
   lazy(actionsSpec, async () => (await import('./cmd-registries')).actionsCommand),

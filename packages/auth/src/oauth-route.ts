@@ -10,8 +10,10 @@
 
 import {
   type Clock,
+  EnvMissingError,
   isUltimateError,
   logger,
+  renderFixShellArg,
   renderThrowable,
   type UltimateError,
 } from '@ultimat3/core';
@@ -52,9 +54,9 @@ export interface OAuthLoginRoutes {
 
 export interface OAuthLoginOptions {
   /**
-   * The origin the provider redirects back to. Defaults to `APP_URL`, then to the request's own
-   * origin — which is the `Host` header, so it is preferred last: a forged one only ever produces
-   * a `redirect_uri` the provider refuses, but naming the canonical origin costs nothing.
+   * The origin the provider redirects back to. Defaults to `APP_URL`; with neither, the start leg
+   * refuses (`X_ENV_MISSING`). Never the request's own origin: that is the `Host` header, which
+   * the caller writes.
    */
   readonly baseUrl?: string | undefined;
   /** Defaults to the two env vars in the provider table, read per request, never at import. */
@@ -125,34 +127,44 @@ export function oauthRouteStatus(code: string): number {
   return Object.hasOwn(OAUTH_ROUTE_STATUS, code) ? (OAUTH_ROUTE_STATUS[code] ?? 502) : 502;
 }
 
+/** The one sentence every refusal carries outward. The event name is where the rest went. */
+const PUBLIC_CAUSE =
+  'the sign-in was refused; its cause and its fix are in this server\u2019s log under auth.oauth.refused';
+
+/** A code this framework would have minted — the only kind spliced into a command. */
+const FRAMEWORK_CODE = /^X_[A-Z0-9_]+$/;
+
 /**
- * What an anonymous caller is allowed to read. `UltimateError.toJSON()` carries `meta` and `stack`
- * — a developer's fields — and BOTH legs of this flow are public by definition, so serialising it
- * whole published a stack trace and whatever a factory put in `meta` to whoever typed the URL. Four
- * fields, the same four on every code: no per-code judgement about which `meta` key is safe today.
+ * What an anonymous caller is allowed to read: the code, its registered title and docs link, and
+ * one fixed sentence. Both legs are public by definition, and an authored `cause`/`fix` is written
+ * for the developer — it names env vars, endpoints and what a provider answered — so neither is
+ * served, on any code: no per-code judgement about which sentence is safe today.
  */
 const publicBody = (coded: UltimateError): Record<string, string> => ({
   code: coded.code,
   title: coded.title,
-  cause: coded.cause,
-  fix: coded.fix,
+  cause: PUBLIC_CAUSE,
+  fix: FRAMEWORK_CODE.test(coded.code)
+    ? `x errors explain ${renderFixShellArg(coded.code, '<CODE>')} --json`
+    : 'x errors list --json',
   docs: coded.docs,
 });
 
 /**
- * Failure is JSON, never a redirect to a login page carrying `?error=`. A callback is the one
- * request in the flow whose failure the developer has to read, and a redirect that drops the code
- * and the fix line is exactly how three dead `fix:` strings survived a whole release. An app that
- * wants a rendered page wraps these two descriptors; the framework ships the debuggable answer.
+ * Failure is JSON, never a redirect to a login page carrying `?error=`: the status and the code
+ * are the answer a client branches on. The developer's half — the cause and the fix line — is
+ * logged as `auth.oauth.refused`, where only an operator reads it. An app that wants a rendered
+ * page wraps these two descriptors.
  */
 function problem(error: unknown, extraCookies: readonly string[]): Response {
   const coded = isUltimateError(error) ? error : uncoded(error);
+  const status = oauthRouteStatus(coded.code);
+  const fields = { code: coded.code, status, cause: coded.cause, fix: coded.fix };
+  if (status >= 500) logger.error('auth.oauth.refused', fields);
+  else logger.info('auth.oauth.refused', fields);
   const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
   for (const cookie of extraCookies) headers.append('set-cookie', cookie);
-  return new Response(JSON.stringify(publicBody(coded)), {
-    status: oauthRouteStatus(coded.code),
-    headers,
-  });
+  return new Response(JSON.stringify(publicBody(coded)), { status, headers });
 }
 
 /**
@@ -244,10 +256,22 @@ function credentialsFor(
   }
 }
 
-function originFor(request: Request, options: OAuthLoginOptions): string {
+/**
+ * The declared origin, or a refusal. The request's own origin is the `Host` header, so a
+ * `redirect_uri` built from it is one the caller chose.
+ */
+function declaredOrigin(options: OAuthLoginOptions): string {
   const env = options.env ?? Bun.env;
-  const declared = options.baseUrl ?? env['APP_URL']?.trim() ?? '';
-  return declared === '' ? new URL(request.url).origin : declared.replace(/\/+$/, '');
+  const declared = (options.baseUrl ?? env['APP_URL'] ?? '').trim();
+  if (declared === '') {
+    throw new EnvMissingError({
+      cause:
+        'APP_URL is not set and oauthLogin() was given no baseUrl, so there is no declared origin to build the provider redirect_uri from',
+      fix: 'export APP_URL=http://localhost:3000   # the origin this app is served from',
+      meta: { key: 'APP_URL' },
+    });
+  }
+  return declared.replace(/\/+$/, '');
 }
 
 /** The handshake's own options, assembled once so both legs seal and open it identically. */
@@ -265,12 +289,15 @@ async function startHandler(
   request: Request,
 ): Promise<Response> {
   try {
+    // Before the provider is looked at: asked after, a missing origin answered 500 for a provider
+    // this app enabled and 404 for one it did not.
+    const origin = declaredOrigin(options);
     const provider = assertEnabled(auth, providerSegment(request, 'start'));
     const credentials = credentialsFor(provider, options);
     const handshake = beginOAuth({
       provider,
       clientId: credentials.clientId,
-      redirectUri: `${originFor(request, options)}${oauthCallbackPath(provider)}`,
+      redirectUri: `${origin}${oauthCallbackPath(provider)}`,
       scopes: options.scopes,
     });
     return new Response(null, {

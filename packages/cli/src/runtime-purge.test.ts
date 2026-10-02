@@ -63,8 +63,8 @@ function stubStores(): RetentionStores & { readonly at: number[] } {
 const installAuthLimiter = (removed: number): void => {
   configureAuthLimiters((policy) => ({
     policy: { ...policy, scope: 'shared' },
-    assertAllowed: async (): Promise<void> => undefined,
-    recordFailure: async (): Promise<void> => undefined,
+    reserve: async (key) => ({ key, atMs: 0 }),
+    refund: async (): Promise<void> => undefined,
     recordSuccess: async (): Promise<void> => undefined,
     lockedUntil: async (): Promise<Date | null> => null,
     reset: async (): Promise<void> => undefined,

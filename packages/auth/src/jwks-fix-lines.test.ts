@@ -46,15 +46,28 @@ describe('a jwks_uri the issuer supplied', () => {
   });
 
   test('nor the third command in that file — the kid the published set does not hold', async () => {
-    const empty = async (): Promise<Response> =>
-      new Response(JSON.stringify({ keys: [] }), {
+    // One real key under another kid: a set with NO importable key is a failed fetch, a different
+    // refusal with a different line (`jwks-empty-set.test.ts`).
+    const pair = (await crypto.subtle.generateKey(
+      {
+        name: 'RSASSA-PKCS1-v1_5',
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: 'SHA-256',
+      },
+      true,
+      ['sign', 'verify'],
+    )) as CryptoKeyPair;
+    const other = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid: 'k1' };
+    const published = async (): Promise<Response> =>
+      new Response(JSON.stringify({ keys: [other] }), {
         headers: { 'content-type': 'application/json' },
       });
     const keys = createJwksClient({
       provider: 'test-op',
       jwksUri: HOSTILE,
       clock,
-      fetch: empty,
+      fetch: published,
     });
     const thrown = await keys.keyFor('k9', 'RS256').catch((error: unknown) => error);
     const fix = thrown instanceof AuthError ? thrown.fix : '';

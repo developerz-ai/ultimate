@@ -1,7 +1,7 @@
 // The lockout's SQL, against a real server. The scripted-executor twin proves the protocol and
-// can prove nothing about the statements: a limiter whose sliding-window count was never executed
-// is a credential control nobody has run. The cases only a server can answer are the sliding
-// window itself, two replicas counting one spray once, and two OPEN transactions doing the same.
+// can prove nothing about the statements: a reservation whose one statement was never executed is
+// a credential control nobody has run. Only a server can answer for the sliding window, a
+// concurrent burst admitted one at a time, and two OPEN transactions counting one account.
 //
 // Skips unless `TEST_DATABASE_URL` is set — never `DATABASE_URL`, because this file drops its
 // tables. Locally:
@@ -50,9 +50,13 @@ const laggingClock: Clock = {
 
 let sql: Bun.SQL;
 
+/** A lockout written by the previous release's two-column table, before the upgrade ran. */
+const CARRIED_KEY = 'account:carried@example.com';
+let carriedCode = 'never-ran';
+
 /**
  * The one-line wrapping every host does, over the pool OR over a transaction handle — `PgExecutor`
- * accepts both, which is the whole reason `SQL_AUTH_KEY_LOCK` exists.
+ * accepts both, which is why the take has to serialise on the key's own row.
  */
 const executorOn = (client: Bun.SQL): PgExecutor => ({
   query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
@@ -62,15 +66,28 @@ const executorOn = (client: Bun.SQL): PgExecutor => ({
 /** Two limiters over ONE table is the deployment being modelled: two replicas, one database. */
 let podA: PostgresAuthLimiter;
 let podB: PostgresAuthLimiter;
-/** A third replica whose clock is half a minute behind — the case `greatest` exists for. */
+/** A third replica whose clock is half a minute behind: it must not move a live lockout. */
 let laggingPod: PostgresAuthLimiter;
 
 beforeAll(async () => {
   if (url === undefined) return;
   sql = new Bun.SQL(url, { max: 6 });
-  await sql.unsafe('drop table if exists x_auth_failures', []);
   await sql.unsafe('drop table if exists x_auth_lockouts', []);
+  // The table as the previous release made it, with a lockout that release established: the
+  // install below has to upgrade it in place and the take has to honour what it holds.
+  await sql.unsafe(
+    'create table x_auth_lockouts (key text primary key, locked_until_ms bigint not null)',
+    [],
+  );
+  await sql.unsafe('insert into x_auth_lockouts (key, locked_until_ms) values ($1, $2)', [
+    CARRIED_KEY,
+    START_MS + 60_000,
+  ]);
   await sql.unsafe(SQL_AUTH_LIMIT_TABLES, []);
+  await sql.unsafe(SQL_AUTH_LIMIT_TABLES, []);
+  carriedCode = await codeOf(
+    postgresAuthLimiter({ executor: executorOn(sql), clock, policy }).reserve(CARRIED_KEY),
+  );
   podA = postgresAuthLimiter({ executor: executorOn(sql), clock, policy });
   podB = postgresAuthLimiter({ executor: executorOn(sql), clock, policy });
   laggingPod = postgresAuthLimiter({
@@ -82,7 +99,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (url === undefined) return;
-  await sql.unsafe('drop table if exists x_auth_failures', []);
   await sql.unsafe('drop table if exists x_auth_lockouts', []);
   await sql.end();
 });
@@ -102,16 +118,16 @@ const LOCK_WAIT_DEADLINE_MS = 2_000;
 const RACE_TIMEOUT_MS = 20_000;
 
 /**
- * Answer whether Postgres itself reports a session parked on an ungranted advisory lock, waiting
+ * Answer whether Postgres itself reports a session parked on an ungranted lock, waiting
  * for the CONDITION rather than for a duration. `pg_locks` is the server's own answer to "is
  * anything waiting?", so the interleaving is observed instead of assumed — a fixed sleep would
  * flake on a slow runner rather than fail on a real regression.
  */
-const keyLockHasWaiter = async (): Promise<boolean> => {
+const rowLockHasWaiter = async (): Promise<boolean> => {
   const deadline = Bun.nanoseconds() + LOCK_WAIT_DEADLINE_MS * 1_000_000;
   while (Bun.nanoseconds() < deadline) {
     const rows = (await sql.unsafe(
-      "select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted",
+      'select count(*)::int as n from pg_locks where not granted',
       [],
     )) as { readonly n: number }[];
     if ((rows[0]?.n ?? 0) > 0) return true;
@@ -129,120 +145,171 @@ const codeOf = async (call: Promise<unknown>): Promise<string> => {
   return 'did-not-throw';
 };
 
+const admitted = (codes: readonly string[]): number =>
+  codes.filter((code) => code === 'did-not-throw').length;
+
+const rowCount = async (): Promise<number> => {
+  const rows = await sql.unsafe('select count(*)::int as n from x_auth_lockouts', []);
+  return (rows as { readonly n: number }[])[0]?.n ?? -1;
+};
+
 describeLive('live · postgres · the shared auth limiter', () => {
-  test('the failures one replica records lock the account on ANOTHER', async () => {
+  test('a table and a lockout from the previous release survive the upgrade', () => {
+    expect(carriedCode).toBe('X_ACCOUNT_LOCKED');
+  });
+
+  test('the attempts one replica reserves lock the account on ANOTHER', async () => {
     const key = accountKey('ada@example.com');
-    await podA.recordFailure(key);
-    await podB.recordFailure(key);
+    await podA.reserve(key);
+    await podB.reserve(key);
     // Still inside the allowance: two of three.
     expect(await podA.lockedUntil(key)).toBeNull();
 
-    await podA.recordFailure(key);
+    await podA.reserve(key);
     // The whole point: pod B never counted three, and the fleet did.
-    expect(await codeOf(podB.assertAllowed(key))).toBe('X_ACCOUNT_LOCKED');
+    expect(await codeOf(podB.reserve(key))).toBe('X_ACCOUNT_LOCKED');
     expect((await podB.lockedUntil(key))?.getTime()).toBe(atMs() + policy.lockoutMs);
   });
 
+  // The failure case first: 40 concurrent guesses each asked "locked?" before any was recorded,
+  // and all 40 were let through to the KDF against an allowance of 5.
+  test('a concurrent burst of 40 is admitted maxAttempts times, across two replicas', async () => {
+    const five: AuthRateLimitPolicy = { ...policy, maxAttempts: 5 };
+    const pods = [0, 1].map(() =>
+      postgresAuthLimiter({ executor: executorOn(sql), clock, policy: five }),
+    );
+    const key = accountKey('burst@example.com');
+    const codes = await Promise.all(
+      Array.from({ length: 40 }, (_, index) => codeOf((pods[index % 2] ?? podA).reserve(key))),
+    );
+    expect(admitted(codes)).toBe(5);
+    expect(codes.filter((code) => code === 'X_ACCOUNT_LOCKED')).toHaveLength(35);
+  });
+
   // A fixed window would admit `maxAttempts` at the end of one window and `maxAttempts` again at
-  // the start of the next. The window here SLIDES, which is why failures are rows and not a count.
-  test('failures that fell out of the window do not add up to a lockout', async () => {
+  // the start of the next. The window here SLIDES, which is why the instants are kept.
+  test('attempts that fell out of the window do not add up to a lockout', async () => {
     const key = accountKey('grace@example.com');
-    await podA.recordFailure(key);
-    await podA.recordFailure(key);
+    await podA.reserve(key);
+    await podA.reserve(key);
     clock.advance(policy.windowMs + 1);
-    await podA.recordFailure(key);
+    await podA.reserve(key);
     expect(await podA.lockedUntil(key)).toBeNull();
   });
 
   test('a success clears the window on every replica, and a lockout with it', async () => {
     const key = accountKey('ada@example.com');
-    for (let i = 0; i < 3; i += 1) await podA.recordFailure(key);
+    for (let i = 0; i < 3; i += 1) await podA.reserve(key);
     await podB.recordSuccess(key);
     expect(await podA.lockedUntil(key)).toBeNull();
-    await podA.recordFailure(key);
+    await podA.reserve(key);
     expect(await podA.lockedUntil(key)).toBeNull();
   });
 
-  // A spray arriving during a lockout must not be able to shorten it.
-  test('a later failure extends a live lockout and never moves it nearer', async () => {
+  // A spray arriving during a lockout is refused, counts nothing, and cannot move the deadline —
+  // not from this replica and not from one whose clock runs behind.
+  test('a refused reservation never moves a live lockout, from any replica', async () => {
     const key = accountKey('ada@example.com');
-    for (let i = 0; i < 3; i += 1) await podA.recordFailure(key);
+    for (let i = 0; i < 3; i += 1) await podA.reserve(key);
     const first = (await podA.lockedUntil(key))?.getTime() ?? 0;
     clock.advance(1_000);
-    await podB.recordFailure(key);
-    const second = (await podA.lockedUntil(key))?.getTime() ?? 0;
-    expect(second).toBeGreaterThan(first);
-  });
-
-  // Two replicas do not share a clock, and the one that is behind must not be able to bring a
-  // live lockout forward — that is a way to buy the account back by picking the right pod.
-  test('a failure from a replica whose clock lags does not shorten the lockout', async () => {
-    const key = accountKey('ada@example.com');
-    for (let i = 0; i < 3; i += 1) await podA.recordFailure(key);
-    const first = (await podA.lockedUntil(key))?.getTime() ?? 0;
-    await laggingPod.recordFailure(key);
+    expect(await codeOf(podB.reserve(key))).toBe('X_ACCOUNT_LOCKED');
+    expect(await codeOf(laggingPod.reserve(key))).toBe('X_ACCOUNT_LOCKED');
     expect((await podA.lockedUntil(key))?.getTime()).toBe(first);
   });
 
   test('an expired lockout answers exactly as a missing one', async () => {
     const key = accountKey('ada@example.com');
-    for (let i = 0; i < 3; i += 1) await podA.recordFailure(key);
+    for (let i = 0; i < 3; i += 1) await podA.reserve(key);
     clock.advance(policy.lockoutMs + 1);
     expect(await podA.lockedUntil(key)).toBeNull();
-    expect(await codeOf(podA.assertAllowed(key))).toBe('did-not-throw');
+    expect(await codeOf(podA.reserve(key))).toBe('did-not-throw');
+    expect(await podA.lockedUntil(key)).toBeNull();
   });
 
-  test('purgeExpired drops stale failures and dead lockouts, and counts them', async () => {
+  test('a refund gives one attempt back and lifts the lockout that attempt started', async () => {
     const key = accountKey('ada@example.com');
-    for (let i = 0; i < 3; i += 1) await podA.recordFailure(key);
-    clock.advance(policy.lockoutMs + 1);
-    expect(await podA.purgeExpired()).toBe(4);
-    const failures = await sql.unsafe('select count(*)::int as n from x_auth_failures', []);
-    expect((failures as { readonly n: number }[])[0]?.n).toBe(0);
+    await podA.reserve(key);
+    await podA.reserve(key);
+    const third = await podB.reserve(key);
+    expect(await podA.lockedUntil(key)).not.toBeNull();
+
+    await podA.refund(third);
+    expect(await podB.lockedUntil(key)).toBeNull();
+    // Two are still counted: the next one fills the window again.
+    await podB.reserve(key);
+    expect(await podA.lockedUntil(key)).not.toBeNull();
   });
 
-  // Concurrency: eight parallel failures against one key must not need a lucky interleaving to
-  // lock. Each `recordFailure` counts AFTER its own insert committed, so nobody sees fewer.
-  test('eight concurrent failures lock the key', async () => {
-    const key = accountKey('parallel@example.com');
-    await Promise.all(Array.from({ length: 8 }, () => podA.recordFailure(key)));
-    expect(await codeOf(podB.assertAllowed(key))).toBe('X_ACCOUNT_LOCKED');
+  // Three reservations in one millisecond are three equal array entries. A refund that removed
+  // every equal entry would hand back all three for one success.
+  test('equal instants are refunded one at a time', async () => {
+    const key = accountKey('same-ms@example.com');
+    const first = await podA.reserve(key);
+    await podA.reserve(key);
+    await podA.refund(first);
+    await podA.refund({ key, atMs: first.atMs - 1 });
+    expect(await podA.lockedUntil(key)).toBeNull();
+    await podA.reserve(key);
+    await podA.reserve(key);
+    expect(await podA.lockedUntil(key)).not.toBeNull();
   });
 
-  // The case only a TRANSACTION can produce, and the one `SQL_AUTH_KEY_LOCK` exists for. Two open
-  // transactions each see committed rows plus their own, so with one failure already committed
-  // both read two against `maxAttempts: 3`, neither locks, and both commit — three failures and an
-  // account still open. Failing-first: without the lock in the insert this test does not lock.
+  test('a refund for a key that is gone writes nothing', async () => {
+    await podA.refund({ key: accountKey('nobody@example.com'), atMs: atMs() });
+    expect(await rowCount()).toBe(0);
+  });
+
+  test('purgeExpired drops keys with nothing live, keeps the rest, and counts what went', async () => {
+    const dead = accountKey('ada@example.com');
+    for (let i = 0; i < 3; i += 1) await podA.reserve(dead);
+    clock.advance(policy.lockoutMs - 1);
+    // Window long emptied, lockout one millisecond from over: still held.
+    expect(await podA.purgeExpired()).toBe(0);
+    clock.advance(2);
+    const fresh = accountKey('grace@example.com');
+    await podA.reserve(fresh);
+    expect(await podA.purgeExpired()).toBe(1);
+    expect(await rowCount()).toBe(1);
+  });
+
+  // The case only a TRANSACTION can produce. Two open transactions each see what has COMMITTED
+  // plus their own write, so with two attempts committed both would count three against
+  // `maxAttempts: 3` and BOTH be admitted — four attempts. The take serialises on the key's row:
+  // the second waits for the first to commit and is then judged against what it wrote.
   test(
-    'failures from two OPEN transactions still add up to a lockout',
+    'reservations from two OPEN transactions are admitted one at a time',
     async () => {
       const key = accountKey('interleaved@example.com');
-      await podA.recordFailure(key);
+      await podA.reserve(key);
+      await podA.reserve(key);
 
       let releaseFirst!: () => void;
       const firstMayCommit = new Promise<void>((resolve) => {
         releaseFirst = resolve;
       });
-      let firstHasRecorded!: () => void;
-      const firstRecorded = new Promise<void>((resolve) => {
-        firstHasRecorded = resolve;
+      let firstHasReserved!: () => void;
+      const firstReserved = new Promise<void>((resolve) => {
+        firstHasReserved = resolve;
       });
 
       const first = sql.begin(async (tx: Bun.SQL) => {
-        await postgresAuthLimiter({ executor: executorOn(tx), clock, policy }).recordFailure(key);
-        firstHasRecorded();
+        await postgresAuthLimiter({ executor: executorOn(tx), clock, policy }).reserve(key);
+        firstHasReserved();
         await firstMayCommit;
       });
 
       let waited = false;
+      let secondCode = 'never-ran';
       try {
-        await firstRecorded;
-        // Opened while the first transaction is still uncommitted, which is the whole case: two
-        // outer transactions counting one account's failures at the same time.
+        await firstReserved;
+        // Opened while the first transaction is still uncommitted, which is the whole case.
         const second = sql.begin(async (tx: Bun.SQL) => {
-          await postgresAuthLimiter({ executor: executorOn(tx), clock, policy }).recordFailure(key);
+          secondCode = await codeOf(
+            postgresAuthLimiter({ executor: executorOn(tx), clock, policy }).reserve(key),
+          );
         });
-        waited = await keyLockHasWaiter();
+        waited = await rowLockHasWaiter();
         releaseFirst();
         await Promise.all([first, second]);
       } finally {
@@ -253,7 +320,8 @@ describeLive('live · postgres · the shared auth limiter', () => {
       }
 
       expect(waited).toBe(true);
-      expect(await codeOf(podB.assertAllowed(key))).toBe('X_ACCOUNT_LOCKED');
+      // The first filled the window and started the lockout; the second saw that, not a stale two.
+      expect(secondCode).toBe('X_ACCOUNT_LOCKED');
     },
     RACE_TIMEOUT_MS,
   );

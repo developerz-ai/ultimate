@@ -4,6 +4,7 @@
 // that would reach the wire.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
 import { BuiltinAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
@@ -305,12 +306,20 @@ describe('BuiltinAdapter — verification tokens', () => {
 
   test('takeVerification consumes one row, and only the one whose hash was presented', async () => {
     setup();
-    await adapter.takeVerification('password-reset', 'ada@example.test', 'the-hash');
+    const redeemedAt = new Date('2031-03-04T05:06:07.000Z');
+    await new BuiltinAdapter(client, frozenClock(redeemedAt)).takeVerification(
+      'password-reset',
+      'ada@example.test',
+      'the-hash',
+    );
     const text = lastText();
     // The hash is inside the statement that writes `consumed_at`: comparing it afterwards means a
     // wrong guess has already consumed the victim's live row.
-    expect(text).toContain('token_hash = $3');
-    expect(lastValues()).toEqual(['password-reset', 'ada@example.test', 'the-hash']);
+    expect(text).toContain('token_hash = $4');
+    // The stamp is the injected clock's instant, bound first — never the server's `now()`.
+    expect(text).toContain('set consumed_at = $1');
+    expect(text).not.toContain('now()');
+    expect(lastValues()).toEqual([redeemedAt, 'password-reset', 'ada@example.test', 'the-hash']);
     // One row, addressed by id — an `update … where purpose = … and identifier = …` with no bound
     // consumes every live row for that address and returns an arbitrary one.
     expect(text).toContain('limit 1');

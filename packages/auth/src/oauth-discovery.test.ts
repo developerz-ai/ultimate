@@ -68,15 +68,57 @@ describe('discoverOAuthProvider', () => {
     expect(provider.clientSecretEnv).toBe('BIGCO_CLIENT_SECRET');
   });
 
-  test('issuers is pinned to what the document declares, not to the URL that was asked for', async () => {
+  test('a document that declares another issuer never becomes a provider', async () => {
+    // OIDC Discovery 1.0 §4.3: the declared issuer MUST be the one the document was fetched for.
+    // Adopted, it pinned `issuers` to whoever the document chose to name.
     const served = serving({ ...DOCUMENT, issuer: 'https://tenant-42.bigco.test' });
-    const provider = await discoverOAuthProvider({
+    const thrown = await discoverOAuthProvider({
       id: 'bigco-42',
       issuer: 'https://sso.bigco.test',
       fetch: served.fetch,
-    });
-    expect(provider.issuers).toEqual(['https://tenant-42.bigco.test']);
+    }).catch((error: unknown) => error);
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(error?.cause).toContain('"https://tenant-42.bigco.test"');
+    expect(error?.cause).toContain('"https://sso.bigco.test"');
+    expect(error?.fix).toBe(
+      'curl -sS -m 5 https://sso.bigco.test/.well-known/openid-configuration | jq .issuer',
+    );
   });
+
+  test.each([
+    ['a path the input does not have', 'https://sso.bigco.test/tenant-42'],
+    ['another scheme', 'http://sso.bigco.test'],
+    ['another case in the host', 'https://SSO.bigco.test'],
+  ])('%s is another issuer', async (_name, declared) => {
+    const served = serving({ ...DOCUMENT, issuer: declared });
+    expect(
+      await codeOf(() =>
+        discoverOAuthProvider({
+          id: 'bigco',
+          issuer: 'https://sso.bigco.test',
+          fetch: served.fetch,
+        }),
+      ),
+    ).toBe('X_OAUTH_EXCHANGE_FAILED');
+  });
+
+  test.each([
+    ['https://sso.bigco.test/', 'https://sso.bigco.test'],
+    ['https://sso.bigco.test', 'https://sso.bigco.test/'],
+  ])(
+    'asked %s, declared %s: a trailing slash is not a different issuer',
+    async (asked, declared) => {
+      const served = serving({ ...DOCUMENT, issuer: declared });
+      const provider = await discoverOAuthProvider({
+        id: 'bigco',
+        issuer: asked,
+        fetch: served.fetch,
+      });
+      // The document's own spelling is what its id tokens carry in `iss`.
+      expect(provider.issuers).toEqual([declared]);
+    },
+  );
 
   test('a 404 at the well-known path is coded, and its fix is the curl that reproduces it', async () => {
     const served = serving({}, 404);

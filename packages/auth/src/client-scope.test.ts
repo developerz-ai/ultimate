@@ -75,7 +75,10 @@ describe('clientScopeOf', () => {
     })();
 
     expect(thrown).toBeUltimateError('X_CONFIG_INVALID');
-    expect((thrown as { cause: string }).cause).toContain('31 characters');
+    const cause = (thrown as { cause: string }).cause;
+    // The floor is named; the length of what was handed over is not.
+    expect(cause).toContain('shorter than the 32 characters required');
+    expect(cause).not.toContain('31');
   });
 
   test('the anonymous page needs no key, so a short secret cannot refuse it', () => {

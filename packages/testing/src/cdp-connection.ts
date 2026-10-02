@@ -13,6 +13,7 @@
 
 import { assert } from '@ultimat3/core';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
+import { wireWatch } from './cdp-wire-watch';
 
 /** One CDP result. `unknown` because every payload here is somebody else's JSON. */
 export interface CdpResult {
@@ -154,6 +155,8 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
   const listeners = new Map<string, Set<CdpEventListener>>();
   let nextId = 0;
   let closed = false;
+  // What a call that is never answered reports instead of a bare "did not answer".
+  const watch = wireWatch();
 
   // Every in-flight call is settled on close. Without this a suite whose browser died waits out
   // one full deadline per call and reports a timeout, where the true fault is a dead browser.
@@ -176,9 +179,12 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
       frame = JSON.parse(raw) as Record<string, unknown>;
     } catch {
       // An unparseable frame is the browser's, not ours, and there is no call to fail with it:
-      // correlation is by `id`, and a frame we cannot read has none. Events land here too.
+      // correlation is by `id`, and a frame we cannot read has none. COUNTED, though: the call
+      // whose reply it was waits out its deadline, and its timeout says frames were dropped.
+      watch.drop();
       return;
     }
+    watch.frame(frame);
     const id = frame['id'];
     if (typeof id !== 'number') {
       const method = frame['method'];
@@ -224,9 +230,11 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
       nextId += 1;
       const id = nextId;
       return new Promise<CdpResult>((resolve, reject) => {
+        const sentAt = watch.mark(sessionId);
         const timer = setTimeout(() => {
           pending.delete(id);
-          reject(new CdpTimeoutError({ method, timeoutMs: deadlineMs }));
+          const observed = watch.observe(sentAt, sessionId, !closed);
+          reject(new CdpTimeoutError({ method, timeoutMs: deadlineMs, observed }));
         }, deadlineMs);
         pending.set(id, { resolve, reject, timer });
         transport.send(

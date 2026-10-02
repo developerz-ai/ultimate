@@ -1,9 +1,6 @@
-// Single responsibility: changing what a user may do, and rotating the credential that was issued
-// under the old answer. `packages/auth/CLAUDE.md` has listed "rotate the session id on any
-// privilege change (`rotateSession`)" as a non-negotiable since 1.0, and
-// `SessionPolicy.rotateOnPrivilegeChange` has defaulted `true` — while `rotateSession` had no
-// caller anywhere outside its own test and the flag was read by nothing. Per axiom 3 the rule did
-// not exist. This is the caller that makes it exist.
+// Single responsibility: changing what a user may do, and ending the credentials issued under the
+// old answer — the caller's session is rotated on any privilege change, and a changed password
+// ends every other session the user holds.
 
 import type { AuthUser, UserPatch } from './adapter';
 import type { Auth } from './auth';
@@ -28,6 +25,8 @@ export interface UpdatePrivilegesResult {
   readonly cookie?: string | undefined;
   /** Which of `PRIVILEGE_FIELDS` the patch actually named. Empty means nothing rotated. */
   readonly changed: readonly string[];
+  /** Sessions a `passwordHash` change ended. Zero for every other patch. */
+  readonly sessionsRevoked: number;
 }
 
 const changedFields = (patch: UserPatch): readonly string[] =>
@@ -44,6 +43,12 @@ const changedFields = (patch: UserPatch): readonly string[] =>
  * there is no cookie of theirs to rotate. That case wants `revokeUserSessions()` instead, and the
  * two are deliberately separate calls — silently killing an operator's own session mid-request is
  * not something a role edit should decide on its own.
+ *
+ * A `passwordHash` change is the exception, and it decides for itself: the password is what every
+ * OTHER session of this user was issued under, so they all end here. The caller's own session —
+ * passed in, and this user's — is the one that survives (rotated, or kept when rotation is off);
+ * with no session of the user's own, as in a reset or an admin's change, none survives. A changed
+ * password that left a lifted cookie working would not have changed anything for whoever holds it.
  */
 export async function updatePrivileges(
   auth: Auth,
@@ -51,23 +56,30 @@ export async function updatePrivileges(
   patch: UserPatch,
   session?: IssuedSession['session'] | undefined,
 ): Promise<UpdatePrivilegesResult> {
+  const changed = changedFields(patch);
+  const own = session !== undefined && session.userId === userId ? session : undefined;
+  const credentialChanged = changed.includes('passwordHash');
   const user = await auth.adapter.updateUser(userId, patch);
   if (user === null) throw authWriteFailed('updateUser', 'x_users');
+  if (changed.length === 0) return { user, changed, sessionsRevoked: 0 };
 
-  const changed = changedFields(patch);
-  if (
-    changed.length === 0 ||
-    session === undefined ||
-    session.userId !== userId ||
-    !auth.sessions.policy.rotateOnPrivilegeChange
-  ) {
-    return { user, changed };
+  const issued =
+    own !== undefined && auth.sessions.policy.rotateOnPrivilegeChange
+      ? await rotateSession(auth.sessions, own)
+      : undefined;
+  let sessionsRevoked = 0;
+  if (credentialChanged) {
+    const keep = issued?.session.id ?? own?.id;
+    sessionsRevoked =
+      keep === undefined
+        ? await auth.adapter.deleteSessionsForUser(userId)
+        : await auth.adapter.deleteOtherSessions(userId, keep);
   }
-
-  const issued = await rotateSession(auth.sessions, session);
+  if (issued === undefined) return { user, changed, sessionsRevoked };
   return {
     user,
     changed,
+    sessionsRevoked,
     session: issued,
     cookie: sessionCookie(issued.token, auth.sessions.policy),
   };

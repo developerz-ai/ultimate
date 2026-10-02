@@ -220,6 +220,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ADMIN_RESOURCE_UNWIRED',
   'X_IMAGE_NOT_PREBUILT',
   'X_ADMIN_UNSCANNED',
+  'X_FRAMEWORK_TABLE_ORPHANED',
 ] as const;
 
 /**
@@ -392,6 +393,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
     'a container role built at boot what the image build should have: island chunks or stylesheets',
   X_ADMIN_UNSCANNED:
     'a defineAdmin() declaration sits outside the app scan, so the admin is never mounted',
+  X_FRAMEWORK_TABLE_ORPHANED:
+    'a framework table no release reads any more is still in the database',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

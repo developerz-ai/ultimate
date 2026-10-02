@@ -130,3 +130,44 @@ describe('the token leg never echoes a body that is not a coded OAuth error', ()
     );
   });
 });
+
+/**
+ * GitHub's shape: HTTP 200 with an `error` member. The description on that branch reached the
+ * cause as the endpoint sent it — any length, any byte — where every other leg renders and caps.
+ */
+describe('a 200 that carries an error is remote text too', () => {
+  const answering =
+    (body: unknown): OAuthFetch =>
+    async () =>
+      new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+
+  const causeOf = async (body: unknown): Promise<string> => {
+    const handshake = handshakeFor('github');
+    const thrown = await exchangeOAuthCode(
+      handshake,
+      { state: handshake.state, code: 'the-code' },
+      { credentials, clock, fetch: answering(body) },
+    ).catch((error: unknown) => error);
+    expect(isUltimateError(thrown) && thrown.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    return isUltimateError(thrown) ? thrown.cause : '';
+  };
+
+  test('a 5 KB error_description is cut, not published whole', async () => {
+    const cause = await causeOf({ error: 'invalid_grant', error_description: 'x'.repeat(5000) });
+    expect(cause).toContain('x'.repeat(200));
+    expect(cause).not.toContain('x'.repeat(201));
+    expect(cause.length).toBeLessThan(400);
+  });
+
+  test('a 5 KB error with no description is cut the same way', async () => {
+    const cause = await causeOf({ error: 'y'.repeat(5000) });
+    expect(cause).not.toContain('y'.repeat(201));
+  });
+
+  test('a long description on a non-2xx answer is cut too', async () => {
+    const detail = await providerDetail(
+      new Response(JSON.stringify({ error_description: 'z'.repeat(5000) }), { status: 400 }),
+    );
+    expect(detail).not.toContain('z'.repeat(201));
+  });
+});

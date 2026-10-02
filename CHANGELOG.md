@@ -14,11 +14,12 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slices 01–04 have landed: `schema` and
+a later slice appends its group below the last one. `As of 2026-10` slices 01–05 have landed: `schema` and
 `core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
 and `cli`; then slice 04, complete — tier 2's `entity`, `policy` and `http`. A browser-launcher
-repair in `testing` rode along with it.
+repair in `testing` rode along with it. Slice 05 is `auth`: **a deployment with MFA-enrolled
+users has an operator step — the first `auth` entry under Changed.**
 
 ### Added
 
@@ -84,6 +85,25 @@ Tier 2 — http. Tier 5 — testing.
 - **http:** config keys `trustClientCertHeader` and `healthDetailPeers` — see Changed.
 - **testing:** `CdpLaunchAttempt`, `LAUNCH_TIMEOUT_MS` (60 s) and `LAUNCH_ATTEMPTS` (2);
   `launchTimeoutMs` on `launchChrome` — see Changed and Fixed.
+
+Tier 2 — auth. Tier 5 — cli (slice 05).
+
+- **auth:** `completeMfa(auth, challenge, code, options?)` — the second factor, six digits or a
+  recovery code, metered by the same reservation as the password. `mfaChallengeRequired`,
+  `MFA_CHALLENGE_PURPOSE`, `MFA_CHALLENGE_TTL_MS` (5 minutes), `CompleteMfaOptions`. `Auth` gains
+  `totpReplay`.
+- **auth:** `saveTotpSecret`, `openTotpSecret`, `sealMfaSecrets`, `countUnsealedMfaSecrets`,
+  `MFA_SECRET_PURPOSE`, `recoveryCodeHash`, and `X_MFA_SECRET_UNSEALED` (HTTP 500) — see Changed.
+- **auth:** `directGrants`, `apiKeyScopes`, `isWildcardScope`, and the types `VerifiedApiKey`,
+  `ApiKeyVerifyStore`, `ApiKeyActorOptions`, `AuthReservation`, `StoredMfaSecret`.
+- **cli:** `x auth seal-mfa [--json]`. `x doctor` gains two auth probes: plaintext second-factor
+  secrets (`X_MFA_SECRET_UNSEALED`, with the count) and a framework table no release reads
+  (`X_FRAMEWORK_TABLE_ORPHANED`, new).
+
+Tier 5 — testing (slice 05).
+
+- **testing:** the types `CdpTimeoutObservation`, `CdpTimeoutReading` and `CdpTargetGone` — see
+  Changed.
 
 Tier 5 — cli.
 
@@ -396,6 +416,72 @@ Tier 5 — testing.
   directory behind. `CdpLaunchFailedError`'s input is `{ executable, attempts }`, was
   `{ executable, detail }`.
 
+Tier 2 — auth.
+
+- **BREAKING — OPERATOR ACTION: `x_users.mfa_secret` is sealed, and a plaintext value is never
+  read.** Every deployment with MFA-enrolled users does three things, in this order:
+  1. Make the master key exist: `x secrets init`, or `ULTIMATE_SECRETS_KEY` in the deploy.
+  2. Deploy this release.
+  3. Run `x auth seal-mfa --json` once. It reports `{ sealed, alreadySealed, skipped }`, is
+     idempotent, and leaves alone a row that changed underneath it.
+
+  Until step 3 an enrolled user gets `X_MFA_SECRET_UNSEALED` (500) at the second factor, and
+  `x doctor` reports how many rows are left. Without the master key, a deployment with MFA users
+  gets `X_SEAL_KEY_MISSING` at `login()`. An app's enrolment writes through
+  `saveTotpSecret(auth, userId, secret)`; a custom adapter seals with the exported
+  `sealMfaSecrets({ adapter })`. The column type is unchanged — there is no migration.
+- **BREAKING — `x_auth_failures` is no longer created or read.** `x_auth_lockouts` gains
+  `attempts_ms bigint[]` and `admitted boolean`, added at boot by `add column if not exists`:
+  nothing to run, and a replica on the previous release keeps working through a rolling deploy.
+  Failure counts in the old table are not carried; live lockouts are. Once every replica runs this
+  release `x doctor` raises `X_FRAMEWORK_TABLE_ORPHANED` with the command:
+  `psql "$DATABASE_URL" -c 'drop table if exists x_auth_failures'`.
+- **BREAKING — `AuthLimiter` is a reservation.** `assertAllowed` and `recordFailure` are gone;
+  `reserve(key): Promise<AuthReservation>` counts the attempt before the password hash, and
+  `refund(reservation)` returns it on success. One statement on Postgres. Every custom limiter
+  implements the two.
+- **BREAKING — `verifyApiKey` returns `{ record, owner }` and refuses a key whose owner is missing
+  or disabled.** It takes an `ApiKeyVerifyStore` (an `ApiKeyStore` with `findUserById`);
+  `apiKeyActor` takes its result. On the bearer mount and on MCP such a key's next request is 401.
+  A key whose `userId` is not an `x_users` id must be issued without `userId`.
+- **BREAKING — an owned API key keeps only the scopes its owner's grants cover.** `*` and
+  `<res>:*` are refused at `issueApiKey` (`X_CONFIG_INVALID`) and dropped from stored rows. A key
+  owned by a user who holds roles and no direct grants resolves with no scopes until the app
+  passes `apiKeyResolver(store, { grantsOf })`. `actorFromApiKey(key, ownerGrants)`; the `agent`
+  arm of `AuthIdentity` gains `ownerGrants`.
+- **BREAKING — `X_MFA_REQUIRED` carries `meta.challenge`, not `meta.userId`.** `login()` and the
+  OAuth path both end in it; the challenge is a short-lived sealed value handed to `completeMfa`.
+- **BREAKING — `redeemRecoveryCode`, `mfaRequired` and `authNotImplemented` are removed.**
+  Redemption goes through `completeMfa`; a custom adapter implements
+  `consumeRecoveryCode(userId, codeHash)` with `recoveryCodeHash(code)`.
+- **BREAKING — `AuthAdapter` has eight more required members.** `findUserByExternalId`,
+  `listUsersByOrg`, `deleteSessionsForUser`, `deleteSessionsCreatedBefore` and
+  `deleteSessionsForOrg` were optional with a runtime `X_NOT_IMPLEMENTED`;
+  `listUsersWithMfaSecret`, `replaceMfaSecret(userId, expected, next)` and
+  `consumeRecoveryCode(userId, codeHash)` are new. A custom adapter missing one does not compile.
+- **BREAKING — `BuiltinAdapter` answers `X_AUTH_WRITE_FAILED` for an `x_users` unique violation**,
+  was `X_DB_UNIQUE_VIOLATION`; `meta.column` is `email`, `external_id` or `id`.
+- **BREAKING — `oauthLogin` requires `baseUrl` or `APP_URL`.** `X_ENV_MISSING` otherwise; the
+  request's `Host` is never the fallback.
+- **auth:** `disableUser` revokes the user's live API keys (the result gains `apiKeysRevoked`) and
+  logs once, before the write.
+- **auth:** `updatePrivileges` with a `passwordHash` ends every other session of that user — all
+  of them when none of theirs is passed. The result gains `sessionsRevoked`.
+- **auth:** `new BuiltinAdapter(client?, clock = systemClock)` stamps `x_verifications.consumed_at`
+  from the clock.
+
+Tier 5 — testing (slice 05).
+
+- **BREAKING — `E2eSession.offline()` rejects when an attached page refuses the switch.**
+  `X_CDP_CALL_FAILED` when a page that is still attached refuses the `navigator.onLine` script or
+  its restore. It swallowed the refusal and stopped switching that page, so a test ran online
+  while it believed otherwise. The restore is always attempted. Fix what the page refuses, or
+  close the page before the call.
+- **testing:** `X_CDP_TIMEOUT` says why a DevTools call went unanswered. `meta.reading` is
+  `target-gone`, `lost-in-transport` or `no-answer`, with the frames that arrived since the call
+  (`framesArrived`, `lastFrames`), the frames dropped as unparseable (`framesDropped` — they were
+  dropped silently) and the navigations since. Code and title unchanged.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -579,6 +665,32 @@ Tier 2 — http (slice 04). Tier 4 — render. Tier 5 — testing, cli.
   processes outlived the browser and re-created the profile directory — 6–12 of 30 closes leaked
   one, as measured by the fix's author.
 - **cli:** `x shot`'s session end waits for the browser to be reaped.
+
+Tier 2 — auth (slice 05).
+
+- **auth:** an OAuth user with MFA could not finish signing in; the OAuth path now ends in the
+  same challenge as `login()`. A proven password with a factor still owed no longer clears the
+  account's lockout bucket.
+- **auth:** recovery-code redemption is one statement (`consumeRecoveryCode`).
+- **auth:** OAuth route failure bodies carry one fixed `cause` and
+  `fix: x errors explain <CODE> --json`. The authored cause and fix are the `auth.oauth.refused`
+  log line.
+- **auth:** `discoverOAuthProvider` refuses a document whose `issuer` differs from the one asked
+  for, trailing slashes aside.
+- **auth:** a JWKS answer with no importable key is `X_OAUTH_EXCHANGE_FAILED` (stage `jwks`) and
+  leaves the cached keys. Provider detail in a cause is cut at 200 characters, and a cause no
+  longer states the length of `SESSION_SECRET`.
+- **auth:** `X_ACCOUNT_LOCKED` for a tenant bucket names no key; its `fix:` names
+  `auth.orgLimiter.recordSuccess(orgKey(user.orgId))`.
+- **auth:** `MemoryAdapter.updateUser` refuses an `externalId` another user holds, and
+  `createUser` refuses an existing `id`, as the Postgres adapter does.
+
+Tier 5 — testing (slice 05). Reference app.
+
+- **testing:** the e2e app is never spawned on a port Chromium refuses (`net::ERR_UNSAFE_PORT`).
+- **examples/dummy:** the `network` fixture's browser restore is awaited in teardown; the next
+  test's page read `navigator.onLine === false` in 9 of 15 runs, as measured by the fix's author.
+  The stale-build e2e awaits the update banner as an event, not a 5 s budget.
 
 ## 23.0.0 - 2026-10-02
 

@@ -22,6 +22,7 @@ import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import { DEFAULT_DOCTOR_PORT, doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
+import { type AuthStorageFact, authStorageFindings, authStorageProbe } from './doctor-auth';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
 import type { OfflineFallbackFact } from './doctor-offline';
@@ -101,6 +102,11 @@ export interface DoctorProbe {
    * a retired key beside a sealed column means is `sealedKeyFindings`' pure rule.
    */
   sealedKeys(): Promise<SealedKeysFact>;
+  /**
+   * What an upgrade left in the auth tables for an operator to finish: unsealed second-factor
+   * secrets, and tables no release reads. Asked of an external database only.
+   */
+  authStorage(): Promise<AuthStorageFact>;
 }
 
 /** What `x doctor` reads about the embedded database, without opening it. */
@@ -293,6 +299,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   findings.push(...(await probe.snapshots()));
   // Sealed columns against the key ring: no key at all, or a rotation whose re-seal is pending.
   findings.push(...sealedKeyFindings(await probe.sealedKeys()));
+  findings.push(...authStorageFindings(await probe.authStorage()));
   return findings;
 }
 
@@ -408,6 +415,7 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
       root === undefined ? { fallback: null, routes: undefined } : offlineFallbackProbe(root),
     sealedKeys: async () =>
       root === undefined ? { columns: undefined, keys: undefined } : sealedKeysProbe(root),
+    authStorage: () => authStorageProbe(process.env['DATABASE_URL']),
   };
 }
 

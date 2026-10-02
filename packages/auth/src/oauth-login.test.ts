@@ -7,6 +7,9 @@ import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { AuthUser } from './adapter';
 import { type Auth, defineAuth } from './auth';
 import { MemoryAdapter } from './memory-adapter';
+import { totpCode, totpStep } from './mfa';
+import { completeMfa } from './mfa-challenge';
+import { saveTotpSecret } from './mfa-secret';
 import { signInWithOAuth } from './oauth-login';
 import { codeOf, freshAuth, NOW, profile, tokens } from './oauth-login-fixture';
 
@@ -271,14 +274,26 @@ describe('signInWithOAuth', () => {
       roles: [],
       createdAt: NOW,
     });
-    await adapter.updateUser(user.id, { emailVerifiedAt: NOW, mfaSecret: 'JBSWY3DPEHPK3PXP' });
+    await adapter.updateUser(user.id, { emailVerifiedAt: NOW });
+    await saveTotpSecret(auth, user.id, 'JBSWY3DPEHPK3PXP');
 
-    expect(await codeOf(signInWithOAuth(auth, { profile: profile(), tokens: tokens() }))).toBe(
-      'X_MFA_REQUIRED',
+    const refused = await signInWithOAuth(auth, { profile: profile(), tokens: tokens() }).catch(
+      (thrown: unknown) => thrown,
     );
+    if (!isUltimateError(refused)) expect.unreachable('an enrolled user was signed straight in');
+    expect(refused.code).toBe('X_MFA_REQUIRED');
     // The second factor is finished on another request; that request must find the link.
     expect((await adapter.findAccount('github', '583231'))?.userId).toBe('user-1');
     expect(await adapter.listSessions('user-1')).toEqual([]);
+
+    // The failure this pins: the OAuth leg carried the bare user id where the sealed challenge
+    // belongs, so nothing could finish it — and the id went out in `meta`.
+    const challenge = refused.meta?.['challenge'];
+    expect(JSON.stringify(refused.meta)).not.toContain('user-1');
+    const code = totpCode('JBSWY3DPEHPK3PXP', totpStep(auth.clock.now()));
+    const finished = await completeMfa(auth, String(challenge), code);
+    expect(finished.session.userId).toBe('user-1');
+    expect(finished.session.mfaSatisfied).toBe(true);
   });
 
   test('an identity with no address names the missing scope, not a wrong password', async () => {

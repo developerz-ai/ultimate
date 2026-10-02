@@ -76,7 +76,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
   }),
   Object.freeze({
     pkg: '@ultimat3/auth',
-    tables: Object.freeze(['x_auth_failures', 'x_auth_lockouts']),
+    tables: Object.freeze(['x_auth_lockouts']),
     ddl: Object.freeze([SQL_AUTH_LIMIT_TABLES]),
   }),
   /**

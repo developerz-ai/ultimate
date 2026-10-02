@@ -376,7 +376,7 @@ Three consequences you plan around:
 
 | Consequence | What it means during a migration |
 |---|---|
-| **It consumes lockout budget** | a failed verification is a failed verification: `recordFailure` fires on the account, the IP and the org bucket alike ([`packages/auth/src/auth.ts:246`](https://github.com/developerz-ai/ultimate/blob/main/packages/auth/src/auth.ts)). A table full of foreign hashes locks accounts out through ordinary login attempts, at the normal rate |
+| **It consumes lockout budget** | a failed verification is a failed verification: the attempt `login()` reserved before the KDF stays counted on the account, the IP and the org bucket alike ([`packages/auth/src/auth.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/auth/src/auth.ts)). A table full of foreign hashes locks accounts out through ordinary login attempts, at the normal rate |
 | **Nothing is logged**, deliberately | the algorithm of an unreadable hash is the same oracle one layer down, and a line per attempt is a spray amplifier. So you see uniform credential failures and no signal that the cause is the hash scheme rather than the password |
 | **It is not a migration path** | nothing rewrites the row. bcrypt is the only "proceed" case — verified natively, `needsRehash` flags it, and the first successful login rewrites it as argon2id |
 

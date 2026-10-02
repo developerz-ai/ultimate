@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 31
-current_focus: "PR 5 — auth (05-auth.md)"
+percent: 38
+current_focus: "PR 6 — action, query (06-action-query.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -29,8 +29,9 @@ slices:
     evidence: "PR 4a (#619, 521d0514): entity, policy and the db drift fixes, with the 2026-09-28 containment row; none dropped. PR 4b (fix/101-04b-http-launcher): the http rows, the 2026-09-28 plan's four http rows (login CSRF, non-http redirect targets, shared-cache offers, the timer overflow) and the parked 2026-09-22 Set-Cookie bug; none dropped. CSRF is narrower than the 09-28 wording: an anonymous unsafe request is checked only when it carries Origin or sec-fetch-site, because the strict rule breaks inbound webhooks and one-click unsubscribe. Health detail is limited on the web role only; the sync role is recorded for slice 08."
   - file: 05-auth.md
     tier: 2
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    evidence: "PR 5 (fix/101-05-auth): every row fixed, none dropped. The mfa_secret row was first blocked - the sealed-column 'legacy plaintext' precedent the plan cites does not exist - and landed as: sealed at enrolment, a one-shot x auth seal-mfa (compare-and-set), completeMfa refusing an unsealed value with that command as its fix, x doctor reporting the count. No plaintext read path. Slice 15 decision 13 (optional adapter members) is answered here by the owner's standing rule: required, eight members. Found on the way: an OAuth user with MFA could not finish; recovery codes had no atomic redemption. Codes: X_MFA_SECRET_UNSEALED, X_FRAMEWORK_TABLE_ORPHANED."
   - file: 06-action-query.md
     tier: 3
     status: not_started
@@ -135,6 +136,21 @@ notes: >-
   isolates files, so it is green; fix in the cli and query PRs.
   examples/dummy's own per-package typecheck script reports 351 errors (rootDir, @postly/mcp);
   root tsc -b and the app gate are clean. Diagnose in the dev-experience PR.
-  Nothing in the build flags an unawaited promise - scripts PR. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  Nothing in the build flags an unawaited promise - scripts PR.
+  PR 4b merged as #620 (3b76f7ba). developerz-ai[bot] published Releases v23.0.1 and v23.0.2 with
+  lightweight tags on the 4a and 4b merge commits; release.yml's check refused both, nothing
+  reached npm, and both were deleted with their tags. Check gh release list after every merge.
+  main went red once on 3b76f7ba from examples/dummy's stale-build e2e: a DevTools call unanswered
+  for 30 s (X_CDP_TIMEOUT). Not a regression from #620 - that page learns of a build over the sync
+  socket, and every response in every traced run was 200. The stall did not reproduce in 60 runs.
+  PR 5 carries what was found beside it: the network fixture restored the cable without awaiting
+  (the next test's page read navigator.onLine false in 9 of 15 runs), freePort could hand out a
+  port Chromium refuses, and X_CDP_TIMEOUT now reports what the wire did.
+  For the realtime PR, with a trace: one like, one idempotency key, four POSTs - the 200 landed in
+  a document being replaced and the next /feed boot re-sent it (packages/realtime/src/
+  page-outbox.ts:104, :153-155, :262). Settle whether that is at-least-once as designed. The
+  'like taken offline' e2e is satisfied by the optimistic count before the server confirms.
+  For the cli PR: nothing checks that x auth seal-mfa has run except x doctor when someone runs
+  it - a boot-time warning with the unsealed count would enforce the operator step. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02

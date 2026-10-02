@@ -86,7 +86,7 @@ export const runsService = defineService('runs', (ctx) => ({
   },
 
   issueKey(orgId: string): Promise<RunKeyIssued> {
-    return issueRunKeyFor({ orgId, userId: ctx.actor.id, clock: ctx.clock });
+    return issueRunKeyFor({ orgId, clock: ctx.clock });
   },
 
   keyOwner(keyId: string): Promise<RunOwner | null> {

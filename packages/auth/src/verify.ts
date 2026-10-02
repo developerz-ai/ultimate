@@ -1,7 +1,7 @@
 // Single responsibility: email verification and password reset — the two flows where a link in
 // an inbox is a credential. Tokens are single-use, expiring, stored hashed and compared in
-// constant time. Mail leaves through an injected `MailSender` port: the app wires
-// `@ultimat3/mail`'s `send` into it, because auth must not depend on a sideways tier-3 package.
+// constant time. Mail leaves through an injected structural `MailSender` port: `@ultimat3/mail` is
+// tier 4 and auth is tier 2, so the app wires mail's `send` in and auth imports nothing upward.
 
 import type { Clock } from '@ultimat3/core';
 import type { AuthVerification, VerificationStore } from './adapter';

@@ -32,7 +32,7 @@ export const PINS_FILE = 'scripts/lib/test-bare-error-pins.ts';
 export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   admin: 7,
   ai: 18,
-  auth: 6,
+  auth: 4,
   cache: 3,
   cli: 9,
   core: 30,

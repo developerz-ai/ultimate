@@ -1,9 +1,9 @@
 // The two OAuth route descriptors driven as HTTP: a forged state, a declined consent and an
-// unknown provider each answer with their own code and status, the body an anonymous caller reads
-// carries no developer diagnostics, and the handshake cookie is cleared on every outcome.
+// unknown provider each answer with their own code and status, the developer's cause and fix go
+// to the `auth.oauth.refused` log line, and the handshake cookie is cleared on every outcome.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { frozenClock, setLogSink } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
 import { MemoryAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
@@ -17,11 +17,24 @@ const credentials = { clientId: 'client-id', clientSecret: 'client-secret' };
 
 let adapter: MemoryAdapter;
 let auth: Auth;
+let logged: string[];
+let previousSink: ReturnType<typeof setLogSink>;
 
 beforeEach(() => {
   adapter = new MemoryAdapter();
   auth = defineAuth({ adapter, clock: frozenClock(NOW), providers: ['github', 'google'] });
+  logged = [];
+  previousSink = setLogSink((line) => {
+    logged.push(line);
+  });
 });
+
+afterEach(() => {
+  setLogSink(previousSink);
+});
+
+/** The developer's half of the last refusal: its cause and fix, where only an operator reads. */
+const refused = (): string => logged.findLast((line) => line.includes('auth.oauth.refused')) ?? '';
 
 /** The three GitHub calls a client-side login makes, and nothing else. */
 const githubFetch = (): OAuthFetch => (input) => {
@@ -74,7 +87,7 @@ describe('oauthLogin', () => {
     const body = await bodyOf(done);
     expect(body['code']).toBe('X_OAUTH_STATE_INVALID');
     // Axiom 4: the fix names a route this package actually mounts, not one it wishes existed.
-    expect(String(body['fix'])).toContain(`GET ${oauthStartPath('github')}`);
+    expect(refused()).toContain(`GET ${oauthStartPath('github')}`);
     expect(login.start.path).toBe('/auth/oauth/:provider');
     // A spent handshake must not survive its own failure — the code it authorised is gone.
     expect(done.headers.getSetCookie().some((c) => c.startsWith('__Host-x_oauth_github=;'))).toBe(
@@ -155,8 +168,8 @@ describe('oauthLogin', () => {
     expect(done.status).toBe(403);
     const body = await bodyOf(done);
     expect(body['code']).toBe('X_OAUTH_DENIED');
-    expect(String(body['cause'])).toContain('access_denied');
-    expect(String(body['fix'])).toContain(`GET ${oauthStartPath('github')}`);
+    expect(refused()).toContain('access_denied');
+    expect(refused()).toContain(`GET ${oauthStartPath('github')}`);
   });
 
   test('a callback with no handshake cookie has nothing to check state against', async () => {
@@ -207,10 +220,8 @@ describe('oauthLogin', () => {
     expect(done.status).toBe(502);
     const body = await bodyOf(done);
     expect(body['code']).toBe('X_OAUTH_EXCHANGE_FAILED');
-    // The contract's three fields, and no stack: what makes it debuggable is the fix line, and
-    // what makes it publishable is that nothing else rides along.
     expect(body['cause']).toBeString();
-    expect(body['fix']).toBeString();
+    expect(body['fix']).toBe('x errors explain X_OAUTH_EXCHANGE_FAILED --json');
     expect(body).not.toContainKey('stack');
   });
 
@@ -247,15 +258,14 @@ describe('oauthLogin', () => {
     // developer — is not what goes on the wire. `meta.enabled` would have published the app's own
     // provider configuration to whoever typed a URL.
     expect(Object.keys(body).sort()).toEqual(['cause', 'code', 'docs', 'fix', 'title']);
-    // The three BUILT-INS, which are a framework constant already in the public docs — never the
-    // app's `providers` and never the live registry. `google` is built in and NOT enabled here, so
-    // a fix that names it is reading the constant rather than this deployment's configuration.
-    expect(String(body['fix'])).toContain("'google'");
-    // And the other half stays out of it. An app that registered an internal OP has put its own
-    // vocabulary into the registry; echoing it back names a system this stranger could not have
-    // known exists. The fix is still executable for that branch — it says how to register one.
-    expect(String(body['fix'])).not.toContain('acme-internal-sso');
-    expect(String(body['fix'])).toContain('registerOAuthProvider');
+    // The body names no provider at all, enabled, built in or registered.
+    expect(JSON.stringify(body)).not.toContain('google');
+    expect(JSON.stringify(body)).not.toContain('acme-internal-sso');
+    // The refusal itself still lists the three BUILT-INS and never the live registry: `google` is
+    // built in and NOT enabled here, so the line is reading the constant, not this deployment.
+    expect(refused()).toContain("'google'");
+    expect(refused()).not.toContain('acme-internal-sso');
+    expect(refused()).toContain('registerOAuthProvider');
   });
 });
 
@@ -365,9 +375,10 @@ describe('an internal exception is logged, never published', () => {
     expect(rendered).not.toContain('hunter2');
     expect(rendered).not.toContain('ECONNREFUSED');
     expect(rendered).not.toContain('10.4.2.17');
-    // Still four fields and still actionable: the `fix:` names where to look.
     expect(Object.keys(body).sort()).toEqual(['cause', 'code', 'docs', 'fix', 'title']);
-    expect(String(body['fix'])).toContain('UltimateError');
+    // Not in the log line either: the throw's own text is under `auth.oauth.uncoded_failure`.
+    expect(refused()).not.toContain('hunter2');
+    expect(refused()).toContain('UltimateError');
   });
 
   test('a fetch that rejects is the same rule one layer earlier, on the secret-carrying leg', async () => {
@@ -385,9 +396,10 @@ describe('an internal exception is logged, never published', () => {
     const rendered = JSON.stringify(body);
     expect(rendered).not.toContain('hunter2');
     expect(rendered).not.toContain('ECONNREFUSED');
-    // The URL and the remedy are framework constants and stay: the failure must remain fixable.
-    expect(String(body['cause'])).toContain('https://github.com/login/oauth/access_token');
-    expect(String(body['fix'])).toContain('curl');
+    // The URL and the remedy are framework constants: the logged failure must remain fixable.
+    expect(refused()).not.toContain('hunter2');
+    expect(refused()).toContain('https://github.com/login/oauth/access_token');
+    expect(refused()).toContain('curl');
   });
 
   /** githubFetch, with one URL answered by `answer` instead. */
@@ -412,7 +424,8 @@ describe('an internal exception is logged, never published', () => {
       expect(rendered).not.toContain('hunter2');
       expect(rendered).not.toContain('ECONNREFUSED');
       expect(rendered).not.toContain('10.4.2.17');
-      expect(String(body['cause'])).toContain('auth.oauth.userinfo_fetch_failed');
+      expect(refused()).not.toContain('hunter2');
+      expect(refused()).toContain('auth.oauth.userinfo_fetch_failed');
     },
   );
 });
@@ -446,18 +459,21 @@ describe('the token leg quotes only the OAuth error fields', () => {
     );
   };
 
-  test('an echoed request in `message` never reaches the public body', async () => {
+  test('an echoed request in `message` reaches neither the body nor the log', async () => {
     const body = await callbackFor(
       tokenAnswer({ message: 'bad request: client_id=client-id&client_secret=SECRET-VALUE-42' }),
     );
     expect(JSON.stringify(body)).not.toContain('SECRET-VALUE-42');
+    expect(refused()).not.toBe('');
+    expect(refused()).not.toContain('SECRET-VALUE-42');
   });
 
-  test('an ordinary error_description is still shown — it is an OAuth field', async () => {
+  test('an ordinary error_description is still logged — it is an OAuth field', async () => {
     const body = await callbackFor(
       tokenAnswer({ error: 'invalid_grant', error_description: 'The code has expired' }),
     );
-    expect(String(body['cause'])).toContain('The code has expired');
+    expect(JSON.stringify(body)).not.toContain('The code has expired');
+    expect(refused()).toContain('The code has expired');
   });
 });
 

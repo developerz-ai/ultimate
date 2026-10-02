@@ -22,7 +22,7 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   action: 10,
   admin: 6,
   ai: 16,
-  auth: 8,
+  auth: 7,
   cache: 10,
   core: 12,
   db: 5,

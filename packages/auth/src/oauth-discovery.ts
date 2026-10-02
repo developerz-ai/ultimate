@@ -3,7 +3,12 @@
 // boot, no dependency — an enterprise IdP is then three lines instead of a hand-copied table of
 // four endpoints that nobody re-checks when the vendor moves one.
 
-import { renderFixLiteral, renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import {
+  renderCauseValue,
+  renderFixLiteral,
+  renderFixShellArg,
+  renderThrowable,
+} from '@ultimat3/core';
 import { isRecord } from './json';
 import type { OAuthProvider } from './oauth';
 import { oauthExchangeFailed } from './oauth-errors';
@@ -16,9 +21,12 @@ const TIMEOUT_CONSEQUENCE =
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+/** An issuer as it is compared and built on: its trailing slashes are not part of its identity. */
+const bareIssuer = (issuer: string): string => issuer.replace(/\/+$/, '');
+
 /** The document lives at a fixed suffix off the issuer; the issuer keeps its own path. */
 export const discoveryUrl = (issuer: string): string =>
-  `${issuer.replace(/\/+$/, '')}/.well-known/openid-configuration`;
+  `${bareIssuer(issuer)}/.well-known/openid-configuration`;
 
 export interface DiscoverOAuthProviderInput {
   /** The id the URL segment carries: `/auth/oauth/<id>`. Also names the two env vars. */
@@ -46,9 +54,9 @@ const envPrefix = (id: string): string => id.toUpperCase().replace(/[^A-Z0-9]+/g
  * `registerOAuthProvider(await discoverOAuthProvider({ id, issuer }))` keeps one install point,
  * and an app that wants to override one endpoint spreads the result before registering it.
  *
- * `issuers` is pinned to the `issuer` the document itself declares, not the URL that was asked
- * for — a document that names a different issuer is answering for somebody else, and pinning the
- * requested URL would let it.
+ * A document that declares a different issuer than the one asked for is answering for somebody
+ * else and is refused (OIDC Discovery 1.0 §4.3). `issuers` then carries the document's own
+ * spelling, which is what its id tokens put in `iss`; only a trailing slash may differ.
  */
 export async function discoverOAuthProvider(
   input: DiscoverOAuthProviderInput,
@@ -121,6 +129,17 @@ export async function discoverOAuthProvider(
         'the discovery document is missing issuer, authorization_endpoint or token_endpoint, ' +
         'so no handshake can be built from it',
       fix: `curl -sS -m 5 ${target} | jq '{issuer, authorization_endpoint, token_endpoint}'`,
+    });
+  }
+
+  if (bareIssuer(issuer) !== bareIssuer(input.issuer)) {
+    throw oauthExchangeFailed({
+      provider: input.id,
+      stage: 'discovery',
+      detail:
+        `the discovery document declares issuer ${renderCauseValue(issuer)}, and it was fetched ` +
+        `for ${renderCauseValue(input.issuer)}, so it is answering for another issuer`,
+      fix: `curl -sS -m 5 ${renderFixShellArg(url, '<issuer>/.well-known/openid-configuration')} | jq .issuer`,
     });
   }
 

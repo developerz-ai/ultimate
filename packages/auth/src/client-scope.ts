@@ -5,7 +5,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { logger } from '@ultimat3/core';
-import { clientScopeSecretShort } from './errors';
+import { AuthError } from './errors';
 
 /** 128 bits: a scope only has to differ between principals, never to authenticate anyone. */
 const SCOPE_HEX_CHARS = 32;
@@ -46,7 +46,13 @@ function scopeKey(options: ClientScopeOptions): string {
     // The same floor as the env path below: an explicit key is a caller's value, so a short one is
     // refused rather than silently swapped for the process key.
     if (options.secret.length < MIN_SECRET_LENGTH) {
-      throw clientScopeSecretShort(options.secret.length, MIN_SECRET_LENGTH);
+      // Never its length: how long the key handed over is narrows a guess at it.
+      throw new AuthError({
+        code: 'X_CONFIG_INVALID',
+        cause: `clientScopeOf({ secret }) was passed a key shorter than the ${String(MIN_SECRET_LENGTH)} characters required, so the scope id would be keyed by a guessable secret`,
+        fix: 'omit secret so clientScopeOf reads SESSION_SECRET, or pass one generated with: openssl rand -hex 32',
+        meta: { option: 'secret', minLength: MIN_SECRET_LENGTH },
+      });
     }
     return options.secret;
   }

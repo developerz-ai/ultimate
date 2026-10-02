@@ -43,6 +43,8 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   }),
   // The app the scaffold writes: no sealed column, so the key ring is never asked about.
   sealedKeys: async () => ({ columns: [], keys: undefined }),
+  // A database with nothing left over from an upgrade.
+  authStorage: async () => ({ unsealedMfaSecrets: 0, retiredTables: [] }),
   ...over,
 });
 

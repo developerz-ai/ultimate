@@ -4,8 +4,12 @@
 // leaves everything else a throw, because "the database is down" is not "your key is wrong".
 
 import { type Clock, isUltimateError, systemClock } from '@ultimat3/core';
-import type { ApiKeyStore } from './adapter';
-import { apiKeyActor, verifyApiKey } from './api-keys';
+import {
+  type ApiKeyActorOptions,
+  type ApiKeyVerifyStore,
+  apiKeyActor,
+  verifyApiKey,
+} from './api-keys';
 import type { PolicyActor } from './policy-bridge';
 
 /**
@@ -15,11 +19,11 @@ import type { PolicyActor } from './policy-bridge';
 export interface ApiKeyCaller {
   /** The agent actor: the key's org, and its scopes as the permissions a policy reads. */
   readonly actor: PolicyActor;
-  /** The key's scopes — what the mount's scope map is cut by. */
+  /** The scopes the ACTOR carries — the key's, cut by its owner's grants. The mount's scope map is cut by these. */
   readonly scopes: ReadonlySet<string>;
 }
 
-export interface ApiKeyResolverOptions {
+export interface ApiKeyResolverOptions extends ApiKeyActorOptions {
   readonly clock?: Clock | undefined;
 }
 
@@ -33,13 +37,14 @@ export interface ApiKeyResolverOptions {
  * the instance and return it.
  */
 export function apiKeyResolver(
-  store: () => ApiKeyStore,
+  store: () => ApiKeyVerifyStore,
   options: ApiKeyResolverOptions = {},
 ): (token: string) => Promise<ApiKeyCaller | null> {
   return async (token) => {
     try {
-      const record = await verifyApiKey(store(), token, options.clock ?? systemClock);
-      return { actor: apiKeyActor(record), scopes: new Set(record.scopes) };
+      const verified = await verifyApiKey(store(), token, options.clock ?? systemClock);
+      const actor = apiKeyActor(verified, options);
+      return { actor, scopes: new Set(actor.scopes) };
     } catch (thrown) {
       // Every way a key can be wrong is this one code, by `verifyApiKey`'s own design: a caller
       // that could tell "revoked" from "unknown" could enumerate ids.

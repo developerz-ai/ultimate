@@ -411,14 +411,14 @@ a current fact: the rules that still hold are in that file, and where the two di
 - **`MemoryAdapter` takes a `Clock`, and every instant it stamps comes from it** —
   `new MemoryAdapter(clock)`, defaulting to `systemClock`, so the no-argument construction every
   test already writes is unchanged. `takeVerification` stamped `consumedAt` with the record's
-  own `createdAt` — the moment the link was ISSUED — where `BuiltinAdapter` writes
+  own `createdAt` — the moment the link was ISSUED — where `BuiltinAdapter` wrote
   `consumed_at = now()`, the moment it was REDEEMED: a redemption an hour later and one a second
-  later recorded the identical instant, and a frozen test clock could not move either.
+  later recorded the identical instant, and a frozen test clock could not move either. Since
+  2026-10-02 `BuiltinAdapter` binds its own `Clock` there too (below).
 
-- The new `AuthAdapter` members are OPTIONAL (`findUserByExternalId`, `listUsersByOrg`,
-  `deleteSessionsForUser`, `deleteSessionsForOrg`, `deleteSessionsCreatedBefore`). A required
-  member is a breaking change to every third-party adapter; the callers throw
-  `X_NOT_IMPLEMENTED` naming the method instead.
+- `findUserByExternalId`, `listUsersByOrg`, `deleteSessionsForUser`, `deleteSessionsForOrg` and
+  `deleteSessionsCreatedBefore` were OPTIONAL until 2026-10-02, with callers throwing
+  `X_NOT_IMPLEMENTED`. They are required now (below).
 
 - Rotate the session id on any privilege change (`rotateSession`), never patch the row.
   `updatePrivileges` in `privileges.ts` is the caller that makes that rule exist — it had none
@@ -548,3 +548,80 @@ a current fact: the rules that still hold are in that file, and where the two di
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
 | `sign-out.ts` | `signOutHeaders({ session? })` — what a sign-out RESPONSE appends: the framework session cookie expired (when `session` is given) and `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), so the browser drops the previous principal's IndexedDB (the page store's `ultimate-client`), local storage, service worker and Cache Storage. Never `"cookies"`: the response sets the signed-out cookie itself. THE TRADE-OFF, decided 2026-09-22: a PWA's offline cache does not survive a sign-out — the worker is unregistered and the next load reinstalls and re-precaches it — because a cached private page IS the previous principal's data. The page boot's rescope wipe stays as the second line, for a sign-out with no navigation. Browsers honour the header only in a secure context (HTTPS, or localhost) |
 | `client-scope.ts` | `clientScopeOf(actor)` — the OPAQUE per-principal id a private document hands the page's client store (`<meta name="ultimate-scope">`, plan 101). Keyed SHA-256 (`SESSION_SECRET`) over kind, id and the impersonator, 32 hex; `''` for anonymous. Never the raw id: the HTML is readable by every script on the page. `SESSION_SECRET` is optional in the env schema, so its absence falls back to a random PER-PROCESS key with one `auth.client_scope.process_key` warning — the id then changes across replicas and restarts, which rescopes (clears) a page's store and never leaks one |
+
+## 2026-10-02 — the adapter, OAuth and JWKS half of plan 101 slice 05
+
+- **Every `AuthAdapter` member is required.** The five above were optional "so a 1.2 adapter still
+  compiles", twenty majors later; the cost was a refusal at the first SCIM lookup or the first
+  03:00 sweep instead of at `defineAuth({ adapter })`. A contract an adapter must meet is a compile
+  error. `directory.ts` calls them directly.
+- **An `x_users` unique violation is `X_AUTH_WRITE_FAILED` on both adapters**
+  (`builtin-adapter-violation.ts`). Postgres answered `X_DB_UNIQUE_VIOLATION` where memory answered
+  auth's code, so an app branching on the code passed its tests and missed in production. The
+  SQLSTATE is read through db's `sqlState` (provenance, not shape) and the column from a CLOSED
+  table of the three constraint names `tables.ts` produces; an index the app added travels on as
+  the database error it is. `MemoryAdapter` gained the two neighbours it lacked: `external_id` on
+  `updateUser`, and a second row at one `id`, which used to replace the first.
+- **`BuiltinAdapter` takes a `Clock`** (`new BuiltinAdapter(client, clock)`) and binds
+  `consumed_at` from it. A constructor argument, not an `at` on `takeVerification`, because that
+  is the shape `MemoryAdapter` already has. The default is `systemClock`: an app with its own
+  clock hands the same one to both.
+- **`discoverOAuthProvider` compares the document's `issuer` to the one asked for** (OIDC
+  Discovery §4.3) and refuses a mismatch. Trailing slashes are the one tolerated difference,
+  because the input's are already stripped to build the URL; `issuers` keeps the document's
+  spelling, which is what `iss` carries.
+- **Both OAuth legs answer one fixed body**: `code`, `title`, `docs`, one `cause` sentence and
+  `x errors explain <CODE> --json`. The authored cause and fix are the `auth.oauth.refused` log
+  line. The earlier rule judged per field what was safe to publish; this one publishes nothing
+  authored. `redirect_uri` needs `baseUrl` or `APP_URL` and never reads `Host`; the check runs
+  before the provider is resolved so a missing origin is not a 404-versus-500 oracle. No cause
+  states a configured secret's length (`oauth-cookie.ts`, `client-scope.ts`).
+- **A JWKS answer with no importable key is a failed fetch.** Adopted, it replaced a working cache
+  with an empty one stamped fresh for a TTL. Now `X_OAUTH_EXCHANGE_FAILED`, cache and stamp
+  untouched.
+- **Remote text is cut and rendered on every branch of the token leg** (`remoteText` in
+  `oauth-exchange.ts`), the 200-with-`error` one included.
+- **`APPLE_PROVIDER` is marked unproven**; ship-or-remove is an open decision.
+
+## Credentials, 2026-10-02 (plan 101 slice 05)
+
+- **An api key is its owner's credential.** `verifyApiKey` never looked at the owning user, so a
+  disabled user's key went on resolving on every bearer mount and MCP endpoint while the session
+  surface refused them. It now re-reads the owner after the secret matches and refuses a missing
+  or disabled one; `disableUser` revokes the keys outright. A key with no `userId` has no owner.
+- **A key's scopes only shrink.** They became `permissions` verbatim, wildcards included, and were
+  never compared with what the owner may do. Wildcards are refused at issue and dropped from a
+  stored row. The intersection uses the grants this tier can read (`permissions`, `scopes`); roles
+  are policy's to expand and policy is the same tier, so the expansion is a seam (`grantsOf`) and
+  the default fails closed.
+- **The limiter is a reservation.** `assertAllowed` → KDF → `recordFailure` let every guess of a
+  concurrent burst pass the check before any was recorded. `reserve` counts in the step that
+  admits; `refund` gives one back. The two old members are gone rather than kept beside it: a
+  check-then-record pair is the defect, so it is not a second way to do it.
+- **The Postgres limiter keeps its window in the row it locks.** A count over a second table reads
+  the statement's snapshot, which predates any wait, so the old insert-then-count needed two
+  statements and an advisory lock and was still check-then-act across the KDF. One
+  `insert … on conflict do update` over `x_auth_lockouts`, the attempts in a `bigint[]`.
+  `x_auth_failures` is no longer created or read. The table NAME and its first two columns were
+  kept, and the two new columns arrive by `add column if not exists`, so a replica still on the
+  previous release keeps working — and keeps honouring lockouts — through a rolling deploy. A new
+  table name was the cleaner shape and was rejected for that reason.
+- **`completeMfa` ships, over a sealed challenge.** The first leg handed back a user id and
+  cleared the account's failures, so any second leg an app built was keyed by an id and unmetered.
+  The challenge is core's `seal()` (purpose `auth:mfa-challenge`), not the HMAC `sealHandshake`
+  uses: it needs no second secret and it hides the user id. A proven password with a factor still
+  owed REFUNDS its reservations and clears nothing.
+- **A password change ends the other sessions**, and `disableUser` logs before its first write.
+- **`X_ACCOUNT_LOCKED` names no org.** The id was looked up from the address the caller typed.
+- **`x_users.mfa_secret` is sealed, with no plaintext read.** The sealed-column work shipped no
+  legacy path (`.sealed({ legacy })` was planned, never built) and `x_users` is boot DDL, not an
+  `entity()`, so there was nothing to reuse. What shipped instead has a hard end: one writer
+  (`saveTotpSecret`), one reader that refuses an unsealed value (`X_MFA_SECRET_UNSEALED`), a
+  required `listUsersWithMfaSecret` on the seam, and the one-shot `x auth seal-mfa`. A reader that
+  fell back to plaintext "until migrated" was rejected: nothing would ever force the migration.
+  `x doctor` counts unsealed rows so the operator hears it at deploy.
+- **Recovery codes are consumed by the adapter** (`consumeRecoveryCode`, one conditional UPDATE).
+  `redeemRecoveryCode` — a pure read-then-write — is deleted: two requests carrying one code both
+  redeemed it. `completeMfa` takes a recovery code where it takes six digits.
+- **`x_auth_failures` is reported, not dropped.** `x doctor` raises `X_FRAMEWORK_TABLE_ORPHANED`
+  with the `drop table` to run once every replica is on this release.

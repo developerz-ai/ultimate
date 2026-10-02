@@ -131,18 +131,18 @@ afterEach(async () => {
 
 describeLive('live · postgres · what the boot installs for auth and retention', () => {
   test(
-    'an app that declares nothing counts its failures in the boot database',
+    'an app that declares nothing counts its attempts in the boot database',
     async () => {
       await boot();
 
       // The app's own call, exactly as a scaffolded `apps/web/app/auth/login.ts` writes it.
       const auth = defineAuth({ adapter: new MemoryAdapter() });
       expect(auth.limiter.policy.scope).toBe('shared');
-      await auth.limiter.recordFailure(accountKey('ada@example.com'));
+      await auth.limiter.reserve(accountKey('ada@example.com'));
 
       // The row is in the DATABASE, not in this process's heap — which is the whole difference
       // between a lockout the fleet enforces and one each pod enforces on its own.
-      expect(await countIn('x_auth_failures')).toBe(1);
+      expect(await countIn('x_auth_lockouts')).toBe(1);
     },
     BOOT_TIMEOUT_MS,
   );
@@ -153,12 +153,16 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       await boot();
       const auth = defineAuth({ adapter: new MemoryAdapter() });
       const live = accountKey('ada@example.com');
-      await auth.limiter.recordFailure(live);
-      // Two rows from before the window and a lockout that has already expired — the rows the
-      // purge exists for. Written directly, because getting there through the limiter means
-      // waiting out a 15-minute window.
-      await on(probeUrl(), "insert into x_auth_failures (key, at_ms) values ('account:old', 0)");
-      await on(probeUrl(), "insert into x_auth_failures (key, at_ms) values ('ip:1.2.3.4', 0)");
+      await auth.limiter.reserve(live);
+      // Two keys whose only attempt left the window long ago and one whose lockout has already
+      // expired — the rows the purge exists for. Written directly, because getting there through
+      // the limiter means waiting out a 15-minute window.
+      for (const key of ['account:old', 'ip:1.2.3.4']) {
+        await on(
+          probeUrl(),
+          `insert into x_auth_lockouts (key, attempts_ms, locked_until_ms) values ('${key}', '{0}', 0)`,
+        );
+      }
       await on(
         probeUrl(),
         "insert into x_auth_lockouts (key, locked_until_ms) values ('ip:9.9.9.9', 1)",
@@ -173,13 +177,12 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         'x_notify_deliveries',
         'x_notify_inbox',
       ]);
-      // Three dead rows gone, the live failure kept: the purge measures against the caller's
+      // Three dead rows gone, the live attempt kept: the purge measures against the caller's
       // clock, so a sweep that read `now()` on the server would take a different set. The two
       // notify targets contribute nothing here — no `setNotifyStores` ran, which is the state of
       // an app that never wired the Postgres stores, and it must be zero rather than a throw.
       expect(report.removed).toBe(3);
-      expect(await countIn('x_auth_failures')).toBe(1);
-      expect(await countIn('x_auth_lockouts')).toBe(0);
+      expect(await countIn('x_auth_lockouts')).toBe(1);
       // Empty tables, so nothing to remove — but the statements ran, which is what a missing
       // relation would have failed on.
       expect(report.swept.find((sweep) => sweep.name === 'x_rate_limit')?.removed).toBe(0);

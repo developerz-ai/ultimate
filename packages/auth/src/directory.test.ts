@@ -5,10 +5,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import type { AuthAdapter, AuthUser } from './adapter';
+import type { AuthUser } from './adapter';
 import { type Auth, defineAuth } from './auth';
 import { describeUser, findUserByExternalId, listOrgUsers } from './directory';
-import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
 
 const START = 1_700_000_000_000;
@@ -75,20 +74,5 @@ describe('the account directory', () => {
     const { auth } = await seed();
     expect((await findUserByExternalId(auth, 'okta|alice'))?.id).toBe('alice');
     expect(await findUserByExternalId(auth, 'okta|nobody')).toBeNull();
-  });
-
-  test('an adapter without the read says so, with the method named', async () => {
-    const legacy = new Proxy(new MemoryAdapter(), {
-      get(target, prop) {
-        if (prop === 'listUsersByOrg') return undefined;
-        const value = Reflect.get(target, prop);
-        return typeof value === 'function' ? value.bind(target) : value;
-      },
-    }) as AuthAdapter;
-    const auth = defineAuth({ adapter: legacy, clock: frozenClock(START) });
-    const thrown = await listOrgUsers(auth, 'org-1').catch((error: unknown) => error);
-    const error = thrown instanceof AuthError ? thrown : null;
-    expect(error?.code).toBe('X_NOT_IMPLEMENTED');
-    expect(error?.cause).toContain('listUsersByOrg');
   });
 });

@@ -13,17 +13,27 @@ export type {
   CreateUserInput,
   SessionPatch,
   SessionStore,
+  StoredMfaSecret,
   UserPatch,
   UserStore,
   VerificationStore,
 } from './adapter';
 export type { ApiKeyCaller, ApiKeyResolverOptions } from './api-key-resolver';
 export { apiKeyResolver } from './api-key-resolver';
-export type { ApiKeySummary, IssueApiKeyInput, IssuedApiKey, ParsedApiKey } from './api-keys';
+export type {
+  ApiKeyActorOptions,
+  ApiKeySummary,
+  ApiKeyVerifyStore,
+  IssueApiKeyInput,
+  IssuedApiKey,
+  ParsedApiKey,
+  VerifiedApiKey,
+} from './api-keys';
 export {
   API_KEY_NAMESPACE,
   apiKeyActor,
   describeApiKey,
+  directGrants,
   issueApiKey,
   parseApiKey,
   revokeApiKey,
@@ -70,14 +80,13 @@ export {
   apiKeyInvalid,
   authLimiterNotShared,
   authLimiterPolicyMismatch,
-  authNotImplemented,
   authUniqueViolation,
   authWriteFailed,
   forbidden,
   kdfOverloaded,
-  mfaRequired,
   mfaRequiredUnenforceable,
   mfaSecretInvalid,
+  mfaSecretUnsealed,
   passwordWeak,
   sessionExpired,
   sessionUnknown,
@@ -132,7 +141,7 @@ export {
   enrolTotp,
   generateRecoveryCodes,
   generateTotpSecret,
-  redeemRecoveryCode,
+  recoveryCodeHash,
   TOTP_DIGITS,
   TOTP_DRIFT_STEPS,
   TOTP_STEP_SECONDS,
@@ -140,6 +149,23 @@ export {
   totpStep,
   verifyTotp,
 } from './mfa';
+export type { CompleteMfaOptions } from './mfa-challenge';
+// `mfaRequired` itself is deliberately absent: the only X_MFA_REQUIRED worth throwing carries a
+// challenge this package sealed, and `mfaChallengeRequired` is what seals one.
+export {
+  completeMfa,
+  MFA_CHALLENGE_PURPOSE,
+  MFA_CHALLENGE_TTL_MS,
+  mfaChallengeRequired,
+} from './mfa-challenge';
+export type { MfaSecretStore, SealMfaSecretsReport } from './mfa-secret';
+export {
+  countUnsealedMfaSecrets,
+  MFA_SECRET_PURPOSE,
+  openTotpSecret,
+  saveTotpSecret,
+  sealMfaSecrets,
+} from './mfa-secret';
 export type {
   BeginOAuthInput,
   OAuthCallback,
@@ -240,6 +266,8 @@ export {
   actorFromApiKey,
   actorFromService,
   actorFromUser,
+  apiKeyScopes,
+  isWildcardScope,
   resolveActor,
 } from './policy-bridge';
 export type { UpdatePrivilegesResult } from './privileges';
@@ -248,6 +276,7 @@ export type {
   AuthLimiter,
   AuthLimiterScope,
   AuthRateLimitPolicy,
+  AuthReservation,
   MemoryAuthLimiter,
 } from './rate-limit';
 export {

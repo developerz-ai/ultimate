@@ -5,10 +5,10 @@
 // lookup happens by the non-secret id so the secret never appears in a query, an index or a log.
 
 import { type Clock, randomHex, systemClock } from '@ultimat3/core';
-import type { ApiKeyStore, AuthApiKeyRecord } from './adapter';
-import { apiKeyEnvInvalid, apiKeyInvalid } from './errors';
+import type { ApiKeyStore, AuthApiKeyRecord, AuthUser, UserStore } from './adapter';
+import { apiKeyEnvInvalid, apiKeyInvalid, apiKeyScopeWildcard } from './errors';
 import type { PolicyActor } from './policy-bridge';
-import { actorFromApiKey } from './policy-bridge';
+import { actorFromApiKey, isWildcardScope } from './policy-bridge';
 import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
 
 export const API_KEY_NAMESPACE = 'ult';
@@ -63,6 +63,8 @@ const API_KEY_ENV = /^[a-z0-9-]+$/;
 
 export function issueApiKey(input: IssueApiKeyInput): IssuedApiKey {
   if (!API_KEY_ENV.test(input.env)) throw apiKeyEnvInvalid(input.env);
+  const wildcard = input.scopes.find(isWildcardScope);
+  if (wildcard !== undefined) throw apiKeyScopeWildcard(wildcard);
   const clock = input.clock ?? systemClock;
   // Hex, not base64url: the id sits between two `_` delimiters and must not contain one.
   const id = randomHex(8);
@@ -85,16 +87,31 @@ export function issueApiKey(input: IssueApiKeyInput): IssuedApiKey {
   };
 }
 
+/** What verification reads: the key, and the user row of whoever owns it. */
+export type ApiKeyVerifyStore = ApiKeyStore & Pick<UserStore, 'findUserById'>;
+
+export interface VerifiedApiKey {
+  readonly record: AuthApiKeyRecord;
+  /** The user the key was issued to, as the row reads NOW. `null` for a key no user owns. */
+  readonly owner: AuthUser | null;
+}
+
 /**
- * Every rejection — malformed, unknown, revoked, expired, wrong secret — throws the same
- * `X_API_KEY_INVALID`. A caller that can tell "revoked" from "unknown" can enumerate ids.
+ * Every rejection — malformed, unknown, revoked, expired, wrong secret, an owner who is gone or
+ * disabled — throws the same `X_API_KEY_INVALID`. A caller that can tell "revoked" from "unknown"
+ * can enumerate ids.
+ *
+ * The owner is re-read on every verification, for the reason `authenticate` re-reads the user on
+ * every request: a key is the owner's credential, so disabling the owner has to stop it on its
+ * next use — not whenever somebody remembers to revoke it. The read happens only after the secret
+ * matched, so an unauthenticated guess costs no second lookup.
  */
 export async function verifyApiKey(
-  store: ApiKeyStore,
+  store: ApiKeyVerifyStore,
   plaintext: string,
   clock: Clock = systemClock,
-): Promise<AuthApiKeyRecord> {
-  const parsed = parseApiKey(plaintext);
+): Promise<VerifiedApiKey> {
+  const parsed = typeof plaintext === 'string' ? parseApiKey(plaintext) : null;
   if (parsed === null) throw apiKeyInvalid();
   const record = await store.findApiKeyById(parsed.id);
   if (record === null) throw apiKeyInvalid();
@@ -104,8 +121,12 @@ export async function verifyApiKey(
     throw apiKeyInvalid();
   }
   if (!timingSafeEqual(sha256Hex(parsed.secret), record.keyHash)) throw apiKeyInvalid();
+  const owner = record.userId === null ? null : await store.findUserById(record.userId);
+  if (record.userId !== null && (owner === null || owner.disabledAt !== null)) {
+    throw apiKeyInvalid();
+  }
   await store.touchApiKey(record.id, now);
-  return record;
+  return { record, owner };
 }
 
 export async function revokeApiKey(
@@ -116,9 +137,35 @@ export async function revokeApiKey(
   return await store.revokeApiKey(id, clock.now());
 }
 
-/** The agent actor for a verified key. Scopes in, scopes out — nothing is added. */
-export function apiKeyActor(record: AuthApiKeyRecord): PolicyActor {
-  return actorFromApiKey(record);
+/**
+ * What an owner may do, as far as this package can read it: the row's direct `permissions` and
+ * `scopes`. ROLES are not here — expanding a role to permissions is `@ultimat3/policy`'s, which
+ * this tier cannot import — so an app whose users hold roles passes `grantsOf` and expands them.
+ */
+export const directGrants = (owner: AuthUser): readonly string[] => [
+  ...owner.permissions,
+  ...owner.scopes,
+];
+
+export interface ApiKeyActorOptions {
+  /**
+   * The owner's effective grants, which a key's scopes are cut down to. Defaults to
+   * `directGrants`. A role-based app passes its own expansion, e.g.
+   * `(owner) => [...directGrants(owner), ...owner.roles.flatMap((role) => ROLE_GRANTS[role] ?? [])]`.
+   */
+  readonly grantsOf?: ((owner: AuthUser) => readonly string[]) | undefined;
+}
+
+/**
+ * The agent actor for a verified key. Nothing is added: the key's scopes, minus any wildcard,
+ * minus — for a key a user owns — whatever that user could not do themselves.
+ */
+export function apiKeyActor(
+  verified: VerifiedApiKey,
+  options: ApiKeyActorOptions = {},
+): PolicyActor {
+  const { record, owner } = verified;
+  return actorFromApiKey(record, owner === null ? null : (options.grantsOf ?? directGrants)(owner));
 }
 
 /** Safe to render in a dashboard or return from an MCP tool: no hash, no secret. */

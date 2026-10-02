@@ -200,8 +200,8 @@ describe('a NULL external id collides with nothing, as NULLS DISTINCT says', () 
   });
 });
 
-// A consumed link is stamped with the moment it was REDEEMED. `BuiltinAdapter` writes
-// `consumed_at = now()`; the memory adapter wrote `new Date(record.createdAt)` — the moment the
+// A consumed link is stamped with the moment it was REDEEMED, read off the clock each adapter was
+// handed. `BuiltinAdapter` wrote the server's `now()`; the memory adapter wrote `new Date(record.createdAt)` — the moment the
 // link was ISSUED — so any window measured from that stamp (an audit line, a "was this used
 // before it expired" read) answered the wrong instant, and answered it identically for a link
 // redeemed a second later and one redeemed a week later.
@@ -219,7 +219,7 @@ describe('a redeemed verification is stamped when it is redeemed', () => {
     createdAt: ISSUED_AT,
   };
 
-  test('the memory adapter reads its clock, and Postgres reads the server’s', async () => {
+  test('both adapters read the clock they were handed', async () => {
     const memory = new MemoryAdapter(frozenClock(REDEEMED_AT));
     await memory.putVerification(record);
 
@@ -235,12 +235,13 @@ describe('a redeemed verification is stamped when it is redeemed', () => {
 
     const client = createRecordingClient();
     client.on('update x_verifications', { rows: [] });
-    await new BuiltinAdapter(client).takeVerification(
+    await new BuiltinAdapter(client, frozenClock(REDEEMED_AT)).takeVerification(
       record.purpose,
       record.identifier,
       record.tokenHash,
     );
-    expect(client.texts.at(-1)).toContain('set consumed_at = now()');
+    expect(client.texts.at(-1)).toContain('set consumed_at = $1');
+    expect(client.statements.at(-1)?.values[0]).toEqual(REDEEMED_AT);
   });
 });
 

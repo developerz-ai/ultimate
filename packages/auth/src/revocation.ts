@@ -7,7 +7,7 @@
 import { logger } from '@ultimat3/core';
 import type { AuthUser } from './adapter';
 import type { Auth } from './auth';
-import { authNotImplemented, authWriteFailed } from './errors';
+import { authWriteFailed } from './errors';
 
 /**
  * Every revocation is logged before it runs, with the reason the caller gave. An incident review
@@ -18,22 +18,14 @@ const record = (operation: string, scope: string, reason: string): void => {
   logger.warn('auth.revocation', { operation, scope, reason });
 };
 
-const unsupported = (method: string, adapterName: string) =>
-  authNotImplemented(
-    `${adapterName}.${method}()`,
-    `implement ${method}() on your AuthAdapter — BuiltinAdapter (Postgres) and MemoryAdapter are the two reference implementations, in packages/auth/src`,
-  );
-
 /** Every session this user holds, their current one included. Returns how many died. */
 export async function revokeUserSessions(
   auth: Auth,
   userId: string,
   reason: string,
 ): Promise<number> {
-  const remove = auth.adapter.deleteSessionsForUser?.bind(auth.adapter);
-  if (remove === undefined) throw unsupported('deleteSessionsForUser', auth.adapter.name);
   record('revokeUserSessions', userId, reason);
-  return await remove(userId);
+  return await auth.adapter.deleteSessionsForUser(userId);
 }
 
 /**
@@ -45,10 +37,8 @@ export async function revokeOrgSessions(
   orgId: string,
   reason: string,
 ): Promise<number> {
-  const remove = auth.adapter.deleteSessionsForOrg?.bind(auth.adapter);
-  if (remove === undefined) throw unsupported('deleteSessionsForOrg', auth.adapter.name);
   record('revokeOrgSessions', orgId, reason);
-  return await remove(orgId);
+  return await auth.adapter.deleteSessionsForOrg(orgId);
 }
 
 /**
@@ -61,37 +51,47 @@ export async function revokeSessionsCreatedBefore(
   before: Date,
   reason: string,
 ): Promise<number> {
-  const remove = auth.adapter.deleteSessionsCreatedBefore?.bind(auth.adapter);
-  if (remove === undefined) throw unsupported('deleteSessionsCreatedBefore', auth.adapter.name);
   record('revokeSessionsCreatedBefore', before.toISOString(), reason);
-  return await remove(before);
+  return await auth.adapter.deleteSessionsCreatedBefore(before);
 }
 
 export interface DisabledUser {
   readonly user: AuthUser;
   readonly sessionsRevoked: number;
+  /** Live api keys this user owned, now revoked. A key is the owner's credential too. */
+  readonly apiKeysRevoked: number;
 }
 
 /**
- * `disabledAt` is read by `login`, by `authenticate` and by the OAuth path — and until this
- * function existed, no code path anywhere ever SET it. Offboarding was an UPDATE somebody typed.
+ * `disabledAt` is read by `login`, by `authenticate`, by `verifyApiKey` and by the OAuth path.
  *
- * Stamping the column is not enough on its own: `authenticate` re-reads the user row on every
- * request, so a disabled account stops working on its next request, but the live session row is
- * still there and still slides. The sessions go in the same call, in that order — stamp first, so
- * a request racing the revocation finds the row already disabled.
+ * Stamping the column is not enough on its own: every one of those readers re-reads the user row,
+ * so a disabled account stops working on its next request, but the live session rows are still
+ * there and still slide, and the api keys still read as live in every listing. Both go in the
+ * same call, in that order — stamp first, so a request racing the revocation finds the row
+ * already disabled. Re-enabling restores neither.
+ *
+ * The log line is written before the first write, as every revocation's is: an incident review
+ * must find the reason even when the write that followed it failed.
  */
 export async function disableUser(
   auth: Auth,
   userId: string,
   reason: string,
 ): Promise<DisabledUser> {
-  const user = await auth.adapter.updateUser(userId, { disabledAt: auth.clock.now() });
+  record('disableUser', userId, reason);
+  const now = auth.clock.now();
+  const user = await auth.adapter.updateUser(userId, { disabledAt: now });
   // No row came back: either there is no such user, or the adapter did not return the update.
   // Both mean the account is not known to be disabled, and reporting success would be a lie.
   if (user === null) throw authWriteFailed('updateUser', 'x_users');
-  record('disableUser', userId, reason);
-  return { user, sessionsRevoked: await revokeUserSessions(auth, userId, reason) };
+  const sessionsRevoked = await auth.adapter.deleteSessionsForUser(userId);
+  let apiKeysRevoked = 0;
+  for (const key of await auth.adapter.listApiKeys(userId)) {
+    if (key.revokedAt !== null) continue;
+    if (await auth.adapter.revokeApiKey(key.id, now)) apiKeysRevoked += 1;
+  }
+  return { user, sessionsRevoked, apiKeysRevoked };
 }
 
 /** The inverse. No sessions are restored — a re-enabled account signs in again, deliberately. */

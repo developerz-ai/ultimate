@@ -217,6 +217,14 @@ It registers `page` and nothing else. `budget`, `signIn` and `deploy` keep refus
 browser's own network state and a second build id are not things a page port can answer for, and a
 fixture that silently no-opped would make the assertion after it read as proof.
 
+**A browser call that is never answered says why.** `X_CDP_TIMEOUT` from the connection carries
+`meta.reading` — `target-gone` (session detached, target destroyed or crashed), `lost-in-transport`
+(`meta.framesDropped` frames arrived unparseable after the call) or `no-answer` — beside
+`framesArrived`, `lastFrames` (the last 8), `transportOpen` and `navigations`; `cause` is the
+one-line reading. `E2eSession.offline(false)` rejects with `X_CDP_CALL_FAILED` when a page that is
+still there refuses to take `navigator.onLine` back: the restore is attempted regardless, and the
+page stays in the set.
+
 Each helper prefixes the test name with its type (`job · onboards an org`), which is what
 `bun test --test-name-pattern "job · "` selects — the six lines of `x verify` come from the tests
 themselves, not from a directory convention.

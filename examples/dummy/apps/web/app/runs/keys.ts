@@ -6,7 +6,7 @@
  * `canRunWrite` for the org it was issued in and for nothing else.
  */
 
-import type { ApiKeyStore } from '@ultimat3/auth';
+import type { ApiKeyVerifyStore } from '@ultimat3/auth';
 import {
   apiKeyResolver,
   BuiltinAdapter,
@@ -27,8 +27,8 @@ export const RUN_KEY_SCOPES = {
  * installs a database client — `@postly/db`'s `selectDriver` makes the same carve-out. Built on
  * first use: the adapter takes the process client, which boot installs after this module loads.
  */
-let store: ApiKeyStore | undefined;
-const keys = (): ApiKeyStore => {
+let store: ApiKeyVerifyStore | undefined;
+const keys = (): ApiKeyVerifyStore => {
   store ??=
     resolveEnvironment({ env: Bun.env }) === 'test' ? new MemoryAdapter() : new BuiltinAdapter();
   return store;
@@ -44,9 +44,13 @@ export interface IssuedRunKey {
   readonly key: string;
 }
 
+/**
+ * The key is the ORG's, with no `userId`: whoever issues it is a Postly member, not an `x_users`
+ * row, and `verifyApiKey` answers for a key's owner out of that table — an owner it cannot find
+ * is a key it refuses. A key owned by nobody is cut by its scopes and its org alone.
+ */
 export async function issueRunKeyFor(issuer: {
   readonly orgId: string;
-  readonly userId: string;
   readonly clock: Clock;
 }): Promise<IssuedRunKey> {
   const issued = issueApiKey({

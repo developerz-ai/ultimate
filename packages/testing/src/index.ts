@@ -50,7 +50,12 @@ export type { CdpE2eTabOptions, E2eTab } from './cdp-e2e-page';
 export { cdpE2eTab } from './cdp-e2e-page';
 export type { CdpE2eSessionOptions, E2eSession } from './cdp-e2e-session';
 export { cdpE2eSession } from './cdp-e2e-session';
-export type { CdpLaunchAttempt } from './cdp-errors';
+export type {
+  CdpLaunchAttempt,
+  CdpTargetGone,
+  CdpTimeoutObservation,
+  CdpTimeoutReading,
+} from './cdp-errors';
 export {
   CdpBrowserMissingError,
   CdpCallFailedError,

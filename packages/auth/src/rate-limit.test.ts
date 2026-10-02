@@ -35,7 +35,7 @@ const caught = async (fn: () => Promise<unknown>): Promise<AuthError> => {
     if (error instanceof AuthError) return error;
     throw error;
   }
-  throw new Error('expected the call to throw');
+  return expect.unreachable('expected the call to throw');
 };
 
 const facts = (error: AuthError): Record<string, string> => ({
@@ -105,12 +105,12 @@ describe('auth rate limiting', () => {
     test('forgets a key once its window has emptied', async () => {
       const clock = frozenClock(0);
       const limiter = createAuthLimiter(clock, policy({ windowMs: 1_000, lockoutMs: 1_000 }));
-      await limiter.recordFailure(ipKey('198.51.100.9'));
+      await limiter.reserve(ipKey('198.51.100.9'));
       expect(limiter.size).toBe(1);
 
       // Past the window AND past the sweep interval: the entry answers as a missing one would.
       clock.advance(120_000);
-      await limiter.recordFailure(ipKey('203.0.113.7'));
+      await limiter.reserve(ipKey('203.0.113.7'));
       expect(limiter.size).toBe(1);
     });
 
@@ -118,11 +118,11 @@ describe('auth rate limiting', () => {
       const clock = frozenClock(0);
       const limiter = createAuthLimiter(clock, policy({ windowMs: 1_000, lockoutMs: 600_000 }));
       const victim = accountKey('ada@example.test');
-      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.recordFailure(victim);
+      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.reserve(victim);
 
       // Long past the failure window, well inside the lockout.
       clock.advance(120_000);
-      await limiter.recordFailure(ipKey('203.0.113.7'));
+      await limiter.reserve(ipKey('203.0.113.7'));
       expect(await limiter.lockedUntil(victim)).not.toBeNull();
       expect(limiter.size).toBe(2);
     });
@@ -149,7 +149,7 @@ describe('auth rate limiting', () => {
     test('a rotating-address spray cannot grow the table past its cap', async () => {
       const limiter = createAuthLimiter(frozenClock(0), policy({ maxKeys: 10 }));
       for (let index = 0; index < 500; index += 1) {
-        await limiter.recordFailure(ipKey(`2001:db8::${index.toString(16)}`));
+        await limiter.reserve(ipKey(`2001:db8::${index.toString(16)}`));
         expect(limiter.size).toBeLessThanOrEqual(10);
       }
     });
@@ -157,11 +157,11 @@ describe('auth rate limiting', () => {
     test('the cap evicts an unlocked key before a locked one', async () => {
       const limiter = createAuthLimiter(frozenClock(0), policy({ maxKeys: 4 }));
       const victim = accountKey('ada@example.test');
-      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.recordFailure(victim);
+      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.reserve(victim);
       expect(await limiter.lockedUntil(victim)).not.toBeNull();
 
       for (let index = 0; index < 200; index += 1) {
-        await limiter.recordFailure(ipKey(`2001:db8::${index.toString(16)}`));
+        await limiter.reserve(ipKey(`2001:db8::${index.toString(16)}`));
       }
 
       expect(limiter.size).toBeLessThanOrEqual(4);
@@ -171,8 +171,8 @@ describe('auth rate limiting', () => {
 
     test('a success and a reset both shrink the table', async () => {
       const limiter = createAuthLimiter(frozenClock(0));
-      await limiter.recordFailure(ipKey('198.51.100.9'));
-      await limiter.recordFailure(accountKey('ada@example.test'));
+      await limiter.reserve(ipKey('198.51.100.9'));
+      await limiter.reserve(accountKey('ada@example.test'));
       expect(limiter.size).toBe(2);
 
       await limiter.recordSuccess(accountKey('ada@example.test'));
@@ -184,11 +184,11 @@ describe('auth rate limiting', () => {
     test('an evicted key throttles again from a clean window, not a corrupt one', async () => {
       const limiter = createAuthLimiter(frozenClock(0), policy({ maxKeys: 1 }));
       const victim = ipKey('198.51.100.9');
-      await limiter.recordFailure(victim);
-      await limiter.recordFailure(ipKey('203.0.113.7'));
+      await limiter.reserve(victim);
+      await limiter.reserve(ipKey('203.0.113.7'));
 
-      await expect(limiter.assertAllowed(victim)).resolves.toBeUndefined();
-      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.recordFailure(victim);
+      expect(await limiter.lockedUntil(victim)).toBeNull();
+      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.reserve(victim);
       expect(await limiter.lockedUntil(victim)).not.toBeNull();
     });
 
@@ -219,8 +219,8 @@ describe('auth rate limiting', () => {
       const backing = createAuthLimiter(clock, enforced);
       return {
         policy: enforced,
-        assertAllowed: backing.assertAllowed,
-        recordFailure: backing.recordFailure,
+        reserve: backing.reserve,
+        refund: backing.refund,
         recordSuccess: backing.recordSuccess,
         lockedUntil: backing.lockedUntil,
         reset: backing.reset,
@@ -360,9 +360,9 @@ describe('a hostile value cannot forge a line in the lockout refusal', () => {
       lockoutMs: 60_000,
     });
     const forged = ipKey('203.0.113.7"\n2026-08-16 level=info msg="all clear');
-    await limiter.recordFailure(forged);
+    await limiter.reserve(forged);
 
-    const thrown = await limiter.assertAllowed(forged).catch((error: unknown) => error);
+    const thrown = await limiter.reserve(forged).catch((error: unknown) => error);
     const error = thrown instanceof AuthError ? thrown : null;
     expect(error?.code).toBe('X_ACCOUNT_LOCKED');
     // Rendered as a JSON string literal, so the newline is two characters and the quote is

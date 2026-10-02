@@ -4,19 +4,20 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
-import type { ApiKeyStore } from './adapter';
 import { apiKeyResolver } from './api-key-resolver';
-import { issueApiKey, revokeApiKey } from './api-keys';
+import { type ApiKeyVerifyStore, issueApiKey, revokeApiKey } from './api-keys';
 import { MemoryAdapter } from './memory-adapter';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
 const clock = frozenClock('2026-10-01T09:00:00.000Z');
 
-const issueInto = async (store: ApiKeyStore, over: { expiresAt?: Date } = {}) => {
+const issueInto = async (
+  store: ApiKeyVerifyStore,
+  over: { expiresAt?: Date; userId?: string } = {},
+) => {
   const issued = issueApiKey({
     env: 'dev',
     scopes: ['run:write', 'run:read'],
-    userId: 'ada',
     orgId: ORG,
     clock,
     ...over,
@@ -58,7 +59,8 @@ describe('apiKeyResolver', () => {
 
   test('a store that FAILS is a fault, never a wrong key', async () => {
     const down = new TypeError('connection refused');
-    const store: ApiKeyStore = {
+    const store: ApiKeyVerifyStore = {
+      findUserById: () => Promise.resolve(null),
       putApiKey: (record) => Promise.resolve(record),
       findApiKeyById: () => Promise.reject(down),
       listApiKeys: () => Promise.resolve([]),
@@ -74,11 +76,60 @@ describe('apiKeyResolver', () => {
   });
 
   test('the store is read when a token is presented, so it may be built after the declaration', async () => {
-    let store: ApiKeyStore | undefined;
+    let store: ApiKeyVerifyStore | undefined;
     // Declared first, as a module evaluated before boot declares its mount.
     const resolve = apiKeyResolver(() => store ?? expect.unreachable('asked before boot'));
     store = new MemoryAdapter(clock);
     const issued = await issueInto(store);
     expect((await resolve(issued.plaintext))?.actor.id).toBeDefined();
+  });
+
+  // What a bearer mount and an MCP endpoint both do with this `null` is answer 401 — so this is
+  // the one place a disabled owner's key is refused for both.
+  test('a key whose owner was disabled is the same null on the next request', async () => {
+    const store = new MemoryAdapter(clock);
+    const owner = await store.createUser({
+      id: 'ada',
+      email: 'ada@corp.test',
+      passwordHash: null,
+      orgId: ORG,
+      roles: [],
+      createdAt: clock.now(),
+    });
+    await store.updateUser(owner.id, { permissions: ['run:read'] });
+    const issued = await issueInto(store, { userId: owner.id });
+    const resolve = apiKeyResolver(() => store, { clock });
+
+    const live = await resolve(issued.plaintext);
+    // Cut by the owner's grants, on the actor AND on the set the mount's scope map reads.
+    expect([...(live?.actor.scopes ?? [])]).toEqual(['run:read']);
+    expect([...(live?.scopes ?? [])]).toEqual(['run:read']);
+
+    await store.updateUser(owner.id, { disabledAt: clock.now() });
+    expect(await resolve(issued.plaintext)).toBeNull();
+  });
+
+  test('grantsOf reaches the actor: a role-based owner keeps what the role grants', async () => {
+    const store = new MemoryAdapter(clock);
+    await store.createUser({
+      id: 'ada',
+      email: 'ada@corp.test',
+      passwordHash: null,
+      orgId: ORG,
+      roles: ['operator'],
+      createdAt: clock.now(),
+    });
+    const issued = await issueInto(store, { userId: 'ada' });
+    expect([
+      ...((await apiKeyResolver(() => store, { clock })(issued.plaintext))?.scopes ?? []),
+    ]).toEqual([]);
+    const resolve = apiKeyResolver(() => store, {
+      clock,
+      grantsOf: (owner) => (owner.roles.includes('operator') ? ['run:*'] : []),
+    });
+    expect([...((await resolve(issued.plaintext))?.scopes ?? [])].sort()).toEqual([
+      'run:read',
+      'run:write',
+    ]);
   });
 });

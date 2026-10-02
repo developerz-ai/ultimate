@@ -17,11 +17,12 @@ const TENANCY = 'Tenancy is a column, not a convention';
 //
 // `await expect(locator).toBeVisible()` retries to a budget; `expect(await locator.isVisible())
 // .toBe(true)` takes one look. They are different assertions, not two spellings of one. A retrying
-// one follows an event this test does not await: the queue draining after `network.online()`, the
-// update banner after `deploy.newBuild()`, and every read of the FEED's rows — the server streams
-// the shell and the rows arrive over the socket after the island hydrates (measured 2026-09-22: the
-// first flush holds "Acme Editorial" and no row). Nothing in the page's own API says any of those
-// has finished, so a single look there is a race.
+// one follows an event this test does not await: the queue draining after `network.online()`, and
+// every read of the FEED's rows — the server streams the shell and the rows arrive over the socket
+// after the island hydrates (measured 2026-09-22: the first flush holds "Acme Editorial" and no
+// row). Nothing in the page's own API says either has finished, so a single look there is a race.
+//
+// The update banner after `deploy.newBuild()` is neither: its event is AWAITED, in the page (below).
 //
 // The rest follow a `goto`, a `gotoStreamed` or a click whose handler paints synchronously — the
 // awaited call IS the wait. A retrying assertion on those would pass even if the element arrived
@@ -115,12 +116,37 @@ test('a stale build offers a reload instead of a broken chunk', async ({
   const { ada } = await seed('dev').pick({ ada: 'member:ada' });
   await signIn(ada);
   await page.goto('/feed');
+  // The test before this one pulls the cable. A document that boots while it is still out believes
+  // it is offline and never hears of the build — so that leak is named here, not at the banner.
+  expect(await page.evaluate(() => navigator.onLine)).toBe(true);
 
   await deploy.newBuild(); // same app, new immutable build id
 
-  // Retries: `deploy.newBuild()` resolves when the new build is SERVED. The running page learns
-  // about it through its service worker, which is a round trip this test cannot await.
-  await expect(page.getByText('A new version is ready.')).toBeVisible();
+  // `deploy.newBuild()` resolves when the new build is SERVED. The running page learns of it from
+  // the sync socket: the SharedWorker redials on its backoff and the new node's first frame is
+  // `update-available`. WHEN that lands is the backoff's business — measured 2026-10-02, up to
+  // 3.3 s after a 3.5 s restart, and one gap later (6.4 s) after a slower one — so no budget of
+  // looks is right. The banner's arrival is awaited as the event it is; a page that reloaded
+  // instead destroys this promise's document, which is a failure and the one this test is about.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const banner = (): boolean =>
+          document.querySelector('[data-role="update-available"]') !== null;
+        if (banner()) {
+          resolve();
+          return;
+        }
+        const seen = new MutationObserver(() => {
+          if (!banner()) return;
+          seen.disconnect();
+          resolve();
+        });
+        seen.observe(document.body, { childList: true, subtree: true });
+      }),
+  );
+  // One look each: the event above IS the wait.
+  expect(await page.getByText('A new version is ready.').isVisible()).toBe(true);
   expect(page.url()).toContain('/feed'); // no forced navigation, no lost form state
 });
 
