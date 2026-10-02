@@ -228,23 +228,6 @@ select count(*)::int as moved from old
 `.trim();
 
 /**
- * One occurrence, fired ATOMICALLY: the watermark moves onto it and its jobs are queued in one
- * statement, or neither happens.
- *
- * It was two round trips — enqueue each job, then mark — and anything between them (a rejected
- * mark, a dead process, job 2 of 3 failing) left the watermark behind the jobs already queued. The
- * next round fired the occurrence again, and the occurrence-scoped idempotency key only absorbs
- * that while the first job is still LIVE: the unique index is partial, so once job 1 is `done` the
- * repeat inserts a second row and the work runs twice.
- *
- * The watermark is the fence. `moved` is empty when it is already at or past this occurrence —
- * another dispatcher fired it — and `queued` inserts only `where exists (select 1 from moved)`.
- * `woken` announces each queue that received a job, once, when the statement commits — read in
- * the final select because a plain-select CTE nothing reads is never run.
- *
- * $1 task, $2 occurrence (ms), $3 the jobs as a JSON array.
- */
-/**
  * The record of a fire that went through `driver.enqueue` — a store that could not write it in
  * the firing statement. The watermark only ever moves forward here too. $1 task, $2 occurrence.
  */
@@ -269,6 +252,23 @@ select task_name,
  limit $1
 `.trim();
 
+/**
+ * One occurrence, fired ATOMICALLY: the watermark moves onto it and its jobs are queued in one
+ * statement, or neither happens.
+ *
+ * It was two round trips — enqueue each job, then mark — and anything between them (a rejected
+ * mark, a dead process, job 2 of 3 failing) left the watermark behind the jobs already queued. The
+ * next round fired the occurrence again, and the occurrence-scoped idempotency key only absorbs
+ * that while the first job is still LIVE: the unique index is partial, so once job 1 is `done` the
+ * repeat inserts a second row and the work runs twice.
+ *
+ * The watermark is the fence. `moved` is empty when it is already at or past this occurrence —
+ * another dispatcher fired it — and `queued` inserts only `where exists (select 1 from moved)`.
+ * `woken` announces each queue that received a job, once, when the statement commits — read in
+ * the final select because a plain-select CTE nothing reads is never run.
+ *
+ * $1 task, $2 occurrence (ms), $3 the jobs as a JSON array.
+ */
 export const SQL_SCHEDULER_FIRE = `
 with moved as (
   insert into x_scheduler_state
