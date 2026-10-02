@@ -5,9 +5,19 @@
 Rule: a promise in `docs/idea/` or `wiki/` is either built or deleted in the same diff. No row stays "promised, absent".
 
 ## A. Owner-decision rows (build or delete — ask first)
+
+> **Note, 2026-10-01:** the MCP job-tools row is DONE (built path) by plan
+> [2026/10/01/101](../../../10/01/101-platform-readiness-for-big-systems/overview.md) slice 16. The
+> jobs dashboard is admin resources and actions, so its tools are the admin's own MCP projection:
+> `admin.x_jobs.list` (list), `admin.x_jobs.read` (status), `admin.action.job.retry` (retry),
+> `admin.x_job_tasks.list` (tasks), plus `admin.action.job.queue.pause` — `job:read` lists and
+> reads, `job:manage` acts (`packages/admin/src/jobs/mcp.test.ts`). The four doc promises were
+> rewritten to these names the same day (`docs/idea/04-jobs.md`, `02-primitives.md`,
+> `wiki/Scheduled-Tasks.md`).
+
 | Gap | Evidence | Build path | Delete path |
 |---|---|---|---|
-| MCP `jobs.list`/`jobs.status`/`jobs.retry`/`tasks.list` promised, absent (dev server has `jobs.inspect`, `queue.depth`) | `docs/idea/04-jobs.md:150`, `02-primitives.md:248,304`, `wiki/Scheduled-Tasks.md:119` vs `packages/mcp/src/dev-server.ts:214-226` | tools over `listJobs`/`inspectJob`/`retry` + `tasks-facts.ts` | remove 4 doc promises |
+| ~~MCP `jobs.list`/`jobs.status`/`jobs.retry`/`tasks.list` promised, absent~~ **done 2026-10-01** — the admin's tools (note above) (dev server has `jobs.inspect`, `queue.depth`) | `docs/idea/04-jobs.md:150`, `02-primitives.md:248,304`, `wiki/Scheduled-Tasks.md:119` vs `packages/mcp/src/dev-server.ts:214-226` | tools over `listJobs`/`inspectJob`/`retry` + `tasks-facts.ts` | remove 4 doc promises |
 | Plain action → job handle (axiom 2 projection) | `docs/idea/02-primitives.md:57` vs `jobs/src/register.ts:41` (`X_ACTION_JOB_UNBRIDGED`); only `agentJob()` bridges | `actionJob(handle)` factory, add to `PRIMITIVE_FACTORIES` | correct the doc; axiom 2 list in CLAUDE.md loses "job handle" |
 | Redis/NATS drivers all `X_NOT_IMPLEMENTED`; `x jobs drain --to redis\|nats` can't move a job | `jobs/src/driver-redis.ts:40,66`, `driver-nats.ts:37,63`, `cli/src/cmd-jobs.ts:80-96`, `wiki/CLI-Reference.md:937`, `docs/idea/04-jobs.md:129` | implement against driver parity suite | delete factories + `drain`; move to `PLANNED_COMMANDS` |
 | `AppConfig.defaultTimeZone`/`defaultCurrency` read by nothing | `core/src/config.ts:194-195`, pin `scripts/lib/config-reader-pins.ts:25-28`, `http/src/context.ts:200` reads `configureTime` instead | wire into `configureTime` at boot | delete keys from config, scaffold (`scaffold-repo.ts:198`), both apps, and pin rows |

@@ -114,10 +114,11 @@ Role table and drain sequence: [Deployment](Deployment).
 
 | Command / tool | Output |
 |---|---|
-| `x tasks list --json` | the descriptor — `name`, `cron`, `tz`, `catchUp`, `maxCatchUp`, `jobs` — plus the resolved **`next`** occurrence, rendered in the task's own `tz`, and its `nextMs` epoch instant. Those last two are derived, never declared fields |
+| `x tasks list --json` | the descriptor — `name`, `cron`, `tz`, `catchUp`, `maxCatchUp`, `jobs` — plus the resolved **`next`** occurrence, rendered in the task's own `tz`, and its `nextMs` epoch instant; and the **`last`** fire (`last`, `lastMs`, `lastFiredAtMs` — `null` before the first), read from the queue, which `x tasks` opens when a task is declared. All derived, never declared fields |
 | `x tasks show <name> --json` | the same, plus the cron in words (`describe`) and the next N occurrences (`--count`, default 5) |
-| MCP `tasks.list` | same content as `x tasks list --json`, same authz |
-| `/_x` dev panel | schedule table with next-run countdown and last-tick outcome |
+| `/admin/jobs/tasks` | the jobs dashboard every `defineAdmin()` serves: schedule, zone, last fire, next fire (`nextTaskRun`), paused; pause, resume and run now behind `job:manage` → [Admin dashboard](Admin-Dashboard#the-jobs-dashboard) |
+| MCP `admin.x_job_tasks.list`, `admin.action.job.task.run-now` | the same screen and actions as admin MCP tools, same authz (`job:read`, `job:manage`) |
+| `/_x` dev panel | the jobs tab: the dev process's tasks beside its queues and runs |
 | `x.manifest.json` | generated `tasks` section — the build-time source of truth |
 | `<task>.describe()` | in process: `kind`, `name`, `cron`, `tz`, `catchUp`, `maxCatchUp`, and the job names it enqueues |
 | `<task>.entries(occurrenceMs?)` | in process: the exact pairs that occurrence fires, inputs included — which `describe()` drops |

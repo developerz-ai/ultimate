@@ -3,11 +3,11 @@
 // only this tier can make, because it is the only one holding the manifest and the entity registry
 // at once. The end-to-end test asserts the emitted SQL, never that the call was made.
 
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive remove, and a fixture tree left behind grows one directory per run.
 import { rmSync } from 'node:fs';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
-import { can } from '@ultimat3/policy';
+import { can, clearPermissions } from '@ultimat3/policy';
 import { from, query, registerQuery, resetRegistry, t } from '@ultimat3/query';
 import { generateAppMigration } from './db-generate';
 import { replicaIdentityTables } from './db-subscribes';
@@ -33,6 +33,12 @@ afterEach(() => {
   clearRegistry();
   resetRegistry();
 });
+
+// Every `can()` here names a permission no `definePermissions()` declares, which is legal only
+// while the set is EMPTY. A file that ran first in this process may have imported
+// `@ultimat3/admin`, whose module scope declares `admin:*` for good — so this file empties the set
+// itself; the file boundary (`registry-leak-guard.ts`) puts it back after.
+beforeAll(clearPermissions);
 
 describe('unit · the tables a live query declares it is patched from', () => {
   test('every declared name reaches the generator, deduped and sorted', () => {

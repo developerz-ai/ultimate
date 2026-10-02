@@ -16,7 +16,12 @@ import {
   withAttr,
 } from './inert-jsx';
 import type { WidgetContext } from './widget-value';
-import { Widget } from './widgets';
+
+// `widgets.tsx` is JSX: loaded after `@ultimat3/render/server` installs its `.tsx` loader, never
+// statically — a static import compiles it to the classic factory first, and every screen a later
+// file in this process renders through it dies with `React is not defined`.
+await import('@ultimat3/render/server');
+const { Widget } = await import('./widgets');
 
 registerCatalog('en', { 'admin.invoice.field.total': 'Total (probe)' });
 // A locale the framework's bundled list never named. The locale picker must offer it — and must
