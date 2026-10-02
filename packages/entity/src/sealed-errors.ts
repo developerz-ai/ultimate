@@ -50,6 +50,22 @@ export const sealedPredicate = (
       });
 
 /**
+ * An equality on a lookup column whose operand is not a string. The column stores ciphertext or
+ * NULL, so a number or an object would match no row — the same answer as "nobody has it". The
+ * value itself is never echoed: it is the secret's plaintext, or close to it.
+ */
+export const sealedLookupValue = (
+  entityName: string,
+  column: string,
+  shape: 'value' | 'list',
+): EntityError =>
+  new EntityError({
+    code: 'X_ENTITY_SEALED_PREDICATE',
+    cause: `${entityName}.${column} is sealed for lookup and was matched against a ${shape === 'list' ? 'list holding a value' : 'value'} that is not a string — the column holds sealed strings or NULL, so the filter could only ever match nothing`,
+    fix: `pass the plaintext as a string — where({ ${column}: String(value) }) — or null to ask for the rows where ${entityName}.${column} is NULL`,
+  });
+
+/**
  * A row to insert that lacks a required sealed column. The driver would refuse it anyway ("is
  * required and has no default"), but in words that send the reader to the entity — and the usual
  * cause is one line above the call: a repository row does not ENUMERATE a sealed property, so

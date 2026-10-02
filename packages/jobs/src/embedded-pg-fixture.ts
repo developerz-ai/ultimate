@@ -3,9 +3,9 @@
 //
 // TIME. Every statement here reads the DATABASE's `now()`, and this process's clock is frozen by
 // the test preload, so there is nothing to advance and nothing to wait for. `age` moves every
-// instant the queue holds into the past by the same amount instead. No row is deleted and no
-// statement of the driver's is bypassed — a lease that lapses here lapses because
-// `expires_at > now()` stopped being true, which is the production path.
+// instant the queue holds, a scheduler watermark aside, into the past by the same amount instead.
+// No row is deleted and no statement of the driver's is bypassed — a lease that lapses here
+// lapses because `expires_at > now()` stopped being true, which is the production path.
 
 import type { PgliteClient } from '@ultimat3/db';
 import { createPgliteClient } from '@ultimat3/db';
@@ -25,37 +25,56 @@ export interface EmbeddedPg {
     work: (executor: PgExecutor) => Promise<void>,
     end?: 'commit' | 'rollback',
   ): Promise<void>;
-  /** Empty every table the queue owns. */
+  /** Empty every table the DDL installed. */
   reset(): Promise<void>;
-  /** Every stored instant, `ms` earlier. */
+  /** Every stored instant, `ms` earlier — but a scheduler watermark (`NOT_AGED`). */
   age(ms: number): Promise<void>;
   close(): Promise<void>;
 }
 
-const TABLES = [
-  'x_jobs',
-  'x_job_steps',
-  'x_job_leases',
-  'x_job_pauses',
-  'x_job_workers',
-  'x_job_counters',
-  'x_scheduler_state',
-  'x_outbox',
-  'x_job_events',
-];
-
 const BACK = `($1::bigint * interval '1 millisecond')`;
 
-const AGE = [
-  `update x_jobs set run_at = run_at - ${BACK}, visible_at = visible_at - ${BACK},
-          created_at = created_at - ${BACK}, updated_at = updated_at - ${BACK}`,
-  `update x_job_leases set expires_at = expires_at - ${BACK}`,
-  `update x_job_workers set expires_at = expires_at - ${BACK},
-          heartbeat_at = heartbeat_at - ${BACK}`,
-  `update x_job_counters set bucket_start = bucket_start - ${BACK}`,
-  `update x_job_events set published_at = published_at - ${BACK},
-          expires_at = expires_at - ${BACK}`,
-];
+/**
+ * Tables `age` leaves alone, and why. A watermark is a CRON-ALIGNED occurrence the scheduler also
+ * holds in memory while it leads: shifting the stored copy would invent a history no occurrence
+ * ever had, and disagree with the leader's own. Every other table is aged, whatever it is.
+ */
+const NOT_AGED: ReadonlySet<string> = new Set(['x_scheduler_state']);
+
+/**
+ * Read off the catalog once the DDL is applied, never listed by hand: a hand list missed
+ * `x_backfills` and `x_scheduler_leader` in `reset`, and `x_outbox`'s claim in `age`, so a table
+ * the DDL grows is held to both promises with no edit here.
+ */
+async function catalogOf(
+  query: <R>(text: string, values: readonly unknown[]) => Promise<readonly R[]>,
+): Promise<{
+  readonly tables: readonly string[];
+  readonly age: readonly string[];
+}> {
+  const columns = await query<{ table_name: string; column_name: string; data_type: string }>(
+    `select c.table_name, c.column_name, c.data_type
+       from information_schema.columns c
+       join information_schema.tables t
+         on t.table_schema = c.table_schema and t.table_name = c.table_name
+      where c.table_schema = current_schema() and t.table_type = 'BASE TABLE'
+      order by c.table_name, c.ordinal_position`,
+    [],
+  );
+  const instants = new Map<string, string[]>();
+  for (const column of columns) {
+    const list = instants.get(column.table_name) ?? [];
+    if (column.data_type === 'timestamp with time zone') list.push(column.column_name);
+    instants.set(column.table_name, list);
+  }
+  const age = [...instants]
+    .filter(([table, list]) => list.length > 0 && !NOT_AGED.has(table))
+    .map(
+      ([table, list]) =>
+        `update ${table} set ${list.map((column) => `${column} = ${column} - ${BACK}`).join(', ')}`,
+    );
+  return { tables: [...instants.keys()], age };
+}
 
 let booted: Promise<EmbeddedPg> | undefined;
 
@@ -69,6 +88,7 @@ export function embeddedPg(): Promise<EmbeddedPg> {
     for (const statement of SQL_JOBS_TABLE.split(';')) {
       if (statement.trim().length > 0) await query(statement, []);
     }
+    const catalog = await catalogOf(query);
     return {
       executor: { query },
       listener: client,
@@ -88,10 +108,10 @@ export function embeddedPg(): Promise<EmbeddedPg> {
         await bound.query(end, []);
       },
       async reset() {
-        for (const table of TABLES) await query(`delete from ${table}`, []);
+        for (const table of catalog.tables) await query(`delete from ${table}`, []);
       },
       async age(ms) {
-        for (const statement of AGE) await query(statement, [ms]);
+        for (const statement of catalog.age) await query(statement, [ms]);
       },
       async close() {
         booted = undefined;
