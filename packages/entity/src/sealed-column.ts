@@ -86,7 +86,15 @@ const sealedMeta = (meta: ColumnMeta, options: SealedOptions): ColumnMeta => {
   if (meta.unique && !lookup) throw sealedUniqueOpaque();
   // `check` and `length` go: they are `char_length(col) <= max`, and the column now holds a sealed
   // string longer than any plaintext bound. The bound still holds where it can — in `$parse`,
-  // against the plaintext, before it is sealed.
+  // against the plaintext, before it is sealed. Any OTHER check has no such home, so it is refused
+  // rather than dropped: the rule would vanish from the DDL with nothing to say it went.
+  if (meta.check !== undefined && meta.length === undefined) {
+    refuseSealed(
+      'given a CHECK',
+      'a CHECK runs in the database against the stored value, which is ciphertext',
+      'text().sealed() with no CHECK — validate the plaintext in the action input schema',
+    );
+  }
   const { check: _check, length: _length, ...rest } = meta;
   return { ...rest, sealed: { lookup } };
 };

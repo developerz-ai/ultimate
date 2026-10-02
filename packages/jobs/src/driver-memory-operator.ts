@@ -100,12 +100,17 @@ export function createMemoryOperator(state: MemoryQueueState): MemoryOperator {
   const workers = new Map<string, WorkerRecord & { readonly expiresAt: number }>();
   const fires = new Map<string, TaskFire>();
 
+  // `eligible` is the verb's own predicate, applied BEFORE the bound as the pg statement's `where`
+  // is applied before its `limit`: rows the verb would skip never spend the bound.
   const bulk = async (
     filter: BulkFilter,
     apply: (record: JobRecord) => Promise<boolean> | boolean,
+    eligible: (record: JobRecord) => boolean = () => true,
   ): Promise<BulkResult> => {
     let affected = 0;
-    const matching = [...jobs.values()].filter((record) => inBulk(record, filter));
+    const matching = [...jobs.values()].filter(
+      (record) => inBulk(record, filter) && eligible(record),
+    );
     for (const record of matching.sort(newestFirst).reverse().slice(0, MAX_BULK_ROWS)) {
       if (await apply(record)) affected += 1;
     }
@@ -182,11 +187,14 @@ export function createMemoryOperator(state: MemoryQueueState): MemoryOperator {
         "pass state: 'delayed' or 'ready' to promoteMany",
       );
       const at = nowMs(clock);
-      const result = await bulk(filter, (record) => {
-        if (record.runAt <= at) return false;
-        jobs.set(record.id, { ...record, state: 'ready', runAt: at, updatedAt: at });
-        return true;
-      });
+      const result = await bulk(
+        filter,
+        (record) => {
+          jobs.set(record.id, { ...record, state: 'ready', runAt: at, updatedAt: at });
+          return true;
+        },
+        (record) => record.runAt > at,
+      );
       if (result.affected > 0) signalEnqueued(filter.queue);
       // Rows of the filter still waiting — a due `ready` row has nothing left to promote.
       const waiting = [...jobs.values()].filter(
