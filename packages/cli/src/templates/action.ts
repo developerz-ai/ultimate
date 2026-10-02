@@ -82,6 +82,9 @@ export const ${name.camel} = mutator({
   input: t.object({ id: t.uuid, orgId: t.uuid, title: t.string }),
   output: t.object({ id: t.uuid, title: t.string }),
   policy: can${feature.pascal}Write,
+  // Required on a mutator (X_MUTATOR_NOT_IDEMPOTENT): the client replays this write under one
+  // Idempotency-Key after a dropped response, and the replay answers the first result.
+  idempotent: true,
   // No \`mcp\` until a real description is written: see \`x g action\`.
   // tx.table(name) rather than tx.${feature.plural}: the typed accessor exists only once the app
   // augments LocalTables, and generated code cannot assume that has happened yet. The name is the

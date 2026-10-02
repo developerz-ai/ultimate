@@ -4,8 +4,9 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 
 ## Boundary
 
-- May import: `core`, `schema` (t0), `cache`, `i18n`, `time` (t1), `entity`, `policy`, `http` (t2).
+- May import: `core`, `schema` (t0), `cache`, `db`, `i18n`, `time` (t1), `entity`, `policy`, `http` (t2).
   `entity` is a real edge since 21.0.0 (`record-wire.ts` → `hasEntityRows`/`rowsOf`), downward 3→2.
+  `db` is one since 2026-10-02, downward 3→1, through **`tx-scope.ts` only** (`currentTx`).
 - Never import: `query`, `jobs`, `realtime` (sideways), or any tier 4-5 package.
 - Never re-implement authz, validation or caching — call `policy`, `schema`, `cache`.
 
@@ -43,7 +44,9 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
 | `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter |
 | `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
-| `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
+| `cache-gate.ts` | the post-COMMIT bust — **the only** file that calls `invalidateTags` |
+| `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust) and `liveTransaction` (the settle) |
+| `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
 | `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the installed-sink store |
 | `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
 | `audit-postgres.ts` | the DURABLE sink — one append-only `x_audit` table, one insert per record |
@@ -98,6 +101,9 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   unchanged** — an upgrade must not make a committed contract stale by itself.
 - Registration names the action the app exported, in place. Naming an already-named action is the
   only case that twins.
+- **A mutator declares `idempotent: true` or does not exist**: required by `MutatorDef`, and
+  `X_MUTATOR_NOT_IDEMPOTENT` at `mutator()` for anything else. The client replays a mutator's write
+  under one key; `transition()` and `x g mutator` declare it. Never a default.
 - A mutator projects `.local`, `.server`, `.conflict` plus every action member — no aliases.
   `mutator.server()` calls the action's own callable (lands in `invoke`); `.local()` never leaves the
   client.
@@ -110,7 +116,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts` asserts identity).
 - **`transition()` is a mutator factory that decides nothing about the machine**: entity's three
   codes propagate; `from` is REQUIRED (it is the UPDATE's predicate); `conflict: 'server-wins'` fixed;
-  `audit` off unless declared.
+  `audit` off unless declared; `id` is the key `output.id` declares (`keySchemaOf`), never a fixed
+  `t.uuid`.
 - **A lookup table is read with `Object.hasOwn`** (`IRREGULAR` in `naming.ts`, `BY_FORMAT` in
   `sample-input.ts`) — caller- or provider-supplied keys.
 
@@ -209,14 +216,30 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `configureIdempotency({ scope })`, compared by `assertIdempotencyScope` in `registerAction`
   (`X_IDEMPOTENCY_NOT_SHARED`). Default `'process'`.
 - **The memory store is bounded; `in-flight` records are the last evicted.** Never an LRU.
-- **`postgresIdempotencyStore` is the shared store** over a structural `PgExecutor` (no `action -> db`
-  edge); the reservation is ONE `insert … on conflict` statement. The CLI boot installs it.
+- **`postgresIdempotencyStore` is the shared store** over a structural `PgExecutor`; the
+  reservation is ONE `insert … on conflict` statement. The CLI boot installs it.
+- **Inside a transaction the SETTLE commits with the write, on BOTH stores** (`liveTransaction()`):
+  Postgres on the handler's connection, memory at `onCommit`. The reservation and `fail` stay
+  immediate. A tx-bound settle that matches no record THROWS `X_IDEMPOTENCY_RESERVATION_LOST` (the
+  rollback of an attempt a retry replaced); the autocommit one only logs. Only a tx-bound
+  `in-flight` record is reclaimed past the deadline — never an autocommit one.
+  `idempotency-parity.test.ts` (memory + PGlite), `idempotency-postgres.live.test.ts`.
+- **The deadline is `reclaimAfterMs: () => number`, REQUIRED on the Postgres store** and read per
+  reservation — the app's `requestTimeoutMs` through `requestDeadlineMs` (`request-deadline.ts`,
+  http's own default, never a number here). **`origin: () => object` is required too**: a
+  transaction on another database settles on the pool. A FINISHED scope's handle binds nothing.
 
 ## Invariants — cache and audit
 
 - **The post-commit bust never fails the write** — `cache-gate.ts` (the only `invalidateTags` caller)
   absorbs a refusing fan-out and logs through core's `logger`, never rendering the tags. A replay
   skips the bust.
+- **The bust waits for the ROOT commit** when a transaction is open (`openCommitScope().onCommit`):
+  dropped on rollback, never fired before the rows are durable. A straggler past its scope gets
+  `DbTx.onCommit`'s own answer, as entity's row observer does. `cache-gate-tx.test.ts` (PGlite).
+- **The OpenAPI contract assertion reads the registry-wide document** and compares `operationId`
+  — one built from the action alone could not fail. **`Problem` is `toProblem`'s members**, no
+  `code` pattern (`openapi-problem.test.ts`).
 - **The policy contract test asserts `ActionDeniedError` and sends valid input** (`sampleInput` from
   the input IR). Only `X_INPUT_INVALID` (and `X_AUDIT_SINK_MISSING`, the one refusal before the parse)
   becomes `X_CONTRACT_DRIFT`; everything else keeps its own code; a non-`UltimateError` is rethrown.

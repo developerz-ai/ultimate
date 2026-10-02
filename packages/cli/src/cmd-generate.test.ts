@@ -325,8 +325,8 @@ describe('unit · x g refreshes a manifest and never invents one', () => {
     expect(await Bun.file(join(ROOT, MANIFEST_FILENAME)).text()).not.toBe('{}\n');
   });
 
-  // Both contracts or the gate goes red on this command's own output: `contract-diff` compares
-  // `openapi.json` against the code, and `x g` refreshed only the manifest.
+  // Both contracts or the gate goes red on this command's own output: the `manifest` step
+  // compares `openapi.json` against the code, and `x g` refreshed only the manifest.
   test('a committed openapi.json is refreshed beside the manifest, and reported', async () => {
     await Bun.write(join(ROOT, MANIFEST_FILENAME), '{}\n');
     await Bun.write(join(ROOT, OPENAPI_FILE), '{}\n');

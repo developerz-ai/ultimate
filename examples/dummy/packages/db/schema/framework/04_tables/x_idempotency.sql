@@ -8,5 +8,6 @@ create table "x_idempotency" (
   "value" jsonb,
   "failure" jsonb,
   "created_at" timestamp with time zone default now() not null,
+  "tx_bound" boolean default false not null,
   constraint "x_idempotency_pkey" PRIMARY KEY (key)
 );

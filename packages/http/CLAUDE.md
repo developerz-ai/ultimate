@@ -217,7 +217,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `finalize.ts` | the tail of that lifecycle, guarded: a throw after the handler degrades, never rejects |
 | `router.ts` | trie matcher, precedence static > param > wildcard, `path-invalid` for a segment that will not decode |
 | `navigation.ts` | the client router's server half: the gate `context` runs after the match (a prefetch to a route whose `meta.navigation` did not opt in → `204`; a soft GET to anything but a page of the router's `<app>:<surface>` → `204` + `x-ultimate-location`, before auth or app code) and the `response` stage's rewrite of a 3xx to a router request into the same hand-over, cookies kept |
-| `error-map.ts` | the code → status table, closed, plus the app's half (`registerErrorStatus`) |
+| `error-map.ts` | the code → status table, closed: COMPOSES the slices and holds no row of its own |
+| `error-map-http.ts`, `error-map-tier-<0-4>.ts` | the rows, one slice per owning tier (this package's own apart). `bun run new-error-code` appends to the slice its `--package` maps to; a code in two slices is refused there and by `error-map.test.ts` |
 | `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document (including the issue list and the opacity rule over it), the three terminal lines |
 | `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices`, `errorPage`, `explainMiss` (asked ONLY on a `not-found` match, synchronously, with the request line alone; its error replaces `X_ROUTE_NOT_FOUND`) + the app's `configureAuthenticator()` |
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |

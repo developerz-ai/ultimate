@@ -612,9 +612,9 @@ because it was slow ([#342](https://github.com/developerz-ai/ultimate/issues/342
 | `e2e` | a real browser (raw CDP) against the app, spawned on a throwaway database when Chrome is present, including offline and SW update |
 | `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
-| `contract-diff` | published actions vs `openapi.json` |
+| `contract-diff` | the code vs the **committed** `x.manifest.json`: a breaking change without a major bump |
 | `budgets` | per-route JS bytes and LCP, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`) |
-| `manifest` | the files an agent reads: `x.manifest.json` freshness, `.env.example`, a hand-written `AGENTS.md` that exists and is under 12kB, and `x.verify.json` naming only steps the gate runs |
+| `manifest` | the files an agent reads: `x.manifest.json` **and `openapi.json`** freshness — the one check `x manifest --check` runs (`X_MANIFEST_MISSING` / `X_MANIFEST_DRIFT` / `X_MANIFEST_STALE`) — `.env.example`, a hand-written `AGENTS.md` that exists and is under 12kB, and `x.verify.json` naming only steps the gate runs |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
 A test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`,

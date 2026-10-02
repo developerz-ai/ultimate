@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 38
-current_focus: "PR 6 — action, query (06-action-query.md)"
+percent: 45
+current_focus: "PR 7 — jobs (07-jobs.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -34,8 +34,9 @@ slices:
     evidence: "PR 5 (fix/101-05-auth): every row fixed, none dropped. The mfa_secret row was first blocked - the sealed-column 'legacy plaintext' precedent the plan cites does not exist - and landed as: sealed at enrolment, a one-shot x auth seal-mfa (compare-and-set), completeMfa refusing an unsealed value with that command as its fix, x doctor reporting the count. No plaintext read path. Slice 15 decision 13 (optional adapter members) is answered here by the owner's standing rule: required, eight members. Found on the way: an OAuth user with MFA could not finish; recovery codes had no atomic redemption. Codes: X_MFA_SECRET_UNSEALED, X_FRAMEWORK_TABLE_ORPHANED."
   - file: 06-action-query.md
     tier: 3
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    evidence: "PR 6a (#623, 5dcb2ff7): query, with entity's comparison rule, admin and mcp. PR 6b (fix/101-06b-action): action; the audit-redaction row dropped as already satisfied by PR 1. Mutators refuse at declaration without idempotent: true. The bust and the idempotency settle ride the transaction, on both stores. action gained a db dependency, one file, recorded in docs/history/tier-decisions.md - the plan's 'no slice adds an import edge' is departed from there, on purpose. x verify's manifest step and x manifest --check are one check. Codes: X_MUTATOR_NOT_IDEMPOTENT, X_IDEMPOTENCY_RESERVATION_LOST."
   - file: 07-jobs.md
     tier: 3
     status: not_started
@@ -159,6 +160,11 @@ notes: >-
   For the admin PR (slice 11): 22 admin test files call defineAdmin() at module scope
   (describe.test.ts:38, routes.test.ts:42, ...), so `bun test ./packages/admin ./packages/query`
   in one process still fails 165 query tests in that order. The source is fixed in PR 6 (importing
-  admin declares nothing); move those calls into beforeAll. Section A of slice 15 holds 21 owner decisions; five were first asked on
+  admin declares nothing); move those calls into beforeAll. Also there: nothing tells an app its
+  closed permission set leaned on the admin import - a boot check that every can() literal is
+  declared would.
+  developerz-ai[bot] published v23.0.1 again, on PR 5's merge commit; deleted with its tag.
+  For the cli PR: configureIdempotency({ scope: 'shared' }) on more than one replica is an
+  instruction with no check - x doctor or boot should refuse the default scope there. Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
 last_updated: 2026-10-02

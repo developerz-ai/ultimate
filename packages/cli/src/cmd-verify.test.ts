@@ -320,10 +320,11 @@ describe('unit · x verify', () => {
     }
   });
 
-  // `openapi.json` is a published contract on its own — the typed client is generated from it —
-  // so gating the step on `x.manifest.json` let a stale spec ship a wrong client unchecked.
-  describe('contract-diff applies to either committed contract', () => {
-    const step = VERIFY_STEPS.find((candidate) => candidate.name === 'contract-diff');
+  // `openapi.json` is a published contract on its own — the typed client is generated from it.
+  // Its staleness is the `manifest` step's, through the check `x manifest --check` runs; it was
+  // `contract-diff`'s, so `verify --only manifest` said green over a spec that command called stale.
+  describe('a committed openapi.json is judged by the manifest step, and only there', () => {
+    const stepNamed = (name: string) => VERIFY_STEPS.find((candidate) => candidate.name === name);
 
     const withRoot = async (
       files: Readonly<Record<string, string>>,
@@ -338,34 +339,31 @@ describe('unit · x verify', () => {
       }
     };
 
-    test('neither file committed: the step is skipped, as before', async () => {
+    test('contract-diff runs on a committed manifest, and on nothing else', async () => {
+      const applies = stepNamed('contract-diff')?.applies;
       await withRoot({}, async (root) => {
-        expect(await step?.applies?.({ ...ctx, root })).toBe(false);
+        expect(await applies?.({ ...ctx, root })).toBe(false);
       });
-    });
-
-    test('openapi.json alone is enough to run it', async () => {
       await withRoot({ [OPENAPI_FILE]: '{}' }, async (root) => {
-        expect(await step?.applies?.({ ...ctx, root })).toBe(true);
+        expect(await applies?.({ ...ctx, root })).toBe(false);
       });
-    });
-
-    test('x.manifest.json alone is still enough to run it', async () => {
       await withRoot({ [MANIFEST_FILENAME]: '{}' }, async (root) => {
-        expect(await step?.applies?.({ ...ctx, root })).toBe(true);
+        expect(await applies?.({ ...ctx, root })).toBe(true);
       });
     });
 
-    test('an openapi.json that no longer matches the code fails with no manifest present', async () => {
+    test('an openapi.json that no longer matches the code fails the manifest step, with no manifest present', async () => {
       const files = {
         [OPENAPI_FILE]: '{"openapi":"3.1.0"}',
         'package.json': JSON.stringify({ name: 'spec-only', version: '1.0.0' }),
       };
       await withRoot(files, async (root) => {
-        const outcome = await step?.run({ ...ctx, root });
+        const outcome = await stepNamed('manifest')?.run({ ...ctx, root });
+        const stale = outcome?.findings.filter((finding) => finding.code === 'X_MANIFEST_STALE');
         expect(outcome?.ok).toBe(false);
-        expect(outcome?.findings.map((finding) => finding.at)).toContain(OPENAPI_FILE);
-        expect(outcome?.findings[0]?.fix).toBe('x manifest');
+        expect(stale?.map((finding) => [finding.at, finding.fix])).toEqual([
+          [OPENAPI_FILE, 'x manifest'],
+        ]);
       });
     });
   });

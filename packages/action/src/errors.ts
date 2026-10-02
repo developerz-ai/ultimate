@@ -1,7 +1,7 @@
 /**
  * Every failure @ultimat3/action can produce, one subclass per stable code so
  * callers `instanceof` a specific failure instead of string-matching a message.
- * The idempotency five live in `errors-idempotency.ts` — this file reached the line ceiling —
+ * The idempotency failures live in `errors-idempotency.ts` — this file reached the line ceiling —
  * and are re-exported here, so `./errors` stays the one import path for all of them.
  */
 import {
@@ -17,7 +17,7 @@ import {
 import type { SurfaceDenial } from '@ultimat3/policy';
 import type { ValidationIssue } from '@ultimat3/schema';
 
-// Re-exported, not re-declared: the five idempotency failures moved to their own file when this
+// Re-exported, not re-declared: the idempotency failures moved to their own file when this
 // one reached the line ceiling, and every importer still reads them from `./errors`.
 export type { IdempotencyConflictReason, IdempotencyKeyProblem } from './errors-idempotency';
 export {
@@ -25,7 +25,9 @@ export {
   IdempotencyKeyInvalidError,
   IdempotencyNotSharedError,
   IdempotencyReplayedFailureError,
+  IdempotencyReservationLostError,
   IdempotencyStatusUnknownError,
+  MutatorNotIdempotentError,
 } from './errors-idempotency';
 
 /**
@@ -60,6 +62,9 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_ACTION_PATH_STYLE_INVALID: "defineApi's http.pathStyle is not a known style",
   X_OPENAPI_CONFIG_INVALID: "defineApi's openapi block cannot produce a valid document",
   X_ACTION_PATH_DERIVED_EARLY: 'a path was derived before pathStyle changed',
+  X_MUTATOR_NOT_IDEMPOTENT: 'a mutator is declared without idempotent: true',
+  X_IDEMPOTENCY_RESERVATION_LOST:
+    "an idempotent action's reservation was taken over before its transaction could settle it",
 };
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"

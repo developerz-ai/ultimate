@@ -254,7 +254,6 @@
             "type": "string"
           },
           "code": {
-            "pattern": "^X_[A-Z0-9_]+$",
             "type": "string"
           },
           "detail": {
@@ -265,6 +264,41 @@
             "type": "string"
           },
           "fix": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "properties": {
+                "expected": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "received": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "expected",
+                "received",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "type": "object"
+          },
+          "requestId": {
             "type": "string"
           },
           "status": {

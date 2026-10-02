@@ -25,6 +25,15 @@ describe('an audit input is redacted through core’s own table', () => {
     ).toEqual({ password: REDACTED, token: REDACTED, authorization: REDACTED });
   });
 
+  test('a COMPOUND credential name is redacted — the matcher is core’s, not an exact-key list', () => {
+    const compound = ['currentPassword', 'newPassword', 'mfaSecret', 'recoveryCode', 'resetToken'];
+    const input = Object.fromEntries(compound.map((key) => [key, 'plaintext']));
+    expect(auditableInput({ ...input, title: 'kept' })).toEqual({
+      ...Object.fromEntries(compound.map((key) => [key, REDACTED])),
+      title: 'kept',
+    });
+  });
+
   test('a key registered at boot by defineEnv({ secret: true }) is redacted too', () => {
     expect(auditableInput({ auditInputCanary: 'value' })).toEqual({
       auditInputCanary: REDACTED,

@@ -14,13 +14,14 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slices 01–05 have landed: `schema` and
+a later slice appends its group below the last one. `As of 2026-10` slices 01–06 have landed: `schema` and
 `core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
 and `cli`; then slice 04, complete — tier 2's `entity`, `policy` and `http`. A browser-launcher
 repair in `testing` rode along with it. Slice 05 is `auth`: **a deployment with MFA-enrolled
-users has an operator step — the first `auth` entry under Changed.** Slice 06 has begun: `query`,
-with `entity`'s comparison rule, `mcp` and `admin`.
+users has an operator step — the first `auth` entry under Changed.** Slice 06 is complete:
+`query` with `entity`'s comparison rule, `mcp` and `admin`, then `action` with what it changed in
+`http`, `db` and `cli`.
 
 ### Added
 
@@ -113,6 +114,21 @@ Tier 2 — entity. Tier 3 — query (slice 06).
 - **query:** `kindsOf(entity)` and the `KindOf` type — see Changed. `readAnswer` and the
   `QueryToolAnswer` type — the one "first row or `X_NOT_FOUND`" rule the route, the tool and the
   served MCP tool share.
+
+Tier 1 — db. Tier 2 — http. Tier 3 — action (slice 06).
+
+- **db:** `liveTxConnection`.
+- **http:** `ERROR_STATUS_SLICES` in `error-map.ts` — the status table per tier. `ERROR_STATUS` is
+  unchanged for importers; the table is split into `error-map-http.ts` and
+  `error-map-tier-{0..4}.ts`.
+- **action:** `requestDeadlineMs`, `MutatorNotIdempotentError` (`X_MUTATOR_NOT_IDEMPOTENT`, HTTP
+  500) and `IdempotencyReservationLostError` (`X_IDEMPOTENCY_RESERVATION_LOST`, HTTP 409) — see
+  Changed.
+
+Repository scripts (slice 06).
+
+- **scripts:** `new-error-code` writes the code's status into its tier's slice and refuses a code
+  another slice names.
 
 Tier 5 — cli.
 
@@ -522,6 +538,41 @@ Tier 5 — admin.
   `can('admin:read')` before `defineAdmin()` runs adds `...ADMIN_PERMISSIONS` to its
   `definePermissions([...])`.
 
+Tier 3 — action.
+
+- **BREAKING — `mutator()` requires `idempotent: true`.** `MutatorDef.idempotent` is the required
+  literal `true`: omitting it is a compile error, and `X_MUTATOR_NOT_IDEMPOTENT` at declaration
+  for an untyped caller. Add `idempotent: true` to each `mutator({ … })`; `transition()` and
+  `x g mutator` declare it. On more than one replica also
+  `configureIdempotency({ scope: 'shared' })`.
+- **BREAKING — the OpenAPI `Problem` schema changes, so every committed `openapi.json` is stale.**
+  It adds `instance`, `requestId`, `issues` and `meta`, and drops the `^X_[A-Z0-9_]+$` pattern
+  on `code`. Run `x manifest` and commit.
+- **BREAKING — `x_idempotency` gains `tx_bound boolean not null default false`**, applied at boot
+  by `add column if not exists`. An app's committed schema dump drifts: run `x db gen` and commit
+  `packages/db/schema/`.
+- **BREAKING — an idempotent action inside `withTransaction` settles with the commit**, on the
+  memory and the Postgres store. A rollback leaves the record `in-flight`; it was `settled`. A
+  transaction-bound in-flight record is reclaimable after the app's `requestTimeoutMs`, and a slow
+  attempt whose key was taken fails `X_IDEMPOTENCY_RESERVATION_LOST` (409) and rolls back.
+  Autocommit handlers are unchanged. A settle that outlives its transaction settles at once; a
+  transaction opened on another database than the store's settles on the pool.
+- **BREAKING — `postgresIdempotencyStore` takes two more required options**, `origin` and
+  `reclaimAfterMs`:
+  `postgresIdempotencyStore({ executor, origin: () => client, reclaimAfterMs: requestDeadlineMs })`.
+  The framework's boot already passes them, with the app's configured request deadline.
+- **BREAKING — `cache.invalidates` inside `withTransaction` fires at the root `COMMIT`**, never on
+  rollback. `bustAfterCommit` returns `undefined` when the bust is deferred.
+- **action:** `@ultimat3/action` now depends on `@ultimat3/db` — one file, `tx-scope.ts`; the edge
+  is recorded in `docs/history/tier-decisions.md`.
+
+Tier 5 — cli (slice 06).
+
+- **BREAKING — the `manifest` step fails on a stale `openapi.json`.** `X_MANIFEST_STALE`; the step
+  and `x manifest --check` are one check. `contract-diff` no longer reports staleness and is
+  skipped when only `openapi.json` is committed. `x manifest --check` on an app with no
+  `x.manifest.json` reports `X_MANIFEST_MISSING`, was `X_MANIFEST_DRIFT`.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -743,6 +794,15 @@ Tier 2 — entity. Tier 3 — query (slice 06).
   `q`, a cursor, a window that would cut rows.
 - **query:** the typed read client sends a `Date` input as its ISO instant. A required array input
   the request omits reads `[]` instead of a 400, so `{ tags: [] }` arrives.
+
+Tier 3 — action (slice 06).
+
+- **action:** `transition()` is idempotent, and its `id` input schema comes from the entity's key
+  (`output.id`): a uuid stays a uuid, `text()` keeps its length, `bigint()` its digits pattern. An
+  optional `id:` overrides it. It was `t.uuid` for every entity, so the published input schema of
+  a transition on a non-uuid key changes.
+- **action:** `.contract()`'s OpenAPI assertion reads the registry-wide document. An unregistered
+  `.named()` twin whose route another registered action owns fails `X_CONTRACT_DRIFT`.
 
 ## 23.0.0 - 2026-10-02
 

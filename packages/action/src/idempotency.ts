@@ -226,6 +226,10 @@ export async function withIdempotency<T>(
   //
   // `record.id` is THIS reservation's, so a straggler from an attempt whose window has since
   // lapsed cannot land on the replacement that reclaimed the key.
+  //
+  // Inside a transaction the shared store settles on that transaction's connection, so "settled"
+  // and "the write is durable" are one COMMIT — and a settle that lost its reservation THROWS
+  // (`X_IDEMPOTENCY_RESERVATION_LOST`), which is the rollback of an attempt a retry replaced.
   await store.settle(key, value, record.id);
   return { value, replayed: false };
 }

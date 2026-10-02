@@ -8,10 +8,13 @@ import type { Ctx } from '@ultimat3/core';
 import { createContext, isUltimateError, logger } from '@ultimat3/core';
 import type { AnyAction } from './action';
 import { ActionDeniedError, ContractDriftError } from './errors';
+import { toOpenApiOperation } from './http';
+import { servedActionRoute } from './http-path';
 import { actionName, invoke } from './invoke';
-import { derivePath } from './naming';
 import { buildOpenApi } from './openapi';
+import { listActions } from './registry';
 import { describeSampleGap, sampleGaps, sampleInput } from './sample-input';
+import { isJsonObject } from './stable';
 import { validateInput } from './validate';
 
 export interface ContractTest {
@@ -74,18 +77,39 @@ export function contractTestsFor(
     },
     {
       name: `${name}: OpenAPI document contains its operation`,
-      run: async () => {
-        const document = buildOpenApi({ actions: [target] });
-        const path = derivePath(name).path;
-        if (document.paths[path] === undefined) {
-          throw new ContractDriftError(
-            `OpenAPI document has no entry for ${path}`,
-            'x verify --json   # the contract suite is a step of it',
-          );
-        }
-      },
+      run: async () => assertDocumented(target, name),
     },
   ];
+}
+
+/**
+ * Against the document the APP publishes — the whole registry, plus this action when a test drives
+ * a `.named()` twin nothing seated — never one built from this action alone: that one holds its
+ * own path by construction, so the assertion could not fail. What can go wrong is in the rest of
+ * the registry: a second action deriving the same route, whose operation is the one published.
+ */
+function assertDocumented(target: AnyAction, name: string): void {
+  const seated = listActions();
+  const actions = seated.some((other) => other.name === name) ? seated : [...seated, target];
+  const { path } = servedActionRoute(name);
+  const published = buildOpenApi({ actions }).paths[path];
+  const owner = operationIdAt(published);
+  if (owner === toOpenApiOperation(target).operationId) return;
+  throw new ContractDriftError(
+    owner === undefined
+      ? `OpenAPI document has no entry for ${path}`
+      : `OpenAPI document serves ${path} as ${owner}, so ${name} is not in the published contract`,
+    owner === undefined
+      ? 'x verify --json   # the contract suite is a step of it'
+      : `x actions describe ${name} --json   # then rename it, or pin its own route with http: { path } in the ${name} definition`,
+  );
+}
+
+/** `paths[path].post.operationId`, read off a value typed `unknown` — narrowed, never cast. */
+function operationIdAt(entry: unknown): string | undefined {
+  if (!isJsonObject(entry) || !isJsonObject(entry['post'])) return undefined;
+  const id = entry['post']['operationId'];
+  return typeof id === 'string' ? id : undefined;
 }
 
 /**

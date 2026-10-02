@@ -7,11 +7,13 @@
 import {
   type PostgresIdempotencyStore,
   postgresIdempotencyStore,
+  requestDeadlineMs,
   resetIdempotency,
   setIdempotencyStore,
 } from '@ultimat3/action';
 import type { DbClient, PgliteClient, PostgresClient, SqlFragment } from '@ultimat3/db';
 import {
+  baseClient,
   createPgliteClient,
   createPostgresClient,
   currentTx,
@@ -137,7 +139,6 @@ export function pgExecutorFor(client: DbClient): PgExecutor {
 async function applySchema(client: DevDbClient): Promise<void> {
   await applyFrameworkSchema((statement) => client.execute(raw(statement)));
 }
-
 /**
  * The dev queue is the real Postgres queue on the embedded Postgres — claiming, leases and the
  * one-live-job-per-key index all behave here exactly as in production. A memory queue in dev
@@ -185,7 +186,14 @@ async function startJobs(
   );
   const events = createPgEventBus({ executor });
   setEventBus(events);
-  const idempotency = postgresIdempotencyStore({ executor });
+  const idempotency = postgresIdempotencyStore({
+    executor,
+    // `baseClient`, read per call and never `client`: a transaction's origin is the AMBIENT client
+    // `startDb` installed, which is the replicated pair when a standby is configured.
+    origin: baseClient,
+    // The app's own `requestTimeoutMs`, read per reservation — it is declared after this boot.
+    reclaimAfterMs: requestDeadlineMs,
+  });
   setIdempotencyStore(idempotency);
   return {
     db: client,

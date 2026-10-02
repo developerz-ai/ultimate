@@ -31,6 +31,7 @@ export const setTheme = mutator({
   input: t.object({ memberId: t.uuid, theme: t.enumerated(...THEMES) }),
   output: members.$schema,
   policy: memberSelf,
+  idempotent: true,
   cache: { invalidates: [tag.member] },
   mcp: { expose: true, description: 'Set the acting member’s theme' },
   local(tx, { memberId, theme }) {
@@ -51,6 +52,7 @@ export const toggleDigestOptIn = mutator({
   input: t.object({ memberId: t.uuid, digestOptIn: t.boolean }),
   output: members.$schema,
   policy: memberSelf,
+  idempotent: true,
   cache: { invalidates: [tag.member] },
   mcp: { expose: true, description: 'Toggle the acting member’s digest subscription' },
   local(tx, { memberId, digestOptIn }) {

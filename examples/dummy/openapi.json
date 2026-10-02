@@ -777,7 +777,6 @@
             "type": "string"
           },
           "code": {
-            "pattern": "^X_[A-Z0-9_]+$",
             "type": "string"
           },
           "detail": {
@@ -788,6 +787,41 @@
             "type": "string"
           },
           "fix": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "properties": {
+                "expected": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "received": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "expected",
+                "received",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "type": "object"
+          },
+          "requestId": {
             "type": "string"
           },
           "status": {
@@ -3237,7 +3271,18 @@
     "/api/digest-opt-ins/toggle": {
       "post": {
         "operationId": "toggleDigestOptIn",
-        "parameters": [],
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3320,6 +3365,16 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -3337,7 +3392,7 @@
         ],
         "x-ultimate": {
           "capability": "member:self",
-          "idempotent": false,
+          "idempotent": true,
           "invalidates": [
             "member"
           ],
@@ -3564,7 +3619,18 @@
     "/api/posts/like": {
       "post": {
         "operationId": "likePost",
-        "parameters": [],
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3606,6 +3672,16 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -3623,7 +3699,7 @@
         ],
         "x-ultimate": {
           "capability": "post:like",
-          "idempotent": false,
+          "idempotent": true,
           "invalidates": [
             "feed",
             "post"
@@ -4445,7 +4521,18 @@
     "/api/themes/set": {
       "post": {
         "operationId": "setTheme",
-        "parameters": [],
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4528,6 +4615,16 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -4545,7 +4642,7 @@
         ],
         "x-ultimate": {
           "capability": "member:self",
-          "idempotent": false,
+          "idempotent": true,
           "invalidates": [
             "member"
           ],

@@ -24,6 +24,7 @@ export const likePost = mutator({
   input: t.object({ postId: t.uuid, orgId: t.uuid }),
   output: PostView,
   policy: postLike,
+  idempotent: true,
   cache: { invalidates: [tag.post, tag.feed] },
   mcp: { expose: true, description: 'Like a post on behalf of the acting member' },
   local: likePostLocally,

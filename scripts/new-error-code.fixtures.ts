@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
-import { STATUS_BACKLOG, STATUS_TABLE, WIKI_PAGE } from './new-error-code';
+import { STATUS_BACKLOG, STATUS_TABLE, STATUS_TABLE_SLICES, WIKI_PAGE } from './new-error-code';
 
 export const ROOT = repoRoot();
 const made: string[] = [];
@@ -40,8 +40,8 @@ export async function fixtureRoot(): Promise<string> {
   );
   await mkdir(`${dir}/wiki`, { recursive: true });
   await Bun.write(`${dir}/${WIKI_PAGE}`, Bun.file(`${ROOT}/${WIKI_PAGE}`));
-  // The two files that decide a code's HTTP status, real copies: a row here or a pin there.
-  for (const file of [STATUS_TABLE, STATUS_BACKLOG]) {
+  // The files that decide a code's HTTP status, real copies: a row in a slice or a pin there.
+  for (const file of [STATUS_TABLE, ...STATUS_TABLE_SLICES, STATUS_BACKLOG]) {
     await Bun.write(`${dir}/${file}`, Bun.file(`${ROOT}/${file}`));
   }
   return dir;

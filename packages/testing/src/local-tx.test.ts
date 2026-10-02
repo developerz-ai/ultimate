@@ -101,6 +101,7 @@ describe('memoryLocalTx', () => {
       input: t.object({ id: t.string, title: t.string }),
       output: t.object({ id: t.string }),
       policy: allow('public'),
+      idempotent: true,
       local(tx, input) {
         tx.table<Post & { pending?: boolean }>('posts').update(input.id, {
           title: input.title,

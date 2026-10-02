@@ -26,12 +26,12 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | `input` | Standard Schema (`t` from `@ultimat3/schema`) | yes | parsed before anything else runs; drives the TS type, JSON Schema, OpenAPI request body, MCP tool schema. `t` is the shipped dependency-free builtin provider; ArkType, Zod and Valibot are optional swaps behind `configureSchemaProvider` and ship no adapter |
 | `output` | Standard Schema | yes | the response contract; drives the typed client return type and the OpenAPI response |
 | `policy` | `Policy` from `can(...)` | yes | the one authz decision, evaluated on every surface. Omitting it is a build error |
-| `cache.invalidates` | `readonly CacheTag[]` | no | tags dropped from every cache tier after `handle` settles; unknown tag = compile error |
+| `cache.invalidates` | `readonly CacheTag[]` | no | tags dropped from every cache tier after `handle` settles — and, for an action invoked inside `withTransaction`, only once the root transaction **commits** (never on rollback). Unknown tag = compile error |
 | `mcp.expose` | `boolean` | no (opt-in) | only a literal `true` makes the action a tool; silence exposes nothing. One predicate answers it everywhere — the tool, the LLM tool list, `describe().mcp.expose`, and `openapi.json`'s `x-ultimate.mcpTool` (which is `null` when there is no tool). Listing an un-exposed action in `defineAppMcp` is `X_MCP_TOOL_UNDECLARED` at boot |
 | `mcp.description` | `string` | no | the tool description an agent reads, and the OpenAPI `summary`. Contract text, so it stays outside `t()` — `openapi.json` must not depend on a locale. Write it for a stranger |
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | `rateLimit` | `{ limit: number; windowMs: number }` | no | registers a bucket named after the action, enforced at the **HTTP** edge — the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. Keyed actor → org → IP. **Not** read at the MCP edge: `/mcp` buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) and never sees this declaration |
-| `idempotent` | `boolean` | no | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument |
+| `idempotent` | `boolean` | no — **required `true` on a `mutator`** | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument. Inside a transaction the Postgres store settles the record with the write's own `COMMIT`, so a rollback never leaves a `settled` record behind |
 | `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a vendor holds (`'/api/webhooks/wompi'`). Static, lowercase, no params, never `/_x` (`X_ACTION_HTTP_PATH_INVALID`) |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
 
@@ -126,6 +126,9 @@ Same declaration surface as `action`, plus a local half that runs client-side ag
 
 ```ts
 export const likePost = mutator({
+  // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
+  // first result instead of running `server` again.
+  idempotent: true,
   // Convergent, not incremental: `local` replays on every rebase, so applying it N times has to
   // equal applying it once — `likedByMe` is what makes the second application a no-op.
   local(tx, { postId }) {
@@ -142,6 +145,7 @@ export const likePost = mutator({
 | Projects to | everything `action` does, plus a local-store transaction and a rebase entry |
 | Owns | conflict strategy: `'server-wins'`, `'last-write-wins'`, or `custom(merge)` |
 | Authz | the `server` half carries the policy; the `local` half is presentation only and never a security boundary |
+| Idempotency | `idempotent: true` is required — a compile error, and `X_MUTATOR_NOT_IDEMPOTENT` at declaration. The client replays a mutator's write under one `Idempotency-Key` (a retry, the offline queue draining), and the replay answers the first result instead of running `server` again |
 | Never | let `local` do I/O, randomness, or `Date.now()` |
 
 **Replayability rule:** `local` is re-executed on every rebase — after each server confirmation, on reconnect, and when a conflicting remote write arrives. It must be a pure function of `(tx, input)`. I/O, `Math.random()`, `crypto.randomUUID()`, or a wall-clock read makes the local timeline diverge from the server's, and the divergence surfaces as flicker, then as wrong data. Ids and timestamps come from the input, generated once at call time. Tier 3 local-first (`persist: true`) has **not shipped**, `As of 2026-08`; mutators work today at realtime tiers 1–2 ([Realtime](Realtime)).
@@ -156,6 +160,8 @@ export const likePost = mutator({
 | `X_FORBIDDEN` | the policy said no — one code for the direct call, the HTTP 403 and the MCP tool error | grant the capability, or call as an actor who has it |
 | `X_UNAUTHENTICATED` | no session; anonymous actor hit a policy needing one (401) | sign in, or send a valid token |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a different payload, or still in flight | send a fresh `Idempotency-Key`, or retry after the first settles |
+| `X_IDEMPOTENCY_RESERVATION_LOST` | an idempotent action inside a transaction outlived the request deadline and a retry took its key; its transaction rolls back (409) | resend with the same `Idempotency-Key` |
+| `X_MUTATOR_NOT_IDEMPOTENT` | a `mutator` declared without `idempotent: true` | add `idempotent: true` to the definition |
 | `X_CONTRACT_DRIFT` | client build id ≠ server build id, or a breaking published-contract change | reload the client / bump the action version |
 | `X_TENANCY_UNSCOPED` | a query inside `handle` had no tenant predicate | scope it through the repo, never raw SQL |
 | `X_BOUNDARY_VIOLATION` | action declared outside `api/` or `<feature>/actions.ts` | move the file, or `x fix boundary <file>` |

@@ -667,3 +667,36 @@ a current fact: the rules that still hold are in that file, and where the two di
   denial. `policy-gate.ts` is the only file with a **runtime** edge to the policy package;
   `errors.ts` also imports it, `import type { SurfaceDenial }`, which `verbatimModuleSyntax`
   erases — so there is still exactly one place authz is evaluated.
+
+- **A mutator is replayable by construction** (2026-10-02, plan 101 slice 06). `useMutation`
+  retries and the offline queue drains a write under ONE `Idempotency-Key`, and `toRoute` read
+  that key only for `idempotent: true` — which `mutator()` never set, so a POST whose response
+  was lost applied twice (a toggle flipped back) while `offline-queue.ts` said the store answered
+  it. Refused at declaration (`X_MUTATOR_NOT_IDEMPOTENT`, and the literal `true` in `MutatorDef`)
+  rather than defaulted: the replay is answered from the idempotency store, and which store that
+  is belongs to the app (`configureIdempotency`).
+
+- **The bust is post-COMMIT, not post-handler.** `bustAfterCommit` ran when the handler
+  returned and never asked whether a transaction was open, so an action invoked inside
+  `withTransaction` busted before the commit: a concurrent read refilled the entry from the
+  pre-commit rows and it stayed for the TTL. It could not be fixed before 2026-10-02 — a root
+  transaction Postgres rolled back was reported committed, so `onCommit` fired for writes that
+  never landed. A straggler that outlives its transaction gets `DbTx.onCommit`'s own answer (at
+  once after a commit, dropped after a rollback), the same one entity's row observer gets.
+
+- **A settlement commits with the write.** Reserve, handler and settle were three commits, so an
+  action inside a transaction that rolled back left a `settled` record: the retry replayed a
+  success for rows nobody stored. Inside a transaction on the store's own database the settle now
+  runs on that connection (Postgres) or at its commit (memory), and the record says so
+  (`tx_bound`) — which is what makes an in-flight record past the request deadline provably
+  uncommitted and reclaimable. An autocommit handler's record is not: "died before the write" and
+  "wrote, then died before the settle" are still one row there, and re-running the second is the
+  double charge. A slow attempt whose key a retry took is refused at ITS settle
+  (`X_IDEMPOTENCY_RESERVATION_LOST`), which is the rollback — so the deadline being wrong costs
+  work, never a second write. The deadline is the app's `requestTimeoutMs`, read per reservation:
+  the app declares it after the boot built the store.
+
+- **`contract()`'s OpenAPI assertion could not fail.** It built a document from the one action
+  and looked the action's path up in it. It reads the registry-wide document now and compares
+  `operationId`. **`Problem`** listed eight members while `toProblem` serves twelve, and pinned
+  `code` to a pattern `factsOf` does not keep; `openapi-problem.test.ts` compares the two.

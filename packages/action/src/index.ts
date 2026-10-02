@@ -130,8 +130,10 @@ export {
   IdempotencyKeyInvalidError,
   IdempotencyNotSharedError,
   IdempotencyReplayedFailureError,
+  IdempotencyReservationLostError,
   IdempotencyStatusUnknownError,
   InputInvalidError,
+  MutatorNotIdempotentError,
   OutputInvalidError,
   RemoteActionError,
   RpcFailedError,
@@ -267,6 +269,7 @@ export {
   registerActions,
   resetRegistry,
 } from './registry';
+export { requestDeadlineMs } from './request-deadline';
 /**
  * A mutator FACTORY, never a ninth primitive: `transition()` returns a `mutator`, so a move through
  * a state machine inherits the route, the OpenAPI operation, the typed client, the MCP tool, the job

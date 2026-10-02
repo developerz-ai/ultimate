@@ -4,6 +4,7 @@
  * Shaped after `@ultimat3/http`'s `memoryRateLimitStore`, including the deliberate eviction order.
  */
 import { finiteCount, uuid } from '@ultimat3/core';
+import { IdempotencyReservationLostError } from './errors-idempotency';
 import type {
   IdempotencyFailure,
   IdempotencyRecord,
@@ -11,6 +12,8 @@ import type {
   IdempotencyScope,
   IdempotencyStore,
 } from './idempotency';
+import { requestDeadlineMs } from './request-deadline';
+import { liveTransaction } from './tx-scope';
 
 /**
  * How long a key is remembered. A day is the window every payment API this shape exists to serve
@@ -34,6 +37,24 @@ export interface MemoryIdempotencyStoreOptions {
   readonly maxKeys?: number | undefined;
   /** Injectable so a test can age a record without sleeping. */
   readonly now?: (() => number) | undefined;
+  /**
+   * The request deadline, read at every reservation — how long an in-flight record whose
+   * settlement rides a transaction is kept before a retry may take the key. Default: the app's
+   * own `requestTimeoutMs` (`requestDeadlineMs`). `0` is "no deadline".
+   */
+  readonly reclaimAfterMs?: (() => number) | undefined;
+}
+
+/**
+ * What an in-flight record's transaction has to do with it — the memory twin of the Postgres
+ * store's `tx_bound` column and of the row lock its settle holds until COMMIT. Keyed by the record
+ * object: a settled or failed record is a new object, so these never outlive the flight.
+ */
+interface Flight {
+  /** Reserved inside a transaction: its settle commits with the write or not at all. */
+  readonly bound: boolean;
+  /** The settle ran and its transaction has not ended yet — nobody may reclaim it now. */
+  settling: boolean;
 }
 
 export class MemoryIdempotencyStore implements IdempotencyStore {
@@ -43,6 +64,8 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   readonly #maxKeys: number;
   readonly #evictTo: number;
   readonly #now: () => number;
+  readonly #reclaimAfterMs: () => number;
+  readonly #flights = new WeakMap<IdempotencyRecord, Flight>();
   readonly #records = new Map<string, IdempotencyRecord>();
   #lastSweepMs = Number.NEGATIVE_INFINITY;
 
@@ -65,6 +88,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     // Batched down to 90% so the eviction sort is paid once per 10% of the cap, not per write.
     this.#evictTo = Math.max(1, Math.floor(this.#maxKeys * 0.9));
     this.#now = options.now ?? ((): number => Date.now());
+    this.#reclaimAfterMs = options.reclaimAfterMs ?? requestDeadlineMs;
   }
 
   /** Records tracked right now — the bound, observable. */
@@ -77,7 +101,11 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     const existing = this.#records.get(key);
     // Expired is missing. A record past the window answers exactly as a first-ever key does, so
     // reclaiming it here is what makes the window mean something rather than being a comment.
-    if (existing !== undefined && !this.#expired(existing, nowMs)) {
+    if (
+      existing !== undefined &&
+      !this.#expired(existing, nowMs) &&
+      !this.#abandoned(existing, nowMs)
+    ) {
       return Promise.resolve({ record: existing, created: false });
     }
     const record: IdempotencyRecord = {
@@ -89,8 +117,26 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
       createdAt: nowMs,
     };
     this.#records.set(key, record);
+    this.#flights.set(record, { bound: liveTransaction() !== undefined, settling: false });
     this.#maintain(nowMs);
     return Promise.resolve({ record, created: true });
+  }
+
+  /**
+   * An in-flight record past the request deadline whose settle was BOUND to a transaction: that
+   * settle lands with the commit or not at all, so the record being in flight proves nothing
+   * committed. An autocommit handler's record is never this — it may have written before it died.
+   */
+  #abandoned(record: IdempotencyRecord, nowMs: number): boolean {
+    const flight = this.#flights.get(record);
+    if (record.status !== 'in-flight' || flight === undefined) return false;
+    if (!flight.bound || flight.settling) return false;
+    const reclaimAfterMs = finiteCount(
+      'MemoryIdempotencyStore',
+      'reclaimAfterMs',
+      this.#reclaimAfterMs(),
+    );
+    return reclaimAfterMs > 0 && nowMs - record.createdAt >= reclaimAfterMs;
   }
 
   /**
@@ -104,9 +150,29 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
    */
   settle(key: string, value: unknown, reservationId: string): Promise<void> {
     const existing = this.#owned(key, reservationId);
-    if (existing !== undefined) {
-      this.#records.set(key, { ...existing, status: 'settled', value });
+    const tx = liveTransaction();
+    if (tx === undefined) {
+      if (existing !== undefined) this.#records.set(key, { ...existing, status: 'settled', value });
+      return Promise.resolve();
     }
+    // Inside a transaction the record is settled BY the commit, as the Postgres store's is: a
+    // rollback leaves it in flight rather than replaying a success for rows nobody stored. And a
+    // settle that lost its reservation is thrown, because nothing has committed yet and the throw
+    // is what rolls this attempt back beside the retry that replaced it.
+    if (existing === undefined) {
+      return Promise.reject(new IdempotencyReservationLostError(key));
+    }
+    const flight = this.#flights.get(existing);
+    if (flight !== undefined) flight.settling = true;
+    tx.onRollback(() => {
+      if (flight !== undefined) flight.settling = false;
+    });
+    tx.onCommit(() => {
+      // Still this reservation's: `settling` kept a reclaim away, and `release` may have dropped it.
+      if (this.#records.get(key) === existing) {
+        this.#records.set(key, { ...existing, status: 'settled', value });
+      }
+    });
     return Promise.resolve();
   }
 

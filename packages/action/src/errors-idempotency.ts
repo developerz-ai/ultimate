@@ -1,5 +1,5 @@
 /**
- * The five idempotency failures, split out of `errors.ts` at its line ceiling. One subclass per
+ * The idempotency failures, split out of `errors.ts` at its line ceiling. One subclass per
  * stable code, exactly as there — the codes and their titles stay in `errors.ts`'s one
  * `registerErrorCodes` call, because a second registration is how two modules end up deciding a
  * title by load order.
@@ -77,7 +77,7 @@ export class IdempotencyNotSharedError extends UltimateError {
       // positional form is `unsafe`), so that line compiled and would have thrown on the first
       // reservation. The framework's own boot already installs this store; a host booting the
       // framework itself wraps the client it opened.
-      fix: "the framework boot installs a shared store — reach this only from a host that boots it itself: setIdempotencyStore(postgresIdempotencyStore({ executor: { query: (text, values) => client.query({ text, values }) } })) from '@ultimat3/action', or drop the declaration to configureIdempotency({ scope: 'process' })",
+      fix: "the framework boot installs a shared store — reach this only from a host that boots it itself: setIdempotencyStore(postgresIdempotencyStore({ executor: { query: (text, values) => client.query({ text, values }) }, origin: () => client, reclaimAfterMs: requestDeadlineMs })) from '@ultimat3/action', or drop the declaration to configureIdempotency({ scope: 'process' })",
       meta: { storeScope: storeScope ?? null },
     });
   }
@@ -135,6 +135,40 @@ export class IdempotencyStatusUnknownError extends UltimateError {
         `which this build does not know — it reads ${input.known.join(', ')}`,
       fix: `psql "$DATABASE_URL" -c "select key, status from x_idempotency where status not in ('in-flight', 'settled', 'failed')" # then drain the older processes: a status this build cannot read was written by a newer deploy`,
       meta: { key: input.key, value: renderCauseValue(input.value), known: [...input.known] },
+    });
+  }
+}
+
+/**
+ * A mutator declared without `idempotent: true`. Refused at declaration: the client replays a
+ * mutator's write under one `Idempotency-Key` (a retry, an offline queue draining after a lost
+ * response), and `toRoute` reads that key only for an idempotent action — so the alternative is a
+ * toggle that flips back, with nothing in any log to say the handler ran twice.
+ */
+export class MutatorNotIdempotentError extends UltimateError {
+  constructor() {
+    super({
+      code: 'X_MUTATOR_NOT_IDEMPOTENT',
+      cause:
+        'a mutator is declared without idempotent: true, so a replay of its write under the same Idempotency-Key would run the server half a second time',
+      fix: 'add `idempotent: true` to the mutator definition',
+    });
+  }
+}
+
+/**
+ * A settlement inside the handler's transaction matched no record: the attempt ran past the
+ * request deadline, a retry reclaimed the key, and this one no longer owns it. THROWN, where the
+ * autocommit path only logs — nothing here has committed, so the throw rolls this attempt's
+ * writes back and the retry's are the only ones stored.
+ */
+export class IdempotencyReservationLostError extends UltimateError {
+  constructor(key: string) {
+    super({
+      code: 'X_IDEMPOTENCY_RESERVATION_LOST',
+      cause: `idempotency key "${key}" was reclaimed by a retry while this attempt was still in flight past the request deadline, so its transaction is rolled back rather than committed beside the retry's`,
+      fix: 'resend this request with the same Idempotency-Key — the attempt that took the key over answers it, and this one was rolled back',
+      meta: { key },
     });
   }
 }

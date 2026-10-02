@@ -35,6 +35,12 @@ function executor(answers: readonly (readonly Record<string, unknown>[])[]): {
   return { exec, calls };
 }
 
+/** The app's request deadline — what boot reads off the http config. */
+const deadline = (): number => 30_000;
+/** No transaction is open in this file, so the client it would be compared with is never read. */
+const ORIGIN = {};
+const origin = (): object => ORIGIN;
+
 /** The id `reserve` handed back — what both settlements must now carry. */
 const RESERVATION_ID = '00000000-0000-4000-8000-0000000000aa';
 
@@ -52,12 +58,14 @@ const row = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
 describe('the postgres idempotency store', () => {
   test('declares itself shared, which is the whole reason it exists', () => {
     const { exec } = executor([]);
-    expect(postgresIdempotencyStore({ executor: exec }).scope).toBe('shared');
+    expect(
+      postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline }).scope,
+    ).toBe('shared');
   });
 
   test('a returned row is the caller that must run the handler', async () => {
     const { exec, calls } = executor([[row()]]);
-    const store = postgresIdempotencyStore({ executor: exec });
+    const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
     const reservation = await store.reserve('chargeCard:k1', 'hash');
     expect(reservation.created).toBe(true);
     expect(reservation.record.status).toBe('in-flight');
@@ -68,7 +76,7 @@ describe('the postgres idempotency store', () => {
 
   test('no row back means a live record exists and this caller must replay it', async () => {
     const { exec, calls } = executor([[], [row({ status: 'settled', value: { ok: true } })]]);
-    const store = postgresIdempotencyStore({ executor: exec });
+    const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
     const reservation = await store.reserve('chargeCard:k1', 'hash');
     expect(reservation.created).toBe(false);
     expect(reservation.record.status).toBe('settled');
@@ -79,20 +87,25 @@ describe('the postgres idempotency store', () => {
   test('a failed record comes back with its failure, so the replay re-throws it', async () => {
     const failure = { code: 'X_OUTPUT_INVALID', cause: 'shape drifted', fix: 'fix the schema' };
     const { exec } = executor([[], [row({ status: 'failed', failure })]]);
-    const store = postgresIdempotencyStore({ executor: exec });
+    const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
     const reservation = await store.reserve('chargeCard:k1', 'hash');
     expect(reservation.record.failure).toEqual(failure);
   });
 
   test('a jsonb failure that is not the declared shape is dropped, never half-read', async () => {
     const { exec } = executor([[], [row({ status: 'failed', failure: { code: 42 } })]]);
-    const store = postgresIdempotencyStore({ executor: exec });
+    const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
     expect((await store.reserve('chargeCard:k1', 'hash')).record.failure).toBeUndefined();
   });
 
   test('the window travels as seconds, so the same number bounds reserve, get and purge', async () => {
     const { exec, calls } = executor([[], []]);
-    const store = postgresIdempotencyStore({ executor: exec, windowMs: 60_000 });
+    const store = postgresIdempotencyStore({
+      executor: exec,
+      origin,
+      reclaimAfterMs: deadline,
+      windowMs: 60_000,
+    });
     await store.reserve('k', 'hash');
     expect(calls[0]?.params[3]).toBe(60);
     expect(calls[1]?.params[1]).toBe(60);
@@ -108,7 +121,7 @@ describe('the postgres idempotency store', () => {
 
   test('a settlement the fence rejected is reported, never silently dropped', async () => {
     const { exec } = executor([[]]);
-    const store = postgresIdempotencyStore({ executor: exec });
+    const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
     // `returning key` is what makes the no-op observable — an update that matched nothing looks
     // exactly like one that matched, otherwise.
     expect(SQL_IDEMPOTENCY_SETTLE).toContain('returning key');
@@ -125,7 +138,7 @@ describe('the postgres idempotency store', () => {
 
   test('the reservation id travels as the third parameter of both statements', async () => {
     const { exec, calls } = executor([[{ key: 'chargeCard:k1' }], [{ key: 'chargeCard:k1' }]]);
-    const store = postgresIdempotencyStore({ executor: exec });
+    const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
     await store.settle('chargeCard:k1', { ok: true }, RESERVATION_ID);
     await store.fail?.(
       'chargeCard:k1',
@@ -142,7 +155,12 @@ describe('the postgres idempotency store', () => {
   // driven from one clock.
   test('the clock is injectable, so the fallback record is stamped by the caller', async () => {
     const { exec } = executor([[], [], [], [], [], []]);
-    const store = postgresIdempotencyStore({ executor: exec, now: () => 1_700_000_000_000 });
+    const store = postgresIdempotencyStore({
+      executor: exec,
+      origin,
+      reclaimAfterMs: deadline,
+      now: () => 1_700_000_000_000,
+    });
     // Three attempts, both statements empty each time: the honest in-flight refusal.
     const reservation = await store.reserve('chargeCard:k1', 'hash');
     expect(reservation.created).toBe(false);
@@ -156,7 +174,7 @@ describe('the postgres idempotency store', () => {
   // for a record nobody could read.
   test('a status this build cannot read is refused, never replayed as a null result', async () => {
     const { exec } = executor([[], [row({ status: 'archived' })]]);
-    const store = postgresIdempotencyStore({ executor: exec });
+    const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
     const failure = await store.reserve('chargeCard:k1', 'hash').catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(Error);
@@ -167,7 +185,7 @@ describe('the postgres idempotency store', () => {
   test('every status this build does read still comes back', async () => {
     for (const status of IDEMPOTENCY_STATUSES) {
       const { exec } = executor([[], [row({ status })]]);
-      const store = postgresIdempotencyStore({ executor: exec });
+      const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
       expect((await store.reserve('chargeCard:k1', 'hash')).record.status).toBe(status);
     }
   });

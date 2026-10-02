@@ -3,9 +3,9 @@
 // statement, an unknown state never reaches a database, the entity's refusal arrives un-wrapped),
 // and that what comes back is a mutator — every projection, or "not a ninth primitive" is a claim.
 //
-// The table is a local fake: `@ultimat3/action` holds no dependency edge on `@ultimat3/entity`, so
-// the seam is structural and this file exercises the seam. That a REAL `Table` satisfies it is a
-// type-level fact this package cannot assert; see the file header.
+// The table is a local fake: the seam is structural (`TransitionTarget`, one method), and this
+// file exercises the seam. That a REAL `Table` satisfies it is a type-level fact entity's own
+// `transition` tests hold.
 
 import { describe, expect, test } from 'bun:test';
 import { createContext, UltimateError, userActor } from '@ultimat3/core';
