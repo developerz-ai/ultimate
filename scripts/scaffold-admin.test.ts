@@ -6,6 +6,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no mkdtemp/rm and exposes no tmpdir(); each case owns a throwaway app directory.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { DEV_BINDING } from '@ultimat3/cli';
 import type { AdminWalk } from './lib/admin-walk';
 import { adminFindings, filledForm, walkAdmin } from './lib/admin-walk';
 import type { AdminCheckIo } from './scaffold-admin';
@@ -318,6 +319,31 @@ describe('unit · the command: boot, walk, stop', () => {
     const result = await checkAdmin(dir, made);
     expect(result.findings?.[0]?.cause).toContain('answered no request in 60000 ms');
     expect(calls.stopped).toBe(1);
+  });
+
+  // The CI failure this pins: `x dev` binds `localhost`, which a runner whose hosts file maps it to
+  // `::1` too binds as `[::1]` alone — so a dial at `127.0.0.1` was refused for the whole budget.
+  test('the app is dialled at the name x dev binds, never a literal loopback address', async () => {
+    const dir = await appDir(['manifest', 'actor', 'bin']);
+    const dialled: string[] = [];
+    const app = fakeApp();
+    const { made } = io((url, init) => {
+      dialled.push(new URL(url).hostname);
+      return app.fetcher(url, init);
+    });
+    const result = await checkAdmin(dir, made);
+    expect(result.ok).toBe(true);
+    expect(dialled.length).toBeGreaterThan(0);
+    expect(new Set(dialled)).toEqual(new Set([DEV_BINDING.hostname]));
+  });
+
+  test('a budget spent on refused dials says what the last dial was told, and where', async () => {
+    const dir = await appDir(['manifest', 'actor', 'bin']);
+    const { made } = io(fakeApp().fetcher, { refusals: Number.POSITIVE_INFINITY });
+    const result = await checkAdmin(dir, made);
+    const cause = result.findings?.[0]?.cause ?? '';
+    expect(cause).toContain(`http://${DEV_BINDING.hostname}:4000/admin`);
+    expect(cause).toContain('ECONNREFUSED');
   });
 
   test('a directory that is not a set-up scaffold is refused before anything boots', async () => {
