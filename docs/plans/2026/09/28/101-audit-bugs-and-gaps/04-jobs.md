@@ -2,6 +2,20 @@
 
 > Part of [`overview.md`](overview.md). Depends on: 02 (only for the scheduler's transactional fire). Tier: 3.
 
+> **Done, 2026-10-01** — all four steps, under
+> [plan 2026/10/01/101](../../../10/01/101-platform-readiness-for-big-systems/overview.md) slices 05–06
+> and their follow-ups:
+>
+> | Step | Where |
+> |---|---|
+> | 1 terminal drop | `nack({ fail })` → row `failed`, outcome `dropped`; `packages/jobs/src/execute-retry.test.ts`, `driver-settle-parity.test.ts` |
+> | 2 owner fence | `ack` / `nack` fenced on the claim (`claimOf(claimed)`, `x_jobs.claims`), which also closes a same-worker re-claim; `driver-parity.test.ts` on both drivers |
+> | 3 atomic fire | `SchedulerState.fire` / `SQL_SCHEDULER_FIRE`, the watermark as fence; the scheduler tests |
+> | 4 relay deadline | bound late, the worker's `DrainBudget` shape; `outbox-relay.test.ts` |
+>
+> `execute.ts` does not pre-check `heartbeat.lost()` (step 2's last sentence): the fenced settle
+> matches nothing and is logged `jobs.settle.unowned`.
+
 ## Files to change
 | File | Defect | Verdict |
 |---|---|---|

@@ -30,17 +30,24 @@ before.
 | `entity` | [`packages/db/src/schema/plans.ts`](packages/db/src/schema/plans.ts) | `money()` column, invariant → CHECK constraint |
 | `entity` | [`packages/db/src/schema/members.ts`](packages/db/src/schema/members.ts) | `tz()` + `locale()` per member, `orgId()` tenancy |
 | `entity` | [`apps/web/app/posts/entity.ts`](apps/web/app/posts/entity.ts) | the feature's view schema (`PostView`) over the shared table |
+| `entity` | [`packages/db/src/schema/connections.ts`](packages/db/src/schema/connections.ts) | `text().sealed()` — a credential, and the proxy exit a run leaves through, the database never holds in the clear and no serialiser carries |
+| `entity` | [`packages/db/src/schema/runs.ts`](packages/db/src/schema/runs.ts) | one row per run: its job, and a `status` projected from its last phase event by the one writer of both |
+| `entity` | [`packages/db/src/schema/run-events.ts`](packages/db/src/schema/run-events.ts) | one row per phase of a run; `seq` starts at 1 and the CHECK says so; `usage` is a `json()` column a schema validates |
 | `policy` | [`apps/web/app/posts/policy.ts`](apps/web/app/posts/policy.ts) | `post:publish` = owns-or-org-admin, one definition, five surfaces. Both authoring forms, once each: `can()` where only an agent reads the denial, `definePolicy()` on `post:like` where a person does — same `Policy` object, and `deny:` is a message key so the refusal goes through `t()` |
 | `action` | [`apps/web/app/posts/actions.ts`](apps/web/app/posts/actions.ts) | `createPost`, `publishPost`, and `summarize` — an `llm()` model call, which is an action factory rather than a ninth primitive |
 | `action` | [`apps/web/app/orgs/actions.ts`](apps/web/app/orgs/actions.ts) | `inviteMember`, `upgradePlan` (minor-unit arithmetic), `grantAvatarUpload` — a presigned PUT whose key and signature are `@ultimat3/storage`'s ([`avatar.ts`](apps/web/app/orgs/avatar.ts)) |
 | `action` | [`apps/web/app/settings/actions.ts`](apps/web/app/settings/actions.ts) | `savePreferences` — a one-action slice still gets an `actions.ts` |
+| `action` | [`apps/web/app/runs/actions.ts`](apps/web/app/runs/actions.ts) | `startRun`, `answerPrompt`, `cancelRun` — each an MCP tool by one line, and served to machine callers under `/v1` by the bearer mount in [`api/index.ts`](apps/web/api/index.ts); `issueRunKey` mints the key |
+| `policy` | [`apps/web/app/runs/policy.ts`](apps/web/app/runs/policy.ts) | rules that read `actor.orgId`, so a member, an agent and an API key pass the same predicate; `row === null` denies an answer or a cancel for a run nobody loaded |
 | `mutator` | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` — optimistic local twin, offline queue, `conflict: 'server-wins'` |
 | `mutator` | [`apps/web/app/settings/mutator.ts`](apps/web/app/settings/mutator.ts) | `setTheme` (`'last-write-wins'`) and `toggleDigestOptIn` (`custom`, sticky unsubscribe) — the other two conflict strategies |
 | `query` | [`apps/web/app/posts/live.ts`](apps/web/app/posts/live.ts) | `liveFeed` (`live: true`) + non-live `postBySlug` |
+| `query` | [`apps/web/app/runs/live.ts`](apps/web/app/runs/live.ts) | `liveRunEvents` — a run's events in `seq` order, pushed as the job writes them |
 | `job` | [`apps/web/app/orgs/jobs.ts`](apps/web/app/orgs/jobs.ts) | `onboardOrg` — durable steps + `step.sleep('3d')` |
 | `job` | [`apps/web/app/posts/jobs.ts`](apps/web/app/posts/jobs.ts) | `notifySubscribers` — fanout, `concurrency: 1` (one in flight across the fleet) |
 | `job` | [`apps/web/app/digest/jobs.ts`](apps/web/app/digest/jobs.ts) | `sendDigest` — 09:00 **local per member**, DST-correct, delivered one (org, zone) group at a time |
 | `job` | [`apps/web/app/posts/backfills/post-excerpts.ts`](apps/web/app/posts/backfills/post-excerpts.ts) | `postExcerpts` — `backfill()` is a **job factory**, not a ninth primitive: one pass over the rows that are behind, every page in its own `step.run`, the checkpoint a cursor and never the page, the handler idempotent because `handle` is at-least-once |
+| `job` | [`apps/web/app/runs/jobs.ts`](apps/web/app/runs/jobs.ts) | `syncConnection` — `scrape()` is a **job factory**: a recorded site (`fixtureBrowser`), `egress` looked up in the worker, one run per connection (`concurrency: { key, whenBusy: 'fail' }` → `X_JOB_KEY_BUSY`), a sealed stored session, a prompt a person answers mid-run over the event bus, and `onSettled` recording how each run ended and what it used |
 | `task` | [`apps/web/api/tasks.ts`](apps/web/api/tasks.ts) | `nightlyDigest` cron with an explicit `tz` |
 | `route` | [`apps/web/site/page.tsx`](apps/web/site/page.tsx) | `static`, `hydrate: 'never'`, 0kb JS |
 | `route` | [`apps/web/site/pricing/page.tsx`](apps/web/site/pricing/page.tsx) | `isr`, money formatted at the edge |
@@ -50,6 +57,7 @@ before.
 | `route` | [`apps/web/app/posts/[id]/page.tsx`](apps/web/app/posts/%5Bid%5D/page.tsx) | `ssr`, fresh per request |
 | `route` | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | `stream`, `useQuery(liveFeed)` over the page's one socket in `feed.island.tsx` + a `<Suspense>`-streamed activity badge, usable offline |
 | `route` | [`apps/web/app/settings/page.tsx`](apps/web/app/settings/page.tsx) | `spa`, locale + timezone + theme pickers |
+| `route` | [`apps/web/app/runs/page.tsx`](apps/web/app/runs/page.tsx) | `ssr` + the run console island: `useQuery(liveRunEvents)` in `AsyncRegion`, the prompt form, a refused run said in words, what an ended run used, every write through the typed browser client |
 
 ## Why `packages/`
 
@@ -79,6 +87,11 @@ apps/web/shared/   tokens, policies, entity types     — leaf, importable by bo
 apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}.ts
 ```
 
+A primitive is registered by `defineApi()` and found by the module scan, never by its filename, so
+this app's one `actions.ts` per feature and the `actions/<verb>-<name>.ts` that `x g` writes are
+the same primitives in two valid module layouts — nothing enforces either ([Project
+layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface)).
+
 ## Cross-cutting checklist
 
 | Concern | Where to look | Proof |
@@ -91,7 +104,7 @@ apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}
 | **Realtime** | [`apps/web/app/posts/[id]/page.tsx`](apps/web/app/posts/%5Bid%5D/page.tsx) | one record, many places — two islands read `posts:<id>` from the page's store; `useChannel(ORG_POSTS)` keeps it current, `useMutation(LIKE_POST)` writes it over HTTP |
 | **Auth** | [`apps/web/app/auth/login.ts`](apps/web/app/auth/login.ts) | "log in with GitHub" is `defineAuth` + `oauthLogin`, ~12 lines; the round trip — 302 with an S256 challenge, a forged `state` refused, a session `authenticate()` resolves — is asserted in [`login.test.ts`](apps/web/app/auth/login.test.ts) against a stubbed provider, because no client id exists in CI. **Not yet reachable in a browser:** see the gotcha in [`CLAUDE.md`](CLAUDE.md) |
 | **AI-first** | [`packages/mcp/src/tools.ts`](packages/mcp/src/tools.ts) | every exposed action is an MCP tool with the *same* policy; admin ships its own MCP surface |
-| **Admin** | [`apps/admin/src/index.ts`](apps/admin/src/index.ts) | the whole dashboard, 20 lines of `defineAdmin` |
+| **Admin** | [`apps/admin/app/admin/admin.ts`](apps/admin/app/admin/admin.ts) | the whole dashboard, mounted under `/admin` by one `defineAdmin` — and the run console's operator view with no page of its own: `running` / `failed` tabs with counts, a run's events as related rows, `cancel` on a live run or a selection |
 | **Prompts** | [`apps/web/app/posts/prompts`](apps/web/app/posts/prompts) | versioned `.md` artifact + typed slots + a scored eval |
 
 ## Six test types

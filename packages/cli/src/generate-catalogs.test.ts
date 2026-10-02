@@ -87,16 +87,18 @@ describe('unit · the catalogs x g writes', () => {
     expect(paths).toContain('packages/i18n/catalogs/es.json');
   });
 
-  test('the catalog carries the admin title key the admin override resolves', () => {
-    // Emitted whether or not --admin was passed: an unused key is only reported, a missing one
-    // renders ⟦key⟧ and fails the i18n gate the moment someone writes the override by hand.
+  test('the catalog carries the keys the admin derives for the table', () => {
+    // Emitted whether or not --admin was passed: the entity is an admin screen once it is in the
+    // handle, and that screen reads `admin.<table>.title` and a label per column. The derivation
+    // itself is pinned against a real `defineAdmin()` in `templates/admin-catalog.test.ts`.
     for (const admin of [false, true]) {
       const files = generate({ kind: 'resource', name: 'invoice', admin });
-      expect(catalogOf(catalogFile(files, 'en')?.contents)['admin.invoice.title']).toBe('Invoices');
+      const catalog = catalogOf(catalogFile(files, 'en')?.contents);
+      expect(catalog['admin.invoices.title']).toBe('Invoices');
+      expect(catalog['admin.invoices.field.createdAt']).toBe('Created at');
+      // The kebab name is not the admin's key: a title under it is a label nothing reads.
+      expect(catalog['admin.invoice.title']).toBeUndefined();
     }
-    const withAdmin = generate({ kind: 'resource', name: 'invoice', admin: true });
-    const override = withAdmin.find((file) => file.path.endsWith('admin/resource.ts'));
-    expect(override?.contents).toContain("titleKey: 'admin.invoice.title'");
   });
 
   test('a locale that is really a path never becomes a catalog file', () => {

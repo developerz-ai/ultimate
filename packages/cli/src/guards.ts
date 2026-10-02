@@ -11,8 +11,8 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ERROR_DOCS_URL, renderCauseValue, renderThrowable } from '@ultimat3/core';
 import { fixProblem } from './error-contract';
+import { type GuardSources, guardSources } from './guard-sources';
 import type { Finding } from './output';
-import type { HostCheck } from './verify-step';
 
 /** The directory IS the registration. An app-side list is a list an app can forget to add to. */
 export const GUARD_DIR = 'guards';
@@ -24,8 +24,13 @@ export interface Guard {
    * The rule, over the app root. Returns findings — it never prints, never decides an exit code
    * and never throws for a normal result, because `--json`, the step table and the exit code are
    * all projections of what it returns (axiom 2).
+   *
+   * `sources` is the run's ONE read of the app (`guard-sources.ts`): a guard that asks it for
+   * files or a compiled stylesheet shares the walk, the read and the compile with every other
+   * guard in the directory. A guard that reads something else — a migration, a lockfile — still
+   * may, from `root`.
    */
-  check(root: string): Promise<readonly Finding[]> | readonly Finding[];
+  check(root: string, sources: GuardSources): Promise<readonly Finding[]> | readonly Finding[];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -129,7 +134,11 @@ const findingInvalid = (path: string, cause: string): Finding => ({
 const messageOf = (error: unknown): string => renderThrowable(error);
 
 /** One guard: import it, run it, and hold what it returns to the contract. Never throws. */
-async function runGuard(root: string, path: string): Promise<readonly Finding[]> {
+async function runGuard(
+  root: string,
+  path: string,
+  sources: GuardSources,
+): Promise<readonly Finding[]> {
   let loaded: unknown;
   try {
     loaded = await import(pathToFileURL(join(root, path)).href);
@@ -149,7 +158,7 @@ async function runGuard(root: string, path: string): Promise<readonly Finding[]>
   }
   let returned: unknown;
   try {
-    returned = await exported.check(root);
+    returned = await exported.check(root, sources);
   } catch (error) {
     return [failed(path, `${path} ("${exported.summary}") threw: ${messageOf(error)}`)];
   }
@@ -173,14 +182,21 @@ async function runGuard(root: string, path: string): Promise<readonly Finding[]>
 }
 
 /**
- * Every guard this app declares, as findings the step it rides on adds to its own. Typed as a
+ * Every guard this app declares, as findings the step it rides on adds to its own. Shaped as a
  * `HostCheck` because that is exactly the seam's shape — a rule the repo enforces on itself,
  * contributed to a step that already exists. A guard can never add, remove, reorder or skip a
  * step, which is what keeps "green" meaning one thing (axiom 5) while the app still gets to make
  * its own convention a build error.
  */
-export const guardFindings: HostCheck = async (root) => {
+export const guardFindings = async (
+  root: string,
+  /** Files the step already read (`guardSources`' seed), so no guard reads one a second time. */
+  seed: readonly { readonly path: string; readonly source: string }[] = [],
+): Promise<readonly Finding[]> => {
   const findings: Finding[] = [];
-  for (const path of await guardPaths(root)) findings.push(...(await runGuard(root, path)));
+  const sources = guardSources(root, seed);
+  for (const path of await guardPaths(root)) {
+    findings.push(...(await runGuard(root, path, sources)));
+  }
   return findings;
 };

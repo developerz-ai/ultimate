@@ -1,46 +1,69 @@
-// The web and background roles' boot, after the services are up: the app loaded, its route table
-// built, the roles started. Split from `serve.ts` (the entry points) at its line ceiling; the rules
-// that file's header states — the SAME boot `x dev` runs, minus the watcher, `/_x` and `dev: true`
-// — are this file's.
+// The serving roles' boot: the services started, the app loaded, its route table built, the roles
+// started. Behind ONE `await import()` in `serve.ts` (the entry points), so `ROLE=migrate` loads
+// none of it; the rules that file's header states — the SAME boot `x dev` runs, minus the watcher,
+// `/_x` and `dev: true` — are this file's. A role imports what it runs: the web surface
+// (`serve-web.ts`) and the manifest projection are behind `await import()` in turn, so a worker's
+// module graph holds neither.
 
 import type { Role } from '@ultimat3/core';
-import { configureLifecycle } from '@ultimat3/core';
-import type { Route } from '@ultimat3/http';
-import { describeRoutes } from '@ultimat3/render';
-import { createIsrController } from '@ultimat3/render/server';
-import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
-import { loadSignInPath } from './app-auth';
-import { loadApp } from './app-load';
-import { appManifest } from './app-manifest';
-import { mountAppMcp } from './app-mcp';
-import { errorPageStyleSources } from './error-page-csp';
-import { islandRoutes } from './island-routes';
-import { loadOrBuildIslands } from './island-store';
+import { configureLifecycle, logger } from '@ultimat3/core';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
-import { loadNavigation, pageNavigation } from './page-navigation';
-import { loadSpeculation, pageSpeculation } from './page-speculation';
-import { pageSync } from './page-sync';
-import { loadPwaArtifacts } from './pwa-artifacts';
+import { loadAppForRole, roleLoadFor } from './role-load';
 import { startRoles } from './role-start';
-import { assetRoutes } from './runtime-assets';
-import { appRoutes } from './runtime-render';
+import { resolveServices } from './runtime-bindings';
 import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
-import { servedStorage, storageRoutes } from './runtime-storage';
-import { seoRoutes } from './seo-routes';
+import { startServices } from './runtime-services';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
+import { adoptPrebuiltStyles, reportBootBuilds, watchBootBuilds } from './serve-prebuilt';
 import type { ServedApp, ServeOptions } from './serve-types';
-import { loadSiteSettings, publicOrigin } from './site-config';
-import { styleBundle } from './style-bundle';
-import { styleRoutes } from './style-routes';
-import { serviceWorkerArtifacts } from './sw-artifacts';
-import { serviceWorkerRoutes } from './sw-routes';
-import { loadThemeMode, themeBoot } from './theme-boot';
+
+/**
+ * The build stamps `BUILD_ID` into the image; unstamped, the manifest's content hash is the same
+ * answer computed here, so `x-ultimate-build` is never absent and never a lie. Projected only when
+ * unstamped, because a stamped image already paid for it at build time and a replica's boot should
+ * not repeat it. The projection describes the WHOLE app — routes included — so an unstamped worker
+ * imports everything its own load left out, and says so.
+ */
+async function buildIdFor(options: ServeOptions, role: Role): Promise<string> {
+  const stamped = options.env['BUILD_ID'];
+  if (stamped !== undefined && stamped.length > 0) return stamped;
+  if (roleLoadFor(role) === 'background') {
+    logger.warn('ultimate build id unstamped', {
+      role,
+      cause:
+        'BUILD_ID is unset, so this role imported every page of the app to compute the build id the web role serves',
+      fix: 'x build --target docker',
+    });
+  }
+  const { appManifest } = await import('./app-manifest');
+  return (await appManifest(options.root)).manifest.buildId;
+}
+
+/**
+ * Everything `serveApp` does after the scrape listener is open: the services, then the roles over
+ * them. One export, so `serve.ts` reaches the whole serving graph through ONE `await import()`.
+ */
+export async function bootServing(boot: {
+  readonly options: ServeOptions;
+  readonly role: Role;
+  readonly acquired: (() => void | Promise<void>)[];
+  readonly metrics: MetricsEndpoint;
+}): Promise<ServedApp> {
+  const { options } = boot;
+  const runtime = await startServices(
+    resolveServices(options.root, options.env),
+    options.env,
+    options.runtime,
+  );
+  boot.acquired.push(() => runtime.stop());
+  return bootRoles({ ...boot, runtime });
+}
 
 /** The half of `serveApp` whose every acquisition is registered for rollback. */
-export async function bootRoles(boot: {
+async function bootRoles(boot: {
   readonly options: ServeOptions;
   readonly role: Role;
   readonly runtime: RunningServices;
@@ -49,18 +72,19 @@ export async function bootRoles(boot: {
   readonly metrics: MetricsEndpoint;
 }): Promise<ServedApp> {
   const { options, role, runtime, acquired, metrics } = boot;
+  // The image's compiled stylesheets, before the first page is imported — importing one IS
+  // compiling its sheet — and the count of what this boot compiles anyway.
+  adoptPrebuiltStyles(options.root);
+  const bootBuilds = watchBootBuilds();
   // Importing the app's modules IS the registration: every route, action and job below is
-  // whatever this call put in the registries.
-  await loadApp(options.root);
-  // The build stamps `BUILD_ID` into the image; unstamped, the manifest's content hash is the same
-  // answer computed here, so `x-ultimate-build` is never absent and never a lie. Projected only
-  // when unstamped, because a stamped image already paid for it at build time and a replica's boot
-  // should not repeat it — the load above is the part every boot needs either way.
-  const stamped = options.env['BUILD_ID'];
-  const buildId =
-    stamped !== undefined && stamped.length > 0
-      ? stamped
-      : (await appManifest(options.root)).manifest.buildId;
+  // whatever this call put in the registries — for THIS role (`role-load.ts`).
+  const loaded = await loadAppForRole(options.root, role);
+  // A module that would not import registered nothing, and a process that only logs the roles it
+  // started gives no sign of it: each one is a line an operator can act on.
+  for (const finding of loaded.findings) {
+    logger.error('ultimate app module failed to load', { role, ...finding });
+  }
+  const buildId = await buildIdFor(options, role);
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.
   configureReporting(options.env, buildId);
@@ -72,8 +96,16 @@ export async function bootRoles(boot: {
   acquired.push(stopOtlp);
   // Only the web role serves pages, so only it builds islands and assembles a route table: a
   // worker, scheduler, sync or replicator pod compiled every island of the app on every boot for
-  // nothing it would ever serve (plan 101, slice 12 e).
-  const web = role === 'web' ? await webSurface(options, runtime, buildId) : undefined;
+  // nothing it would ever serve (plan 101, slice 12 e). The MODULE is the web role's as well —
+  // imported here, it is render, PWA, SEO and MCP code no other role evaluates.
+  const web =
+    role === 'web'
+      ? await (await import('./serve-web')).webSurface(options, runtime, buildId)
+      : undefined;
+  // Islands and stylesheets are the image build's to make (`x build --target prebuilt`). A role
+  // that made either here served correctly and paid for it — seconds of CPU and a compiler's
+  // memory, on every start of every replica — so it says so once, with the Dockerfile line.
+  reportBootBuilds(role, bootBuilds(web?.islandsBuilt));
   const port = options.port ?? portFromEnv(options.env);
   // An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
   // fixed 9090 would fail the next suite to boot beside it. An environment that names the port
@@ -93,13 +125,15 @@ export async function bootRoles(boot: {
     runtime,
     routes: web?.routes ?? [],
     env: options.env,
-    // Same declaration `x dev` reads. Without it a container answers a browser that opened a
-    // guarded page with the problem document, rendered as raw JSON in the viewport.
-    signInPath: await loadSignInPath(options.root),
-    // The enforced policy this process sends must admit the app's own error pages' `<style>` and
-    // the theme boot the documents carry; `x dev` is report-only, so only here was it a blank page.
-    inlineStyles: web === undefined ? [] : await errorPageStyleSources(options.root),
-    inlineScripts: web === undefined ? [] : web.inlineScripts,
+    // The three facts only a process serving documents has (`WebSurface`); `startWeb` is their
+    // one reader, so every other role hands none.
+    ...(web === undefined
+      ? {}
+      : {
+          signInPath: web.signInPath,
+          inlineStyles: web.inlineStyles,
+          inlineScripts: web.inlineScripts,
+        }),
     // The app's own `apps/web/site/errors/<status>.html`, resolved inside `startWeb` so this
     // process and `x dev` cannot answer a browser differently.
     root: options.root,
@@ -127,111 +161,5 @@ export async function bootRoles(boot: {
       // the final counter snapshot still have somewhere to go.
       stopOtlp();
     },
-  };
-}
-
-/** What only the web role serves: its islands, its documents and every route beside them. */
-async function webSurface(
-  options: ServeOptions,
-  runtime: RunningServices,
-  buildId: string,
-): Promise<{ readonly routes: readonly Route[]; readonly inlineScripts: readonly string[] }> {
-  // Read from the store `x build --target docker` wrote and VERIFIED against this app and this
-  // runtime (`island-store.ts`); built here only when there is no store to trust, which is correct
-  // and slower, and logged with its reason.
-  const islands = await loadOrBuildIslands(options.root);
-  // The same two strings `x dev` resolves, from the same reader: a `<link rel="manifest">` served
-  // on a laptop and absent in the image is exactly the dev/prod difference this file exists to
-  // prevent, and it is the one an operator cannot see without installing the app.
-  const pwa = await loadPwaArtifacts(options.root);
-  const theme = themeBoot(await loadThemeMode(options.root));
-  // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
-  const site = await loadSiteSettings(options.root);
-  const origin = publicOrigin(options.env, site);
-  // The page's sync target and its scripts — the same call `x dev` makes, so the two cannot differ.
-  // Before the service worker, which precaches those scripts.
-  const sync = await pageSync(options.root, options.env, buildId, runtime.realtime);
-  // The client router, when a surface opted in (`navigation.client`) — the same call in both boots.
-  const declared = await loadNavigation(options.root);
-  const navigation = await pageNavigation(options.root, declared, buildId);
-  // The browser's own prefetch, for the documents that carry no router (`navigation.speculation`).
-  const speculation = pageSpeculation({
-    config: await loadSpeculation(options.root),
-    client: declared.surfaces,
-  });
-  // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
-  // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
-  // route added here cannot be missing from the precache manifest.
-  const serviceWorker =
-    pwa === undefined
-      ? undefined
-      : serviceWorkerArtifacts({
-          pwa,
-          buildId,
-          routes: describeRoutes(),
-          islands,
-          styles: styleBundle(),
-          scripts: [
-            ...sync.scripts,
-            ...(navigation.script === undefined ? [] : [navigation.script]),
-          ],
-        });
-  // The app's own MCP endpoint, through the same call `x dev` makes — see `app-mcp.ts`.
-  const mcpMount = await mountAppMcp(options.root);
-  // The app's own disks when it declared any (`defineStorage` in an app module), else this boot's.
-  const served = servedStorage(runtime.storage);
-  const routes: readonly Route[] = [
-    ...apiRoutes(),
-    // The bearer doors onto a cut of the same routes (`defineApi({ http: { mounts } })`), counted
-    // on the store this boot's limiter uses, so one token's allowance is one number fleet-wide.
-    ...apiMountRoutes(options.runtime?.rateLimitStore ?? runtime.rateLimitStore),
-    ...mcpMount.routes,
-    // The app's own plain routes (`apps/<app>/runtime.ts` `routes`), before any page can shadow one.
-    ...(options.runtime?.routes ?? []),
-    ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
-    ...assetRoutes({
-      root: options.root,
-      storage: served,
-      ...(options.runtime?.images === undefined ? {} : { images: options.runtime.images }),
-      ...(pwa === undefined ? {} : { pwa }),
-    }),
-    ...storageRoutes({ storage: served }),
-    ...islandRoutes(() => islands),
-    // The surface stylesheets the documents link. Built from the registry the `loadApp` above
-    // filled, so this process serves exactly the CSS it renders against.
-    ...styleRoutes(() => styleBundle()),
-    // `robots.txt` and `sitemap.xml`, the same two files the static export writes (`site-seo.ts`).
-    ...seoRoutes({ env: options.env, site, root: options.root }),
-    // The page's one socket: its worker script, served beside the islands for their reason.
-    ...sync.routes,
-    ...navigation.routes,
-    // A page's `POST`, bound to an action (`defineRoute({ post })`) — beside the page's `GET`.
-    ...pagePostRoutes(),
-    ...appRoutes({
-      buildId,
-      resolveIsland: (file) => islands.resolverFor(file),
-      ...(sync.head === undefined ? {} : { sync: sync.head }),
-      persisted: sync.persisted,
-      ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
-      themeHead: theme.head,
-      ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
-      // A `static` page is the same bytes for every request of this process: rendered once.
-      memoStatic: true,
-      ...(origin === undefined ? {} : { origin }),
-      ...(pwa === undefined
-        ? {}
-        : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
-      // Only when a store was supplied. `createIsrController` defaults to a per-process memory
-      // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of
-      // the fleet while the other eleven keep serving the page it just invalidated.
-      ...(options.runtime?.isrStore === undefined
-        ? {}
-        : { isr: createIsrController({ buildId, store: options.runtime.isrStore }) }),
-    }),
-  ];
-  return {
-    routes,
-    // The theme boot and the speculation rules: the two inline bodies every document may carry.
-    inlineScripts: [theme.cspSource, ...(speculation === undefined ? [] : [speculation.cspSource])],
   };
 }

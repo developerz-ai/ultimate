@@ -288,8 +288,12 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // signature — for every label, so a seeded post's columns were untyped and this rename could
     // not reach the fixture that writes one. It answers the entity's own row type now, keyed off
     // the `<entity>:<name>` label, so `db.posts.insert({ excerpt })` there is a real hop.
+    //
+    // `post-excerpts.test.ts` joined it 2026-10-01: the sweep's handler finally has a test that
+    // RUNS it, and that test stores posts and reads their `excerpt` back through the typed handle.
     const touchedFiles = [
       'apps/web/app/posts/backfills/post-excerpts.job.test.ts',
+      'apps/web/app/posts/backfills/post-excerpts.test.ts',
       'apps/web/app/posts/backfills/post-excerpts.ts',
       'apps/web/app/posts/entity.ts',
       'apps/web/app/posts/repo.ts',
@@ -344,7 +348,9 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // `packages/cli/src/scaffold-typecheck.ts` uses for pinned compiler drift.
     expect(new Set(introduced.map((d) => d.file))).toEqual(new Set(touchedFiles));
     // 22 as of 2026-08-24: 21, plus the one `scripts/test-setup.test.ts` now contributes.
-    expect(introduced).toHaveLength(22);
+    // 26 as of 2026-10-01: the sweep's handler writes `{ excerpt }` by primary key (2 more in
+    // `post-excerpts.ts`), and `post-excerpts.test.ts` stores and reads the column (2).
+    expect(introduced).toHaveLength(26);
 
     // `entity.ts`: the view's field list no longer names a real column (hop 4).
     expect(

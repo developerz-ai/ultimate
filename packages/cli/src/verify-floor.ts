@@ -9,8 +9,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
+import type { CoverageFloor } from './coverage-floor';
+import { COVERAGE_FIELD, readCoverageFloor } from './coverage-floor';
 import type { Finding } from './output';
-import { VERIFY_STEP_NAMES } from './verify-step';
+import type { StepTimeouts } from './verify-deadline';
+import { readStepTimeouts, STEP_TIMEOUT_FIELD } from './verify-deadline';
+import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
 
 /** Hand-written and committed, beside the generated `x.manifest.json` the same gate reads. */
 export const VERIFY_FLOOR_FILE = 'x.verify.json';
@@ -48,6 +52,16 @@ export interface VerifyFloor {
    * says `true` here once, in the file that configures the gate, and `x test`/`x verify` honour it.
    */
   readonly isolate?: boolean;
+  /**
+   * A step's own deadline in milliseconds, beating its class's declared number
+   * (`verify-deadline.ts`). A step past it is `X_VERIFY_STEP_TIMEOUT`, by name.
+   */
+  readonly stepTimeoutMs?: StepTimeouts;
+  /**
+   * The coverage the `unit` step must hold, of the app's whole source tree (`coverage-floor.ts`).
+   * Absent in an app is `X_COVERAGE_FLOOR_UNSTATED`: no app is held to a number it did not write.
+   */
+  readonly coverage?: CoverageFloor;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
   readonly problems: readonly string[];
 }
@@ -147,18 +161,27 @@ export function parseVerifyFloor(
   const budget = readBudget(record);
   const typecheckBin = readTypecheckBin(record);
   const isolate = readIsolate(record);
+  const timeouts = readStepTimeouts(record, declared);
+  const coverage = readCoverageFloor(record);
+  const rest = {
+    ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
+    ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
+    ...(isolate.isolate === undefined ? {} : { isolate: isolate.isolate }),
+    ...(timeouts.timeouts === undefined ? {} : { stepTimeoutMs: timeouts.timeouts }),
+    ...(coverage.coverage === undefined ? {} : { coverage: coverage.coverage }),
+  };
   const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
     return {
       steps: [],
-      ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
-      ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
-      ...(isolate.isolate === undefined ? {} : { isolate: isolate.isolate }),
+      ...rest,
       problems: [
         'it has no "steps" array of step names',
         ...budget.problems,
         ...typecheckBin.problems,
         ...isolate.problems,
+        ...timeouts.problems,
+        ...coverage.problems,
       ],
     };
   }
@@ -166,9 +189,7 @@ export function parseVerifyFloor(
   const unknown = named.filter((step) => !declared.includes(step));
   return {
     steps: named.filter((step) => declared.includes(step)),
-    ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
-    ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
-    ...(isolate.isolate === undefined ? {} : { isolate: isolate.isolate }),
+    ...rest,
     problems: [
       ...isolate.problems,
       ...(named.length === steps.length ? [] : ['"steps" holds an entry that is not a string']),
@@ -177,6 +198,8 @@ export function parseVerifyFloor(
         ? []
         : [`"steps" names ${unknown.join(', ')}, which x verify does not run`]),
       ...budget.problems,
+      ...timeouts.problems,
+      ...coverage.problems,
     ],
   };
 }
@@ -206,10 +229,10 @@ export const floorRequires = (floor: VerifyFloor | undefined, step: string): boo
  * command that rewrites the floor is the gate editing its own ratchet, which is the false green the
  * floor exists to close — so the run that proves the step is back is what this offers to repeat.
  */
-export const vanishedSuiteFinding = (step: string): Finding => ({
+export const vanishedSuiteFinding = (step: string, command: string = GATE_COMMAND): Finding => ({
   code: 'X_VERIFY_SUITE_VANISHED',
   cause: `${VERIFY_FLOOR_FILE} requires the ${step} step and this run found nothing for it to check`,
-  fix: `x verify --json   # restore the ${step} suite, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
+  fix: `${command} --json   # restore the ${step} suite, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
   docs: ERROR_DOCS_URL,
   at: VERIFY_FLOOR_FILE,
 });
@@ -262,5 +285,9 @@ const fixFor = (problem: string): string => {
     return `x verify --json   # then set "${BUDGET_FIELD}" in ${VERIFY_FLOOR_FILE} to a positive whole number of bytes, or drop the key for the ${AGENTS_MD_MAX_BYTES}B default`;
   if (problem.includes(`"${TYPECHECK_BIN_FIELD}"`))
     return `x verify --json   # then set "${TYPECHECK_BIN_FIELD}" in ${VERIFY_FLOOR_FILE} to a non-empty binary name, or drop the key to run tsc`;
+  if (problem.includes(`"${STEP_TIMEOUT_FIELD}"`))
+    return `x verify --json   # then write "${STEP_TIMEOUT_FIELD}" in ${VERIFY_FLOOR_FILE} as { "unit": 900000 } — a step it runs, a whole number of milliseconds`;
+  if (problem.includes(`"${COVERAGE_FIELD}`))
+    return `x verify --only unit --json   # then write "${COVERAGE_FIELD}" in ${VERIFY_FLOOR_FILE} as { "lines": 95, "funcs": 95 }, every "exclude" entry as { "glob": "…", "why": "…" }`;
   return `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`;
 };

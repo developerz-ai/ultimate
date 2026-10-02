@@ -84,6 +84,7 @@ The body always opens with a `target_info` gauge carrying the service identity, 
 | A separate port, not beside `/healthz` | the Helm ingress routes `/` `Prefix` to the web Service with no path exclusion, so `/metrics` on 3000 publishes your route patterns, request volumes and error rates to the internet. Nothing in the chart fronts 9090, so it is cluster-internal by construction rather than by an exclusion somebody has to remember |
 | Every role, not just `web` | `worker`, `scheduler` and `replicator` open no HTTP socket at all — a separate listener is the only thing they can ever be scraped on, and `queue_depth` belongs to `worker` |
 | Its own env var, not `PORT + n` | moving the app port must not silently move the port Prometheus is configured against, and the roles that set no `PORT` still need one |
+| `x dev` with no `METRICS_PORT` moves off a taken port | two apps on one laptop both default to 9090: the second binds a free port, logs `ultimate metrics port taken`, and reports the real URL in `x dev --json`'s `metrics`. A declared `METRICS_PORT`, and every container, refuses with `X_PORT_IN_USE` — a scraper was told that port |
 | Answered outside the request pipeline | no auth stage, no rate limit, no locale — a saturated or draining process must still be able to say how saturated it is. Same shape as `/healthz` |
 
 ## The series autoscaling reads
@@ -112,6 +113,30 @@ All five are wired `As of 2026-08`, each in the package that owns the event:
 | `recordQueueDepth` | `packages/jobs/src/worker.ts` — top of `tick()` | throttled to 15s, not per poll: `driver.stats()` aggregates the whole jobs table, and a scrape reads it every ~15s anyway. Records `ready` only — a job parked until Tuesday is not backlog. A `stats()` failure is logged and never costs a tick |
 | `recordJob` | `packages/jobs/src/worker.ts` — the outcome branch of a finished job | labelled by queue and outcome only; a label per job name is unbounded in the app's own vocabulary. `suspended` is deliberately unmapped — parking a run with `step.sleep` is control flow, and counting it would make the failure ratio meaningless |
 | `recordLeaseLost` | `packages/jobs/src/heartbeat.ts` — once per job whose lease lapsed | the worker could not renew the visibility window for longer than the window itself, so the queue is free to hand that job to another worker while this one still runs it. One point = one job that ran twice. Alert on any non-zero rate |
+
+### What every process reports about itself
+
+Declared in `process-metrics.ts` and `packages/db/src/pool-gauge.ts`, started by the scrape listener — so every role that can be scraped answers them, `worker` and `scheduler` included. `As of 2026-10`.
+
+| Name | Kind | Unit | Labels | Reads |
+|---|---|---|---|---|
+| `process_resident_memory_bytes` | gauge | `By` | none | RSS — what the container is charged for |
+| `process_heap_used_bytes` | gauge | `By` | none | JavaScript heap in use, uncollected garbage included; Bun may report it a few percent above `process_heap_total_bytes` |
+| `process_heap_total_bytes` | gauge | `By` | none | heap the engine has reserved |
+| `process_external_memory_bytes` | gauge | `By` | none | buffers, strings and compiled code held outside the heap |
+| `process_cpu_seconds_total` | counter | `s` | none | user + system CPU; the boot's share is counted at start |
+| `process_event_loop_lag_seconds` | histogram | `s` | none | how late a 1,000 ms timer fired, one sample a second |
+| `process_start_time_seconds` | gauge | `s` | none | Unix time the process started |
+| `process_info` | gauge | `1` | `role` | always 1; `role` is `ROLE`, or `x dev`'s roles joined by `+` |
+| `db_pool_max` | gauge | `{connection}` | none | connections this process may open, summed over its pools |
+| `db_pool_in_use` | gauge | `{connection}` | none | connections running a statement or pinned by a transaction |
+| `db_pool_waiting` | gauge | `{statement}` | none | statements and pins queued because the pool is at `max` |
+
+- **Cost**: one unref'd timer wake a second — 0.12 millicore measured, on top of the 1.8 an idle Bun process spends — and ~12 µs per reading (`process.memoryUsage()` + `process.cpuUsage()`); a scrape reads the gauges at collection time.
+- **No GC count, no heap object count.** Bun exposes neither cheaply: `bun:jsc`'s `heapStats()` runs a full collection to answer — 9 ms on a process holding only the framework.
+- **The pool series are derived from demand.** `Bun.SQL` publishes no occupancy, so `client.ts` counts every statement from send to settle and every pin from ask to release: demand up to `max` is in use, the rest is waiting. `db_pool_max - db_pool_in_use` is the headroom; there is no idle count.
+- **`queue_wake_live`** (gauge, `worker` only): 1 once a notification has crossed the worker's `LISTEN` session, 0 while jobs start on the poll alone — a transaction-pooling proxy disables the wake without an error.
+- **What grows?** `process_resident_memory_bytes` rising with `process_heap_used_bytes` flat is memory outside the heap (`process_external_memory_bytes`, or the allocator); both rising is a retained structure.
 
 ### The one series a `sync` node adds
 

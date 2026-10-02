@@ -41,7 +41,7 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   schema: 5,
   seo: 4,
   storage: 3,
-  testing: 6,
+  testing: 5,
   time: 1,
   ui: 4,
 };

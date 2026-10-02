@@ -2,13 +2,18 @@
 // generator run on top of the one that carries an app. Separate from the compiler harness next to
 // it, because "which scaffolds exist" is a fact about the CLI's surface, not about running `tsc`.
 
+import { withAdminResources } from './admin-registration';
 import type { GenerateOptions } from './cmd-generate';
 import { dedupe, generate } from './cmd-generate';
 import { planNewApp } from './cmd-new';
+import { withHandleEntries } from './handle-registration';
 import type { GeneratedFile } from './templates';
 
 /** The app the fixture scaffolds. Kebab, multi-word: single-word names hide casing bugs. */
 export const FIXTURE_APP = 'ledger-demo';
+
+/** The fixture app's db package, as `x new` names it. */
+const FIXTURE_DB = `@${FIXTURE_APP}/db`;
 
 /**
  * An `errors.ts` an author wrote: it declares what the slice throws, and not the generated name.
@@ -126,10 +131,16 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
 
 /** The whole scaffolded surface: a new app, then every generator run inside it. */
 export function scaffoldFixture(): readonly GeneratedFile[] {
-  return dedupe([
+  const files = dedupe([
     ...planNewApp({ name: FIXTURE_APP, example: true }),
-    ...FIXTURE_GENERATORS.flatMap((options) => generate(options)),
+    // `dbModule` is what `x g` reads off the app's own `packages/db/package.json`: without it the
+    // generated repos import the handle from a placeholder package this sandbox does not have.
+    ...FIXTURE_GENERATORS.flatMap((options) => generate({ ...options, dbModule: FIXTURE_DB })),
   ]);
+  // What `x g` does on disk after it writes: each generated entity joins the handle's set.
+  // …and each `--admin` override joins the admin's `resources:`, so its type is compiled where
+  // `defineAdmin()` reads it.
+  return withAdminResources(withHandleEntries(files, FIXTURE_DB), `@${FIXTURE_APP}/web`);
 }
 
 export interface ScaffoldVariant {

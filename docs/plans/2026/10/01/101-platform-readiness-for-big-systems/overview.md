@@ -80,6 +80,10 @@ service itself is a later plan in its own repo; this plan is framework work only
 Land lowest tier first. Every new import goes down: `entity → core`, `scraping → core`,
 `scraping → jobs`. Nothing is added to `SIDEWAYS_ALLOW`.
 
+> **Note, 2026-10-01:** every `onDead` on this page shipped as ONE `onSettled` hook the same day
+> (`completed`, `dead-lettered`, `dropped`, `refused`; `packages/jobs/src/settled.ts`). Status per
+> slice: [`status.yml`](status.yml).
+
 ## Plan files (execute in order)
 1. [`01-core-seal.md`](01-core-seal.md) — tier 0: one value sealed under the master key.
 2. [`02-db-schema-dump.md`](02-db-schema-dump.md) — tier 1: the whole schema as generated, deterministic SQL files.

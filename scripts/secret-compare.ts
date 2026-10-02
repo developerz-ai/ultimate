@@ -43,11 +43,20 @@ import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
-import { isInert, namesASecret, operandAfter, operandBefore } from './lib/secret-compare-operands';
+import type { SiteProbe } from './lib/ratchet-sites';
+import { leadSite, newSitesFirst, siteList } from './lib/ratchet-sites';
+import {
+  isInert,
+  namesASecret,
+  operandAfter,
+  operandBefore,
+  predicateElementAt,
+} from './lib/secret-compare-operands';
 import { SECRET_COMPARE_PINS, SECRET_PINS_FILE } from './lib/secret-compare-pins';
 import { isTestPath, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'secret-compare';
+const EXPLAIN = 'bun run scripts/secret-compare.ts --explain --json lists every one';
 
 // The vocabulary and the two operand walks live in `lib/secret-compare-operands.ts` — this file
 // reached its 500-line ceiling when it learned the other four comparisons. Re-exported BY NAME so
@@ -153,12 +162,14 @@ export function scanSecretCompares(
   code: string = maskLiterals(source),
 ): readonly SecretCompareSite[] {
   const sites: SecretCompareSite[] = [];
+  const elementAt = predicateElementAt(code);
   for (const match of code.matchAll(EQUALITY)) {
     const at = match.index;
     const left = operandBefore(code, at);
     const right = operandAfter(code, at + match[0].length);
     if (isInert(left) || isInert(right)) continue;
-    const name = namesASecret(left) ?? namesASecret(right);
+    const element = elementAt(at);
+    const name = namesASecret(left, element) ?? namesASecret(right, element);
     if (name === undefined) continue;
     sites.push({
       path,
@@ -178,10 +189,11 @@ export function scanSecretCompares(
       // stake. A PREFIX test is symmetric — `sessionToken.startsWith(given)` puts the secret on the
       // receiver — so both sides are read there and only there.
       if (isInert(argument) || isInert(receiver)) continue;
+      const element = elementAt(at);
       const name =
         kind === 'prefix'
-          ? (namesASecret(argument) ?? namesASecret(receiver))
-          : namesASecret(argument);
+          ? (namesASecret(argument, element) ?? namesASecret(receiver, element))
+          : namesASecret(argument, element);
       if (name === undefined) continue;
       sites.push({
         path,
@@ -254,12 +266,26 @@ export const checkSecretCompares = (input: SecretCompareInput): readonly SecretC
 const at = (site: SecretCompareSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
-const overFinding = (gap: SecretCompareGap): Finding => ({
-  code: 'X_SECRET_COMPARED_UNSAFELY',
-  cause: `${gap.pkg} compares a value named as a secret with a short-circuiting operator in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${at(gap.first)} writes \`${gap.first?.source ?? ''}\`, whose running time depends on how many leading bytes match, so an attacker learns the value one byte at a time`,
-  fix: `replace the comparison at ${at(gap.first)} with timingSafeEqual(a, b) from @ultimat3/core; if "${gap.first?.name ?? ''}" is not a secret, add ${gap.pkg} to SECRET_COMPARE_PINS in ${SECRET_PINS_FILE} with the sentence saying what it is`,
-  at: at(gap.first),
-});
+/**
+ * EVERY comparison, never only the first — `ratchet.ts`'s `sites` says why: the first site of a
+ * package is usually pinned already, and the one that took it over the pin is the newest.
+ */
+const overFinding = (gap: SecretCompareGap): Finding => {
+  const sites = gap.sites ?? (gap.first === undefined ? [] : [gap.first]);
+  const listed = siteList(gap, (site) => `${at(site)} \`${site.source}\``, EXPLAIN);
+  const [only] = sites;
+  const where =
+    sites.length === 1 && only !== undefined
+      ? `the comparison at ${at(only)}`
+      : `${String(gap.found - gap.pinned)} of the ${String(sites.length)} comparisons the cause lists — the one this change added —`;
+  const named = sites.length === 1 && only !== undefined ? `"${only.name}"` : 'the value';
+  return {
+    code: 'X_SECRET_COMPARED_UNSAFELY',
+    cause: `${gap.pkg} compares a value named as a secret with a short-circuiting operator in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${listed} — whose running time depends on how many leading bytes match, so an attacker learns the value one byte at a time`,
+    fix: `replace ${where} with timingSafeEqual(a, b) from @ultimat3/core; if ${named} is not a secret, add ${gap.pkg} to SECRET_COMPARE_PINS in ${SECRET_PINS_FILE} with the sentence saying what it is`,
+    at: at(leadSite(gap)),
+  };
+};
 
 const staleFinding = (gap: SecretCompareGap): Finding => ({
   code: 'X_SECRET_COMPARE_PIN_STALE',
@@ -298,8 +324,17 @@ export const secretCompareSites = async (root: string): Promise<readonly SecretC
     isTestPath(file.path) ? [] : scanSecretCompares(file.path, file.source, file.masked),
   );
 
+const PROBE: SiteProbe<SecretCompareSite> = {
+  rescan: (path, source) => scanSecretCompares(path, source),
+  line: (site) => site.line,
+};
+
 export const secretCompareGaps = async (root: string): Promise<readonly SecretCompareGap[]> =>
-  ratchetGaps(await secretCompareSites(root), SECRET_COMPARE_PINS, true);
+  newSitesFirst(
+    root,
+    ratchetGaps(await secretCompareSites(root), SECRET_COMPARE_PINS, true),
+    PROBE,
+  );
 
 /** What this rule contributes to `x verify`, through its own test file. */
 export const secretCompareFindings = async (root: string): Promise<readonly Finding[]> =>
@@ -312,6 +347,7 @@ if (import.meta.main) {
     pins: SECRET_COMPARE_PINS,
     sites: secretCompareSites,
     findingFor: secretCompareFindingFor,
+    probe: PROBE,
     clean:
       'no package compares a secret-named value with ===, !==, .includes(), .indexOf(), a prefix test, a switch or deepEquals above its pin',
   });

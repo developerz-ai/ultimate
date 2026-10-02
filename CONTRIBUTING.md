@@ -19,7 +19,10 @@ embedded Postgres (PGlite), in-process events, and S3 to a local directory.
 | `bin/dev <args>` | run the `x` CLI from source: `bin/dev verify --json` |
 | `bin/check` | the CI gate, locally |
 | `bun run test` | every package's tests, opt-in suites included; `examples/` is gated by its own `x verify` |
+| `bunx tsc --noEmit -p packages/<pkg>/tsconfig.json` | one package's types, when `tsc -b` stops in another project; the package's `tsconfig.json` excludes its tests, so `bun run scripts/test-typecheck-gate.ts` checks those |
 | `bun run scripts/help.ts` | the full script catalogue |
+| `docker compose -f docker/docker-compose.test.yml up -d --wait` | the test services: two Postgres servers (pgvector, and one with `wal_level=logical`), Redis, NATS, an S3 gateway — all in RAM, no fsync, no logs. `down` leaves nothing |
+| `set -a; . docker/test-services.env; set +a` | points the suites at them (`TEST_*_URL`). Without it every live suite skips; with it `bun run verify` runs what CI runs |
 
 ## ✅ The gate
 
@@ -56,11 +59,11 @@ edge is listed in `scripts/lib/tiers.ts`, never upward.
 | Tier | Packages | May import |
 |---|---|---|
 | 0 | `core` `schema` | — |
-| 1 | `i18n` `money` `time` `cache` `seo` `db` `storage` | 0 |
+| 1 | `i18n` `money` `time` `cache` `seo` `db` `storage` `flags` | 0 |
 | 2 | `entity` `policy` `http` `auth` | 0–1 |
 | 3 | `action` `query` `jobs` `realtime` | 0–2 |
-| 4 | `render` `pwa` `mcp` `ai` `manifest` `mail` | 0–3 |
-| 5 | `ui` `admin` `testing` `cli` | 0–4 |
+| 4 | `render` `pwa` `mcp` `ai` `manifest` `mail` `ui` `notify` | 0–3 |
+| 5 | `admin` `testing` `cli` `scraping` | 0–4 |
 
 ```sh
 bun run scripts/boundaries.ts --json

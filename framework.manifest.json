@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "257babf9c5678a651dec492d47ebf4a122358ec16ad47504c53149613f4f31b2",
+  "buildId": "3c59031c99d7fbc586d0c035b3a8d03737ec2871867b0b40f6ff9f3d12c76174",
   "tiers": {
     "0": [
       "core",
@@ -300,6 +300,11 @@
       "at": "packages/admin/src/errors.ts"
     },
     {
+      "code": "X_ADMIN_ACTION_NOT_APPLICABLE",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
+    },
+    {
       "code": "X_ADMIN_DENIED",
       "owner": "admin",
       "at": "packages/admin/src/errors.ts"
@@ -315,12 +320,22 @@
       "at": "packages/admin/src/errors.ts"
     },
     {
+      "code": "X_ADMIN_FILTER_INVALID",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
+    },
+    {
       "code": "X_ADMIN_FLATTENER_VIOLATION",
       "owner": "scripts",
       "at": "scripts/boundaries.ts"
     },
     {
       "code": "X_ADMIN_INVALID",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_ADMIN_MOUNT_MISSING",
       "owner": "admin",
       "at": "packages/admin/src/errors.ts"
     },
@@ -340,9 +355,24 @@
       "at": "packages/admin/src/errors.ts"
     },
     {
+      "code": "X_ADMIN_REPO_UNBOUND",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_ADMIN_RESOURCE_UNWIRED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ADMIN_TOOL_FORBIDDEN",
       "owner": "admin",
       "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_ADMIN_UNSCANNED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_AGENT_MAX_TURNS",
@@ -576,13 +606,13 @@
     },
     {
       "code": "X_BROWSER_SERVER_BARREL",
-      "owner": "scripts",
-      "at": "scripts/browser-transport.ts"
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BROWSER_TRANSPORT_BYPASS",
-      "owner": "scripts",
-      "at": "scripts/browser-transport.ts"
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BROWSER_TRANSPORT_UNSCANNED",
@@ -850,6 +880,21 @@
       "at": "scripts/coverage-gate.ts"
     },
     {
+      "code": "X_COVERAGE_BELOW_FLOOR",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_COVERAGE_FLOOR_STALE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_COVERAGE_FLOOR_UNSTATED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_COVERAGE_PIN_STALE",
       "owner": "scripts",
       "at": "scripts/coverage-gate.ts"
@@ -941,6 +986,11 @@
     },
     {
       "code": "X_DB_GEN_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DB_HANDLE_UNREGISTERED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -1068,6 +1118,11 @@
       "code": "X_DEV_ROOT_GONE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DOC_CAUSE_ECHOES_TITLE",
+      "owner": "scripts",
+      "at": "scripts/doc-fixes.ts"
     },
     {
       "code": "X_DOC_CHANGELOG_SECTION_INVALID",
@@ -1261,6 +1316,16 @@
     },
     {
       "code": "X_ENTITY_DUPLICATE",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_SEALED_IN_VIEW",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_SEALED_PREDICATE",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },
@@ -1650,6 +1715,11 @@
       "at": "scripts/image-contract.ts"
     },
     {
+      "code": "X_IMAGE_NOT_PREBUILT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_IMAGE_QUERY_INVALID",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
@@ -1750,6 +1820,11 @@
       "at": "packages/jobs/src/errors.ts"
     },
     {
+      "code": "X_JOB_KEY_BUSY",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
       "code": "X_JOB_LEASE_LOST",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
@@ -1765,7 +1840,27 @@
       "at": "packages/jobs/src/errors.ts"
     },
     {
+      "code": "X_JOB_NOT_PROMOTABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_NOT_REMOVABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
       "code": "X_JOB_NOT_REQUEUEABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_ON_SETTLED_FAILED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_PAGE_INVALID",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
     },
@@ -2780,6 +2875,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_ROLE_LOAD_INCOMPLETE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ROLE_REDEFINED",
       "owner": "policy",
       "at": "packages/policy/src/errors.ts"
@@ -2872,7 +2972,7 @@
     {
       "code": "X_SCAFFOLD_FIRST_RUN_FAILED",
       "owner": "scripts",
-      "at": "scripts/scaffold-first-run.ts"
+      "at": "scripts/lib/admin-walk.ts"
     },
     {
       "code": "X_SCAFFOLD_GATE_RED",
@@ -2908,6 +3008,11 @@
       "code": "X_SCHEMA_DISCRIMINANT_INVALID",
       "owner": "schema",
       "at": "packages/schema/src/error-codes.ts"
+    },
+    {
+      "code": "X_SCHEMA_DUMP_DRIFT",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
     },
     {
       "code": "X_SCHEMA_UNSUPPORTED",
@@ -2956,6 +3061,16 @@
     },
     {
       "code": "X_SCRAPE_DRIVER_UNKNOWN",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_EGRESS_IN_PAYLOAD",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_EGRESS_UNSUPPORTED",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },
@@ -3068,6 +3183,36 @@
       "code": "X_SCRAPE_YIELD_HISTORY_MISSING",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SEAL_CALL_OUTSIDE_CORE",
+      "owner": "scripts",
+      "at": "scripts/seal-calls.ts"
+    },
+    {
+      "code": "X_SEAL_CALL_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/seal-calls.ts"
+    },
+    {
+      "code": "X_SEAL_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_SEAL_KEY_MISSING",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_SEAL_KEY_UNKNOWN",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_SEAL_RESEAL_PENDING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SEARCH_IN_MEMORY",
@@ -3610,6 +3755,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_ISLAND_STATE_UNKNOWN",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_ISLAND_STATES_AMBIGUOUS",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -3921,6 +4071,11 @@
     },
     {
       "code": "X_VERIFY_SHARD_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_STEP_TIMEOUT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

@@ -16,7 +16,7 @@ import {
   timestamp,
   uuid,
 } from '@ultimat3/entity';
-import { registerCatalog } from '@ultimat3/i18n';
+import { registerCatalog, resetCatalogs } from '@ultimat3/i18n';
 import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import {
   defineRoles,
@@ -95,6 +95,9 @@ const acting = defineAdmin({
   ],
 });
 
+// The refusals below assert the framework's own wording (`admin.actor.anonymous`), and a file that
+// ran first in this process may have left a probe over it: start from the shipped catalogs.
+resetCatalogs();
 registerCatalog('en', {
   'admin.admin_mount_gadgets.title': 'Gadgets',
   'admin.admin_mount_gadgets.field.id': 'Id',
@@ -143,6 +146,7 @@ afterAll(() => {
   defineRoles(previousRoles);
   restorePermissions(previousPermissions);
   clearRegistry();
+  resetCatalogs();
 });
 
 interface Answer {

@@ -6,7 +6,7 @@ Companion to [`09-rendering-internals.md`](./09-rendering-internals.md), which c
 
 ## One path, four entry points
 
-`x dev`, `x build --target static`, `apps/web/server.ts` and `bun test` all load a page module the same way. There is no "bundled" behaviour separate from "dev" behaviour, because there is no bundler.
+`x dev`, `x build --target static`, `apps/web/server.ts` and `bun test` all load a page module the same way. There is no "bundled" behaviour separate from "dev" behaviour for a page, because a page is never bundled — only islands are (below).
 
 ```
 import '@ultimat3/render/server' → installRenderLoader() (module-loader.ts)
@@ -68,8 +68,18 @@ Both halves of the config stay as they are, and each now means one thing:
 
 ## What is not here
 
-- **No client bundle.** `Bun.build` is called nowhere. No chunks, no splitting, no `modulepreload`, no minification outside `--target binary`.
-- **No hydration.** `solid-js@1.9.14` does ship `solid-js/web` — `render`, `hydrate`, `renderToString`, `generateHydrationScript` are all there — so this is **framework work, not an upstream blocker** `As of 2026-08`. What is missing is the compile step: `solid-js/jsx-runtime` exports types and no factory, because Solid compiles JSX to `template()` calls rather than runtime `jsx()` calls. Hydration therefore needs a second, Solid-compiled bundle graph for the client, distinct from the inert `h` the server renders through. `hydrate.ts` and `islands.ts` emit the markup conventions that bundle would read; nothing reads them yet.
+- **No page bundle; islands only.** A page module is never bundled for the browser — the server
+  renders it through the inert `h` above. What the browser gets is one `Bun.build` entry point per
+  `*.island.tsx` (`packages/cli/src/island-bundle.ts`), minified, Solid-compiled by
+  `babel-preset-solid` inside that build's plugin (`packages/cli/src/solid-loader.ts`), addressed by
+  a hash of its source graph. `islands: { sharedChunks: true }` builds them in one split build
+  instead; off by default, by measurement (`packages/core/src/config-islands.ts`). No
+  `modulepreload`. `As of 2026-10`, this replaced the 2026-08 statement that `Bun.build` was called
+  nowhere.
+- **Hydration is per island, never per page.** An island mounts with Solid's own runtime when its
+  `hydrate` timing fires; the page shell around it is server HTML and is never hydrated. There is
+  still no whole-page client graph, by design (axiom 6: the static path never pays for the app
+  path).
 - **No `<Suspense>` holes.** `renderStreamHtml` still splices `<x-hole>` chunks, but nothing marks a subtree as one, so a `stream` route flushes its whole body in the first chunk — correct output, no streaming benefit. Solid's own `<Suspense>` is **not** the missing piece and must not be reached for: it calls `getContextId()`, which throws `cannot be used under non-hydrating context` outside a Solid renderer. Async data needs no boundary here — `renderToHtml` awaits async components and promise children directly.
 - **No per-module CSS graph.** `stylesFor(surface)` filters by the stylesheet's own path, which keeps `site/` and `app/` apart but does not attribute CSS to a single route. So a route links its whole surface's sheet — which is the remaining half of the 2026-09-06 fix: the bytes are now cached rather than re-sent, but a dashboard still downloads the terminal's rules once.
 

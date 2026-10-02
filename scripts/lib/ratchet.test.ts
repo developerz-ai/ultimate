@@ -33,6 +33,9 @@ describe('unit · the per-package ratchet', () => {
       ['over', 'ui', 2, 1],
     ]);
     expect(gaps[1]?.first).toEqual(site('packages/ui/src/a.ts'));
+    // Every site, not only the first: the one that took the package over is not knowable here.
+    expect(gaps[1]?.sites).toEqual([site('packages/ui/src/a.ts'), site('packages/ui/src/b.ts')]);
+    expect(gaps[0]?.sites).toBeUndefined();
   });
 
   test('a corpus that read nothing is UNSCANNED, never a clean tree', () => {
@@ -96,6 +99,29 @@ describe('unit · --unpin edits the pins file', () => {
       const after = await Bun.file(join(dir, FILE)).text();
       expect(after).not.toContain('create-ultimate');
       expect(after).toContain('ui: 1');
+    });
+  });
+
+  test('a row whose count sits under a why: comment is lowered too — pin-raises puts one there', async () => {
+    // `pin-raises` asks for `// why:` on a raised row, and "inside it" is a place it accepts. The
+    // unpin then matched no row at all and reported "nothing to lower" for a pin that was stale.
+    const text = [
+      'export const P = {',
+      '  cli: {',
+      '    // why: the sixteenth is a content hash that is already the public URL',
+      '    // and a second line of it',
+      '    count: 16,',
+      "    reason: 'r',",
+      '  },',
+      '};',
+      '',
+    ].join('\n');
+    const pins = { cli: { count: 16, reason: 'r' } };
+    await withPins(text, async (dir) => {
+      expect(await applyUnpin(dir, FILE, ['cli'], { cli: 12 }, pins)).toEqual(['cli -> 12']);
+      const after = await Bun.file(join(dir, FILE)).text();
+      expect(after).toContain('    count: 12,');
+      expect(after).toContain('// why: the sixteenth');
     });
   });
 
