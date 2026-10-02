@@ -46,6 +46,10 @@ function identities(catalog: CatalogDescription): readonly ObjectIdentity[] {
   ];
 }
 
+/** What `shellInertIdentifier` refuses in a name, plus the controls a pasted line must not carry. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point.
+const SIGNATURE_ACTIVE = /[`$\\\u0000-\u001f\u007f]/;
+
 const keyOf = (object: ObjectIdentity): string =>
   [object.kind, object.table ?? '', object.name, object.signature].join('\u0000');
 
@@ -59,8 +63,16 @@ function unexpectedObject(object: ObjectIdentity): DriftDifference {
   const table = object.table === null ? null : shellInertIdentifier(object.table);
   const where = object.table === null ? '' : ` on table "${object.table}"`;
   const signature = object.signature === '' ? '' : `(${object.signature})`;
-  const spellable = name !== null && (object.table === null || table !== null);
-  const drop = `drop ${object.kind} ${name}${table === null ? '' : ` on ${table}`};`;
+  // A function is dropped by its argument list, empty included: `drop function "add";` is
+  // `42725 function name is not unique` while an overload lives beside it. The list is catalog
+  // text (`pg_get_function_identity_arguments`), already quoted for SQL, so it is screened for
+  // what a shell or a pasted line would read and never escaped.
+  const args = object.kind === 'function' ? `(${object.signature})` : '';
+  const spellable =
+    name !== null &&
+    (object.table === null || table !== null) &&
+    !SIGNATURE_ACTIVE.test(object.signature);
+  const drop = `drop ${object.kind} ${name}${args}${table === null ? '' : ` on ${table}`};`;
   return {
     kind: 'unexpected-object',
     table: object.table ?? object.name,
@@ -70,7 +82,8 @@ function unexpectedObject(object: ObjectIdentity): DriftDifference {
       ? `run ${drop} inside psql "$DATABASE_URL", then write its create statement into a ` +
         'migration and run x db migrate — or leave it dropped if nothing owns it'
       : 'drop it by hand, then write its create statement into a migration and run x db migrate ' +
-        '— its name carries a backtick, a dollar sign, a quote, a backslash or whitespace, so ' +
+        '— its name or arguments carry a backtick, a dollar sign, a quote, a backslash or ' +
+        'whitespace, so ' +
         'no statement here can spell it',
   };
 }

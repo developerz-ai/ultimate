@@ -47,6 +47,17 @@ interface Stored {
   readonly object: StorageObject;
 }
 
+/**
+ * An object no caller shares with the store. `metadata` and `lastModified` are mutable by anyone
+ * holding a reference, and the local disk's sidecar is a copy by construction — a test that
+ * mutated what `put()` was handed must not see a different object on the next `get()`.
+ */
+const snapshot = (object: StorageObject): StorageObject => ({
+  ...object,
+  lastModified: new Date(object.lastModified.getTime()),
+  ...(object.metadata === undefined ? {} : { metadata: { ...object.metadata } }),
+});
+
 export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDriver {
   const maxPutBytes = finiteCount(
     'the memory disk driver',
@@ -107,14 +118,14 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
           : { cacheControl: putOptions.cacheControl }),
         ...(putOptions?.metadata === undefined ? {} : { metadata: putOptions.metadata }),
       };
-      // A copy in, as a file write is: the caller's buffer is the caller's to reuse.
-      stored.set(safe, { bytes: bytes.slice(), object });
-      return object;
+      // A copy in, as a file write is: the caller's buffer and metadata are the caller's to reuse.
+      stored.set(safe, { bytes: bytes.slice(), object: snapshot(object) });
+      return snapshot(object);
     },
 
     async get(key: string): Promise<StorageRead> {
       const hit = found(assertSafeKey(key));
-      return { object: hit.object, bytes: hit.bytes.slice() };
+      return { object: snapshot(hit.object), bytes: hit.bytes.slice() };
     },
 
     async stream(key: string): Promise<ReadableStream<Uint8Array>> {
@@ -130,8 +141,8 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
         key: destination,
         lastModified: clock.now(),
       };
-      stored.set(destination, { bytes: source.bytes.slice(), object });
-      return object;
+      stored.set(destination, { bytes: source.bytes.slice(), object: snapshot(object) });
+      return snapshot(object);
     },
 
     async delete(key: string): Promise<void> {
@@ -153,7 +164,7 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
       const page = keys.slice(0, limit);
       const objects = page.flatMap((key) => {
         const hit = stored.get(key);
-        return hit === undefined ? [] : [hit.object];
+        return hit === undefined ? [] : [snapshot(hit.object)];
       });
       const last = page.at(-1);
       return keys.length > page.length && last !== undefined
