@@ -77,6 +77,45 @@ describe('collectGuards', () => {
   });
 });
 
+describe('the listed command is the form that REPORTS', () => {
+  const usage = (line: string): string =>
+    GUARD.replace('//\n// A later paragraph.', `//\n//   ${line}`);
+
+  test('a guard whose usage offers a bare [--check] writes by default, so the page lists --check', async () => {
+    const root = await repo({
+      'package.json': JSON.stringify({ scripts: { dumps: 'bun run scripts/dumps.ts' } }),
+      'scripts/dumps.ts': usage('bun run dumps [--check] [--json]'),
+      'scripts/unnamed.ts': usage('bun run scripts/unnamed.ts [--check] [--json]'),
+    });
+    expect((await collectGuards(root)).map((guard) => guard.command)).toEqual([
+      'bun run dumps --check',
+      'bun run scripts/unnamed.ts --check',
+    ]);
+  });
+
+  test('a guard that reports by default is listed bare: --write, --check | --write, a required --check', async () => {
+    const root = await repo({
+      'package.json': '{}',
+      'scripts/a.ts': usage('bun run scripts/a.ts [--write] [--json]'),
+      'scripts/b.ts': usage('bun run scripts/b.ts [--check | --write] [--json]'),
+      'scripts/c.ts': usage('bun run scripts/c.ts --check [--json]   # verify, read-only'),
+      'scripts/d.ts': GUARD,
+    });
+    expect((await collectGuards(root)).map((guard) => guard.command)).toEqual([
+      'bun run scripts/a.ts',
+      'bun run scripts/b.ts',
+      'bun run scripts/c.ts',
+      'bun run scripts/d.ts',
+    ]);
+  });
+
+  test('the real page lists no guard in a form that rewrites the tree', async () => {
+    const listed = (await collectGuards(repoRoot())).map((guard) => guard.command);
+    expect(listed).toContain('bun run schema-dumps --check');
+    expect(listed).not.toContain('bun run schema-dumps');
+  });
+});
+
 describe('--check', () => {
   test('a page that matches the headers is clean, and one edit to either side is drift', async () => {
     const root = await repo({ 'package.json': '{"scripts":{}}', 'scripts/g.ts': GUARD });

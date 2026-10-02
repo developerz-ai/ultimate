@@ -40,7 +40,7 @@ Rails' philosophy on a Bun + Postgres + SolidJS stack. Everything is one of **ei
 
 | End of the range | The claim | Measured `As of 2026-08-23` |
 |---|---|---|
-| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **163** files you never edit (**135** with `--no-example`; re-derived `As of 2026-09-23`), installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
+| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **194** files you never edit (**162** with `--no-example`; re-derived `As of 2026-10-01`, `bun run scripts/generator-counts.ts`), installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
 | **large** — many teams, real traffic | the ladder, the tier boundaries and the 20-step gate are already in the beginner's app | the same `x verify`, the same primitives, the same image; climbing is `ROLE`, env and replica counts ([scale ladder](docs/idea/17-scale-ladder.md)) |
 | **the model you can afford** | enforced conventions and executable `fix:` lines are worth *more* the cheaper the model | a fresh scaffold's own `bin/setup && bin/check` is **green on the first pass**, no waiver and no fix-follow, asserted on every push in CI; every red a model does reach names the command that clears it |
 
@@ -145,7 +145,8 @@ The list is data, not prose — `VERIFY_STEP_NAMES` in [`packages/cli/src/verify
 | both tracked apps' own gates, on a ratchet | `bun run scripts/reference-app-gate.ts` |
 | import boundaries alone | `bun run boundaries` |
 | regenerate the framework manifest | `bun run manifest` |
-| one test file · one test name | `bun test packages/core/src/errors.test.ts` · `bun test -t 'formats the fix line'` |
+| one test file · one test name | `bun test packages/core/src/errors.test.ts` · `bun test packages/core/src/errors.test.ts -t '<name>'` — always with a path |
+| both tracked apps' committed schema dumps, regenerated | `bun run schema-dumps` (`--check` only reports) |
 
 ## Every number here has a command beside it
 
@@ -162,7 +163,7 @@ A version, a count or a status written into a file goes stale on the next commit
 | every `X_*` code, its owner and the file declaring it | `bun run manifest` → `framework.manifest.json` |
 | the realtime capacity figures, audited against the committed run | [`CLAUDE.md`](CLAUDE.md)'s status section — [`scripts/bench-claims.ts`](scripts/bench-claims.ts) fails the gate when they drift |
 
-`As of 2026-08-20`: 30 workspaces, 29 `@ultimat3/*` plus the unscoped `create-ultimate`, versioned and published in lockstep — one version, one commit, one tag, 31 tarballs. [`PUBLISHING.md`](PUBLISHING.md) owns the mechanics; [`CLAUDE.md`](CLAUDE.md) carries the full status table, one runnable check per row.
+`As of 2026-10-01`: 31 workspaces, 30 `@ultimat3/*` plus the unscoped `create-ultimate`, versioned and published in lockstep — one version, one commit, one tag, 31 tarballs. [`PUBLISHING.md`](PUBLISHING.md) owns the mechanics; [`CLAUDE.md`](CLAUDE.md) carries the full status table, one runnable check per row.
 
 **Never claimed:** no adoption numbers, no production deployments, no testimonials. None exist yet, and this file will say so until they do.
 
@@ -232,7 +233,7 @@ Derived from `bun run scripts/list-workspaces.ts --json` and each package's own 
 | 5 | [`@ultimat3/testing`](packages/testing/README.md) | Test harness: cloned template DBs per worker, frozen clock, sealed network, 6 test types |
 | 6 | [`create-ultimate`](packages/create-ultimate/README.md) | `bunx create-ultimate myapp` — scaffold an Ultimate monorepo |
 
-Tier table, executable: [`scripts/lib/tiers.ts`](scripts/lib/tiers.ts). Declared sideways edges, each earning its line — five, `As of 2026-08-23`: `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli`. → [Package map](docs/architecture/01-package-map.md) · [Boundaries](docs/architecture/02-boundaries.md)
+Tier table, executable: [`scripts/lib/tiers.ts`](scripts/lib/tiers.ts). Declared sideways edges, each earning its line — five, `As of 2026-10-01`: `core → schema`, `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli` (`SIDEWAYS_ALLOW`). → [Package map](docs/architecture/01-package-map.md) · [Boundaries](docs/architecture/02-boundaries.md)
 
 ## What is enforced, not documented
 
@@ -241,7 +242,7 @@ A convention that is not a build error does not exist (axiom 3).
 | Concern | The default | The enforcement |
 |---|---|---|
 | **i18n** | flat catalogs, `Intl` for everything numeric | a missing key in a shipped locale fails the gate; misses render loudly as `⟦key⟧` |
-| **Dark theme** | semantic tokens, OS-following with an explicit override that wins | a raw hex in a component is a lint failure |
+| **Dark theme** | semantic tokens, OS-following with an explicit override that wins | a raw colour in a stylesheet or component fails `boundaries` — the `raw-colour` guard, not lint: Biome does not read `.scss` |
 | **Timezones** | store UTC, format with an explicit IANA zone | no formatter has an ambient default; a cron without a `tz` will not compile |
 | **Money** | integer minor units + currency, always attached | cross-currency arithmetic is refused; the exponent comes from the ISO table, never `/100` |
 | **SEO** | typed metadata, JSON-LD, sitemap from the route table | its own gate step; a `site/` route with no description fails the build |
@@ -250,6 +251,11 @@ A convention that is not a build error does not exist (axiom 3).
 | **Import tiers** | one package, one responsibility | a sideways or upward import fails `boundaries` |
 | **Secrets** | `Secret` redacts **by value** — `toString`, `toJSON`, the logger, at any depth | frozen, so a spread cannot unwrap it; `.env.example` generated from the typed env declaration |
 | **Generated facts** | `x.manifest.json` and `openapi.json` | stale or drifted fails `manifest` / `contract-diff` |
+| **The schema** | `packages/db/schema/`, one generated SQL file per table, committed | a missing, stale or hand-edited dump fails `drift` (`X_SCHEMA_DUMP_DRIFT`) |
+| **Browser requests** | one transport: `browserClient`, `useQuery`, `uploadFile` | a raw `fetch(` in island code fails `boundaries` (`X_BROWSER_TRANSPORT_BYPASS`), no allowlist |
+| **Credentials at rest** | `text().sealed()`, under the app's master key | a predicate on a sealed column is a compile error; the value never enumerates off a row |
+| **Coverage** | a floor in `x.verify.json`, 95% lines and functions in a new app | under it fails `unit` (`X_COVERAGE_BELOW_FLOOR`), naming the files; a floor nobody states is red too |
+| **App conventions** | a guard per file in the app's `guards/`, every name in `SHIPPED_GUARD_NAMES` | each runs inside `boundaries`; `x doctor` lists the shipped ones an app lacks |
 
 → [Conventions in full](docs/architecture/00-conventions.md) · [The error contract](docs/architecture/04-error-contract.md)
 
@@ -267,13 +273,13 @@ Render mode is a route-level property, never a global one. `site/` **cannot** im
 
 ## Realtime — a ladder, not a cliff
 
-Three tiers, the same mutator shape at every rung. Tiers 1–2 ship; tier 3 is deferred behind the interfaces already here.
+Three tiers, the same mutator shape at every rung. All three ship; tier 3 is opt-in per entity since 21.0.0.
 
 | Tier | What | Covers |
 |---|---|---|
 | 1 · **Channels** | `ctx.publish(topic, msg)` over Bun's native WS pub/sub | presence, cursors, notifications |
 | 2 · **Live queries** | declared server-side with a policy, received as a Solid signal | most of what "realtime app" means |
-| 3 · **Local-first** *(not shipped)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
+| 3 · **Local-first** | `entity(name, { persist: true })`: IndexedDB per principal, one HTTP outbox, rebase | offline writes that reconcile |
 
 Capacity is measured **on one node** and published with its scope: per-node recovery from a forced restart, not a multi-node result and not a throughput figure. The audited figures live in [`CLAUDE.md`](CLAUDE.md) — [`scripts/bench-claims.ts`](scripts/bench-claims.ts) fails the gate when they disagree with the committed run. Reproduce:
 
@@ -363,7 +369,7 @@ The 1,767 generated Lucide glyph files are excluded on purpose — leaving them 
 
 ## Design axioms
 
-Eight, and they override any instinct that conflicts: **one way to do each thing** · **define once, project everywhere** · **enforced, not documented** · **errors are instructions** · **one command means shippable** · **the static path never pays for the app path** · **deploy anywhere = containers only** · **Ultimate ships mechanism; your app ships convention**.
+Nine, and they override any instinct that conflicts: **one way to do each thing** · **define once, project everywhere** · **enforced, not documented** · **errors are instructions** · **one command means shippable** · **the static path never pays for the app path** · **deploy anywhere = containers only** · **Ultimate ships mechanism; your app ships convention** · **useful, then efficient**.
 
 An app extends the framework by **wrapping**, never by forking, patching or petitioning — the primitives are plain functions returning values, so an app's own `tenantEntity` or `auditedMutator` yields primitives the registry, the manifest, admin and MCP treat identically. There is no plugin API.
 

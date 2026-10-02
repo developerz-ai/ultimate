@@ -179,7 +179,9 @@ describe('unit · x dev boots the app', () => {
     // for a refusal that named neither — and it broke the moment the panel stopped calling a
     // syntax error a permissions problem.
     expect(write.data.refused).toContain('"delete"');
-    expect(write.data.refused).toContain('x db psql --write');
+    // `x db psql --write` was named here until 2026-10-01; no such command exists (`x db --help`).
+    expect(write.data.refused).toContain('psql "$DATABASE_URL"');
+    expect(write.data.refused).not.toContain('x db psql');
     expect(write.data.result).toBeNull();
   });
 

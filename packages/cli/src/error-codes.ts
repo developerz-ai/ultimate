@@ -141,6 +141,11 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_GUARD_INVALID',
   'X_GUARD_FAILED',
   'X_GUARD_FINDING_INVALID',
+  // The browser-transport rule, on `boundaries` in every app (`app-transport.ts`). Both codes
+  // shipped as this repository's own script findings; the rule moved into the gate, so the CLI
+  // emits them and therefore owns them — the code strings and their meaning are unchanged.
+  'X_BROWSER_TRANSPORT_BYPASS',
+  'X_BROWSER_SERVER_BARREL',
   // The CLI's own declarations, held to each other. A flag the parser accepts and no code reads
   // is a promise in `x help` with nothing behind it — `x deploy --critical` said "forces clients
   // to reload" and reached no reader outside the plan JSON it was written into.
@@ -205,6 +210,16 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SITEMAP_EXTRA_INVALID',
   'X_DEV_RESTART_REQUIRED',
   'X_DEV_ROOT_GONE',
+  'X_SEAL_RESEAL_PENDING',
+  'X_VERIFY_STEP_TIMEOUT',
+  'X_COVERAGE_BELOW_FLOOR',
+  'X_COVERAGE_FLOOR_UNSTATED',
+  'X_COVERAGE_FLOOR_STALE',
+  'X_DB_HANDLE_UNREGISTERED',
+  'X_ROLE_LOAD_INCOMPLETE',
+  'X_ADMIN_RESOURCE_UNWIRED',
+  'X_IMAGE_NOT_PREBUILT',
+  'X_ADMIN_UNSCANNED',
 ] as const;
 
 /**
@@ -314,6 +329,10 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_GUARD_INVALID: 'a file in guards/ exports no usable guard',
   X_GUARD_FAILED: 'an app guard threw instead of returning findings',
   X_GUARD_FINDING_INVALID: "an app guard's finding breaks the error contract",
+  X_BROWSER_TRANSPORT_BYPASS:
+    'browser-reachable code opens its own connection instead of using the one seam',
+  X_BROWSER_SERVER_BARREL:
+    "browser-reachable code imports a package's server barrel where the package publishes a browser entry",
   X_CLI_FLAG_UNREAD: 'a command declares a flag no code reads',
   X_SECRETS_EDITOR_MISSING: 'no $EDITOR to open the decrypted secrets in',
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
@@ -360,6 +379,19 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_DEV_RESTART_REQUIRED:
     'a save reached a module that defines a primitive; only a new process serves it',
   X_DEV_ROOT_GONE: 'the app root x dev serves was deleted or moved',
+  X_SEAL_RESEAL_PENDING: 'sealed columns still hold values under a retired master key',
+  X_VERIFY_STEP_TIMEOUT: 'a gate step ran past its deadline and was stopped',
+  X_COVERAGE_BELOW_FLOOR: 'the unit suite covers less of the app than x.verify.json states',
+  X_COVERAGE_FLOOR_UNSTATED:
+    'x.verify.json states no coverage floor, or one under 95 with no reason',
+  X_COVERAGE_FLOOR_STALE: 'the app now covers more than the floor in x.verify.json states',
+  X_DB_HANDLE_UNREGISTERED: "an entity x g wrote is not in the app's typed database handle",
+  X_ROLE_LOAD_INCOMPLETE: 'a worker or scheduler did not register a job or task the manifest names',
+  X_ADMIN_RESOURCE_UNWIRED: "an admin override x g wrote is not in the app's defineAdmin() call",
+  X_IMAGE_NOT_PREBUILT:
+    'a container role built at boot what the image build should have: island chunks or stylesheets',
+  X_ADMIN_UNSCANNED:
+    'a defineAdmin() declaration sits outside the app scan, so the admin is never mounted',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

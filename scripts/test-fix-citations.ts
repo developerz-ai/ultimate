@@ -22,10 +22,13 @@ import { CORPUS_PATTERNS, corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import type { SiteProbe } from './lib/ratchet-sites';
+import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
 import { sourceStrings } from './lib/source-strings';
 import { PINS_FILE, TEST_FIX_PINS } from './lib/test-fix-pins';
 
 const SCRIPT = 'test-fix-citations';
+const EXPLAIN = 'bun run scripts/test-fix-citations.ts --explain --json lists every one';
 
 /** What the `tests` corpus scope reads, re-exported under the name its callers already use. */
 export const TEST_GLOBS: readonly string[] = CORPUS_PATTERNS.tests;
@@ -89,11 +92,14 @@ const testFixSites = (input: Omit<TestFixInput, 'pins'>): readonly TestFixSite[]
 export const checkTestFixes = (input: TestFixInput): readonly TestFixGap[] =>
   ratchetGaps(testFixSites(input), input.pins, input.files.length > 0);
 
+const said = (site: TestFixSite): string => `${site.at} ("${site.fix}", which ${site.problem})`;
+
+/** Every citation, new ones first — the package's first is usually one its pin already allows. */
 const overFinding = (gap: TestFixGap): Finding => ({
   code: 'X_TEST_FIX_UNRUNNABLE',
-  cause: `${gap.pkg} has ${String(gap.found)} test fix line(s) citing a command this build cannot run and is pinned at ${String(gap.pinned)} — ${gap.first?.at ?? ''} writes "${gap.first?.fix ?? ''}", which ${gap.first?.problem ?? ''}`,
-  fix: `rewrite the fix at ${gap.first?.at ?? gap.pkg} as an invocation this build ships; \`x help --json\` lists every command, subcommand and flag`,
-  at: gap.first?.at ?? gap.pkg,
+  cause: `${gap.pkg} has ${String(gap.found)} test fix line(s) citing a command this build cannot run and is pinned at ${String(gap.pinned)} — ${siteList(gap, said, EXPLAIN)}`,
+  fix: `rewrite the fix at ${siteTarget(gap, (site) => site.at)} as an invocation this build ships; \`x help --json\` lists every command, subcommand and flag`,
+  at: leadSite(gap)?.at ?? gap.pkg,
 });
 
 const staleFinding = (gap: TestFixGap): Finding => ({
@@ -126,12 +132,17 @@ export async function readTestSources(
   return (await corpus(root, 'tests')).map((file) => ({ path: file.path, text: file.source }));
 }
 
-export const testFixGaps = async (root: string): Promise<readonly TestFixGap[]> =>
-  checkTestFixes({
-    files: await readTestSources(root),
-    catalog: await loadCommandCatalog(),
-    pins: TEST_FIX_PINS,
-  });
+/** The single-file scan against one catalog: what tells a new citation from one the base held. */
+const probeFor = (catalog: CommandCatalog): SiteProbe<TestFixSite> => ({
+  rescan: (path, text) => testFixSites({ files: [{ path, text }], catalog }),
+  line: (site) => Number(site.at.slice(site.at.lastIndexOf(':') + 1)),
+});
+
+export const testFixGaps = async (root: string): Promise<readonly TestFixGap[]> => {
+  const catalog = await loadCommandCatalog();
+  const gaps = checkTestFixes({ files: await readTestSources(root), catalog, pins: TEST_FIX_PINS });
+  return newSitesFirst(root, gaps, probeFor(catalog));
+};
 
 /** What this repo contributes to `x verify`'s `errors` step. */
 export const testFixFindings = async (root: string): Promise<readonly Finding[]> =>
@@ -147,6 +158,7 @@ if (import.meta.main) {
     pins: TEST_FIX_PINS,
     sites: treeSites,
     findingFor: testFixFindingFor,
+    probe: probeFor(await loadCommandCatalog()),
     clean: 'every fix: a test evaluates cites a command this build can run',
   });
 }

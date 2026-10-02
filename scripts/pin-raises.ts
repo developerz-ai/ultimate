@@ -120,8 +120,11 @@ export async function readPinTables(root: string, base: string): Promise<PinTabl
       tables.push({
         path,
         source,
-        now: pinRows(await importPinSource(source, scratch)),
-        base: then === undefined ? undefined : pinRows(await importPinSource(then, scratch)),
+        now: pinRows(await importPinSource(source, scratch, `${root}/${path}`)),
+        base:
+          then === undefined
+            ? undefined
+            : pinRows(await importPinSource(then, scratch, `${root}/${path}`)),
       });
     }
   } finally {

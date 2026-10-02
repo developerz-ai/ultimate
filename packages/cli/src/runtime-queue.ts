@@ -33,6 +33,7 @@ import {
   setJobsFacade,
 } from '@ultimat3/jobs';
 import { applyFrameworkSchema } from './framework-schema';
+import { appExtensions } from './migration-extensions';
 import type { DevServices } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { attachReplica, type ReplicaEnv, replicaUrlFor } from './runtime-replica';
@@ -93,7 +94,13 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
     binding.mode === 'embedded'
       ? // `pgliteDataDir` is `@ultimat3/db`'s own reader of the `pglite://` form; a second parser
         // here is a second thing to keep right when the form changes.
-        createPgliteClient({ dataDir: pgliteDataDir(binding.url) })
+        // Linked at boot, from the app's own migrations: PGlite cannot `create extension` one it
+        // was not handed, and the schema dump's scratch replay already asks this same reader — an
+        // app that replayed in the gate and failed in `x dev` was the two disagreeing.
+        createPgliteClient({
+          dataDir: pgliteDataDir(binding.url),
+          extensions: () => appExtensions(services.root),
+        })
       : createPostgresClient({ url: binding.url });
   const attached = attachReplica(client, replicaUrlFor(binding, env));
   setDbClient(attached.client);

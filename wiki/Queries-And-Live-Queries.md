@@ -165,6 +165,7 @@ export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
 | `limit` | an unbounded result set has no bounded change buffer and no bounded reconnect snapshot | `x verify` error naming the query |
 | No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | `x verify` error naming the expression |
 | No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_FORBIDDEN` at subscribe |
+| The source reads as its subscriber's tenant | a sync node shares one read per `(query, input)` **per org**, in a context carrying that org — so `repo.list(limit)` needs no org argument on a live query, exactly as on a request | a source naming another org is `X_TENANCY_ACTOR_MISMATCH`; a subscriber with no org reading a tenant table is `X_TENANCY_ACTOR_ORG_REQUIRED` |
 
 A page is served `order by <declared keys>, "id" asc`, and so is a live window — `As of 2026-08`,
 the initial window, the matcher's patch positions and the keyset re-read a reconnect resumes with
@@ -174,6 +175,25 @@ prints the order. A row that reaches the matcher with no `id` is `X_QUERY_NOT_PA
 patch aimed at a position no client holds.
 
 A non-live query has none of these constraints — it is just a read.
+
+## A sealed column never rides on a row
+
+A query declares no output schema, so nothing parses a row on its way out. A `.sealed()` column
+stays behind because the repository row does not enumerate it
+([Sealed columns](Entities-And-Migrations#sealed-columns)), `As of 2026-10`.
+
+| Projection | Sealed column |
+|---|---|
+| `GET /_x/query/<name>` — list, `Page`, `single: true`, the record envelope's `data` and `records` | absent |
+| the MCP read tool, a `cache:` entry in a shared tier | absent |
+| a live snapshot and every patch | absent |
+| `query(input)` / `.as(actor, input)` called on the server | `row.password` reads the plaintext |
+| a derived row — `rows.map((row) => ({ ...row, initials }))` | absent; the spread drops it |
+| a derived row that names it — `({ id: row.id, token: row.token })` | **sent.** The only way to send a secret is to write its name |
+
+| Refused | Code |
+|---|---|
+| `live: true` with a sealed column in `.where()` / `.compare()` / `.orderBy()` | `X_MATCHER_UNSUPPORTED` at subscribe — a change row carries no sealed column, so the window could be read once and never patched |
 
 ## Row-level policy filtering
 
@@ -185,6 +205,8 @@ Policy is not a subscribe-time gate that then trusts the stream.
 | Initial snapshot | every row filtered through the same policy |
 | Each incremental patch | re-checked per row. A row that fails is **dropped, never sent** |
 | Actor change (role revoked, org left) | the subscription re-evaluates; rows that no longer pass are delivered as `delete` ops |
+| Actor moves to another org | the subscription is re-seated on that org's own window and sent its snapshot: a window is one tenant's, and two orgs never share one |
+| A refused subscription, on the page | `useQuery`'s `failed` state carries the node's error as a branded `UltimateError` — its code, cause and fix — never `X_INTERNAL` |
 | Topic guards (tier 1) | `X_TOPIC_FORBIDDEN` — cause names the actor and topic, never the topic's data |
 
 One authz system. A live query cannot become a second door into your data — that is the failure mode that killed the `allow`/`deny` generation of frameworks ([The eight primitives](The-Eight-Primitives)).

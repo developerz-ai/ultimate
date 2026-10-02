@@ -94,19 +94,15 @@ export function unzonedDates(files: readonly SourceFile[]): readonly Finding[] {
 
 export const guard: Guard = {
   summary: 'a date is never formatted without an explicit IANA time zone',
-  async check(root) {
-    const files: SourceFile[] = [];
-    for await (const entry of new Bun.Glob('{apps,packages}/**/*.{ts,tsx}').scan({
-      cwd: root,
-      absolute: false,
-    })) {
-      const path = entry.split('\\\\').join('/');
-      // A test's subject is often the wrong shape on purpose, and \`node_modules\` is not this
-      // app's source. Neither exclusion hides a rendered date from a user.
-      if (path.includes('node_modules/') || /\\.(?:test|d)\\.tsx?$/.test(path)) continue;
-      files.push({ path, source: await Bun.file(\`\${root}/\${path}\`).text() });
-    }
-    return unzonedDates(files);
+  async check(_root, sources) {
+    // A test's subject is often the wrong shape on purpose; excluding it hides no rendered date
+    // from a user. The run's ONE read of the source: every guard asking for this glob shares it.
+    const code = await sources.files('{apps,packages}/**/*.{ts,tsx}');
+    return unzonedDates(
+      code
+        .filter((file) => !/\\.(?:test|d)\\.tsx?$/.test(file.path))
+        .map((file) => ({ path: file.path, source: file.text })),
+    );
   },
 };
 `;

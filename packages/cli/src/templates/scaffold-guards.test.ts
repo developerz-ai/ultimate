@@ -1,6 +1,7 @@
 // The guards `x new` ships, driven as the gate drives them: written to disk, imported through the
 // same `guardFindings` seam `x verify`'s `boundaries` step calls, and pointed at a real tree. The
-// five `AGENTS.md` non-negotiables are here; the five interface rules are `scaffold-guards-ux.test.ts`.
+// five `AGENTS.md` non-negotiables are here; the five interface rules are `scaffold-guards-ux.test.ts`
+// and each of the seven stylesheet rules is `guard-<name>.test.ts`.
 //
 // Asserting on the template STRINGS would prove nothing — the defect this closes is that
 // `AGENTS.md` stated nine rules and five of them were enforced by no code at all, which is exactly
@@ -18,19 +19,29 @@ import { planNewApp } from '../cmd-new';
 import { guardFindings, guardPaths } from '../guards';
 import type { Finding } from '../output';
 import { scaffoldGuardFiles } from './scaffold-guards';
+import { linkUi } from './shipped-guard-fixture';
 
-/** The scaffold's own files, written to a temp root — the tree every case below starts from. */
-async function scaffoldInto(dir: string): Promise<void> {
+/**
+ * The scaffold's own files, written to a temp root — the tree every case below starts from.
+ * `ui` is what `bun install` would have done for the one package a stylesheet resolves: without
+ * it no scaffolded sheet compiles and the two guards that read COMPILED sheets see nothing. Only
+ * the cases that are ABOUT those sheets pay for the nine compiles.
+ */
+async function scaffoldInto(dir: string, ui = false): Promise<void> {
   for (const file of planNewApp({ name: 'guard-demo', example: true })) {
     await Bun.write(join(dir, file.path), file.contents);
   }
+  if (ui) await linkUi(dir);
 }
 
 /** One extra file on top of the scaffold, then the gate's own guard pass over the result. */
-async function findingsWith(files: Readonly<Record<string, string>>): Promise<readonly Finding[]> {
+async function findingsWith(
+  files: Readonly<Record<string, string>>,
+  ui = false,
+): Promise<readonly Finding[]> {
   const dir = mkdtempSync(join(tmpdir(), 'x-guards-'));
   try {
-    await scaffoldInto(dir);
+    await scaffoldInto(dir, ui);
     for (const [path, contents] of Object.entries(files)) {
       await Bun.write(join(dir, path), contents);
     }
@@ -42,20 +53,31 @@ async function findingsWith(files: Readonly<Record<string, string>>): Promise<re
 
 const codes = (findings: readonly Finding[]): readonly string[] => findings.map((f) => f.code);
 
+/** Every guard `x new` writes, spelled out: an eighteenth arriving unannounced fails here. */
+const SEVENTEEN: readonly string[] = [
+  'guards/animated-layout-property.ts',
+  'guards/bare-error.ts',
+  'guards/focus-visible.ts',
+  'guards/image-dimensions.ts',
+  'guards/island-without-states.ts',
+  'guards/raw-breakpoint.ts',
+  'guards/raw-colour.ts',
+  'guards/raw-length.ts',
+  'guards/raw-motion.ts',
+  'guards/raw-shadow.ts',
+  'guards/raw-z-index.ts',
+  'guards/repo-raw-sql.ts',
+  'guards/semantic-interactive.ts',
+  'guards/undeclared-custom-property.ts',
+  'guards/undefined-style-class.ts',
+  'guards/untranslated-string.ts',
+  'guards/unzoned-date.ts',
+];
+
 describe('unit · x new · the guards it ships', () => {
   test('every guard is a file the gate discovers, and each has its own test', () => {
     const paths = scaffoldGuardFiles().map((file) => file.path);
-    expect(paths.filter((path) => !path.endsWith('.test.ts'))).toEqual([
-      'guards/animated-layout-property.ts',
-      'guards/bare-error.ts',
-      'guards/focus-visible.ts',
-      'guards/image-dimensions.ts',
-      'guards/island-without-states.ts',
-      'guards/raw-colour.ts',
-      'guards/semantic-interactive.ts',
-      'guards/untranslated-string.ts',
-      'guards/unzoned-date.ts',
-    ]);
+    expect(paths.filter((path) => !path.endsWith('.test.ts'))).toEqual([...SEVENTEEN]);
     for (const rule of paths.filter((path) => !path.endsWith('.test.ts'))) {
       expect(paths).toContain(rule.replace(/\.ts$/, '.test.ts'));
     }
@@ -67,17 +89,7 @@ describe('unit · x new · the guards it ships', () => {
     const dir = mkdtempSync(join(tmpdir(), 'x-guards-'));
     try {
       await scaffoldInto(dir);
-      expect(await guardPaths(dir)).toEqual([
-        'guards/animated-layout-property.ts',
-        'guards/bare-error.ts',
-        'guards/focus-visible.ts',
-        'guards/image-dimensions.ts',
-        'guards/island-without-states.ts',
-        'guards/raw-colour.ts',
-        'guards/semantic-interactive.ts',
-        'guards/untranslated-string.ts',
-        'guards/unzoned-date.ts',
-      ]);
+      expect(await guardPaths(dir)).toEqual([...SEVENTEEN]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -87,16 +99,36 @@ describe('unit · x new · the guards it ships', () => {
   // SILENT. A guard that reports on the scaffold's own files is a scaffold whose first `x verify`
   // is red for something the author did not write, which is worse than the rule being absent.
   test('a pristine scaffold trips none of them', async () => {
-    expect(await findingsWith({})).toEqual([]);
+    expect(await findingsWith({}, true)).toEqual([]);
+  }, 30_000);
+
+  // Non-vacuity for the line above. The two compiled-sheet guards are silent on a sheet that does
+  // not compile, so "a pristine scaffold trips none" is only a claim about them if the scaffold's
+  // own sheets DID compile here — proven by breaking one the way an author would.
+  test('and its stylesheets really were compiled: a class and a token step that do not exist', async () => {
+    const findings = await findingsWith(
+      {
+        'apps/web/site/probe.module.scss':
+          "@use '@ultimat3/ui/tokens' as tokens;\n.probe {\n  padding: tokens.space(7);\n}\n",
+        'apps/web/site/probe.tsx':
+          "import styles from './probe.module.scss';\nexport const classes = [styles.probe, styles.gone];\n",
+      },
+      true,
+    );
+    expect(codes(findings)).toEqual(['X_UNDECLARED_CUSTOM_PROPERTY', 'X_UNDEFINED_STYLE_CLASS']);
+    expect(findings[1]?.cause).toContain('styles.gone');
   }, 30_000);
 });
 
 describe('unit · x new · each shipped guard refuses the mistake it names', () => {
+  // Each stylesheet fixture is its OWN file, never the scaffold's `page.module.scss` rewritten:
+  // replacing that sheet deletes the classes `page.tsx` reads, and `undefined-style-class` then
+  // reports ten correct findings about a mistake the case was not about.
   // The exact five `AGENTS.md` states and `x verify` used to pass, one per case. Each was measured
   // green on a scaffold built against the published 7.0.0 packages before these guards existed.
   test('a raw hex in a stylesheet is X_RAW_COLOUR', async () => {
     const findings = await findingsWith({
-      'apps/web/site/page.module.scss': '.hero {\n  color: #ff0000;\n}\n',
+      'apps/web/site/probe.module.scss': '.hero {\n  color: #ff0000;\n}\n',
     });
     expect(codes(findings)).toEqual(['X_RAW_COLOUR']);
     expect(findings[0]?.cause).toContain('#ff0000');
@@ -110,7 +142,7 @@ describe('unit · x new · each shipped guard refuses the mistake it names', () 
   // and a rule that noisy is a rule the first author to meet it deletes.
   test('a channel function over var(--…) references is the token form, not a raw colour', async () => {
     const findings = await findingsWith({
-      'apps/web/site/page.module.scss': [
+      'apps/web/site/probe.module.scss': [
         '.hero {',
         '  color: rgb(var(--color-fg) / 1);',
         '  background-color: rgb(var(--color-bg-soft));',
@@ -127,7 +159,7 @@ describe('unit · x new · each shipped guard refuses the mistake it names', () 
   // the argument list and it is a colour no theme can restate.
   test('a channel function with a literal channel is still X_RAW_COLOUR', async () => {
     const findings = await findingsWith({
-      'apps/web/site/page.module.scss': '.hero {\n  background: rgb(1 2 3);\n}\n',
+      'apps/web/site/probe.module.scss': '.hero {\n  background: rgb(1 2 3);\n}\n',
     });
     expect(codes(findings)).toEqual(['X_RAW_COLOUR']);
     expect(findings[0]?.cause).toContain('rgb(1 2 3)');
@@ -136,7 +168,7 @@ describe('unit · x new · each shipped guard refuses the mistake it names', () 
   // A var reference in ONE slot does not launder the literals beside it.
   test('a channel function mixing a var reference with literals is refused', async () => {
     const findings = await findingsWith({
-      'apps/web/site/page.module.scss': '.hero {\n  color: rgb(var(--color-fg-r) 2 3);\n}\n',
+      'apps/web/site/probe.module.scss': '.hero {\n  color: rgb(var(--color-fg) 2 3);\n}\n',
     });
     expect(codes(findings)).toEqual(['X_RAW_COLOUR']);
   }, 30_000);

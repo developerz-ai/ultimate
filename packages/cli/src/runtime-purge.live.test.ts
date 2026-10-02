@@ -111,6 +111,8 @@ async function runSweep(): Promise<PurgeReport> {
     step: runner.step,
     ctx: createContext({ role: 'worker' }),
     attempt: 1,
+    finalAttempt: false,
+    progress: () => undefined,
     jobId: 'job-1',
     runId: 'run-1',
   });

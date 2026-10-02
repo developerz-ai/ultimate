@@ -11,12 +11,12 @@ import {
   appImportGraph,
   BOUNDARY_CODES,
   boundaryCodeOf,
-  checkAppBoundaries,
   checkImportRules,
   readAppSources,
   relativeSpecifier,
   resolveSpecifier,
 } from './app-boundaries';
+import { appBoundaryFindings } from './boundary-findings';
 
 const file = (path: string, source: string): SourceFile => ({ path, source });
 
@@ -253,8 +253,16 @@ describe('unit · readAppSources / appImportGraph', () => {
     expect(graph.get('apps/web/app/orders/repo.ts')?.map((ref) => ref.file)).toEqual(['@acme/db']);
   });
 
-  test('checkAppBoundaries is readAppSources + checkImportRules, not a second file walk', async () => {
-    const files = await readAppSources(root);
-    expect(checkImportRules(files)).toEqual(await checkAppBoundaries(root));
+  test('the gate step reads once: its findings are the import rules over that one read', async () => {
+    // The step rewrites a surface finding's `fix` into the concrete cut; what was found is the same.
+    const found = (findings: readonly { code: string; at?: string; cause: string }[]) =>
+      findings.map(({ code, at, cause }) => ({ code, at, cause }));
+    const onDisk = await readAppSources(root);
+    expect(found(await appBoundaryFindings(root))).toEqual(found(checkImportRules(onDisk)));
+    // Handed the files, it reads nothing: a violation that exists only in the handed set is found.
+    const bad = { path: 'apps/web/site/bad.tsx', source: "import '../app/orders/repo';\n" };
+    const rules = checkImportRules([...onDisk, bad]);
+    expect(rules.map((finding) => finding.code)).toContain('X_BOUNDARY_SITE_TO_APP');
+    expect(found(await appBoundaryFindings(root, [...onDisk, bad]))).toEqual(found(rules));
   });
 });

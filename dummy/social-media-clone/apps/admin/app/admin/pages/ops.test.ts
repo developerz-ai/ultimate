@@ -13,7 +13,7 @@ import { isUltimateError } from '@ultimat3/core';
 // `apps/admin/static-tsx-imports.test.ts`, which explains the whole mechanism.
 await import('@ultimat3/render/server');
 const { admin } = await import('../admin');
-const { opsPage } = await import('./ops');
+const { OpsPage, opsPage } = await import('./ops');
 
 const OPS_PATH = '/admin/ops';
 
@@ -60,4 +60,36 @@ test('unit · the sidebar link is derived, and it carries the permissions that h
   const item = admin.nav.flatMap((group) => group.items).find((entry) => entry.href === '/ops');
   expect(item?.labelKey).toBe('admin.ops.title');
   expect(item?.permissions).toEqual(['admin:read', 'job:read']);
+});
+
+// The board renders what `uploadsFor` decided — both answers. No role this app defines holds
+// `job:read` without `media:read`, so the refused half needs an exact grant list.
+const board = async (granted: readonly string[]): Promise<string> => {
+  const { renderComponent } = await import('@ultimat3/render/server');
+  const { memoryAuditLog, staticAuthz } = await import('@ultimat3/admin');
+  const ctx = {
+    actor: { id: 'test-actor', roles: [], locale: 'en', timeZone: 'UTC' },
+    requestId: 'test-ops',
+    audit: memoryAuditLog(),
+    authz: staticAuthz(granted),
+  };
+  return renderComponent(
+    () => OpsPage({ ctx, params: {}, url: 'http://localhost/admin/ops' }),
+    {},
+    'apps/admin/app/admin/pages/ops.tsx',
+  );
+};
+
+test('unit · the board shows the counts to an actor who may list media, by state', async () => {
+  const html = await board(['admin:read', 'job:read', 'media:read']);
+  for (const state of ['pending', 'attached', 'orphan']) {
+    expect(html).toContain(`data-state="${state}"`);
+  }
+  expect(html).not.toContain('media:read');
+});
+
+test('unit · and the refusal, naming media:read, to one who may only open the board', async () => {
+  const html = await board(['admin:read', 'job:read']);
+  expect(html).toContain('media:read');
+  expect(html).not.toContain('data-state=');
 });

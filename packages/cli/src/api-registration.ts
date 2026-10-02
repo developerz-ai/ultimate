@@ -1,7 +1,8 @@
-// `x g job` / `x g task` / `x g resource` hand what they wrote to `apps/web/api/index.ts`. The scan
-// registers actions and queries by export name on its own and registers NO job: a job module
-// nothing lists keeps the positional `anonymous-job-2` that `job()` minted, on the queue row, in
+// Every generator hands the primitives it wrote to `apps/web/api/index.ts`. The scan registers
+// actions and queries by export name on its own and registers NO job: a job module nothing lists
+// keeps the positional `anonymous-job-2` that `job()` minted, on the queue row, in
 // `x.manifest.json` and in every dead-letter trace — under a green gate (plan 101 slice 11 b).
+// Actions and queries are listed for the TYPE: `Api` is what the browser's client is shaped from.
 
 import { API_INDEX } from './app-root';
 import { containedPath } from './generate-write';
@@ -10,7 +11,7 @@ import { wrapList } from './templates/wrap';
 
 /** One module to import as a namespace and list under a `defineApi` key. */
 export interface ApiEntry {
-  readonly key: 'jobs' | 'tasks';
+  readonly key: 'actions' | 'queries' | 'jobs' | 'tasks';
   /** The namespace binding: the file's own name, camelCased — `reindexPost`. */
   readonly binding: string;
   /** From `apps/web/api/`: `../app/post/jobs/reindex-post`. */
@@ -18,17 +19,37 @@ export interface ApiEntry {
 }
 
 const PRIMITIVE_PATH =
-  /^apps\/web\/(?<rest>[^/]+\/[^/]+\/(?<dir>jobs|tasks)\/(?<file>[a-z0-9-]+))\.ts$/;
+  /^apps\/web\/(?<rest>[^/]+\/[^/]+\/(?<dir>actions|queries|live|jobs|tasks)\/(?<file>[a-z0-9-]+))\.ts$/;
 
-/** The job and task modules among the paths a generator wrote. Tests are not modules to list. */
+/** The order `x new` writes the lists in, which a list this adds keeps. */
+const LIST_ORDER: readonly ApiEntry['key'][] = ['actions', 'queries', 'jobs', 'tasks'];
+
+/**
+ * The `defineApi` list each generated directory belongs in. `actions/` holds mutators too, and a
+ * mutator IS an action — `defineApi` merges both lists into one registration — so one key serves.
+ */
+const KEY_OF: Readonly<Record<string, ApiEntry['key']>> = {
+  actions: 'actions',
+  queries: 'queries',
+  live: 'queries',
+  jobs: 'jobs',
+  tasks: 'tasks',
+};
+
+/**
+ * The primitive modules among the paths a generator wrote. Tests are not modules to list.
+ *
+ * Actions and queries too, though the scan registers those at boot without being told: `Api` —
+ * the type the browser's typed client is shaped from — is `typeof defineApi({ … })`, so one the
+ * index does not list is an endpoint the page has no typed call for.
+ */
 export function apiEntriesFor(written: readonly string[]): readonly ApiEntry[] {
   return written.flatMap((path) => {
     const groups = PRIMITIVE_PATH.exec(path)?.groups;
     if (groups === undefined) return [];
     const { rest = '', dir, file = '' } = groups;
-    return [
-      { key: dir === 'tasks' ? 'tasks' : 'jobs', binding: camel(file), specifier: `../${rest}` },
-    ];
+    const key = dir !== undefined && Object.hasOwn(KEY_OF, dir) ? KEY_OF[dir] : undefined;
+    return key === undefined ? [] : [{ key, binding: camel(file), specifier: `../${rest}` }];
   });
 }
 
@@ -87,8 +108,12 @@ export function insertApiEntries(
     const list = listOf(next, entry.key, call);
     if (list?.items.includes(entry.binding) === true) continue;
     if (list === undefined) {
-      // After `actions: [...],` — the order `x new` writes: actions, queries, jobs, tasks.
-      const after = next.indexOf('\n', actions.end);
+      // In the order `x new` writes — actions, queries, jobs, tasks: after the nearest list
+      // before it that the call already holds, which is `actions` at the least.
+      const earlier = LIST_ORDER.slice(0, LIST_ORDER.indexOf(entry.key))
+        .map((key) => listOf(next, key, call))
+        .findLast((found) => found !== undefined);
+      const after = next.indexOf('\n', (earlier ?? actions).end);
       const line = `  ${entry.key}: [${entry.binding}],`;
       next = `${next.slice(0, after + 1)}${line}\n${next.slice(after + 1)}`;
     } else {

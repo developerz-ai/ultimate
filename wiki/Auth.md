@@ -57,7 +57,7 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 |---|---|
 | TOTP + recovery codes | `enrolTotp`, `verifyTotp`, `createTotpReplayGuard`, `generateRecoveryCodes`, `redeemRecoveryCode` — pure functions; the secret and the hashes are the app's rows. A password proven with a factor outstanding is `X_MFA_REQUIRED` |
 | email verification, password reset | `issueVerification` / `consumeVerification`; a token is consumed only when its hash matches, so a wrong guess cannot burn the victim's live link. The mail is sent through an injected `MailSender` ([Mail](Mail)) |
-| API keys — how an agent authenticates | `issueApiKey` → `ult_<env>_<id>_<secret>`, shown once; `verifyApiKey` + `apiKeyActor` give a `kind: 'agent'` actor whose scopes are **exactly** the key's, never the owner's roles (`X_API_KEY_INVALID`) |
+| API keys — how an agent authenticates | `issueApiKey` → `ult_<env>_<id>_<secret>`, shown once; `verifyApiKey` + `apiKeyActor` give a `kind: 'agent'` actor whose scopes are **exactly** the key's, never the owner's roles (`X_API_KEY_INVALID`). `apiKeyResolver(() => store)` is both as the `resolveToken` a bearer mount and `defineAppMcp()` take: `{ actor, scopes }` for a live key, one `null` for every wrong one, and a store fault left a throw. In a test the store is `new MemoryAdapter()` |
 | service-to-service | `verifyWorkloadToken` reads a Kubernetes service-account token, a SPIFFE JWT-SVID or a cloud IMDS token (they are all one JWT); `actorFromService` gives a `kind: 'service'` actor. mTLS is the mesh's job |
 
 Every auth code — `X_UNAUTHENTICATED`, `X_SESSION_EXPIRED`, `X_MFA_REQUIRED`, `X_OAUTH_*`,

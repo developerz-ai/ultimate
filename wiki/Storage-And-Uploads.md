@@ -20,12 +20,29 @@ defineStorage({
 await disk('media').put(scopedKey(orgId, 'avatars', 'a.png'), bytes, { contentType: 'image/png' });
 ```
 
-Swapping `local` for `s3` changes no call site, and `x dev` needs no MinIO.
+Swapping `local` for `s3` changes no call site, and `x dev` needs no S3 server.
 
 | Driver | Backing | For |
 |---|---|---|
 | `localDriver` | `Bun.file` / `Bun.write` under one root | dev, tests, a single node |
-| `s3Driver` | `Bun.s3` | MinIO, R2, AWS — the difference is `endpoint` + `forcePathStyle`. Credentials are env var **names**, never literals |
+| `s3Driver` | `Bun.s3` | any S3-compatible endpoint — AWS, R2, a self-hosted gateway. The difference is `endpoint`, `region` and `forcePathStyle`. Credentials are env var **names**, never literals |
+| `memoryDriver` | a `Map` in this process | a test's disk: `defineStorage({ disks: { uploads: memoryDriver() } })`. Every method `localDriver` answers, the same refusals, the same signing rule; `objects()` is a copy of the stored bytes by key. Never a deployment's disk — a restart is every object gone |
+
+**A declaration holds a disk by THUNK, never by value.** `disk('sessions')` resolves through
+`defineStorage()`, which boot runs after an app's modules were evaluated — so a `scrape()` or any
+other declaration built at import time takes `() => disk('sessions')` and reads it when it is
+used ([Scraping](Scraping)). Called at module scope, `disk()` is `X_CONFIG_INVALID`: storage was
+not defined yet.
+
+A real S3 on a laptop is `docker/docker-compose.dev.yml`'s `s3` service — Versity S3 Gateway over a
+volume, with the bucket already there (a directory under its root is a bucket, and the volume is
+mounted at one). Point the app at it with `S3_ENDPOINT=http://127.0.0.1:9000`, `S3_BUCKET=<app>`,
+`S3_FORCE_PATH_STYLE=1` and the key pair the file ships. That file chooses a server for development
+only — production is whichever S3-compatible endpoint you run.
+
+`S3_REGION` is the region requests are signed for. Unset, they are signed for `auto`: what R2 wants
+and what the dev gateway is started with. An endpoint that expects another region refuses the
+first write, list or delete with `X_CONFIG_INVALID`, and the fix line names the value to set.
 
 ## Keys are refused, never sanitised
 

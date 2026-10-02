@@ -3,6 +3,7 @@
 // production one.
 
 import { describe, expect, test } from 'bun:test';
+import { createLogger } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import { testClock } from './clock';
 import { fakeBrowser } from './driver-fake';
@@ -93,6 +94,7 @@ describe('unit · the recorded leg redacts the same body the live leg does', () 
       ],
     }).open({
       name: 'orders',
+      logger: createLogger({ writer: () => undefined }),
       rules: { allowHosts: ['shop.test'] },
       clock: testClock(),
       timeoutMs: 1_000,

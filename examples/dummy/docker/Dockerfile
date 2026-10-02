@@ -26,6 +26,16 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# ---------- prebuilt: every island chunk and compiled stylesheet, made once, here ----------
+# What a web pod otherwise makes on EVERY boot — Babel over every island, Sass over every
+# stylesheet: seconds of CPU and a compiler's worth of memory, per replica, per start. It runs in
+# the image build because the store is valid only for the Bun and the paths that wrote it; above
+# BUILD_ID, so two images differing only by their stamp share this layer; and above
+# NODE_ENV=production, because it imports the app with no deployment environment and app.config.ts
+# must ask for none — exactly as on a fresh clone. An image without this line still serves, and
+# every boot logs X_IMAGE_NOT_PREBUILT naming it.
+RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target prebuilt
+
 # The immutable content hash this image serves. Stamped by CI (`--build-arg BUILD_ID=$(git rev-parse HEAD)`);
 # without one the server computes the same hash from the manifest at boot. Never `latest`.
 ARG BUILD_ID=

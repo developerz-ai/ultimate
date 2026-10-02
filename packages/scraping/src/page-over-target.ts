@@ -35,6 +35,7 @@ import type {
   ScrapeTarget,
 } from './target';
 import { ROOT_SELECTOR } from './target';
+import type { UsageMeter } from './usage';
 
 export interface PageContext {
   readonly clock: ScrapeClock;
@@ -51,6 +52,8 @@ export interface PageContext {
   readonly secrets?: ScrapeSecrets | undefined;
   readonly robots?: RobotsGate | undefined;
   readonly signal?: AbortSignal | undefined;
+  /** The run's meter. Counts a navigation where the wedge watchdog is told about one. */
+  readonly usage?: UsageMeter | undefined;
 }
 
 /** Mutable, shared by the page and every frame under it: a taint is a property of the SESSION. */
@@ -251,6 +254,7 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
       await guardNavigation(url, ctx);
       await ctx.pace?.(ctx.signal);
       ctx.onActivity?.();
+      ctx.usage?.navigation();
       await target.goto(url, {
         timeoutMs: options?.timeout ?? ctx.defaultTimeoutMs,
         signal: ctx.signal,

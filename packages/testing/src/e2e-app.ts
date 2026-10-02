@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { finiteCount } from '@ultimat3/core';
 import type { E2eAppMode } from './e2e-spawn';
 import { inherited, refuse, spawnE2eApp, xBin } from './e2e-spawn';
+import { testSealKeyEnv } from './test-seal-key';
 
 export type { E2eAppMode } from './e2e-spawn';
 
@@ -35,6 +36,11 @@ export interface E2eApp {
   readonly base: string;
   /** The throwaway `.x` this app runs on — the one directory a test may inspect or corrupt. */
   readonly stateDir: string;
+  /**
+   * The last of what the app printed, bounded — what a failing e2e test carries in its message
+   * (`failure-context.ts`), so a live-path bug is readable without running `x dev` by hand.
+   */
+  log(): string;
   /** Kill the app and delete its state directory. Idempotent. */
   stop(): Promise<void>;
   /**
@@ -72,7 +78,13 @@ export async function startE2eApp(options: StartE2eAppOptions): Promise<E2eApp> 
   // Before the state directory too: an app that cannot name its `x` leaves nothing behind.
   const bin = await xBin(options.root);
   const stateDir = await mkdtemp(join(tmpdir(), 'ultimate-e2e-'));
-  const env: Record<string, string> = { ...options.env, ULTIMATE_STATE_DIR: stateDir };
+  // The app is a server, not a test process: it installs no seal key for itself. The harness hands
+  // down the throwaway one when the app's root has none, so a `.sealed()` column works under e2e.
+  const env: Record<string, string> = {
+    ...testSealKeyEnv({ root: options.root }),
+    ...options.env,
+    ULTIMATE_STATE_DIR: stateDir,
+  };
   const cleanup = (): Promise<void> => rm(stateDir, { recursive: true, force: true });
   try {
     x(bin, ['db', 'reset'], options.root, env);
@@ -93,6 +105,7 @@ export async function startE2eApp(options: StartE2eAppOptions): Promise<E2eApp> 
     return {
       base: spawned.base,
       stateDir,
+      log: () => spawned.log(),
       restart: (next) => spawned.restart(next),
       async stop(): Promise<void> {
         await spawned.stop();

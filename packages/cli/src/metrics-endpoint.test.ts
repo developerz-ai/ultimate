@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  collectMetrics,
   METRICS_CONTENT_TYPE,
   METRICS_PATH,
   recordConnection,
@@ -14,10 +15,12 @@ import {
 } from '@ultimat3/core';
 import { PORT_RANGE } from './flag-number';
 import {
+  bindScrapePort,
   isAddressInUse,
   type MetricsEndpoint,
   MetricsPortInUseError,
   startMetricsEndpoint,
+  whenMetricsPortTaken,
 } from './metrics-endpoint';
 
 let endpoint: MetricsEndpoint | undefined;
@@ -58,6 +61,35 @@ describe('the scrape endpoint', () => {
     expect(body).toContain('http_request_duration_seconds_count');
     // A rate is derived by the adapter, never stored: nothing may export a series called `rps`.
     expect(body).not.toContain('\nrps');
+  });
+
+  test('every scrape carries what the process itself costs, labelled with its role', async () => {
+    endpoint?.stop();
+    endpoint = startMetricsEndpoint({ port: 0, role: 'worker' });
+    const body = await (await scrape()).text();
+    const value = (name: string): number =>
+      Number(new RegExp(`^${name} (\\S+)$`, 'm').exec(body)?.[1] ?? Number.NaN);
+    // This test process, measured: more than a megabyte resident, started before now.
+    expect(value('process_resident_memory_bytes')).toBeGreaterThan(1024 * 1024);
+    expect(value('process_heap_used_bytes')).toBeGreaterThan(0);
+    expect(value('process_heap_total_bytes')).toBeGreaterThan(0);
+    expect(value('process_external_memory_bytes')).toBeGreaterThanOrEqual(0);
+    expect(value('process_start_time_seconds')).toBeGreaterThan(1_600_000_000);
+    expect(value('process_cpu_seconds_total')).toBeGreaterThan(0);
+    expect(body).toContain('# TYPE process_cpu_seconds_total counter');
+    expect(body).toContain('# TYPE process_event_loop_lag_seconds histogram');
+    expect(body).toContain('process_info{role="worker"} 1');
+  });
+
+  test('a listener opened with no role says so, and stopping it stops the process series', async () => {
+    expect(await (await scrape()).text()).toContain('process_info{role="unknown"} 1');
+    endpoint?.stop();
+    endpoint = undefined;
+    const resident = collectMetrics().metrics.find(
+      (metric) => metric.descriptor.name === 'process_resident_memory_bytes',
+    );
+    // Stopped: the observer answers 0 rather than reading a process nobody is scraping.
+    expect(resident?.points[0]?.value).toBe(0);
   });
 
   test('answers only its own path — it is not a second router', async () => {
@@ -169,5 +201,60 @@ describe('a scrape port that is not a number', () => {
     } finally {
       ephemeral.stop();
     }
+  });
+
+  // Two `x dev` on one laptop both default to 9090, and the second one died at boot. A seam, not
+  // a second socket: whether a kernel refuses a rebind is the OS's answer.
+  describe('a taken port', () => {
+    const taken = (): never => {
+      throw Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' });
+    };
+    const bindExcept = (busy: number, asked: number[]) => (port: number) => {
+      asked.push(port);
+      return port === busy ? taken() : { port: port === 0 ? 41234 : port };
+    };
+
+    test('x dev with no declared port takes a free one instead of refusing to boot', () => {
+      const asked: number[] = [];
+      expect(bindScrapePort(9090, 'free', bindExcept(9090, asked))).toEqual({ port: 41234 });
+      // The declared port first, then the kernel's choice — never a guess at a neighbour.
+      expect(asked).toEqual([9090, 0]);
+    });
+
+    test('a declared port is refused with the code and the command, never moved', () => {
+      const asked: number[] = [];
+      let thrown: unknown;
+      try {
+        bindScrapePort(9090, 'refuse', bindExcept(9090, asked));
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(MetricsPortInUseError);
+      expect(asked).toEqual([9090]);
+    });
+
+    test('a free port is bound as asked, and an ephemeral ask is never retried', () => {
+      const asked: number[] = [];
+      expect(bindScrapePort(9090, 'free', bindExcept(1, asked))).toEqual({ port: 9090 });
+      expect(() => bindScrapePort(0, 'free', taken)).toThrow(MetricsPortInUseError);
+    });
+
+    test('only x dev with no METRICS_PORT moves; a declared port and a container refuse', () => {
+      expect(whenMetricsPortTaken(true, {})).toBe('free');
+      expect(whenMetricsPortTaken(true, { METRICS_PORT: ' ' })).toBe('free');
+      expect(whenMetricsPortTaken(true, { METRICS_PORT: '9090' })).toBe('refuse');
+      expect(whenMetricsPortTaken(false, {})).toBe('refuse');
+      expect(whenMetricsPortTaken(false, { METRICS_PORT: '9191' })).toBe('refuse');
+    });
+
+    test('a failure that is not a collision is not answered with a second bind', () => {
+      const asked: number[] = [];
+      const denied = (port: number): never => {
+        asked.push(port);
+        throw Object.assign(new Error('listen EACCES'), { code: 'EACCES' });
+      };
+      expect(() => bindScrapePort(80, 'free', denied)).toThrow('EACCES');
+      expect(asked).toEqual([80]);
+    });
   });
 });

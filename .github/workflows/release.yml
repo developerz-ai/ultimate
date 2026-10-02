@@ -119,10 +119,13 @@ jobs:
       # The gate's verdict on THIS commit, read — never re-run. This job used to run
       # `scripts/verify.ts` itself, on a runner with no Postgres, NATS or Redis and no
       # `E2E_BROWSER_REQUIRED`: the 21.0.0 run executed 10 of 342 live tests where ci.yml's
-      # `verify` job ran 278, and still called the tag verified. ci.yml runs on every push to main,
-      # so the release commit already has the real answer. Polled because a Release published the
-      # minute its commit lands races that run (`verify` times out at 12 min; the window is 20).
-      # Fails closed: no run, no verdict, or any conclusion but `success` does not publish.
+      # gate ran 278, and still called the tag verified. ci.yml runs on every push to main, so the
+      # release commit already has the real answer. Since 2026-10-01 that gate runs in parts, one
+      # per runner, and `verify` is the job that MERGES them — its conclusion is the gate's, and it
+      # is red for a step no part ran, so reading this one name still reads the whole gate. Polled
+      # because a Release published the minute its commit lands races that run (a part times out
+      # at 10 min and the merge at 5; the window is 20). Fails closed: no run, no verdict, or any
+      # conclusion but `success` — `skipped` on a cancelled run included — does not publish.
       - name: require ci.yml's verify job to have passed on the tagged commit
         env:
           GH_TOKEN: ${{ github.token }}

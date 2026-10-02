@@ -123,7 +123,7 @@ apps/web/app/<features>/page.tsx the route, at the plural URL
 | `ui.tsx`, `ui/` | Solid components | fetching, business logic, its own authz |
 | `admin/resource.ts` | list columns, title key, page size | a second authz path |
 
-One primitive per file, not one file per role: `actions/publish-post.ts` is the only place `publishPost` is declared, so a slice with nine actions is nine reviewable diffs instead of one 600-line module. The flat files are the ones there is exactly one of per feature.
+`x g` writes one primitive per file: `actions/<verb>-post.ts`, `live/<name>.ts`, `queries/<name>.ts`, `jobs/<verb>-post.ts`, `tasks/<name>.ts`. A primitive is registered by `defineApi()` and found by the module scan, never by its filename, so a feature may equally keep several declarations in one file — `examples/dummy` keeps one `actions.ts` per feature — and nothing enforces either layout ([Project layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface) names the filenames that ARE enforced). The flat files are the ones there is exactly one of per feature.
 
 The folder is the name passed to `x g resource`; the route is its plural, because a collection URL is plural — `x g resource post` writes the slice to `apps/web/app/post/` and the page to `apps/web/app/posts/page.tsx`.
 
@@ -173,7 +173,7 @@ arrives on rule two.
 x g resource post --admin --locales en,es
 ```
 
-That invocation writes 31 files, `As of 2026-09-08` — `x g resource` writes 29 files without
+That invocation writes 35 files, `As of 2026-10` — `x g resource` writes 33 files without
 `--admin`, and the two extra are the override in row 12 and its test. Re-derive by counting
 `data.files` under `--dry-run --json`; a stale number here is `X_DOC_FILE_COUNT_STALE` from the
 gate's `manifest` step. `--locales` moves neither number: it merges keys into a catalog the plan
@@ -189,7 +189,7 @@ refuses to allow.
 | # | File | Contents |
 |---|---|---|
 | 1 | `apps/web/app/post/entity.ts` | `entity('posts', { tenant, columns, invariants, indexes })`, the row type, `PostView` |
-| 2 | `apps/web/app/post/repo.ts` | the table's only SQL: `byId`, ordered-and-bounded `listByOrg`, `insert` |
+| 2 | `apps/web/app/post/repo.ts` | the table's only reads and writes, through the typed handle (`db.posts`) — no `sql`: `byId`, ordered-and-bounded `list(limit)`, `insert`. The handle scopes every read to the actor's org |
 | 3 | `apps/web/app/post/service.ts` | one method per use case, over the repo, no HTTP |
 | 4 | `apps/web/app/post/policy.ts` | `post:read` / `post:write` both ways (module augmentation + `definePermissions`) and the feature's cache tag |
 | 5 | `apps/web/app/post/errors.ts` | `PostNotFoundError` — code, cause, executable fix |
@@ -286,18 +286,20 @@ the generator's output list, so it is an orphan the author deletes.
 | File | Why the generator leaves it alone | What a new resource costs |
 |---|---|---|
 | `packages/db/src/schema.ts` | the db package's **public surface**, not the generator's input — `x db gen` and the `drift` step both read the entity registry (`describeEntities()`), which `loadApp` fills by importing every module under `apps/*/{site,app,api,shared}/**` and `packages/*/src/**`. `examples/dummy` has entities, migrations and no `schema.ts` at all. The re-export decides what `@myapp/db` hands out, and moves the text half of the drift hash (`packages/db/src/**`) | one `export { post } from '@myapp/web/app/post/entity';` |
-| `apps/admin/src/index.ts` | composition — `defineAdmin({ entities, resources })` is the app deciding which tables get an operator door and which stay shut | one entry in `entities`, plus the `--admin` override in `resources` |
+| `apps/admin/app/admin/admin.ts` | composition — `defineAdmin({ entities, resources })` is the app deciding which tables get an operator door and which stay shut | nothing while `entities: adminEntitiesOf(db)` reads the handle; `x g resource --admin` lists its override under `resources:` itself (`X_ADMIN_RESOURCE_UNWIRED` names the two lines when it cannot) |
 
 Neither is a second declaration of anything, and neither is a generator's file to overwrite.
 `packages/db/src/schema.ts` ships with `x new`, already re-exporting the example resource, so the
-second entity is a copy of the line in front of you. The `defineAdmin` call is not scaffolded at
-all: as of 2026-08 `x new` emits the admin app as a route shell (`apps/admin/app/page.tsx`), and the
-app writes its own composition — the reference app keeps it at `apps/admin/src/index.ts`.
+second entity is a copy of the line in front of you. `x new` writes the `defineAdmin` call at
+`apps/admin/app/admin/admin.ts` — the admin's one home, inside the scan's
+`apps/*/{site,app,api,shared}/**` — and `x g admin:page` writes beside it, in
+`apps/admin/app/admin/pages/`. A declaration under `apps/<app>/src/` is outside that scan, is never
+imported and never mounts: `loadApp` reports it as `X_ADMIN_UNSCANNED` (the `manifest` step), with
+the `git mv` that moves it home.
 
-Of the two, only the admin list is arguably still a registry rather than a decision. MCP solved the
-same problem on the declaration side — `mcp: { expose: true }`, collected by
-`defineAppMcp({ include: 'exposed' })` — and admin exposure has no equivalent: as of 2026-08
-`defineAdmin` takes an explicit `entities` array and nothing else.
+The admin list is a decision only when the app makes one: the scaffold's `adminEntitiesOf(db)`
+derives it from the typed handle, so every entity the handle serves is a screen, and naming them —
+`entities: [post]` — is how an app leaves a table out (`As of 2026-10`).
 
 ## The promise
 

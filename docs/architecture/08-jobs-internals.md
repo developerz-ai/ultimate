@@ -63,9 +63,10 @@ export interface JobDriver {
   readonly steps: StepStore;
   enqueue(request: EnqueueRequest): Promise<EnqueueResult>;
   claim(options: ClaimOptions): Promise<readonly ClaimedJob[]>;
-  ack(jobId: string): Promise<void>;
-  nack(jobId: string, options: NackOptions): Promise<void>;
-  heartbeat(jobId: string, options: { readonly visibilityTimeoutMs: number }): Promise<void>;
+  // Each settle and renewal names its CLAIM — `{ workerId, claim }` — and answers whether it landed.
+  ack(jobId: string, by: AckOptions): Promise<boolean>;
+  nack(jobId: string, options: NackOptions): Promise<boolean>;
+  heartbeat(jobId: string, options: HeartbeatOptions): Promise<boolean>;
   stats(): Promise<readonly QueueStats[]>;
   readonly backfills?: BackfillLedger;
   readonly introspect?: JobIntrospection;
@@ -117,7 +118,7 @@ RETURNING j.id, j.name, j.input, j.attempt, j.tenant_id, j.trace, j.idempotency_
 | `run_at <= now()` | backoff, `step.sleep`, and rate-limit deferral all express as a future `run_at`. One mechanism, three features |
 | `attempt` incremented at claim | a worker that dies mid-run has still burned an attempt, so a poison job cannot loop forever |
 | Partial index | `CREATE INDEX ON x_jobs (queue, priority DESC, run_at) WHERE state = 'ready'` — the ready set stays small even with millions of terminal rows |
-| Wakeup | `LISTEN x_jobs_ready` + `NOTIFY` on post-commit outbox release; polling is the fallback (`pollInterval`, default 1s), never the primary path |
+| Wakeup | `LISTEN x_jobs_wake` / `x_outbox_wake` on one session per worker pod (`startQueueWake`); the enqueue and the outbox stage carry the `pg_notify`. Polling is the guarantee underneath — see [Idle cost](#idle-cost) |
 
 ## Visibility timeout
 
@@ -199,33 +200,89 @@ export const onboardOrg = job({
 | Uniqueness window | `retention` per queue; default 24h after terminal state |
 | Non-idempotent external call inside a step | pass the provider's idempotency header keyed `${jobId}:${stepName}` |
 
-## Per-tenant limits
+## Limits and concurrency
 
-Declared per job, enforced per tenant, so one noisy customer cannot starve the rest.
+Two layers. `createLimiter` counts in ONE process; `job.concurrency` is held across the fleet.
 
 ```ts
 export const syncCrm = job({
-  input: t.object({ orgId: t.uuid }),
+  input: t.object({ orgId: t.uuid, accountId: t.uuid }),
   tenant: ({ orgId }) => orgId,
-  idempotencyKey: ({ orgId }) => `crm-sync:${orgId}`,
-  concurrency: { key: ({ orgId }) => orgId, limit: 2 },
-  rateLimit:   { key: ({ orgId }) => orgId, limit: 60, per: '1m' },
+  idempotencyKey: ({ accountId }) => `crm-sync:${accountId}`,
+  concurrency: { key: ({ accountId }) => accountId, limit: 1, whenBusy: 'fail' },
+  retry: { attempts: 3 },
   queue: 'integrations',
-  async run({ input, step, ctx }) { /* ... */ },
+  async run({ input, step, ctx, finalAttempt }) { /* ... */ },
 });
 ```
 
 | Control | Mechanism | On breach |
 |---|---|---|
-| `concurrency.limit` | lease-count check at claim: `COUNT(*) WHERE state='running' AND concurrency_key = $k` inside the claim transaction | row is **deferred** — `run_at = now() + jitter`, still queued |
-| `rateLimit` | token bucket row in `x_rate_buckets`, refilled by elapsed time, decremented at claim | deferred with `run_at = bucket.next_refill` |
+| `concurrency: 4` / `concurrency: { key, limit }` | one row per HELD SLOT in `x_job_leases`, taken after the claim by `SQL_LEASE_ACQUIRE` — the `(lease_key, slot)` primary key serialises two workers. Lease key `job:<name>`, or `job-key:<encoded name>:<key(input)>` for a keyed cap. TTL is the worker's `visibilityTimeoutMs`, renewed on the heartbeat interval. There is no `concurrency_key` column and no count inside the claim | `whenBusy: 'wait'` (default, and always for a plain number): nacked back `ready`, attempt uncounted. `whenBusy: 'fail'`: settled `failed` with `X_JOB_KEY_BUSY`, body never run — unless the only holder is this run's own earlier claim (`SQL_LEASE_HOLDERS`), which waits |
+| `createLimiter({ perTenant, perQueue, global, ratePerTenant })` | three `Map`s in the worker's heap (`limits.ts`). **Per process**: multiplied by the replica count. There is no `rateLimit:` on a job and no `x_rate_buckets` table, `As of 2026-10` | handed straight back: `ready`, attempt uncounted, `jobs.worker.shed` |
 | `queue` | named pool; `WORKER_QUEUES=default,integrations` selects pools per replica | a queue with no worker is visible in `x jobs ls --json`, not silently stalled |
 | `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, in the driver scheduler. The curve is `@ultimat3/core`'s `backoffDelay` since 2026-08-23; what stays here is `DurationInput` (`'30s'`), the `DEFAULT_RETRY` fallbacks, and this package's public `jitter: boolean` | after `attempts`, dead-letter with the full step trace |
 | `retry.jitter` | **equal** jitter — half fixed, half rolled — and `true` by default. Never `full`: a job that has already failed twice must not be handed a near-zero wait | a burst of failures retries spread out rather than in lockstep |
 | the thrown code's `retry` classification | `nextRetryForError` (`packages/jobs/src/retry-classification.ts`), read at `execute.ts` before the attempt count | a **`terminal`** code stops on the attempt that failed — the remaining attempts are a queue slot and a provider bill. `retry-after` replaces the delay, clamped by `maxDelay`, never the ceiling. An **unclassified** code takes exactly the path it took before the reader existed |
 | Dead letter | `state='dead'`, steps retained | `x jobs retry <id>` replays **from the failed step**, memo intact |
 
-A limited job is **deferred, never dropped**. Dropping is a data-loss decision disguised as backpressure.
+A limited job is **deferred, never dropped** — `whenBusy: 'fail'` is the one declared exception, and it leaves a `failed` row, never nothing. Dropping is a data-loss decision disguised as backpressure.
+
+## The operator surface
+
+`JobIntrospection` (`packages/jobs/src/introspection.ts`) is the whole of what an operator may ask; both drivers implement every member and `operator-surface-fixture.ts` runs one assertion set over both.
+
+| Capability | Mechanism | Statement |
+|---|---|---|
+| paged listing | keyset on `(created_at, id)`, newest first, over `x_jobs_created_idx`. The cursor is `<createdAt ms>:<id>`; the seek reads the cursor row's own `created_at`, because the ms is rounded | `SQL_JOB_LIST` |
+| settle + history | `ack` / `nack` are fenced on `state = 'running'`, `claimed_by` AND the claim's ordinal (`x_jobs.claims`, moved by `SQL_CLAIM`, never reset) — a worker that takes back its own lapsed job has the same id as the body still unwinding. The same statement upserts the job's one-minute bucket in `x_job_counters`; an ack with `counted: false` (`x jobs drain`) skips it | `SQL_ACK`, `SQL_NACK` |
+| renewal + progress | fenced the same way, so the superseded body's heartbeat answers `false` and its run is cancelled | `SQL_HEARTBEAT`, `SQL_JOB_PROGRESS` |
+| last fire | `x_scheduler_state.fired_occurrence_at` / `fired_at`, written by the firing statement. The watermark beside them also moves on an arming and a skipped catch-up, which are not fires | `SQL_SCHEDULER_FIRE`, `SQL_TASK_FIRES` |
+| counter tiers | 1-minute for 24 h → 5-minute for 7 d → 1-hour for 30 d. The scheduler leader folds once a minute; delete-and-insert in one statement, so two nodes folding move each bucket once | `SQL_COUNTER_FOLD`, `SQL_COUNTER_DROP` |
+| queue / task pause | one row in `x_job_pauses (kind, name)`. The claim excludes a paused queue with `not exists`; the scheduler skips a paused task and leaves its watermark | `SQL_PAUSE`, `SQL_CLAIM` |
+| bulk | one CTE each: select up to 1,000, act, and count what matched before the act | `SQL_JOB_REQUEUE_MANY`, `SQL_JOB_REMOVE_MANY` |
+| worker registry | `x_job_workers`, rewritten on the heartbeat interval, expired by `expires_at` | `SQL_WORKER_ANNOUNCE`, `SQL_WORKERS` |
+| progress | `x_jobs.progress` (jsonb), throttled in the runner to one write a second, fenced on the claimer | `SQL_JOB_PROGRESS` |
+| atomic fire | the watermark upsert is the fence; the occurrence's jobs insert `where exists (select 1 from moved)` | `SQL_SCHEDULER_FIRE` |
+
+Measured on the embedded Postgres, `As of 2026-10-01` (3,000 settles, median of three runs on a loaded machine): `ack` 0.72 ms → 1.39 ms, a counted `nack` 1.01 ms → 1.39 ms, an uncounted one (a shed) 1.20 ms. One round trip before and after.
+
+## Idle cost
+
+Measured on a production app `As of 2026-10-01`: an idle scheduler with ~35 tasks sent ~70 statements a second and an idle worker pod 9–13. Counted per idle minute by `packages/jobs/src/idle-cost.test.ts` and `queue-wake.test.ts`:
+
+| Loop | Fixed poll | Backoff, no wake | Backoff, proven wake | How |
+|---|---|---|---|---|
+| scheduler, 35 tasks | 4,321 | 6 | 6 | watermarks and each task's next occurrence held in memory while leading; the lease trusted for `renewEveryMs` (TTL / 3); the pause table read only when a task is due; the counter fold every ten minutes |
+| worker, 2 queues | 480 | 30 | 12 | `idle-backoff.ts`: 250 ms doubling to 2 s, or to 5 s while `wakeIsLive()`; an idle pass is one `SQL_CLAIM` over every queue with a free slot, `limit` = the fewest free |
+| outbox relay | 300 | 30 | 12 | the same backoff from 200 ms |
+
+The lease is not what makes a trusted window safe: `SQL_SCHEDULER_FIRE` moves the watermark and queues the occurrence's jobs in one statement, so two nodes that both believe they lead queue it once.
+
+### The wake
+
+| Piece | Mechanism |
+|---|---|
+| session | `@ultimat3/db`'s `client.listen(channel, onNotify, onListening)`: one connection beside the pool (`Bun.SQL.listen`; PGlite's own under `x dev`). The driver re-dials a session that died and `onListening` fires again |
+| listener | `startQueueWake({ listener, executor })`, started by the boot for the `worker` role. A notification becomes `signalEnqueued(queue)` or `signalStaged(true)` — the signals a local enqueue already raises |
+| proof | after every (re-)listen a probe is sent through the POOL; the wake is live once it has come back on both channels. Not proven within 5 s: `jobs.wake.unverified`, once |
+| enqueue | `SQL_ENQUEUE` notifies the queue name unless another row of that queue was created in the same 250 ms slot, or the row is due more than 1 s out |
+| stage | `SQL_OUTBOX_STAGE` notifies — at COMMIT, never on rollback — unless a committed row is already waiting unclaimed |
+| woken loop | passes now, then at its floor again: that second pass finds the row a slot kept silent |
+
+| Why | Detail |
+|---|---|
+| a notification is throttled in the statement | Postgres serialises the commit of every transaction that issued a `NOTIFY` behind one lock held through the WAL flush. Unthrottled, an app's enqueuing commits go one flush at a time |
+| the ceiling rises only on proof | PgBouncer in `pool_mode = transaction` accepts the `LISTEN` and delivers nothing. Unproven, the ceiling stays 2 s |
+| the poll stays | a notification sent while the session was down is gone; a delayed job another process queued announces nothing when it falls due |
+
+Enqueue → start on an idle worker, Postgres 17 on loopback, median / max, `As of 2026-10-01`:
+
+| Path | Backoff, no wake | With the wake |
+|---|---|---|
+| same process | 7 ms / 21 ms | 10 ms / 19 ms |
+| another process, direct | 1,033 ms / 1,785 ms | 8 ms / 18 ms |
+| another process, through the outbox, from COMMIT | 1,275 ms / 2,008 ms | 9 ms / 13 ms |
 
 ## Where durable business state lives
 

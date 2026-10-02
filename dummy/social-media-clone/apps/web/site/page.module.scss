@@ -25,7 +25,7 @@ $band: 72rem;
 .hero::before {
   content: '';
   position: absolute;
-  z-index: -2;
+  z-index: calc(-1 * #{t.z(sticky)});
   inset: 0;
   background:
     radial-gradient(52rem 30rem at 8% 4%, t.role('accent', 0.3), transparent 64%),
@@ -38,7 +38,7 @@ $band: 72rem;
 .hero::after {
   content: '';
   position: absolute;
-  z-index: -1;
+  z-index: calc(-1 * #{t.z(raised)});
   inset: 0;
   // Accent-tinted rather than `line`: the neutral line role sits a few percent off the warm page
   // ground and disappears entirely, which is a texture nobody can see and therefore is not one.
@@ -320,7 +320,7 @@ $band: 72rem;
     box-shadow: t.shadow('md');
 
     @include t.motion {
-      transform: translateY(-2px);
+      transform: translateY(t.rem(-2px));
     }
   }
 }

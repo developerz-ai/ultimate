@@ -12,6 +12,7 @@ import {
   TestPolicyExpectedError,
 } from './matcher-receiver-errors';
 import type { MatcherResult } from './matcher-result';
+import { rowEquality } from './matcher-row';
 import type { UltimateMatchers } from './matcher-surface';
 import type { VisibleOptions } from './matcher-visible';
 import { assertVisibilityProbe, visibilityResult } from './matcher-visible';
@@ -294,6 +295,11 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     return hasIssues(schema, input).then((rejected) =>
       result(rejected, () => `expected the schema to reject ${renderCauseValue(input)}`),
     );
+  },
+
+  // Any receiver is comparable, so there is nothing to refuse: a non-row simply is not equal.
+  toEqualRow(received: unknown, expected: unknown) {
+    return rowEquality(received, expected);
   },
 
   toAcceptInput(received: unknown, input: unknown) {

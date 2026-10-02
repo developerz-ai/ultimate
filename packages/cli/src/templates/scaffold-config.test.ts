@@ -16,6 +16,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { defineConfig } from '@ultimat3/core';
+import { planNewApp } from '../cmd-new';
 import { names } from './naming';
 import { repoFiles } from './scaffold-repo';
 
@@ -172,5 +173,35 @@ describe('unit · the app.config.ts x new writes', () => {
       'offline',
       'push',
     ]);
+  });
+});
+
+describe('unit · who the budget pass renders app/ as', () => {
+  // `x build` weighs every `app/` route by rendering it once. The framework's default measurement
+  // actor is a `service` with no org, and a page that reads rows reads them through the typed
+  // handle, which refuses an actor with none — so the scaffold's own dashboard was filed
+  // unmeasured (X_TENANCY_ACTOR_ORG_REQUIRED) and `budgets` answered X_BUDGET_UNMEASURED.
+  test('app.config.ts declares a measurement actor, and it carries the demo org', () => {
+    const emitted = source();
+    expect(emitted).toContain('defineMeasurementActor(async () => {');
+    expect(emitted).toContain("await import('./apps/web/shared/demo-org')");
+    expect(emitted).toContain("userActor({ id: 'x-build-measure', orgId: DEMO_ORG_ID, roles:");
+    // Both names it calls are ones the one import line brings in.
+    expect(emitted).toContain(
+      "import { defineConfig, defineEnv, defineMeasurementActor, userActor } from '@ultimat3/core';",
+    );
+  });
+
+  test('so the dashboard needs no catch for an actor with no org — only for no database', () => {
+    const page = String(
+      planNewApp({ name: 'ledger-demo', example: true }).find(
+        (file) => file.path === 'apps/web/app/dashboard/page.tsx',
+      )?.contents,
+    );
+    expect(page).toContain("error.code === 'X_DB_UNAVAILABLE'");
+    expect(page).not.toContain('X_TENANCY_ACTOR_ORG_REQUIRED');
+    // And it reads its ACTOR's org: the repo takes no org argument to get wrong.
+    expect(page).toContain('repo.list(ROW_LIMIT)');
+    expect(page).not.toContain('DEMO_ORG');
   });
 });

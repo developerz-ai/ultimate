@@ -45,6 +45,8 @@ const POLL_MS = 250;
 export interface SpawnedE2eApp {
   /** `http://localhost:<port>`, no trailing slash. */
   readonly base: string;
+  /** The last of what the CURRENT process printed, stdout and stderr, bounded. */
+  log(): string;
   /** Kill the process. Idempotent. */
   stop(): Promise<void>;
   /** Kill it and start it again on the SAME port, with `env` added — a deploy. Refused after `stop()`. */
@@ -142,6 +144,7 @@ export async function spawnE2eApp(options: SpawnE2eAppOptions): Promise<SpawnedE
   }
   return {
     base,
+    log: () => tail(),
     stop,
     async restart(next: Readonly<Record<string, string>> = {}): Promise<void> {
       // `stop()` is final. A child respawned here would be one no later `stop()` kills — the flag

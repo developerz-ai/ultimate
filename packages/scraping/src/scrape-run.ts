@@ -22,10 +22,12 @@ import {
   persistSession,
   restorableSession,
 } from './auth';
-import { systemScrapeClock } from './clock';
+import { scrapeClock } from './clock';
 import type { ScrapeSession } from './driver';
 import { scrapeDriver } from './driver';
 import { driverUnknown, outputInvalid } from './error-throws';
+import { egressInPayload } from './error-throws-session';
+import type { ScrapeEventFields } from './events';
 import { scrapeLogger, withStepEvent } from './events';
 import { guardYield } from './expect';
 import { burnsSession, errorCode, neverRetried } from './failures';
@@ -33,8 +35,12 @@ import { createPacer, DEFAULT_NAVIGATION_RATE } from './rate';
 import { runRecovery } from './recover';
 import { createRobotsGate } from './robots';
 import type { ScrapeDefinition, ScrapeReport } from './scrape';
-import { createSecretBag } from './secrets';
+import { containsSecret } from './secret-scan';
+import { createSecretBag, MIN_REDACTABLE_LENGTH } from './secrets';
 import { sessionKeyFor } from './session-state';
+import { hasCredentials, splitCredentials, urlSecretValues } from './url-secrets';
+import type { ScrapeUsage } from './usage';
+import { createUsageMeter, rememberFailedUsage } from './usage';
 
 /** `ctx.actor` is a structural read: this package never imports the auth types (tier 2). */
 const orgOf = (ctx: unknown): string | undefined => {
@@ -63,11 +69,26 @@ const toMillis = (value: string | number | undefined, fallback: number, option: 
 
 export const DEFAULT_PAGE_TIMEOUT_MS = 30_000;
 
+/**
+ * True when the exit's password is readable out of the run's own input — which is the queue row.
+ * Both spellings, because a password with a quote or a backslash is stored JSON-escaped; and
+ * nothing shorter than `MIN_REDACTABLE_LENGTH`, which is a substring of ordinary payload text.
+ */
+function credentialInPayload(egress: string, input: unknown): boolean {
+  const { password } = splitCredentials(egress);
+  if (password.length < MIN_REDACTABLE_LENGTH) return false;
+  const payload = JSON.stringify(input ?? null);
+  const escaped = JSON.stringify(password).slice(1, -1);
+  // Both scans always run: an `||` would skip the second exactly when the first found the secret.
+  const plain = containsSecret(payload, password);
+  return containsSecret(payload, escaped) || plain;
+}
+
 export async function runScrape<I, Row>(
   definition: ScrapeDefinition<I, Row>,
   args: JobRunArgs<I>,
 ): Promise<ScrapeReport<Row>> {
-  const clock = definition.clock ?? systemScrapeClock;
+  const clock = definition.clock ?? scrapeClock();
   const driver = definition.driver ?? scrapeDriver();
   // The scrape's name goes in the SCRAPE slot: there is no driver here to name, which is the
   // whole failure.
@@ -79,6 +100,21 @@ export async function runScrape<I, Row>(
     driver: driver.name,
   });
   const secrets = createSecretBag(definition.secrets ?? []);
+  // The run's exit, resolved HERE — in the worker, under the job's tenant — so what the queue row
+  // carries is the id of whatever holds it. An empty answer is "none", the same as absent: a
+  // driver handed `''` would dial `--proxy-server=` and call that a decision.
+  const declared = await definition.egress?.(args.input, args.ctx);
+  const egress = declared === undefined || declared === '' ? undefined : declared;
+  if (egress !== undefined && hasCredentials(egress)) {
+    // Concealed HERE and not only in the driver that dials it: an offline or third-party driver
+    // never parses the exit, and the page artifact is redacted from this one bag either way.
+    for (const value of urlSecretValues(egress)) secrets.conceal(value);
+    // Before the browser opens: the credential is in `x_jobs` already, and running would only add
+    // a session to an exposure somebody has to rotate.
+    if (credentialInPayload(egress, args.input)) {
+      throw egressInPayload({ scrape: definition.name, egress });
+    }
+  }
   const rules = { allowHosts: definition.allowHosts, block: definition.block };
   // Screened here as well as in `scrape()`, and the two are not one check written twice: that one
   // refuses the DECLARATION and never sees a definition assembled by hand, which `runScrape` is
@@ -113,13 +149,19 @@ export async function runScrape<I, Row>(
   // opening a session first would already have spent an identity on a run that cannot succeed.
   const restored = await restorableSession(plan);
   const pageTimeoutMs = toMillis(definition.pageTimeout, DEFAULT_PAGE_TIMEOUT_MS, 'pageTimeout');
-  // The exit the session dials, readable only AFTER `driver.open()` — the proxy is a driver
-  // option and the gate below is an argument to `open()`, so the gate asks for it per read
-  // instead of being handed a value that cannot exist yet. Every read happens during a
-  // navigation, which is after this is assigned.
+  // The exit the session dials, readable only AFTER `driver.open()` — a driver with no run exit
+  // falls back to its own option, and the gate below is an argument to `open()`, so the gate asks
+  // for it per read instead of being handed a value that cannot exist yet. Every read happens
+  // during a navigation, which is after this is assigned.
   let sessionProxy: string | undefined;
+  // Before `open()`: the time a rented browser takes to arrive is time it was held.
+  const usage = createUsageMeter(clock);
   const session = await driver.open({
     name: definition.name,
+    logger,
+    runId: args.runId,
+    ...(egress === undefined ? {} : { proxy: egress }),
+    usage,
     rules,
     clock,
     timeoutMs: pageTimeoutMs,
@@ -151,10 +193,21 @@ export async function runScrape<I, Row>(
           ensureAuthenticated({
             ...plan,
             input: args.input,
+            runId: args.runId,
             page: session.page,
             secrets,
             restored,
-            prompt: createPrompt(definition.name, definition.prompt, session.page),
+            prompt: createPrompt({
+              scrape: definition.name,
+              handler: definition.prompt,
+              input: args.input,
+              page: session.page,
+              runId: args.runId,
+              clock,
+              signal: args.ctx.signal,
+              secrets,
+              onAnswered: () => usage.promptAnswered(),
+            }),
           }),
       );
       // Persisted after a LOGIN only, never after a reuse: rewriting the record on every run
@@ -181,16 +234,23 @@ export async function runScrape<I, Row>(
     // alone made a run that blocked 5,000 images print 200 and discarded the one number
     // (`Ring.dropped`) that exists to say "you are not seeing it all".
     const networkDropped = session.page.networkDropped();
-    logger.info('scrape.ok', { rows: rows.length, refused });
+    const used = usage.snapshot(session.browserCost);
+    logger.info('scrape.ok', { rows: rows.length, refused, ...usageFields(used) });
     return {
       scrape: definition.name,
       rows,
       artifacts: artifact.saved.map((ref) => ref.key),
       refused,
       networkDropped,
+      usage: used,
     };
   } catch (thrown) {
-    logger.error('scrape.failed', { code: errorCode(thrown) });
+    // A failed run has no report, and it was billed all the same: the counts ride the one line
+    // every failure already writes.
+    const used = usage.snapshot(session.browserCost);
+    logger.error('scrape.failed', { code: errorCode(thrown), ...usageFields(used) });
+    // Kept for `onSettled`, and only when somebody declared one to read it.
+    if (definition.onSettled !== undefined) rememberFailedUsage(args.runId, used);
     if (errorCode(thrown) === 'X_SCRAPE_AUTH_FAILED') {
       await recordSessionOutcome('session.refuse', logger, () => markRefused(plan));
     } else if (burnsSession(thrown)) {
@@ -203,6 +263,15 @@ export async function runScrape<I, Row>(
     await session.close();
   }
 }
+
+/** The counts as log fields. `browserCost` stays off the line: it is on the report, as `Money`. */
+const usageFields = (used: ScrapeUsage): ScrapeEventFields => ({
+  browserMs: used.browserMs,
+  navigations: used.navigations,
+  httpRequests: used.httpRequests,
+  bytesIn: used.bytesIn,
+  promptsAnswered: used.promptsAnswered,
+});
 
 /**
  * The tombstone or the burn, on the way out — best effort, and it may NEVER replace the failure
@@ -250,11 +319,13 @@ async function bodyWithRecovery<I, Row>(
       secrets,
       artifact,
       attempt: args.attempt,
+      finalAttempt: args.finalAttempt,
+      progress: args.progress,
       runId: args.runId,
     });
   try {
     return await withStepEvent(
-      { name: 'body', logger, clock: definition.clock ?? systemScrapeClock, attempt: args.attempt },
+      { name: 'body', logger, clock: definition.clock ?? scrapeClock(), attempt: args.attempt },
       body,
     );
   } catch (thrown) {

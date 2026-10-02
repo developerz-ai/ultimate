@@ -39,6 +39,7 @@
     "@ultimat3/realtime": "22.15.0",
     "@ultimat3/render": "22.15.0",
     "@ultimat3/schema": "22.15.0",
+    "@ultimat3/scraping": "22.15.0",
     "@ultimat3/seo": "22.15.0",
     "@ultimat3/storage": "22.15.0",
     "@ultimat3/testing": "22.15.0",

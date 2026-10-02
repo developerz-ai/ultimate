@@ -64,6 +64,7 @@ export function Layout(props: {
           */}
           <nav class={styles.nav} aria-label={t('app.nav.org')}>
             <a href="/feed">{t('app.nav.feed')}</a>
+            <a href="/runs">{t('app.nav.runs')}</a>
             <a href="/settings">{t('app.nav.settings')}</a>
           </nav>
 

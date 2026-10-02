@@ -10,6 +10,7 @@ import { e2eBrowser, publishE2eRun, republishE2eBrowser } from './e2e-browser-ha
 import type { E2eDriverOptions } from './e2e-driver';
 import type { E2eBrowserPage } from './e2e-page';
 import { answersWithin } from './e2e-probe';
+import { setFailureContext } from './failure-context';
 
 /** How long a live browser gets to answer `1` before it is declared hung and relaunched. */
 export const PROBE_MS = 5_000;
@@ -54,6 +55,9 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
   };
   let browser = await openOrStop(app, deps.openBrowser);
   publishE2eRun({ browser, app });
+  // Every test that fails from here on carries the app's log tail: the server's half of a failure
+  // the browser can only report as "the row never arrived".
+  setFailureContext(() => app.log());
   // Installed ONCE, over a page that delegates to whichever browser is current: an `e2eTest` body
   // is bound to its fixtures when the file DEFINES it, so reinstalling on a relaunch would leave
   // every test defined before it driving a closed browser.
@@ -80,6 +84,7 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
   });
 
   deps.afterAll(async () => {
+    setFailureContext(undefined);
     uninstall();
     browser.close();
     await app.stop();

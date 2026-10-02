@@ -2,6 +2,11 @@
 
 > Part of [`overview.md`](overview.md). Depends on: 05. Tier: 3.
 
+> **Note, 2026-10-01:** `onDead` below shipped and was reshaped the same day into ONE `onSettled`
+> hook (`packages/jobs/src/settled.ts`) — told once per ending: `completed`, `dead-lettered`, `dropped`,
+> `refused`; at most once across a crash; `X_JOB_ON_SETTLED_FAILED`. No release carried `onDead`. The
+> text below is the plan as written; read `onDead` as `onSettled`.
+
 Rule: every operator capability is a member of `JobIntrospection`
 (`packages/jobs/src/driver.ts:184-205`) that the Postgres and memory drivers both implement. The
 dashboard in slice 16 reads nothing a driver does not promise, so a future driver serves the

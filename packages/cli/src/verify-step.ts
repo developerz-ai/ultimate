@@ -3,10 +3,12 @@
 // implementation can live beside the code it checks without importing the list.
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import type { CoverageMap } from './coverage-lcov';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
-import type { Finding, ShardFacts } from './output';
+import type { Finding, ShardFacts, StepResult } from './output';
 import type { TestCounts } from './test-counts';
+import type { StepTimeouts } from './verify-deadline';
 
 /**
  * Every step of the gate, in cost order — cheapest and most informative first, and never a check
@@ -106,7 +108,28 @@ export interface VerifyContext {
    * name is accepted for the callers that narrow to one (`scripts/verify.ts`).
    */
   readonly only?: VerifyStepName | readonly VerifyStepName[];
+  /**
+   * Per-step deadlines in milliseconds that beat `x.verify.json`'s `stepTimeoutMs`, which beat the
+   * step class's declared number (`verify-deadline.ts`). A step past its deadline fails by name
+   * with `X_VERIFY_STEP_TIMEOUT` and every process it started is killed.
+   */
+  readonly stepTimeoutMs?: StepTimeouts;
+  /**
+   * Called as each step finishes, in the order they finish. `--json` prints nothing until the run
+   * ends, so a job cancelled mid-run left no trace of where it hung (#589): the command streams
+   * one line per step to stderr through this, and stdout stays the single document.
+   */
+  readonly onStep?: (step: StepResult) => void;
+  /**
+   * The gate as it was invoked HERE, for a `fix:` that has to run where it was raised: `x verify`
+   * when absent, `bun run verify` from the framework root's own entry — where `x verify` answers
+   * `X_NOT_IN_APP`.
+   */
+  readonly command?: string;
 }
+
+/** `ctx.command`'s default: the binary and the command, as an app types it. */
+export const GATE_COMMAND = 'x verify';
 
 export interface StepOutcome {
   readonly ok: boolean;
@@ -128,6 +151,24 @@ export interface StepOutcome {
    * NOT the same as a suite that ran nothing, which is a number the ratchet acts on.
    */
   readonly tests?: TestCounts;
+  /**
+   * What the `unit` suite covered of the app's own tree, when this run did NOT judge it: a
+   * `--shard` slice cannot hold a floor, so it hands its facts to `x verify merge`, which folds
+   * every shard's and judges once.
+   */
+  readonly coverage?: CoverageMap;
+  /**
+   * What the `unit` suite covered of the app's own tree when this run DID judge it. `--json` drops
+   * a green step's `output`, so the numbers ride in `data.coverage` where a reader can find them.
+   */
+  readonly measured?: CoverageNumbers;
+}
+
+/** The two percentages a judged run measured, and the source files they are over. */
+export interface CoverageNumbers {
+  readonly lines: number;
+  readonly funcs: number;
+  readonly files: number;
 }
 
 export interface VerifyStep {

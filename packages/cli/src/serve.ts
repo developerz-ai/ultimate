@@ -13,8 +13,6 @@ import { startMetricsEndpoint } from './metrics-endpoint';
 import { readMigrations } from './migrations';
 import { resolveServices } from './runtime-bindings';
 import { startQueue } from './runtime-queue';
-import { startServices } from './runtime-services';
-import { bootRoles } from './serve-boot';
 import { containerBinding, metricsPortFor, portFromEnv, roleFromEnv } from './serve-env';
 import type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve-types';
 
@@ -144,17 +142,16 @@ export async function serveApp(input: ServeOptions): Promise<ServedApp> {
   const metrics = startMetricsEndpoint({
     port: metricsPortFor(options.env, port, options.metricsPort),
     hostname: containerBinding(options.env, options.hostname).hostname,
+    role,
   });
   // Everything acquired from here down, in order, so a throw anywhere below gives it all back.
   const acquired: (() => void | Promise<void>)[] = [() => metrics.stop()];
   try {
-    const runtime = await startServices(
-      resolveServices(options.root, options.env),
-      options.env,
-      options.runtime,
-    );
-    acquired.push(() => runtime.stop());
-    return await bootRoles({ options, role, runtime, acquired, metrics });
+    // Behind `await import()`: `ROLE=migrate` runs in this module too, applies SQL files and
+    // exits, and the services and the role boot are ~240 modules it never calls
+    // (`serve-graph.test.ts` pins the count each role is left with).
+    const { bootServing } = await import('./serve-boot');
+    return await bootServing({ options, role, acquired, metrics });
   } catch (error) {
     await releaseBoot(acquired);
     throw error;
