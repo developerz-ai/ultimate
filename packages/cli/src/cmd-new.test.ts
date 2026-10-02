@@ -220,6 +220,39 @@ function emitted(path: string, example: boolean): string {
   return typeof contents === 'string' ? contents : '';
 }
 
+describe('unit · x new · one way to read a string, in every file it writes', () => {
+  const files = planNewApp({ name: 'demo-app', example: true }).filter(
+    (file) => typeof file.contents === 'string' && /^apps\/.*\.tsx?$/.test(file.path),
+  );
+
+  test('the example slice reads its strings through the app catalog module, as x g resource does', () => {
+    const ui = files.find((file) => file.path === 'apps/web/app/post/ui.tsx');
+    expect(String(ui?.contents)).toContain("import { useT } from '@demo-app/i18n';");
+  });
+
+  test('the example /posts page sits in the app frame the scaffold writes, as x g resource puts it', () => {
+    expect(files.some((file) => file.path === 'apps/web/shared/shell.tsx')).toBe(true);
+    const page = String(
+      files.find((file) => file.path === 'apps/web/app/posts/page.tsx')?.contents,
+    );
+    expect(page).toContain("import { Shell } from '../../shared/shell';");
+    expect(page).not.toContain('<main');
+  });
+
+  test('no component the scaffold writes imports `t` from the framework', () => {
+    // `t` from @ultimat3/i18n renders a string while depending on nothing that registers the
+    // catalogs — issue #249's idiom. `x new` wrote it for the example slice while `x g resource`
+    // wrote `useT()` into the same app: two idioms in one scaffold.
+    const offenders = files
+      .filter((file) =>
+        /import \{[^}]*\bt\b[^}]*\} from '@ultimat3\/i18n'/.test(String(file.contents)),
+      )
+      .map((file) => file.path);
+    expect(offenders).toEqual([]);
+    expect(files.length).toBeGreaterThan(20);
+  });
+});
+
 describe('unit · x new · the suite floor the app is gated on', () => {
   // `X_VERIFY_SUITE_VANISHED` was unreachable in every generated app: no scaffold wrote a floor,
   // `readVerifyFloor` answers "no file is no floor", and a deleted suite turns its step from green

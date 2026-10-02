@@ -4,6 +4,7 @@
 // because `index.ts` has to know the example slice's own file layout.
 
 import type { GeneratedFile } from './naming';
+import { browserClientFiles } from './scaffold-browser-client';
 
 const healthAction =
   (): string => `// api/ holds actions only: no rendering, no components. This one is the readiness probe every
@@ -47,6 +48,50 @@ contractTest('health projects one MCP tool and one OpenAPI operation', () => {
 });
 `;
 
+const healthUnitTest =
+  (): string => `// health, called: what a probe gets back. Its projections — the OpenAPI operation and the MCP
+// tool — are the contract suite's, next door.
+import { anonymousActor, resolveRole } from '@ultimat3/core';
+import { expect, unitTest } from '@ultimat3/testing';
+import { health } from './health';
+
+const target = health.named('health');
+
+unitTest('health answers ok and the role of this process, with no session', async () => {
+  // Anonymous on purpose: a load balancer has no session, and \`allow('public')\` is what lets it
+  // in. The role is the process's own (\`ROLE\`), which is what tells a web probe from a worker's.
+  expect(await target.as(anonymousActor(), {})).toEqual({ ok: true, role: resolveRole() });
+});
+`;
+
+const apiIndexTest = (
+  example: boolean,
+): string => `// The registration, read back. \`defineApi\` names every primitive by its EXPORT, so what this
+// pins is that a declaration reached the call at all — an action left out of the list is a route
+// that answers 404 with every test of the action itself still green.
+import { expect, unitTest } from '@ultimat3/testing';
+import { health } from './health';
+import { api } from './index';
+
+unitTest('health is registered, as the object its module exports', () => {
+  expect(api.actions.health).toBe(health);
+  expect(api.actions.health.describe().name).toBe('health');
+});
+${
+  example
+    ? `
+unitTest('the post slice is registered: two actions, a live query and a job', () => {
+  expect(api.actions.createPost.describe().name).toBe('createPost');
+  expect(api.actions.archivePost.describe().name).toBe('archivePost');
+  expect(api.queries.postList.isLive).toBe(true);
+  // The half an app cannot skip: a job nothing lists keeps \`anonymous-job-<n>\` on the queue row
+  // and in every dead-letter trace.
+  expect(api.jobs.reindexPost.name).toBe('reindexPost');
+});
+`
+    : ''
+}`;
+
 /** The imports and the lists that differ between `x new` and `x new --no-example`. */
 const exampleSlice = {
   imports: `import * as archivePost from '../app/post/actions/archive-post';
@@ -87,14 +132,23 @@ ${slice.imports}import * as health from './health';
 export const api = defineApi({
   actions: [health${slice.actions}],${slice.extra}
 });
+
+/** What the typed client is shaped from — imported as a TYPE only by \`shared/browser-client.ts\`. */
+export type Api = typeof api;
 `;
 };
 
-/** `apps/web/api` for a new app: the readiness action, its contract test, and the registration. */
+/**
+ * `apps/web/api` for a new app: the readiness action, its contract test, and the registration —
+ * plus the browser's typed clients over it (`scaffold-browser-client.ts`), which read its `Api` type.
+ */
 export function apiFiles(example: boolean): readonly GeneratedFile[] {
   return [
     { path: 'apps/web/api/health.ts', contents: healthAction() },
+    { path: 'apps/web/api/health.test.ts', contents: healthUnitTest() },
     { path: 'apps/web/api/health.contract.test.ts', contents: healthTest() },
     { path: 'apps/web/api/index.ts', contents: apiIndex(example) },
+    { path: 'apps/web/api/index.test.ts', contents: apiIndexTest(example) },
+    ...browserClientFiles(example),
   ];
 }

@@ -5,9 +5,11 @@
 
 import { stripComments } from '@ultimat3/core';
 import type { FeatureTarget } from './entity';
+import { jobBodyTest, taskBodyTest } from './job-body-test';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
-import { sliceExports, sliceFoundation } from './slice-foundation';
+import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
+import { sliceExports, sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
 import { wrapList } from './wrap';
 
 const jobSource = (
@@ -34,7 +36,7 @@ export const ${name.camel} = job({
     const row = await step.run('load', () => repo.byId(input.id));
     if (row === undefined) return { skipped: true };
     await step.run('process', async () => {
-      await repo.listByOrg(row.orgId, 1);
+      await repo.list(1);
     });
     return { skipped: false };
   },
@@ -43,7 +45,7 @@ export const ${name.camel} = job({
 
 /**
  * The other shape: this feature's own `entity.ts` names no tenant column (or names `'none'`), or
- * its `repo.ts` does not export the `byId`/`listByOrg` pair the tenant-scoped body above calls —
+ * its `repo.ts` does not export the `byId`/`list` pair the tenant-scoped body above calls —
  * checked by `isTenantScopedSlice` against what is actually on the app's disk, never assumed. The
  * body imports neither `../entity` nor `../repo`, so it compiles whether this feature has an
  * entity yet or has one with no tenant, and `tenant: 'none'` is stated rather than defaulted so a
@@ -63,7 +65,7 @@ export const ${name.camel} = job({
   // entity names none. \`tenant: 'none'\` STRIPS the org from the run rather than leaving one
   // behind, so a tenant-scoped read added later fails closed with X_TENANCY_ACTOR_ORG_REQUIRED
   // instead of reading whichever org the enqueuer happened to hold. Once this feature's entity
-  // declares \`tenant: 'orgId'\` and its repo exports \`byId\`/\`listByOrg\`, the next \`x g job\` in
+  // declares \`tenant: 'orgId'\` and its repo exports \`byId\`/\`list\`, the next \`x g job\` in
   // this slice scaffolds the tenant-scoped shape above instead.
   tenant: 'none',
   idempotencyKey: ({ id }) => \`${name.kebab}:\${id}\`,
@@ -283,7 +285,7 @@ export interface JobOptions extends FeatureTarget {
    * This feature's own `entity.ts` as it stands on disk, or absent when the feature has none yet.
    * Supplied by `run` for the same reason `ActionOptions.sliceErrors` is: whether the slice is
    * tenant-scoped is a fact about THIS app, and a template that assumed `tenant: 'orgId'` wrote
-   * `repo.byId`/`repo.listByOrg` calls into a feature whose repo never declared them —
+   * `repo.byId`/`repo.list` calls into a feature whose repo never declared them —
    * `x g task purgeOrphans --feature links` on a `links` slice with no `orgId` produced files that
    * did not compile.
    */
@@ -297,9 +299,9 @@ export interface JobOptions extends FeatureTarget {
  * NOT: only `x g entity` and `x g resource` create a feature's data, and counting absent as scoped
  * made `x g task nightly` lay down an `entity('nightlies', { title, price })` that the `drift` step
  * then demanded a migration for. One that exists is trusted: it declares
- * a real, non-`'none'` `tenant`, AND its `repo.ts` actually exports the `byId`/`listByOrg` pair the
+ * a real, non-`'none'` `tenant`, AND its `repo.ts` actually exports the `byId`/`list` pair the
  * tenant-scoped body calls. Both have to hold — an entity that still names `tenant: 'orgId'` after
- * an author trimmed `listByOrg` out of `repo.ts` (or never generated one) is not a slice this job
+ * an author trimmed `list` out of `repo.ts` (or never generated one) is not a slice this job
  * can read through either.
  */
 export function isTenantScopedSlice(
@@ -310,7 +312,7 @@ export function isTenantScopedSlice(
   const declaresTenant = /\btenant\s*:\s*'(?!none')[^']+'/.test(stripComments(sliceEntity));
   if (!declaresTenant) return false;
   if (sliceRepo === undefined) return true;
-  return sliceExports(sliceRepo, 'byId') && sliceExports(sliceRepo, 'listByOrg');
+  return sliceExports(sliceRepo, 'byId') && sliceExports(sliceRepo, 'list');
 }
 
 export function jobFiles(rawName: string, target: JobOptions): readonly GeneratedFile[] {
@@ -335,6 +337,16 @@ export function jobFiles(rawName: string, target: JobOptions): readonly Generate
       path: `${dir}/${name.kebab}.job.test.ts`,
       contents: scoped ? jobTest(name) : neutralJobTest(name),
     },
+    // And the plain `<name>.test.ts`: the BODY, on the `unit` step. The suite above pins what a
+    // queue guarantees; an app's coverage floor counts the unit suite alone (`job-body-test.ts`).
+    {
+      path: `${dir}/${name.kebab}.test.ts`,
+      contents: jobBodyTest(name, {
+        scoped,
+        storesRow: scoped && sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo),
+        dbModule: target.dbModule ?? PLACEHOLDER_DB_MODULE,
+      }),
+    },
   ];
 }
 
@@ -350,6 +362,9 @@ export function taskFiles(rawName: string, target: JobOptions): readonly Generat
     },
     // A task's test is a `jobTest` too — it drives a queue — so it takes the same suffix.
     { path: `${dir}/${name.kebab}.job.test.ts`, contents: taskTest(name, jobName) },
+    // The task FIRED, on the `unit` step: its `enqueue` function is otherwise run by nothing the
+    // coverage floor counts.
+    { path: `${dir}/${name.kebab}.test.ts`, contents: taskBodyTest(name, jobName) },
     ...jobFiles(`${rawName}-job`, target),
   ];
 }

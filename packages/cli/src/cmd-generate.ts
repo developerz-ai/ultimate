@@ -4,6 +4,7 @@
 
 import { existsSync } from 'node:fs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { registerAdminResources } from './admin-registration';
 import { registerGeneratedPrimitives } from './api-registration';
 import { writeAppArtifacts } from './app-artifacts';
 import { appManifest } from './app-manifest';
@@ -13,18 +14,20 @@ import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
 import { assertFeatureExists } from './generate-feature';
 import { generate, sliceDir } from './generate-files';
+import { ungrantedByGenerator } from './generate-grant-findings';
 import { grantGeneratedPermissions } from './generate-grants';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { containedPath, writeFiles } from './generate-write';
+import { registerGeneratedEntities, resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
-import { syncI18nIndex } from './i18n-index';
+import { catalogLocales, syncI18nIndex } from './i18n-index';
 import { reproducedFlags } from './invocation-flags';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagBool, flagList, flagString } from './parse';
 import { quoteArg } from './shell-quote';
-import { kebab, resolveLocales } from './templates';
+import { kebab, names, resolveLocales } from './templates';
 
 // One import path for the generator, unchanged by the split: `index.ts`, `x new` and the scaffold
 // fixture reach the kinds, the pure file list and the writer through this module, and a second path
@@ -46,7 +49,7 @@ export const generateCommand: CliCommand = {
     // Both flags are resolved before a single file is planned: a bad surface or a locale that is
     // really a path fails here, with nothing written and nothing to undo.
     const surface = readSurface(flagString(ctx.args, 'surface'), kind, name);
-    const locales = resolveLocales(flagList(ctx.args, 'locales'));
+    const locales = resolveLocales(await namedOrAppLocales(root, flagList(ctx.args, 'locales')));
     const at = flagString(ctx.args, 'at');
     // Read with the two above, and refused here for their reason: the value is spliced into the
     // emitted source three times, and a value that is not a `<resource>:<verb>` is a page the app
@@ -55,6 +58,10 @@ export const generateCommand: CliCommand = {
     // Read before a file is planned, like the flags above: which module a generated component
     // imports `useT()` from is a fact about THIS app, and `generate` is a pure function.
     const catalogModule = await resolveCatalogModule(root);
+    // And for the same reason: which package a generated `repo.ts` imports the typed handle from.
+    const dbModule = await resolveDbModule(root);
+    // And whether the app has the frame a resource's page sits in.
+    const shell = existsSync(containedPath(root, SHELL_MODULE));
     // Read for the same reason: which errors the slice declares is written on THIS app's disk.
     const slice = sliceDir(surface, kebab(featureFlag ?? name));
     // A named slice that is not there is refused, never invented (X_FEATURE_UNKNOWN).
@@ -78,6 +85,8 @@ export const generateCommand: CliCommand = {
       admin: flagBool(ctx.args, 'admin'),
       locales,
       ...(catalogModule === undefined ? {} : { catalogModule }),
+      ...(dbModule === undefined ? {} : { dbModule }),
+      shell,
     });
     if (flagBool(ctx.args, 'dry-run')) {
       return {
@@ -97,13 +106,24 @@ export const generateCommand: CliCommand = {
       ...reproducedFlags(generateCommand.spec, ctx.args),
     ].join(' ');
     const report = await writeFiles(root, files, flagBool(ctx.args, 'force'), invocation);
-    // The two edits a generated primitive needs outside its own slice, performed rather than left
-    // as findings: a declared permission granted to a role, and a job listed in `defineApi`.
-    // Before the manifest load below, so the projection sees both.
+    // The three edits a generated primitive needs outside its own slice, performed rather than
+    // left as findings: a declared permission granted to a role, a job listed in `defineApi`, and
+    // an entity added to the typed handle its `repo.ts` reads through. Before the manifest load
+    // below, so the projection sees all three — a repo reading a table the handle lacks would not
+    // load at all.
+    const handle = await registerGeneratedEntities(root, report.written, dbModule);
+    // And a fourth, for `--admin`: the override it wrote, listed where `defineAdmin()` reads it.
+    const adminWiring = await registerAdminResources(root, report.written);
     const edited = [
       ...(await grantGeneratedPermissions(root, report.written)),
       ...(await registerGeneratedPrimitives(root, report.written)),
+      ...handle.edited,
+      ...adminWiring.edited,
     ];
+    // A grant that edit could not place is said so, with the role each permission belongs to: an
+    // app whose role map is not the scaffold's got no grant and no word, and a 403 on every
+    // endpoint the run had just written.
+    const ungranted = await ungrantedByGenerator(root, report.written);
     // A locale's catalog existing on disk and the app being able to select it are two different
     // facts — see `syncI18nIndex`. Runs before the manifest load below so a route or resource
     // this same invocation just wrote never gets projected against a stale catalog registration.
@@ -133,17 +153,36 @@ export const generateCommand: CliCommand = {
         buildId = manifest.buildId;
       } else loadFailures.push(...findings);
     }
-    const findings = [...report.conflicts, ...indexSync.findings, ...loadFailures];
+    const findings = [
+      ...report.conflicts,
+      ...handle.findings,
+      ...ungranted,
+      ...adminWiring.findings,
+      ...indexSync.findings,
+      ...loadFailures,
+    ];
     // One list behind all three renderings. The manifest was printed as a `+` line while the count
     // beside it came from `report.written` alone, so `x g island` said "wrote 2 file(s)" over three
     // lines — and `--json` carried the shorter list, which is the drift `--json` exists to prevent.
     const written = [...report.written, ...edited, ...artifacts];
+    // Named only over a clean run: with a finding, the finding's own `fix:` is the next command.
+    const table = names(isEntityKind(kind) ? name : (featureFlag ?? name)).table;
+    const next = findings.length === 0 ? nextSteps(report.written, edited, table) : [];
     return {
       ok: findings.length === 0,
       command: 'g',
-      summary: msg('cli.generate.wrote', { count: written.length, kind, name }),
+      summary:
+        next.length === 0
+          ? msg('cli.generate.wrote', { count: written.length, kind, name })
+          : msg('cli.generate.wroteNext', {
+              count: written.length,
+              kind,
+              name,
+              next: next.join(' && '),
+            }),
       data: {
         files: written,
+        ...(next.length === 0 ? {} : { next }),
         ...(buildId === undefined ? {} : { manifest: { buildId } }),
       },
       lines: written.map((path) => msg('cli.file.added', { path })),
@@ -151,6 +190,59 @@ export const generateCommand: CliCommand = {
     };
   },
 };
+
+/**
+ * `--locales` when the caller named any, and otherwise every locale the app already has a catalog
+ * for: a key written to `en` alone in an app that also ships `es` renders ⟦key⟧ for every Spanish
+ * reader. A stem that is not a locale tag is some other JSON file, and not a catalog to write to.
+ */
+async function namedOrAppLocales(
+  root: string,
+  named: readonly string[],
+): Promise<readonly string[]> {
+  if (named.length > 0) return named;
+  return (await catalogLocales(root)).filter((stem) => {
+    try {
+      return Intl.getCanonicalLocales(stem).length === 1;
+    } catch {
+      return false;
+    }
+  });
+}
+
+const isEntityKind = (kind: Generator): boolean => kind === 'entity' || kind === 'resource';
+
+/**
+ * What a run that declared a table owes before the app can read it, in the order it has to
+ * happen — each one a command that runs as printed. `bunx x`, never a bare `x`: `bun install`
+ * links the binary into `./node_modules/.bin` and nowhere on PATH.
+ *
+ * `bun install` leads when a manifest gained a workspace edge: the handle imports the entity from
+ * the web workspace, and an edge only a manifest declares is not linked until the install runs.
+ * `x db gen` then writes the migration AND `packages/db/schema/`, which the `drift` step holds.
+ */
+export function nextSteps(
+  written: readonly string[],
+  edited: readonly string[],
+  table: string,
+): readonly string[] {
+  if (!written.some((path) => path.endsWith('/entity.ts'))) return [];
+  return [
+    ...(edited.some((path) => path.endsWith('package.json')) ? ['bun install'] : []),
+    `bunx x db gen "create ${table}"`,
+    'bunx x db migrate',
+    // A page that mounts an island has a byte budget only a build can weigh — measured on `x new`'s
+    // app (`RESOURCE_PAGE_BUDGET`), and an app that charges more per document is over it on this
+    // run rather than on the next `bin/check`.
+    ...(written.some((path) => path.endsWith('/page.tsx')) ? [MEASURE_PAGE] : []),
+  ];
+}
+
+/** The two commands that weigh a page against its budget: the build writes the bytes it reads. */
+export const MEASURE_PAGE = 'bunx x build --target static && bunx x verify --only budgets';
+
+/** The frame `x new` writes: a resource's page renders inside it when the app has one. */
+export const SHELL_MODULE = 'apps/web/shared/shell.tsx';
 
 /**
  * The slice's `errors.ts`, for the two generators whose template throws from it. Only those two:
@@ -167,20 +259,23 @@ async function readSliceErrors(
   return existsSync(file) ? await Bun.file(file).text() : undefined;
 }
 
+/** The generators whose output depends on what the slice's `entity.ts` / `repo.ts` declare. */
+const READS_SLICE: ReadonlySet<Generator> = new Set(['job', 'task', 'action', 'mutator', 'query']);
+
 /**
- * `job`, `task`, `action` and `mutator`: the slice's `entity.ts`/`repo.ts` as they stand on disk, absent when the
- * generator's kind is neither or the file does not exist yet. `readSliceErrors`'s reason —
- * whichever generator reads it decides on THIS app's disk, not on a default the template assumes.
+ * The slice's `entity.ts`/`repo.ts` as they stand on disk, absent when the generator's kind reads
+ * neither or the file does not exist yet. `readSliceErrors`'s reason — whichever generator reads
+ * it decides on THIS app's disk, not on a default the template assumes. `query` reads them for its
+ * test alone: whether it may store a row is a fact about the entity an author may have reshaped.
+ * Exported so a test can ask which kinds read the disk without running a whole generation.
  */
-async function readSliceFile(
+export async function readSliceFile(
   root: string,
   kind: Generator,
   slice: string,
   name: 'entity.ts' | 'repo.ts',
 ): Promise<string | undefined> {
-  if (kind !== 'job' && kind !== 'task' && kind !== 'action' && kind !== 'mutator') {
-    return undefined;
-  }
+  if (!READS_SLICE.has(kind)) return undefined;
   const file = containedPath(root, `${slice}/${name}`);
   return existsSync(file) ? await Bun.file(file).text() : undefined;
 }

@@ -22,6 +22,13 @@ import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
 import { stepFinding } from './db-finding';
 import { generateAppMigration, unrenderedJson, unrenderedLines } from './db-generate';
+import { liveObjectDrift } from './db-object-drift';
+import {
+  afterWrittenMigration,
+  refreshSchemaDump,
+  type SchemaDumpRefresh,
+  schemaDumpJson,
+} from './db-schema-refresh';
 import type { SeedPassRow } from './db-seed';
 import {
   discoverSeeds,
@@ -109,34 +116,52 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
   // `x i18n add fr` failure, repeated. The count is the verdict; the gate's own `drift` step is
   // where a red belongs, and it reads the same list to decide that `x db gen` is not the fix.
   const lost = unrenderedLines(generated.unrendered);
+  // After the migration, from the migrations alone: the dump is what replaying them produces, so
+  // it is rewritten on all three outcomes — `unchanged` included, which is what makes this
+  // command the `fix:` on `X_SCHEMA_DUMP_DRIFT` when a framework table or a hand edit moved it.
+  const dump = await refreshSchemaDump(root, ctx.env);
+  const dumpFindings = dump.finding === undefined ? [] : [dump.finding];
   const migration = generated.migration;
   if (migration === undefined) {
     return {
-      ok: generated.findings.length === 0,
+      ok: generated.findings.length === 0 && dumpFindings.length === 0,
       command: 'db',
       // The sidecar path, never a bare id: `hash-recorded` writes exactly one, and it is the file
       // the `drift` step reads back.
+      // `blocked` FIRST: the app did not load, so nothing was diffed, and every sentence below
+      // it is a claim about a comparison that never ran. It read "entities and migrations agree"
+      // over an exit 1.
       summary:
-        generated.outcome === 'hash-recorded'
-          ? msg('cli.db.gen.recorded', { file: generated.files[0] ?? '' })
-          : msg('cli.db.gen.unchanged'),
-      findings: generated.findings,
+        generated.outcome === 'blocked'
+          ? msg('cli.db.gen.blocked', { count: generated.findings.length })
+          : generated.outcome === 'hash-recorded'
+            ? msg('cli.db.gen.recorded', { file: generated.files[0] ?? '' })
+            : dump.status === 'written'
+              ? msg('cli.db.gen.dumped', { count: dump.written.length + dump.removed.length })
+              : msg('cli.db.gen.unchanged'),
+      findings: [...generated.findings, ...dumpFindings],
       // `files` is what this command WROTE, so the empty array here was a false claim.
-      lines: [...generated.files.map((file) => `  ${file}`), ...lost],
+      lines: [...generated.files.map((file) => `  ${file}`), ...dumpLines(dump), ...lost],
       data: {
         outcome: generated.outcome,
         migration: null,
         files: [...generated.files],
         schemaHash: generated.schemaHash ?? null,
         unrendered: unrenderedJson(generated.unrendered),
+        schemaDump: schemaDumpJson(dump),
       },
     };
   }
   return {
-    ok: true,
+    ok: dumpFindings.length === 0,
     command: 'db',
-    summary: msg('cli.db.gen.written', { id: migration.id }),
-    lines: [...generated.files.map((file) => `  ${file}`), ...lost],
+    summary:
+      dumpFindings.length === 0
+        ? msg('cli.db.gen.written', { id: migration.id })
+        : msg('cli.db.gen.writtenDumpFailed', { id: migration.id }),
+    // Exit 1 with a migration on disk: the finding has to say so, or the next move is a duplicate.
+    findings: dumpFindings.map((finding) => afterWrittenMigration(finding, migration.id)),
+    lines: [...generated.files.map((file) => `  ${file}`), ...dumpLines(dump), ...lost],
     data: {
       outcome: generated.outcome,
       migration: migration.id,
@@ -144,9 +169,19 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
       files: [...generated.files],
       schemaHash: generated.schemaHash ?? null,
       unrendered: unrenderedJson(generated.unrendered),
+      schemaDump: schemaDumpJson(dump),
     },
   };
 }
+
+/**
+ * What the dump refresh did, one path per line — the same list `data.schemaDump` carries, so the
+ * human render and `--json` report one fact. A refresh that changed nothing prints nothing.
+ */
+const dumpLines = (dump: SchemaDumpRefresh): readonly string[] => [
+  ...dump.written.map((file) => `  ${file}`),
+  ...dump.removed.map((file) => `  - ${file}`),
+];
 
 /**
  * The post-migrate report, rendered. Through `driftError` rather than a second literal: the
@@ -175,16 +210,30 @@ async function runMigrate(
   try {
     const migrated = await runMigrations({ root, env: ctx.env });
     const report = migrated.report;
+    // A hand-written or pulled migration reaches the dump here, with no `x db gen` in between.
+    const dump = await refreshSchemaDump(root, ctx.env);
+    // The half a snapshot cannot hold: a trigger, function, view, type or sequence this database
+    // carries and no migration creates. Asked only when the replay produced a catalog to ask
+    // against — without one there is nothing that says what the migrations create.
+    const objects =
+      dump.catalog === undefined ? [] : await liveObjectDrift(root, ctx.env, dump.catalog);
+    const findings = [
+      ...driftFindings(migrated.drift),
+      ...objects.map((difference) => findingFrom(driftError(difference))),
+      ...(dump.finding === undefined ? [] : [dump.finding]),
+    ];
     return {
-      ok: migrated.drift.ok,
+      ok: findings.length === 0,
       command: 'db',
       summary,
-      findings: driftFindings(migrated.drift),
+      findings,
+      lines: dumpLines(dump),
       data: {
         applied: report.applied.map((entry) => entry.id),
         skipped: report.skipped.length,
         appVersion: report.appVersion,
         durationMs: report.durationMs,
+        schemaDump: schemaDumpJson(dump),
       },
     };
   } catch (error) {

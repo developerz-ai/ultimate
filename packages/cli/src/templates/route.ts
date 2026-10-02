@@ -103,13 +103,10 @@ const catalogImport = (module: string | undefined): string =>
 const translatorBinding = (module: string | undefined): string =>
   module === undefined ? '' : '\n  const t = useT();\n';
 
+// The component is `Page` in every route file: the name the router looks for first
+// (`pageComponentOf`) and the one both tracked apps use. It was `<Name>Page` — `PostsPage`,
+// `PricingPage` — found only by the router's fallback, and a second spelling of one thing.
 const pageSource = (surface: Surface, path: string, module: string | undefined): string => {
-  const name = pascal(
-    path
-      .split('/')
-      .filter((part) => part.length > 0)
-      .at(-1) ?? 'page',
-  );
   return `// Route: /${path} on the ${surface} surface. Config first: render mode, offline
 // strategy and budget are declarations, not runtime choices.
 
@@ -127,7 +124,7 @@ export const config = defineRoute({
   }),
 });
 
-export function ${name}Page() {${translatorBinding(module)}
+export function Page() {${translatorBinding(module)}
   return (
     <main class={styles.page}>
       <h1>{t('${titleKey(path)}')}</h1>
@@ -170,36 +167,45 @@ const paramsLiteral = (path: string): string => {
 const routeTest = (
   surface: Surface,
   path: string,
-): string => `// /${path}'s declaration, on the \`unit\` step: metadata that renders, and the render mode,
-// offline strategy and budget it promises. A route with no title is an SEO regression.
-import { metaContextFor, routeDataFor } from '@ultimat3/render';
-import { expect, unitTest } from '@ultimat3/testing';
-import { config } from './page';
+  module: string | undefined,
+): string => `// /${path}, rendered: the heading a visitor reads, the metadata a search result renders, and the
+// render mode, offline strategy and budget the route promises. A route with no title is an SEO
+// regression; one whose page throws is a 500 the config alone never shows.
+${sortedImports([
+  catalogImport(module),
+  "import { expect, renderRoute, unitTest } from '@ultimat3/testing';",
+])}
+import * as page from './page';
 
-// What a render gives this route: the URL it matched and the params in it. \`routeDataFor\` is the
-// one resolver — with no \`load\` the context IS the data, and with one the loader decides — so a
-// test asserts on the same object the page component and \`meta\` are handed in production.
-const ctx = { params: ${paramsLiteral(path)}, url: 'https://example.test/${sampleUrl(path)}' };
+// What a request gives this route: the URL it matched and the params in it. \`renderRoute\` resolves
+// the route's data once and hands \`meta\` and the page that one object, as every render mode does.
+const request = {
+  url: 'https://example.test/${sampleUrl(path)}',
+  params: ${paramsLiteral(path)},
+};
 
-unitTest('/${path} declares metadata', async () => {
-  expect(config.kind).toBe('route');
-  // meta() takes the route's data and always resolves — awaiting is the one shape, whether the
-  // declaration was written sync or async.
-  const meta = await config.meta(metaContextFor(ctx, await routeDataFor(config, ctx)));
-  expect(meta.title ?? '').not.toBe('');
-  expect(meta.description ?? '').not.toBe('');
+unitTest('the page renders its title as its one heading', async () => {${module === undefined ? '' : '\n  const t = useT();'}
+  const view = await renderRoute(page, request);
+  expect(view.html.match(/<h1\\b/g)).toHaveLength(1);
+  expect(view.text).toBe(t('${titleKey(path)}'));
 });
 
-unitTest('/${path} declares its render and offline strategy', () => {
-  expect(config.render).toBe('${RENDER[surface]}');
-  expect(config.offline).toBe('${OFFLINE[surface]}');
+unitTest('it declares the metadata a search result renders', async () => {${module === undefined ? '' : '\n  const t = useT();'}
+  const view = await renderRoute(page, request);
+  expect(view.meta.title).toBe(t('${titleKey(path)}'));
+  expect(view.meta.description).toBe(t('${titleKey(path).replace('.title', '.description')}'));
 });
 
 // The only budget this route declares, because it is the only one the build can weigh: nothing
 // in the framework observes a paint, so an lcp budget would be a number pinned here and never
 // compared against anything.
-unitTest('/${path} stays inside its byte budget declaration', () => {
-  expect(config.budget.js).toBe('${BUDGET[surface].js}');
+unitTest('it declares its render mode, offline strategy and byte budget', async () => {
+  const view = await renderRoute(page, request);
+  expect(page.config.render).toBe('${RENDER[surface]}');
+  expect(page.config.offline).toBe('${OFFLINE[surface]}');
+  expect(page.config.budget.js).toBe('${BUDGET[surface].js}');
+  // No island yet: what the page ships is what the config says, until the first \`island()\`.
+  expect(view.islands).toEqual([]);
 });
 `;
 
@@ -253,7 +259,10 @@ export function routeFiles(rawPath: string, options: RouteOptions): readonly Gen
   return [
     { path: `${dir}/page.tsx`, contents: pageSource(options.surface, path, options.catalogModule) },
     { path: `${dir}/page.module.scss`, contents: styleSource() },
-    { path: `${dir}/page.test.ts`, contents: routeTest(options.surface, path) },
+    {
+      path: `${dir}/page.test.ts`,
+      contents: routeTest(options.surface, path, options.catalogModule),
+    },
     { path: `${dir}/page.e2e.test.ts`, contents: routeE2eTest(path) },
     ...locales.map((locale) => ({
       path: catalogPath(locale),

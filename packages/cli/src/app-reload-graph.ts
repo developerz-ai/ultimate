@@ -20,9 +20,10 @@
 // the old instance of what changed (a slice's service under its query, an admin page's view under
 // `defineAdmin`), so only a new process serves the save. `x dev` restarts on it (`dev-supervisor.ts`).
 
-// why: Bun ships no path API; import specifiers resolve against the importing file's directory.
-import { dirname, resolve } from 'node:path';
+// why: Bun ships no path API; the app root is compared as an absolute path.
+import { resolve } from 'node:path';
 import { registeredStylesheets } from '@ultimat3/render/server';
+import { resolvedImports } from './module-imports';
 import { hasPathSegment } from './path-segments';
 
 type Kind = 'script' | 'style' | 'data';
@@ -91,11 +92,6 @@ const STYLE = /\.(?:s[ac]ss|css)$/;
 const kindOf = (path: string): Kind =>
   SCRIPT.test(path) ? 'script' : STYLE.test(path) ? 'style' : 'data';
 
-const transpilers = {
-  ts: new Bun.Transpiler({ loader: 'ts' }),
-  tsx: new Bun.Transpiler({ loader: 'tsx' }),
-};
-
 const readText = async (path: string): Promise<string | null> => {
   try {
     return await Bun.file(path).text();
@@ -108,29 +104,10 @@ const hashOf = (text: string | null): bigint | null =>
   text === null ? null : BigInt(Bun.hash.wyhash(text));
 
 /** The in-app files `source` imports — a package under `node_modules` is not the app's to reload. */
-function importsOf(path: string, source: string, root: string): string[] {
-  let specifiers: readonly { readonly path: string }[];
-  try {
-    const transpiler = path.endsWith('x') ? transpilers.tsx : transpilers.ts;
-    specifiers = transpiler.scanImports(source);
-  } catch {
-    // A file that will not parse imports nothing yet; its own hash still changes on the fix.
-    return [];
-  }
-  const found: string[] = [];
-  for (const { path: specifier } of specifiers) {
-    let target: string;
-    try {
-      target = Bun.resolveSync(specifier, dirname(path));
-    } catch {
-      continue;
-    }
-    if (target.startsWith(`${root}/`) && !hasPathSegment(target, 'node_modules')) {
-      found.push(target);
-    }
-  }
-  return found;
-}
+const importsOf = (path: string, source: string, root: string): string[] =>
+  resolvedImports(path, source, 'referenced').filter(
+    (target) => target.startsWith(`${root}/`) && !hasPathSegment(target, 'node_modules'),
+  );
 
 function link(from: string, to: string): void {
   let set = importers.get(to);

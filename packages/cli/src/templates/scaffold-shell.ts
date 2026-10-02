@@ -183,7 +183,7 @@ const shellStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
   block-size: tokens.space(2);
   border-radius: tokens.radius('full');
   background: tokens.role('success');
-  animation: pulse 2.4s tokens.easing('in-out') infinite;
+  animation: pulse calc(#{tokens.duration('slower')} * 4) tokens.easing('in-out') infinite;
 }
 
 // Opacity only — the one property family the motion guard admits, and the global reduced-motion
@@ -245,45 +245,25 @@ const shellStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 `;
 
 const shellTest =
-  (): string => `// The frame, rendered the way a route renders it: through the framework's server JSX factory,
-// with the app's own catalog registered by the import. What can go wrong is structural — the
-// current page losing its \`aria-current\`, the page's actions landing outside the banner — and
-// both are invisible to a typecheck.
-import { h, type JsxComponent } from '@ultimat3/render';
-import { renderToHtml } from '@ultimat3/render/server';
-import { expect, unitTest } from '@ultimat3/testing';
-
-// A DYNAMIC import, after the static ones above have run: importing \`@ultimat3/render\` is what
-// installs the loader that compiles this app's \`.tsx\` to the framework's JSX factory, and a
-// plugin only reaches modules loaded after it. Imported statically, \`shell.tsx\` is transpiled
-// ahead of that install, to \`React.createElement\` against a global that does not exist — the
-// route modules never meet this because \`x dev\` loads them after the framework.
-//
-// \`h\` is typed for the framework's own components; \`Shell\` carries Solid's JSX types. The cast
-// is the seam itself — the assertions below are what check it at runtime.
-const shell = (await import('./shell')).Shell as unknown as JsxComponent;
+  (): string => `// The frame, rendered the way a route renders it, with the app's own catalog registered by the
+// import. What can go wrong is structural — the current page losing its \`aria-current\`, the
+// page's actions landing outside the banner — and both are invisible to a typecheck.
+import { expect, renderView, unitTest } from '@ultimat3/testing';
+import { Shell } from './shell';
 
 unitTest('the shell marks the current destination and keeps the page in <main>', async () => {
-  const html = await renderToHtml(
-    h(shell, { nav: 'dashboard', children: h('p', { 'data-role': 'page' }, 'body') }),
-  );
-  expect(html).toContain('aria-current="page"');
-  expect(html).toContain('href="/dashboard"');
+  const view = await renderView(Shell, { nav: 'dashboard', children: 'the page body' });
+  expect(view.html).toMatch(/<a href="\\/dashboard" aria-current="page"/);
   // Landmarks come from AppShell: one banner, one navigation, one main, one contentinfo.
-  expect(html.match(/<main\\b/g)?.length).toBe(1);
-  expect(html.match(/<nav\\b/g)?.length).toBe(1);
-  expect(html).toMatch(/<main[^>]*>[\\s\\S]*data-role="page"[\\s\\S]*<\\/main>/);
+  expect(view.html.match(/<main\\b/g)).toHaveLength(1);
+  expect(view.html.match(/<nav\\b/g)).toHaveLength(1);
+  expect(view.html).toMatch(/<main[^>]*>the page body<\\/main>/);
 });
 
 unitTest('no nav marks nothing current, and the actions land in the header', async () => {
-  const html = await renderToHtml(
-    h(shell, {
-      actions: h('button', { type: 'button', 'data-role': 'action' }, 'act'),
-      children: h('p', null, 'body'),
-    }),
-  );
-  expect(html).not.toContain('aria-current="page"');
-  expect(html).toMatch(/<header[^>]*>[\\s\\S]*data-role="action"[\\s\\S]*<\\/header>/);
+  const view = await renderView(Shell, { actions: 'the page actions', children: 'body' });
+  expect(view.html).not.toContain('aria-current="page"');
+  expect(view.html).toMatch(/<header[^>]*>[\\s\\S]*the page actions[\\s\\S]*<\\/header>/);
 });
 `;
 
@@ -379,20 +359,10 @@ const toggleTest =
 
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  type MountedIsland,
-  mountIsland,
-  test,
-} from '@ultimat3/testing';
+import { describeIslandState, expect, test } from '@ultimat3/testing';
 import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from '@ultimat3/ui';
 import { bootedEnv } from './theme-toggle.island';
-
-const APP_ROOT = join(import.meta.dir, ${upToAppRoot(SHELL_DIR)});
-const ISLAND = '${SHELL_DIR}/theme-toggle.island.tsx';
+import { themeToggleStates } from './theme-toggle.island.states';
 
 /** What the island reads through \`browserThemeEnv\`: storage and the OS query, both fakes. */
 const stored = new Map<string, string>();
@@ -407,42 +377,38 @@ const matchMedia = (): Record<string, unknown> => ({
   removeEventListener: () => {},
 });
 
-let mounted: MountedIsland;
+// The state \`x shot --island theme-toggle\` photographs is the state this mounts: one manifest,
+// so the picture and the assertion cannot be of two different components.
+const island = {
+  build: buildIslands,
+  root: join(import.meta.dir, ${upToAppRoot(SHELL_DIR)}),
+  shell: '<button type="button">theme</button>',
+  globals: { localStorage, matchMedia },
+};
 
-beforeAll(async () => {
-  mounted = await mountIsland({
-    build: buildIslands,
-    root: APP_ROOT,
-    file: ISLAND,
-    props: { locale: 'en' },
-    shell: '<button type="button">theme</button>',
-    globals: { localStorage, matchMedia },
-  });
-}, 60_000);
-
-afterAll(() => {
-  mounted?.[Symbol.dispose]();
-});
-
-describe('the theme toggle island', () => {
-  test('mount renders the catalog control over the server shell', () => {
-    expect(mounted.find('button')).not.toBeNull();
-    expect(mounted.code).not.toMatch(/\\bReact\\b/);
+describeIslandState(themeToggleStates, 'default', island, (mounted) => {
+  test('the default state renders the catalog control over the server shell', () => {
+    // \`aria-pressed\` is the live control's: the shell's own button carries none, so a mount that
+    // rendered nothing leaves this selector with no match.
+    expect(mounted().find('button[aria-pressed]')).not.toBeNull();
+    expect(mounted().code).not.toMatch(/\\bReact\\b/);
+    // The state's own prop reached the island: the provider stamps the locale it was handed.
+    expect(mounted().documentElement.getAttribute('lang')).toBe('en');
   });
 
   test('a click stores the opposite theme and applies it to <html>', () => {
     // No stamp on this document, so the island booted light; the click flips it. \`false\` means
     // no handler ran — an onClick that never reached the DOM looks identical to a selector typo.
-    expect(mounted.fire('button', 'click')).toBe(true);
+    expect(mounted().fire('button', 'click')).toBe(true);
     expect(stored.get(THEME_STORAGE_KEY)).toBe('dark');
-    expect(mounted.documentElement.getAttribute(THEME_ATTRIBUTE)).toBe('dark');
+    expect(mounted().documentElement.getAttribute(THEME_ATTRIBUTE)).toBe('dark');
   });
 
   test('the env the island builds starts from the theme stamped on <html>', () => {
     // The fake document is still installed here, so this reads exactly what \`mount\` read.
-    mounted.documentElement.setAttribute(THEME_ATTRIBUTE, 'dark');
+    mounted().documentElement.setAttribute(THEME_ATTRIBUTE, 'dark');
     expect(bootedEnv().prefersDark()).toBe(true);
-    mounted.documentElement.setAttribute(THEME_ATTRIBUTE, 'light');
+    mounted().documentElement.setAttribute(THEME_ATTRIBUTE, 'light');
     expect(bootedEnv().prefersDark()).toBe(false);
   });
 });

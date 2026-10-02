@@ -406,10 +406,10 @@ describe('unit · the command surface an agent reads', () => {
     expect(clientEntry).toContain('apps/web/site/pricing/currency-picker.island.tsx');
   });
 
-  test('no --at keeps the layout x new scaffolds', async () => {
+  test('no --at writes beside the declaration x new scaffolds, inside the app scan', async () => {
     const result = await generateCommand.run(ctxFor(['g', 'admin:page', 'ops', '--dry-run']));
     expect((result.data as { files: readonly string[] }).files).toContain(
-      'apps/admin/src/pages/ops.tsx',
+      'apps/admin/app/admin/pages/ops.tsx',
     );
   });
 
