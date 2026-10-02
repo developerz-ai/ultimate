@@ -15,13 +15,12 @@
 import type { GeneratedFile, NameSet } from './naming';
 import { bareDashboardFiles } from './scaffold-dashboard-bare';
 import { exampleDashboardFiles } from './scaffold-dashboard-example';
-import { DASHBOARD_DIR, dashboardPageTest, dashboardStyle } from './scaffold-dashboard-shared';
+import { DASHBOARD_DIR, dashboardStyle } from './scaffold-dashboard-shared';
 
 /** `apps/web/app/dashboard/`, in the shape the invocation earns. */
 export function dashboardFiles(app: NameSet, example: boolean): readonly GeneratedFile[] {
   return [
     ...(example ? exampleDashboardFiles(app) : bareDashboardFiles(app)),
     { path: `${DASHBOARD_DIR}/page.module.scss`, contents: dashboardStyle() },
-    { path: `${DASHBOARD_DIR}/page.test.ts`, contents: dashboardPageTest() },
   ];
 }

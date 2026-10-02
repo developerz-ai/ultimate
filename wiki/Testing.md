@@ -43,6 +43,8 @@ Any test that can pass twice and fail the third time is worse than no test — i
 | **Sealed network** | any egress not explicitly mocked **fails the test** with `X_TEST_NETWORK_SEALED`, naming the URL and the fix |
 | **Fixed timezone + locale** | `UTC` and `en-US` unless a test declares otherwise; a tz-dependent bug fails deterministically |
 | **Ordered concurrency** | job workers in tests run deterministically; `runJobs()` drains the queue synchronously |
+| **Per-test reset** | before EVERY test, not every file, the preload puts the jobs event bus back (`installPerTestReset()`): an answer one test published never resumes the next test's waiting run, with or without `runJobs`. A test that never loaded `@ultimat3/jobs` pays nothing. `As of 2026-10` |
+| **Seal key** | a test over a `.sealed()` column needs no key: the preload sets `ULTIMATE_SECRETS_KEY` to a fixed throwaway when `NODE_ENV=test` and the app has neither the variable nor `.secrets.key`. The app's own key wins. `startE2eApp` hands the same key to the app it spawns. The key is public — it ships in the package — and is installed nowhere else, `As of 2026-10` |
 
 Sealed network is the highest-value rule: it converts "the suite is slow and occasionally fails" into "you forgot to mock Stripe, here is the line".
 
@@ -64,6 +66,16 @@ Locale and zone are declared per test when the behavior under test depends on th
 | **job** | `x test job` | step-level replay (a step already run is not re-run), idempotency-key dedupe, retry/backoff, concurrency and rate limits, outbox atomicity on rollback | cloned DB + frozen clock |
 | **e2e** | `x test e2e` | a real browser (Chrome over raw CDP, no Playwright) against the app: render mode behavior, streaming holes filling, hydration timing, SW install + offline fallback, version-skew reload, two tabs, offline writes | the app spawned on a throwaway database (`ULTIMATE_STATE_DIR`) + a real browser, when Chrome is present |
 | **eval** | `x test eval` | prompt quality vs. a baseline: exact, schema, rubric (judge), or regression tolerance | pinned models, recorded fixtures |
+
+**Each helper takes `{ timeoutMs }`** — `unitTest(name, body, { timeoutMs: 30_000 })`, the same
+on `contractTest`, `liveTest`, `jobTest`, `e2eTest` and `test`, and a key of `evalTest`'s options.
+Handed to `bun:test`; absent is Bun's 5 s default. Never `test(testName('unit', …), body, 30_000)`
+to buy a deadline.
+
+**`unitTest`, `contractTest`, `liveTest` and `jobTest` take [the fixture bag](#the-fixture-bag)**,
+exactly as `test` does: `unitTest('…', async ({ runJobs, clock }) => …)`. A body that destructures
+nothing builds nothing. Never `describe(testName('unit', …))` around a bare `test` to reach a
+fixture. `As of 2026-10`.
 
 **The e2e step drives a real browser, `As of 2026-09-22`** (21.0.0). When Chrome is on the
 machine, `x verify`'s `e2e` step spawns the app with `startE2eApp` (reset, seed, boot, on its own
@@ -138,6 +150,74 @@ test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) =>
 ```
 
 The `job` example is the one that matters: it asserts the durability guarantee, not that mail was sent. See [Jobs and workflows](Jobs-And-Workflows) and [Policies and authz](Policies-And-Authz).
+
+## Matchers
+
+Installed by the preload on `expect`.
+
+| Matcher | Asserts |
+|---|---|
+| `toBeUltimateError(code?)` | an `X_` code with a cause and a fix; the code when given |
+| `toDenyPolicy(context)` | the policy refuses that context |
+| `toEmitSteps(names)` | a job runs exactly those steps, in order |
+| `toMatchOpenApi(committed)` | no operation removed, no parameter newly required |
+| `toBeWithinBudget(limit)` | a measured number is at or under the limit |
+| `toRejectInput(input)` / `toAcceptInput(input)` | a schema's verdict on one input |
+| `toEqualRow(expected)` | equality over every OWN property — the one that sees a `.sealed()` column |
+| `toBeVisible(options?)` | waits for a locator to show; `.not` waits for it to go |
+
+`toEqualRow` exists because `toEqual` walks enumerable properties and a repository row does not
+enumerate a sealed column ([Sealed columns](Entities-And-Migrations#sealed-columns)):
+
+```ts
+const row = await db.connections.insert({ label: 'primary', password: 'hunter2' });
+
+expect(row).toEqual({ id: row.id, label: 'primary', password: 'hunter2' });    // fails, empty diff
+expect(row).toEqualRow({ id: row.id, label: 'primary', password: 'hunter2' }); // passes
+```
+
+A failure names each property that differs. A server-only one is named and never printed — not its
+value, not its length.
+
+## Rendering a page in a unit test
+
+No server, no browser, no cast. `renderRoute` takes the route module whole and resolves it the way
+a request does; `renderView` renders one component with its own props.
+
+```ts
+import { expect, renderRoute, renderView, unitTest } from '@ultimat3/testing';
+import * as page from './page';
+
+unitTest('the dashboard counts the posts of the org that is looking', async () => {
+  const view = await renderRoute(page, { url: 'https://example.test/dashboard', actor: viewer });
+  expect(view.data.rows).toHaveLength(2);
+  expect(view.meta.title).toBe(t('app.dashboard.title'));
+  expect(view.text).toContain(t('app.dashboard.tableTitle'));
+  expect(view.islands.map((island) => island.moduleId)).toEqual(['shared-theme-toggle']);
+});
+```
+
+| Answer | Is |
+|---|---|
+| `view.html` | the markup, as the document carries it |
+| `view.text` | what a reader sees — tags and script/style bodies removed, entities decoded. Compare it with `t('<key>')` |
+| `view.data` · `view.meta` | what `load` resolved, and what `meta` answered for that same object |
+| `view.islands` | the islands the render emitted. Empty on a page that ships no JavaScript |
+
+`actor` runs `load` and the page inside a request context holding that actor. `renderView` refuses
+a component that renders an `island()` — its hydration timing is a route's. `As of 2026-10`.
+
+## Running a mutator's local half
+
+```ts
+const store = memoryLocalTx({ posts: { [id]: { id, title: 'before', pending: false } } });
+renamePost.local(store.tx, { id, orgId, title: 'after' });
+expect(store.rows('posts')).toEqual({ [id]: { id, title: 'after', pending: true } });
+```
+
+`memoryLocalTx(seed?)` is the client store under test: keyed rows, `update` a no-op for a key it
+does not hold, `undefined` leaving a column alone, rows frozen. Apply `local` twice and compare —
+a rebase replays it. `As of 2026-10`.
 
 ## Seeing what you built
 
@@ -243,14 +323,14 @@ What the rendered result is then held to: [Interface rules](Interface-Rules).
 
 ## The fixture bag
 
-`test` passes a bag as the first argument and builds only what the body destructures — a test that never names `runJobs` never starts a queue. The framework owns the whole bag; an app registers only what the framework cannot know.
+`test` and the typed helpers pass a bag as the first argument and build only what the body destructures — a test that never names `runJobs` never starts a queue. The framework owns the whole bag; an app registers only what the framework cannot know.
 
 | Fixture | Is | Built by |
 |---|---|---|
 | `clock` | `now()` · `advance('3d')` · `set(instant)` | the preload |
 | `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` | the preload |
 | `network` | `offline()` · `drop()` · `online()` · `state()` | the preload |
-| `runJobs` | enqueue+drain, then `drain()` `due()` `inFlight()` `depth()` | the preload |
+| `runJobs` | enqueue+drain, then `enqueue()` `drain()` `due()` `inFlight()` `depth()` → [A job under `runJobs`](#a-job-under-runjobs) | the preload |
 | `statements` | `all()` · `count(fingerprint?)` · `shapes()` — and an N+1 fails the test | the preload |
 | `page` | `goto` · `gotoStreamed` · `getByRole` · `evaluate` · `waitForServiceWorker` | a browser driver |
 | `budget` | `jsBytes(route)` off the built output | a browser driver |
@@ -270,6 +350,79 @@ defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
 
 `network.offline()` fails every request ahead of the mocks, so the app's own offline path runs instead of a branch written for the test; `drop()` is the same for a request but tells a subscriber its connection was cut rather than closed, which is what separates a resume from a resubscribe.
 
+## A job under `runJobs`
+
+```ts
+unitTest('a row deleted before the run is skipped, not failed', async ({ runJobs }) => {
+  const trace = await runJobs(reindexPost, { id, orgId });
+  expect(trace.executions.map((run) => run.outcome)).toEqual(['completed']);
+  expect(trace.executions[0]?.result).toEqual({ skipped: true });
+  expect(Object.keys(trace.steps)).toEqual(['load']);
+});
+```
+
+| On the trace or the call | Is |
+|---|---|
+| `trace.executions[n].result` | what the body returned. Absent on a run that failed, suspended or was interrupted |
+| `trace.steps[name].executions` | times the step body ran — a replay from storage does not count. Cumulative for the test |
+| `runJobs(job, input, { actor })` · `drain({ actor })` | the identity the **worker** runs as (`WorkerOptions.context()` in a real one). Its org is still the job's declared `tenant`; `tenant: 'none'` strips it. Absent is the anonymous actor |
+| `runJobs(job, input, { tenantId })` · `enqueue(…, { tenantId })` | the **enqueuer's** tenant on the row: the limiter's bucket and the dedupe namespace, as `handle.as(actor, input)` files it. One key in two tenants is two jobs |
+| the event bus | fresh per fixture: one test's `publishEvent` never resumes the next test's `step.waitForEvent` |
+
+Enforced through it, keyed or not: `concurrency` and `whenBusy` — each pass is a real worker's `tick()`, so a run over its slot waits for the next pass, or is refused under `whenBusy: 'fail'`. The lease is renewed on the test clock — every millisecond of it — so a body in flight learns of a cancel at the next `clock.advance()`: cancel, `clock.advance(1)`, await the drain. A `clock.advance()` past the visibility timeout while it runs is `X_JOB_LEASE_LOST`, as in production. `As of 2026-10`.
+
+## Testing an island
+
+One block per state the island's manifest declares. `describeIslandState` owns the lookup, the
+mount (`beforeAll`, 60 s unless `timeoutMs` says otherwise) and the teardown; the island is built
+once per file.
+
+```ts
+const island = { build: buildIslands, root: join(import.meta.dir, '..', '..', '..') };
+
+describeIslandState(counterStates, 'idle', island, (mounted) => {
+  test('a click reaches the DOM through the signal', () => {
+    expect(mounted().fire('button', 'click')).toBe(true);
+    expect(mounted().text('[data-role="count"]')).toBe('1');
+  });
+});
+```
+
+| | |
+|---|---|
+| `mounted()` | the block's mount — an accessor, because the block is declared before `beforeAll` runs |
+| `shell` · `globals` · `size` | per block: the server's markup inside the wrapper, a `fetch` stub, the host's box |
+| an id the manifest does not declare | `X_TEST_ISLAND_STATE_UNKNOWN`, listing the declared ones |
+| `mountIslandState(manifest, id, options)` | the same lookup for one test's own mount: `using island = await mountIslandState(…)` |
+
+The props are the manifest's, so the picture `x shot --island` takes and the test are of one
+component. `mountIsland` stays the call for props no state declares. `As of 2026-10`.
+
+## Testing an authenticator
+
+```ts
+unitTest('a session cookie resolves the member it was issued to', async () => {
+  const actor = await authenticate(...(await authRequest({ cookies: { session: token } })));
+  expect(actor?.id).toBe(member.id);
+});
+```
+
+`authRequest({ url?, method?, headers?, cookies?, bearer? })` answers the two arguments
+`configureAuthenticator()`'s function is handed — a real request over a real context, no server,
+no cast. `cookies` and `bearer` win over the same header spelled in `headers`. `As of 2026-10`.
+
+## Log lines under test
+
+| `LOG_LEVEL` | The terminal shows | A `setLogSink` a test installs receives |
+|---|---|---|
+| unset | nothing | `info` and above |
+| `info` · `debug` · `trace` | that level and above | that level and above |
+| `warn` · `error` · `fatal` · `silent` | that level and above | `info` and above, still |
+
+`LOG_LEVEL=info bun test <file>` is how to read the lines. A level above `info` filters the
+terminal and never the logger, so a test asserting on an `info` audit line passes under
+`LOG_LEVEL=error`. `As of 2026-10`.
+
 ## An N+1 fails the test it happened in
 
 `x dev` warns about a query loop; CI is where nobody is watching. Destructuring `statements` installs the same detector in **throw** mode for the length of one test:
@@ -285,7 +438,7 @@ test('the feed reads its authors once', async ({ statements }) => {
 
 The loop's fifth statement is what rejects, so the failing line is the loop's own — not a summary at teardown. Opting in is naming the fixture: there is no `strict: true` to remember and no switch left on for the next file.
 
-| | |
+| What | Rule |
 |---|---|
 | **The unit of work is the test** | not the request. A `posts.findById(id)` loop in a unit test has no request anywhere, and that is the loop worth catching |
 | **The threshold is the dev one** | 5 statements of one shape, `N_PLUS_ONE_THRESHOLD` from `@ultimat3/entity`. A loop that fails a test and a loop that warns in `x dev` are the same loop |
@@ -380,15 +533,24 @@ describe(testName('unit', 'publishPost'), () => {
 
 ## Generated scaffolds
 
-Every primitive emits a test scaffold that fails until filled in — an untested action is a red build, not a backlog item.
+Every generator writes the tests beside what it wrote, and the `unit` half RUNS the code — the
+coverage floor counts that suite alone, so a body only a typed suite reaches is uncovered source.
+`As of 2026-10`.
 
-| Primitive | Scaffold |
-|---|---|
-| `action` / `mutator` | schema round-trip + one denial case per policy branch |
-| `query` (`live: true`) | snapshot + one incremental patch + one policy-filtered row |
-| `job` | idempotency dedupe + one step-retry case |
-| `route` | metadata presence, budget, and offline strategy |
-| `llm` prompt | an evals file (missing evals fails `x verify`) |
+| Generator | `unit` (in process, in-memory driver) | Its typed suite |
+|---|---|---|
+| `x g action` | input parse; the handler through `.as(actor, input)` — the refusal first, then what it answers | `contract`: the action contract, the foreign-org denial, the OpenAPI operation |
+| `x g mutator` | the same, plus `local()` against `memoryLocalTx()`, applied twice | `contract` |
+| `x g query` | the SQL's bound, total order and direction; the read through `.as()` — no grant refused, an empty org reads empty, stored rows read back newest first and never another org's | `--live`: the declaration in `.live.test.ts` |
+| `x g job` · `x g task` | the body under `runJobs`: which steps one run takes, what it answers, and how it ends | `job`: key, tenant, retry policy, enqueue dedupe |
+| `x g backfill` | one whole pass over rows in two tenants; the projection replayed | `job`: durable name, dedupe |
+| `x g route` | the page rendered (`renderRoute`): heading, metadata, mode, budget, islands | `e2e`: the offline fallback |
+| `x g resource` | every row above for its slice, plus `page.test.ts`: the page rendered as the request's actor — the org's rows newest first beside the form island, the empty state, a member of another org reading none of them, and the refusal rendered inside the page | `e2e`: the offline fallback |
+| `x g island` | a `describeIslandState` block per state the `.island.states.ts` declares | — |
+| `llm` prompt | — | `eval`: an evals file (missing evals fails `x verify`) |
+
+A stored-row case is written only into a slice whose entity still has the columns `x g entity`
+scaffolds; one an author reshaped gets the cases that need no row.
 
 ## Memory, width and isolation
 
@@ -444,6 +606,69 @@ A worker on the embedded database (PGlite) cannot go much below 1 GB: one booted
 For CI, where wall time matters more than one box's memory, the gate splits across jobs:
 [CI: the gate across parallel jobs](CI-Parallel-Gate).
 
+## Coverage
+
+95% of lines and 95% of functions — one bar, for the framework's packages and for every app.
+Held by the `unit` step: lint and tests alone are not green.
+
+| What | Rule |
+|---|---|
+| Measured over | every `.ts` / `.tsx` under the app's `apps/` and `packages/`. Not tests, `.d.ts`, `node_modules`, `dist`, `build`, `.x` |
+| A file no unit test loads | counts at **0%**, weighed off its source. Bun's own summary averages loaded files only — `dummy/social-media-clone` read 91.7% of lines that way and is 67.5% over its whole tree (24 files nothing loads, `As of 2026-10-01`) |
+| A barrel, a types-only module | weighs nothing: it emits no code |
+| Which suite | `unit` only. An opt-in suite cannot hold a floor every default run must meet |
+| The floor | `coverage` in `x.verify.json`. `x new` writes 95 / 95 |
+
+```json
+{
+  "steps": ["unit"],
+  "coverage": {
+    "lines": 95,
+    "funcs": 95,
+    "exclude": [{ "glob": "apps/*/server.ts", "why": "the container entry point" }]
+  }
+}
+```
+
+| State | Finding on `unit` | Fix it carries |
+|---|---|---|
+| no `coverage` | `X_COVERAGE_FLOOR_UNSTATED` | the exact line to add, with the measured numbers |
+| a floor under 95 with no `why` | `X_COVERAGE_FLOOR_UNSTATED` | add `"why"`, or raise to 95 |
+| measured under the floor | `X_COVERAGE_BELOW_FLOOR` — both numbers, and the ten files losing the most lines | `bun test --coverage <the worst file's test>` |
+| a floor under 95, and the tree 1.5 points over it | `X_COVERAGE_FLOOR_STALE` | the numbers to write |
+| an `exclude` with no `why`, a number that is not 0–100 | `X_CONFIG_INVALID`, on `manifest` | the shape to write |
+
+- **The floor only rises.** Under 95 it may be nothing but what the tree measures: more than 1.5
+  points over it is red until the floor moves up. No history is read — an app with no git is held
+  the same.
+- **`exclude` is for code a unit test cannot execute** — an island's browser mount (its test runs a
+  built chunk), a container entry point. Each entry carries its `why`; `x doctor` prints them all.
+- **A floor, not the goal.** Coverage counts execution, not validation: 100% is reachable with zero
+  assertions. A test added to raise it is proven by mutation — break the source, watch it go red,
+  restore. A covered branch whose test cannot fail is worse than an uncovered one.
+- **Cost: none measured.** The step on `examples/dummy` (53 unit files): 7.5 s before, 7.5 s after
+  (`As of 2026-10-01`).
+- **Same number on every machine.** The suite runs as fixed slices of 16 neighbouring test files,
+  one plain `bun test` each; the lcov parts are folded here. Not `bun test --parallel --coverage`:
+  Bun's own cross-worker merge read one tree as 59.9% at four workers and 65.0% at two.
+- **Functions** are counted per source file as the best one slice reached — Bun's lcov carries no
+  function names to union. A directory's tests share a slice, so tests beside their source count
+  together.
+- **Under `--shard`** a slice cannot hold a floor: it is green on coverage, carries its facts in
+  `data.coverage.unit.facts`, and `x verify merge` judges the fold → [CI](CI-Parallel-Gate).
+- **In `--json`** a judged run carries `data.coverage.unit` — `{ "lines", "funcs", "files" }`. The
+  human render prints the same line under the step with `--verbose`, and always when it is red.
+- **A `.tsx` is counted in its COMPILED lines — a Bun inaccuracy, `As of 2026-10` (Bun 1.4.0).**
+  Bun reports a plugin-loaded file under its source path with the output's line numbers and
+  totals, and every rendered `.tsx` is compiled by a plugin. So `Uncovered Line #s` for a `.tsx`
+  is not a place in the source, and a view whose tests assert every branch can still read under
+  100%. Read the percentage, ignore the line list, and keep logic that needs a line-accurate
+  answer in a `.ts` module beside the view. The minimal case:
+  [`docs/history/bun-coverage-plugin-lines.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/history/bun-coverage-plugin-lines.md).
+
+The framework holds itself to the same constant: `bun run coverage` gates each package and
+`scripts/` alone, one process each (`scripts/coverage-gate.ts`).
+
 ## `x verify`
 
 The single gate. Green means shippable.
@@ -463,12 +688,12 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | Step | Fails on |
 |---|---|
 | `typecheck` | any error; `any` is banned by lint, not tolerated by a cast |
-| `lint` | biome only: formatting, `any`, default exports, unused imports. **Not** raw colours, bare `Error`, untranslated strings or unzoned dates — biome ignores `.scss` entirely and those four are guards, one row down |
-| `boundaries` | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages, **and every file in the app's own `guards/`** — the nine `x new` writes, or the ones you kept → [Interface rules](Interface-Rules) |
+| `lint` | biome only: formatting, `any`, default exports, unused imports. **Not** raw colours, bare `Error`, untranslated strings or unzoned dates — biome ignores `.scss` entirely and those are guards, one row down |
+| `boundaries` | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages, **and every file in the app's own `guards/`** — every name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) that `x new` writes, or the ones you kept → [Interface rules](Interface-Rules) |
 | `filesize` | a source file over 500 lines |
 | `package-shape` | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, or `src/index.ts` |
 | `errors` | an `X_*` code with no runnable fix or no docs page |
-| `unit` | pure logic — services, money, policy predicates, matchers |
+| `unit` | pure logic — services, money, policy predicates, matchers; in an app, coverage under the floor in `x.verify.json` → [Coverage](#coverage) |
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
 | `job` | step replay, idempotency dedupe, retry/backoff, concurrency, outbox atomicity |
@@ -495,6 +720,18 @@ $ x verify
         fix:   x db gen "add publish_at"
 ```
 
+**A step has a deadline, and a hung one fails by name.**
+
+| Step | Deadline | Past it |
+|---|---|---|
+| `unit` `contract` `live` `job` `e2e` `eval` | 8 minutes | `X_VERIFY_STEP_TIMEOUT` on that step; every process it started is killed; the steps after it still run |
+| every other step | 5 minutes | the same |
+| one you name | `"stepTimeoutMs": { "unit": 900000 }` in `x.verify.json` | the same |
+
+**`--json` says where it is.** One line per finished step on stderr —
+`{"step":"lint","ok":true,"ms":21987}` — so a cancelled CI job's log ends on the last step that
+finished. stdout stays the one document.
+
 `x verify --json` emits the same content machine-readably → [MCP and AI](MCP-And-AI). CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check developers cannot run.
 
 ## Errors
@@ -505,6 +742,11 @@ $ x verify
 | `X_FORBIDDEN` | the actor's policy refused — the assertion target of every denial test | `x actions describe <action> --json` names the capability it enforces: assert the denial with `.rejects.toBeUltimateError('X_FORBIDDEN')`, or grant that capability to the seeded actor's role in `apps/web/shared/policies.ts` |
 | `X_INVARIANT` | a domain invariant was violated inside a test fixture | fix the seed or the invariant |
 | `X_CONFIG_INVALID` | test config names an unknown worker count, driver, or test type | `x test --help` |
+| `X_TEST_ISLAND_STATE_UNKNOWN` | an island test named a state its manifest does not declare | name one of the ids the cause lists, or declare the state in the `.island.states.ts` beside the island |
+| `X_COVERAGE_BELOW_FLOOR` | the unit suite covers less of the app than `x.verify.json` states | `x verify --only unit --json` names the ten worst files; cover the first with a test beside it |
+| `X_COVERAGE_FLOOR_UNSTATED` | no `coverage` in `x.verify.json`, or one under 95 with no `why` | the finding carries the line to add |
+| `X_COVERAGE_FLOOR_STALE` | a floor under 95 the tree has left 1.5 points behind | raise `coverage` to the numbers the finding carries |
+| `X_VERIFY_STEP_TIMEOUT` | a gate step ran past its deadline | `x verify --only unit --json` reproduces the step alone |
 
 Full list: [Error codes](Error-Codes).
 

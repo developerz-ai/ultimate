@@ -1,83 +1,56 @@
-// The one bridge from the admin's route table to @ultimat3/render, and the one place a policy
-// is composed onto an admin page. Every admin route is `ssr`: it is behind auth, so its guard runs
-// on the server, there is nothing to prerender and nothing a CDN may hold — and `network-only`
-// keeps a stale org's rows out of a service worker cache.
+// The one place a route gets its SCREEN, and the matcher a host asks per request. The config a
+// route is served under — `ssr`, gated, `network-only` — is `route-config.ts`'s; this file binds
+// it to what renders there.
 
-import { t } from '@ultimat3/i18n';
-import { defineRoute, type RouteGuard } from '@ultimat3/render';
+import { compilePattern, type RouteConfig, type RouteGuard } from '@ultimat3/render';
 import type { AdminApp, AdminRoute } from './admin';
-import { AdminPagePathInvalidError, AdminPageUnguardedError } from './errors';
-import { guardedPage } from './page-guard';
-import type { AdminPageComponent } from './pages';
+import { AdminPagePathInvalidError } from './errors';
+import { adminRouteDefinition } from './route-config';
+import type { AdminRouteRequest, AdminRouteResponse } from './screen-frame';
+import { screenFor } from './screens';
 
 export interface AdminRouteConfig {
   readonly path: string;
   readonly view: AdminRoute['view'];
   readonly entity: string | null;
   readonly permissions: readonly string[];
-  /** The GUARDED component of a custom page; `null` for a generated view. */
-  readonly component: AdminPageComponent | null;
   /**
    * The coarse gate, already composed — the SAME object `config.policy` carries. It is here, and
-   * not read back off `config`, because `RouteConfig.policy` is optional: a host that serves an
-   * admin URL from its own file has to be able to take the gate without proving it exists.
+   * not read back off `config`, because `RouteConfig.policy` is optional.
    */
   readonly policy: RouteGuard;
-  readonly config: ReturnType<typeof defineRoute>;
+  readonly config: RouteConfig;
+  /**
+   * Answer one request to this route — a GET, or the form the screen posted back at itself — as
+   * a status and a framed body, or the redirect a write that worked earns. Never absent: a
+   * generated view renders its rows and a custom page is wrapped, so no route of the table is a
+   * path with nothing behind it. The screen decides before it renders; a host only serialises.
+   */
+  respond(request: AdminRouteRequest): Promise<AdminRouteResponse>;
 }
 
-/**
- * The author never writes this `defineRoute` call, so the author cannot omit its `policy` —
- * which is the whole mechanism. The coarse gate is `permissions[0]` (always `admin:read`, put
- * there by `permissionsForOperation`/`pagePermissions`); the rest of the pair is decided per
- * request by `decideAll`, in `crud.ts` for a generated view and in `page-guard.tsx` for a page.
- * An empty list is refused here too: `render: 'ssr'` with no policy is a public dashboard.
- */
-export function adminRouteConfig(route: AdminRoute): AdminRouteConfig {
-  const permission = route.permissions[0];
-  if (permission === undefined) throw new AdminPageUnguardedError({ path: route.path });
-  const policy: RouteGuard = { permission };
-
+/** One route of the table, with its gate, its served config and its screen. */
+export function adminRouteConfig(app: AdminApp, route: AdminRoute): AdminRouteConfig {
+  const { policy, config } = adminRouteDefinition(route);
   return {
     path: route.path,
     view: route.view,
     entity: route.entity,
     permissions: route.permissions,
-    component: route.component === undefined ? null : guardedPage(route, route.component),
+    respond: screenFor(app, route),
     policy,
-    config: defineRoute({
-      // One mode for every admin route, never an author's choice. A generated view was `spa` — a
-      // shell the browser was supposed to fill — until `spa` was deleted: nothing ever built the
-      // client bundle it preloaded and `renderSpa` never read the route's component, so every
-      // generated view served an empty `<div id="x-root">`. `ssr` renders the same rows behind the
-      // same guard, once per request, and `hydrate: 'never'` means the screen ships no JS at all:
-      // an admin view is a pure function of its props (no `createSignal`, no local state), so
-      // there is nothing to hydrate. `never` is a REFUSAL and not just a default — an `island()`
-      // rendered on this route throws `X_ISLAND_NOT_HYDRATED` (`@ultimat3/render`'s
-      // `island-collector.ts`), and no admin module declares one.
-      render: 'ssr',
-      offline: 'network-only',
-      hydrate: 'never',
-      policy,
-      meta: () => ({ title: t(route.titleKey) }),
-    }),
+    config,
   };
 }
 
-/** Hand these to the router. Auth stays the host app's: see `AdminApp.auth`. */
+/** Every route of the table, each with its screen. Auth stays the host app's: see `AdminApp.auth`. */
 export function adminRoutes(app: AdminApp): readonly AdminRouteConfig[] {
-  return app.routes.map(adminRouteConfig);
+  return app.routes.map((route) => adminRouteConfig(app, route));
 }
 
 /**
- * The one route the admin declares for `path` — the lookup a host performs when it serves an admin
- * URL from its own file rather than from `adminRoutes()`.
- *
- * It exists because the alternative is what the deployed demo shipped: a page file typing
- * `policy: { permission: 'admin:read' }` beside a route table that separately declared
- * `permissionsForOperation(...)` for the same URL. Two declarations of one URL's authz agree until
- * one of them is edited, and nothing was ever going to notice. Reading the gate from here means
- * there is one declaration and one reader.
+ * The one route the admin declares for `path` — a read of the table, for a caller that wants a
+ * route's gate or its screen without matching a URL.
  *
  * A path the table does not declare is refused rather than answered with a default: a mount with
  * no route is a screen whose permissions nothing composed, which is exactly the shape `pages:`
@@ -95,5 +68,33 @@ export function adminRouteFor(app: AdminApp, path: string): AdminRouteConfig {
         'or declare this one in `pages:` on defineAdmin()',
     });
   }
-  return adminRouteConfig(route);
+  return adminRouteConfig(app, route);
+}
+
+export interface AdminRouteMatch {
+  readonly route: AdminRouteConfig;
+  readonly params: Readonly<Record<string, string>>;
+}
+
+/**
+ * The route a REQUEST's pathname names, with its params — what a host mounting the admin under
+ * one catch-all asks per request. `null` is "no admin screen lives there", which the host answers
+ * 404. The most specific pattern wins, so `/posts/new` is the create form and never the detail
+ * of a row called `new`. Matched against the table as it is NOW, so a page added in a save is
+ * served without the host re-reading anything.
+ */
+export function adminRouteMatch(app: AdminApp, pathname: string): AdminRouteMatch | null {
+  let best: { route: AdminRoute; params: Record<string, string>; specificity: number } | null =
+    null;
+  for (const route of app.routes) {
+    const pattern = compilePattern(route.path);
+    const found = pattern.regex.exec(pathname);
+    if (found === null || (best !== null && best.specificity >= pattern.specificity)) continue;
+    const params: Record<string, string> = {};
+    pattern.keys.forEach((key, index) => {
+      params[key] = decodeURIComponent(found[index + 1] ?? '');
+    });
+    best = { route, params, specificity: pattern.specificity };
+  }
+  return best === null ? null : { route: adminRouteConfig(app, best.route), params: best.params };
 }

@@ -4,59 +4,24 @@
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no mkdtemp/rm of its own; a unique directory per run keeps test workers apart.
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-// why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
-import { tmpdir } from 'node:os';
+import { mkdir } from 'node:fs/promises';
 import { PACKAGE_SECTIONS, registerIn, rowIn } from './lib/error-code-plan';
-import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 
 // Reads the real tree or spawns real processes, so it runs on the repo-scan backstop.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
+afterAll(removeFixtureRoots);
 
 import { ScriptError } from './lib/script-error';
-import { newErrorCode, WIKI_PAGE } from './new-error-code';
-
-const ROOT = repoRoot();
-const made: string[] = [];
-afterAll(async () => {
-  for (const dir of made) await rm(dir, { recursive: true, force: true });
-});
-
-/** A root with the real money and seo registrations, a query one in no known shape, and the page. */
-async function fixtureRoot(): Promise<string> {
-  const dir = await mkdtemp(`${tmpdir()}/new-error-code-`);
-  made.push(dir);
-  for (const pkg of ['money', 'seo']) {
-    await mkdir(`${dir}/packages/${pkg}/src`, { recursive: true });
-    await Bun.write(
-      `${dir}/packages/${pkg}/src/errors.ts`,
-      Bun.file(`${ROOT}/packages/${pkg}/src/errors.ts`),
-    );
-  }
-  await mkdir(`${dir}/packages/odd/src`, { recursive: true });
-  await Bun.write(
-    `${dir}/packages/odd/src/errors.ts`,
-    "export const odd = new Map([['X_ODD', 't']]);\n",
-  );
-  await mkdir(`${dir}/wiki`, { recursive: true });
-  await Bun.write(`${dir}/${WIKI_PAGE}`, Bun.file(`${ROOT}/${WIKI_PAGE}`));
-  return dir;
-}
-
-const read = (dir: string, path: string): Promise<string> => Bun.file(`${dir}/${path}`).text();
-const refusal = async (run: Promise<unknown>): Promise<string> =>
-  run.then(
-    () => expect.unreachable('the generator wrote where it had to refuse'),
-    (error: unknown) => (error instanceof ScriptError ? error.code : `not a ScriptError`),
-  );
-const transpiles = (source: string): boolean => {
-  try {
-    new Bun.Transpiler({ loader: 'ts' }).transformSync(source);
-    return true;
-  } catch {
-    return false;
-  }
-};
+import { newErrorCode, STATUS_BACKLOG, STATUS_TABLE, WIKI_PAGE } from './new-error-code';
+import {
+  fixtureRoot,
+  ROOT,
+  read,
+  refusal,
+  removeFixtureRoots,
+  transpiles,
+} from './new-error-code.fixtures';
 
 describe('a new code, registered and documented in one edit', () => {
   test('money: into the codes array AND the titles table, and a row under its section', async () => {
@@ -69,10 +34,12 @@ describe('a new code, registered and documented in one edit', () => {
       "a conversion that can't keep its minor units",
       '--fix',
       "call convert(amount, rate, { rounding: 'half-even' })",
-      '--meaning',
+      '--cause',
       'a rate with more | decimals than the currency',
+      '--status',
+      '422',
     ]);
-    expect(result.written).toEqual(['packages/money/src/errors.ts', WIKI_PAGE]);
+    expect(result.written).toEqual(['packages/money/src/errors.ts', WIKI_PAGE, STATUS_TABLE]);
     const errors = await read(dir, 'packages/money/src/errors.ts');
     expect(errors).toContain("  'X_MONEY_ROUNDING_LOST',\n] as const;");
     expect(errors).toContain(
@@ -103,6 +70,7 @@ describe('a new code, registered and documented in one edit', () => {
       code: 'X_SCRAPE_PROBE',
       pkg: 'scraping',
       title: 't',
+      cause: 'c',
       fix: 'f',
     }).split('\n');
     expect(after[end + 1]).toStartWith('| `X_SCRAPE_PROBE`');
@@ -116,12 +84,161 @@ describe('a new code, registered and documented in one edit', () => {
       'seo',
       '--title',
       'an image with no alt text',
+      '--cause',
+      'what usually makes it happen',
       '--fix',
       'add alt to the <img> the cause names',
+      '--off-socket',
     ]);
     const errors = await read(dir, 'packages/seo/src/errors.ts');
     expect(errors).toContain("  X_SEO_ALT_MISSING: { title: 'an image with no alt text' },\n});");
     expect(transpiles(errors)).toBe(true);
+  });
+});
+
+describe('a package whose titles are not in the first file the planner looks at', () => {
+  // `@ultimat3/core` keeps its REGISTRY in `error-codes.ts` and its titles in
+  // `core-error-codes.ts`, closed by `} as const;`. The planner stopped at the registry and
+  // refused the package every other package depends on (plan 101, slice 01).
+  test('core: the title lands in core-error-codes.ts, inside the literal', async () => {
+    const dir = await fixtureRoot();
+    await mkdir(`${dir}/packages/core/src`, { recursive: true });
+    for (const file of ['error-codes.ts', 'core-error-codes.ts', 'errors.ts']) {
+      await Bun.write(
+        `${dir}/packages/core/src/${file}`,
+        Bun.file(`${ROOT}/packages/core/src/${file}`),
+      );
+    }
+    const registry = await read(dir, 'packages/core/src/error-codes.ts');
+    const result = await newErrorCode(dir, [
+      'X_CORE_PROBE_ONLY',
+      '--package',
+      'core',
+      '--title',
+      'a probe',
+      '--cause',
+      'what usually makes it happen',
+      '--fix',
+      'x doctor --json',
+      '--off-socket',
+    ]);
+    expect(result.written).toEqual([
+      'packages/core/src/core-error-codes.ts',
+      WIKI_PAGE,
+      STATUS_BACKLOG,
+    ]);
+    const titles = await read(dir, 'packages/core/src/core-error-codes.ts');
+    expect(titles).toContain("  X_CORE_PROBE_ONLY: 'a probe',\n} as const;");
+    expect(transpiles(titles)).toBe(true);
+    // The registry it could not add to is left exactly as found.
+    expect(await read(dir, 'packages/core/src/error-codes.ts')).toBe(registry);
+    expect(await read(dir, WIKI_PAGE)).toContain('| `X_CORE_PROBE_ONLY` | a probe |');
+  });
+
+  // `@ultimat3/entity` keeps its registry in `entity-error.ts` — split from `errors.ts` so a
+  // browser module can raise a code without importing `@ultimat3/db` (plan 101, slice 03).
+  test('entity: the code joins the owned array and the titles in entity-error.ts', async () => {
+    const dir = await fixtureRoot();
+    await mkdir(`${dir}/packages/entity/src`, { recursive: true });
+    for (const file of ['entity-error.ts', 'errors.ts']) {
+      await Bun.write(
+        `${dir}/packages/entity/src/${file}`,
+        Bun.file(`${ROOT}/packages/entity/src/${file}`),
+      );
+    }
+    const result = await newErrorCode(dir, [
+      'X_ENTITY_PROBE_ONLY',
+      '--package',
+      'entity',
+      '--title',
+      'a probe',
+      '--cause',
+      'what usually makes it happen',
+      '--fix',
+      'x doctor --json',
+      '--status',
+      '500',
+    ]);
+    expect(result.written).toEqual([
+      'packages/entity/src/entity-error.ts',
+      WIKI_PAGE,
+      STATUS_TABLE,
+    ]);
+    const errors = await read(dir, 'packages/entity/src/entity-error.ts');
+    expect(errors).toContain("  'X_ENTITY_PROBE_ONLY',\n] as const;");
+    expect(errors).toContain("  X_ENTITY_PROBE_ONLY: 'a probe',\n};");
+    expect(transpiles(errors)).toBe(true);
+  });
+
+  test('a code any candidate file already names is refused, not added to the next one', async () => {
+    const dir = await fixtureRoot();
+    await mkdir(`${dir}/packages/core/src`, { recursive: true });
+    await Bun.write(
+      `${dir}/packages/core/src/error-codes.ts`,
+      "export const registry = new Map([['X_CORE_TAKEN', 't']]);\n",
+    );
+    await Bun.write(
+      `${dir}/packages/core/src/core-error-codes.ts`,
+      "const CORE_CODE_TITLES = {\n  X_A: 'a',\n} as const;\n",
+    );
+    const argv = [
+      'X_CORE_TAKEN',
+      '--package',
+      'core',
+      '--title',
+      't',
+      '--cause',
+      'what usually makes it happen',
+      '--fix',
+      'f',
+      '--off-socket',
+    ];
+    expect(await refusal(newErrorCode(dir, argv))).toBe('X_NEW_ERROR_CODE_EXISTS');
+    expect(await read(dir, 'packages/core/src/core-error-codes.ts')).not.toContain('X_CORE_TAKEN');
+  });
+});
+
+describe('the wiki fix cell reads like its neighbours', () => {
+  // `--fix 'x db gen'` landed on the page as bare text between rows whose commands are in
+  // backticks (W-DB, plan 101): a command a reader copies is code, and the page says so.
+  const cellOf = (fix: string): string => {
+    const page = rowIn(
+      '## Core and runtime\n\n| Code | Means | Typical cause | Fix |\n|---|---|---|---|\n| `X_A` | a | a | `x a` |\n',
+      {
+        code: 'X_CORE_PROBE',
+        pkg: 'core',
+        title: 't',
+        cause: 'c',
+        fix,
+      },
+    );
+    const row = page.split('\n').find((line) => line.startsWith('| `X_CORE_PROBE`')) ?? '';
+    return row.split(' | ').at(-1)?.replace(/ \|$/, '') ?? '';
+  };
+
+  test('a bare command is written in backticks', () => {
+    expect(cellOf('x db gen')).toBe('`x db gen`');
+    expect(cellOf('x jobs ls --name <job> --state running --json')).toBe(
+      '`x jobs ls --name <job> --state running --json`',
+    );
+  });
+
+  test('a trailing shell comment stays prose, after the command', () => {
+    expect(cellOf('x secrets show --json   # confirms the key id in force')).toBe(
+      '`x secrets show --json` — confirms the key id in force',
+    );
+  });
+
+  test('a fix the author already formatted is left exactly as written', () => {
+    expect(cellOf('`x secrets init`, or export `ULTIMATE_SECRETS_KEY`')).toBe(
+      '`x secrets init`, or export `ULTIMATE_SECRETS_KEY`',
+    );
+  });
+
+  test('a pipe inside the command is still escaped for the table', () => {
+    expect(cellOf('printf %s "$T" | x secrets set NAME')).toBe(
+      '`printf %s "$T" \\| x secrets set NAME`',
+    );
   });
 });
 
@@ -144,6 +261,7 @@ describe('a codes array with a sentence per entry', () => {
       code: 'X_C',
       pkg: 'x',
       title: 'c',
+      cause: 'c',
       fix: 'x doctor --json',
     });
     expect(out).toContain("  'X_C',\n] as const;");
@@ -162,6 +280,8 @@ describe('every refusal is coded and writes nothing', () => {
         'odd',
         '--title',
         't',
+        '--cause',
+        'what usually makes it happen',
         '--fix',
         'f',
         '--section',
@@ -176,7 +296,19 @@ describe('every refusal is coded and writes nothing', () => {
 
   test('a code already registered, or already on the page, is refused', async () => {
     const dir = await fixtureRoot();
-    const argv = (code: string) => [code, '--package', 'money', '--title', 't', '--fix', 'f'];
+    const argv = (code: string) => [
+      code,
+      '--package',
+      'money',
+      '--title',
+      't',
+      '--cause',
+      'what usually makes it happen',
+      '--fix',
+      'f',
+      '--status',
+      '400',
+    ];
     expect(await refusal(newErrorCode(dir, argv('X_CURRENCY_UNKNOWN')))).toBe(
       'X_NEW_ERROR_CODE_EXISTS',
     );
@@ -187,19 +319,68 @@ describe('every refusal is coded and writes nothing', () => {
 
   test('a malformed code, a missing flag, an unknown package or section is refused', async () => {
     const dir = await fixtureRoot();
-    const ok = ['--package', 'money', '--title', 't', '--fix', 'f'];
+    const ok = [
+      '--package',
+      'money',
+      '--title',
+      't',
+      '--cause',
+      'what makes it happen',
+      '--fix',
+      'f',
+      '--status',
+      '400',
+    ];
     expect(await refusal(newErrorCode(dir, ['x_lower', ...ok]))).toBe('X_NEW_ERROR_CODE_INVALID');
     expect(await refusal(newErrorCode(dir, ['X_A_B', '--package', 'money']))).toBe(
       'X_NEW_ERROR_CODE_INVALID',
     );
     expect(
       await refusal(
-        newErrorCode(dir, ['X_A_B', '--package', 'nope', '--title', 't', '--fix', 'f']),
+        newErrorCode(dir, [
+          'X_A_B',
+          '--package',
+          'nope',
+          '--title',
+          't',
+          '--cause',
+          'what makes it happen',
+          '--fix',
+          'f',
+        ]),
       ),
     ).toBe('X_NEW_ERROR_CODE_INVALID');
     expect(await refusal(newErrorCode(dir, ['X_A_B', ...ok, '--section', 'No such section']))).toBe(
       'X_NEW_ERROR_CODE_INVALID',
     );
+  });
+});
+
+describe('the cause cell is its own sentence, never the title again', () => {
+  const base = ['X_MONEY_PROBE', '--package', 'money', '--title', 'a probe', '--fix', 'f'];
+
+  test('no --cause is refused before anything is written', async () => {
+    const dir = await fixtureRoot();
+    const before = await read(dir, WIKI_PAGE);
+    expect(await refusal(newErrorCode(dir, [...base, '--status', '400']))).toBe(
+      'X_NEW_ERROR_CODE_INVALID',
+    );
+    expect(await read(dir, WIKI_PAGE)).toBe(before);
+  });
+
+  test('a --cause that repeats the title is refused — the row would say one thing twice', async () => {
+    const dir = await fixtureRoot();
+    const argv = [...base, '--cause', ' A probe ', '--status', '400'];
+    expect(await refusal(newErrorCode(dir, argv))).toBe('X_NEW_ERROR_CODE_INVALID');
+  });
+
+  test('the row carries title, cause and fix in their own cells', async () => {
+    const dir = await fixtureRoot();
+    await newErrorCode(dir, [...base, '--cause', 'what usually causes it', '--status', '400']);
+    const row = (await read(dir, WIKI_PAGE))
+      .split('\n')
+      .find((line) => line.startsWith('| `X_MONEY_PROBE`'));
+    expect(row).toBe('| `X_MONEY_PROBE` | a probe | what usually causes it | `f` |');
   });
 });
 
@@ -221,6 +402,7 @@ describe('the real tree', () => {
           code: 'X_PROBE_ONLY',
           pkg,
           title: 't',
+          cause: 'c',
           fix: 'f',
         });
         // Accepted means VALID: a plan that corrupts the file is worse than a refusal.

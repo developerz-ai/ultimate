@@ -15,8 +15,14 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, defaults read off column names |
 | `factory-persist.ts` | `usePersister` — the one seam `create()` writes through |
 | `shared-examples.ts` | `sharedExamples` / `behavesLike` — one rule, many subjects |
-| `test-types.ts` | the six test types and their helpers |
-| `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` `toAcceptInput` `toBeVisible` |
+| `test-types.ts` | the six test types and their helpers — four of them take the fixture bag, as `test` does |
+| `auth-request.ts` | `authRequest()` — the two arguments an app's authenticator is handed, built for real |
+| `island-state-mount.ts` | `describeIslandState()` / `mountIslandState()` — one declared island state, mounted, with the setup and teardown a mount owes |
+| `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` `toAcceptInput` `toEqualRow` `toBeVisible` |
+| `matcher-row.ts` | `toEqualRow` — equality over every OWN property, so a `.sealed()` column (not enumerable on a repository row) is compared; a server-only difference is named, never printed |
+| `test-seal-key.ts` | the throwaway master key a test process seals under when the app has none — installed by the preload, handed to the app `startE2eApp` spawns, exported from nowhere |
+| `local-tx.ts` | `memoryLocalTx()` — the client store a mutator's `local()` half writes into under test, with the record store's own rules |
+| `render-view.ts` | `renderView()` / `renderRoute()` — what the server renders, for a unit test: one component, or a whole route module with its `load`, `meta` and islands |
 | `retry.ts` | the one retry loop every waiting assertion is built from — a budget, a fixed interval, and an injectable sleep |
 | `fixtures.ts` | the registry + `test('…', ({ clock }) => …)` injection |
 | `fixture-{clock,mail,jobs,network,statements}.ts` | the five fixtures the framework builds in-process |
@@ -35,6 +41,7 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty, and restores the ones that can be restored at the same boundary |
 | `registry-snapshot.ts` | `captureProcessRegistries()` / `restoreProcessRegistries()` — the locale config, the catalogs, the permission set and the role map, put back as a file inherited them. A module-scope declaration evaluates once per process (`bun test` without `--isolate`, `As of 2026-08`), so a neighbour's `clearPermissions()` is otherwise permanent |
 | `registry-isolation.ts` | `isolateEntityRegistry()` — an empty entity registry, and the process's back after. Its own entry point (`@ultimat3/testing/registry-isolation`), never the barrel: it value-imports `@ultimat3/entity`, and the barrel is what a tier-0 test imports for `expect` |
+| `quiet-logs.ts` | a green run prints the reporter and nothing else: the framework's log lines go to a sink that drops them. `LOG_LEVEL=info bun test <file>` shows them — naming `LOG_LEVEL` is the one escape hatch, and a level above `info` filters what the TERMINAL shows, never what the logger emits (below). A test asserting on log output hands `createLogger({ level, writer })` its own writer, or installs its own `setLogSink` and restores the previous one |
 | `preload.ts` | the bunfig preload that installs all of the above |
 
 ## Install
@@ -45,15 +52,30 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 preload = ["@ultimat3/testing/preload"]
 ```
 
+The preload also sets `ULTIMATE_SECRETS_KEY` to a fixed throwaway key, so a test over a
+`.sealed()` column runs on a fresh clone and in CI, where `.secrets.key` (gitignored) is absent.
+
+| Rule | |
+|---|---|
+| Only a test process | `NODE_ENV=test`, which `bun test` sets. A server that imported the preload gets no key |
+| The app's key wins | nothing is installed when the variable is set or `.secrets.key` exists |
+| e2e | `startE2eApp` hands the same key to the reset, the seed and the app it spawns |
+| Not an export | the key is module-private; `installTestSealKey` is not on the barrel |
+
 ## Fixtures
 
-`test` from this package passes a fixture bag as the first argument, and builds only what the
-body destructures — a test that never names `runJobs` never starts a queue.
+`test` from this package — and `unitTest`, `contractTest`, `liveTest`, `jobTest` — passes a
+fixture bag as the first argument, and builds only what the body destructures: a test that never
+names `runJobs` never starts a queue, and one that destructures nothing builds nothing.
 
 ```ts
-import { expect, test } from '@ultimat3/testing';
+import type { JobHandle } from '@ultimat3/jobs';
+import { expect, unitTest } from '@ultimat3/testing';
 
-test('the three-day sleep releases the worker', async ({ clock, runJobs }) => {
+declare const onboardOrg: JobHandle<{ orgId: string }>; // yours
+declare const orgId: string;
+
+unitTest('the three-day sleep releases the worker', async ({ clock, runJobs }) => {
   await runJobs(onboardOrg, { orgId });
   expect(await runJobs.inFlight()).toBe(0);   // suspended, not waiting
   clock.advance('3d');
@@ -61,12 +83,15 @@ test('the three-day sleep releases the worker', async ({ clock, runJobs }) => {
 });
 ```
 
+One body shape for all five (`FixtureBody`), so a job body under the `unit` step is `unitTest`
+with `{ runJobs }` — never `describe(testName('unit', …))` around a bare `test` to reach a fixture.
+
 | Fixture | Is | Built by |
 |---|---|---|
 | `clock` | `now()` · `advance('3d')` · `set(instant)` on the frozen clock | the preload |
 | `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` over an in-memory transport | the preload |
 | `network` | `offline()` · `drop()` · `online()` · `state()` over the sealed network | the preload |
-| `runJobs` | a worker: call it to enqueue+drain, then `drain()` `due()` `inFlight()` `depth()` | the preload |
+| `runJobs` | a worker: call it to enqueue+drain, then `enqueue()` `drain()` `due()` `inFlight()` `depth()` — see [below](#a-job-under-runjobs) | the preload |
 | `statements` | every statement the test issued: `all()` `count(fingerprint?)` `shapes()` — and an N+1 throws | the preload |
 | `page` | the browser: `goto` `gotoStreamed` `getByRole` `evaluate` `waitForServiceWorker` | a browser driver |
 | `budget` | `jsBytes(route)` measured off the built output | a browser driver |
@@ -102,6 +127,41 @@ Destructuring a name nobody registered fails with `X_TEST_FIXTURE_UNKNOWN`, whic
 that *is* registered — never `undefined is not an object` from inside the body. A name that is
 registered but has no driver fails with `X_TEST_FIXTURE_UNAVAILABLE` instead; the two are different
 instructions, so they are different codes.
+
+## A job under `runJobs`
+
+```ts
+import { serviceActor } from '@ultimat3/core';
+import type { JobHandle } from '@ultimat3/jobs';
+import { expect, unitTest } from '@ultimat3/testing';
+
+declare const reindexPost: JobHandle<{ id: string; orgId: string }>; // yours
+declare const chargeInvoices: JobHandle<{ orgId: string }>;
+declare const id: string;
+declare const orgId: string;
+
+unitTest('a row deleted before the run is skipped, not failed', async ({ runJobs }) => {
+  const trace = await runJobs(reindexPost, { id, orgId });
+  expect(trace.executions.map((run) => run.outcome)).toEqual(['completed']);
+  expect(trace.executions[0]?.result).toEqual({ skipped: true });   // what the BODY returned
+  expect(Object.keys(trace.steps)).toEqual(['load']);
+});
+
+unitTest('the sweep runs as the billing worker', async ({ runJobs }) => {
+  const worker = serviceActor({ id: 'billing-worker', scopes: ['billing:run'] });
+  await runJobs(chargeInvoices, { orgId }, { actor: worker, tenantId: orgId });
+});
+```
+
+| | |
+|---|---|
+| **`trace.executions[n].result`** | what the body returned, on a completed run — `undefined` for a body that returns nothing, and no such key on a run that failed, suspended or was interrupted. It is `executeJob`'s own (`JobExecution.result`): `{ skipped: true }` and "did the work" are otherwise one trace |
+| **`trace.steps[name]`** | `executions` (a replay from storage does not count), `attempts`, `status` — cumulative for the test |
+| **`{ actor }`** | on the call and on `drain()`: the identity the WORKER runs as — what an app wires through `WorkerOptions.context()`. Its org is replaced by the job's declared tenant, as a real worker's is; `tenant: 'none'` strips it. Absent is core's anonymous actor |
+| **`{ tenantId }`** | on the call and on `enqueue()`: the ENQUEUER's tenant on the row — the limiter's bucket and the dedupe namespace, the half of `handle.as(actor, input)` that reaches the queue. Never the tenant the body runs under: that is the job's own `tenant:` |
+| **one event bus per fixture** | `step.waitForEvent` reads an ambient bus that STORES; the fixture installs a fresh one and hands the process's back, so one test's `publishEvent` cannot resume the next test's run |
+| **a real worker's pass** | each round is `createWorker(...).tick()`: admission, the limiter and keyed `concurrency` (`whenBusy: 'fail'` settles `refused`, `X_JOB_KEY_BUSY`) hold exactly as in production |
+| **a cancel reaches a running body** | the worker renews its lease on the TEST clock — every millisecond of it — and a renewal that misses the row aborts `ctx.signal` with `X_JOB_LEASE_LOST`: start `runJobs.drain()`, cancel the row (`cancelJob(jobDriver(), id)` or the app's own action), `clock.advance(1)`, await the drain. No hand-built worker, no sleep, no wall-clock timer |
 
 ## An N+1 fails the test it happened in
 
@@ -140,6 +200,12 @@ there is no flag on the fixture and no code to silence.
 | `jobTest` | step sequence, retries, idempotency | `job` |
 | `e2eTest` | a browser driver; with none registered it SKIPS, and the gate's `e2e` step passes over the skip — ask `hasE2eDriver()` rather than reading that as a pass | `e2e` |
 | `evalTest` | LLM output scoring against a threshold | `eval` |
+
+Each takes an optional `{ timeoutMs }` after the body — `unitTest(name, body, { timeoutMs: 30_000 })`,
+and `test` takes the same; `evalTest` reads it off its options — handed to `bun:test` as that
+test's own deadline (`TestOptions`). Absent is Bun's 5 s default. An `E2eDriver` receives it as its
+third argument. `unitTest`, `contractTest`, `liveTest` and `jobTest` hand their body the
+[fixture bag](#fixtures); `e2eTest` hands its own (`E2eFixtures`).
 
 **Registering one, `As of 2026-08-25`.** `@ultimat3/cli`'s `installE2eDriver({ page, baseUrl })` is
 the driver that exists — a `PageLike` over `@ultimat3/scraping`'s browser — and an app's test preload
@@ -258,6 +324,117 @@ core's `markListening()`, so a test may call its own `handle.url()` on a kernel-
 the seal fully on. Unsealing (`ULTIMATE_TEST_ALLOW_NET=1`) stays reserved for a deliberate live
 integration — never for a socket test.
 
+## Rendering a page or a component
+
+A page is a function of props and a route is a module, so a unit test renders either in process —
+no server, no browser, and no cast between Solid's JSX types and the server factory's.
+
+```ts
+import type { Actor } from '@ultimat3/core';
+import type { RouteModule } from '@ultimat3/testing';
+import { expect, renderRoute, renderView, unitTest } from '@ultimat3/testing';
+
+// Yours: `import { Shell } from '../../shared/shell'` and `import * as page from './page'`.
+declare const Shell: (props: { nav: string; children: string }) => unknown;
+declare const page: RouteModule<{ rows: readonly unknown[] }>;
+declare const viewer: Actor;
+declare const t: (key: string) => string;
+
+unitTest('the dashboard counts the posts of the org that is looking', async () => {
+  const view = await renderRoute(page, { url: 'https://example.test/dashboard', actor: viewer });
+  expect(view.data.rows).toHaveLength(2);                 // what `load` resolved
+  expect(view.meta.title).toBe(t('app.dashboard.title')); // what `meta` answered for that data
+  expect(view.text).toContain(t('app.dashboard.tableTitle'));
+  expect(view.html).toMatch(/<a href="\/dashboard" aria-current="page"/);
+  expect(view.islands.map((island) => island.moduleId)).toEqual(['shared-theme-toggle']);
+});
+
+unitTest('the shell keeps the page in <main>', async () => {
+  const view = await renderView(Shell, { nav: 'dashboard', children: 'the page body' });
+  expect(view.html).toMatch(/<main[^>]*>the page body<\/main>/);
+});
+```
+
+| | |
+|---|---|
+| **`renderRoute(module, { url?, params?, actor? })`** | the route module passed WHOLE (`import * as page`), so the page is found by the router's own rule (`pageComponentOf`). `load` runs once; `meta` and the page are handed that one object; islands are collected under the route's own `hydrate` |
+| **`renderView(Component, props)`** | one component. `props` is the component's own type — a renamed prop is a compile error in the test. A component that renders an `island()` is refused here: its timing is a route's |
+| **`view.html`** | the markup as the document carries it |
+| **`view.text`** | what a reader sees: tags, `<script>` and `<style>` bodies removed, entities decoded, whitespace collapsed. Compare with `t('<key>')` — markup escapes what the catalog does not |
+| **`actor`** | `load` and the page run inside `runWithContext(createContext({ actor }))`. Without one they run outside any request context, as a static page does |
+| **the file stays `.test.ts`** | no JSX in a test: the registry-leak guard's loader covers `.test.ts` only, and children that need markup are a string |
+
+`@ultimat3/render` is imported inside the two functions, so the barrel still loads no renderer.
+
+## Testing an authenticator
+
+An app's `configureAuthenticator()` function is handed a request and its context. `authRequest`
+builds both for real — a `UltimateRequest` over a `RequestContext` — so the test calls the
+function with no server and no `as unknown as Parameters<…>`.
+
+```ts
+import type { Authenticator } from '@ultimat3/http';
+import { authRequest, expect, unitTest } from '@ultimat3/testing';
+
+declare const authenticate: Authenticator; // yours — the function `configureAuthenticator()` takes
+declare const token: string;
+declare const key: string;
+
+unitTest('a session cookie resolves the member it was issued to', async () => {
+  const actor = await authenticate(...(await authRequest({ cookies: { session: token } })));
+  expect(actor?.id).toBe('ada');
+});
+
+unitTest('an API key authenticates only under /v1', async () => {
+  const [request, ctx] = await authRequest({ url: 'https://example.test/v1/posts', bearer: key });
+  expect(await authenticate(request, ctx)).not.toBeNull();
+});
+```
+
+| Key | Is |
+|---|---|
+| `cookies` | by name, sent as the ONE `cookie` header a browser sends, values percent-encoded |
+| `bearer` | `Authorization: Bearer <token>` |
+| `headers` | any other header; `cookies` and `bearer` win over the same header spelled here |
+| `url` · `method` | `https://example.test/` and `GET` when absent |
+
+The answer is the hook's own parameter list (`Parameters<Authenticator>`), so a parameter the hook
+gains is a compile error in the test. The context is the one the `auth` stage sees: its actor is
+still anonymous, because resolving it is the function under test. `@ultimat3/http` is imported
+inside the function.
+
+## Running a mutator's local half
+
+`local(tx, input)` is replayed on every rebase, so what a test proves is the row it leaves and that
+a second application leaves the same one. `memoryLocalTx` is the store it writes into — keyed rows,
+with the page record store's rules — so the test holds no hand-rolled table and no cast.
+
+```ts
+import type { MemoryLocalTx } from '@ultimat3/testing';
+import { expect, memoryLocalTx, unitTest } from '@ultimat3/testing';
+
+type RenameInput = { id: string; orgId: string; title: string };
+declare const renamePost: { local(tx: MemoryLocalTx['tx'], input: RenameInput): void }; // yours
+declare const id: string;
+declare const orgId: string;
+
+unitTest('the local twin marks the row pending, and a replay lands in the same place', () => {
+  const store = memoryLocalTx({ posts: { [id]: { id, title: 'before', pending: false } } });
+  renamePost.local(store.tx, { id, orgId, title: 'after' });
+  const once = store.rows('posts');
+  expect(once).toEqual({ [id]: { id, title: 'after', pending: true } });
+  renamePost.local(store.tx, { id, orgId, title: 'after' });
+  expect(store.rows('posts')).toEqual(once);
+});
+```
+
+| | |
+|---|---|
+| **seed** | `{ <table>: { <key>: <row> } }`. Copied and frozen: a twin that mutates a row in place throws here rather than corrupting synced truth in a browser |
+| **`update`** | a NO-OP for a key the table does not hold — a twin must not invent a row |
+| **`upsert` / `update`** | an `undefined` field leaves the column alone |
+| **`store.rows(table)`** | what the table holds now, by key; `{}` for a table never seen |
+
 ## Testing an island
 
 An island is the only client-side code Ultimate ships, so it is the only code an app cannot test
@@ -315,6 +492,52 @@ teardown: an island whose `mount` polled on an interval kept ticking after the D
 which surfaced as `document is not defined` thrown into whichever later test happened to be
 running, and as one file's fetch stub receiving POSTs from another file's island. A `mount` that
 returns nothing disposes as it always did.
+
+### One block per declared state
+
+Every island declares its states (below), so an island test mounts THOSE — the props a picture is
+taken of are the props the test asserts on. `describeIslandState` owns what a mount owes: the
+lookup, the `beforeAll` that builds and mounts, the `afterAll` that disposes.
+
+```ts
+import { join } from 'node:path';
+import { buildIslands } from '@ultimat3/cli';
+import type { IslandStatesManifest } from '@ultimat3/testing';
+import { describeIslandState, expect, test } from '@ultimat3/testing';
+
+declare const counterStates: IslandStatesManifest; // yours — './counter.island.states'
+
+const island = {
+  build: buildIslands,
+  root: join(import.meta.dir, '..', '..', '..'),
+  shell: '<span>shell</span>',          // what the server rendered; `mount` replaces it
+};
+
+describeIslandState(counterStates, 'idle', island, (mounted) => {
+  test('a click reaches the DOM through the signal', () => {
+    expect(mounted().fire('button', 'click')).toBe(true);
+    expect(mounted().text('[data-role="count"]')).toBe('1');
+  });
+});
+
+describeIslandState(counterStates, 'long-label', island, (mounted) => {
+  test('the label arrives whole', () => {
+    expect(mounted().text('button')).toBe('Abrechnungseinstellungen anzeigen');
+  });
+});
+```
+
+| | |
+|---|---|
+| **`mounted()`** | an accessor, for `describeApp`'s reason: the block is declared at module scope and the mount exists only once `beforeAll` has run. Outside its block's tests it throws |
+| **one mount per block** | shared by the block's tests, in order — a mount installs a process-global `document`, so two cannot be live at once |
+| **one build per file** | the bundle is kept per `(build, root, island)`; a second state mounts the chunk the first one built. A build that rejects is not kept |
+| **`timeoutMs`** | the mount's deadline, build included. `ISLAND_MOUNT_TIMEOUT_MS` (60 s) when absent — Bun's 5 s default is what a cold runner misses |
+| **`shell` · `globals` · `size`** | `mountIsland`'s own, per block. `file` and `props` are the manifest's and are not options |
+| **an id the manifest does not declare** | `X_TEST_ISLAND_STATE_UNKNOWN`, listing the declared ones |
+| **`mountIslandState(manifest, id, options)`** | the same lookup for ONE test that needs its own mount — a fetch stub per test: `using island = await mountIslandState(states, 'idle', { build, root })` |
+
+`mountIsland` stays the call for props no state declares.
 
 ### Selectors
 
@@ -486,7 +709,7 @@ fails on a page that simply has not painted yet.
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`
 `X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED` `X_TEST_REGISTRY_LEAK`
 `X_TEST_ISLAND_NOT_BUILT` `X_TEST_ISLAND_NO_MOUNT` `X_TEST_ISLAND_SELECTOR_UNSUPPORTED`
-`X_TEST_ISLAND_STATES_EMPTY`
+`X_TEST_ISLAND_STATES_EMPTY` `X_TEST_ISLAND_STATE_UNKNOWN`
 `X_TEST_ISLAND_STATES_NOT_PURE` `X_TEST_ISLAND_STATES_MISSING_FILE` `X_TEST_ISLAND_STATES_UNKNOWN`
 `X_TEST_ISLAND_STATES_AMBIGUOUS` `X_TEST_ISLAND_STATE_ID_INVALID` `X_TEST_ISLAND_STATE_DUPLICATE`
 `X_TEST_ISLAND_STATE_JSON_INVALID` `X_TEST_ISLAND_STATE_CLOCK_INVALID`
@@ -505,6 +728,22 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `NondeterministicError` | `X_TEST_NONDETERMINISTIC` | `src/errors.ts` |
 | `RegistryLeakError` | `X_TEST_REGISTRY_LEAK` | `src/errors.ts` |
 | `TestDatabaseUnavailableError` | `X_TEST_DB_UNAVAILABLE` | `src/errors.ts` |
+
+## Log lines under test
+
+| `LOG_LEVEL` | The terminal shows | A `setLogSink` a test installs receives |
+|---|---|---|
+| unset | nothing — the reporter only | `info` and above |
+| `info` | `info` and above | `info` and above |
+| `debug` · `trace` | that level and above | that level and above — asking for more lines is asking for them everywhere |
+| `warn` · `error` · `fatal` · `silent` | that level and above | **`info` and above, still** |
+
+The last row is the rule: a level above `info` filters the TERMINAL, never the process logger.
+Core reads `LOG_LEVEL` once, when it is first imported, so `LOG_LEVEL=error bun test` used to raise
+the logger itself and a test asserting on an `info` audit line collected nothing. `quiet-logs.ts`
+pins the level at `info` for the moment core loads, restores the variable (a spawned child inherits
+what was named), and installs the filter. It is the preload's first import for that reason.
+`As of 2026-10`.
 
 ## One process, one registry
 

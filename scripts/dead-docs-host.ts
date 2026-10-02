@@ -28,10 +28,12 @@ import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { leadSite, siteList, siteTarget } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
 import { insideString, sourceStrings } from './lib/source-strings';
 
 const SCRIPT = 'dead-docs-host';
+const EXPLAIN = 'bun run scripts/dead-docs-host.ts --explain --json lists every one';
 
 /**
  * The host, SPELT IN PIECES — because this file is shipped source and the rule reads shipped source,
@@ -127,18 +129,19 @@ const at = (site: DeadHostSite | undefined): string =>
 const overFinding = (gap: DeadHostGap): Finding =>
   gap.first !== undefined && isDoc(gap.first.path) ? docFinding(gap) : codeFinding(gap);
 
+/** Zero-pinned, so every site of the gap is the finding: each is listed, never only the first. */
 const docFinding = (gap: DeadHostGap): Finding => ({
   code: 'X_DEAD_DOCS_HOST',
-  cause: `${at(gap.first)} links to ${HOST}, a host that answers HTTP 404 on every path`,
-  fix: `edit ${at(gap.first)} — link https://github.com/developerz-ai/ultimate/wiki/Error-Codes for an error, or https://github.com/developerz-ai/ultimate for the project`,
-  at: at(gap.first),
+  cause: `${HOST}, a host that answers HTTP 404 on every path, is linked at ${siteList(gap, at, EXPLAIN)}`,
+  fix: `edit ${siteTarget(gap, at)} — link https://github.com/developerz-ai/ultimate/wiki/Error-Codes for an error, or https://github.com/developerz-ai/ultimate for the project`,
+  at: at(leadSite(gap)),
 });
 
 const codeFinding = (gap: DeadHostGap): Finding => ({
   code: 'X_DEAD_DOCS_HOST',
-  cause: `${gap.pkg} builds ${String(gap.found)} URL(s) on ${HOST} and is pinned at ${String(gap.pinned)} — ${at(gap.first)} emits one, and that host answers HTTP 404 on every path, so the link an operator is handed at the moment of a failure goes nowhere`,
-  fix: `delete the docs: line at ${at(gap.first)} — UltimateError resolves the registered descriptor, whose default is ${REPLACEMENT} from @ultimat3/core; if this is not an error link, import ${REPLACEMENT} rather than writing a second host`,
-  at: at(gap.first),
+  cause: `${gap.pkg} builds ${String(gap.found)} URL(s) on ${HOST} and is pinned at ${String(gap.pinned)} — ${siteList(gap, at, EXPLAIN)} — and that host answers HTTP 404 on every path, so the link an operator is handed at the moment of a failure goes nowhere`,
+  fix: `delete the docs: line at ${siteTarget(gap, at)} — UltimateError resolves the registered descriptor, whose default is ${REPLACEMENT} from @ultimat3/core; if this is not an error link, import ${REPLACEMENT} rather than writing a second host`,
+  at: at(leadSite(gap)),
 });
 
 const staleFinding = (gap: DeadHostGap): Finding => ({

@@ -4,14 +4,20 @@
 // may import all of them, which is why the pin lives here. It is now the LAST cross-package pin in
 // this package: the tier-0 four went with the declared `core -> schema` edge (2026-08-27).
 
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { action, describeAction, toMcpTools, toOpenApiOperation } from '@ultimat3/action';
 import { toLlmTools } from '@ultimat3/ai';
 import { isMcpExposed } from '@ultimat3/core';
 import { asProjectable, isExposed as isMcpToolExposed, toolsFrom } from '@ultimat3/mcp';
-import { can } from '@ultimat3/policy';
+import { can, clearPermissions } from '@ultimat3/policy';
 import { from, query, toQueryTools } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
+
+// Every `can()` here names a permission no `definePermissions()` declares, which is legal only
+// while the set is EMPTY. A file that ran first in this process may have imported
+// `@ultimat3/admin`, whose module scope declares `admin:*` for good — so this file empties the set
+// itself; the file boundary (`registry-leak-guard.ts`) puts it back after.
+beforeAll(clearPermissions);
 
 const Input = t.object({ id: t.uuid });
 const Output = t.object({ ok: t.boolean });

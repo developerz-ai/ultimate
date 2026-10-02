@@ -13,11 +13,14 @@ import { stripComments } from '../packages/core/src/source-mask';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import type { SiteProbe } from './lib/ratchet-sites';
+import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
 import { insideString, sourceStrings } from './lib/source-strings';
 import { BARE_ERROR_PINS, PINS_FILE } from './lib/test-bare-error-pins';
 import { readTestSources } from './test-fix-citations';
 
 const SCRIPT = 'test-bare-error';
+const EXPLAIN = 'bun run scripts/test-bare-error.ts --explain --json lists every one';
 
 /**
  * `throw` is the whole rule, and it is what makes the two populations separable — which #132 said
@@ -83,11 +86,12 @@ export const checkBareErrors = (input: BareErrorInput): readonly BareErrorGap[] 
 const at = (site: BareErrorSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
+/** Every throw, new ones first — the package's first is usually one its pin already allows. */
 const overFinding = (gap: BareErrorGap): Finding => ({
   code: 'X_TEST_BARE_ERROR',
-  cause: `${gap.pkg} has ${String(gap.found)} test(s) reporting a verdict with a bare Error and is pinned at ${String(gap.pinned)} — ${at(gap.first)} throws one, which carries no code, no cause and no fix, and reports at the throw rather than at the assertion`,
-  fix: `replace the throw at ${at(gap.first)} with expect.unreachable('<what was expected>') — its never return also narrows the variable, so the cast below it goes away`,
-  at: at(gap.first),
+  cause: `${gap.pkg} has ${String(gap.found)} test(s) reporting a verdict with a bare Error and is pinned at ${String(gap.pinned)} — ${siteList(gap, at, EXPLAIN)} — and a bare Error carries no code, no cause and no fix, and reports at the throw rather than at the assertion`,
+  fix: `replace the throw at ${siteTarget(gap, at)}: expect.unreachable('<what was expected>') reports at the assertion, and its never return also narrows the variable, so the cast below it goes away`,
+  at: at(leadSite(gap)),
 });
 
 const staleFinding = (gap: BareErrorGap): Finding => ({
@@ -115,8 +119,10 @@ export const bareErrorFindingFor = (gap: BareErrorGap): Finding =>
 const treeSites = async (root: string): Promise<readonly BareErrorSite[]> =>
   (await readTestSources(root)).flatMap((file) => scanBareErrorThrows(file.path, file.text));
 
+const PROBE: SiteProbe<BareErrorSite> = { rescan: scanBareErrorThrows, line: (site) => site.line };
+
 export const bareErrorGaps = async (root: string): Promise<readonly BareErrorGap[]> =>
-  ratchetGaps(await treeSites(root), BARE_ERROR_PINS, true);
+  newSitesFirst(root, ratchetGaps(await treeSites(root), BARE_ERROR_PINS, true), PROBE);
 
 /** What this repo contributes to `x verify`'s `errors` step. */
 export const bareErrorFindings = async (root: string): Promise<readonly Finding[]> =>
@@ -129,6 +135,7 @@ if (import.meta.main) {
     pins: BARE_ERROR_PINS,
     sites: treeSites,
     findingFor: bareErrorFindingFor,
+    probe: PROBE,
     clean: 'no package reports a test verdict with a bare Error above its pin',
   });
 }

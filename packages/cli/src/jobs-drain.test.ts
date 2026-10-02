@@ -38,7 +38,7 @@ async function makeSuspendedJob(driver: JobDriver, name: string): Promise<string
     visibilityTimeoutMs: 60_000,
     workerId: 'w',
   });
-  await driver.nack(id, { delayMs: 0, countsAsAttempt: false });
+  await driver.nack(id, { workerId: 'w', claim: 1, delayMs: 0, countsAsAttempt: false });
   return id;
 }
 
@@ -65,7 +65,7 @@ function leaselessSource(inner: JobDriver): { driver: JobDriver; acked: string[]
       claim: () => Promise.resolve([]),
       ack: (id: string) => {
         acked.push(id);
-        return inner.ack(id);
+        return inner.ack(id, { workerId: 'w', claim: 1 });
       },
     },
   };
@@ -87,6 +87,21 @@ describe('unit · drainJobs ownership', () => {
     expect(outcome.moved.map((record) => record.state).sort()).toEqual(['ready', 'ready']);
     expect((await source.introspect?.job(readyId))?.state).toBe('done');
     expect((await listJobs(target)).rows).toHaveLength(2);
+  });
+
+  // The source row is settled `done` because it LEFT. Until 2026-10-01 that ack went through
+  // the same counter every completed run does, so draining 10,000 queued jobs put 10,000 runs in
+  // the source's history for work that had not started.
+  test('a moved job adds nothing to the source`s counters — it was moved, not run', async () => {
+    const source = createMemoryDriver();
+    const target = createMemoryDriver();
+    const id = await enqueue(source, 'ready-job');
+
+    const outcome = await drainJobs(source, target, false);
+
+    expect(outcome.moved.map((record) => record.id)).toEqual([id]);
+    expect((await source.introspect?.job(id))?.state).toBe('done');
+    expect(await source.introspect?.counterTotals(0)).toEqual([]);
   });
 
   test('never acknowledges a candidate it could not lease', async () => {

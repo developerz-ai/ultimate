@@ -5,6 +5,8 @@
 //   [test]
 //   preload = ["@ultimat3/testing/preload"]
 
+// A green run prints the reporter and nothing else: the process logger's lines go to a sink.
+import './quiet-logs';
 import { installDeterminism } from './determinism';
 import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
@@ -12,8 +14,15 @@ import { installAppJsxLoader } from './app-jsx-loader';
 import { onFileBoundary } from './file-boundary';
 import { disposeLiveIslands } from './fixture-island';
 import { releasePluginsAfterIsolatedFile } from './isolated-plugins';
+import { installPerTestReset } from './per-test-reset';
 import { installRegistryLeakGuard } from './registry-leak-guard';
 import { sealNetwork } from './sealed-network';
+import { installTestSealKey } from './test-seal-key';
+
+// `.secrets.key` is gitignored and CI names no `ULTIMATE_SECRETS_KEY`: without a key every test
+// over a `.sealed()` column is `X_SEAL_KEY_MISSING` on a fresh clone. A throwaway one, only in a
+// test process (`NODE_ENV=test`) and only when the app supplied none — see the file.
+installTestSealKey();
 
 const seed = Number.parseInt(Bun.env['ULTIMATE_TEST_SEED'] ?? '', 10);
 const now = Bun.env['ULTIMATE_TEST_NOW'];
@@ -39,6 +48,10 @@ installRegistryLeakGuard();
 // file never disposed is disposed between files, and `file-boundary.ts` then puts `globalThis`
 // back to what the first file saw.
 onFileBoundary(disposeLiveIslands);
+
+// And per TEST: the jobs event bus stores what it is handed, so one test's published answer
+// resumed the next test's waiting run (`per-test-reset.ts`).
+installPerTestReset();
 
 // A shared worker only (an isolated file is a fresh registry anyway): the app's
 // `defineApi({ pathStyle })` evaluates once per worker, in whichever file first imports it, and

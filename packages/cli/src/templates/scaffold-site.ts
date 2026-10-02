@@ -45,7 +45,7 @@ export const config = defineRoute({
   }),
 });
 
-export function HomePage() {
+export function Page() {
   const t = useT();
 
   return (
@@ -259,23 +259,49 @@ const siteStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-const sitePageTest =
-  (): string => `// The landing page ships zero JS and declares its metadata. Both are promises the file makes in
-// its config, and both are the kind that rot silently when someone adds one import.
-import { metaContextFor, routeDataFor } from '@ultimat3/render';
-import { expect, unitTest } from '@ultimat3/testing';
-import { config } from './page';
+const sitePageTest = (
+  app: NameSet,
+): string => `// The landing page, rendered: what a visitor reads, where its two calls to action lead, and that
+// it ships zero JS. Each is a promise the file makes, and each rots silently on one import.
+${sortedImports([
+  `import { useT } from '@${app.kebab}/i18n';`,
+  "import { expect, renderRoute, unitTest } from '@ultimat3/testing';",
+])}
+import * as page from './page';
 
-// The same two objects a render builds: \`routeDataFor\` resolves the route's data once, and
-// \`metaContextFor\` wraps it the way every render mode wraps it before calling \`meta\`.
-const ctx = { params: {}, url: 'https://example.test/' };
+const url = 'https://example.test/';
 
-unitTest('the landing page ships zero JS and declares metadata', async () => {
-  expect(config.render).toBe('static');
-  expect(config.hydrate).toBe('never');
-  expect(config.budget.js).toBe('0kb');
-  const meta = await config.meta(metaContextFor(ctx, await routeDataFor(config, ctx)));
-  expect(meta.title ?? '').not.toBe('');
+unitTest('the landing page says what the catalog says, under one h1', async () => {
+  const t = useT();
+  const view = await renderRoute(page, { url });
+  expect(view.html.match(/<h1\\b/g)).toHaveLength(1);
+  expect(view.text).toContain(t('site.home.headline'));
+  expect(view.text).toContain(t('site.home.lede'));
+  // Three facts, each a heading and a body.
+  expect(view.html.match(/<h2\\b/g)).toHaveLength(3);
+  for (const key of ['site.home.f1Title', 'site.home.f2Body', 'site.home.f3Title'] as const) {
+    expect(view.text).toContain(t(key));
+  }
+  // A key no catalog holds renders as \u27e6key\u27e7 — to a visitor, with every other check green.
+  expect(view.text).not.toContain('\u27e6');
+});
+
+unitTest('its two calls to action lead into the product', async () => {
+  const view = await renderRoute(page, { url });
+  const hrefs = [...view.html.matchAll(/<a\\b[^>]*href="([^"]*)"/g)].map((match) => match[1]);
+  expect(hrefs).toEqual(['/dashboard', '/admin']);
+});
+
+unitTest('it ships zero JS and declares the metadata a search result renders', async () => {
+  const t = useT();
+  const view = await renderRoute(page, { url });
+  expect(page.config.render).toBe('static');
+  expect(page.config.hydrate).toBe('never');
+  expect(page.config.budget.js).toBe('0kb');
+  // What the render DID, beside what the config declares: no island left the page.
+  expect(view.islands).toEqual([]);
+  expect(view.meta.title).toBe(t('site.home.title'));
+  expect(view.meta.description).toBe(t('site.home.description'));
 });
 `;
 
@@ -283,5 +309,5 @@ unitTest('the landing page ships zero JS and declares metadata', async () => {
 export const siteFiles = (app: NameSet): readonly GeneratedFile[] => [
   { path: 'apps/web/site/page.tsx', contents: sitePage(app) },
   { path: 'apps/web/site/page.module.scss', contents: siteStyle() },
-  { path: 'apps/web/site/page.test.ts', contents: sitePageTest() },
+  { path: 'apps/web/site/page.test.ts', contents: sitePageTest(app) },
 ];

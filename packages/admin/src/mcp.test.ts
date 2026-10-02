@@ -5,11 +5,19 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { agentActor } from '@ultimat3/core';
-import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
+import {
+  clearRegistry,
+  database,
+  entity,
+  memoryDriver,
+  text,
+  timestamp,
+  uuid,
+} from '@ultimat3/entity';
 import { type JsonRpcResponse, type McpCaller, METHOD_NOT_FOUND } from '@ultimat3/mcp';
 import { defineAdmin } from './admin';
 import { type AdminActor, type AdminAuthz, type AdminDecision, staticAuthz } from './authz';
-import { adminMcp } from './mcp';
+import { adminMcp, callAdminTool } from './mcp';
 import type { AdminAction } from './registry';
 
 const post = entity('admin_mcp_post', {
@@ -50,6 +58,7 @@ const perActorAuthz: AdminAuthz = {
 
 const app = defineAdmin({
   entities: [post],
+  db: database({ post }, { driver: memoryDriver() }),
   actions: [publish],
   auth: { actor: (): AdminActor | null => null, authz: perActorAuthz },
 });
@@ -110,6 +119,35 @@ describe('the admin MCP catalog is computed per caller', () => {
     const action = schemaOf('admin.action.post.publish');
     expect(action['additionalProperties']).toBe(true);
     expect(Object.keys(action['properties'] as Record<string, unknown>)).toContain('id');
+  });
+
+  test('the list tool takes `where` and `scope` — and a filter the resource does not derive is refused by name', async () => {
+    const list = mcp.tools.find((tool) => tool.name === 'admin.admin_mcp_post.list');
+    const schema = (list?.inputSchema ?? {}) as { properties?: Record<string, unknown> };
+    expect(schema.properties?.['where']).toEqual({ type: 'array', items: { type: 'object' } });
+    expect(schema.properties?.['scope']).toEqual({ type: 'string' });
+    // The description names what `where` filters by: the label is this resource's one filter
+    // besides its key.
+    expect(list?.description).toContain('over title, id');
+
+    const ctx = app.ctx({ actor: { id: 'reader' }, requestId: 'mcp-where' });
+    const refused = await callAdminTool(app, ctx, 'admin.admin_mcp_post.list', {
+      where: [{ field: 'colour', value: 'red' }],
+    });
+    expect(refused).toEqual({
+      ok: false,
+      error: 'X_ADMIN_FILTER_INVALID',
+      reason: expect.stringContaining('"f.colour" is not a filter of this resource'),
+    });
+    const unscoped = await callAdminTool(app, ctx, 'admin.admin_mcp_post.list', {
+      scope: 'archived',
+    });
+    expect(unscoped.ok === false && unscoped.error).toBe('X_ADMIN_FILTER_INVALID');
+    // One the resource does derive is answered.
+    const asked = await callAdminTool(app, ctx, 'admin.admin_mcp_post.list', {
+      where: [{ field: 'title', op: 'eq', value: 'nothing by that name' }],
+    });
+    expect(asked.ok && (asked.data as { rows: readonly unknown[] }).rows).toEqual([]);
   });
 
   test('a second caller against the SAME server gets a different catalog', async () => {
@@ -245,6 +283,7 @@ describe('one action name addresses one handler', () => {
     try {
       defineAdmin({
         entities: [post, second],
+        db: database({ post, second }, { driver: memoryDriver() }),
         actions: collidingActions,
         auth: { actor: () => null, authz: perActorAuthz },
       });
@@ -267,6 +306,7 @@ describe('one action name addresses one handler', () => {
     expect(() =>
       defineAdmin({
         entities: [post],
+        db: database({ post }, { driver: memoryDriver() }),
         actions: [shared],
         resources: { admin_mcp_post: { actions: [shared] } },
         auth: { actor: () => null, authz: perActorAuthz },

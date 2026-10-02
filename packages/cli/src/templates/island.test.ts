@@ -71,7 +71,23 @@ describe('unit · x g island', () => {
       islandFiles('counter', { dir: DIR }).find((file) => file.path.endsWith('.island.test.ts'))
         ?.contents ?? '',
     );
-    expect(spec).toContain(`const ISLAND = '${ENTRY}'`);
+    // The entry is the MANIFEST's — one spelling of the path, in the states file — and each state
+    // is mounted from its declared props, so the picture and the test are of one component.
+    expect(spec).toContain("import { counterStates } from './counter.island.states';");
+    // No path and no props in the test at all: `describeIslandState` reads both off the manifest.
+    expect(spec).not.toContain('counter.island.tsx');
+    expect(spec).not.toContain('props:');
+    const states = String(
+      islandFiles('counter', { dir: DIR }).find((file) => file.path.endsWith('.island.states.ts'))
+        ?.contents ?? '',
+    );
+    expect(states).toContain(`island: '${ENTRY}'`);
+    // Every state the manifest declares is one the test mounts — a state nothing mounts is a
+    // states file no unit test loads, which is uncovered source under the app's coverage floor.
+    for (const id of ['idle', 'long-label']) {
+      expect(states).toContain(`id: '${id}'`);
+      expect(spec).toContain(`describeIslandState(counterStates, '${id}', island, (mounted) => {`);
+    }
     // One `..` per directory segment. A miscounted root is a test that reports the island was
     // never built, naming a file the author can see on disk.
     expect(spec).toContain("join(import.meta.dir, '..', '..', '..', '..')");

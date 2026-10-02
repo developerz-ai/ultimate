@@ -3,15 +3,19 @@
 // command: what a run means — never bail early, count what actually ran — belongs to neither.
 
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
+import type { CoverageMap } from './coverage-lcov';
+import { encodeCoverage } from './coverage-lcov';
 import { msg } from './messages';
-import type { CommandResult, Finding, StepResult } from './output';
+import type { CommandResult, Finding, JsonValue, StepResult } from './output';
+import { guardStep, raceDeadline, stepTimeoutFinding, stepTimeoutMs } from './verify-deadline';
 import {
   floorRequires,
   readVerifyFloor,
   skippedSuiteFinding,
   vanishedSuiteFinding,
 } from './verify-floor';
-import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
+import type { CoverageNumbers, StepOutcome, VerifyContext, VerifyStep } from './verify-step';
+import { GATE_COMMAND } from './verify-step';
 
 /**
  * Run every step, never bailing early: an agent fixing three things at once needs all
@@ -30,6 +34,30 @@ export async function runVerify(
   const only = onlyList(ctx.only);
   const selected = only === undefined ? steps : steps.filter((step) => only.includes(step.name));
   const byName = new Map<string, StepResult>();
+  // Per step: the numbers a judged run measured, or — under `--shard`, which cannot judge — the
+  // `facts` its slice covered, for `x verify merge` to fold.
+  const coverage = new Map<string, JsonValue>();
+  // One per run: a step's tag is `<step>@<run>`, so two gates on one machine never kill each
+  // other's children.
+  const runId = crypto.randomUUID().slice(0, 8);
+  const run = async (step: VerifyStep, stepCtx: VerifyContext): Promise<void> => {
+    const ran = await runStep(step, stepCtx, floor, runId);
+    byName.set(step.name, ran.result);
+    if (ran.coverage !== undefined) {
+      coverage.set(step.name, { facts: encodeCoverage(ran.coverage) });
+    } else if (ran.measured !== undefined) {
+      const { lines, funcs, files } = ran.measured;
+      coverage.set(step.name, { lines, funcs, files });
+    }
+    // Told as it finishes, never at the end: the caller streams it, so a cancelled job's log
+    // ends on the last step that finished (#589). A progress line is not the verdict: a listener
+    // that throws — stderr closed under it — must not take the gate down with it.
+    try {
+      ctx.onStep?.(ran.result);
+    } catch {
+      // Nothing to report it on; the document on stdout still carries the step.
+    }
+  };
   const began = performance.now();
   // The static steps wait for the serial suites and then run BESIDE them — only when `live` is in
   // the list, so a one-step run (`--only`) and a list with no serial suite keep today's order.
@@ -51,16 +79,12 @@ export async function runVerify(
   for (const step of selected) {
     if (beside.includes(step)) continue;
     if (step.name === SERIAL_SUITES[0]) {
-      pending = Promise.all(
-        beside.map(async (other) => {
-          byName.set(other.name, await runStep(other, base, floor));
-        }),
-      ).then(() => undefined);
+      pending = Promise.all(beside.map((other) => run(other, base))).then(() => undefined);
     } else if (!SERIAL_SUITES.includes(step.name)) {
       await join();
     }
     const inWindow = pending !== undefined && SERIAL_SUITES.includes(step.name);
-    byName.set(step.name, await runStep(step, inWindow ? shared : base, floor));
+    await run(step, inWindow ? shared : base);
   }
   await join();
   // Reported in the declared order, whatever order the steps finished in: the table, `--json` and
@@ -98,6 +122,7 @@ export async function runVerify(
       // summary line to learn that this run checked one thing.
       // `only` is always the LIST, in declared order — one name is a list of one.
       ...(only === undefined ? {} : { notAGateRun: true, only: [...only] }),
+      ...(coverage.size === 0 ? {} : { coverage: Object.fromEntries(coverage) }),
     },
     // The step's own status: one step, so `failedSteps` is that step and nothing else.
     exitCode: failedSteps.length === 0 ? 0 : 1,
@@ -163,14 +188,27 @@ async function runStep(
   step: VerifyStep,
   ctx: VerifyContext,
   floor: Awaited<ReturnType<typeof readVerifyFloor>>,
-): Promise<StepResult> {
+  runId: string,
+): Promise<{
+  readonly result: StepResult;
+  readonly coverage?: CoverageMap;
+  readonly measured?: CoverageNumbers;
+}> {
+  const command = ctx.command ?? GATE_COMMAND;
   // Inside the step's own failure, like a throwing `run`: an `applies` that threw escaped every
   // catch and aborted the whole gate, which is the one outcome `runVerify` exists to prevent.
   let applies: boolean;
   try {
     applies = step.applies === undefined ? true : await step.applies(ctx);
   } catch (error) {
-    return { name: step.name, ok: false, durationMs: 0, findings: [findingOf(error, step.name)] };
+    return {
+      result: {
+        name: step.name,
+        ok: false,
+        durationMs: 0,
+        findings: [findingOf(error, step.name, command)],
+      },
+    };
   }
   if (!applies) {
     // A skip this repo already ruled out is not a skip. The step ran here before — the floor is
@@ -180,20 +218,36 @@ async function runStep(
     // the summary, `data.failed`, and the reference-app gate's own red list.
     const required = floorRequires(floor, step.name);
     return {
-      name: step.name,
-      ok: !required,
-      durationMs: 0,
-      skipped: !required,
-      findings: required ? [vanishedSuiteFinding(step.name)] : [],
+      result: {
+        name: step.name,
+        ok: !required,
+        durationMs: 0,
+        skipped: !required,
+        findings: required ? [vanishedSuiteFinding(step.name, command)] : [],
+      },
     };
   }
   const started = performance.now();
-  const outcome = await step.run(ctx).catch(
-    (error: unknown): StepOutcome => ({
-      ok: false,
-      findings: [findingOf(error, step.name)],
-    }),
+  // The deadline: a step that hangs fails BY NAME and its processes are killed, instead of eating
+  // the CI job's whole timeout and leaving a log that says nothing (#589). The step runs on a
+  // guarded runner, so everything it starts carries its tag — that is what the kill finds.
+  const limit = stepTimeoutMs(step.name, ctx.stepTimeoutMs, floor?.stepTimeoutMs);
+  const guard = guardStep(ctx.runner, `${step.name}@${runId}`);
+  const raced = await raceDeadline(
+    step.run({ ...ctx, runner: guard.runner }).catch(
+      (error: unknown): StepOutcome => ({
+        ok: false,
+        findings: [findingOf(error, step.name, command)],
+      }),
+    ),
+    limit,
   );
+  const outcome: StepOutcome = raced.timedOut
+    ? {
+        ok: false,
+        findings: [stepTimeoutFinding(step.name, limit, await guard.expire(), command)],
+      }
+    : raced.value;
   // A suite that executed nothing did not run, whatever its exit code says: `bun test` exits 0
   // over an all-skipped file, so the counts are the only channel that can tell the two apart.
   // ONE definition of "nothing ran", read twice, because the floor decides which of the two
@@ -208,23 +262,27 @@ async function runStep(
   // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
   const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
   return {
-    name: step.name,
-    ok: outcome.ok && vanished.length === 0,
-    durationMs: Math.round(performance.now() - started),
-    // Without a floor to require it, a suite that ran nothing is a SKIP and not a pass (#434):
-    // the `e2e` step printed `✓ e2e 46ms` over its one skipped test, which is the one thing a
-    // step table may never do — a reader cannot tell a lane that ran from a lane that did not.
-    skipped: nothingRan && !required,
-    findings: [...outcome.findings, ...vanished],
-    ...(outcome.output === undefined ? {} : { output: outcome.output }),
-    ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
-    ...(outcome.widthReason === undefined ? {} : { widthReason: outcome.widthReason }),
-    ...(outcome.shard === undefined ? {} : { shard: outcome.shard }),
-    ...(tests === undefined ? {} : { tests }),
+    result: {
+      name: step.name,
+      ok: outcome.ok && vanished.length === 0,
+      durationMs: Math.round(performance.now() - started),
+      // Without a floor to require it, a suite that ran nothing is a SKIP and not a pass (#434):
+      // the `e2e` step printed `✓ e2e 46ms` over its one skipped test, which is the one thing a
+      // step table may never do — a reader cannot tell a lane that ran from a lane that did not.
+      skipped: nothingRan && !required,
+      findings: [...outcome.findings, ...vanished],
+      ...(outcome.output === undefined ? {} : { output: outcome.output }),
+      ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
+      ...(outcome.widthReason === undefined ? {} : { widthReason: outcome.widthReason }),
+      ...(outcome.shard === undefined ? {} : { shard: outcome.shard }),
+      ...(tests === undefined ? {} : { tests }),
+    },
+    ...(outcome.coverage === undefined ? {} : { coverage: outcome.coverage }),
+    ...(outcome.measured === undefined ? {} : { measured: outcome.measured }),
   };
 }
 
-function findingOf(error: unknown, step: string): Finding {
+function findingOf(error: unknown, step: string, command: string): Finding {
   // A step may throw anything, including an Error that fights being read: `instanceof` runs a
   // Proxy's `getPrototypeOf` trap and `.message` runs a getter, so a hostile throw would take the
   // gate's own report down with it — the one message that may never be lost.
@@ -232,7 +290,7 @@ function findingOf(error: unknown, step: string): Finding {
   return {
     code: 'X_VERIFY_FAILED',
     cause: `step "${step}" threw: ${cause}`,
-    fix: 'x verify --json',
+    fix: `${command} --json`,
     docs: ERROR_DOCS_URL,
   };
 }

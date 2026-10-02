@@ -1,0 +1,6 @@
+{
+  "url": "https://ledger.example/api/accounts",
+  "method": "GET",
+  "status": 200,
+  "body": "{\"rows\":[{\"id\":\"acct-1\",\"name\":\"Operating\"},{\"id\":\"acct-2\",\"name\":\"Reserve\"}]}"
+}

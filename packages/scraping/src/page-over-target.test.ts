@@ -1,6 +1,7 @@
 // The vocabulary's own traps, on the fake driver — no browser, no port.
 
 import { describe, expect, test } from 'bun:test';
+import { createLogger } from '@ultimat3/core';
 import { testClock } from './clock';
 import { fakeBrowser, fakePage } from './driver-fake';
 import { downloadTimeout } from './error-throws';
@@ -39,6 +40,7 @@ describe('unit · frame() re-resolves on every call', () => {
   test('a handle taken before a re-navigation addresses the CURRENT frame, not a detached one', async () => {
     const session = await fakeBrowser(PAGES).open({
       name: 'bank',
+      logger: createLogger({ writer: () => undefined }),
       rules: { allowHosts: ['bank.test'] },
       clock: testClock(),
       timeoutMs: 1_000,
@@ -92,6 +94,7 @@ describe('unit · interception is recorded, never silent', () => {
       },
     ]).open({
       name: 'shop',
+      logger: createLogger({ writer: () => undefined }),
       rules: { allowHosts: ['shop.test'], block: ['image'] },
       clock: testClock(),
       timeoutMs: 1_000,

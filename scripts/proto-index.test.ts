@@ -42,6 +42,24 @@ describe('the shape that shipped thirteen times', () => {
     expect(keys(source)).toEqual(['SCOPES[input.tenant]']);
   });
 
+  // The first site of a package is usually one its pin already holds. Which read is the NEW one
+  // is not knowable from the tree, so the finding names them all (plan 101).
+  test('a package over its pin has EVERY read named, not only its first', () => {
+    const file = (path: string, table: string) => ({
+      path,
+      source: `const ${table}: Record<string, S> = {};\nexport const use = (n: string) => ${table}[n];`,
+    });
+    const gaps = checkProtoIndex({
+      files: [file('packages/core/src/a.ts', 'OLD'), file('packages/core/src/b.ts', 'NEWER')],
+      pins: { core: 1 },
+    });
+    const finding = protoIndexFindingFor(gaps[0] as never);
+    expect(finding.cause).toContain('in 2 place(s) and is pinned at 1');
+    expect(finding.cause).toContain('packages/core/src/a.ts:2 (OLD[n])');
+    expect(finding.cause).toContain('packages/core/src/b.ts:2 (NEWER[n])');
+    expect(finding.fix).toContain('1 of the 2 reads the cause lists');
+  });
+
   test('the finding names Object.hasOwn and the table', () => {
     const gaps = checkProtoIndex({
       files: [

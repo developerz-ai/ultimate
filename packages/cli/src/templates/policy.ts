@@ -45,7 +45,7 @@ ${permissionSet(feature)}
 /** What a write invalidates and a read depends on — one tag, both directions. */
 export const ${feature.camel}Tag = tag('${feature.kebab}');
 
-/** What every ${feature.kebab} rule needs to decide. Actions and queries both accept it. */
+/** What a ${feature.kebab} write decides on: the org of the row an action names. */
 export interface ${feature.pascal}Scope {
   readonly orgId: string;
 }
@@ -54,13 +54,17 @@ export interface ${feature.pascal}Scope {
 // never do this" from "you may, but not in that org" — an agent can act on the difference.
 // The predicates below add tenancy only; the grant is never re-checked by hand.
 
-/** Read is org-scoped: an actor sees rows in their own org and nothing else. */
-export const can${feature.pascal}Read = can<${feature.pascal}Scope>(
+/**
+ * Read takes no org from its input: the repo's typed handle scopes every read to the actor's own
+ * org, so the tenancy rule here is that the actor HAS one. A second org check on an input field
+ * would be a second source of tenancy, and the one a caller could set.
+ */
+export const can${feature.pascal}Read = can(
   '${feature.kebab}:read',
-  ({ actor, input }) => actor !== null && actor.orgId === input.orgId,
+  ({ actor }) => actor !== null && typeof actor.orgId === 'string' && actor.orgId !== '',
 );
 
-/** Write is the same tenancy rule on a second permission — grant the two separately in roles. */
+/** Write compares the org the action's input names with the actor's — grant it apart from read. */
 export const can${feature.pascal}Write = can<${feature.pascal}Scope>(
   '${feature.kebab}:write',
   ({ actor, input }) => actor !== null && actor.orgId === input.orgId,
@@ -103,10 +107,13 @@ const reader = testActor('reader', { orgId: org, permissions: [read] }).actor;
 const writer = testActor('writer', { orgId: org, permissions: [read, write] }).actor;
 const outsider = testActor('outsider', { orgId: otherOrg, permissions: [read, write] }).actor;
 
-unitTest('${feature.camel} read denies anonymous and cross-org actors', async () => {
-  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: null, input });
-  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: outsider, input });
-  await expect(can${feature.pascal}Read).not.toDenyPolicy({ actor: reader, input });
+unitTest('${feature.camel} read denies anonymous and orgless actors', async () => {
+  // Which org's rows a reader gets is the handle's, not this rule's: the slice's query test reads
+  // as an actor in another org and gets none of these.
+  const orgless = testActor('orgless', { permissions: [read] }).actor;
+  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: null, input: {} });
+  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: orgless, input: {} });
+  await expect(can${feature.pascal}Read).not.toDenyPolicy({ actor: reader, input: {} });
 });
 
 unitTest('${feature.camel} write denies the read-only actor', async () => {

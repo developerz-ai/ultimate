@@ -14,9 +14,12 @@ import { join } from 'node:path';
 import {
   generateMasterKey,
   openSecrets,
+  openText,
   SECRETS_FILE,
   SECRETS_KEY_ENV,
   SECRETS_KEY_FILE,
+  SECRETS_RETIRED_KEYS_ENV,
+  seal,
 } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import { createSecretsCommand, type SecretsIo, secretsCommand } from './cmd-secrets';
@@ -383,7 +386,12 @@ describe('unit · x secrets rotate', () => {
 
     const text = await Bun.file(join(root, SECRETS_FILE)).text();
     const at = { file: SECRETS_FILE, key: SECRETS_KEY_FILE };
-    expect(await openSecrets(text, next, at)).toEqual({ SESSION_SECRET: 's3cr3t-value' });
+    // The same values — plus the key that was just replaced, kept so sealed values still open.
+    expect(await openSecrets(text, next, at)).toEqual({
+      SESSION_SECRET: 's3cr3t-value',
+      [SECRETS_RETIRED_KEYS_ENV]: previous,
+    });
+    expect(record(result.data)['count']).toBe(1);
     await expect(openSecrets(text, previous, at)).rejects.toBeUltimateError(
       'X_SECRETS_KEY_MISMATCH',
     );
@@ -396,6 +404,87 @@ describe('unit · x secrets rotate', () => {
     const rendered = JSON.stringify(result);
     expect(rendered).not.toContain(previous);
     expect(rendered).not.toContain(await keyOf(root));
+  });
+});
+
+describe('unit · x secrets rotate keeps a key ring', () => {
+  const PURPOSE = 'entity:connections.password';
+  /** What a process sees after `installSecrets()`: the file's values over an empty environment. */
+  const installed = async (root: string): Promise<Record<string, string>> => ({
+    ...(await openSecrets(await Bun.file(join(root, SECRETS_FILE)).text(), await keyOf(root), {
+      file: SECRETS_FILE,
+      key: SECRETS_KEY_FILE,
+    })),
+  });
+  const run = async (argv: readonly string[], root: string): Promise<Record<string, JsonValue>> =>
+    record((await secretsCommand.run(context(argv, root))).data);
+
+  test('a value sealed before a rotation opens after it, and after the next one', async () => {
+    const root = await initialized('ring');
+    const sealed = await seal('hunter2', { purpose: PURPOSE, root, env: {} });
+    const first = await run(['secrets', 'rotate'], root);
+    expect(first['retiredKeyIds']).toEqual([String(first['previousKeyId'])]);
+    const second = await run(['secrets', 'rotate'], root);
+    // Newest first: the key replaced a moment ago, then the one before it.
+    expect(second['retiredKeyIds']).toEqual([
+      String(second['previousKeyId']),
+      String(first['previousKeyId']),
+    ]);
+    const env = await installed(root);
+    expect(await openText(sealed, { purpose: PURPOSE, root, env })).toBe('hunter2');
+  });
+
+  test('--drop removes one retired key by id and generates no new key', async () => {
+    const root = await initialized('ring-drop');
+    const sealed = await seal('hunter2', { purpose: PURPOSE, root, env: {} });
+    const rotated = await run(['secrets', 'rotate'], root);
+    const live = await keyOf(root);
+    const retired = String(rotated['previousKeyId']);
+    const dropped = await run(['secrets', 'rotate', '--drop', retired], root);
+    expect(dropped['dropped']).toBe(retired);
+    expect(dropped['retiredKeyIds']).toEqual([]);
+    expect(dropped['keyId']).toBe(rotated['keyId']);
+    expect(await keyOf(root)).toBe(live);
+    const env = await installed(root);
+    // The last retired key takes the entry with it: an empty value is not a secret.
+    expect(Object.keys(env)).toEqual([]);
+    await expect(openText(sealed, { purpose: PURPOSE, root, env })).rejects.toBeUltimateError(
+      'X_SEAL_KEY_UNKNOWN',
+    );
+  });
+
+  test('--drop of an id the ring does not hold is refused and writes nothing', async () => {
+    const root = await initialized('ring-drop-unknown');
+    const none = context(['secrets', 'rotate', '--drop', '0123456789abcdef'], root);
+    await expect(secretsCommand.run(none)).rejects.toBeUltimateError('X_CLI_BAD_FLAG');
+    const rotated = await run(['secrets', 'rotate'], root);
+    const before = await Bun.file(join(root, SECRETS_FILE)).text();
+    const wrong = context(['secrets', 'rotate', '--drop', String(rotated['keyId'])], root);
+    const refused = await secretsCommand.run(wrong).then(
+      () => expect.unreachable('the current key is not a retired one'),
+      (error: unknown) => error as { cause: string; fix: string },
+    );
+    expect(String(refused.cause)).toContain(String(rotated['previousKeyId']));
+    expect(refused.fix).toBe(`x secrets rotate --drop ${rotated['previousKeyId']} --json`);
+    expect(await Bun.file(join(root, SECRETS_FILE)).text()).toBe(before);
+  });
+
+  test('show names the retired keys by id and never lists the ring as an app secret', async () => {
+    const root = await initialized('ring-show');
+    await createSecretsCommand(stdin('s3cr3t-value')).run(
+      context(['secrets', 'set', 'SESSION_SECRET'], root),
+    );
+    const previous = await keyOf(root);
+    const rotated = await run(['secrets', 'rotate'], root);
+    const result = await secretsCommand.run(context(['secrets', 'show'], root));
+    const data = record(result.data);
+    expect(data['retiredKeyIds']).toEqual([String(rotated['previousKeyId'])]);
+    expect(data['count']).toBe(1);
+    expect(data['undeclared']).toEqual([]);
+    const rendered = JSON.stringify(result);
+    expect(rendered).not.toContain(SECRETS_RETIRED_KEYS_ENV);
+    expect(rendered).not.toContain(previous);
+    expect((result.lines ?? []).join('\n')).toContain(String(rotated['previousKeyId']));
   });
 });
 

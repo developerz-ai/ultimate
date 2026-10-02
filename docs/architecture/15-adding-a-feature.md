@@ -7,16 +7,16 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | # | Step | Command | Lands in |
 |---|---|---|---|
 | 0 | Pick the surface | — | see the table below |
-| 1 | Generate the slice | `x g resource post --live --admin` | 31 files — 29 without `--admin`, `As of 2026-09-08`. `--live` adds none: a resource already ships a live query. What each file is: [`12-generated-app.md`](./12-generated-app.md). Re-derive with `--dry-run --json` and count `data.files`; a stale number here is `X_DOC_FILE_COUNT_STALE` from the gate's `manifest` step |
-| 2 | Entity + invariants | edit | `apps/web/app/posts/entity.ts` |
-| 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/<stamp>_create_posts.{sql,snapshot.json,hash}` |
-| 4 | Apply | `x db migrate` | the dev database |
-| 5 | Policy | edit | `apps/web/app/posts/policy.ts` |
-| 6 | Service | edit | `apps/web/app/posts/service.ts` |
-| 7 | Action | edit | `apps/web/app/posts/actions.ts` |
-| 8 | Query (live?) | edit | `apps/web/app/posts/live.ts` |
-| 9 | Job | edit | `apps/web/app/posts/jobs.ts` |
-| 10 | Route + meta + offline | edit | `apps/web/site/blog/[slug]/page.tsx` |
+| 1 | Generate the slice | `x g resource post --admin` | 35 files — 33 without `--admin`, `As of 2026-10-01`. A resource already ships a live list query; `--live` belongs to `x g query` and is refused here. What each file is: [`12-generated-app.md`](./12-generated-app.md). Re-derive with `--dry-run --json` and count `data.files`; a stale number here is `X_DOC_FILE_COUNT_STALE` from the gate's `manifest` step |
+| 2 | Entity + invariants | edit | `apps/web/app/post/entity.ts` |
+| 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/<stamp>_create_posts.{sql,snapshot.json,hash}`, and the schema dump: `packages/db/schema/04_tables/posts.sql` plus its index and foreign-key files |
+| 4 | Apply | `x db migrate` | the dev database; the schema dump again, when a migration was written by hand |
+| 5 | Policy | edit | `apps/web/app/post/policy.ts` |
+| 6 | Service | edit | `apps/web/app/post/service.ts` |
+| 7 | Action | edit | `apps/web/app/post/actions/<verb>-post.ts` — one file per action |
+| 8 | Query (live?) | edit | `apps/web/app/post/live/post-list.ts` |
+| 9 | Job | edit | `apps/web/app/post/jobs/<verb>-post.ts` — one file per job |
+| 10 | Route + meta + offline | edit | `apps/web/app/posts/page.tsx` (generated: reads the list, mounts the form) · `apps/web/site/blog/[slug]/page.tsx` (new) |
 | 11 | i18n keys | `x i18n sync es` | `packages/i18n/catalogs/{en,es}.json` (merged in) |
 | 12 | Tests | fill the scaffolds | `*.test.ts` next to each source |
 | 13 | Manifest | `x manifest` | `x.manifest.json`, `openapi.json` |
@@ -31,22 +31,24 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | Machine-only (agents, the typed client, webhooks) | `apps/web/api/` | none | policy per action |
 | Needed by both | `apps/web/shared/` (leaf, must stay small) | n/a | n/a |
 
-Posts have a public blog page **and** an authed editor, so: entity/service/policy in the `app/` slice, the public page in `site/`. `site/` may never import `app/` ([`02-boundaries.md`](./02-boundaries.md)) — the blog page reaches posts only through the typed query client, below.
+Posts have a public blog page **and** an authed editor, so: entity/service/policy in the `app/` slice (`apps/web/app/post/` — the folder is the name passed to `x g resource`, the page beside it is its plural), the public page in `site/`. `site/` may never import `app/` ([`02-boundaries.md`](./02-boundaries.md)) — the blog page reaches posts only through the typed query client, below.
 
-Note that `action` declarations still live inside the feature slice (`app/posts/actions.ts`), never under `apps/web/api/`, whether or not the feature also has a public page: an `action` projects to HTTP, OpenAPI, the typed client and an MCP tool on its own, wherever it is declared. `api/` is for surfaces with no primitive behind them at all — webhooks, health checks.
+Note that `action` declarations still live inside the feature slice (`app/post/actions/publish-post.ts`), never under `apps/web/api/`, whether or not the feature also has a public page: an `action` projects to HTTP, OpenAPI, the typed client and an MCP tool on its own, wherever it is declared. `api/` is for surfaces with no primitive behind them at all — webhooks, health checks.
 
 ## 1. Generate
 
 ```bash
-x g resource post --live --admin
+x g resource post --admin
 ```
 
-Generates schema, entity, repo, service, policy, actions, live query, job stub, components, route, i18n keys, admin screens, MCP entries, and failing test scaffolds. Everything below is *editing* generated files — not creating them.
+Generates schema, entity, repo, service, policy, actions, live query, job stub, components, the form island, the `posts` page, i18n keys, admin screens, MCP entries, and the tests beside each. The page is reachable as written: its `load` reads the list through the slice's query as the request's actor, `AsyncRegion` renders ready, empty and refused, and the form island posts to `createPost`. `x g` ends by printing what the new table owes (`x db gen`, `x db migrate`) and the build that weighs the page against its budget. Everything below is *editing* generated files — not creating them.
+
+`x g` writes one primitive per file: `actions/<verb>-post.ts`, `live/<name>.ts`, `queries/<name>.ts`, `jobs/<verb>-post.ts`, `tasks/<name>.ts`. A primitive is registered by `defineApi()` and found by the module scan, never by its filename, so a feature may equally keep several declarations in one file — `examples/dummy` keeps one `actions.ts` per feature — and nothing enforces either layout ([Project layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface) names the filenames that ARE enforced). `x g resource <name>` takes no `--feature`: the name is the slice (`X_CLI_BAD_FLAG`).
 
 ## 2. Entity + invariants
 
 ```ts
-// apps/web/app/posts/entity.ts
+// apps/web/app/post/entity.ts
 export const posts = entity('posts', {
   columns: {
     id: uuid().primaryKey(),
@@ -67,7 +69,7 @@ export const posts = entity('posts', {
 ```
 
 ```ts
-// apps/web/app/posts/entity.ts
+// apps/web/app/post/entity.ts
 export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publishedAt']);
 ```
 
@@ -79,7 +81,8 @@ export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publish
 ## 3–4. Migration
 
 ```bash
-x db gen "create posts"     # diffs entity source vs. the latest snapshot; writes .sql + .snapshot.json + .hash
+x db gen "create posts"     # diffs entity source vs. the latest snapshot; writes .sql + .snapshot.json + .hash,
+                              # then rewrites packages/db/schema/ from a scratch replay of every migration
 x db migrate                  # applies to the dev database, then re-reads the live catalog
 ```
 
@@ -90,20 +93,21 @@ zero declared against zero recorded is agreement, which is what keeps `x new --n
 before its first entity. Foreign keys are emitted as `alter table … add constraint` after every table
 statement, so the order entities register in cannot produce a migration that will not apply.
 
-Three separate checks, and conflating them is how a "drift" report gets chased in the wrong place.
+Four separate checks, and conflating them is how a "drift" report gets chased in the wrong place.
 
 | Check | Who runs it | Database? | Compares | Code on failure | `fix:` |
 |---|---|---|---|---|---|
 | generation | `x db gen` | no | entity source → latest migration snapshot | `X_DB_GEN_FAILED` | `x doctor --json` |
 | source drift | `x verify`'s `drift` step | no | schema hash → the hashes committed beside each migration | `X_DB_DRIFT` | `x db gen "describe the change"` |
 | live-catalog drift | `x db migrate`, after applying | yes | the live catalog → the migration ledger | `X_DB_DRIFT` | `x verify --json` |
+| schema-dump drift | `x verify`'s `drift` step | a scratch one it boots itself | committed `packages/db/schema/` → a replay of the migrations, and that dump loaded back | `X_SCHEMA_DUMP_DRIFT` | `x db gen` |
 
 `x db gen` never reports drift — it *resolves* it, by writing the migration and the hash sidecar that make the source and the ledger agree again; a generator that could not produce one is `X_DB_GEN_FAILED`, whose cause carries the Postgres error verbatim. Source drift needs no connection, so a fresh clone and CI answer identically ([`packages/cli/src/drift.ts`](../../packages/cli/src/drift.ts)). Live-catalog drift can only be seen with a connection open, which is why `x db migrate` asks it and `x verify` cannot — same `X_DB_DRIFT`, two conditions, one reporter each ([`06-data-layer.md`](./06-data-layer.md)). There is still no separate "check drift" command.
 
 ## 5. Policy
 
 ```ts
-// apps/web/app/posts/policy.ts
+// apps/web/app/post/policy.ts
 export const postRead    = can<PostScope>('post:read', ({ actor, input }) => actor?.orgId === input.orgId);
 
 // `PostRow` is the second type argument: this rule decides about a row, not just about `input`.
@@ -126,7 +130,7 @@ export const postPublish = can<PostScope, PostRow>('post:publish', ({ actor, inp
 ## 6. Service
 
 ```ts
-// apps/web/app/posts/service.ts — business logic, composed from repos
+// apps/web/app/post/service.ts — business logic, composed from repos
 export async function publish(ctx: Ctx, postId: string): Promise<Post> {
   const post = await ctx.posts.byId(postId);
   if (!post) throw new PostError({ code: 'X_POST_NOT_FOUND', cause: `post ${postId}`,
@@ -140,7 +144,7 @@ No HTTP imports — that is what lets the same rule run in a job, a cron task, a
 ## 7. Action
 
 ```ts
-// apps/web/app/posts/actions.ts
+// apps/web/app/post/actions/publish-post.ts
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
@@ -174,7 +178,7 @@ Actions must never read headers/cookies, render, redirect, authorize inside `han
 ## 8. Query — live or not?
 
 ```ts
-// apps/web/app/posts/live.ts
+// apps/web/app/post/live/live-feed.ts
 export const liveFeed = query({
   input: t.object({ orgId: t.uuid, limit: t.number.int().min(1).max(50).default(50) }),
   policy: feedRead,
@@ -197,7 +201,7 @@ Every order ends with a key unique in the row shape, written out explicitly (`.o
 ## 9. Job
 
 ```ts
-// apps/web/app/posts/jobs.ts
+// apps/web/app/post/jobs/notify-subscribers.ts
 export const notifySubscribers = job({
   input: t.object({ postId: t.uuid, orgId: t.uuid }),
   // REQUIRED by the type, and the reason `orgId` is in the input: a job has no request behind
@@ -205,7 +209,7 @@ export const notifySubscribers = job({
   tenant: ({ orgId }) => orgId,
   idempotencyKey: ({ postId }) => `notify:${postId}`,   // REQUIRED by the type
   retry: { attempts: 5, backoff: 'exponential' },
-  concurrency: 1,   // max in-flight runs of THIS job across the fleet — a plain number, not a key
+  concurrency: 1,   // max in-flight runs of THIS job across the fleet; { key, limit, whenBusy } caps it per key
   async run({ input, step, ctx }) {
     const subs = await step.run('load-subscribers', () => ctx.subs.forPost(input.postId));
     // One step PER recipient, because the step is the replay unit: a provider blip on recipient 40
@@ -261,9 +265,9 @@ Zero hardcoded user-facing strings — a literal outside `t()` is a build error 
 Fill the scaffolds; they fail until you do.
 
 ```bash
-x test contract --filter posts.contract
-x test job      --filter posts/jobs
-x test live     --filter posts/live
+x test contract --filter post/actions
+x test job      --filter post/jobs
+x test live     --filter post/live
 x test e2e      --filter blog
 ```
 
@@ -313,4 +317,4 @@ Every row's command is the error's own registered `fix:` line, not a paraphrase 
 - Never enqueue outside a transaction, never paginate with an offset, never format a date without a zone, never put money in a float.
 - Never hand-edit a generated artifact (`sw.js`, `x.manifest.json`, `openapi.json`, migrations already applied).
 - Read the `fix:` line. It is a command, and it is meant to be run.
-- Adding an `X_*` code to a **framework package** is `bun run new-error-code`: one command writes the registration and the `wiki/Error-Codes.md` row together ([`04-error-contract.md`](./04-error-contract.md#adding-a-code)). An app's own codes are registered in the app, and this repository's wiki does not document them.
+- Adding an `X_*` code to a **framework package** is `bun run new-error-code … --cause '…'`, plus `--status <n>` or `--off-socket` for a tier 0–4 package (a tier-5 package takes neither: its codes never reach the status table): one command writes the registration, the `wiki/Error-Codes.md` row and the code's HTTP status decision together ([`04-error-contract.md`](./04-error-contract.md#adding-a-code)). An app's own codes are registered in the app, and this repository's wiki does not document them.

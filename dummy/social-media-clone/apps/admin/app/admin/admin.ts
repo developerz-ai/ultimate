@@ -1,21 +1,23 @@
-// The whole dashboard, in one call. Columns, filters, validation and labels are DERIVED from the
-// entities — nothing here restates a column — and the three seams `@ultimat3/admin` documents are
-// each used exactly once: `actions` (the suspend button), `resources` (per-entity overrides), and
-// this app's own routes (`ops/page.tsx`, which the generator would never have written).
+// The whole dashboard, in one call — and the only file that serves it. Columns, filters,
+// validation and labels are DERIVED from the entities, the rows are read through the app's own
+// typed handle, and `x dev` and the container mount every screen under `/admin`: there is no page
+// file, no repo adapter and no screen glue in this app. The three seams `@ultimat3/admin`
+// documents are each used exactly once: `actions` (suspend — on an active user, one row or a
+// whole selection), `resources` (per-entity overrides, the user's sections and related lists),
+// and `pages` (the ops board, which no generator would have written). The jobs dashboard —
+// `/admin/jobs` and its runs, queues, tasks and workers — is every admin's, declared by nothing.
 
-import { schema } from '@social-media-clone/db';
+import { db, schema } from '@social-media-clone/db';
 import {
   type AdminApp,
-  type CrudCtx,
+  adminRepoFor,
   defineAdmin,
   memoryAuditLog,
-  permissionsForOperation,
   policyAuthz,
+  postgresAuditLog,
 } from '@ultimat3/admin';
-import { currentAdminActor } from './actor';
 import { opsPage } from './pages/ops';
 import { adminPolicies } from './policy';
-import { mediaAdminRepo, postsAdminRepo, usersAdminRepo } from './repo';
 
 /**
  * `branding.accent` is deliberately absent. `ThemeTokenRef` is `--x-${string}`
@@ -25,28 +27,30 @@ import { mediaAdminRepo, postsAdminRepo, usersAdminRepo } from './repo';
  */
 export const admin: AdminApp = defineAdmin({
   entities: [schema.users, schema.posts, schema.media],
+  // The app's typed handle, once: each resource reads and writes through its own table there —
+  // soft delete included, so a deleted post is absent from the list by the entity's own rule.
+  db,
   resources: {
     users: {
-      repo: usersAdminRepo,
-      // `path` is spelled out on all three: `adminResource`'s pluralizer
-      // (packages/admin/src/resource.ts:93) assumes a SINGULAR entity name, and this app names its
-      // entities plurally — so the default would be `/userses`, `/medias` and a nav full of 404s.
-      path: '/users',
       labelField: 'handle',
       listFields: ['handle', 'displayName', 'role', 'suspended', 'createdAt'],
-      // An entity has no notion of a secret column, so `sensitive` is said here or it is absent.
-      // It keeps the address out of the list, out of the form and out of every audit diff.
+      // Not a sealed column — the app reads it — so `sensitive` is said here or it is absent. It
+      // keeps the address out of the list, out of the form and out of every audit diff.
       fields: { email: { sensitive: true } },
+      // Two named groups; every other column (bio, avatar key, timestamps) falls into the default
+      // section below them, so a column added to `users` is on this page the day it lands.
+      sections: [
+        { titleKey: 'admin.users.section.profile', fields: ['handle', 'displayName', 'role'] },
+        { titleKey: 'admin.users.section.account', fields: ['suspended', 'locale', 'tz'] },
+      ],
+      // The person's posts and uploads, each drawn as THAT resource's own list filtered to them.
+      related: ['posts', 'media'],
     },
     posts: {
-      repo: postsAdminRepo,
-      path: '/posts',
       labelField: 'body',
       listFields: ['body', 'audience', 'likeCount', 'commentCount', 'publishedAt'],
     },
     media: {
-      repo: mediaAdminRepo,
-      path: '/media',
       labelField: 'key',
       listFields: ['key', 'kind', 'state', 'bytes', 'createdAt'],
     },
@@ -60,9 +64,16 @@ export const admin: AdminApp = defineAdmin({
       permission: 'users:suspend',
       entity: 'users',
       labelKey: 'admin.action.user.suspend',
+      // On a user who is not already suspended — the button, each list row, and the server's own
+      // second look before the handler runs.
+      when: (row) => row['suspended'] !== true,
+      // In the list's batch bar: the checked users, or every user the list's filter matches.
+      batch: true,
       async handle({ input }) {
         const id = String(input.id ?? '');
-        const row = await usersAdminRepo.update(id, { suspended: true });
+        // Through the admin's own adapter, so the id off the URL is PARSED by the key column
+        // before it reaches the driver — never cast.
+        const row = await adminRepoFor(schema.users, db.users).update(id, { suspended: true });
         return { id, suspended: row.suspended === true };
       },
     },
@@ -71,50 +82,21 @@ export const admin: AdminApp = defineAdmin({
    * The escape hatch, used once. `/admin/ops` is not a resource and no generator would have
    * written it, so it arrives here as data: `pageRoutes()` gives it the same route table entry a
    * generated screen gets, `pagePermissions()` puts `admin:read` in front of its own `job:read`,
-   * and `guardedPage()` decides it. Declaring it anywhere else — a route file with its own
+   * and `guardedScreen()` decides it. Declaring it anywhere else — a route file with its own
    * `defineRoute` and its own permission check, which is what this app had — is a page whose authz
    * nothing enforces.
    */
   pages: [opsPage],
-  /**
-   * `/admin/jobs` is a route `defineAdmin()` builds for every app, and `adminNav()` derives items
-   * from the RESOURCES and from `pages:` — never from the built-in routes. So this app served a
-   * jobs screen that no sidebar linked and only a typed URL reached, which is the same defect as
-   * the dashboard having no link in. Declared here, with the SAME `permissionsForOperation('job',
-   * 'list')` the route was built from, so `visibleNav` hides the link for exactly the actor
-   * `/admin/jobs` would refuse. `/admin/audit` and `/admin/search` stay unlinked on purpose: this
-   * app serves no page file for either, and a link to a URL with no page is a 404 with a label.
-   */
-  nav: {
-    extra: [
-      {
-        key: 'jobs',
-        labelKey: 'admin.jobs.title',
-        href: '/jobs',
-        entity: null,
-        permissions: permissionsForOperation('job', 'list'),
-        group: 'admin.group.operations',
-      },
-    ],
-  },
   branding: { nameKey: 'admin.brand.name', mode: 'system', density: 'comfortable' },
   auth: {
-    actor: () => currentAdminActor().actor,
+    // `actor` is left to its default: the one the HTTP pipeline resolved for this request, so the
+    // dashboard has no session lookup of its own beside the app's.
     // The app's own policies, never a grant list: `staticAuthz()` exists for tests and `x dev
     // --actor`, and using it here would be the second authz path this package is built to prevent.
     authz: policyAuthz({ policies: adminPolicies }),
   },
-  audit: memoryAuditLog(),
-  // `jobs` is not passed: `describeJobs()` is a snapshot of a registry that `apps/web/api/tasks.ts`
-  // fills, and module import order does not promise it ran first. The jobs page reads it live.
+  // Durable wherever there is a database: the boot applies `x_admin_audit` with every other
+  // framework table, so a user's history survives a deploy. A process with no database (a unit
+  // test, `x dev` before Postgres is up) keeps the in-memory log.
+  audit: Bun.env['DATABASE_URL'] ? postgresAuditLog() : memoryAuditLog(),
 });
-
-/**
- * The per-request handle every CRUD call and every nav render takes. Anonymous is a real actor id
- * here — `decideAll()` refuses it exactly as it refuses a signed-in actor missing the grant, and an
- * audit row that says `anonymous` is more useful than one that says nothing.
- */
-export const adminCtxForRequest = (): CrudCtx => {
-  const { actor, requestId } = currentAdminActor();
-  return admin.ctx({ actor: actor ?? { id: 'anonymous', roles: [] }, requestId });
-};

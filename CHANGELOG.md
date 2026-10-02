@@ -8,7 +8,579 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+**23.0.0 in progress: platform readiness for big systems**
+([`docs/plans/2026/10/01/101-platform-readiness-for-big-systems/`](docs/plans/2026/10/01/101-platform-readiness-for-big-systems/overview.md)).
+Every breaking entry below has a manual edit in the
+[Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `22.x → 23.0.0` section, in
+the same order — which is the order an existing app meets them. There is no codemod and no
+compatibility shim: a break is a build error or an `X_*` error that names the rewrite. `As of
+2026-10` every slice of the plan has an entry, the admin's detail, form, action and jobs screens
+included.
+
+### Added
+
+Seal and sealed columns.
+
+- **core:** `seal()` / `open()` / `openText()` — one value sealed under the app's master key, the
+  key `x secrets` already manages. AES-256-GCM, wire form `x1.<keyId>.<iv>.<ciphertext+tag>`
+  (base64url); `purpose` is required and bound as authenticated data, so a value sealed for one
+  column does not open as another. `{ deterministic: true }` for an equality lookup, `sealAll()`
+  for one candidate per declared key, `isSealed()`, `sealedKeyId()`, `sealKeyIds()`,
+  `resolveSealKeys()`. Three failures, three codes, all terminal and HTTP 500:
+  `X_SEAL_KEY_MISSING`, `X_SEAL_KEY_UNKNOWN`, `X_SEAL_INVALID`.
+- **core, cli:** a key ring. `ULTIMATE_SECRETS_RETIRED_KEYS` names the keys still allowed to open;
+  `x secrets rotate --drop <keyId>` closes a rotation, `x secrets show` reports `retiredKeyIds`.
+- **entity:** `text().sealed()` and `text().sealed({ lookup: true })`. Sealed on write, opened on
+  read, purpose `entity:<table>.<column>`; the DDL stays `text`. The row type stays `string`;
+  `entity.$schema` omits the column, so an action output or a record never carries it. On a
+  repository row the property is own and **not enumerable**: `{ ...row }`, `JSON.stringify(row)`, a
+  log line, a job payload, a cache entry and island props all drop it; read it by name. A `where` or
+  `orderBy` on an opaque column is a compile error and `X_ENTITY_SEALED_PREDICATE`; a `$view` naming
+  one is `X_ENTITY_SEALED_IN_VIEW`; a live query that filters or orders on one is
+  `X_MATCHER_UNSUPPORTED` at subscribe. `{ lookup: true }` allows `eq`, `in`, NULL tests and
+  `.unique()`. `andWhere(column, 'is-null' | 'is-not-null')` takes any column. An insert that
+  spread a row and lost a required sealed column is `X_INVARIANT_VIOLATED` naming
+  `{ ...row, <col>: row.<col> }`; a **nullable** one stores NULL, silently.
+- **cli:** `x doctor` reports `X_SEAL_KEY_MISSING` when a sealed column exists and no key does, and
+  `X_SEAL_RESEAL_PENDING` while a retired key is still declared. `x manifest diff` classes a column
+  becoming sealed, unsealed, or moving lookup → opaque as breaking.
+- **testing:** `toEqualRow(expected)` compares own properties, enumerable or not, and never prints a
+  server-only value. The preload installs a fixed throwaway master key when `NODE_ENV=test` and the
+  app has none.
+
+The schema dump.
+
+- **db, cli:** `packages/db/schema/` — the whole schema as generated SQL, one object per file in
+  nine numbered directories, the framework's `x_` tables under `framework/`. Written by `x db gen`
+  and `x db migrate`, by catalog introspection, byte-deterministic per engine major.
+  `X_SCHEMA_DUMP_DRIFT` on the `drift` step for a missing, stale or hand-edited dump; the step also
+  loads the dump back and compares it with the replay. Kinds the dump cannot render are named in
+  `unrendered.sql`, never rendered wrong. `x db gen` / `x db migrate --json` gain
+  `data.schemaDump`. `@ultimat3/db/schema-dump` is the subpath (`introspectCatalog`,
+  `renderSchemaDump`, `loadSchemaDump`, `compareSchemaDump`).
+- **db:** the scratch replay restores a post-`initdb` snapshot, `.x/cache/pglite-<version>-f1.snapshot`
+  (about 40 MB; `rm -r .x/cache` is always safe). Measured on the reference app, one process per
+  run, 2026-10-01: 3.9–4.6 s cold, 1.8–2.1 s warm.
+- **db:** `client.listen(channel, handler)` on the Postgres and embedded clients, and `canListen`.
+
+The typed client at scale.
+
+- **core, render, cli:** the action path style is stamped once. A document served under a
+  non-default `pathStyle` carries `<meta name="ultimate-path-style">`; `actionPath(name)` reads it
+  when the caller names none, so `rpc`, `useMutation` and the outbox replay agree with the server
+  without restating it. `CLIENT_PATH_STYLE_META`, `explainActionPathMiss`, `ServerHooks.explainMiss`.
+- **cli:** `x new` writes `apps/web/shared/browser-client.ts` (`browserClient`, `browserQueries`)
+  with its test, and `apps/web/api/index.ts` exports `type Api`.
+
+Jobs.
+
+- **jobs:** keyed concurrency — `concurrency: { key, limit, whenBusy: 'wait' | 'fail' }`. The key
+  is derived from the input, held fleet-wide as a lease, at most 200 characters. `'fail'` settles
+  the second run `failed` with `X_JOB_KEY_BUSY` (terminal), body never run, attempt uncounted.
+- **jobs:** `finalAttempt` and `progress(…)` on the run arguments. Progress is written at most once
+  a second and flushed before every settle.
+- **jobs:** `onSettled(settled)` — one hook, told once per ending: `completed` (with the body's
+  result), `dead-lettered`, `dropped`, `refused`. After the settle, by the worker whose settle
+  landed, under the job's tenant; at most once across a crash; three tries, then
+  `X_JOB_ON_SETTLED_FAILED`. Not called for a retry, a suspension, a drain or a cancel.
+- **jobs, cli:** the operator surface on `JobIntrospection` — paged `list()` (`jobCursor`), `remove`,
+  `requeueMany`, `removeMany`, `promote`, queue and task pause, a worker registry, per-job counters
+  in 60 s / 300 s / 3,600 s tiers kept 24 h / 7 d / 30 d, `taskFires()`. CLI: `x jobs rm`,
+  `x jobs promote`, `x jobs pause`, `x jobs resume`, `x jobs ls --after`; `x jobs show --json`
+  carries `input` (redacted), `stack`, `progress`, `concurrencyKey`. New codes
+  `X_JOB_NOT_REMOVABLE`, `X_JOB_NOT_PROMOTABLE` (409), `X_JOB_PAGE_INVALID` (400).
+- **jobs, db, cli:** a cross-process wake. The `worker` role holds one `LISTEN` session; an enqueue
+  and an outbox stage carry a throttled `pg_notify`. `startQueueWake`, `queue_wake_live` gauge.
+- **jobs:** `EnqueueOptions.runId`; `resetEventBus()`.
+- **jobs:** `JobIntrospection.promoteMany(filter)` and `PROMOTABLE_STATES` (`ready`, `delayed`) — run
+  now over every matching row, bounded as `requeueMany`. `JobFilter.before` (the page before a
+  cursor), `JobFilter.tenantId` and `BulkFilter.tenantId` (one org's rows). `nextTaskRun(task, from)`
+  — a task's next occurrence in its own zone, the scheduler's own resolver. Both drivers, one
+  parity fixture.
+
+UI.
+
+- **ui:** `respond-down`, `respond-between`, `rem()`, `fluid()` and a `stroke` scale
+  (`hairline 1px`, `thick 2px`, `heavy 3px`) in `@ultimat3/ui/tokens`. `<Link appearance="button">`
+  — a link with a button's look, one class function for both elements. `<Pagination hrefFor>` and
+  `<DataTable hrefFor sortHrefFor>` — server-rendered paging and sorting as anchors, no island.
+  `BarChart` draws a stacked second series (`ChartPoint.secondary`, `seriesLabels`).
+
+Guards.
+
+- **cli:** eight more shipped guards — `raw-length`, `raw-breakpoint`, `raw-z-index`, `raw-shadow`,
+  `raw-motion`, `undefined-style-class`, `undeclared-custom-property`, `repo-raw-sql`. The list is
+  `SHIPPED_GUARD_NAMES` in `packages/cli/src/templates/scaffold-guards.ts`. `x new` writes every
+  one; `x g guard <name>` with a shipped guard's name writes that guard; `x doctor` lists the ones an
+  app does not hold (`data.guards.missing`). Upgrading installs none. `guardSources(root)` is the
+  run's one read of the app.
+
+Generators.
+
+- **cli:** `x g entity` registers the entity in the app's typed handle
+  (`packages/db/src/client.ts`) and prints the next commands (`data.next` under `--json`). A handle
+  it cannot edit is `X_DB_HANDLE_UNREGISTERED` with the two lines to add.
+- **cli:** `x g entity` / `x g resource` write the admin's catalog keys (`admin.<table>.title`,
+  `admin.<table>.field.<column>`) and grant `<table>:read|write|delete` to `admin`.
+  `x g resource --admin` wires its override into `defineAdmin()`; `X_ADMIN_RESOURCE_UNWIRED` when
+  there is no call to add to. A grant that could not be placed is an `X_PERMISSION_UNGRANTED`
+  finding.
+- **cli:** every generator emits unit tests that run the body it wrote — page (`renderRoute`),
+  component (`renderView`), island states, job, task, backfill, live query, action handler. A
+  default `x new` measures 100% of lines and functions; after all thirteen generators, 99.84% /
+  99.39% (`--no-example`: 99.79% / 99.19%). Measured 2026-10-01.
+
+Scraping.
+
+- **scraping:** `egress: (input, ctx) => …` — an exit per session, resolved in the worker, winning
+  over the driver's `proxy`. `cdpUrl` takes a `CdpResolver`: rent a browser per run, `release()`
+  runs exactly once, `cost` is `Money`. `ScrapeReport.usage`. `eventPrompt({ timeout })` and
+  `answerPrompt({ runId, index, answer })` — a mid-run question answered over the job event bus,
+  the answer sealed on the bus. `ScrapeSecrets.conceal(value)`. `setScrapeClock` / `noWaitClock`.
+  New codes `X_SCRAPE_EGRESS_UNSUPPORTED`, `X_SCRAPE_EGRESS_IN_PAYLOAD`.
+
+Admin.
+
+- **admin, render, cli:** `defineAdmin({ entities, db })` serves its own list, detail and form.
+  Zero app script per document (`hydrate: 'never'`). `adminEntitiesOf(db)` makes every entity on
+  the handle a screen. Mounted routes appear in `x routes` (`mount`) and the manifest.
+- **admin:** list filters, scope tabs with counts, relation labels and a lookup screen, six column
+  renderers, row scoping — all state in the URL (`?scope=`, `?sort=`, `?f.<field>.<op>=`).
+  `X_ADMIN_FILTER_INVALID` for a parameter the resource does not derive. One list page is 4
+  statements for 50 rows, 2 reference columns and 1 counted scope. `adminTestCtx()`.
+- **admin:** the detail page and the forms — `sections` and `formGroups` (`{ titleKey, fields }`;
+  an undeclared field lands in a default section drawn last), `related: ['<hasMany>']` drawn as
+  the related resource's own list filtered to the row, `fields.<f>.hintKey` and
+  `fields.<f>.on: 'create' | 'update'` (enforced on the write too). A detail page with 2 related
+  lists and a history card is 4 statements on the memory audit log, 5 on Postgres.
+- **admin:** actions — `input` (the action's own form at `<row>?action=<name>`, 422 per field),
+  `when(row)` (decides the button, asked again on the server: `X_ADMIN_ACTION_NOT_APPLICABLE`,
+  409), `batch: true | { threshold, chunk? }` (checked rows or every row the list's URL matches —
+  200 inline per request, up to 1,000 queued as `admin.batch` jobs a worker runs as the operator;
+  `X_ADMIN_MOUNT_MISSING` when a worker never ran `defineAdmin`), and `matching` (one set-based
+  call for "all matching"). No island: native forms, zero admin JavaScript.
+- **admin:** a durable audit log — `postgresAuditLog()` over `x_admin_audit`, applied at boot from
+  `@ultimat3/admin/schema`, one insert per audited write inside the write's own transaction;
+  allowed reads only with `reads: true`; sealed and sensitive values `[redacted]`. The detail page
+  carries the row's history.
+- **admin:** the jobs dashboard in every `defineAdmin()` — `/admin/jobs` (tiles, done vs failed over
+  1h / 24h / 7d / 30d, per-name volume, failure rate and mean duration, a declared 30 s refresh),
+  `/admin/jobs/runs`, `/queues`, `/tasks`, `/workers`: four ordinary resources over
+  `JobIntrospection` with retry, retry from a step, run now, cancel, remove, queue and task pause /
+  resume, task run now. `job:read` reads, `job:manage` acts; an actor with an `orgId` sees only that
+  org's runs and none of the fleet. `AdminResourceOptions.permission` (the noun a resource's
+  permissions are named after), `AdminAction.matching`, `JOB_READ`, `JOB_MANAGE`, `jobRowScope`.
+  The `/_x` jobs tab draws the same overview. Statements: 1 for a runs list, 5 for a run's detail.
+- **examples/dummy:** a run console — a `scrape()` job per connection with a live event feed, a
+  prompt answered mid-run, a refused second run said in words, what an ended run used, `/v1` bearer
+  access and the MCP projection — and its operator view as `defineAdmin()` resources and a
+  `run.cancel` action with `when` and `batch`, no page of its own.
+
+Runtime.
+
+- **core, db, cli:** process metrics on the scrape endpoint — `process_resident_memory_bytes`,
+  `process_heap_used_bytes`, `process_heap_total_bytes`, `process_external_memory_bytes`,
+  `process_cpu_seconds_total`, `process_event_loop_lag_seconds`, `process_start_time_seconds`,
+  `process_info{role}`, `db_pool_max`, `db_pool_in_use`, `db_pool_waiting`.
+- **cli:** `x build --target prebuilt` — writes the island store and compiled stylesheets to
+  `node_modules/.cache/ultimate`, for the image build to run. No gate, no subprocess.
+
+Test kit.
+
+- **testing:** `renderView`, `renderRoute`, `memoryLocalTx`, `authRequest`, `describeIslandState`,
+  `mountIslandState`; `unitTest` / `contractTest` / `liveTest` / `jobTest` take the fixture bag and
+  `{ timeoutMs }`; `runJobs(handle, input, { actor, tenantId })` and the body's result on the trace.
+  An island state id the states file does not declare is `X_TEST_ISLAND_STATE_UNKNOWN`.
+- **storage:** `memoryDriver()`. **auth:** `apiKeyResolver(() => store)`.
+
+CI and tooling (this repository).
+
+- **ci:** the gate runs as five parts — `unit` in three shards, `live` with the static steps,
+  `e2e` with `typecheck` — and `verify` merges them. Both tracked apps, both scaffold forms and the
+  `packages` job are matrices. Test services come from `docker/docker-compose.test.yml`, in RAM,
+  with their URLs in `docker/test-services.env`.
+- **scripts:** `bun run schema-dumps` regenerates both tracked apps' dumps (`--check` reports);
+  `bun run seal-calls` refuses an AES call outside three core modules; `scripts/scaffold-admin.ts`
+  boots a scaffold and walks its admin; `coverage-gate --all --shard i/n`, and `scripts/` is a
+  coverage unit. `new-error-code` takes `--status <n>` or `--off-socket` for a tier ≤ 4 package and
+  writes the CLI's `CLI_FIXES` row. `seal-calls` reports `X_SEAL_CALL_OUTSIDE_CORE` /
+  `X_SEAL_CALL_UNSCANNED`.
+- **scripts:** `new-error-code` requires `--cause '<what usually makes it happen>'` (it was
+  `--meaning`, defaulting to the title) and refuses one equal to `--title`; `doc-fixes` reports a
+  wiki cause cell that echoes its title as `X_DOC_CAUSE_ECHOES_TITLE`. `package-shape` refuses a
+  published package whose `files` does not negate `!src/**/*-fixture.ts`; scraping's recorded
+  browser moved to `driver-recorded.ts` (`fixtureBrowser`, same name).
+
+### Changed
+
+What an existing app meets, in the order it meets it.
+
+- **BREAKING — the image builds its own island store.** `x build --target docker` no longer writes
+  `.x/islands/`. Add one line to `docker/Dockerfile`, in the runtime stage, after `COPY . .` and
+  above `ENV NODE_ENV=production`: `RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target
+  prebuilt`. Without it the image still serves, every web pod compiles every island and stylesheet
+  at boot, and each boot logs `X_IMAGE_NOT_PREBUILT` naming the line. `app.config.ts` must import
+  with no deployment environment while `NODE_ENV` is unset. Measured on the demo app's image
+  (`oven/bun:1.4-alpine`, read-only root), 2026-10-01: a web pod is ready in 1.6–1.7 s, was
+  4.2–4.8 s; settled RSS 97–102 Mi, was 215–220 Mi.
+- **BREAKING — `ROLE=worker` and `ROLE=scheduler` import less of the app.** They import
+  `apps/web/api/index.ts` and every module that reaches no component (`.tsx`) or stylesheet. A
+  module a job depends on only by side effect (`defineService`, `defineStorage`, `defineCatalogs`)
+  that also imports a component must be imported from the API index. The smaller load needs
+  `x.manifest.json` and a stamped `BUILD_ID` in the image; without either the role imports the whole
+  app and logs the fix. A job or task the manifest names and the load did not register is
+  `X_ROLE_LOAD_INCOMPLETE`, logged, and answered by importing everything; the `manifest` step
+  reports the same gap at build time. Measured on the demo app under container conditions,
+  2026-10-01: a worker is ready in 1.2 s, was 3.8 s; settled RSS 98 Mi, was 224 Mi.
+- **BREAKING — an app with a migration must commit `packages/db/schema/`.** The `drift` step is
+  `X_SCHEMA_DUMP_DRIFT` without it. Run `x db gen` once and commit the directory, with
+  `schema/** linguist-generated=true text eol=lf` in `packages/db/.gitattributes`. `x db gen` and
+  `x db migrate` now boot a scratch embedded database and need `@electric-sql/pglite` installed —
+  without it the fix is `bun add -d @electric-sql/pglite   # then: x db gen`. A release that changes
+  a framework table changes the `framework/` half of every app's dump; this one does (`x_jobs`,
+  `x_outbox`, `x_scheduler_state`, and `x_job_pauses`, `x_job_workers`, `x_job_counters`,
+  `x_admin_audit`), so re-run `x db gen` after upgrading.
+- **BREAKING — migrations must replay on the embedded database.** PGlite's contrib extensions are
+  linked automatically (`x dev` links them too, so `create extension citext` now applies there). An
+  extension it does not ship (`vector`, `postgis`) replays on a real server: set `TEST_DATABASE_URL`
+  (or `DATABASE_URL`) to one that has it, with a role that may create a database, in CI and wherever
+  `x db gen` runs. Without it: `X_SCHEMA_DUMP_DRIFT` naming the extension and the variable.
+- **BREAKING — `x db gen` exits 1 when the dump cannot be produced**, after writing the migration.
+  The cause leads with the migration that was written; do not regenerate it.
+- **BREAKING — `x db migrate` reports `unexpected-object`** (`X_DB_DRIFT`) and exits 1 when the dev
+  database holds a trigger, function, view, type or sequence no migration creates. `DriftKind` gains
+  `'unexpected-object'`: an exhaustive `switch` needs the case.
+- **BREAKING — an app states a coverage floor.** With no `coverage` in `x.verify.json` the `unit`
+  step is `X_COVERAGE_FLOOR_UNSTATED`, and the finding carries the line to add with the app's
+  measured numbers. Coverage is of the whole source tree — a file no unit test loads counts at 0% —
+  and only the unit suite counts. Under the floor is `X_COVERAGE_BELOW_FLOOR`, naming the ten worst
+  files. A floor under 95 needs a `"why"`, and one the tree has passed by 1.5 points is
+  `X_COVERAGE_FLOOR_STALE`. An `exclude` entry is `{ "glob", "why" }`; `x doctor` prints them.
+- **BREAKING — a gate step has a deadline.** 8 minutes for `unit`, `contract`, `live`, `job`, `e2e`
+  and `eval`; 5 for every other step. Past it the step is `X_VERIFY_STEP_TIMEOUT` and its processes
+  are killed. `"stepTimeoutMs": { "unit": 900000 }` in `x.verify.json` raises one.
+- **BREAKING — `x verify --json` writes one line per finished step to stderr**
+  (`{"step":"lint","ok":true,"ms":21987}`). stdout is still one document. A caller that parses
+  `2>&1` as JSON reads stdout only.
+- **BREAKING — an app's `unit` step runs as fixed slices of test files**, one plain `bun test`
+  process per slice of at most 16 neighbouring files, not `bun test --parallel`. A test that
+  depended on which files shared a worker may order differently. `x test unit` is unchanged.
+- **BREAKING — a raw request in browser code fails `x verify`.** The `boundaries` step reports
+  `X_BROWSER_TRANSPORT_BYPASS` for a `fetch(`, `new WebSocket(`, `new XMLHttpRequest(` or
+  `new EventSource(` in any `*.island.tsx`, any module that calls `clientTransport` / `pageClient`,
+  or anything either imports — the app's own `packages/*` included. A `route.ts`, a job, a task and
+  a test are not browser code. No allowlist, no flag. Each finding's `fix:` is the replacement call.
+- **BREAKING — a server barrel in browser code fails `x verify`.** `X_BROWSER_SERVER_BARREL`: a
+  value import of `@ultimat3/entity` or `@ultimat3/query` in that same closure. Import
+  `@ultimat3/entity/record` or `@ultimat3/query/client`; `import type` is unaffected.
+- **BREAKING — `x.manifest.json` changes shape.** An `admin` section is always written — each
+  resource's filters, sorts, scopes, row scope, `sections`, `formGroups`, `related` and `actions`,
+  and the audit store's `kind` — a job that declares `concurrency` gains
+  `concurrency: { limit, keyed, whenBusy }` on its row, and one that declares `onSettled` gains
+  `onSettled: true`. The `manifest` step is `X_MANIFEST_DRIFT` until `x manifest` is run.
+- **BREAKING — a `defineAdmin()` the app scan cannot reach is `X_ADMIN_UNSCANNED`.** The scan
+  imports `apps/*/{site,app,api,shared}/**`; an admin under `apps/*/src/` never ran and `/admin`
+  answered 404. The `manifest` step names the file:
+  `git mv apps/admin/src/index.ts apps/admin/app/admin/admin.ts`, then repoint its imports.
+- **BREAKING — the `policy` step checks a mounted admin's permissions.** Each permission a mounted
+  admin route asks for that no role grants is `X_PERMISSION_UNGRANTED`, one finding per permission
+  per mount. Grant `admin:read` and `<table>:read|write|delete` — plus `job:read` / `job:manage`
+  for the jobs dashboard and `audit:read` for the audit screen — in the role map. A wildcard grant
+  (`orgs:*`) counts when its prefix is declared, and the finding names the app's real role-map file.
+- **BREAKING — the `i18n` step checks the keys a mounted admin renders.** A locale lacking a
+  resource title, field label, section, scope, column, nav, action label (`admin.action.<name>` when
+  no `labelKey`), action input label (`admin.input.<action>.<field>`) or branding key is
+  `X_CATALOG_MISSING_KEYS`; the page drew `⟦admin.<table>.title⟧` with the step green. The list is
+  `AdminApp.catalogKeys()`. `en` is answered by the framework's catalog; a non-`en` app adds the
+  framework admin keys to its own.
+- **BREAKING — `x g entity` / `x g resource` write a `repo.ts` over the typed handle**:
+  `import { db } from '@<app>/db'`, `byId`, `list(limit)`, `insert` — no `sql`, no `decodeRow`, no
+  org argument. `list(limit)` replaces `listByOrg(orgId, limit)`; the handle scopes every read to
+  the actor's org, and a read under an actor with no org is `X_TENANCY_ACTOR_ORG_REQUIRED`.
+  Existing repos keep working. In an app scaffolded before 23.0.0 the first `x g entity` creates
+  `packages/db/src/client.ts` and exits 1 with `X_DB_HANDLE_UNREGISTERED` naming the line to add to
+  `packages/db/src/index.ts`.
+- **BREAKING — `x g resource <name> --feature <other>` is refused** (`X_CLI_BAD_FLAG`). The flag
+  was ignored and the slice landed in two directories. Drop it.
+- **BREAKING — `--live` on any `x g` but `query` is refused** (`X_CLI_BAD_FLAG`). On a resource it
+  did nothing — the slice's list query is already live. The fix names the generator that takes it:
+  `x g query <name>-feed --feature <name> --live`.
+- **BREAKING — `x g query` / `x g resource` generate a read with no `orgId` input.** The input is
+  `{ limit }`; the org is the actor's, scoped by the typed handle, and the generated `can<X>Read`
+  checks only that the actor has an org. Already-generated slices keep working; a caller of a
+  newly generated query passes `{ limit }`.
+- **BREAKING — `x g admin:page` writes `apps/admin/app/admin/pages/`** (was `apps/admin/src/pages`,
+  outside the app scan). Move existing pages: `git mv apps/admin/src/pages apps/admin/app/admin/pages`,
+  then update the import in `apps/admin/app/admin/admin.ts`.
+- **BREAKING — `x tasks` opens the app's queue when a task is declared**, to show each task's last
+  fire beside its next; with no reachable queue it fails as `x jobs ls` does. `--json` rows gain
+  `lastMs`, `last`, `lastFiredAtMs`.
+
+Jobs.
+
+- **BREAKING — `JobRunArgs.finalAttempt` and `JobRunArgs.progress` are required.** A test that
+  calls `<job>.run({ … })` by hand adds `finalAttempt: isFinalAttempt(<job>.retry, attempt)` and
+  `progress: () => undefined`. TS2741 names each site.
+- **BREAKING — job types gain members.** `JobOutcome` gains `'refused'` and `'dropped'`;
+  `QueueStats` gains `failed`; `WorkerStats` gains `refused`, `dropped`, `pollDelayMs`; `JobHandle`
+  gains `whenBusy` and `concurrencyKeyFor()`; `JobDescriptor` gains `concurrency` and `onSettled`;
+  `JobRecord` gains `progress` and `lastErrorStack`; `JobTrace` gains `concurrencyKey`, `input`,
+  `stack`, `progress`. A hand-built literal or an exhaustive `switch` adds the member.
+- **BREAKING — a settle names its claim.** `JobDriver.ack` / `nack` take `{ workerId, claim }` and
+  answer `Promise<boolean>`; `ClaimedJob` carries `claim`. `driver.ack(id)` becomes
+  `driver.ack(id, claimOf(claimed))`. A hand-written driver increments a claim ordinal in `claim()`,
+  fences both settles on it, files a row `failed` when `NackOptions.fail` is set
+  (`nackState(options)`), and honours `EnqueueRequest.id` by answering the existing job,
+  `deduped: true`. A worker that re-claimed its own lapsed job could have that claim settled by
+  the body it had lost.
+- **BREAKING — `JobIntrospection` gains required members**: `remove`, `requeueMany`, `removeMany`,
+  `promote`, `promoteMany`, `pauseQueue`, `resumeQueue`, `pausedQueues`, `pauseTask`, `resumeTask`, `pausedTasks`,
+  `recordTaskFire`, `taskFires`, `announceWorker`, `forgetWorker`, `workers`, `recordProgress`,
+  `counters`, `counterTotals`, `rollupCounters`. `list()` answers one page of at most 200 rows —
+  walk with `list({ after: jobCursor(lastRow) })`; a larger limit or a foreign cursor is
+  `X_JOB_PAGE_INVALID`.
+- **BREAKING — hand-written job stores gain members.** `LeaseStore.holders(key)`;
+  `SchedulerState.fire(driver, { task, occurrenceMs, jobs })`; `LeaderElection.renewEveryMs`
+  (`0` asks before every dispatch); `FleetSlots.acquire` answers a `SlotGrant`, not a boolean.
+- **BREAKING — `EventBus` gains `stored` and `now()`**, both required, and `createPgEventBus` takes
+  no `clock`: `published_at` and the expiry are the database's `now()`. `eventPrompt()` refuses a
+  bus with `stored: false` outside development and test (`X_DRIVER_UNAVAILABLE`).
+- **BREAKING — a staged `enqueue()` answers the job's real `id` and `runId`.** It answered the
+  outbox row's id and `''`. `OutboxRecord.runId` is required and `x_outbox` gains `run_id`; a
+  hand-written `OutboxStore` persists it.
+- **BREAKING — `retry: { deadLetter: false }` settles an exhausted job `failed`** (outcome
+  `dropped`). It was re-queued and re-run forever.
+- **BREAKING — an invalid `concurrency` is `X_JOB_DECLARATION_INVALID`**, not `X_INVARIANT`:
+  `0`, a negative, a fraction, `NaN`, `Infinity`.
+- **BREAKING — a failed job row's `lastError` ends with ` — fix: <the error's fix>`** when the
+  error is an `UltimateError`. Code that compared `lastError` to a rendered message compares a
+  prefix.
+- **BREAKING — the memory job driver stores a payload's JSON form**, as Postgres does. A `Date`
+  arrives as a string; an `undefined` member and a non-enumerable property do not arrive.
+- **BREAKING — `exportRows({ sink })` takes a thunk**: `sink: () => disk('exports')`, resolved per
+  write. A value evaluated `disk()` at module load, before boot; it is now a type error, and at
+  runtime `definition.sink is not a function` on the first part.
+- **jobs:** idle polling. A worker waits `pollIntervalMs` (250 ms) while passes find work and
+  doubles to `idlePollMaxMs` while they do not — 2 s, or 5 s once the wake is proven; an idle pass
+  is one claim over every queue. The outbox relay does the same from `intervalMs` (200 ms). An idle
+  scheduler reads no store. Measured 2026-10-01, idle statements a minute: a scheduler with 35
+  tasks 4,321 → 6; a worker over 2 queues 480 → 12 claims once the wake is proven; the relay
+  300 → 12; a whole idle worker pod 28. Enqueue in one process to start in another, Postgres 17 on
+  loopback, median of 6: 8 ms with the wake, ≤ 250 ms on the old fixed poll.
+  Through a transaction-pooling proxy the wake is never proven (`jobs.wake.unverified`, once) and
+  pickup is bounded by the 2 s poll. There is no option for the old fixed interval.
+- **jobs:** `X_JOB_DECLARATION_INVALID`'s title is "the job declaration is missing or mis-declares
+  a field". `x jobs drain` no longer counts a moved row as a completed run. `x jobs show`,
+  `retry` and `cancel` load the app, so a keyed run shows its `concurrencyKey`.
+
+Client, realtime, entity, secrets.
+
+- **BREAKING — a wrong `pathStyle` is answered `X_CONTRACT_DRIFT`, not `X_ROUTE_NOT_FOUND`.** Still
+  a 404; the cause names the style the server serves. A browser passes no `pathStyle` — delete it
+  from `rpc({ … })` in island code.
+- **BREAKING — a live query's source is read as its subscriber's tenant.** A window is keyed by
+  query, input and tenant, and read in a context that carries the org. A source naming another org
+  is `X_TENANCY_ACTOR_MISMATCH`; a subscriber with no org reading a tenant-scoped table is
+  `X_TENANCY_ACTOR_ORG_REQUIRED`. Drop hand-written org arguments from live repo reads.
+  `LiveQueryDefinition.snapshot` receives `{ input, tenant }`; cursors minted before the upgrade
+  cost one snapshot.
+- **BREAKING — `EntityCore<Row>['$schema']` is `Schema<unknown, unknown>`.** Read the output type
+  off the `entity()` result (`typeof posts.$schema`). `RecordProjection` gains a required
+  `sealed: readonly string[]`; a projection built by hand adds `sealed: []`.
+- **BREAKING — `x secrets rotate` keeps the replaced master key.** After a rotation
+  `secrets.enc.json` holds `ULTIMATE_SECRETS_RETIRED_KEYS` and `installSecrets()` puts it in the
+  environment. Nothing to edit unless something asserts on the file's exact contents; drop a retired
+  key with `x secrets rotate --drop <keyId>` once nothing is sealed under it.
+
+UI, CLI and testing exports.
+
+- **BREAKING — `LinkProps`, `PaginationProps` and `DataTableProps<Row>` are unions**, one interface
+  per mode. A type that extends one extends a member instead: `TextLinkProps` / `ButtonLinkProps`,
+  `PaginationCallbackProps` / `PaginationLinkProps`, `DataTableCallbackProps<Row>` /
+  `DataTableLinkProps<Row>`. JSX call sites are unchanged.
+- **BREAKING — `Guard.check` is `check(root, sources)`.** A guard written as `check(root)` keeps
+  working. A test that calls `guard.check(root)` itself passes `guardSources(root)` from
+  `@ultimat3/cli` as the second argument.
+- **BREAKING — `@ultimat3/cli` drops `checkAppBoundaries`** (nothing in the gate called it), and
+  `BUILD_TARGETS` is `docker | binary | static | prebuilt`: an exhaustive `switch` over
+  `BuildTarget` needs the fourth case.
+- **BREAKING — `useE2eDriver`'s driver receives a third argument**, the test's `{ timeoutMs }`. A
+  hand-written driver that ignores it drops the deadline.
+- **BREAKING — `E2eApp` has a required `log(): string`**, the spawned app's bounded output; a failed
+  e2e test now carries its last 40 lines. A hand-written `E2eApp` double adds `log: () => ''`.
+- **BREAKING — `runJobs` drives a real worker.** Each pass is an unstarted worker's `tick()`, so
+  keyed `concurrency` waits, `whenBusy: 'fail'` refuses with `X_JOB_KEY_BUSY`, and runs claimed in
+  one pass run concurrently, not one after another. A test that expected two runs of one key to
+  both complete sees a refusal or a wait.
+- **BREAKING — `runJobs` renews its lease on the test clock** as a real worker does. A test that
+  `clock.advance()`s past the visibility timeout while a run is in flight sees `X_JOB_LEASE_LOST`;
+  a test that cancels a running job and awaits `runJobs.drain()` adds `clock.advance(1)` after the
+  cancel. `WorkerOptions.schedule` (`IntervalScheduler`) is the one seam for every renewal.
+- **BREAKING — the app test preload resets the jobs event bus before every test** (only when
+  `@ultimat3/jobs` is already loaded). An event published in `beforeAll` is gone by the test that
+  reads it: publish inside the test.
+- **BREAKING — a published package's `files` must negate `!src/**/*-fixture.ts`.** A fixture
+  reachable from an entry point is `X_PACKAGE_SHAPE` naming the file to rename. Private packages —
+  every generated app's — are exempt.
+- **BREAKING — a `robots: { index: false }` document carries no `og:*`, `article:*` or `twitter:*`
+  tag.** A page that may not be indexed has no link preview either; there is no switch.
+- **ui:** `Spinner` turns in 640 ms (was 700 ms), `Skeleton` shimmers in 1.28 s (was 1.4 s), and the
+  default focus ring reads `--stroke-thick`: a page that does not load the theme sheet loses its
+  ring width. An app sheet that defines its own `respond-down`, `respond-between`, `rem` or `fluid`
+  shadows the framework's; the `raw-breakpoint` and `raw-length` guards refuse the local copy.
+- **ui:** the unknown-breakpoint `@error` reads `X_TOKEN_UNKNOWN: respond-to("<name>") — that
+  breakpoint is not in $breakpoints. fix: use one of sm, md, lg, xl, 2xl`, unquoted.
+- **cli:** `x <command> --json --verbose` carries a green step's output, as the terminal does.
+  `x dev` with no `METRICS_PORT` binds a free metrics port when 9090 is taken; a declared port and
+  every container still refuse. An app module that fails to import at container boot is logged at
+  `error`, once per module; it was dropped silently.
+- **testing:** a green `bun test` prints no framework log line — both preloads install a sink.
+  `LOG_LEVEL=info bun test <file>` prints them; `LOG_LEVEL=warn` or higher filters the terminal and
+  no longer raises the process logger's threshold. `setLogSink` is core's seam.
+  `@ultimat3/testing` depends on `@ultimat3/http`.
+
+Admin.
+
+- **BREAKING — the admin is served by the framework.** `defineAdmin` without a `db` handle that
+  carries each entity (or `resources.<entity>.repo`) throws `X_ADMIN_REPO_UNBOUND`: write
+  `defineAdmin({ entities, db })`. Delete every `page.tsx` that serves an admin URL, any `AdminRepo`
+  adapter and any action route for admin buttons — a page file on a path the admin mounts is
+  `X_ROUTE_DUPLICATE`. The demo app deleted 1,781 lines.
+- **BREAKING — `guardedPage`, `AdminRouteConfig.component` and `RegisteredRepo` are removed.** Use
+  `route.respond({ ctx, params, url, method, form })`, or `guardedScreen(app, route, body)`.
+  `adminRouteConfig(route)` is `adminRouteConfig(app, route)`. `AdminList`, `AdminDetail`,
+  `AdminForm`, `AdminActions` and `AdminLayout` take no event handlers and no `loading`.
+- **BREAKING — the admin list API.** `AdminListProps.hrefFor` is `(location: ListLocation) =>
+  string` — `hrefFor={(location) => listHref(basePath, resource, location)}` — and `request`,
+  `scope`, `counts` are required. `pageRequestOf()` returns an `AdminListRequest` and throws
+  `X_ADMIN_FILTER_INVALID` for an unknown sort field, direction, scope, filter or parameter; they
+  were ignored. `adminList(resource, ctx, request)` takes `{ cursor, limit, sort, scope, filters }`.
+  `AdminField.relation` is `{ entity }`. `CrudResult` has a fourth member,
+  `{ ok: false, kind: 'missing', audit }`.
+- **BREAKING — the tenant column is not an admin field.** Not a form field, a list column or a
+  filter; a create is stamped with the acting actor's tenant and a posted value for it is ignored.
+  A read by a malformed id answers `null` (the admin's 404); it threw `X_INVARIANT_VIOLATED`.
+- **BREAKING — `describeRoutes()` lists routes a package mounts** (`mount: { by, permissions }`,
+  `file: '@ultimat3/admin'`), and `Stylesheet` has a required `claimed` field.
+- **BREAKING — every `defineAdmin()` serves the jobs dashboard.** Resources `x_jobs`,
+  `x_job_queues`, `x_job_tasks`, `x_job_workers` and the overview at `/admin/jobs`. Delete a
+  hand-written jobs page and nav item; a `pages:` entry at those paths is
+  `X_ADMIN_PAGE_PATH_INVALID`. A test that renders `/admin/jobs` installs a queue first:
+  `setJobDriver(createMemoryDriver())`.
+- **BREAKING — `DefineAdminInput.jobs` and `AdminApp.jobs` are removed.** The dashboard reads the
+  queue. Delete the option; TS2353 names the site.
+- **BREAKING — `AuditLog.entries()` is async and takes `AuditQuery`** (`entity`, `entityId`,
+  `actorId`, `orgId`, `limit`, `before`, `changes`). Write `await log.entries(…)`. A hand-written
+  `AuditLog` adds `atomic(run)` and `kind`.
+- **BREAKING — `InvokeResult` failures carry `kind`**: `'denied' | 'not-applicable' | 'invalid'`.
+  Narrow on `kind === 'denied'` before reading `decision`.
+- **BREAKING — a posted row action redirects to the row** (303), not the list.
+- **BREAKING — an admin create or update whose resulting row falls outside `rows(actor)` is
+  refused** before the repo is called, and audited as `admin.error.row-out-of-scope` — screens and
+  MCP alike. A text `gt`/`lt` row scope cannot be decided and refuses the write.
+- **BREAKING — an admin action on a row the actor cannot see is refused**, with or without `when`:
+  a row that is gone or outside `rows` is `X_ADMIN_ACTION_NOT_APPLICABLE` (409; the same over MCP).
+  It ran the handler.
+- **BREAKING — `permissionsForOperation('admin', op)` answers one permission**, not
+  `admin:read` twice.
+- **admin:** every admin document is `noindex,nofollow`; the admin's stylesheet is carried by the
+  `app` surface only (−5,251 B on the demo app's `site/` sheet); enum cells render as a badge and
+  reference cells as the target's label; `contains` treats `%` and `_` as characters. The default
+  authz is `roleAuthz()`: a role needs `admin:read|write|destroy`, `job:read`, `audit:read` and
+  each table's `<table>:read|write|delete`, and `admin:destroy` implies `admin:write` implies
+  `admin:read`, as `staticAuthz` answers. A resource's permissions are named after
+  `AdminResource.permission` (default: the entity's name). An action's input field is labelled
+  `admin.input.<action>.<field>`. The dashboard's operation matrix lists only the operations a
+  resource offers.
+
+Scraping.
+
+- **BREAKING — `storageSessionStore` seals every stored session** under the app's master key. Run
+  `x secrets init` (or set `ULTIMATE_SECRETS_KEY`) before the first run; without a key the scrape
+  fails with `X_SEAL_KEY_MISSING` before its browser opens. **Sessions and refusal markers stored
+  before this release are deleted on first load.** The run logs in again, and a credential the site
+  had already refused is presented once more — on a site that locks an account after repeated
+  failures, correct the credential before the first run after upgrading.
+- **BREAKING — `storageSessionStore` and `scrape({ artifacts: { storage } })` take a thunk.**
+  `storageSessionStore(disk)` becomes `storageSessionStore(() => disk('sessions'))`; a driver value
+  is TS2345.
+- **BREAKING — scraping types gain required members.** `createPrompt(scrape, handler, page)` is
+  `createPrompt({ scrape, handler, page, runId, clock, … })`; `PromptRequest` gains `runId`,
+  `index`, `clock`, `signal`, `keepAlive`, `input`; `AuthContext` gains `runId`; `ScrapeSecrets`
+  gains `conceal(value)`; `ScrapeReport` gains `usage`; `SessionInit.logger` is required. A handler
+  or a run body is unaffected; a value built by hand adds the members.
+- **BREAKING — `X_SCRAPE_CDP_ATTACH_FAILED` names the endpoint by scheme and host only.**
+  `meta.cdpUrl` is `wss://host:port`, never the full URL: a connect URL carries a token.
+- **BREAKING — a proxy URL with credentials on `localBrowser({ proxy })` is not passed to
+  `--proxy-server` with its userinfo**; the page authenticates. A launcher whose page has no
+  `authenticate()` fails with `X_SCRAPE_EGRESS_UNSUPPORTED` — upgrade the launcher or drop the
+  credentials from the URL.
+
+Scaffold and generator output — new apps and new slices; nothing rewrites a file an app holds.
+
+- **cli:** the scaffolded `packages/db/src/index.ts` exports the typed handle (`db`, `driver`,
+  `selectDriver` from `./client`). `app.config.ts` declares `defineMeasurementActor`. Route files
+  export `Page`. `apps/web/app/auth/dev-actor.ts` exports `devAuthenticate`, and a cookie naming an
+  undeclared role is anonymous, not admin. The admin is `apps/admin/app/admin/admin.ts`, a
+  declaration with no page file, on `roleAuthz()`.
+- **cli:** `x g backfill` reads and writes `db.<table>` and updates one row at a time by primary
+  key. A backfill generated earlier with `upsertAll(rows, { onConflict: ['id'] })` on a
+  tenant-scoped entity never completed (`X_TENANCY_UNSCOPED`); replace the write with
+  `db.<table>.update(row.id, { … })`.
+- **cli:** `x g resource`'s plural route is reachable as written: `load` reads the list through the
+  slice's query as the request's actor, `AsyncRegion` renders ready / empty / refused, the form
+  island is mounted, the route declares `policy: { permission: '<name>:read' }` and a measured
+  `budget.js` of `64kb` (58,522 B on `x new`'s app, Bun 1.4.0, 2026-10-01) with its `measured:` /
+  `why:` comment, inside `Shell` when `apps/web/shared/shell.tsx` exists. The run prints a fourth
+  step, `x build --target static && x verify --only budgets`. Emitted tests mint actors with
+  `testActor()`.
+- **cli:** `X_BUDGET_EXCEEDED`'s `fix:` names the route file, the next whole kb and the
+  `// measured: <N> B … — why:` line to paste. **render:** `h(Component, props)` checks `props`
+  against the component's own props type.
+- **cli:** a generated query's SQL orders `createdAt` descending, as its in-memory source does; an
+  already-generated one keeps ascending until edited. `x g` with no `--locales` writes catalog keys
+  to every locale that has a catalog, and a catalog merge keeps the file's own key order.
+- **cli:** the dev compose `x new` writes runs Versity S3 Gateway (`versity/versitygw:v1.8.0`,
+  region `auto`) instead of MinIO. The bucket is the volume's mount path and exists on the first
+  `up`. Objects in a MinIO volume are not readable by the gateway; re-upload them.
+
+### Fixed
+
+- **action, query:** `rpc<Api['actions']>` and `queryClient<Api['queries']>` typecheck past 47
+  modules ([#534](https://github.com/developerz-ai/ultimate/issues/534)). `Merge` in `defineApi`
+  cost one instantiation level per module, so the 48th was TS2589 whatever each exported. Measured
+  with `tsc --extendedDiagnostics`, 2026-10-01: 100 modules × 3 actions + 50 × 2 queries is 850,546
+  instantiations and 0 errors; 300 × 5 + 100 × 3 (1,500 actions) is 3,782,244 and 0 errors.
+- **realtime:** a live query read in a sync node threw `X_TENANCY_UNSCOPED` for every subscriber
+  whose source took its tenant from the actor, and one pre-policy read was shared across orgs.
+  A failed live snapshot reaches the page as the branded error the server sent, not `X_INTERNAL`.
+- **jobs:** a job enqueued inside a transaction could not be named by the action that started it.
+  A relay `stop(deadline)` joining a manual stop never bound its deadline. A wake landing on a pass
+  in flight forked a second poll chain. A scheduler fire is one atomic statement fenced on the
+  watermark.
+- **entity:** the memory driver compares an ISO instant with a zone as Postgres does; it compared
+  characters, so page 2 of a list sorted by a timestamp was empty.
+- **storage:** `s3Driver` answers a request signed for the wrong region with `X_CONFIG_INVALID`
+  naming the region to set, from `put`, `copy`, `list` and `delete`. It was a bare `S3Error` from
+  `put` and an IAM-grants fix from the other two.
+- **ui:** `respond-to('2xl')`, the quoted form, failed with `X_TOKEN_UNKNOWN`.
+- **cli:** `x db gen` printed "no migration needed" while its outcome was blocked by an unrelated
+  finding. A `fix:` naming a scoped package (`@scope/name`) renders runnable. `x verify`'s test
+  counts carry errored files. [#589](https://github.com/developerz-ai/ultimate/issues/589): a job
+  cancelled mid-gate left a log with nothing in it.
+- **realtime:** after an `updateWhere` / `deleteWhere` on any table, the next live change reached
+  no subscriber. Every window was marked stale, and the re-read's position equalled the change's,
+  so the duplicate guard returned before re-snapshotting. Invalidation is scoped to the windows
+  reading the written entity, and a re-read window re-snapshots every subscriber.
+- **admin:** the `/_x` DB panel's refusal named `x db psql --write`, which does not exist; it says
+  `psql "$DATABASE_URL"`.
+- **wiki:** guard counts point at `SHIPPED_GUARD_NAMES` instead of stating a number
+  ([#443](https://github.com/developerz-ai/ultimate/issues/443)).
+
+### Removed
+
+- **jobs:** the wiki's `rateLimit:` job field and the architecture doc's `concurrency_key` SQL —
+  neither ever existed in code.
 
 ## 22.15.0 - 2026-10-01
 

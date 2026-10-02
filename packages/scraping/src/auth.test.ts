@@ -3,15 +3,22 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createLogger } from '@ultimat3/core';
-import type { AuthPlanInput, ScrapeAuth } from './auth';
+import type { AuthPlanInput, PromptHandler, ScrapeAuth } from './auth';
 import { createPrompt, ensureAuthenticated, markRefused, restorableSession } from './auth';
 import { testClock } from './clock';
 import { fakePage } from './driver-fake';
-import { createSecretBag } from './secrets';
+import type { ScrapePage } from './page';
+import { createSecretBag, redactSecrets } from './secrets';
 import { memorySessionStore, type SessionState } from './session-state';
 
 const silent = createLogger({ writer: () => undefined });
 const clock = testClock(new Date('2026-08-18T00:00:00.000Z'));
+
+/** What a run was queued with: handed to the prompt handler verbatim. */
+const INPUT = { connectionId: 'conn-1' };
+
+const promptOver = (handler: PromptHandler | undefined, page: ScrapePage) =>
+  createPrompt({ scrape: 'bank', handler, input: INPUT, page, runId: 'run-1', clock });
 
 const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
   try {
@@ -85,10 +92,11 @@ describe('unit · validate decides, and an invalid session is burned before the 
     const loggedIn = await ensureAuthenticated({
       ...planFor(auth),
       input: {},
+      runId: 'run-1',
       page,
       restored: stored(),
       secrets: createSecretBag([]),
-      prompt: createPrompt('bank', undefined, page),
+      prompt: promptOver(undefined, page),
     });
     expect(loggedIn).toBe(false);
     expect(logins).toBe(0);
@@ -108,10 +116,11 @@ describe('unit · validate decides, and an invalid session is burned before the 
     const loggedIn = await ensureAuthenticated({
       ...planFor(auth),
       input: {},
+      runId: 'run-1',
       page,
       restored: stored(),
       secrets: createSecretBag([]),
-      prompt: createPrompt('bank', undefined, page),
+      prompt: promptOver(undefined, page),
     });
     expect(loggedIn).toBe(true);
     expect(logins).toBe(1);
@@ -147,19 +156,67 @@ describe('unit · the 2FA prompt', () => {
   const page = fakePage('<p>hi</p>');
 
   test('with no handler declared, asking is X_SCRAPE_PROMPT_UNANSWERED', async () => {
-    expect(await codeOf(createPrompt('bank', undefined, page)('sms code'))).toBe(
+    expect(await codeOf(promptOver(undefined, page)('sms code'))).toBe(
       'X_SCRAPE_PROMPT_UNANSWERED',
     );
   });
 
   test('an empty answer is not an answer', async () => {
-    expect(await codeOf(createPrompt('bank', () => '', page)('sms code'))).toBe(
-      'X_SCRAPE_PROMPT_UNANSWERED',
-    );
+    expect(await codeOf(promptOver(() => '', page)('sms code'))).toBe('X_SCRAPE_PROMPT_UNANSWERED');
   });
 
   test('a handler answers, and is told what is being asked', async () => {
-    const prompt = createPrompt('bank', (request) => `code-for-${request.label}`, page);
+    const prompt = promptOver((request) => `code-for-${request.label}`, page);
     expect(await prompt('sms code')).toBe('code-for-sms code');
+  });
+
+  test('each prompt is told which run asks and which prompt of the run it is', async () => {
+    const seen: string[] = [];
+    const prompt = promptOver((request) => {
+      seen.push(`${request.runId}:${String(request.index)}`);
+      return 'a-code';
+    }, page);
+    await prompt('sms code');
+    await prompt('security question');
+    expect(seen).toEqual(['run-1:1', 'run-1:2']);
+  });
+
+  test('an answer is concealed in the run secret set and counted, before the body has it', async () => {
+    const secrets = createSecretBag([]);
+    let answered = 0;
+    const prompt = createPrompt({
+      scrape: 'bank',
+      handler: () => '482913',
+      input: INPUT,
+      page,
+      runId: 'run-1',
+      clock,
+      secrets,
+      onAnswered: () => {
+        answered += 1;
+      },
+    });
+    expect(await prompt('sms code')).toBe('482913');
+    expect(answered).toBe(1);
+    expect(redactSecrets('the code 482913 was echoed', secrets)).toBe(
+      'the code [redacted] was echoed',
+    );
+  });
+
+  test('keepAlive is one read through the page vocabulary — it reports activity', async () => {
+    let touches = 0;
+    const watched = fakePage('<p>hi</p>', {
+      context: {
+        onActivity: () => {
+          touches += 1;
+        },
+      },
+    });
+    const prompt = promptOver(async (request) => {
+      await request.keepAlive();
+      return 'a-code';
+    }, watched);
+    await prompt('sms code');
+    expect(touches).toBe(1);
   });
 });

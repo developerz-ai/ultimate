@@ -26,8 +26,11 @@ const pad2 = (value: number): string => String(value).padStart(2, '0');
  * UTC-`Z` only, `isoDateInZone` is date-only, and `formatWithOffset` renders locale prose, not
  * ISO. So this composes the package's own instant→zoned-wall-clock conversion (`toZoned`) and
  * zone-label helper (`offsetLabel`) rather than a fresh `Intl.DateTimeFormat` call here.
+ *
+ * Exported for `cmd-tasks.ts`'s `last` column: the occurrence a task last fired and the one it
+ * fires next are one clock, so they are one function.
  */
-function isoInZone(ms: number, zone: string): string {
+export function isoInZone(ms: number, zone: string): string {
   const zoned = toZoned(fromEpochMs(ms), zone);
   const date = `${String(zoned.year).padStart(4, '0')}-${pad2(zoned.month)}-${pad2(zoned.day)}`;
   const time = `${pad2(zoned.hour)}:${pad2(zoned.minute)}:${pad2(zoned.second)}`;

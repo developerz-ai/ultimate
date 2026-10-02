@@ -6,8 +6,10 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import {
   clearRegistry,
+  database,
   entity,
   enumerated,
+  memoryDriver,
   money,
   newId,
   text,
@@ -81,6 +83,8 @@ const GRANTS = ['admin:write', 'admin_reg_post:read', 'admin_reg_post:write'];
 const adminOver = (store: Map<string, AdminRow>) =>
   defineAdmin({
     entities: [orgs, posts],
+    // `orgs` reads through the handle; `posts` keeps its own repo — the override, per resource.
+    db: database({ orgs }, { driver: memoryDriver() }),
     resources: { admin_reg_post: { repo: repoOver(store) } },
     auth: { actor: (): AdminActor => actor, authz: staticAuthz(GRANTS) },
   });
@@ -123,10 +127,7 @@ describe('defineAdmin over entities built by entity()', () => {
     expect(resource.field('status').widget).toBe('select');
     expect(resource.field('price').widget).toBe('money');
     expect(resource.field('createdAt').widget).toBe('datetime');
-    expect(resource.field('ownerId').relation).toEqual({
-      entity: 'admin_reg_org',
-      labelField: 'id',
-    });
+    expect(resource.field('ownerId').relation).toEqual({ entity: 'admin_reg_org' });
   });
 
   test('generated columns are read-only, a defaulted one stays writable', () => {
@@ -143,7 +144,15 @@ describe('defineAdmin over entities built by entity()', () => {
   });
 
   test('both entities get their routes, and the nav lists both', () => {
-    expect(app.resources.map((each) => each.name)).toEqual(['admin_reg_org', 'admin_reg_post']);
+    // The app's entities, then the jobs dashboard every admin declares.
+    expect(app.resources.map((each) => each.name)).toEqual([
+      'admin_reg_org',
+      'admin_reg_post',
+      'x_jobs',
+      'x_job_queues',
+      'x_job_tasks',
+      'x_job_workers',
+    ]);
     expect(app.routes.map((route) => route.path)).toContain('/admin/admin_reg_post/:id');
   });
 });

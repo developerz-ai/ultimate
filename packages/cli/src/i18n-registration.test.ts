@@ -256,6 +256,69 @@ describe('unit · checkRegistration', () => {
   });
 });
 
+describe('unit · a mounted admin’s DERIVED keys are audited per locale', () => {
+  // `⟦admin.orgs.title⟧` rendered on the reference app's admin with the step green: no source file
+  // spells a key `defineAdmin` derives, so the source audit could never see one.
+  const wired = async () => {
+    for (const [locale, catalog] of Object.entries(shipped)) registerCatalog(locale, catalog);
+    return { findings: [], defaultLocale: 'en' };
+  };
+  const check = (adminKeys: readonly string[], load = wired) =>
+    checkRegistration({
+      root: '/nowhere',
+      catalogs: shipped,
+      extraction,
+      ignoreUnused: [],
+      load,
+      adminKeys: async () => adminKeys,
+    });
+
+  test('a derived key no locale defines is X_CATALOG_MISSING_KEYS, per locale, at its catalog', async () => {
+    const report = await check(['admin.orgs.title', 'app.play.title']);
+    expect(report.ok).toBe(false);
+    expect(report.findings.map((finding) => [finding.code, finding.at])).toEqual([
+      ['X_CATALOG_MISSING_KEYS', 'packages/i18n/catalogs/en.json'],
+      ['X_CATALOG_MISSING_KEYS', 'packages/i18n/catalogs/es.json'],
+    ]);
+    expect(report.findings[0]?.cause).toContain('admin.orgs.title');
+    expect(report.findings[0]?.cause).not.toContain('app.play.title');
+    // An edit naming the file: `x i18n sync` seeds keys SOURCE uses and cannot know these.
+    expect(report.findings[0]?.fix).toContain('packages/i18n/catalogs/en.json');
+    expect(report.findings[0]?.fix).toContain('"admin.orgs.title"');
+  });
+
+  test('a key the framework’s base layer answers needs nothing in the app’s catalog', async () => {
+    const report = await check(['errors.notFound.title']);
+    // Answered in `en` by the base layer; `es` has no base layer, and renders the miss.
+    expect(report.findings.map((finding) => finding.at)).toEqual([
+      'packages/i18n/catalogs/es.json',
+    ]);
+  });
+
+  test('a placeholder is still a miss', async () => {
+    const report = await check(['admin.orgs.title'], async () => {
+      for (const [locale, catalog] of Object.entries(shipped)) {
+        registerCatalog(locale, { ...catalog, 'admin.orgs.title': loudMiss('admin.orgs.title') });
+      }
+      return { findings: [], defaultLocale: 'en' };
+    });
+    expect(report.findings).toHaveLength(2);
+  });
+
+  test('every derived key defined is silence', async () => {
+    const report = await check(['app.play.title', 'site.home.title']);
+    expect(report.findings).toEqual([]);
+  });
+
+  test('an unregistered locale is reported once, as unregistered — not again key by key', async () => {
+    const report = await check(['admin.orgs.title'], loadsNothing);
+    expect(report.findings.map((finding) => finding.code)).toEqual([
+      'X_CATALOG_UNREGISTERED',
+      'X_CATALOG_UNREGISTERED',
+    ]);
+  });
+});
+
 describe('unit · the gate asks the same question the command does', () => {
   test('`i18n` is a step of x verify, between the app-load steps and manifest', () => {
     const names = VERIFY_STEPS.map((step) => step.name);

@@ -3,8 +3,9 @@
 // every one of those places — there is no second place to get it wrong.
 
 import { safeUrl } from '@ultimat3/core';
-import { registeredLocales, t } from '@ultimat3/i18n';
+import { isMiss, registeredLocales, t } from '@ultimat3/i18n';
 import {
+  Badge,
   Checkbox,
   DateTime,
   type DateTimeFormatter,
@@ -16,6 +17,7 @@ import {
 } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import type { AdminField } from './fields';
+import { currencyFieldOf } from './form-decode';
 import { type WidgetContext, type WidgetProps, widgetProps } from './widget-value';
 
 export interface WidgetInput {
@@ -72,6 +74,17 @@ export const formatCalendarDate: DateTimeFormatter = (at, options) =>
 const inputValueFor = (iso: string, precision: 'date' | 'instant'): string =>
   iso.slice(0, precision === 'date' ? 10 : 16);
 
+/**
+ * An enum value's label: its translation when the catalog has one, the value itself when it does
+ * not. The value is an identifier the ENTITY declares (`public`, `draft`), so showing it is true;
+ * a `⟦admin.posts.field.audience.option.public⟧` in every cell of a derived list is not, and the
+ * key is built at runtime, so no i18n gate could have asked the app for it.
+ */
+export const optionLabel = (field: AdminField, value: string): string => {
+  const label = t(`${field.labelKey}.option.${value}`);
+  return isMiss(label) ? value : label;
+};
+
 /** Read-mode rendering of already-guarded props. Never formats; the widgets do that. */
 function readView(props: WidgetProps, field: AdminField, ctx: WidgetContext): JSX.Element {
   switch (props.widget) {
@@ -79,7 +92,9 @@ function readView(props: WidgetProps, field: AdminField, ctx: WidgetContext): JS
       return props.value === null ? (
         <span>{t('admin.value.empty')}</span>
       ) : (
-        <Money value={props.value} />
+        // The ACTOR's locale, handed over: ui's own default is the document's, and an operator
+        // whose dashboard is otherwise in their language read every amount and date in another.
+        <Money value={props.value} locale={ctx.locale} />
       );
     case 'datetime':
       return props.value === null ? (
@@ -87,6 +102,7 @@ function readView(props: WidgetProps, field: AdminField, ctx: WidgetContext): JS
       ) : (
         <DateTime
           value={props.value}
+          locale={ctx.locale}
           timeZone={props.timeZone}
           format={props.precision === 'date' ? formatCalendarDate : undefined}
         />
@@ -94,21 +110,25 @@ function readView(props: WidgetProps, field: AdminField, ctx: WidgetContext): JS
     case 'checkbox':
       return <span>{t(props.value ? 'admin.value.true' : 'admin.value.false')}</span>;
     case 'select':
-      return (
-        <span>
-          {props.value === null
-            ? t('admin.value.empty')
-            : t(`${field.labelKey}.option.${props.value}`)}
-        </span>
+      // A value from a closed set is a state, and a state reads as a badge. Only an enum: a
+      // locale or a zone is an identifier, and stays text.
+      if (props.value === null) return <span>{t('admin.value.empty')}</span>;
+      return field.type === 'enum' ? (
+        <Badge>{optionLabel(field, props.value)}</Badge>
+      ) : (
+        <span>{optionLabel(field, props.value)}</span>
       );
     case 'json-editor':
       return <pre class="x-admin-json">{props.value}</pre>;
     case 'reference': {
       if (props.value === null) return <span>{t('admin.value.empty')}</span>;
+      // The target's label when the page read it, the id when it did not — a row this actor may
+      // not see keeps its id and gains no name.
+      const shown = props.label ?? props.value;
       // `ctx.hrefFor` or nothing. The route table lives on `AdminApp`; this file only ever knew
       // the target entity's NAME, and turning that into a URL by appending an `s` is a guess.
       const href = ctx.hrefFor?.(props.entity, props.value) ?? null;
-      return href === null ? <span>{props.value}</span> : <a href={href}>{props.value}</a>;
+      return href === null ? <span>{shown}</span> : <a href={href}>{shown}</a>;
     }
     case 'upload':
       return props.value === null ? (
@@ -116,6 +136,9 @@ function readView(props: WidgetProps, field: AdminField, ctx: WidgetContext): JS
       ) : (
         <a href={safeUrl(props.value.url, 'href') ?? undefined}>{props.value.name}</a>
       );
+    case 'secret-input':
+      // Nothing to show, by type: `WidgetProps` carries no value for a sealed column.
+      return <span>{t('admin.value.sealed')}</span>;
     default:
       return <span>{String(props.value ?? '')}</span>;
   }
@@ -155,7 +178,9 @@ function editView(props: WidgetProps, input: WidgetInput): JSX.Element {
       // Minor units, not a decimal: turning "12,34" into cents is currency- and locale-aware
       // work owned by @ultimat3/money, and the design system has no money input to host it.
       const currency = props.value?.currency ?? input.field.currency ?? '';
-      return (
+      // The other half of the value, posted beside the amount: a known currency rides hidden, an
+      // unknown one is asked for — money is always both.
+      return [
         <Input
           {...shared}
           name={props.field}
@@ -167,8 +192,18 @@ function editView(props: WidgetProps, input: WidgetInput): JSX.Element {
             const next = event.currentTarget.value;
             emit(input, next === '' ? null : { minor: Number(next), currency });
           }}
-        />
-      );
+        />,
+        currency === '' ? (
+          <Input
+            name={currencyFieldOf(props.field)}
+            maxlength={3}
+            placeholder={t('admin.value.currency')}
+            disabled={disabled}
+          />
+        ) : (
+          <input type="hidden" name={currencyFieldOf(props.field)} value={currency} />
+        ),
+      ];
     }
     case 'checkbox':
       return (
@@ -242,6 +277,43 @@ function editView(props: WidgetProps, input: WidgetInput): JSX.Element {
           onInput={(event) => emit(input, event.currentTarget.value)}
         />
       );
+    case 'reference':
+      // A small target is a `<select>` of its rows, by label. A large one is the id in a text
+      // box, with its label and the target's lookup beside it — both work with scripting off.
+      if (props.options !== null) {
+        return (
+          <Select
+            {...shared}
+            name={props.field}
+            value={props.value ?? ''}
+            disabled={disabled}
+            options={[
+              { value: '', label: t('admin.value.empty') },
+              ...props.options.map((option) => ({ value: option.id, label: option.label })),
+            ]}
+            onChange={(event) => emit(input, event.currentTarget.value)}
+          />
+        );
+      }
+      return [
+        <Input
+          {...shared}
+          name={props.field}
+          value={props.value ?? ''}
+          disabled={disabled}
+          suffix={props.label ?? undefined}
+          onInput={(event) => emit(input, event.currentTarget.value)}
+        />,
+        props.lookupHref === null ? null : (
+          <a href={props.lookupHref} target="_blank" rel="noopener">
+            {t('admin.filter.find')}
+          </a>
+        ),
+      ];
+    case 'secret-input':
+      // Write-only: never a `value`, and `new-password` so a browser offers no saved credential
+      // of the operator's own. Empty on an edit means "unchanged" (`form-decode.ts`).
+      return <Input {...shared} name={props.field} type="password" autocomplete="new-password" />;
     default:
       return (
         <Input

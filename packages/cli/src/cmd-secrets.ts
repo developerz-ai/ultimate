@@ -30,6 +30,7 @@ import {
 } from '@ultimat3/core';
 import { ENV_SCHEMA_EXPORT, loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
+import { appSecrets, dropRetired, retire, retiredKeyIds } from './cmd-secrets-ring';
 import { secretsSpec } from './cmd-secrets-spec';
 import type { CliCommand, CommandContext } from './command';
 import {
@@ -40,6 +41,7 @@ import {
 } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
+import { flagString } from './parse';
 import { recoverRotation, rotateMasterKey } from './secrets-rotation';
 import { shredOnSignal } from './signal-shred';
 import { renderTable } from './table';
@@ -245,35 +247,64 @@ async function set(ctx: CommandContext, io: SecretsIo): Promise<CommandResult> {
 }
 
 /**
+ * The closing half of a rotation: one retired key leaves the ring, by id, once nothing sealed
+ * under it is left. No new key is generated and the key file is not touched — the committed file
+ * is resealed under the key already in force.
+ */
+async function drop(session: Session, keyId: string): Promise<CommandResult> {
+  const { root, key } = session;
+  const after = await dropRetired(await readSecretsFile(root, key), keyId);
+  await writeSecretsFile(root, after, key);
+  const retired = await retiredKeyIds(after);
+  return {
+    ok: true,
+    command: 'secrets',
+    summary: msg('cli.secrets.dropped', { path: SECRETS_FILE, kid: keyId, count: retired.length }),
+    data: {
+      path: SECRETS_FILE,
+      keyId: await masterKeyIdOf(key),
+      dropped: keyId,
+      retiredKeyIds: [...retired],
+    },
+  };
+}
+
+/**
  * A new master key over the same values: staged beside the old one, the file sealed with it, then
  * made live (`rotateMasterKey`). Sealed first with the key file written last, a crash between the
  * two left a committed file no key on disk could open.
+ *
+ * The key being replaced joins the ring INSIDE the sealed file (`cmd-secrets-ring.ts`), so a value
+ * `seal()` wrote under it still opens and a deploy is still handed exactly one key.
  */
 async function rotate(ctx: CommandContext): Promise<CommandResult> {
-  const { root, key } = await open(ctx, 'rotate');
-  const values = await readSecretsFile(root, key);
+  const session = await open(ctx, 'rotate');
+  const dropping = flagString(ctx.args, 'drop');
+  if (dropping !== undefined) return drop(session, dropping);
+  const { root, key } = session;
+  const values = retire(await readSecretsFile(root, key), key.hex);
   const previous = await masterKeyIdOf(key);
   // Ignored BEFORE any key file is written, staged one included; the order inside is
   // `secrets-rotation.ts`'s: stage the key, seal, then rename it live.
   await ensureIgnored(root);
   const next = await rotateMasterKey(root, values);
   const keyId = await masterKeyIdOf(next);
+  const count = Object.keys(appSecrets(values)).length;
   return {
     ok: true,
     command: 'secrets',
-    summary: msg('cli.secrets.rotated', {
-      path: SECRETS_FILE,
-      from: previous,
-      to: keyId,
-      count: Object.keys(values).length,
-    }),
-    lines: [msg('cli.secrets.redeploy', { env: SECRETS_KEY_ENV, keyPath: SECRETS_KEY_FILE })],
+    summary: msg('cli.secrets.rotated', { path: SECRETS_FILE, from: previous, to: keyId, count }),
+    lines: [
+      msg('cli.secrets.redeploy', { env: SECRETS_KEY_ENV, keyPath: SECRETS_KEY_FILE }),
+      msg('cli.secrets.retired', { kid: previous }),
+    ],
     data: {
       path: SECRETS_FILE,
       keyPath: SECRETS_KEY_FILE,
       previousKeyId: previous,
       keyId,
-      count: Object.keys(values).length,
+      count,
+      retiredKeyIds: [...(await retiredKeyIds(values))],
     },
   };
 }
@@ -285,9 +316,12 @@ async function rotate(ctx: CommandContext): Promise<CommandResult> {
  */
 async function show(ctx: CommandContext): Promise<CommandResult> {
   const { root, key } = await open(ctx, 'show');
-  const values = await readSecretsFile(root, key);
+  const sealed = await readSecretsFile(root, key);
+  // The ring is the framework's own entry: reported by key id below, never as an app secret that
+  // `envSchema` forgot to declare.
+  const retired = await retiredKeyIds(sealed);
   const schema = await loadEnvSchema(root);
-  const summaries = describeSecrets(values);
+  const summaries = describeSecrets(appSecrets(sealed));
   const keyId = await masterKeyIdOf(key);
   const declared = (name: string): boolean | undefined =>
     schema === undefined ? undefined : schema[name] !== undefined;
@@ -309,6 +343,7 @@ async function show(ctx: CommandContext): Promise<CommandResult> {
       : [
           msg('cli.secrets.undeclared', { count: undeclared.length, names: undeclared.join(', ') }),
         ]),
+    ...(retired.length === 0 ? [] : [msg('cli.secrets.ring', { kids: retired.join(', ') })]),
   ];
   return {
     ok: true,
@@ -322,6 +357,7 @@ async function show(ctx: CommandContext): Promise<CommandResult> {
       path: SECRETS_FILE,
       keySource: key.source,
       keyId,
+      retiredKeyIds: [...retired],
       count: summaries.length,
       secrets: summaries.map((entry) => ({
         name: entry.name,

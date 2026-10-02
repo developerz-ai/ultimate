@@ -6,7 +6,7 @@
 // is the compile-time proof that a real `entity()` result satisfies it; it is checked by
 // `tsc`, not asserted in a comment, because the admin used to read fields no entity had.
 
-import type { Entity, Repo } from '@ultimat3/entity';
+import type { Entity, Operator, Table } from '@ultimat3/entity';
 
 /**
  * What the author declared about one column — `@ultimat3/entity`'s `ColumnMeta`, narrowed to
@@ -37,11 +37,21 @@ export interface AdminColumnMeta {
    * hands back the resolved target — but its presence is what makes the column a foreign key.
    */
   readonly references?: () => unknown;
+  /**
+   * `.sealed()`: encrypted at rest, opened on read, absent from every schema that leaves the
+   * server. Present means the admin derives NO readable field for it — see `entity-columns.ts`.
+   */
+  readonly sealed?: { readonly lookup: boolean };
 }
 
 /** One column of a registered entity. An `@ultimat3/entity` `Column` satisfies this. */
 export interface AdminColumn {
   readonly $meta: AdminColumnMeta;
+  /**
+   * The column's own guard. Optional in this surface only because a hand-built fixture has none;
+   * every `entity()` column carries it, and `repo-entity.ts` parses a URL's id through it.
+   */
+  readonly $parse?: (value: unknown) => unknown;
 }
 
 /** One column of `$describe()` output. Money is the one property that becomes two of these. */
@@ -65,6 +75,12 @@ export interface AdminEntity {
   readonly $columns: Readonly<Record<string, AdminColumn>>;
   /** The Standard Schema the entity validates with; forms hand input straight to it. */
   readonly $schema: unknown;
+  /**
+   * The column the handle scopes every read and write by, or `null`. Optional in this surface only
+   * because a hand-built fixture has none; every `entity()` result carries it. The admin never
+   * renders it as an input — the acting actor's tenant is the only value it may hold.
+   */
+  readonly $tenantColumn?: string | null;
   /** Resolves foreign-key targets. See `entity-columns.ts` for what the admin takes from it. */
   $describe(): AdminEntityDescription;
 }
@@ -80,14 +96,63 @@ type Satisfies<Surface, T extends Surface> = T;
 export type RegisteredEntity = Satisfies<AdminEntity, Entity<AdminRow>>;
 
 /**
- * A repo as `@ultimat3/entity` registers it — deliberately NOT claimed to be an `AdminRepo`:
- * the verbs differ (`findMany`/`insert` vs `list`/`create`) and its cursor is an opaque signed
- * string where the admin speaks a keyset bound, so the host binds an adapter over it.
+ * The slice of a typed handle's read chain the admin drives — `database()`'s `db.<entity>`. Named
+ * for the reason `AdminEntity` is: one file changes when the handle grows, and `RegisteredTable`
+ * is the `tsc`-checked proof a real one satisfies it.
  */
-export type RegisteredRepo = Repo;
+export interface AdminTableRead {
+  where(filter: Readonly<Record<string, unknown>>): AdminTableRead;
+  andWhere(column: string, op: Operator, value?: unknown): AdminTableRead;
+  orderBy(column: string, direction?: 'asc' | 'desc'): AdminTableRead;
+  limit(rows: number): AdminTableRead;
+  all(): Promise<readonly AdminRow[]>;
+  one(): Promise<AdminRow | null>;
+  count(): Promise<number>;
+  /** Read for the entity NAME only: it is how a handle is matched to the entity it serves. */
+  plan(): { readonly entity: string };
+}
 
-export type FilterOp = 'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'in' | 'is-null';
+/** One table of the app's typed handle. Tenancy, soft delete and sealing are its own. */
+export interface AdminTable extends AdminTableRead {
+  insert(values: Readonly<Record<string, unknown>>): Promise<AdminRow>;
+  update(id: string, patch: Readonly<Record<string, unknown>>): Promise<AdminRow>;
+  delete(id: string): Promise<void>;
+}
 
+/** The app's `database()` result, as `defineAdmin({ db })` takes it. Keys are the app's spelling. */
+export type AdminDb = Readonly<Record<string, AdminTable>>;
+
+/** The claim, checked: `database()`'s table IS an `AdminTable`. */
+export type RegisteredTable = Satisfies<AdminTable, Table<AdminRow>>;
+
+export type FilterOp =
+  | 'eq'
+  | 'neq'
+  | 'contains'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'in'
+  /** `value: true` keeps the rows with no value, `value: false` the rows with one. */
+  | 'is-null';
+
+export const FILTER_OPS: readonly FilterOp[] = [
+  'eq',
+  'neq',
+  'contains',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'in',
+  'is-null',
+];
+
+/**
+ * One predicate of a list read. Every list the admin issues is a CONJUNCTION of these — the URL's
+ * filters, the scope's, and the resource's row scope — so each maps to one indexed comparison.
+ */
 export interface AdminFilter {
   readonly field: string;
   readonly op: FilterOp;
@@ -147,10 +212,33 @@ export interface AdminActionCtx {
   readonly timeZone: string;
 }
 
+/** How a batch action behaves past the size a request should run inline. */
+export interface AdminBatchOptions {
+  /**
+   * The most rows one request runs INLINE. A selection larger than this is handed to the queue —
+   * one `admin.batch` job per chunk — and the answer says how many rows were queued, not done.
+   */
+  readonly threshold: number;
+  /** Rows per queued job. Omitted: `threshold`. */
+  readonly chunk?: number;
+}
+
+/** What a set-based "all matching" answers — the shape of a store's own bulk verb. */
+export interface AdminMatchingResult {
+  /** Rows this call changed. */
+  readonly affected: number;
+  /** Rows still matching afterwards. Run again until it is zero. */
+  readonly remaining: number;
+}
+
 /**
  * A registered `action` as the admin surfaces it. `permission` is not optional: an action
  * with no policy is an open door, and the admin refuses to render one
  * (X_ADMIN_POLICY_MISSING).
+ *
+ * One declaration, every projection: the button on the detail page and on each list row, the
+ * action's own form, the batch bar, the MCP tool, the audit entry. `when` and `batch` narrow WHERE
+ * it appears and never add a second handler.
  */
 export interface AdminAction<Input = Readonly<Record<string, unknown>>, Output = unknown> {
   readonly name: string;
@@ -158,15 +246,47 @@ export interface AdminAction<Input = Readonly<Record<string, unknown>>, Output =
   /** The entity the button belongs to. Absent = a global action in the toolbar. */
   readonly entity?: string;
   readonly destructive?: boolean;
+  /** Absent: `admin.action.<name>` — `actionLabelKey`, the one spelling every screen reads. */
   readonly labelKey?: string;
   /** Mirrors the action's own `mcp` block; the admin MCP surface honours `expose`. */
   readonly mcp?: { readonly expose?: boolean; readonly description?: string };
-  /** The action's Standard Schema, handed to the form and to the MCP tool definition. */
+  /**
+   * The action's input schema — a `t.object({ … })`. Rendered as the action's form (one control
+   * per property), validated before the handler runs with each issue shown against its field,
+   * and handed to the MCP tool definition. Absent: the action takes no input, and its button is a
+   * confirm only. The row's `id` is the admin's own envelope and is never a property here.
+   */
   readonly input?: unknown;
+  /**
+   * Whether the action applies to THIS row. Decides the button on the detail page and on each
+   * list row, and is evaluated again on the server before the handler runs — a hidden button is
+   * not an authorization: `X_ADMIN_ACTION_NOT_APPLICABLE`. The row it reads carries no sealed
+   * column. Absent: the action applies to every row.
+   */
+  readonly when?: (row: AdminRow) => boolean;
+  /**
+   * In the list's batch bar: run once per selected row through the same gate as the button, each
+   * row audited, the answer counting done, refused and failed. `true` runs every batch inline;
+   * `{ threshold }` queues a selection larger than that as one job per chunk.
+   */
+  readonly batch?: true | AdminBatchOptions;
+  /**
+   * The batch bar's "all matching" as ONE set-based call instead of a walk of rows: handed the
+   * list's own `where` — row scope, then scope, then filters — it changes what matches and answers
+   * how many it changed and how many still match. For a store with a bounded bulk verb of its own
+   * (the jobs operator's `requeueMany`). Decided and audited once, for the set; the per-row gate is
+   * not asked per row, so the verb's own predicate is where `when` holds. A checked selection
+   * still runs row by row through `handle`. Requires `batch`.
+   */
+  readonly matching?: (args: {
+    readonly where: readonly AdminFilter[];
+    readonly input: Input;
+    readonly ctx: AdminActionCtx;
+  }) => Promise<AdminMatchingResult>;
   handle(args: { input: Input; ctx: AdminActionCtx }): Promise<Output>;
 }
 
-/** A registered `job` as the admin's Jobs page needs it — `describeJobs()` output. */
+/** A registered `job` as an AI pane is told about it (`ai-panes.ts`) — `describeJobs()` output. */
 export interface AdminJobSummary {
   readonly name: string;
   readonly queue?: string;
@@ -184,4 +304,14 @@ export function readField(row: AdminRow, field: string): unknown {
 export function rowId(row: AdminRow, idField: string): string {
   const value = row[idField];
   return typeof value === 'string' ? value : String(value ?? '');
+}
+
+/**
+ * A row as something DRAWN or DECIDED on reads it: its enumerable values, minus every sealed
+ * column. A repository row keeps a sealed property off its enumerable set already; a hand-written
+ * `repo:` may not, so the names are dropped explicitly — a computed cell is rendered and an
+ * action's `when` is evaluated per row, and a sealed value reaches neither.
+ */
+export function computedRow(row: AdminRow, sealed: readonly string[]): AdminRow {
+  return Object.fromEntries(Object.entries(row).filter(([key]) => !sealed.includes(key)));
 }

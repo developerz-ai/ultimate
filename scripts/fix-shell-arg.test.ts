@@ -137,6 +137,28 @@ describe('the ratchet', () => {
     expect(finding.at).toBe('packages/x/src/errors.ts:4');
   });
 
+  // W-JOBS added a splice in `errors-concurrency.ts` and was pointed at `backfill-errors.ts:32` —
+  // the package's FIRST site, which was already pinned. Which site is the new one is not knowable
+  // from the tree alone, so every site is named, with the count against the pin.
+  test('a package over its pin has EVERY site named, not only its first', () => {
+    const older = { ...site, path: 'packages/jobs/src/backfill-errors.ts', line: 32 };
+    const newer = {
+      ...site,
+      path: 'packages/jobs/src/errors-concurrency.ts',
+      line: 41,
+      substitution: 'input.key',
+    };
+    const gaps = checkFixShellArgs({ sites: [older, newer], pins: { jobs: 1 }, scanned: true });
+    const finding = fixShellArgFindingFor(gaps[0] as never);
+    expect(finding.code).toBe('X_FIX_SHELL_ARG_UNSCREENED');
+    expect(finding.cause).toContain('2 value(s)');
+    expect(finding.cause).toContain('pinned at 1');
+    expect(finding.cause).toContain('packages/jobs/src/backfill-errors.ts:32');
+    expect(finding.cause).toContain('packages/jobs/src/errors-concurrency.ts:41 (${input.key})');
+    // One over the pin: the fix says how many of the listed sites have to go.
+    expect(finding.fix).toContain('1 of the 2 sites the cause lists');
+  });
+
   test('a pin holds it, and a pin above the tree is stale with the command that lowers it', () => {
     const pins = { x: { count: 1, reason: 'measured, and every one is a literal' } };
     expect(checkFixShellArgs({ sites: [site], pins, scanned: true })).toEqual([]);

@@ -42,9 +42,12 @@ import { commandPositionOf, isScreened } from './lib/fix-shell-arg-scan';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import type { SiteProbe } from './lib/ratchet-sites';
+import { leadSite, newSitesFirst, siteList } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'fix-shell-arg';
+const EXPLAIN = 'bun run scripts/fix-shell-arg.ts --explain --json lists every one';
 
 /** Source the CLI EMITS rather than executes — a scaffolded app's own fix lines, not this tree's. */
 const TEMPLATE_ROOT = 'packages/cli/src/templates/';
@@ -98,12 +101,27 @@ export const checkFixShellArgs = (input: FixShellArgInput): readonly FixShellArg
 const at = (site: FixShellArgSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
-const overFinding = (gap: FixShellArgGap): Finding => ({
-  code: 'X_FIX_SHELL_ARG_UNSCREENED',
-  cause: `${gap.pkg} splices ${String(gap.found)} value(s) into the command position of a fix: line and is pinned at ${String(gap.pinned)} — ${at(gap.first)} puts \${${gap.first?.substitution ?? ''}} after ${gap.first?.command ?? 'a command word'}, and a fix: is a command meant to be pasted, so a value carrying $(…), a backtick or a ; runs whatever it says`,
-  fix: `wrap it: renderFixShellArg(${gap.first?.substitution ?? 'value'}, '<what a reader substitutes>') from @ultimat3/core, at ${at(gap.first)}; if the value cannot carry shell syntax, add ${gap.pkg} to FIX_SHELL_ARG_PINS in ${FIX_SHELL_PINS_FILE} with the sentence saying where it comes from`,
-  at: at(gap.first),
-});
+/**
+ * EVERY site, never only the first. The first site of a package is usually one its pin already
+ * allows, and the site that took it over the pin is whichever was added last — which the tree
+ * cannot say. Naming only the first sent a reader to `backfill-errors.ts:32` for a splice that had
+ * just been written in `errors-concurrency.ts` (plan 101).
+ */
+const overFinding = (gap: FixShellArgGap): Finding => {
+  const sites = gap.sites ?? (gap.first === undefined ? [] : [gap.first]);
+  const listed = siteList(gap, (site) => `${at(site)} (\${${site.substitution}})`, EXPLAIN);
+  const excess = gap.found - gap.pinned;
+  const which =
+    sites.length === 1
+      ? `at ${at(gap.first)}`
+      : `at ${String(excess)} of the ${String(sites.length)} sites the cause lists — the one this change added`;
+  return {
+    code: 'X_FIX_SHELL_ARG_UNSCREENED',
+    cause: `${gap.pkg} splices ${String(gap.found)} value(s) into the command position of a fix: line and is pinned at ${String(gap.pinned)} — ${listed} — and a fix: is a command meant to be pasted, so a value carrying $(…), a backtick or a ; runs whatever it says`,
+    fix: `wrap it: renderFixShellArg(value, '<what a reader substitutes>') from @ultimat3/core, ${which}; if the value cannot carry shell syntax, raise ${gap.pkg} in FIX_SHELL_ARG_PINS in ${FIX_SHELL_PINS_FILE} with the sentence saying where it comes from`,
+    at: at(leadSite(gap)),
+  };
+};
 
 const staleFinding = (gap: FixShellArgGap): Finding => ({
   code: 'X_FIX_SHELL_ARG_PIN_STALE',
@@ -156,12 +174,18 @@ export const fixShellArgSites = async (root: string): Promise<readonly FixShellA
     .filter(shipped)
     .flatMap((file) => scanFixShellArgs(file.path, file.source));
 
+const PROBE: SiteProbe<FixShellArgSite> = { rescan: scanFixShellArgs, line: (site) => site.line };
+
 export const fixShellArgGaps = async (root: string): Promise<readonly FixShellArgGap[]> =>
-  checkFixShellArgs({
-    sites: await fixShellArgSites(root),
-    pins: FIX_SHELL_ARG_PINS,
-    scanned: true,
-  });
+  newSitesFirst(
+    root,
+    checkFixShellArgs({
+      sites: await fixShellArgSites(root),
+      pins: FIX_SHELL_ARG_PINS,
+      scanned: true,
+    }),
+    PROBE,
+  );
 
 /** What this rule contributes to `x verify`'s `errors` step, through `errorRendering`'s caller. */
 export const fixShellArgFindings = async (root: string): Promise<readonly Finding[]> =>
@@ -174,6 +198,7 @@ if (import.meta.main) {
     pins: FIX_SHELL_ARG_PINS,
     sites: fixShellArgSites,
     findingFor: fixShellArgFindingFor,
+    probe: PROBE,
     clean: 'every fix: substitution in a shell command position is at or under its package pin',
   });
 }

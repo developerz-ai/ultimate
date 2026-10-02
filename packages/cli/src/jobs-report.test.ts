@@ -44,7 +44,7 @@ async function makeDeadJob(driver: JobDriver, name = 'send-email'): Promise<stri
     visibilityTimeoutMs: 60_000,
     workerId: 'w',
   });
-  await driver.nack(id, { delayMs: 0, deadLetter: true, error: 'boom' });
+  await driver.nack(id, { workerId: 'w', claim: 1, delayMs: 0, deadLetter: true, error: 'boom' });
   return id;
 }
 
@@ -110,6 +110,7 @@ describe('unit · listJobs', () => {
       delayed: 0,
       running: 0,
       suspended: 0,
+      failed: 0,
       dead: 0,
     });
   });
@@ -126,6 +127,7 @@ describe('unit · listJobs', () => {
       delayed: 1,
       running: 0,
       suspended: 0,
+      failed: 0,
       dead: 1,
     });
     expect(result.rows.map((row) => row.id).sort()).toEqual([readyId, delayedId, deadId].sort());

@@ -273,7 +273,7 @@ export function sharedLeafFindingFor(violation: SharedLeafViolation): Finding {
   };
 }
 
-/** Tests are excluded, as they are in `checkAppBoundaries`: a test is never bundled, and the leaf
+/** Tests are excluded, as they are in the CLI's `readAppSources`: a test is never bundled, and the leaf
  * rule exists to keep bundle graphs apart (axiom 6). */
 /**
  * The two roots this repo tracks an app under. One fact, stated once: `scripts/async-context-guard.ts`

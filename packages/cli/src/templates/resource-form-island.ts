@@ -170,9 +170,9 @@ export function mount(el: HTMLElement, props: ${feature.pascal}FormProps): void 
 const formIslandTest = (
   feature: NameSet,
   dir: string,
-): string => `// The form the browser actually runs. \`mountIsland\` builds this entry with the same
-// \`buildIslands\` that \`x build\` and \`x dev\` use, imports the emitted chunk the way the hydration
-// runtime does, and drives \`mount\` against a DOM small enough to read.
+): string => `// The form the browser actually runs, in every state its manifest declares: built once for this
+// file with the same \`buildIslands\` that \`x build\` and \`x dev\` use, imported the way the
+// hydration runtime imports it, and driven against a DOM small enough to read.
 //
 // It is the test that keeps this file a CLIENT entry. A generated form that only typechecks is
 // what shipped before: server-rendered, every \`on*\` prop dropped, every signal read once.
@@ -180,76 +180,46 @@ const formIslandTest = (
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import {
-  afterAll,
-  beforeAll,
-  describe,
+  describeIslandState,
   expect,
   type FakeElement,
   type MountedIsland,
-  mountIsland,
   test,
 } from '@ultimat3/testing';
-
-const APP_ROOT = join(import.meta.dir, ${upToAppRoot(dir)});
-const ISLAND = '${dir}/${feature.kebab}-form.island.tsx';
-const ENDPOINT = '/api/${feature.kebab}/create-${feature.kebab}';
-
-const LABELS = {
-  title: 'Title',
-  price: 'Price',
-  submit: 'Save',
-  saved: 'Saved',
-  retry: 'Try again',
-};
+import { ${feature.camel}FormStates } from './${feature.kebab}-form.island.states';
 
 const calls: { url: string; body: Record<string, unknown> }[] = [];
 
-/** One stub, both outcomes: the mount costs seconds, so the network's answer is a switch. */
+/** One stub, both outcomes: a block shares its mount, so the network's answer is a switch. */
 let networkFails = false;
 
-let mounted: MountedIsland;
-
-// The build is a Babel pass plus a browser bundle — seconds, not milliseconds. It lives in
-// \`beforeAll\` with its own timeout because \`test\` takes no third argument: fixtures are resolved
-// per case, so the slow work goes where it can be given one and every case shares the result.
-beforeAll(async () => {
-  mounted = await mountIsland({
-    build: buildIslands,
-    root: APP_ROOT,
-    file: ISLAND,
-    props: { endpoint: ENDPOINT, locale: 'en', currency: 'USD', labels: LABELS },
-    // What the server rendered inside the island's wrapper. \`mount\` replaces it.
-    shell: '<p>Loading</p>',
-    globals: {
-      // The form sends through \`clientTransport\`, which calls \`globalThis.fetch\` — this stub.
-      fetch: (url: string, init: { body: string }): Promise<Response> => {
-        calls.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
-        // What a browser rejects with when there is no network. Not a response, which is exactly
-        // why the form has to catch it.
-        return networkFails
-          ? Promise.reject(new TypeError('Failed to fetch'))
-          : Promise.resolve(Response.json({ id: 'created' }));
-      },
+// One block per declared state: \`describeIslandState\` mounts it before the block's first test
+// and disposes it after the last. The props are the manifest's own — what
+// \`x shot --island ${feature.kebab}-form\` photographs — so the picture and the test are of one
+// component.
+const island = {
+  build: buildIslands,
+  root: join(import.meta.dir, ${upToAppRoot(dir)}),
+  // What the server rendered inside the island's wrapper. \`mount\` replaces it.
+  shell: '<p>Loading</p>',
+  globals: {
+    // The form sends through \`clientTransport\`, which calls \`globalThis.fetch\` — this stub.
+    fetch: (url: string, init: { body: string }): Promise<Response> => {
+      calls.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
+      // What a browser rejects with when there is no network. Not a response, which is exactly
+      // why the form has to catch it.
+      return networkFails
+        ? Promise.reject(new TypeError('Failed to fetch'))
+        : Promise.resolve(Response.json({ id: 'created' }));
     },
-  });
-}, 60_000);
-
-// The fake \`document\` is process-global: left installed it reaches every LATER FILE in the run.
-//
-// \`?.\` on a binding the type says is always set: TypeScript's definite-assignment analysis does not
-// cross the \`beforeAll\` closure, so a setup that REJECTED leaves this undefined at run time — and
-// bun runs \`afterAll\` regardless. Unguarded, the build failure is followed by a \`TypeError:
-// undefined is not an object\` that says nothing, and that second line is the one a tail reads.
-// Nothing is skipped by the guard: \`mountIsland\` restores the process itself when a mount throws.
-afterAll(() => {
-  mounted?.[Symbol.dispose]();
-});
+  },
+};
 
 /**
  * Until the status line changes, a bounded number of macrotasks: the send is several awaits deep
  * inside \`clientTransport\`, so counting microtasks would pin the transport, not the form.
  */
-async function statusSettled(): Promise<void> {
+async function statusSettled(mounted: MountedIsland): Promise<void> {
   const before = mounted.text('[data-role="status"]');
   for (let tick = 0; tick < 50; tick += 1) {
     if (mounted.text('[data-role="status"]') !== before) return;
@@ -257,53 +227,61 @@ async function statusSettled(): Promise<void> {
   }
 }
 
-/**
- * One mount, driven as a session: the cases below run in order against the same island, because
- * building the real chunk costs seconds and repeating it per case would pay them for state each
- * case sets up anyway. What each one asserts is independent.
- */
-describe('the ${feature.kebab} form island', () => {
+// Each case sets the network's answer itself and asserts on what its own submit produced, so
+// none depends on the one before it.
+describeIslandState(${feature.camel}FormStates, 'idle', island, (mounted) => {
   test('mount replaces the server shell with the editor', () => {
-    expect(mounted.find('p')?.getAttribute('data-role')).toBe('status');
+    expect(mounted().find('p')?.getAttribute('data-role')).toBe('status');
+    expect(mounted().text('button')).toBe('Save');
     // Solid compiles to real DOM calls; a chunk that fell back to the classic React factory names
     // a global that is not in it, and \`Bun.build\` answers \`success: true\` over that all the same.
-    expect(mounted.code).not.toMatch(/\\bReact\\b/);
+    expect(mounted().code).not.toMatch(/\\bReact\\b/);
   });
 
-  test('the fields track, and submit posts the create input', async () => {
-    const title: FakeElement | null = mounted.find('input[aria-label="Title"]');
-    const price: FakeElement | null = mounted.find('input[aria-label="Price"]');
+  test('the fields track, submit posts the create input, and the status answers', async () => {
+    networkFails = false;
+    const title: FakeElement | null = mounted().find('input[aria-label="Title"]');
+    const price: FakeElement | null = mounted().find('input[aria-label="Price"]');
     expect(title).not.toBeNull();
     expect(price).not.toBeNull();
     if (title !== null) title.value = 'First ${feature.camel}';
     if (price !== null) price.value = '12.50';
     // \`false\` means no handler ran — an island whose onInput never reached the DOM looks
     // identical to a selector typo otherwise.
-    expect(mounted.fire(title, 'input')).toBe(true);
-    expect(mounted.fire(price, 'input')).toBe(true);
-    expect(mounted.fire('form', 'submit', { preventDefault: () => {} })).toBe(true);
-    await statusSettled();
+    expect(mounted().fire(title, 'input')).toBe(true);
+    expect(mounted().fire(price, 'input')).toBe(true);
+    expect(mounted().fire('form', 'submit', { preventDefault: () => {} })).toBe(true);
+    await statusSettled(mounted());
 
     const body = {
       title: 'First ${feature.camel}',
       price: { minor: 1250, currency: 'USD' },
     };
-    expect(calls).toEqual([{ url: ENDPOINT, body }]);
-  });
-
-  test('the status line answers the response', () => {
+    // The endpoint is the state's own: the form posts where the server told it to.
+    expect(calls.at(-1)).toEqual({ url: '/api/${feature.pluralKebab}/create', body });
     // The signal reached the DOM: an eager JSX factory renders '' here and never runs again.
-    expect(mounted.text('[data-role="status"]')).toBe(LABELS.saved);
+    expect(mounted().text('[data-role="status"]')).toBe('Saved');
   });
 
   test('a request that never got a response still reaches retry', async () => {
     // The outcome \`retry\` is FOR. A \`fetch\` that rejects produces no answer, so without the
     // catch in \`send\` the status line stays on its last value and the rejection escapes.
     networkFails = true;
-    expect(mounted.fire('form', 'submit', { preventDefault: () => {} })).toBe(true);
-    await statusSettled();
+    expect(mounted().fire('form', 'submit', { preventDefault: () => {} })).toBe(true);
+    await statusSettled(mounted());
 
-    expect(mounted.text('[data-role="status"]')).toBe(LABELS.retry);
+    expect(mounted().text('[data-role="status"]')).toBe('That did not save. Try again.');
+  });
+});
+
+describeIslandState(${feature.camel}FormStates, 'long-labels', island, (mounted) => {
+  test('every label is the state’s own, in the locale it names', () => {
+    // Whether they FIT is a picture's question — \`x shot --island ${feature.kebab}-form\`. What a
+    // test can say is that the island was handed this state's text, and none of the idle one's.
+    expect(mounted().find('input[aria-label="Bezeichnung des Beitrags"]')).not.toBeNull();
+    expect(mounted().find('input[aria-label="Title"]')).toBeNull();
+    expect(mounted().text('button')).toBe('Änderungen speichern');
+    expect(mounted().documentElement.getAttribute('lang')).toBe('de');
   });
 });
 `;

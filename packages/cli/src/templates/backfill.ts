@@ -3,38 +3,12 @@
 // One live run per name: a second enqueue while the pass is going is the same pass.
 
 import type { FeatureTarget } from './entity';
+import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
+import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
 import { sliceFoundation } from './slice-foundation';
 import { wrapImport } from './wrap';
-
-/**
- * What the entity's value export is called inside the generated file. `x g backfill invoice
- * --feature invoice` is a legal invocation and it emitted `import { invoice } from '../entity'`
- * beside `export const invoice = backfill(...)` — one name, two declarations, which is
- * `lint/suspicious/noRedeclare` in the app's own gate and a genuinely ambiguous reference in TS.
- * Aliased only when it would collide, because every other backfill reads better without one.
- */
-const entityRef = (name: NameSet, feature: NameSet): string =>
-  name.camel === feature.camel ? `${feature.camel}Entity` : feature.camel;
-
-const entityImport = (name: NameSet, feature: NameSet): string => {
-  const local = entityRef(name, feature);
-  return local === feature.camel ? feature.camel : `${feature.camel} as ${local}`;
-};
-
-/**
- * The chain accessor, wrapped the way Biome would wrap it. Emitted pre-formatted rather than
- * always-wrapped because the formatter joins an arrow body back onto one line when it fits — so a
- * fixed shape is wrong for one name length or the other. Same reason `policy.ts` measures its
- * `definePermissions` line.
- */
-const tableLine = (name: NameSet, feature: NameSet): string => {
-  const ref = entityRef(name, feature);
-  const head = `const ${feature.camel}Table = () =>`;
-  const body = `tableFor(${ref}, postgresRepo(${ref}));`;
-  return `${head} ${body}`.length <= 100 ? `${head} ${body}` : `${head}\n  ${body}`;
-};
 
 /**
  * Working source, never a stub: a generated `throw new Error(…)` carries no `X_*` code and a
@@ -45,32 +19,29 @@ const tableLine = (name: NameSet, feature: NameSet): string => {
 const backfillSource = (
   name: NameSet,
   feature: NameSet,
+  dbModule: string,
 ): string => `// ${name.camel}: one pass over a chain of rows. The backfill is a job factory, not a ninth
 // primitive, so it inherits .enqueue(), retry, cancellation and the manifest row.
 // \`BackfillBatch\` comes from @ultimat3/jobs, not @ultimat3/schema: a backfill file imports one package.
 
-import type { Ctx } from '@ultimat3/core';
-import { assert, hasScope } from '@ultimat3/core';
-import type { ReadBuilder } from '@ultimat3/entity';
-import { CROSS_TENANT_SCOPE, postgresRepo, tableFor } from '@ultimat3/entity';
-import type { BackfillBatch } from '@ultimat3/jobs';
-import { backfill } from '@ultimat3/jobs';
+${sortedImports([
+  "import { assert, type Ctx, hasScope } from '@ultimat3/core';",
+  "import { CROSS_TENANT_SCOPE, type ReadBuilder } from '@ultimat3/entity';",
+  "import { type BackfillBatch, backfill } from '@ultimat3/jobs';",
+  `import { db } from '${dbModule}';`,
+])}
 import type { ${feature.pascal} } from '../entity';
-import { ${entityImport(name, feature)} } from '../entity';
 
 /** The row this sweep visits, aliased once: every signature below then reads at one width. */
 type Row = ${feature.pascal};
 
-/** The table as a chain — the seam \`database()\` hands an app, so this sweep reads what a query reads. */
-${tableLine(name, feature)}
-
 /**
- * The rows this pass visits. A one-pass sweep has no single org, so it declares \`tenant: 'none'\`
- * below — which STRIPS the org from the run rather than inheriting the worker's. That makes
- * spanning tenants a capability instead of an accident: the actor this worker runs as has to carry
- * \`tenancy:cross\`, and this is where that is said, before a page is read rather than inside the
- * plan builder. A single-org sweep is the other shape — declare \`tenant: () => '<org id>'\` and put
- * \`.where({ orgId: ctx.actor.orgId })\` back.
+ * The rows this pass visits, read through the app's typed handle — the table a query reads. A
+ * one-pass sweep has no single org, so it declares \`tenant: 'none'\` below — which STRIPS the org
+ * from the run rather than inheriting the worker's. That makes spanning tenants a capability
+ * instead of an accident: the actor this worker runs as has to carry \`tenancy:cross\`, and this is
+ * where that is said, before a page is read rather than inside the plan builder. A single-org
+ * sweep is the other shape — declare \`tenant: () => '<org id>'\`, and the handle scopes the read.
  */
 const ${name.camel}Scope = (ctx: Ctx): ReadBuilder<Row> => {
   assert(
@@ -79,7 +50,7 @@ const ${name.camel}Scope = (ctx: Ctx): ReadBuilder<Row> => {
     // A generated \`fix:\` is copied and run verbatim, so it names a command this build SHIPS.
     'x db backfill ${name.kebab} --write --json',
   );
-  return ${feature.camel}Table();
+  return db.${feature.plural};
 };
 
 /**
@@ -103,12 +74,18 @@ export const ${name.camel} = backfill({
   tenant: 'none',
   source: ({ ctx }): ReadBuilder<Row> => ${name.camel}Scope(ctx),
   handle: async ({ rows, signal }: BackfillBatch<Row>) => {
-    // One page, in its own durable step, at least once. Write through upsertAll, updateWhere or an
-    // idempotent statement; never count + 1. The signal is the run cancellation composed with this
-    // batch's ceiling, so a cancelled pass stops here instead of writing past its lease.
+    // One page, in its own durable step, at least once. The signal is the run cancellation
+    // composed with this batch's ceiling, so a cancelled pass stops here instead of writing past
+    // its lease.
     signal.throwIfAborted();
-    const next = rows.map(${name.camel}Row);
-    await ${feature.camel}Table().upsertAll(next, { onConflict: ['id'] });
+    // One \`update\` per row, by primary key, and only the column this pass owns — never count + 1.
+    // Not \`upsertAll(rows, { onConflict: ['id'] })\`: on a tenant-scoped table a collision judged
+    // on \`id\` alone could land on another tenant's row, so the handle refuses it
+    // (X_TENANCY_UNSCOPED) and the pass would retry its first page for ever.
+    for (const row of rows) {
+      const next = ${name.camel}Row(row);
+      await db.${feature.plural}.update(row.id, { title: next.title });
+    }
   },
   // How many rows still NEED the change — never how many the sweep visits. Declare it once
   // \`source\` narrows to the rows that are actually behind (\`.andWhere('publishedAt', 'is', null)\`
@@ -127,15 +104,12 @@ export const ${name.camel} = backfill({
 
 const backfillTest = (
   name: NameSet,
-  feature: NameSet,
-): string => `// ${name.camel} sweeps rows a user never asked for, so the two facts worth failing on are its
-// durable identity — one live run per name, retried under the same key — and that the row
-// projection it applies is idempotent, because a cancelled attempt replays its page whole.
+): string => `// ${name.camel}'s durable identity: one live run per name, retried under the same key. The work
+// itself — the pass over real rows and the projection it applies — is the unit suite's, next door.
 
 import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
-import type { ${feature.pascal} } from '../entity';
-${wrapImport([name.camel, `${name.camel}Row`], `./${name.kebab}`)}
+import { ${name.camel} } from './${name.kebab}';
 
 // The driver is process-global, so it is installed and released around this file rather than
 // left behind for whichever test happens to run next.
@@ -147,15 +121,6 @@ afterAll(resetJobDriver);
 // The durable name this sweep runs under, spelled once — so the assertion below carries the
 // backfill's own name and still fits the formatter width the app's \`lint\` step enforces.
 const expectedKey = '${name.kebab}';
-
-const row = (over: Partial<${feature.pascal}> = {}): ${feature.pascal} => ({
-  id: '00000000-0000-4000-8000-000000000001',
-  orgId: '00000000-0000-4000-8000-000000000002',
-  title: '  needs normalising  ',
-  price: { minor: 1000, currency: 'USD' },
-  createdAt: new Date(0),
-  ...over,
-});
 
 jobTest('${name.camel} declares a durable name and retry policy', () => {
   expect(${name.camel}.kind).toBe('job');
@@ -174,19 +139,6 @@ jobTest('${name.camel} projects itself into the manifest', () => {
   expect(described.retry.attempts).toBeGreaterThan(0);
 });
 
-jobTest('${name.camel} actually rewrites the row it is handed', () => {
-  // The declaration alone cannot fail this: a handler that returned without writing would still
-  // enqueue, still checkpoint and still report the page as swept.
-  expect(${name.camel}Row(row()).title).toBe('needs normalising');
-});
-
-jobTest('${name.camel} replays a page idempotently', () => {
-  // At least once is the contract: an attempt cancelled between the last row and its checkpoint
-  // hands this page to the next attempt. Twice through must equal once through.
-  const once = ${name.camel}Row(row());
-  expect(${name.camel}Row(once)).toEqual(once);
-});
-
 jobTest('${name.camel} enqueues once, and dedupes the retry', async () => {
   // One live run per name, forced or not: a second enqueue while the pass is going is the same pass.
   // \`.enqueue()\` is the backfill path — the declared job, queued with no scheduler involved.
@@ -197,18 +149,100 @@ jobTest('${name.camel} enqueues once, and dedupes the retry', async () => {
 });
 `;
 
-export function backfillFiles(rawName: string, target: FeatureTarget): readonly GeneratedFile[] {
+/**
+ * The WORK, on the `unit` step: one whole pass, run by an in-process worker over rows in the
+ * in-memory driver, and the projection it applies. An app's coverage floor counts the unit suite
+ * alone — and a sweep whose handler nothing ever ran is how a body that could not complete shipped.
+ */
+const backfillUnitTest = (
+  name: NameSet,
+  feature: NameSet,
+  dbModule: string,
+): string => `// ${name.camel}, SWEPT: one whole pass run by a worker in this process, over rows in the in-memory
+// driver. A sweep rewrites rows no user asked it to, so what is worth failing on is that it reaches
+// every tenant's rows, writes the projection and nothing else, and that a replay changes nothing.
+${sortedImports([
+  "import { createContext, runWithContext } from '@ultimat3/core';",
+  "import { testActor } from '@ultimat3/policy';",
+  "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
+  `import { db, driver } from '${dbModule}';`,
+])}
+import type { ${feature.pascal} } from '../entity';
+${wrapImport([name.camel, `${name.camel}Row`], `./${name.kebab}`)}
+
+const orgA = '00000000-0000-4000-8000-000000000002';
+const orgB = '00000000-0000-4000-8000-000000000009';
+
+/** What a request is to the handle: an actor, whose org every read and write runs under. */
+const inOrg = <T>(orgId: string, run: () => Promise<T>): Promise<T> =>
+  runWithContext(createContext({ actor: testActor('member', { orgId }).actor }), run);
+
+const store = (orgId: string, title: string): Promise<${feature.pascal}> => {
+  const draft = { orgId, title, price: { minor: 1000, currency: 'USD' } };
+  return inOrg(orgId, () => db.${feature.plural}.insert(draft));
+};
+
+const titlesOf = (orgId: string): Promise<readonly string[]> =>
+  inOrg(orgId, async () => (await db.${feature.plural}.all()).map((row) => row.title));
+
+// One store per process: without this, one test's rows are the next test's fixtures.
+afterEach(() => {
+  driver.reset?.();
+});
+
+unitTest('one pass rewrites the rows of every tenant, and completes', async ({ runJobs }) => {
+  await store(orgA, '  needs normalising  ');
+  await store(orgB, ' so does this ');
+  const trace = await runJobs(${name.camel}, {});
+  // \`completed\`, not retried: a handler the table refuses retries its first page for ever.
+  expect(trace.executions.map((run) => run.outcome)).toEqual(['completed']);
+  expect(await titlesOf(orgA)).toEqual(['needs normalising']);
+  expect(await titlesOf(orgB)).toEqual(['so does this']);
+});
+
+unitTest('the pass writes the projection and nothing else', async ({ runJobs }) => {
+  const stored = await store(orgA, ' padded ');
+  await runJobs(${name.camel}, {});
+  const [swept] = await inOrg(orgA, () => db.${feature.plural}.all());
+  expect(swept).toEqualRow({ ...stored, title: 'padded' });
+});
+
+unitTest('the projection is idempotent: a replayed page changes nothing', () => {
+  // At least once is the contract: an attempt cancelled between the last row and its checkpoint
+  // hands this page to the next attempt. Twice through must equal once through.
+  const row: ${feature.pascal} = {
+    id: '00000000-0000-4000-8000-000000000001',
+    orgId: orgA,
+    title: '  needs normalising  ',
+    price: { minor: 1000, currency: 'USD' },
+    createdAt: new Date(0),
+  };
+  const once = ${name.camel}Row(row);
+  expect(once.title).toBe('needs normalising');
+  expect(${name.camel}Row(once)).toEqual(once);
+});
+`;
+
+export interface BackfillOptions extends FeatureTarget {
+  /** Every locale the planted entity's admin labels ship for. Defaults to `['en']`. */
+  readonly locales?: readonly string[];
+}
+
+export function backfillFiles(rawName: string, target: BackfillOptions): readonly GeneratedFile[] {
   const name = names(rawName);
   const feature = names(target.feature);
   const dir = `${target.surfaceDir}/${target.feature}/backfills`;
+  const dbModule = target.dbModule ?? PLACEHOLDER_DB_MODULE;
   return [
-    // A sweep is a chain over the entity's own table (`tableFor(entity, postgresRepo(entity))`), so
-    // the entity is what it reads and what its generated test builds rows of. No repo call, but
-    // `repo.ts` rides along with `entity.ts`: it is that file's only reader.
-    ...sliceFoundation(target, ['entity']),
-    { path: `${dir}/${name.kebab}.ts`, contents: backfillSource(name, feature) },
-    // A sweep IS a job (`backfill()` is a job factory), its test is a `jobTest`, and the gate
-    // types a test by its filename — so `<name>.test.ts` put it in the `unit` step forever.
-    { path: `${dir}/${name.kebab}.job.test.ts`, contents: backfillTest(name, feature) },
+    // A sweep is a chain over the entity's own table, reached through the app's typed handle
+    // (`db.<table>`), so the entity is what it reads and what its generated test stores rows of.
+    // No repo call, but `repo.ts` rides along with `entity.ts`: it is that file's only reader.
+    ...sliceFoundation(target, ['entity'], target.locales),
+    { path: `${dir}/${name.kebab}.ts`, contents: backfillSource(name, feature, dbModule) },
+    // A sweep IS a job (`backfill()` is a job factory): its durable identity is a `jobTest`, and
+    // the gate types a test by its filename.
+    { path: `${dir}/${name.kebab}.job.test.ts`, contents: backfillTest(name) },
+    // And the pass itself on the `unit` step, against the in-memory driver.
+    { path: `${dir}/${name.kebab}.test.ts`, contents: backfillUnitTest(name, feature, dbModule) },
   ];
 }

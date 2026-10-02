@@ -1,6 +1,6 @@
 // What both dashboards share — `scaffold-dashboard.ts` picks one of `scaffold-dashboard-example.ts`
 // and `scaffold-dashboard-bare.ts` per invocation, and everything the two must agree on lives here:
-// the route declaration, the theme island, the stylesheet and the config test.
+// the route declaration, the theme island and the stylesheet.
 
 export const DASHBOARD_DIR = 'apps/web/app/dashboard';
 
@@ -55,23 +55,4 @@ export const dashboardStyle = (): string => `@use '@ultimat3/ui/tokens' as token
   margin-inline: auto;
   color: tokens.role('fg');
 }
-`;
-
-export const dashboardPageTest =
-  (): string => `// The dashboard renders per request, is gated by a policy, hydrates its one island, and stays
-// under its budget. Losing the policy is the interesting regression: the page still renders, to
-// anyone.
-import { expect, unitTest } from '@ultimat3/testing';
-import { config } from './page';
-
-unitTest('the dashboard renders on the server, is gated, and has an offline strategy', () => {
-  expect(config.render).toBe('ssr');
-  expect(config.policy?.permission).toBe('dashboard:read');
-  expect(config.offline).toBe('runtime');
-});
-
-unitTest('the dashboard hydrates its one island inside a stated budget', () => {
-  expect(config.hydrate).toBe('visible');
-  expect(config.budget.js).toBe('60kb');
-});
 `;

@@ -348,7 +348,7 @@ describe('the action dispatch', () => {
     const fixture = appWithAction();
     await call(fixture, 'admin.action.admin.reindex', { id: 'r_7' });
 
-    const entry = fixture.ctx.audit.entries()[0];
+    const entry = (await fixture.ctx.audit.entries())[0];
     expect(entry).toBeDefined();
     if (entry === undefined) return;
     expect(entry.kind).toBe('action');

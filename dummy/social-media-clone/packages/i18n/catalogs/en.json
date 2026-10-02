@@ -81,6 +81,10 @@
     "users": {
       "title": "People",
       "description": "Every account in the demo, generated from the users entity.",
+      "section": {
+        "profile": "Profile",
+        "account": "Account"
+      },
       "field": {
         "id": "Id",
         "handle": "Handle",
@@ -136,22 +140,11 @@
         "createdAt": "Uploaded"
       }
     },
-    "jobs": {
-      "title": "Jobs",
-      "description": "What the queue can run, with the retry policy each job declares.",
-      "name": "Job",
-      "queue": "Queue",
-      "attempts": "Attempts",
-      "backoff": "Backoff"
-    },
     "ops": {
       "title": "Operations",
-      "description": "The demo's scheduled work and the uploads it acts on.",
+      "description": "The uploads the demo's hourly sweep acts on.",
       "uploads": "Uploads by state",
-      "uploadsHint": "An upload that never gets claimed is collected by the hourly sweep and moved to orphan.",
-      "schedule": "Schedule",
-      "scheduleHint": "Every cron carries an explicit IANA zone. An unzoned cron runs twice or not at all on a DST switch day.",
-      "enqueues": "enqueues {jobs}"
+      "uploadsHint": "An upload that never gets claimed is collected by the hourly sweep and moved to orphan."
     },
     "backToApp": "← Back to the app"
   },
