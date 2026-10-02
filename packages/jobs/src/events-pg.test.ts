@@ -50,7 +50,9 @@ describe('the pg event bus', () => {
       'o-1',
       3_600_000,
     ]);
-    expect(SQL_EVENT_PUBLISH).toContain("now() + ($5::bigint * interval '1 millisecond')");
+    expect(SQL_EVENT_PUBLISH).toContain(
+      "statement_timestamp() + ($5::bigint * interval '1 millisecond')",
+    );
     expect(SQL_EVENT_PUBLISH).not.toContain('to_timestamp');
     expect(event).toMatchObject({
       correlationKey: 'o-1',
@@ -66,11 +68,20 @@ describe('the pg event bus', () => {
     expect(SQL_EVENT_NOW).toContain('floor(');
   });
 
+  test("every event statement reads the STATEMENT's time, never the transaction's", () => {
+    // `now()` is when the transaction began: a bus on a long transaction's connection stamped an
+    // event at its start (`events-pg.live.test.ts` proves it on a server).
+    for (const statement of [SQL_EVENT_PUBLISH, SQL_EVENT_NOW, SQL_EVENT_FIND, SQL_EVENT_PURGE]) {
+      expect(statement).not.toContain('now()');
+      expect(statement).toContain('statement_timestamp()');
+    }
+  });
+
   test('the lookup honours order, expiry and the correlation key', () => {
     // Same three rules the memory bus follows, so a step behaves identically on either bus:
     // earliest match at or after the wait began, never an expired one, never another run's.
     expect(SQL_EVENT_FIND).toContain('order by published_at');
-    expect(SQL_EVENT_FIND).toContain('expires_at > now()');
+    expect(SQL_EVENT_FIND).toContain('expires_at > statement_timestamp()');
     expect(SQL_EVENT_FIND).toContain('published_at >= to_timestamp($3 / 1000.0)');
     expect(SQL_EVENT_FIND).toContain('($2::text is null or correlation_key = $2)');
   });
