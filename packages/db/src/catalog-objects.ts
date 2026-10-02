@@ -124,7 +124,11 @@ export const functionRows = (client: DbClient, schema: string): Promise<readonly
       and ${notExtensionOwned('pg_proc', 'p.oid')}
   `);
 
-/** `not tgisinternal`: a foreign key's own enforcement triggers are the constraint's, not the app's. */
+/**
+ * `not tgisinternal`: a foreign key's own enforcement triggers are the constraint's, not the app's.
+ * A trigger on an extension-owned table is skipped with its table: the dump creates no such table,
+ * so its `09_triggers/` file could never load.
+ */
 export const triggerRows = (client: DbClient, schema: string): Promise<readonly TriggerRow[]> =>
   client.query<TriggerRow>(sql`
     select
@@ -135,7 +139,9 @@ export const triggerRows = (client: DbClient, schema: string): Promise<readonly 
     from pg_trigger t
     join pg_class c on c.oid = t.tgrelid
     join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = ${schema} and not t.tgisinternal
+    where n.nspname = ${schema}
+      and not t.tgisinternal
+      and ${notExtensionOwned('pg_class', 'c.oid')}
   `);
 
 /**
