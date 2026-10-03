@@ -102,6 +102,20 @@ describe('collectGuards', () => {
     expect(guard?.codes).toEqual(['X_FAKE_GUARD', 'X_LIB_PAIRED', 'X_TYPE_ONLY_STILL_READ']);
   });
 
+  test('a side-effect import of a lib module counts as much as a named one', async () => {
+    const root = await repo({
+      'package.json': '{}',
+      'scripts/fake-guard.ts': `import './lib/registers';\nimport"./lib/tight";\n${GUARD}`,
+      'scripts/lib/registers.ts': "throw { code: 'X_SIDE_EFFECT_RULE' };\n",
+      'scripts/lib/tight.ts': "export const t = 'X_NO_SPACE';\n",
+    });
+    expect((await collectGuards(root))[0]?.codes).toEqual([
+      'X_FAKE_GUARD',
+      'X_NO_SPACE',
+      'X_SIDE_EFFECT_RULE',
+    ]);
+  });
+
   test('a lib module that does not exist adds nothing and breaks nothing', async () => {
     const root = await repo({
       'package.json': '{}',

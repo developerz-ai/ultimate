@@ -22,6 +22,7 @@
 //   bun run scripts/changelog-check.ts [--json]
 
 import { parseScriptArgs } from './lib/args';
+import { BREAKING_ENTRY, CHANGELOG_PATH, UPGRADING_PATH } from './lib/changelog-format';
 import { checkPairing, pairingFinding } from './lib/changelog-pairing';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -29,15 +30,10 @@ import { repoRoot, run } from './lib/run';
 import { claimGaps, treeClaims } from './lib/unreleased-claims';
 
 const SCRIPT = 'changelog-check';
-export const CHANGELOG_PATH = 'CHANGELOG.md';
-export const UPGRADING_PATH = 'wiki/Upgrading.md';
 
-/**
- * One line, one breaking entry — the identical regex wiki/Upgrading.md hands the reader in a fenced
- * `grep -cE`. Anchored at column 0 deliberately: an INDENTED `- **BREAKING —` is a sub-bullet of
- * the entry above it and not an entry of its own, which is how the `Bun.Image` entry carries three.
- */
-export const BREAKING_ENTRY = /^(?:- \*\*|### )BREAKING —/;
+// Stated once in `lib/changelog-format.ts`, which the pairing rule reads too; re-exported here for
+// the callers that already name this module.
+export { BREAKING_ENTRY, CHANGELOG_PATH, UPGRADING_PATH };
 
 /** `## [Unreleased]` holds work that has no version yet, so the released-section rules skip it. */
 const UNRELEASED = 'unreleased';
@@ -461,8 +457,11 @@ export async function changelogGaps(root: string): Promise<readonly ChangelogGap
 export const changelogFindings = async (root: string): Promise<readonly Finding[]> => {
   const changelog = await Bun.file(`${root}/${CHANGELOG_PATH}`).text();
   const upgrading = await Bun.file(`${root}/${UPGRADING_PATH}`).text();
+  // Each file read ONCE, and every rule handed the same text: two reads could see two versions.
   return [
-    ...(await changelogGaps(root)).map(changelogFinding),
+    ...checkChangelog({ changelog, upgrading, taggedVersion: await taggedVersion(root) }).map(
+      changelogFinding,
+    ),
     ...checkPairing(changelog, upgrading).map(pairingFinding),
     ...claimGaps(await treeClaims(root, changelog)),
   ];

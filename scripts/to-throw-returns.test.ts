@@ -99,6 +99,17 @@ describe('what it leaves alone', () => {
     expect(gaps('expect(() => sendFailed(a)).rejects.toThrow();', ['sendFailed'])).toEqual([]);
   });
 
+  test('a `;` inside a string of the returned expression does not end the statement', () => {
+    const [gap] = gaps("expect(() => { return new Error('first; second'); }).toThrow();");
+    expect(gap?.body).toBe("new Error('first; second')");
+  });
+
+  test('a constructor that only STARTS with Error is not an error type', () => {
+    expect(gaps('expect(() => new ErrorCount(3)).toThrow();')).toEqual([]);
+    expect(gaps('expect(() => new FaultLine()).toThrow();')).toEqual([]);
+    expect(gaps("expect(() => new MailError('x')).toThrow();")).toHaveLength(1);
+  });
+
   test('a block that does more than return — it may throw first, and text cannot tell', () => {
     const text = 'expect(() => { setup(); return boom(); }).toThrow();';
     expect(gaps(text, ['boom'])).toEqual([]);

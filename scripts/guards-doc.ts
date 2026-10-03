@@ -65,9 +65,13 @@ const codesIn = (source: string): readonly string[] =>
  */
 export const libImportsOf = (source: string): readonly string[] => [
   ...new Set(
-    [...stripComments(source).matchAll(/\bfrom\s+['"]\.\/lib\/([a-z0-9-]+)(?:\.ts)?['"]/g)].map(
-      (m) => `scripts/lib/${m[1] ?? ''}.ts`,
-    ),
+    // `from './lib/x'` and the side-effect `import './lib/x'`: both load the module, and either
+    // form may raise its codes. A dynamic `import('./lib/x')` is left out: it is a value, not a load.
+    [
+      ...stripComments(source).matchAll(
+        /(?:\bfrom|\bimport)\s*['"]\.\/lib\/([a-z0-9-]+)(?:\.ts)?['"]/g,
+      ),
+    ].map((m) => `scripts/lib/${m[1] ?? ''}.ts`),
   ),
 ];
 

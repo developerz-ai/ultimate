@@ -45,6 +45,7 @@ import {
   configReaderPinnedFor,
 } from './lib/config-reader-pins';
 import { CORPUS_PATTERNS, corpus } from './lib/corpus';
+import { GATED_APPS } from './lib/gated-apps';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -406,7 +407,7 @@ const unexplainedFinding = (gap: ConfigReaderGap): Finding => ({
 
 const appUnreadFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READER_APP_UNREAD',
-  cause: `${CONFIG_PINS_FILE} pins ${gap.leaf} as read by app code ("${gap.reason ?? ''}") and no file of either tracked app (examples/dummy, dummy/social-media-clone) reads it outside app.config.ts — the reader the pin names does not exist. Delete it from ${CONFIG_FILE} and defaults(), read it from an app module, or rewrite its row so it names no app reader`,
+  cause: `${CONFIG_PINS_FILE} pins ${gap.leaf} as read by app code ("${gap.reason ?? ''}") and no file of either tracked app (${GATED_APPS.map((app) => app.dir).join(', ')}) reads it outside app.config.ts — the reader the pin names does not exist. Delete it from ${CONFIG_FILE} and defaults(), read it from an app module, or rewrite its row so it names no app reader`,
   fix: 'bun run scripts/config-readers.ts --json',
   at: CONFIG_PINS_FILE,
 });

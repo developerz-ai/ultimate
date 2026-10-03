@@ -335,13 +335,16 @@ describe('unit · this repo', () => {
       const table = await run(['bun', 'run', 'scripts/list-workspaces.ts', '--json'], {
         cwd: root,
       });
+      // Each subprocess's own verdict first, so a crash reads as one rather than as a short plan.
+      expect(table.ok).toBe(true);
       const jq = Bun.spawn(['jq', '-r', filter ?? '.'], {
         stdin: new Blob([table.output]),
         stdout: 'pipe',
         // A filter over a few KB; a jq that hangs is a red test, never a hung runner.
         timeout: 30_000,
       });
-      const [plan] = await Promise.all([new Response(jq.stdout).text(), jq.exited]);
+      const [plan, jqCode] = await Promise.all([new Response(jq.stdout).text(), jq.exited]);
+      expect(jqCode).toBe(0);
       const sequence = plan
         .split('\n')
         .filter((line) => line.length > 0)

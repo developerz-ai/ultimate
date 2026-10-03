@@ -226,21 +226,30 @@ async function procfsProcesses(): Promise<readonly ProcessEnviron[] | undefined>
 /** One `ps` listing; past this the sweep answers what it has rather than outliving the step. */
 const PS_TIMEOUT_MS = 10_000;
 
+const PS_LISTING: readonly string[] = ['ps', 'axeww', '-o', 'pid=,command='];
+
 /**
  * Elsewhere (macOS, BSD): `ps` in its BSD spelling — `e` prints each process's environment after
  * its command, `ww` never truncates it. The same spelling answers on Linux, which is where it is
  * tested; procfs is preferred there because it needs no process and no parsing.
  */
-export async function psProcesses(): Promise<readonly ProcessEnviron[]> {
+export async function psProcesses(
+  argv: readonly string[] = PS_LISTING,
+  timeoutMs: number = PS_TIMEOUT_MS,
+): Promise<readonly ProcessEnviron[]> {
   try {
-    const ps = Bun.spawn(['ps', 'axeww', '-o', 'pid=,command='], {
+    const ps = Bun.spawn([...argv], {
       stdout: 'pipe',
       stderr: 'ignore',
-      // The deadline's own sweep: a `ps` that hangs would hang the step it exists to end.
-      timeout: PS_TIMEOUT_MS,
+      // The deadline's own sweep: a `ps` that hangs would hang the step it exists to end. SIGKILL,
+      // never the default SIGTERM, which a wedged child may ignore and so outlive the bound.
+      timeout: timeoutMs,
+      killSignal: 'SIGKILL',
     });
-    const text = await new Response(ps.stdout).text();
-    await ps.exited;
+    const [text, code] = await Promise.all([new Response(ps.stdout).text(), ps.exited]);
+    // A listing cut short by the timeout is NOT a smaller table: read as one, a tagged worker past
+    // the cut is "nothing left to kill". Unreadable, exactly like a `ps` that never ran.
+    if (code !== 0) return [];
     return text.split('\n').flatMap((line) => {
       const match = /^\s*(\d+)\s+(.*)$/.exec(line);
       return match === null ? [] : [{ pid: Number(match[1]), environ: match[2] ?? '' }];
@@ -268,6 +277,7 @@ async function commandOf(pid: number): Promise<string> {
         stdout: 'pipe',
         stderr: 'ignore',
         timeout: PS_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
       });
       text = await new Response(ps.stdout).text();
       await ps.exited;

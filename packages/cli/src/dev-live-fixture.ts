@@ -35,15 +35,37 @@ export function alive(pid: number): boolean {
   }
 }
 
-/** Every descendant of `pid`, depth first — asked while `pid` lives, or its children are init's. */
+/** Every descendant of `pid` in a `[pid, ppid]` listing, depth first; a racing cycle stops. */
+export function descendantsIn(
+  listing: readonly (readonly [number, number])[],
+  pid: number,
+): readonly number[] {
+  const out: number[] = [];
+  const seen = new Set<number>([pid]);
+  const walk = (parent: number): void => {
+    for (const [child, ppid] of listing) {
+      if (ppid !== parent || seen.has(child)) continue;
+      seen.add(child);
+      out.push(child);
+      walk(child);
+    }
+  };
+  walk(pid);
+  return out;
+}
+
+/**
+ * Every descendant of `pid`, depth first — asked while `pid` lives, or its children are init's.
+ * ONE `ps` listing walked in memory, never a `pgrep` per level: this runs synchronously inside a
+ * test's `finally`, where the test timeout cannot interrupt it, so the whole walk shares one bound.
+ */
 export function descendantsOf(pid: number): readonly number[] {
-  // Synchronous inside a test's `finally`, where the test timeout cannot interrupt it.
-  const out = Bun.spawnSync(['pgrep', '-P', String(pid)], { timeout: 5_000 }).stdout.toString();
-  const children = out
-    .split('\n')
-    .map((line) => Number(line.trim()))
-    .filter((child) => Number.isInteger(child) && child > 0);
-  return children.flatMap((child) => [child, ...descendantsOf(child)]);
+  const out = Bun.spawnSync(['ps', '-A', '-o', 'pid=,ppid='], { timeout: 5_000 }).stdout.toString();
+  const listing = out.split('\n').flatMap((line): (readonly [number, number])[] => {
+    const [child, parent] = line.trim().split(/\s+/).map(Number);
+    return Number.isInteger(child) && Number.isInteger(parent) ? [[child ?? 0, parent ?? 0]] : [];
+  });
+  return descendantsIn(listing, pid);
 }
 
 /**

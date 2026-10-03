@@ -41,7 +41,8 @@ export interface SpawnSite {
  * is a pin with its sentence, never a silent pass.
  *
  * WHAT IT CANNOT SEE: options passed as a variable (`Bun.spawn(cmd, options)`) read as untimed, and
- * a `timeout` that is `undefined` at run time reads as timed. A floor, not a proof.
+ * a `timeout` that is `undefined` at run time reads as timed — and so does a `signal` that is no
+ * `AbortSignal` bounding the child, since only the property NAME is read. A floor, not a proof.
  */
 export function scanSpawns(path: string, source: string): readonly SpawnSite[] {
   const masked = maskLiterals(source);

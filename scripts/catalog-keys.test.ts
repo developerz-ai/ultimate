@@ -74,6 +74,16 @@ describe('a carried key is found in each shape', () => {
     ]);
   });
 
+  test('a brace inside a table string neither ends the table early nor runs it on', () => {
+    const data = file('packages/a/src/data.ts', [
+      "const UI_KEYS = { open: '}', close: 'ui.close', glyph: \"{\", cancel: 'ui.cancel' };",
+    ]);
+    expect(scan([RENDER, data])).toEqual([
+      'packages/a/src/data.ts:1 ui.close',
+      'packages/a/src/data.ts:1 ui.cancel',
+    ]);
+  });
+
   test('a ternary branch, a non-carrier property and prose are not carried keys', () => {
     const data = file('packages/a/src/data.ts', [
       "const reason = typeof inner.reason === 'string' ? inner.reason : 'admin.policy.evaluated';",

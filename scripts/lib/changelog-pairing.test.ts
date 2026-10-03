@@ -2,8 +2,16 @@
 // this repo ships, which is the assertion that makes it a gate rather than a demo.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { BREAKING_ENTRY, CHANGELOG_PATH, UPGRADING_PATH } from '../changelog-check';
+import * as format from './changelog-format';
 import type { PairingGap } from './changelog-pairing';
-import { checkPairing, numbersIn, pairingFinding, parseWalkthroughs } from './changelog-pairing';
+import {
+  checkPairing,
+  KEYED as KEY_PATTERN,
+  numbersIn,
+  pairingFinding,
+  parseWalkthroughs,
+} from './changelog-pairing';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -59,6 +67,19 @@ const KEYED = ['- **BREAKING — (#1) one.** text', '- **BREAKING — (#2) two.*
 
 const kinds = (gaps: readonly PairingGap[]): readonly string[] =>
   gaps.map((gap) => `${gap.kind}: ${gap.detail}`);
+
+describe('one statement of the format', () => {
+  test('the count rule and the pairing rule read the same BREAKING prefix and the same paths', () => {
+    // Re-exported, never redeclared: a prefix changed in one file only would make the count rule
+    // and the pairing rule read different lines.
+    expect(BREAKING_ENTRY).toBe(format.BREAKING_ENTRY);
+    expect(KEY_PATTERN.source.startsWith(format.BREAKING_ENTRY.source)).toBe(true);
+    expect([CHANGELOG_PATH, UPGRADING_PATH]).toEqual([
+      format.CHANGELOG_PATH,
+      format.UPGRADING_PATH,
+    ]);
+  });
+});
 
 describe('pairing', () => {
   test('keyed lines and rows that agree are clean — a later table is not the entry table', () => {

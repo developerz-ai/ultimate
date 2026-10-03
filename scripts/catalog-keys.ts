@@ -6,6 +6,7 @@
 
 import type { Catalog } from '@ultimat3/i18n';
 import { loadCatalog } from '@ultimat3/i18n';
+import { maskLiterals } from '../packages/core/src/source-mask';
 import { MAIL_CATALOG } from '../packages/mail/src/catalog';
 import { CATALOG_FILE } from './i18n-catalog';
 import { parseScriptArgs } from './lib/args';
@@ -79,12 +80,16 @@ const inObject = (text: string, index: number): boolean => {
   return cursor < 0 || text[cursor] === '{' || text[cursor] === ',';
 };
 
-/** The `{…}` body opened at `open`, braces in strings ignored — a table body is flat data. */
+/**
+ * The `{…}` body opened at `open`. Braces are counted on the literal-masked text, so a `'}'` or a
+ * `"{"` among the values neither closes the table early nor runs it on; the slice is the original.
+ */
 const bodyAt = (text: string, open: number): string => {
+  const masked = maskLiterals(text);
   let depth = 0;
-  for (let index = open; index < text.length; index += 1) {
-    if (text[index] === '{') depth += 1;
-    else if (text[index] === '}' && --depth === 0) return text.slice(open, index);
+  for (let index = open; index < masked.length; index += 1) {
+    if (masked[index] === '{') depth += 1;
+    else if (masked[index] === '}' && --depth === 0) return text.slice(open, index);
   }
   return '';
 };

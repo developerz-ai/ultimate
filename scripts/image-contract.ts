@@ -33,11 +33,12 @@
 //
 //   bun run scripts/image-contract.ts [--json]
 
-import { renderFixShellArg, SECRETS_KEY_FILE } from '@ultimat3/core';
+import { renderFixShellArg, renderThrowable, SECRETS_KEY_FILE } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { ScriptError } from './lib/script-error';
 
 export const DOCKERFILE = 'docker/Dockerfile';
 
@@ -308,21 +309,35 @@ export const checkIgnores = (files: readonly IgnoreFile[]): readonly IgnoreGap[]
   files.filter((one) => !ignoresMasterKey(one.text)).map((one) => ({ file: one.file }));
 
 /**
- * Every path `pattern` matches under `root`, outside `node_modules/`. A directory another process
+ * Directories whose contents are generated or installed, never written by an author: a Dockerfile
+ * or an ignore file under one is a copy of a tracked file, or a package's own, and not this tree's.
+ */
+export const SKIPPED_DIRS: readonly string[] = ['node_modules', 'dist', '.git', '.x'];
+
+const SKIPPED = new RegExp(
+  `(?:^|/)(?:${SKIPPED_DIRS.map((dir) => dir.replace('.', '\\.')).join('|')})/`,
+);
+
+/**
+ * Every path `pattern` matches under `root`, outside `SKIPPED_DIRS`. A directory another process
  * deletes mid-walk — a test fixture under the gate's parallel run — makes the glob throw ENOENT on
- * its `readdir`; that is the tree moving, not an answer, so the walk is taken again (three times,
- * then the error stands).
+ * its `readdir`; that is the tree moving, not an answer, so the walk is taken again, three times.
+ * A walk that still cannot read the tree is refused with a code: "unread" is never "clean".
  */
 function scanTree(root: string, pattern: string, attempts = 3): readonly string[] {
   try {
     return [...new Bun.Glob(pattern).scanSync({ cwd: root, dot: true })]
       .map((path) => path.split('\\').join('/'))
-      .filter((path) => !/(?:^|\/)node_modules\//.test(path))
+      .filter((path) => !SKIPPED.test(path))
       .sort();
   } catch (error) {
     const vanished = (error as { readonly code?: unknown } | null)?.code === 'ENOENT';
-    if (!vanished || attempts <= 1) throw error;
-    return scanTree(root, pattern, attempts - 1);
+    if (vanished && attempts > 1) return scanTree(root, pattern, attempts - 1);
+    throw new ScriptError({
+      code: 'X_CORPUS_UNSCANNED',
+      cause: `image-contract could not walk ${pattern} under ${root} (${renderThrowable(error)}) — the tree changed or became unreadable during the scan, and a Dockerfile it never read is not one it checked`,
+      fix: 'bun run scripts/image-contract.ts --json',
+    });
   }
 }
 

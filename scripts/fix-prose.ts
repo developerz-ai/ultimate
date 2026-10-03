@@ -5,8 +5,8 @@
 // and the `errors` step holds it to half of that: a banned phrase with nothing runnable beside it
 // (`fixProblem`), and a cited `x` command that must exist. Neither asks whether the line OPENS with
 // something a reader can run — so `set pwa.offline.fallback in app.config.ts to a path a route
-// serves` passes both, and is a sentence an agent has to translate before it can act. Measured on
-// the first run: 968 of 1,633 readable fix lines in shipped source are prose.
+// serves` passes both, and is a sentence an agent has to translate before it can act. Measured the
+// day the pins were cut (`lib/fix-prose-pins.ts`, 2026-10-03): 987 fix lines were prose.
 //
 // The shape is read off how the line opens (`lib/fix-shape.ts`): a command word, a repo script, an
 // environment prefix, or a code shape. A fix that opens with a `${…}` is the value's shape and is

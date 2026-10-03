@@ -3,6 +3,7 @@
 // number a walkthrough cites is a row it has. The count rule proves both sides hold as many; only a
 // key proves line 57 and row 57 are the same change.
 
+import { BREAKING_ENTRY, CHANGELOG_PATH, UPGRADING_PATH } from './changelog-format';
 import type { Finding } from './log';
 
 /**
@@ -10,11 +11,8 @@ import type { Finding } from './log';
  * `### Entry by entry` table. A number the author writes, never one inferred from order: inferring
  * it is the count rule again, blind to one line added on each side. The prefix is `BREAKING_ENTRY`'s.
  */
-const KEYED = /^(?:- \*\*|### )BREAKING — \(#(\d+)\)/;
-const ENTRY = /^(?:- \*\*|### )BREAKING —/;
+export const KEYED = new RegExp(String.raw`${BREAKING_ENTRY.source} \(#(\d+)\)`);
 const WALKTHROUGH = /^## .*→ (\d+\.\d+\.\d+), entry by entry(.*)$/;
-const CHANGELOG_PATH = 'CHANGELOG.md';
-const UPGRADING_PATH = 'wiki/Upgrading.md';
 /** Lines a finding spells out before it says how many more. */
 const LISTED = 8;
 /**
@@ -44,7 +42,7 @@ export function breakingBySection(changelog: string): ReadonlyMap<string, readon
       out.set(version, current);
       return;
     }
-    if (current === undefined || !ENTRY.test(text)) return;
+    if (current === undefined || !BREAKING_ENTRY.test(text)) return;
     const key = KEYED.exec(text)?.[1];
     current.push({ line: index + 1, key: key === undefined ? undefined : Number(key) });
   });

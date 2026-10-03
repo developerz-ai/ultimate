@@ -18,6 +18,7 @@
 //
 //   bun run scripts/to-throw-returns.ts [--json]
 
+import { maskLiterals } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
 import { balancedClose, topLevelArguments } from './lib/balanced-paren';
 import type { Finding } from './lib/log';
@@ -50,14 +51,18 @@ const EXPECT = /\bexpect\(/g;
 /** Directly after `expect(…)`: synchronous only — `rejects.toThrow` is not vulnerable. */
 const SYNC_TO_THROW = /^\s*\.toThrow\w*\(/;
 const ARROW = /^(?:async\s*)?\(\s*\)\s*=>\s*([\s\S]*)$/;
-/** `{ return <value>; }` — the one block whose value text can be certain about. */
-const RETURN_ONLY = /^\{\s*return\s+([^;]*?);?\s*\}$/;
+/**
+ * `{ return <value>; }` — the one block whose value text can be certain about. Matched on the
+ * MASKED body (string and template text blanked, offsets kept), so a `;` inside the returned
+ * message — `new Error('first; second')` — is not read as the statement's end.
+ */
+const RETURN_ONLY = /^\{\s*return\s+([^;]*?);?\s*\}$/d;
 /**
  * `new Error(…)`, `new MailError(…)`, and the `new`-less `Error(…)` / `TypeError(…)`, which construct
- * one too. The name prefix is optional: `[A-Z]\w*Error` alone missed the plain `Error`.
+ * one too. The name prefix is optional: `[A-Z]\w*Error` alone missed the plain `Error`. The name
+ * ENDS at `Error`/`Fault` — `new ErrorCount()` is not an error type.
  */
-const CONSTRUCTS_ERROR =
-  /^\s*(?:new\s+(?:[A-Z]\w*)?(?:Error|Fault)\w*|(?:[A-Z]\w*)?(?:Error|Fault))\s*\(/;
+const CONSTRUCTS_ERROR = /^\s*(?:new\s+)?(?:[A-Z]\w*)?(?:Error|Fault)\s*\(/;
 const CALLS = /^\s*([A-Za-z_$][\w$]*)\s*\(/;
 
 /**
@@ -72,7 +77,8 @@ function callbackValue(text: string, open: number): string | undefined {
   const args = topLevelArguments(text.slice(open + 1, close)).filter((arg) => arg !== '');
   const body = args.length === 1 ? ARROW.exec(args[0] as string)?.[1]?.trim() : undefined;
   if (body === undefined || !body.startsWith('{')) return body;
-  return RETURN_ONLY.exec(body)?.[1]?.trim();
+  const span = RETURN_ONLY.exec(maskLiterals(body))?.indices?.[1];
+  return span === undefined ? undefined : body.slice(span[0], span[1]).trim();
 }
 
 export interface ThrowGap {

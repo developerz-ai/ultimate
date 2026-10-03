@@ -10,8 +10,14 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
 import { SECRETS_KEY_FILE } from '@ultimat3/core';
-import { dockerfilesOf, imageContractFindings, SECRET_IGNORE_PATTERN } from './image-contract';
+import {
+  dockerfilesOf,
+  imageContractFindings,
+  SECRET_IGNORE_PATTERN,
+  SKIPPED_DIRS,
+} from './image-contract';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import { ScriptError } from './lib/script-error';
 
 const roots: string[] = [];
 
@@ -92,5 +98,34 @@ describe('a Dockerfile with no ignore file', () => {
     const root = await tree({ 'docker/Dockerfile': GOOD, 'docker/sub/.dockerignore': IGNORE });
     const codes = (await imageContractFindings(root)).map((one) => one.code);
     expect(codes).toEqual(['X_IMAGE_SECRET_UNIGNORED']);
+  });
+});
+
+describe('what discovery never reads', () => {
+  // A `dist/` build output or a `.x/` run directory holding a Dockerfile is a generated copy, not
+  // a Dockerfile this tree ships — reading one turned the gate red over a file nobody wrote.
+  test('a Dockerfile under a generated or installed tree is not one this tree ships', async () => {
+    const broken = GOOD.replace('oven/bun:1.3-slim', 'oven/bun:1.3-alpine');
+    const root = await tree({
+      'docker/Dockerfile': GOOD,
+      'docker/Dockerfile.dockerignore': IGNORE,
+      ...Object.fromEntries(
+        SKIPPED_DIRS.map((dir) => [`packages/x/${dir}/Dockerfile`, broken] as const),
+      ),
+    });
+    expect(await dockerfilesOf(root)).toEqual(['docker/Dockerfile']);
+    expect(await imageContractFindings(root)).toEqual([]);
+  });
+
+  // A walk that cannot read the tree is not a clean tree, and its refusal is an instruction —
+  // the raw ENOENT carried no code, no cause and no fix.
+  test('a tree that cannot be walked is a coded refusal, never a bare filesystem error', async () => {
+    const thrown = await dockerfilesOf(join(tmpdir(), 'ultimate-image-files-never-made')).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(ScriptError);
+    expect((thrown as ScriptError).code).toBe('X_CORPUS_UNSCANNED');
+    expect((thrown as ScriptError).fix).toBe('bun run scripts/image-contract.ts --json');
   });
 });
