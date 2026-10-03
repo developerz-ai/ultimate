@@ -26,6 +26,15 @@ const FORM = [
   '<button type="submit">Save</button></form>',
 ].join('');
 
+/** The version the edit form renders — escaped, as the renderer writes an attribute. */
+const VERSION = 'h1:key&v';
+const EDIT_FORM = [
+  `<form class="f" method="post" action="/admin/smoke_resources/${ID}/edit">`,
+  '<input type="hidden" name="_version" value="h1:key&amp;v">',
+  '<input name="title" type="text" value="smoke row" required>',
+  '<button type="submit">Save</button></form>',
+].join('');
+
 interface Seen {
   readonly method: string;
   readonly path: string;
@@ -61,6 +70,11 @@ const fakeApp = (over: Partial<Record<string, (seen: Seen) => Response | undefin
         rows.splice(rows.indexOf(ID), 1);
         return new Response(null, { status: 303, headers: { location: '/admin/smoke_resources' } });
       }
+      // The admin's optimistic check: an edit that does not post back the version it was drawn
+      // with is a 409, never a write.
+      if (one.path.endsWith('/edit') && posted.get('_version') !== VERSION) {
+        return new Response('<p>Someone changed this row after you opened it</p>', { status: 409 });
+      }
       if (one.path.endsWith('/new')) rows.push(ID);
       return new Response(null, {
         status: 303,
@@ -68,6 +82,7 @@ const fakeApp = (over: Partial<Record<string, (seen: Seen) => Response | undefin
       });
     }
     if (one.path.endsWith('/new')) return new Response(FORM);
+    if (one.path.endsWith('/edit')) return new Response(EDIT_FORM);
     return new Response(rows.map((id) => `<tr data-row="${id}"><td>x</td></tr>`).join(''));
   };
   return { fetcher, seen, rows };
@@ -92,6 +107,12 @@ describe('unit · the admin of a scaffolded app, walked', () => {
     expect(app.rows).toEqual([]);
     expect(app.seen.map((one) => `${one.method} ${one.path} ${one.role}`)).toContain(
       `POST /admin/smoke_resources/${ID}/edit admin`,
+    );
+    // The edit is posted as a browser posts it: the form opened first, its version sent back.
+    const edit = app.seen.find((one) => one.method === 'POST' && one.path.endsWith('/edit'));
+    expect(new URLSearchParams(edit?.body).get('_version')).toBe(VERSION);
+    expect(app.seen.map((one) => `${one.method} ${one.path}`)).toContain(
+      `GET /admin/smoke_resources/${ID}/edit`,
     );
     // The write names its own origin: the framework refuses a form post that does not.
     const post = app.seen.find((one) => one.method === 'POST' && one.role === 'admin');

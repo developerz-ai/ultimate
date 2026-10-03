@@ -24,9 +24,20 @@ export interface AdminStep {
   readonly curl: string;
 }
 
+/** An attribute value as the browser reads it back: the five entities a renderer escapes. */
+const attributeText = (raw: string): string =>
+  raw
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+
 /**
- * The create form, filled from ITS OWN fields — never a list of columns kept here, which would be a
- * second copy of the entity template and go stale the day that template gains a column.
+ * A form, filled from ITS OWN fields — never a list of columns kept here, which would be a second
+ * copy of the entity template and go stale the day that template gains a column. A hidden input
+ * goes back exactly as rendered, as a browser posts it: the edit form's `_version` is how the
+ * admin tells "the row I was shown" from a stale or forged write, and a post without it is a 409.
  */
 export function filledForm(
   html: string,
@@ -38,7 +49,11 @@ export function filledForm(
   for (const [tag] of (form[1] ?? '').matchAll(/<input\b[^>]*>/gi)) {
     const name = /\bname="([^"]+)"/.exec(tag)?.[1];
     const type = /\btype="([^"]+)"/.exec(tag)?.[1] ?? 'text';
-    if (name === undefined || type === 'checkbox' || type === 'hidden') continue;
+    if (name === undefined || type === 'checkbox') continue;
+    if (type === 'hidden') {
+      fields.set(name, attributeText(/\bvalue="([^"]*)"/.exec(tag)?.[1] ?? ''));
+      continue;
+    }
     const numeric = type === 'number' || /\binputmode="(?:numeric|decimal)"/.test(tag);
     fields.set(name, name.endsWith('.currency') ? 'USD' : numeric ? '100' : 'smoke row');
   }
@@ -153,7 +168,13 @@ export async function walkAdmin(
       // admin role one and not the other fails HERE and nowhere earlier.
       if (shown && created !== undefined) {
         const row = `${list}/${created}`;
-        const edited = await ask(walk, fetcher, 'admin', `${row}/edit`, body);
+        // As a browser edits: open the form, post back what it rendered — the version included.
+        const editPage = await ask(walk, fetcher, 'admin', `${row}/edit`);
+        const editForm = editPage.response.status === 200 ? filledForm(editPage.text) : undefined;
+        const edited =
+          editForm === undefined
+            ? editPage
+            : await ask(walk, fetcher, 'admin', editForm.action, editForm.fields);
         step(
           'the admin role edits the row',
           edited.response.status === 303,
