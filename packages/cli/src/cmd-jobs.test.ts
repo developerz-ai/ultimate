@@ -175,6 +175,42 @@ describe('unit · x jobs show and retry rendering', () => {
     }
   });
 
+  // `x_jobs.id` is a uuid column: `x jobs show nosuch` reached Postgres and came back a raw
+  // `X_DB_STATEMENT_FAILED [22P02]` with a psql fix. An id no driver could hold is answered at the
+  // door, before a statement is sent — for every subcommand that takes one.
+  test('an id that is not a job id is X_JOB_UNKNOWN, and no driver is asked', async () => {
+    for (const subcommand of ['show', 'retry', 'cancel', 'rm', 'promote']) {
+      const driver = createMemoryDriver();
+      const asked: string[] = [];
+      const introspect = driver.introspect;
+      const watched: JobDriver = {
+        ...driver,
+        ...(introspect === undefined
+          ? {}
+          : {
+              introspect: new Proxy(introspect, {
+                get(target, key, receiver) {
+                  asked.push(String(key));
+                  return Reflect.get(target, key, receiver);
+                },
+              }),
+            }),
+      };
+      const thrown: unknown = await runJobs(watched, {
+        subcommand,
+        positionals: ['nosuch'],
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect([subcommand, (thrown as { code?: string }).code]).toEqual([
+        subcommand,
+        'X_JOB_UNKNOWN',
+      ]);
+      expect([subcommand, asked]).toEqual([subcommand, []]);
+    }
+  });
+
   test('retry re-queues and reports the new state', async () => {
     const driver = createMemoryDriver();
     const id = await enqueue(driver, 'send-email');

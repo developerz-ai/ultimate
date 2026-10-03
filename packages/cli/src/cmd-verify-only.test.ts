@@ -70,6 +70,11 @@ describe('unit · --only takes a comma-separated list', () => {
   test('an empty item is refused, never read as nothing', () => {
     const failure = thrownBy(() => readOnlySteps(argsFor(['verify', '--only', 'lint,'])));
     expect(failure.cause).toContain('(empty) is not a gate step');
+    // Uncorrectable: never the step nearest to '' (an audit saw `lint,` → `lint,job`).
+    expect(failure.fix).toBe('x verify --json');
+    expect(thrownBy(() => readOnlySteps(argsFor(['verify', '--only', 'lint,,drift']))).fix).toBe(
+      'x verify --json',
+    );
   });
 
   test('the runner executes exactly the listed steps, once, and still says NOT A GATE RUN', async () => {

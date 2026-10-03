@@ -226,3 +226,23 @@ describe('unit · drainJobs step transfer', () => {
     expect((await listJobs(target)).rows[0]?.runId).toBe(runId);
   });
 });
+
+// The list behind the drain answered one default page (100 rows) per state: 350 ready jobs moved
+// 100, the summary said "100 left", and 250 stayed on a source the operator was retiring.
+describe('unit · the drain walks every page', () => {
+  test('350 ready jobs on the source are 350 candidates, 350 moved, none left', async () => {
+    const source = createMemoryDriver();
+    const target = createMemoryDriver();
+    for (let index = 0; index < 350; index += 1) await enqueue(source, `bulk-${index}`);
+
+    const planned = await drainJobs(source, target, true);
+    expect(planned.candidates).toHaveLength(350);
+    expect(new Set(planned.candidates.map((record) => record.id)).size).toBe(350);
+
+    const outcome = await drainJobs(source, target, false);
+    expect(outcome.moved).toHaveLength(350);
+    expect(outcome.skipped).toEqual([]);
+    expect((await listJobs(source, { state: 'ready' })).rows).toEqual([]);
+    expect((await target.stats()).reduce((sum, row) => sum + row.ready, 0)).toBe(350);
+  }, 30_000);
+});

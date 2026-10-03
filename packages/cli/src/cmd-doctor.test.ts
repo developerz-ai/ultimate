@@ -22,6 +22,7 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   bunVersion: REQUIRED_BUN,
   root: '/app',
   port: 3000,
+  appUrl: undefined,
   // The ordinary developer: the shipped cursor key, off production. Every case below that does
   // not say otherwise is this one.
   devCursorSecret: true,
@@ -191,13 +192,13 @@ describe('unit · x doctor', () => {
       parseArgs(['doctor', '--port', value], [doctorCommand.spec]);
     let caught: unknown;
     try {
-      doctorPort(args('0'));
+      doctorPort(args('0'), {});
     } catch (error) {
       caught = error;
     }
     expect(caught).toMatchObject({ code: 'X_CLI_BAD_FLAG' });
-    expect(doctorPort(args('1'))).toBe(1);
-    expect(doctorPort(args(String(PORT_RANGE.max)))).toBe(PORT_RANGE.max);
+    expect(doctorPort(args('1'), {})).toBe(1);
+    expect(doctorPort(args(String(PORT_RANGE.max)), {})).toBe(PORT_RANGE.max);
   });
 
   test('running outside an app stops after the one finding that explains everything', async () => {

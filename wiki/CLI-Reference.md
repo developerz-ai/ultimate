@@ -4,7 +4,7 @@ The binary is `x`. One command registry — a command that is not in it does not
 
 ```bash
 x help                 # the catalogue
-x help <command>       # usage for one command
+x help <command>       # usage for one command; a name no command has is X_CLI_UNKNOWN_COMMAND
 x <command> --help     # the same thing, except on db and mcp — see Subcommands below
 x version              # CLI version
 ```
@@ -216,6 +216,13 @@ answer:
 | `manifest` | is the committed `x.manifest.json` current |
 | `services` | which database/events/storage this process is talking to, and its reload count |
 | `boundaries` | which import crosses a surface or a layer |
+
+`/_x` answers a loopback `Host` only — `localhost`, `*.localhost`, `127.0.0.1`, `[::1]` — and
+refuses any other with `421` `X_DEV_HOST_REFUSED` (a DNS-rebound name is how a page reads a
+loopback server). The `db` panel runs a statement on a same-origin `POST` only, inside a
+`BEGIN READ ONLY` transaction that always rolls back:
+`curl -sS -H 'accept: application/json' --data-urlencode 'sql=select 1' http://localhost:3000/_x/db`.
+A `GET /_x/db?sql=…` is `X_METHOD_NOT_ALLOWED`; a cross-site `POST` is `X_CSRF_BLOCKED`.
 
 Every one of the eleven answers in a `x dev` process. Three of them read facts only this process
 holds, so nothing else can serve them: `timeline` is core's own spans, recorded by the exporter
@@ -918,6 +925,9 @@ Regenerates the generated facts: routes, entities, actions, mutators, queries, j
 x routes [--surface site|app|api|shared] [--json]
 ```
 
+No positional: `x routes list` (the retired spelling) or `x routes app` is `X_CLI_UNKNOWN_COMMAND`
+with fix `x routes --json` — the filter is `--surface`.
+
 ```bash
 $ x routes --surface site --json
 {"ok":true,"routes":[{"path":"/","surface":"site","render":"static","hydrate":"never",
@@ -940,7 +950,7 @@ x mcp serve [--transport stdio|http] [--port 9229] [--json]
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--transport` | string | `stdio` | `stdio` for an editor client, `http` for a socket |
-| `--port` | string | `9229` | HTTP port when `--transport http` |
+| `--port` | string | `9229` | HTTP port when `--transport http`. `9229` is also the inspector's default; a taken port is `X_PORT_IN_USE`, naming the next one |
 
 Serves `@ultimat3/mcp`'s dev server — 18 tools, one catalog, the same on both transports. Every
 tool declares a scope; the local developer's caller carries all five, and an HTTP caller carries
@@ -958,7 +968,7 @@ whatever its bearer token was issued.
 | `errors.explain` | `X_*` → cause, fix, docs | `dev:read` |
 | `db.query` | ONE read-only SQL statement; `limit` defaults to 100 rows, maximum 1000 | `db:read` |
 | `db.migrate` | apply pending migrations to a **branch** database | `db:migrate` |
-| `tests.run` | run the suite, structured results | `dev:test` |
+| `tests.run` | run the suite, structured results — an error outside any test (`1 error` beside `0 fail`) or a non-zero exit is a failure, never `failed: 0` | `dev:test` |
 | `verify.run` | run `x verify`, structured per-step result | `dev:test` |
 | `logs.tail` | last N log lines, optionally for one role | `dev:logs` |
 | `ui.shot` | photograph one route at a named viewport, light or dark; PNG path plus verdict. Launches a browser | `dev:test` |
@@ -997,7 +1007,13 @@ and the suggestion moves both: `x doctor --port 3000` with 3001 taken answers `x
 never `3001`, which is the port it has just reported as taken (`As of 2026-09`; the same repair
 `X_PORT_IN_USE`'s own `fix:` took in `x dev`). A `--port` at the top of the range has no room for
 the sync node at all, so it reports the boot's own `X_PORT_INVALID` rather than probing a port
-below it that `x dev` would never bind.
+below it that `x dev` would never bind. The port is `x dev`'s own: `--port`, then `PORT`, then
+3000 — under `PORT=4000` it probes 4000 and 4001, never 3000.
+
+**`APP_URL`, when set**, must be an `http://` or `https://` origin (`X_CONFIG_INVALID`, the sync
+boot's own refusal), and a loopback one must name that same port — `APP_URL=http://localhost:3000`
+beside `PORT=4000` is `X_APP_URL_PORT_MISMATCH`, whose fix is the `export` line with the port `x dev`
+serves on. Unset is no finding; a public origin is the deploy's and is not judged here.
 
 **Sealed columns against the key ring.** An app that declares `.sealed()` columns is checked for
 two conditions; an app with none is never judged.
@@ -1077,7 +1093,7 @@ x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|r
 x jobs cancel 019ff1c5-0000-7000-8000-000000000001 --reason "wrong tenant" --json
 ```
 
-Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `show`, `retry` and `cancel` load the app first, `As of 2026-10`: a trace is the row read through the job's own declaration, so unloaded every run showed `concurrencyKey: null` and no retry delays. An app that half-loads still answers, with those two fields degraded. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it. That ordering is only a guarantee while the target OUTLIVES the command, which is why the target set holds durable drivers only.
+Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `show`, `retry` and `cancel` load the app first, `As of 2026-10`: a trace is the row read through the job's own declaration, so unloaded every run showed `concurrencyKey: null` and no retry delays. An app that half-loads still answers, with those two fields degraded. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it. That ordering is only a guarantee while the target OUTLIVES the command, which is why the target set holds durable drivers only. `drain` walks every page of every pending state and leases in batches of `MAX_JOB_PAGE`, `As of 2026-10`: it read one default page (100 rows) per state, so 350 ready jobs moved 100. An `<id>` that is not a uuid is `X_JOB_UNKNOWN` before any statement is sent — `x jobs show nosuch` used to reach Postgres and come back `X_DB_STATEMENT_FAILED [22P02]`.
 
 `ls` reports only the sweeps still **running**, because it is a live view of the queue; the whole
 ledger, finished passes included, is `x db backfill --list`. A driver that ships no backfill ledger
@@ -1228,7 +1244,7 @@ x shot --all-islands [--json]
 |---|---|---|
 | `<route>` | required | a path on the app. An absolute URL is `X_CLI_BAD_FLAG` — pointing a headless browser inside your network at someone else's site is not a screenshot tool's job |
 | `--port` | `0` | the kernel picks a free one. **Never 3000**, which another project usually holds |
-| `--out` | `<root>/.x/shot/<slug>/` | `.x/` is already gitignored in every scaffold |
+| `--out` | `<root>/.x/shot/<slug>/` | `.x/` is already gitignored in every scaffold. A relative `--out` resolves against the cwd, as `x build --out` does |
 | `--full` | on (`--no-full` for the fold) | a fold-sized viewport crops nearly every route |
 | `--settle` | `2000` | matches the hydration runtime's own `requestIdleCallback` timeout |
 | `--timeout` | `30000` | one navigation |

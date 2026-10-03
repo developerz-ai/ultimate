@@ -205,8 +205,10 @@ describe('unit · TRUSTED_PROXY_HOPS', () => {
   test('a malformed count is refused, never defaulted — the wrong index trusts the client', () => {
     // `Number.parseInt` reads `2abc` as 2, which is a deployment reading the header one entry too
     // far left and calling whatever the caller typed its `ctx.ip`.
-    for (const value of ['2abc', '0', '-1', '1.5', 'yes', '99']) {
-      expect(() => trustedHopsFromEnv({ TRUSTED_PROXY_HOPS: value })).toThrow(/X_PORT_INVALID/);
+    for (const value of ['2abc', '0', '-1', '1.5', 'yes', '99', '0x2', '2e0']) {
+      expect(() => trustedHopsFromEnv({ TRUSTED_PROXY_HOPS: value })).toThrow(
+        /X_TRUSTED_PROXY_HOPS_INVALID/,
+      );
     }
   });
 

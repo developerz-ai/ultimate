@@ -301,7 +301,8 @@ async function runSeed(ctx: CommandContext, root: string): Promise<CommandResult
   });
   if (chosen.length === 0) {
     return {
-      ok: true,
+      // A seed module that would not import may hold the seed that was asked for.
+      ok: discovery.findings.length === 0,
       command: 'db',
       summary: msg('cli.db.seed.none'),
       findings: discovery.findings,

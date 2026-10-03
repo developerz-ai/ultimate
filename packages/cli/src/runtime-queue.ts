@@ -18,7 +18,6 @@ import {
   createPostgresClient,
   currentTx,
   pgliteDataDir,
-  raw,
   setDbClient,
 } from '@ultimat3/db';
 import type { Tx } from '@ultimat3/entity';
@@ -28,13 +27,14 @@ import {
   createPgDriver,
   createPgEventBus,
   createPgOutboxStore,
+  resetEventBus,
   resetJobDriver,
   resetJobsFacade,
   setEventBus,
   setJobDriver,
   setJobsFacade,
 } from '@ultimat3/jobs';
-import { applyFrameworkSchema } from './framework-schema';
+import { applyLockedSchema, verifySchema } from './framework-schema-apply';
 import { appExtensions } from './migration-extensions';
 import type { DevServices } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
@@ -136,8 +136,17 @@ export function pgExecutorFor(client: DbClient): PgExecutor {
  * `@ultimat3/notify` because a package that holds no database dependency cannot apply its own
  * schema — the same reason `SQL_JOBS_TABLE` is applied by the boot.
  */
-async function applySchema(client: DevDbClient): Promise<void> {
-  await applyFrameworkSchema((statement) => client.execute(raw(statement)));
+/**
+ * `'apply'` — `ROLE=migrate`, `x dev` and every CLI command — runs the DDL under the migration
+ * lock with a bounded `lock_timeout` and stamps the build. `'verify'` — a serving role on an
+ * external database — runs none: an `alter table` queued behind one open transaction stalled every
+ * enqueue in the fleet on each pod start, and racing `create table`s were a first-deploy `23505`.
+ */
+export type SchemaMode = 'apply' | 'verify';
+
+async function applySchema(client: DevDbClient, mode: SchemaMode): Promise<void> {
+  if (mode === 'verify') await verifySchema(client);
+  else await applyLockedSchema(client);
 }
 /**
  * The dev queue is the real Postgres queue on the embedded Postgres — claiming, leases and the
@@ -170,9 +179,10 @@ async function applySchema(client: DevDbClient): Promise<void> {
 async function startJobs(
   client: DevDbClient,
   replica: PostgresClient | undefined,
-  overrides?: RuntimeOverrides,
+  overrides: RuntimeOverrides | undefined,
+  schema: SchemaMode,
 ): Promise<RunningQueue> {
-  await applySchema(client);
+  await applySchema(client, schema);
   const executor = pgExecutorFor(client);
   const driver = overrides?.jobs ?? createPgDriver({ executor });
   setJobDriver(driver);
@@ -212,7 +222,8 @@ async function startJobs(
  * startup entirely, so every query it makes fails on a connection this process already dropped.
  *
  * The facade goes with the driver for the same reason: an enqueue routed through a store bound to
- * a closed client is a staged row nothing will ever publish.
+ * a closed client is a staged row nothing will ever publish — and the event bus with both, or a
+ * `publishEvent` after `stop()` runs over the closed pool.
  */
 async function releaseQueue(
   db: DevDbClient,
@@ -223,6 +234,7 @@ async function releaseQueue(
   // holds this client, and the next command in this process would reserve keys over a closed one.
   resetIdempotency();
   resetJobsFacade();
+  resetEventBus();
   resetJobDriver();
   setDbClient(undefined);
   await jobs?.close?.();
@@ -247,13 +259,14 @@ export async function startQueue(
    * this file reads it: see `startDb` for what two readers of one question cost.
    */
   env: ReplicaEnv = process.env,
+  schema: SchemaMode = 'apply',
 ): Promise<RunningQueue> {
   const { client: db, replica } = startDb(services, env);
   try {
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database
     // fails at boot rather than on some later query.
     await db.ping();
-    return await startJobs(db, replica, overrides);
+    return await startJobs(db, replica, overrides, schema);
   } catch (error) {
     // `db.ping()` or `startJobs` is where a broken database is supposed to fail. Without this,
     // the caller exits holding the PGlite lock and the ambient accessors, and nothing is left to

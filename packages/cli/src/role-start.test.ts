@@ -254,14 +254,14 @@ describe('unit · x dev --role', () => {
 
     const app = running.url ?? expect.unreachable('the web role bound no port');
     const socket = new WebSocket(`${app.replace('http', 'ws')}/_x/sync?build=test`);
-    await new Promise<void>((resolve, reject) => {
-      socket.onopen = () => {
-        resolve();
-      };
-      socket.onerror = () => {
-        reject(new Error('the app port refused the sync upgrade'));
-      };
+    // Settled by the socket's own events, never a timer: `open`, or the CLOSE that ends a refused
+    // upgrade — whose code and reason name the cause. This test failed once in a batch with only
+    // "refused" to go on (plan 101 status; not reproduced in 20 parallel runs).
+    const opened = await new Promise<string>((resolve) => {
+      socket.addEventListener('open', () => resolve('open'));
+      socket.addEventListener('close', (event) => resolve(`closed ${event.code} ${event.reason}`));
     });
+    expect(opened).toBe('open');
     expect(socket.readyState).toBe(WebSocket.OPEN);
     socket.close();
 

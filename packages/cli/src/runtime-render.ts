@@ -1,30 +1,21 @@
-// Projecting the route table onto HTTP routes `x dev` can serve. Every mode goes through
+// Projecting the route table onto HTTP routes both boots serve. Every mode goes through
 // `@ultimat3/render`'s own function for that mode — the CLI picks the mode and supplies the
-// document, it never decides what a mode means or what headers it earns.
-//
-// The document is head + the route's own component, rendered by `@ultimat3/render`'s server JSX
-// writer, with the surface's compiled CSS LINKED — one content-hashed file per surface
-// (`style-bundle.ts`), served `immutable`.
-//
-// It was inlined until 2026-09-06, on the argument that a `site/` page is a 0kb-JS artifact a CDN
-// serves as one file and a link would add a round trip. The round trip is real and it is paid
-// once: measured against ai-maxxing, every `app/` document carried the SAME 156,738-byte `<style>`
-// block — 92% of the dashboard document — inside a response the pipeline sends
-// `Cache-Control: private, no-store`, so the trip that argument saved was re-paid in full on every
-// navigation, with a re-parse on top. The static export writes the file (`writeStyles`), so the
-// "second file" cost is one `Bun.write`.
+// document (head + the route's component, the surface's CSS LINKED, `style-bundle.ts`), it never
+// decides what a mode means or what headers it earns.
 
 // why: Bun ships no path API; an island's file is its route file's directory joined to its `src`.
 import { posix } from 'node:path';
 import { actionPathStyle } from '@ultimat3/action';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx } from '@ultimat3/core';
-import { CLIENT_SCOPE_HEADER } from '@ultimat3/core';
+import { CLIENT_SCOPE_HEADER, createSingleFlight } from '@ultimat3/core';
 import type {
   RouteMeta as HttpRouteMeta,
   RedirectIntent,
+  RequestContext,
   Route,
   RouteParams,
+  UltimateRequest,
 } from '@ultimat3/http';
 import { asCtx, html, NO_STORE, redirect, stream, takeRedirect } from '@ultimat3/http';
 import { currentLocale, localeConfig } from '@ultimat3/i18n';
@@ -52,7 +43,6 @@ import {
 import type { IsrController } from '@ultimat3/render/server';
 import {
   contentHash,
-  createIsrController,
   isrKey,
   ROOT_ELEMENT_ID,
   renderComponent,
@@ -69,6 +59,7 @@ import {
   navigationTagsOf,
   principalRelocation,
 } from './page-navigation';
+import { attachedIsr } from './runtime-isr';
 import type { StaticResult } from './static-document';
 import { createStaticMemo, staticMemoKey, staticResponse } from './static-document';
 import { styleBundle } from './style-bundle';
@@ -77,7 +68,11 @@ export type { DocumentOptions, IslandResolver } from './document-options';
 
 export interface DevRenderOptions extends DocumentOptions {
   readonly buildId: string;
-  /** Injected so a test can drive the ISR store without a timer. */
+  /**
+   * The boot's own controller, attached and released by it (`runtime-isr.ts`). Omitted, one is
+   * built AND attached here, never released — a caller with no stop list (a contract test) still
+   * gets pages a tag bust reaches; the revalidator slot is the latest attach's.
+   */
   readonly isr?: IsrController;
   /**
    * Keep each `static` document after its first render (`static-document.ts`). The container sets
@@ -156,7 +151,8 @@ const headFor = async (
 
 /**
  * `<link rel="stylesheet">` for the surface's own stylesheets, or nothing at all when the surface
- * imports none.
+ * imports none. Inlined until 2026-09-06: every `app/` document of ai-maxxing then carried the same
+ * 156,738-byte `<style>` (92% of it) under `no-store`, re-paid on every navigation.
  *
  * In `<head>`, which is what keeps this a swap and not a regression: a `<link rel="stylesheet">`
  * there is render-blocking in every browser, exactly as the inline block was, so there is no
@@ -429,8 +425,11 @@ const metaOf = (entry: RouteEntry, head?: NavigationDocumentHead): HttpRouteMeta
  * only a test does — and then guard and page fall back together.
  */
 export function appRoutes(options: DevRenderOptions): readonly Route[] {
-  const isr = options.isr ?? createIsrController({ buildId: options.buildId });
+  const isr = options.isr ?? attachedIsr({ buildId: options.buildId }).isr;
   const memo = createStaticMemo();
+  // A cold static key is ONE render however many requests arrive during it: the memo alone was
+  // check-then-act, so a burst at boot ran `load` and the render once per request.
+  const firstRender = createSingleFlight();
   return routeEntries().map((registered) => ({
     method: 'GET' as const,
     path: registered.path,
@@ -450,23 +449,46 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
           : undefined;
       const kept = key === undefined ? undefined : memo.get(key);
       if (kept !== undefined) return staticResponse(request, kept);
-      const data: DevRouteData = { url: request.url.href, params: ctx.params };
-      // ONCE per request, before the mode is chosen: every branch of `resultFor` reads this same
-      // object, so a route's `load` runs exactly once however its mode splits head from body.
-      const loaded = await routeDataFor(entry.config, data);
-      // `setRedirect()` inside `load` — the same slot an action's handler fills — answers here,
-      // before a document is rendered for a page the visitor is leaving. `withStatus` refuses a
-      // 3xx because a rendered document has no `Location`; this is the path that has one.
-      const to = takeRedirect(ctx);
-      if (to !== undefined) return loadRedirect(entry, to);
-      const result = await resultFor(entry, data, loaded, options, isr, asCtx(ctx));
-      if (entry.config.render !== 'static' || typeof result.body !== 'string') {
-        return responseOf(result);
-      }
-      const document: StaticResult = { ...result, body: result.body };
-      if (key !== undefined) memo.set(key, document);
+      const render = async (): Promise<Rendered> => {
+        const rendered = await renderEntry(entry, request, ctx, options, isr);
+        if (key !== undefined && rendered.document !== undefined) memo.set(key, rendered.document);
+        return rendered;
+      };
+      const rendered = key === undefined ? await render() : await firstRender.run(key, render);
       // The ETag was only ever a header: a matching `If-None-Match` is a 304, not the page again.
-      return staticResponse(request, document);
+      return rendered.document === undefined
+        ? rendered.respond()
+        : staticResponse(request, rendered.document);
     },
   }));
+}
+
+/** A static document a joined request can share, or how to answer when there is none. */
+interface Rendered {
+  readonly document?: StaticResult;
+  readonly respond: () => Response;
+}
+
+async function renderEntry(
+  entry: RouteEntry,
+  request: UltimateRequest,
+  ctx: RequestContext,
+  options: DevRenderOptions,
+  isr: IsrController,
+): Promise<Rendered> {
+  const data: DevRouteData = { url: request.url.href, params: ctx.params };
+  // ONCE per request, before the mode is chosen: every branch of `resultFor` reads this same
+  // object, so a route's `load` runs exactly once however its mode splits head from body.
+  const loaded = await routeDataFor(entry.config, data);
+  // `setRedirect()` inside `load` — the same slot an action's handler fills — answers here,
+  // before a document is rendered for a page the visitor is leaving. `withStatus` refuses a
+  // 3xx because a rendered document has no `Location`; this is the path that has one.
+  const to = takeRedirect(ctx);
+  if (to !== undefined) return { respond: () => loadRedirect(entry, to) };
+  const result = await resultFor(entry, data, loaded, options, isr, asCtx(ctx));
+  if (entry.config.render !== 'static' || typeof result.body !== 'string') {
+    return { respond: () => responseOf(result) };
+  }
+  const document: StaticResult = { ...result, body: result.body };
+  return { document, respond: () => responseOf(document) };
 }

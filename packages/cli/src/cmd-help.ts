@@ -2,7 +2,9 @@
 // never describe a flag that does not exist. Built as a factory over the spec list to keep the
 // registry acyclic.
 
+import { nearestName } from '@ultimat3/core';
 import type { CliCommand, CommandContext } from './command';
+import { UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import type { CommandSpec, FlagSpec } from './parse';
@@ -18,17 +20,28 @@ const flagLine = (flag: FlagSpec): string => {
  * The one resolution of a topic, read by both renderers. `--json` filtered on `spec.name === topic`
  * of its own, so the two disagreed about exactly the inputs a caller is least sure of: `x help
  * generate --json` answered `[]` — "that command does not exist" — while the page beside it printed
- * `g`, and `x help nosuch --json` answered `[]` while the page printed the whole catalogue.
+ * `g`. A topic naming no command is refused, as `x <topic>` itself is: answering the catalogue
+ * with exit 0 read as that command's usage to a caller that never compared the names.
  */
 const specFor = (
   specs: readonly CommandSpec[],
   topic: string | undefined,
-): CommandSpec | undefined =>
-  topic === undefined
-    ? undefined
-    : specs.find((entry) => entry.name === topic || (entry.aliases ?? []).includes(topic));
+): CommandSpec | undefined => {
+  if (topic === undefined) return undefined;
+  const found = specs.find(
+    (entry) => entry.name === topic || (entry.aliases ?? []).includes(topic),
+  );
+  if (found !== undefined) return found;
+  const names = specs.map((entry) => entry.name);
+  const nearest = nearestName(topic, [...names, ...specs.flatMap((entry) => entry.aliases ?? [])]);
+  throw new UnknownCommandError({
+    path: `help ${topic}`,
+    known: names,
+    suggestion: nearest === undefined ? 'help' : `help ${nearest}`,
+  });
+};
 
-/** What `--json` reports: the one resolved command, or — as the human render does — all of them. */
+/** What `--json` reports: the one resolved command, or — with no topic — all of them. */
 export function helpTopic(
   specs: readonly CommandSpec[],
   topic: string | undefined,

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "85ce74c9759dcd2862d7a179cd1715114769a268a4d6febd9d9b32c71e6f7a6e",
+  "buildId": "7e67ae4bc5a92947c2f5a534239efca3b232236796a14514f085ec80a7bea460",
   "tiers": {
     "0": [
       "core",
@@ -471,6 +471,11 @@
     },
     {
       "code": "X_APP_PACKAGE_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_APP_URL_PORT_MISMATCH",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -1125,6 +1130,11 @@
       "at": "packages/admin/src/errors.ts"
     },
     {
+      "code": "X_DEV_HOST_REFUSED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_DEV_LOCK_UNREADABLE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1586,6 +1596,11 @@
     },
     {
       "code": "X_FRAMEWORK_SCHEMA_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_FRAMEWORK_SCHEMA_UNAPPLIED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -4043,6 +4058,11 @@
       "code": "X_TRUST_PUBLISHER_MISSING",
       "owner": "scripts",
       "at": "scripts/trust-publishers.ts"
+    },
+    {
+      "code": "X_TRUSTED_PROXY_HOPS_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_TYPECHECK_FAILED",

@@ -110,8 +110,10 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
   {{/*
   Probes follow the role, because the roles do not agree on what they open. web and sync serve
   HTTP and get both. worker, scheduler and replicator open no HTTP socket at all — the scrape
-  listener is their only port — so they take liveness on it and NO readiness: nothing routes to
-  them, and a readiness flap would drop the pod out of the Service and so out of the scrape.
+  listener is their only port — so they take liveness on it. Readiness for replicator alone, on
+  /readyz of that listener: 503 while the replication stream is down, so the pod shows 0/1 instead
+  of a healthy pod feeding nothing. Their headless Service publishes not-ready addresses, so a
+  not-ready pod is still scraped.
 
   Every one of them takes a startupProbe too, because no listener opens early: the server builds
   the app's islands before any role binds a port, and a liveness probe counting from container
@@ -144,6 +146,11 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 5
     failureThreshold: 30
+  {{- if eq $role "replicator" }}
+  readinessProbe:
+    httpGet: { path: /readyz, port: metrics }
+    periodSeconds: 10
+  {{- end }}
   livenessProbe:
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 15
@@ -229,6 +236,9 @@ spec:
   type: ClusterIP
   {{- if not $cfg.port }}
   clusterIP: None
+  # Scraped whether or not ready: a replicator whose stream is down (readiness 503) is the pod
+  # whose metrics matter most, and nothing routes to these addresses anyway.
+  publishNotReadyAddresses: true
   {{- end }}
   selector:
     app.kubernetes.io/instance: {{ $.Release.Name }}

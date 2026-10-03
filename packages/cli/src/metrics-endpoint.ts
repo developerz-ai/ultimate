@@ -5,11 +5,14 @@
 
 import {
   finiteCount,
+  type HealthPayload,
+  healthzPayload,
   logger,
   METRICS_CONTENT_TYPE,
   METRICS_PATH,
   markListening,
   metricsText,
+  readyzPayload,
   startProcessMetrics,
   stringField,
   UltimateError,
@@ -124,6 +127,18 @@ export interface MetricsEndpoint {
 }
 
 /**
+ * `/healthz` and `/readyz` for the roles whose only socket this is — `worker`, `scheduler`,
+ * `replicator` — so the replicator's readiness check (`role-replicator.ts`) is read by a probe.
+ * The verdict only, never the report: this port is unauthenticated, and check names are topology.
+ */
+function healthResponse(payload: HealthPayload, role: string): Response {
+  return Response.json(
+    { state: payload.body.state, ready: payload.body.ready, role },
+    { status: payload.status, headers: { 'cache-control': 'no-store' } },
+  );
+}
+
+/**
  * Answers outside the request pipeline, exactly as `/healthz` and `/readyz` do in
  * `@ultimat3/http`'s `server.ts`: no auth, no rate limit, no locale negotiation. A saturated or
  * draining process must still be able to say how saturated it is — an autoscaler that loses its
@@ -142,7 +157,16 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
       port: candidate,
       hostname: options.hostname ?? 'localhost',
       fetch(request: Request): Response {
-        if (new URL(request.url).pathname !== METRICS_PATH) {
+        const url = new URL(request.url);
+        const role = options.role ?? 'unknown';
+        if (url.pathname === '/healthz') return healthResponse(healthzPayload(), role);
+        if (url.pathname === '/readyz') {
+          return healthResponse(
+            readyzPayload({ deep: url.searchParams.get('deep') === '1' }),
+            role,
+          );
+        }
+        if (url.pathname !== METRICS_PATH) {
           return new Response('not found', { status: 404 });
         }
         // `collectMetrics()` is cumulative and never reset by a read, so two scrapers cannot

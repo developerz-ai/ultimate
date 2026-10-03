@@ -5,7 +5,6 @@
 
 import type { Route } from '@ultimat3/http';
 import { describeRoutes } from '@ultimat3/render';
-import { createIsrController } from '@ultimat3/render/server';
 import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { mountAppMcp } from './app-mcp';
@@ -19,6 +18,7 @@ import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { adminMountRoutes } from './runtime-admin';
 import { assetRoutes } from './runtime-assets';
+import { attachedIsr } from './runtime-isr';
 import { appRoutes } from './runtime-render';
 import type { RunningServices } from './runtime-services';
 import { servedStorage, storageRoutes } from './runtime-storage';
@@ -42,6 +42,8 @@ export interface WebSurface {
   readonly signInPath: string | null;
   /** Present when this boot built the islands itself: how many chunks, and why not the store. */
   readonly islandsBuilt?: LoadedIslands['built'];
+  /** Detaches the ISR controller from `invalidateTags` — on the boot's stop list. */
+  readonly release: () => void;
 }
 
 export async function webSurface(
@@ -93,6 +95,13 @@ export async function webSurface(
   const mcpMount = await mountAppMcp(options.root);
   // The app's own disks when it declared any (`defineStorage` in an app module), else this boot's.
   const served = servedStorage(runtime.storage);
+  // Attached, so a tag bust marks this process's ISR pages stale. The store is the deployment's
+  // when it supplied one: the default is per process, so twelve replicas hold twelve of them and a
+  // purge regenerates one twelfth of the fleet while the other eleven keep the invalidated page.
+  const isr = attachedIsr({
+    buildId,
+    ...(options.runtime?.isrStore === undefined ? {} : { store: options.runtime.isrStore }),
+  });
   const routes: readonly Route[] = [
     ...apiRoutes(),
     // The bearer doors onto a cut of the same routes (`defineApi({ http: { mounts } })`), counted
@@ -142,12 +151,7 @@ export async function webSurface(
       ...(pwa === undefined
         ? {}
         : { pwaHead: (locale: string) => pwa.headFor(locale) + (serviceWorker?.head ?? '') }),
-      // Only when a store was supplied. `createIsrController` defaults to a per-process memory
-      // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of
-      // the fleet while the other eleven keep serving the page it just invalidated.
-      ...(options.runtime?.isrStore === undefined
-        ? {}
-        : { isr: createIsrController({ buildId, store: options.runtime.isrStore }) }),
+      isr: isr.isr,
     }),
   ];
   return {
@@ -160,5 +164,6 @@ export async function webSurface(
     // guarded page with the problem document, rendered as raw JSON in the viewport.
     signInPath: await loadSignInPath(options.root),
     ...(islandsBuilt === undefined ? {} : { islandsBuilt }),
+    release: isr.release,
   };
 }

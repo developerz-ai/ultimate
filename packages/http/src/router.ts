@@ -343,7 +343,7 @@ const paramsOf = (path: string): readonly string[] =>
     .filter((segment) => segment.startsWith(':') || segment.startsWith('*'))
     .map((segment) => segment.slice(1));
 
-/** Feeds the `/_x` dashboard, the manifest emitter and `x routes list --json`. */
+/** Feeds the `/_x` dashboard, the manifest emitter and `x routes --json`. */
 export const describeRoutes = (table: RouteTable): readonly RouteDescription[] =>
   table.routes
     .map((route) => ({

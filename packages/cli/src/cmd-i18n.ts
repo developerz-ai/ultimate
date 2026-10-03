@@ -196,14 +196,15 @@ async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult>
   const { registered, findings: indexFindings } = await syncI18nIndex(root);
 
   const keys = catalogKeys(seeded).length;
+  // The catalog is on disk either way, but a finding fails the run: a `packages/i18n/src/index.ts`
+  // that would not import is why `from` may be the framework's `en` instead of the app's own
+  // default, and an index the locale could not be registered in is a red `i18n` gate step.
+  const findings = [...indexFindings, ...app.findings];
   return {
-    // The catalog is on disk, so the command did what it was asked. `loadApp`'s findings ride along
-    // rather than flip that: a `packages/i18n/src/index.ts` that would not import is why `from` may
-    // be the framework's `en` instead of the app's own default, and silence there is the bug.
-    ok: true,
+    ok: findings.length === 0,
     command: 'i18n',
     summary: msg('cli.i18n.added', { locale, keys, from: from ?? locale }),
-    findings: [...indexFindings, ...app.findings],
+    findings,
     // `registered` is false only for an app with no `packages/i18n` at all — a fact a caller has
     // to be able to read, because it is the one case where the locale is on disk and unselectable.
     data: { locale, from: from ?? locale, keys, path, registered },
@@ -274,16 +275,16 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
   const { registered, findings: indexFindings } = await syncI18nIndex(root);
 
   const total = catalogKeys(merged).length;
+  // Same as `runAdd`: the merge landed, and a finding still fails the run.
+  const findings = [...indexFindings, ...app.findings];
   return {
-    // Same as `runAdd`: the merge landed, and `loadApp`'s findings say whether `from` is the app's
-    // own default or the framework's fallback standing in for an i18n module that would not import.
-    ok: true,
+    ok: findings.length === 0,
     command: 'i18n',
     summary: msg('cli.i18n.synced', { locale, from: from ?? locale, added: added.length, total }),
     // The keys themselves, raw — `runCheck` lists gaps the same way, because a key is a value an
     // author copies and never prose the catalog owns.
     lines: seeded ? added.map((key) => `  ${key}`) : [],
-    findings: [...indexFindings, ...app.findings],
+    findings,
     data: {
       locale,
       from: from ?? locale,

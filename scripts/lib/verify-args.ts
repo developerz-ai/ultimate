@@ -40,8 +40,9 @@ const isStep = (raw: string): raw is VerifyStepName =>
 
 /** The list as it would be with each typo corrected, or the gate when an item resembles nothing. */
 const fixFor = (items: readonly string[]): string => {
+  // An empty item corrects to nothing — never to whichever step is nearest to ''.
   const corrected = items.map((item) =>
-    isStep(item) ? item : nearestName(item, VERIFY_STEP_NAMES),
+    isStep(item) ? item : item === '' ? undefined : nearestName(item, VERIFY_STEP_NAMES),
   );
   return corrected.every((item) => item !== undefined)
     ? `bun run verify --only ${[...new Set(corrected)].join(',')}`

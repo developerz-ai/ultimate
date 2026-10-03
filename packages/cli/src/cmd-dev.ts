@@ -13,7 +13,6 @@ import type { OverlayNotice, RequestContext } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
-import { createIsrController } from '@ultimat3/render/server';
 import { loadSignInPath } from './app-auth';
 import { appManifest } from './app-manifest';
 import type { StalePin } from './app-reload-graph';
@@ -50,6 +49,7 @@ import {
   resolveServices,
   withRealtimeEvents,
 } from './runtime-bindings';
+import { attachedIsr } from './runtime-isr';
 import { liveFeedLabel } from './runtime-live-feed';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { replicaOverrides } from './runtime-replica';
@@ -239,9 +239,10 @@ async function bootDev(
   };
   const panels = devPanels(dashboard).map((panel) => panel.key);
 
-  // `x dev`'s own, so a reload can empty it: an `isr` page's first render was otherwise served for
-  // its whole ttl after every save, whatever the modules behind it now said.
-  const isr = createIsrController({ buildId });
+  // `x dev`'s own, so a reload can empty it (a save otherwise kept a page's first render for its
+  // ttl); attached, so a tag bust reaches it too. Released with the roles.
+  const { isr, release: releaseIsr } = attachedIsr({ buildId });
+  acquired.push(releaseIsr);
   const { routes, theme, speculation, errorStyles, mcpPath, mcpPaths } = await devRouteTable({
     isr,
     root: options.root,
@@ -350,16 +351,16 @@ async function bootDev(
     async stop() {
       watcher.close();
       await running.stop();
+      releaseIsr();
       await runtime.stop();
       // Released after the roles: a span opened by an in-flight request still has an exporter to
       // end into. `configureTelemetry` merges, so handing back the noop is how it is uninstalled —
       // leaving it in place would keep every span of the next `startDev` in this process's buffer.
       configureTelemetry({ exporter: noopExporter });
       traces.reset();
-      // Released with the exporter, after the roles, for the same reason: a statement still in
-      // flight is observed by the ledger that counted the rest of its request. Leaving it
-      // installed would keep every statement of the next `startDev` in this process's counts —
-      // and, worse, keep instrumentation on in a process that is no longer a dev server.
+      // With the exporter, for the same reason: an in-flight statement is observed by the ledger
+      // that counted its request. Left installed, the next `startDev`'s statements land in these
+      // counts — and instrumentation stays on in a process that is no longer a dev server.
       setStatementObserver(undefined);
       statements.reset();
     },

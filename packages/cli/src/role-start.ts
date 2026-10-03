@@ -7,7 +7,7 @@
 // something every `x dev` in a team should do to the same server by simply starting.
 
 import type { Role } from '@ultimat3/core';
-import { createContext, isRole, logger, ROLES } from '@ultimat3/core';
+import { createContext, isRole, logger, markReady, ROLES } from '@ultimat3/core';
 import type { RateLimitStore, Route, ServerHandle, WebSocketMount } from '@ultimat3/http';
 import {
   configuredAuthenticator,
@@ -28,7 +28,7 @@ import {
 } from '@ultimat3/jobs';
 import type { SyncWs } from '@ultimat3/realtime/server';
 import { errorPageHook } from './error-pages';
-import { BadFlagError, PortInvalidError, RuntimeDriverSplitError } from './errors';
+import { BadFlagError, RuntimeDriverSplitError } from './errors';
 import {
   DEFAULT_METRICS_PORT,
   startMetricsEndpoint,
@@ -49,6 +49,7 @@ import type { RunningServices } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
 import { inlineStyleSources } from './style-csp';
 import { syncConnectSources } from './sync-url';
+import { TrustedProxyHopsInvalidError } from './trusted-hops-error';
 import { DEV_BINDING } from './web-binding';
 
 // Declared beside the option types so `x dev`'s spec reads it without loading this module.
@@ -160,8 +161,8 @@ export function trustedHopsFromEnv(env: Env): number | null {
   const hops = Number(raw);
   // A malformed count is refused rather than defaulted: reading the header at the wrong index is
   // trusting a value the client typed, which is the failure trusting a proxy exists to avoid.
-  if (!Number.isInteger(hops) || hops < 1 || hops > MAX_PROXY_HOPS) {
-    throw new PortInvalidError({ value: raw, name: 'TRUSTED_PROXY_HOPS' });
+  if (!/^\d+$/.test(raw) || !Number.isInteger(hops) || hops < 1 || hops > MAX_PROXY_HOPS) {
+    throw new TrustedProxyHopsInvalidError({ value: raw });
   }
   return hops;
 }
@@ -406,6 +407,10 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       replicatorHere: replicator !== null,
     });
     started.push(async () => live.stop());
+    // The web server and the sync node mark ready when they bind; a process with neither — a
+    // worker, scheduler or replicator pod — is ready once its roles started, which is what the
+    // scrape port's `/readyz` answers (`metrics-endpoint.ts`). The checks still decide after this.
+    if (server === null && sync === null) markReady();
 
     return {
       roles: selected,

@@ -38,7 +38,7 @@ describe('renderOverlay', () => {
     expect(markup).toContain('<style>');
     expect(markup).toContain('X_ROUTE_NOT_FOUND');
     expect(markup).toContain('no route registered for GET /missing');
-    expect(markup).toContain('x routes list --json');
+    expect(markup).toContain('x routes --json');
     expect(markup).toContain(ERROR_DOCS_URL);
   });
 

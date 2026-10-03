@@ -46,9 +46,14 @@ async function appRoot(): Promise<string> {
 }
 
 /** Install the driver `withJobDriver` must reuse, so no test here boots a queue or a database. */
-async function runBackfill(driver: JobDriver, argv: readonly string[]): Promise<CommandResult> {
+async function runBackfill(
+  driver: JobDriver,
+  argv: readonly string[],
+  prepare: (root: string) => Promise<void> = async () => {},
+): Promise<CommandResult> {
   setJobDriver(driver);
   const root = await appRoot();
+  await prepare(root);
   try {
     return await dbCommand.run(ctxFor(argv, root));
   } finally {
@@ -293,5 +298,26 @@ describe('unit · x db backfill', () => {
 
     const done = await runBackfill(driver, ['db', 'backfill', '--list', '--status', 'completed']);
     expect(done.data).toEqual([]);
+  });
+
+  // Importing IS the declaration: a module that would not import may be the one declaring the
+  // sweep, so "every one of 0 declared backfills has completed" over it is a vacuous green.
+  test('a declaring module that will not import fails --pending and a pass, never a clean 0', async () => {
+    const broken = async (root: string): Promise<void> => {
+      await Bun.write(
+        join(root, 'apps/web/shared/sweeps.ts'),
+        "import './a-module-nobody-wrote';\n",
+      );
+    };
+    for (const argv of [
+      ['db', 'backfill', '--pending'],
+      ['db', 'backfill', '--all'],
+    ]) {
+      const result = await runBackfill(createMemoryDriver(), argv, broken);
+      expect([argv.join(' '), result.ok]).toEqual([argv.join(' '), false]);
+      expect(result.findings?.some((finding) => finding.at === 'apps/web/shared/sweeps.ts')).toBe(
+        true,
+      );
+    }
   });
 });

@@ -28,6 +28,9 @@ interface RunnerCall {
   readonly cwd: string;
 }
 
+/** What the next `bun test` exits with; the reply table only ever answered 0 until it did not. */
+let nextExit = 0;
+
 function recordingRunner(stdoutFor: (command: readonly string[]) => string): {
   runner: Runner;
   calls: RunnerCall[];
@@ -35,10 +38,11 @@ function recordingRunner(stdoutFor: (command: readonly string[]) => string): {
   const calls: RunnerCall[] = [];
   const runner: Runner = async (command, options) => {
     calls.push({ command, cwd: options.cwd });
+    const code = nextExit;
     const result: ExecResult = {
       command,
-      code: 0,
-      ok: true,
+      code,
+      ok: code === 0,
       stdout: stdoutFor(command),
       stderr: '',
       durationMs: 7,
@@ -55,6 +59,8 @@ const PASSING = `bun test v1.3.14 (0d9b296a)
  9 expect() calls
 Ran 4 tests across 1 file. [12.00ms]`;
 
+/** The stdout the runner answers with — `PASSING` unless a test says otherwise. */
+let reply = PASSING;
 let calls: RunnerCall[];
 let host: CliMcpServer;
 
@@ -91,7 +97,7 @@ beforeAll(async () => {
   // The fixture app has no prompt: one an earlier file on this worker registered would make the
   // eval step red for a reason this file never introduced.
   resetPrompts();
-  const recording = recordingRunner(() => PASSING);
+  const recording = recordingRunner(() => reply);
   calls = recording.calls;
   // Builds the REAL capability object: `databaseTarget` runs here, nothing else does.
   host = await createDevMcpServer({ root: ROOT, env: {}, runner: recording.runner });
@@ -118,6 +124,21 @@ describe('tests.run shells out to bun test in the app root', () => {
       durationMs: 7,
       failures: [],
     });
+  });
+
+  // `0 fail` is not a green run: bun counts an error OUTSIDE any test (a file that threw at load)
+  // on its own `1 error` line, and exits non-zero. `test.run` read only pass/fail, and answered
+  // `failed: 0` for a suite whose file never got as far as declaring a test.
+  test('an error outside any test, and a non-zero exit, are failures in the answer', async () => {
+    reply = 'bun test v1.4.0\n\n 0 pass\n 0 fail\n 1 error\nRan 0 tests across 1 file. [5.00ms]';
+    nextExit = 1;
+    try {
+      const { json } = resultOf(await call('tests.run'));
+      expect((json as { failed: number }).failed).toBeGreaterThan(0);
+    } finally {
+      reply = PASSING;
+      nextExit = 0;
+    }
   });
 
   test('a filter is appended as bun test’s own path argument', async () => {

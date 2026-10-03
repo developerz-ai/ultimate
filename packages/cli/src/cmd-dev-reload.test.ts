@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join, relative } from 'node:path';
-import { isolateDeclaredTags } from '@ultimat3/cache';
+import { invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import { resetLifecycle } from '@ultimat3/core';
 import type { StalePin } from './app-reload-graph';
 import type { DevServer } from './cmd-dev';
@@ -46,6 +46,23 @@ export const config = defineRoute({
 
 export function Page() {
   return <main><View /></main>;
+}
+`,
+  // A tag-only ISR page (no TTL): fresh until a bust reaches it — which needs an attached controller.
+  'apps/web/site/tagged/page.tsx': `import { tag } from '@ultimat3/cache';
+import { defineRoute } from '@ultimat3/render';
+
+export const config = defineRoute({
+  render: 'isr',
+  revalidate: { tags: [tag('post')] },
+  offline: 'runtime',
+  hydrate: 'never',
+  budget: { js: '0kb' },
+  meta: () => ({ title: 'Tagged', description: 'A tag-only isr page a bust must reach' }),
+});
+
+export function Page() {
+  return <main><p>{\`tagged \${String(Reflect.get(globalThis, '__xIsrProbe') ?? 0)}\`}</p></main>;
 }
 `,
   'apps/web/app/greet/service.ts': `export const greeting = (): string => 'greeting one';
@@ -133,6 +150,28 @@ const save = async (file: string, from: string, to: string): Promise<string> => 
 };
 
 describe('unit · x dev serves the save', () => {
+  // Plan 101 s2-con #1: `x dev` built its ISR controller and never attached it, so `invalidateTags`
+  // reached no page and a tag-only one served its first render until the process restarted.
+  test(
+    'a tag bust marks a tag-only isr page stale, then serves the regenerated body',
+    async () => {
+      const handle = server.running.server;
+      const get = async (): Promise<Response> =>
+        (handle as NonNullable<typeof handle>).fetch(new Request('http://dev.test/tagged'));
+      Reflect.set(globalThis, '__xIsrProbe', 1);
+      expect(await (await get()).text()).toContain('tagged 1');
+      Reflect.set(globalThis, '__xIsrProbe', 2);
+      await invalidateTags([tag('post')]);
+      const stale = await get();
+      expect(stale.headers.get('x-ultimate-isr')).toBe('stale');
+      expect(await stale.text()).toContain('tagged 1');
+      await Bun.sleep(0);
+      expect(await (await get()).text()).toContain('tagged 2');
+      Reflect.deleteProperty(globalThis, '__xIsrProbe');
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
   // The defect — `rebuild` re-ran `loadApp`, `import()` answered from its cache, `register` saw a
   // registered file, so the table kept the FIRST component while `buildIslands` re-bundled the
   // island: a new island, an old page.

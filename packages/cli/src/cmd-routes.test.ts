@@ -204,3 +204,19 @@ describe('unit · x routes --json projects every fact the table shows', () => {
     expect(appRows.map((row) => row.path)).toEqual(['/dashboard']);
   });
 });
+
+// `x routes list --json` ran only because a stray positional was ignored — and http's route-miss
+// fix lines named that retired spelling. `x routes` takes no positional; one is refused, before
+// the app is loaded, with the spelling that works.
+describe('unit · x routes takes no positional', () => {
+  test('any positional is X_CLI_UNKNOWN_COMMAND, naming x routes --json', async () => {
+    for (const word of ['list', 'app', 'site']) {
+      const thrown: unknown = await routesCommand.run(contextFor(['routes', word, '--json'])).then(
+        (result) => result,
+        (error: unknown) => error,
+      );
+      expect([word, (thrown as { code?: string }).code]).toEqual([word, 'X_CLI_UNKNOWN_COMMAND']);
+      expect([word, (thrown as { fix?: string }).fix]).toEqual([word, 'x routes --json']);
+    }
+  });
+});

@@ -24,6 +24,7 @@ import {
   orgMismatch,
 } from '@ultimat3/storage';
 import { storageUploadRoute } from './runtime-storage-upload';
+import { storedObjectHeaders } from './stored-object-headers';
 
 /**
  * The one capability that gates reading a stored object, on every disk. A permission and not a
@@ -185,6 +186,8 @@ export function storageResponse(request: UltimateRequest, read: StorageRead): Re
     'content-type': read.object.contentType,
     etag,
     'accept-ranges': 'bytes',
+    // A type a browser would RUN (html, svg, xml) is a download, never a page on this origin.
+    ...storedObjectHeaders(read.object.contentType),
   });
   // Omitted, never invented: a disk whose provider reported no date has none, and a `Last-Modified`
   // made up for it is a validator a cache would go on to trust.

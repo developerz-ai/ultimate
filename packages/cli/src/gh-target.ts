@@ -76,18 +76,23 @@ const PR_VIEW = t.object({ number: t.number });
  * The pull request for the current branch. gh exits non-zero when there is none, with a message
  * that names the branch — so the refusal keeps gh's own sentence and adds the remedy gh has no
  * opinion about: name the number, or open the PR.
+ *
+ * No `--repo`: gh refuses `pr view --repo <slug>` without a number, url or branch before any
+ * network call, so that argv could never succeed. The checkout-scoped form resolves the branch's
+ * tracking remote itself — the same resolution `gh repo view` gave `resolveRepo`. `repo` names the
+ * pull request in the refusal only.
  */
 export async function resolvePrNumber(host: GhHost, repo: GhRepo): Promise<number> {
   try {
-    const viewed = await ghJson(
-      host,
-      ['pr', 'view', '--repo', repo.slug, '--json', 'number'],
-      PR_VIEW,
-      { label: 'gh pr view', fix: 'x pr review --pr 241 --json' },
-    );
+    const viewed = await ghJson(host, ['pr', 'view', '--json', 'number'], PR_VIEW, {
+      label: 'gh pr view',
+      fix: 'x pr review --pr 241 --json',
+    });
     return viewed.number;
   } catch (error) {
-    if (error instanceof GhFailedError) throw new PrNotFoundError({ detail: error.cause });
+    if (error instanceof GhFailedError) {
+      throw new PrNotFoundError({ detail: `${repo.slug}: ${error.cause}` });
+    }
     throw error;
   }
 }

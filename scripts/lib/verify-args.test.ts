@@ -56,6 +56,17 @@ describe('unit · bun run verify --only narrows, and refuses what it cannot read
     expect(refusal(['--only', 'lint,,drift']).cause).toContain('unknown step (none given)');
   });
 
+  // An empty item is uncorrectable: the fix is the gate, never the step nearest to '' (an audit
+  // saw `lint,` answered with `lint,job`). The same rule `x verify --only` follows.
+  test('an empty --only item is never corrected into an invented step', () => {
+    for (const argv of [['--only', 'lint,'], ['--only', 'lint,,drift'], ['--only'], ['--onyl']]) {
+      expect([argv.join(' '), refusal(argv).fix]).toEqual([
+        argv.join(' '),
+        'bun run verify --json',
+      ]);
+    }
+  });
+
   test('an unknown flag is refused rather than ignored', () => {
     const r = refusal(['--onyl', 'lint']);
     expect(r.code).toBe('X_CLI_BAD_FLAG');

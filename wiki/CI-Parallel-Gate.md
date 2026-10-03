@@ -65,13 +65,16 @@ answers the gate:
 - every step of the gate appears — `X_VERIFY_MERGE_INCOMPLETE` names a step no part ran;
 - a sharded step has shards `1..n` exactly once, all with one `corpusHash` — a missing shard, a
   duplicate, or two corpora (jobs on different commits) is named;
+- and their `files` partition that corpus: a file in two shards, or in none (the union does not
+  hash to `corpusHash` — shards split by two rules, one with `--timings` and one without), is named;
 - the zero-tests floor is applied to each sharded step's summed counts;
 - an app's coverage floor is applied to the fold of a sharded `unit` step's `data.coverage.unit.facts`;
 - a red step in any part is red here, with its findings and output kept.
 
 The merged document has no `notAGateRun` — it is the gate's answer — and its `durationMs` is the
 slowest part's, which is the wall time CI waited. A part that is not an `x verify --json`
-document is `X_VERIFY_MERGE_INPUT`.
+document is `X_VERIFY_MERGE_INPUT` — and so is a step whose `durationMs` is not a number or whose
+`findings` are not each a `code`, `cause` and `fix`.
 
 ## A GitHub Actions workflow
 

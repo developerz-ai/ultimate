@@ -97,6 +97,10 @@ export interface Stage extends StageDoc {
  */
 const SHED_RETRY_AFTER_SECONDS = '1';
 
+/** The two names a policy travels under — the enforced one and `reportOnly`'s. */
+const isCspHeader = (name: string): boolean =>
+  name === 'content-security-policy' || name === 'content-security-policy-report-only';
+
 /**
  * The one label a request with no matched route may carry. Every 404 and every scan of `/wp-admin`
  * would otherwise be its own rate-limit bucket and its own metric series — an attacker choosing
@@ -444,7 +448,11 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       for (const [name, value] of Object.entries(
         responseSecurityHeaders(config.security, ctx.https),
       )) {
-        response.headers.set(name, value);
+        // A policy the handler set is KEPT and the app's is added beside it — comma-joined, two
+        // policies, both enforced — so a handler can only narrow (a `sandbox` on an uploaded file),
+        // never widen. Overwritten, that `sandbox` never reached a browser.
+        if (isCspHeader(name) && response.headers.has(name)) response.headers.append(name, value);
+        else response.headers.set(name, value);
       }
       response.headers.set('server-timing', `total;dur=${elapsedMs(ctx)}`);
       return undefined;

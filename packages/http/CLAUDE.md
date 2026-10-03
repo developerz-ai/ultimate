@@ -37,6 +37,9 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   (`X_CSP_DIRECTIVE_INVALID`); `buildCsp` builds through a `Map`.
 - **The security headers are built once per `(SecurityConfig, https)`** (`responseSecurityHeaders`, a
   `WeakMap`); a config is never mutated after `defineHttpConfig`. HSTS only when `ctx.https` is affirmed.
+- **A `content-security-policy` the handler set is kept**: the `response` stage APPENDS the app's
+  policy beside it (two policies, both enforced), so a handler can narrow — `sandbox` on a served
+  upload — and never widen. Every other security header is set over the handler's (`stages-csp.test.ts`).
 
 ## Rules — the context
 

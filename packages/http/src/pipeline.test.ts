@@ -212,7 +212,7 @@ describe('lifecycle', () => {
     expect(response.headers.get('content-type')).toContain('application/problem+json');
     const body = (await response.json()) as Record<string, unknown>;
     expect(body['code']).toBe('X_ROUTE_NOT_FOUND');
-    expect(body['fix']).toContain('x routes list');
+    expect(body['fix']).toContain('x routes --json');
   });
 
   test("auth: 'required' with no actor is 401 before the handler runs", async () => {

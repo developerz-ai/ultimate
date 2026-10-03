@@ -121,13 +121,22 @@ function caughtOutbox(fixture: readonly SentMail[]): MemoryMailDriver {
   };
 }
 
-/** Only the two members the hooks touch; a PGlite boot proves nothing about the projection. */
+/**
+ * Only the two members the hooks touch; a PGlite boot proves nothing about the projection. The
+ * database answers `fake.rows` to the one read and records every statement — the read-only
+ * transaction around it included, which is what `readOnlySql` adds.
+ */
 const fakeRuntime = (fake: FakeRuntime = {}): RunningServices =>
   ({
     db: {
       query: (fragment: { text: string }): Promise<readonly unknown[]> => {
         fake.seen?.push(fragment.text);
         return Promise.resolve(fake.rows ?? []);
+      },
+      one: (): Promise<null> => Promise.resolve(null),
+      execute: (fragment: { text: string }): Promise<number> => {
+        fake.seen?.push(fragment.text);
+        return Promise.resolve(0);
       },
     },
     // `name` is load-bearing, not decoration: `isMemoryDriver` narrows on it before the panel
@@ -219,12 +228,16 @@ describe('unit · x dev mounts the dashboard', () => {
     const routes = devDashboardRoutes(input);
     const keys = devPanels(input).map((panel) => panel.key);
 
-    expect(routes.map((route) => route.path)).toEqual(['/_x', ...keys.map((key) => `/_x/${key}`)]);
+    expect(routes.map((route) => `${route.method} ${route.path}`)).toEqual([
+      'GET /_x',
+      ...keys.map((key) => `GET /_x/${key}`),
+      // The one read that RUNS something is a POST (`dev-dashboard-routes.test.ts` says why).
+      'POST /_x/db',
+    ]);
     const names = routes.map((route) => route.meta.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain('dev._x');
     expect(names).toContain('dev._x.services');
-    expect(routes.every((route) => route.method === 'GET')).toBe(true);
     expect(routes.every((route) => route.meta.auth === 'public')).toBe(true);
   });
 
@@ -259,8 +272,12 @@ describe('unit · x dev mounts the dashboard', () => {
     );
     const result = await sources.runSql('select n, label from t');
 
-    // Verbatim: `assertReadOnly` in `dbPanel` is the only gate, so the CLI must not rewrite SQL.
-    expect(seen).toEqual(['select n, label from t']);
+    // The server's own refusal around it — `readOnlySql`, never the plain `db.query` that ran
+    // whatever the parse guard let through — and the statement itself read through a cursor that
+    // fetches at most the panel's row ceiling.
+    expect(seen[0]).toBe('BEGIN READ ONLY');
+    expect(seen.some((text) => text.includes('select n, label from t'))).toBe(true);
+    expect(seen.at(-1)).toBe('ROLLBACK');
     expect(result.columns).toEqual(['n', 'label']);
     expect(result.rows).toEqual([
       [1, 'one'],

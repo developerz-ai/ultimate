@@ -21,7 +21,6 @@ import {
   parseLock,
   portHolder,
   preflight,
-  suggestPort,
   writeLock,
 } from './dev-lock';
 
@@ -69,14 +68,6 @@ describe('isProcessAlive', () => {
     expect(isProcessAlive(0)).toBe(false);
     expect(isProcessAlive(-1)).toBe(false);
     expect(isProcessAlive(2 ** 31)).toBe(false);
-  });
-});
-
-describe('suggestPort', () => {
-  test('the next port up, except at the top of the range', () => {
-    expect(suggestPort(3000)).toBe(3001);
-    // 65536 is not a port, and a `fix:` that cannot run is the failure this module exists to end.
-    expect(suggestPort(65535)).toBe(65534);
   });
 });
 
@@ -170,7 +161,7 @@ describe('preflight', () => {
         portBound: () => true,
         holder: async () => ({}),
       }).catch(() => undefined);
-      // A claim held past a refusal would make `x dev --port 3001` — the fix line this very
+      // A claim held past a refusal would make `x dev --port 3002` — the fix line this very
       // refusal prints — fail with X_DEV_ALREADY_RUNNING naming the process that just exited.
       expect(await Bun.file(lockPath(dir)).exists()).toBe(false);
     } finally {
@@ -255,7 +246,9 @@ describe('preflight', () => {
       expect(error.code).toBe('X_PORT_IN_USE');
       expect(error.cause).toContain('docker-pr');
       expect(error.cause).toContain('99');
-      expect(error.fix).toContain('x dev --port 3001');
+      // Two up, never one: `x dev --port 3001` binds 3001 AND 3002 for sync, and 3001 is the
+      // neighbour of the very pair that was refused (`portPairAfter`).
+      expect(error.fix).toContain('x dev --port 3002');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -272,7 +265,7 @@ describe('preflight', () => {
         holder: async () => ({}),
       }).catch((error: unknown) => error)) as DevPortInUseError;
       expect(thrown.cause).toContain('another process');
-      expect(thrown.fix).toBe('x dev --port 3001');
+      expect(thrown.fix).toBe('x dev --port 3002');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

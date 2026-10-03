@@ -517,8 +517,8 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 
 | var | roles | required | notes |
 |---|---|---|---|
-| `ROLE` | all | no — default `web` | exactly `web \| sync \| worker \| scheduler \| migrate \| replicator`. There is no `all`. Invalid → `X_ROLE_UNKNOWN` from the production boot path, `X_ROLE_INVALID` from `assertRole()` inside the framework |
-| `PORT` | `web`, `sync` | no — default `3000` | the TCP port the role binds. Empty, non-numeric or outside 0–65535 → `X_PORT_INVALID`, refused rather than defaulted past, because a web role that quietly bound 3000 fails the platform's health probe with nothing in the log that names the cause |
+| `ROLE` | all | no — default `web`, as is empty or blank | exactly `web \| sync \| worker \| scheduler \| migrate \| replicator`. There is no `all`. Invalid → `X_ROLE_UNKNOWN` from the production boot path, `X_ROLE_INVALID` from `assertRole()` inside the framework |
+| `PORT` | `web`, `sync` | no — default `3000` | the TCP port the role binds. Non-decimal (`0x1F90`, `8e3`, `+80`) or outside 0–65535 → `X_PORT_INVALID`, refused rather than defaulted past, because a web role that quietly bound 3000 fails the platform's health probe with nothing in the log that names the cause |
 | `HOST` | `web`, `sync` | no — default `0.0.0.0` | the interface the role binds, and its metrics endpoint with it. Empty or whitespace is the default. `127.0.0.1` inside a container is unreachable through a port mapping and reachable only where the container shares the host's network namespace (`--network host`, a sidecar, `ssh -L`) — what an app that admits one implicit actor without a login wants. `runRole({ hostname })` overrides it, as `port` overrides `PORT` |
 | `ULTIMATE_ENV` | all | no — default `development` | `development \| test \| staging \| production`, read by `resolveEnvironment()`. `NODE_ENV` is a fallback only, and is never policed |
 | `DATABASE_URL` | all | yes | |
@@ -537,7 +537,7 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `BUILD_ID` | all | set by `x build` | content hash. Never a timestamp, never `latest` |
 | `DRAIN_TIMEOUT` | all | no — default `30s` | must be <= the orchestrator's `stop_grace_period` |
 | `LOG_LEVEL` | all | no — unset or empty is `info` | `trace \| debug \| info \| warn \| error \| fatal \| silent`, lowercase. Any other value — `DEBUG`, `verbose` — is REFUSED at import (`X_INVARIANT`), never read as `info` |
-| `TRUSTED_PROXY_HOPS` | `web`, `sync` | no — unset trusts no proxy header | how many proxies **append** to `x-forwarded-for` between the client and this process: 1 for a single ingress or ALB, 2 for a CDN in front of one. Integer 1–16; anything else is `X_PORT_INVALID`, refused rather than defaulted, because reading the header at the wrong index is trusting a value the client typed. Unset means `ctx.ip` is the socket address, `ctx.peer` is `null` and no inbound `x-request-id` is echoed |
+| `TRUSTED_PROXY_HOPS` | `web`, `sync` | no — unset trusts no proxy header | how many proxies **append** to `x-forwarded-for` between the client and this process: 1 for a single ingress or ALB, 2 for a CDN in front of one. Decimal digits, 1–64 (`@ultimat3/http`'s `MAX_PROXY_HOPS`); anything else is `X_TRUSTED_PROXY_HOPS_INVALID`, refused rather than defaulted, because reading the header at the wrong index is trusting a value the client typed. Unset means `ctx.ip` is the socket address, `ctx.peer` is `null` and no inbound `x-request-id` is echoed |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | all | no | the OTLP collector. There is no `otel` config block for it to override — see [`otel`](#otel) |
 
 Rules:

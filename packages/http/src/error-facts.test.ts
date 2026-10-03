@@ -14,7 +14,7 @@ describe('factsOf', () => {
     const facts = factsOf(routeNotFound('GET', '/missing'));
     expect(facts.code).toBe('X_ROUTE_NOT_FOUND');
     expect(facts.cause).toContain('GET /missing');
-    expect(facts.fix).toContain('x routes list');
+    expect(facts.fix).toContain('x routes --json');
     expect(facts.status).toBe(404);
     expect(facts.docs).toBe(ERROR_DOCS_URL);
   });

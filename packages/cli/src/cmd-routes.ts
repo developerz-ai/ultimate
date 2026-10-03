@@ -10,7 +10,7 @@ import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { routesSpec } from './cmd-routes-spec';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError } from './errors';
+import { BadFlagError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagString } from './parse';
@@ -83,6 +83,16 @@ export const routesCommand: CliCommand = {
   spec: routesSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('routes', ctx.cwd).dir;
+    // No positional: `x routes list --json` ran only because a stray word was ignored, which is
+    // how a retired spelling stayed in the route-miss fix lines. Refused before the app loads.
+    const stray = ctx.args.positionals[0];
+    if (stray !== undefined) {
+      throw new UnknownCommandError({
+        path: `routes ${stray}`,
+        known: ['routes'],
+        suggestion: 'routes --json',
+      });
+    }
     // Read before the app is loaded: a typo must not cost a boot to report, the rule `x mcp`'s
     // `--transport` already follows.
     const surface = readSurfaceFilter(flagString(ctx.args, 'surface'));

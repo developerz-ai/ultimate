@@ -22,6 +22,9 @@ spec:
   type: ClusterIP
   {{- if not $cfg.port }}
   clusterIP: None
+  # Scraped whether or not ready: a replicator whose stream is down (readiness 503) is the pod
+  # whose metrics matter most, and nothing routes to these addresses anyway.
+  publishNotReadyAddresses: true
   {{- end }}
   selector:
     app.kubernetes.io/instance: {{ $.Release.Name }}

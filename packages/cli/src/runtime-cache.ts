@@ -20,7 +20,7 @@ import {
   resetTiers,
 } from '@ultimat3/cache';
 import type { CacheTierName } from '@ultimat3/core';
-import { CACHE_TIERS, defineConfig, logger, renderThrowable } from '@ultimat3/core';
+import { backoffDelay, CACHE_TIERS, defineConfig, logger, renderThrowable } from '@ultimat3/core';
 import type { Transport, TransportSubscription } from '@ultimat3/realtime/server';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
@@ -44,7 +44,13 @@ export interface CacheTiersOptions {
    * a convention to remember. `loadCacheTiers` is what a boot holding only a root calls for it.
    */
   readonly tiers: readonly CacheTierName[];
+  /** The wait before re-subscribing after `attempt` failures (1-based). Injected by a test. */
+  readonly subscribeRetryMs?: ((attempt: number) => number) | undefined;
 }
+
+/** 1 s doubling to 30 s, full jitter: a bus that is down is retried without a fleet in lockstep. */
+const defaultSubscribeRetryMs = (attempt: number): number =>
+  backoffDelay({ attempt, base: 1_000, max: 30_000, jitter: 'full' });
 
 /**
  * The rungs an app that declares none gets — ASKED of `defineConfig` rather than written out, for
@@ -176,24 +182,36 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   registerInvalidationBroadcast(async (wireTags) => {
     await options.transport.publish(CACHE_INVALIDATE_SUBJECT, JSON.stringify(wireTags));
   });
-  // Not awaited HERE: the boot must not block on a subscribe, and a bus that refuses one is a
-  // process that misses peer invalidations, never a process that fails to start. The PROMISE is
-  // held rather than a handle assigned inside a `.then`, because the release ran first whenever
-  // `stop()` beat the round trip — a NATS bus plus a boot that throws in `bootRoles`, or a test
-  // that boots and stops immediately — and the subscription that landed afterwards was live with
-  // nobody left holding it. `mcp-host.ts`'s lazy `started` is the same shape.
-  const subscribing: Promise<TransportSubscription | undefined> = options.transport
-    .subscribe(CACHE_INVALIDATE_SUBJECT, (payload: string) => {
-      void applyBroadcast(payload);
-    })
-    .catch((error: unknown) => {
-      logger.warn('cache.broadcast.subscribe-failed', { error: broadcastErrorText(error) });
-      return undefined;
-    });
+  // Not awaited HERE: the boot must not block on a subscribe. The PROMISE is held rather than a
+  // handle assigned inside a `.then`, because the release ran first whenever `stop()` beat the round
+  // trip and the subscription that landed afterwards was live with nobody left holding it.
+  // RETRIED until it lands or the release runs (s1-con #8): a refused boot subscribe used to be
+  // logged once and never asked again, so the process missed every peer invalidation for its life.
+  const released = Promise.withResolvers<undefined>();
+  let stopped = false;
+  const retryMs = options.subscribeRetryMs ?? defaultSubscribeRetryMs;
+  const subscribing = (async (): Promise<TransportSubscription | undefined> => {
+    for (let attempt = 1; !stopped; attempt += 1) {
+      try {
+        return await options.transport.subscribe(CACHE_INVALIDATE_SUBJECT, (payload: string) => {
+          void applyBroadcast(payload);
+        });
+      } catch (error) {
+        logger.warn('cache.broadcast.subscribe-failed', {
+          error: broadcastErrorText(error),
+          attempt,
+        });
+        await Promise.race([Bun.sleep(retryMs(attempt)), released.promise]);
+      }
+    }
+    return undefined;
+  })();
 
   // `resetTiers()` drops the registry AND the broadcast in one call: this boot is the only thing
   // that registers either, and a tier left behind would purge for a process that has stopped.
   return async () => {
+    stopped = true;
+    released.resolve(undefined);
     (await subscribing)?.unsubscribe();
     resetTiers();
   };

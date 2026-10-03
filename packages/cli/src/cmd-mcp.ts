@@ -3,17 +3,24 @@
 // supplies only the app, the caller and the socket. A tool answered here would be a second answer
 // to a question the framework already answers.
 
-import { markListening, nanoid, timingSafeEqual } from '@ultimat3/core';
+import {
+  markListening,
+  nanoid,
+  renderFixShellArg,
+  timingSafeEqual,
+  UltimateError,
+} from '@ultimat3/core';
 import { mcpHttpRoute, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
 import { DEFAULT_PORT, mcpSpec } from './cmd-mcp-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
-import { intFlagOr, PORT_RANGE } from './flag-number';
+import { intFlagOr, neighbouringPort, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import type { CliMcpServer } from './mcp-host';
 import { createDevMcpServer, DEV_TOOL_SCOPES } from './mcp-host';
 import { msg } from './messages';
+import { isAddressInUse } from './metrics-endpoint';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
 
@@ -56,6 +63,21 @@ const notFound = (path: string): Response =>
     { status: 404, headers: { 'content-type': 'application/json' } },
   );
 
+/**
+ * The MCP port is bound already — by another `x mcp serve`, or by the inspector, whose default
+ * 9229 this one shares. `metrics-endpoint.ts`'s pattern: an `EADDRINUSE` throw becomes the
+ * framework's `X_PORT_IN_USE`, with the invocation one port over.
+ */
+export class McpPortInUseError extends UltimateError {
+  constructor(input: { port: number }) {
+    super({
+      code: 'X_PORT_IN_USE',
+      cause: `port ${String(input.port)} is already bound, so x mcp serve could not open its HTTP transport`,
+      fix: `x mcp serve --transport http --port ${renderFixShellArg(String(neighbouringPort(input.port)), '9230')}`,
+    });
+  }
+}
+
 /** A running HTTP transport. `stop()` releases the socket AND the host's lazily booted services. */
 export interface McpHttpServer {
   readonly result: CommandResult;
@@ -70,7 +92,7 @@ export interface McpHttpServer {
  * directory outlive `run()` otherwise, and nothing — a test, an embedding caller, or a signal —
  * could ever release them.
  */
-export function startMcpHttp(host: CliMcpServer, port: number): McpHttpServer {
+export async function startMcpHttp(host: CliMcpServer, port: number): Promise<McpHttpServer> {
   const token = nanoid(32);
   const route = mcpHttpRoute({
     server: host.server,
@@ -83,18 +105,26 @@ export function startMcpHttp(host: CliMcpServer, port: number): McpHttpServer {
         ? { actor: host.caller.actor, scopes: DEV_TOOL_SCOPES }
         : null,
   });
-  const handle = Bun.serve({
-    port,
-    hostname: 'localhost',
-    fetch: (request: Request, server): Response | Promise<Response> => {
-      const url = new URL(request.url);
-      if (request.method !== route.method || url.pathname !== route.path) {
-        return notFound(route.path);
-      }
-      // The socket's peer: failed tokens are metered per address, and only the server knows it.
-      return route.handle(request, { address: server.requestIP(request)?.address });
-    },
-  });
+  let handle: ReturnType<typeof Bun.serve>;
+  try {
+    handle = Bun.serve({
+      port,
+      hostname: 'localhost',
+      fetch: (request: Request, server): Response | Promise<Response> => {
+        const url = new URL(request.url);
+        if (request.method !== route.method || url.pathname !== route.path) {
+          return notFound(route.path);
+        }
+        // The socket's peer: failed tokens are metered per address, and only the server knows it.
+        return route.handle(request, { address: server.requestIP(request)?.address });
+      },
+    });
+  } catch (error) {
+    // The host booted before the bind; a refusal that left it open would leak its database.
+    await host.close();
+    if (isAddressInUse(error)) throw new McpPortInUseError({ port });
+    throw error;
+  }
   // Announces the socket as this process's own, so a caller on it is never mistaken for egress.
   const stopListening = markListening(handle.url.origin);
   const url = `${handle.url.origin}${route.path}`;
@@ -180,7 +210,7 @@ export const mcpCommand: CliCommand = {
     // starts is what releases the socket and the database. Registering a shutdown hook and
     // returning was the older shape — nothing installed a signal handler, so the hook was never
     // reached and the exit code closed the socket the line above had just announced.
-    const served = startMcpHttp(host, port);
+    const served = await startMcpHttp(host, port);
     return { ...served.result, hold: holdUntilShutdown('mcp', () => served.stop()) };
   },
 };
