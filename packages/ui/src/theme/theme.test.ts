@@ -9,6 +9,7 @@ import {
   setTheme,
   storedTheme,
   THEME_ATTRIBUTE,
+  THEME_DEFAULT_ATTRIBUTE,
   THEME_MEDIA_QUERY,
   THEME_STORAGE_KEY,
   type Theme,
@@ -24,13 +25,19 @@ interface FakeEnv extends ThemeEnv {
   fireOsChange(): void;
 }
 
-function fakeEnv(init: { stored?: string | null; dark?: boolean } = {}): FakeEnv {
+function fakeEnv(
+  init: { stored?: string | null; dark?: boolean; stamped?: Theme; appDefault?: string } = {},
+): FakeEnv {
   const listeners: Array<() => void> = [];
   const env: FakeEnv = {
     stored: init.stored ?? null,
     dark: init.dark ?? false,
-    applied: [],
+    // What the boot script stamped on <html> before any of this ran.
+    applied: init.stamped === undefined ? [] : [init.stamped],
     read: () => env.stored,
+    current: () => env.applied.at(-1) ?? null,
+    // What the boot stamped as `theme.defaultMode` — `null` before any boot ran.
+    appDefault: () => init.appDefault ?? null,
     write: (value) => {
       env.stored = value;
     },
@@ -63,6 +70,20 @@ describe('resolution order', () => {
     expect(resolveTheme(env)).toBe('dark');
     env.dark = false;
     expect(resolveTheme(env)).toBe('light');
+  });
+
+  test('with no stored choice, the theme the boot stamped beats the OS — the app default', () => {
+    // `theme.defaultMode: 'dark'` on a light-OS machine: the boot script stamped dark.
+    env = fakeEnv({ stamped: 'dark', dark: false });
+    expect(resolveTheme(env)).toBe('dark');
+    // The first toggle is a visible flip, not a write of the theme already on screen.
+    expect(toggleTheme(env)).toBe('light');
+    expect(env.applied.at(-1)).toBe('light');
+  });
+
+  test('a stamped value that is not a theme is ignored, and the OS decides', () => {
+    env = fakeEnv({ stamped: 'sepia' as Theme, dark: true });
+    expect(resolveTheme(env)).toBe('dark');
   });
 
   test('a stored choice beats the OS', () => {
@@ -105,11 +126,43 @@ describe('resolution order', () => {
   test('an invalid theme throws X_THEME_INVALID with a fix', () => {
     try {
       setTheme('sepia' as Theme, env);
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; fix?: string };
       expect(err.code).toBe(UI_ERROR_CODES.themeInvalid);
       expect(err.fix).toContain('clearTheme()');
+    }
+  });
+});
+
+describe('a fixed app default (`theme.defaultMode`) outranks the OS', () => {
+  test('clearing the choice returns to the APP default, not the OS', () => {
+    const env = fakeEnv({ appDefault: 'dark', stamped: 'dark', dark: false });
+    setTheme('light', env);
+    expect(clearTheme(env)).toBe('dark');
+    expect(env.applied.at(-1)).toBe('dark');
+  });
+
+  test('an OS flip never overrides a fixed app default', () => {
+    const env = fakeEnv({ appDefault: 'dark', stamped: 'dark', dark: true });
+    const stop = watchOsTheme(env);
+    env.applied.length = 0;
+    env.dark = false;
+    env.fireOsChange();
+    expect(env.applied).toEqual([]);
+    stop();
+  });
+
+  test("'system' — or no boot at all — still follows the OS", () => {
+    for (const appDefault of ['system', undefined]) {
+      const env = fakeEnv(appDefault === undefined ? {} : { appDefault });
+      const stop = watchOsTheme(env);
+      env.dark = true;
+      env.fireOsChange();
+      expect(env.applied.at(-1)).toBe('dark');
+      env.dark = false;
+      expect(clearTheme(env)).toBe('light');
+      stop();
     }
   });
 });
@@ -209,6 +262,10 @@ describe('browserThemeEnv', () => {
         setAttribute: (name: string, value: string): void => {
           applied.push(`${name}=${value}`);
         },
+        getAttribute: (name: string): string | null => {
+          const last = applied.filter((entry) => entry.startsWith(`${name}=`)).at(-1);
+          return last === undefined ? null : last.slice(name.length + 1);
+        },
       },
     };
 
@@ -255,6 +312,30 @@ describe('browserThemeEnv', () => {
     try {
       browserThemeEnv().apply('dark');
       expect(host.applied).toEqual([`${THEME_ATTRIBUTE}=dark`]);
+    } finally {
+      host.restore();
+    }
+  });
+
+  test('appDefault reads the fallback the boot script stamped beside the theme', () => {
+    const host = installHost();
+    try {
+      const env = browserThemeEnv();
+      expect(env.appDefault()).toBeNull();
+      host.applied.push(`${THEME_DEFAULT_ATTRIBUTE}=dark`);
+      expect(env.appDefault()).toBe('dark');
+    } finally {
+      host.restore();
+    }
+  });
+
+  test('current reads the attribute the boot script stamped, live', () => {
+    const host = installHost();
+    try {
+      const env = browserThemeEnv();
+      expect(env.current()).toBeNull();
+      host.applied.push(`${THEME_ATTRIBUTE}=dark`);
+      expect(env.current()).toBe('dark');
     } finally {
       host.restore();
     }

@@ -22,8 +22,9 @@ repair in `testing` rode along with it. Slice 05 is `auth`: **a deployment with 
 users has an operator step — the first `auth` entry under Changed.** Slice 06 is complete:
 `query` with `entity`'s comparison rule, `mcp` and `admin`, then `action` with what it changed in
 `http`, `db` and `cli`. Slice 07 is `jobs`; no DDL changed. Slice 08 is
-`realtime`: **three operator steps — the first three `realtime` entries under Changed.** Slice 09's
-first half is `render` and `pwa`, with what they changed in `http`; its `ui` half follows.
+`realtime`: **three operator steps — the first three `realtime` entries under Changed.** Slice 09 is
+complete: `render` and `pwa`, with what they changed in `http`; then `ui`, with the theme script it
+reads in `render` and the build-stats rule it moved in `cli`.
 
 ### Added
 
@@ -163,6 +164,17 @@ Tier 4 — render, pwa (slice 09).
   `DEFAULT_ISR_REGENERATE_DEADLINE_MS` (30,000), from `@ultimat3/render/server` — see Fixed.
 - **pwa:** `routeRules(routes, personalPages)` takes an optional second parameter, default
   `'never'` — see Fixed.
+
+Tier 4 — ui, render (slice 09).
+
+- **ui:** `defaultTheme(env)` — the theme "no explicit choice" means: `theme.defaultMode` when it is
+  `'light'` or `'dark'`, the OS otherwise. `THEME_DEFAULT_ATTRIBUTE` (`data-theme-default`), where
+  the boot records that mode. `ThemeEnv` gains `current()` and `appDefault()` — see Changed.
+- **ui:** `bun run --filter @ultimat3/ui icons --bump` moves `LUCIDE_VERSION` in
+  `packages/ui/src/icons/build-icons.ts` to the registry's latest `lucide-static`, then
+  regenerates the glyphs. Every icon-data `fix:` is now that one command.
+- **render:** `themeScriptBody` stamps its fallback beside the theme, as `<attribute>-default`
+  (`data-theme-default`), outside the `try` — so a storage read that throws still leaves it.
 
 Tier 5 — cli.
 
@@ -767,6 +779,44 @@ Tier 2 — http. Tier 4 — render, pwa (slice 09).
   measured numbers and the reason are in the comment above each budget, where
   `bun run budget-raises` reads them.
 
+Tier 4 — ui, render. Tier 5 — cli (slice 09).
+
+- **BREAKING — `ThemeEnv` gains required `current()` and `appDefault()`.** `current()` is the
+  `data-theme` on the document now; `appDefault()` the `data-theme-default` the boot stamped, `null`
+  when no boot ran. `browserThemeEnv()` implements both. A hand-built `ThemeEnv` is TS2741: add
+  `current: () => document.documentElement.getAttribute(THEME_ATTRIBUTE)` and
+  `appDefault: () => document.documentElement.getAttribute(THEME_DEFAULT_ATTRIBUTE)`, or spread
+  `browserThemeEnv()`; a test fake answers `null` for both to keep the OS rule.
+- **BREAKING — a fixed `theme.defaultMode` is what "no choice" means on the client.**
+  `resolveTheme()` is stored choice → the `data-theme` the boot stamped → `defaultTheme(env)`; it was
+  stored choice → the OS, so with `defaultMode: 'dark'` on a light-OS machine the first toggle wrote
+  the dark already on screen. With `'light'` or `'dark'`, `clearTheme()` — `ThemeToggle`'s "System" —
+  returns to that mode, not the OS, and `watchOsTheme` no longer re-themes the page on an OS change.
+  `'system'` and an app with no boot are unchanged. An app that wants the OS followed sets
+  `theme: { defaultMode: 'system' }`; a `ThemeEnv` that overrode `prefersDark` to pin the booted
+  theme can drop the override.
+- **BREAKING — `THEME_INLINE_SCRIPT`, `themeInlineScriptTag`, `themeInlineScriptHash` and
+  `themeInlineScriptCspSource` are removed** from `@ultimat3/ui` — deprecated in 20.2.0, "removed in
+  21" and never were. The boot inlines `render`'s `themeScript({ fallback })` and admits its hash
+  itself. Delete the import, the hand-inlined `<script>` and its `sha256-…` in your
+  `Content-Security-Policy` (TS2305 at the import).
+- **BREAKING — `Popover`'s `trigger` receives `'aria-controls': string | undefined`.** Absent while
+  the panel is closed: an IDREF to an element not in the document names nothing. A trigger that
+  hands it to a prop typed `string`, or annotates its parameter with `string`, is TS2322: widen to
+  `string | undefined`, or spread the control object onto the element.
+- **BREAKING — `Dropzone` and `FileInput` leave only accepted files in their `<input type=file>`.**
+  A file `accept`, `maxBytes` or `maxFiles` refused was posted with the form anyway; a drop with
+  nothing accepted leaves an earlier pick alone, and a pick that refused everything empties the
+  input, so a `required` control blocks the submit. A server or e2e test that received the refused
+  file stops receiving it — the `onSelect` selection's `rejected` list is where it is reported. The
+  internal `adoptDroppedFiles` is `adoptAcceptedFiles`; neither was exported.
+- **render:** the boot's theme script is 52–54 B longer (`light` 149 → 202, `dark` 148 → 200,
+  `system` 207 → 261 characters) and its `script-src` hash changes; the boot admits the new hash from
+  the same string, and `budgets` never charges it.
+- **cli:** `BUILD_STATS_RULES` is 4, was 3 — the exempt theme script's bytes moved. A
+  `.x/build-stats.json` written before this release is stale: every budgeted route reads
+  `X_BUDGET_UNMEASURED` until `x build --target static`.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -1107,6 +1157,49 @@ Tier 2 — http. Tier 4 — render, pwa (slice 09).
 - **pwa:** the wiki's `push` and `shareTarget` capability rows say what is generated: the two
   service-worker handlers only with a `vapid` key, which `x build` never passes; the
   `share_target` manifest member only.
+
+Tier 4 — ui (slice 09).
+
+- **ui:** `<QrCode>` draws a code a reader decodes. Four placement defects made every one
+  undecodable: a second light separator ring over row and column 8 (the format strip and two timing
+  modules), alignment patterns over the top-right and bottom-left finders from version 2, the data
+  strip that straddles the timing column not shifted left, and the second format copy transposed.
+  Every QR changes its modules. Held by a test-only reader written from ISO 18004 that shares no
+  code with the encoder (`components/qr-reader.ts`, never exported), and by a whole reference matrix
+  per version 1–3, module for module, drawn by an independent encoder (byte mode, level M).
+- **ui:** `DataTable` leaves its error or empty state when the query recovers. The branch was
+  decided in the component body, which an island runs once; it is decided inside the returned JSX,
+  as `AsyncRegion` does. The error and empty states now sit inside the table's wrapper, which
+  carries `class`.
+- **ui:** a `defineTheme()` role overridden in light only no longer reaches an OS-dark document
+  with no `data-theme` (scripting off, storage throwing): the dark media block answers it with the
+  shipped dark channels. The brand's CSS, and its `brandStyleCspSource()` hash, change for such a
+  brand.
+- **ui:** `createFormBinding` — a local schema `validate` that throws or rejects is a failed
+  submit. `submit()` rejected and left the state at `submitting`, refusing every retry.
+- **ui:** RTL. `CommandPalette`, `Tooltip` and `Popover`'s `align="center"` centre by
+  `inset-inline` + `margin-inline: auto`; a 50% logical inset beside a −50% physical translate put
+  them a whole width off under `dir="rtl"`. `Popover`'s inline placements sit beside the anchor —
+  an align rule wiped their inset and dropped the panel over it; `align` applies to `block-*`
+  placements only. The vertical `Tabs` indicator is mirrored. `components/rtl-sheets.test.ts`
+  compiles every component sheet and refuses both patterns; `packages/cli/e2e/ui-rtl.e2e.test.ts`
+  measures the overlays in Chrome at 390 px.
+- **ui:** `useId` in a browser is `<prefix>-<scope>-<n>`, the scope drawn once per copy of the
+  module: each island bundles its own counter, and two islands both minted `field-1`. Server output
+  is unchanged.
+- **ui:** `Textarea` writes the parser's leading newline on the server only; in an island it sets
+  `.value`, where the newline was data.
+- **ui:** smaller ones. `RelativeTime` promotes a value that rounds into the next unit ("1 hour
+  ago", was "60 minutes ago"). `BarChart` shrinks the gap before the bars: from 201 points the 3 px gaps
+  filled the 600-unit width and every bar had zero or negative width. `linkTarget` decides external by resolving the href: `//cdn.test`,
+  `HTTPS://…` and a leading space are external, and an href the parser refuses is treated as
+  external. `Meter`'s `aria-valuenow` / `aria-valuemax` follow the drawn bar — clamped to the
+  range, `0` of `1` with no usable maximum. A disabled `Dropzone` and `FileInput` button are
+  dimmed; the compiled rule matched nothing. `toastIdentity` uses `\0` escapes, not raw NUL bytes
+  that made git treat `toast-state.ts` as binary (`src/source-text.test.ts`).
+- **ui:** the icon generator. A body that is not JSON, and a node that is not `[tag, attributes]`,
+  is `X_UI_INVALID_VALUE`; the first was a bare `SyntaxError`, the second skipped into a partial
+  glyph. Every generator `fix:` is one runnable command.
 
 ## 23.0.0 - 2026-10-02
 

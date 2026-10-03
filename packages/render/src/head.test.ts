@@ -281,13 +281,13 @@ describe('themeScript', () => {
     const tag = themeScript();
     expect(tag.content).toContain('localStorage.getItem("ultimate.theme")');
     expect(tag.content).toContain('matchMedia("(prefers-color-scheme: dark)")');
-    expect(tag.content).toContain('document.documentElement.setAttribute("data-theme"');
+    expect(tag.content).toContain('d.setAttribute("data-theme",t)');
   });
 
   test('custom attribute/storageKey options appear in the emitted source', () => {
     const tag = themeScript({ attribute: 'data-x-theme', storageKey: 'my-theme' });
     expect(tag.content).toContain('localStorage.getItem("my-theme")');
-    expect(tag.content).toContain('document.documentElement.setAttribute("data-x-theme"');
+    expect(tag.content).toContain('d.setAttribute("data-x-theme",t)');
     expect(tag.content).not.toContain('localStorage.getItem("ultimate.theme")');
     expect(tag.content).not.toContain('setAttribute("data-theme"');
   });
@@ -320,6 +320,19 @@ describe('themeScript', () => {
     // value must not be stamped onto the document.
     const body = themeScriptBody({ fallback: 'light' });
     expect(body).toContain('s==="light"||s==="dark"?s:"light"');
+  });
+
+  test('the fallback itself is stamped beside the theme, so the client can tell an app default from the OS', () => {
+    // `@ultimat3/ui`'s `clearTheme` / `watchOsTheme` read it: with `defaultMode: 'dark'` an OS flip
+    // or a "system" pick must not override the app's own opinion.
+    for (const fallback of ['light', 'dark', 'system'] as const) {
+      expect(themeScriptBody({ fallback })).toContain(
+        `setAttribute("data-theme-default",${JSON.stringify(fallback)})`,
+      );
+    }
+    expect(themeScriptBody({ attribute: 'data-scheme', fallback: 'dark' })).toContain(
+      'setAttribute("data-scheme-default","dark")',
+    );
   });
 
   test('the tag carries exactly the body, so one hash admits it', () => {
@@ -382,7 +395,7 @@ describe('themeScript encodes its options as JS string literals', () => {
   test('the ordinary options are unchanged, so the encoder did not rewrite them', () => {
     const tag = themeScript({ attribute: 'data-x-theme', storageKey: 'my-theme' });
     expect(tag.content).toContain('localStorage.getItem("my-theme")');
-    expect(tag.content).toContain('document.documentElement.setAttribute("data-x-theme"');
+    expect(tag.content).toContain('d.setAttribute("data-x-theme",t)');
   });
 });
 

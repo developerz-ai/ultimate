@@ -31,7 +31,7 @@ Tier 4. Imports `@ultimat3/core`, `i18n`, `money`, `time` — **not `schema`**, 
 - **`@include t.tone-classes`** emits the `.tone-*` custom-property blocks. Never hand-write a seventh copy; `$tones` in `_colors.scss` mirrors `TONES` and `variants.test.ts` gates it.
 - **Icons are generated, never authored.** `src/icons/glyphs/*.ts` is one module per Lucide icon, written by `bun run icons` from `lucide-static@LUCIDE_VERSION`. Never hand-edit a glyph, never add a hand-drawn one, never introduce a second icon source. An upstream fix is a version bump plus a re-run. `lucide` itself is NOT a dependency — the data is committed, so the package still installs, typechecks and renders offline with zero runtime deps.
 - **One icon, one module.** The `Icon` component takes a `glyph`, not a name: a `name → glyph` map would be one module holding 1767 icons, and no bundler can split that. Per-icon imports are the whole point (1 icon = 104 B minified, 50 = 8.9 kB).
-- **No client runtime exists yet.** A new interactive component must be correct server-rendered and usable with scripting off — `<details>` for disclosure, `<input list>`+`<datalist>` for suggestions, a real `rel="next"` link for paging — with listeners and observers as additive extras. A component that renders nothing until JS runs does not ship.
+- **Server-rendered first, an island second.** Components run in islands (`examples/dummy`'s settings and feed islands render them), but every one must still be correct server-rendered and usable with scripting off — `<details>` for disclosure, `<input list>`+`<datalist>` for suggestions, a real `rel="next"` link for paging — with listeners and observers as additive extras. A component that renders nothing until JS runs does not ship. In an island the body runs ONCE: a branch decided there (an early `return <ErrorState>`) is decided for the island's life, so branches live inside the returned JSX (`AsyncRegion`, `DataTable`). A server-only spelling is gated on `typeof document` (`Textarea`'s parser newline). Ids minted in an island carry a per-copy scope (`a11y.ts`), because each island bundles its own counter.
 - **`inert-render.test.ts` must not assume which factory its `.tsx` compiled to.** `@ultimat3/render` installs a process-global `.tsx` `onLoad` plugin at import, so in one `bun test` process a component may compile to render's `h`. The walker recognises both (`Symbol.for('ultimate.render.jsx')`), and the first test asserts a recognised node — otherwise the file renders `"[object Object]"` and passes by shard packing.
 - **Components are not unit-tested through a renderer.** `.tsx` compiles to `@ultimat3/render`'s `h`, which this package may not import, so every rule lives in a pure module beside the component (`icon-glyph.ts`, `accordion-view.ts`, `combobox-filter.ts`, `infinite-scroll-view.ts`) and *that* is what the tests assert.
 - Formatting logic lives in a pure `*-view.ts` next to the component (`money-view.ts`, `date-time-view.ts`) so it is testable with no renderer. Every other renderer-free core follows the same rule under its own name (`sort-state.ts`, `image-source.ts`) — the `.tsx` holds markup, never a rule.
@@ -64,11 +64,10 @@ Tier 4. Imports `@ultimat3/core`, `i18n`, `money`, `time` — **not `schema`**, 
 | `src/theme/runtime-slot.ts` | the module-scope slot holding the app's Solid runtime — and nothing else, so registering one costs an island 72 B |
 | `src/theme/solid-adapter.ts` | the runtime's SHAPE, and the one rule that decides which runtime a render gets |
 | `src/theme/inert-runtime.ts` | `INERT_SOLID_RUNTIME` — what a server render IS, not a stub of what it lacks |
-| `src/theme/theme.ts` | resolution: stored choice → OS; all side effects via injected `ThemeEnv` |
+| `src/theme/theme.ts` | resolution: stored choice → the theme the boot stamped on `<html>` (`ThemeEnv.current()`) → the app default (`data-theme-default`, `ThemeEnv.appDefault()`) → OS; clearing and the OS listener answer the app default too; all side effects via injected `ThemeEnv` |
 | `src/theme/ambient-slot.ts` | the module-scope slot holding the reader `useUi()` falls back to on the server — imports nothing, so a browser chunk pays nothing for it |
 | `src/theme/ambient.ts` | the server's reader (`ambientUiContext`: request locale, zone, direction, translator), registered at import; `index.ts` imports it bare, and the `browser` field maps it to `ambient.browser.ts`, which answers the defaults and registers nothing |
 | `src/error-registry.ts` | the `registerErrorCodes()` call, alone, so `errors.ts` is pure and the barrel's re-export of it costs a chunk nothing |
-| `src/theme/inline-script.ts` | anti-flash `<head>` snippet + its CSP sha256 |
 | `src/components/` | 62 components, `PascalCase.tsx` (component convention overrides the repo's kebab-case) |
 | `src/icons/glyphs/` | GENERATED: 1767 per-icon modules, `@ultimat3/ui/icons/<name>` → `icon<Name>` |
 | `src/icons/build-icons.ts` | the generator + the pinned `LUCIDE_VERSION`; `LICENSE.lucide` is upstream's ISC text |
@@ -107,6 +106,7 @@ bun test                                  # from the repo root
 bun run --filter @ultimat3/ui typecheck
 bun run --filter @ultimat3/ui catalog     # after any prop change — CATALOG.md is gated
 bun run --filter @ultimat3/ui icons       # regenerate the glyph set (network; dev-only)
+bun run --filter @ultimat3/ui icons --bump  # move LUCIDE_VERSION to the latest lucide-static, then regenerate
 ```
 
 ## Deep import

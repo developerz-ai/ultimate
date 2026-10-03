@@ -9,8 +9,13 @@
   @include t.transition(opacity, translate);
   position: absolute;
   z-index: t.z(tooltip);
-  inset-inline-start: 50%;
-  translate: -50% t.space(1);
+  // Centred over the trigger in either direction: auto margins inside an inset band far wider than
+  // any bubble. A 50% logical inset with a -50% physical translate lands a whole width off-centre
+  // under `dir="rtl"` (`rtl-sheets.test.ts`).
+  inset-inline: -100vw;
+  margin-inline: auto;
+  inline-size: max-content;
+  translate: 0 t.space(1);
   max-inline-size: 18rem;
   padding-block: t.space(1);
   padding-inline: t.space(2);
@@ -36,6 +41,6 @@
 // Hover and keyboard focus both reveal it — a hover-only tooltip is inaccessible.
 .wrap:hover .bubble,
 .wrap:focus-within .bubble {
-  translate: -50% 0;
+  translate: 0 0;
   opacity: 1;
 }

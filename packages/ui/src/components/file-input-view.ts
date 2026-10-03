@@ -106,22 +106,41 @@ export interface FileTarget {
   files: FileList | null;
 }
 
+/** Builds the `FileList` an input's `files` accepts — the one constructor the DOM offers for it. */
+export type FileListOf<TFile extends FileCandidate> = (files: readonly TFile[]) => FileList;
+
+function dataTransferList<TFile extends FileCandidate>(files: readonly TFile[]): FileList {
+  const transfer = new DataTransfer();
+  for (const one of files) transfer.items.add(one as unknown as File);
+  return transfer.files;
+}
+
 /**
- * Hand a drop's files to the real `<input>`, so a dropped file behaves exactly like a picked one.
+ * Make the real `<input>` hold exactly the files the control ACCEPTED, so the form posts what the
+ * control showed and nothing it refused.
  *
- * Without this a `<Dropzone name="avatar" required>` inside a `<form>` shows the accepted file and
- * then refuses to submit: `onSelect` fired, but `input.files` is still empty, so `required` blocks
- * on "Please select a file" and a submit that got past it would post no file at all. Native form
- * participation is what the `name`/`required` props promise. `files` is assignable from a
- * `DataTransfer`'s own `FileList` in every current engine — that is the supported way to do this.
+ * A drop never reaches the input on its own: without this a `<Dropzone name="avatar" required>`
+ * shows the accepted file and then refuses to submit. And handing it the whole drop posted the
+ * files `accept` / `maxBytes` / `maxFiles` turned away — `accept` is a hint to the picker, never a
+ * filter on `files`. So a `drop` with something accepted is adopted as the accepted list, and a
+ * drop with nothing accepted leaves an earlier pick alone, as a refused drop should. A `pick`
+ * already set `files` itself; it is narrowed only when it refused something — to an empty list if
+ * it refused everything, because the refused file is the one the form would otherwise post. A list
+ * is BUILT (`listOf`, a `DataTransfer` in a browser) only when something was refused.
  */
-export function adoptDroppedFiles(
+export function adoptAcceptedFiles<TFile extends FileCandidate>(
   input: FileTarget | undefined,
-  dropped: FileList | null | undefined,
+  offered: FileList | null | undefined,
+  selection: FileSelection<TFile>,
+  origin: 'drop' | 'pick',
+  listOf: FileListOf<TFile> = dataTransferList,
 ): void {
-  // An empty drop must not CLEAR a previous pick: the browser does not, and neither does this.
-  if (input === undefined || dropped === null || dropped === undefined || dropped.length === 0) {
-    return;
+  if (input === undefined) return;
+  if (origin === 'drop' && selection.accepted.length === 0) return;
+  if (selection.rejected.length > 0) {
+    input.files = listOf(selection.accepted);
+  } else if (origin === 'drop' && offered !== null && offered !== undefined) {
+    // Nothing refused: the drop's own list, which needs no constructor at all.
+    input.files = offered;
   }
-  input.files = dropped;
 }

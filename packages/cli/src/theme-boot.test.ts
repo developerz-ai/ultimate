@@ -67,4 +67,12 @@ describe('unit · render and ui agree on the storage key', () => {
     expect(declared).toBe(THEME_STORAGE_KEY);
     expect(themeBoot('system').head).toContain(JSON.stringify(THEME_STORAGE_KEY));
   });
+
+  test('the default attribute the boot stamps is the one ui reads', async () => {
+    const theme = new URL('../../ui/src/theme/theme.ts', import.meta.url).pathname;
+    const source = await Bun.file(theme).text();
+    const declared = /export const THEME_DEFAULT_ATTRIBUTE = `\$\{THEME_ATTRIBUTE\}-default`/;
+    expect(declared.test(source)).toBe(true);
+    expect(themeBoot('dark').head).toContain('"data-theme-default","dark"');
+  });
 });

@@ -312,12 +312,6 @@ export {
   useUi,
 } from './theme/context';
 export { INERT_SOLID_RUNTIME } from './theme/inert-runtime';
-export {
-  THEME_INLINE_SCRIPT,
-  themeInlineScriptCspSource,
-  themeInlineScriptHash,
-  themeInlineScriptTag,
-} from './theme/inline-script';
 export type { UiProviderProps } from './theme/provider';
 export { UiProvider } from './theme/provider';
 // The slot is its own module so that registering a runtime does not drag `errors.ts` — and with it
@@ -330,6 +324,7 @@ export type { ThemeEnv } from './theme/theme';
 export {
   browserThemeEnv,
   clearTheme,
+  defaultTheme,
   initTheme,
   isTheme,
   osTheme,
@@ -337,6 +332,7 @@ export {
   setTheme,
   storedTheme,
   THEME_ATTRIBUTE,
+  THEME_DEFAULT_ATTRIBUTE,
   THEME_MEDIA_QUERY,
   THEME_STORAGE_KEY,
   toggleTheme,

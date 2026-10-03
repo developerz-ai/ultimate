@@ -204,10 +204,15 @@ export function themeScriptBody(options: ThemeScriptOptions = {}): string {
   // string in a `<script>` body, where one `"` ends the string and the rest is code the page runs.
   // Author-supplied today — the same status every `emitIslandAttributes` value had before it was
   // routed through `html.ts`. The element's own raw-text rule is applied by `renderTag` below.
+  // The fallback itself goes on the document too, OUTSIDE the `try`: a storage read that throws
+  // still leaves the app's own opinion where `@ultimat3/ui`'s `clearTheme` / `watchOsTheme` read
+  // it, so a fixed `theme.defaultMode` is never overridden by an OS flip or a "system" pick.
   return (
+    `var d=document.documentElement;` +
+    `d.setAttribute(${JSON.stringify(`${attribute}-default`)},${JSON.stringify(fallback)});` +
     `try{var s=localStorage.getItem(${JSON.stringify(storageKey)}),` +
     `t=s==="light"||s==="dark"?s:${otherwise};` +
-    `document.documentElement.setAttribute(${JSON.stringify(attribute)},t)}catch(e){}`
+    `d.setAttribute(${JSON.stringify(attribute)},t)}catch(e){}`
   );
 }
 

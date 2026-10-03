@@ -27,16 +27,23 @@ const THRESHOLDS: readonly Threshold[] = [
   { unit: 'second', ms: 1000 },
 ];
 
+const unitMs = (index: number): number => (THRESHOLDS[index] as Threshold).ms;
+const roundIn = (delta: number, index: number): number => Math.round(delta / unitMs(index));
+
 export function relativeTimeText(options: RelativeTimeOptions): string {
   const target = toDate(options.value).getTime();
   const base = options.now === undefined ? Date.now() : toDate(options.now).getTime();
   const delta = target - base;
   const magnitude = Math.abs(delta);
 
-  const threshold =
-    THRESHOLDS.find((candidate) => magnitude >= candidate.ms) ??
-    (THRESHOLDS[THRESHOLDS.length - 1] as Threshold);
-  const value = Math.round(delta / threshold.ms);
+  let index = THRESHOLDS.findIndex((candidate) => magnitude >= candidate.ms);
+  if (index < 0) index = THRESHOLDS.length - 1;
+  // Promote AFTER rounding: 59.6 minutes rounds to 60, and "60 minutes ago" is "1 hour ago".
+  while (index > 0 && Math.abs(roundIn(delta, index)) * unitMs(index) >= unitMs(index - 1)) {
+    index -= 1;
+  }
+  const threshold = THRESHOLDS[index] as Threshold;
+  const value = roundIn(delta, index);
 
   const formatter = new Intl.RelativeTimeFormat(options.locale, {
     numeric: options.numeric ?? 'auto',

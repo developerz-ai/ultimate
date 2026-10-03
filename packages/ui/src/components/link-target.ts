@@ -19,7 +19,27 @@ export interface LinkTarget {
 export function linkTarget(href: string, declaredExternal?: boolean | undefined): LinkTarget {
   const safe = safeUrl(href, 'href');
   if (safe === null) return { href: undefined, external: false };
-  return { href: safe, external: declaredExternal === true || /^https?:\/\//.test(safe) };
+  return { href: safe, external: declaredExternal === true || namesAnotherOrigin(safe) };
+}
+
+/** An origin no real link can name: whatever resolves AWAY from it carried its own authority. */
+const SENTINEL_ORIGIN = 'http://link-target.invalid';
+
+/**
+ * Decided the way a browser resolves the href, not by its spelling: `//cdn.test`, `HTTPS://…` and
+ * a leading space all leave the page's origin, and a regex over the raw string read each of them
+ * as internal — no `noopener`, no external hint. A value the parser refuses is treated as external,
+ * because the hardening is the safe side of a wrong guess.
+ */
+function namesAnotherOrigin(href: string): boolean {
+  try {
+    const url = new URL(href, `${SENTINEL_ORIGIN}/`);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== SENTINEL_ORIGIN
+    );
+  } catch {
+    return true;
+  }
 }
 
 /**

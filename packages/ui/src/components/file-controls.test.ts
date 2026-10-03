@@ -58,9 +58,24 @@ describe('the file controls', () => {
         onSelect: (selection: Selection) => void seen.push(selection),
       });
 
-      fire(one(byTag(nodes, 'input'), '<input>'), 'onChange', {
-        currentTarget: { files: [PNG, PDF, HUGE] },
-      });
+      // `accept` only steers the picker: the input itself must end up holding the accepted file
+      // alone, or the form posts the two this control refused. Bun has no `DataTransfer`.
+      class FakeTransfer {
+        readonly added: unknown[] = [];
+        readonly items = { add: (file: unknown): number => this.added.push(file) };
+        get files(): unknown[] {
+          return this.added;
+        }
+      }
+      const had = 'DataTransfer' in globalThis;
+      Object.assign(globalThis, { DataTransfer: FakeTransfer });
+      const picker = { files: [PNG, PDF, HUGE] as unknown };
+      try {
+        fire(one(byTag(nodes, 'input'), '<input>'), 'onChange', { currentTarget: picker });
+      } finally {
+        if (!had) Reflect.deleteProperty(globalThis, 'DataTransfer');
+      }
+      expect(picker.files).toEqual([PNG]);
 
       expect(seen).toHaveLength(1);
       expect(seen[0]?.accepted).toEqual([PNG]);

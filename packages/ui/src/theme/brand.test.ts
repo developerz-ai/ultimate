@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES } from '../errors';
+import { colorTokens } from '../tokens/tokens';
 import { brandStyleCspSource, brandStyleTag, defineTheme } from './brand';
 
 function codeOf(run: () => unknown): string | undefined {
@@ -33,7 +34,32 @@ describe('defineTheme', () => {
     const css = defineTheme({ colors: { light: { accent: '10 20 30' } } }).css;
     expect(css).toContain(':root {\n  --color-accent: 10 20 30;\n}');
     expect(css).toContain("html[data-theme='light'] {\n  --color-accent: 10 20 30;\n}");
-    expect(css).not.toContain('prefers-color-scheme');
+    // No dark ATTRIBUTE rule: `theme.scss`'s own (0,1,1) already outranks the brand's `:root`.
+    expect(css).not.toContain("html[data-theme='dark']");
+  });
+
+  test('a role overridden in light only keeps the shipped dark value on an OS-dark document', () => {
+    // The brand `:root` follows `theme.scss`'s dark media `:root` at equal specificity, so with no
+    // `data-theme` (scripting off, storage throwing) the light accent landed on the dark palette.
+    const css = defineTheme({ colors: { light: { accent: '10 20 30' } } }).css;
+    const shipped = colorTokens.dark.accent;
+    expect(css).toContain(
+      `@media (prefers-color-scheme: dark) {\n  :root {\n    --color-accent: ${shipped};\n  }\n}`,
+    );
+    expect(css).toContain(':root {\n  --color-accent: 10 20 30;\n}');
+    expect(css.indexOf('@media')).toBeGreaterThan(css.indexOf(':root {'));
+  });
+
+  test('the dark media block holds the dark override where there is one, the shipped value elsewhere', () => {
+    const css = defineTheme({
+      colors: { light: { accent: '10 20 30', fg: '0 0 0' }, dark: { accent: '200 210 220' } },
+    }).css;
+    const media = css.slice(css.indexOf('@media'), css.indexOf("html[data-theme='dark']"));
+    expect(media).toContain('--color-accent: 200 210 220;');
+    expect(media).toContain(`--color-fg: ${colorTokens.dark.fg};`);
+    expect(media.match(/--color-accent/g)).toHaveLength(1);
+    // The attribute rule carries what the brand said about dark, and nothing it did not.
+    expect(css).toContain("html[data-theme='dark'] {\n  --color-accent: 200 210 220;\n}");
   });
 
   test('dark colours land behind the media query AND the attribute rule', () => {

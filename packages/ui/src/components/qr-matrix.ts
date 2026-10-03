@@ -75,28 +75,15 @@ function drawAlignmentPattern(matrix: Matrix, centerRow: number, centerCol: numb
 function drawFunctionPatterns(matrix: Matrix, version: number): void {
   const size = matrix.size;
 
-  // Three finder patterns, each an 8x8 area (7x7 pattern plus a light separator ring); only the
-  // 7x7 pattern is drawn as dark/light above, so the surrounding separator is drawn explicitly.
+  // Three finder patterns. `drawFinderPattern`'s outermost ring (`dist === 4`) IS the light
+  // separator, clipped to the matrix — drawing a second ring one further out would claim row and
+  // column 8, the format strip and two timing modules.
   const corners: readonly (readonly [number, number])[] = [
     [3, 3],
     [3, size - 4],
     [size - 4, 3],
   ];
   for (const [row, col] of corners) drawFinderPattern(matrix, row, col);
-  // Separators: the light ring one module beyond each finder pattern, clipped to the matrix.
-  for (const [row, col] of corners) {
-    for (let d = -4; d <= 4; d++) {
-      for (const [r, c] of [
-        [row + d, col - 5],
-        [row + d, col + 5],
-        [row - 5, col + d],
-        [row + 5, col + d],
-      ] as const) {
-        if (r >= 0 && c >= 0 && r < size && c < size && !matrix.isSet(r, c))
-          matrix.set(r, c, false);
-      }
-    }
-  }
 
   // Timing patterns: row 6 and column 6, alternating dark/light, skipping cells the finder
   // patterns already claimed.
@@ -107,11 +94,14 @@ function drawFunctionPatterns(matrix: Matrix, version: number): void {
   }
 
   // Alignment pattern(s): every (row, col) pair from this version's coordinate list, except the
-  // one that overlaps the top-left finder pattern.
+  // three that would land on a finder pattern — (first, first), (first, last) and (last, first).
   const positions = ALIGNMENT_POSITIONS[version - 1] ?? [];
+  const first = positions[0];
+  const last = positions[positions.length - 1];
   for (const row of positions) {
     for (const col of positions) {
-      if (row === 6 && col === 6) continue;
+      if (row === first && (col === first || col === last)) continue;
+      if (row === last && col === first) continue;
       drawAlignmentPattern(matrix, row, col);
     }
   }
@@ -158,10 +148,11 @@ function drawFormatInfo(matrix: Matrix, maskPattern: number): void {
   matrix.set(8, 7, bit(8));
   for (let i = 9; i <= 14; i++) matrix.set(8, 14 - i, bit(i));
 
-  // The mirrored copy: bits 0-7 along row `size-1` down to `size-8` in column 8, bits 8-14 up
-  // column `size-1` down to `size-15` in row 8.
-  for (let i = 0; i <= 7; i++) matrix.set(size - 1 - i, 8, bit(i));
-  for (let i = 8; i <= 14; i++) matrix.set(8, size - 15 + i, bit(i));
+  // The second copy: bits 0-7 along row 8 from column `size-1` leftwards to `size-8`, bits 8-14
+  // down column 8 from row `size-7` to `size-1` — one short of the fixed dark module at
+  // (`size-8`, 8), which belongs to no format copy.
+  for (let i = 0; i <= 7; i++) matrix.set(8, size - 1 - i, bit(i));
+  for (let i = 8; i <= 14; i++) matrix.set(size - 15 + i, 8, bit(i));
 }
 
 /** Whether mask `pattern` (0-7, ISO 18004 §8.8.1) flips the module at `(row, col)`. */
@@ -198,11 +189,13 @@ function drawData(matrix: Matrix, codewords: readonly number[], pattern: number)
   let bitIndex = 0;
   let upward = true;
   for (let colPair = size - 1; colPair > 0; colPair -= 2) {
+    // The vertical timing column carries no data, so the strip that would straddle it moves one
+    // module left — which is also what makes column 0 the last strip's left half.
+    if (colPair === 6) colPair = 5;
     for (let count = 0; count < size; count++) {
       const row = upward ? size - 1 - count : count;
       for (let colOffset = 0; colOffset < 2; colOffset++) {
         const col = colPair - colOffset;
-        if (col === 6) continue; // the vertical timing column carries no data
         if (matrix.isSet(row, col)) continue;
         const bit = bits[bitIndex] ?? false;
         bitIndex++;

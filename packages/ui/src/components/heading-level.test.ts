@@ -14,7 +14,7 @@ describe('headingTag', () => {
     for (const bad of [0, 7, -1, 1.5]) {
       try {
         headingTag(bad as (typeof HEADING_LEVELS)[number]);
-        throw new Error(`expected a throw for ${bad}`);
+        expect.unreachable(`expected a throw for ${bad}`);
       } catch (error) {
         const err = error as { code?: string; fix?: string };
         expect(err.code).toBe(UI_ERROR_CODES.invalidValue);

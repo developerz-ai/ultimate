@@ -23,6 +23,23 @@ describe('linkTarget', () => {
     });
   });
 
+  test('every spelling a browser reads as another origin is external, not only "http(s)://"', () => {
+    for (const href of [
+      '//cdn.test/a.js',
+      'HTTPS://app.test',
+      'Http://app.test/x',
+      ' https://app.test',
+    ]) {
+      expect(linkTarget(href).external).toBe(true);
+    }
+  });
+
+  test('a relative URL that merely contains a scheme-like string stays internal', () => {
+    for (const href of ['/go?to=https://app.test', 'posts/1', '#top', '?page=2', './https:/x']) {
+      expect(linkTarget(href).external).toBe(false);
+    }
+  });
+
   test('an explicit external declaration wins for a safe URL', () => {
     expect(linkTarget('/docs', true)).toEqual({ href: '/docs', external: true });
   });

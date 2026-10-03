@@ -71,6 +71,8 @@ function themeEnv(stored: string | null = null): FakeThemeEnv {
     applied: [],
     observers: [],
     read: () => env.stored,
+    current: () => env.applied.at(-1) ?? null,
+    appDefault: () => null,
     write: (value) => {
       env.stored = value;
     },

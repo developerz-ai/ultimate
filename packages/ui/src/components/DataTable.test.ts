@@ -339,6 +339,38 @@ describe('DataTable', () => {
  * prevent, reported as a healthy loading state. `Infinity` is worse: `Array.from` asks for
  * 2^53 - 1 elements and the render dies with a bare `RangeError`, uncoded, out of a component.
  */
+describe('DataTable, the branch is decided inside the returned markup', () => {
+  beforeAll(probe);
+  afterAll(unprobe);
+
+  // A component body runs ONCE in an island. A branch taken there (an early `return <ErrorState>`)
+  // is the branch for the island's life: a table that first failed never showed its rows after the
+  // query recovered. The same root in every state is what leaves the decision to the markup, where
+  // Solid re-runs it — this package cannot build an island, so the root is what is asserted here.
+  const root = (extra: Record<string, unknown>): unknown =>
+    (DataTable as unknown as (props: Record<string, unknown>) => unknown)({
+      caption: 'Invoices',
+      columns: COLUMNS,
+      rows: ROWS,
+      rowKey: (row: Row): string => row.id,
+      class: 'mine',
+      ...extra,
+    });
+
+  for (const [state, extra] of [
+    ['failed', { error: new TypeError('boom') }],
+    ['empty', { rows: [] }],
+    ['pending', { rows: [], loading: true }],
+    ['ready', {}],
+  ] as const) {
+    test(`${state}: the root is the table's own wrapper, carrying the caller's class`, () => {
+      const node = root(extra) as { type: unknown; props: Record<string, unknown> };
+      expect(node.type).toBe('div');
+      expect(String(node.props['class'])).toContain('mine');
+    });
+  }
+});
+
 describe('DataTable, a placeholder count that is not a count', () => {
   beforeAll(probe);
   afterAll(unprobe);

@@ -10,7 +10,7 @@ import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
 import styles from './FileInput.module.scss';
 import type { FileSelection } from './file-input-view';
-import { progressPercent, selectFiles } from './file-input-view';
+import { adoptAcceptedFiles, progressPercent, selectFiles } from './file-input-view';
 import type { Size } from './variants';
 
 export interface FileInputProps {
@@ -61,7 +61,11 @@ export function FileInput(props: FileInputProps): JSX.Element {
         aria-invalid={ariaBool(props['aria-invalid'])}
         onBlur={props.onBlur}
         onChange={(event) => {
-          props.onSelect?.(selectFiles([...(event.currentTarget.files ?? [])], props));
+          const selection = selectFiles([...(event.currentTarget.files ?? [])], props);
+          // `accept` only steers the picker; "All files" gets past it, and the form would post
+          // what this control just refused.
+          adoptAcceptedFiles(event.currentTarget, event.currentTarget.files, selection, 'pick');
+          props.onSelect?.(selection);
         }}
       />
       {props.progress === undefined ? null : (

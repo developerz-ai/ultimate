@@ -10,7 +10,9 @@ import type { FormState } from './form-state';
 const raw = (found: FormIssue): string => found.message;
 
 /** A schema in the one shape this package declares: Standard Schema's single member. */
-const schemaOf = (validate: (value: unknown) => FormValidationResult): FormSchema => ({
+const schemaOf = (
+  validate: (value: unknown) => FormValidationResult | Promise<FormValidationResult>,
+): FormSchema => ({
   '~standard': { validate },
 });
 
@@ -64,6 +66,35 @@ describe('createFormBinding', () => {
     expect(called).toBe(0);
     expect(form.errorFor('title')).toBe('too short');
   });
+
+  for (const [how, validate] of [
+    [
+      'throws',
+      (): FormValidationResult => {
+        throw new TypeError('schema bug');
+      },
+    ],
+    ['rejects', (): Promise<FormValidationResult> => Promise.reject(new TypeError('schema bug'))],
+  ] as const) {
+    test(`a local validate that ${how} fails the form — it never strands it in submitting`, async () => {
+      let called = 0;
+      const form = createFormBinding<{ title: string }, Saved>({
+        fields: ['title'],
+        messageFor: raw,
+        schema: schemaOf(validate),
+        submit: () => {
+          called += 1;
+          return Promise.resolve({ id: 'post-1' });
+        },
+      });
+
+      const state = await form.submit({ title: 'Hello' });
+      expect(state.status).toBe('failed');
+      expect(form.pending()).toBe(false);
+      expect(called).toBe(0);
+      expect(form.state().formErrors).toHaveLength(1);
+    });
+  }
 
   /**
    * The client's parse OUTPUT is thrown away — only its issues are read. A binding that submitted

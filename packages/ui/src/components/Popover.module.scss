@@ -33,27 +33,24 @@
   inset-block-start: 0;
 }
 
-.align-start {
-  inset-inline-start: 0;
-}
+// Alignment is along the anchor's inline edge, so it exists only for the block placements. An
+// inline placement owns both inline insets itself; an align rule that reached it (and the reset
+// that used to undo one) wiped the placement's own inset and dropped the panel over the anchor.
+.placement-block-end,
+.placement-block-start {
+  &.align-start {
+    inset-inline-start: 0;
+  }
 
-.align-end {
-  inset-inline-end: 0;
-}
-
-.align-center {
-  inset-inline-start: 50%;
-  translate: -50% 0;
-}
-
-// Inline placements own their own inline axis; alignment must not fight them.
-.placement-inline-end,
-.placement-inline-start {
-  &.align-start,
-  &.align-center,
   &.align-end {
-    inset-inline-start: auto;
-    inset-inline-end: auto;
-    translate: none;
+    inset-inline-end: 0;
+  }
+
+  // Auto margins inside an inset band far wider than any panel: centred in either direction. A 50%
+  // logical inset with a -50% physical translate is a whole width off under `dir="rtl"`.
+  &.align-center {
+    inset-inline: -100vw;
+    margin-inline: auto;
+    inline-size: fit-content;
   }
 }

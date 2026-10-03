@@ -18,9 +18,15 @@
     border-inline-end: 1px solid t.role('line');
   }
 
+  // On the list's inline-END edge, beside its border. A shadow's x offset is physical, so RTL —
+  // where that edge is the left one — gets the mirrored sign, as `Switch.module.scss` does.
   .tab[aria-selected='true'] {
     box-shadow: inset calc(-1 * #{t.stroke(thick)}) 0 0 0 t.role('accent');
   }
+}
+
+[dir='rtl'] .orientation-vertical .tab[aria-selected='true'] {
+  box-shadow: inset t.stroke(thick) 0 0 0 t.role('accent');
 }
 
 .list {

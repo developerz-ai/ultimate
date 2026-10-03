@@ -379,6 +379,26 @@ describe('the anchored overlays', () => {
     }
   });
 
+  test('a closed Popover names no aria-controls — the id it would name is not in the document', () => {
+    const rt = runtime();
+    const closes: boolean[] = [];
+    try {
+      let control: Record<string, unknown> = {};
+      renderNodes(Popover, {
+        ...popoverProps(closes),
+        open: false,
+        trigger: (c: Record<string, unknown>) => {
+          control = c;
+          return null;
+        },
+      });
+      expect(control['aria-expanded']).toBe(false);
+      expect(control['aria-controls']).toBeUndefined();
+    } finally {
+      rt.restore();
+    }
+  });
+
   test('Menu dismisses on Escape and on an outside pointerdown, then stops on cleanup', () => {
     const rt = runtime();
     const closes: boolean[] = [];

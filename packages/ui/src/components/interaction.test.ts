@@ -259,6 +259,38 @@ describe('component keyboard and form wiring', () => {
     expect(selections).toHaveLength(1);
   });
 
+  test('Dropzone hands the input only what it accepted — a refused file is never posted', () => {
+    // A browser builds the narrowed list with `DataTransfer`; Bun has none, so the double records it.
+    class FakeTransfer {
+      readonly added: unknown[] = [];
+      readonly items = { add: (file: unknown): number => this.added.push(file) };
+      get files(): unknown {
+        return Object.assign([...this.added], { length: this.added.length });
+      }
+    }
+    const had = 'DataTransfer' in globalThis;
+    Object.assign(globalThis, { DataTransfer: FakeTransfer });
+    try {
+      const nodes = renderNodes(Dropzone, {
+        label: 'Drop files',
+        name: 'avatar',
+        accept: 'image/*',
+        onSelect: () => undefined,
+      });
+      const input = { files: null as unknown };
+      attachRef(one(byTag(nodes, 'input'), '<input>'), input);
+      const png = { name: 'a.png', type: 'image/png', size: 10 };
+      const exe = { name: 'b.exe', type: 'application/x-msdownload', size: 10 };
+      fire(one(byTag(nodes, 'label'), '<label>'), 'onDrop', {
+        preventDefault: () => {},
+        dataTransfer: { files: Object.assign([png, exe], { length: 2 }) },
+      });
+      expect([...(input.files as unknown[])]).toEqual([png]);
+    } finally {
+      if (!had) Reflect.deleteProperty(globalThis, 'DataTransfer');
+    }
+  });
+
   // --- finding: a prop read once at setup instead of per use ------------------------------------
 
   test('Select reads props.value through a thunk, so a runtime can track it', () => {
