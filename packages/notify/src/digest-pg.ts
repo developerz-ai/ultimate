@@ -191,8 +191,8 @@ export function createPgDigestStore(options: PgDigestStoreOptions): PgDigestStor
       // had already elapsed by this process's clock — two replicas a whole window apart in time.
       throw new UltimateError({
         code: 'X_INVARIANT',
-        cause: `the digest window for notifier "${input.slot.notifier}" kept closing before this append could join it (${String(MAX_SEALS)} seals)`,
-        fix: 'timedatectl set-ntp true',
+        cause: `the digest window for notifier "${input.slot.notifier}" kept closing before this append could join it (${String(MAX_SEALS)} seals): its ${String(input.windowMs)} ms window is shorter than one append's round trip, or two replicas' clocks are a whole window apart`,
+        fix: 'psql "$DATABASE_URL" -c "select notifier, recipient, ends_at, sealed, now() from x_notify_digests order by ends_at desc limit 10"',
         meta: { notifier: input.slot.notifier, seals: MAX_SEALS },
       });
     },

@@ -129,7 +129,10 @@ export class ManifestFactInvalidError extends UltimateError {
     super({
       code: 'X_MANIFEST_FACT_INVALID',
       cause: `the manifest fact at ${input.path} is ${input.value}, which x.manifest.json would write as ${input.value === '-0' ? '0' : 'null'} — the file could never match its own buildId`,
-      fix: `set the declaration that publishes ${input.path} to a finite number, then run x manifest`,
+      fix:
+        input.value === '-0'
+          ? `set the declaration that publishes ${input.path} to 0, then run x manifest`
+          : `set the declaration that publishes ${input.path} to a finite number, then run x manifest`,
       meta: { path: input.path, value: input.value },
     });
   }

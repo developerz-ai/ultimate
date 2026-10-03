@@ -269,7 +269,7 @@ Tier 3 — `@ultimat3/jobs` (80–86). Tier 5 — `@ultimat3/cli` again (87). Ti
 | 116 | mail recipients, `unsubscribeUrl`, the `mail.send` job | a `to`, `cc`, `bcc` or `replyTo` holds a control character, `<`/`>` in the mailbox, or a non-ASCII mailbox: `X_MAIL_ADDRESS_INVALID` at `send()` on every driver — Resend and memory delivered it. Write the domain as punycode; a non-ASCII local part needs another mailbox. An unparseable `unsubscribeUrl` is `X_VALIDATION_FAILED`. Always, where `x.manifest.json` is committed and the app sends mail: `contract-diff` reports `jobs.mail.send.input` until `x manifest` |
 | 117 | `packages/db/schema/` | always, if the dump is committed: the boot creates `x_notify_digests` and its indexes. `x db gen`, commit |
 | 118 | `x.manifest.json` | always, if the file is committed: every query gains `input`. `x manifest`, commit. The first diff against a file without it reports no change |
-| 119 | manifest facts | a declaration publishes `NaN`, `Infinity` or `-0` — a budget, a rate limit, a retry count read from an unset variable: `X_MANIFEST_FACT_INVALID` at `x manifest`, naming `meta.path`. Make it finite |
+| 119 | manifest facts | a declaration publishes `NaN`, `Infinity` or `-0` — a budget, a rate limit, a retry count read from an unset variable: `X_MANIFEST_FACT_INVALID` at `x manifest`, naming `meta.path`. Replace `-0` with `0`, and `NaN` or `Infinity` with a finite number |
 | 120 | an entity column's default | a release drops the default of a NOT NULL column: `contract-diff` reports `…hasDefault` as breaking, so the gate is `X_MANIFEST_BREAKING` without a major bump. Keep the default, or bump the major in `package.json` |
 
 Entry 58, **the one step an operator must not skip.** A deployment with MFA-enrolled users:
