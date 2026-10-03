@@ -161,6 +161,8 @@ export {
   rateLimitStoreUnavailable,
   tenantBucketUnknown,
 } from './rate-limit-errors';
+export type { RateLimitPeek } from './rate-limit-peek';
+export { rateLimitPeek, refilledTokens } from './rate-limit-peek';
 export type {
   PgExecutor,
   PostgresRateLimitStore,

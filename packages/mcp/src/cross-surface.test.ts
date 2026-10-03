@@ -161,6 +161,66 @@ describe('one declaration, three schema surfaces', () => {
   });
 });
 
+/**
+ * A flagged `pattern` holds the same verdict on every surface. JSON Schema's `pattern` has no flag
+ * syntax, so `@ultimat3/schema` publishes the flags beside it (`x-ultimate-pattern-flags`) and
+ * this server compiles with them: `/^[a-z]+$/i` refused `ABC` over MCP while the action took it.
+ */
+describe('a flagged pattern: the MCP server and the schema agree', () => {
+  const Flagged = t.object({
+    word: t.string.pattern(/^[a-z]+$/i),
+    letters: t.string.pattern(/^\p{L}+$/u),
+  });
+  let flagged: ReturnType<typeof registerAction>;
+
+  beforeEach(() => {
+    resetActions();
+    clearRoles();
+    clearPermissions();
+    definePermissions(['order:archive']);
+    defineRoles({ owner: { grants: ['order:archive'] } });
+    flagged = registerAction(
+      'renameThing',
+      action({
+        input: Flagged,
+        output: t.object({ ok: t.boolean }),
+        policy: can('order:archive'),
+        mcp: { expose: true, description: 'Rename a thing' },
+        handle: () => ({ ok: true }),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    resetActions();
+    clearRoles();
+    clearPermissions();
+  });
+
+  const accepts = async (value: { word: string; letters: string }): Promise<boolean> => {
+    const result = await Flagged['~standard'].validate(value);
+    return result.issues === undefined;
+  };
+
+  test('the `i` and `u` flags: tools/list validation matches the schema parse', async () => {
+    const response = await defineAppMcp({ actions: [flagged] }).server.handle(
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      caller,
+    );
+    const result = response?.result as { tools?: { inputSchema: JsonSchema }[] } | undefined;
+    const schema = result?.tools?.[0]?.inputSchema ?? {};
+    for (const value of [
+      { word: 'ABC', letters: 'é' },
+      { word: 'abc', letters: 'Ωmega' },
+      { word: 'ab1', letters: 'é' },
+      { word: 'ABC', letters: 'e1' },
+    ]) {
+      expect(validateArgs(schema, value).ok).toBe(await accepts(value));
+    }
+    expect(validateArgs(schema, { word: 'ABC', letters: 'é' }).ok).toBe(true);
+  });
+});
+
 describe('one declaration, ONE tool name', () => {
   let archiveOrder: ReturnType<typeof declare>;
   let recentOrders: ReturnType<typeof declareRead>;

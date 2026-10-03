@@ -396,3 +396,25 @@ describe('validateArgs: a declared pattern is compiled once per schema, not once
     expect(compiledPatternCount() - before).toBe(1);
   });
 });
+
+describe('validateArgs: a flagged pattern', () => {
+  const flagged = (flags: string): JsonSchema => ({
+    type: 'object',
+    properties: {
+      word: { type: 'string', pattern: '^[a-z]+$', 'x-ultimate-pattern-flags': flags },
+    },
+    additionalProperties: false,
+  });
+
+  test('a g flag on the cached RegExp does not refuse the second call of an accepted value', () => {
+    const schema = flagged('gi');
+    expect(validateArgs(schema, { word: 'ABC' }).ok).toBe(true);
+    expect(validateArgs(schema, { word: 'ABC' }).ok).toBe(true);
+  });
+
+  test('flags this runtime cannot compile are refused, naming the flags', () => {
+    const result = validateArgs(flagged('zz'), { word: 'abc' });
+    expect(result).toMatchObject({ ok: false, issues: [{ path: 'word' }] });
+    expect(JSON.stringify(result)).toContain('/^[a-z]+$/zz');
+  });
+});

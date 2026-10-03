@@ -101,6 +101,12 @@ export interface JsonSchema {
    * way to learn the format was `X_INPUT_INVALID` from the action's own parse.
    */
   readonly pattern?: string;
+  /**
+   * The flags `pattern` is compiled with — `@ultimat3/schema`'s extension, carried because JSON
+   * Schema's `pattern` has none: compiled without them, `/^[a-z]+$/i` refused `ABC` here while the
+   * action's own parse accepted it.
+   */
+  readonly 'x-ultimate-pattern-flags'?: string;
   readonly anyOf?: readonly JsonSchema[];
 }
 

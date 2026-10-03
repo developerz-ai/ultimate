@@ -213,8 +213,13 @@ function endpointRoutes(route: Descriptor, path: string, index: number): readonl
       // The PUBLIC origin, as the pipeline resolved it (`ctx.https` honours a trusted proxy's
       // `x-forwarded-proto`): behind a TLS-terminating ingress the raw request URL is `http://`
       // on an internal host, and a `resource_metadata` naming that is a URL no client can reach.
+      // The client ADDRESS likewise: failed tokens are metered per address, and the descriptor
+      // has no other way to learn it.
       handler: (request, ctx) =>
-        route.handle(request.raw, { origin: selfOrigin(ctx.url, ctx.https) }),
+        route.handle(request.raw, {
+          origin: selfOrigin(ctx.url, ctx.https),
+          address: ctx.ip ?? undefined,
+        }),
       meta: { name, auth: 'public', enforcedBy: 'handler' },
     },
     ...metadata,

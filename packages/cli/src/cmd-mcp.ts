@@ -86,12 +86,13 @@ export function startMcpHttp(host: CliMcpServer, port: number): McpHttpServer {
   const handle = Bun.serve({
     port,
     hostname: 'localhost',
-    fetch: (request: Request): Response | Promise<Response> => {
+    fetch: (request: Request, server): Response | Promise<Response> => {
       const url = new URL(request.url);
       if (request.method !== route.method || url.pathname !== route.path) {
         return notFound(route.path);
       }
-      return route.handle(request);
+      // The socket's peer: failed tokens are metered per address, and only the server knows it.
+      return route.handle(request, { address: server.requestIP(request)?.address });
     },
   });
   // Announces the socket as this process's own, so a caller on it is never mistaken for egress.

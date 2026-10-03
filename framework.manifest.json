@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "932d156399b94d0297e231a76629543c0924fd1bc14110cd3f403e0c31ff67db",
+  "buildId": "88697b88c534dc4f8e1ddec8bb0ed4ff852fd1633f7ab81e81e8a3051547414f",
   "tiers": {
     "0": [
       "core",
@@ -2071,6 +2071,11 @@
     },
     {
       "code": "X_MANIFEST_DRIFT",
+      "owner": "manifest",
+      "at": "packages/manifest/src/errors.ts"
+    },
+    {
+      "code": "X_MANIFEST_FACT_INVALID",
       "owner": "manifest",
       "at": "packages/manifest/src/errors.ts"
     },

@@ -207,7 +207,7 @@ describe('a bad token on the mount is metered by address', () => {
       }),
     });
 
-  test('the fourth guess from one address is 429, and a real token is still served', async () => {
+  test('the fourth guess from one address is 429, a real token from it too, and from elsewhere is served', async () => {
     const pipeline = guarded();
     const guess = (index: number) =>
       pipeline.handle(call('GET', '/v1/case-list', { authorization: `Bearer guess-${index}` }), {
@@ -223,11 +223,15 @@ describe('a bad token on the mount is metered by address', () => {
       ip: '203.0.113.9',
     });
     expect(bare.status).toBe(429);
-    const real = await pipeline.handle(
-      call('GET', '/v1/case-list', { authorization: 'Bearer tok-read' }),
-      { role: 'web', ip: '203.0.113.9' },
-    );
-    expect(real.status).toBe(200);
+    // A right guess from the spent address is refused before the token is resolved: otherwise
+    // the 429 told a wrong guess apart from a right one, and guessing went on unbounded.
+    const real = (ip: string) =>
+      pipeline.handle(call('GET', '/v1/case-list', { authorization: 'Bearer tok-read' }), {
+        role: 'web',
+        ip,
+      });
+    expect((await real('203.0.113.9')).status).toBe(429);
+    expect((await real('198.51.100.4')).status).toBe(200);
   });
 });
 

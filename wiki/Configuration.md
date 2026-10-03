@@ -362,7 +362,7 @@ configureHttp({
 | `healthDetailPeers` | `['loopback']` | who `/healthz` and `/readyz` tell more than `{ state, ready, role }`. Each entry is an address class (`loopback`, `private`, `link-local`, `ula`, `cgnat`, `unspecified`, `reserved`, `public`) or one IP literal; anything else is `X_CONFIG_INVALID`. `[]` tells nobody. Behind a trusted proxy the forwarded caller must be listed as well as the socket. The `sync` role's own listener reads the same list; it trusts no proxy, so a request carrying `Forwarded` or `X-Forwarded-For` gets the verdict only |
 | `security` | HSTS off until https is affirmed, CSP report-only in dev | `security.csp.extend` merges **per directive** with the boot's own hashes, so admitting a CDN source does not evict the hydration runtime's and lock every island out. `connect-src` is `'self' blob:` — no bare `ws:`/`wss:` (a socket to any host); a sync node on another origin (`SYNC_URL`) is added by that origin alone (`As of 22.6.0`). `security.hsts` merges key by key: `{ preload: true }` alone opts into preload over the two-year default, `null` sends none |
 | `locale` / `tz` | header + cookie names | it decides WHERE the request's locale and zone are read from; `@ultimat3/i18n` and `@ultimat3/time` decide what they mean |
-| `rateLimit` | `enabled`, `buckets`, `defaultBucket`, `tenantBucket: null` | `scope` is boot-owned (below). `tenantBucket` names a bucket a whole tenant spends **beside** the caller's own; a name `buckets` does not declare is `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN` at boot. A request that fails `auth: 'required'` spends `defaultBucket` under one key per client address, across every route — the 401 leaves before the `rate-limit` stage, so it is metered there or nowhere |
+| `rateLimit` | `enabled`, `buckets`, `defaultBucket`, `tenantBucket: null` | `scope` is boot-owned (below). `tenantBucket` names a bucket a whole tenant spends **beside** the caller's own; a name `buckets` does not declare is `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN` at boot. A request that fails `auth: 'required'` spends `defaultBucket` under one key per client address, across every route — the 401 leaves before the `rate-limit` stage, so it is metered there or nowhere. Once that allowance is spent, the address is refused `X_RATE_LIMITED` on every required route **before** `authenticate` runs — a valid credential included, so a right guess cannot be told from a wrong one — until it refills (`As of 2026-10`) |
 
 **Seven keys plus `rateLimit.scope` are boot-owned, and writing one is a compile error** — `AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey | 'rateLimit'>` with `rateLimit` re-added minus `scope`, so the refusal is `TS2353` at the call and never a value silently discarded at every boot:
 
@@ -493,6 +493,11 @@ framework applies the DDL either way.
 must **never be shorter than your idempotency window**: a job replayed inside the idempotency window
 against a claim that has already been purged claims cleanly and sends the notification a second
 time. Pass `idempotency.windowMs` and the two cannot disagree.
+
+**`x_notify_digests` has no config key either.** A digest window is deleted by its own flush; the
+sweep takes only a window CLOSED longer than `createPgDigestStore({ executor, retentionMs })` ago —
+a week by default, longer than any flush's retries — which is a window whose flush dead-lettered on
+a slot that never digests again. Up to 50 batches of 1,000 rows per hourly pass.
 
 ## `ai`
 

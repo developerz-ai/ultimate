@@ -98,8 +98,8 @@ One call, at boot. Whole-object replacement, never a merge.
 ```ts
 import type { PgExecutor } from '@ultimat3/jobs';
 import {
-  createMemoryDigestStore,
   createPgDeliveryLedger,
+  createPgDigestStore,
   createPgInboxStore,
   setNotifyStores,
 } from '@ultimat3/notify';
@@ -116,7 +116,8 @@ setNotifyStores({
   // a job replayed inside that window against a purged claim claims cleanly and sends twice.
   ledger: createPgDeliveryLedger({ executor, windowMs: idempotency.windowMs }),
   inbox: createPgInboxStore({ executor }),
-  digest: createMemoryDigestStore(),
+  // `x_notify_digests`: a window survives a restart and every replica joins the same one.
+  digest: createPgDigestStore({ executor }),
   preferences: {
     // The GATE ships; what it reads never does. Your taxonomy, your quiet hours.
     allows: ({ recipient, notifier: name, channel, ctx }) =>
@@ -130,23 +131,25 @@ setNotifyStores({
 | `ledger` | `createMemoryDeliveryLedger()` | one process is genuinely deduped by a heap map, and no ledger at all means a replay sends twice |
 | `preferences` | `allowAllPreferences()` | denying by default is a notifier that silently delivers nothing |
 | `inbox` | **none** — `X_NOTIFY_STORE_MISSING` | a message written to nowhere is worse than a refusal |
-| `digest` | **none** — `X_NOTIFY_STORE_MISSING` | same |
+| `digest` | **none** — `X_NOTIFY_STORE_MISSING` | same. `createMemoryDigestStore()` for one process; `createPgDigestStore({ executor })` keeps a window across a restart and gives two replicas ONE window (a partial unique index on the open one), so exactly one run owns its flush |
 
 `executor` is a structural `{ query(sql, params) }` — `@ultimat3/cli`'s `pgExecutorFor(client)` over
 a `DbClient` is the framework's own. `Bun.sql` does **not** satisfy it.
 
 ## Retention
 
-Both tables grow with traffic, and the boot's hourly `x.purge` job sweeps both — but only against
-the **Postgres** stores. `createPgInboxStore` carries `purgeBefore` and `createPgDeliveryLedger`
-carries `purgeExpired`; the memory ones do not, and a boot that installed a memory store sweeps
-nothing. The methods are on those stores' own wider types (`PgInboxStore`, `PgDeliveryLedger`), not
-on `InboxStore`/`DeliveryLedger`, so an app that wrote its own implementation is unaffected.
+All three tables grow with traffic, and the boot's hourly `x.purge` job sweeps them — but only
+against the **Postgres** stores. `createPgInboxStore` carries `purgeBefore`, `createPgDeliveryLedger`
+and `createPgDigestStore` carry `purgeExpired`; the memory ones do not, and a boot that installed a
+memory store sweeps nothing. The methods are on those stores' own wider types (`PgInboxStore`,
+`PgDeliveryLedger`, `PgDigestStore`), not on the seams, so an app that wrote its own implementation
+is unaffected.
 
 | Table | Window | Default |
 |---|---|---|
 | `x_notify_deliveries` | `createPgDeliveryLedger({ windowMs })` | 24 h. A settled claim ages from its **last** attempt — `settle` moves `at` |
 | `x_notify_inbox` | `notify.inboxReadRetentionMs` / `notify.inboxUnreadRetentionMs` in `app.config.ts` | **neither** — never swept |
+| `x_notify_digests` | `createPgDigestStore({ retentionMs })` | 7 days after a window CLOSED. A drained window is already gone; this takes one whose flush dead-lettered. Batched: 1,000 rows per statement, at most 50 per pass |
 
 The inbox default is deliberate and is not a missing number. An inbox row is a message a person has
 not read yet, so when it disappears is your decision, not the framework's — which is why the key

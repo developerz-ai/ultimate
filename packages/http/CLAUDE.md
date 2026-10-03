@@ -189,6 +189,9 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A failed `auth: 'required'` is metered in the `auth` stage** (`spendUnauthenticated`,
   `rate-limit-stage.ts`): `defaultBucket` under `unauthenticated|ip:<address>`, not route-scoped,
   spent only on failure — the 401 leaves before `rate-limit`. Covers the bearer mount's bad tokens.
+  Spent, it REFUSES the address before `authenticate()` (`refuseExhaustedAddress`, via the store's
+  read-only `peek` — never a take: that was an upsert per signed-in page),
+  a valid credential included; no `ctx.ip`, no gate. Signed-in callers behind that NAT wait too.
 - **`postgresRateLimitStore({ executor })` is the shared store**, over a structural `PgExecutor`. The
   refill expression is repeated inside `on conflict do update` on purpose; `spent` is a stored column;
   `purgeExpired(nowMs)` takes the caller's clock.

@@ -7,7 +7,7 @@ import type { ErrorAudience } from '@ultimat3/core';
 import { fixFor } from '@ultimat3/core';
 import { auditResourceRead, auditToolCall, outcomeForResult } from './audit';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
-import { asFrameworkError } from './framework-error';
+import { asFrameworkError, forAudience } from './framework-error';
 import { metaCall } from './meta-call';
 import { META_UNKNOWN_FIX } from './meta-errors';
 import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
@@ -450,8 +450,9 @@ export class McpServer {
       auditResourceRead({ uri, outcome: 'ok', caller });
       return resultResponse(id, { contents: [contents] });
     } catch (error) {
-      const framework = asFrameworkError(error);
-      if (framework !== undefined) {
+      const thrown = asFrameworkError(error);
+      if (thrown !== undefined) {
+        const framework = forAudience(thrown, this.voice.errorAudience);
         auditResourceRead({ uri, outcome: 'failed', caller, code: framework.code });
         return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`, {
           code: framework.code,

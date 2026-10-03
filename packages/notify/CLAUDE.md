@@ -13,7 +13,7 @@ returns a `job`, which is the whole design.
 |---|---|
 | `@ultimat3/mail` | Same tier (4). A `Mailer` is declared **structurally** in `channel-mail.ts` — one method, no dependency — exactly as `@ultimat3/action`'s `PgExecutor` mirrors `@ultimat3/db`. Moving `notify` to tier 5 to legalise the import would put notifications above `render`, `pwa` and `ui` for one channel's transport, and would then need a `cli → notify` edge the way `cli → scraping` does. |
 | `@ultimat3/render`, `@ultimat3/ui`, `@ultimat3/ai`, `@ultimat3/mcp`, `@ultimat3/pwa` | Same tier. A notification has no view — the inbox is rendered by the app's page out of `InboxStore.list`, which is data. |
-| `@ultimat3/db`, `@ultimat3/entity` | Legal downward, and deliberately not taken. The two tables this package owns are **DDL constants applied by the boot** (`SQL_NOTIFY_DELIVERIES_TABLE`, `SQL_NOTIFY_INBOX_TABLE`), the way `x_jobs`, `x_idempotency` and `x_audit` are — never `entity()` declarations, which would put framework tables in the app's migration graph and make an app's `x db gen` responsible for them. The Postgres stores take a structural `PgExecutor`, imported as a **type** from `@ultimat3/jobs` rather than re-declared, because a third copy of a one-method interface is a third place to look. |
+| `@ultimat3/db`, `@ultimat3/entity` | Legal downward, and deliberately not taken. The three tables this package owns are **DDL constants applied by the boot** (`SQL_NOTIFY_DELIVERIES_TABLE`, `SQL_NOTIFY_INBOX_TABLE`, `SQL_NOTIFY_DIGESTS_TABLE`), the way `x_jobs`, `x_idempotency` and `x_audit` are — never `entity()` declarations, which would put framework tables in the app's migration graph and make an app's `x db gen` responsible for them. The Postgres stores take a structural `PgExecutor`, imported as a **type** from `@ultimat3/jobs` rather than re-declared, because a third copy of a one-method interface is a third place to look. |
 | `@ultimat3/policy` | A notification is addressed to exactly one person and the audience is `recipients`. There is no row a policy could decide about here. The **inbox read surface** is where authz belongs, and that is the app's query. |
 
 ## What ships, and what must never
@@ -55,7 +55,16 @@ A job body runs **before** its checkpoint lands, so both layers are load-bearing
 `attempt.ts` is the only place a send happens, so there is exactly one implementation of that order.
 The **one at-most-once seam** is a digest flush: `DigestStore.drain` empties the window, and a
 process killed between the drain and its checkpoint loses that batch. It is stated in `digest.ts`
-rather than hidden, and a durable store can close it.
+rather than hidden. `createPgDigestStore` makes the window itself durable and shared — the
+partial unique index `x_notify_digests_open_idx` lets two replicas' first appends collide so ONE
+opens the window and owns the flush; an elapsed open window is sealed and the append retried — but
+its `drain` is still a delete, so the seam is unchanged (`digest-parity.live.test.ts` runs one
+suite against both stores).
+
+**The audience is deduplicated by `id` once, as it leaves the `open` step** (`As of 2026-10-02`).
+Every per-recipient step is named by the id, so a resolver that named one person twice failed
+`X_STEP_DUPLICATE` part-way through the fan-out, on every retry. Outside the step rather than in it,
+so an `open` checkpointed with duplicates by an earlier version is repaired on replay too.
 
 ## Files
 
@@ -70,8 +79,9 @@ rather than hidden, and a durable store can close it.
 | `ledger.ts` · `ledger-pg.ts` | the delivery ledger, memory and Postgres |
 | `inbox.ts` · `inbox-pg.ts` | the in-app inbox, memory and Postgres |
 | `preferences.ts` · `digest.ts` | the gate and the window, as seams |
+| `digest-pg.ts` | the digest window in Postgres: one row per window, at most one OPEN per slot |
 | `stores.ts` | the one installer for all four |
-| `retention.ts` | the two sweeps, read off the installed seam |
+| `retention.ts` | the three sweeps, read off the installed seam |
 | `errors.ts` | this package's `X_NOTIFY_*` codes and their titles |
 
 One entry point, deliberately: every module runs on the server, so there is no browser half to split
@@ -108,7 +118,7 @@ it the two would split on exactly the Unicode keys nobody writes a test for.
 
 ## Retention
 
-Both tables are swept by the boot's hourly `x.purge` job, and neither store is handed to it:
+All three tables are swept by the boot's hourly `x.purge` job, and no store is handed to it:
 `setNotifyStores` is an APP's boot line that runs when the app's modules import, after the boot that
 installs the sweep. So `retention.ts` reads the seam **per attempt** — the same shape as
 `purgeAuthLimits()` — and answers `0` for a memory store or none at all, which is a boot that made a
@@ -117,15 +127,23 @@ decision rather than a failure.
 | Table | Window | Named where |
 |---|---|---|
 | `x_notify_deliveries` | `PgDeliveryLedgerOptions.windowMs`, default 24 h | beside the statement that reads it. **Never shorter than the app's idempotency window** — a job replayed inside that window against a purged claim claims cleanly and sends twice. Pass `idempotency.windowMs` |
+| `x_notify_digests` | `PgDigestStoreOptions.retentionMs`, default 7 days after the window closed | beside the statement that reads it, like the ledger's |
 | `x_notify_inbox` | `notify.inboxReadRetentionMs` / `notify.inboxUnreadRetentionMs` in `AppConfig`, **both absent by default** | the app's `app.config.ts`, because an inbox row is a message a person has not read yet and when it disappears is a product decision (axiom 8) |
 
 `purgeBefore` and `purgeExpired` live on the **Postgres stores' own wider types**
-(`PgInboxStore`, `PgDeliveryLedger`), never on `InboxStore`/`DeliveryLedger`: adding a method to the
-seam every implementation must satisfy is a breaking change for an app that wrote its own, and a
+(`PgInboxStore`, `PgDeliveryLedger`, `PgDigestStore`), never on the seams: adding a method to
+the seam every implementation must satisfy is a breaking change for an app that wrote its own, and a
 heap map bounded by process life has nothing to delete. Exactly the shape `PostgresIdempotencyStore`
 already has.
 
-`packages/cli/src/framework-schema.ts` applies both tables' DDL on every boot, **whether or not that
+`x_notify_digests`: every window is deleted by its own flush's `drain`, or by the next window's
+drain of the same slot (`ends_at <=`). The one neither reaches — a flush that dead-lettered, on a
+slot that never digests again — is the sweep's (`purgeNotifyDigests` → `PgDigestStore.purgeExpired`,
+`As of 2026-10-02`): windows CLOSED more than `retentionMs` before the job's clock, default
+`DEFAULT_DIGEST_RETENTION_MS` (7 days, longer than any flush's retries), deleted in batches of
+`DIGEST_PURGE_BATCH` and at most `DIGEST_PURGE_MAX_BATCHES` statements per pass.
+
+`packages/cli/src/framework-schema.ts` applies every notify table's DDL on every boot, **whether or not that
 boot calls `setNotifyStores`** — this file said it did not until 2026-08-27, which is a sentence that
 outlived its fact.
 

@@ -39,7 +39,11 @@ import { navigationGate, redirectForRouter } from './navigation';
 import { overlayResponse } from './overlay';
 import { resolvePreferences } from './preferences';
 import type { RateLimiter } from './rate-limit';
-import { spendRequestBuckets, spendUnauthenticated } from './rate-limit-stage';
+import {
+  refuseExhaustedAddress,
+  spendRequestBuckets,
+  spendUnauthenticated,
+} from './rate-limit-stage';
 import type { UltimateRequest } from './request';
 import { addVary, problem, redirect } from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
@@ -210,6 +214,11 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // A route's own authenticator REPLACES the app's, never runs beside it: a bearer mount must
       // not also accept the session cookie the app's hook would resolve (`RouteMeta.authenticate`).
       const authenticate = ctx.route?.meta.authenticate ?? hooks.authenticate;
+      // A required route is where credentials are guessed: an address that has spent its failures
+      // is refused before the credential store is asked, a right guess included.
+      if (ctx.route?.meta.auth === 'required') {
+        await refuseExhaustedAddress(ctx, limiter, config.rateLimit);
+      }
       if (authenticate !== undefined) {
         // The hook says "anonymous" with null; the context says it with core's anonymous actor,
         // because `asCtx` publishes this object as a `Ctx` and `Ctx.actor` is never null.

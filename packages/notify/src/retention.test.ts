@@ -3,11 +3,13 @@
 // zero and silent, because a boot that never configured retention has made a decision.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createMemoryDigestStore } from './digest';
+import type { PgDigestStore } from './digest-pg';
 import { createMemoryInboxStore } from './inbox';
 import type { InboxPurgeBefore, PgInboxStore } from './inbox-pg';
 import { createMemoryDeliveryLedger } from './ledger';
 import type { PgDeliveryLedger } from './ledger-pg';
-import { purgeNotifyDeliveries, purgeNotifyInbox } from './retention';
+import { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from './retention';
 import { resetNotifyStores, setNotifyStores } from './stores';
 
 const AT = new Date('2026-08-24T09:00:00Z');
@@ -74,5 +76,26 @@ describe('unit · notify retention seam', () => {
     const notAMethod = { ...createMemoryInboxStore(), purgeBefore: 'soon' };
     setNotifyStores({ inbox: notAMethod as unknown as PgInboxStore });
     expect(await purgeNotifyInbox({ read: AT })).toBe(0);
+  });
+
+  // A window whose flush dead-lettered, on a slot that never digests again, is drained by nobody.
+  test('no digest store or a memory one sweeps nothing; a Postgres one gets the caller clock', async () => {
+    setNotifyStores({});
+    expect(await purgeNotifyDigests(AT.getTime())).toBe(0);
+    setNotifyStores({ digest: createMemoryDigestStore() });
+    expect(await purgeNotifyDigests(AT.getTime())).toBe(0);
+
+    const calls: number[] = [];
+    const store: PgDigestStore = {
+      ...createMemoryDigestStore(),
+      retentionMs: 60_000,
+      purgeExpired: (nowMs) => {
+        calls.push(nowMs);
+        return Promise.resolve(4);
+      },
+    };
+    setNotifyStores({ digest: store });
+    expect(await purgeNotifyDigests(AT.getTime())).toBe(4);
+    expect(calls).toEqual([AT.getTime()]);
   });
 });

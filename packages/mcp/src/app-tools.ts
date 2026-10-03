@@ -20,7 +20,7 @@ import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
 import type { McpOAuth } from './oauth-metadata';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
-import type { AnyMcpTool, McpVerbClass } from './registry';
+import type { AnyMcpTool } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
 import type { McpScopes } from './scopes';
@@ -28,7 +28,7 @@ import { withScopes } from './scopes';
 import type { CreateMcpServerInput } from './server';
 import { createMcpServer, type McpServer } from './server';
 import type { McpInstructions } from './server-voice';
-import type { McpRouteDescriptor, ResolvedToken } from './transport-http';
+import type { McpRateLimits, McpRouteDescriptor, ResolvedToken } from './transport-http';
 import { mcpHttpRoute } from './transport-http';
 
 /** Schema map behind the authored `tools` record; inferred per tool, never written by hand. */
@@ -133,10 +133,11 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    */
   readonly bodyLimitBytes?: number | undefined;
   /**
-   * Requests per minute per caller, by class. Defaults to `MCP_RATE_LIMITS` and is ENFORCED by the
-   * route, so this is the app's one knob over what an agent may spend here.
+   * Requests per minute per caller, by class — defaults to `MCP_RATE_LIMITS` — and failed
+   * authentications per minute per address (`unauthenticated`). ENFORCED by the route, so this is
+   * the app's one knob over what an agent, or a stranger guessing tokens, may spend here.
    */
-  readonly rateLimits?: Readonly<Record<McpVerbClass, number>> | undefined;
+  readonly rateLimits?: McpRateLimits | undefined;
   /**
    * Where those buckets are counted. Forwarded rather than left to the route's per-process default
    * because an app behind N replicas has no other way to reach it — and N processes each holding

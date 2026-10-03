@@ -90,13 +90,18 @@ export function listParamsProperties(spec: McpListParams): readonly [string, Jso
 }
 
 /**
- * The schema `manage_resource` validates a list call against: the tool's own input with every
- * list key NARROWED to the whitelist, and nothing else admitted. `Object.fromEntries` (a define,
- * never `[k] =`) because a field name is the app's string and `__proto__` must land as a key.
+ * The schema `manage_resource` validates a list call against: the whitelist, NARROWED, plus the
+ * input keys the query REQUIRES (a `projectId` the list cannot run without), and nothing else
+ * admitted. Decided by provenance — the author's `required` and the author's whitelist — never by
+ * whether a key looks like a filter: an optional `status_in` or `includeDeleted` the whitelist
+ * left out was admitted until 2026-10. `Object.fromEntries` (a define, never `[k] =`) because a
+ * field name is the app's string and `__proto__` must land as a key.
  */
 export function listParamsSchema(spec: McpListParams, base: JsonSchema): JsonSchema {
+  const declared = base.properties ?? {};
+  const required = (base.required ?? []).filter((key) => Object.hasOwn(declared, key));
   const properties = Object.fromEntries([
-    ...Object.entries(base.properties ?? {}),
+    ...required.map((key): [string, JsonSchema] => [key, declared[key] ?? {}]),
     ...listParamsProperties(spec),
   ]);
   return {

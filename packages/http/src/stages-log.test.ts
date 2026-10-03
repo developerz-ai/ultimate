@@ -34,6 +34,7 @@ const runErrorMap = async (error: unknown): Promise<Record<string, unknown>[]> =
     limiter: {
       scope: 'process',
       check: async () => never(),
+      peek: async () => never(),
       headers: () => ({}),
       assert: async () => never(),
     },

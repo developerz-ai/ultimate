@@ -299,7 +299,9 @@ const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 function headOf(tool: AnyMcpTool): Omit<MetaAction, 'params'> {
   return {
     name: tool.name,
-    kind: tool.destructive === false ? 'query' : 'action',
+    // `=== true`, as `ToolRegistry.verbClass` meters it: an omitted `destructive` is a read in the
+    // rate limiter, so listing it as an action gave one tool two answers.
+    kind: tool.destructive === true ? 'action' : 'query',
     description: tool.description,
     ...(tool.confirms === true ? { confirms: true } : {}),
     ...(tool.scope === undefined ? {} : { scope: tool.scope }),

@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createMemoryStepStore, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
+import { createMemoryDigestStore } from './digest';
 import { createMemoryDeliveryLedger } from './ledger';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
@@ -253,5 +254,48 @@ describe('unit · fan-out', () => {
 
     await run.finish(handle, { params, recipients: [{ id: 'ana' }] });
     expect(log.sent.map((entry) => entry.channel)).toEqual(['in-app', 'email']);
+  });
+
+  // `s1-t4 #2`: the audience was never deduplicated, and a step is named by the recipient's id —
+  // so `[u1, u2, u1, u3]` failed `X_STEP_DUPLICATE` after u2, u3 was never notified, and every retry
+  // failed the same way. One person is one delivery per channel, whichever path named them twice.
+  test('a repeated recipient id is one delivery, and the rest of the audience still gets theirs', async () => {
+    setNotifyStores({});
+    const log = recorder();
+    const handle = notifier<TestParams>({
+      name: 'post.repeated',
+      input: t.object({ postId: t.uuid }),
+      tenant: 'none',
+      key: (input) => `post.repeated:${input.postId}`,
+      recipients: () => [{ id: 'u1' }, { id: 'u2' }, { id: 'u1' }, { id: 'u3' }],
+      deliver: [{ channel: log.one('email') }],
+    });
+
+    const resolved = await driver().finish(handle, { params });
+    expect(log.sent.map((entry) => entry.to.join())).toEqual(['u1', 'u2', 'u3']);
+    expect(resolved.recipients).toBe(3);
+
+    // The explicit list is the same audience by another path, and is deduplicated the same way.
+    const explicit = await driver().finish(handle, {
+      params: { postId: '00000000-0000-7000-8000-00000000cafe' },
+      recipients: [{ id: 'u4' }, { id: 'u4' }],
+    });
+    expect(explicit.delivered).toBe(1);
+  });
+
+  test('a repeated recipient id lands in its digest window once', async () => {
+    setNotifyStores({ digest: createMemoryDigestStore() });
+    const log = recorder();
+    const handle = notifier<TestParams>({
+      name: 'post.repeated-digest',
+      input: t.object({ postId: t.uuid }),
+      tenant: 'none',
+      key: (input) => `post.repeated-digest:${input.postId}`,
+      deliver: [{ channel: log.one('email'), digest: { window: '15m' } }],
+    });
+
+    await driver().finish(handle, { params, recipients: [{ id: 'u1' }, { id: 'u1' }] });
+    expect(log.sent.map((entry) => entry.to.join())).toEqual(['u1']);
+    expect(log.sent[0]?.events).toHaveLength(1);
   });
 });

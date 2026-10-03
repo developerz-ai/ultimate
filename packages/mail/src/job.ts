@@ -5,21 +5,33 @@
 import { type JobHandle, job } from '@ultimat3/jobs';
 import { type StandardSchemaV1, t } from '@ultimat3/schema';
 import { type MailMessage, mailDriver, type SendResult } from './driver';
+import { addressRefusal } from './envelope-address';
 import { assertHeaderSafe } from './header-safety';
 import { mailIdempotencyKey } from './idempotency';
+
+/**
+ * A recipient by the rule the SMTP envelope applies (`addressRefusal`), never `t.email`: the
+ * inline path takes the RFC 5322 display form, so a stricter queue schema turned a `send()` that
+ * answered `queued: true` into a worker that refused the row it had just been handed.
+ */
+const mailAddress = t.refine(t.string, {
+  name: 'mail-address',
+  message: 'a mailbox or a display-form address, with no control character or non-ASCII mailbox',
+  check: (address) => addressRefusal(address) === undefined,
+});
 
 /** The queue payload is the already-rendered envelope: rendering happens once, at send time. */
 export const mailMessageSchema: StandardSchemaV1<unknown, MailMessage> = t.object({
   mailId: t.string,
-  to: t.array(t.email),
+  to: t.array(mailAddress),
   subject: t.string,
   html: t.string,
   text: t.string,
   locale: t.locale,
   tz: t.timezone,
-  replyTo: t.email.optional(),
-  cc: t.array(t.email).optional(),
-  bcc: t.array(t.email).optional(),
+  replyTo: mailAddress.optional(),
+  cc: t.array(mailAddress).optional(),
+  bcc: t.array(mailAddress).optional(),
   unsubscribeUrl: t.url.optional(),
   unsubscribeOneClick: t.boolean.optional(),
   idempotencyKey: t.string.optional(),

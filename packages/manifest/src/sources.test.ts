@@ -10,6 +10,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   action,
+  jsonSchemaOf,
   mutator,
   registerAction,
   resetRegistry as resetActions,
@@ -262,6 +263,15 @@ describe('the query and job projections', () => {
     expect(fact?.live).toBe(true);
     // `tags` on the descriptor, `cacheTags` in the manifest.
     expect(fact?.cacheTags).toEqual(['feed']);
+  });
+
+  // `s1-t4 #11`: the README promised a query's input schema and the projection never wrote one, so
+  // `diffQueries`' input compare could not fire on a real manifest — narrowing a query's input
+  // reached every client with the contract gate green. The schema is the one OpenAPI publishes.
+  test('a query publishes its input schema, the projection actions and jobs already use', () => {
+    const fact = frameworkSources({ app: APP }).queries?.[0];
+    const published: unknown = fact?.input;
+    expect(published).toEqual(jsonSchemaOf(t.object({ limit: t.number.default(10) })));
   });
 
   // The half `@ultimat3/cli` reads at generation time: tier 5 cannot import query's runtime, so

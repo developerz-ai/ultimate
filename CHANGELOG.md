@@ -14,7 +14,7 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slices 01–08 have landed: `schema` and
+a later slice appends its group below the last one. `As of 2026-10` slices 01–09 and the first half of slice 10 have landed: `schema` and
 `core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
 and `cli`; then slice 04, complete — tier 2's `entity`, `policy` and `http`. A browser-launcher
@@ -24,7 +24,11 @@ users has an operator step — the first `auth` entry under Changed.** Slice 06 
 `http`, `db` and `cli`. Slice 07 is `jobs`; no DDL changed. Slice 08 is
 `realtime`: **three operator steps — the first three `realtime` entries under Changed.** Slice 09 is
 complete: `render` and `pwa`, with what they changed in `http`; then `ui`, with the theme script it
-reads in `render` and the build-stats rule it moved in `cli`.
+reads in `render` and the build-stats rule it moved in `cli`. Slice 10's first half is `http`'s
+failed-credential gate, then `mcp`, `mail`, `notify` and `manifest`, with what they changed in
+`schema` and `cli`: **an app that commits `x.manifest.json` runs `x manifest`, and one that
+commits `packages/db/schema/` runs `x db gen`, once** — the `manifest`, `contract-diff` and `drift`
+steps are red until it does.
 
 ### Added
 
@@ -175,6 +179,27 @@ Tier 4 — ui, render (slice 09).
   regenerates the glyphs. Every icon-data `fix:` is now that one command.
 - **render:** `themeScriptBody` stamps its fallback beside the theme, as `<attribute>-default`
   (`data-theme-default`), outside the `try` — so a storage read that throws still leaves it.
+
+Tier 0 — schema. Tier 2 — http. Tier 4 — mcp, notify, manifest (slice 10).
+
+- **schema:** `JsonSchema['x-ultimate-pattern-flags']`. A `.pattern()` with flags publishes them
+  beside `pattern` — `/^[a-z]+$/i` is `pattern: '^[a-z]+$'` with `'x-ultimate-pattern-flags': 'i'`
+  — in OpenAPI and in an MCP tool's `inputSchema`. JSON Schema's `pattern` has no flag syntax;
+  `description` still states them for a reader.
+- **http:** `RateLimitStore#peek(key, bucket, nowMs)` and `RateLimiter#peek(key, bucketName)` —
+  what a key holds now, refill applied, with nothing written; a key never taken is full.
+  `rateLimitPeek(bucket, tokens)`, `refilledTokens(bucket, stored, lastMs, nowMs)` and the
+  `RateLimitPeek` type (`remaining`, `retryAfterSeconds`) — see Changed.
+- **mcp:** `MCP_UNAUTHENTICATED_LIMIT` (20) and the `McpRateLimits` type: `rateLimits` takes an
+  optional `unauthenticated`, failed authentications per minute per address. `McpRequestOrigin`
+  gains an optional `address` — see Changed.
+- **notify:** `createPgDigestStore({ executor, retentionMs })` → `PgDigestStore`
+  (`PgDigestStoreOptions`): digest windows in Postgres, one row per window, so a `digested` event
+  outlives the process that appended it and every replica joins the same window. `retentionMs`
+  defaults to `DEFAULT_DIGEST_RETENTION_MS` (7 days); `purgeExpired(nowMs)` deletes windows that
+  closed before `nowMs - retentionMs`. `SQL_NOTIFY_DIGESTS_TABLE` and `purgeNotifyDigests(nowMs)`
+  — see Changed.
+- **manifest:** `X_MANIFEST_FACT_INVALID` (`ManifestFactInvalidError`) — see Changed.
 
 Tier 5 — cli.
 
@@ -817,6 +842,103 @@ Tier 4 — ui, render. Tier 5 — cli (slice 09).
   `.x/build-stats.json` written before this release is stale: every budgeted route reads
   `X_BUDGET_UNMEASURED` until `x build --target static`.
 
+Tier 2 — http (slice 10).
+
+- **BREAKING — `RateLimitStore` and `RateLimiter` gain a required `peek`.** A store answers
+  `peek(key, bucket, nowMs): Promise<RateLimitPeek>`, a limiter `peek(key, bucketName)`: what the
+  key holds now, refill applied, nothing written, a key never taken full. A hand-written store or
+  limiter is TS2741. Answer from the state the store already keeps:
+  `rateLimitPeek(bucket, refilledTokens(bucket, stored, lastMs, nowMs))`, and
+  `rateLimitPeek(bucket, bucket.capacity)` for a key it holds nothing for. `memoryRateLimitStore`
+  and `postgresRateLimitStore` implement it; the Postgres one is a `select`, never the upsert.
+- **BREAKING — an address that has spent its failed-credential allowance is refused before
+  `authenticate()`.** On an `auth: 'required'` route, once `rateLimit.defaultBucket` under
+  `unauthenticated|ip:<address>` is empty, every request from that address is `429
+  X_RATE_LIMITED` with `Retry-After` — a valid credential included — until the bucket refills. A
+  right guess used to authenticate straight past the 429s, so the bucket bounded nothing a guesser
+  cares about. A signed-in caller behind the same NAT address waits too. No `ctx.ip`, or
+  `rateLimit.enabled: false`, and there is no gate. Cost: one `peek` per request to a required
+  route — on `postgresRateLimitStore` one `select`, no write. Raise `rateLimit.defaultBucket`, or
+  stop a probe that fails on purpose from sharing an address with real users.
+
+Tier 4 — mcp. Tier 5 — cli (slice 10).
+
+- **BREAKING — a caller-audience MCP server hides a 5xx cause.** A thrown code whose HTTP status
+  is 5xx, and which core's `hasPublicCause` does not list, renders a fixed cause pointing at the
+  process's logs and `fix: x errors explain <CODE> --json` — or the error's `callerFix` — in a
+  `tools/call` result and in `resources/read` error data. `X_DB_STATEMENT_FAILED` carried the
+  server's message and the statement. `'caller'` is `defineAppMcp`'s default `errorAudience`;
+  `createMcpServer`'s is `'developer'`, which is unchanged, as is every code under 500. Read the
+  real cause in the log line or the error monitor; a server whose reader is the app's author passes
+  `errorAudience: 'developer'`.
+- **BREAKING — `db.query` refuses more.** A `U&"…"` identifier — refused, never decoded; a call
+  that runs SQL handed to it as text — `query_to_xml*`, `cursor_to_xml*`, `table_to_xml*`,
+  `schema_to_xml*`, `database_to_xml*`, `ts_stat`, `ts_rewrite`; and `pg_import_*`, which writes
+  `pg_collation`. Each is `X_MCP_QUERY_REJECTED`. The leading keyword is read as Postgres lexes an
+  identifier, so `select2 …` is no longer taken for a `select`. Spell an identifier plainly; run
+  the inner statement as the query itself.
+- **BREAKING — `surface: 'meta'` lists a hand-registered tool without `destructive` as a `query`.**
+  It was `action`, while `ToolRegistry.verbClass` already metered it as a read. Declare
+  `destructive: true` on a tool that writes.
+- **BREAKING — a `manage_resource` list call admits the `listParams` whitelist and the input's
+  required keys, and nothing else.** An optional input key the whitelist leaves out
+  (`includeDeleted`, `status_in`) is an `isError` result carrying `X_INPUT_INVALID`; it reached the
+  query. Add the key to the query's `mcp.listParams`, or call the query's own tool.
+- **BREAKING — failed MCP authentications are metered per address.** `mcpHttpRoute`, the app's MCP
+  endpoint and `x mcp serve --transport http` count a missing or unresolved bearer token against
+  the caller's address, 20 a minute (`MCP_UNAUTHENTICATED_LIMIT`; set
+  `rateLimits: { read, write, unauthenticated }`). Past it the address is `429
+  X_MCP_RATE_LIMITED` with `Retry-After` before `resolveToken` runs, a right token included. The
+  check is a `peek`: an authenticated call writes nothing. A host calling `route.handle(request)`
+  without `{ address }` is not metered. An `unauthenticated` that is not a whole number of at least
+  1 is `X_INVARIANT` when the route is built.
+
+Tier 4 — mail (slice 10).
+
+- **BREAKING — `send()` inside a transaction stages its job.** It enqueues through the jobs facade:
+  inside `withTransaction` the `mail.send` job is staged on the transaction and published after
+  `COMMIT`, so a rollback sends nothing. It enqueued on the pool, and a handler that rolled back
+  after `send()` mailed anyway. A test that reads the queue inside the transaction reads it after
+  the commit. A facade installed with `mode: 'required'` refuses a `send()` outside a transaction
+  with `X_OUTBOX_NO_TX`, as for any enqueue; the framework's boot installs `'default'`.
+  `{ sync: true }` and a process with no job driver send inline, unchanged.
+- **BREAKING — one recipient rule at `send()`, on every driver.** `to`, `cc`, `bcc` and `replyTo`
+  holding a control character, a `<` or `>` in the mailbox, or a non-ASCII mailbox are
+  `X_MAIL_ADDRESS_INVALID` (`meta.reason`: `injection` or `non-ascii`) from `send()` and
+  `renderMessage()`. Resend and the memory driver delivered them; SMTP refused them at the worker.
+  The queue schema asks the same question in place of `t.email`, so a display-form
+  `Jane Doe <jane@x.test>` queues and delivers — it was `queued: true` and then a worker parse
+  failure. An `unsubscribeUrl` the URL parser refuses is `X_VALIDATION_FAILED` at `send()`. Write
+  the domain as punycode (`jose@xn--exmple-cua.test`); a non-ASCII local part needs another
+  mailbox. The `mail.send` job's input schema changed, so `contract-diff` reports
+  `jobs.mail.send.input` as breaking until `x manifest` is run and the file committed.
+
+Tier 4 — notify. Tier 5 — cli (slice 10).
+
+- **BREAKING — the boot creates `x_notify_digests`, so a committed schema dump drifts.** The table
+  and its three indexes are applied beside the other notify tables, whether or not the app installs
+  `createPgDigestStore`. Run `x db gen` and commit `packages/db/schema/`.
+- **cli:** the hourly `x.purge` sweeps `x_notify_digests` — windows closed longer ago than the
+  installed `PgDigestStore`'s `retentionMs`, which only a dead-lettered flush leaves behind. A
+  memory store, or none, sweeps 0. `PurgeReport.swept` has a seventh entry, before `x_job_events`.
+
+Tier 4 — manifest (slice 10).
+
+- **BREAKING — queries publish `input`, so every committed `x.manifest.json` is stale.**
+  `frameworkSources` projects each query handle's input through `jsonSchemaOf`, as for an action;
+  it wrote none, so `diffQueries`' input compare never fired. The `manifest` step is
+  `X_MANIFEST_STALE` until `x manifest`; commit the file. A side with no `input` — a manifest
+  committed before this release — is no evidence, so the first diff reports no change for it.
+- **BREAKING — a `NaN`, `±Infinity` or `-0` manifest fact fails the build.**
+  `X_MANIFEST_FACT_INVALID`, the fact's location in `meta.path`. `JSON.stringify` wrote it as
+  `null` or `0` while `buildId` hashed the token, so the committed file failed its own
+  `verifyBuildId` and read as drift on every build. Make the declaration behind `meta.path` finite.
+- **BREAKING — a NOT NULL column losing its default is a breaking contract change.**
+  `contract-diff` reports `entities.<name>.columns.<column>.hasDefault`, so the gate is
+  `X_MANIFEST_BREAKING` without a major bump; it reported only `buildId`. On a nullable column the
+  drop is `internal`; a default gained is `additive`. Restore the default, or bump the app's major
+  in `package.json`.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -1200,6 +1322,34 @@ Tier 4 — ui (slice 09).
 - **ui:** the icon generator. A body that is not JSON, and a node that is not `[tag, attributes]`,
   is `X_UI_INVALID_VALUE`; the first was a bare `SyntaxError`, the second skipped into a partial
   glyph. Every generator `fix:` is one runnable command.
+
+Tier 4 — mcp, mail, notify (slice 10).
+
+- **mcp:** argument validation compiles a pattern with the flags `@ultimat3/schema` publishes
+  (`x-ultimate-pattern-flags`): `/^[a-z]+$/i` accepts `ABC` and `/^\p{L}+$/u` accepts `é`, as the
+  action's own parse already did. A `g` or `y` pattern no longer refuses a value on its second
+  check. The refusal quotes `/source/flags`.
+- **mcp:** `db.query` reads a word as Postgres lexes an identifier — digits, `$` and non-ASCII after
+  the first character. A column named `set2` was refused as `SET`.
+- **mail:** `Reply-To` takes the address path, so a non-ASCII display name is an RFC 2047 word; it
+  went out as raw 8-bit octets. An ASCII display name holding a special is quoted in `From`, `To`,
+  `Cc` and `Reply-To`: `Doe, Jane <jane@x.test>` is `"Doe, Jane" <jane@x.test>`, where the comma
+  split one address into two.
+- **mail:** `List-Unsubscribe` carries the url as the WHATWG serialiser writes it — punycode host,
+  percent-encoded path and query. A url holding a control character is left for the CR/LF gate to
+  refuse.
+- **mail:** `X_MAIL_HEADER_INVALID` carries `meta.reason`, `line-break` or `non-ascii`. A non-ASCII
+  mailbox in an address header was reported with the line-break cause, and its `fix:` now names
+  the option to change. Code unchanged.
+- **mail:** an `SMTP_URL` whose user or password holds a `%` that starts no escape is
+  `X_CONFIG_INVALID` from `createSmtpDriver`, was a bare `URIError`. Neither cause nor fix carries
+  the credential.
+- **mail:** `registeredMails()` sorts by code unit, as `registeredMailIds()` does; it used
+  `localeCompare`, so the two lists disagreed on mixed-case ids.
+- **notify:** a fan-out delivers once per recipient id. A resolver that named one recipient twice
+  failed `X_STEP_DUPLICATE` at the second delivery: every later recipient went un-notified and
+  every retry stopped at the same place. A checkpoint written before this release is repaired on
+  replay.
 
 ## 23.0.0 - 2026-10-02
 

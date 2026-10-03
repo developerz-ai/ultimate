@@ -10,6 +10,7 @@ import { memoryRateLimitStore, rateLimitDecision } from './rate-limit';
 import type { PgExecutor } from './rate-limit-postgres';
 import {
   postgresRateLimitStore,
+  SQL_RATE_LIMIT_PEEK,
   SQL_RATE_LIMIT_PURGE,
   SQL_RATE_LIMIT_RESET,
   SQL_RATE_LIMIT_TABLE,
@@ -156,5 +157,27 @@ describe('both stores answer the same numbers', () => {
     );
     expect(fromPostgres).toEqual(fromMemory);
     expect(fromMemory).toEqual(rateLimitDecision(bucket, 0, 1, false, 1_000));
+  });
+});
+
+describe('the postgres store peek', () => {
+  test('is one plain select, and a missing row is a full bucket', async () => {
+    const { exec, calls } = executor([[]]);
+    const peek = await postgresRateLimitStore({ executor: exec }).peek('k', bucket, 5_000);
+    expect(peek).toEqual({ remaining: 3, retryAfterSeconds: 0 });
+    expect(calls).toEqual([{ sql: SQL_RATE_LIMIT_PEEK, params: ['k'] }]);
+    expect(SQL_RATE_LIMIT_PEEK.trim().toLowerCase()).toStartWith('select ');
+  });
+
+  test('refills the stored row in JS, string columns included, and says when to come back', async () => {
+    const { exec } = executor([[{ tokens: '0.25', last_ms: '1000' }], [{ tokens: 0, last_ms: 0 }]]);
+    const store = postgresRateLimitStore({ executor: exec });
+    // 0.25 + 0.5 s × 1/s = 0.75: no whole token, one more in 0.25 s → 1 s.
+    expect(await store.peek('k', bucket, 1_500)).toEqual({ remaining: 0, retryAfterSeconds: 1 });
+    // Capped at capacity however long it sat.
+    expect(await store.peek('k', bucket, 1_000_000)).toEqual({
+      remaining: 3,
+      retryAfterSeconds: 0,
+    });
   });
 });

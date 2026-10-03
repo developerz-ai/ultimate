@@ -40,9 +40,9 @@ await commentPosted.enqueue({ params: { postId, orgId, author } });
 | `ledger` — the delivery claim | in-memory (one process is genuinely deduped) | `createPgDeliveryLedger({ executor, windowMs })` — `windowMs` never shorter than your idempotency window |
 | `preferences` — the gate | allow all | yours: **the gate ships, what it reads never does** — your taxonomy, your quiet hours |
 | `inbox` | none — `X_NOTIFY_STORE_MISSING` | `createPgInboxStore({ executor })` |
-| `digest` | none — `X_NOTIFY_STORE_MISSING` | `createMemoryDigestStore()` |
+| `digest` | none — `X_NOTIFY_STORE_MISSING` | `createPgDigestStore({ executor })` — one window per slot across replicas; `createMemoryDigestStore()` for one process |
 
-The hourly `x.purge` job sweeps the Postgres ledger and inbox — and, in the same pass, `x_job_events`, the stored bus `step.waitForEvent` reads. The inbox is swept only when your
+The hourly `x.purge` job sweeps the Postgres ledger, inbox and digest windows (a closed window a week old, by default) — and, in the same pass, `x_job_events`, the stored bus `step.waitForEvent` reads. The inbox is swept only when your
 `app.config.ts` sets `notify.inboxReadRetentionMs` / `notify.inboxUnreadRetentionMs` — when an unread
 message disappears is your decision ([Configuration](Configuration)).
 
@@ -54,6 +54,8 @@ message disappears is your decision ([Configuration](Configuration)).
   in without an import.
 - `requireInbox(name)` answers `list`, `unreadCount`, `markSeen`, `markRead`. `seenAt` and `readAt`
   are two facts, and the unread count is derived, never stored.
+- A recipient id named twice in the audience is one recipient: the list is deduplicated by `id`,
+  first entry kept, before any channel runs.
 - A replay does not send twice: the step checkpoint per channel and recipient, and the ledger's
   atomic claim on `(notifier, key, channel, recipient)` taken before the send.
 - Entries fire in `wait` order; `if` / `unless` run **after** the wait, on the attempt that delivers.

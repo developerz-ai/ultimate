@@ -17,6 +17,7 @@
 // this function stays pure and unit-testable.
 
 import { canonicalJson } from '@ultimat3/core';
+import { assertFiniteFacts } from './finite-facts';
 import type {
   ActionFact,
   AdminFact,
@@ -96,6 +97,8 @@ export function buildManifest(sources: ManifestSources): Manifest {
     errorCodes,
   };
 
+  // Before the hash: a fact the written file cannot hold must never get a buildId at all.
+  assertFiniteFacts(body, '');
   return { ...body, buildId: contentHash(body) };
 }
 

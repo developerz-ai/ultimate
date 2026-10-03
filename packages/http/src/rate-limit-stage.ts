@@ -76,11 +76,40 @@ export const spendRequestBuckets = async (
   );
 };
 
+/** The one key failed credentials are counted under: the address alone, never the route. */
+const unauthenticatedKey = (ip: string | null): string =>
+  `${UNAUTHENTICATED_SCOPE}|ip:${ip ?? 'unknown'}`;
+
+/**
+ * The `auth` stage's GATE, before `authenticate()` on a required route: an address whose failure
+ * allowance is spent is refused here, a valid credential included. Spending only on failure
+ * answered a wrong guess 429 and still served a right one, so it bounded nothing a guesser cares
+ * about — and every refused guess was still a credential-store read.
+ *
+ * READ ONLY: `RateLimitStore.peek`, never a take — this runs on every request to a required route,
+ * signed-in ones included, and a zero-cost take was a Postgres upsert on each. The refusal carries
+ * the peek's own `Retry-After` (`rateLimitPeek`). With no address there is no key
+ * worth refusing on — `ip:unknown` is everyone at once — so the gate stands aside and the failure
+ * path below still counts.
+ */
+export const refuseExhaustedAddress = async (
+  ctx: RequestContext,
+  limiter: RateLimiter,
+  config: RateLimitConfig,
+): Promise<void> => {
+  if (!config.enabled || ctx.ip === null) return;
+  const key = unauthenticatedKey(ctx.ip);
+  const peek = await limiter.peek(key, config.defaultBucket);
+  if (peek.remaining >= 1) return;
+  throw rateLimited(key, peek.retryAfterSeconds);
+};
+
 /**
  * The `auth` stage's failure path. A request refused 401 never reaches `rate-limit`, so nothing
  * metered it: a caller with no credential, or a wrong one, could ask the credential store about
  * tokens without bound. Spent only on FAILURE and keyed on the address ALONE — a signed-in
- * caller behind the same NAT spends nothing here, and its own bucket stays where it was.
+ * caller behind the same NAT spends nothing here. Once it is spent, `refuseExhaustedAddress`
+ * refuses that address on required routes, signed-in callers included, until it refills.
  */
 export const spendUnauthenticated = (
   ctx: RequestContext,
@@ -89,6 +118,6 @@ export const spendUnauthenticated = (
 ): Promise<void> => {
   if (!config.enabled) return Promise.resolve();
   return spendAll(ctx, limiter, [
-    { key: `${UNAUTHENTICATED_SCOPE}|ip:${ctx.ip ?? 'unknown'}`, bucket: config.defaultBucket },
+    { key: unauthenticatedKey(ctx.ip), bucket: config.defaultBucket },
   ]);
 };

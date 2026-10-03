@@ -112,4 +112,35 @@ describeLive('live · postgres · the shared rate-limit store', () => {
     // bucket is the same free allowance one `delete` further along.
     expect((await store.take('untouched', bucket, 1, nowMs)).allowed).toBe(false);
   });
+
+  // The peek runs on every request to a required route, so it must agree with the memory store AND
+  // leave no trace: no row for a key never taken, no change to one that was.
+  test('peek agrees with the memory store and writes nothing', async () => {
+    const memory = memoryRateLimitStore();
+    const count = async (): Promise<number> =>
+      Number(
+        (
+          (await sql.unsafe('select count(*)::int as n from x_rate_limit', [])) as { n: number }[]
+        )[0]?.n,
+      );
+    const before = await count();
+    expect(await store.peek('never-taken', bucket, 1_000)).toEqual({
+      remaining: 4,
+      retryAfterSeconds: 0,
+    });
+    expect(await count()).toBe(before);
+
+    await store.take('peeked', bucket, 4, 1_000);
+    await memory.take('peeked', bucket, 4, 1_000);
+    for (const nowMs of [1_000, 1_400, 2_000, 9_000]) {
+      expect(await store.peek('peeked', bucket, nowMs)).toEqual(
+        await memory.peek('peeked', bucket, nowMs),
+      );
+    }
+    const row = (await sql.unsafe('select tokens, last_ms from x_rate_limit where key = $1', [
+      'peeked',
+    ])) as { tokens: number; last_ms: string }[];
+    expect(Number(row[0]?.tokens)).toBe(0);
+    expect(Number(row[0]?.last_ms)).toBe(1_000);
+  });
 });

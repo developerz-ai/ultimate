@@ -2,9 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import {
+  createJobsFacade,
   createMemoryDriver as createMemoryJobDriver,
+  createMemoryOutboxStore,
   resetJobDriver,
+  resetJobsFacade,
   setJobDriver,
+  setJobsFacade,
 } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
@@ -60,6 +64,18 @@ const alphaMail = defineMail<{ name: string }>({
   input: basicInput,
   template: () => [blocks.paragraph('test.basic.body')],
 });
+
+// A THIRD, whose id differs from the others in CASE: `localeCompare` puts `test-Zeta` after
+// `test-basic`, a code-unit sort puts it first — the one input on which the two orders disagree.
+defineMail<{ name: string }>({
+  id: 'test-Zeta',
+  subject: 'test.basic.subject',
+  input: basicInput,
+  template: () => [blocks.paragraph('test.basic.body')],
+});
+
+/** The facade's transaction token, named without importing `@ultimat3/entity` into this package. */
+type Tx = NonNullable<ReturnType<Parameters<typeof createJobsFacade>[1]>>;
 
 let memory: MemoryMailDriver;
 
@@ -187,6 +203,36 @@ test('unsubscribeOneClick: false reaches the envelope and survives the queue sch
   expect(sent.html).toContain('https://example.test/unsubscribe/confirm?token=abc');
 });
 
+// One recipient rule on both paths: what the queue schema refuses, `send()` refuses at the call
+// site, whichever driver is installed — never `queued: true` and then a worker's parse failure.
+test('a recipient the envelope gate refuses is refused at send(), on the memory driver too', async () => {
+  for (const options of [
+    { to: 'josé@exämple.test', locale: 'en' },
+    { to: 'ada@example.test', cc: ['a<b@x.test'], locale: 'en' },
+    { to: 'ada@example.test', bcc: ['ops@x.test\u0007'], locale: 'en' },
+    { to: 'ada@example.test', replyTo: 'Ada <adä@x.test>', locale: 'en' },
+  ] satisfies SendOptions[]) {
+    expect(codeOf(await caught(send(basicMail, { name: 'Ada' }, options)))).toBe(
+      'X_MAIL_ADDRESS_INVALID',
+    );
+  }
+  expect(memory.sent).toHaveLength(0);
+});
+
+// The queue schema types `unsubscribeUrl` as `t.url`; inline, an unparseable one went out as
+// `List-Unsubscribe: <not a url>`. Same rule, refused at the call site.
+test('an unsubscribeUrl the queue schema refuses is refused at send()', async () => {
+  const options: SendOptions = {
+    to: 'ada@example.test',
+    unsubscribeUrl: 'not a url',
+    locale: 'en',
+  };
+  expect(codeOf(await caught(send(basicMail, { name: 'Ada' }, options)))).toBe(
+    'X_VALIDATION_FAILED',
+  );
+  expect(memory.sent).toHaveLength(0);
+});
+
 describe('the registry', () => {
   test('mailFor answers the very definition defineMail returned, and undefined otherwise', () => {
     // Identity: `sendById` looks a mail up here and hands it to `send`, so a lookup that
@@ -257,6 +303,31 @@ describe('the queue path', () => {
     const other = await send(basicMail, { name: 'Grace' }, options);
     expect(other.idempotencyKey).not.toBe(first.idempotencyKey);
     expect(other.id).not.toBe(first.id);
+  });
+
+  // `s1-con #3`: `send()` called `jobDriver().enqueue` on the pool, autocommitted, so a handler that
+  // rolled back after sending still mailed. Through the facade, an ambient transaction STAGES the
+  // row — nothing reaches the queue until that transaction commits.
+  test('inside a transaction the send is staged on it, not published to the queue', async () => {
+    const queue = createMemoryJobDriver();
+    setJobDriver(queue);
+    const store = createMemoryOutboxStore();
+    const tx = { id: 'request-tx' } as unknown as Tx;
+    setJobsFacade(createJobsFacade({ store, driver: queue }, () => tx));
+    try {
+      const result = await send(
+        basicMail,
+        { name: 'Ada' },
+        { to: 'ada@example.test', locale: 'en' },
+      );
+      expect(result.queued).toBe(true);
+      expect((await queue.introspect?.list()) ?? []).toEqual([]);
+      await store.rollback(tx);
+      expect(await store.claim(10)).toEqual([]);
+      expect(memory.sent).toHaveLength(0);
+    } finally {
+      resetJobsFacade();
+    }
   });
 
   test('sync: true delivers inline even with a queue configured', async () => {

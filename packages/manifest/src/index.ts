@@ -39,6 +39,7 @@ export {
   MANIFEST_ERROR_TITLES,
   ManifestBreakingError,
   ManifestDriftError,
+  ManifestFactInvalidError,
 } from './errors';
 export type {
   ActionFact,

@@ -1,10 +1,11 @@
 // The retention sweep this boot owns: the framework tables that grow with traffic, the `purge()`
 // job that empties them and the `task` that fires it hourly.
 //
-// SIX TARGETS over six tables, `As of 2026-10-02` — `x_idempotency`, `x_rate_limit`, the
-// `x_auth` limiter's table, `x_notify_deliveries`, `x_notify_inbox` and `x_job_events`. Counted
-// nowhere in prose but here: this header said "three" for two releases after the notify tables
-// joined the boot's DDL, which is how `x_notify_inbox` became the one framework table nothing swept.
+// SEVEN TARGETS over seven tables, `As of 2026-10-02` — `x_idempotency`, `x_rate_limit`, the
+// `x_auth` limiter's table, `x_notify_deliveries`, `x_notify_inbox`, `x_notify_digests` and
+// `x_job_events`. Counted nowhere in prose but here: this header said "three" for two releases
+// after the notify tables joined the boot's DDL, which is how `x_notify_inbox` became the one
+// framework table nothing swept.
 //
 // WHY here and not in the packages that own the tables: `postgresIdempotencyStore` (tier 3),
 // `postgresRateLimitStore` (tier 2) and `postgresAuthLimiter` (tier 2) cannot see each other and
@@ -29,7 +30,7 @@ import {
   purge,
   task,
 } from '@ultimat3/jobs';
-import { purgeNotifyDeliveries, purgeNotifyInbox } from '@ultimat3/notify';
+import { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from '@ultimat3/notify';
 import type { InboxRetention } from './runtime-notify-retention';
 import { NO_INBOX_RETENTION } from './runtime-notify-retention';
 
@@ -66,7 +67,7 @@ export interface RetentionStores {
 }
 
 /**
- * The two notify tables, and neither store is in `RetentionStores` — deliberately, and for the
+ * The three notify tables, and no store is in `RetentionStores` — deliberately, and for the
  * reason `authTarget` is not either. `setNotifyStores` is an APP's boot line and runs when the
  * app's modules import, which is AFTER this install; `framework-schema.ts` says so where it
  * applies the DDL "whether or not this boot calls `setNotifyStores`". So the sweep can only ask,
@@ -91,6 +92,12 @@ function notifyTargets(retention: InboxRetention): readonly PurgeTarget[] {
           unread:
             retention.unreadMs === undefined ? undefined : new Date(nowMs - retention.unreadMs),
         }),
+    },
+    {
+      name: 'x_notify_digests',
+      // The job's clock, and the store's own window (`createPgDigestStore({ retentionMs })`, a week
+      // by default) — a closed window only its dead-lettered flush would ever have drained.
+      purgeExpired: (nowMs: number): Promise<number> => purgeNotifyDigests(nowMs),
     },
   ];
 }

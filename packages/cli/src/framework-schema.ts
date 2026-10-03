@@ -11,7 +11,11 @@ import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from '@ultimat3/admin/schema
 import { AUTH_TABLE_NAMES, AUTH_TABLES, SQL_AUTH_LIMIT_TABLES } from '@ultimat3/auth';
 import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
-import { SQL_NOTIFY_DELIVERIES_TABLE, SQL_NOTIFY_INBOX_TABLE } from '@ultimat3/notify';
+import {
+  SQL_NOTIFY_DELIVERIES_TABLE,
+  SQL_NOTIFY_DIGESTS_TABLE,
+  SQL_NOTIFY_INBOX_TABLE,
+} from '@ultimat3/notify';
 import { FrameworkSchemaFailedError } from './schema-errors';
 
 export interface FrameworkSchema {
@@ -112,6 +116,13 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/notify',
     tables: Object.freeze(['x_notify_inbox']),
     ddl: Object.freeze([SQL_NOTIFY_INBOX_TABLE]),
+  }),
+  // `createPgDigestStore`'s windows. Installed whether or not the app picks that store, for the
+  // reason every notify row is: `setNotifyStores` is the app's boot line and runs after this one.
+  Object.freeze({
+    pkg: '@ultimat3/notify',
+    tables: Object.freeze(['x_notify_digests']),
+    ddl: Object.freeze([SQL_NOTIFY_DIGESTS_TABLE]),
   }),
   /**
    * The admin's durable audit trail — what `postgresAuditLog()` writes and every detail page's

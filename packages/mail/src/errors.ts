@@ -186,18 +186,52 @@ export const mailCredentialMissing = (environment: Environment): MailError =>
   });
 
 /**
+ * Why a header was refused. Two reasons, one code, as `AddressRefusal` is for the envelope: a
+ * non-ASCII MAILBOX in an address header was raised with the line-break cause, which named a
+ * character the value did not hold.
+ */
+export type HeaderRefusal = 'line-break' | 'non-ascii';
+
+/** The `send()` option each address header comes from; `From` is the transport's own config. */
+const ADDRESS_OPTION: ReadonlyMap<string, string> = new Map([
+  ['To', 'to'],
+  ['Cc', 'cc'],
+  ['Reply-To', 'replyTo'],
+]);
+
+/**
+ * The domain as punycode is the ASCII form; a non-ASCII LOCAL part has none and needs another
+ * mailbox. The example is fixed text — an address is recipient data, never echoed back.
+ */
+const nonAsciiFix = (name: string): string => {
+  const option = ADDRESS_OPTION.get(name);
+  return option === undefined
+    ? 'set mail.from in app.config.ts to an ASCII mailbox, e.g. no-reply@example.test'
+    : `pass the mailbox's ASCII form, the domain as punycode: send(mail, data, { ${option}: 'jose@xn--exmple-cua.test', locale })`;
+};
+
+/**
  * A CR or LF inside a header value ends the header early and lets whatever follows become new
  * headers — the recipient list, a forged `From`. Interpolated data reaches `Subject`, so this is
  * refused rather than stripped: silently rewriting a subject is its own surprise.
  */
-export const headerInvalid = (name: string, mailId: string): MailError =>
+export const headerInvalid = (
+  name: string,
+  mailId: string,
+  reason: HeaderRefusal = 'line-break',
+): MailError =>
   new MailError({
     code: 'X_MAIL_HEADER_INVALID',
-    cause: `the "${name}" header of mail "${mailId}" contains a CR or LF, which would inject headers`,
+    cause:
+      reason === 'line-break'
+        ? `the "${name}" header of mail "${mailId}" contains a CR or LF, which would inject headers`
+        : `the "${name}" header of mail "${mailId}" holds a non-ASCII byte in its mailbox, and this package negotiates no SMTPUTF8, so the address cannot be written as a header`,
     fix:
-      `strip line breaks from the value before it reaches the header: ` +
-      `t('mail.${mailId}.subject', { ...data, x: String(x).replace(/[\\r\\n]+/g, ' ') })`,
-    meta: { header: name, mailId },
+      reason === 'line-break'
+        ? `strip line breaks from the value before it reaches the header: ` +
+          `t('mail.${mailId}.subject', { ...data, x: String(x).replace(/[\\r\\n]+/g, ' ') })`
+        : nonAsciiFix(name),
+    meta: { header: name, mailId, reason },
   });
 
 /**

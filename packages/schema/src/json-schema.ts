@@ -34,6 +34,13 @@ export interface JsonSchema {
   readonly minLength?: number;
   readonly maxLength?: number;
   readonly pattern?: string;
+  /**
+   * The RegExp flags `pattern` is applied with, when there are any. JSON Schema's `pattern` has no
+   * flag syntax and an inline `(?i)` is not ECMA-262, so they travel beside it as an extension a
+   * consumer that compiles the pattern (`@ultimat3/mcp`'s arg validator) reads; the prose copy in
+   * `description` is for a reader.
+   */
+  readonly 'x-ultimate-pattern-flags'?: string;
   readonly minimum?: number;
   readonly maximum?: number;
   readonly enum?: readonly (string | number)[];
@@ -99,6 +106,9 @@ function stringNode(node: SchemaNode): JsonSchema {
     ...(node.minLength === undefined ? {} : { minLength: node.minLength }),
     ...(node.maxLength === undefined ? {} : { maxLength: node.maxLength }),
     ...(node.pattern === undefined ? {} : { pattern: node.pattern }),
+    ...(node.pattern === undefined || node.patternFlags === undefined || node.patternFlags === ''
+      ? {}
+      : { 'x-ultimate-pattern-flags': node.patternFlags }),
   };
 }
 

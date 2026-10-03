@@ -35,6 +35,20 @@
   result is re-checked by `assertHeaderSafe`; a throw or a malformed result is
   `X_MAIL_TRANSFORM_FAILED` and nothing is sent. None installed ⇒ the same object, byte-identical.
 
+- **`send()` enqueues through `jobsFacade().enqueue(sendMailJob, message)`, never `jobDriver().enqueue`**
+  (`As of 2026-10-02`). The driver call published on the pool, autocommitted, so a handler that
+  rolled back after `send()` still mailed — and under `{ retry }` each re-run could mail again.
+  Through the facade an ambient transaction STAGES the row and the relay publishes it after COMMIT.
+  `send-outbox.job.test.ts` proves a rollback delivers nothing, on the memory pair and on Postgres.
+- **One recipient rule, inline and queued** (`As of 2026-10-02`). `addressRefusal`
+  (`envelope-address.ts`) is `envelopeAddress`'s rule without the throw; `renderMessage` applies it
+  to `to`/`cc`/`bcc`/`replyTo` after the header gate, and `mailMessageSchema` refines with it. It was
+  `t.email` on the queue and nothing inline, so `Jane Doe <jane@x.test>` answered `queued: true` and
+  the worker's parse refused the row. `unsubscribeUrl` is `t.url` on both paths for the same reason.
+- `X_MAIL_HEADER_INVALID` carries `meta.reason` (`line-break` | `non-ascii`) with a cause per
+  reason; the non-ASCII mailbox refusal was raised with the line-break cause until 2026-10-02.
+  `Reply-To` takes the `address` mode in `mime.ts` (encoded phrase, refused non-ASCII mailbox), and
+  an ASCII phrase holding an RFC 5322 special other than `.` is quoted (`"Doe, Jane"`).
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a `defineMail` file
   imports one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on
   every access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
@@ -163,11 +177,12 @@
   data reaches `Subject`, and a break there injects headers. Refuse it, never strip it.
 - Every ENVELOPE address is checked the same way and separately (`X_MAIL_ADDRESS_INVALID`,
   `envelope-address.ts`, called by `smtpDeliver`). Two wire formats, one gate each: `bcc` is not a
-  header, so the header gate never sees it, and on the inline send path no schema does either — a
-  `bcc` of `ops@x.test\r\nRCPT TO:<evil@y.test>` relayed mail over the app's own authenticated
-  connection. The refused set is control characters plus `<` and `>`; a space is deliberately
-  allowed (quoted local-parts). Non-ASCII in the MAILBOX is refused too, and by this package:
-  SMTPUTF8 (RFC 6531) is what makes a UTF-8 addr-spec legal and `smtp-client.ts` negotiates none.
+  header, so the header gate never sees it, and on the inline send path no schema did either until
+  `renderMessage` took `addressRefusal` (2026-10-02) — a `bcc` of
+  `ops@x.test\r\nRCPT TO:<evil@y.test>` relayed mail over the app's own authenticated connection.
+  The refused set is control characters plus `<` and `>`; a space is deliberately allowed (quoted
+  local-parts). Non-ASCII in the MAILBOX is refused too, and by this package: SMTPUTF8 (RFC 6531)
+  is what makes a UTF-8 addr-spec legal and `smtp-client.ts` negotiates none.
 
 ## Commands
 

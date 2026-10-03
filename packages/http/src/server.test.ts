@@ -213,7 +213,7 @@ describe('rate limiting across replicas', () => {
   /** The memory store held by both handles: one process standing in for a shared tier. */
   const sharedStore = (): RateLimitStore => {
     const backing = memoryRateLimitStore();
-    return { scope: 'shared', take: backing.take, reset: backing.reset };
+    return { scope: 'shared', take: backing.take, peek: backing.peek, reset: backing.reset };
   };
 
   const replica = (store: RateLimitStore) =>

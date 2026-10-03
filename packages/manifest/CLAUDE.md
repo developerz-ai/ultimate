@@ -62,7 +62,10 @@ by the CLI, not imported.
   they already carried — so the swap is observable only where the old form folded. **The published
   document is `manifestJson` and is still `JSON.stringify` with a fixed key order**: an injective
   form emits tokens JSON cannot parse, which is why `@ultimat3/action`'s `stableStringify` exists
-  as a separate function and why this one may not be written to disk.
+  as a separate function and why this one may not be written to disk. **So a fact the document
+  cannot hold is refused at build** (`As of 2026-10-02`, `finite-facts.ts`, `X_MANIFEST_FACT_INVALID`
+  with `meta.path`): `NaN`, `±Infinity` and `-0` hashed apart from what the file wrote, so a manifest
+  carrying one failed its own `verifyBuildId` and read as drift on every build.
 - Job `steps` keep declared order. Everything else sorts.
 - `permissions` is derived, never a second declared list — and derived from each operation's own
   `permissions`, **never from `policy`**. `policy` is a DISPLAY label: a composite renders as
@@ -136,6 +139,11 @@ by the CLI, not imported.
   "no key", so a dropped one is classified. `surface`, `offline`, `hydrate`, `budget` and
   `revalidateTags` absent means "this file predates the field", so `diffScalar` skips a side that
   carries nothing rather than reporting every route in an upgraded app as re-surfaced.
+  `QueryFact.input` follows the same rule (`As of 2026-10-02`): `sources.ts` now projects the
+  handle's schema through `jsonSchemaOf` — it wrote none before, so the README's promise was false
+  and the input compare never fired — and a committed manifest from before carries none.
+  `hasDefault` is different: absent IS "no default", so a NOT NULL column losing one is breaking,
+  a nullable one `internal`, gaining one additive.
 - **`MANIFEST_VERSION` bumps only when a reader built for the old version would be WRONG** — a
   field removed, retyped, or given a new meaning — never for one that is merely added. Two costs
   make the reflex expensive: `isCompatible` is an equality check, so a bump rejects every

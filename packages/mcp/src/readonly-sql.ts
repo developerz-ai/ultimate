@@ -7,6 +7,7 @@
 // (INSERT ...) SELECT`, which reads like a SELECT and is not one).
 
 import { McpNotBranchDbError, McpQueryRejectedError } from './errors';
+import { calledFunctions, forbiddenFamily } from './readonly-sql-calls';
 
 /** Named in `db.query`'s `guards`, so a caller can see that layer 3 actually ran. */
 export const PARSE_GUARD = 'parse:single-read';
@@ -69,102 +70,6 @@ const WRITE_KEYWORDS = new Set([
 ]);
 
 /**
- * Function families a read may not call, matched as a PREFIX of a CALLED function name.
- *
- * The family is the unit, never the name. Refusing `pg_sleep` while admitting `pg_sleep_for` is a
- * distinction only this parser draws, and an exact-name list admits by default: every spelling
- * nobody thought to write down passes. A prefix refuses by default instead, so a member Postgres
- * adds next release is covered on the day it ships.
- *
- * Each family is a ban this file already makes in some other spelling:
- *  - reach outside the database — the original list (`pg_read_*`, `pg_ls_*`, `lo_*`, `dblink`);
- *  - hold a lock, which `FOR UPDATE` is refused for below. The call is the worse of the two: a
- *    SESSION advisory lock is not released by the `ROLLBACK` layer 2 always runs, so it outlives
- *    the read on a pooled connection the app's own writers use;
- *  - mutate the server or the session — `set_config` is `SET` spelled as a call, and `SET` is a
- *    write keyword above;
- *  - burn the wall clock — layer 2's `statement_timeout` cannot interrupt embedded PGlite
- *    (single-threaded WASM), which is the database `x dev` runs, so this ban is the only one
- *    that holds there;
- *  - ADVANCE A SEQUENCE (`nextval`, `setval`) — a write that leaves no keyword behind, and one
- *    `ROLLBACK` does not undo: a consumed sequence value is gone, so a read can silently burn the
- *    next id a real insert would have taken. `currval`/`lastval` read the session and stay legal.
- *    `txid_current`/`pg_current_xact_id` are the same ban one level down: they ASSIGN a real
- *    transaction id to a read, and a rollback does not give it back;
- *  - PUBLISH A MESSAGE — `pg_notify` is `NOTIFY` spelled as a call, and `notify`, `listen` and
- *    `unlisten` are all write keywords above. The keyword scan cannot see it: it is one token;
- *  - CONTROL THE SERVER (`pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`,
- *    `pg_wal_replay_*`) — the family `pg_cancel_backend`/`pg_terminate_backend` already
- *    established, in the spellings that reconfigure or fail over the server rather than a backend;
- *  - CONSUME THE REPLICATION STREAM (`pg_create_*`, `pg_drop_*`, `pg_replication_*`,
- *    `pg_logical_*`) — `pg_logical_slot_get_changes` advances a slot's confirmed position, so the
- *    changes it returned are gone for the real consumer. Exactly the `nextval` argument: a write
- *    with no keyword, and no `ROLLBACK` undoes it. The catalog VIEWS beside them
- *    (`pg_replication_slots`, `pg_stat_replication`) are read `from`, never called, so the call
- *    scan never sees them;
- *  - WRITE A FILE (`pg_file_*`) — the other half of `pg_read_*`, which was banned from the start.
- *
-
- * The prefix is applied to a CALL — a name followed by `(` — and never to a bare word, so a
- * column called `pg_sleep_for_seconds` stays readable. Quoting does not evade it: the scan reads
- * a form where a quoted identifier keeps its content, because `"pg_advisory_lock"(1)` is the same
- * call as `pg_advisory_lock(1)`.
- */
-const FORBIDDEN_FUNCTIONS = [
-  'dblink',
-  'lo_',
-  'nextval',
-  'pg_advisory_',
-  'pg_cancel_backend',
-  'pg_create_',
-  'pg_current_xact_id',
-  'pg_drop_',
-  'pg_file_',
-  'pg_logical_',
-  'pg_ls_',
-  'pg_notify',
-  'pg_promote',
-  'pg_read_',
-  'pg_reload_',
-  'pg_replication_',
-  'pg_rotate_',
-  'pg_sleep',
-  'pg_stat_file',
-  'pg_stat_reset',
-  // Not reachable from `pg_stat_reset`: the extension spells the same reset with the statistics
-  // view's name in the middle, so a prefix of one is not a prefix of the other.
-  'pg_stat_statements_reset',
-  'pg_switch_',
-  'pg_terminate_backend',
-  'pg_try_advisory_',
-  'pg_wal_replay_',
-  'set_config',
-  'setval',
-  'txid_current',
-];
-
-/** The family refusing `called`, or `undefined`. A prefix, so a new member is refused by default. */
-function forbiddenFamily(called: string): string | undefined {
-  return FORBIDDEN_FUNCTIONS.find((family) => called.startsWith(family));
-}
-
-/**
- * A call: an identifier immediately before `(`. Schema qualification falls out of the scan —
- * `pg_catalog.set_config(` matches on the last segment, which is the function being called.
- */
-const CALL_PATTERN = /([a-z_][a-z0-9_$]*)\s*\(/g;
-
-/** Every function `sql` calls, lowercased. Read from the identifier-preserving strip. */
-function calledFunctions(sql: string): readonly string[] {
-  const names: string[] = [];
-  for (const match of sql.toLowerCase().matchAll(CALL_PATTERN)) {
-    const name = match[1];
-    if (name !== undefined) names.push(name);
-  }
-  return names;
-}
-
-/**
  * Throw unless `sql` is a single read-only statement. Every check runs on the *stripped* form
  * (literals and comments blanked) so a keyword hiding in a string cannot fool it — but the
  * string returned is the caller's own `sql`, verbatim apart from surrounding whitespace and
@@ -189,7 +94,9 @@ export function assertReadOnlyQuery(sql: string): string {
   }
 
   const statement = statements[0] ?? '';
-  const words: readonly string[] = statement.toLowerCase().match(/[a-z_]+/g) ?? [];
+  // A word is what Postgres lexes as ONE identifier — a letter, `_` or non-ASCII first, then
+  // digits and `$` too. `[a-z_]+` split `set2` at the digit and refused a column as `SET`.
+  const words: readonly string[] = statement.toLowerCase().match(WORD) ?? [];
   const leader = words[0] ?? '';
   if (!READ_LEADERS.has(leader)) {
     throw rejected(
@@ -336,6 +243,15 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
       continue;
     }
     const char = sql[i];
+    if (char === '"' && unicodeEscaped(sql, i)) {
+      // Refused, never decoded: `U&"pg\005fsleep"` is `pg_sleep` to Postgres, and a decoder here
+      // is a second reading of the lexer's escape grammar (`UESCAPE` included) that can drift.
+      throw rejected(
+        'the statement quotes an identifier with Unicode escapes (U&"…"), which this check ' +
+          'cannot read',
+        'spell the identifier plainly: select "column name" from posts',
+      );
+    }
     if (char === "'" || char === '"') {
       const end = char === "'" ? skipSingleQuoted(sql, i) : skipQuoted(sql, i, char);
       // Padded, never spliced in place: `select"pg_advisory_lock"(1)` must not fuse into one
@@ -372,7 +288,20 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
 }
 
 const IDENTIFIER_CHAR = /[A-Za-z0-9_$\u0080-\uffff]/;
+const WORD = /[a-z_\u0080-\uffff][a-z0-9_$\u0080-\uffff]*/g;
 const DOLLAR_TAG = /^\$(?:[A-Za-z_\u0080-\uffff][A-Za-z0-9_\u0080-\uffff]*)?\$/;
+
+/**
+ * `U&"` opening at a token boundary — the lexer's `xuistart`, with no space inside. `menu&"m"` is
+ * the column `menu` and an operator, so the `u` must not continue an identifier.
+ */
+function unicodeEscaped(sql: string, quote: number): boolean {
+  return (
+    sql[quote - 1] === '&' &&
+    (sql[quote - 2] === 'u' || sql[quote - 2] === 'U') &&
+    !IDENTIFIER_CHAR.test(sql[quote - 3] ?? '')
+  );
+}
 
 /**
  * Where a `--` comment ends: the first CR **or** LF, or the end of the input.
