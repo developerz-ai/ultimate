@@ -2,7 +2,7 @@
 // bug: a frozen clock means "advance it", a seeded RNG means "same values every run", and both are
 // restorable so a test that genuinely needs real time can opt out explicitly.
 
-import { finiteCount, finiteOption } from '@ultimat3/core';
+import { canonicalJson, finiteCount, finiteOption, renderCauseValue } from '@ultimat3/core';
 import { NondeterministicError } from './errors';
 
 export const DEFAULT_SEED = 20260101;
@@ -197,10 +197,27 @@ export async function frozenClock<T>(now: string, body: () => T | Promise<T>): P
   const at = instantMs('frozenClock', now);
   const previous = frozenAt;
   frozenAt = at;
+  // Both moves announced, as `setFrozenClock` announces one: the frozen scheduler renews leases on
+  // the announcement alone, so an unannounced jump is time its timers never see.
+  announceMove();
   try {
     return await body();
   } finally {
     frozenAt = previous;
+    announceMove();
+  }
+}
+
+/**
+ * Core's canonical form — a BigInt, a Date, a Map have tokens of their own where `JSON.stringify`
+ * threw a bare `TypeError` or folded them to `{}` — or `undefined` for the one shape it cannot
+ * walk, a cycle, which `Bun.deepEquals` then compares instead.
+ */
+function comparable(value: unknown): string | undefined {
+  try {
+    return canonicalJson(value);
+  } catch {
+    return undefined;
   }
 }
 
@@ -211,8 +228,15 @@ export async function frozenClock<T>(now: string, body: () => T | Promise<T>): P
 export async function assertDeterministic<T>(what: string, body: () => T | Promise<T>): Promise<T> {
   const first = await body();
   const second = await body();
-  const a = JSON.stringify(first);
-  const b = JSON.stringify(second);
-  if (a !== b) throw new NondeterministicError({ what, first: a, second: b });
+  const a = comparable(first);
+  const b = comparable(second);
+  const same = a === undefined || b === undefined ? Bun.deepEquals(first, second) : a === b;
+  if (!same) {
+    throw new NondeterministicError({
+      what,
+      first: a ?? renderCauseValue(first),
+      second: b ?? renderCauseValue(second),
+    });
+  }
   return first;
 }

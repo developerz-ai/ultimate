@@ -23,6 +23,7 @@ import { isScrapeError } from './errors';
 import type { ScrapeEventFields } from './events';
 import { errorCode } from './failures';
 import { httpOverFetch } from './http';
+import { launchArgs } from './launch-args';
 import { pageOverTarget } from './page-over-target';
 import type { ScrapeTarget } from './target';
 import { endpointLabel, hasCredentials, splitCredentials, urlSecretValues } from './url-secrets';
@@ -38,7 +39,10 @@ export interface BrowserOptions {
    * `egress(input)` — `SessionInit.proxy` — wins over it, per session.
    */
   readonly proxy?: string | undefined;
-  /** Extra launch/connect arguments, passed through untouched. */
+  /**
+   * Extra launch/connect options, passed through — except `args`, which `localBrowser()` puts
+   * BEFORE the exit's `--proxy-server` and screens for a second route (`launch-args.ts`).
+   */
   readonly options?: Record<string, unknown> | undefined;
   /** How long a graceful `close()` may take before the process is killed. */
   readonly graceMs?: number | undefined;
@@ -267,6 +271,11 @@ export function localBrowser(options: LocalBrowserOptions): ScrapeDriver {
       // The userinfo never reaches the argument list: Chrome ignores it there, and an argument is
       // readable by every process on the box. `opened()` answers the challenge instead.
       const proxyArg = proxy !== undefined && authenticate ? splitCredentials(proxy).bare : proxy;
+      // The caller's args FIRST and the exit appended after them, never a spread that lets one
+      // replace the other: `{ args: ['--no-sandbox'] }` — every container deploy's — used to
+      // overwrite the proxy flag, and the browser dialled direct while the session reported the exit.
+      const { args: callerArgs, ...passthrough } = options.options ?? {};
+      const args = launchArgs(callerArgs, proxyArg);
       let browser: CdpBrowserLike;
       try {
         browser = await launch.call(options.launcher, {
@@ -275,8 +284,8 @@ export function localBrowser(options: LocalBrowserOptions): ScrapeDriver {
             ? {}
             : { executablePath: options.executablePath }),
           ...(options.profileDir === undefined ? {} : { userDataDir: options.profileDir }),
-          ...(proxyArg === undefined ? {} : { args: [`--proxy-server=${proxyArg}`] }),
-          ...options.options,
+          ...passthrough,
+          ...(args === undefined ? {} : { args }),
         });
       } catch (thrown) {
         throw browserUnreachable(CDP_DRIVER, thrown);

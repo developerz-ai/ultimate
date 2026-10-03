@@ -4,6 +4,7 @@
 // event payloads, so the offline drivers cannot pin any of them.
 
 import { describe, expect, test } from 'bun:test';
+import { fakeBrowserTarget } from './cdp-fake-target';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
@@ -53,6 +54,7 @@ const recorder = (start = 'about:blank'): Recorder => {
     page,
     browser: {
       newPage: () => Promise.resolve(page),
+      target: () => fakeBrowserTarget().target,
       setCookie: () => Promise.resolve(),
       close: () => Promise.resolve(),
       process: () => null,
@@ -383,7 +385,8 @@ describe('unit · the browser`s own keys are read, never refused by name', () =>
     });
     const target = await cdpTarget({
       page: cdp.page,
-      browser: cdp.browser,
+      // A jar is required to read a session at all; this test is about the storage half.
+      browser: { ...cdp.browser, cookies: () => Promise.resolve([]) },
       rules: { allowHosts: ['shop.test'] },
       clock: testClock(),
     });

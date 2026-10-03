@@ -174,6 +174,8 @@ export async function runScrape<I, Row>(
     // this gate reads as "no restrictions".
     robots: createRobotsGate({
       policy: definition.robots ?? 'obey',
+      // Every hop of the read screened by the run's own host rule, as the HTTP leg's are.
+      allowHosts: rules.allowHosts,
       timeoutMs: pageTimeoutMs,
       signal: args.ctx.signal,
       proxy: () => sessionProxy,
@@ -184,6 +186,10 @@ export async function runScrape<I, Row>(
     watchdog: definition.watchdog,
   });
   sessionProxy = session.proxy;
+  // The `savedAt` of the stored session this run is ON — restored, or persisted after its own
+  // login. A burn or a tombstone on the way out compares against it, so a session another run on
+  // the same key saved meanwhile is not destroyed by this run's failure (`auth.ts`'s `stillSeen`).
+  let seen = restored?.savedAt;
 
   try {
     if (definition.auth !== undefined) {
@@ -212,7 +218,15 @@ export async function runScrape<I, Row>(
       );
       // Persisted after a LOGIN only, never after a reuse: rewriting the record on every run
       // refreshes `savedAt` without refreshing the session, so `maxAge` would never expire it.
-      if (loggedIn) await persistSession(plan, session.page);
+      //
+      // And a failure to SAVE never fails the attempt: the login happened, the body can run, and
+      // failing here made the retry log in again — one more arrival at the login form, and on a
+      // store that stays down, one per attempt. Logged, like the burn and the tombstone below.
+      if (loggedIn) {
+        await recordSessionOutcome('session.save', logger, async () => {
+          seen = await persistSession(plan, session.page);
+        });
+      }
     }
 
     const raw = await bodyWithRecovery(definition, args, session, logger, artifact, secrets);
@@ -252,9 +266,9 @@ export async function runScrape<I, Row>(
     // Kept for `onSettled`, and only when somebody declared one to read it.
     if (definition.onSettled !== undefined) rememberFailedUsage(args.runId, used);
     if (errorCode(thrown) === 'X_SCRAPE_AUTH_FAILED') {
-      await recordSessionOutcome('session.refuse', logger, () => markRefused(plan));
+      await recordSessionOutcome('session.refuse', logger, () => markRefused(plan, seen));
     } else if (burnsSession(thrown)) {
-      await recordSessionOutcome('session.burn', logger, () => burnSession(plan));
+      await recordSessionOutcome('session.burn', logger, () => burnSession(plan, seen));
     }
     if (definition.artifacts?.onFailure !== false) await saveFailureArtifact(session, artifact);
     throw thrown;
@@ -274,8 +288,8 @@ const usageFields = (used: ScrapeUsage): ScrapeEventFields => ({
 });
 
 /**
- * The tombstone or the burn, on the way out — best effort, and it may NEVER replace the failure
- * that caused it. `markRefused` reaches `store.save()` reaches `storage.put()`, so an S3 503 or an
+ * The save after a login, and the tombstone or the burn on the way out — best effort, and none
+ * may ever replace the run's own outcome. `markRefused` reaches `store.save()` reaches `storage.put()`, so an S3 503 or an
  * `X_STORAGE_PATH_UNSAFE` from a tenant whose key sanitises to nothing used to propagate out of
  * the catch and REPLACE a terminal `X_SCRAPE_AUTH_FAILED` with a retryable one. Attempt 2 then
  * found no tombstone — the save is what failed — and walked the same rejected password back to
@@ -283,15 +297,16 @@ const usageFields = (used: ScrapeUsage): ScrapeEventFields => ({
  * reason: the run's own error is the one the reader needs.
  */
 async function recordSessionOutcome(
-  step: 'session.refuse' | 'session.burn',
+  step: 'session.save' | 'session.refuse' | 'session.burn',
   logger: ReturnType<typeof scrapeLogger>,
   write: () => Promise<void>,
 ): Promise<void> {
   try {
     await write();
   } catch (thrown) {
-    // Logged rather than swallowed silently: the tombstone is missing, so the NEXT attempt will
-    // re-probe rather than refuse cheaply, and that is a fact an operator has to be able to see.
+    // Logged rather than swallowed silently: a missing tombstone means the NEXT attempt re-probes
+    // rather than refusing cheaply, a missing save means it logs in again, and an operator has to
+    // be able to see either.
     logger.error('scrape.session.write_failed', { step, code: errorCode(thrown) });
   }
 }

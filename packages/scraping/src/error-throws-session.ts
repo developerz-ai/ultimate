@@ -72,3 +72,40 @@ export const promptAnswerInvalid = (input: {
     fix: 'publish the answer with answerPrompt({ runId, index, answer }) and never publishEvent() by hand — the answer is sealed for this one prompt, so a plain payload is refused rather than typed into the site',
     meta: { scrape: input.scrape, label: input.label, event: input.event },
   });
+
+/** Lists every `localBrowser(` call site and every proxy switch in the app — where the edit goes. */
+export const LAUNCH_ARGS_FIX =
+  "grep -rnE --include='*.ts' -e 'localBrowser\\(' -e '--(no-)?proxy-' .";
+
+/**
+ * The caller's launch args set the exit themselves, or are not a list a launcher can take. The
+ * switch NAME only, never its value: `--proxy-server=http://user:pass@…` is a credential a caller
+ * may well have written, and this cause is written to the dead-letter row.
+ */
+
+export const launchArgsInvalid = (reason: string, route: boolean): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_LAUNCH_ARGS_INVALID',
+    cause: `localBrowser({ options: { args } }) ${reason} — ${
+      route
+        ? 'delete the switch from args and pass the exit as localBrowser({ proxy }) or scrape({ egress })'
+        : "pass args as a list of strings, e.g. options: { args: ['--no-sandbox'] }"
+    }`,
+    // One command, the same for both shapes: it lists every call site and every proxy switch.
+    fix: LAUNCH_ARGS_FIX,
+    meta: { reason },
+  });
+
+/**
+ * A name a WILDCARD admitted, resolved to an address inside the network. The address CLASS and
+ * never the address: the cause reaches the dead-letter row, and the hostname is enough to act on.
+ */
+export const hostResolvesInward = (url: string, hostname: string, kind: string): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_HOST_BLOCKED',
+    cause: `${url} is admitted by a wildcard in allowHosts, and ${hostname} resolves to ${
+      kind === 'unresolvable' ? 'no address' : `a ${kind} address`
+    } — a wildcard admits public addresses only`,
+    fix: `name the host exactly on the scrape() definition — allowHosts: [${JSON.stringify(hostname)}] — if it is meant to be reached inside your network`,
+    meta: { url, host: hostname, addressClass: kind },
+  });

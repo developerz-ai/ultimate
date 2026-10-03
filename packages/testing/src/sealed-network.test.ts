@@ -76,4 +76,15 @@ describe(testName('unit', 'sealed network'), () => {
     await fetch('https://a.example.com/2');
     expect(requestedUrls()).toEqual(['https://a.example.com/1', 'https://a.example.com/2']);
   });
+
+  test('a global or sticky regexp mock matches EVERY call, not every other one', async () => {
+    // `RegExp.prototype.test` on a `g`/`y` pattern resumes at `lastIndex`, so the second call
+    // missed the mock and reached the seal.
+    mockJson(/api\.example\.com\/g/g, { ok: 'g' });
+    mockJson(/^https:\/\/api\.example\.com\/y/y, { ok: 'y' });
+    for (const _ of [1, 2, 3]) {
+      expect(await (await fetch('https://api.example.com/g')).json()).toEqual({ ok: 'g' });
+      expect(await (await fetch('https://api.example.com/y')).json()).toEqual({ ok: 'y' });
+    }
+  });
 });

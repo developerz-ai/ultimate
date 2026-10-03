@@ -136,14 +136,14 @@ describe('unit · a refused credential is never presented twice', () => {
     // again": a second wrong password is what locks the account, and the record is the only thing
     // that knows it was wrong.
     const plan = planFor<unknown>({ login: () => Promise.resolve(), store, reuse: false });
-    await markRefused(plan);
+    await markRefused(plan, undefined);
     expect(await codeOf(restorableSession(plan))).toBe('X_SCRAPE_AUTH_FAILED');
   });
 
   test('the refusal is written down, and the NEXT attempt fails before reaching a login form', async () => {
     const store = memorySessionStore();
     const plan = planFor<unknown>({ login: () => Promise.resolve(), store });
-    await markRefused(plan);
+    await markRefused(plan, undefined);
     // The queue dead-letters a `terminal` code on the attempt that threw it, so this is not what
     // makes the failure terminal — it is what makes it CHEAP. A replay, a manual requeue or a
     // second enqueue of the same input refuses here, before a browser opens, rather than typing

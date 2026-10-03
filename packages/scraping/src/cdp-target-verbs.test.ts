@@ -7,6 +7,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { fakeCdpBrowser } from './cdp-fake';
+import { fakeBrowserTarget } from './cdp-fake-target';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
@@ -50,6 +51,7 @@ const barePage = (): { readonly page: CdpPageLike; readonly calls: readonly stri
 
 const browserOver = (page: CdpPageLike): CdpBrowserLike => ({
   newPage: () => Promise.resolve(page),
+  target: () => fakeBrowserTarget().target,
   close: () => Promise.resolve(),
   process: () => null,
 });

@@ -30,7 +30,7 @@ failed-credential gate, then `mcp`, `mail`, `notify` and `manifest`, with what t
 commits `packages/db/schema/` runs `x db gen`, once** — the `manifest`, `contract-diff` and `drift`
 steps are red until it does. Then `ai`, with its status row in `http`: **a gateway's `actor` and
 `org` ceilings now count every `llm()`, `agent()` and `hive()` call — size them before the
-deploy.**
+deploy.** Slice 11 is in progress: `testing` and `scraping`.
 
 ### Added
 
@@ -211,6 +211,23 @@ Tier 4 — ai (slice 10).
   `BudgetStore#take` answers — see Changed.
 - **ai:** `X_VECTOR_UNSCOPED` (`VectorUnscopedError`, 500) and `VectorScope.crossTenant`, the mark
   `UNSCOPED` now carries — see Changed.
+
+Tier 5 — testing, scraping (slice 11).
+
+- **testing:** `jobDriverConformance` — the `JobDriver` contract as shared examples:
+  `behavesLike(jobDriverConformance, () => driver)` runs eight checks, one test each — a row
+  claimed once and settled by its claim, dedupe on a live idempotency key, `queues: []` refused,
+  the claim fence after a nack and after a lapsed lease, a dead letter never re-claimed, a lease
+  lapsed on the final attempt buried and reported once through `onExhausted`, `dropExhausted`
+  burying `failed`. A 0 ms lease, so no clock seam. The memory and Postgres drivers pass it.
+- **testing:** `budgetStoreConformance` and the `BudgetStoreLike` type — `@ultimat3/ai`'s
+  `BudgetStore` contract as shared examples, typed structurally so `testing` takes no `ai`
+  dependency: 24 concurrent `take`s on one key never overspend, a refused take spends nothing,
+  `add` takes a negative credit, `reset(key)` clears that key alone. A store that reads, awaits,
+  then writes fails the race.
+- **testing:** `X_TEST_APP_NOT_BOOTED` — see Changed.
+- **scraping:** `X_SCRAPE_LAUNCH_ARGS_INVALID` (terminal) and the `CdpBrowserTargetLike` /
+  `CdpBrowserSessionLike` types — see Changed.
 
 Tier 5 — cli.
 
@@ -1016,6 +1033,87 @@ Tier 4 — ai. Tier 2 — http (slice 10).
   answer 0, `Infinity` every answer 1. `0` is exact match — see Fixed.
 - **ai:** `@ultimat3/ai` depends on `@ultimat3/http` (tier 2), for `statusFor`; an install pulls it.
 
+Tier 5 — testing (slice 11).
+
+- **BREAKING — `describeApp`'s `app()` read before boot is `X_TEST_APP_NOT_BOOTED`.** Called while
+  the `describe` block is still registering, before its `beforeAll`, the accessor threw a bare
+  `ReferenceError`; it throws an `UltimateError`. A test that asserted `toBeInstanceOf(ReferenceError)`
+  asserts `toBeUltimateError('X_TEST_APP_NOT_BOOTED')`; read `app()` inside a `test` body.
+- **BREAKING — `assertDeterministic` compares core's `canonicalJson` forms.** Key order is no
+  longer a difference; a BigInt, a Date or a Map result is compared, where `JSON.stringify` threw a
+  bare `TypeError` or folded it to `{}`; a cyclic result is compared by `Bun.deepEquals`. The
+  `X_TEST_NONDETERMINISTIC` cause shows the canonical forms. A test that relied on key order
+  failing passes now: assert the order itself.
+- **BREAKING — `frozenClock(now, body)` announces both moves.** `onClockMoved` listeners fire once
+  entering and once restoring, as `setFrozenClock` already announced, so the frozen scheduler's
+  lease renewals fire inside and after the body. A test that counted announcements counts two more
+  per call.
+- **BREAKING — `mountIsland` loads each mount from its own scratch directory.** Two mounts of
+  byte-identical chunks are two module instances; they shared module state. The directory is
+  removed on dispose, when the mount throws, and — for a mount nobody disposed — at the next file
+  boundary or after the run's last file. `process.on('exit')` never fires under `bun test`, so the
+  old per-process directory stayed in the temp root after every run. A test that carried state from
+  one mount to the next sets it up in each.
+- **testing:** the `disposeLiveIslands` file-boundary hook is registered by `fixture-island.ts`, no
+  longer by `@ultimat3/testing/preload`: any preload that installs the leak guard gets it. No edit.
+
+Tier 5 — scraping (slice 11).
+
+- **BREAKING — `localBrowser({ options: { args } })` keeps the caller's args and refuses a proxy
+  switch in them: `X_SCRAPE_LAUNCH_ARGS_INVALID`.** `--proxy-server` (the driver's `proxy` or the
+  run's `egress`) is appended after the caller's args; passing `args` dropped it, so the browser
+  left by the worker's own address while the session reported the exit. `--proxy-server`,
+  `--proxy-bypass-list`, `--proxy-pac-url`, `--proxy-auto-detect` or `--no-proxy-server` — `-` or
+  `--`, any case — in `args`, or an `args` that is not a list of strings, is refused before
+  anything launches, exit configured or not. Set the exit with `localBrowser({ proxy })` or
+  `scrape({ egress })`.
+- **BREAKING — `CdpBrowserLike.target()` is required.** It answers a `CdpBrowserTargetLike` whose
+  `createCDPSession()` gives a `CdpBrowserSessionLike` (`send` plus `on`). `allowHosts` and `block`
+  are enforced at browser level, so a popup, a `target=_blank` tab or any target the page opens is
+  screened; page-level interception saw only the page this package created, and a `window.open`
+  reached an off-list host. A hand-written launcher or test double is TS2741; puppeteer already
+  has it. A browser that refuses browser-level `Fetch.enable` fails `open()` with
+  `X_SCRAPE_BROWSER_UNREACHABLE`.
+- **BREAKING — a jar-less CDP browser is `X_NOT_IMPLEMENTED`.** `session()` on a browser with no
+  `cookies()` answered an empty jar, and `restore()` of a session holding cookies on one with no
+  `setCookie()` dropped them — the HTTP leg and a persisted session ran signed out. Use a
+  puppeteer-core that exposes both, or set `auth: { reuse: false }` on the `scrape()` definition.
+- **BREAKING — `burnSession(plan, seen)` takes the `savedAt` of the session the run used.** A
+  record another run saved since is kept, and a refused login's tombstone is not written over it
+  either — two runs on one key, and the one that failed destroyed the session the other had just
+  persisted. TS2554 at a one-argument call: pass `restored?.savedAt`. The compare is a load
+  then a write — the store has no compare-and-set — so it narrows the race and does not close it.
+- **BREAKING — `expect.maxDrop` outside `[0, 1)` is `X_INVARIANT` at `scrape()`.** `1` or above
+  — `50`, the percent habit — put the alarm line at or below zero, so it never fired; a negative
+  one fired on a run that matched its baseline. Write `50` as `0.5`.
+- **BREAKING — `urlSecretValues` conceals only credential-shaped query values and path
+  segments.** A query key matching `token|key|secret|auth|sig|pass|pwd|cred|session|jwt|bearer`,
+  or a value of 16+ characters mixing letters and digits with no whitespace; it concealed every
+  query value and the whole path, so ordinary words were masked in logs. `redactSecrets` also
+  redacts each secret's percent-encoded, form-encoded and HTML-escaped spellings, which passed
+  through. A snapshot of a redacted log or artifact changes.
+- **BREAKING — on the HTTP leg a declared header replaces the session's of the same name, whatever
+  its case.** Names were compared case-sensitively and `Headers` appends a second spelling: a
+  declared `User-Agent: Mine` beside the session's `user-agent` went out as `BrowserUA, Mine`, and
+  a declared `Cookie` was joined to the jar's. A request that relied on the joined value declares
+  the whole value.
+- **BREAKING — a host admitted only by a wildcard is resolved and pinned on the HTTP leg and the
+  robots read.** Any address that is not public is `X_SCRAPE_HOST_BLOCKED`, naming the address
+  class, never the address; the connection goes to the approved address. `allowHosts: ['*']`
+  admitted a name resolving to `127.0.0.1`. An exact rule and a proxied run are unchanged. Add an
+  exact rule for an internal host the run must reach. The browser resolves its own names, so its
+  leg is not pinned — `wiki/Known-Gaps.md`.
+- **BREAKING — the robots read follows redirects itself, at most 5.** It followed every redirect,
+  to any host. With `allowHosts` — a `scrape()` run always passes its own — every hop, the first
+  included, is screened against the list; a hop off it is never requested. With none, which only a
+  direct `createRobotsGate` / `robotsFetcher` caller can have, a redirect is followed only while it
+  stays on the starting URL's hostname over http(s) — a scheme upgrade, its port change, a moved
+  path; another host, a subdomain included, is never requested. A hop not followed and a sixth
+  redirect read as "no robots" — no restrictions. Both take optional `allowHosts` and `resolve`.
+  List the host a site's `robots.txt` redirects to.
+- **BREAKING — a recording whose `recordedAt` is not a date is `X_SCRAPE_FIXTURE_STALE`.** Its age
+  read `NaN`, and `NaN > maxAgeMs` is false, so it passed as fresh. Re-record the fixture.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -1452,6 +1550,24 @@ Tier 4 — ai (slice 10).
   tolerance read as past it.
 - **ai:** `chunk()`'s carried overlap yields, oldest unit first, to a next unit it does not fit
   beside, so no chunk exceeds `size`.
+
+Tier 5 — testing, scraping (slice 11).
+
+- **testing:** `mountIsland`'s template parser reads `<!>` and `<!-- … -->` as one empty node, and
+  decodes `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;` and numeric references once, in text and in
+  attribute values — what a browser hands an island's `textContent` and `getAttribute`. Solid's
+  `<!>` marker was text merged into its neighbours, so a `nextSibling` walk landed one node short,
+  and an entity stayed escaped. An unknown name is left as written.
+- **testing:** the per-worker template database drops and clones inside the advisory lock. Outside
+  it, `CREATE DATABASE … TEMPLATE` met the next worker's migration session on the template and
+  failed `X_TEST_DATABASE_UNAVAILABLE` (`… is being accessed by other users`).
+- **testing:** a `g` or `y` regexp in a sealed-network mock matches every call; `lastIndex` carried
+  over, so every other call missed.
+- **testing:** the `runJobs` fixture (`createRunJobs`) restores the event bus and the job driver on
+  dispose when the driver's `close()` throws; the next file inherited both.
+- **scraping:** a session save that fails after a successful login is logged
+  `scrape.session.write_failed` with `step: 'session.save'` and the attempt goes on; it failed the
+  run that had already signed in.
 
 ## 23.0.0 - 2026-10-02
 

@@ -8,6 +8,8 @@
 //
 // Precedent: `packages/storage/src/driver-s3-fixture.ts` ships the same way.
 
+import type { FakeBrowserTarget } from './cdp-fake-target';
+import { fakeBrowserTarget } from './cdp-fake-target';
 import type {
   CdpBrowserLike,
   CdpFrameLike,
@@ -72,7 +74,9 @@ export interface FakeCdpPageInit {
 
 type Handlers = Map<string, ((payload: unknown) => void)[]>;
 
-export interface FakeCdpBrowser extends CdpBrowserLike {
+export interface FakeCdpBrowser
+  extends CdpBrowserLike,
+    Pick<FakeBrowserTarget, 'emitTargetRequest' | 'browserFetch'> {
   /** Fire a request event, as a real browser would when the page fetches a subresource. */
   emitRequest(url: string, resourceType: string): void;
   /**
@@ -158,6 +162,7 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
   const prepared: string[] = [];
   const sessions = { created: 0, detached: 0 };
   const axBySelector = init.accessibility ?? {};
+  const browserTarget = fakeBrowserTarget();
 
   /**
    * A raw session answering the four commands `cdp-a11y.ts` sends, in CDP's own wire shapes —
@@ -364,6 +369,9 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
 
   return {
     newPage: () => Promise.resolve(page),
+    target: () => browserTarget.target,
+    emitTargetRequest: (...args) => browserTarget.emitTargetRequest(...args),
+    browserFetch: browserTarget.browserFetch,
     cookies: () => Promise.resolve(cookies),
     setCookie: (...next: readonly unknown[]) => {
       cookies = next as readonly ScrapeCookie[];

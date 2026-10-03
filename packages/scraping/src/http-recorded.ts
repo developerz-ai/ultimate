@@ -64,7 +64,9 @@ export function recordedHttp(init: RecordedHttpInit): ScrapeHttp {
       if (found === undefined) throw fixtureMissing(`${method} ${url}`, init.source);
       if (init.maxAgeMs !== undefined && found.recordedAt !== undefined) {
         const age = init.clock.now().getTime() - new Date(found.recordedAt).getTime();
-        if (age > init.maxAgeMs) throw fixtureStale(`${method} ${url}`, age, init.maxAgeMs);
+        // `!(age <= limit)`, never `age > limit`: an unparseable `recordedAt` makes `age` NaN, and
+        // `NaN > limit` is false — a recording of unknown age replayed as fresh. `auth.ts` the same.
+        if (!(age <= init.maxAgeMs)) throw fixtureStale(`${method} ${url}`, age, init.maxAgeMs);
       }
       init.network.push({
         method,

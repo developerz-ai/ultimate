@@ -4,6 +4,7 @@
 // event-payload rules (restored storage, request method, console level).
 
 import { describe, expect, test } from 'bun:test';
+import { fakeBrowserTarget } from './cdp-fake-target';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpScreenshotOptions } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
@@ -138,6 +139,7 @@ const rich = (
   };
   const browser: CdpBrowserLike = {
     newPage: () => Promise.resolve(page),
+    target: () => fakeBrowserTarget().target,
     close: () => Promise.resolve(),
     process: () => null,
     ...(options.cookies === true
@@ -286,10 +288,12 @@ describe('unit · cookies and session', () => {
     );
   });
 
-  test('session() reads storage, agent and origin, and answers [] for a jar-less browser', async () => {
-    const target = await targetOver(rich());
+  test('session() reads cookies, storage, agent and origin', async () => {
+    const target = await targetOver(rich({ cookies: true }));
     expect(await target.session()).toEqual({
-      cookies: [],
+      cookies: [
+        { name: 'sid', value: '', domain: 'shop.test', path: '/', httpOnly: true, secure: true },
+      ],
       headers: {},
       storage: { t: 'abc' },
       userAgent: 'fake-agent',
@@ -297,10 +301,42 @@ describe('unit · cookies and session', () => {
     });
   });
 
+  // A jar-less browser answered `cookies: []`, so the HTTP leg went out logged-out and a persisted
+  // session held no cookies — both silently. Every other missing port method refuses by name.
+  test('session() on a browser with NO cookies() refuses, terminal, by name', async () => {
+    const thrown = await caught((await targetOver(rich())).session());
+    expect((thrown as { code?: string }).code).toBe('X_NOT_IMPLEMENTED');
+    expect((thrown as { retry?: string }).retry).toBe('terminal');
+    expect((thrown as { cause?: string }).cause).toContain('session()');
+  });
+
+  test('restore() of cookies on a browser with NO setCookie() refuses rather than dropping them', async () => {
+    const target = await targetOver(rich({ cookies: true }));
+    const thrown = await caught(
+      target.restore({
+        cookies: [
+          { name: 'sid', value: 'x', domain: 'shop.test', path: '/', httpOnly: true, secure: true },
+        ],
+        headers: {},
+        storage: {},
+        userAgent: '',
+        origin: 'https://shop.test',
+      }),
+    );
+    expect((thrown as { code?: string }).code).toBe('X_NOT_IMPLEMENTED');
+    expect((thrown as { cause?: string }).cause).toContain('setCookie()');
+  });
+
+  test('restore() of a session with no cookies needs no setCookie()', async () => {
+    const target = await targetOver(rich({ cookies: true }));
+    await target.restore({ cookies: [], headers: {}, storage: {}, userAgent: '', origin: '' });
+    expect(await target.cookies()).toHaveLength(1);
+  });
+
   test('a page on about:blank has NO origin — never the string "about:blank"', async () => {
     // `new URL('about:blank').origin` is `'null'`, and a session stamped with that would be
     // restorable against a site it does not belong to.
-    const session = await (await targetOver(rich({ url: 'not a url' }))).session();
+    const session = await (await targetOver(rich({ url: 'not a url', cookies: true }))).session();
     expect(session.origin).toBe('');
   });
 });

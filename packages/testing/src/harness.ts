@@ -4,6 +4,7 @@
 
 import { afterAll, beforeAll, describe, test } from 'bun:test';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
+import { AppNotBootedError } from './errors';
 import {
   allowHost,
   captureNetwork,
@@ -171,7 +172,7 @@ export function describeApp(
       booted = undefined;
     });
     body(() => {
-      if (booted === undefined) throw new ReferenceError('app is not booted yet');
+      if (booted === undefined) throw new AppNotBootedError({ suite: name });
       return booted.handle;
     });
   });

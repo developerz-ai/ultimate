@@ -121,7 +121,8 @@ describe(testName('unit', 'describeApp: accessing the handle before boot'), () =
     }
 
     test('the accessor throws until beforeAll has booted the app', () => {
-      expect(earlyAccessError).toBeInstanceOf(ReferenceError);
+      expect(earlyAccessError).toBeUltimateError('X_TEST_APP_NOT_BOOTED');
+      expect((earlyAccessError as { cause: string }).cause).toContain("describeApp('booted late')");
     });
   });
 });

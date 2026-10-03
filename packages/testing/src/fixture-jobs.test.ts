@@ -183,6 +183,20 @@ describe(testName('unit', 'runJobs: each fixture has its own event bus'), () => 
     expect(second).toBeDefined();
   });
 
+  test('a driver whose close() throws still hands back the bus and the driver', async () => {
+    const busBefore = eventBus();
+    const driverBefore = jobDriver();
+    const fixture = await createRunJobs();
+    const installed = jobDriver();
+    if (installed === undefined) return expect.unreachable('createRunJobs installed no driver');
+    spyOn(installed, 'close').mockImplementation(() => {
+      throw new TypeError('driver close failed');
+    });
+    await expect(fixture[Symbol.asyncDispose]()).rejects.toThrow('driver close failed');
+    expect(eventBus()).toBe(busBefore);
+    expect(jobDriver()).toBe(driverBefore);
+  });
+
   test('a waiting step resumes on the event its own test published', async () => {
     minted += 1;
     const waiter = job<Input>({

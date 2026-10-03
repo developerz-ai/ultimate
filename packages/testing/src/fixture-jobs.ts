@@ -244,11 +244,15 @@ export async function createRunJobs(): Promise<RunJobs> {
       ).length,
     inFlight: async () => (await live()).filter((record) => record.state === 'running').length,
     [Symbol.asyncDispose]: async (): Promise<void> => {
-      await driver.close?.();
-      renewals[Symbol.dispose]();
-      jobs.setEventBus(previousBus);
-      if (previous === undefined) jobs.resetJobDriver();
-      else jobs.setJobDriver(previous);
+      // A `finally`: a close that throws must still hand every later file its bus and its driver.
+      try {
+        await driver.close?.();
+      } finally {
+        renewals[Symbol.dispose]();
+        jobs.setEventBus(previousBus);
+        if (previous === undefined) jobs.resetJobDriver();
+        else jobs.setJobDriver(previous);
+      }
     },
   });
 }

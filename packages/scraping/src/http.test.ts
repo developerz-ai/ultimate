@@ -37,6 +37,8 @@ const transport = (
     network,
     secrets,
     session: () => Promise.resolve(session),
+    // A wildcard-admitted name is resolved and pinned (`pinned-host.ts`); every name here is public.
+    resolve: () => Promise.resolve(['93.184.216.34']),
     fetch: (url, init) => {
       calls.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
       return Promise.resolve(new Response(answer.body, { status: answer.status }));
@@ -324,5 +326,56 @@ describe('unit · the site`s own body never carries a secret into an error', () 
     expect(await causeOf(response.parse(t.object({ ok: t.boolean })))).toContain(
       'upstream is down',
     );
+  });
+});
+
+describe("unit · a caller's header wins over the session's whatever its case", () => {
+  /** Read the way the platform reads it: `Headers` APPENDS two spellings of one name. */
+  const sent = async (declared: Record<string, string>, session = EMPTY_SESSION) => {
+    const seen: Headers[] = [];
+    const http = httpOverFetch({
+      rules: { allowHosts: ['api.test'] },
+      clock: testClock(),
+      timeoutMs: 1_000,
+      network: createRing<NetworkEntry>(),
+      session: () => Promise.resolve(session),
+      fetch: (_url, init) => {
+        seen.push(new Headers(init.headers));
+        return Promise.resolve(new Response('{}', { status: 200 }));
+      },
+    });
+    await http.request('https://api.test/orders', { headers: declared });
+    return seen[0] ?? new Headers();
+  };
+
+  const browserSession = {
+    ...EMPTY_SESSION,
+    cookies: [
+      { name: 'sid', value: 'jar', domain: 'api.test', path: '/', httpOnly: true, secure: true },
+    ],
+    headers: { 'X-Csrf': 'from-session' },
+    userAgent: 'BrowserUA',
+  };
+
+  test('User-Agent, Cookie and a session header, each declared in another case, replace theirs', async () => {
+    const headers = await sent(
+      { 'User-Agent': 'Mine', Cookie: 'sid=declared', 'x-csrf': 'declared' },
+      browserSession,
+    );
+    expect(headers.get('user-agent')).toBe('Mine');
+    expect(headers.get('cookie')).toBe('sid=declared');
+    expect(headers.get('x-csrf')).toBe('declared');
+  });
+
+  test("two spellings in the caller's own record collapse to one value, never a joined pair", async () => {
+    const headers = await sent({ accept: 'text/html', Accept: 'application/json' });
+    expect(headers.get('accept')).not.toContain(',');
+  });
+
+  test("with nothing declared the session's own values ride, as before", async () => {
+    const headers = await sent({}, browserSession);
+    expect(headers.get('user-agent')).toBe('BrowserUA');
+    expect(headers.get('cookie')).toBe('sid=jar');
+    expect(headers.get('x-csrf')).toBe('from-session');
   });
 });

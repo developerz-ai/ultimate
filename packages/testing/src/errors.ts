@@ -48,6 +48,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_OPENAPI_EXPECTED',
   'X_TEST_NUMBER_EXPECTED',
   'X_TEST_ISLAND_STATE_UNKNOWN',
+  'X_TEST_APP_NOT_BOOTED',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -87,6 +88,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_OPENAPI_EXPECTED: 'a matcher expected an OpenAPI document and got something else',
   X_TEST_NUMBER_EXPECTED: 'a matcher expected a finite number and got something else',
   X_TEST_ISLAND_STATE_UNKNOWN: 'an island state manifest declares no state with that id',
+  X_TEST_APP_NOT_BOOTED: 'describeApp handle read before boot',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -135,7 +137,18 @@ export class NondeterministicError extends UltimateError {
     super({
       code: 'X_TEST_NONDETERMINISTIC',
       cause: `${input.what} produced "${input.first}" then "${input.second}"`,
-      fix: 'wrap the test in frozenClock() / seededRandom(), or remove the wall-clock read',
+      fix: "await frozenClock('2026-01-01T00:00:00.000Z', () => assertDeterministic('…', body))",
+    });
+  }
+}
+
+/** `describeApp`'s `app()` read while the block was still being registered, before `beforeAll`. */
+export class AppNotBootedError extends UltimateError {
+  constructor(input: { suite: string }) {
+    super({
+      code: 'X_TEST_APP_NOT_BOOTED',
+      cause: `describeApp('${input.suite}') — app() was called while the describe block was being registered, before its beforeAll booted the app`,
+      fix: "test('…', () => { const handle = app(); })",
     });
   }
 }

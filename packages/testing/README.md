@@ -279,14 +279,41 @@ failure line reads `publishPost > behaves like an authenticated action > denies 
 — which subject, and which shared rule. `behavesLike` calls `describe`, so it goes at declaration
 scope, never inside a test body.
 
+Two ship, for the ports an app may implement itself — a `JobDriver` and `@ultimat3/ai`'s
+`BudgetStore`:
+
+```ts
+import { createMemoryDriver } from '@ultimat3/jobs';
+import { behavesLike, budgetStoreConformance, describe, jobDriverConformance } from '@ultimat3/testing';
+
+describe('my queue', () => behavesLike(jobDriverConformance, () => createMemoryDriver()));
+describe('my budget store', () =>
+  behavesLike(budgetStoreConformance, () => ({
+    spent: () => 0,
+    add: () => undefined,
+    take: () => ({ taken: false }),
+    reset: () => undefined,
+  })),
+);
+```
+
+| Suite | Holds a store to |
+|---|---|
+| `jobDriverConformance` | claim once · ack/nack fenced on the claim · a live key dedupes · `queues: []` refused · dead-letter never re-claimed · a lapsed lease re-claimed, the loser unable to renew · a lease lapsed on the final attempt buried, reported through `onExhausted` once, `failed` under `dropExhausted` |
+| `budgetStoreConformance` | 24 concurrent `take`s on one key never overspend · a refused take spends nothing · negative `add` · `reset(key)` scoped |
+
+The subject is called once per test. Each check claims from a queue — or counts under a key — of
+its own, so one shared store is enough.
+
 ## Parallel databases
 
 ```ts
 const db = await acquireWorkerDatabase({ adminUrl, migrate });
 ```
 
-The first worker creates the template under a Postgres advisory lock and migrates it once; every
-worker then clones it copy-on-write. With no Postgres configured it falls back to PGlite, so
+The first worker creates the template under a Postgres advisory lock and migrates it; every
+worker then clones it copy-on-write, under the same lock — a clone waits only 5 s for a session on
+the template to leave, and the next worker's migration holds one. With no Postgres configured it falls back to PGlite, so
 `bun test` works on a laptop with nothing installed.
 
 **The gate shards; a bare `bun test` does not.** `As of 2026-08`:
@@ -729,7 +756,7 @@ fails on a page that simply has not painted yet.
 ## Errors
 
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`
-`X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED` `X_TEST_REGISTRY_LEAK`
+`X_TEST_APP_NOT_BOOTED` `X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED` `X_TEST_REGISTRY_LEAK`
 `X_TEST_ISLAND_NOT_BUILT` `X_TEST_ISLAND_NO_MOUNT` `X_TEST_ISLAND_SELECTOR_UNSUPPORTED`
 `X_TEST_ISLAND_STATES_EMPTY` `X_TEST_ISLAND_STATE_UNKNOWN`
 `X_TEST_ISLAND_STATES_NOT_PURE` `X_TEST_ISLAND_STATES_MISSING_FILE` `X_TEST_ISLAND_STATES_UNKNOWN`
@@ -744,6 +771,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
+| `AppNotBootedError` | `X_TEST_APP_NOT_BOOTED` | `src/errors.ts` |
 | `FixtureUnavailableError` | `X_TEST_FIXTURE_UNAVAILABLE` | `src/errors.ts` |
 | `NetworkOfflineError` | `X_TEST_NETWORK_OFFLINE` | `src/errors.ts` |
 | `NetworkSealedError` | `X_TEST_NETWORK_SEALED` | `src/errors.ts` |

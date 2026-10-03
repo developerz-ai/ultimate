@@ -157,6 +157,43 @@ describe('unit · egress: on the definition reaches the driver as the session ex
     expect(driver.seen[0]?.proxy).toBeUndefined();
   });
 
+  /** The robots read answered by `answer`, every URL it dialled written down. */
+  const robotsDuring = async (answer: (url: string) => Response, run: () => Promise<unknown>) => {
+    const seen: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = ((url: string | URL | Request) => {
+      seen.push(String(url));
+      return Promise.resolve(answer(String(url)));
+    }) as typeof globalThis.fetch;
+    try {
+      return { seen, outcome: await codeOf(run) };
+    } finally {
+      globalThis.fetch = real;
+    }
+  };
+  const moved = (location: string): Response =>
+    new Response(null, { status: 301, headers: { location } });
+
+  test("the run's robots read follows a redirect inside allowHosts and obeys what it finds", async () => {
+    const { seen, outcome } = await robotsDuring(
+      (url) =>
+        url === 'https://shop.test/robots.txt'
+          ? moved('https://shop.test/static/robots.txt')
+          : new Response('User-agent: *\nDisallow: /orders'),
+      () => runScrape(define(), runArgs({})),
+    );
+    expect(seen).toEqual(['https://shop.test/robots.txt', 'https://shop.test/static/robots.txt']);
+    expect(outcome['code']).toBe('X_SCRAPE_ROBOTS_DISALLOWED');
+  });
+
+  test("the run's robots read never dials a redirect off its allowHosts", async () => {
+    const { seen } = await robotsDuring(
+      () => moved('http://10.0.0.7/robots.txt'),
+      () => runScrape(define(), runArgs({})),
+    );
+    expect(seen).toEqual(['https://shop.test/robots.txt']);
+  });
+
   test('an offline session reports the exit, so the robots read leaves through it', async () => {
     const seen = await fetchesDuring(() =>
       runScrape(define({ egress: () => EXIT }), runArgs({ exit: EXIT })),
@@ -222,6 +259,99 @@ describe('unit · the launched browser dials the run exit, not the driver consta
     expect(String(thrown['cause'])).toContain('http://exit-7.test:8080');
     expect(fake.closed).toBe(true);
   });
+});
+
+describe('unit · caller launch args never displace the exit', () => {
+  const CONTAINER_ARGS = ['--no-sandbox', '--disable-dev-shm-usage'];
+
+  test('the container flags and the proxy flag both reach the launcher, the proxy last', async () => {
+    const { launcher, launched } = recordingLauncher();
+    const session = await localBrowser({
+      launcher,
+      proxy: EXIT,
+      options: { args: CONTAINER_ARGS, protocolTimeout: 5_000 },
+    }).open(sessionInit());
+    expect(launched[0]?.['args']).toEqual([...CONTAINER_ARGS, `--proxy-server=${EXIT}`]);
+    expect(launched[0]?.['protocolTimeout']).toBe(5_000);
+    expect(session.proxy).toBe(EXIT);
+    await session.close();
+  });
+
+  test("the run's exit is appended after caller args too", async () => {
+    const { launcher, launched } = recordingLauncher();
+    const session = await localBrowser({ launcher, options: { args: CONTAINER_ARGS } }).open(
+      sessionInit({ proxy: SECRET_EXIT }),
+    );
+    expect(launched[0]?.['args']).toEqual([...CONTAINER_ARGS, `--proxy-server=${EXIT}`]);
+    await session.close();
+  });
+
+  test('with no exit at all, caller args pass through untouched', async () => {
+    const { launcher, launched } = recordingLauncher();
+    const session = await localBrowser({ launcher, options: { args: CONTAINER_ARGS } }).open(
+      sessionInit(),
+    );
+    expect(launched[0]?.['args']).toEqual(CONTAINER_ARGS);
+    await session.close();
+  });
+
+  test('no exit and no caller args puts no args key on the launch at all', async () => {
+    const { launcher, launched } = recordingLauncher();
+    const session = await localBrowser({ launcher }).open(sessionInit());
+    expect(Object.hasOwn(launched[0] ?? {}, 'args')).toBe(false);
+    await session.close();
+  });
+
+  // Every switch Chrome reads a proxy decision from, in both prefix spellings POSIX Chrome accepts,
+  // with and without a configured exit: a caller-set exit the session never reports is the same
+  // two-identities defect as a dropped one.
+  const OWNED = [
+    '--proxy-server=http://other.test:1',
+    '-proxy-server=http://other.test:1',
+    '--PROXY-SERVER=http://other.test:1',
+    '--proxy-bypass-list=*',
+    '--proxy-pac-url=http://pac.test/p.pac',
+    '--proxy-auto-detect',
+    '--no-proxy-server',
+  ];
+  for (const flag of OWNED) {
+    for (const proxy of [EXIT, undefined]) {
+      test(`${flag} in caller args is refused before launch (exit ${proxy ?? 'none'})`, async () => {
+        const { launcher, launched } = recordingLauncher();
+        const thrown = await codeOf(() =>
+          localBrowser({ launcher, proxy, options: { args: ['--no-sandbox', flag] } }).open(
+            sessionInit(),
+          ),
+        );
+        expect(thrown['code']).toBe('X_SCRAPE_LAUNCH_ARGS_INVALID');
+        expect(thrown['retry']).toBe('terminal');
+        expect(thrown['fix']).toBe(
+          "grep -rnE --include='*.ts' -e 'localBrowser\\(' -e '--(no-)?proxy-' .",
+        );
+        expect(String(thrown['cause'])).not.toContain('other.test');
+        expect(launched).toEqual([]);
+      });
+    }
+  }
+
+  test('a flag that merely mentions a proxy in its VALUE is not refused', async () => {
+    const { launcher, launched } = recordingLauncher();
+    const args = ['--user-agent=proxy-server-test'];
+    const session = await localBrowser({ launcher, options: { args } }).open(sessionInit());
+    expect(launched[0]?.['args']).toEqual(args);
+    await session.close();
+  });
+
+  for (const args of ['--no-sandbox', ['--no-sandbox', 7], { 0: '--no-sandbox' }, null]) {
+    test(`args that are not a string array (${JSON.stringify(args)}) are refused`, async () => {
+      const { launcher, launched } = recordingLauncher();
+      const thrown = await codeOf(() =>
+        localBrowser({ launcher, proxy: EXIT, options: { args } }).open(sessionInit()),
+      );
+      expect(thrown['code']).toBe('X_SCRAPE_LAUNCH_ARGS_INVALID');
+      expect(launched).toEqual([]);
+    });
+  }
 });
 
 describe('unit · an attached browser already bound to an exit refuses a different one', () => {

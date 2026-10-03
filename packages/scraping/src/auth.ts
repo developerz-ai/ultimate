@@ -194,10 +194,37 @@ export async function restorableSession<I>(
   return found;
 }
 
-/** Written down so the next attempt cannot reach the login form with the same credentials. */
-export async function markRefused<I>(plan: AuthPlanInput<I>): Promise<void> {
+/**
+ * True when the stored record is still the one this run last saw — `seen` is the `savedAt` it
+ * restored or persisted, `undefined` when it found none. The store has no compare-and-set, so a
+ * burn or a tombstone is a blind write: two runs on one key, and the one that failed destroyed the
+ * session the other had just persisted. Compared before the write, which narrows the race to the
+ * gap between this read and that write rather than the whole run. A record moved on is left alone.
+ */
+async function stillSeen<I>(
+  plan: AuthPlanInput<I>,
+  store: ScrapeSessionStore,
+  seen: string | undefined,
+  step: 'session.burn' | 'session.refuse',
+): Promise<boolean> {
+  const current = await store.load(plan.key);
+  if (current === undefined || current.savedAt === seen) return true;
+  plan.logger.warn('scrape.session.superseded', { step });
+  return false;
+}
+
+/**
+ * Written down so the next attempt cannot reach the login form with the same credentials — unless
+ * another run saved a session after this one read the record: that login SUCCEEDED, so this
+ * refusal is older news than the record it would overwrite.
+ */
+export async function markRefused<I>(
+  plan: AuthPlanInput<I>,
+  seen: string | undefined,
+): Promise<void> {
   const store = plan.auth?.store;
   if (store === undefined) return;
+  if (!(await stillSeen(plan, store, seen, 'session.refuse'))) return;
   await store.save({
     key: plan.key,
     savedAt: plan.clock.now().toISOString(),
@@ -210,10 +237,19 @@ export async function markRefused<I>(plan: AuthPlanInput<I>): Promise<void> {
   });
 }
 
-/** New identity, from scratch. One call, because a flagged profile is unusable and must go. */
-export async function burnSession<I>(plan: AuthPlanInput<I>): Promise<void> {
-  if (plan.auth?.store === undefined) return;
-  await plan.auth.store.burn(plan.key);
+/**
+ * New identity, from scratch. One call, because a flagged profile is unusable and must go — the
+ * profile THIS run used: `seen` is that session's `savedAt` (`restored?.savedAt`, or the one
+ * `persistSession` answered), and a session another run saved since is not burned.
+ */
+export async function burnSession<I>(
+  plan: AuthPlanInput<I>,
+  seen: string | undefined,
+): Promise<void> {
+  const store = plan.auth?.store;
+  if (store === undefined) return;
+  if (!(await stillSeen(plan, store, seen, 'session.burn'))) return;
+  await store.burn(plan.key);
   plan.logger.warn('scrape.session.burned', { burned: true });
 }
 
@@ -251,18 +287,26 @@ export async function ensureAuthenticated<I>(args: EnsureAuthInput<I>): Promise<
       return false;
     }
     args.logger.info('scrape.session.expired', { reused: false });
-    await burnSession(args);
+    await burnSession(args, args.restored.savedAt);
   }
   if (auth.login === undefined) throw sessionExpired(args.scrape, args.key);
   await auth.login(context);
   return true;
 }
 
-/** After a login: keep what it produced. A 2FA code somebody typed is worth exactly this. */
-export async function persistSession<I>(plan: AuthPlanInput<I>, page: ScrapePage): Promise<void> {
+/**
+ * After a login: keep what it produced. A 2FA code somebody typed is worth exactly this. Answers
+ * the `savedAt` it wrote — the record this run now owns, for a later burn to compare against.
+ */
+export async function persistSession<I>(
+  plan: AuthPlanInput<I>,
+  page: ScrapePage,
+): Promise<string | undefined> {
   const store = plan.auth?.store;
-  if (store === undefined) return;
+  if (store === undefined) return undefined;
   const snapshot = await page.session();
-  await store.save({ ...snapshot, key: plan.key, savedAt: plan.clock.now().toISOString() });
+  const savedAt = plan.clock.now().toISOString();
+  await store.save({ ...snapshot, key: plan.key, savedAt });
   plan.logger.info('scrape.session.saved', sessionDigest(snapshot));
+  return savedAt;
 }

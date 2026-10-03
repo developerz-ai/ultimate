@@ -10,6 +10,7 @@ import {
   frozenNow,
   installDeterminism,
   isDeterminismInstalled,
+  onClockMoved,
   restoreCapturedDeterminism,
   seededRandom,
   seededUuid,
@@ -143,7 +144,56 @@ describe('unit · determinism', () => {
       throw new Error('expected a throw');
     } catch (error) {
       expect(error).toBeUltimateError('X_TEST_NONDETERMINISTIC');
-      expect((error as { fix: string }).fix).toContain('frozenClock');
+      expect((error as { fix: string }).fix).toBe(
+        "await frozenClock('2026-01-01T00:00:00.000Z', () => assertDeterministic('…', body))",
+      );
     }
+  });
+
+  test('frozenClock announces its move in, and its move back out', async () => {
+    // The frozen scheduler renews leases on `onClockMoved`: a jump it never hears is a lease that
+    // never renews inside the body, and a restore it never hears leaves its timers on the body's time.
+    setFrozenClock('2026-01-01T00:00:00.000Z');
+    const heard: string[] = [];
+    const stop = onClockMoved(() => heard.push(frozenNow().toISOString()));
+    try {
+      await frozenClock('2030-06-01T00:00:00.000Z', () => undefined);
+    } finally {
+      stop();
+    }
+    expect(heard).toEqual(['2030-06-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z']);
+  });
+
+  test('assertDeterministic compares a BigInt result, and a cyclic one, with no bare TypeError', async () => {
+    expect(await assertDeterministic('bigint', () => ({ n: 10n }))).toEqual({ n: 10n });
+    const cyclic = (): Record<string, unknown> => {
+      const node: Record<string, unknown> = { id: 1 };
+      node['self'] = node;
+      return node;
+    };
+    expect((await assertDeterministic('cyclic', cyclic))['id']).toBe(1);
+    let calls = 0n;
+    const drifting = assertDeterministic('drifting bigint', () => {
+      calls += 1n;
+      return calls;
+    });
+    await expect(drifting).rejects.toBeUltimateError('X_TEST_NONDETERMINISTIC');
+    let id = 0;
+    const cyclicDrift = assertDeterministic('drifting cycle', () => {
+      id += 1;
+      const node: Record<string, unknown> = { id };
+      node['self'] = node;
+      return node;
+    });
+    await expect(cyclicDrift).rejects.toBeUltimateError('X_TEST_NONDETERMINISTIC');
+  });
+
+  test('assertDeterministic reads key order as no difference', async () => {
+    let flip = false;
+    const result = await assertDeterministic('key order', () => {
+      flip = !flip;
+      return flip ? { a: 1, b: 2 } : { b: 2, a: 1 };
+    });
+    expect(result).toEqual({ a: 1, b: 2 });
   });
 });

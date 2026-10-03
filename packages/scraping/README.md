@@ -313,8 +313,9 @@ bound threw away, so a count taken from one is never quietly a floor.
 All three are **redacted by value** on the way out, the same pass `page.html()` makes: a login
 endpoint fetched with the password in its query string, or a site that logs the credential it
 rejected, would otherwise put the value in `page.network()`/`page.console()` verbatim and from
-there into the stored failure artifact. The HTTP leg's `X_SCRAPE_HTTP_FAILED` cause is redacted
-too, at its throw site. Values shorter than `MIN_REDACTABLE_LENGTH` are not — a 3-character PIN is
+there into the stored failure artifact — percent-encoded, form-encoded or HTML-escaped as much as
+raw, since a password in a query string is never the raw string. The HTTP leg's
+`X_SCRAPE_HTTP_FAILED` cause is redacted too, at its throw site. Values shorter than `MIN_REDACTABLE_LENGTH` are not — a 3-character PIN is
 a substring of ordinary prose — and pixels never can be, which is why a typed secret TAINTS the
 page and `screenshot()`/`pdf()` are refused outright.
 

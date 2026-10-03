@@ -22,6 +22,8 @@ export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
 export type {
   CdpBrowserLike,
+  CdpBrowserSessionLike,
+  CdpBrowserTargetLike,
   CdpFrameLike,
   CdpKeyboardLike,
   CdpLauncherLike,

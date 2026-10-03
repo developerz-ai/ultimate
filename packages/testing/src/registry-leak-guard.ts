@@ -7,7 +7,7 @@ import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
 import { isAppRoot } from './app-jsx-loader';
 import { RegistryLeakError } from './errors';
-import { runFileBoundary } from './file-boundary';
+import { runBoundaryHooks, runFileBoundary } from './file-boundary';
 import type { ProcessRegistrySnapshot } from './registry-snapshot';
 import {
   captureProcessRegistries,
@@ -219,6 +219,8 @@ export function installRegistryLeakGuard(): void {
   });
 
   afterAll(() => {
+    // The run's LAST file has no boundary after it: its undisposed island mounts end here.
+    runBoundaryHooks();
     close();
     if (leaks.length > 0) throw new RegistryLeakError({ leaks });
   });

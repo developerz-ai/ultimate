@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "18caecf9599fb75eaa85bafc180a6bfad98ac7018d55030d1aa05745468f9cd0",
+  "buildId": "85a67d7bea3eb046918cc53575039ccae17fef8a5864efa6b449faf7cac055c1",
   "tiers": {
     "0": [
       "core",
@@ -3155,6 +3155,11 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_LAUNCH_ARGS_INVALID",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SCRAPE_NOT_ACTIONABLE",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
@@ -3713,6 +3718,11 @@
       "code": "X_TENANCY_UNSCOPED",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_TEST_APP_NOT_BOOTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_TEST_BARE_ERROR",

@@ -67,7 +67,7 @@ export const NODE_IMPORT_PINS: Readonly<Record<string, number>> = {
   render: 15,
   scraping: 4,
   scripts: 28,
-  testing: 9,
+  testing: 7,
   time: 1,
   ui: 1,
 };

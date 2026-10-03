@@ -30,6 +30,7 @@ import type { ScrapeClock } from './clock';
 import type { ScrapeDriver } from './driver';
 import { yieldHistoryMissing } from './error-throws';
 import type { YieldExpectation, YieldHistory } from './expect';
+import { maxDropFraction } from './expect';
 import type { HostRule } from './hosts';
 import type { ScrapeHttp } from './http';
 import type { ScrapePage } from './page';
@@ -198,8 +199,9 @@ export function scrape<I, Row>(definition: ScrapeDefinition<I, Row>): JobHandle<
   // Two halves that must be set together. `maxDrop` is a fraction of a trailing median and only
   // `history:` can supply one, so declaring it alone is an alarm that cannot fire — refused here,
   // where it is written, rather than discovered as a scrape that never once went red.
-  if (definition.expect?.maxDrop !== undefined && definition.history === undefined) {
-    throw yieldHistoryMissing(definition.name);
+  if (definition.expect?.maxDrop !== undefined) {
+    if (definition.history === undefined) throw yieldHistoryMissing(definition.name);
+    maxDropFraction(definition.name, definition.expect.maxDrop);
   }
   const onSettled = definition.onSettled?.bind(definition);
   return job<I, ScrapeReport<Row>>({

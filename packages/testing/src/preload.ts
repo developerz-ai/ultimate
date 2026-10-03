@@ -12,7 +12,6 @@ import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
 import { installAppJsxLoader } from './app-jsx-loader';
 import { onFileBoundary } from './file-boundary';
-import { disposeLiveIslands } from './fixture-island';
 import { releasePluginsAfterIsolatedFile } from './isolated-plugins';
 import { installPerTestReset } from './per-test-reset';
 import { installRegistryLeakGuard } from './registry-leak-guard';
@@ -43,11 +42,6 @@ Bun.env['ULTIMATE_TEST_SLOT_HELD'] ??= '1';
 // One `bun test` invocation is one process: a file that leaves a process-global registry dirty
 // fails a later file in another package, for a reason nothing in that file explains.
 installRegistryLeakGuard();
-
-// A worker runs many files in one global unless the repo opted into `--isolate` (22.7): a mount a
-// file never disposed is disposed between files, and `file-boundary.ts` then puts `globalThis`
-// back to what the first file saw.
-onFileBoundary(disposeLiveIslands);
 
 // And per TEST: the jobs event bus stores what it is handed, so one test's published answer
 // resumed the next test's waiting run (`per-test-reset.ts`).

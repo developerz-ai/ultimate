@@ -41,6 +41,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_KEY_INVALID',
   'X_SCRAPE_EGRESS_UNSUPPORTED',
   'X_SCRAPE_EGRESS_IN_PAYLOAD',
+  'X_SCRAPE_LAUNCH_ARGS_INVALID',
 ] as const;
 
 /**
@@ -95,6 +96,8 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_KEY_INVALID: 'the key chord names no key a browser can press',
   X_SCRAPE_EGRESS_UNSUPPORTED: 'this driver cannot give the session the exit the run asked for',
   X_SCRAPE_EGRESS_IN_PAYLOAD: 'the run exit carries a credential that is also in the job payload',
+  X_SCRAPE_LAUNCH_ARGS_INVALID:
+    'the launch options carry arguments this driver cannot hand the browser',
 };
 
 // One unconditional call, so a second package claiming one of these codes throws
@@ -202,6 +205,9 @@ export const SCRAPE_ERROR_RETRY = {
   X_SCRAPE_EGRESS_UNSUPPORTED: 'terminal',
   // The payload is the row: every remaining attempt reads the same credential out of it.
   X_SCRAPE_EGRESS_IN_PAYLOAD: 'terminal',
+  // The args are the deploy's own literal: attempt 2 launches with the same list and is refused
+  // the same way. Launching anyway is the retry that "works" from the worker's own address.
+  X_SCRAPE_LAUNCH_ARGS_INVALID: 'terminal',
 } as const satisfies Readonly<Record<ScrapeOwnedErrorCode, 'retryable' | 'terminal'>>;
 
 registerErrorRetry(SCRAPE_ERROR_RETRY);

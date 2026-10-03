@@ -21,8 +21,7 @@ claims and that page does not carry is a capability an app author cannot find.
 because `recover: 'agent'` is designed to import `@ultimat3/ai` (tier 4), and a package at 4 cannot
 import a package at 4. Moving up later would be a table change with consumers already attached.
 
-`cli` is also tier 5, so `x shot` needs the declared `cli -> scraping` edge in
-`scripts/lib/tiers.ts`. Moving this package to 4 was refused: it would foreclose `recover: 'agent'`.
+Nothing in the framework imports it (`x shot` left in 22.0.0), so no sideways edge exists.
 
 ## puppeteer-core is NOT a dependency
 
@@ -54,11 +53,11 @@ and a value cannot leak. `driver-parity.test.ts` runs the real driver's code pat
 | no wait outside `clock.ts` | `clock-discipline.test.ts` scans `src/*.ts` for `setTimeout`/`setInterval`/`Bun.sleep`. `http.ts` and `robots-fetch.ts` are pinned as the exceptions — the two files that dial the platform's `fetch`, each for one `AbortSignal.timeout` handed to it. The exemption covers `AbortSignal.timeout` only; a real timer in either still offends |
 | the fake never drifts from the real driver | `driver-parity.test.ts` runs one suite against `fake`, `fixture` and the puppeteer path, and pins the one honest divergence (no layout engine offline, so no box and no hit-target) |
 | an unrecorded request throws | `html-target.ts` and `http-recorded.ts`. **One request escapes: the robots read.** Offline drivers under the default `robots: 'obey'` fire a real `fetch` for `/robots.txt` (the gate is built in `scrape-run.ts`, blind to the driver), and under `bun test` the sealed network's refusal reads as "no restrictions". Declare `robots: { ignore: '<reason>' }` on an offline scrape → `wiki/Known-Gaps.md` |
-| `allowHosts` is enforced, never advisory | `intercept.ts` is the single decision, asked by every driver AND by the HTTP leg, before a byte leaves |
+| `allowHosts` is enforced, never advisory | `intercept.ts` is the single decision, asked by every driver AND by the HTTP leg, before a byte leaves. The CDP driver asks it at the BROWSER too (`armBrowser`: `Fetch` on `browser.target()`), so a popup is screened (`cdp-arm-targets.test.ts`). A wildcard-admitted name is resolved and pinned on the HTTP leg and robots read (`pinned-host.ts`). Open: Chrome's DNS, WebSockets (`wiki/Known-Gaps.md`) |
 | a REDIRECT is a request nobody screened, so this leg follows it itself | `http.ts` sends `redirect: 'manual'` and walks the chain hop by hop (`http-redirect.ts`), re-asking `interceptVerdict`, `RobotsGate.assertAllowed`, `pace` and `cookieHeaderFor` for **every** hop, bounded by `MAX_REDIRECT_HOPS` (`X_SCRAPE_REDIRECT_LOOP`, terminal); `responseOver` and the ring carry the FINAL url. It re-performs the platform's two halves: a caller's credential (`authorization`, `proxy-authorization`, a hand-written `cookie`) is dropped at the first cross-origin hop and stays dropped, and only a `POST` is rewritten on `301`/`302` (`http-redirect-follow.test.ts`, `http-redirect.test.ts`) |
 | a `javascript:` URL is refused, not treated as hostless | `hosts.ts`'s `REFUSED_SCHEMES`. It executes in the current origin, and `javascript://api.test/%0a…` parses with hostname `api.test`, so an allow list would have matched it (`hosts.test.ts`) |
-| the robots read is deadlined and capped | `robots-fetch.ts` is the ONE default `/robots.txt` read, with `DEFAULT_ROBOTS_TIMEOUT_MS`, `DEFAULT_ROBOTS_MAX_BYTES` and the session's proxy — a RESOLVER read from `ScrapeSession.proxy`, because the exit is resolved inside `driver.open()`, after the gate is built. `scrape-run.ts` supplies the page timeout and `ctx.signal`: the gate caches one promise per origin (`robots-fetch.test.ts`, `scrape-run.test.ts`, `driver-cdp.test.ts`) |
-| the exit is the RUN's, and a driver that cannot dial it refuses | `scrape({ egress })` → `SessionInit.proxy`, which wins over a driver's own `proxy`. `driver-cdp.ts`'s `exitFor()` is the one precedence; the session REPORTS it (offline ones too, so the robots read leaves through it). A fixed `cdpUrl` handed a different exit, or a credentialed exit on a launcher with no `page.authenticate()`, is `X_SCRAPE_EGRESS_UNSUPPORTED` (terminal) — never a silent dial of the driver's constant. Credentials never reach `--proxy-server` (`egress.test.ts`) |
+| the robots read is deadlined, capped and screened | `robots-fetch.ts` is the ONE default `/robots.txt` read: `redirect: 'manual'`, each hop asked of `allowHosts` (`MAX_ROBOTS_REDIRECTS`), with `DEFAULT_ROBOTS_TIMEOUT_MS`, `DEFAULT_ROBOTS_MAX_BYTES` and the session's proxy — a RESOLVER read from `ScrapeSession.proxy`, because the exit is resolved inside `driver.open()`, after the gate is built. `scrape-run.ts` supplies the page timeout and `ctx.signal`: the gate caches one promise per origin (`robots-fetch.test.ts`, `scrape-run.test.ts`, `driver-cdp.test.ts`) |
+| the exit is the RUN's, and a driver that cannot dial it refuses | `scrape({ egress })` → `SessionInit.proxy`, which wins over a driver's own `proxy`. `driver-cdp.ts`'s `exitFor()` is the one precedence; the session REPORTS it (offline ones too, so the robots read leaves through it). A fixed `cdpUrl` handed a different exit, or a credentialed exit on a launcher with no `page.authenticate()`, is `X_SCRAPE_EGRESS_UNSUPPORTED` (terminal) — never a silent dial of the driver's constant. Credentials never reach `--proxy-server`, which `launch-args.ts` appends AFTER the caller's args; a caller proxy switch is `X_SCRAPE_LAUNCH_ARGS_INVALID` (`egress.test.ts`) |
 | the exit is resolved in the WORKER, and a credential that rode the payload is refused | `egress(input, ctx)` is awaited in `runScrape` under the job's tenant. `credentialInPayload()` reads the exit's password against the run's own input — through `secret-scan.ts`'s `containsSecret`, every window compared whole, never `.includes(password)` (`bun run secret-compare`); a hit is `X_SCRAPE_EGRESS_IN_PAYLOAD`, **terminal**, thrown BEFORE `driver.open()`. Shorter than `MIN_REDACTABLE_LENGTH` is not checked (`scrape-service.test.ts`) |
 | a rented browser is released EXACTLY once | `cdp-resolver.ts`'s `acquireCdp()` latches `release`. `remoteBrowser.open()` releases on every throw after the rental exists (`runScrape`'s `finally` cannot close a session `open()` never returned); `close()` quits the browser FIRST, then releases; neither can throw (`cdp-resolver.test.ts`) |
 | a stored session is SEALED, and nothing else in the bucket is read | `storageSessionStore` writes `{ sealed }` through core's `seal()` (purpose `SESSION_SEAL_PURPOSE`) — never WebCrypto here (`scripts/seal-calls.ts`). `load()` resolves the key ring FIRST and outside every catch: no key is `X_SEAL_KEY_MISSING` before the browser opens, never "no session". An unsealed, unopenable or other-key record is BURNED — no migration, no legacy read; the record's own `key` is compared because the purpose is one constant (`session-seal.test.ts`) |
@@ -113,7 +112,7 @@ SESSION default of `0` (`pageTimeout`, `fakePage({ timeoutMs })`) is refused, be
 wait and every navigation already out of time. `<file>-bounds.test.ts` beside each source holds both
 sides, and flipping a floor turns exactly one of them red.
 
-**One comparison fails closed instead**, because a screen cannot reach it: `restorableSession`'s
+**Two comparisons fail closed instead** (this one and `http-recorded.ts`'s `recordedAt`), because a screen cannot reach them: `restorableSession`'s
 `age` comes from `found.savedAt`, which is a string in a bucket that `parseSessionState` only checks
 is a string. `!(age <= limit)` and never `age > limit` — the same test for every finite age, the
 opposite one for a `NaN`.
@@ -148,14 +147,15 @@ never a value.
   prompt answer (`createPrompt`), an `egress` URL's password (`runScrape`, and `exitFor()` for a
   driver's own `proxy`), every credential-bearing part of a CDP URL (`remoteBrowser`).
   `url-secrets.ts` is the one split of a URL into what may be printed (`endpointLabel`: scheme and
-  host) and what may not (`urlSecretValues`). `X_SCRAPE_CDP_ATTACH_FAILED` prints the label for a
+  host) and what may not (`urlSecretValues`: credential-shaped query values and path segments only). `X_SCRAPE_CDP_ATTACH_FAILED` prints the label for a
   fixed URL as for a resolved one, and cuts those values out of the launcher's own message
   (`cdp-redaction.test.ts`).
-- **Redaction is by VALUE and covers four surfaces, each with a caller**: `safeHtml`,
+- **Redaction is by VALUE, in every encoded spelling (`spellingsOf`), and covers four surfaces, each with a caller**: `safeHtml`,
   `safeConsole`, `safeNetwork`, `safePageErrors`, plus `X_SCRAPE_HTTP_FAILED`'s cause (redacted at
   its throw site; `HttpTransportInit.secrets` / `RecordedHttpInit.secrets` carry the bag). Not
   redacted, deliberately: other errors' `cause`/`meta` URLs, values shorter than
   `MIN_REDACTABLE_LENGTH`, and pixels — which is why a typed secret TAINTS the page.
+- Burn and tombstone compare `savedAt` first: another run's newer record is kept; a failed post-login save is logged, not fatal (`session-race.test.ts`).
 - The refusal tombstone is read BEFORE `reuse` is honoured: `reuse: false` means "do not restore
   this session", never "present the rejected credential again" (`auth.ts`).
 - `X_SCRAPE_AUTH_FAILED` is registered `terminal`, so `executeJob` dead-letters it on the attempt
