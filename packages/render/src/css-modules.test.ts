@@ -193,6 +193,12 @@ describe('stripCharset', () => {
 // Only a SELECTOR names a class. A pass over the whole sheet rewrote every `.ident` it met: a
 // font's `local(Inter.Regular)`, a comment's text, and the halves of an escaped-dot class.
 describe('scopeClasses reads selector preludes only', () => {
+  test('a nested rule after a declaration leaves the declaration value alone', () => {
+    const out = scopeClasses('.a{--token:.b;.c{x:y}}', 'h');
+    expect(out.css).toBe('.a_h{--token:.b;.c_h{x:y}}');
+    expect(out.classes).toEqual({ a: 'a_h', c: 'c_h' });
+  });
+
   test('a dotted name inside a declaration is left alone', () => {
     const css = '@font-face{font-family:Inter;src:local(Inter.Regular)}.a{font:12px Inter.Var}';
     const out = scopeClasses(css, 'h');
