@@ -25,9 +25,12 @@ describe.skipIf(adminUrl === '')(testName('live', 'the pg job driver'), () => {
     await client.execute(raw(SQL_JOBS_TABLE));
   });
 
+  // Both run, whatever the first does; the first failure is the one reported.
   afterAll(async () => {
-    await client?.close();
-    await db?.drop();
+    const failures: unknown[] = [];
+    await Promise.resolve(client?.close()).catch((error: unknown) => failures.push(error));
+    await Promise.resolve(db?.drop()).catch((error: unknown) => failures.push(error));
+    if (failures.length > 0) throw failures[0];
   });
 
   // The executor the boot builds (`pgExecutorFor`, `@ultimat3/cli`): the db client's own query.

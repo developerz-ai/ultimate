@@ -19,8 +19,8 @@ import {
   createPrompt,
   ensureAuthenticated,
   markRefused,
+  observeSession,
   persistSession,
-  restorableSession,
 } from './auth';
 import { scrapeClock } from './clock';
 import type { ScrapeSession } from './driver';
@@ -147,7 +147,8 @@ export async function runScrape<I, Row>(
 
   // Read BEFORE the browser opens: a refused credential must not reach a login form again, and
   // opening a session first would already have spent an identity on a run that cannot succeed.
-  const restored = await restorableSession(plan);
+  const observed = await observeSession(plan);
+  const restored = observed.restorable;
   const pageTimeoutMs = toMillis(definition.pageTimeout, DEFAULT_PAGE_TIMEOUT_MS, 'pageTimeout');
   // The exit the session dials, readable only AFTER `driver.open()` — a driver with no run exit
   // falls back to its own option, and the gate below is an argument to `open()`, so the gate asks
@@ -186,10 +187,11 @@ export async function runScrape<I, Row>(
     watchdog: definition.watchdog,
   });
   sessionProxy = session.proxy;
-  // The `savedAt` of the stored session this run is ON — restored, or persisted after its own
-  // login. A burn or a tombstone on the way out compares against it, so a session another run on
-  // the same key saved meanwhile is not destroyed by this run's failure (`auth.ts`'s `stillSeen`).
-  let seen = restored?.savedAt;
+  // The VERSION of the stored record this run is on — the one it found (restorable or not), or the
+  // one it persisted after its own login. A burn or a tombstone on the way out compares against
+  // it, so a record another run on the key saved meanwhile is not destroyed by this run's failure
+  // (`auth.ts`'s `stillSeen`).
+  let seen = observed.seen;
 
   try {
     if (definition.auth !== undefined) {

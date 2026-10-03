@@ -52,10 +52,40 @@ export function splitCredentials(url: string): {
 }
 
 /**
- * A query key that names a credential. Read off the key and not the value, because a provider's
- * token can be short and the key is the URL's own statement of what the value is.
+ * The words that name a credential, matched against a query key's COMPONENTS — split on `_`, `-`,
+ * `.` and camelCase — never as substrings: `keyboard` holds `key` and `monkey` holds it too, and
+ * concealing their values blanked ordinary words out of every artifact. Read off the key and not
+ * the value, because a provider's token can be short and the key is the URL's own statement.
  */
-const CREDENTIAL_KEY = /token|key|secret|auth|sig|pass|pwd|cred|session|jwt|bearer/i;
+const CREDENTIAL_WORDS = new Set([
+  'token',
+  'key',
+  'apikey',
+  'secret',
+  'auth',
+  'authorization',
+  'sig',
+  'signature',
+  'pass',
+  'password',
+  'passwd',
+  'pwd',
+  'cred',
+  'credential',
+  'credentials',
+  'session',
+  'sessionid',
+  'sid',
+  'jwt',
+  'bearer',
+]);
+
+const credentialKey = (key: string): boolean =>
+  key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[\s_.-]+/)
+    .some((part) => CREDENTIAL_WORDS.has(part));
 
 /**
  * A value that is a capability whatever it is called: long, one unbroken run, letters and digits
@@ -89,11 +119,17 @@ export function urlSecretValues(url: string): readonly string[] {
       values.add(`${parsed.pathname}${parsed.search}`);
       values.add(parsed.search.slice(1));
     }
-    for (const segment of parsed.pathname.split('/')) {
-      if (credentialShaped(decoded(segment))) values.add(decoded(segment)).add(segment);
+    const segments = parsed.pathname.split('/');
+    for (const [index, segment] of segments.entries()) {
+      // By POSITION as well as by shape: Chrome's `/devtools/<browser|page>/<id>` id IS the
+      // capability, and an id of letters alone is not credential-shaped.
+      const capability = index >= 2 && segments[index - 2] === 'devtools';
+      if (capability || credentialShaped(decoded(segment))) {
+        values.add(decoded(segment)).add(segment);
+      }
     }
     for (const [key, value] of parsed.searchParams) {
-      if (CREDENTIAL_KEY.test(key) || credentialShaped(value)) values.add(value);
+      if (credentialKey(key) || credentialShaped(value)) values.add(value);
     }
   } catch {
     // Not a URL: the whole string above is all there is to redact.

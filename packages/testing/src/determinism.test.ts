@@ -145,7 +145,7 @@ describe('unit · determinism', () => {
     } catch (error) {
       expect(error).toBeUltimateError('X_TEST_NONDETERMINISTIC');
       expect((error as { fix: string }).fix).toBe(
-        "await frozenClock('2026-01-01T00:00:00.000Z', () => assertDeterministic('…', body))",
+        "assertDeterministic('…', () => { installDeterminism(); return body(); })",
       );
     }
   });
@@ -195,5 +195,64 @@ describe('unit · determinism', () => {
       return flip ? { a: 1, b: 2 } : { b: 2, a: 1 };
     });
     expect(result).toEqual({ a: 1, b: 2 });
+  });
+
+  test('a listener that throws on entry still gets the outer instant back, body unrun', async () => {
+    setFrozenClock('2026-01-01T00:00:00.000Z');
+    let calls = 0;
+    const stop = onClockMoved(() => {
+      calls += 1;
+      if (calls === 1) throw new TypeError('listener refused the move');
+    });
+    let ran = false;
+    try {
+      await expect(
+        frozenClock('2030-06-01T00:00:00.000Z', () => {
+          ran = true;
+        }),
+      ).rejects.toThrow('listener refused the move');
+    } finally {
+      stop();
+    }
+    expect(ran).toBe(false);
+    expect(frozenNow().toISOString()).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  test('assertDeterministic tells undefined, null, a function and a symbol apart', async () => {
+    const results: unknown[][] = [
+      [undefined, null],
+      [null, undefined],
+      [() => 1, null],
+      [Symbol('s'), undefined],
+    ];
+    for (const [first, second] of results) {
+      let flip = false;
+      const drift = assertDeterministic('top-level token', () => {
+        flip = !flip;
+        return flip ? first : second;
+      });
+      await expect(drift).rejects.toBeUltimateError('X_TEST_NONDETERMINISTIC');
+    }
+    expect(await assertDeterministic('undefined twice', () => undefined)).toBeUndefined();
+  });
+
+  test('the fix X_TEST_NONDETERMINISTIC hands out makes a clock-and-random body pass', async () => {
+    const snapshot = captureDeterminism();
+    const body = (): readonly number[] => [Date.now(), Math.random(), advanceClock(1).getTime()];
+    try {
+      const error = await assertDeterministic('bare', body).catch((caught: unknown) => caught);
+      expect(error).toBeUltimateError('X_TEST_NONDETERMINISTIC');
+      expect((error as { fix: string }).fix).toBe(
+        "assertDeterministic('…', () => { installDeterminism(); return body(); })",
+      );
+      // The fix, verbatim in shape: re-install the seeded clock and RNG before each run.
+      const result = await assertDeterministic('fixed', () => {
+        installDeterminism();
+        return body();
+      });
+      expect(result).toHaveLength(3);
+    } finally {
+      restoreCapturedDeterminism(snapshot);
+    }
   });
 });

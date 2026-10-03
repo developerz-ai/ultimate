@@ -215,6 +215,7 @@ export type {
 export {
   memorySessionStore,
   parseSessionState,
+  recordVersion,
   SESSION_SEAL_PURPOSE,
   sessionDigest,
   sessionKeyFor,

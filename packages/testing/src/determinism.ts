@@ -199,8 +199,9 @@ export async function frozenClock<T>(now: string, body: () => T | Promise<T>): P
   frozenAt = at;
   // Both moves announced, as `setFrozenClock` announces one: the frozen scheduler renews leases on
   // the announcement alone, so an unannounced jump is time its timers never see.
-  announceMove();
   try {
+    // Inside the `try`: a listener that throws on entry must still get the outer instant back.
+    announceMove();
     return await body();
   } finally {
     frozenAt = previous;
@@ -211,9 +212,13 @@ export async function frozenClock<T>(now: string, body: () => T | Promise<T>): P
 /**
  * Core's canonical form — a BigInt, a Date, a Map have tokens of their own where `JSON.stringify`
  * threw a bare `TypeError` or folded them to `{}` — or `undefined` for the one shape it cannot
- * walk, a cycle, which `Bun.deepEquals` then compares instead.
+ * walk, a cycle, which `Bun.deepEquals` then compares instead. A top-level `undefined`, function
+ * or symbol is a token of its type.
  */
 function comparable(value: unknown): string | undefined {
+  // Canonical JSON spells all three `null`, so `undefined` and `null` compared equal: a token each.
+  const kind = typeof value;
+  if (kind === 'undefined' || kind === 'function' || kind === 'symbol') return `<${kind}>`;
   try {
     return canonicalJson(value);
   } catch {

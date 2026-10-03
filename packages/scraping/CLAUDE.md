@@ -155,7 +155,7 @@ never a value.
   its throw site; `HttpTransportInit.secrets` / `RecordedHttpInit.secrets` carry the bag). Not
   redacted, deliberately: other errors' `cause`/`meta` URLs, values shorter than
   `MIN_REDACTABLE_LENGTH`, and pixels — which is why a typed secret TAINTS the page.
-- Burn and tombstone compare `savedAt` first: another run's newer record is kept; a failed post-login save is logged, not fatal (`session-race.test.ts`).
+- Burn and tombstone compare a `version` first: another run's newer record is kept; a failed post-login save is logged, not fatal (`session-race.test.ts`).
 - The refusal tombstone is read BEFORE `reuse` is honoured: `reuse: false` means "do not restore
   this session", never "present the rejected credential again" (`auth.ts`).
 - `X_SCRAPE_AUTH_FAILED` is registered `terminal`, so `executeJob` dead-letters it on the attempt

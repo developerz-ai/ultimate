@@ -137,7 +137,7 @@ export class NondeterministicError extends UltimateError {
     super({
       code: 'X_TEST_NONDETERMINISTIC',
       cause: `${input.what} produced "${input.first}" then "${input.second}"`,
-      fix: "await frozenClock('2026-01-01T00:00:00.000Z', () => assertDeterministic('…', body))",
+      fix: "assertDeterministic('…', () => { installDeterminism(); return body(); })",
     });
   }
 }

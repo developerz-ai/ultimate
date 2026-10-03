@@ -208,6 +208,56 @@ describe('unit · a run burns or refuses only the session it saw', () => {
   });
 });
 
+describe('unit · ownership is a unique version, and a record seen but not reused still counts', () => {
+  test('a same-millisecond replacement by another run is not burned — savedAt alone cannot tell them apart', async () => {
+    const { store, keys } = keyed();
+    const code = await runScrape(
+      define({
+        auth: { store, login: () => Promise.resolve() },
+        run: async () => {
+          // The other run, on the SAME frozen clock: an identical savedAt, a different record.
+          const key = keys[0] ?? '';
+          const mine = await store.load(key);
+          await store.save({ ...state(mine?.savedAt ?? T1, { key }), userAgent: 'the-other-run' });
+          throw blocked('orders', URL_A, 'captcha wall');
+        },
+      }),
+      runArgs(),
+    ).catch((thrown: unknown) => (thrown as { code?: string }).code);
+    expect(code).toBe('X_SCRAPE_BLOCKED');
+    expect((await onlyRecord(store, keys))?.userAgent).toBe('the-other-run');
+  });
+
+  for (const [name, auth] of [
+    ['reuse: false', { reuse: false }],
+    ['a record past maxAge', { maxAge: 1 }],
+  ] as const) {
+    test(`${name}: a refused fresh login still tombstones the record the run found`, async () => {
+      const inner = memorySessionStore();
+      const keys: string[] = [];
+      const store: ScrapeSessionStore = {
+        load: async (key) => {
+          if (!keys.includes(key)) keys.push(key);
+          return (await inner.load(key)) ?? state(T0, { key });
+        },
+        save: (saved) => inner.save(saved),
+        burn: (key) => inner.burn(key),
+      };
+      await runScrape(
+        define({
+          auth: {
+            store,
+            ...auth,
+            login: () => Promise.reject(authFailed('orders', 'the password was rejected')),
+          },
+        }),
+        runArgs(),
+      ).catch(() => undefined);
+      expect((await inner.load(keys[0] ?? ''))?.refusedAt).toBeDefined();
+    });
+  }
+});
+
 describe('unit · a login that succeeded survives a store that cannot keep it', () => {
   test('a rejected save after a login does not fail the run, and is logged', async () => {
     const { lines, logger } = linesOf();

@@ -142,6 +142,16 @@ describe('unit · maxDrop is a fraction in [0, 1)', () => {
     });
   }
 
+  test('the refusal fixes with one runnable command, naming no value from the declaration', () => {
+    let fix: unknown;
+    try {
+      yieldProblem({ scrape: 'orders', rows: 0, expect: { maxDrop: 50 }, history: [10, 10, 10] });
+    } catch (thrown) {
+      fix = (thrown as { fix?: unknown }).fix;
+    }
+    expect(fix).toBe("grep -rnE --include='*.ts' 'maxDrop: *(-|[1-9]|1\\.)' .");
+  });
+
   test('0 and 0.99 are accepted, and 0 fires on any drop at all', () => {
     expect(
       yieldProblem({ scrape: 'orders', rows: 9, expect: { maxDrop: 0 }, history: [10, 10, 10] })

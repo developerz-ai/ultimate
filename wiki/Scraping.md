@@ -200,13 +200,14 @@ run: async ({ page, secrets }) => {
 and `page.pageErrors()` — plus the HTTP leg's response body, which reaches an error `cause` and
 from there a dead-letter row that `x jobs show` prints. Three of those were unredacted until
 2026-08-25 while this package's own header promised all of them. **Every spelling of a value is
-redacted**: raw, percent-encoded, form-encoded (`+` for a space) and HTML-escaped as text, as an
+redacted**: raw, percent-encoded (hex escapes in either case), form-encoded (`+` for a space) and HTML-escaped as text, as an
 attribute or by a template (`&#39;`) — a password in a query string is never the raw string.
 
 A credential-bearing URL — a proxy exit, a provider's connect URL — hands the redaction set the
 whole URL, its password, its query, and only those query values and path segments that are
-credential-shaped (a key named like `token`, `key`, `secret`, `auth`, `sig`, `session`, or a long
-letters-and-digits run such as a browser id). `stealth=true&proxy=residential` does not blank every
+credential-shaped (a key whose words — split on `_`, `-`, `.` and camelCase — include `token`, `key`,
+`secret`, `auth`, `sig`, `session` and the like, so `apiKey` counts and `keyboard` does not; a long
+letters-and-digits run; or the id after `/devtools/browser/` or `/devtools/page/`). `stealth=true&proxy=residential` does not blank every
 `true` and `residential` in the artifact.
 
 **One stated limit**: a secret shorter than 4 characters is not redacted. A 3-character token would
@@ -222,7 +223,7 @@ Reuse is both the fast path and the safe path — logging in on every run is slo
 |---|---|
 | `restorableSession(plan)` | the stored session this run may restore, or `undefined` |
 | `ensureAuthenticated(plan)` | log in when there is nothing to restore |
-| `burnSession(plan, seen)` | delete it — a flagged profile stays flagged, so a retry that reloads it re-trips the block. `seen` is the `savedAt` of the session this run used (`restored?.savedAt`); a session another run on the same key saved since is left in place, and so is the refusal tombstone a failed login writes |
+| `burnSession(plan, seen)` | delete it — a flagged profile stays flagged, so a retry that reloads it re-trips the block. `seen` is the `version` of the record this run found — restorable or not — or saved (`recordVersion(restored)`; a record from before versions shipped reads its `savedAt`). A record another run on the same key saved since is left in place; the refusal tombstone a failed login writes follows the same rule. The compare narrows the race and does not close it: neither the store nor `StorageDriver` has a conditional write |
 | `memorySessionStore()` / `storageSessionStore(() => disk('sessions'))` | where it lives. The disk is a THUNK, read per call: a scrape is declared when its module loads, and the app's disks exist only after boot ran `defineStorage()` |
 
 **A stored session is sealed.** `storageSessionStore` writes `{ "sealed": "x1.…" }` — core's

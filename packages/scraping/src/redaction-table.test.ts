@@ -36,6 +36,20 @@ const ROWS: readonly (Row & { readonly name: string })[] = [
     expected: '/login?pw=[redacted]&next=/',
   },
   {
+    name: 'percent-encoded with LOWERCASE hex escapes',
+    source: 'secret',
+    value: PASSWORD,
+    text: `/login?pw=${encodeURIComponent(PASSWORD).replace(/%[0-9A-F]{2}/g, (e) => e.toLowerCase())}&next=/`,
+    expected: '/login?pw=[redacted]&next=/',
+  },
+  {
+    name: "the value's own letters stay case-sensitive — only the hex of an escape folds",
+    source: 'secret',
+    value: 'Hunter2/Pass',
+    text: 'hunter2%2fpass and Hunter2%2fPass',
+    expected: 'hunter2%2fpass and [redacted]',
+  },
+  {
     name: 'form-encoded (space as +, quote and apostrophe escaped)',
     source: 'secret',
     value: PASSWORD,
@@ -99,6 +113,13 @@ const ROWS: readonly (Row & { readonly name: string })[] = [
     expected: 'target [redacted] closed',
   },
   {
+    name: 'an ALPHABETIC browser id in a devtools path, alone',
+    source: 'url',
+    value: 'ws://browser.test:9222/devtools/browser/abcdefghijklmnopqrstuvwx',
+    text: 'target abcdefghijklmnopqrstuvwx gone; devtools browser page',
+    expected: 'target [redacted] gone; devtools browser page',
+  },
+  {
     name: 'a short value under a credential-named key',
     source: 'url',
     value: CDP_URL,
@@ -111,6 +132,21 @@ const ROWS: readonly (Row & { readonly name: string })[] = [
     value: CDP_URL,
     text: '<p>stealth is true; residential proxy; region eu; devtools browser</p>',
     expected: '<p>stealth is true; residential proxy; region eu; devtools browser</p>',
+  },
+  {
+    name: 'a key that merely CONTAINS a credential word is an ordinary key',
+    source: 'url',
+    value:
+      'wss://p.test/c?token=tok_live_9f8e7d6c5b4a3210&keyboard=residential&monkey=banana&passage=narrow',
+    text: 'residential banana narrow',
+    expected: 'residential banana narrow',
+  },
+  {
+    name: 'credential words as delimited or camelCase components still count',
+    source: 'url',
+    value: 'wss://p.test/c?api_key=k3y9&accessToken=t0k3n&X-Amz-Signature=s1gn&sessionId=s3ss',
+    text: 'k3y9 t0k3n s1gn s3ss',
+    expected: '[redacted] [redacted] [redacted] [redacted]',
   },
   {
     name: 'a proxy exit password, and not its username',

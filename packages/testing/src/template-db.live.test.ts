@@ -9,41 +9,52 @@ import { acquireWorkerDatabase, dropSql } from './template-db';
 const adminUrl = Bun.env['TEST_DATABASE_URL'] ?? '';
 
 /**
- * A migration that holds a session on the template past Postgres' 5 s wait: a real migrator over
- * a large schema, or one stalled on a lock of its own.
+ * Two workers whose interleaving is forced by SIGNALS, never by a delay: a worker that reaches its
+ * DROP after leaving the template's lock waits until the other worker's migration holds a session
+ * on the template — the window a busy server opens. A worker that drops inside the lock never waits.
+ * The migration holds its session past Postgres' 5 s wait (`pg_sleep(6)`, server-side).
  */
-const slowMigrate = async (url: string): Promise<void> => {
-  const sql = new Bun.SQL(url);
-  try {
-    await sql.unsafe('CREATE TABLE IF NOT EXISTS probe (id int)');
-    await sql.unsafe('SELECT pg_sleep(6)');
-  } finally {
-    await sql.close();
-  }
-};
-
-/**
- * Bun.SQL over one admin URL, with latency before the worker's own DROP: the time between leaving
- * the template's lock and starting the clone, which a busy server stretches. Made wide, not made up.
- */
-const laggingConnect = (url: string): SqlRunner => {
-  const sql = new Bun.SQL(url);
+function race(): { migrate: (url: string) => Promise<void>; connect: (url: string) => SqlRunner } {
+  let sessions = 0;
+  let secondOpen: () => void = () => undefined;
+  const bothOpen = new Promise<void>((resolve) => {
+    secondOpen = resolve;
+  });
   return {
-    exec: async (statement) => {
-      if (statement.startsWith('DROP DATABASE')) await Bun.sleep(500);
-      await sql.unsafe(statement);
+    async migrate(url) {
+      const sql = new Bun.SQL(url);
+      try {
+        await sql.unsafe('CREATE TABLE IF NOT EXISTS probe (id int)');
+        sessions += 1;
+        if (sessions === 2) secondOpen();
+        await sql.unsafe('SELECT pg_sleep(6)');
+      } finally {
+        await sql.close();
+      }
     },
-    close: () => sql.close(),
+    connect(url) {
+      const sql = new Bun.SQL(url);
+      let unlocked = false;
+      return {
+        exec: async (statement) => {
+          if (statement.startsWith('DROP DATABASE') && unlocked) await bothOpen;
+          await sql.unsafe(statement);
+          if (statement.startsWith('SELECT pg_advisory_unlock')) unlocked = true;
+        },
+        close: () => sql.close(),
+      };
+    },
   };
-};
+}
 
 describe.skipIf(adminUrl === '')('live · template-db under concurrent workers', () => {
   test('two workers acquiring at once both get their clone', async () => {
     const template = `ultimate_tpl_race_${process.pid}`;
+    const { migrate, connect } = race();
     const acquire = (worker: number): Promise<WorkerDatabase> =>
       acquireWorkerDatabase(
-        { adminUrl, templateName: template, migrate: slowMigrate },
-        { env: { ULTIMATE_TEST_WORKER: String(worker) }, connect: laggingConnect },
+        { adminUrl, templateName: template, migrate },
+        { env: { ULTIMATE_TEST_WORKER: String(worker) }, connect },
       );
     const settled = await Promise.allSettled([acquire(1), acquire(2)]);
     const admin = new Bun.SQL(adminUrl);

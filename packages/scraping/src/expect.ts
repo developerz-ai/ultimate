@@ -67,8 +67,9 @@ export function maxDropFraction(scrape: string, value: number): number {
   const fraction = finiteOption('the scrape expect', 'maxDrop', value);
   assert(
     fraction >= 0 && fraction < 1,
-    `scrape "${scrape}" declares expect.maxDrop: ${String(fraction)}, and maxDrop is a fraction of the trailing median from 0 up to but not including 1 — at 1 or above no yield is ever under the line and the alarm can never fire`,
-    `write the drop as a fraction on scrape("${scrape}") — expect: { maxDrop: 0.5 } allows half`,
+    `scrape "${scrape}" declares expect.maxDrop: ${String(fraction)}, and maxDrop is a fraction of the trailing median from 0 up to but not including 1 — at 1 or above no yield is ever under the line and the alarm can never fire; write it as a fraction, expect: { maxDrop: 0.5 } allows half`,
+    // Lists every declaration outside [0, 1) — static, so no declared value reaches a shell.
+    "grep -rnE --include='*.ts' 'maxDrop: *(-|[1-9]|1\\.)' .",
   );
   return fraction;
 }

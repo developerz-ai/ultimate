@@ -54,7 +54,13 @@ describe(testName('unit', 'decodeEntities'), () => {
     expect(decodeEntities('&apos;&#65;&#x42;')).toBe("'AB");
   });
 
-  test('an unknown name or an out-of-range code point is left as written', () => {
-    expect(decodeEntities('&nbsp; &#x110000; & alone')).toBe('&nbsp; &#x110000; & alone');
+  test('an unknown name is left as written', () => {
+    expect(decodeEntities('&nbsp; & alone')).toBe('&nbsp; & alone');
+  });
+
+  test('zero, a surrogate and an out-of-range code point are U+FFFD, as a browser parses them', () => {
+    expect(decodeEntities('&#0;|&#xD800;|&#xdfff;|&#x110000;|&#99999999999;')).toBe(
+      '\uFFFD|\uFFFD|\uFFFD|\uFFFD|\uFFFD',
+    );
   });
 });

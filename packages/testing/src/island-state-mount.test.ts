@@ -131,7 +131,7 @@ const FILE = 'apps/web/site/slow.island.tsx';
 const states = defineIslandStates({ island: FILE, states: [{ id: 'idle', title: 'idle', props: {} }] });
 let release;
 const gate = new Promise((resolve) => { release = resolve; });
-const chunk = (name) => ({ chunks: [{ file: FILE, code: 'export function mount(el) { globalThis.__mounted = (globalThis.__mounted ?? 0) + 1; el.textContent = ' + JSON.stringify(name) + '; }' }] });
+const chunk = (name) => ({ chunks: [{ file: FILE, code: 'export function mount(el) { globalThis.__onMounted?.(); el.textContent = ' + JSON.stringify(name) + '; }' }] });
 describeIslandState(states, 'idle', { build: () => gate.then(() => chunk('short')), root: '/a', timeoutMs: 20 }, (mounted) => {
   test('short', () => { mounted(); });
 });
@@ -140,13 +140,14 @@ describeIslandState(states, 'idle', { build: async () => chunk('long'), root: '/
 });
 // The short block's mount resolves AFTER its deadline and its afterAll: it must not stay installed.
 test('nothing is left installed', async () => {
-  const before = globalThis.__mounted;
+  // The island signals its own mount; a mount that never comes fails on this test's deadline.
+  const mounted = new Promise((resolve) => { globalThis.__onMounted = resolve; });
   release();
-  while (globalThis.__mounted === before) await Bun.sleep(1);
+  await mounted;
   // The late mount's own continuation disposes it: every microtask drains before a macrotask.
   await new Promise((resolve) => setImmediate(resolve));
   if ('document' in globalThis) process.exit(4);
-});
+}, 5000);
 `;
 
 test('timeoutMs is the deadline of the mount, build included', async () => {

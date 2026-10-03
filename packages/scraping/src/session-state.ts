@@ -39,6 +39,13 @@ export interface SessionState extends SessionSnapshot {
   /** ISO 8601. What a `maxAge` on reuse is measured against. */
   readonly savedAt: string;
   /**
+   * Unique per save — what a burn or a tombstone compares to decide whether the record is still
+   * the one a run saw (`auth.ts`'s `stillSeen`). Never `savedAt`: two saves in one millisecond, or
+   * on one frozen clock, share it. Absent on a record written before it existed; `recordVersion`
+   * reads `savedAt` for that one.
+   */
+  readonly version?: string | undefined;
+  /**
    * ISO 8601, set when this site REFUSED these credentials — and the reason the record survives
    * the failure instead of being deleted with it.
    *
@@ -309,6 +316,7 @@ export function parseSessionState(raw: unknown, key: string): SessionState | und
   return {
     key,
     savedAt: value.savedAt,
+    ...(typeof value.version === 'string' ? { version: value.version } : {}),
     ...(typeof value.refusedAt === 'string' ? { refusedAt: value.refusedAt } : {}),
     cookies: value.cookies.flatMap((cookie: unknown) => toCookie(cookie) ?? []),
     headers: value.headers ?? {},
@@ -317,3 +325,6 @@ export function parseSessionState(raw: unknown, key: string): SessionState | und
     origin: value.origin ?? '',
   };
 }
+
+/** The identity a conditional burn or tombstone compares: the record's version, else its `savedAt`. */
+export const recordVersion = (state: SessionState): string => state.version ?? state.savedAt;

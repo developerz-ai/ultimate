@@ -1037,17 +1037,22 @@ Tier 5 — testing (slice 11).
 
 - **BREAKING — `describeApp`'s `app()` read before boot is `X_TEST_APP_NOT_BOOTED`.** Called while
   the `describe` block is still registering, before its `beforeAll`, the accessor threw a bare
-  `ReferenceError`; it throws an `UltimateError`. A test that asserted `toBeInstanceOf(ReferenceError)`
-  asserts `toBeUltimateError('X_TEST_APP_NOT_BOOTED')`; read `app()` inside a `test` body.
+  `ReferenceError`; it throws an `UltimateError`. A test that asserted
+  `toBeInstanceOf(ReferenceError)` asserts `toBeUltimateError('X_TEST_APP_NOT_BOOTED')`; read
+  `app()` inside a `test` body.
 - **BREAKING — `assertDeterministic` compares core's `canonicalJson` forms.** Key order is no
   longer a difference; a BigInt, a Date or a Map result is compared, where `JSON.stringify` threw a
-  bare `TypeError` or folded it to `{}`; a cyclic result is compared by `Bun.deepEquals`. The
-  `X_TEST_NONDETERMINISTIC` cause shows the canonical forms. A test that relied on key order
-  failing passes now: assert the order itself.
+  bare `TypeError` or folded it to `{}`; a cyclic result is compared by `Bun.deepEquals`. A
+  top-level `undefined`, function or symbol is compared by its type, so `undefined` then `null` is
+  `X_TEST_NONDETERMINISTIC` — canonical JSON spells all three `null`. The cause shows the compared
+  forms, and the `fix:` is the call to paste:
+  `assertDeterministic('…', () => { installDeterminism(); return body(); })`. A test that relied on
+  key order failing passes now: assert the order itself.
 - **BREAKING — `frozenClock(now, body)` announces both moves.** `onClockMoved` listeners fire once
   entering and once restoring, as `setFrozenClock` already announced, so the frozen scheduler's
-  lease renewals fire inside and after the body. A test that counted announcements counts two more
-  per call.
+  lease renewals fire inside and after the body. A listener that throws on entry rejects the call:
+  the body does not run and the earlier instant is restored. A test that counted announcements
+  counts two more per call.
 - **BREAKING — `mountIsland` loads each mount from its own scratch directory.** Two mounts of
   byte-identical chunks are two module instances; they shared module state. The directory is
   removed on dispose, when the mount throws, and — for a mount nobody disposed — at the next file
@@ -1078,20 +1083,28 @@ Tier 5 — scraping (slice 11).
   `cookies()` answered an empty jar, and `restore()` of a session holding cookies on one with no
   `setCookie()` dropped them — the HTTP leg and a persisted session ran signed out. Use a
   puppeteer-core that exposes both, or set `auth: { reuse: false }` on the `scrape()` definition.
-- **BREAKING — `burnSession(plan, seen)` takes the `savedAt` of the session the run used.** A
-  record another run saved since is kept, and a refused login's tombstone is not written over it
-  either — two runs on one key, and the one that failed destroyed the session the other had just
-  persisted. TS2554 at a one-argument call: pass `restored?.savedAt`. The compare is a load
-  then a write — the store has no compare-and-set — so it narrows the race and does not close it.
+- **BREAKING — `burnSession(plan, seen)` takes the version of the record the run used.**
+  `SessionState` gains an optional `version`, a random UUID written on every save and every
+  refusal tombstone; a record without one is identified by its `savedAt`. A record another run
+  saved since is kept, and a refused login's tombstone is not written over it either — two runs on
+  one key, and the one that failed destroyed the session the other had just persisted. A refused
+  login now also tombstones over a record the run found but did not reuse (`reuse: false`, or past
+  `maxAge`); it compared against "nothing" and let the rejected credential through again. TS2554
+  at a one-argument call: pass `recordVersion(restored)`. A hand-written
+  `ScrapeSessionStore` keeps `version` as it was handed. The compare is a load then a write — the
+  store has no compare-and-set — so it narrows the race and does not close it.
 - **BREAKING — `expect.maxDrop` outside `[0, 1)` is `X_INVARIANT` at `scrape()`.** `1` or above
   — `50`, the percent habit — put the alarm line at or below zero, so it never fired; a negative
   one fired on a run that matched its baseline. Write `50` as `0.5`.
 - **BREAKING — `urlSecretValues` conceals only credential-shaped query values and path
-  segments.** A query key matching `token|key|secret|auth|sig|pass|pwd|cred|session|jwt|bearer`,
-  or a value of 16+ characters mixing letters and digits with no whitespace; it concealed every
-  query value and the whole path, so ordinary words were masked in logs. `redactSecrets` also
-  redacts each secret's percent-encoded, form-encoded and HTML-escaped spellings, which passed
-  through. A snapshot of a redacted log or artifact changes.
+  segments.** A query value whose key, split on `_`, `-`, `.` and camelCase, holds a credential
+  word (`token`, `key`, `apiKey`, `secret`, `auth`, `sig`, `password`, `session`, `jwt`, `bearer`
+  and their kin — `apiKey` is one, `keyboard` is not); a value or segment of 16+ characters mixing
+  letters and digits with no whitespace; and the id after `/devtools/<browser|page>/`. It
+  concealed every query value and the whole path, so ordinary words were masked in logs.
+  `redactSecrets` also redacts each secret's percent-encoded — hex escapes in either case —
+  form-encoded and HTML-escaped spellings, which passed through. A snapshot of a redacted log or
+  artifact changes.
 - **BREAKING — on the HTTP leg a declared header replaces the session's of the same name, whatever
   its case.** Names were compared case-sensitively and `Headers` appends a second spelling: a
   declared `User-Agent: Mine` beside the session's `user-agent` went out as `BrowserUA, Mine`, and
@@ -1555,7 +1568,8 @@ Tier 5 — testing, scraping (slice 11).
 
 - **testing:** `mountIsland`'s template parser reads `<!>` and `<!-- … -->` as one empty node, and
   decodes `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;` and numeric references once, in text and in
-  attribute values — what a browser hands an island's `textContent` and `getAttribute`. Solid's
+  attribute values, as a browser hands them to an island's `textContent` and `getAttribute`; a
+  reference to 0, a surrogate or past U+10FFFF is U+FFFD, as the HTML parser answers it. Solid's
   `<!>` marker was text merged into its neighbours, so a `nextSibling` walk landed one node short,
   and an entity stayed escaped. An unknown name is left as written.
 - **testing:** the per-worker template database drops and clones inside the advisory lock. Outside

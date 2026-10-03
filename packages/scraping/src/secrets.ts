@@ -127,6 +127,26 @@ function spellingsOf(value: string): readonly string[] {
   ];
 }
 
+const REGEX_SPECIAL = /[.*+?^${}()|[\]\\/]/g;
+
+/**
+ * One spelling as a pattern: literal throughout, except that the hex digits of a `%XX` escape
+ * match in either case — `%2F` and `%2f` are the same byte, and clients emit both. The value's own
+ * letters stay case-sensitive: `Hunter2` is not `hunter2`.
+ */
+const spellingPattern = (spelling: string): RegExp =>
+  new RegExp(
+    spelling
+      .split(/(%[0-9A-Fa-f]{2})/)
+      .map((part, index) =>
+        index % 2 === 1
+          ? part.replace(/[A-Fa-f]/g, (digit) => `[${digit.toUpperCase()}${digit.toLowerCase()}]`)
+          : part.replace(REGEX_SPECIAL, '\\$&'),
+      )
+      .join(''),
+    'g',
+  );
+
 /**
  * Redaction BY VALUE, over the text this package hands back or persists. Name-based redaction only
  * catches a secret travelling under a name somebody remembered to list, and a password pasted into
@@ -158,7 +178,7 @@ export function redactSecrets(text: string, secrets: ScrapeSecrets | undefined):
     ),
   ].sort((a, b) => b.length - a.length);
   let out = text;
-  for (const value of values) out = out.split(value).join(SECRET_PLACEHOLDER);
+  for (const value of values) out = out.replace(spellingPattern(value), SECRET_PLACEHOLDER);
   return out;
 }
 
