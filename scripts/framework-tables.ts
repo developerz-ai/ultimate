@@ -30,7 +30,7 @@
 
 import { FRAMEWORK_SCHEMA } from '@ultimat3/cli';
 import { collectSourceFiles, type SourceFile } from './boundaries';
-import { parseScriptArgs } from './lib/args';
+import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { packageOf } from './lib/ratchet';
@@ -169,7 +169,7 @@ if (import.meta.main) {
         // which, and a reader reconciling them had no way to know either was right.
         declaredOccurrences: declared.length,
         declaredRelations: new Set(declared.map((one) => one.table)).size,
-        declared: args.flags.get('explain') === true ? declared : declared.length,
+        declared: flagBool(args, 'explain') ? declared : declared.length,
         applied,
       },
     },

@@ -14,10 +14,11 @@
 //   bun run scripts/registry-audit.ts [--json]
 
 import { parseScriptArgs } from './lib/args';
-import type { Finding } from './lib/log';
+import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { listWorkspaces, publishOrder } from './lib/workspaces';
+import type { Workspace } from './lib/workspaces';
+import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/workspaces';
 
 export const REGISTRY = 'https://registry.npmjs.org';
 
@@ -205,24 +206,33 @@ export const findingFor = (state: PublishState): Finding | undefined =>
 export const registryFindings = (states: readonly PublishState[]): readonly Finding[] =>
   states.map(findingFor).filter((finding): finding is Finding => finding !== undefined);
 
-if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const targets = publishOrder(await listWorkspaces(repoRoot()));
-  const states = await auditRegistry(targets);
-  const findings = registryFindings(states);
+/**
+ * The whole audit as one result, the floor first: a tree that enumerates no publishable workspace
+ * answered "0/0 … every one attested", `ok: true` — a perfect registry and a wrong directory read
+ * the same.
+ */
+export async function registryAuditResult(
+  workspaces: readonly Workspace[],
+  fetcher: RegistryFetch = defaultFetch,
+): Promise<ScriptResult> {
+  const targets = publishOrder(workspaces);
+  const states = await auditRegistry(targets, fetcher);
+  const findings = [...publishFloorFindings(workspaces), ...registryFindings(states)];
   const attested = states.filter((state) => state.kind === 'ok').length;
   const version = targets[0]?.version ?? 'unknown';
-  report(
-    {
-      ok: findings.length === 0,
-      script: 'registry-audit',
-      summary:
-        findings.length === 0
-          ? `${attested}/${states.length} publishable packages are on npm at ${version}, every one attested`
-          : `${findings.length} registry gap(s) across ${states.length} publishable packages`,
-      findings,
-      data: { registry: REGISTRY, states },
-    },
-    args.json,
-  );
+  return {
+    ok: findings.length === 0,
+    script: 'registry-audit',
+    summary:
+      findings.length === 0
+        ? `${attested}/${states.length} publishable packages are on npm at ${version}, every one attested`
+        : `${findings.length} registry gap(s) across ${states.length} publishable packages`,
+    findings,
+    data: { registry: REGISTRY, states },
+  };
+}
+
+if (import.meta.main) {
+  const args = parseScriptArgs(Bun.argv.slice(2));
+  report(await registryAuditResult(await listWorkspaces(repoRoot())), args.json);
 }

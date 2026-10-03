@@ -5,8 +5,9 @@
 // wrong place. So every `budget.js` / `budget.lcp` literal in a route file that is larger than in
 // `origin/main`'s TIP needs a comment DIRECTLY above the budget line carrying
 // `measured: <N> B` (`<N> ms` for `lcp`) and `why:` — greppable tokens, the shape `node-imports`'
-// `why:` takes. No raise buys an axiom 6 exception: `site/` importing `app/` stays a `boundaries`
-// error whatever the number says.
+// `why:` takes. The comment must be NEW (not the one the base already had above the budget, which
+// measured the old number) and the measurement must fit the new budget. No raise buys an axiom 6
+// exception: `site/` importing `app/` stays a `boundaries` error whatever the number says.
 //
 // The tip, not the merge-base: CI then needs one commit (`FETCH_MAIN`, `--depth=1`) instead of the
 // whole history a merge-base walks. A branch behind main compares against main's CURRENT budget,
@@ -90,10 +91,18 @@ export interface RouteVersions {
 /** The unit a stated measurement is written in: bytes for `js`, milliseconds for `lcp`. */
 const unitOf = (key: BudgetKey): string => (key === 'js' ? 'B' : 'ms');
 
-/** Whether the comment above states this raise: a number in the key's unit, and a reason. */
-export const states = (comment: string, key: BudgetKey): boolean =>
-  new RegExp(String.raw`\bmeasured:\s*\d[\d,_]*\s*${unitOf(key)}\b`).test(comment) &&
-  /\bwhy:/.test(comment);
+/**
+ * Whether the comment above states this raise: a number in the key's unit that FITS the new budget
+ * (`ceiling`, in that unit), and a reason. A measurement above the budget it justifies is a number
+ * the budget step would already refuse, so it states nothing.
+ */
+export const states = (comment: string, key: BudgetKey, ceiling: number): boolean => {
+  const measured = new RegExp(String.raw`\bmeasured:\s*(\d[\d,_]*)\s*${unitOf(key)}\b`).exec(
+    comment,
+  );
+  if (measured === null || !/\bwhy:/.test(comment)) return false;
+  return Number((measured[1] as string).replace(/[,_]/g, '')) <= ceiling;
+};
 
 export function checkBudgetRaises(routes: readonly RouteVersions[]): readonly BudgetRaise[] {
   const raises: BudgetRaise[] = [];
@@ -103,6 +112,10 @@ export function checkBudgetRaises(routes: readonly RouteVersions[]): readonly Bu
     const was = readBudget(route.base);
     if (now === undefined || was === undefined) continue;
     const comment = statedAbove(route.now, now.line);
+    // The sentence the base already carried measured the OLD number, so it states no raise.
+    const inherited = comment !== '' && comment === statedAbove(route.base, was.line);
+    const ceiling = (key: BudgetKey): number =>
+      key === 'js' ? (now.js?.bytes ?? 0) : (now.lcp ?? 0);
     const found: BudgetRaise[] = [];
     if (now.js !== undefined && was.js !== undefined && now.js.bytes > was.js.bytes) {
       found.push({
@@ -122,7 +135,9 @@ export function checkBudgetRaises(routes: readonly RouteVersions[]): readonly Bu
         now: `${now.lcp}`,
       });
     }
-    raises.push(...found.filter((raise) => !states(comment, raise.key)));
+    raises.push(
+      ...found.filter((raise) => inherited || !states(comment, raise.key, ceiling(raise.key))),
+    );
   }
   return raises;
 }
@@ -133,7 +148,7 @@ export function raiseFinding(raise: BudgetRaise, base: string): Finding {
   return {
     code: 'X_BUDGET_RAISE_UNSTATED',
     at: `${raise.file}:${raise.line}`,
-    cause: `${raise.file}:${raise.line} raises budget.${raise.key} from ${raise.was} to ${raise.now} since ${base} and the comment above it states no measured number and no reason`,
+    cause: `${raise.file}:${raise.line} raises budget.${raise.key} from ${raise.was} to ${raise.now} since ${base} and the comment above it states no new measured number within ${raise.now} and no reason — a comment ${base} already had measured the old budget`,
     fix: `edit ${raise.file}:${raise.line} — add // measured: <N> ${unit} (${measure}) — why: <the function it buys> directly above the budget line, or restore ${raise.key}: ${raise.was}`,
   };
 }

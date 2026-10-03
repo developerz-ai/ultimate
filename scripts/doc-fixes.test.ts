@@ -54,6 +54,25 @@ describe('a Fix cell that cannot be run as written', () => {
   });
 });
 
+describe('a Fix cell passing a positional its command does not take', () => {
+  const routes: CommandCatalog = {
+    ...catalog,
+    specs: [
+      ...catalog.specs,
+      { name: 'routes', summary: '', usage: 'x routes [--surface site|app] [--json]' },
+    ],
+  };
+  const arity = (fix: string) => checkDocFixes({ markdown: table(fix), catalog: routes });
+
+  test('`x routes list --json` is the finding — the retired spelling the 404 fix lines shipped', () => {
+    const [gap] = arity('`x routes list --json`');
+    expect(gap?.kind).toBe('unrunnable');
+    expect(gap?.problem).toContain('cites "x routes list"');
+    expect(gap?.problem).toContain('takes no positional word');
+    expect(arity('`x routes --json`')).toEqual([]);
+  });
+});
+
 describe('a cause cell that repeats its title', () => {
   const page = (means: string, cause: string) =>
     [

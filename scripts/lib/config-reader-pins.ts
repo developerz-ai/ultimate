@@ -5,7 +5,9 @@
 // A reason, not a boolean, deliberately: "pinned" with no sentence is a waiver, and the twelve keys
 // this rule exists for (`jobs.driver`, `realtime.heartbeatMs`, `database.urlEnv/poolSize/schema`,
 // `pwa.installPrompt`, `auth.afterSignInPath`, `ai.modelEnv`, …) would each have been waived by
-// whoever added them. The sentence has to name a READER — a file, or a surface outside this repo.
+// whoever added them. The sentence has to name a READER — a file, or a surface outside this repo —
+// or, where there is none, the decision the key is waiting on. A sentence naming APP code is checked
+// against both tracked apps (`config-app-readers.ts`, `X_CONFIG_READER_APP_UNREAD`).
 //
 // Shrink it with `bun run scripts/config-readers.ts --unpin <leaf>[,<leaf>]`, which drops a key
 // whose reader has landed and refuses to drop one that still has none.
@@ -23,9 +25,9 @@ export const CONFIG_PINS_FILE = 'scripts/lib/config-reader-pins.ts';
  */
 export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
   defaultTimeZone:
-    "read by APP code and by `config.ts`'s own validator (`isIanaZoneName`). The framework may not read it — CLAUDE.md forbids an ambient time zone, so every framework format takes an explicit `timeZone`; this key is the value an app passes.",
+    "read by NOTHING but `config.ts`'s own validator (`isIanaZoneName`): no package reads it (CLAUDE.md forbids an ambient time zone) and neither tracked app does — both only write it in app.config.ts. Delete-or-wire is an owner decision, plan 101 slice 15 row 6, asked and unanswered; this row is that debt.",
   defaultCurrency:
-    "read by APP code and by `config.ts`'s validator (`CURRENCY_RE`). Same shape as `defaultTimeZone`: `Money` always carries its own currency, so the framework never defaults one for you.",
+    "read by NOTHING but `config.ts`'s validator (`CURRENCY_RE`): `Money` carries its own currency, so no package defaults one, and neither tracked app reads it outside app.config.ts. Same owner decision as `defaultTimeZone`, plan 101 slice 15 row 6.",
 };
 
 /**

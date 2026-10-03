@@ -39,7 +39,7 @@
 // ZERO-PINNED, so it holds no pin table — the 24-site sweep landed with the rule. A pin, if one is
 // ever needed, is an `OrderPin` passed in as `pins`, and it must carry its reason.
 
-import { parseScriptArgs } from './lib/args';
+import { flagBool, parseScriptArgs } from './lib/args';
 import { balancedClose } from './lib/balanced-paren';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -57,11 +57,13 @@ const SCRIPT = 'index-of-order';
  * this rule reported "0 at-risk sites" having scanned no file at all. One pattern per entry needs
  * no such judgement.
  */
-const TEST_GLOBS = [
-  'packages/*/src/**/*.test.ts',
-  'scripts/**/*.test.ts',
-  'examples/**/*.test.ts',
-  'dummy/**/*.test.ts',
+export const TEST_GLOBS = [
+  'packages/*/src/**/*.test.{ts,tsx}',
+  // `e2e/` beside `src/` holds suites too, and a `.tsx` suite asserts orderings like any other.
+  'packages/*/e2e/**/*.test.{ts,tsx}',
+  'scripts/**/*.test.{ts,tsx}',
+  'examples/**/*.test.{ts,tsx}',
+  'dummy/**/*.test.{ts,tsx}',
 ] as const;
 
 const FROM_INDEX = /\b(?:indexOf|findIndex)\s*\(/;
@@ -364,7 +366,7 @@ if (import.meta.main) {
         data: {
           files,
           sites: sites.length,
-          unguarded: args.flags.get('explain') === true ? unguarded : unguarded.length,
+          unguarded: flagBool(args, 'explain') ? unguarded : unguarded.length,
         },
       },
       args.json,

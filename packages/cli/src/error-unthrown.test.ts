@@ -1,5 +1,6 @@
 // A registered code no shipped source constructs, against a fixture monorepo on disk: reported
-// unless its reference row says, in words, that nothing throws it.
+// unless it is LISTED as unthrown (`UNTHROWN_CODES`) or sits under the reserved heading. A row's
+// prose waives nothing — a sentence that happens to say "not thrown" is not a decision.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive delete; `rm(…, { force: true })` removes a root that may not exist.
@@ -10,6 +11,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path API — nothing native joins a path.
 import { join } from 'node:path';
 import { checkErrorCodesThrown, declaredUnthrown } from './error-unthrown';
+import { UNTHROWN_CODES } from './unthrown-codes';
 
 // Under the git-ignored fixture parent, so a crashed run leaves nothing a status would show.
 const ROOT = join(tmpdir(), `x-error-unthrown-${process.pid}`);
@@ -59,20 +61,51 @@ afterEach(async () => {
 describe('checkErrorCodesThrown', () => {
   test('a registered code only a test and a script name is X_ERROR_CODE_UNTHROWN', async () => {
     await tree('| `X_DEMO_GHOST` | the ghost |');
-    const findings = await checkErrorCodesThrown(ROOT, PAGE);
+    const findings = await checkErrorCodesThrown(ROOT, PAGE, new Set());
 
     expect(findings.map((finding) => finding.code)).toEqual(['X_ERROR_CODE_UNTHROWN']);
     expect(findings[0]?.cause).toContain('X_DEMO_GHOST');
-    expect(findings[0]?.fix).toContain('thrown by nothing');
+    expect(findings[0]?.cause).toContain('Add it to UNTHROWN_CODES');
+    expect(findings[0]?.fix).toBe('x errors explain X_ERROR_CODE_UNTHROWN --json');
   });
 
-  test('its row saying "thrown by nothing" is the declaration, and silences it', async () => {
+  test('its row merely SAYING "thrown by nothing" waives nothing — the prose match is gone', async () => {
     await tree('| `X_DEMO_GHOST` | **registered, thrown by nothing since 21.0.0** |');
-    expect(await checkErrorCodesThrown(ROOT, PAGE)).toEqual([]);
+    const findings = await checkErrorCodesThrown(ROOT, PAGE, new Set());
+    expect(findings.map((finding) => finding.code)).toEqual(['X_ERROR_CODE_UNTHROWN']);
+    expect(findings[0]?.cause).toContain('UNTHROWN_CODES in packages/cli/src/unthrown-codes.ts');
+  });
+
+  test('a code in the listed set is the declaration, and silences it', async () => {
+    await tree('| `X_DEMO_GHOST` | **registered, thrown by nothing since 21.0.0** |');
+    expect(await checkErrorCodesThrown(ROOT, PAGE, new Set(['X_DEMO_GHOST']))).toEqual([]);
+  });
+
+  test('a listed code that is thrown again is a stale listing; an unregistered name is inert', async () => {
+    await tree('| `X_DEMO_GHOST` | the ghost |');
+    const listed = new Set(['X_DEMO_GHOST', 'X_DEMO_THROWN', 'X_DEMO_NEVER']);
+    const findings = await checkErrorCodesThrown(ROOT, PAGE, listed);
+    expect(findings.map((finding) => [finding.code, finding.cause.split(' ')[0]])).toEqual([
+      ['X_ERROR_CODE_UNTHROWN_STALE', 'X_DEMO_THROWN'],
+    ]);
+    expect(findings[0]?.cause).toContain('delete it from UNTHROWN_CODES');
+    expect(findings[0]?.fix).toBe('x errors explain X_ERROR_CODE_UNTHROWN_STALE --json');
+  });
+
+  test('the shipped list is the five codes this repo retired without a thrower', () => {
+    // `X_RPC_FAILED`'s row says "thrown by nothing", and `@ultimat3/action` still constructs it in a
+    // class kept exported — so it was never the prose waiver that kept it green, and it is not listed.
+    expect([...UNTHROWN_CODES].sort()).toEqual([
+      'X_DB_STUDIO_FAILED',
+      'X_LIVE_CLIENT_MISSING',
+      'X_PWA_SYNC_FLUSH_FAILED',
+      'X_PWA_SYNC_INCOMPLETE',
+      'X_QUERY_NOT_SUBSCRIBABLE',
+    ]);
   });
 
   test('a code under the reserved heading is declared unthrown by where it sits', () => {
-    const page = '| `X_A` | live |\n## Reserved codes\n| `X_B` | reserved |\n';
+    const page = '| `X_A` | not thrown |\n## Reserved codes\n| `X_B` | reserved |\n';
     expect([...declaredUnthrown(page)]).toEqual(['X_B']);
   });
 });

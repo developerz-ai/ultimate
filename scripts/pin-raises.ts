@@ -1,12 +1,14 @@
 #!/usr/bin/env bun
 // A ratchet pin that goes UP needs its reason in the same diff — `budget-raises`' rule, applied to
-// every `scripts/lib/*-pins.ts` table. History shows why: `secret-compare` went 53 → 63,
-// `node-import-pins` 3 → 12 and `proto-index-pins` 1 → 9 with nothing on the row saying why, and a
-// ratchet that only rises in silence is a list of findings nobody is asked to read.
+// every `scripts/lib/*-pins.ts` table and to the ratchets kept inside scripts (`PIN_FILES`). History
+// shows why: `secret-compare` went 53 → 63, `node-import-pins` 3 → 12 and `proto-index-pins` 1 → 9
+// with nothing on the row saying why, and a ratchet that only rises in silence is a list of
+// findings nobody is asked to read.
 //
-// A row higher than at `origin/main`'s tip (absent there reads as 0) needs a `why:` token on the
-// row or on the line directly above it, else `X_PIN_RAISE_UNSTATED`. A checkout that cannot get
-// `origin/main` is refused (`X_PIN_BASE_MISSING`), never passed.
+// A row higher than at `origin/main`'s tip (absent there reads as 0) needs a `why:` on the row or in
+// the comment block directly above it — and one the base did not already have for that row, since
+// the sentence written for the old number licenses nothing about the new one. Else
+// `X_PIN_RAISE_UNSTATED`. A checkout without `origin/main` is refused (`X_PIN_BASE_MISSING`).
 //
 //   bun run scripts/pin-raises.ts [--json]
 
@@ -19,10 +21,11 @@ import { BASE_REF, baseRef, FETCH_MAIN, textAt } from './lib/base-ref';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { importPinSource, pinRows } from './lib/pin-rows';
+import type { ScriptPinTable } from './lib/pin-tables';
+import { PIN_GLOB, SCRIPT_PIN_TABLES, scriptTableRows, tableDeclaration } from './lib/pin-tables';
 import { repoRoot } from './lib/run';
 
 const SCRIPT = 'pin-raises';
-export const PIN_FILES = 'scripts/lib/*-pins.ts';
 
 export interface PinTableVersions {
   readonly path: string;
@@ -30,6 +33,10 @@ export interface PinTableVersions {
   readonly now: ReadonlyMap<string, number>;
   /** `undefined` when the file does not exist at the base — every row is then a raise from 0. */
   readonly base: ReadonlyMap<string, number> | undefined;
+  /** The file's text at the base, so a raise's `why:` can be compared with the one it had. */
+  readonly baseSource?: string;
+  /** Where a row sits in this file; `rowLine` when absent. */
+  readonly line?: (source: string, row: string) => number;
 }
 
 export interface PinRaise {
@@ -58,13 +65,24 @@ export function rowLine(source: string, row: string): number {
   return at === -1 ? 0 : at + 1;
 }
 
-/** The row's own lines — the key line through its closing brace — plus the line directly above. */
-export function statesWhy(source: string, line: number): boolean {
-  if (line === 0) return false;
+const COMMENT = /^(?:\/\/|\/\*|\*)/;
+
+/**
+ * What a row SAYS: the comment block directly above it plus, inside the row (key line through its
+ * closing brace), every comment and every text from a `why:` on — never the count itself, which is
+ * the one part a raise always changes. `undefined` when none of it carries a `why:`. Whitespace is
+ * collapsed so a rewrap is not a new reason.
+ */
+export function whyStatement(source: string, line: number): string | undefined {
+  if (line === 0) return undefined;
   const lines = source.split('\n');
   const head = lines[line - 1] ?? '';
   const indent = /^\s*/.exec(head)?.[0] ?? '';
-  const span = [lines[line - 2] ?? '', head];
+  const said: string[] = [];
+  for (let index = line - 2; index >= 0 && COMMENT.test((lines[index] ?? '').trim()); index -= 1) {
+    said.unshift((lines[index] ?? '').trim());
+  }
+  const span = [head];
   if (/[{[]\s*$/.test(head)) {
     for (let index = line; index < lines.length; index += 1) {
       const text = lines[index] ?? '';
@@ -72,8 +90,22 @@ export function statesWhy(source: string, line: number): boolean {
       if (text.startsWith(`${indent}}`) || text.startsWith(`${indent}]`)) break;
     }
   }
-  return span.some((text) => /\bwhy:/.test(text));
+  for (const text of span) {
+    const from = [text.indexOf('//'), text.search(/\bwhy:/)].filter((at) => at >= 0);
+    if (from.length > 0) said.push(text.slice(Math.min(...from)).trim());
+  }
+  const statement = said.join(' ').replace(/\s+/g, ' ');
+  return /\bwhy:/.test(statement) ? statement : undefined;
 }
+
+/** Stated: a `why:` is there now, and it is not the one the base had for the same row. */
+const states = (table: PinTableVersions, row: string, line: number): boolean => {
+  const now = whyStatement(table.source, line);
+  if (now === undefined) return false;
+  if (table.baseSource === undefined || table.base?.has(row) !== true) return true;
+  const at = (table.line ?? rowLine)(table.baseSource, row);
+  return whyStatement(table.baseSource, at) !== now;
+};
 
 /**
  * A table NEW since the base opens with its whole debt at once; a `why:` in the header above its
@@ -92,8 +124,8 @@ export function checkPinRaises(tables: readonly PinTableVersions[]): readonly Pi
     for (const [row, now] of table.now) {
       const was = table.base?.get(row) ?? 0;
       if (now <= was) continue;
-      const line = rowLine(table.source, row);
-      if (statesWhy(table.source, line)) continue;
+      const line = (table.line ?? rowLine)(table.source, row);
+      if (states(table, row, line)) continue;
       raises.push({ path: table.path, row, line, was, now });
     }
   }
@@ -104,17 +136,29 @@ export function raiseFinding(raise: PinRaise): Finding {
   const at = `${raise.path}:${raise.line}`;
   return {
     code: 'X_PIN_RAISE_UNSTATED',
-    cause: `${raise.path} ${raise.row} rose ${raise.was}→${raise.now} since ${BASE_REF} with no why:`,
+    cause: `${raise.path} ${raise.row} rose ${raise.was}→${raise.now} since ${BASE_REF} with no why: of its own — none on the row, or only the one ${BASE_REF} already had, which was written for ${raise.was}`,
     fix: `edit ${at} — add // why: <the reason these sites cannot be fixed yet> on that row or directly above it, or fix the new sites and lower the row back to ${raise.was}`,
     at,
   };
+}
+
+/** One script's table at one end of the diff, or `undefined` when that text does not declare it. */
+async function scriptRows(
+  spec: ScriptPinTable,
+  text: string | undefined,
+  scratch: string,
+  from: string,
+): Promise<ReadonlyMap<string, number> | undefined> {
+  const declared = text === undefined ? undefined : tableDeclaration(text, spec.table);
+  if (declared === undefined) return undefined;
+  return scriptTableRows(spec, await importPinSource(declared, scratch, from));
 }
 
 export async function readPinTables(root: string, base: string): Promise<PinTableVersions[]> {
   const scratch = `${tmpdir()}/ultimate-pin-raises-${process.pid}`;
   const tables: PinTableVersions[] = [];
   try {
-    for (const path of [...new Bun.Glob(PIN_FILES).scanSync({ cwd: root })].sort()) {
+    for (const path of [...new Bun.Glob(PIN_GLOB).scanSync({ cwd: root })].sort()) {
       const source = await Bun.file(`${root}/${path}`).text();
       const then = await textAt(root, base, path);
       tables.push({
@@ -125,6 +169,22 @@ export async function readPinTables(root: string, base: string): Promise<PinTabl
           then === undefined
             ? undefined
             : pinRows(await importPinSource(then, scratch, `${root}/${path}`)),
+        ...(then === undefined ? {} : { baseSource: then }),
+      });
+    }
+    for (const spec of SCRIPT_PIN_TABLES) {
+      const from = `${root}/${spec.path}`;
+      const source = await Bun.file(from).text();
+      const then = await textAt(root, base, spec.path);
+      tables.push({
+        path: spec.path,
+        source,
+        // A script that no longer declares its table has no rows to raise; an absent one at the
+        // base reads as a new table, exactly as a new `*-pins.ts` does.
+        now: (await scriptRows(spec, source, scratch, from)) ?? new Map(),
+        base: await scriptRows(spec, then, scratch, from),
+        ...(then === undefined ? {} : { baseSource: then }),
+        ...(spec.line === undefined ? {} : { line: spec.line }),
       });
     }
   } finally {

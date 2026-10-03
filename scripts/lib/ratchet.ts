@@ -4,7 +4,7 @@
 // `apply*Unpin`, a counts walk, a two-branch main), and the copies had drifted: three read a pin's
 // `reason` and five did not. What stays in a guard is what is its own — the scanner and the words.
 
-import { flagList, parseScriptArgs } from './args';
+import { flagBool, flagList, parseScriptArgs } from './args';
 import type { Finding } from './log';
 import { report } from './log';
 import type { SiteProbe } from './ratchet-sites';
@@ -205,7 +205,7 @@ export async function ratchetMain<S extends { readonly path: string }>(
           : `${String(gaps.length)} package(s) off the ${spec.script} ratchet`,
       findings: gaps.map(spec.findingFor),
       // `--explain` lists every site: the number a maintainer wants before lowering a pin.
-      data: { counts, ...(args.flags.get('explain') === true ? { sites } : {}) },
+      data: { counts, ...(flagBool(args, 'explain') ? { sites } : {}) },
     },
     args.json,
   );

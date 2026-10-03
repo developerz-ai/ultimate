@@ -13,7 +13,7 @@ import { frameworkVersion } from '@ultimat3/core';
 import { flagString, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { allowedTiersFor, TIERS, tierOf } from './lib/tiers';
+import { ABOVE_TABLE, allowedTiersFor, TIER_OF, TIERS, tierOf } from './lib/tiers';
 
 /**
  * The grant, copied rather than referenced. npm packs a `files` entry per package directory and
@@ -225,16 +225,32 @@ export const TIER_NUMBERS: readonly number[] = Object.keys(TIERS)
  * and `--tier 1` scaffolded "May import tiers 0-5" too, because the allowed range was derived from
  * the package NAME and a package being created is in no tier table yet.
  */
-export function tierProblem(raw: string | undefined): string | undefined {
-  if (raw === undefined) return undefined;
+export function tierProblem(raw: string | undefined, name: string): string | undefined {
+  // No flag used to fall back to `tierOf(name)`, which answers `UNLISTED_TIER` for a name in no
+  // table — a scaffold claiming "may import tiers 0-5", i.e. every package in the framework.
+  if (raw === undefined) {
+    return TIER_OF.has(name) || Object.hasOwn(ABOVE_TABLE, name)
+      ? undefined
+      : `--tier is required: ${name} is in no tier table, so it has no tier to default to`;
+  }
   if (!/^\d+$/.test(raw) || !TIER_NUMBERS.includes(Number.parseInt(raw, 10))) {
     return `--tier ${raw} is not one of ${TIER_NUMBERS.join(', ')}`;
   }
   return undefined;
 }
 
+/**
+ * The name is a directory under `packages/` and the part after `@ultimat3/`, so it is kebab-case
+ * and nothing else. Unchecked, `../../x` was joined under `packages/` and written wherever it led.
+ */
+export function nameProblem(name: string): string | undefined {
+  return /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(name)
+    ? undefined
+    : `the package name must be kebab-case (a-z, 0-9, single hyphens, a letter first), and "${name}" is not`;
+}
+
 function readTier(raw: string | undefined, name: string, json: boolean): number {
-  const problem = tierProblem(raw);
+  const problem = tierProblem(raw, name);
   if (problem !== undefined) {
     report(
       {
@@ -270,6 +286,24 @@ if (import.meta.main) {
             code: 'X_CLI_BAD_FLAG',
             cause: 'no package name given',
             fix: 'bun run scripts/new-package.ts seo --tier 1',
+          },
+        ],
+      },
+      args.json,
+    );
+  }
+  const badName = nameProblem(name);
+  if (badName !== undefined) {
+    report(
+      {
+        ok: false,
+        script: 'new-package',
+        summary: 'a package name is a kebab-case directory name',
+        findings: [
+          {
+            code: 'X_CLI_BAD_FLAG',
+            cause: badName,
+            fix: 'bun run scripts/new-package.ts my-package --tier 1',
           },
         ],
       },

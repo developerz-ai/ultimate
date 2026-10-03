@@ -132,6 +132,8 @@ describe('the real tree', () => {
     // making the rule blind — the failure mode this whole file exists against.
     expect(files).toBeGreaterThan(100);
     expect(scanned.length).toBeGreaterThan(0);
+    // The `e2e/` tree beside `src/` is tests too — `scripts/lib/corpus.ts`'s `tests` scope reads it.
+    expect([...sources.keys()].some((path) => /^packages\/[^/]+\/e2e\//.test(path))).toBe(true);
 
     expect(checkCleanup({ files: scanned, scanned: files > 0 })).toEqual([]);
   });

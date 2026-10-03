@@ -75,6 +75,62 @@ describe('collectGuards', () => {
     ]);
     expect(guards[0]?.codes).toEqual(['X_FAKE_GUARD']);
   });
+
+  test('a code raised in a scripts/lib module the guard imports is the guard’s code too', async () => {
+    const root = await repo({
+      'package.json': '{}',
+      'scripts/fake-guard.ts': [
+        "import { pair } from './lib/pairing';",
+        "import type { Shape } from './lib/shape';",
+        "import { parseScriptArgs } from './lib/args';",
+        "import { PINS } from './lib/fake-pins';",
+        "// import { x } from './lib/in-a-comment';",
+        GUARD,
+      ].join('\n'),
+      'scripts/lib/pairing.ts':
+        "import { deep } from './deep';\nexport const pair = 'X_LIB_PAIRED';\n",
+      'scripts/lib/shape.ts': "export type Shape = 'X_TYPE_ONLY_STILL_READ';\n",
+      'scripts/lib/in-a-comment.ts': "export const x = 'X_NEVER_IMPORTED';\n",
+      // One level only: a module the lib module imports is not read.
+      'scripts/lib/deep.ts': "export const deep = 'X_TWO_LEVELS_DOWN';\n",
+      // Shared infrastructure and pin tables contribute nothing to a row.
+      'scripts/lib/args.ts': "export const args = 'X_CLI_BAD_FLAG';\n",
+      'scripts/lib/fake-pins.ts':
+        "export const PINS = { x: { reason: 'see X_NAMED_IN_PROSE' } };\n",
+    });
+    const [guard] = await collectGuards(root);
+    expect(guard?.codes).toEqual(['X_FAKE_GUARD', 'X_LIB_PAIRED', 'X_TYPE_ONLY_STILL_READ']);
+  });
+
+  test('a side-effect import of a lib module counts as much as a named one', async () => {
+    const root = await repo({
+      'package.json': '{}',
+      'scripts/fake-guard.ts': `import './lib/registers';\nimport"./lib/tight";\n${GUARD}`,
+      'scripts/lib/registers.ts': "throw { code: 'X_SIDE_EFFECT_RULE' };\n",
+      'scripts/lib/tight.ts': "export const t = 'X_NO_SPACE';\n",
+    });
+    expect((await collectGuards(root))[0]?.codes).toEqual([
+      'X_FAKE_GUARD',
+      'X_NO_SPACE',
+      'X_SIDE_EFFECT_RULE',
+    ]);
+  });
+
+  test('a lib module that does not exist adds nothing and breaks nothing', async () => {
+    const root = await repo({
+      'package.json': '{}',
+      'scripts/fake-guard.ts': `import { gone } from './lib/gone';\n${GUARD}`,
+    });
+    expect((await collectGuards(root))[0]?.codes).toEqual(['X_FAKE_GUARD']);
+  });
+
+  test('the real changelog-check row lists the pairing codes from lib/changelog-pairing.ts', async () => {
+    const guard = (await collectGuards(repoRoot())).find(
+      (one) => one.file === 'scripts/changelog-check.ts',
+    );
+    expect(guard?.codes).toContain('X_DOC_MIGRATION_UNPAIRED');
+    expect(guard?.codes).toContain('X_DOC_MIGRATION_RANGE_STALE');
+  });
 });
 
 describe('the listed command is the form that REPORTS', () => {

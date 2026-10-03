@@ -34,6 +34,8 @@ export interface MemoryAuditSinkOptions {
  * here: a non-zero count on a real deployment is the sink saying it is the wrong one.
  */
 export interface MemoryAuditSink extends AuditSink {
+  /** Synchronous here: the window is an array, so nothing is left for a caller to await. */
+  write(record: AuditRecord): void;
   /** The retained window, oldest first. A copy — the log cannot be mutated through it. */
   records(): readonly AuditRecord[];
   /** Retained right now — the bound, observable. */

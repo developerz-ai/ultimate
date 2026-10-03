@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "7e67ae4bc5a92947c2f5a534239efca3b232236796a14514f085ec80a7bea460",
+  "buildId": "0a84adc50661cb7e34b82ef25c92c45036e3ae7cb313afe05d605ff14ea0fc76",
   "tiers": {
     "0": [
       "core",
@@ -715,6 +715,11 @@
       "at": "packages/cache/src/errors.ts"
     },
     {
+      "code": "X_CATALOG_CARRIER_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/catalog-keys.ts"
+    },
+    {
       "code": "X_CATALOG_INVALID",
       "owner": "i18n",
       "at": "packages/i18n/src/errors.ts"
@@ -855,6 +860,11 @@
       "at": "scripts/config-readers.ts"
     },
     {
+      "code": "X_CONFIG_READER_APP_UNREAD",
+      "owner": "scripts",
+      "at": "scripts/config-readers.ts"
+    },
+    {
       "code": "X_CONFIG_READER_PIN_STALE",
       "owner": "scripts",
       "at": "scripts/config-readers.ts"
@@ -877,7 +887,7 @@
     {
       "code": "X_CORPUS_UNSCANNED",
       "owner": "scripts",
-      "at": "scripts/lib/corpus.ts"
+      "at": "scripts/image-contract.ts"
     },
     {
       "code": "X_CORS_CONFIG_INVALID",
@@ -1235,9 +1245,19 @@
       "at": "scripts/changelog-check.ts"
     },
     {
+      "code": "X_DOC_MIGRATION_RANGE_STALE",
+      "owner": "scripts",
+      "at": "scripts/lib/changelog-pairing.ts"
+    },
+    {
       "code": "X_DOC_MIGRATION_SECTION_MISSING",
       "owner": "scripts",
       "at": "scripts/changelog-check.ts"
+    },
+    {
+      "code": "X_DOC_MIGRATION_UNPAIRED",
+      "owner": "scripts",
+      "at": "scripts/lib/changelog-pairing.ts"
     },
     {
       "code": "X_DOC_MIGRATION_UNSCANNED",
@@ -1405,6 +1425,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_ERROR_CODE_UNTHROWN_STALE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ERROR_FIX_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1508,6 +1533,26 @@
       "code": "X_FINITE_BOUND_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/finite-bounds.ts"
+    },
+    {
+      "code": "X_FIX_PROSE",
+      "owner": "scripts",
+      "at": "scripts/fix-prose.ts"
+    },
+    {
+      "code": "X_FIX_PROSE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/fix-prose.ts"
+    },
+    {
+      "code": "X_FIX_PROSE_PIN_UNEXPLAINED",
+      "owner": "scripts",
+      "at": "scripts/fix-prose.ts"
+    },
+    {
+      "code": "X_FIX_PROSE_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/fix-prose.ts"
     },
     {
       "code": "X_FIX_SHELL_ARG_PIN_STALE",
@@ -3548,6 +3593,21 @@
       "code": "X_SOCKET_UNAUTHENTICATED",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_SPAWN_TIMEOUT_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/spawn-timeout.ts"
+    },
+    {
+      "code": "X_SPAWN_TIMEOUT_PIN_UNEXPLAINED",
+      "owner": "scripts",
+      "at": "scripts/spawn-timeout.ts"
+    },
+    {
+      "code": "X_SPAWN_UNTIMED",
+      "owner": "scripts",
+      "at": "scripts/spawn-timeout.ts"
     },
     {
       "code": "X_SQL_LITERAL_COPY",

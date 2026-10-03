@@ -1,7 +1,8 @@
 // A registered code nothing constructs. The registry and the reference keep a shipped code alive
 // forever — which is right — and that is exactly why a code can outlive its last thrower with no
 // gate noticing: `X_RPC_FAILED` sat registered and documented as live after the transport change
-// took its only throw site away. The reference row has to SAY so, or this reports it.
+// took its only throw site away. It has to be LISTED as unthrown (`UNTHROWN_CODES`), or this
+// reports it.
 
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, maskLiterals, stripComments } from '@ultimat3/core';
@@ -9,6 +10,7 @@ import { RESERVED_HEADING } from './error-contract';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
 import { isCodeRegistry } from './ts-scan';
+import { UNTHROWN_CODES, UNTHROWN_CODES_FILE } from './unthrown-codes';
 
 const CODE_LITERAL = /(['"`])(X_[A-Z0-9_]+)\1/g;
 const TITLE_KEY = /^[\t ]*(X_[A-Z0-9_]+)\s*:/gm;
@@ -17,9 +19,6 @@ const LIST_LINE = /^[\t ]*(['"`])X_[A-Z0-9_]+\1\s*,?\s*$/;
 /** `metaMissing: 'X_SEO_META_MISSING'` — the table `@ultimat3/seo` and `@ultimat3/ui` raise from. */
 const TABLE_ENTRY = /\b([a-z][A-Za-z0-9]*)\s*:\s*(['"`])(X_[A-Z0-9_]+)\2/g;
 const MEMBER_READ = /\.([A-Za-z_$][\w$]*)/g;
-
-/** Phrases a reference row uses to say, in words, that nothing throws the code any more. */
-const DECLARED_UNTHROWN = /thrown by nothing|not thrown/i;
 
 export interface CodeUse {
   /** Every code a package registry names. */
@@ -78,6 +77,8 @@ export async function collectCodeUse(root: string): Promise<CodeUse> {
   const members = new Set<string>();
   for await (const source of eachSourceFile(root)) {
     if (!/^packages\/[^/]+\/src\//.test(source) || isTest(source) || isGenerated(source)) continue;
+    // The list names every code it waives, and naming one is not throwing it.
+    if (source === UNTHROWN_CODES_FILE) continue;
     const use = codeUseOf(await Bun.file(join(root, source)).text());
     for (const code of use.registered) registered.add(code);
     for (const code of use.used) used.add(code);
@@ -88,26 +89,34 @@ export async function collectCodeUse(root: string): Promise<CodeUse> {
   return { registered, used };
 }
 
-/** Codes whose reference row says nothing throws them, or that sit under the reserved heading. */
+/** Codes that sit under the reserved heading — declared unthrown by WHERE they are, not by words. */
 export function declaredUnthrown(markdown: string): ReadonlySet<string> {
   const out = new Set<string>();
   let reserved = false;
   for (const line of markdown.split('\n')) {
     if (line.trim() === RESERVED_HEADING) reserved = true;
     const row = /^\|\s*`(X_[A-Z0-9_]+)`\s*\|/.exec(line);
-    if (row !== null && (reserved || DECLARED_UNTHROWN.test(line))) out.add(row[1] ?? '');
+    if (row !== null && reserved) out.add(row[1] ?? '');
   }
   return out;
 }
 
 const unthrownFinding = (code: string, page: string): Finding => ({
   code: 'X_ERROR_CODE_UNTHROWN',
-  cause: `${code} is registered and ${page} presents it as live, but no shipped source constructs it — a reader matching on it waits for an error that cannot arrive`,
+  cause: `${code} is registered and ${page} presents it as live, but no shipped source constructs it — a reader matching on it waits for an error that cannot arrive. Add it to UNTHROWN_CODES in ${UNTHROWN_CODES_FILE} and say so in its row, or throw it again where it belongs`,
   // Never "delete the registration": a shipped code is stable forever, and an old log line must
   // still explain. The row is what has to change.
-  fix: `write "registered, thrown by nothing since <version>" into ${code}'s row in ${page}, naming the code that replaced it — or throw it again where it belongs`,
+  fix: 'x errors explain X_ERROR_CODE_UNTHROWN --json',
   docs: ERROR_DOCS_URL,
   at: page,
+});
+
+const staleFinding = (code: string): Finding => ({
+  code: 'X_ERROR_CODE_UNTHROWN_STALE',
+  cause: `${code} is listed in UNTHROWN_CODES and shipped source constructs it again — the listing would excuse a code that is live, so delete it from UNTHROWN_CODES in ${UNTHROWN_CODES_FILE}`,
+  fix: 'x errors explain X_ERROR_CODE_UNTHROWN_STALE --json',
+  docs: ERROR_DOCS_URL,
+  at: UNTHROWN_CODES_FILE,
 });
 
 /**
@@ -118,13 +127,22 @@ const unthrownFinding = (code: string, page: string): Finding => ({
 export async function checkErrorCodesThrown(
   root: string,
   page: string,
+  listed: ReadonlySet<string> = UNTHROWN_CODES,
 ): Promise<readonly Finding[]> {
   const reference = Bun.file(join(root, page));
   if (!(await reference.exists())) return [];
-  const exempt = declaredUnthrown(await reference.text());
+  const reserved = declaredUnthrown(await reference.text());
   const { registered, used } = await collectCodeUse(root);
-  return [...registered]
-    .filter((code) => !used.has(code) && !exempt.has(code))
+  const unthrown = [...registered]
+    .filter((code) => !used.has(code) && !listed.has(code) && !reserved.has(code))
     .sort()
     .map((code) => unthrownFinding(code, page));
+  // Only the THROWN-again direction: a listed name no registry holds waives nothing (the code it
+  // was meant to name is still reported), and a host repo's fixture registering none of this
+  // repo's codes would otherwise read every listing as stale.
+  const stale = [...listed]
+    .filter((code) => used.has(code))
+    .sort()
+    .map((code) => staleFinding(code));
+  return [...unthrown, ...stale];
 }

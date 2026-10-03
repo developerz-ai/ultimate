@@ -4,7 +4,7 @@ All notable changes to Ultimate. Format follows [Keep a Changelog](https://keepa
 
 Framework packages version in **lockstep** — a release bumps every package to the same version, in one commit, under one tag. Pin `@ultimat3/*` exactly; a mixed-version install is a combination nobody tested. See [PUBLISHING.md](PUBLISHING.md).
 
-Semver applies from 1.0.0. A breaking change to a documented API needs a major — [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) says what "documented API" covers.
+Semver applies from 1.0.0. A breaking change to a documented API needs a major — [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) says what "documented API" covers. From 23.0.0 on, each `BREAKING —` line names its migration as `(#N)` straight after the dash — row N of that major's `Entry by entry` table in Upgrading — and `bun run changelog-check` refuses a line without one (`X_DOC_MIGRATION_UNPAIRED`).
 
 ## [Unreleased]
 
@@ -37,7 +37,8 @@ is `cli`'s build, generator, test-selection and policy half, with what it change
 the `drift` step a `REPLICA IDENTITY FULL` no migration recorded.** Slice 12b is `cli`'s runtime
 and command half, with what it changed in `http` and the chart: **an operator step — a serving role
 no longer applies the framework schema, so `ROLE=migrate` runs before it, the first `cli (slice
-12b)` entry under Changed.**
+12b)` entry under Changed.** Slice 13a is the repository's own guards and release scripts, with
+what they changed in `cli`, `action`, `testing` and `ui`.
 
 ### Added
 
@@ -271,6 +272,30 @@ Tier 5 — cli (slice 12b).
   the verdict only, `{ state, ready, role }`, never a check's name. A worker, scheduler or
   replicator process is marked ready once its roles start; nothing marked it.
 
+Tier 5 — cli (slice 13a).
+
+- **cli:** `X_ERROR_CODE_UNTHROWN_STALE` — see Changed.
+
+Repository scripts (slice 13a).
+
+- **scripts:** `bun run spawn-timeout` refuses a synchronous spawn anywhere, or a `Bun.spawn`
+  outside a test, with neither `timeout` nor `signal` (`X_SPAWN_UNTIMED`), pinned per unit with a
+  `why:` (`X_SPAWN_TIMEOUT_PIN_STALE`, `X_SPAWN_TIMEOUT_PIN_UNEXPLAINED`).
+- **scripts:** `bun run catalog-keys` checks every key the framework hands `t()` through a constant
+  or a property (`titleKey`, `reason`, `ROW_CHANGED_REASON`) against the framework catalogs
+  (`X_CATALOG_MISSING_KEYS`, `X_CATALOG_CARRIER_UNSCANNED`).
+- **scripts:** `fix-prose`, in the `errors` step: a `fix:` that opens with prose rather than a
+  command or a code shape is `X_FIX_PROSE`, ratcheted per package (`X_FIX_PROSE_PIN_STALE`,
+  `X_FIX_PROSE_PIN_UNEXPLAINED`, `X_FIX_PROSE_UNSCANNED`).
+- **scripts:** `changelog-check` pairs each `BREAKING —` line's `(#N)` with Upgrading's entry N, one
+  to one, from 23.0.0 on, and every entry or step number a walkthrough cites with a row that exists
+  (`X_DOC_MIGRATION_UNPAIRED`, `X_DOC_MIGRATION_RANGE_STALE`).
+- **scripts:** `compose-env-parity.test.ts` — a `${VAR:?…}` one production compose file requires on
+  a role, every other file with that role requires; `floating-promises.test.ts` — Biome's
+  `noFloatingPromises` covers tests and every path outside `packages/*/src`.
+- **scripts:** `config-readers` checks a pin that says app code reads a key against both tracked
+  apps' source (`X_CONFIG_READER_APP_UNREAD`).
+
 Tier 5 — cli.
 
 - **cli:** `Finding` carries an optional `meta` — the structured facts behind `cause`, for a
@@ -285,30 +310,30 @@ Repository scripts.
 
 Tier 0 — schema.
 
-- **BREAKING — `t.date` refuses a day its month does not have.** `'2026-02-30'`, `'2026-04-31'`, a
+- **BREAKING — (#1) `t.date` refuses a day its month does not have.** `'2026-02-30'`, `'2026-04-31'`, a
   month `00` or `13`, a day `00` or `32`. It validated and stored the rolled-over instant —
   `2026-02-30` became March 2nd. The rule is `isIsoDateTime`, so `fromIso`, an entity
   `timestamp()` column, `@ultimat3/seo` feed dates and `@ultimat3/ui`'s `DateTime` refuse the same
   strings. Correct the date where it is written.
-- **BREAKING — `t.url` refuses a string the URL parser would have cut.** A leading or trailing
+- **BREAKING — (#2) `t.url` refuses a string the URL parser would have cut.** A leading or trailing
   space or C0 control, and a tab, CR or LF anywhere. `' https://a.b'` validated and was stored
   untrimmed. Call `.trim()` before validating; an interior tab, CR or LF is not whitespace
   `.trim()` removes — strip or percent-encode it at the source. A space inside the path and an
   upper-case host are unchanged.
-- **BREAKING — `t.object`, `t.record` and `t.money` take plain objects only.** A value whose
+- **BREAKING — (#3) `t.object`, `t.record` and `t.money` take plain objects only.** A value whose
   prototype is neither `Object.prototype` nor `null` — a `Map`, a `Date`, a class instance — is
   `expected an object`. `t.record(t.number)` parsed a `Map` to `{}`. HTTP coercion no longer
   spreads an array or a `Date` into an object either. Pass a plain object: `{ ...instance }` or
   `Object.fromEntries(map)`.
-- **BREAKING — `.default(v)` throws `X_SCHEMA_DEFAULT_INVALID` when the schema refuses `v`.** At
+- **BREAKING — (#4) `.default(v)` throws `X_SCHEMA_DEFAULT_INVALID` when the schema refuses `v`.** At
   declaration, so at the first import of the file. `t.number.min(5).default(1)` parsed an omitted
   field to 1 and published `minimum: 5, default: 1`. Edit the default or the rule the cause quotes.
-- **BREAKING — HTTP coercion reads decimal numerals only.** `?page=0x10`, `0b11` and `0o17` stay
+- **BREAKING — (#5) HTTP coercion reads decimal numerals only.** `?page=0x10`, `0b11` and `0o17` stay
   strings and fail validation as `expected a number`; they arrived as 16, 3 and 15. Send decimal.
 
 Tier 0 — core.
 
-- **BREAKING — `defineConfig` refuses more of an invalid `app.config.ts`**, each as
+- **BREAKING — (#6) `defineConfig` refuses more of an invalid `app.config.ts`**, each as
   `X_CONFIG_INVALID` naming the key: an unknown `roles` entry, `jobs.backoff`, `database.driver` or
   `theme.defaultMode`; a non-boolean `database.ssl`, `realtime.enabled` or `ai.mcp.expose` (the
   string `'false'` read as on); an `auth.signInPath` or `ai.mcp.path` with no leading `/`; an empty
@@ -316,22 +341,22 @@ Tier 0 — core.
   (`['EN', 'en']`). A section written as `null` or as the wrong shape, a list written as a string,
   and a non-string `seo.robots.disallow` / `seo.sitemap.extra` entry are `X_CONFIG_INVALID` too;
   those were a native `TypeError` out of the validator.
-- **BREAKING — an unknown `LOG_LEVEL` fails at import** (`X_INVARIANT`). `LOG_LEVEL=verbose` and
+- **BREAKING — (#7) an unknown `LOG_LEVEL` fails at import** (`X_INVARIANT`). `LOG_LEVEL=verbose` and
   the upper-case `LOG_LEVEL=DEBUG` meant `info` in silence. Set one of `trace`, `debug`,
   `info`, `warn`, `error`, `fatal`, `silent`, lower-case, or unset it. Unset and empty are still `info`.
-- **BREAKING — `retry()` and `retryDecision()` refuse a policy that cannot stop the loop**
+- **BREAKING — (#8) `retry()` and `retryDecision()` refuse a policy that cannot stop the loop**
   (`X_INVARIANT`), before the first try: `attempts` that is `NaN`, infinite, negative or a
   fraction, and a `timeBudgetMs` that is `NaN` or infinite. `attempts: 0` still runs once; a
   negative or fractional budget is still legal.
-- **BREAKING — `createFlightGate` refuses a limit that is not a count** (`X_INVARIANT`), at
+- **BREAKING — (#9) `createFlightGate` refuses a limit that is not a count** (`X_INVARIANT`), at
   construction: `maxConcurrent` or `maxQueued` that is `NaN`, infinite, negative or a fraction.
   `maxConcurrent: 0` now refuses every caller (`X_FLIGHT_GATE_OVERLOADED`, or the gate's own
   `overflow` error); it queued them for a slot that never came.
-- **BREAKING — `withChildContext({ signal })` aborts when the parent aborts.** The patched signal
+- **BREAKING — (#10) `withChildContext({ signal })` aborts when the parent aborts.** The patched signal
   is composed with the parent's, not swapped for it, so a client disconnect or a request timeout
   reaches the child. Work that must outlive the request does not belong in a child context:
   enqueue a job.
-- **BREAKING — compound credential names are redacted.** `currentPassword`, `mfaSecret`,
+- **BREAKING — (#11) compound credential names are redacted.** `currentPassword`, `mfaSecret`,
   `resetToken`, `recoveryCode`, `webhookSecret`, `passwordHash`, `tokenHash`, `keyHash` and the
   rest `isRedactedKey` now matches are `[redacted]` in a log line, an audit row and the error
   monitor's envelope; they were written in clear. A name ending in `token` is redacted unless its
@@ -342,49 +367,49 @@ Tier 0 — core.
   `continuationToken`, `maxTokens`, `cacheKey`, `signingKeyId`, `code` and `clientSecretEnv` stay
   readable. A test or a log query that read one of
   the values reads the marker.
-- **BREAKING — the Sentry envelope carries an error's `meta` under `extra.meta`.** It was spread
+- **BREAKING — (#12) the Sentry envelope carries an error's `meta` under `extra.meta`.** It was spread
   into `extra`, so `meta: { fix, stack }` replaced the framework's own. Both `meta` and
   `scope.extra` are redacted, and `scope.extra` can no longer overwrite `fix`, `docs`, `stack`,
   `requestId` or `actorId`. A monitor rule or saved search on `extra.<key>` reads
   `extra.meta.<key>`. A `bigint` or a cycle in `meta` no longer drops the report.
-- **BREAKING — `OTEL_EXPORTER_OTLP_TRACES_HEADERS` and `OTEL_EXPORTER_OTLP_METRICS_HEADERS` are
+- **BREAKING — (#13) `OTEL_EXPORTER_OTLP_TRACES_HEADERS` and `OTEL_EXPORTER_OTLP_METRICS_HEADERS` are
   read**, and each replaces `OTEL_EXPORTER_OTLP_HEADERS` for its signal. Only the generic variable
   was read. A deploy that sets both sends the per-signal one alone on that signal: put every header
   that signal needs in it, or unset it.
-- **BREAKING — `OTEL_TRACES_SAMPLER=parentbased_always_on` ignores `OTEL_TRACES_SAMPLER_ARG`.** A
+- **BREAKING — (#14) `OTEL_TRACES_SAMPLER=parentbased_always_on` ignores `OTEL_TRACES_SAMPLER_ARG`.** A
   leftover `ARG=0.1` thinned its roots to 10%; every root is sampled now. For a ratio, set
   `OTEL_TRACES_SAMPLER=parentbased_traceidratio`.
-- **BREAKING — a wildcard host rule no longer admits an address inside the network.**
+- **BREAKING — (#15) a wildcard host rule no longer admits an address inside the network.**
   `hostDecision` under `'*'` or `'*.suffix'` refuses a loopback, private, link-local or metadata
   address literal (`127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `[::1]`). Opt in with an exact rule:
   `allowHosts: ['*', '127.0.0.1']`. A hostname that resolves inward is still admitted — this
   function has no resolver; pinning the resolved address is the connecting driver's job.
-- **BREAKING — an empty `ULTIMATE_CURSOR_SECRET=` counts as unset.** It keyed the cursor HMAC with
+- **BREAKING — (#16) an empty `ULTIMATE_CURSOR_SECRET=` counts as unset.** It keyed the cursor HMAC with
   the empty string and passed the boot check. Now it is the development key locally and
   `X_CURSOR_SECRET_DEV` anywhere else: `x secrets set ULTIMATE_CURSOR_SECRET`. Cursors signed
   under the empty key stop verifying.
 
 Tier 1 — i18n.
 
-- **BREAKING — `t(key)` always interpolates.** With no vars, a placeholder renders the
+- **BREAKING — (#17) `t(key)` always interpolates.** With no vars, a placeholder renders the
   missing-value marker (`Hello ⟦name⟧`, was the raw `Hello {name}`) and `{{` / `}}` unescape to
   `{` / `}`. `t('a')` and `t('a', {})` are one render. To read a template, placeholders intact:
   `t.raw(key)`.
 
 Tier 1 — time.
 
-- **BREAKING — an interval cron runs through both passes of a fall-back hour.** A schedule whose
+- **BREAKING — (#18) an interval cron runs through both passes of a fall-back hour.** A schedule whose
   minute or hour field is `*` or `*/n` fires in the repeated hour's second pass too; it went dark
   for that hour. A fixed time (`30 2 * * *`) still fires once, on the first pass. `CronExpression`
   gains a required `wildcardTime: boolean`: a hand-built literal adds it, `parseCron` sets it.
-- **BREAKING — cron fields are read exactly.** A name is its three letters or its whole word:
+- **BREAKING — (#19) cron fields are read exactly.** A name is its three letters or its whole word:
   `mon`, `monday`, `mar`, `march`. `mond`, `monkey` and `marzipan` matched on their first three
   letters; they are `X_CRON_INVALID`. So are `1-5-7`, `1/2/3` and `*/2/3`, which were read as
   `1-5`, `1/2` and `*/2`.
-- **BREAKING — `formatRelative` requires `zone`.** `FormatRelativeOptions` extends `FormatContext`
+- **BREAKING — (#20) `formatRelative` requires `zone`.** `FormatRelativeOptions` extends `FormatContext`
   whole; omitting `zone` is a type error. From a day apart the number is calendar days in that
   zone, not elapsed milliseconds truncated: 47 hours ahead across two midnights is "in 2 days".
-- **BREAKING — `@ultimat3/time` refuses a number or a date it cannot represent.**
+- **BREAKING — (#21) `@ultimat3/time` refuses a number or a date it cannot represent.**
   `addDaysInZone` with a non-integer `days` is `X_SCHEDULE_INVALID` (`0.5` moved nothing, `NaN`
   was a bare `RangeError`). `formatDuration` / `formatDurationIso` with `NaN` or `±Infinity` are
   `X_INVARIANT` (rendered `NaN days` and `P0D`). `plainDateUtc`, `addPlainDays` and `plainDateIn`
@@ -392,22 +417,22 @@ Tier 1 — time.
 
 Tier 1 — db.
 
-- **BREAKING — `withTransaction` rejects when a statement failed and the body caught the error.**
+- **BREAKING — (#22) `withTransaction` rejects when a statement failed and the body caught the error.**
   `X_DB_TRANSACTION_ABORTED`. Postgres had already rolled the unit of work back, so the call used
   to resolve, fire `onCommit`, and store nothing. Wrap the fallible statement in a nested
   `withTransaction` and catch that — `await withTransaction(() => fallible()).catch(fallback)` — or
   rethrow. A nested scope whose body swallowed a failure rejects the same way and loses only its
   own work; a nested scope opened on an aborted transaction is refused by name. Any `COMMIT` the
   server answers with `ROLLBACK` is this code, on both drivers.
-- **BREAKING — a `COMMIT` that rejects with no SQLSTATE is `X_DB_COMMIT_UNKNOWN`**, not
+- **BREAKING — (#23) a `COMMIT` that rejects with no SQLSTATE is `X_DB_COMMIT_UNKNOWN`**, not
   `X_DB_UNAVAILABLE`. The transaction is durable or it is not, so neither `onCommit` nor
   `onRollback` runs; `onRollback` used to. The `fix:` is a `psql "$DATABASE_URL"` session: select a
   row the transaction wrote, and re-run only when it is absent.
-- **BREAKING — a nested `withTransaction` refuses options a savepoint cannot honour**
+- **BREAKING — (#24) a nested `withTransaction` refuses options a savepoint cannot honour**
   (`X_INVARIANT`): `isolation`, `readOnly: true`, `deferrable: true`, or a `client` other than the
   root's. They were ignored — `{ readOnly: true }` wrapped writes that committed. State them on
   the outermost call; open a second database in its own unit of work.
-- **BREAKING — sibling nested `withTransaction` scopes run one after the other.** Savepoints are
+- **BREAKING — (#25) sibling nested `withTransaction` scopes run one after the other.** Savepoints are
   a stack, so two scopes opened under one parent — `Promise.all` included — no longer interleave;
   the second waits for the first's `RELEASE` or `ROLLBACK TO`. One that waits more than
   `siblingWaitMs` rejects with `X_DB_SIBLING_SCOPE_TIMEOUT` (HTTP 500). The field is new on
@@ -415,50 +440,50 @@ Tier 1 — db.
   value that is not a whole number of 0 or more is `X_INVARIANT`. This refuses a nested body that
   awaits a sibling scope — a cycle — and a sibling whose predecessor holds its turn past the wait.
   Await the scopes in sequence, or pass `{ siblingWaitMs }`.
-- **BREAKING — `DriftKind` gains `'changed-primary-key'`.** A table whose live key differs from
+- **BREAKING — (#26) `DriftKind` gains `'changed-primary-key'`.** A table whose live key differs from
   the declared one — columns, order, or a key on one side only — is reported; it read `ok: true`.
   The finding's `fix:` is one `psql "$DATABASE_URL" -c '…'` command — the drop/add pair, run
   against the drifted database; `x db migrate` then re-checks. An exhaustive `switch` needs the
   case. Nullability is excused for the declared key's columns only.
-- **BREAKING — `introspect()` reports the type and the index keys the catalog holds.**
+- **BREAKING — (#27) `introspect()` reports the type and the index keys the catalog holds.**
   `ColumnDescription.dataType` is `format_type` output: `numeric(12,2)`, `text[]`, an enum's name —
   was `numeric`, `ARRAY`, `USER-DEFINED`. `IndexDescription.columns` keeps an expression key in its
   position as `(lower(title))`; it was dropped.
-- **BREAKING — `CatalogColumn.generated` is `{ expression, storage: 'stored' | 'virtual' } | null`**
+- **BREAKING — (#28) `CatalogColumn.generated` is `{ expression, storage: 'stored' | 'virtual' } | null`**
   on `@ultimat3/db/schema-dump`, was `string | null`. Read `.expression`. A virtual generated
   column is dumped `virtual`; it was dumped `stored`.
-- **BREAKING — `unrendered.sql` names more objects**: extended statistics, forced row security, a
+- **BREAKING — (#29) `unrendered.sql` names more objects**: extended statistics, forced row security, a
   column whose storage departs from its type's, an unpopulated materialized view, and a trigger on
   a relation the dump does not create (filed under `09_triggers/` before, which refused the load).
   An app whose database holds one re-runs `x db gen` and commits `packages/db/schema/`.
 
 Tier 1 — flags.
 
-- **BREAKING — `expiresAt` must be ISO-8601 and name a real day.** `'December 1, 2026'`,
+- **BREAKING — (#30) `expiresAt` must be ISO-8601 and name a real day.** `'December 1, 2026'`,
   `'12/01/2026'` and `'2026-02-30'` are `X_FLAG_EXPIRY_INVALID` at declaration; the first two were
   read at the host's local midnight, the third as March 2nd. Write `'2026-12-01'`, or a date-time
   with `Z` or an offset.
-- **BREAKING — `configureFlags({ reportEveryMs })` refuses `NaN`, `Infinity`, a negative and a
+- **BREAKING — (#31) `configureFlags({ reportEveryMs })` refuses `NaN`, `Infinity`, a negative and a
   fraction** (`X_INVARIANT`). `NaN` removed the rate limit; `Infinity` muted the report. `0` is
   legal.
 
 Tier 1 — cache.
 
-- **BREAKING — a tagged response carries an entity index key at the edge.** `cacheHeaders()` and
+- **BREAKING — (#32) a tagged response carries an entity index key at the edge.** `cacheHeaders()` and
   `surrogateKeys()` add one `e:<entity>` per distinct entity to `Surrogate-Key` and `Cache-Tag`:
   tags `post:1`, `post:2` go out as `post:1 e:post post:2`. A row bust purges `<entity>:<id>` and
   `<entity>`; a collection bust purges `e:<entity>` and `<entity>` — it used to miss every detail
   page. Growth is `len(entity) + 3` bytes per entity per header: 14 bytes a response for `post`.
   A test that asserts the header value adds the key. An edge copy cached before the upgrade lacks
   the index key until its `s-maxage` passes; a collection bust does not reach it until then.
-- **BREAKING — a tag with whitespace or a comma is refused where it is emitted.** `cacheHeaders()`
+- **BREAKING — (#33) a tag with whitespace or a comma is refused where it is emitted.** `cacheHeaders()`
   and `surrogateKeys()` throw `X_CACHE_PURGE_FAILED`; a CDN splits such a key into keys nothing
   purges. The CDN tier refuses the same bust before any purge driver is called. Rename the tag in
   its `declareTags(...)` call.
 
 Tier 1 — seo.
 
-- **BREAKING — `responsiveImage()` offers WebP only by default**, was AVIF then WebP. The built-in
+- **BREAKING — (#34) `responsiveImage()` offers WebP only by default**, was AVIF then WebP. The built-in
   pipeline cannot encode AVIF, so the first `<source>` a browser picked answered
   `X_IMAGE_UNSUPPORTED`. An app whose image driver encodes AVIF passes
   `responsiveImage(input, { formats: FORMAT_ORDER })`. `usableWidths` caps at `MAX_IMAGE_WIDTH`
@@ -468,33 +493,33 @@ Tier 1 — seo.
 
 Tier 1 — storage.
 
-- **BREAKING — `promoteAttachment` requires `policy`.** It measures the pending object with
+- **BREAKING — (#35) `promoteAttachment` requires `policy`.** It measures the pending object with
   `stat()` and refuses one over `policy.maxBytes` (`X_STORAGE_TOO_LARGE`); on a bucket-backed disk
   nothing had measured it. Pass the policy the upload was granted under:
   `promoteAttachment({ disk, key, orgId, target, policy })`.
-- **BREAKING — `StorageDriver` gains a required `stat(key)`**: the object without its bytes, or
+- **BREAKING — (#36) `StorageDriver` gains a required `stat(key)`**: the object without its bytes, or
   `undefined`. A driver written outside the package implements it; the three shipped ones do.
-- **BREAKING — `lastModified` is optional on `StorageListEntry` and `StorageObject`.** Absent when
+- **BREAKING — (#37) `lastModified` is optional on `StorageListEntry` and `StorageObject`.** Absent when
   the provider reported none; it was epoch 0, which `sweepOrphans` read as older than every window
   and deleted. `sweepOrphans` now spares such an object. A reader handles `undefined`.
-- **BREAKING — `get()` has a ceiling on every driver.** An object over `maxGetBytes` — default the
+- **BREAKING — (#38) `get()` has a ceiling on every driver.** An object over `maxGetBytes` — default the
   disk's `maxPutBytes`, 10 MB unless set — is `X_STORAGE_TOO_LARGE`. Read it with
   `disk.stream(key)`, or raise the ceiling: `s3Driver({ bucket, maxGetBytes })`.
-- **BREAKING — variant keys keep the source's extension.** `photos/hero.png@w640.webp`, was
+- **BREAKING — (#39) variant keys keep the source's extension.** `photos/hero.png@w640.webp`, was
   `photos/hero@w640.webp`: `hero.png` and `hero.jpg` shared one variant. Variants stored under the
   old shape are never read again and nothing sweeps them; the Upgrading entry has the listing
   commands.
-- **BREAKING — `variantKey` and `fitDimensions` refuse a width or height that is not a whole number
+- **BREAKING — (#40) `variantKey` and `fitDimensions` refuse a width or height that is not a whole number
   of at least 1** (`X_INVARIANT`); `{ width: NaN }` minted `a@wNaN.webp`. `fitDimensions` never
   upscales under `contain` — a 40×20 source asked for 400×400 is 40×20, was 400×200 — and never
   returns a zero edge.
-- **BREAKING — signed URLs are `v2` and name their disk.** The canonical string includes the
+- **BREAKING — (#41) signed URLs are `v2` and name their disk.** The canonical string includes the
   disk's base path; a URL signed for one local disk verified on another. Every local- and
   memory-disk signed URL outstanding at deploy stops verifying — the default lifetime is 15
   minutes. `canonicalRequest(constraints, basePath)` and
   `signConstraints(secret, constraints, basePath)` take the path; `signedUrlBasePath(baseUrl)`
   derives it.
-- **BREAKING — ISO base media files are sniffed by major brand.** AVIF, HEIC, MOV, M4A and 3GP
+- **BREAKING — (#42) ISO base media files are sniffed by major brand.** AVIF, HEIC, MOV, M4A and 3GP
   sniff as their own types; each was `video/mp4`. A policy that allowed `video/mp4` and accepted
   those under that label now rejects them: add the real types to `allowedContentTypes`.
 - **storage:** `DEV_SIGNING_SECRET`, `STORAGE_SIGNING_SECRET_KEY` and `usesDevStorageSecret` live
@@ -502,19 +527,19 @@ Tier 1 — storage.
 
 Tier 4 — render.
 
-- **BREAKING — a `revalidate.tags` entry that cannot be a purge key is refused at registration.**
+- **BREAKING — (#43) a `revalidate.tags` entry that cannot be a purge key is refused at registration.**
   `X_ROUTE_MODE_INVALID`, naming the route file, for a tag with whitespace or a comma. The tag now goes out on every response of the route — see Fixed. Rename the tag.
 
 Tier 2 — entity.
 
-- **BREAKING — `Driver` gains a required `transactor()`, and `SealedMeta` a required `plaintext`.**
+- **BREAKING — (#44) `Driver` gains a required `transactor()`, and `SealedMeta` a required `plaintext`.**
   A hand-built driver adds the method; a wrapper delegates:
   `transactor: () => inner.transactor()`. A seed dry run rolls back through it. `plaintext` is the
   parser the column had before `.sealed()`.
-- **BREAKING — `dbDrift` is no longer exported from `@ultimat3/entity`.** Drift is db's:
+- **BREAKING — (#45) `dbDrift` is no longer exported from `@ultimat3/entity`.** Drift is db's:
   `import { dbDrift } from '@ultimat3/db'`. `ENTITY_ERROR_CODES` and `EntityErrorCode` no longer
   contain `X_DB_DRIFT`.
-- **BREAKING — `preload(relation)` has a ceiling.** At most `max` related rows per page, default
+- **BREAKING — (#46) `preload(relation)` has a ceiling.** At most `max` related rows per page, default
   `MAX_PRELOADED_ROWS`, 10,000; past it `X_INVARIANT_VIOLATED`, never a truncated list. Declare the
   relation's own bound: `posts.preload('comments', { max: 50000 })`. A repeated
   `preload(name, { max })` replaces the ceiling with the later stated one, as a second `.limit()`
@@ -528,63 +553,63 @@ Tier 2 — entity.
 
 Tier 2 — policy.
 
-- **BREAKING — `assertAllowed` throws the decision's code.** `X_UNAUTHENTICATED` for no actor —
+- **BREAKING — (#47) `assertAllowed` throws the decision's code.** `X_UNAUTHENTICATED` for no actor —
   it was `X_FORBIDDEN` for every denial — and the app's own code for `denied(reason, code)`, as a
   `PolicyDenialError`. A `catch` that matches `X_FORBIDDEN` for an anonymous caller matches
   `X_UNAUTHENTICATED`.
-- **BREAKING — `HttpDenial.status` and `problem.status` are `401 | 403`** (`DenialStatus`), was the
+- **BREAKING — (#48) `HttpDenial.status` and `problem.status` are `401 | 403`** (`DenialStatus`), was the
   literal `403`: 401 when the code is `X_UNAUTHENTICATED`. `problem.title` is the code's
   registered title, was `policy denied this actor`.
-- **BREAKING — a predicate or `definePolicy` `check` that returns anything but `true` or a
+- **BREAKING — (#49) a predicate or `definePolicy` `check` that returns anything but `true` or a
   well-formed decision denies.** `{ allowed: 'yes' }` read as allowed; a forgotten `return` was a
   bare `TypeError`. Return `true`, `false`, or `denied(reason, code)`.
 
 Tier 2 — http.
 
-- **BREAKING — `ctx.peer` needs `trustClientCertHeader: true`.** `trustProxy` alone no longer reads
+- **BREAKING — (#50) `ctx.peer` needs `trustClientCertHeader: true`.** `trustProxy` alone no longer reads
   `x-forwarded-client-cert`: appending to `x-forwarded-for` is no promise that the proxy strips a
   certificate header the client sent. `configureHttp({ trustClientCertHeader: true })`, only where
   the proxy strips or overwrites that header.
-- **BREAKING — an anonymous unsafe request carrying `Origin` or `sec-fetch-site` must prove
+- **BREAKING — (#51) an anonymous unsafe request carrying `Origin` or `sec-fetch-site` must prove
   same-origin**, else `X_CSRF_BLOCKED` (403). Anonymous writes were exempt, which left a sign-in
   form forgeable. An anonymous request with neither header — a webhook, `curl`, a server-to-server
   call, a one-click unsubscribe — is unaffected. A cross-origin browser form lists its origin:
   `configureHttp({ cors: { origins } })`. The code's title is now "an unsafe request that did not
   prove same-origin"; code and status are unchanged.
-- **BREAKING — a request that fails `auth: 'required'` is metered.** Each failure spends
+- **BREAKING — (#52) a request that fails `auth: 'required'` is metered.** Each failure spends
   `rateLimit.defaultBucket` under one key per client address, `unauthenticated|ip:<address>`,
   across all routes. Past it the answer is 429 with `Retry-After`, not 401 or the sign-in
   redirect. A request that authenticates spends nothing there. The bearer mount is metered the same
   way: the fourth wrong token from one address is 429, and a real token is still served.
-- **BREAKING — `/healthz` and `/readyz` on the web role tell a stranger only the verdict.** A peer
+- **BREAKING — (#53) `/healthz` and `/readyz` on the web role tell a stranger only the verdict.** A peer
   not in `healthDetailPeers` gets `{ state, ready, role }`; the build id, the in-flight count and
   the readiness check names go to a listed peer. Default `['loopback']`; an entry is an address
   class (`loopback`, `private`, `link-local`, `ula`, `cgnat`, …) or one exact IP literal — no
   CIDR, no hostname (`X_CONFIG_INVALID`). Status codes are unchanged. For an in-cluster reader:
   `configureHttp({ healthDetailPeers: ['loopback', 'private'] })`. **The sync role's health routes
   are not covered yet**; that lands with the realtime slice.
-- **BREAKING — a handler `cache-control` that states freshness is a shared-cache offer.**
+- **BREAKING — (#54) a handler `cache-control` that states freshness is a shared-cache offer.**
   `max-age`, `must-revalidate` or `proxy-revalidate` with no `private` or `no-store` is now
   handled as `public` / `s-maxage` already were: `private, max-age=0` for an identified request;
   `vary: accept-language, cookie, x-timezone` added for an anonymous GET; `no-store` on a POST or
   a 4xx/5xx. To keep a browser-only lifetime, write `private, max-age=N`.
-- **BREAKING — a non-empty body with no `content-type` is refused.** `X_BODY_INVALID` (422) from
+- **BREAKING — (#55) a non-empty body with no `content-type` is refused.** `X_BODY_INVALID` (422) from
   `request.body()` and the `body` stage; it read as `undefined`, so an all-optional schema
   validated a request nobody parsed. Send the header. `bodyBytes()` still reads raw bytes.
-- **BREAKING — `defineHttpConfig` no longer defaults `hostname` from `HOSTNAME`.** Docker sets
+- **BREAKING — (#56) `defineHttpConfig` no longer defaults `hostname` from `HOSTNAME`.** Docker sets
   that variable to the container id. The boot passes `HOST`; an embedder passes `hostname`.
   `buildId: null` now wins over `BUILD_ID`, switching skew detection off as written.
 
 Tier 5 — testing.
 
-- **BREAKING — `E2eBrowser.close()` and `LaunchedBrowser.close()` return a promise.** Await them;
+- **BREAKING — (#57) `E2eBrowser.close()` and `LaunchedBrowser.close()` return a promise.** Await them;
   `closed` is removed. Unawaited, a process that exits next leaves a Chrome child and a profile
   directory behind. `CdpLaunchFailedError`'s input is `{ executable, attempts }`, was
   `{ executable, detail }`.
 
 Tier 2 — auth.
 
-- **BREAKING — OPERATOR ACTION: `x_users.mfa_secret` is sealed, and a plaintext value is never
+- **BREAKING — (#58) OPERATOR ACTION: `x_users.mfa_secret` is sealed, and a plaintext value is never
   read.** Every deployment with MFA-enrolled users does three things, in this order:
   1. Make the master key exist: `x secrets init`, or `ULTIMATE_SECRETS_KEY` in the deploy.
   2. Deploy this release.
@@ -596,38 +621,38 @@ Tier 2 — auth.
   gets `X_SEAL_KEY_MISSING` at `login()`. An app's enrolment writes through
   `saveTotpSecret(auth, userId, secret)`; a custom adapter seals with the exported
   `sealMfaSecrets({ adapter })`. The column type is unchanged — there is no migration.
-- **BREAKING — `x_auth_failures` is no longer created or read.** `x_auth_lockouts` gains
+- **BREAKING — (#59) `x_auth_failures` is no longer created or read.** `x_auth_lockouts` gains
   `attempts_ms bigint[]` and `admitted boolean`, added at boot by `add column if not exists`:
   nothing to run, and a replica on the previous release keeps working through a rolling deploy.
   Failure counts in the old table are not carried; live lockouts are. Once every replica runs this
   release `x doctor` raises `X_FRAMEWORK_TABLE_ORPHANED` with the command:
   `psql "$DATABASE_URL" -c 'drop table if exists x_auth_failures'`.
-- **BREAKING — `AuthLimiter` is a reservation.** `assertAllowed` and `recordFailure` are gone;
+- **BREAKING — (#60) `AuthLimiter` is a reservation.** `assertAllowed` and `recordFailure` are gone;
   `reserve(key): Promise<AuthReservation>` counts the attempt before the password hash, and
   `refund(reservation)` returns it on success. One statement on Postgres. Every custom limiter
   implements the two.
-- **BREAKING — `verifyApiKey` returns `{ record, owner }` and refuses a key whose owner is missing
+- **BREAKING — (#61) `verifyApiKey` returns `{ record, owner }` and refuses a key whose owner is missing
   or disabled.** It takes an `ApiKeyVerifyStore` (an `ApiKeyStore` with `findUserById`);
   `apiKeyActor` takes its result. On the bearer mount and on MCP such a key's next request is 401.
   A key whose `userId` is not an `x_users` id must be issued without `userId`.
-- **BREAKING — an owned API key keeps only the scopes its owner's grants cover.** `*` and
+- **BREAKING — (#62) an owned API key keeps only the scopes its owner's grants cover.** `*` and
   `<res>:*` are refused at `issueApiKey` (`X_CONFIG_INVALID`) and dropped from stored rows. A key
   owned by a user who holds roles and no direct grants resolves with no scopes until the app
   passes `apiKeyResolver(store, { grantsOf })`. `actorFromApiKey(key, ownerGrants)`; the `agent`
   arm of `AuthIdentity` gains `ownerGrants`.
-- **BREAKING — `X_MFA_REQUIRED` carries `meta.challenge`, not `meta.userId`.** `login()` and the
+- **BREAKING — (#63) `X_MFA_REQUIRED` carries `meta.challenge`, not `meta.userId`.** `login()` and the
   OAuth path both end in it; the challenge is a short-lived sealed value handed to `completeMfa`.
-- **BREAKING — `redeemRecoveryCode`, `mfaRequired` and `authNotImplemented` are removed.**
+- **BREAKING — (#64) `redeemRecoveryCode`, `mfaRequired` and `authNotImplemented` are removed.**
   Redemption goes through `completeMfa`; a custom adapter implements
   `consumeRecoveryCode(userId, codeHash)` with `recoveryCodeHash(code)`.
-- **BREAKING — `AuthAdapter` has eight more required members.** `findUserByExternalId`,
+- **BREAKING — (#65) `AuthAdapter` has eight more required members.** `findUserByExternalId`,
   `listUsersByOrg`, `deleteSessionsForUser`, `deleteSessionsCreatedBefore` and
   `deleteSessionsForOrg` were optional with a runtime `X_NOT_IMPLEMENTED`;
   `listUsersWithMfaSecret`, `replaceMfaSecret(userId, expected, next)` and
   `consumeRecoveryCode(userId, codeHash)` are new. A custom adapter missing one does not compile.
-- **BREAKING — `BuiltinAdapter` answers `X_AUTH_WRITE_FAILED` for an `x_users` unique violation**,
+- **BREAKING — (#66) `BuiltinAdapter` answers `X_AUTH_WRITE_FAILED` for an `x_users` unique violation**,
   was `X_DB_UNIQUE_VIOLATION`; `meta.column` is `email`, `external_id` or `id`.
-- **BREAKING — `oauthLogin` requires `baseUrl` or `APP_URL`.** `X_ENV_MISSING` otherwise; the
+- **BREAKING — (#67) `oauthLogin` requires `baseUrl` or `APP_URL`.** `X_ENV_MISSING` otherwise; the
   request's `Host` is never the fallback.
 - **auth:** `disableUser` revokes the user's live API keys (the result gains `apiKeysRevoked`) and
   logs once, before the write.
@@ -638,7 +663,7 @@ Tier 2 — auth.
 
 Tier 5 — testing (slice 05).
 
-- **BREAKING — `E2eSession.offline()` rejects when an attached page refuses the switch.**
+- **BREAKING — (#68) `E2eSession.offline()` rejects when an attached page refuses the switch.**
   `X_CDP_CALL_FAILED` when a page that is still attached refuses the `navigator.onLine` script or
   its restore. It swallowed the refusal and stopped switching that page, so a test ran online
   while it believed otherwise. The restore is always attempted. Fix what the page refuses, or
@@ -650,12 +675,12 @@ Tier 5 — testing (slice 05).
 
 Tier 3 — query.
 
-- **BREAKING — `compareValues` is removed, and `compareRows`, `matchesFilter` and `isAfterKey`
+- **BREAKING — (#69) `compareValues` is removed, and `compareRows`, `matchesFilter` and `isAfterKey`
   require a `KindOf`.** Pass `kindsOf(shape.entity)`. Values compare by the column's declared kind
   in the live matcher, `from()` and the seek fallback, so a live query ordered on a `bigint()` or
   `decimal()` column patches rows where the database returns them. A relation no entity declares
   compares digits as text.
-- **BREAKING — a declared `.limit()` is the size of the listing on every page.** `.page()` and
+- **BREAKING — (#70) a declared `.limit()` is the size of the listing on every page.** `.page()` and
   `?_first=` no longer replace it, and a cursor cannot walk past it: the page after the last is
   empty with `nextCursor: null`. Drop the `.limit()` from a read meant to be paged to the end. A
   limited read's cursor carries the rows served so far, so a cursor minted before the upgrade on
@@ -665,7 +690,7 @@ Tier 3 — query.
 
 Tier 3 — query. Tier 4 — mcp.
 
-- **BREAKING — a `single: true` read answers one row through its MCP tool**, or `X_NOT_FOUND` —
+- **BREAKING — (#71) a `single: true` read answers one row through its MCP tool**, or `X_NOT_FOUND` —
   from `tool().read()` and from the served `tools/call`. Its `outputSchema` is the row, was
   `{ rows }`. An agent or client that read `.rows[0]` reads the object. `tool().read()` is typed by
   the declaration: a list read still answers `readonly object[]`, and only a single read's type
@@ -673,7 +698,7 @@ Tier 3 — query. Tier 4 — mcp.
 
 Tier 5 — admin.
 
-- **BREAKING — importing `@ultimat3/admin` no longer declares `admin:*`.** The import used to
+- **BREAKING — (#72) importing `@ultimat3/admin` no longer declares `admin:*`.** The import used to
   close the app's permission set as a side effect; `defineAdmin()` declares them now, and the
   `adminPermissions` export is removed. An app with its own closed permission set that writes
   `can('admin:read')` before `defineAdmin()` runs adds `...ADMIN_PERMISSIONS` to its
@@ -681,79 +706,79 @@ Tier 5 — admin.
 
 Tier 3 — action.
 
-- **BREAKING — `mutator()` requires `idempotent: true`.** `MutatorDef.idempotent` is the required
+- **BREAKING — (#73) `mutator()` requires `idempotent: true`.** `MutatorDef.idempotent` is the required
   literal `true`: omitting it is a compile error, and `X_MUTATOR_NOT_IDEMPOTENT` at declaration
   for an untyped caller. Add `idempotent: true` to each `mutator({ … })`; `transition()` and
   `x g mutator` declare it. On more than one replica also
   `configureIdempotency({ scope: 'shared' })`.
-- **BREAKING — the OpenAPI `Problem` schema changes, so every committed `openapi.json` is stale.**
+- **BREAKING — (#74) the OpenAPI `Problem` schema changes, so every committed `openapi.json` is stale.**
   It adds `instance`, `requestId`, `issues` and `meta`, and drops the `^X_[A-Z0-9_]+$` pattern
   on `code`. Run `x manifest` and commit.
-- **BREAKING — `x_idempotency` gains `tx_bound boolean not null default false`**, applied at boot
+- **BREAKING — (#75) `x_idempotency` gains `tx_bound boolean not null default false`**, applied at boot
   by `add column if not exists`. An app's committed schema dump drifts: run `x db gen` and commit
   `packages/db/schema/`.
-- **BREAKING — an idempotent action inside `withTransaction` settles with the commit**, on the
+- **BREAKING — (#76) an idempotent action inside `withTransaction` settles with the commit**, on the
   memory and the Postgres store. A rollback leaves the record `in-flight`; it was `settled`. A
   transaction-bound in-flight record is reclaimable after the app's `requestTimeoutMs`, and a slow
   attempt whose key was taken fails `X_IDEMPOTENCY_RESERVATION_LOST` (409) and rolls back.
   Autocommit handlers are unchanged. A settle that outlives its transaction settles at once; a
   transaction opened on another database than the store's settles on the pool.
-- **BREAKING — `postgresIdempotencyStore` takes two more required options**, `origin` and
+- **BREAKING — (#77) `postgresIdempotencyStore` takes two more required options**, `origin` and
   `reclaimAfterMs`:
   `postgresIdempotencyStore({ executor, origin: () => client, reclaimAfterMs: requestDeadlineMs })`.
   The framework's boot already passes them, with the app's configured request deadline.
-- **BREAKING — `cache.invalidates` inside `withTransaction` fires at the root `COMMIT`**, never on
+- **BREAKING — (#78) `cache.invalidates` inside `withTransaction` fires at the root `COMMIT`**, never on
   rollback. `bustAfterCommit` returns `undefined` when the bust is deferred.
 - **action:** `@ultimat3/action` now depends on `@ultimat3/db` — one file, `tx-scope.ts`; the edge
   is recorded in `docs/history/tier-decisions.md`.
 
 Tier 5 — cli (slice 06).
 
-- **BREAKING — the `manifest` step fails on a stale `openapi.json`.** `X_MANIFEST_STALE`; the step
+- **BREAKING — (#79) the `manifest` step fails on a stale `openapi.json`.** `X_MANIFEST_STALE`; the step
   and `x manifest --check` are one check. `contract-diff` no longer reports staleness and is
   skipped when only `openapi.json` is committed. `x manifest --check` on an app with no
   `x.manifest.json` reports `X_MANIFEST_MISSING`, was `X_MANIFEST_DRIFT`.
 
 Tier 3 — jobs.
 
-- **BREAKING — a lease that lapses on a row's final attempt is buried by the next claim.** The row
+- **BREAKING — (#80) a lease that lapses on a row's final attempt is buried by the next claim.** The row
   becomes `dead` — or `failed` for a job declaring `retry.deadLetter: false` — and is never handed
   out again; a job whose worker died on every attempt was re-claimed forever. `lastError` is
   `LEASE_LAPSED_FINAL_ATTEMPT`; the worker logs `jobs.claim.exhausted`, runs `onSettled` once and
   counts it. A job that relied on `retry.attempts: 1` being re-run after its worker died raises
   `retry.attempts`.
-- **BREAKING — `SQL_CLAIM` takes a fifth parameter and also returns buried rows; `SQL_SCHEDULER_FIRE`
+- **BREAKING — (#81) `SQL_CLAIM` takes a fifth parameter and also returns buried rows; `SQL_SCHEDULER_FIRE`
   takes `$4`.** A custom `JobDriver.claim` buries and reports the same way, through
   `ClaimOptions.onExhausted` and `dropExhausted`. `run-once` moves its watermark in the fire
   statement on both stores, so a custom `SchedulerState.fire` lands `ScheduledFire.watermarkMs`. A
   hand-built `Lease` adds `abandon()`.
-- **BREAKING — `cancel` refuses every finished state.** `dead`, `failed`, `done` and `cancelled`
+- **BREAKING — (#82) `cancel` refuses every finished state.** `dead`, `failed`, `done` and `cancelled`
   are `X_JOB_NOT_CANCELLABLE`; cancelling a dead letter used to destroy its record. To delete a
   dead letter: `x jobs rm <id>`.
-- **BREAKING — a step write is fenced on the claim.** `StepStore.put(record, by?)`: a write whose
+- **BREAKING — (#83) a step write is fenced on the claim.** `StepStore.put(record, by?)`: a write whose
   claim no longer holds the row is `X_JOB_LEASE_LOST`, so a job body that outlives its lease now
   fails its step writes with that code instead of writing over the re-claimer's.
-- **BREAKING — `enqueue(..., { runId })` refuses anything but a lowercase uuid** (`X_ID_INVALID`),
+- **BREAKING — (#84) `enqueue(..., { runId })` refuses anything but a lowercase uuid** (`X_ID_INVALID`),
   before anything is staged. The memory driver took any string.
-- **BREAKING — `EventBus.purgeExpired()` returns `Promise<number>`, and `EventLookup.now()` is
+- **BREAKING — (#85) `EventBus.purgeExpired()` returns `Promise<number>`, and `EventLookup.now()` is
   required.** The purge is awaited, counted, and rejects on failure; it used to fire, answer 0
   and swallow the failure. A custom bus returns the promise; a custom lookup adds
   `now(): Promise<number>`.
-- **BREAKING — jobs refuses an id or a count that is not one.** A list cursor's id must be a uuid
+- **BREAKING — (#86) jobs refuses an id or a count that is not one.** A list cursor's id must be a uuid
   (`X_JOB_PAGE_INVALID`, which now names `after` or `before`; fix: `x jobs ls --limit 200 --json`).
   `backfills.list({ runId })` refuses a non-uuid (`X_ID_INVALID`). `retry.attempts` must be a
   whole finite number of at least 1; `Infinity` and `1.5` were admitted.
 
 Tier 5 — cli (slice 07).
 
-- **BREAKING — the hourly `x.purge` sweeps `x_job_events`.** `RetentionStores.events` is required
+- **BREAKING — (#87) the hourly `x.purge` sweeps `x_job_events`.** `RetentionStores.events` is required
   and `PurgeReport.swept` has a sixth entry; the table only grew before. A hand-built
   `RetentionStores` passes the bus.
 - **cli:** `x jobs drain` logs `jobs.claim.exhausted` for a row its claim buries.
 
 Tier 3 — realtime.
 
-- **BREAKING — OPERATOR ACTION: on the sync websocket, a declared origin is the whole
+- **BREAKING — (#88) OPERATOR ACTION: on the sync websocket, a declared origin is the whole
   allow-list.** When `APP_URL` (or `createSyncNode({ allowedOrigins })`) is set, only the declared
   origins are admitted — the origin the node was reached on is not admitted beside them.
   Undeclared, the node admits the origin it was reached on, and its `https` spelling when reached
@@ -766,33 +791,33 @@ Tier 3 — realtime.
   own web role's origin — with its `localhost`, `127.0.0.1` and `[::1]` spellings and the
   `Host`-derived origin — to a declared list, so dev works with the scaffold's `.env`.
   `SocketOriginRefusedError`'s constructor requires `{ reason, asked, admitted }`.
-- **BREAKING — OPERATOR ACTION: `x db gen` grants `REPLICA IDENTITY FULL` to the `records` tables of
+- **BREAKING — (#89) OPERATOR ACTION: `x db gen` grants `REPLICA IDENTITY FULL` to the `records` tables of
   every channel declared with params.** An app that already declares one runs
   `x db gen "replica identity full"`, then `x db migrate`. Until then the replicator logs
   `replication.channel_identity_partial` and deletes on those channels are not announced.
-- **BREAKING — OPERATOR ACTION: the replication connection refuses a cleartext or md5 password
+- **BREAKING — (#90) OPERATOR ACTION: the replication connection refuses a cleartext or md5 password
   request under `sslmode=prefer` (the default) and `allow`.** `X_REPLICATION_FAILED`. Set
   `?sslmode=require` (or `verify-full`), move the role to scram-sha-256, or state
   `?sslmode=disable`.
   `require` encrypts to whoever answered and verifies no certificate: it protects the password
   from a passive listener only. `verify-ca` and `verify-full` stop an attacker on the path.
-- **BREAKING — rows cross the bus revived.** `parseEnvelope` and `parseChange` return `Date` and
+- **BREAKING — (#91) rows cross the bus revived.** `parseEnvelope` and `parseChange` return `Date` and
   `Uint8Array` for `timestamp()` and `bytes()` columns; they arrived as strings, so a
   timestamp-ordered live window mis-sorted. `bytes()` is base64 on the wire. **Replicator and
   sync nodes must run the same major** — roll them together.
-- **BREAKING — five interfaces gain required members.** A custom transport adds
+- **BREAKING — (#92) five interfaces gain required members.** A custom transport adds
   `Transport.onReconnect(listener): () => void`; a custom lock adds
   `AdvisoryLock.onLost(listener): () => void` and `AdvisoryLock.abandon(): void`; a custom feed
   adds `ChangeFeed.abandon(): void`; `UpgradeTarget` requires `requestIP(request)` and
   `UpgradeDeps` requires `healthDetailPeers`. A dead stream or a lost lock abandons the feed, then
   the lock, synchronously, with no goodbye written; `stop()` gives each goodbye
   `STOP_DEADLINE_MS`, 5 s.
-- **BREAKING — the sync role's `/healthz` and `/readyz` tell a stranger only the verdict.**
+- **BREAKING — (#93) the sync role's `/healthz` and `/readyz` tell a stranger only the verdict.**
   `{ state, ready, role }` to a peer not in `healthDetailPeers`, and to any request carrying one
   of six forwarding headers: `Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`,
   `X-Forwarded-Proto`, `X-Real-IP`, `Via`. This completes the web role's change above; status
   codes are unchanged.
-- **BREAKING — channel re-authorization denies more, and a failing guard suspends.** A `null`
+- **BREAKING — (#94) channel re-authorization denies more, and a failing guard suspends.** A `null`
   actor on a channel that declares `row`, and the tenancy refusals
   `X_TENANCY_ACTOR_ORG_REQUIRED`, `X_TENANCY_ACTOR_MISMATCH` and `X_TENANCY_CROSS_DENIED`, are
   denials (`X_TOPIC_FORBIDDEN`). A guard that fails rather than denies suspends the seat: kept,
@@ -805,7 +830,7 @@ Tier 3 — realtime.
   socket holds `maxTopicsPerSocket` latched denials. The re-auth sweep bounds each grant refresh
   (`grantRefreshDeadlineMs`, default 10,000): a timeout keeps the grant expired and is retried,
   where one refresh that never settled stalled every later grant on the node.
-- **BREAKING — queued offline writes are never sent under the next principal.** A `rescope`
+- **BREAKING — (#95) queued offline writes are never sent under the next principal.** A `rescope`
   abandons the queue at once; a write enqueued as the principal changes rejects with
   `X_OFFLINE_QUEUE_ABANDONED`, and `useMutation` takes its optimistic twin back as for any outbox
   refusal.
@@ -814,7 +839,7 @@ Tier 3 — realtime.
   under the next principal. `replay()` after a principal change never returns the previous
   principal's pass or report. **Known gap, not fixed here:** a replayed write is not bound to its
   principal on the server — `wiki/Known-Gaps.md` carries the row.
-- **BREAKING — decoded `records.adopt`, `records.remove` and channel `params` are null-prototype
+- **BREAKING — (#96) decoded `records.adopt`, `records.remove` and channel `params` are null-prototype
   objects.** `value.hasOwnProperty(key)` throws; write `Object.hasOwn(value, key)`.
 - **realtime:** a replication stream that ends is restarted. `createReplicator` clears `running`,
   releases the advisory lock and redials on `retryDelayMs`; one rejected publish restarts the
@@ -834,21 +859,21 @@ Tier 3 — realtime.
 
 Tier 2 — http. Tier 4 — render, pwa (slice 09).
 
-- **BREAKING — a catch-all route matches an empty rest.** `/docs` and `/docs/` reach `/docs/*path`
+- **BREAKING — (#97) a catch-all route matches an empty rest.** `/docs` and `/docs/` reach `/docs/*path`
   with `path: ''`; both were 404. A static route at `/docs` still wins the bare prefix, and a
   `:param` beside the catch-all keeps its one segment. It is the path `@ultimat3/render`'s static
   build writes for an empty rest (`fillPath`). A handler that assumed a non-empty rest handles
   `path === ''`, or the app declares the static `/docs`.
-- **BREAKING — a zero-length `revalidate.ttl` string is no trigger.** `'0s'`, `'0ms'`, `'0m'` and
+- **BREAKING — (#98) a zero-length `revalidate.ttl` string is no trigger.** `'0s'`, `'0ms'`, `'0m'` and
   the rest parse to `null` (`parseTtlMs`), as the number `0` already did. An `isr` route whose only
   trigger it was is `X_ROUTE_MODE_INVALID` at registration; it registered, and its page never
   expired. Write a positive `ttl`, or `tags`. Beside `tags` the route is tag-only, which is how it
   already behaved.
-- **BREAKING — `NativeReason` gains `'unparsable'`.** `linkVerdict` answers it for an `href` no URL
+- **BREAKING — (#99) `NativeReason` gains `'unparsable'`.** `linkVerdict` answers it for an `href` no URL
   parses (`href="http://"`), `formVerdict` for such an action; the client router leaves both to the
   browser, where its click and submit handlers threw a bare `TypeError`. An exhaustive `switch` over
   `NativeReason` adds `case 'unparsable':`.
-- **BREAKING — a CSS module scopes a class only where it is a selector, and every scoped name
+- **BREAKING — (#100) a CSS module scopes a class only where it is a selector, and every scoped name
   changes once.** Only a rule's prelude is rewritten; a declaration (`src: local(Inter.Regular)`), a
   comment and an at-rule's prelude are left as written, and their words are no longer keys of
   `classes`. An escaped class is one class: `.w-1\.5` was a scoped `w-1` and a stray `.5`, and is
@@ -856,7 +881,7 @@ Tier 2 — http. Tier 4 — render, pwa (slice 09).
   two `page.module.scss` with one source and different `@use`d partials shared one class name and
   the later sheet won on both pages. Rebuild; update a snapshot holding a scoped name; read an
   escaped class by its unescaped name.
-- **BREAKING — `CompiledPattern.specificity` is a positional rank.** `compilePattern` — moved to
+- **BREAKING — (#101) `CompiledPattern.specificity` is a positional rank.** `compilePattern` — moved to
   `route-pattern.ts`, still exported by name from `@ultimat3/render` — ranks as `@ultimat3/http`'s
   router walks: the first segment where two patterns differ decides, a literal 3, a `:param` 2, a
   `*catch-all` 1, and 4 where the pattern has ended, packed in base 5 over 22 segments. It was a
@@ -864,7 +889,7 @@ Tier 2 — http. Tier 4 — render, pwa (slice 09).
   Compare two patterns' `specificity`, never a stored number. The regex also matches a catch-all's
   bare prefix (`/docs` for `/docs/*path`), and a literal segment raw or percent-encoded in either
   hex case (`/precios-espa%C3%B1a` for `/precios-españa`).
-- **BREAKING — a notification tap opens this app only.** The service worker's `notificationclick`
+- **BREAKING — (#102) a notification tap opens this app only.** The service worker's `notificationclick`
   opens the payload's `url` when it resolves to the worker's own origin, else the app root; it
   opened any URL. A sender that deep-linked to another host links to a page of the app instead. The
   handler is emitted only when `generateServiceWorker` is handed a `vapid` key — `x build` never
@@ -876,13 +901,13 @@ Tier 2 — http. Tier 4 — render, pwa (slice 09).
 
 Tier 4 — ui, render. Tier 5 — cli (slice 09).
 
-- **BREAKING — `ThemeEnv` gains required `current()` and `appDefault()`.** `current()` is the
+- **BREAKING — (#103) `ThemeEnv` gains required `current()` and `appDefault()`.** `current()` is the
   `data-theme` on the document now; `appDefault()` the `data-theme-default` the boot stamped, `null`
   when no boot ran. `browserThemeEnv()` implements both. A hand-built `ThemeEnv` is TS2741: add
   `current: () => document.documentElement.getAttribute(THEME_ATTRIBUTE)` and
   `appDefault: () => document.documentElement.getAttribute(THEME_DEFAULT_ATTRIBUTE)`, or spread
   `browserThemeEnv()`; a test fake answers `null` for both to keep the OS rule.
-- **BREAKING — a fixed `theme.defaultMode` is what "no choice" means on the client.**
+- **BREAKING — (#104) a fixed `theme.defaultMode` is what "no choice" means on the client.**
   `resolveTheme()` is stored choice → the `data-theme` the boot stamped → `defaultTheme(env)`; it was
   stored choice → the OS, so with `defaultMode: 'dark'` on a light-OS machine the first toggle wrote
   the dark already on screen. With `'light'` or `'dark'`, `clearTheme()` — `ThemeToggle`'s "System" —
@@ -890,16 +915,16 @@ Tier 4 — ui, render. Tier 5 — cli (slice 09).
   `'system'` and an app with no boot are unchanged. An app that wants the OS followed sets
   `theme: { defaultMode: 'system' }`; a `ThemeEnv` that overrode `prefersDark` to pin the booted
   theme can drop the override.
-- **BREAKING — `THEME_INLINE_SCRIPT`, `themeInlineScriptTag`, `themeInlineScriptHash` and
+- **BREAKING — (#105) `THEME_INLINE_SCRIPT`, `themeInlineScriptTag`, `themeInlineScriptHash` and
   `themeInlineScriptCspSource` are removed** from `@ultimat3/ui` — deprecated in 20.2.0, "removed in
   21" and never were. The boot inlines `render`'s `themeScript({ fallback })` and admits its hash
   itself. Delete the import, the hand-inlined `<script>` and its `sha256-…` in your
   `Content-Security-Policy` (TS2305 at the import).
-- **BREAKING — `Popover`'s `trigger` receives `'aria-controls': string | undefined`.** Absent while
+- **BREAKING — (#106) `Popover`'s `trigger` receives `'aria-controls': string | undefined`.** Absent while
   the panel is closed: an IDREF to an element not in the document names nothing. A trigger that
   hands it to a prop typed `string`, or annotates its parameter with `string`, is TS2322: widen to
   `string | undefined`, or spread the control object onto the element.
-- **BREAKING — `Dropzone` and `FileInput` leave only accepted files in their `<input type=file>`.**
+- **BREAKING — (#107) `Dropzone` and `FileInput` leave only accepted files in their `<input type=file>`.**
   A file `accept`, `maxBytes` or `maxFiles` refused was posted with the form anyway; a drop with
   nothing accepted leaves an earlier pick alone, and a pick that refused everything empties the
   input, so a `required` control blocks the submit. A server or e2e test that received the refused
@@ -914,14 +939,14 @@ Tier 4 — ui, render. Tier 5 — cli (slice 09).
 
 Tier 2 — http (slice 10).
 
-- **BREAKING — `RateLimitStore` and `RateLimiter` gain a required `peek`.** A store answers
+- **BREAKING — (#108) `RateLimitStore` and `RateLimiter` gain a required `peek`.** A store answers
   `peek(key, bucket, nowMs): Promise<RateLimitPeek>`, a limiter `peek(key, bucketName)`: what the
   key holds now, refill applied, nothing written, a key never taken full. A hand-written store or
   limiter is TS2741. Answer from the state the store already keeps:
   `rateLimitPeek(bucket, refilledTokens(bucket, stored, lastMs, nowMs))`, and
   `rateLimitPeek(bucket, bucket.capacity)` for a key it holds nothing for. `memoryRateLimitStore`
   and `postgresRateLimitStore` implement it; the Postgres one is a `select`, never the upsert.
-- **BREAKING — an address that has spent its failed-credential allowance is refused before
+- **BREAKING — (#109) an address that has spent its failed-credential allowance is refused before
   `authenticate()`.** On an `auth: 'required'` route, once `rateLimit.defaultBucket` under
   `unauthenticated|ip:<address>` is empty, every request from that address is `429
   X_RATE_LIMITED` with `Retry-After` — a valid credential included — until the bucket refills. A
@@ -933,7 +958,7 @@ Tier 2 — http (slice 10).
 
 Tier 4 — mcp. Tier 5 — cli (slice 10).
 
-- **BREAKING — a caller-audience MCP server hides a 5xx cause.** A thrown code whose HTTP status
+- **BREAKING — (#110) a caller-audience MCP server hides a 5xx cause.** A thrown code whose HTTP status
   is 5xx, and which core's `hasPublicCause` does not list, renders a fixed cause pointing at the
   process's logs and `fix: x errors explain <CODE> --json` — or the error's `callerFix` — in a
   `tools/call` result and in `resources/read` error data. `X_DB_STATEMENT_FAILED` carried the
@@ -941,20 +966,20 @@ Tier 4 — mcp. Tier 5 — cli (slice 10).
   `createMcpServer`'s is `'developer'`, which is unchanged, as is every code under 500. Read the
   real cause in the log line or the error monitor; a server whose reader is the app's author passes
   `errorAudience: 'developer'`.
-- **BREAKING — `db.query` refuses more.** A `U&"…"` identifier — refused, never decoded; a call
+- **BREAKING — (#111) `db.query` refuses more.** A `U&"…"` identifier — refused, never decoded; a call
   that runs SQL handed to it as text — `query_to_xml*`, `cursor_to_xml*`, `table_to_xml*`,
   `schema_to_xml*`, `database_to_xml*`, `ts_stat`, `ts_rewrite`; and `pg_import_*`, which writes
   `pg_collation`. Each is `X_MCP_QUERY_REJECTED`. The leading keyword is read as Postgres lexes an
   identifier, so `select2 …` is no longer taken for a `select`. Spell an identifier plainly; run
   the inner statement as the query itself.
-- **BREAKING — `surface: 'meta'` lists a hand-registered tool without `destructive` as a `query`.**
+- **BREAKING — (#112) `surface: 'meta'` lists a hand-registered tool without `destructive` as a `query`.**
   It was `action`, while `ToolRegistry.verbClass` already metered it as a read. Declare
   `destructive: true` on a tool that writes.
-- **BREAKING — a `manage_resource` list call admits the `listParams` whitelist and the input's
+- **BREAKING — (#113) a `manage_resource` list call admits the `listParams` whitelist and the input's
   required keys, and nothing else.** An optional input key the whitelist leaves out
   (`includeDeleted`, `status_in`) is an `isError` result carrying `X_INPUT_INVALID`; it reached the
   query. Add the key to the query's `mcp.listParams`, or call the query's own tool.
-- **BREAKING — failed MCP authentications are metered per address.** `mcpHttpRoute`, the app's MCP
+- **BREAKING — (#114) failed MCP authentications are metered per address.** `mcpHttpRoute`, the app's MCP
   endpoint and `x mcp serve --transport http` count a missing or unresolved bearer token against
   the caller's address, 20 a minute (`MCP_UNAUTHENTICATED_LIMIT`; set
   `rateLimits: { read, write, unauthenticated }`). Past it the address is `429
@@ -965,14 +990,14 @@ Tier 4 — mcp. Tier 5 — cli (slice 10).
 
 Tier 4 — mail (slice 10).
 
-- **BREAKING — `send()` inside a transaction stages its job.** It enqueues through the jobs facade:
+- **BREAKING — (#115) `send()` inside a transaction stages its job.** It enqueues through the jobs facade:
   inside `withTransaction` the `mail.send` job is staged on the transaction and published after
   `COMMIT`, so a rollback sends nothing. It enqueued on the pool, and a handler that rolled back
   after `send()` mailed anyway. A test that reads the queue inside the transaction reads it after
   the commit. A facade installed with `mode: 'required'` refuses a `send()` outside a transaction
   with `X_OUTBOX_NO_TX`, as for any enqueue; the framework's boot installs `'default'`.
   `{ sync: true }` and a process with no job driver send inline, unchanged.
-- **BREAKING — one recipient rule at `send()`, on every driver.** `to`, `cc`, `bcc` and `replyTo`
+- **BREAKING — (#116) one recipient rule at `send()`, on every driver.** `to`, `cc`, `bcc` and `replyTo`
   holding a control character, a `<` or `>` in the mailbox, or a non-ASCII mailbox are
   `X_MAIL_ADDRESS_INVALID` (`meta.reason`: `injection` or `non-ascii`) from `send()` and
   `renderMessage()`. Resend and the memory driver delivered them; SMTP refused them at the worker.
@@ -985,7 +1010,7 @@ Tier 4 — mail (slice 10).
 
 Tier 4 — notify. Tier 5 — cli (slice 10).
 
-- **BREAKING — the boot creates `x_notify_digests`, so a committed schema dump drifts.** The table
+- **BREAKING — (#117) the boot creates `x_notify_digests`, so a committed schema dump drifts.** The table
   and its three indexes are applied beside the other notify tables, whether or not the app installs
   `createPgDigestStore`. Run `x db gen` and commit `packages/db/schema/`.
 - **cli:** the hourly `x.purge` sweeps `x_notify_digests` — windows closed longer ago than the
@@ -994,16 +1019,16 @@ Tier 4 — notify. Tier 5 — cli (slice 10).
 
 Tier 4 — manifest (slice 10).
 
-- **BREAKING — queries publish `input`, so every committed `x.manifest.json` is stale.**
+- **BREAKING — (#118) queries publish `input`, so every committed `x.manifest.json` is stale.**
   `frameworkSources` projects each query handle's input through `jsonSchemaOf`, as for an action;
   it wrote none, so `diffQueries`' input compare never fired. The `manifest` step is
   `X_MANIFEST_STALE` until `x manifest`; commit the file. A side with no `input` — a manifest
   committed before this release — is no evidence, so the first diff reports no change for it.
-- **BREAKING — a `NaN`, `±Infinity` or `-0` manifest fact fails the build.**
+- **BREAKING — (#119) a `NaN`, `±Infinity` or `-0` manifest fact fails the build.**
   `X_MANIFEST_FACT_INVALID`, the fact's location in `meta.path`. `JSON.stringify` wrote it as
   `null` or `0` while `buildId` hashed the token, so the committed file failed its own
   `verifyBuildId` and read as drift on every build. Make the declaration behind `meta.path` finite.
-- **BREAKING — a NOT NULL column losing its default is a breaking contract change.**
+- **BREAKING — (#120) a NOT NULL column losing its default is a breaking contract change.**
   `contract-diff` reports `entities.<name>.columns.<column>.hasDefault`, so the gate is
   `X_MANIFEST_BREAKING` without a major bump; it reported only `buildId`. On a nullable column the
   drop is `internal`; a default gained is `additive`. Restore the default, or bump the app's major
@@ -1011,7 +1036,7 @@ Tier 4 — manifest (slice 10).
 
 Tier 4 — ai. Tier 2 — http (slice 10).
 
-- **BREAKING — `BudgetStore` gains a required `take(key, tokens, limit)`.** It adds `tokens` to
+- **BREAKING — (#121) `BudgetStore` gains a required `take(key, tokens, limit)`.** It adds `tokens` to
   `key` only when the total stays at or under `limit`, in one atomic step on the store's side, and
   answers `{ taken, spent }` with `spent` read before the take; any other answer is `X_INVARIANT`
   at the reservation. A hand-written store is TS2741 — the README's Redis `EVAL` is one; never build
@@ -1020,11 +1045,11 @@ Tier 4 — ai. Tier 2 — http (slice 10).
   store scope, and gives back what it took when a later scope refuses. The turnstile ordered one
   root ledger, and every request roots its own: with `org: 1500`, eight concurrent 1,000-token
   calls, each under its own `gateway.scope()`, all reached the provider; one does now.
-- **BREAKING — `Gateway#callLedger(keys: BudgetKeys)` is required.** It was optional and took no
+- **BREAKING — (#122) `Gateway#callLedger(keys: BudgetKeys)` is required.** It was optional and took no
   argument; without it `llm()` and `agent()` rooted in an empty ledger, under no gateway ceiling. A
   hand-written or wrapping gateway is TS2741, a `callLedger()` call TS2554: forward `keys` to the
   wrapped gateway's `callLedger`.
-- **BREAKING — a gateway's `actor` and `org` ceilings count every `llm()`, `agent()` and `hive()`
+- **BREAKING — (#123) a gateway's `actor` and `org` ceilings count every `llm()`, `agent()` and `hive()`
   call.** With no `scope()` open each roots its ledger in
   `gateway.callLedger(budgetKeysFor(ctx.actor))` — the caller's `actor:<kind>:<id>` and
   `org:<orgId>`. `callLedger` passed no keys, so those ceilings bound only a hand-written
@@ -1034,7 +1059,7 @@ Tier 4 — ai. Tier 2 — http (slice 10).
   counter. A `scope()` keyed another way (`{ actorKey: actor.id }`) counts on a different key from
   an unscoped call of the same actor: pass `budgetKeysFor(actor)`. Raise the ceiling, or drop
   `actor` / `org` from `budget`.
-- **BREAKING — `agent()` hides a 5xx cause from the model.** A tool that throws a code whose status
+- **BREAKING — (#124) `agent()` hides a 5xx cause from the model.** A tool that throws a code whose status
   (`@ultimat3/http`'s `statusFor`) is 5xx, and which core's `hasPublicCause` does not list, reads
   back as `CODE: ` and a fixed sentence pointing at the server logs, plus `(fix: <callerFix>)` when
   the throw is an `UltimateError` that declares one. The cause and the developer `fix:` both went to
@@ -1043,20 +1068,20 @@ Tier 4 — ai. Tier 2 — http (slice 10).
   `registerErrorStatus` row is 500, so it is hidden too: give a refusal the model should react to a
   4xx — `registerErrorStatus({ X_ORDER_LOCKED: 409 })` — or
   `registerProblemMeta({ X_ORDER_LOCKED: { publicCause: true } })`.
-- **BREAKING — `fnv1a` is no longer exported.** TS2305. Use core's `fingerprint(value)`; for a
+- **BREAKING — (#125) `fnv1a` is no longer exported.** TS2305. Use core's `fingerprint(value)`; for a
   32-bit number, `Number.parseInt(fingerprint(text).slice(0, 8), 16)`, as `HashEmbedder` now does.
-- **BREAKING — `HashEmbedder` vectors change.** A token's slot and sign come from core's
+- **BREAKING — (#126) `HashEmbedder` vectors change.** A token's slot and sign come from core's
   `fingerprint`; FNV-1a/32 collides on ordinary words (`costarring` / `liquid`), which landed on one
   slot with one sign. A store indexed through it — `x dev` data, a seeded database, a fixture —
   holds vectors a query no longer produces, and a test pinning a ranking or a vector changes.
   Re-run `indexDocument` over each document; update the snapshot.
-- **BREAKING — an OpenAI-format `finish_reason` this build does not know reads `max_tokens`.** It
+- **BREAKING — (#127) an OpenAI-format `finish_reason` this build does not know reads `max_tokens`.** It
   read `end_turn` non-streamed and as no finish at all streamed; the Anthropic format already read
   an unknown `stop_reason` as `max_tokens`. An answer that also fails its schema is
   `X_LLM_TRUNCATED` from `llm()` and `agent()`, with no repair turn; `.stream()` throws
   `X_LLM_TRUNCATED`. A `null` on a streamed delta is still "not finished". A fake provider or
   recorded fixture that emits an invented reason emits `stop`.
-- **BREAKING — a vector read with no tenant bound, inside a request acting for an org, is
+- **BREAKING — (#128) a vector read with no tenant bound, inside a request acting for an org, is
   `X_VECTOR_UNSCOPED` (500).** `search`, `searchText` and `hybrid`, on `MemoryVectorStore` and
   `PgVectorStore`, when the ambient actor has an `orgId`. A store opened with no `scope`, or with an
   `allow` list alone, searched every tenant's rows. Outside a context, or for an actor with no org,
@@ -1064,25 +1089,25 @@ Tier 4 — ai. Tier 2 — http (slice 10).
   deliberate cross-tenant read, open the store with `scope: UNSCOPED` or call `.scoped(UNSCOPED)`.
   `UNSCOPED` is `{ crossTenant: true }`, was `{}`. **http:** `X_VECTOR_UNSCOPED` is 500 in
   `TIER_4_ERROR_STATUS`.
-- **BREAKING — `VectorStore#prune(filter, keep)` is required.** A hand-written store is TS2741:
+- **BREAKING — (#129) `VectorStore#prune(filter, keep)` is required.** A hand-written store is TS2741:
   delete every in-scope row `filter` matches except the ids in `keep`. `indexDocument` called it
   only when present, so re-indexing a shorter document left the old tail retrievable.
-- **BREAKING — `chunk()` writes `metadata.source` as the document id, over a `source` the caller
+- **BREAKING — (#130) `chunk()` writes `metadata.source` as the document id, over a `source` the caller
   passed.** The caller's won, and `indexDocument` prunes by `source`, so a re-index pruned another
   document's rows, or none. Store your own value under another key.
-- **BREAKING — `numericTolerance(t)` refuses a `NaN`, infinite or negative `t`.** `X_INVARIANT`
+- **BREAKING — (#131) `numericTolerance(t)` refuses a `NaN`, infinite or negative `t`.** `X_INVARIANT`
   where it is called — an eval file's import. `NaN` scored every answer `NaN`, a negative `t` every
   answer 0, `Infinity` every answer 1. `0` is exact match — see Fixed.
 - **ai:** `@ultimat3/ai` depends on `@ultimat3/http` (tier 2), for `statusFor`; an install pulls it.
 
 Tier 5 — testing (slice 11).
 
-- **BREAKING — `describeApp`'s `app()` read before boot is `X_TEST_APP_NOT_BOOTED`.** Called while
+- **BREAKING — (#132) `describeApp`'s `app()` read before boot is `X_TEST_APP_NOT_BOOTED`.** Called while
   the `describe` block is still registering, before its `beforeAll`, the accessor threw a bare
   `ReferenceError`; it throws an `UltimateError`. A test that asserted
   `toBeInstanceOf(ReferenceError)` asserts `toBeUltimateError('X_TEST_APP_NOT_BOOTED')`; read
   `app()` inside a `test` body.
-- **BREAKING — `assertDeterministic` compares core's `canonicalJson` forms.** Key order is no
+- **BREAKING — (#133) `assertDeterministic` compares core's `canonicalJson` forms.** Key order is no
   longer a difference; a BigInt, a Date or a Map result is compared, where `JSON.stringify` threw a
   bare `TypeError` or folded it to `{}`; a cyclic result is compared by `Bun.deepEquals`. A
   top-level `undefined`, function or symbol is compared by its type, so `undefined` then `null` is
@@ -1090,12 +1115,12 @@ Tier 5 — testing (slice 11).
   forms, and the `fix:` is the call to paste:
   `assertDeterministic('…', () => { installDeterminism(); return body(); })`. A test that relied on
   key order failing passes now: assert the order itself.
-- **BREAKING — `frozenClock(now, body)` announces both moves.** `onClockMoved` listeners fire once
+- **BREAKING — (#134) `frozenClock(now, body)` announces both moves.** `onClockMoved` listeners fire once
   entering and once restoring, as `setFrozenClock` already announced, so the frozen scheduler's
   lease renewals fire inside and after the body. A listener that throws on entry rejects the call:
   the body does not run and the earlier instant is restored. A test that counted announcements
   counts two more per call.
-- **BREAKING — `mountIsland` loads each mount from its own scratch directory.** Two mounts of
+- **BREAKING — (#135) `mountIsland` loads each mount from its own scratch directory.** Two mounts of
   byte-identical chunks are two module instances; they shared module state. The directory is
   removed on dispose, when the mount throws, and — for a mount nobody disposed — at the next file
   boundary or after the run's last file. `process.on('exit')` never fires under `bun test`, so the
@@ -1106,7 +1131,7 @@ Tier 5 — testing (slice 11).
 
 Tier 5 — scraping (slice 11).
 
-- **BREAKING — `localBrowser({ options: { args } })` keeps the caller's args and refuses a proxy
+- **BREAKING — (#136) `localBrowser({ options: { args } })` keeps the caller's args and refuses a proxy
   switch in them: `X_SCRAPE_LAUNCH_ARGS_INVALID`.** `--proxy-server` (the driver's `proxy` or the
   run's `egress`) is appended after the caller's args; passing `args` dropped it, so the browser
   left by the worker's own address while the session reported the exit. `--proxy-server`,
@@ -1114,18 +1139,18 @@ Tier 5 — scraping (slice 11).
   `--`, any case — in `args`, or an `args` that is not a list of strings, is refused before
   anything launches, exit configured or not. Set the exit with `localBrowser({ proxy })` or
   `scrape({ egress })`.
-- **BREAKING — `CdpBrowserLike.target()` is required.** It answers a `CdpBrowserTargetLike` whose
+- **BREAKING — (#137) `CdpBrowserLike.target()` is required.** It answers a `CdpBrowserTargetLike` whose
   `createCDPSession()` gives a `CdpBrowserSessionLike` (`send` plus `on`). `allowHosts` and `block`
   are enforced at browser level, so a popup, a `target=_blank` tab or any target the page opens is
   screened; page-level interception saw only the page this package created, and a `window.open`
   reached an off-list host. A hand-written launcher or test double is TS2741; puppeteer already
   has it. A browser that refuses browser-level `Fetch.enable` fails `open()` with
   `X_SCRAPE_BROWSER_UNREACHABLE`.
-- **BREAKING — a jar-less CDP browser is `X_NOT_IMPLEMENTED`.** `session()` on a browser with no
+- **BREAKING — (#138) a jar-less CDP browser is `X_NOT_IMPLEMENTED`.** `session()` on a browser with no
   `cookies()` answered an empty jar, and `restore()` of a session holding cookies on one with no
   `setCookie()` dropped them — the HTTP leg and a persisted session ran signed out. Use a
   puppeteer-core that exposes both, or set `auth: { reuse: false }` on the `scrape()` definition.
-- **BREAKING — `burnSession(plan, seen)` takes the version of the record the run used.**
+- **BREAKING — (#139) `burnSession(plan, seen)` takes the version of the record the run used.**
   `SessionState` gains an optional `version`, a random UUID written on every save and every
   refusal tombstone; a record without one is identified by its `savedAt`. A record another run
   saved since is kept, and a refused login's tombstone is not written over it either — two runs on
@@ -1135,10 +1160,10 @@ Tier 5 — scraping (slice 11).
   at a one-argument call: pass `recordVersion(restored)`. A hand-written
   `ScrapeSessionStore` keeps `version` as it was handed. The compare is a load then a write — the
   store has no compare-and-set — so it narrows the race and does not close it.
-- **BREAKING — `expect.maxDrop` outside `[0, 1)` is `X_INVARIANT` at `scrape()`.** `1` or above
+- **BREAKING — (#140) `expect.maxDrop` outside `[0, 1)` is `X_INVARIANT` at `scrape()`.** `1` or above
   — `50`, the percent habit — put the alarm line at or below zero, so it never fired; a negative
   one fired on a run that matched its baseline. Write `50` as `0.5`.
-- **BREAKING — `urlSecretValues` conceals only credential-shaped query values and path
+- **BREAKING — (#141) `urlSecretValues` conceals only credential-shaped query values and path
   segments.** A query value whose key, split on `_`, `-`, `.` and camelCase, holds a credential
   word (`token`, `key`, `apiKey`, `secret`, `auth`, `sig`, `password`, `session`, `jwt`, `bearer`
   and their kin — `apiKey` is one, `keyboard` is not); a value or segment of 16+ characters mixing
@@ -1147,18 +1172,18 @@ Tier 5 — scraping (slice 11).
   `redactSecrets` also redacts each secret's percent-encoded — hex escapes in either case —
   form-encoded and HTML-escaped spellings, which passed through. A snapshot of a redacted log or
   artifact changes.
-- **BREAKING — on the HTTP leg a declared header replaces the session's of the same name, whatever
+- **BREAKING — (#142) on the HTTP leg a declared header replaces the session's of the same name, whatever
   its case.** Names were compared case-sensitively and `Headers` appends a second spelling: a
   declared `User-Agent: Mine` beside the session's `user-agent` went out as `BrowserUA, Mine`, and
   a declared `Cookie` was joined to the jar's. A request that relied on the joined value declares
   the whole value.
-- **BREAKING — a host admitted only by a wildcard is resolved and pinned on the HTTP leg and the
+- **BREAKING — (#143) a host admitted only by a wildcard is resolved and pinned on the HTTP leg and the
   robots read.** Any address that is not public is `X_SCRAPE_HOST_BLOCKED`, naming the address
   class, never the address; the connection goes to the approved address. `allowHosts: ['*']`
   admitted a name resolving to `127.0.0.1`. An exact rule and a proxied run are unchanged. Add an
   exact rule for an internal host the run must reach. The browser resolves its own names, so its
   leg is not pinned — `wiki/Known-Gaps.md`.
-- **BREAKING — the robots read follows redirects itself, at most 5.** It followed every redirect,
+- **BREAKING — (#144) the robots read follows redirects itself, at most 5.** It followed every redirect,
   to any host. With `allowHosts` — a `scrape()` run always passes its own — every hop, the first
   included, is screened against the list; a hop off it is never requested. With none, which only a
   direct `createRobotsGate` / `robotsFetcher` caller can have, a redirect is followed only while it
@@ -1166,49 +1191,49 @@ Tier 5 — scraping (slice 11).
   path; another host, a subdomain included, is never requested. A hop not followed and a sixth
   redirect read as "no robots" — no restrictions. Both take optional `allowHosts` and `resolve`.
   List the host a site's `robots.txt` redirects to.
-- **BREAKING — a recording whose `recordedAt` is not a date is `X_SCRAPE_FIXTURE_STALE`.** Its age
+- **BREAKING — (#145) a recording whose `recordedAt` is not a date is `X_SCRAPE_FIXTURE_STALE`.** Its age
   read `NaN`, and `NaN > maxAgeMs` is false, so it passed as fresh. Re-record the fixture.
 
 Tier 5 — admin (slice 11).
 
-- **BREAKING — `KeysetBound.value` and `AdminCursor.value` are `string | null`.** A row whose sort
+- **BREAKING — (#146) `KeysetBound.value` and `AdminCursor.value` are `string | null`.** A row whose sort
   column is NULL is bounded by `null`, was `''`, and sorts as the largest value — last ascending,
   first descending — as entity and query order a nullable key. A custom `AdminRepo#list` that
   reads `keyset.value` handles `null` (TS2345 / TS18047 where it is used as a string); the fleet
   repos (queues, tasks, workers) order NULL the same way.
-- **BREAKING — an admin edit form posts `_version`, and an edit whose row changed since the form
+- **BREAKING — (#147) an admin edit form posts `_version`, and an edit whose row changed since the form
   was drawn, or that posts none, is a 409 that writes nothing.** `_version` is `rowVersion(row)`, a
   keyed fingerprint of the row as read, sealed values excluded. The form is redrawn with what the
   operator typed over the row as it is now, under the current version, so a second save overwrites
   on purpose. It merged the stale copy of every posted field over a concurrent edit. A script or
   test that posts the edit form by hand posts the `_version` the form rendered. `adminUpdate` with
   no `version` — an MCP call, a script — writes against the row as it is.
-- **BREAKING — `AdminFormProps.version: string | null` is required.** TS2741 where `AdminForm` is
+- **BREAKING — (#148) `AdminFormProps.version: string | null` is required.** TS2741 where `AdminForm` is
   rendered by hand: pass `rowVersion(row)` for an edit, `null` for a create.
-- **BREAKING — `CrudResult` gains the failure kind `'stale'`, with `row` (as it is now), `version`
+- **BREAKING — (#149) `CrudResult` gains the failure kind `'stale'`, with `row` (as it is now), `version`
   and `audit`.** `adminUpdate(resource, ctx, id, patch, { version })` answers it when `version` is
   given and no longer matches; nothing is written and the log holds a `failed` entry. An exhaustive
   `switch` over `kind` does not compile until it handles `'stale'`.
-- **BREAKING — a create and an update are decided again on what they write.** After validation the
+- **BREAKING — (#150) a create and an update are decided again on what they write.** After validation the
   operation is decided a second time with the validated values as the subject's `input` — on an
   update beside `row`, the row before. Create and update decisions never carried `input`, so a rule
   over written values ("never filed as paid", "never moved to another owner") could not fire on
   the admin. A policy whose rule reads `input` now refuses there; a write it refuses is the usual
   denied result and audit entry.
-- **BREAKING — `/admin/audit` and a row's history card show the actor's tenant only.** An actor with
+- **BREAKING — (#151) `/admin/audit` and a row's history card show the actor's tenant only.** An actor with
   an `orgId` reads entries of that org; an actor with none — the platform — reads every tenant's.
   `audit:read` in one org read every org's operators and what they touched.
-- **BREAKING — an action's handler, a set-based `matching` call and a queued batch's enqueues commit
+- **BREAKING — (#152) an action's handler, a set-based `matching` call and a queued batch's enqueues commit
   with their audit entry.** They run inside `AuditLog#atomic` with the `allowed` entry; on
   `postgresAuditLog` an entry that cannot be written rolls the work back, and the log holds one
   `failed` entry. The write committed while its entry was lost. A queued batch's id is derived from
   its content, so a retry after a failed enqueue dedupes onto the chunks the queue still holds —
   while they are live.
-- **BREAKING — `?scope=*` is "no scope, not even the default".** `listHref({ scope: null })` writes
+- **BREAKING — (#153) `?scope=*` is "no scope, not even the default".** `listHref({ scope: null })` writes
   it, so a related card's "all" link opens every row; it wrote nothing and opened the default scope.
   A scope declared under the name `*` is `X_ADMIN_FILTER_INVALID` where the resource is declared:
   rename it.
-- **BREAKING — admin list filters refuse what an operator did not type.** A number filter takes
+- **BREAKING — (#154) admin list filters refuse what an operator did not type.** A number filter takes
   decimal digits, a sign and a point — a blank, `0x10`, `1e3` and `Infinity` are
   `X_ADMIN_FILTER_INVALID`, were read as `0`, `16`, `1000` and an unbounded list. A date filter
   refuses a day the calendar does not have (`2026-02-30`), which `Date` rolled into March. Correct
@@ -1218,7 +1243,7 @@ Tier 5 — admin (slice 11).
 
 Tier 1 — seo (slice 12a).
 
-- **BREAKING — a split sitemap's parts are `/sitemaps/<n>.xml`, were `/sitemap-<n>.xml`.** Past
+- **BREAKING — (#155) a split sitemap's parts are `/sitemaps/<n>.xml`, were `/sitemap-<n>.xml`.** Past
   `maxUrls` (50,000 by default) `buildSitemap` writes the index at `/sitemap.xml` and its parts
   under `SITEMAP_PARTS_DIR`. The running web role now serves them (`GET /sitemaps/:file`); every
   `/sitemap-<n>.xml` 404'd there, because a route parameter is a whole path segment. A part the
@@ -1228,7 +1253,7 @@ Tier 1 — seo (slice 12a).
 
 Tier 2 — policy (slice 12a).
 
-- **BREAKING — `restorePermissions(names, declaredAt)` requires where each permission was
+- **BREAKING — (#156) `restorePermissions(names, declaredAt)` requires where each permission was
   declared.** A one-argument call is TS2554. It restored the names with no declaration site, and
   a name with no site is one the `policy` step never judges — so a hand-written restore silently
   turned `X_PERMISSION_BORROWED` off for every permission it put back. Capture
@@ -1237,60 +1262,60 @@ Tier 2 — policy (slice 12a).
 
 Tier 5 — cli (slice 12a).
 
-- **BREAKING — `x build --target static` refuses an export directory it cannot prove is its own:
+- **BREAKING — (#157) `x build --target static` refuses an export directory it cannot prove is its own:
   `X_BUILD_OUT_UNSAFE`.** Every build empties the directory first, and deleted an existing,
   non-empty `--out` whatever it held. It now empties only a directory that is absent, empty, or
   holds the `.x-export` marker an earlier build wrote — every build writes it, and the default
   `.x/static` is exempt. An `--out` that is the app root or holds it is `X_BUILD_OUT_UNSAFE`, was
   `X_CLI_BAD_FLAG`. Empty a custom output directory once, or build to `.x/static`; the marker
   ships in the export.
-- **BREAKING — a static build over a module that fails to import is `X_BUILD_FAILED`.** The build
+- **BREAKING — (#158) a static build over a module that fails to import is `X_BUILD_FAILED`.** The build
   succeeded and the page that module registered was missing from the export. It is refused before
   the export is emptied, so the last good export survives. `x verify --only manifest --json` lists
   each module and why.
-- **BREAKING — `x build` refuses a flag its target never reads: `X_CLI_BAD_FLAG`.** `--tag` is the
+- **BREAKING — (#159) `x build` refuses a flag its target never reads: `X_CLI_BAD_FLAG`.** `--tag` is the
   docker target's only; `--out` is not the docker target's; the prebuilt target takes none of
   `--tag`, `--out` or `--no-preflight`. Each was ignored. Drop the flag.
-- **BREAKING — `x g --dry-run` is the write plan.** It answers `ok: false` with the conflicts the
+- **BREAKING — (#160) `x g --dry-run` is the write plan.** It answers `ok: false` with the conflicts the
   real run would meet, and `data.files` lists only files it would write — a slice module already
   on disk is no longer listed. It answered `ok: true` and every planned path.
-- **BREAKING — `x g` refuses a primitive whose binding `apps/web/api/index.ts` already holds:
+- **BREAKING — (#161) `x g` refuses a primitive whose binding `apps/web/api/index.ts` already holds:
   `X_GENERATE_CONFLICT`, before anything is written.** The index binds each listed module under its
   camelCased file name; a name held by another feature's module, or by the index's own `api`,
   `defineApi` or `health`, left the job unregistered under a green run or the index unloadable.
   The `fix:` is the same command under a free name, prefixed with the feature.
-- **BREAKING — `x g` refuses three kinds of name: `X_CLI_BAD_FLAG`.** A plural `resource` or
+- **BREAKING — (#162) `x g` refuses three kinds of name: `X_CLI_BAD_FLAG`.** A plural `resource` or
   `entity` name (`posts` → `x g resource post`), a name with a non-ASCII letter (`Über` →
   `x g entity uber`), and a name whose type the generated code also uses (`promise`, `omit`,
   `partial`, `row` → `x g resource promise-resource`). Each wrote a slice that pluralised twice or
   did not compile. `date`, `record`, `response`, `event`, `error` and `money` stay allowed.
-- **BREAKING — `x affected` and `x test --affected` read a changed file no workspace owns as
+- **BREAKING — (#163) `x affected` and `x test --affected` read a changed file no workspace owns as
   root-wide.** Any non-doc path outside every workspace — `scripts/`, `guards/`,
   `tsconfig.base.json`, `bin/` — selects every workspace and every test file, those outside any
   workspace included. Only a fixed list of root files did; a change under `scripts/` selected
   nothing. A CI job keyed on `--affected` runs more.
-- **BREAKING — test discovery skips `build/`, `examples/` and `dummy/` at the root only.** `x test`
+- **BREAKING — (#164) test discovery skips `build/`, `examples/` and `dummy/` at the root only.** `x test`
   and the gate's steps — the parallel ones and the serial `live` and `e2e` — matched them at any
   depth, so an app slice named `build` lost 14 of its 16 test files and `x g resource example` its
   page tests. `dist/` and `node_modules/` are still skipped everywhere. A test under such a slice
   that never ran now runs, and may fail. Both tracked apps and this repository select the same
   files as before.
-- **BREAKING — the `filesize` and `errors` steps read `guards/*.ts`, `apps/*/server.ts` and
+- **BREAKING — (#165) the `filesize` and `errors` steps read `guards/*.ts`, `apps/*/server.ts` and
   `apps/*/prerender.ts`; `x i18n check` and the `i18n` step skip `guards/`.** A guard or an app
   entry file past 500 lines, or with a `fix:` that is not a runnable command, now fails the gate.
   A guard's fix text quotes `t('…')` as an example, which the `i18n` step read as a missing key.
-- **BREAKING — the web role keeps `/robots.txt`, `/sitemap.xml` and its parts for one hour per
+- **BREAKING — (#166) the web role keeps `/robots.txt`, `/sitemap.xml` and its parts for one hour per
   origin, at most 8 origins.** Every request recomputed them, each dynamic route's `prerender()`
   included. A computation that fails is not kept. A sitemap change reaches a running process an
   hour later at most — restart it to see one sooner.
-- **BREAKING — `x new` pins `solid-js` 1.9.15**, the runtime the island compiler targets and this
+- **BREAKING — (#167) `x new` pins `solid-js` 1.9.15**, the runtime the island compiler targets and this
   repository runs; it pinned 1.9.14. An existing app moves its pin by hand.
-- **BREAKING — `x new` writes `tsc --noEmit -p ../../tsconfig.json` as the `typecheck` script of
+- **BREAKING — (#168) `x new` writes `tsc --noEmit -p ../../tsconfig.json` as the `typecheck` script of
   `apps/web` and `apps/admin`**, as every package workspace already had. `-p tsconfig.json` left
   out type extensions another workspace declares (`PermissionRegistry` in `app/*/policy.ts`), so
   `apps/admin` passed a permission typo the gate refuses. The script now checks the whole program,
   and is slower. An existing app sets the script in both `package.json` files.
-- **BREAKING — the `policy` step refuses a permission only a package declared:
+- **BREAKING — (#169) the `policy` step refuses a permission only a package declared:
   `X_PERMISSION_BORROWED`.** An app action, query or route guard whose `can()` — inside `or()`
   included — names a permission every `definePermissions()` call for which ran outside the app root
   or under `node_modules`: `defineAdmin()` declares `<entity>:read|write|delete` for each mounted
@@ -1298,7 +1323,7 @@ Tier 5 — cli (slice 12a).
   `X_PERMISSION_UNKNOWN` at that `can()`. Add the name to the app's own `definePermissions([...])`
   — the finding names the file. A permission whose declaration site cannot be read is not judged;
   an undeclared one is still `X_PERMISSION_UNKNOWN`.
-- **BREAKING — the `drift` step reports a `REPLICA IDENTITY FULL` no migration recorded:
+- **BREAKING — (#170) the `drift` step reports a `REPLICA IDENTITY FULL` no migration recorded:
   `X_DB_SCHEMA_UNMIGRATED`.** The tables `x db gen` grants it to — each params channel's `records`
   tables and each live query's `subscribes:` — are part of the declared snapshot; a table whose
   FULL no migration records is reported, with `x db gen "record replica identity full"`. An app
@@ -1307,26 +1332,26 @@ Tier 5 — cli (slice 12a).
 
 Tier 5 — testing (slice 12a).
 
-- **BREAKING — `ProcessRegistrySnapshot` has a required `permissionSites`.** It captures
+- **BREAKING — (#171) `ProcessRegistrySnapshot` has a required `permissionSites`.** It captures
   `permissionDeclarationSites()` and restores through `restorePermissions(names, sites)`, so a
   test's restore keeps every permission's provenance. A hand-built snapshot is TS2741: add
   `permissionSites: permissionDeclarationSites()`, or `{}` for none.
 
 Tier 2 — http (slice 12b).
 
-- **BREAKING — a handler's own `content-security-policy` is kept, and the app's policy is added
+- **BREAKING — (#172) a handler's own `content-security-policy` is kept, and the app's policy is added
   beside it.** The security stage overwrote it. Both policies are sent, comma-joined, and the
   browser enforces both, so a handler can only narrow what a page may do — a `sandbox` on an
   uploaded file now reaches the browser. The report-only header follows the same rule; every other
   security header is still overwritten. A handler that meant to loosen the app's policy widens it
   through `security.csp.extend` instead.
-- **BREAKING — the `fix:` of `X_ROUTE_NOT_FOUND` and of the duplicate-route and mount-conflict
+- **BREAKING — (#173) the `fix:` of `X_ROUTE_NOT_FOUND` and of the duplicate-route and mount-conflict
   errors reads `x routes --json`, was `x routes list --json`.** Codes unchanged; a monitor or
   script that matches the fix string updates it. `x routes list` is refused — see `cli`.
 
 Tier 5 — cli (slice 12b).
 
-- **BREAKING — OPERATOR ACTION: a serving role no longer applies the framework schema;
+- **BREAKING — (#174) OPERATOR ACTION: a serving role no longer applies the framework schema;
   `ROLE=migrate` does, before it.** On an external `DATABASE_URL`, `web`, `sync`, `worker`,
   `scheduler` and `replicator` verify that their build was applied and refuse to boot with
   `X_FRAMEWORK_SCHEMA_UNAPPLIED` (`fix: x db migrate`) until it was; every serving pod ran the
@@ -1336,59 +1361,103 @@ Tier 5 — cli (slice 12b).
   embedded database applies its own. The shipped chart's pre-install/pre-upgrade migrate hook and
   `docker-compose.prod.yml`'s `service_completed_successfully` already order it; a deploy that
   starts serving pods first, or skips migrate, runs `ROLE=migrate` first.
-- **BREAKING — a malformed `TRUSTED_PROXY_HOPS` is `X_TRUSTED_PROXY_HOPS_INVALID`, was
+- **BREAKING — (#175) a malformed `TRUSTED_PROXY_HOPS` is `X_TRUSTED_PROXY_HOPS_INVALID`, was
   `X_PORT_INVALID`.** It must be decimal digits, 1 to 64. An alert or script matching the old code
   updates it.
-- **BREAKING — `PORT` and `METRICS_PORT` are decimal digits only.** `0x1F90`, `8e3` and `+80` are
+- **BREAKING — (#176) `PORT` and `METRICS_PORT` are decimal digits only.** `0x1F90`, `8e3` and `+80` are
   `X_PORT_INVALID`; `Number` read them as 8080, 8000 and 80. A blank `ROLE` is the default `web`;
   it was refused as a role nobody declared.
-- **BREAKING — a stored object that is not a raster image, audio or video is served as a sandboxed
+- **BREAKING — (#177) a stored object that is not a raster image, audio or video is served as a sandboxed
   download.** `/_storage` and `/media` add `content-disposition: attachment` and
   `content-security-policy: sandbox` to everything but PNG, JPEG, GIF, WebP, AVIF, MP3, Ogg, WAV,
   WebM and MP4 — an SVG, HTML, XML or PDF opened from the app's origin ran with its cookies. A link
   that opened an uploaded PDF or SVG in a tab now downloads it; `<img>`, `<audio>` and `<video>`
   are unaffected.
-- **BREAKING — `worker`, `scheduler` and `replicator` get no readiness grace.** On SIGTERM they stop
+- **BREAKING — (#178) `worker`, `scheduler` and `replicator` get no readiness grace.** On SIGTERM they stop
   claiming at once; the grace that keeps a listener answering applied to every role. `web` and
   `sync` keep `drain.readinessGraceMs`.
-- **BREAKING — the replicator is ready only while its replication stream runs.** The chart gives
+- **BREAKING — (#179) the replicator is ready only while its replication stream runs.** The chart gives
   it a `readinessProbe` on `/readyz` of the metrics port, and its headless metrics Services set
   `publishNotReadyAddresses: true`, so a not-ready replicator is still scraped. While the stream is
   down the pod reads 0/1. An alert that treats a not-ready replicator as an outage now fires then —
   the signal intended. `docker/helm` carries it; a chart `x new` wrote before this release copies
   both edits from `docker/helm/templates/_helpers.tpl` and `service.yaml`.
-- **BREAKING — `x help <name>` for a name no command has is `X_CLI_UNKNOWN_COMMAND`, exit 1**, with
+- **BREAKING — (#180) `x help <name>` for a name no command has is `X_CLI_UNKNOWN_COMMAND`, exit 1**, with
   the nearest name as the fix. It printed the whole catalogue and exited 0.
-- **BREAKING — `x i18n add`, `x i18n sync`, `x db seed` and `x db backfill` (`--pending`, `--all`,
+- **BREAKING — (#181) `x i18n add`, `x i18n sync`, `x db seed` and `x db backfill` (`--pending`, `--all`,
   `<name>`) exit 1 on any finding**, an app module that will not import included. Each answered
   `ok: true` beside the findings. Fix the module the finding names.
-- **BREAKING — `x doctor` probes `PORT` when `--port` is absent, and checks `APP_URL`.** It probed
+- **BREAKING — (#182) `x doctor` probes `PORT` when `--port` is absent, and checks `APP_URL`.** It probed
   3000 whatever `PORT` said. A loopback `APP_URL` on another port is `X_APP_URL_PORT_MISMATCH`, one
   that is not an http(s) origin `X_CONFIG_INVALID`; an unset or public one is not judged. The
   exported `DoctorProbe` gains a required `appUrl: string | undefined` — TS2741 in a hand-built
   probe.
-- **BREAKING — the `/_x` SQL panel runs a statement only on a same-origin `POST /_x/db`, and every
+- **BREAKING — (#183) the `/_x` SQL panel runs a statement only on a same-origin `POST /_x/db`, and every
   `/_x` route answers a loopback `Host` only.** `GET /_x/db?sql=` is `405 X_METHOD_NOT_ALLOWED`; a
   cross-site POST is `X_CSRF_BLOCKED`; another `Host` is `421 X_DEV_HOST_REFUSED`. The statement
   runs through `readOnlySql`. From a shell: `curl -sS -H 'accept: application/json' --data-urlencode
   'sql=select 1' http://localhost:3000/_x/db`.
-- **BREAKING — `x jobs show|retry|cancel|rm|promote <id>` refuses an id that is not a uuid:
+- **BREAKING — (#184) `x jobs show|retry|cancel|rm|promote <id>` refuses an id that is not a uuid:
   `X_JOB_UNKNOWN`**, before any driver call. On Postgres it was `X_DB_STATEMENT_FAILED` (`22P02`).
-- **BREAKING — `x shot --out <relative path>` resolves against the cwd**, as `x build --out` does;
+- **BREAKING — (#185) `x shot --out <relative path>` resolves against the cwd**, as `x build --out` does;
   it resolved against the app root.
-- **BREAKING — `x dev`'s `X_PORT_IN_USE` fix suggests `--port N+2`**, was `N+1`: `x dev` binds a
+- **BREAKING — (#186) `x dev`'s `X_PORT_IN_USE` fix suggests `--port N+2`**, was `N+1`: `x dev` binds a
   pair, and `N+1` is most often the sync role of the `x dev` already running.
-- **BREAKING — `x verify merge` reads each part's steps against their shape, and requires sharded
+- **BREAKING — (#187) `x verify merge` reads each part's steps against their shape, and requires sharded
   `files` to partition the corpus.** A step without a numeric `durationMs` or well-formed findings
   is `X_VERIFY_MERGE_INPUT`; shards whose `files` repeat a file, or whose union does not hash to
   `corpusHash`, are red. Shard every job by one rule — all with `--timings`, or none.
-- **BREAKING — MCP `tests.run` counts an error outside any test, and a non-zero exit, as a
+- **BREAKING — (#188) MCP `tests.run` counts an error outside any test, and a non-zero exit, as a
   failure.** A run that printed `0 fail` and `1 error` and exited 1 answered `failed: 0`.
-- **BREAKING — `x mcp serve --transport http` on a taken port is `X_PORT_IN_USE`**, with the run on
+- **BREAKING — (#189) `x mcp serve --transport http` on a taken port is `X_PORT_IN_USE`**, with the run on
   a neighbouring port as the fix and the host closed first; it was `X_CLI_UNEXPECTED`.
-- **BREAKING — `x routes` refuses any positional: `X_CLI_UNKNOWN_COMMAND`, fix `x routes --json`.**
+- **BREAKING — (#190) `x routes` refuses any positional: `X_CLI_UNKNOWN_COMMAND`, fix `x routes --json`.**
   `x routes list --json` ran with the word ignored. Use `x routes --json`, `--surface <s>` to
   filter.
+
+Tier 3 — action (slice 13a).
+
+- **action:** `MemoryAuditSink#write` is typed `void`, was `Promise<void> | void`: the sink is
+  synchronous. A narrowing — a caller that awaited it gets a lint hint, nothing else.
+
+Tier 5 — cli (slice 13a).
+
+- **BREAKING — (#191) `checkErrorCodesThrown` waives a code only when a list names it, never on a
+  row's wording.** A registered code no source constructs was exempt when its `wiki/Error-Codes.md`
+  row said "not thrown" or "thrown by nothing" — any sentence using either phrase silenced the rule
+  for its code. The waiver is now a set: the function's new third argument, defaulting to this
+  repository's `UNTHROWN_CODES` (`packages/cli/src/unthrown-codes.ts`), plus the reserved heading.
+  A listed code that is constructed again is `X_ERROR_CODE_UNTHROWN_STALE`. A host repository that
+  calls it passes its own set: `checkErrorCodesThrown(root, page, new Set(['X_MY_RETIRED']))`. The
+  `X_ERROR_CODE_UNTHROWN` fix is `x errors explain X_ERROR_CODE_UNTHROWN --json`.
+
+Repository scripts (slice 13a).
+
+- **scripts:** a root script refuses a value on a boolean flag — `--dry-run=true`, `--json=true`,
+  `--json merge` — with `X_CLI_BAD_FLAG`, naming the corrected command; a refusal while parsing is
+  one JSON document under `--json`.
+- **scripts:** `pin-raises` needs a NEW `why:` on a raised row, and also reads `DOC_COMMAND_PINS`,
+  `README_FENCE_BACKLOG` and each app's `expectedRed`; `budget-raises` needs a new `measured:` no
+  higher than the new budget.
+- **scripts:** `doc-commands` reads `examples/**/*.md` and `dummy/**/*.md`; `doc-fixes` refuses a
+  positional the command's usage line has no slot for.
+- **scripts:** `to-throw-returns` and `test-bare-error` catch `Error(…)` without `new`, the bare
+  `Error` name, a callback wrapped onto a new line and a factory typed `: Error`;
+  `skip-if-cleanup`, `index-of-order` and the `tests` corpus include `packages/*/e2e`.
+- **scripts:** `list-workspaces --json` lists in publish order — within a tier, a dependency before
+  its dependant (`publishSequence`); an unknown `--tier` or an empty table exits non-zero.
+  `registry-audit` and `release --check` / `--bump` refuse a tree with no publishable workspace
+  (`X_CORPUS_UNSCANNED`).
+- **scripts:** a release bump that fails part-way names every file it already wrote
+  (`X_RELEASE_VERSION_SKEW`), and the manifest, lockfile and footer steps each run whatever the
+  one before did.
+- **scripts:** `bun run verify --workers` takes an integer from 1 to 64 only; `new-package` needs a
+  kebab-case name, and `--tier` for a name no tier table holds; a coverage unit runs
+  `bun test ./packages/<name>`, a path, was a substring filter.
+- **scripts:** `image-contract` checks every tracked Dockerfile — a `COPY --from` an external image
+  or a stage index included — and refuses one with no ignore file (`X_IMAGE_SECRET_UNIGNORED`).
+- **biome.json:** `noFloatingPromises` is no longer switched off for tests and for paths outside
+  `packages/*/src`.
 
 Tier 5 — cli.
 
@@ -1890,6 +1959,13 @@ Tier 5 — cli (slice 12b).
 - **cli:** `x pr` with no `--pr` finds the branch's pull request with `gh pr view --json number`;
   gh refused the `--repo` form it ran before any network call, so the lookup always failed.
 
+Tier 4 — ui. Tier 5 — cli, testing (slice 13a).
+
+- **cli, testing, ui:** a synchronous child process has a deadline, so a hang is a refusal rather
+  than a wait nothing interrupts: a sitemap `lastmod`'s `git log` (5 s, then the file's mtime), the
+  step deadline's `ps` sweep (10 s), the e2e harness's database reset and seed (90 s), `ui`'s icon
+  build `biome format` (60 s).
+
 ## 23.0.0 - 2026-10-02
 
 **23.0.0: platform readiness for big systems**
@@ -2099,7 +2175,7 @@ CI and tooling (this repository).
 
 What an existing app meets, in the order it meets it.
 
-- **BREAKING — the image builds its own island store.** `x build --target docker` no longer writes
+- **BREAKING — (#1) the image builds its own island store.** `x build --target docker` no longer writes
   `.x/islands/`. Add one line to `docker/Dockerfile`, in the runtime stage, after `COPY . .` and
   above `ENV NODE_ENV=production`: `RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target
   prebuilt`. Without it the image still serves, every web pod compiles every island and stylesheet
@@ -2107,7 +2183,7 @@ What an existing app meets, in the order it meets it.
   with no deployment environment while `NODE_ENV` is unset. Measured on the demo app's image
   (`oven/bun:1.4-alpine`, read-only root), 2026-10-01: a web pod is ready in 1.6–1.7 s, was
   4.2–4.8 s; settled RSS 97–102 Mi, was 215–220 Mi.
-- **BREAKING — `ROLE=worker` and `ROLE=scheduler` import less of the app.** They import
+- **BREAKING — (#2) `ROLE=worker` and `ROLE=scheduler` import less of the app.** They import
   `apps/web/api/index.ts` and every module that reaches no component (`.tsx`) or stylesheet. A
   module a job depends on only by side effect (`defineService`, `defineStorage`, `defineCatalogs`)
   that also imports a component must be imported from the API index. The smaller load needs
@@ -2116,7 +2192,7 @@ What an existing app meets, in the order it meets it.
   `X_ROLE_LOAD_INCOMPLETE`, logged, and answered by importing everything; the `manifest` step
   reports the same gap at build time. Measured on the demo app under container conditions,
   2026-10-01: a worker is ready in 1.2 s, was 3.8 s; settled RSS 98 Mi, was 224 Mi.
-- **BREAKING — an app with a migration must commit `packages/db/schema/`.** The `drift` step is
+- **BREAKING — (#3) an app with a migration must commit `packages/db/schema/`.** The `drift` step is
   `X_SCHEMA_DUMP_DRIFT` without it. Run `x db gen` once and commit the directory, with
   `schema/** linguist-generated=true text eol=lf` in `packages/db/.gitattributes`. `x db gen` and
   `x db migrate` now boot a scratch embedded database and need `@electric-sql/pglite` installed —
@@ -2124,124 +2200,124 @@ What an existing app meets, in the order it meets it.
   a framework table changes the `framework/` half of every app's dump; this one does (`x_jobs`,
   `x_outbox`, `x_scheduler_state`, and `x_job_pauses`, `x_job_workers`, `x_job_counters`,
   `x_admin_audit`), so re-run `x db gen` after upgrading.
-- **BREAKING — migrations must replay on the embedded database.** PGlite's contrib extensions are
+- **BREAKING — (#4) migrations must replay on the embedded database.** PGlite's contrib extensions are
   linked automatically (`x dev` links them too, so `create extension citext` now applies there). An
   extension it does not ship (`vector`, `postgis`) replays on a real server: set `TEST_DATABASE_URL`
   (or `DATABASE_URL`) to one that has it, with a role that may create a database, in CI and wherever
   `x db gen` runs. Without it: `X_SCHEMA_DUMP_DRIFT` naming the extension and the variable.
-- **BREAKING — `x db gen` exits 1 when the dump cannot be produced**, after writing the migration.
+- **BREAKING — (#5) `x db gen` exits 1 when the dump cannot be produced**, after writing the migration.
   The cause leads with the migration that was written; do not regenerate it.
-- **BREAKING — `x db migrate` reports `unexpected-object`** (`X_DB_DRIFT`) and exits 1 when the dev
+- **BREAKING — (#6) `x db migrate` reports `unexpected-object`** (`X_DB_DRIFT`) and exits 1 when the dev
   database holds a trigger, function, view, type or sequence no migration creates. `DriftKind` gains
   `'unexpected-object'`: an exhaustive `switch` needs the case.
-- **BREAKING — an app states a coverage floor.** With no `coverage` in `x.verify.json` the `unit`
+- **BREAKING — (#7) an app states a coverage floor.** With no `coverage` in `x.verify.json` the `unit`
   step is `X_COVERAGE_FLOOR_UNSTATED`, and the finding carries the line to add with the app's
   measured numbers. Coverage is of the whole source tree — a file no unit test loads counts at 0% —
   and only the unit suite counts. Under the floor is `X_COVERAGE_BELOW_FLOOR`, naming the ten worst
   files. A floor under 95 needs a `"why"`, and one the tree has passed by 1.5 points is
   `X_COVERAGE_FLOOR_STALE`. An `exclude` entry is `{ "glob", "why" }`; `x doctor` prints them.
-- **BREAKING — a gate step has a deadline.** 8 minutes for `unit`, `contract`, `live`, `job`, `e2e`
+- **BREAKING — (#8) a gate step has a deadline.** 8 minutes for `unit`, `contract`, `live`, `job`, `e2e`
   and `eval`; 5 for every other step. Past it the step is `X_VERIFY_STEP_TIMEOUT` and its processes
   are killed. `"stepTimeoutMs": { "unit": 900000 }` in `x.verify.json` raises one.
-- **BREAKING — `x verify --json` writes one line per finished step to stderr**
+- **BREAKING — (#9) `x verify --json` writes one line per finished step to stderr**
   (`{"step":"lint","ok":true,"ms":21987}`). stdout is still one document. A caller that parses
   `2>&1` as JSON reads stdout only.
-- **BREAKING — an app's `unit` step runs as fixed slices of test files**, one plain `bun test`
+- **BREAKING — (#10) an app's `unit` step runs as fixed slices of test files**, one plain `bun test`
   process per slice of at most 16 neighbouring files, not `bun test --parallel`. A test that
   depended on which files shared a worker may order differently. `x test unit` is unchanged.
-- **BREAKING — a raw request in browser code fails `x verify`.** The `boundaries` step reports
+- **BREAKING — (#11) a raw request in browser code fails `x verify`.** The `boundaries` step reports
   `X_BROWSER_TRANSPORT_BYPASS` for a `fetch(`, `new WebSocket(`, `new XMLHttpRequest(` or
   `new EventSource(` in any `*.island.tsx`, any module that calls `clientTransport` / `pageClient`,
   or anything either imports — the app's own `packages/*` included. A `route.ts`, a job, a task and
   a test are not browser code. No allowlist, no flag. Each finding's `fix:` is the replacement call.
-- **BREAKING — a server barrel in browser code fails `x verify`.** `X_BROWSER_SERVER_BARREL`: a
+- **BREAKING — (#12) a server barrel in browser code fails `x verify`.** `X_BROWSER_SERVER_BARREL`: a
   value import of `@ultimat3/entity` or `@ultimat3/query` in that same closure. Import
   `@ultimat3/entity/record` or `@ultimat3/query/client`; `import type` is unaffected.
-- **BREAKING — `x.manifest.json` changes shape.** An `admin` section is always written — each
+- **BREAKING — (#13) `x.manifest.json` changes shape.** An `admin` section is always written — each
   resource's filters, sorts, scopes, row scope, `sections`, `formGroups`, `related` and `actions`,
   and the audit store's `kind` — a job that declares `concurrency` gains
   `concurrency: { limit, keyed, whenBusy }` on its row, and one that declares `onSettled` gains
   `onSettled: true`. The `manifest` step is `X_MANIFEST_DRIFT` until `x manifest` is run.
-- **BREAKING — a `defineAdmin()` the app scan cannot reach is `X_ADMIN_UNSCANNED`.** The scan
+- **BREAKING — (#14) a `defineAdmin()` the app scan cannot reach is `X_ADMIN_UNSCANNED`.** The scan
   imports `apps/*/{site,app,api,shared}/**`; an admin under `apps/*/src/` never ran and `/admin`
   answered 404. The `manifest` step names the file:
   `git mv apps/admin/src/index.ts apps/admin/app/admin/admin.ts`, then repoint its imports.
-- **BREAKING — the `policy` step checks a mounted admin's permissions.** Each permission a mounted
+- **BREAKING — (#15) the `policy` step checks a mounted admin's permissions.** Each permission a mounted
   admin route asks for that no role grants is `X_PERMISSION_UNGRANTED`, one finding per permission
   per mount. Grant `admin:read` and `<table>:read|write|delete` — plus `job:read` / `job:manage`
   for the jobs dashboard and `audit:read` for the audit screen — in the role map. A wildcard grant
   (`orgs:*`) counts when its prefix is declared, and the finding names the app's real role-map file.
-- **BREAKING — the `i18n` step checks the keys a mounted admin renders.** A locale lacking a
+- **BREAKING — (#16) the `i18n` step checks the keys a mounted admin renders.** A locale lacking a
   resource title, field label, section, scope, column, nav, action label (`admin.action.<name>` when
   no `labelKey`), action input label (`admin.input.<action>.<field>`) or branding key is
   `X_CATALOG_MISSING_KEYS`; the page drew `⟦admin.<table>.title⟧` with the step green. The list is
   `AdminApp.catalogKeys()`. `en` is answered by the framework's catalog; a non-`en` app adds the
   framework admin keys to its own.
-- **BREAKING — `x g entity` / `x g resource` write a `repo.ts` over the typed handle**:
+- **BREAKING — (#17) `x g entity` / `x g resource` write a `repo.ts` over the typed handle**:
   `import { db } from '@<app>/db'`, `byId`, `list(limit)`, `insert` — no `sql`, no `decodeRow`, no
   org argument. `list(limit)` replaces `listByOrg(orgId, limit)`; the handle scopes every read to
   the actor's org, and a read under an actor with no org is `X_TENANCY_ACTOR_ORG_REQUIRED`.
   Existing repos keep working. In an app scaffolded before 23.0.0 the first `x g entity` creates
   `packages/db/src/client.ts` and exits 1 with `X_DB_HANDLE_UNREGISTERED` naming the line to add to
   `packages/db/src/index.ts`.
-- **BREAKING — `x g resource <name> --feature <other>` is refused** (`X_CLI_BAD_FLAG`). The flag
+- **BREAKING — (#18) `x g resource <name> --feature <other>` is refused** (`X_CLI_BAD_FLAG`). The flag
   was ignored and the slice landed in two directories. Drop it.
-- **BREAKING — `--live` on any `x g` but `query` is refused** (`X_CLI_BAD_FLAG`). On a resource it
+- **BREAKING — (#19) `--live` on any `x g` but `query` is refused** (`X_CLI_BAD_FLAG`). On a resource it
   did nothing — the slice's list query is already live. The fix names the generator that takes it:
   `x g query <name>-feed --feature <name> --live`.
-- **BREAKING — `x g query` / `x g resource` generate a read with no `orgId` input.** The input is
+- **BREAKING — (#20) `x g query` / `x g resource` generate a read with no `orgId` input.** The input is
   `{ limit }`; the org is the actor's, scoped by the typed handle, and the generated `can<X>Read`
   checks only that the actor has an org. Already-generated slices keep working; a caller of a
   newly generated query passes `{ limit }`.
-- **BREAKING — `x g admin:page` writes `apps/admin/app/admin/pages/`** (was `apps/admin/src/pages`,
+- **BREAKING — (#21) `x g admin:page` writes `apps/admin/app/admin/pages/`** (was `apps/admin/src/pages`,
   outside the app scan). Move existing pages: `git mv apps/admin/src/pages apps/admin/app/admin/pages`,
   then update the import in `apps/admin/app/admin/admin.ts`.
-- **BREAKING — `x tasks` opens the app's queue when a task is declared**, to show each task's last
+- **BREAKING — (#22) `x tasks` opens the app's queue when a task is declared**, to show each task's last
   fire beside its next; with no reachable queue it fails as `x jobs ls` does. `--json` rows gain
   `lastMs`, `last`, `lastFiredAtMs`.
 
 Jobs.
 
-- **BREAKING — `JobRunArgs.finalAttempt` and `JobRunArgs.progress` are required.** A test that
+- **BREAKING — (#23) `JobRunArgs.finalAttempt` and `JobRunArgs.progress` are required.** A test that
   calls `<job>.run({ … })` by hand adds `finalAttempt: isFinalAttempt(<job>.retry, attempt)` and
   `progress: () => undefined`. TS2741 names each site.
-- **BREAKING — job types gain members.** `JobOutcome` gains `'refused'` and `'dropped'`;
+- **BREAKING — (#24) job types gain members.** `JobOutcome` gains `'refused'` and `'dropped'`;
   `QueueStats` gains `failed`; `WorkerStats` gains `refused`, `dropped`, `pollDelayMs`; `JobHandle`
   gains `whenBusy` and `concurrencyKeyFor()`; `JobDescriptor` gains `concurrency` and `onSettled`;
   `JobRecord` gains `progress` and `lastErrorStack`; `JobTrace` gains `concurrencyKey`, `input`,
   `stack`, `progress`. A hand-built literal or an exhaustive `switch` adds the member.
-- **BREAKING — a settle names its claim.** `JobDriver.ack` / `nack` take `{ workerId, claim }` and
+- **BREAKING — (#25) a settle names its claim.** `JobDriver.ack` / `nack` take `{ workerId, claim }` and
   answer `Promise<boolean>`; `ClaimedJob` carries `claim`. `driver.ack(id)` becomes
   `driver.ack(id, claimOf(claimed))`. A hand-written driver increments a claim ordinal in `claim()`,
   fences both settles on it, files a row `failed` when `NackOptions.fail` is set
   (`nackState(options)`), and honours `EnqueueRequest.id` by answering the existing job,
   `deduped: true`. A worker that re-claimed its own lapsed job could have that claim settled by
   the body it had lost.
-- **BREAKING — `JobIntrospection` gains required members**: `remove`, `requeueMany`, `removeMany`,
+- **BREAKING — (#26) `JobIntrospection` gains required members**: `remove`, `requeueMany`, `removeMany`,
   `promote`, `promoteMany`, `pauseQueue`, `resumeQueue`, `pausedQueues`, `pauseTask`, `resumeTask`, `pausedTasks`,
   `recordTaskFire`, `taskFires`, `announceWorker`, `forgetWorker`, `workers`, `recordProgress`,
   `counters`, `counterTotals`, `rollupCounters`. `list()` answers one page of at most 200 rows —
   walk with `list({ after: jobCursor(lastRow) })`; a larger limit or a foreign cursor is
   `X_JOB_PAGE_INVALID`.
-- **BREAKING — hand-written job stores gain members.** `LeaseStore.holders(key)`;
+- **BREAKING — (#27) hand-written job stores gain members.** `LeaseStore.holders(key)`;
   `SchedulerState.fire(driver, { task, occurrenceMs, jobs })`; `LeaderElection.renewEveryMs`
   (`0` asks before every dispatch); `FleetSlots.acquire` answers a `SlotGrant`, not a boolean.
-- **BREAKING — `EventBus` gains `stored` and `now()`**, both required, and `createPgEventBus` takes
+- **BREAKING — (#28) `EventBus` gains `stored` and `now()`**, both required, and `createPgEventBus` takes
   no `clock`: `published_at` and the expiry are the database's `now()`. `eventPrompt()` refuses a
   bus with `stored: false` outside development and test (`X_DRIVER_UNAVAILABLE`).
-- **BREAKING — a staged `enqueue()` answers the job's real `id` and `runId`.** It answered the
+- **BREAKING — (#29) a staged `enqueue()` answers the job's real `id` and `runId`.** It answered the
   outbox row's id and `''`. `OutboxRecord.runId` is required and `x_outbox` gains `run_id`; a
   hand-written `OutboxStore` persists it.
-- **BREAKING — `retry: { deadLetter: false }` settles an exhausted job `failed`** (outcome
+- **BREAKING — (#30) `retry: { deadLetter: false }` settles an exhausted job `failed`** (outcome
   `dropped`). It was re-queued and re-run forever.
-- **BREAKING — an invalid `concurrency` is `X_JOB_DECLARATION_INVALID`**, not `X_INVARIANT`:
+- **BREAKING — (#31) an invalid `concurrency` is `X_JOB_DECLARATION_INVALID`**, not `X_INVARIANT`:
   `0`, a negative, a fraction, `NaN`, `Infinity`.
-- **BREAKING — a failed job row's `lastError` ends with ` — fix: <the error's fix>`** when the
+- **BREAKING — (#32) a failed job row's `lastError` ends with ` — fix: <the error's fix>`** when the
   error is an `UltimateError`. Code that compared `lastError` to a rendered message compares a
   prefix.
-- **BREAKING — the memory job driver stores a payload's JSON form**, as Postgres does. A `Date`
+- **BREAKING — (#33) the memory job driver stores a payload's JSON form**, as Postgres does. A `Date`
   arrives as a string; an `undefined` member and a non-enumerable property do not arrive.
-- **BREAKING — `exportRows({ sink })` takes a thunk**: `sink: () => disk('exports')`, resolved per
+- **BREAKING — (#34) `exportRows({ sink })` takes a thunk**: `sink: () => disk('exports')`, resolved per
   write. A value evaluated `disk()` at module load, before boot; it is now a type error, and at
   runtime `definition.sink is not a function` on the first part.
 - **jobs:** idle polling. A worker waits `pollIntervalMs` (250 ms) while passes find work and
@@ -2259,54 +2335,54 @@ Jobs.
 
 Client, realtime, entity, secrets.
 
-- **BREAKING — a wrong `pathStyle` is answered `X_CONTRACT_DRIFT`, not `X_ROUTE_NOT_FOUND`.** Still
+- **BREAKING — (#35) a wrong `pathStyle` is answered `X_CONTRACT_DRIFT`, not `X_ROUTE_NOT_FOUND`.** Still
   a 404; the cause names the style the server serves. A browser passes no `pathStyle` — delete it
   from `rpc({ … })` in island code.
-- **BREAKING — a live query's source is read as its subscriber's tenant.** A window is keyed by
+- **BREAKING — (#36) a live query's source is read as its subscriber's tenant.** A window is keyed by
   query, input and tenant, and read in a context that carries the org. A source naming another org
   is `X_TENANCY_ACTOR_MISMATCH`; a subscriber with no org reading a tenant-scoped table is
   `X_TENANCY_ACTOR_ORG_REQUIRED`. Drop hand-written org arguments from live repo reads.
   `LiveQueryDefinition.snapshot` receives `{ input, tenant }`; cursors minted before the upgrade
   cost one snapshot.
-- **BREAKING — `EntityCore<Row>['$schema']` is `Schema<unknown, unknown>`.** Read the output type
+- **BREAKING — (#37) `EntityCore<Row>['$schema']` is `Schema<unknown, unknown>`.** Read the output type
   off the `entity()` result (`typeof posts.$schema`). `RecordProjection` gains a required
   `sealed: readonly string[]`; a projection built by hand adds `sealed: []`.
-- **BREAKING — `x secrets rotate` keeps the replaced master key.** After a rotation
+- **BREAKING — (#38) `x secrets rotate` keeps the replaced master key.** After a rotation
   `secrets.enc.json` holds `ULTIMATE_SECRETS_RETIRED_KEYS` and `installSecrets()` puts it in the
   environment. Nothing to edit unless something asserts on the file's exact contents; drop a retired
   key with `x secrets rotate --drop <keyId>` once nothing is sealed under it.
 
 UI, CLI and testing exports.
 
-- **BREAKING — `LinkProps`, `PaginationProps` and `DataTableProps<Row>` are unions**, one interface
+- **BREAKING — (#39) `LinkProps`, `PaginationProps` and `DataTableProps<Row>` are unions**, one interface
   per mode. A type that extends one extends a member instead: `TextLinkProps` / `ButtonLinkProps`,
   `PaginationCallbackProps` / `PaginationLinkProps`, `DataTableCallbackProps<Row>` /
   `DataTableLinkProps<Row>`. JSX call sites are unchanged.
-- **BREAKING — `Guard.check` is `check(root, sources)`.** A guard written as `check(root)` keeps
+- **BREAKING — (#40) `Guard.check` is `check(root, sources)`.** A guard written as `check(root)` keeps
   working. A test that calls `guard.check(root)` itself passes `guardSources(root)` from
   `@ultimat3/cli` as the second argument.
-- **BREAKING — `@ultimat3/cli` drops `checkAppBoundaries`** (nothing in the gate called it), and
+- **BREAKING — (#41) `@ultimat3/cli` drops `checkAppBoundaries`** (nothing in the gate called it), and
   `BUILD_TARGETS` is `docker | binary | static | prebuilt`: an exhaustive `switch` over
   `BuildTarget` needs the fourth case.
-- **BREAKING — `useE2eDriver`'s driver receives a third argument**, the test's `{ timeoutMs }`. A
+- **BREAKING — (#42) `useE2eDriver`'s driver receives a third argument**, the test's `{ timeoutMs }`. A
   hand-written driver that ignores it drops the deadline.
-- **BREAKING — `E2eApp` has a required `log(): string`**, the spawned app's bounded output; a failed
+- **BREAKING — (#43) `E2eApp` has a required `log(): string`**, the spawned app's bounded output; a failed
   e2e test now carries its last 40 lines. A hand-written `E2eApp` double adds `log: () => ''`.
-- **BREAKING — `runJobs` drives a real worker.** Each pass is an unstarted worker's `tick()`, so
+- **BREAKING — (#44) `runJobs` drives a real worker.** Each pass is an unstarted worker's `tick()`, so
   keyed `concurrency` waits, `whenBusy: 'fail'` refuses with `X_JOB_KEY_BUSY`, and runs claimed in
   one pass run concurrently, not one after another. A test that expected two runs of one key to
   both complete sees a refusal or a wait.
-- **BREAKING — `runJobs` renews its lease on the test clock** as a real worker does. A test that
+- **BREAKING — (#45) `runJobs` renews its lease on the test clock** as a real worker does. A test that
   `clock.advance()`s past the visibility timeout while a run is in flight sees `X_JOB_LEASE_LOST`;
   a test that cancels a running job and awaits `runJobs.drain()` adds `clock.advance(1)` after the
   cancel. `WorkerOptions.schedule` (`IntervalScheduler`) is the one seam for every renewal.
-- **BREAKING — the app test preload resets the jobs event bus before every test** (only when
+- **BREAKING — (#46) the app test preload resets the jobs event bus before every test** (only when
   `@ultimat3/jobs` is already loaded). An event published in `beforeAll` is gone by the test that
   reads it: publish inside the test.
-- **BREAKING — a published package's `files` must negate `!src/**/*-fixture.ts`.** A fixture
+- **BREAKING — (#47) a published package's `files` must negate `!src/**/*-fixture.ts`.** A fixture
   reachable from an entry point is `X_PACKAGE_SHAPE` naming the file to rename. Private packages —
   every generated app's — are exempt.
-- **BREAKING — a `robots: { index: false }` document carries no `og:*`, `article:*` or `twitter:*`
+- **BREAKING — (#48) a `robots: { index: false }` document carries no `og:*`, `article:*` or `twitter:*`
   tag.** A page that may not be indexed has no link preview either; there is no switch.
 - **ui:** `Spinner` turns in 640 ms (was 700 ms), `Skeleton` shimmers in 1.28 s (was 1.4 s), and the
   default focus ring reads `--stroke-thick`: a page that does not load the theme sheet loses its
@@ -2325,47 +2401,47 @@ UI, CLI and testing exports.
 
 Admin.
 
-- **BREAKING — the admin is served by the framework.** `defineAdmin` without a `db` handle that
+- **BREAKING — (#49) the admin is served by the framework.** `defineAdmin` without a `db` handle that
   carries each entity (or `resources.<entity>.repo`) throws `X_ADMIN_REPO_UNBOUND`: write
   `defineAdmin({ entities, db })`. Delete every `page.tsx` that serves an admin URL, any `AdminRepo`
   adapter and any action route for admin buttons — a page file on a path the admin mounts is
   `X_ROUTE_DUPLICATE`. The demo app deleted 1,781 lines.
-- **BREAKING — `guardedPage`, `AdminRouteConfig.component` and `RegisteredRepo` are removed.** Use
+- **BREAKING — (#50) `guardedPage`, `AdminRouteConfig.component` and `RegisteredRepo` are removed.** Use
   `route.respond({ ctx, params, url, method, form })`, or `guardedScreen(app, route, body)`.
   `adminRouteConfig(route)` is `adminRouteConfig(app, route)`. `AdminList`, `AdminDetail`,
   `AdminForm`, `AdminActions` and `AdminLayout` take no event handlers and no `loading`.
-- **BREAKING — the admin list API.** `AdminListProps.hrefFor` is `(location: ListLocation) =>
+- **BREAKING — (#51) the admin list API.** `AdminListProps.hrefFor` is `(location: ListLocation) =>
   string` — `hrefFor={(location) => listHref(basePath, resource, location)}` — and `request`,
   `scope`, `counts` are required. `pageRequestOf()` returns an `AdminListRequest` and throws
   `X_ADMIN_FILTER_INVALID` for an unknown sort field, direction, scope, filter or parameter; they
   were ignored. `adminList(resource, ctx, request)` takes `{ cursor, limit, sort, scope, filters }`.
   `AdminField.relation` is `{ entity }`. `CrudResult` has a fourth member,
   `{ ok: false, kind: 'missing', audit }`.
-- **BREAKING — the tenant column is not an admin field.** Not a form field, a list column or a
+- **BREAKING — (#52) the tenant column is not an admin field.** Not a form field, a list column or a
   filter; a create is stamped with the acting actor's tenant and a posted value for it is ignored.
   A read by a malformed id answers `null` (the admin's 404); it threw `X_INVARIANT_VIOLATED`.
-- **BREAKING — `describeRoutes()` lists routes a package mounts** (`mount: { by, permissions }`,
+- **BREAKING — (#53) `describeRoutes()` lists routes a package mounts** (`mount: { by, permissions }`,
   `file: '@ultimat3/admin'`), and `Stylesheet` has a required `claimed` field.
-- **BREAKING — every `defineAdmin()` serves the jobs dashboard.** Resources `x_jobs`,
+- **BREAKING — (#54) every `defineAdmin()` serves the jobs dashboard.** Resources `x_jobs`,
   `x_job_queues`, `x_job_tasks`, `x_job_workers` and the overview at `/admin/jobs`. Delete a
   hand-written jobs page and nav item; a `pages:` entry at those paths is
   `X_ADMIN_PAGE_PATH_INVALID`. A test that renders `/admin/jobs` installs a queue first:
   `setJobDriver(createMemoryDriver())`.
-- **BREAKING — `DefineAdminInput.jobs` and `AdminApp.jobs` are removed.** The dashboard reads the
+- **BREAKING — (#55) `DefineAdminInput.jobs` and `AdminApp.jobs` are removed.** The dashboard reads the
   queue. Delete the option; TS2353 names the site.
-- **BREAKING — `AuditLog.entries()` is async and takes `AuditQuery`** (`entity`, `entityId`,
+- **BREAKING — (#56) `AuditLog.entries()` is async and takes `AuditQuery`** (`entity`, `entityId`,
   `actorId`, `orgId`, `limit`, `before`, `changes`). Write `await log.entries(…)`. A hand-written
   `AuditLog` adds `atomic(run)` and `kind`.
-- **BREAKING — `InvokeResult` failures carry `kind`**: `'denied' | 'not-applicable' | 'invalid'`.
+- **BREAKING — (#57) `InvokeResult` failures carry `kind`**: `'denied' | 'not-applicable' | 'invalid'`.
   Narrow on `kind === 'denied'` before reading `decision`.
-- **BREAKING — a posted row action redirects to the row** (303), not the list.
-- **BREAKING — an admin create or update whose resulting row falls outside `rows(actor)` is
+- **BREAKING — (#58) a posted row action redirects to the row** (303), not the list.
+- **BREAKING — (#59) an admin create or update whose resulting row falls outside `rows(actor)` is
   refused** before the repo is called, and audited as `admin.error.row-out-of-scope` — screens and
   MCP alike. A text `gt`/`lt` row scope cannot be decided and refuses the write.
-- **BREAKING — an admin action on a row the actor cannot see is refused**, with or without `when`:
+- **BREAKING — (#60) an admin action on a row the actor cannot see is refused**, with or without `when`:
   a row that is gone or outside `rows` is `X_ADMIN_ACTION_NOT_APPLICABLE` (409; the same over MCP).
   It ran the handler.
-- **BREAKING — `permissionsForOperation('admin', op)` answers one permission**, not
+- **BREAKING — (#61) `permissionsForOperation('admin', op)` answers one permission**, not
   `admin:read` twice.
 - **admin:** every admin document is `noindex,nofollow`; the admin's stylesheet is carried by the
   `app` surface only (−5,251 B on the demo app's `site/` sheet); enum cells render as a badge and
@@ -2379,23 +2455,23 @@ Admin.
 
 Scraping.
 
-- **BREAKING — `storageSessionStore` seals every stored session** under the app's master key. Run
+- **BREAKING — (#62) `storageSessionStore` seals every stored session** under the app's master key. Run
   `x secrets init` (or set `ULTIMATE_SECRETS_KEY`) before the first run; without a key the scrape
   fails with `X_SEAL_KEY_MISSING` before its browser opens. **Sessions and refusal markers stored
   before this release are deleted on first load.** The run logs in again, and a credential the site
   had already refused is presented once more — on a site that locks an account after repeated
   failures, correct the credential before the first run after upgrading.
-- **BREAKING — `storageSessionStore` and `scrape({ artifacts: { storage } })` take a thunk.**
+- **BREAKING — (#63) `storageSessionStore` and `scrape({ artifacts: { storage } })` take a thunk.**
   `storageSessionStore(disk)` becomes `storageSessionStore(() => disk('sessions'))`; a driver value
   is TS2345.
-- **BREAKING — scraping types gain required members.** `createPrompt(scrape, handler, page)` is
+- **BREAKING — (#64) scraping types gain required members.** `createPrompt(scrape, handler, page)` is
   `createPrompt({ scrape, handler, page, runId, clock, … })`; `PromptRequest` gains `runId`,
   `index`, `clock`, `signal`, `keepAlive`, `input`; `AuthContext` gains `runId`; `ScrapeSecrets`
   gains `conceal(value)`; `ScrapeReport` gains `usage`; `SessionInit.logger` is required. A handler
   or a run body is unaffected; a value built by hand adds the members.
-- **BREAKING — `X_SCRAPE_CDP_ATTACH_FAILED` names the endpoint by scheme and host only.**
+- **BREAKING — (#65) `X_SCRAPE_CDP_ATTACH_FAILED` names the endpoint by scheme and host only.**
   `meta.cdpUrl` is `wss://host:port`, never the full URL: a connect URL carries a token.
-- **BREAKING — a proxy URL with credentials on `localBrowser({ proxy })` is not passed to
+- **BREAKING — (#66) a proxy URL with credentials on `localBrowser({ proxy })` is not passed to
   `--proxy-server` with its userinfo**; the page authenticates. A launcher whose page has no
   `authenticate()` fails with `X_SCRAPE_EGRESS_UNSUPPORTED` — upgrade the launcher or drop the
   credentials from the URL.

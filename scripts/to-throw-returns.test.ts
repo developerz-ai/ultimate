@@ -59,6 +59,27 @@ describe('what it reports', () => {
     expect(gap?.reason).toContain('sendFailed()');
   });
 
+  test('a bare `new Error(…)` and a `new`-less `Error(…)` — the name prefix is optional', () => {
+    expect(gaps("expect(() => new Error('x')).toThrow();")).toHaveLength(1);
+    expect(gaps("expect(() => TypeError('x')).toThrow();")).toHaveLength(1);
+  });
+
+  test('a callback wrapped onto its own line, as Biome formats a long one', () => {
+    const text = [
+      'expect(() =>',
+      "  sendFailed({ to: 'a@b.c', reason: 'a reason long enough to wrap' }),",
+      ').toThrow(MailError);',
+    ].join('\n');
+    const [gap] = gaps(text, ['sendFailed']);
+    expect(gap?.at).toBe('packages/p/src/a.test.ts:1');
+    expect(gap?.reason).toContain('sendFailed()');
+  });
+
+  test('a block whose one statement RETURNS the error', () => {
+    expect(gaps('expect(() => { return boom(); }).toThrow();', ['boom'])).toHaveLength(1);
+    expect(gaps("expect(() => {\n  return new MailError('x');\n}).toThrow();")).toHaveLength(1);
+  });
+
   test('the reach is the inline arrow only, and the gap is stated rather than assumed away', () => {
     // `expect(returnsAnError).toThrow()` is the same defect and needs type information to see.
     expect(gaps('expect(returnsAnError).toThrow();', ['returnsAnError'])).toEqual([]);
@@ -77,6 +98,27 @@ describe('what it leaves alone', () => {
   test('rejects.toThrow, which the premise test above proves is safe', () => {
     expect(gaps('expect(() => sendFailed(a)).rejects.toThrow();', ['sendFailed'])).toEqual([]);
   });
+
+  test('a `;` inside a string of the returned expression does not end the statement', () => {
+    const [gap] = gaps("expect(() => { return new Error('first; second'); }).toThrow();");
+    expect(gap?.body).toBe("new Error('first; second')");
+  });
+
+  test('a constructor that only STARTS with Error is not an error type', () => {
+    expect(gaps('expect(() => new ErrorCount(3)).toThrow();')).toEqual([]);
+    expect(gaps('expect(() => new FaultLine()).toThrow();')).toEqual([]);
+    expect(gaps("expect(() => new MailError('x')).toThrow();")).toHaveLength(1);
+  });
+
+  test('a block that does more than return — it may throw first, and text cannot tell', () => {
+    const text = 'expect(() => { setup(); return boom(); }).toThrow();';
+    expect(gaps(text, ['boom'])).toEqual([]);
+  });
+
+  test('an expect whose argument is not an arrow, and an Error-suffixed call that is no error', () => {
+    expect(gaps('expect(value).toThrow();')).toEqual([]);
+    expect(gaps('expect(() => assertNoError(x)).toThrow();')).toEqual([]);
+  });
 });
 
 describe('the factory set is derived from source, never listed', () => {
@@ -87,6 +129,15 @@ describe('the factory set is derived from source, never listed', () => {
       'export function plainThing(a: number): string {',
     ].join('\n');
     expect([...errorFactoriesIn(source)].sort()).toEqual(['routeNotFound', 'sendFailed']);
+  });
+
+  test('a factory typed as the plain `: Error` is one too', () => {
+    const source = [
+      'export function wrapped(cause: unknown): Error {',
+      'export const asError = (value: unknown): Error =>',
+      'export function errorCount(a: number): ErrorCount {',
+    ].join('\n');
+    expect([...errorFactoriesIn(source)].sort()).toEqual(['asError', 'wrapped']);
   });
 });
 

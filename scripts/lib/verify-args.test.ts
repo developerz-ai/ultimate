@@ -33,9 +33,20 @@ describe('unit · bun run verify --only narrows, and refuses what it cannot read
     expect(read('--json', '--verbose')).toEqual({});
   });
 
-  test('--workers is forwarded when whole and positive', () => {
+  test('--workers is forwarded when whole and in range', () => {
     expect(read('--workers', '4').workers).toBe(4);
-    expect(read('--workers', '0').workers).toBeUndefined();
+    expect(read('--workers', '64').workers).toBe(64);
+  });
+
+  // `abc` and `0` were dropped without a word, `4x` ran four and `5000` was accepted: a width the
+  // caller did not ask for is the full-width gate this flag exists to avoid (the OOM case).
+  test('--workers that is not an integer from 1 to 64 is refused, never dropped or truncated', () => {
+    for (const raw of ['abc', '0', '-2', '4x', '1.5', '5000', '']) {
+      const failure = refusal(['--workers', raw]);
+      expect(failure.code).toBe('X_CLI_BAD_FLAG');
+      expect(failure.fix).toBe('bun run verify --workers 4');
+    }
+    expect(refusal(['--workers']).code).toBe('X_CLI_BAD_FLAG');
   });
 
   test('an unknown step is refused with the nearest step in the fix', () => {

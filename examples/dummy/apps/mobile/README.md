@@ -17,17 +17,21 @@ this directory cheap to fill.
 ## Swift
 
 ```bash
-x sdk swift --out apps/mobile/ios/PostlyKit
+x manifest
+bunx @openapitools/openapi-generator-cli generate -i openapi.json -g swift5 -o apps/mobile/ios/PostlyKit
 ```
 
-Generates a Swift package from `openapi.json`: one method per action, typed request and response
-structs, and the same error codes (`X_FORBIDDEN`, `X_BILLING_SEATS_EXCEEDED`) as an enum.
-Auth is the same session cookie or bearer token the web app uses — Better Auth issues both.
+`x manifest` writes `openapi.json`; an OpenAPI generator turns it into a Swift package with one
+method per action and typed request and response structs. The CLI ships no SDK generator of its
+own. Errors arrive as the same problem+json body the web app reads, `code` included (`X_FORBIDDEN`,
+`X_BILLING_SEATS_EXCEEDED`). Auth is the same session cookie or bearer token the web app uses —
+Better Auth issues both.
 
 ## Kotlin
 
 ```bash
-x sdk kotlin --out apps/mobile/android/postly-kit
+x manifest
+bunx @openapitools/openapi-generator-cli generate -i openapi.json -g kotlin -o apps/mobile/android/postly-kit
 ```
 
 Same contract, same codes.

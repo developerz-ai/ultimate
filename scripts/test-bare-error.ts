@@ -39,8 +39,11 @@ const EXPLAIN = 'bun run scripts/test-bare-error.ts --explain --json lists every
  * refusal, and nothing was thrown')` — and `expect.unreachable` is this repo's idiom for it
  * (10+ uses in `packages/realtime/src/`): it reports at the assertion with the value that actually
  * arrived, and its `never` return narrows the variable so no cast is needed.
+ *
+ * `new` is optional: `throw Error('x')` constructs the same bare `Error`, and a rule that needed
+ * the keyword was a rule one deleted word could step around.
  */
-const THROWN = /\bthrow\s+new\s+Error\s*\(/g;
+const THROWN = /\bthrow\s+(?:new\s+)?Error\s*\(/g;
 
 /** The honest limit, stated rather than guessed at — see `bareErrorFindingFor`'s cause. */
 export interface BareErrorSite {

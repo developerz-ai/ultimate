@@ -3,6 +3,8 @@
 // a narrowing that silently widens is the gate lying about what it checked.
 
 import { BadFlagError } from '../../packages/cli/src/errors';
+import { parseIntFlag } from '../../packages/cli/src/flag-number';
+import { WORKER_CEILING, WORKER_FLOOR } from '../../packages/cli/src/test-workers';
 import type { ShardSpec } from '../../packages/cli/src/verify-shard';
 import { assertShardable, parseShard } from '../../packages/cli/src/verify-shard';
 import type { VerifyStepName } from '../../packages/cli/src/verify-step';
@@ -89,9 +91,19 @@ export function readVerifyArgs(args: ScriptArgs): VerifyArgs {
     });
   }
   const only = readOnly(args.flags.get('only'));
+  // The CLI's own integer reader and bounds: `parseInt` alone dropped `abc` and `0` without a word,
+  // read `4x` as 4 and accepted 5000 — `x verify --workers` refuses all four, and so does this.
   const rawWorkers = args.flags.get('workers');
-  const n = typeof rawWorkers === 'string' ? Number.parseInt(rawWorkers, 10) : Number.NaN;
-  const workers = Number.isFinite(n) && n > 0 ? n : undefined;
+  const workers =
+    rawWorkers === undefined
+      ? undefined
+      : parseIntFlag(typeof rawWorkers === 'string' ? rawWorkers : '', {
+          name: 'workers',
+          command: 'verify',
+          min: WORKER_FLOOR,
+          max: WORKER_CEILING,
+          example: 'bun run verify --workers 4',
+        });
 
   const rawShard = args.flags.get('shard');
   const timings = args.flags.get('timings');

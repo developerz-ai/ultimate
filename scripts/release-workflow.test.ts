@@ -316,4 +316,51 @@ describe('unit · this repo', () => {
     },
     REPO_SCAN_TIMEOUT_MS,
   );
+
+  /**
+   * The publish PLAN, end to end: the workflow's own jq filter, read out of the workflow, run over
+   * this script's own output. v22.4.0 published `core` and died before `schema`, because the plan
+   * was alphabetical inside a tier; the order is now the table's and jq's `group_by` keeps it.
+   */
+  test.skipIf(Bun.which('jq') === null)(
+    'every dependency publishes before its dependant across the whole plan',
+    async () => {
+      const root = repoRoot();
+      const workflow = await Bun.file(join(root, RELEASE_WORKFLOW)).text();
+      const filter =
+        /plan="\$\(bun run scripts\/list-workspaces\.ts --json \| jq -r '([^']+)'\)"/.exec(
+          workflow,
+        )?.[1];
+      expect(filter).toBeDefined();
+      const table = await run(['bun', 'run', 'scripts/list-workspaces.ts', '--json'], {
+        cwd: root,
+      });
+      // Each subprocess's own verdict first, so a crash reads as one rather than as a short plan.
+      expect(table.ok).toBe(true);
+      const jq = Bun.spawn(['jq', '-r', filter ?? '.'], {
+        stdin: new Blob([table.output]),
+        stdout: 'pipe',
+        // A filter over a few KB; a jq that hangs is a red test, never a hung runner.
+        timeout: 30_000,
+      });
+      const [plan, jqCode] = await Promise.all([new Response(jq.stdout).text(), jq.exited]);
+      expect(jqCode).toBe(0);
+      const sequence = plan
+        .split('\n')
+        .filter((line) => line.length > 0)
+        .flatMap((line) => (line.split('\t')[1] ?? '').split(' '));
+      const position = new Map(sequence.map((name, index) => [name, index]));
+      const late: string[] = [];
+      for (const one of publishOrder(await listWorkspaces(root))) {
+        for (const dep of one.dependsOn) {
+          if ((position.get(dep) ?? -1) > (position.get(one.name) ?? -1)) {
+            late.push(`${one.name} publishes before ${dep}`);
+          }
+        }
+      }
+      expect(sequence.length).toBeGreaterThan(20);
+      expect(late).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });

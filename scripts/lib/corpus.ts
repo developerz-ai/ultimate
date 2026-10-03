@@ -21,7 +21,13 @@ export const CORPUS_PATTERNS: Readonly<Record<CorpusScope, readonly string[]>> =
   source: ['packages/*/src/**/*.{ts,tsx}', 'packages/*/e2e/**/*.{ts,tsx}', 'scripts/**/*.{ts,tsx}'],
   packages: ['packages/*/src/**/*.{ts,tsx}'],
   shipped: ['packages/*/src/**/*.{ts,tsx}'],
-  tests: ['packages/*/src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
+  // `e2e/` beside `src/`: `source` already read it, and without it here every guard over tests
+  // answered green over fifteen suites it never opened.
+  tests: [
+    'packages/*/src/**/*.test.{ts,tsx}',
+    'packages/*/e2e/**/*.test.{ts,tsx}',
+    'scripts/**/*.test.ts',
+  ],
 });
 
 /**

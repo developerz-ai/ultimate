@@ -22,7 +22,7 @@
 | Task | Command |
 |---|---|
 | test | `bun test packages/i18n` |
-| find unused keys | `x i18n prune --json` (reports; never deletes) |
+| find unused keys | `x i18n check --json` (reports them per locale; never deletes) |
 | find missing keys | `x verify` (fails) or `x i18n check --json` |
 
 ## Conventions

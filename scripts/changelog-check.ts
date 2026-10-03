@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// Enforce, as a gate rule, that CHANGELOG.md's sections are well-formed and that every migration
-// count in wiki/Upgrading.md is read out of that major's OWN section.
+// Enforce, as a gate rule, that CHANGELOG.md's sections are well-formed, that every migration
+// count in wiki/Upgrading.md is read out of that major's OWN section, and that each `BREAKING —`
+// line names its Upgrading row one-to-one (`lib/changelog-pairing.ts`).
 //
 // The gap this closes is at commit 8fe7c56d — `git show 8fe7c56d:CHANGELOG.md`. That is
 // `release: 6.0.0`, the release script's OWN output: seven `BREAKING —` entries still under
@@ -21,21 +22,18 @@
 //   bun run scripts/changelog-check.ts [--json]
 
 import { parseScriptArgs } from './lib/args';
+import { BREAKING_ENTRY, CHANGELOG_PATH, UPGRADING_PATH } from './lib/changelog-format';
+import { checkPairing, pairingFinding } from './lib/changelog-pairing';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
 import { claimGaps, treeClaims } from './lib/unreleased-claims';
 
 const SCRIPT = 'changelog-check';
-export const CHANGELOG_PATH = 'CHANGELOG.md';
-export const UPGRADING_PATH = 'wiki/Upgrading.md';
 
-/**
- * One line, one breaking entry — the identical regex wiki/Upgrading.md hands the reader in a fenced
- * `grep -cE`. Anchored at column 0 deliberately: an INDENTED `- **BREAKING —` is a sub-bullet of
- * the entry above it and not an entry of its own, which is how the `Bun.Image` entry carries three.
- */
-export const BREAKING_ENTRY = /^(?:- \*\*|### )BREAKING —/;
+// Stated once in `lib/changelog-format.ts`, which the pairing rule reads too; re-exported here for
+// the callers that already name this module.
+export { BREAKING_ENTRY, CHANGELOG_PATH, UPGRADING_PATH };
 
 /** `## [Unreleased]` holds work that has no version yet, so the released-section rules skip it. */
 const UNRELEASED = 'unreleased';
@@ -451,11 +449,23 @@ export async function changelogGaps(root: string): Promise<readonly ChangelogGap
   });
 }
 
-/** Every finding this rule contributes, for a caller that folds it into a gate step. */
-export const changelogFindings = async (root: string): Promise<readonly Finding[]> => [
-  ...(await changelogGaps(root)).map(changelogFinding),
-  ...claimGaps(await treeClaims(root, await Bun.file(`${root}/${CHANGELOG_PATH}`).text())),
-];
+/**
+ * Every finding this rule contributes, for a caller that folds it into a gate step. The count rule
+ * above, the one-to-one pairing of each line with its row (`lib/changelog-pairing.ts`), and the
+ * unreleased-claim rule.
+ */
+export const changelogFindings = async (root: string): Promise<readonly Finding[]> => {
+  const changelog = await Bun.file(`${root}/${CHANGELOG_PATH}`).text();
+  const upgrading = await Bun.file(`${root}/${UPGRADING_PATH}`).text();
+  // Each file read ONCE, and every rule handed the same text: two reads could see two versions.
+  return [
+    ...checkChangelog({ changelog, upgrading, taggedVersion: await taggedVersion(root) }).map(
+      changelogFinding,
+    ),
+    ...checkPairing(changelog, upgrading).map(pairingFinding),
+    ...claimGaps(await treeClaims(root, changelog)),
+  ];
+};
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));

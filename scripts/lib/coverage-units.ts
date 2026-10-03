@@ -34,7 +34,9 @@ export const unitOf = (name: string): CoverageUnit =>
     ? SCRIPTS_UNIT
     : {
         name,
-        test: `packages/${name}`,
+        // `./`, as `SCRIPTS_UNIT`: a bare `packages/mcp` is a substring filter to `bun test`, and
+        // matched the tracked apps' own `packages/mcp` suites too.
+        test: `./packages/${name}`,
         source: `packages/${name}/src/`,
         glob: `packages/${name}/src/**/*.{ts,tsx}`,
       };
@@ -87,7 +89,10 @@ export function unitsFor(
     throw refuse(name, `unknown flag --${name}`, `${SELF} --all`);
   }
   const only = flags.get('package');
-  const all = flags.get('all') === true;
+  const rawAll = flags.get('all');
+  // A boolean given a value (`--all=false`) is refused, never read as off — `lib/args.ts`'s rule.
+  if (typeof rawAll === 'string') throw refuse('all', '--all takes no value', `${SELF} --all`);
+  const all = rawAll === true;
   const shard = flags.get('shard');
   if (typeof only === 'string' && all) {
     throw refuse('package', '--package and --all name two different runs', `${SELF} --all`);

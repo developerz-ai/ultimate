@@ -11,6 +11,7 @@ import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { carriedKeySites } from './catalog-keys';
 import { catchRenderFindings } from './catch-render';
 import { configReaderInput } from './config-readers';
 import { deadHostFindings } from './dead-docs-host';
@@ -27,6 +28,7 @@ import { nodeImportFindings } from './node-imports';
 import { protoIndexFindings } from './proto-index';
 import { vocabularyFindings } from './render-modes';
 import { secretCompareFindings } from './secret-compare';
+import { spawnSites } from './spawn-timeout';
 import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
 import { tierBoundaries } from './verify';
@@ -34,6 +36,7 @@ import { tierBoundaries } from './verify';
 /** Every guard that reads the tree, by the name its `bun run` alias carries. */
 const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[] = [
   ['boundaries', tierBoundaries],
+  ['catalog-keys', carriedKeySites],
   ['catch-render', catchRenderFindings],
   ['config-readers', configReaderInput],
   ['dead-docs-host', deadHostFindings],
@@ -48,6 +51,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['proto-index', protoIndexFindings],
   ['render-modes', vocabularyFindings],
   ['secret-compare', secretCompareFindings],
+  ['spawn-timeout', spawnSites],
   ['test-bare-error', bareErrorFindings],
   ['test-fix-citations', testFixFindings],
 ];

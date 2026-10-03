@@ -165,6 +165,15 @@ describe('where there is no procfs', () => {
     expect(await goneSoon(found)).toBe(true);
   });
 
+  test('a ps that outlives its timeout is KILLED, and its partial listing is never an answer', async () => {
+    // Ignores SIGTERM and has already printed one tagged-looking line: a timeout that only sent
+    // SIGTERM waited out the sleep, and a listing cut short read as "nothing left to kill".
+    const stubborn = ['sh', '-c', 'trap "" TERM; echo "4242 X_TAG=1"; exec sleep 30'];
+    const started = performance.now();
+    expect(await psProcesses(stubborn, 200)).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
   test('a process table that cannot be read kills nothing and does not throw', async () => {
     expect(await killTagged('nothing@carries-this', async () => [])).toEqual([]);
   });

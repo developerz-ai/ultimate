@@ -42,7 +42,7 @@
 //
 //   bun run skip-if-cleanup  ·  bun run scripts/skip-if-cleanup.ts [--json] [--explain]
 
-import { parseScriptArgs } from './lib/args';
+import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -59,6 +59,8 @@ const SCRIPT = 'skip-if-cleanup';
  */
 export const TEST_GLOBS = [
   'packages/*/src/**/*.test.{ts,tsx}',
+  // `e2e/` beside `src/` holds suites too — `scripts/lib/corpus.ts`'s `tests` scope reads it.
+  'packages/*/e2e/**/*.test.{ts,tsx}',
   'scripts/**/*.test.{ts,tsx}',
   'examples/**/*.test.{ts,tsx}',
   'dummy/**/*.test.{ts,tsx}',
@@ -273,7 +275,7 @@ if (import.meta.main) {
       findings,
       data: {
         files,
-        checked: args.flags.get('explain') === true ? scanned : scanned.length,
+        checked: flagBool(args, 'explain') ? scanned : scanned.length,
       },
     },
     args.json,

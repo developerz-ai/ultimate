@@ -57,6 +57,65 @@ const codesIn = (source: string): readonly string[] =>
     .filter((code) => code !== '')
     .sort();
 
+/**
+ * The `scripts/lib/*` modules a guard imports, by path — one level, never their own imports. Read
+ * off the comment-stripped source, so an import written in prose is no import. A guard's findings
+ * are raised wherever its rule lives, and `changelog-check`'s pairing codes live in
+ * `lib/changelog-pairing.ts`: a row reading only the script's own text listed none of them.
+ */
+export const libImportsOf = (source: string): readonly string[] => [
+  ...new Set(
+    // `from './lib/x'` and the side-effect `import './lib/x'`: both load the module, and either
+    // form may raise its codes. A dynamic `import('./lib/x')` is left out: it is a value, not a load.
+    [
+      ...stripComments(source).matchAll(
+        /(?:\bfrom|\bimport)\s*['"]\.\/lib\/([a-z0-9-]+)(?:\.ts)?['"]/g,
+      ),
+    ].map((m) => `scripts/lib/${m[1] ?? ''}.ts`),
+  ),
+];
+
+/**
+ * Shared infrastructure every guard leans on, contributing NO codes to a row: flag parsing
+ * (`X_CLI_BAD_FLAG`), the subprocess boundary (`X_CLI_UNEXPECTED`), the corpus floor
+ * (`X_CORPUS_UNSCANNED`), the ratchet, the workspace and tier tables. Listed by name — measured
+ * 2026-10-03, `args` and `run` are imported by 63 and 59 of 74 guards — because a row that repeats
+ * them on every line says nothing about the guard it is on.
+ */
+export const SHARED_LIBS: ReadonlySet<string> = new Set(
+  [
+    'app-select',
+    'args',
+    'corpus',
+    'doc-citations',
+    'log',
+    'ratchet',
+    'ratchet-sites',
+    'run',
+    'tiers',
+    'verify-args',
+    'workspaces',
+  ].map((name) => `scripts/lib/${name}.ts`),
+);
+
+/**
+ * A pin table (`scripts/lib/*-pins.ts`, `pin-raises`' own glob) is data: its `reason` sentences
+ * NAME codes (`X_VERIFY_STEP_TIMEOUT`) and raise none.
+ */
+const contributesCodes = (lib: string): boolean =>
+  !SHARED_LIBS.has(lib) && !lib.endsWith('-pins.ts');
+
+/** The guard's own codes and those of each rule-specific lib module it imports, one level down. */
+async function guardCodes(root: string, source: string): Promise<readonly string[]> {
+  const codes = new Set(codesIn(source));
+  for (const lib of libImportsOf(source).filter(contributesCodes)) {
+    const file = Bun.file(join(root, lib));
+    if (!(await file.exists())) continue;
+    for (const code of codesIn(await file.text())) codes.add(code);
+  }
+  return [...codes].sort();
+}
+
 /** `bun run <name>` where `package.json` names the script, else the path itself. */
 async function commandsByFile(root: string): Promise<ReadonlyMap<string, string>> {
   const manifest: unknown = await Bun.file(join(root, 'package.json')).json();
@@ -95,8 +154,9 @@ export async function collectGuards(root: string): Promise<readonly Guard[]> {
     if (file.endsWith('.test.ts') || file.includes('.fixtures.')) continue;
     const source = await Bun.file(join(root, file)).text();
     if (!source.includes('import.meta.main')) continue;
-    const codes = codesIn(source);
-    if (codes.length === 0) continue;
+    // A guard is still defined by ITS OWN codes; the lib modules only complete its row.
+    if (codesIn(source).length === 0) continue;
+    const codes = await guardCodes(root, source);
     guards.push({
       command: reportingForm(commands.get(file) ?? `bun run ${file}`, source),
       file,

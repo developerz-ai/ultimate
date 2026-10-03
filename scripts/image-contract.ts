@@ -6,18 +6,19 @@
 // green, because the one thing that would have caught it — `/out/app --version` — ran on the BUILD
 // stage, which is not what ships. `docker build` runs on no PR, so nothing stops either recurring.
 //
-// THREE RULES, all derived entirely from files, none needing a table that can go stale:
-//   libc     the stage the runtime COPYs its artifact from must link the same libc family the
-//            runtime provides. `alpine` means musl and `slim`/`debian`/`distroless/cc` mean glibc
-//            for as long as those distributions exist; an image neither pattern recognises yields
-//            NO finding, because unknown is not broken.
+// THREE RULES over EVERY Dockerfile in the tree, derived from files, none needing a stale table:
+//   libc     whatever the runtime COPYs its artifact from — a stage by name or index, or an
+//            external image — must link the libc family the runtime provides. `alpine` means
+//            musl and `slim`/`debian`/`distroless/cc` mean glibc for as long as those
+//            distributions exist; an image neither pattern recognises yields NO finding, because
+//            unknown is not broken.
 //   guard    the final stage's ENTRYPOINT binary must be RUN inside that same stage. "There is a
 //            guard" and "the guard runs on what ships" are different claims and only the second was
 //            violated — the broken Dockerfile had a guard, one stage too early.
-//   secret   every `*.dockerignore` in the tree must exclude the secrets master key. All four
-//            excluded `.env` and `.npmrc` and none excluded `.secrets.key`, so `COPY . .` baked the
-//            AES key into a layer beside the committed `secrets.enc.json` it decrypts — and
-//            `findMasterKey` reads the file whenever `ULTIMATE_SECRETS_KEY` is unset, so the
+//   secret   every Dockerfile has an ignore file, and every `*.dockerignore` excludes the master
+//            key. All four excluded `.env` and `.npmrc` and none `.secrets.key`, so `COPY . .`
+//            baked the AES key into a layer beside the committed `secrets.enc.json` it decrypts
+//            — and `findMasterKey` reads the file whenever `ULTIMATE_SECRETS_KEY` is unset, so the
 //            container boots on the baked key and the env path is never exercised.
 //            `wiki/CLI-Reference.md` stated the invariant ("ships no key file at all") and nothing
 //            enforced it. A generated app's ignore file is written by
@@ -32,11 +33,12 @@
 //
 //   bun run scripts/image-contract.ts [--json]
 
-import { SECRETS_KEY_FILE } from '@ultimat3/core';
+import { renderFixShellArg, renderThrowable, SECRETS_KEY_FILE } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { ScriptError } from './lib/script-error';
 
 export const DOCKERFILE = 'docker/Dockerfile';
 
@@ -149,14 +151,30 @@ export type ImageGapKind = 'libc' | 'guard';
 
 export interface ImageGap {
   readonly kind: ImageGapKind;
+  /** The Dockerfile, repo-relative — every one in the tree is checked, not `DOCKERFILE` alone. */
+  readonly file: string;
   readonly line: number;
   /** For `libc`: the producing stage's image and family. For `guard`: the entrypoint binary. */
   readonly detail: string;
   readonly runtime: string;
 }
 
+/**
+ * Where a `COPY --from=<source>` artifact was linked: a stage by name, a stage by INDEX (`--from=0`
+ * is the first `FROM`), or else an image reference — whose libc is its own, exactly as a stage's.
+ * Reading every non-name as "nothing to compare" let `--from=alpine:3` and `--from=0` through.
+ */
+function producerImage(source: string, stages: readonly Stage[]): { image: string; line?: number } {
+  const named = stages.find((one) => one.name?.toLowerCase() === source.toLowerCase());
+  const indexed = /^\d+$/.test(source) ? stages[Number(source)] : undefined;
+  const stage = named ?? indexed;
+  return stage === undefined
+    ? { image: source }
+    : { image: baseImageOf(stage, stages), line: stage.line };
+}
+
 /** Pure, so the negative case is a fixture rather than an edit to the Dockerfile that ships. */
-export function checkImage(dockerfile: string): readonly ImageGap[] {
+export function checkImage(dockerfile: string, file: string = DOCKERFILE): readonly ImageGap[] {
   const stages = parseDockerfile(dockerfile);
   const runtime = stages.at(-1);
   if (runtime === undefined) return [];
@@ -165,15 +183,15 @@ export function checkImage(dockerfile: string): readonly ImageGap[] {
   const gaps: ImageGap[] = [];
 
   for (const source of copySources(runtime)) {
-    const producer = stages.find((one) => one.name?.toLowerCase() === source.toLowerCase());
-    if (producer === undefined) continue;
-    const image = baseImageOf(producer, stages);
-    const libc = libcOf(image);
+    const producer = producerImage(source, stages);
+    const libc = libcOf(producer.image);
     if (libc === undefined || runtimeLibc === undefined || libc === runtimeLibc) continue;
     gaps.push({
       kind: 'libc',
-      line: producer.line,
-      detail: `${source} on ${image} (${libc})`,
+      file,
+      // An external image has no line of its own; the stage that copies from it is where to look.
+      line: producer.line ?? runtime.line,
+      detail: `${source} on ${producer.image} (${libc})`,
       runtime: `${runtimeImage} (${runtimeLibc})`,
     });
   }
@@ -187,6 +205,7 @@ export function checkImage(dockerfile: string): readonly ImageGap[] {
     if (!runs.includes(binary)) {
       gaps.push({
         kind: 'guard',
+        file,
         line: entrypoint?.line ?? runtime.line,
         detail: binary,
         runtime: runtimeImage,
@@ -196,19 +215,22 @@ export function checkImage(dockerfile: string): readonly ImageGap[] {
   return gaps;
 }
 
-const where = (gap: ImageGap): string => `${DOCKERFILE}:${gap.line}`;
+const where = (gap: ImageGap): string => `${gap.file}:${gap.line}`;
+
+/** The Dockerfile as a `docker build -f` operand — verbatim when a shell reads it as one word. */
+const buildFile = (gap: ImageGap): string => renderFixShellArg(gap.file, DOCKERFILE);
 
 const libcFinding = (gap: ImageGap): Finding => ({
   code: 'X_IMAGE_LIBC_MISMATCH',
-  cause: `${DOCKERFILE} builds its artifact in stage ${gap.detail} and ships it on ${gap.runtime}, so the binary asks for a loader the runtime does not have — every container exits "exec: no such file or directory" and the build stays green`,
-  fix: `change that stage's FROM to a base of the same libc family as the runtime in ${DOCKERFILE}, then docker build -f ${DOCKERFILE} -t ultimate-app:libc-check .`,
+  cause: `${gap.file} builds its artifact in stage ${gap.detail} and ships it on ${gap.runtime}, so the binary asks for a loader the runtime does not have — every container exits "exec: no such file or directory" and the build stays green`,
+  fix: `change that stage's FROM to a base of the same libc family as the runtime, then docker build -f ${buildFile(gap)} -t ultimate-app:libc-check .`,
   at: where(gap),
 });
 
 const guardFinding = (gap: ImageGap): Finding => ({
   code: 'X_IMAGE_GUARD_MISSING',
-  cause: `the final stage of ${DOCKERFILE} ships ${gap.detail} as its ENTRYPOINT and never runs it, so a binary that cannot exec passes the build and fails on the first command an operator runs — a guard in an earlier stage proves the build image, which is not what ships`,
-  fix: `add \`RUN ["${gap.detail}", "--version"]\` to the FINAL stage of ${DOCKERFILE} (exec form — a distroless stage has no shell), then docker build -f ${DOCKERFILE} -t ultimate-app:guard-check .`,
+  cause: `the final stage of ${gap.file} ships ${gap.detail} as its ENTRYPOINT and never runs it, so a binary that cannot exec passes the build and fails on the first command an operator runs — a guard in an earlier stage proves the build image, which is not what ships`,
+  fix: `add \`RUN ["${gap.detail}", "--version"]\` to the FINAL stage (exec form — a distroless stage has no shell), then docker build -f ${buildFile(gap)} -t ultimate-app:guard-check .`,
   at: where(gap),
 });
 
@@ -287,27 +309,45 @@ export const checkIgnores = (files: readonly IgnoreFile[]): readonly IgnoreGap[]
   files.filter((one) => !ignoresMasterKey(one.text)).map((one) => ({ file: one.file }));
 
 /**
+ * Directories whose contents are generated or installed, never written by an author: a Dockerfile
+ * or an ignore file under one is a copy of a tracked file, or a package's own, and not this tree's.
+ */
+export const SKIPPED_DIRS: readonly string[] = ['node_modules', 'dist', '.git', '.x'];
+
+const SKIPPED = new RegExp(
+  `(?:^|/)(?:${SKIPPED_DIRS.map((dir) => dir.replace('.', '\\.')).join('|')})/`,
+);
+
+/**
+ * Every path `pattern` matches under `root`, outside `SKIPPED_DIRS`. A directory another process
+ * deletes mid-walk — a test fixture under the gate's parallel run — makes the glob throw ENOENT on
+ * its `readdir`; that is the tree moving, not an answer, so the walk is taken again, three times.
+ * A walk that still cannot read the tree is refused with a code: "unread" is never "clean".
+ */
+function scanTree(root: string, pattern: string, attempts = 3): readonly string[] {
+  try {
+    return [...new Bun.Glob(pattern).scanSync({ cwd: root, dot: true })]
+      .map((path) => path.split('\\').join('/'))
+      .filter((path) => !SKIPPED.test(path))
+      .sort();
+  } catch (error) {
+    const vanished = (error as { readonly code?: unknown } | null)?.code === 'ENOENT';
+    if (vanished && attempts > 1) return scanTree(root, pattern, attempts - 1);
+    throw new ScriptError({
+      code: 'X_CORPUS_UNSCANNED',
+      cause: `image-contract could not walk ${pattern} under ${root} (${renderThrowable(error)}) — the tree changed or became unreadable during the scan, and a Dockerfile it never read is not one it checked`,
+      fix: 'bun run scripts/image-contract.ts --json',
+    });
+  }
+}
+
+/**
  * Every `*.dockerignore` in the tree, contents included. Globbed rather than listed: the four that
  * exist today were each added beside a new Dockerfile, and a table here would leave the fifth
  * unchecked with nothing red — the defect class this whole file exists to close.
  */
-/**
- * Every `.dockerignore` under `root`. A directory another process deletes mid-walk — a test fixture
- * under the gate's parallel run — makes the glob throw ENOENT on its `readdir`; that is the tree
- * moving, not an answer, so the walk is taken again (three times, then the error stands).
- */
-function scanIgnoreFiles(root: string, attempts = 3): readonly string[] {
-  try {
-    return [...new Bun.Glob('**/*.dockerignore').scanSync({ cwd: root, dot: true })].sort();
-  } catch (error) {
-    const vanished = (error as { readonly code?: unknown } | null)?.code === 'ENOENT';
-    if (!vanished || attempts <= 1) throw error;
-    return scanIgnoreFiles(root, attempts - 1);
-  }
-}
-
 export async function ignoreFilesOf(root: string): Promise<readonly IgnoreFile[]> {
-  const paths = scanIgnoreFiles(root);
+  const paths = scanTree(root, '**/*.dockerignore');
   return Promise.all(
     paths.map(async (file) => ({ file, text: await Bun.file(`${root}/${file}`).text() })),
   );
@@ -321,45 +361,86 @@ export const ignoreGapFindingFor = (gap: IgnoreGap): Finding => ({
 });
 
 /**
- * The Dockerfile, or `undefined`. ONE read, shared by the gate check and the command below — they
- * used to read the path separately and disagree about it being gone: `imageGaps` answered `[]` and
- * `main` crashed on a bare ENOENT with no code, no `fix:` and no `--json` payload.
- *
- * ABSENCE IS NOT A FINDING HERE, and that is a per-check decision rather than a house style: unlike
- * `wiki/Realtime.md`, which is the only public description of a protocol this tree still ships, a
- * repo with no Dockerfile is a repo that builds no image, and there is no counterpart artifact left
- * making a claim. The rule says so out loud in its summary instead of answering a silent green.
+ * Every Dockerfile in the tree, by the three names docker and the repo's convention use. It read
+ * `docker/Dockerfile` alone, so the image `deploy-social-demo.yml` ships —
+ * `dummy/social-media-clone/docker/Dockerfile.monorepo` — was held to none of these rules.
  */
-const readDockerfile = async (root: string): Promise<string | undefined> => {
-  const file = Bun.file(`${root}/${DOCKERFILE}`);
-  return (await file.exists()) ? await file.text() : undefined;
+export async function dockerfilesOf(root: string): Promise<readonly string[]> {
+  const found = ['**/Dockerfile', '**/Dockerfile.*', '**/*.Dockerfile'].flatMap((pattern) =>
+    scanTree(root, pattern),
+  );
+  return [...new Set(found)].filter((path) => !path.endsWith('.dockerignore')).sort();
+}
+
+/**
+ * The ignore files docker would read for `file`: the per-Dockerfile `<file>.dockerignore`, or a
+ * `.dockerignore` at the root of a context — any directory from the Dockerfile's own up to the
+ * repo root, the contexts a build of it can plausibly name.
+ */
+export const ignoreCandidates = (file: string): readonly string[] => {
+  const dirs = file.split('/').slice(0, -1);
+  const roots = dirs.map((_, depth) => `${dirs.slice(0, dirs.length - depth).join('/')}/`);
+  return [`${file}.dockerignore`, ...roots.map((dir) => `${dir}.dockerignore`), '.dockerignore'];
 };
 
-/** Read the Dockerfile, then check it. The one impure step. */
+/**
+ * A Dockerfile with NO ignore file passed the master-key rule by giving it nothing to read: the
+ * third rule checks what each ignore file says, and an absent one says nothing.
+ */
+const unignoredFinding = (file: string): Finding => ({
+  code: 'X_IMAGE_SECRET_UNIGNORED',
+  cause: `${file} has no ignore file — no ${file}.dockerignore beside it and no .dockerignore at or above it — so a build stage's \`COPY . .\` carries ${SECRETS_KEY_FILE}, .env and .npmrc into a layer`,
+  fix: `printf '%s\\n' '**/.env' '**/.npmrc' '${SECRET_IGNORE_PATTERN}' > ${renderFixShellArg(`${file}.dockerignore`, 'Dockerfile.dockerignore')} && bun run scripts/image-contract.ts --json`,
+  at: file,
+});
+
+/**
+ * Every Dockerfile and what it ships, read once — shared by the gate check and the command below.
+ *
+ * ABSENCE IS NOT A FINDING HERE, and that is a per-check decision rather than a house style: a repo
+ * with no Dockerfile is a repo that builds no image, and there is no counterpart artifact left
+ * making a claim. The rule says so out loud in its summary instead of answering a silent green.
+ */
+async function readDockerfiles(
+  root: string,
+): Promise<readonly { readonly file: string; readonly text: string }[]> {
+  const files = await dockerfilesOf(root);
+  return Promise.all(
+    files.map(async (file) => ({ file, text: await Bun.file(`${root}/${file}`).text() })),
+  );
+}
+
+/** Read every Dockerfile, then check each. */
 export async function imageGaps(root: string): Promise<readonly ImageGap[]> {
-  const text = await readDockerfile(root);
-  return text === undefined ? [] : checkImage(text);
+  return (await readDockerfiles(root)).flatMap((one) => checkImage(one.text, one.file));
+}
+
+/** All three rules over one read of the tree. */
+async function imageContract(root: string) {
+  const dockerfiles = await readDockerfiles(root);
+  const ignores = await ignoreFilesOf(root);
+  const present = new Set(ignores.map((one) => one.file));
+  const findings: readonly Finding[] = [
+    ...dockerfiles.flatMap((one) => checkImage(one.text, one.file)).map(imageGapFindingFor),
+    ...dockerfiles
+      .filter((one) => !ignoreCandidates(one.file).some((path) => present.has(path)))
+      .map((one) => unignoredFinding(one.file)),
+    ...checkIgnores(ignores).map(ignoreGapFindingFor),
+  ];
+  return { dockerfiles, ignores, findings };
 }
 
 /** What this repo contributes to `x verify`'s `boundaries` step. */
-export const imageContractFindings = async (root: string): Promise<readonly Finding[]> => [
-  ...(await imageGaps(root)).map(imageGapFindingFor),
-  ...checkIgnores(await ignoreFilesOf(root)).map(ignoreGapFindingFor),
-];
+export const imageContractFindings = async (root: string): Promise<readonly Finding[]> =>
+  (await imageContract(root)).findings;
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const text = await readDockerfile(root);
-  const gaps = text === undefined ? [] : checkImage(text);
-  const stages = text === undefined ? [] : parseDockerfile(text);
-  const ignores = await ignoreFilesOf(root);
-  const ignoreGaps = checkIgnores(ignores);
-  const findings = [...gaps.map(imageGapFindingFor), ...ignoreGaps.map(ignoreGapFindingFor)];
+  const { dockerfiles, ignores, findings } = await imageContract(repoRoot());
   const green =
-    text === undefined
-      ? `no ${DOCKERFILE} in this tree, so it builds no image and there is nothing to check`
-      : `${stages.length} stages in ${DOCKERFILE}: one libc family, and the shipped entrypoint proven in the stage that ships it; ${ignores.length} ignore file(s) keep ${SECRETS_KEY_FILE} out of every build context`;
+    dockerfiles.length === 0
+      ? 'no Dockerfile in this tree, so it builds no image and there is nothing to check'
+      : `${dockerfiles.length} Dockerfile(s): each ships one libc family and proves its entrypoint in the stage that ships it; ${ignores.length} ignore file(s) keep ${SECRETS_KEY_FILE} out of every build context`;
   report(
     {
       ok: findings.length === 0,
@@ -367,8 +448,10 @@ if (import.meta.main) {
       summary: findings.length === 0 ? green : `${findings.length} image-contract violation(s)`,
       findings,
       data: {
-        dockerfile: text === undefined ? null : DOCKERFILE,
-        stages: stages.length,
+        dockerfiles: dockerfiles.map((one) => ({
+          file: one.file,
+          stages: parseDockerfile(one.text).length,
+        })),
         ignoreFiles: ignores.map((one) => one.file),
       },
     },

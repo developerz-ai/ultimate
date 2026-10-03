@@ -23,9 +23,15 @@ import {
   plannedWriteLine,
   RELEASE_WRITES,
   releaseCheckFindings,
+  stampReleaseFiles,
 } from './lib/release-writes';
 import { repoRoot, run } from './lib/run';
-import { listWorkspaces, publishOrder, workspaceManifests } from './lib/workspaces';
+import {
+  listWorkspaces,
+  publishFloorFindings,
+  publishOrder,
+  workspaceManifests,
+} from './lib/workspaces';
 
 export const BUMPS = ['patch', 'minor', 'major'] as const;
 
@@ -184,6 +190,20 @@ if (import.meta.main) {
   const workspaces = await listWorkspaces(root);
   const publishable = publishOrder(workspaces);
   const current = publishable[0]?.version ?? '0.0.1';
+  // Before `--check` and before any write: a tree that enumerates no publishable workspace is read
+  // from the wrong place, and both answers below were `ok` over it ("0 packages are stamped").
+  const floor = publishFloorFindings(workspaces);
+  if (floor.length > 0) {
+    report(
+      {
+        ok: false,
+        script: 'release',
+        summary: 'refusing: no publishable workspace',
+        findings: floor,
+      },
+      args.json,
+    );
+  }
 
   // `--check <version>` writes nothing and answers one question: is this repo actually stamped at
   // the version about to be published? The lockstep rule on its own compares packages only to each
@@ -328,20 +348,35 @@ if (import.meta.main) {
   }
 
   if (!dryRun) {
-    for (const path of manifests) {
-      const raw = await Bun.file(path).text();
-      const own = published.has(path) ? setOwnVersion(raw, version) : raw;
-      await Bun.write(path, repinFrameworkDeps(own, version));
+    // Own version for the published manifests, pins for all; then the Helm chart, which is not a
+    // workspace — `appVersion` is the default `image.tag`, so a chart left behind names an image tag
+    // this release never pushes (it sat at 0.0.1 through every 1.x release) — then the changelog.
+    const stamped = await stampReleaseFiles(root, [
+      ...manifests.map((path) => ({
+        path,
+        rewrite: (raw: string) =>
+          repinFrameworkDeps(published.has(path) ? setOwnVersion(raw, version) : raw, version),
+      })),
+      {
+        path: join(root, CHART_FILE),
+        rewrite: (raw: string) => setChartVersions(raw, version),
+        optional: true,
+      },
+      { path: changelogPath, rewrite: () => promoted.changelog },
+    ]);
+    if (stamped.findings.length > 0) {
+      report(
+        {
+          ok: false,
+          script: 'release',
+          summary: `refusing to continue: the bump stopped after ${stamped.written.length} file(s)`,
+          findings: stamped.findings,
+          lines: stamped.written.map((path) => `  wrote     ${path}`),
+          data: { version, current, written: stamped.written },
+        },
+        args.json,
+      );
     }
-    // The Helm chart moves with them. It is not a workspace, so the loop above cannot reach it —
-    // and `appVersion` is the default `image.tag`, so a chart left behind names an image tag this
-    // release never pushes. It sat at 0.0.1 through every 1.x release for exactly that reason.
-    const chartPath = join(root, CHART_FILE);
-    const chart = Bun.file(chartPath);
-    if (await chart.exists()) {
-      await Bun.write(chartPath, setChartVersions(await chart.text(), version));
-    }
-    await Bun.write(changelogPath, promoted.changelog);
   }
 
   // AFTER the manifests, never before: all three of these are derived from what the loop above

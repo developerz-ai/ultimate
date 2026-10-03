@@ -10,6 +10,7 @@ import {
   findingFor,
   ordinalLabel,
   packumentUrl,
+  registryAuditResult,
   registryFindings,
 } from './registry-audit';
 
@@ -185,5 +186,33 @@ describe('the request itself', () => {
     expect(states[0]?.kind).toBe('unreachable');
     expect(findingFor(only(states))?.cause).toContain('aborted by the deadline');
     expect(signals[0]).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('the floor', () => {
+  // "0/0 publishable packages are on npm at unknown, every one attested", `ok: true`: a tree read
+  // from the wrong directory answered exactly like a perfect registry.
+  test('zero publishable workspaces is a failure, not a clean audit', async () => {
+    const neverCalled: RegistryFetch = () => expect.unreachable('nothing to look up');
+    const result = await registryAuditResult([], neverCalled);
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => finding.code)).toEqual(['X_CORPUS_UNSCANNED']);
+  });
+
+  test('one attested workspace is a clean audit', async () => {
+    const fetcher: RegistryFetch = async () =>
+      new Response(packument('@ultimat3/core', { '9.0.0': attested }, '9.0.0'));
+    const core = {
+      dir: 'core',
+      name: '@ultimat3/core',
+      version: '9.0.0',
+      private: false,
+      path: '/nowhere/packages/core',
+      tier: 0,
+      dependsOn: [],
+    };
+    const result = await registryAuditResult([core], fetcher);
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe('1/1 publishable packages are on npm at 9.0.0, every one attested');
   });
 });

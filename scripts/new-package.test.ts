@@ -5,7 +5,13 @@
 import { describe, expect, test } from 'bun:test';
 import { PACKAGE_FILES } from '@ultimat3/cli';
 import { allowedTiersFor, TIERS } from './lib/tiers';
-import { packageTemplates, TIER_NUMBERS, tierProblem, withPackageReference } from './new-package';
+import {
+  nameProblem,
+  packageTemplates,
+  TIER_NUMBERS,
+  tierProblem,
+  withPackageReference,
+} from './new-package';
 
 const fileNamed = (name: string, tier: number, path: string): string => {
   const file = packageTemplates(name, tier, 'one line').find((entry) => entry.path === path);
@@ -100,14 +106,46 @@ describe('unit · a scaffolded package joins the root build graph', () => {
 describe('unit · --tier is a tier or a refusal', () => {
   // `--tier abc` was `Number.parseInt`'d to NaN and written into the docs as "Tier NaN".
   test('a non-numeric or out-of-table tier is refused', () => {
-    expect(tierProblem('abc')).toContain('not one of');
-    expect(tierProblem('9')).toContain('not one of');
-    expect(tierProblem('1.5')).toContain('not one of');
-    expect(tierProblem('')).toContain('not one of');
+    expect(tierProblem('abc', 'seo')).toContain('not one of');
+    expect(tierProblem('9', 'seo')).toContain('not one of');
+    expect(tierProblem('1.5', 'seo')).toContain('not one of');
+    expect(tierProblem('', 'seo')).toContain('not one of');
   });
 
-  test('every tier in the table passes, and an absent flag is not a problem', () => {
-    for (const tier of Object.keys(TIERS)) expect(tierProblem(tier)).toBeUndefined();
-    expect(tierProblem(undefined)).toBeUndefined();
+  test('every tier in the table passes, and an absent flag is not a problem for a listed name', () => {
+    for (const tier of Object.keys(TIERS)) expect(tierProblem(tier, 'brand-new')).toBeUndefined();
+    expect(tierProblem(undefined, 'seo')).toBeUndefined();
+    expect(tierProblem(undefined, 'create-ultimate')).toBeUndefined();
+  });
+
+  // No `--tier` for a package in no table resolved to `UNLISTED_TIER` (6): a scaffold whose own
+  // CLAUDE.md said "may import tiers 0-5", which is every package in the framework.
+  test('a name in no tier table must state its tier', () => {
+    expect(tierProblem(undefined, 'brand-new')).toContain('--tier is required');
+  });
+});
+
+describe('unit · the name is a package directory, nothing else', () => {
+  // `../../x` was joined under `packages/` and written wherever it resolved.
+  test('a path, an upper-case or a non-kebab name is refused', () => {
+    for (const name of [
+      '../../x',
+      'a/b',
+      'Seo',
+      'seo_two',
+      '-seo',
+      'seo-',
+      'seo--two',
+      '1seo',
+      '',
+    ]) {
+      expect(nameProblem(name)).toContain('kebab-case');
+    }
+  });
+
+  test('every package in the table is a legal name, and so is a new kebab-case one', () => {
+    for (const name of [...Object.values(TIERS).flat(), 'create-ultimate', 'i18n', 'brand-new']) {
+      expect(nameProblem(name)).toBeUndefined();
+    }
   });
 });

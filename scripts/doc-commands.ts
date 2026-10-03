@@ -36,6 +36,10 @@ export const DOC_GLOBS: readonly string[] = [
   'wiki/**/*.md',
   'docs/**/*.md',
   'packages/*/*.md',
+  // Both tracked apps: their READMEs, AGENTS.md and per-package pages are what an agent working IN
+  // the app reads first, and `gate-steps.ts` already reads them for the same reason.
+  'examples/**/*.md',
+  'dummy/**/*.md',
 ];
 export const ALLOW_FILE = 'scripts/doc-commands-allow.ts';
 /** Where `DOC_COMMAND_PINS` lives — the file a pin finding tells its reader to edit. */
@@ -54,7 +58,11 @@ export const PINS_FILE = 'scripts/doc-commands.ts';
  * has exactly one owner.
  */
 export const skipDocPath = (path: string): boolean =>
-  path.startsWith('docs/plans/') || path === 'CHANGELOG.md' || path === 'wiki/Error-Codes.md';
+  path.startsWith('docs/plans/') ||
+  path === 'CHANGELOG.md' ||
+  path === 'wiki/Error-Codes.md' ||
+  // An installed dependency's or a build's pages are not this repo's to keep runnable.
+  /(?:^|\/)(?:node_modules|dist|\.x)\//.test(path);
 
 /**
  * A per-file count of citations that do not resolve, tolerated because they were already there

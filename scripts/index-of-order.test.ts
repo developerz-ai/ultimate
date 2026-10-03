@@ -4,7 +4,13 @@
 // `indexOf(...)` and so matched no assertion at all.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { checkOrdering, orderingSites, packageOfTest, scanTree } from './index-of-order';
+import {
+  checkOrdering,
+  orderingSites,
+  packageOfTest,
+  scanTree,
+  TEST_GLOBS,
+} from './index-of-order';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -194,6 +200,11 @@ describe('the real tree', () => {
     // rule blind, which is how both of its earlier drafts failed.
     expect(files).toBeGreaterThan(1000);
     expect(sites.length).toBeGreaterThan(20);
+    // The `e2e/` tree beside `src/`, and `.tsx` suites, are tests too — and the glob reaches files.
+    const e2e = TEST_GLOBS.find((glob) => glob.startsWith('packages/*/e2e/'));
+    expect(e2e).toBeDefined();
+    expect([...new Bun.Glob(e2e ?? '').scanSync({ cwd: repoRoot() })].length).toBeGreaterThan(0);
+    expect(TEST_GLOBS.every((glob) => glob.endsWith('.test.{ts,tsx}'))).toBe(true);
 
     expect(checkOrdering({ sites, pins: [], scanned: files > 0 })).toEqual([]);
   });

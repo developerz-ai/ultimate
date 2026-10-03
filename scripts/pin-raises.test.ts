@@ -5,16 +5,23 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { BASE_REF, baseRef } from './lib/base-ref';
 import { importPinSource, pinRows } from './lib/pin-rows';
+import { expectedRedLine, expectedRedRows, PIN_FILES, tableDeclaration } from './lib/pin-tables';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
-import { checkPinRaises, pinRaiseResult, readPinTables, rowLine, statesWhy } from './pin-raises';
+import { checkPinRaises, pinRaiseResult, readPinTables, rowLine, whyStatement } from './pin-raises';
 
 const PATH = 'scripts/lib/demo-pins.ts';
 
-const table = (source: string, now: Record<string, number>, base?: Record<string, number>) => ({
+const table = (
+  source: string,
+  now: Record<string, number>,
+  base?: Record<string, number>,
+  baseSource?: string,
+) => ({
   path: PATH,
   source,
   now: new Map(Object.entries(now)),
   base: base === undefined ? undefined : new Map(Object.entries(base)),
+  ...(baseSource === undefined ? {} : { baseSource }),
 });
 
 const FLAT = ['export const DEMO_PINS = {', '  cli: 12,', '  core: 3,', '};'].join('\n');
@@ -78,6 +85,41 @@ describe('unit · a ratchet pin that rises needs a why: on the row', () => {
     ).toHaveLength(1);
   });
 
+  test('a raise under the why: the base already had is UNSTATED — an old reason licenses nothing', () => {
+    // The pin went 3 -> 30 and the sentence above it is the one written for the 3.
+    const was = FLAT_WHY;
+    const now = FLAT_WHY.replace('cli: 12', 'cli: 30');
+    const raises = checkPinRaises([
+      table(now, { 'DEMO_PINS.cli': 30 }, { 'DEMO_PINS.cli': 12 }, was),
+    ]);
+    expect(raises.map((raise) => raise.row)).toEqual(['DEMO_PINS.cli']);
+    // A new sentence for the new number states it.
+    const restated = now.replace('fixed by slice 15', 'and the 18 the scanner gained in slice 16');
+    expect(
+      checkPinRaises([table(restated, { 'DEMO_PINS.cli': 30 }, { 'DEMO_PINS.cli': 12 }, was)]),
+    ).toEqual([]);
+  });
+
+  test('a nested row whose reason did not change is unstated too', () => {
+    const now = NESTED.replace('count: 12', 'count: 40');
+    expect(
+      checkPinRaises([table(now, { 'DEMO_PINS.cli': 40 }, { 'DEMO_PINS.cli': 12 }, NESTED)]),
+    ).toHaveLength(1);
+  });
+
+  test('a why: comment wrapped over several lines above the row states it', () => {
+    const source = [
+      'export const DEMO_PINS = {',
+      '  // why: the record moved verbatim with its history (plan 101 slice 17 f,',
+      '  // 2026-09-23); it quotes the commands its rules were written against.',
+      '  cli: 12,',
+      '};',
+    ].join('\n');
+    expect(
+      checkPinRaises([table(source, { 'DEMO_PINS.cli': 12 }, { 'DEMO_PINS.cli': 3 })]),
+    ).toEqual([]);
+  });
+
   test('a new row, or a new table, is a raise from zero; a lowered one is not a raise', () => {
     expect(checkPinRaises([table(FLAT, { 'DEMO_PINS.core': 3 })])[0]?.was).toBe(0);
     expect(checkPinRaises([table(FLAT, { 'DEMO_PINS.cli': 9 }, { 'DEMO_PINS.cli': 12 })])).toEqual(
@@ -125,13 +167,82 @@ describe('unit · a ratchet pin that rises needs a why: on the row', () => {
     expect(rowLine("const T = {\n  'a-b': 1,\n};", 'T.a-b')).toBe(2);
     expect(rowLine("const T = [\n  { pkg: 'ui', count: 2 },\n];", 'T.ui')).toBe(2);
     expect(rowLine('const T = {};', 'T.nope')).toBe(0);
-    expect(statesWhy('', 0)).toBe(false);
+    expect(whyStatement('', 0)).toBeUndefined();
   });
 
   test('a checkout that cannot get origin/main is refused, never green', () => {
     const result = pinRaiseResult([], undefined);
     expect(result.ok).toBe(false);
     expect(result.findings?.map((one) => one.code)).toEqual(['X_PIN_BASE_MISSING']);
+  });
+});
+
+describe('the tables that live inside a script', () => {
+  test('the widened file list names every table whose header says it may only shrink', () => {
+    expect(PIN_FILES).toEqual([
+      'scripts/lib/*-pins.ts',
+      'scripts/doc-commands.ts',
+      'scripts/readme-fences-backlog.ts',
+      'scripts/lib/gated-apps.ts',
+    ]);
+  });
+
+  test('one table is lifted out of a script, a brace inside a string or comment included', () => {
+    const source = [
+      "import { x } from '@ultimat3/cli';",
+      'export const DOC_PINS: Readonly<Record<string, number>> = {',
+      "  // a } in a comment (and a ')' too)",
+      "  'a}.md': 1,",
+      '};',
+      'export const after = 2;',
+    ].join('\n');
+    expect(tableDeclaration(source, 'DOC_PINS')).toBe(
+      "export const DOC_PINS = {\n  // a } in a comment (and a ')' too)\n  'a}.md': 1,\n};\n",
+    );
+    expect(tableDeclaration(source, 'MISSING')).toBeUndefined();
+    expect(tableDeclaration('export const N = 3;', 'N')).toBeUndefined();
+  });
+
+  test('an expectedRed step is one row per app, placed under that app', () => {
+    const source = [
+      'export const GATED_APPS = [',
+      "  { dir: 'a', expectedRed: { drift: 'x' } },",
+      '  {',
+      "    dir: 'b',",
+      '    expectedRed: {',
+      "      drift: 'y',",
+      '    },',
+      '  },',
+      '];',
+    ].join('\n');
+    const rows = expectedRedRows([
+      { dir: 'a', expectedRed: { drift: 'x' } },
+      { dir: 'b', expectedRed: { drift: 'y' } },
+      { dir: 'c' },
+      null,
+    ]);
+    expect([...rows]).toEqual([
+      ['GATED_APPS.a.drift', 1],
+      ['GATED_APPS.b.drift', 1],
+    ]);
+    expect(expectedRedRows({})).toEqual(new Map());
+    expect(expectedRedLine(source, 'GATED_APPS.b.drift')).toBe(6);
+    expect(expectedRedLine(source, 'GATED_APPS.z.drift')).toBe(0);
+    // A new red step with no why: is a raise from zero, and reported at its own line.
+    const raises = checkPinRaises([
+      {
+        path: 'scripts/lib/gated-apps.ts',
+        source,
+        now: rows,
+        base: new Map(),
+        baseSource: 'export const GATED_APPS = [];',
+        line: expectedRedLine,
+      },
+    ]);
+    expect(raises.map((raise) => `${raise.row}:${raise.line}`)).toEqual([
+      'GATED_APPS.a.drift:2',
+      'GATED_APPS.b.drift:6',
+    ]);
   });
 });
 
@@ -143,6 +254,13 @@ describe('the real tree, against origin/main', () => {
       const base = await baseRef(root);
       expect(base).toBe(BASE_REF);
       const tables = await readPinTables(root, BASE_REF);
+      // The script-held tables are read too, not only the `*-pins.ts` glob.
+      const paths = tables.map((one) => one.path);
+      expect(paths).toContain('scripts/doc-commands.ts');
+      expect(paths).toContain('scripts/readme-fences-backlog.ts');
+      expect(paths).toContain('scripts/lib/gated-apps.ts');
+      const docs = tables.find((one) => one.path === 'scripts/doc-commands.ts');
+      expect(docs?.now.get('DOC_COMMAND_PINS.docs/history/cli.md')).toBeGreaterThan(0);
       // Non-vacuity: the tables were read at both ends and hold rows.
       expect(tables.length).toBeGreaterThan(5);
       expect(tables.filter((one) => one.base !== undefined).length).toBeGreaterThan(5);

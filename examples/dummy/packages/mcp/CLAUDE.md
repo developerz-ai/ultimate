@@ -25,8 +25,7 @@ imports them.
 
 | Task | Command |
 |---|---|
-| list tools | `x mcp ls --json` |
-| generate docs | `x mcp doc --json` |
+| list tools | `x mcp tools --json` |
 | test | `bun test packages/mcp` |
 
 ## Conventions

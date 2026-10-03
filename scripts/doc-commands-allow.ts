@@ -148,4 +148,12 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     kind: 'proposed',
     why: 'how the proposed design would run the native target in dev',
   },
+  // The reference app's desktop placeholder says the CLI has no `x app add` yet — true, and the
+  // reason the directory is empty. Same proposed vocabulary as `docs/idea/16-app-targets.md`.
+  {
+    path: 'examples/dummy/apps/desktop/README.md',
+    cites: 'x app',
+    kind: 'absent',
+    why: 'the sentence says the CLI has no `x app add`, which is why the desktop directory stays empty',
+  },
 ];

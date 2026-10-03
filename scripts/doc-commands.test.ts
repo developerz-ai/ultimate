@@ -9,6 +9,7 @@ import {
   docCommandFindingFor,
   docCommandGaps,
   PINS_FILE,
+  readDocPages,
   skipDocPath,
 } from './doc-commands';
 import type { DocCommandAllowance } from './doc-commands-allow';
@@ -225,6 +226,16 @@ describe('against this repo', () => {
     expect(found.filter((one) => one.kind === 'allowance')).toEqual([]);
     expect(DOC_COMMAND_ALLOWANCES.length).toBeGreaterThan(0);
   }, 20_000);
+
+  test('both tracked apps are read — an app README hands a reader commands too', async () => {
+    const paths = (await readDocPages(repoRoot())).map((file) => file.path);
+    expect(paths).toContain('examples/dummy/README.md');
+    expect(paths).toContain('dummy/social-media-clone/README.md');
+    expect(paths.some((path) => path.startsWith('examples/dummy/packages/'))).toBe(true);
+    // Installed and built trees are someone else's pages.
+    expect(paths.some((path) => /(?:^|\/)(?:node_modules|dist|\.x)\//.test(path))).toBe(false);
+    expect(skipDocPath('examples/dummy/node_modules/zod/README.md')).toBe(true);
+  });
 
   test('the scanner reads the pages it is pointed at', () => {
     expect(scanDocCitations(page('`x db migrate`')).length).toBe(1);

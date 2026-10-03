@@ -23,6 +23,13 @@ describe('scanBareErrorThrows separates the verdict from the input', () => {
     expect(found[0]?.line).toBe(2);
   });
 
+  test('`throw Error(…)` without `new` constructs the same bare Error, and is reported', () => {
+    const found = scanBareErrorThrows('packages/x/src/a.test.ts', "throw Error('no refusal');\n");
+    expect(found).toHaveLength(1);
+    // `ErrorBoundary`-style names are not the bare `Error`.
+    expect(scanBareErrorThrows('packages/x/src/a.test.ts', 'throw ErrorLike(x);')).toEqual([]);
+  });
+
   // The carve-out #132 said grep could not make. These are the code-under-test's INPUT, and
   // `packages/realtime/CLAUDE.md` blesses them: "the rule governs what this package throws, never
   // what a test hands it." A rule that reported these would ask for a rewrite that changes what the
