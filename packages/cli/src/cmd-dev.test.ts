@@ -104,7 +104,8 @@ describe('unit · x dev boots the app', () => {
     expect(server.roles).toEqual(['web', 'sync', 'worker', 'scheduler']);
     expect(server.running.worker).not.toBeNull();
     expect(server.running.scheduler).not.toBeNull();
-    expect(portOf(server.running.syncUrl)).toBe(portOf(server.url) + 1); // PORT + 1 at --port 0 too
+    // At --port 0 the kernel picks the sync port too — never web + 1, which another socket may hold.
+    expect(portOf(server.running.syncUrl)).not.toBe(portOf(server.url));
     expect(server.findings).toEqual([]);
   });
 

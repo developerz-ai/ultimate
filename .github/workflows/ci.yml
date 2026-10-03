@@ -68,24 +68,30 @@ jobs:
   # `bun run verify --only <steps>` — over a slice of the one step list, and none of them is a
   # verdict: a narrowed run says NOT A GATE RUN on its own summary line. `verify`, below, is.
   #
-  # THE PARTS, sized from the per-step wall times the gate printed on main (run 36899716351, a
-  # 4-core runner):
+  # THE PARTS, sized from the per-step wall times the parts printed on main (run 37101906027,
+  # 2026-10-03, 4-core runners):
   #
-  #   unit-N   180 s over three shards   the one step worth splitting; `--shard i/n` is a pure
+  #   unit-N   79-90 s per shard         the one step worth splitting; `--shard i/n` is a pure
   #                                      function of the sorted file list, so 2/3 is the same files
   #                                      on every runner and reproduces locally with the same flags
-  #   live     64 s, the static steps    every suite that needs a server. The six static steps run
-  #            BESIDE it, at no wall     BESIDE the serial suites whenever `live` is in the list —
-  #            time of their own         the runner's own rule, and how the whole gate has run them
-  #                                      since 2026-09-23 — so they cost this part nothing: the
-  #                                      slowest was 37 s inside a 64 s window. Two runners of
-  #                                      their own cost 4 billed minutes to save none.
-  #   e2e      8 s + 42 s                a browser, and the compiler: `tsc -b` writes, so it runs
-  #                                      alone and first, on the part with a core to spare
+  #   live     72 s, the static steps    every suite that needs more than one Postgres. The six
+  #            BESIDE it, at no wall     static steps run BESIDE the serial suites whenever `live`
+  #            time of their own         is in the list — the runner's own rule — so they cost this
+  #                                      part nothing: the slowest (`errors`, 32 s) fits inside it.
+  #                                      Two runners of their own cost 4 billed minutes to save none.
+  #   e2e      6 + 12 + 16 + 34 s        the compiler, then `contract` and `job` (Postgres only),
+  #                                      then a browser: `tsc -b` writes, so it runs alone and first.
+  #
+  # `contract` and `job` moved here from `live` on 2026-10-03. With them, `live` was the slowest
+  # part (129-157 s, against 79-125 s for a unit shard and 55-70 s for e2e), and the verdict
+  # cannot start before the slowest part ends. They read only TEST_DATABASE_URL, which this part
+  # now starts, and here they run one after another before the browser: with no `live` in the
+  # list, nothing opens the overlap window.
   #
   # Fixed cost per part, measured on main: 7-11 s for checkout and setup (the install cache is a
-  # 34 MB restore keyed on bun.lock and the install after it is under a second), plus the services
-  # where a part starts any.
+  # 168 MB restore keyed on bun.lock and the install after it is under a second), plus 10-20 s for
+  # the services where a part starts any — begun BEFORE setup and waited for after it, so the two
+  # overlap instead of adding up.
   #
   # The shape is the one wiki/CI-Parallel-Gate.md hands an app: a matrix of parts, each uploading
   # its `--json` document, and one job that merges them.
@@ -130,15 +136,32 @@ jobs:
             services: postgres
             urls: TEST_DATABASE_URL
           - part: live
-            only: lint,boundaries,filesize,package-shape,errors,contract,live,job,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
+            only: lint,boundaries,filesize,package-shape,errors,live,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
             services: postgres postgres-logical redis nats s3
             urls: TEST_DATABASE_URL|TEST_REPLICATION_URL|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
           - part: e2e
-            only: typecheck,e2e
+            only: typecheck,contract,job,e2e
+            services: postgres
+            urls: TEST_DATABASE_URL
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The services are mostly an image pull, and the setup below is mostly a cache restore:
+      # neither waits on the other, so the pull starts first and runs BEHIND setup. A background
+      # process outlives its step (the runner reaps orphans at the end of the JOB), and the step
+      # after setup blocks on its exit — on the process, never on a sleep.
+      - name: test services, in RAM — started
+        if: matrix.services
+        env:
+          SERVICES: ${{ matrix.services }}
+        run: |
+          # $SERVICES is a list of compose service names, split on purpose; the inner script is
+          # single-quoted because ITS shell expands "$@" and $RUNNER_TEMP, not this one.
+          # shellcheck disable=SC2086,SC2016
+          nohup bash -c 'time docker compose -f docker/docker-compose.test.yml up -d --wait "$@"; echo $? > "$RUNNER_TEMP/services.exit"' \
+            services $SERVICES > "$RUNNER_TEMP/services.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/services.pid"
       # `scripts/budget-raises.ts` compares every route budget with origin/main's TIP, so one commit
       # at depth 1 is all it needs — never `fetch-depth: 0`. Skipped on a push to main, where HEAD
       # IS that tip: the rule then prints that it compared nothing, and there is nothing to raise.
@@ -147,22 +170,25 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
       - uses: ./.github/actions/setup
-      # `time` prints what the services cost this part to start; it is the line to read when this
-      # step is suspected of being the slow one.
-      - name: test services, in RAM
+      # `time` in the log above prints what the services cost this part to start; the wait here is
+      # what they cost it on top of setup — the line to read when this step is suspected of being
+      # the slow one. `--wait` returned only once every healthcheck passed.
+      - name: test services, in RAM — ready
         if: matrix.services
         env:
-          SERVICES: ${{ matrix.services }}
           URLS: ${{ matrix.urls }}
         run: |
-          # $SERVICES is a list of compose service names, split on purpose.
-          # shellcheck disable=SC2086
-          time docker compose -f docker/docker-compose.test.yml up -d --wait $SERVICES \
+          tail --pid="$(cat "$RUNNER_TEMP/services.pid")" -f /dev/null
+          cat "$RUNNER_TEMP/services.log"
+          [ "$(cat "$RUNNER_TEMP/services.exit" 2>/dev/null)" = 0 ] \
             || { docker compose -f docker/docker-compose.test.yml ps -a; exit 1; }
           grep -E "^(${URLS})=" docker/test-services.env >> "$GITHUB_ENV"
       # The part's `--json` document is the artifact `verify` merges, so it is written to a file
-      # first and printed after — and the step table is rendered from it for the person reading a
-      # red run, because a 60 kB JSON line is not something anyone scans for a failing step.
+      # and uploaded below — never `cat` into the log. A red part's document carries the suite's
+      # output and runs past a megabyte on ONE line, and the Actions log dropped that line and every
+      # line after it: run 37103688822's red `unit-1` showed no step table at all. What the log and
+      # the job summary get is the step table rendered from it, which names a red part's step, its
+      # findings and `fix:` lines, and the suite output's last lines.
       #
       # Written under $RUNNER_TEMP, never in the checkout: the file is open and EMPTY while the
       # part's own steps run, and `lint` (biome walks the tree) failed the `live` part on it once.
@@ -177,17 +203,22 @@ jobs:
           status=0
           bun run scripts/verify.ts --only "$ONLY" ${SHARD:+--shard "$SHARD"} --json \
             > "$parts/${PART}.json" || status=$?
-          cat "$parts/${PART}.json"
-          jq -r '
+          echo "the part's document: $(wc -c < "$parts/${PART}.json") bytes, uploaded as verify-part-${PART}"
+          table="$(jq -r '
             (.steps // [])[]
             | "\(if .skipped then "-" elif .ok then "✓" else "✗" end) \(.name)  \(.durationMs)ms\(if .tests then "  \(.tests.ran) ran, \(.tests.skipped) skipped\(if .tests.errors then ", \(.tests.errors) errored" else "" end)" else "" end)",
               (.findings[]? | "    \(.code)\(if .at then " (\(.at))" else "" end)\n      cause: \(.cause)\n      fix:   \(.fix)"),
+              (select(.ok | not) | .output // empty | split("\n") | map(select(test("^\\s*\\(fail\\)"))) | unique | select(length > 0) | "    failed tests:\n\(map("      " + ltrimstr(" ")) | join("\n"))"),
               (select(.ok | not) | .output // empty | "    output (last lines):\n\(split("\n")[-40:] | map("      " + .) | join("\n"))")
-          ' "$parts/${PART}.json" || true
+          ' "$parts/${PART}.json" || true)"
+          echo "$table"
+          # The backticks are a Markdown fence, not a command substitution.
+          # shellcheck disable=SC2016
+          printf '### gate (%s)\n\n```text\n%s\n```\n' "$PART" "$table" >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       # Uploaded when the part is RED too: the verdict is the merge's, and a part that failed
       # without a document would read there as a step nobody ran rather than a step that failed.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ !cancelled() }}
         with:
           name: verify-part-${{ matrix.part }}
@@ -216,19 +247,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: verify-part-*
           path: ${{ runner.temp }}/parts
           merge-multiple: true
       # The human render, not `--json`: this is the one table a person reads to learn what the
-      # gate said, with every finding from every part under the step that raised it.
+      # gate said, with every finding from every part under the step that raised it — in the log,
+      # and on the run's summary page.
       - name: x verify merge — every step, from exactly one part, green
-        run: bun run scripts/verify.ts merge ${{ runner.temp }}/parts/*.json
+        run: |
+          status=0
+          bun run scripts/verify.ts merge ${{ runner.temp }}/parts/*.json > "$RUNNER_TEMP/verdict.txt" 2>&1 \
+            || status=$?
+          cat "$RUNNER_TEMP/verdict.txt"
+          # The backticks are a Markdown fence, not a command substitution.
+          # shellcheck disable=SC2016
+          printf '### verify — the verdict\n\n```text\n%s\n```\n' "$(cat "$RUNNER_TEMP/verdict.txt")" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   # Each tracked app — `examples/dummy` and the deployed `dummy/social-media-clone` — on its own
   # runner: BUILT (`x build --target static`, as a generated app's `bin/check` does, because
@@ -262,7 +302,7 @@ jobs:
       matrix:
         app: [examples/dummy, dummy/social-media-clone]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
@@ -275,7 +315,7 @@ jobs:
       - name: the PGlite version bun.lock pins
         id: pglite
         run: echo "version=$(grep -om1 '"@electric-sql/pglite@[0-9][^"]*"' bun.lock | tr -dc '0-9.')" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.app }}/.x/cache/pglite-*.snapshot
           key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
@@ -346,7 +386,7 @@ jobs:
     env:
       APP: ${{ matrix.app }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
@@ -368,7 +408,7 @@ jobs:
       - name: the PGlite version bun.lock pins
         id: pglite
         run: echo "version=$(grep -om1 '"@electric-sql/pglite@[0-9][^"]*"' bun.lock | tr -dc '0-9.')" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/${{ matrix.app }}/.x/cache/pglite-*.snapshot
           key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
@@ -442,7 +482,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -637,6 +677,71 @@ jobs:
           done < <(awk '/terminationGracePeriodSeconds:/ {print $2}' /tmp/deploy-130.yaml)
           echo "ok: hook account, External worker metric, startup probes, gated preStop, grace >= 35s"
 
+      # What a compromised pod can reach, rendered (plan 101, s2-sec L9). Each assertion names the
+      # hole it holds shut:
+      #
+      #   - one Secret `envFrom`'d into every role and the migrate Job, so a web pod held the
+      #     schema owner's credential and a worker the signing secrets;
+      #   - `/tmp` an `emptyDir` with no `sizeLimit` — node disk, so one pod filling it evicted its
+      #     neighbours;
+      #   - no NetworkPolicy, so every port of every role answered any pod in the cluster.
+      - name: the chart scopes each role's Secret, bounds /tmp and fences every role's ports
+        run: |
+          set -euo pipefail
+          fail() { echo "::error title=$1::$2"; exit 1; }
+          doc_with() { awk -v want="$2" 'BEGIN{RS="\n---\n"} index($0, want) {print; exit}' "$1"; }
+          secret_of() { doc_with "$1" "$2" | awk '/secretRef:/ {getline; print $2}'; }
+
+          scoped=(--set roles.web.existingSecret=web-only --set migrate.existingSecret=migrate-only)
+          helm template app docker/helm "${scoped[@]}" --show-only templates/deployments.yaml > /tmp/scoped.yaml
+          helm template app docker/helm "${scoped[@]}" --show-only templates/migrate-job.yaml >> /tmp/scoped.yaml
+          web="$(secret_of /tmp/scoped.yaml 'name: app-ultimate-web')"
+          worker="$(secret_of /tmp/scoped.yaml 'name: app-ultimate-worker')"
+          migrate="$(secret_of /tmp/scoped.yaml 'kind: Job')"
+          echo "secrets: web=[${web}] worker=[${worker}] migrate=[${migrate}]"
+          if [ "$web" != web-only ] || [ "$migrate" != migrate-only ] || [ "$worker" != ultimate-secrets ]; then
+            fail "per-role Secret not honoured" "roles.web.existingSecret=web-only and migrate.existingSecret=migrate-only rendered web=[${web}] migrate=[${migrate}] worker=[${worker}]; expected web-only, migrate-only and the release-wide ultimate-secrets. fix: the envFrom secretRef in docker/helm/templates/_helpers.tpl must read (default \$root.Values.existingSecret \$cfg.existingSecret)."
+          fi
+          if helm template app docker/helm --set existingSecret= >/dev/null 2>&1; then
+            fail "role without a Secret rendered" "with existingSecret empty and no per-role Secret the chart rendered pods that read no configuration. fix: keep the required() around the secretRef name in docker/helm/templates/_helpers.tpl."
+          fi
+
+          volumes="$(grep -c 'emptyDir:' /tmp/scoped.yaml)"
+          bounded="$(grep -c 'sizeLimit: "512Mi"' /tmp/scoped.yaml || true)"
+          echo "emptyDirs=${volumes} bounded=${bounded}"
+          if [ "$volumes" = 0 ] || [ "$volumes" != "$bounded" ]; then
+            fail "unbounded /tmp" "${bounded} of ${volumes} emptyDir volumes carry tmp.sizeLimit. fix: every workload's volumes go through the 'ultimate.tmpVolume' helper in docker/helm/templates/_helpers.tpl."
+          fi
+          if helm template app docker/helm --set tmp=null >/dev/null 2>&1; then
+            fail "tmp.sizeLimit not required" "the chart rendered with tmp unset, so /tmp is node disk again. fix: keep the required() in the 'ultimate.tmpVolume' helper in docker/helm/templates/_helpers.tpl."
+          fi
+
+          helm template app docker/helm --show-only templates/networkpolicy.yaml > /tmp/netpol.yaml
+          deployments="$(helm template app docker/helm --show-only templates/deployments.yaml | grep -c '^kind: Deployment$')"
+          policies="$(grep -c '^kind: NetworkPolicy$' /tmp/netpol.yaml)"
+          echo "deployments=${deployments} networkPolicies=${policies}"
+          [ "$policies" = "$deployments" ] \
+            || fail "role without a NetworkPolicy" "${policies} NetworkPolicies for ${deployments} Deployments. fix: docker/helm/templates/networkpolicy.yaml ranges over the same enabled roles as deployments.yaml."
+          case "$(doc_with /tmp/netpol.yaml 'name: app-ultimate-web')" in *"port: http"*"port: metrics"*"namespaceSelector: {}"*) ;;
+            *) fail "web NetworkPolicy" "the web role's policy does not admit http from httpFrom and metrics from metricsFrom only. fix: see docker/helm/templates/networkpolicy.yaml." ;;
+          esac
+          case "$(doc_with /tmp/netpol.yaml 'name: app-ultimate-worker')" in *"port: http"*)
+            fail "worker NetworkPolicy" "the worker role's policy admits an http port it never opens. fix: gate the http rule on \$cfg.port in docker/helm/templates/networkpolicy.yaml." ;;
+          esac
+          if grep -q -- '- Egress' /tmp/netpol.yaml; then
+            fail "egress filtered by default" "the default render filters egress, and the chart cannot know the database, NATS or object-store addresses. fix: render Egress only when networkPolicy.egress lists rules."
+          fi
+          helm template app docker/helm --show-only templates/networkpolicy.yaml \
+            --set-json 'networkPolicy.egress=[{"to":[{"ipBlock":{"cidr":"10.0.0.0/8"}}]}]' > /tmp/netpol-egress.yaml
+          # Both halves: the type without the rules is deny-all egress, the rules without the type
+          # are ignored by the API server.
+          if ! grep -q -- '- Egress' /tmp/netpol-egress.yaml || ! grep -q 'cidr: 10.0.0.0/8' /tmp/netpol-egress.yaml; then
+            fail "egress rules ignored" "networkPolicy.egress was set and the policies do not filter egress with exactly those rules. fix: see docker/helm/templates/networkpolicy.yaml."
+          fi
+          [ "$(helm template app docker/helm --set networkPolicy.enabled=false | grep -c '^kind: NetworkPolicy$' || true)" = 0 ] \
+            || fail "networkPolicy.enabled ignored" "networkPolicy.enabled=false still rendered a NetworkPolicy. fix: see docker/helm/templates/networkpolicy.yaml."
+          echo "ok: per-role Secret, bounded /tmp, one NetworkPolicy per role with only its own ports"
+
   # The rolling restart, PERFORMED — milestone 11's proof. `container` renders the chart; nothing
   # there can say whether an upgrade drops a request, because that is a property of a running
   # cluster: endpoint removal racing SIGTERM, the readiness grace, keep-alive connections held by
@@ -654,7 +759,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # A `paths:` filter belongs to a whole workflow, never to one job, so the filter is a step.
@@ -735,7 +840,7 @@ jobs:
       matrix:
         shard: [1/2, 2/2]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup

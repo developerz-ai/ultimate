@@ -31,9 +31,23 @@ const slurp = async (relative: string): Promise<string> => Bun.file(join(ROOT, r
 const workflowPins = (yaml: string): string[] =>
   [...yaml.matchAll(/^\s*bun-version:\s*'([^']+)'/gm)].map((match) => match[1] ?? '');
 
-/** Every `FROM oven/bun:<tag>` — anchored, so the historical tags in comments are not pins. */
+/**
+ * Every `FROM oven/bun:<tag>` — anchored, so the historical tags in comments are not pins. The
+ * `@sha256:` digest beside the tag is what builds; the tag is the series this file compares.
+ */
 const imagePins = (dockerfile: string): string[] =>
-  [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map((match) => match[1] ?? '');
+  [...dockerfile.matchAll(/^FROM oven\/bun:([^\s@]+)/gm)].map((match) => match[1] ?? '');
+
+/** Every external `FROM` image (a stage name is not one) that carries no `@sha256:` digest. */
+const unpinnedBases = (dockerfile: string): string[] => {
+  const stages = [...dockerfile.matchAll(/^FROM\s+(?:--\S+\s+)*\S+\s+AS\s+(\S+)/gim)].map((match) =>
+    (match[1] ?? '').toLowerCase(),
+  );
+  return [...dockerfile.matchAll(/^FROM\s+(?:--\S+\s+)*(\S+)/gim)]
+    .map((match) => match[1] ?? '')
+    .filter((image) => !stages.includes(image.toLowerCase()))
+    .filter((image) => !/@sha256:[0-9a-f]{64}$/.test(image));
+};
 
 /**
  * Every Dockerfile the tracked apps ship, DERIVED from `APP_ROOTS` rather than restated: a new
@@ -228,6 +242,21 @@ describe('the Bun series is pinned once, in agreement', () => {
     for (const tag of [...imagePins(frameworkImage), ...imagePins(appImage), ...tracked]) {
       expect(tag).toMatch(/^\d+\.\d+-(slim|alpine)$/);
     }
+  });
+
+  // A tag is a pointer its publisher can move: the same commit built twice could run on two
+  // different bases, and a moved tag reaches the image before any check here sees it. Dependabot's
+  // docker ecosystem (.github/dependabot.yml) moves the digest with the tag, so the pin does not rot.
+  test('every base image is pinned by digest, in every Dockerfile this test reads', async () => {
+    const files = ['docker/Dockerfile', ...appDockerfiles()];
+    const unpinned: string[] = [];
+    for (const path of files) {
+      for (const image of unpinnedBases(await slurp(path))) unpinned.push(`${path}: ${image}`);
+    }
+    const scaffold = await slurp('packages/cli/src/templates/scaffold-container.ts');
+    for (const image of unpinnedBases(scaffold))
+      unpinned.push(`x new → docker/Dockerfile: ${image}`);
+    expect(unpinned).toEqual([]);
   });
 
   test('the image the demo DEPLOYS is one of the files this test reads', () => {

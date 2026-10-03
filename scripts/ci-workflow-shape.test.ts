@@ -144,11 +144,14 @@ describe('unit · ci.yml · the gate in parts is still the gate', () => {
 });
 
 describe('unit · ci.yml · every reader of a job name still finds it', () => {
-  test('release.yml reads the check named verify, and that is the merge job', async () => {
+  // release.yml reads this WORKFLOW's run conclusion, so no job name is its contract any more —
+  // but `verify` stays the merge and the one check branch protection would require.
+  test('release.yml reads ci.yml`s whole run, and verify is still the merge job', async () => {
     const release = await read('release.yml');
     const check = (release.jobs?.['check']?.steps ?? []).map((step) => step.run ?? '').join('\n');
 
-    expect(check).toContain('select(.name == "verify" and .status == "completed")');
+    expect(check).toContain('actions/workflows/ci.yml/runs');
+    expect(check).not.toContain('select(.name == "verify"');
     // No `name:` — the check a job publishes is its id unless it is renamed.
     expect(job('verify').name).toBeUndefined();
     expect(job('verify').strategy).toBeUndefined();

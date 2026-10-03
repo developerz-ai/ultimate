@@ -64,8 +64,8 @@ servers a `services:` block cannot start.
 
 | Job | Runners | What one runner does |
 |---|---|---|
-| `gate` | 5 | one part of the framework gate: `unit` in three shards, `live` (every suite that needs a server, with the six static steps beside it), `e2e` (with the compiler) |
-| `verify` | 1 | `x verify merge` over the five parts — the verdict, and the name `release.yml` reads |
+| `gate` | 5 | one part of the framework gate: `unit` in three shards, `live` (every suite that needs more than one server, with the six static steps beside it), `e2e` (the compiler, then `contract` and `job` against one Postgres, then a browser) |
+| `verify` | 1 | `x verify merge` over the five parts — the framework gate's verdict. `release.yml` reads the whole run's conclusion, which includes it (2026-10-03) |
 | `reference-app-verify` | 2 | one tracked app: build, gate, ratchet |
 | `scaffold-smoke` | 2 | one scaffold shape: default, `--no-example` |
 | `packages` | 2 | half the packages, each tested and covered alone |
@@ -120,3 +120,19 @@ real work measured in tens of seconds, never a five-second suite paying a minute
 | branch protection | none: `main` is unprotected and has no rulesets (`gh api repos/developerz-ai/ultimate/branches/main/protection` → 404, `As of 2026-10-01`) | — |
 
 If `main` is ever protected, the one required check is `verify`.
+
+## Rebalanced, 2026-10-03
+
+Measured on eight runs of 2026-10-03 (run 37101906027 among them), seconds per job: `packages (2/2)`
+169–225 (one package, `cli`, is 168.6 s of it, covered in one process), `gate (live)` 129–157,
+`reference-app-verify (examples/dummy)` 115–150, a `unit` shard 80–125, `gate (e2e)` 55–70.
+
+| Change | Why |
+|---|---|
+| `contract` (12 s) and `job` (16 s) moved from `live` to `e2e`, which starts Postgres | `live` was the slowest part, and `verify` waits on the slowest part; both suites read only `TEST_DATABASE_URL` |
+| services started before `setup`, waited for after it | the pull (10–20 s) and the cache restore (4–9 s) no longer add up |
+| a part's `--json` document is uploaded, never printed | a red one is a single line over 1 MB, and the Actions log dropped it and the step table after it (run 37103688822) |
+| the step table, its `(fail)` test names and the merged verdict go to the job summary | a red run names its step and `fix:` on the run page |
+
+The run's wall time is still `packages (2/2)` until `cli`'s coverage is split across processes
+(`scripts/coverage-gate.ts`), which is outside this change.

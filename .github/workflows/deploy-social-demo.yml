@@ -76,7 +76,7 @@ jobs:
       # The commit ci.yml judged, not the tip of main when this run started: two pushes in quick
       # succession would otherwise build the second under the first one's verdict. The image tag
       # below is `git rev-parse HEAD`, so it names exactly the commit CI passed.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
@@ -89,6 +89,30 @@ jobs:
             echo "sha=$sha"
             echo "short=sha-$(printf '%.7s' "$sha")"
           } >> "$GITHUB_OUTPUT"
+
+      # Only a commit ON main publishes, and only main's TIP is `:latest`. A dispatch builds
+      # whichever ref was selected, so a branch commit — even one ci.yml passed on its pull
+      # request — reached the registry, `:latest` included; and a `workflow_run` for an older push
+      # that finished after a newer one moved `:latest` backwards. `ahead_by` is the commits this
+      # one has that main lacks: 0 is on main, and a failed call reads as not-on-main (fail closed).
+      # A main that cannot be read only withholds `:latest`, never the `sha-<7>` tags.
+      - name: on main, and whether it is main's tip
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.built.outputs.sha }}
+        run: |
+          set -euo pipefail
+          main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha || true)"
+          ahead="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${SHA}" --jq .ahead_by || echo 1)"
+          if [ "$ahead" != 0 ]; then
+            echo "::error::${SHA} is not on main (${ahead} commit(s) main does not have) — not publishing. Dispatch this workflow from main, for a commit ci.yml passed there."
+            exit 1
+          fi
+          latest=false
+          [ "$main" = "$SHA" ] && latest=true
+          echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+          echo "ok: ${SHA} is on main; main's tip: ${latest}"
 
       # The gate's verdict on THIS commit, read once, before a single layer is pushed. Under
       # `workflow_run` ci.yml has already concluded, so the answer is final and this is the check
@@ -141,7 +165,7 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ steps.built.outputs.short }}
             ${{ env.IMAGE }}:${{ steps.built.outputs.sha }}
-            ${{ env.IMAGE }}:latest
+            ${{ steps.tip.outputs.latest == 'true' && format('{0}:latest', env.IMAGE) || '' }}
           cache-from: type=gha,scope=ultimate-social
           cache-to: type=gha,scope=ultimate-social,mode=max
           # Both off deliberately: the attestation manifests they add confuse the image updater's
@@ -153,8 +177,11 @@ jobs:
         env:
           SHORT: ${{ steps.built.outputs.short }}
           SHA: ${{ steps.built.outputs.sha }}
+          LATEST: ${{ steps.tip.outputs.latest }}
         run: |
-          for ref in "${IMAGE}:${SHORT}" "${IMAGE}:${SHA}" "${IMAGE}:latest"; do
+          refs=("${IMAGE}:${SHORT}" "${IMAGE}:${SHA}")
+          if [ "$LATEST" = true ]; then refs+=("${IMAGE}:latest"); fi
+          for ref in "${refs[@]}"; do
             docker buildx imagetools inspect "$ref" > /dev/null
             echo "ok $ref"
           done

@@ -23,7 +23,10 @@
 # anywhere in the monorepo re-ran a full install of every workspace. The set is derived from the
 # context, never listed, so a workspace glob added later cannot be the member it forgot.
 # `bunfig.toml` survives because its `[install]` section is input to the install.
-FROM oven/bun:1.4-alpine AS manifests
+# The tag names the series for the reader; the digest is what builds. A tag is a pointer its
+# publisher can move, so the same commit could build on a different base tomorrow. Dependabot's
+# docker ecosystem moves the digest together with the tag.
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS manifests
 WORKDIR /repo
 COPY . .
 RUN find . ! -type d ! -name package.json ! -name bunfig.toml -delete \
@@ -35,7 +38,7 @@ RUN find . ! -type d ! -name package.json ! -name bunfig.toml -delete \
 # layer every node pulls. `x verify` is the gate and it ran in CI before this image was built.
 # Measured on this tree, `docker images`, linux/amd64, 2026-09-23: 842 MB before, 594 MB after, and
 # the image still applies all 6 migrations and answers `/readyz` 200 and `GET /` 200 as ROLE=web.
-FROM oven/bun:1.4-alpine AS deps
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS deps
 WORKDIR /repo
 COPY --from=manifests /repo ./
 COPY bun.lock ./
@@ -48,7 +51,7 @@ RUN bun install --frozen-lockfile --production
 # The whole installed tree — Bun's isolated linker puts each workspace's links under its own
 # `node_modules` — then the source on top; `.dockerignore` drops every host `node_modules`, so the
 # two merge rather than one shadowing the other.
-FROM oven/bun:1.4-alpine AS runtime
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
 WORKDIR /repo
 
 COPY --from=deps /repo ./

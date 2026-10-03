@@ -8,7 +8,10 @@
 # syntax=docker/dockerfile:1
 
 # ---------- deps: runtime dependencies only, cached on the workspace manifests ----------
-FROM oven/bun:1.4-alpine AS deps
+# The tag names the series for the reader; the digest is what builds. A tag is a pointer its
+# publisher can move, so the same commit could build on a different base tomorrow. Dependabot's
+# docker ecosystem moves the digest together with the tag.
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 # The workspace members' manifests are what `bun install` resolves against; their sources are not.
@@ -21,7 +24,7 @@ RUN bun install --frozen-lockfile --production
 # before it ever calls `docker build`. Re-running typecheck and lint here would need the
 # devDependencies the `--production` install above deliberately leaves out — which is exactly how
 # a build stage came to run `tsc` and `biome` against a tree that had neither.
-FROM oven/bun:1.4-alpine AS runtime
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

@@ -18,6 +18,41 @@ env:
 
 existingSecret: ultimate-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, SENTRY_DSN, ULTIMATE_CURSOR_SECRET
 
+# The release-wide Secret above is every role's DEFAULT, not its only option: `existingSecret` under
+# a role (roles.web.existingSecret, migrate.existingSecret) names that role's own. Split them so a
+# role holds only what it reads — the migrate Job's DDL-owning DATABASE_URL never on a web pod, the
+# signing secrets never on a worker:
+#
+#   migrate:  { existingSecret: app-migrate-secrets }   # the schema owner's DATABASE_URL
+#   roles:
+#     web:    { existingSecret: app-web-secrets }       # AUTH_SECRET, ULTIMATE_CURSOR_SECRET, …
+#     worker: { existingSecret: app-worker-secrets }
+
+# The /tmp every pod mounts (the root filesystem is read-only), bounded: past this the kubelet
+# evicts the pod that filled it, never its neighbours for node disk pressure. It holds the
+# embedded-state directory when ULTIMATE_STATE_DIR points there (docs/ops/01-kubernetes.md).
+tmp:
+  sizeLimit: 512Mi
+
+# One NetworkPolicy per serving role (networkpolicy.yaml): a pod accepts its `http` port from
+# `httpFrom` and its `metrics` port from `metricsFrom`, and nothing else on any port. Kubelet probes
+# are node traffic, which a NetworkPolicy never blocks. Inert on a CNI that does not enforce
+# NetworkPolicy; nothing to install either way.
+#
+#   httpFrom     who reaches web and sync. Empty = any source, because the ingress controller lives
+#                in a namespace this chart cannot know; narrow it to that namespace, e.g.
+#                [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }]
+#   metricsFrom  who scrapes /metrics. Default: any pod in the cluster and no address outside it.
+#   egress       OFF while empty. A list turns on egress filtering with exactly those rules — the
+#                database, NATS, the object store and DNS are your addresses, not the chart's, so
+#                write all of them: a list that omits DNS resolves nothing.
+networkPolicy:
+  enabled: true
+  httpFrom: []
+  metricsFrom:
+    - namespaceSelector: {}
+  egress: []
+
 # The scrape listener every serving role opens, on its own port and never the app's: the ingress
 # below routes `/` to web, so `/metrics` beside `/healthz` on 3000 is `/metrics` on the internet.
 # This is `METRICS_PORT` in the container; move one and the other follows.

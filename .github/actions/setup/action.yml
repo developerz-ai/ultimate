@@ -3,16 +3,17 @@ description: Bun, the dependency cache and a frozen install — the three steps 
 
 # Checkout stays in the caller: this file has to be on disk before it can run.
 #
-# Pinning rule for this repo, and it is one rule with one boundary: an action from the `actions/`
-# org follows its major tag (GitHub owns the runner and the tag together), and EVERY action from
-# anywhere else is pinned by commit SHA with its version in the trailing comment. `@v2` is a tag a
-# third party can move, and this composite runs first in nearly every job in the repository —
-# including the release workflow's `check` job. Dependabot's `github-actions` ecosystem updates a
-# SHA pin and rewrites the comment with it, so the pin does not rot.
+# Pinning rule for this repo, one rule and no boundary: EVERY action, `actions/*` included, is
+# pinned by commit SHA with its version in the trailing comment. A tag is a pointer its owner can
+# move, and this composite runs first in nearly every job in the repository — including the release
+# workflow's `check` job. `actions/*` followed its major tag until 2026-10 (plan 101, s1-sec L5);
+# a moved `actions/cache@v6` would have run in every job before any check could object. Dependabot's
+# `github-actions` ecosystem updates a SHA pin and rewrites the comment with it (.github/
+# dependabot.yml lists this directory, which the default `/` does not reach), so the pin does not rot.
 #
-# ONE exception, stricter rather than looser: `.github/workflows/release.yml` pins `actions/*` by
-# SHA too, and its `publish` job — the one holding `id-token: write` — does NOT use this composite
-# (whose `actions/cache` follows its tag). `scripts/release-workflow-shape.test.ts` enforces both.
+# `.github/workflows/release.yml`'s `publish` job — the one holding `id-token: write` — does NOT use
+# this composite: no cache a previous run wrote reaches the job that publishes.
+# `scripts/release-workflow-shape.test.ts` enforces both.
 
 runs:
   using: composite
@@ -98,7 +99,7 @@ runs:
         # somebody measured. Move it forward the way 1.3 → 1.4 moved: run the gate on the candidate
         # and write the numbers here. 1.4.1 is untested and is not the pin for that reason alone.
         bun-version: '1.4.0'
-    - uses: actions/cache@v6
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.bun/install/cache
         key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}

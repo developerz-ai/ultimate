@@ -38,7 +38,7 @@ jobs:
       # `persist-credentials: false`: the checkout would otherwise leave the job's `issues: write`
       # token in .git/config through `bun install`, readable by every dependency's install script.
       # The issue step below passes its own `GH_TOKEN` and needs nothing from the checkout.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup

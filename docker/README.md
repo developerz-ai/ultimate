@@ -124,6 +124,14 @@ helm upgrade --install app docker/helm \
   --set image.repository=ghcr.io/you/app --set image.tag=1.2.3
 ```
 
+What a compromised pod can reach, bounded by the chart's defaults (`helm/values.yaml`):
+
+| Value | Default | Holds |
+|---|---|---|
+| `existingSecret`, `roles.<role>.existingSecret`, `migrate.existingSecret` | one release-wide Secret | a role reads its own Secret when you name one — the migrate Job's schema-owning `DATABASE_URL` off the web pods |
+| `tmp.sizeLimit` | `512Mi` | `/tmp` is an `emptyDir`; past the limit the kubelet evicts that pod, never its neighbours |
+| `networkPolicy` | on, ingress only | one NetworkPolicy per role: `http` from `httpFrom` (any source until you name your ingress controller's namespace), `metrics` from inside the cluster only; `egress` rules turn on egress filtering |
+
 ## Why per-role autoscaling
 
 CPU is a lagging proxy for all three serving roles and scales the wrong one at the wrong time.

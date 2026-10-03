@@ -95,9 +95,16 @@ in values.yaml, where the two numbers would drift.
     - name: {{ $key }}
       value: {{ $value | quote }}
     {{- end }}
+  {{- /*
+  The Secret a role reads, per role. One Secret `envFrom`'d into every pod handed the migrate Job's
+  DDL credential to the web role and the auth secret to a worker that signs nothing: a role that is
+  compromised leaks what every role holds. `roles.<role>.existingSecret` (or
+  `migrate.existingSecret`) names a narrower one; unset, the role reads the release-wide
+  `existingSecret`, and both unset is a render error rather than a pod with no configuration.
+  */}}
   envFrom:
     - secretRef:
-        name: {{ $root.Values.existingSecret }}
+        name: {{ required (printf "no Secret for role %s — set existingSecret, or roles.%s.existingSecret, in your values" $role $role) (default $root.Values.existingSecret $cfg.existingSecret) }}
   {{- if or $cfg.port $scraped }}
   ports:
     {{- if $cfg.port }}
@@ -177,4 +184,16 @@ in values.yaml, where the two numbers would drift.
   volumeMounts:
     - name: tmp
       mountPath: /tmp
+{{- end -}}
+
+{{/*
+The writable scratch every pod mounts at /tmp — the root filesystem is read-only. Bounded, because
+an `emptyDir` with no `sizeLimit` is node disk: one role filling /tmp (an embedded-state directory
+under `ULTIMATE_STATE_DIR`, a runaway upload) evicts its NEIGHBOURS for disk pressure, where with a
+limit the kubelet evicts that pod alone.
+*/}}
+{{- define "ultimate.tmpVolume" -}}
+- name: tmp
+  emptyDir:
+    sizeLimit: {{ required "tmp.sizeLimit is unset — set it in your values (e.g. 512Mi): an unbounded /tmp is node disk" (default dict .Values.tmp).sizeLimit | quote }}
 {{- end -}}

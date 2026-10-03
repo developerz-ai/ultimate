@@ -31,8 +31,10 @@ updates:
       # Bun is pinned by `engines` and installed by the workflow, not by npm.
       - dependency-name: bun
 
+  # `/` reaches `.github/workflows/` only; the composite in `.github/actions/setup/` pins actions by
+  # SHA too, and a pin Dependabot cannot see is a pin that rots.
   - package-ecosystem: github-actions
-    directory: /
+    directories: ['/', '/.github/actions/*']
     schedule:
       interval: weekly
       day: monday
@@ -45,8 +47,9 @@ updates:
       actions:
         patterns: ['*']
 
+  # Every base image is pinned by digest beside its tag; these are the directories that pin one.
   - package-ecosystem: docker
-    directory: /docker
+    directories: ['/docker', '/dummy/social-media-clone/docker', '/examples/dummy/docker']
     schedule:
       interval: weekly
       day: monday

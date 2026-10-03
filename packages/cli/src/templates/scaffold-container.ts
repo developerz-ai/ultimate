@@ -30,14 +30,16 @@ const dockerfile = (
 # install refuses. \`bunfig.toml\` survives because its \`[install]\` section is input to the install,
 # and so does a \`.tgz\`: a \`file:\` tarball dependency (a vendored or private package) is resolved
 # from the file itself, and without it the frozen install cannot find what the lockfile names.
-FROM oven/bun:1.4-alpine AS manifests
+# The tag names the series for the reader; the digest is what builds — a tag is a pointer its
+# publisher can move. Dependabot's docker ecosystem moves the digest together with the tag.
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS manifests
 WORKDIR /app
 COPY . .
 RUN find . ! -type d ! -name package.json ! -name bunfig.toml ! -name '*.tgz' -delete \\
  && find . -type d -empty -delete
 
 # ---------- deps: runtime dependencies only, cached on the lockfile and the manifests ----------
-FROM oven/bun:1.4-alpine AS deps
+FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS deps
 WORKDIR /app
 COPY --from=manifests /app ./
 COPY bun.lock ./

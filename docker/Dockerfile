@@ -40,7 +40,10 @@
 #
 # Manifests only, not source: that is what makes the deps layer below cache on dependencies rather
 # than on every line of code, which the header there had claimed and never done.
-FROM oven/bun:1.4-slim AS manifests
+# The tag names the series for the reader; the digest is what builds. A tag is a pointer its
+# publisher can move, so the same commit could build on a different base tomorrow. Dependabot's
+# docker ecosystem moves the digest together with the tag.
+FROM oven/bun:1.4-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS manifests
 WORKDIR /src
 COPY . .
 # `bunfig.toml` survives with the manifests, and it is not a convenience: its `[install]` section is
@@ -50,14 +53,14 @@ RUN find . ! -type d ! -name package.json ! -name bunfig.toml -delete \
  && find . -type d -empty -delete
 
 # ---------- deps: cached on the lockfile and the workspace manifests ----------
-FROM oven/bun:1.4-slim AS deps
+FROM oven/bun:1.4-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS deps
 WORKDIR /src
 COPY --from=manifests /src ./
 COPY bun.lock ./
 RUN bun install --frozen-lockfile
 
 # ---------- build: one self-contained binary ----------
-FROM oven/bun:1.4-slim AS build
+FROM oven/bun:1.4-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS build
 WORKDIR /src
 # The WHOLE installed tree, not just the root `node_modules`. Bun's default isolated linker — still
 # the default on 1.4, re-checked on that bump — stores every package once under `node_modules/.bun/`
@@ -124,7 +127,7 @@ RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/packa
 # confirmed with `ldd`. The build was green, because the ONE thing that would have caught it ran on
 # the wrong image: `/out/app --version` proved the binary runs on the BUILD stage, and the build
 # stage is not what ships.
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2 AS runtime
 COPY --from=build /out/app /app/x
 # `ROLE=web` was here, under "ROLE is the only knob", and nothing in this image has ever read it:
 # `roleFromEnv` is reached only through `serveApp`/`runRole`, which no `x` subcommand calls. An

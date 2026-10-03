@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { InProcessTransport } from '@ultimat3/realtime/server';
 import type { StartRolesOptions } from './role-start';
-import { prepareSync, syncPortFor } from './role-sync';
+import { prepareSync } from './role-sync';
 import type { RunningServices } from './runtime-services';
 import type { WebBinding } from './web-binding';
 
@@ -21,26 +21,6 @@ function web(): { readonly port: number; readonly origin: string } {
   stops.push(() => server.stop(true));
   const port = server.port ?? 0;
   return { port, origin: `http://127.0.0.1:${port}` };
-}
-
-/**
- * The same stand-in on a port whose NEIGHBOUR is free too, for the one case where the code under
- * test binds `PORT + 1` itself. The neighbour is bound and released rather than assumed: a kernel
- * port whose `+ 1` another process holds failed this file once in a batch. A pair that is not free
- * stays held until the test ends, so the kernel cannot answer with it again.
- */
-function webWithFreeNeighbour(): { readonly port: number; readonly origin: string } {
-  for (;;) {
-    const candidate = web();
-    try {
-      Bun.serve({ port: syncPortFor(candidate.port), hostname: '127.0.0.1', fetch: page }).stop(
-        true,
-      );
-      return candidate;
-    } catch {
-      // Taken (or the top of the range): ask the kernel for another.
-    }
-  }
 }
 
 interface Booted {
@@ -148,9 +128,9 @@ describe('unit · x dev on another port than its APP_URL names', () => {
   const declared = { APP_URL: 'http://localhost:3000' };
 
   test('the page the dev server itself serves is admitted, under each loopback spelling', async () => {
-    const pages = webWithFreeNeighbour();
+    const pages = web();
     const node = await sync(declared, DEV, pages.origin);
-    expect(new URL(node.url).port).toBe(String(syncPortFor(pages.port)));
+    expect(new URL(node.url).port).not.toBe(String(pages.port));
     for (const host of ['127.0.0.1', 'localhost', '[::1]']) {
       const origin = `http://${host}:${pages.port}`;
       // The node's own listener, by a real client…
@@ -163,7 +143,7 @@ describe('unit · x dev on another port than its APP_URL names', () => {
   });
 
   test('another listener on the same machine is still refused', async () => {
-    const pages = webWithFreeNeighbour();
+    const pages = web();
     const node = await sync(declared, DEV, pages.origin);
     expect(await statusOf(node.url, `http://127.0.0.1:${pages.port + 7}`)).toBe(403);
     // Dev also admits the origin a request was reached on, beside the declaration.
@@ -172,7 +152,7 @@ describe('unit · x dev on another port than its APP_URL names', () => {
   });
 
   test('with no APP_URL nothing is added: the origin the node was reached on still decides', async () => {
-    const pages = webWithFreeNeighbour();
+    const pages = web();
     const node = await sync({}, DEV, pages.origin);
     // A forwarded host (a Codespace, a tunnel) is the page's origin and the request's host alike.
     const forwarded = 'https://dev-3000.preview.example.com';
@@ -182,21 +162,21 @@ describe('unit · x dev on another port than its APP_URL names', () => {
 
 describe('unit · the combined-role container, APP_URL declared', () => {
   test('declared and correct: the page is admitted', async () => {
-    const pages = webWithFreeNeighbour();
+    const pages = web();
     const node = await sync({ APP_URL: 'https://www.example.com' }, CONTAINER, pages.origin);
     expect(await statusOf(node.url, 'https://www.example.com')).toBe('open');
     expect(await node.mounted('http://www.example.com', 'https://www.example.com')).toBeUndefined();
   });
 
   test('declared but wrong: refused, and the web role’s own origin is NOT added in production', async () => {
-    const pages = webWithFreeNeighbour();
+    const pages = web();
     const node = await sync({ APP_URL: 'https://www.example.com' }, CONTAINER, pages.origin);
     expect(await statusOf(node.url, pages.origin)).toBe(403);
     expect((await node.mounted(pages.origin, pages.origin))?.status).toBe(403);
   });
 
   test('the refusal names the declared origin and the one that asked, and its fix admits it', async () => {
-    const pages = webWithFreeNeighbour();
+    const pages = web();
     const node = await sync({ APP_URL: 'https://www.example.com/' }, CONTAINER, pages.origin);
     const refused = await handshake(node.url, 'https://app.example.com');
     if (refused === 'open') expect.unreachable('a page APP_URL does not name was admitted');
@@ -209,5 +189,32 @@ describe('unit · the combined-role container, APP_URL declared', () => {
       expect(error.cause).toContain('https://app.example.com');
       expect(error.fix).toStartWith('export APP_URL=https://app.example.com ');
     }
+  });
+});
+
+// `port: 0` is a scratch server — `x shot`, a test — and its pages dial `/_x/sync` on their own
+// origin (`sync-url.ts`), never a neighbouring port. Deriving `PORT + 1` from the kernel's answer
+// asked for one SPECIFIC port nobody had checked, and under load another socket held it: the
+// boot died `X_PORT_IN_USE` (role-realtime.test.ts, reproduced 6 of 20 with 12,000 loopback
+// connections held). Held deliberately here, so the race is the test's and not the kernel's.
+describe('unit · a scratch server`s node takes a port the kernel picks', () => {
+  test('the web port`s neighbour is held by another socket, and the node still binds', async () => {
+    let pages = web();
+    let held: { stop: (force?: boolean) => void } | undefined;
+    while (held === undefined) {
+      try {
+        held = Bun.serve({ port: pages.port + 1, hostname: '127.0.0.1', fetch: page });
+      } catch {
+        pages = web();
+      }
+    }
+    const neighbour = held;
+    stops.push(() => neighbour.stop(true));
+    const node = await sync({}, DEV, pages.origin);
+    const bound = Number(new URL(node.url).port);
+    expect(bound).toBeGreaterThan(0);
+    expect(bound).not.toBe(pages.port);
+    // A listener that answers, not a number: the node's own origin opens a socket on it.
+    expect(await dial(node.url, new URL(node.url.replace(/^ws/, 'http')).origin)).toBe('open');
   });
 });

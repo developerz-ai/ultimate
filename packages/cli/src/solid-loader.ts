@@ -73,6 +73,10 @@ interface CacheEntry {
  */
 const cache = new Map<string, CacheEntry>();
 
+/** Transforms running now, and the `prepareStackTrace` the first of them found (see below). */
+let inFlight = 0;
+let foundStackTrace: typeof Error.prepareStackTrace;
+
 /** Test seam: the cache is process-global because the dev server it serves is too. */
 export function clearIslandTransformCache(): void {
   cache.clear();
@@ -92,8 +96,12 @@ export async function transformIslandTsx(source: string, path: string): Promise<
 
   // Babel installs its own `prepareStackTrace` on the first TRANSFORM — not on import, which is
   // where this guard was first put — and leaving it installed makes `Error.captureStackTrace`
-  // strict for every unrelated module loaded later in the same process.
-  const saved = Error.prepareStackTrace;
+  // strict for every unrelated module loaded later in the same process, and names every error in
+  // it `Error` (a `TypeError`'s stack then opens `Error: …`). Saved by the FIRST transform in
+  // flight and restored by the LAST: `Bun.build` loads a second `.tsx` while the first compiles,
+  // and a per-call save taken inside that window saved Babel's own rewriter and restored it last.
+  if (inFlight === 0) foundStackTrace = Error.prepareStackTrace;
+  inFlight += 1;
   let code: string | null | undefined;
   try {
     // `transformAsync` and never `transformFileAsync`: the latter is gated behind `@babel/core`'s
@@ -111,7 +119,8 @@ export async function transformIslandTsx(source: string, path: string): Promise<
     });
     code = result?.code;
   } finally {
-    Error.prepareStackTrace = saved;
+    inFlight -= 1;
+    if (inFlight === 0) Error.prepareStackTrace = foundStackTrace;
   }
   // A parse error is NOT caught here: Babel's own message already names the file, the line and the
   // column ("a.island.tsx: Unexpected token (2:23)"), and `buildOne` wraps whatever escapes in

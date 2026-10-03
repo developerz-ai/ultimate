@@ -3,6 +3,7 @@
 // Split from scaffold-helm.ts, which holds the chart's INPUTS (Chart.yaml, values.yaml).
 
 import type { GeneratedFile, NameSet } from './naming';
+import { helmFenceFiles } from './scaffold-helm-fences';
 
 const helpers = (
   app: NameSet,
@@ -93,9 +94,14 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
     - name: {{ $key }}
       value: {{ $value | quote }}
     {{- end }}
+  {{- /*
+  The Secret a role reads, per role: roles.<role>.existingSecret (or migrate.existingSecret) names a
+  narrower one than the release-wide existingSecret, so the migrate Job's schema-owning credential
+  need not sit on a web pod. Both unset is a render error, not a pod with no configuration.
+  */}}
   envFrom:
     - secretRef:
-        name: {{ $root.Values.existingSecret }}
+        name: {{ required (printf "no Secret for role %s — set existingSecret, or roles.%s.existingSecret, in your values" $role $role) (default $root.Values.existingSecret $cfg.existingSecret) }}
   {{- if or $cfg.port $scraped }}
   ports:
     {{- if $cfg.port }}
@@ -211,8 +217,7 @@ spec:
       containers:
         {{- include "${app.kebab}.container" (dict "role" $role "cfg" $cfg "root" $) | nindent 8 }}
       volumes:
-        - name: tmp
-          emptyDir: {}
+        {{- include "${app.kebab}.tmpVolume" $ | nindent 8 }}
 {{- end }}
 {{- end }}
 `;
@@ -287,8 +292,7 @@ spec:
       containers:
         {{- include "${app.kebab}.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 8 }}
       volumes:
-        - name: tmp
-          emptyDir: {}
+        {{- include "${app.kebab}.tmpVolume" . | nindent 8 }}
 {{- end }}
 `;
 
@@ -402,5 +406,6 @@ export function helmTemplateFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'docker/helm/templates/migrate-job.yaml', contents: migrateJob(app) },
     { path: 'docker/helm/templates/ingress.yaml', contents: ingress(app) },
     { path: 'docker/helm/templates/hpa.yaml', contents: hpa(app) },
+    ...helmFenceFiles(app),
   ];
 }
