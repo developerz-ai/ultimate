@@ -22,6 +22,7 @@ import {
   roleDefinitions,
 } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
+import type { AdminApp } from './admin';
 import type { AdminActor } from './authz';
 import type { AdminRouteResponse } from './screen-frame';
 
@@ -49,37 +50,40 @@ const db = database({ widgets }, { driver: memoryDriver() });
 const ran: string[] = [];
 const seenByWhen: unknown[] = [];
 
-const admin = defineAdmin({
-  basePath: '/when',
-  entities: [widgets],
-  db,
-  actions: [
-    {
-      name: 'widget.activate',
-      permission: 'admin_when_widgets:write',
-      entity: 'admin_when_widgets',
-      when: (row) => {
-        seenByWhen.push(row);
-        return row['active'] !== true;
+let admin: AdminApp;
+beforeAll(() => {
+  admin = defineAdmin({
+    basePath: '/when',
+    entities: [widgets],
+    db,
+    actions: [
+      {
+        name: 'widget.activate',
+        permission: 'admin_when_widgets:write',
+        entity: 'admin_when_widgets',
+        when: (row) => {
+          seenByWhen.push(row);
+          return row['active'] !== true;
+        },
+        batch: true,
+        handle: async ({ input }) => {
+          ran.push(`activate:${String(input['id'])}`);
+          await db.widgets.update(String(input['id']), { active: true });
+        },
       },
-      batch: true,
-      handle: async ({ input }) => {
-        ran.push(`activate:${String(input['id'])}`);
-        await db.widgets.update(String(input['id']), { active: true });
+      {
+        name: 'widget.rename',
+        permission: 'admin_when_widgets:write',
+        entity: 'admin_when_widgets',
+        input: t.object({ title: t.string.min(3), loud: t.boolean }),
+        handle: async ({ input }) => {
+          ran.push(
+            `rename:${String(input['id'])}:${String(input['title'])}:${String(input['loud'])}`,
+          );
+        },
       },
-    },
-    {
-      name: 'widget.rename',
-      permission: 'admin_when_widgets:write',
-      entity: 'admin_when_widgets',
-      input: t.object({ title: t.string.min(3), loud: t.boolean }),
-      handle: async ({ input }) => {
-        ran.push(
-          `rename:${String(input['id'])}:${String(input['title'])}:${String(input['loud'])}`,
-        );
-      },
-    },
-  ],
+    ],
+  });
 });
 
 registerCatalog('en', {

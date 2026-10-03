@@ -18,7 +18,9 @@ import {
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
+import type { AdminApp } from './admin';
 import type { AdminActor } from './authz';
+import type { AdminResource } from './resource';
 import { outsideRowScope, ROW_OUT_OF_SCOPE_REASON } from './row-scope-write';
 
 const { defineAdmin } = await import('./admin');
@@ -39,20 +41,24 @@ const cases = entity('admin_scope_writes', {
 
 const db = database({ cases }, { driver: memoryDriver() });
 
-const admin = defineAdmin({
-  basePath: '/scope-writes',
-  entities: [cases],
-  db,
-  resources: {
-    admin_scope_writes: {
-      rows: (actor) => [{ field: 'region', op: 'eq', value: actor.locale ?? '' }],
+let admin: AdminApp;
+let resource: AdminResource;
+beforeAll(() => {
+  admin = defineAdmin({
+    basePath: '/scope-writes',
+    entities: [cases],
+    db,
+    resources: {
+      admin_scope_writes: {
+        rows: (actor) => [{ field: 'region', op: 'eq', value: actor.locale ?? '' }],
+      },
     },
-  },
+  });
+  resource = admin.resource('admin_scope_writes');
 });
 
 const EU: AdminActor = { id: 'u-eu', roles: ['scope-writer'], locale: 'eu' };
 const ctxOf = (actor: AdminActor) => admin.ctx({ actor, requestId: 'row-scope-write' });
-const resource = admin.resource('admin_scope_writes');
 const count = (): Promise<number> => db.cases.count();
 
 let euId = '';

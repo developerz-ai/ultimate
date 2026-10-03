@@ -21,6 +21,7 @@ import {
   roleDefinitions,
 } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
+import type { AdminApp } from './admin';
 import type { AdminActor } from './authz';
 import type { AdminRouteResponse } from './screen-frame';
 
@@ -41,42 +42,45 @@ const tickets = entity('admin_bscreen_tickets', {
 const db = database({ tickets }, { driver: memoryDriver() });
 const ran: string[] = [];
 
-const admin = defineAdmin({
-  basePath: '/bscreen',
-  entities: [tickets],
-  db,
-  actions: [
-    {
-      name: 'ticket.close',
-      permission: 'admin_bscreen_tickets:write',
-      entity: 'admin_bscreen_tickets',
-      when: (row) => row['state'] === 'open',
-      batch: true,
-      handle: async ({ input }) => {
-        ran.push(`close:${String(input['id'])}`);
+let admin: AdminApp;
+beforeAll(() => {
+  admin = defineAdmin({
+    basePath: '/bscreen',
+    entities: [tickets],
+    db,
+    actions: [
+      {
+        name: 'ticket.close',
+        permission: 'admin_bscreen_tickets:write',
+        entity: 'admin_bscreen_tickets',
+        when: (row) => row['state'] === 'open',
+        batch: true,
+        handle: async ({ input }) => {
+          ran.push(`close:${String(input['id'])}`);
+        },
       },
-    },
-    {
-      name: 'ticket.note',
-      permission: 'admin_bscreen_tickets:write',
-      entity: 'admin_bscreen_tickets',
-      input: t.object({ note: t.string.min(2) }),
-      batch: true,
-      handle: async ({ input }) => {
-        ran.push(`note:${String(input['id'])}:${String(input['note'])}`);
+      {
+        name: 'ticket.note',
+        permission: 'admin_bscreen_tickets:write',
+        entity: 'admin_bscreen_tickets',
+        input: t.object({ note: t.string.min(2) }),
+        batch: true,
+        handle: async ({ input }) => {
+          ran.push(`note:${String(input['id'])}:${String(input['note'])}`);
+        },
       },
-    },
-    {
-      name: 'ticket.drop',
-      permission: 'admin_bscreen_tickets:delete',
-      entity: 'admin_bscreen_tickets',
-      destructive: true,
-      batch: true,
-      handle: async ({ input }) => {
-        ran.push(`drop:${String(input['id'])}`);
+      {
+        name: 'ticket.drop',
+        permission: 'admin_bscreen_tickets:delete',
+        entity: 'admin_bscreen_tickets',
+        destructive: true,
+        batch: true,
+        handle: async ({ input }) => {
+          ran.push(`drop:${String(input['id'])}`);
+        },
       },
-    },
-  ],
+    ],
+  });
 });
 
 registerCatalog('en', {

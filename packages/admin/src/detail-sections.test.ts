@@ -154,6 +154,7 @@ describe('unit · form groups, hints and one-sided fields', () => {
         ctx: { timeZone: 'UTC', locale: 'en' },
         action: '/x',
         cancelHref: '/y',
+        version: mode === 'edit' ? 'v1' : null,
       }),
     );
 

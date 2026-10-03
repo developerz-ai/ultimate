@@ -12,6 +12,7 @@ import {
   type AdminSubject,
   decideAll,
 } from './authz';
+import { atomicallyAudited } from './crud-outcome';
 import { AdminActionNotApplicableError } from './errors';
 import {
   ADMIN_DESTROY,
@@ -278,51 +279,24 @@ export async function invokeAdminAction<Input, Output>(
     timeZone: args.timeZone ?? actor.timeZone ?? 'UTC',
   };
 
-  try {
-    const value = await action.handle({ input, ctx });
-    return {
-      ok: true,
-      value,
-      audit: await audit.append({
-        requestId,
-        actor,
-        operation: action.name,
-        kind: 'action',
-        entity,
-        entityId,
-        permission: action.permission,
-        outcome: 'allowed',
-        reason: decision.reason,
-        diff: args.diff ?? [],
-      }),
-    };
-  } catch (error) {
-    // NOTHING is read off `error` before the append, and nothing is read off it at all.
-    //
-    // This built an `AdminDecision` first, whose `trace` rendered the caught value with
-    // `String(error)` — and a `catch` binding is annotated by nobody, so it holds whatever an
-    // app's handler threw. `Object.create(null)` has no `toString`, no `valueOf` and no
-    // `Symbol.toPrimitive`, so `String(it)` raises `TypeError: No default value` from inside the
-    // block that owes the auditor an entry: measured, ZERO entries, and the caller received the
-    // TypeError instead of what was thrown. Ordering was the second half — the render ran BEFORE
-    // `append`, so its throw skipped the append rather than merely spoiling one field.
-    //
-    // The decision object was also DEAD: only its `reason` was ever read, and `append` takes no
-    // trace. So there is no destination for a rendered value here and `renderThrowable` is not
-    // needed either — an audit reason is a key the view renders, never a sentence from a
-    // database, an upstream or an attacker.
-    await audit.append({
+  // The handler and its entry are ONE unit (`atomicallyAudited`): a handler whose writes ride the
+  // ambient transaction commits with its `allowed` entry or not at all, and a throw from either
+  // leaves exactly one `failed` entry, appended after the rollback, with nothing read off the
+  // thrown value — which reaches the caller unchanged.
+  const { value, audit: appended } = await atomicallyAudited(
+    audit,
+    {
       requestId,
       actor,
       operation: action.name,
       kind: 'action',
       entity,
-      entityId,
       permission: action.permission,
-      outcome: 'failed',
-      reason: ACTION_FAILED_REASON,
-      diff: [],
-    });
-    throw error;
-  }
+    },
+    { allowed: decision.reason, failed: ACTION_FAILED_REASON },
+    entityId,
+    () => action.handle({ input, ctx }),
+    () => ({ entityId, diff: args.diff ?? [] }),
+  );
+  return { ok: true, value, audit: appended };
 }

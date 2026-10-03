@@ -2,12 +2,19 @@
 // refused by the same decision. An org-scoped operator sees that org's job rows and nothing of the
 // fleet — no other org's job, no queue to pause — on a screen, a forged post and "all matching".
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { resetJobDriver } from '@ultimat3/jobs';
+import type { AdminApp } from '../admin';
 import { ask, jobsAdmin, MANAGER, READER, type Seeded, seedQueue } from './jobs-fixture';
 
-const reader = jobsAdmin('/read', READER);
-const manager = jobsAdmin('/manage', MANAGER);
+let reader: AdminApp;
+beforeAll(() => {
+  reader = jobsAdmin('/read', READER);
+});
+let manager: AdminApp;
+beforeAll(() => {
+  manager = jobsAdmin('/manage', MANAGER);
+});
 const platform = { id: 'u-platform' };
 const orgB = { id: 'u-org-b', orgId: 'org-b' };
 let seeded: Seeded;

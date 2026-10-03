@@ -1,9 +1,15 @@
-// The job rows as an `AdminRepo`: a page is ONE `JobIntrospection.list` call, newest first and
-// keyset by `(createdAt, id)` — the store's own order, and the only one it answers — and a detail
-// is the store's own trace, its input already redacted. Read-only: every change is an action.
+// The job rows as an `AdminRepo`: a page is the store's own `JobIntrospection.list`, newest first
+// and keyset by `(createdAt, id)` — the only order it answers — and a detail is the store's own
+// trace, its input already redacted. Read-only: every change is an action.
 
 import { assert } from '@ultimat3/core';
-import { inspectJob, type JobRecord, jobCursor, MAX_JOB_PAGE } from '@ultimat3/jobs';
+import {
+  inspectJob,
+  type JobFilter,
+  type JobRecord,
+  jobCursor,
+  MAX_JOB_PAGE,
+} from '@ultimat3/jobs';
 import { AdminFilterInvalidError } from '../errors';
 import type { AdminListQuery, AdminRepo, AdminRow, KeysetBound } from '../registry';
 import { JOBS_RESOURCE, jobWhere } from './job-where';
@@ -37,7 +43,12 @@ export function jobRow(record: JobRecord): AdminRow {
 
 /** A keyset bound as the store's cursor: the bound row's instant in ms, and its id. */
 const cursorOf = (bound: KeysetBound): string =>
-  jobCursor({ createdAt: Date.parse(bound.value), id: bound.id });
+  // `createdAt` is never NULL on a job row, so a bound without a value names no position: `NaN`
+  // here, which the store refuses as an unreadable cursor rather than seeking from the epoch.
+  jobCursor({
+    createdAt: bound.value === null ? Number.NaN : Date.parse(bound.value),
+    id: bound.id,
+  });
 
 function assertOrder(query: AdminListQuery): void {
   const { field, direction } = query.sort;
@@ -50,23 +61,46 @@ function assertOrder(query: AdminListQuery): void {
   });
 }
 
+/**
+ * The rows one admin query asks for. The admin asks ONE row past its page to learn whether a next
+ * one exists, and the store answers `MAX_JOB_PAGE` at most — so a 200-row page (the admin's own
+ * ceiling, and what the MCP list tool accepts) was answered 200 rows, read as "no more", and every
+ * row after it was on no page. Past the store's ceiling, the overflow is a second read from where
+ * the first one stopped: after its last row walking forward, before its first walking back.
+ */
+async function records(filter: JobFilter, query: AdminListQuery): Promise<readonly JobRecord[]> {
+  const { introspect } = jobsOperator();
+  const backward = query.before !== undefined;
+  const bound =
+    query.after !== undefined
+      ? { after: cursorOf(query.after) }
+      : query.before !== undefined
+        ? { before: cursorOf(query.before) }
+        : {};
+  const first = await introspect.list({
+    ...filter,
+    limit: Math.min(query.limit, MAX_JOB_PAGE),
+    ...bound,
+  });
+  const over = query.limit - MAX_JOB_PAGE;
+  if (over <= 0 || first.length < MAX_JOB_PAGE) return first;
+  const edge = backward ? first[0] : first[first.length - 1];
+  if (edge === undefined) return first;
+  const more = await introspect.list({
+    ...filter,
+    limit: Math.min(over, MAX_JOB_PAGE),
+    ...(backward ? { before: jobCursor(edge) } : { after: jobCursor(edge) }),
+  });
+  return backward ? [...more, ...first] : [...first, ...more];
+}
+
 async function list(query: AdminListQuery): Promise<readonly AdminRow[]> {
   assertOrder(query);
   const where = jobWhere(query.where ?? []);
   if (where.empty) return [];
-  const { introspect } = jobsOperator();
-  const records = await introspect.list({
-    ...where.filter,
-    // The admin asks one row past its page to learn whether there is a next one; the store's page
-    // is bounded, and a full store page simply reads as "maybe more".
-    limit: Math.min(query.limit, MAX_JOB_PAGE),
-    ...(query.after === undefined ? {} : { after: cursorOf(query.after) }),
-    ...(query.before === undefined ? {} : { before: cursorOf(query.before) }),
-  });
+  const found = await records(where.filter, query);
   const exact = where.exactId;
-  return (exact === undefined ? records : records.filter((record) => record.id === exact)).map(
-    jobRow,
-  );
+  return (exact === undefined ? found : found.filter((record) => record.id === exact)).map(jobRow);
 }
 
 /** The detail: the row, plus what `inspectJob` says of it — redacted input, steps, the stack. */

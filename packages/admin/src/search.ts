@@ -105,6 +105,7 @@ async function searchResource(
 }
 
 const SKIPPED_FORBIDDEN = 'admin.search.skipped.forbidden';
+const SKIPPED_FAILED = 'admin.search.skipped.failed';
 
 export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchResult> {
   const { ctx } = input;
@@ -160,7 +161,6 @@ export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchR
       skipped.push({ entity: resource.name, reason: 'admin.search.skipped.no-repo' });
       continue;
     }
-    searched.push(resource.name);
     // Appended BEFORE the read, so a repo that throws still leaves the record that the rows were
     // asked for — `audit.ts`: if it isn't logged, it didn't happen.
     audit.push(
@@ -176,7 +176,15 @@ export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchR
         reason: decision.reason,
       }),
     );
-    hits.push(...(await searchResource(resource, ctx.actor, term, limit)));
+    try {
+      hits.push(...(await searchResource(resource, ctx.actor, term, limit)));
+      searched.push(resource.name);
+    } catch {
+      // One resource whose repo fails is a resource this search could not read — listed, so the
+      // operator is never silently shown a subset — never a 500 for every other one. Nothing is
+      // read off the thrown value: a reason is a key.
+      skipped.push({ entity: resource.name, reason: SKIPPED_FAILED });
+    }
   }
 
   return { term, hits, searched, skipped, audit };

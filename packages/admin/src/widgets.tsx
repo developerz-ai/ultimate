@@ -17,7 +17,7 @@ import {
 } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import type { AdminField } from './fields';
-import { currencyFieldOf } from './form-decode';
+import { currencyFieldOf, datetimeInputValue } from './form-decode';
 import { type WidgetContext, type WidgetProps, widgetProps } from './widget-value';
 
 export interface WidgetInput {
@@ -69,10 +69,6 @@ export const formatCalendarDate: DateTimeFormatter = (at, options) =>
     timeZone: 'UTC',
     dateStyle: 'medium',
   }).format(at);
-
-/** `<input type="date">` wants `YYYY-MM-DD`; `datetime-local` wants `YYYY-MM-DDTHH:mm`. */
-const inputValueFor = (iso: string, precision: 'date' | 'instant'): string =>
-  iso.slice(0, precision === 'date' ? 10 : 16);
 
 /**
  * An enum value's label: its translation when the catalog has one, the value itself when it does
@@ -238,7 +234,7 @@ function editView(props: WidgetProps, input: WidgetInput): JSX.Element {
           {...shared}
           name={props.field}
           type={props.precision === 'date' ? 'date' : 'datetime-local'}
-          value={props.value === null ? '' : inputValueFor(props.value, props.precision)}
+          value={props.value === null ? '' : datetimeInputValue(props.value, props.precision)}
           suffix={props.precision === 'date' ? undefined : 'UTC'}
           disabled={disabled}
           onInput={(event) => emit(input, event.currentTarget.value)}

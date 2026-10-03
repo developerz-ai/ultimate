@@ -5,7 +5,7 @@
 // jit-preload store — read whatever actor the transport's surrounding request had installed. Over
 // HTTP that is the session cookie's user; over stdio it is nothing at all.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   agentActor,
   createContext,
@@ -15,6 +15,7 @@ import {
 } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import type { McpCaller } from '@ultimat3/mcp';
+import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, type AdminAuthz, type AdminDecision, staticAuthz } from './authz';
 import { adminMcp } from './mcp';
@@ -53,28 +54,31 @@ const perActorAuthz: AdminAuthz = {
   },
 };
 
-const app = defineAdmin({
-  entities: [doc],
-  actions: [whoami],
-  resources: {
-    admin_ctx_doc: {
-      repo: {
-        list: async (): Promise<readonly AdminRow[]> => [],
-        // A row to act on: an action on a row nobody can find is refused before its handler.
-        find: async (id): Promise<AdminRow | null> => ({ id }),
-        create: async (input): Promise<AdminRow> => input,
-        update: async (_id, patch): Promise<AdminRow> => patch,
-        destroy: async (): Promise<void> => undefined,
+let app: AdminApp;
+let mcp: ReturnType<typeof adminMcp>;
+beforeAll(() => {
+  app = defineAdmin({
+    entities: [doc],
+    actions: [whoami],
+    resources: {
+      admin_ctx_doc: {
+        repo: {
+          list: async (): Promise<readonly AdminRow[]> => [],
+          // A row to act on: an action on a row nobody can find is refused before its handler.
+          find: async (id): Promise<AdminRow | null> => ({ id }),
+          create: async (input): Promise<AdminRow> => input,
+          update: async (_id, patch): Promise<AdminRow> => patch,
+          destroy: async (): Promise<void> => undefined,
+        },
       },
     },
-  },
-  auth: { actor: (): AdminActor | null => null, authz: perActorAuthz },
-});
-
-const mcp = adminMcp({
-  app,
-  actor: (): AdminActor | null => null,
-  requestId: (): string => 'req_ctx',
+    auth: { actor: (): AdminActor | null => null, authz: perActorAuthz },
+  });
+  mcp = adminMcp({
+    app,
+    actor: (): AdminActor | null => null,
+    requestId: (): string => 'req_ctx',
+  });
 });
 
 const caller: McpCaller = { actor: agentActor({ id: 'agent' }), scopes: new Set() };

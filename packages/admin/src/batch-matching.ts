@@ -4,6 +4,7 @@
 
 import type { AdminDecision } from './authz';
 import type { CrudCtx } from './crud';
+import { atomicallyAudited } from './crud-outcome';
 import { type AdminListRequest, listWhere } from './list-scope';
 import { ADMIN_DESTROY, CONFIRMATION_REQUIRED_REASON, confirmationToken } from './permissions';
 import type { AdminAction, AdminActionCtx, AdminMatchingResult } from './registry';
@@ -57,36 +58,30 @@ export async function runMatching(args: MatchingInput): Promise<MatchingAnswer> 
     locale: ctx.actor.locale ?? 'en',
     timeZone: ctx.actor.timeZone ?? 'UTC',
   };
-  const entry = {
-    requestId: ctx.requestId,
-    actor: ctx.actor,
-    operation: action.name,
-    kind: 'action',
-    entity: resource.name,
-    entityId: null,
-    permission: args.decision.permission,
-  } as const;
-  let result: AdminMatchingResult;
-  try {
-    result = await action.matching({ where, input: args.input, ctx: actionCtx });
-  } catch (error) {
-    // The gate's rule: the failure is recorded before it travels, and nothing is read off it.
-    await ctx.audit.append({
-      ...entry,
-      outcome: 'failed',
-      reason: MATCHING_FAILED_REASON,
-      diff: [],
-    });
-    throw error;
-  }
-  await ctx.audit.append({
-    ...entry,
-    outcome: 'allowed',
-    reason: BATCH_MATCHING_REASON,
-    diff: [
-      { field: 'affected', before: null, after: result.affected },
-      { field: 'remaining', before: null, after: result.remaining },
-    ],
-  });
+  // The set-based write and its one entry commit together or not at all — a `matching` verb that
+  // rides the ambient transaction is rolled back with an entry that could not be written, and the
+  // log says `failed` (`atomicallyAudited`). It used to append AFTER the call, outside any `try`:
+  // a sink that threw left a committed write with no entry at all.
+  const { value: result } = await atomicallyAudited(
+    ctx.audit,
+    {
+      requestId: ctx.requestId,
+      actor: ctx.actor,
+      operation: action.name,
+      kind: 'action',
+      entity: resource.name,
+      permission: args.decision.permission,
+    },
+    { allowed: BATCH_MATCHING_REASON, failed: MATCHING_FAILED_REASON },
+    null,
+    () => action.matching({ where, input: args.input, ctx: actionCtx }),
+    (answered) => ({
+      entityId: null,
+      diff: [
+        { field: 'affected', before: null, after: answered.affected },
+        { field: 'remaining', before: null, after: answered.remaining },
+      ],
+    }),
+  );
   return { ok: true, result };
 }

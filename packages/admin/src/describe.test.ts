@@ -1,7 +1,7 @@
 // An admin as plain data — what the manifest records. Deterministic and JSON-safe: resources by
 // entity, routes by URL, and inside a resource the order the bar and the tabs are drawn in.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   clearRegistry,
   database,
@@ -12,6 +12,8 @@ import {
   text,
   uuid,
 } from '@ultimat3/entity';
+import type { AdminApp } from './admin';
+import type { AdminDescription } from './describe';
 
 const { defineAdmin } = await import('./admin');
 
@@ -35,37 +37,43 @@ const ants = entity('admin_desc_ants', {
 
 afterAll(clearRegistry);
 
-const admin = defineAdmin({
-  basePath: '/desc-admin',
-  // Declared zebras-first: the description is sorted, so this order must not survive.
-  entities: [zebras, ants],
-  db: database({ zebras, ants }, { driver: memoryDriver() }),
-  resources: {
-    admin_desc_zebras: {
-      path: '/zebras',
-      scopes: {
-        wild: { where: [{ field: 'mood', op: 'eq', value: 'wild' }], count: true },
-        calm: { where: [{ field: 'mood', op: 'eq', value: 'calm' }], default: true },
+let admin: AdminApp;
+beforeAll(() => {
+  admin = defineAdmin({
+    basePath: '/desc-admin',
+    // Declared zebras-first: the description is sorted, so this order must not survive.
+    entities: [zebras, ants],
+    db: database({ zebras, ants }, { driver: memoryDriver() }),
+    resources: {
+      admin_desc_zebras: {
+        path: '/zebras',
+        scopes: {
+          wild: { where: [{ field: 'mood', op: 'eq', value: 'wild' }], count: true },
+          calm: { where: [{ field: 'mood', op: 'eq', value: 'calm' }], default: true },
+        },
+        rows: () => [],
+        sections: [{ titleKey: 'admin.zebras.section.look', fields: ['stripes'] }],
+        related: ['admin_desc_ants'],
       },
-      rows: () => [],
-      sections: [{ titleKey: 'admin.zebras.section.look', fields: ['stripes'] }],
-      related: ['admin_desc_ants'],
     },
-  },
-  actions: [
-    {
-      name: 'zebra.tame',
-      permission: 'admin_desc_zebras:write',
-      entity: 'admin_desc_zebras',
-      when: (row) => row['mood'] === 'wild',
-      batch: { threshold: 50 },
-      handle: async () => {},
-    },
-  ],
+    actions: [
+      {
+        name: 'zebra.tame',
+        permission: 'admin_desc_zebras:write',
+        entity: 'admin_desc_zebras',
+        when: (row) => row['mood'] === 'wild',
+        batch: { threshold: 50 },
+        handle: async () => {},
+      },
+    ],
+  });
 });
 
 describe('unit · AdminApp.describe()', () => {
-  const described = admin.describe();
+  let described: AdminDescription;
+  beforeAll(() => {
+    described = admin.describe();
+  });
 
   test('each resource: its filters, sorts and scopes in drawing order, and whether rows are scoped', () => {
     expect(described.basePath).toBe('/desc-admin');

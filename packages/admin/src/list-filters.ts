@@ -62,11 +62,31 @@ const LOCAL_MINUTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 const ZONED = /(?:Z|[+-]\d{2}:\d{2})$/;
 
 /**
+ * A number as an operator types one: decimal digits, a sign, a point. `Number()` alone read a
+ * blank as `0`, `0x10` as 16 and `1e3` as 1000 — a filter nobody asked for, answered as a list.
+ */
+const DECIMAL = /^-?\d+(?:\.\d+)?$/;
+
+/**
+ * The `YYYY-MM-DD` a value opens with names a day the calendar HAS. `Date` rolls `2026-02-30`
+ * over to March 2nd without a word, so the shape test passed and the driver was handed a day
+ * nobody typed.
+ */
+const onCalendar = (raw: string): boolean => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (match === null) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (month < 1 || month > 12 || day < 1) return false;
+  return day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
+};
+
+/**
  * A typed instant → the ISO string a driver compares. `datetime-local` posts `YYYY-MM-DDTHH:mm`
  * and the control says UTC beside the box — the same contract the edit form states — and a bare
  * date is that day's first instant in UTC.
  */
 const instantOf = (raw: string): string | undefined => {
+  if (!onCalendar(raw)) return undefined;
   const text = DATE.test(raw)
     ? `${raw}T00:00:00.000Z`
     : LOCAL_MINUTE.test(raw)
@@ -92,14 +112,19 @@ function scalarOf(field: AdminField, raw: unknown): Scalar | Refusal {
     }
     case 'range': {
       if (field.type === 'number') {
-        const parsed = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
-        return raw !== '' && Number.isFinite(parsed)
-          ? parsed
-          : { cause: `takes a number, got ${shown(raw)}` };
+        const parsed =
+          typeof raw === 'number'
+            ? raw
+            : typeof raw === 'string' && DECIMAL.test(raw)
+              ? Number(raw)
+              : NaN;
+        return Number.isFinite(parsed) ? parsed : { cause: `takes a number, got ${shown(raw)}` };
       }
       if (typeof raw !== 'string') return { cause: `takes a date as text, got ${shown(raw)}` };
       if (field.type === 'date') {
-        return DATE.test(raw) ? raw : { cause: `takes a YYYY-MM-DD date, got ${shown(raw)}` };
+        return DATE.test(raw) && onCalendar(raw)
+          ? raw
+          : { cause: `takes a YYYY-MM-DD date, got ${shown(raw)}` };
       }
       return (
         instantOf(raw) ?? {

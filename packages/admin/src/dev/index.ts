@@ -48,3 +48,4 @@ export {
   devDashboard,
   devShellStyle,
 } from './server';
+export { DEV_SQL_MAX_ROWS, readOnlySql } from './sql-runner';

@@ -10,6 +10,9 @@ import type { AdminResource } from './resource';
 import type { ValidationIssue } from './validate';
 
 const { renderComponent } = await import('@ultimat3/render/server');
+
+import { ROW_CHANGED_REASON, VERSION_FIELD } from './row-version';
+
 const { AdminForm } = await import('./form');
 
 registerCatalog('en', {
@@ -80,6 +83,7 @@ const render = (over: Record<string, unknown> = {}): Promise<string> =>
         ctx: { timeZone: 'UTC', locale: 'en-US' },
         action: '/admin/posts/new',
         cancelHref: '/admin/posts',
+        version: null,
         ...over,
       } as never),
     {},
@@ -122,6 +126,27 @@ describe('a native form', () => {
     const [cancel = ''] = /<a[^>]*href="\/admin\/posts"[^>]*>[\s\S]*?<\/a>/.exec(html) ?? [];
     expect(cancel).toContain('Cancel (probe)');
     expect(html.match(/<button/g) ?? []).toHaveLength(1);
+  });
+});
+
+describe('the version an edit is drawn against', () => {
+  test('an edit carries it as a hidden field; a create carries none', async () => {
+    const edit = await render({ mode: 'edit', version: 'h1:abc:def' });
+    expect(edit).toContain(`name="${VERSION_FIELD}"`);
+    expect(edit).toContain('value="h1:abc:def"');
+    expect(await render()).not.toContain(VERSION_FIELD);
+  });
+
+  test('the row-changed issue names no control, so it links to none', async () => {
+    const html = await render({
+      mode: 'edit',
+      version: 'v',
+      issues: [{ path: VERSION_FIELD, message: 'changed', messageKey: ROW_CHANGED_REASON }],
+    });
+    expect(html).not.toContain(`href="#x-admin-field-${VERSION_FIELD}"`);
+    // The key resolves in the framework catalog: a missing entry renders the raw key instead.
+    expect(html).not.toContain(ROW_CHANGED_REASON);
+    expect(html).toContain('Someone changed this row after you opened it.');
   });
 });
 

@@ -2,6 +2,7 @@
 // Kills: "why is this page still stale?" — the tag graph, and the invalidation log showing
 // what busted what.
 
+import { DevSourceUnavailableError } from '../errors';
 import type { CacheEdgeFact, InvalidationFact } from './facts';
 import type { DevPanel } from './panel';
 
@@ -23,11 +24,15 @@ export const cachePanel: DevPanel<CachePanelData> = {
   questionKey: 'dev.panel.cache.question',
   async data(sources): Promise<CachePanelData> {
     const graph = await sources.cacheGraph();
-    // The invalidation log needs a running process that has served a write; the graph alone
-    // is still worth showing.
+    // The invalidation log needs a running process that has served a write; the graph alone is
+    // still worth showing when it is NOT WIRED — and only then. A log that is wired and failed is
+    // a diagnostic, not "no invalidations yet".
     const invalidations = await sources
       .invalidations()
-      .catch((): readonly InvalidationFact[] => []);
+      .catch((error: unknown): readonly InvalidationFact[] => {
+        if (!(error instanceof DevSourceUnavailableError)) throw error;
+        return [];
+      });
 
     const busted = new Set(invalidations.flatMap((event) => event.busted));
     // A `Map`, then `Object.fromEntries` — never `count[key] = (count[key] ?? 0) + 1` on a plain

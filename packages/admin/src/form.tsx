@@ -12,6 +12,7 @@ import type { AdminField } from './fields';
 import type { AdminRow } from './registry';
 import type { AdminResource } from './resource';
 import { fieldsFor } from './resource-layout';
+import { VERSION_FIELD } from './row-version';
 import type { ValidationIssue } from './validate';
 import type { WidgetContext } from './widget-value';
 import { Widget } from './widgets';
@@ -28,6 +29,11 @@ export interface AdminFormProps<Row extends AdminRow> {
   readonly action: string;
   /** Where Cancel goes — the list for a create, the row for an edit. */
   readonly cancelHref: string;
+  /**
+   * An edit's `rowVersion()` of the row it was rendered from, posted back as `_version` so the
+   * write is refused if the row moved on meanwhile. `null` for a create, which has no row.
+   */
+  readonly version: string | null;
 }
 
 const issuesFor = (issues: readonly ValidationIssue[], field: string): readonly ValidationIssue[] =>
@@ -90,15 +96,23 @@ export function AdminForm<Row extends AdminRow>(props: AdminFormProps<Row>): JSX
   return (
     <Card header={<h2>{t(titleKey, { entity: t(props.resource.titleKey) })}</h2>}>
       <form class={styles['form']} method="post" action={props.action}>
+        {props.version === null ? null : (
+          <input type="hidden" name={VERSION_FIELD} value={props.version} />
+        )}
         {props.issues.length === 0 ? null : (
           <div class="x-admin-issues" role="alert" tabindex={-1}>
             <h3>{t('admin.form.issues')}</h3>
             <ul>
-              {props.issues.map((issue) => (
-                <li>
-                  <a href={`#x-admin-field-${issue.path}`}>{issue.path}</a>: {issueText(issue)}
-                </li>
-              ))}
+              {props.issues.map((issue) =>
+                // The form's own issue (the row changed under it) names no control to jump to.
+                issue.path === VERSION_FIELD ? (
+                  <li>{issueText(issue)}</li>
+                ) : (
+                  <li>
+                    <a href={`#x-admin-field-${issue.path}`}>{issue.path}</a>: {issueText(issue)}
+                  </li>
+                ),
+              )}
             </ul>
           </div>
         )}

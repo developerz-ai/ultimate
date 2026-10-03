@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createContext, markListening, runWithContext } from '@ultimat3/core';
 import { createWorker, resetJobDriver, type Worker } from '@ultimat3/jobs';
 import { clearRoutes } from '@ultimat3/render';
+import type { AdminApp } from '../src/admin';
 import { MANAGER, type Seeded, seedQueue } from '../src/jobs/jobs-fixture';
 
 const { renderComponent } = await import('@ultimat3/render/server');
@@ -17,11 +18,10 @@ const { adminRouteMatch } = await import('../src/routes');
 const { staticAuthz } = await import('../src/authz');
 const { clearAdminMounts } = await import('../src/mounts');
 
-const admin = defineAdmin({
-  basePath: '/e2e',
-  entities: [],
-  auth: { actor: () => ({ id: 'u-operator' }), authz: staticAuthz(MANAGER) },
-});
+// Declared in `beforeAll`, never at module scope: what a file's module scope registers is its
+// environment to the leak guard, kept for every file after it — `defineAdmin()` would close the
+// permission set for `bun test packages/admin packages/query` in one process.
+let admin: AdminApp;
 
 /** A repeated name is a list, as a checkbox group posts it — the HTTP pipeline's own reading. */
 function fields(body: string): Readonly<Record<string, unknown>> {
@@ -62,6 +62,11 @@ let seeded: Seeded;
 let worker: Worker;
 
 beforeAll(async () => {
+  admin = defineAdmin({
+    basePath: '/e2e',
+    entities: [],
+    auth: { actor: () => ({ id: 'u-operator' }), authz: staticAuthz(MANAGER) },
+  });
   seeded = await seedQueue();
   worker = createWorker({
     driver: seeded.driver,

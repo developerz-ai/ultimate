@@ -8,8 +8,9 @@
 //
 // Driven through `route.handle`, the real `POST /mcp`, because the first hop is inside it.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
+import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, type AdminAuthz, type AdminDecision, staticAuthz } from './authz';
 import { adminMcp } from './mcp';
@@ -33,28 +34,31 @@ const recordingAuthz: AdminAuthz = {
   },
 };
 
-const app = defineAdmin({
-  entities: [doc],
-  resources: {
-    admin_tenant_doc: {
-      repo: {
-        list: async (): Promise<readonly AdminRow[]> => [],
-        find: async (): Promise<AdminRow | null> => null,
-        create: async (input): Promise<AdminRow> => input,
-        update: async (_id, patch): Promise<AdminRow> => patch,
-        destroy: async (): Promise<void> => undefined,
+let app: AdminApp;
+let mcp: ReturnType<typeof adminMcp>;
+beforeAll(() => {
+  app = defineAdmin({
+    entities: [doc],
+    resources: {
+      admin_tenant_doc: {
+        repo: {
+          list: async (): Promise<readonly AdminRow[]> => [],
+          find: async (): Promise<AdminRow | null> => null,
+          create: async (input): Promise<AdminRow> => input,
+          update: async (_id, patch): Promise<AdminRow> => patch,
+          destroy: async (): Promise<void> => undefined,
+        },
       },
     },
-  },
-  auth: { actor: (): AdminActor | null => null, authz: recordingAuthz },
-});
-
-const mcp = adminMcp({
-  app,
-  // The session's own resolver — the same hook the HTTP surface uses. It answers a TENANTED
-  // operator, which is the fact the two hops below have to preserve.
-  actor: (): AdminActor => ({ id: 'agent-1', roles: ['ops'], orgId: 'org-a' }),
-  requestId: (): string => 'req_tenant',
+    auth: { actor: (): AdminActor | null => null, authz: recordingAuthz },
+  });
+  mcp = adminMcp({
+    app,
+    // The session's own resolver — the same hook the HTTP surface uses. It answers a TENANTED
+    // operator, which is the fact the two hops below have to preserve.
+    actor: (): AdminActor => ({ id: 'agent-1', roles: ['ops'], orgId: 'org-a' }),
+    requestId: (): string => 'req_tenant',
+  });
 });
 
 const post = async (body: unknown): Promise<void> => {

@@ -52,13 +52,13 @@ A refusal is a 403 document naming the permission, and an audit entry. Anonymous
 |---|---|
 | `?f.<field>=<value>` | the field's default operator (`contains` for text, `eq` otherwise) |
 | `?f.<field>.<op>=<value>` | `eq` `neq` `contains` `gt` `gte` `lt` `lte` `in` (repeat the parameter) `is-null` (`true` / `false`) — the ones the field's shape answers |
-| `?scope=<name>` | a declared scope; absent is the default |
+| `?scope=<name>` | a declared scope; absent is the default; `*` is no scope at all — what a related card's link opens. A scope may not be declared as `*` |
 | `?sort=<field>:<asc\|desc>` | a sortable field |
-| `?cursor=<signed>` | keyset position |
+| `?cursor=<signed>` | keyset position on `(sort, id)`: any number of rows sharing a sort value, and NULLs (last ascending, first descending), are reached both ways |
 
-An unknown field, operator, sort, scope or parameter — or a value that is not the column's type — is `X_ADMIN_FILTER_INVALID`: a 400 naming what the list answers, never the unfiltered list. The MCP list tool takes the same grammar (`scope`, `where: [{ field, op?, value }]`).
+An unknown field, operator, sort, scope or parameter — or a value that is not the column's type (a number is decimal digits: no blank, hex or exponent; a date is one the calendar has) — is `X_ADMIN_FILTER_INVALID`: a 400 naming what the list answers, never the unfiltered list. The MCP list tool takes the same grammar (`scope`, `where: [{ field, op?, value }]`).
 
-Statements per list page: 1 for the rows, 1 per counted scope, 1 per referenced resource (2 for one with more than 50 rows that a control picks from). A reference picker is a `<select>` up to 50 rows and the target's lookup screen above that — both work with scripting off.
+Statements per list page: 1 for the rows (2 when the sort column is nullable, one more when a page ends inside one millisecond of an instant sort, and a page past its first adds the rest of the boundary's tie), 1 per counted scope, 1 per referenced resource per 200 ids (2 for one with more than 50 rows that a control picks from). A reference picker is a `<select>` up to 50 rows and the target's lookup screen above that — both work with scripting off.
 
 ## Detail, form, actions
 
@@ -76,12 +76,14 @@ Statements per list page: 1 for the rows, 1 per counted scope, 1 per referenced 
 | `input: t.object({ … })` | the button is a link to the action's form; a refusal is a 422 with each issue on its field. No schema: a confirm only |
 | `when: (row) => boolean` | decides the button on the detail and each list row, and is asked again before the handler: `X_ADMIN_ACTION_NOT_APPLICABLE` (409) |
 | `batch: true` | in the list's batch bar: checked rows, or every row the list's URL matches (200 per request, continued from where it stopped). Each row through the button's gate and on the audit log; answered `done` / `refused` / `failed` / `remaining` |
-| `batch: { threshold, chunk? }` | past `threshold` rows, one `admin.batch` job per chunk, run by a worker as the operator; `queued` in the answer |
+| `batch: { threshold, chunk? }` | past `threshold` rows, one `admin.batch` job per chunk, run by a worker as the operator; `queued` in the answer. The batch id is derived from actor, action, rows and input, so retrying a request whose enqueue failed part-way dedupes the chunks already queued |
 | `matching: ({ where, input, ctx }) => { affected, remaining }` | "all matching" as ONE set-based call over the list's `where` (row scope, scope, filters) — a store's bounded bulk verb — decided and audited once; a destructive one types `<entity>:all matching`. Checked rows still run row by row |
 
 Still one MCP tool per action — a batch action's takes `ids`. No script on any of it: the row checkboxes join the bar's form by their `form` attribute, and a confirmation is a server round trip. An action's input fields are labelled `admin.input.<action>.<field>` — beside its own `admin.action.<action>`, never under it, so both fit one JSON catalog. An action on a row the actor cannot see (gone, or outside its `rows`) is refused, `when` or none.
 
-A create, or an update of the fields it touches, whose resulting row falls outside the actor's `rows(actor)` is refused before the repo is called — audited as a denial, reason `admin.error.row-out-of-scope`, on the screens and over MCP alike.
+A create, or an update of the fields it touches, whose resulting row falls outside the actor's `rows(actor)` is refused before the repo is called — audited as a denial, reason `admin.error.row-out-of-scope`, on the screens and over MCP alike. Both are then decided again on the validated values they write, as the subject's `input` (an update: beside its `row`).
+
+An edit form carries the row's version (`_version`); a row someone changed after the form was drawn is a 409 (`admin.error.row-changed`) with the form redrawn over the row as it is now — never overwritten. A `datetime-local` box holds minutes, so an instant posted back exactly as it was drawn is left out of the write.
 
 ## The audit log
 
@@ -90,14 +92,14 @@ A create, or an update of the fields it touches, whose resulting row falls outsi
 | Store | Keeps | Use |
 |---|---|---|
 | `memoryAuditLog()` | this process's entries, until a restart | tests, `x dev` |
-| `postgresAuditLog()` | `x_admin_audit` — applied at boot with every framework table, from `@ultimat3/admin/schema`; one insert per audited write, inside the write's own transaction (`AuditLog.atomic`) | production: `audit: Bun.env['DATABASE_URL'] ? postgresAuditLog() : memoryAuditLog()` |
+| `postgresAuditLog()` | `x_admin_audit` — applied at boot with every framework table, from `@ultimat3/admin/schema`; one insert per audited write, inside the write's own transaction (`AuditLog.atomic`) — a CRUD write, an action's handler, a `matching` set and a queued batch's enqueues alike: an entry that cannot be written rolls the work back, and the log holds one `failed` entry | production: `audit: Bun.env['DATABASE_URL'] ? postgresAuditLog() : memoryAuditLog()` |
 | your own `AuditLog` | anything with `append`, `entries(query)` (async), `atomic(run)` and `kind` | — |
 
 | Rule | Detail |
 |---|---|
 | What is recorded | every write and every refusal. An allowed read (`list`, `detail`, `search`, a page) is stored by `postgresAuditLog({ reads: true })` only |
 | Redaction | a `sensitive` or sealed value is only ever `[redacted]`, in the diff and on screen |
-| Where it shows | the detail page's history card — `audit.entries({ entity, entityId, changes: true })`, keyset by `?history=`; `/admin/audit` (`audit:read`) for the whole trail |
+| Where it shows | the detail page's history card — `audit.entries({ entity, entityId, changes: true })`, keyset by `?history=`; `/admin/audit` (`audit:read`) for the whole trail. Both read only the actor's tenant's entries (`orgId`) when the actor has an org |
 | A copy elsewhere | `memoryAuditLog({ sinks })` / `postgresAuditLog({ sinks })` — each `AuditSink` gets a copy of every entry; a sink is write-only and never read back |
 
 ## The jobs dashboard

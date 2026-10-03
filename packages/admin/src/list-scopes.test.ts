@@ -19,8 +19,11 @@ import {
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
+import type { AdminApp } from './admin';
 import type { AdminActor } from './authz';
+import type { CrudCtx } from './crud';
 import type { AdminFilter, AdminRepo, AdminRow } from './registry';
+import type { AdminResource } from './resource';
 
 const { defineAdmin } = await import('./admin');
 const { adminList } = await import('./crud');
@@ -54,17 +57,23 @@ const SCOPES = {
   },
 } as const;
 
-const admin = defineAdmin({
-  entities: [orders],
-  db,
-  resources: { admin_tab_orders: { scopes: SCOPES } },
+let admin: AdminApp;
+let ctx: CrudCtx;
+let resource: AdminResource;
+beforeAll(() => {
+  admin = defineAdmin({
+    entities: [orders],
+    db,
+    resources: { admin_tab_orders: { scopes: SCOPES } },
+  });
+  ctx = admin.ctx({ actor: ANA, requestId: 'scopes' });
+  resource = admin.resource('admin_tab_orders');
+  repo = resource.repo ?? expect.unreachable('the resource has a repo');
 });
-const resource = admin.resource('admin_tab_orders');
 /** The repo `defineAdmin` bound from the handle — every resource it builds has one. */
-const repo: AdminRepo<AdminRow> = resource.repo ?? expect.unreachable('the resource has a repo');
+let repo: AdminRepo<AdminRow>;
 
 const ANA: AdminActor = { id: 'ana', roles: ['clerk'] };
-const ctx = admin.ctx({ actor: ANA, requestId: 'scopes' });
 
 beforeAll(async () => {
   defineRoles({ ...previousRoles, clerk: { grants: ['admin:read', 'admin_tab_orders:read'] } });

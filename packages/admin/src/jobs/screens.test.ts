@@ -4,9 +4,13 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { resetJobDriver } from '@ultimat3/jobs';
+import type { AdminApp } from '../admin';
 import { ask, jobsAdmin, type Seeded, seedQueue } from './jobs-fixture';
 
-const admin = jobsAdmin('/ops');
+let admin: AdminApp;
+beforeAll(() => {
+  admin = jobsAdmin('/ops');
+});
 const platform = { id: 'u-platform', locale: 'en', timeZone: 'America/Bogota' };
 let seeded: Seeded;
 
