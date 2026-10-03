@@ -94,6 +94,7 @@ export const supportAgent = agent({
 | The tool's own `policy` decides every call | there is no "LLM permissions" concept, because there is no second authz system |
 | The tool's own `input:` parses what the model sent | which is what drops an `{ actor: 'admin' }` the model invented, before any handler sees it |
 | A tool failure is a `tool_result` flagged `is_error`, not a crash | a policy denial is an outcome the model should read and react to |
+| A 5xx failure's cause reaches the model only when its code declares it public | the provider keeps every request it is sent; a `X_DB_STATEMENT_FAILED` reads as the code and a fixed sentence — the verdict a production problem document and an MCP client get |
 | The actor is **`ctx.actor`**, read once, and nothing the model emits can reach it | this is the mistake a hand-rolled loop ships, and the reason the loop belongs in the framework |
 
 An unknown tool name answers `unknown tool: <name>` as an error result rather than throwing — the model asked for something it was not offered, which is a turn to correct, not a run to abort.
@@ -157,7 +158,7 @@ Every tool a single turn asked for runs **at once**, through one `Promise.all`, 
 | No second ceiling here | the batch is bounded by what one turn asked for, and each entry is an action carrying its own `policy` and its own `rateLimit`; a ceiling here would be a throttle competing with those |
 | Ordering | **positional**, never by completion. `Promise.all` resolves by index and each result carries the `tool_use` id it was handed, so a fast tool answering first cannot be paired with a slow tool's call |
 | Turns | serial, always. Every turn re-sends the whole transcript, which is why cost grows quadratically in turns and `maxTurns` defaults low |
-| Budget under parallelism | still holds — every call queues on the ledger's root turnstile, which debits before the provider is reached |
+| Budget under parallelism | still holds — every reservation debits before it checks, so concurrent calls cannot all read the same `spent` |
 
 ## Budgets, and the ceiling that holds under concurrency
 
@@ -174,7 +175,7 @@ budget: {
 | `tokensIn` | prompt tokens of one call | `agent()`, `llm()`, `hive()` |
 | `tokensPerRun` | prompt + completion across **every turn and every nested call** of one run | `agent()`, `hive()` |
 | `costPerCall` | worst-case price of one call, integer minor units | `agent()`, `llm()`, `hive()` |
-| `actor` / `org` | tokens across a whole window, per identity | `createGateway({ budget })` |
+| `actor` / `org` | tokens across a whole window, per identity — the CALLER's: `llm()`, `agent()` and `hive()` key it `budgetKeysFor(ctx.actor)` | `createGateway({ budget })` |
 
 A budget **refuses**; it never truncates. A shortened prompt yields a confidently wrong answer with no signal, and `X_AI_BUDGET_EXCEEDED` names the scope and what remains.
 
@@ -182,12 +183,11 @@ A budget **refuses**; it never truncates. A shortened prompt yields a confidentl
 
 | Mechanism | What it fixes |
 |---|---|
-| `reserve()` **debits** the pre-flight estimate, it does not merely check it | three concurrent calls under one ledger otherwise all read `spent() === 0`, all pass, and all three record against a ceiling only one of them fitted. `record()` then replaces the estimate with the provider's real counts, and `release()` gives it back when the call never happened |
-| Reservations queue on the **root** ledger's turnstile, not on their own | `derive()` gives every call its own ledger, so a per-ledger queue serialises nothing: `Promise.all` of three derived ledgers all read the chain before any of them debits it. The turnstile is the root's, so reservations under one scope take turns however deep the derivation goes. A refusal is chained on a settled shadow, so one refusal does not reject everything queued behind it |
+| `reserve()` **debits, then checks** — never a read-then-write across an `await` | the in-memory `request` counters are checked and debited with nothing awaited between; the store's `actor` / `org` counters go through `BudgetStore.take(key, tokens, limit)`, one atomic step. A read-then-write let concurrent calls — one request per scope racing one org key — all read `spent() === 0` and all pass. A refusal at a later scope gives back what the earlier ones took; `record()` replaces the estimate with the provider's real counts, `release()` gives it back when the call never happened |
 | `derive()` takes the **tighter** of each limit and never the looser | a per-call budget on an inner `agent()` must not be able to widen the actor or org ceiling it runs inside |
 | `reserveNow()` walks the **whole** parent chain | each ledger keeps its own counter, and the tightest limit is not always the one with the most spent against it |
 
-One event loop, so a promise chain is the lock. A `BudgetStore` shared across **processes** needs an atomic increment of its own — this closes the parallelism inside one process. The default `MemoryBudgetStore` is per process and resets on every deploy: `org: 20_000_000` at six replicas is six ledgers of twenty million.
+`take` is required of every `BudgetStore`, and a store shared across **processes** must make it atomic on its own side — a Redis `EVAL`, a SQL `update … where spent + $n <= $limit`. The default `MemoryBudgetStore` is per process and resets on every deploy: `org: 20_000_000` at six replicas is six ledgers of twenty million.
 
 ## Cancellation
 

@@ -4,7 +4,7 @@
 // is a model call, which means it is itself a measuring instrument that can drift — so its
 // prompt is a versioned artifact and its hash is part of the scorer's name.
 
-import { finiteCount } from '@ultimat3/core';
+import { assert, finiteCount, finiteOption } from '@ultimat3/core';
 import type { Gateway } from './gateway';
 import type { Prompt } from './prompt';
 
@@ -81,8 +81,17 @@ export function jsonSchemaValid(required: readonly string[]): Scorer {
   };
 }
 
-/** Graded numeric closeness — 1 at exact, 0 at or beyond `tolerance`. */
+/**
+ * Graded numeric closeness — 1 at exact, 0 at or beyond `tolerance`. `tolerance: 0` is exact match.
+ * Screened at declaration: a `NaN` scored every answer `NaN`, a negative one every answer 0.
+ */
 export function numericTolerance(tolerance: number): Scorer {
+  finiteOption('numericTolerance', 'tolerance', tolerance);
+  assert(
+    tolerance >= 0,
+    `numericTolerance tolerance is ${String(tolerance)}: a distance cannot be negative, so every answer would score 0`,
+    'numericTolerance(0)   # 0 is exact match; a positive tolerance grades closeness',
+  );
   return {
     name: 'numeric-tolerance',
     score: ({ output, expected }) => {
@@ -90,6 +99,8 @@ export function numericTolerance(tolerance: number): Scorer {
       const want = Number.parseFloat((expected ?? '').trim());
       if (Number.isNaN(got) || Number.isNaN(want)) return 0;
       const delta = Math.abs(got - want);
+      // Exact first: at `tolerance: 0`, `0 >= 0` read an exact match as out of range.
+      if (delta === 0) return 1;
       return delta >= tolerance ? 0 : 1 - delta / tolerance;
     },
   };

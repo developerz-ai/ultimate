@@ -5,7 +5,7 @@
 // queried with another is a silent relevance collapse, and the only place to catch it is
 // where the two meet. `VectorStore` compares the declared dimension and refuses.
 
-import { finiteCount } from '@ultimat3/core';
+import { fingerprint, finiteCount } from '@ultimat3/core';
 import { AiEmbedderInvalidError } from './errors';
 
 export interface Embedder {
@@ -88,10 +88,10 @@ export class HashEmbedder implements Embedder {
   private one(text: string): Float32Array {
     const vector = new Float32Array(this.dimension);
     for (const token of tokenize(text)) {
-      const slot = fnv1a(token) % this.dimension;
+      const slot = hashOf(token) % this.dimension;
       // Signed accumulation: without it every vector is non-negative and cosine
       // similarity compresses into a narrow band where nothing ranks apart.
-      const sign = fnv1a(`${token}#sign`) % 2 === 0 ? 1 : -1;
+      const sign = hashOf(`${token}#sign`) % 2 === 0 ? 1 : -1;
       vector[slot] = (vector[slot] ?? 0) + sign;
     }
     return normalize(vector);
@@ -103,14 +103,13 @@ export function tokenize(text: string): readonly string[] {
   return text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 }
 
-/** FNV-1a 32-bit. Chosen for stability across runtimes, not for cryptographic strength. */
-export function fnv1a(text: string): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash;
+/**
+ * A token's slot hash: 32 bits of core's `fingerprint`, never a local FNV-1a. FNV-1a/32 collides on
+ * ordinary words (`costarring` / `liquid`), and two colliding words embed IDENTICALLY here — cosine
+ * 1, so a semantic lookup answered one with the other's entry.
+ */
+function hashOf(text: string): number {
+  return Number.parseInt(fingerprint(text).slice(0, 8), 16);
 }
 
 /** L2 normalise in place so cosine similarity reduces to a dot product. */

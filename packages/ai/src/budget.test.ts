@@ -178,7 +178,9 @@ describe('derive tightens, never widens', () => {
 
   test('the shared store is still credited exactly once per debit', async () => {
     const store = new MemoryBudgetStore();
-    const parent = new BudgetLedger({ limits: {}, actorKey: 'actor:u1', orgKey: 'org:o1', store });
+    // Ceilings declared: a key with no ceiling is never written at all (`budget-identity.test.ts`).
+    const limits = { actor: 1_000_000, org: 1_000_000 };
+    const parent = new BudgetLedger({ limits, actorKey: 'actor:u1', orgKey: 'org:o1', store });
     const child = parent.derive({});
 
     await child.record(
@@ -199,13 +201,20 @@ describe('derive tightens, never widens', () => {
 });
 
 describe('the ceiling holds under parallelism', () => {
-  /** A store whose `spent` yields to the loop, so three reads can genuinely interleave. */
+  /**
+   * A store whose reads and takes yield to the loop, so three reservations genuinely interleave —
+   * and whose `take` is atomic on its own side, as a real store's `EVAL` or `update … where` is.
+   */
   function slowStore(): BudgetStore & { read(key: string): number } {
     const inner = new MemoryBudgetStore();
     return {
       async spent(key: string): Promise<number> {
         await Promise.resolve();
         return inner.spent(key);
+      },
+      async take(key, tokens, limit) {
+        await Promise.resolve();
+        return inner.take(key, tokens, limit);
       },
       add: (key, tokens) => inner.add(key, tokens),
       reset: (key) => inner.reset(key),
@@ -237,7 +246,7 @@ describe('the ceiling holds under parallelism', () => {
     expect(store.read('org:o1')).toBeLessThanOrEqual(10_000);
   });
 
-  // A refusal must not reject the reservations queued behind it on the turnstile.
+  // A refusal must leave nothing behind that refuses the next reservation.
   test('a refused reservation lets the next one through on its own merits', async () => {
     const store = slowStore();
     const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
@@ -312,5 +321,25 @@ describe('the ledger refuses a ceiling that cannot hold', () => {
     expect(refusal(() => parent.derive({ tokensIn: Number.NaN })).cause).toContain('tokensIn');
     // And the honest derivation still tightens, which is the rule this file exists for.
     expect((await parent.derive({ request: 100 }).report()).limits.request).toBe(100);
+  });
+});
+
+// `take` is the app's code, and the reservation reads its answer: a store that answers nothing
+// must fail as a coded refusal naming the shape, never as a `TypeError` off `undefined`.
+describe('a BudgetStore whose take answers the wrong shape', () => {
+  test('is X_INVARIANT, before anything is debited', async () => {
+    const inner = new MemoryBudgetStore();
+    const store: BudgetStore = {
+      spent: (key) => inner.spent(key),
+      add: (key, tokens) => inner.add(key, tokens),
+      reset: (key) => inner.reset(key),
+      take: () => undefined as unknown as { taken: boolean; spent: number },
+    };
+    const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
+    await expect(ledger.reserve(estimateSpend(request('hi', 100)))).rejects.toMatchObject({
+      code: 'X_INVARIANT',
+    });
+    expect(inner.spent('actor:u1')).toBe(0);
+    expect((await ledger.report()).requestTokens).toBe(0);
   });
 });

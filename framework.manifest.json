@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "88697b88c534dc4f8e1ddec8bb0ed4ff852fd1633f7ab81e81e8a3051547414f",
+  "buildId": "18caecf9599fb75eaa85bafc180a6bfad98ac7018d55030d1aa05745468f9cd0",
   "tiers": {
     "0": [
       "core",
@@ -4121,6 +4121,11 @@
     },
     {
       "code": "X_VECTOR_SCOPE_WIDENED",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_VECTOR_UNSCOPED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },

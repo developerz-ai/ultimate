@@ -126,3 +126,27 @@ describe('unit · what counts as a regression', () => {
     );
   });
 });
+
+// The baseline is WRITTEN rounded to three decimals and the live score was compared raw: a score
+// of 2/3 recorded as 0.667 regressed against itself at `tolerance: 0` (0.6666… < 0.667).
+describe('unit · a score compared with its own recording', () => {
+  test('an unchanged score never regresses from its own baseline, at tolerance 0', async () => {
+    await inTemporaryDir(async (dir) => {
+      const path = join(dir, 'third.baseline.json');
+      const score = 2 / 3;
+      await writeBaseline(path, { ...BASELINE, score, cases: { alpha: 1 / 3 } });
+      const baseline = await readBaseline(path);
+      if (baseline === undefined) expect.unreachable('the baseline was just written');
+      expect(
+        regressionsAgainst({ baseline, score, cases: { alpha: 1 / 3 }, tolerance: 0 }),
+      ).toEqual([]);
+    });
+  });
+
+  test('a real drop below the recording is still caught at tolerance 0', () => {
+    const baseline = { ...BASELINE, score: 0.667, cases: { alpha: 0.333 } };
+    expect(
+      regressionsAgainst({ baseline, score: 0.66, cases: { alpha: 0.333 }, tolerance: 0 }),
+    ).toEqual([{ case: OVERALL, baseline: 0.667, score: 0.66 }]);
+  });
+});

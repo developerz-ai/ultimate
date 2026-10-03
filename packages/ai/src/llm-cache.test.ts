@@ -5,6 +5,11 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx } from '@ultimat3/action';
+import { createMemorySemanticCache } from '@ultimat3/cache';
+import { allow } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
+import { createGateway } from './gateway';
+import { llm } from './llm';
 import {
   ANSWER,
   ctxFor,
@@ -15,7 +20,8 @@ import {
   promptFor,
   stub,
 } from './llm-fixture';
-import { resetAiRuntime } from './runtime';
+import { definePrompt } from './prompt';
+import { configureAi, resetAiRuntime } from './runtime';
 
 beforeEach(() => {
   resetAiRuntime();
@@ -191,5 +197,55 @@ describe('the semantic cache', () => {
     await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
     await summarize({ postId: OTHER_ID }, { ctx: anonymousCtx() });
     expect(seen.length).toBe(2);
+  });
+});
+
+// The entry key was a 32-bit FNV-1a of the rendered prompt, and FNV-1a collides on short words:
+// `costarring` and `liquid` hash alike, and so does anything that STARTS with them. Two prompts
+// differing only there wrote one entry, the second overwriting the first.
+describe('the entry key', () => {
+  test('two rendered prompts that collide under FNV-1a are two entries', async () => {
+    const keys: string[] = [];
+    const inner = createMemorySemanticCache();
+    const { provider } = stub({ answer: 'ok' });
+    configureAi({
+      gateway: createGateway({ providers: [provider] }),
+      // Orthogonal per first letter, so the two prompts never answer each other's lookup and the
+      // entry KEY is the only thing under test.
+      embedder: {
+        name: 'first-letter',
+        dimension: 26,
+        embed: async (texts) =>
+          texts.map((text) => {
+            const vector = new Float32Array(26);
+            vector[(text.charCodeAt(0) - 97 + 26) % 26] = 1;
+            return vector;
+          }),
+      },
+      semanticCache: () => ({
+        ...inner,
+        lookup: (embedding, threshold) => inner.lookup(embedding, threshold),
+        remember(key, embedding, value, options) {
+          keys.push(key);
+          return inner.remember(key, embedding, value, options);
+        },
+      }),
+    });
+    const ask = llm({
+      input: t.object({ q: t.string }),
+      output: t.object({ answer: t.string }),
+      prompt: definePrompt<{ q: string }>({
+        id: 'fnv-collide',
+        version: '1.0.0',
+        template: '{{q}}',
+      }),
+      vars: ({ input }) => ({ q: input.q }),
+      cache: { semantic: { threshold: 0.99 } },
+      policy: allow(),
+    }).named('fnvCollide');
+    await ask({ q: 'costarring' }, { ctx: anonymousCtx() });
+    await ask({ q: 'liquid' }, { ctx: anonymousCtx() });
+    expect(keys.length).toBe(2);
+    expect(keys[0]).not.toBe(keys[1]);
   });
 });

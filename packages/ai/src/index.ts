@@ -11,14 +11,17 @@ export { describeAgents, resetAgents } from './agent-facts';
 export type { AgentJobOptions } from './agent-job';
 export { agentJob } from './agent-job';
 export type {
+  BudgetKeys,
   BudgetLedgerInput,
   BudgetLimits,
   BudgetReport,
   BudgetStore,
+  BudgetTake,
   SpendEstimate,
 } from './budget';
 export {
   BudgetLedger,
+  budgetKeysFor,
   currentBudget,
   estimateSpend,
   MemoryBudgetStore,
@@ -29,7 +32,6 @@ export {
   cosine,
   embedBatched,
   embedOne,
-  fnv1a,
   HashEmbedder,
   normalize,
   tokenize,
@@ -219,5 +221,5 @@ export type {
 } from './vector';
 export { fuse, MemoryVectorStore } from './vector';
 export type { VectorScope } from './vector-scope';
-export { NO_TENANT, tenantOf, UNSCOPED } from './vector-scope';
+export { NO_TENANT, tenantOf, UNSCOPED, VectorUnscopedError } from './vector-scope';
 export type { StreamState } from './wire';

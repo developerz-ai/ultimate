@@ -245,6 +245,7 @@
         "@ultimat3/cache": "23.0.0",
         "@ultimat3/core": "23.0.0",
         "@ultimat3/db": "23.0.0",
+        "@ultimat3/http": "23.0.0",
         "@ultimat3/jobs": "23.0.0",
         "@ultimat3/money": "23.0.0",
         "@ultimat3/policy": "23.0.0",

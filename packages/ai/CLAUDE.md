@@ -4,7 +4,8 @@ Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity pol
 query jobs realtime`. **Never** `mcp manifest render pwa ui admin testing cli`.
 
 Declared today: `action` (the primitive `llm()` returns), `cache` (semantic cache), `core`,
-`db` (pgvector), `jobs` (`agentJob()`), `money`, `policy`, `schema`, `time`.
+`db` (pgvector), `http` (`statusFor`, so a tool result redacts a 5xx cause as a problem document
+does), `jobs` (`agentJob()`), `money`, `policy`, `schema`, `time`.
 
 `jobs` is declared for `agentJob()`: the action→job bridge has to live at tier 4+.
 
@@ -46,6 +47,7 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
+| `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
 | `agent.ts` | `agent()` — the tool loop, declared as an `action` |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
@@ -75,7 +77,18 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
   before the ledger's `request`; `retrieve()`'s own `k`; `RemoteEmbedder`'s `maxResponseBytes`).
 - A per-call budget `derive`s from the ambient ledger and only TIGHTENS. **A derived ledger reports
   back up the chain** (every debit on every ancestor; `reserve` checks each `request` scope); the
-  STORE is written once, by the ledger the call was made on; reservations queue on the ROOT's turnstile.
+  STORE is written once, by the ledger the call was made on.
+- **`reserve` debits, then checks — never a read-then-write across an `await`.** The in-memory scopes
+  check and debit synchronously; the store's go through `BudgetStore.take(key, tokens, limit)`, which
+  is REQUIRED and must be atomic (no default over `spent` + `add` — that pair is the race). A refusal
+  at a later scope gives back what the earlier ones took.
+- **The store is touched only for a scope whose ceiling is DECLARED** (`takeScope`, `meteredKeys`):
+  every call carries keys, so a write per key grew the default store by one entry per caller.
+  `MemoryBudgetStore` has no window and no eviction (eviction is a ceiling bypass); a counter back
+  at zero is deleted.
+- **`llm()`, `agent()`, `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))`**
+  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>`. `callLedger` is required on
+  `Gateway`; `hive()` asks `installedGateway()` so a hive of plain actions needs none.
 - **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**
   (`createGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that
   clamps at zero leaks the ceiling.
@@ -88,6 +101,9 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 
 - **`llm()` returns an `action`**, never a ninth primitive; it adds only the model half: render the
   prompt, project `output` into the one `respond` tool, reserve the budget, consult the semantic cache.
+- **A non-object `output` is wrapped in `{ value }` and unwrapped** (`respond.ts`) — a tool's input is
+  an object; never refused, because `.stream()` serves `output: t.string`. `parseJsonish` is two
+  `indexOf` scans, never a backtracking pattern.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts`).
 - One repair turn, then `X_LLM_OUTPUT_INVALID`. A refusal (a 200 with no answer) is `X_LLM_REFUSED`
   before the parse, carrying `stopDetails.category`; a truncated invalid answer is `X_LLM_TRUNCATED`.
@@ -116,6 +132,11 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 
 ## Invariants — providers and the gateway
 
+- **The response cache key is core's `fingerprint` over the request, each tool WHOLE** (every `llm()`
+  tool is `respond`); a throwing `cache.set` is logged (`ai.cache.write_failed`), never a failure.
+- **An unknown stop/finish reason FAILS CLOSED as `max_tokens` on both formats**, streamed or not.
+- **One failure-body reader** (`error-body.ts`'s `detailOf`, bounded at `READ_LIMIT`) and one
+  `withoutKey` scrub — the embedder included.
 - **`attempt` collects TRANSPORT failures only**: an `UltimateError` other than
   `X_AI_PROVIDER_UNAVAILABLE` is rethrown on the spot (the same misconfiguration everywhere). Read
   with `stringField(error, 'code')`.
@@ -188,9 +209,12 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
     ("superseded").
   - A tool result is rendered totally (`'null'` for `undefined`; a non-JSON result reported as such,
     never as a failure); the throw is read with `stringField`.
+  - **A 5xx code's cause reaches the model only when core's `hasPublicCause` allows it** (status from
+    `@ultimat3/http`'s `statusFor`) — else `CODE: HIDDEN_TOOL_CAUSE`, plus a branded `callerFix`. The
+    same verdict a problem document and `@ultimat3/mcp` give.
 - **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
   member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
-  order with `index`; the hive never names an actor; no hive budget code (the root turnstile holds
+  order with `index`; the hive never names an actor; no hive budget code (the reservation holds
   it); a member's throw is recorded via `isThrownError`/`stringField`; `skipped` reasons
   `SKIPPED_ABORTED` / `SKIPPED_NO_INPUT`; `onMemberError` is required; `concurrency` 4, `minMembers`
   2 (a below-floor split still runs serially); an empty split is `X_HIVE_EMPTY`; an aborted `ctx`
@@ -206,13 +230,17 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 - **No fix line may name `x ai`** (planned). An eval is selected with `x test eval --filter <name>`;
   `eval-errors.test.ts` asserts every `x test <word>` is one of the six types.
 - Every eval result carries the prompt hash. An eval gates on the DROP from its recorded baseline,
-  mean AND per case. Never-recorded is `X_EVAL_BASELINE_MISSING`, corrupt is `X_EVAL_BASELINE_INVALID`.
+  mean AND per case, both sides rounded as the baseline is written. Never-recorded is `X_EVAL_BASELINE_MISSING`, corrupt is `X_EVAL_BASELINE_INVALID`.
   `baseline` is `import.meta.resolve('./…')`. Every prompt is named by an eval (`X_EVAL_MISSING`, by
   prompt ID). `ULTIMATE_EVAL_RECORD=1` records; a deliberately-worse test calls `run`, never
   `assert`; `x verify` with the flag is `X_EVAL_RECORDING` and runs no eval. The gate asks for a
   recorded baseline, not only a declaration.
-- Retrieval is hybrid by default; no vector-only path. **`chunk()` hard-wraps**, and the overlap
-  carry stops at `buffer.length - 1`.
+- Retrieval is hybrid by default; no vector-only path. **`chunk()` hard-wraps**, the overlap
+  carry stops at `buffer.length - 1` and yields to a next unit it does not fit beside (no chunk over
+  `size`); `metadata.source` is written AFTER the caller's spread. `VectorStore.prune` is required.
+- **A store with no tenant bound, read inside a request whose actor has an `orgId`, is
+  `X_VECTOR_UNSCOPED`** (`assertTenantRead`, both stores, every read). `scope: UNSCOPED`
+  (`crossTenant: true`) is the named opt-in; an omitted scope is `UNBOUND`.
 - `PgVectorStore` is the only production vector path (pgvector + FTS in the app's Postgres);
   `MemoryVectorStore` enforces the same envelope. **`pg-vector.live.test.ts` refuses to skip** on a
   Postgres without the extension (CI uses `pgvector/pgvector:pg17`).

@@ -62,9 +62,14 @@ const ERROR_STATUS: ReadonlyMap<string, number> = new Map(
   }),
 );
 
-/** A finish reason this format knows, or `undefined` for `null` — which means "still going". */
+/**
+ * The finish reason, or `undefined` for a non-string (`null` on a delta means "still going").
+ * A string this table does not know FAILS CLOSED as `max_tokens` — `wire.ts`'s `parseStopReason`
+ * rule, so one unknown reason reads the same on both formats: a provider's new reason is far
+ * likelier to be a way of stopping early than of finishing.
+ */
 export function parseFinishReason(raw: unknown): StopReason | undefined {
-  return typeof raw === 'string' ? FINISH_REASONS.get(raw) : undefined;
+  return typeof raw === 'string' ? (FINISH_REASONS.get(raw) ?? 'max_tokens') : undefined;
 }
 
 /**

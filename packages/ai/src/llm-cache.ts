@@ -16,8 +16,9 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
+import { fingerprint } from '@ultimat3/core';
 import { parseDuration } from '@ultimat3/time';
-import { embedOne, fnv1a } from './embeddings';
+import { embedOne } from './embeddings';
 import { aiEmbedder, semanticCacheFor } from './runtime';
 
 /** What a `scope` may decide from. The same pair `vars()` receives, and for the same reason. */
@@ -119,7 +120,7 @@ export async function openCache<TParsed>(
     },
     remember(value: unknown): Promise<void> {
       return store.remember(
-        `${args.prompt.hash}:${fnv1a(args.rendered).toString(16)}`,
+        `${args.prompt.hash}:${fingerprint(args.rendered)}`,
         embedding,
         value,
         ttlMs === undefined ? {} : { ttlMs },

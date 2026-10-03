@@ -249,8 +249,8 @@ describe('ran-and-failed is not never-ran', () => {
 });
 
 describe('the ceiling holds under concurrency', () => {
-  // The property `budget.ts`'s root turnstile exists for, asserted through the hive rather than
-  // asserted about the ledger: three members reserve before any of them records, so a ceiling only
+  // The property `budget.ts`'s debit-then-check reservation exists for, asserted through the hive,
+  // not about the ledger: three members reserve before any of them records, so a ceiling only
   // one fits refuses the other two — no new budget machinery, and none needed.
   test('three members against a ceiling only one fits leaves exactly one ok', async () => {
     const { provider } = byPrompt(() => false, 200);

@@ -354,7 +354,7 @@ describe('cancellation', () => {
 /** The common declaration, so each test states only the part it is about. */
 
 /**
- * `maxTokens` is refused at DECLARATION, beside `respondToolFor`'s own refusal, because it is not
+ * `maxTokens` is refused at DECLARATION, beside `respondFor`'s own refusal, because it is not
  * the request a `NaN` there breaks — it is the budget.
  *
  * `maxTokens` becomes the pre-flight ESTIMATE. `BudgetLedger.assertScope` asks `want > remaining`,

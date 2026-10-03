@@ -203,3 +203,47 @@ describe('re-indexing a shorter document', () => {
     expect((await store.searchText('zebra', 5)).map((hit) => hit.id)).toEqual(['other#0']);
   });
 });
+
+// Units of ~10, ~500 and ~400 tokens under `size: 512, overlap: 64`: the flush before the third
+// carried the second whole as overlap and pushed the third on top — a 900-token chunk. The carry
+// yields to the unit; `size` is the promise.
+describe('the carried overlap never pushes a chunk past its size', () => {
+  const words = (count: number, word: string) =>
+    `${Array.from({ length: count }, () => word).join(' ')}.`;
+
+  test('the carry is dropped until the next unit fits', () => {
+    const text = [words(2, 'tenth'), words(400, 'bbbb'), words(320, 'cccc')].join('\n\n');
+    const chunks = chunk({ id: 'doc', text, size: 512, overlap: 64 });
+    for (const piece of chunks) expect(piece.tokens).toBeLessThanOrEqual(512);
+    // Nothing is lost to the drop: every unit still opens or closes some chunk.
+    expect(chunks.some((piece) => piece.text.includes('cccc'))).toBe(true);
+    expect(chunks.some((piece) => piece.text.includes('bbbb'))).toBe(true);
+  });
+});
+
+// `source` is the framework's stamp, and `indexDocument` prunes by it. A caller's own `source`
+// overwrote it, so a re-index pruned nothing of that document and could prune another's rows.
+describe('the source stamp is the chunker’s, whatever the caller passes', () => {
+  test('a caller metadata `source` never replaces the document id', () => {
+    const [first] = chunk({ id: 'doc1', text: 'alpha one.', metadata: { source: 'upload' } });
+    expect(first?.metadata['source']).toBe('doc1');
+  });
+
+  test('re-indexing shorter still prunes the tail when the caller passed a source', async () => {
+    const store = new MemoryVectorStore({ dimension: 64 });
+    const embedder = new HashEmbedder({ dimension: 64 });
+    const metadata = { source: 'upload' };
+    const long = ['alpha one.', 'bravo two.', 'charlie three zebra.'].join('\n\n');
+    await indexDocument({
+      store,
+      embedder,
+      document: { id: 'doc1', text: long, size: 4, metadata },
+    });
+    await indexDocument({
+      store,
+      embedder,
+      document: { id: 'doc1', text: 'alpha one.', size: 4, metadata },
+    });
+    expect(await store.searchText('zebra', 5)).toEqual([]);
+  });
+});

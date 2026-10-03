@@ -27,9 +27,9 @@ import type { Ctx, Span, SpanAttributes } from '@ultimat3/core';
 import { finiteCount, withSpan } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
-import { formatIssues, toMcpInputSchema, validateAsync } from '@ultimat3/schema';
+import { formatIssues, validateAsync } from '@ultimat3/schema';
 import type { BudgetLimits } from './budget';
-import { BudgetLedger, currentBudget, withBudget } from './budget';
+import { budgetKeysFor, currentBudget, withBudget } from './budget';
 import {
   LlmOutputInvalidError,
   LlmRefusedError,
@@ -47,15 +47,9 @@ import type { Prompt, PromptVars } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
+import type { Respond } from './respond';
+import { parseJsonish, RESPOND, respondFor } from './respond';
 import { aiGateway, aiRedactor } from './runtime';
-import type { LlmTool } from './tools';
-
-/**
- * The tool the model answers through. One name, so the reader never has to guess — and shared
- * with `agent()`, which offers the app's tools alongside it and needs the same name to tell an
- * answer from a tool call.
- */
-export const RESPOND = 'respond';
 
 /** Two attempts total: the answer, then one repair turn. See `LlmOutputInvalidError`. */
 const ATTEMPTS = 2;
@@ -138,8 +132,8 @@ export function llm<
   TOutput extends StandardSchemaV1,
   V extends PromptVars,
 >(def: LlmDef<TInput, TOutput, V>): LlmAction<TInput, TOutput> {
-  const respond = respondToolFor(def.output);
-  // Screened at DECLARATION, beside `respondToolFor`'s own refusal and for the same reason: an
+  const respond = respondFor(def.output);
+  // Screened at DECLARATION, beside `respondFor`'s own refusal and for the same reason: an
   // `llm()` is evaluated at module scope, so a bound that is not one fails the boot rather than
   // the first request. It is the read at `generate` below that makes it urgent — `maxTokens`
   // becomes the pre-flight ESTIMATE, a `NaN` estimate passes every `want > remaining` check, and
@@ -190,7 +184,7 @@ async function generate<
   V extends PromptVars,
 >(
   def: LlmDef<TInput, TOutput, V>,
-  respond: LlmTool,
+  respond: Respond,
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
@@ -250,7 +244,7 @@ async function generate<
       // the provider call in flight, billed and unread, and the repair turn bought a SECOND one.
       signal: args.ctx.signal,
     };
-    const request: GenerateRequest = { ...base, tools: [respond] };
+    const request: GenerateRequest = { ...base, tools: [respond.tool] };
 
     // A ledger derived from the ambient one, so a per-call budget can only TIGHTEN the actor
     // and org ceilings this call runs inside, never widen them. The gateway reserves against
@@ -259,11 +253,10 @@ async function generate<
     const limits = limitsOf(def.budget);
     // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
     const gateway = aiGateway(name);
-    const ledger = (
-      currentBudget() ??
-      gateway.callLedger?.() ??
-      new BudgetLedger({ limits: {} })
-    ).derive(limits);
+    // Keyed on the CALLER, so the gateway's `actor` / `org` ceilings count this call against them.
+    const ledger = (currentBudget() ?? gateway.callLedger(budgetKeysFor(args.ctx.actor))).derive(
+      limits,
+    );
     const sink = currentLlmSink();
 
     return withBudget(ledger, async () => {
@@ -292,7 +285,7 @@ async function generate<
             explanation: result.stopDetails?.explanation,
           });
         }
-        const parsed = await validateAsync(def.output, structuredOutputOf(result));
+        const parsed = await validateAsync(def.output, respond.read(result));
         if (parsed.issues === undefined) {
           await cache?.remember(parsed.value);
           return parsed.value;
@@ -404,21 +397,6 @@ function limitsOf(budget: LlmBudget | undefined): BudgetLimits {
 }
 
 /**
- * The output schema as the only tool the model may answer through — the spec's "structured
- * output drives tool use". `toMcpInputSchema` is the same projection an MCP client sees, so
- * a model and an agent are shown one shape, and a schema it cannot express throws HERE, at
- * declaration time, rather than degrading into a permissive node the model cannot satisfy.
- */
-export function respondToolFor(output: StandardSchemaV1): LlmTool {
-  return {
-    name: RESPOND,
-    description: 'Return the result. Call this exactly once; do not answer in prose.',
-    input_schema: toMcpInputSchema(output),
-    strict: true,
-  };
-}
-
-/**
  * What the model answered, as text the Messages API will accept — or nothing.
  *
  * `result.text` is the EMPTY STRING whenever the answer came through the `respond` tool, which
@@ -435,24 +413,4 @@ function assistantEcho(result: GenerateResult): string | undefined {
   if (call === undefined) return undefined;
   const replayed = JSON.stringify(call.input);
   return replayed === undefined || replayed === '' ? undefined : replayed;
-}
-
-/**
- * The tool call if the model made one, otherwise the text parsed as JSON — a model that
- * answers in prose is a schema failure, not a crash, so it flows into the repair turn.
- */
-export function structuredOutputOf(result: GenerateResult): unknown {
-  const call = result.toolCalls.find((c) => c.name === RESPOND);
-  if (call !== undefined) return call.input;
-  return parseJsonish(result.text);
-}
-
-function parseJsonish(text: string): unknown {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-  const body = (fenced?.[1] ?? text).trim();
-  try {
-    return JSON.parse(body);
-  } catch {
-    return undefined;
-  }
 }

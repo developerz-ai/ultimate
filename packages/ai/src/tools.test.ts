@@ -1,12 +1,33 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { action } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import {
+  agentActor,
+  createContext,
+  resetPublicCauses,
+  runWithContext,
+  stringField,
+  UltimateError,
+} from '@ultimat3/core';
+import { driverError } from '@ultimat3/db';
+import { registerErrorStatus, registerProblemMeta, resetErrorStatus } from '@ultimat3/http';
 import { allow, forbidden } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { ProjectableAction } from './tools';
-import { asProjectableAction, runLlmToolCall, toLlmTool, toLlmTools, toolLabel } from './tools';
+import {
+  asProjectableAction,
+  HIDDEN_TOOL_CAUSE,
+  runLlmToolCall,
+  toLlmTool,
+  toLlmTools,
+  toolLabel,
+} from './tools';
 
 const actor = agentActor({ id: 'agent-1' });
+
+afterEach(() => {
+  resetErrorStatus();
+  resetPublicCauses();
+});
 
 const projectable = (
   name: string,
@@ -216,7 +237,9 @@ describe('runLlmToolCall survives a result the framework did not build', () => {
 
   // A null-prototype error object is what a worker, a subprocess or a JSON round trip produces,
   // and it still carries the three fields — reading them must not depend on a prototype.
+  // A 4xx the app declared: the redaction rule below only touches a 5xx, so this pins the reader.
   test('a null-prototype error object still renders its code, cause and fix', async () => {
+    registerErrorStatus({ X_ORDER_LOCKED: 409 });
     const flattened = Object.assign(Object.create(null), {
       code: 'X_ORDER_LOCKED',
       cause: 'order o-1 is closed',
@@ -233,6 +256,70 @@ describe('runLlmToolCall survives a result the framework did not build', () => {
       content: 'X_ORDER_LOCKED: order o-1 is closed (fix: x db query "select * from orders")',
       isError: true,
     });
+  });
+});
+
+// The verdict `@ultimat3/http`'s `error-facts-public-cause.test.ts` pins for a problem document,
+// asked of the one other renderer that sends a throw off the box: the model's provider. A cause
+// leaked here cannot be recalled — it is in a third party's request log.
+describe('runLlmToolCall withholds a 5xx cause the code did not declare public', () => {
+  const failing = (thrown: unknown) =>
+    projectable('publishPost', { expose: true }, () => Promise.reject(thrown));
+  const call = async (thrown: unknown) =>
+    (
+      await runLlmToolCall(
+        [failing(thrown)],
+        { id: 'call-r', name: 'publishPost', input: { id: 'p1' } },
+        actor,
+      )
+    ).content;
+
+  test('X_DB_STATEMENT_FAILED: the code and a fixed sentence, never the server message', async () => {
+    const thrown = driverError('select password_hash from x_users', {
+      code: '42P99',
+      message: 'column "password_hash" does not exist',
+    });
+    expect(stringField(thrown, 'code')).toBe('X_DB_STATEMENT_FAILED');
+    const content = await call(thrown);
+    expect(content).toBe(`X_DB_STATEMENT_FAILED: ${HIDDEN_TOOL_CAUSE}`);
+    expect(content).not.toContain('password_hash');
+    expect(content).not.toContain('psql');
+  });
+
+  test('an app code with no status is a 500 and hidden; declared public, it is shown', async () => {
+    const thrown = new UltimateError({
+      code: 'X_APP_UPSTREAM_DOWN',
+      cause: 'billing at 10.0.0.4 refused',
+      fix: 'curl http://10.0.0.4/health',
+    });
+    expect(await call(thrown)).toBe(`X_APP_UPSTREAM_DOWN: ${HIDDEN_TOOL_CAUSE}`);
+    registerErrorStatus({ X_APP_UPSTREAM_DOWN: 502 });
+    expect(await call(thrown)).not.toContain('10.0.0.4');
+    registerProblemMeta({ X_APP_UPSTREAM_DOWN: { publicCause: true } });
+    expect(await call(thrown)).toContain('billing at 10.0.0.4 refused');
+  });
+
+  test('a framework-public 5xx keeps its cause: the instruction is the point of it', async () => {
+    const thrown = new UltimateError({
+      code: 'X_DRAINING',
+      cause: 'this node is draining',
+      fix: 'retry',
+    });
+    expect(await call(thrown)).toBe('X_DRAINING: this node is draining (fix: retry)');
+  });
+
+  test('a hidden failure keeps the caller fix it declared, and only a branded one', async () => {
+    const declared = new UltimateError({
+      code: 'X_APP_UPSTREAM_DOWN',
+      cause: 'billing at 10.0.0.4 refused',
+      fix: 'curl http://10.0.0.4/health',
+      callerFix: 'retry in a minute',
+    });
+    expect(await call(declared)).toBe(
+      `X_APP_UPSTREAM_DOWN: ${HIDDEN_TOOL_CAUSE} (fix: retry in a minute)`,
+    );
+    const foreign = { code: 'X_APP_UPSTREAM_DOWN', cause: 'secret', callerFix: 'curl evil' };
+    expect(await call(foreign)).toBe(`X_APP_UPSTREAM_DOWN: ${HIDDEN_TOOL_CAUSE}`);
   });
 });
 

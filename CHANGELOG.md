@@ -14,7 +14,7 @@ Every breaking entry below has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `23.x → 24.0.0` section, in
 the same order. There is no legacy path, no codemod and no compatibility shim: a break is a build
 error or an `X_*` error that names the rewrite. Entries are grouped by package, lowest tier first;
-a later slice appends its group below the last one. `As of 2026-10` slices 01–09 and the first half of slice 10 have landed: `schema` and
+a later slice appends its group below the last one. `As of 2026-10` slices 01–10 have landed: `schema` and
 `core` with the gate's step deadline in `cli`; tier 1 — `i18n`, `time`, `db`, `flags`; then the
 rest of tier 1 — `money`, `cache`, `seo`, `storage` — with what they changed in `http`, `render`
 and `cli`; then slice 04, complete — tier 2's `entity`, `policy` and `http`. A browser-launcher
@@ -24,11 +24,13 @@ users has an operator step — the first `auth` entry under Changed.** Slice 06 
 `http`, `db` and `cli`. Slice 07 is `jobs`; no DDL changed. Slice 08 is
 `realtime`: **three operator steps — the first three `realtime` entries under Changed.** Slice 09 is
 complete: `render` and `pwa`, with what they changed in `http`; then `ui`, with the theme script it
-reads in `render` and the build-stats rule it moved in `cli`. Slice 10's first half is `http`'s
+reads in `render` and the build-stats rule it moved in `cli`. Slice 10 is complete: `http`'s
 failed-credential gate, then `mcp`, `mail`, `notify` and `manifest`, with what they changed in
 `schema` and `cli`: **an app that commits `x.manifest.json` runs `x manifest`, and one that
 commits `packages/db/schema/` runs `x db gen`, once** — the `manifest`, `contract-diff` and `drift`
-steps are red until it does.
+steps are red until it does. Then `ai`, with its status row in `http`: **a gateway's `actor` and
+`org` ceilings now count every `llm()`, `agent()` and `hive()` call — size them before the
+deploy.**
 
 ### Added
 
@@ -200,6 +202,15 @@ Tier 0 — schema. Tier 2 — http. Tier 4 — mcp, notify, manifest (slice 10).
   closed before `nowMs - retentionMs`. `SQL_NOTIFY_DIGESTS_TABLE` and `purgeNotifyDigests(nowMs)`
   — see Changed.
 - **manifest:** `X_MANIFEST_FACT_INVALID` (`ManifestFactInvalidError`) — see Changed.
+
+Tier 4 — ai (slice 10).
+
+- **ai:** `budgetKeysFor(actor)` → `BudgetKeys`: `actorKey` `actor:<kind>:<id>`, and `orgKey`
+  `org:<orgId>` when the actor has an org — the keys `llm()`, `agent()` and `hive()` count their
+  caller under. `gateway.scope()` takes the same type. `BudgetTake` (`taken`, `spent`) is what
+  `BudgetStore#take` answers — see Changed.
+- **ai:** `X_VECTOR_UNSCOPED` (`VectorUnscopedError`, 500) and `VectorScope.crossTenant`, the mark
+  `UNSCOPED` now carries — see Changed.
 
 Tier 5 — cli.
 
@@ -939,6 +950,72 @@ Tier 4 — manifest (slice 10).
   drop is `internal`; a default gained is `additive`. Restore the default, or bump the app's major
   in `package.json`.
 
+Tier 4 — ai. Tier 2 — http (slice 10).
+
+- **BREAKING — `BudgetStore` gains a required `take(key, tokens, limit)`.** It adds `tokens` to
+  `key` only when the total stays at or under `limit`, in one atomic step on the store's side, and
+  answers `{ taken, spent }` with `spent` read before the take; any other answer is `X_INVARIANT`
+  at the reservation. A hand-written store is TS2741 — the README's Redis `EVAL` is one; never build
+  it from `spent` then `add`, which is the race. The root ledger's turnstile is gone: `reserve`
+  debits the in-memory `request` scopes with no `await` between check and debit, then `take`s each
+  store scope, and gives back what it took when a later scope refuses. The turnstile ordered one
+  root ledger, and every request roots its own: with `org: 1500`, eight concurrent 1,000-token
+  calls, each under its own `gateway.scope()`, all reached the provider; one does now.
+- **BREAKING — `Gateway#callLedger(keys: BudgetKeys)` is required.** It was optional and took no
+  argument; without it `llm()` and `agent()` rooted in an empty ledger, under no gateway ceiling. A
+  hand-written or wrapping gateway is TS2741, a `callLedger()` call TS2554: forward `keys` to the
+  wrapped gateway's `callLedger`.
+- **BREAKING — a gateway's `actor` and `org` ceilings count every `llm()`, `agent()` and `hive()`
+  call.** With no `scope()` open each roots its ledger in
+  `gateway.callLedger(budgetKeysFor(ctx.actor))` — the caller's `actor:<kind>:<id>` and
+  `org:<orgId>`. `callLedger` passed no keys, so those ceilings bound only a hand-written
+  `gateway.scope()`; `hive()` rooted on an empty ledger and dropped every gateway ceiling,
+  `request` included, for its members. An app whose `createGateway({ budget })` declares `actor` or
+  `org` sees `X_AI_BUDGET_EXCEEDED` where the call ran. Every anonymous caller is one actor, so one
+  counter. A `scope()` keyed another way (`{ actorKey: actor.id }`) counts on a different key from
+  an unscoped call of the same actor: pass `budgetKeysFor(actor)`. Raise the ceiling, or drop
+  `actor` / `org` from `budget`.
+- **BREAKING — `agent()` hides a 5xx cause from the model.** A tool that throws a code whose status
+  (`@ultimat3/http`'s `statusFor`) is 5xx, and which core's `hasPublicCause` does not list, reads
+  back as `CODE: ` and a fixed sentence pointing at the server logs, plus `(fix: <callerFix>)` when
+  the throw is an `UltimateError` that declares one. The cause and the developer `fix:` both went to
+  the model's provider — `X_DB_STATEMENT_FAILED` with the server's message and statement. The rule
+  a production problem document and a caller-audience MCP server follow. An app code with no
+  `registerErrorStatus` row is 500, so it is hidden too: give a refusal the model should react to a
+  4xx — `registerErrorStatus({ X_ORDER_LOCKED: 409 })` — or
+  `registerProblemMeta({ X_ORDER_LOCKED: { publicCause: true } })`.
+- **BREAKING — `fnv1a` is no longer exported.** TS2305. Use core's `fingerprint(value)`; for a
+  32-bit number, `Number.parseInt(fingerprint(text).slice(0, 8), 16)`, as `HashEmbedder` now does.
+- **BREAKING — `HashEmbedder` vectors change.** A token's slot and sign come from core's
+  `fingerprint`; FNV-1a/32 collides on ordinary words (`costarring` / `liquid`), which landed on one
+  slot with one sign. A store indexed through it — `x dev` data, a seeded database, a fixture —
+  holds vectors a query no longer produces, and a test pinning a ranking or a vector changes.
+  Re-run `indexDocument` over each document; update the snapshot.
+- **BREAKING — an OpenAI-format `finish_reason` this build does not know reads `max_tokens`.** It
+  read `end_turn` non-streamed and as no finish at all streamed; the Anthropic format already read
+  an unknown `stop_reason` as `max_tokens`. An answer that also fails its schema is
+  `X_LLM_TRUNCATED` from `llm()` and `agent()`, with no repair turn; `.stream()` throws
+  `X_LLM_TRUNCATED`. A `null` on a streamed delta is still "not finished". A fake provider or
+  recorded fixture that emits an invented reason emits `stop`.
+- **BREAKING — a vector read with no tenant bound, inside a request acting for an org, is
+  `X_VECTOR_UNSCOPED` (500).** `search`, `searchText` and `hybrid`, on `MemoryVectorStore` and
+  `PgVectorStore`, when the ambient actor has an `orgId`. A store opened with no `scope`, or with an
+  `allow` list alone, searched every tenant's rows. Outside a context, or for an actor with no org,
+  nothing changes. Bind the tenant — `store.scoped({ tenant: ctx.actor.orgId })` — or, for a
+  deliberate cross-tenant read, open the store with `scope: UNSCOPED` or call `.scoped(UNSCOPED)`.
+  `UNSCOPED` is `{ crossTenant: true }`, was `{}`. **http:** `X_VECTOR_UNSCOPED` is 500 in
+  `TIER_4_ERROR_STATUS`.
+- **BREAKING — `VectorStore#prune(filter, keep)` is required.** A hand-written store is TS2741:
+  delete every in-scope row `filter` matches except the ids in `keep`. `indexDocument` called it
+  only when present, so re-indexing a shorter document left the old tail retrievable.
+- **BREAKING — `chunk()` writes `metadata.source` as the document id, over a `source` the caller
+  passed.** The caller's won, and `indexDocument` prunes by `source`, so a re-index pruned another
+  document's rows, or none. Store your own value under another key.
+- **BREAKING — `numericTolerance(t)` refuses a `NaN`, infinite or negative `t`.** `X_INVARIANT`
+  where it is called — an eval file's import. `NaN` scored every answer `NaN`, a negative `t` every
+  answer 0, `Infinity` every answer 1. `0` is exact match — see Fixed.
+- **ai:** `@ultimat3/ai` depends on `@ultimat3/http` (tier 2), for `statusFor`; an install pulls it.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -1350,6 +1427,31 @@ Tier 4 — mcp, mail, notify (slice 10).
   failed `X_STEP_DUPLICATE` at the second delivery: every later recipient went un-notified and
   every retry stopped at the same place. A checkpoint written before this release is repaired on
   replay.
+
+Tier 4 — ai (slice 10).
+
+- **ai:** a non-object `output` (`t.string`, `t.number`, an array) works in `llm()` and `agent()`.
+  It went into `respond` as its own schema — `{"type":"string"}`, a tool input no model can call —
+  and failed `X_LLM_OUTPUT_INVALID`. It travels as `{ value }` and is unwrapped on return; a prose
+  answer that does not parse as JSON is taken as the raw text, as `.stream()` already took it.
+- **ai:** the prose reader finds a fenced block with two `indexOf` scans. The regex was quadratic
+  on an unterminated fence in model output.
+- **ai:** the gateway's response-cache key is core's `fingerprint` over the request with each tool
+  whole. It held tool names only, and every `llm()` tool is `respond`, so an answer shaped for an
+  old `output` schema was served after the schema changed. A `cache.set` that throws is logged
+  `ai.cache.write_failed` and the paid answer returned; it failed the call.
+- **ai:** `estimateTokens` caps the completion at the model's `maxOutput`, as `estimateCost`
+  already did: a `maxTokens` above it over-reserved and could refuse a call that fitted.
+- **ai:** a provider failure body is read to 4 KiB on the Anthropic, OpenAI-format and embedding
+  transports, through one reader; 300 characters are shown. The generation transports read it
+  whole, so an endless 5xx body held the call. `RemoteEmbedder` scrubs its key from a failure and a
+  timeout detail, as the generation transports did.
+- **ai:** `numericTolerance(0)` scores an exact match 1; it scored 0.
+- **ai:** an eval's regression check rounds both sides and the drop to the baseline's 3 decimals: a
+  raw `2/3` fell below its own recorded `0.667` at `tolerance: 0`, and a drop of exactly the
+  tolerance read as past it.
+- **ai:** `chunk()`'s carried overlap yields, oldest unit first, to a next unit it does not fit
+  beside, so no chunk exceeds `size`.
 
 ## 23.0.0 - 2026-10-02
 

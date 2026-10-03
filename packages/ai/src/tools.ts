@@ -20,7 +20,8 @@
 import type { AnyAction } from '@ultimat3/action';
 import { actionName, invoke, isAction } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
-import { isMcpExposed, stringField } from '@ultimat3/core';
+import { hasPublicCause, isMcpExposed, isUltimateError, stringField } from '@ultimat3/core';
+import { statusFor } from '@ultimat3/http';
 import { toMcpInputSchema } from '@ultimat3/schema';
 
 /** The JSON Schema subset the framework emits for tool arguments. */
@@ -198,14 +199,32 @@ function resultOf(toolUseId: string, output: unknown): LlmToolResult {
 }
 
 /**
+ * What the model reads in place of a cause it may not see. Fixed, so nothing of the throw rides on
+ * it: the provider keeps every request it is sent, and a cause that reached it cannot be recalled.
+ */
+export const HIDDEN_TOOL_CAUSE =
+  'the tool failed inside the server; the details are withheld from this conversation and are in the server logs';
+
+/**
  * The thrown value, read STRUCTURALLY and totally. `stringField` from `@ultimat3/core`, never
  * `typeof e.code === 'string'`: the value is whatever an app's handler, its driver or its SDK
  * threw, so each read is a getter call or a `Proxy` trap — and it runs inside the catch block
  * that has nothing left to answer the model with if the probe itself raises.
+ *
+ * A 5xx code's cause is shown only when core's `hasPublicCause` allows it — the rule a production
+ * problem document follows (`@ultimat3/http`'s `toProblem`). Hidden, the developer's `fix` goes with
+ * it (a driver writes it from the statement it failed on); a `callerFix` an `UltimateError` built in
+ * this process is authored for a remote reader and stays.
  */
 function describeFailure(error: unknown): string {
   const code = stringField(error, 'code');
   if (code === undefined) return 'tool failed';
+  if (statusFor(code) >= 500 && !hasPublicCause(code)) {
+    const callerFix = isUltimateError(error) ? stringField(error, 'callerFix') : undefined;
+    return callerFix === undefined
+      ? `${code}: ${HIDDEN_TOOL_CAUSE}`
+      : `${code}: ${HIDDEN_TOOL_CAUSE} (fix: ${callerFix})`;
+  }
   const cause = stringField(error, 'cause') ?? 'unknown';
   const fix = stringField(error, 'fix') ?? '';
   return fix === '' ? `${code}: ${cause}` : `${code}: ${cause} (fix: ${fix})`;

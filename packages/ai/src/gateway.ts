@@ -7,14 +7,16 @@
 import type { Random } from '@ultimat3/core';
 import {
   backoffDelay,
+  fingerprint,
   finiteCount,
   isRetryableStatus,
   isUltimateError,
+  logger,
   renderThrowable,
   stringField,
 } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import type { BudgetLimits, BudgetStore } from './budget';
+import type { BudgetKeys, BudgetLimits, BudgetStore } from './budget';
 import { BudgetLedger, currentBudget, estimateSpend, withBudget } from './budget';
 import { AiProviderUnavailableError } from './errors';
 import type { ModelId } from './models';
@@ -78,10 +80,11 @@ export interface Gateway {
   spent(): Promise<Money>;
   /**
    * A ledger over this gateway's own `budget`, for a call made with no `scope()` open — which is
-   * every call `llm()` and `agent()` make. Optional so a hand-written gateway still satisfies the
-   * interface; absent, such a call runs under the ceilings its own declaration sets and no others.
+   * every call `llm()`, `agent()` and `hive()` make, each passing `budgetKeysFor(ctx.actor)` so the
+   * `actor` and `org` ceilings count the caller. Required: a gateway without it ran every such call
+   * under no gateway ceiling at all.
    */
-  callLedger?(): BudgetLedger;
+  callLedger(keys: BudgetKeys): BudgetLedger;
 }
 
 export function createGateway(input: CreateGatewayInput): Gateway {
@@ -114,23 +117,19 @@ class GatewayImpl implements Gateway {
   /**
    * `budget` held with no scope open. It was enforced ONLY inside `scope()`, which nothing in the
    * framework calls — so `createGateway({ budget: { request: 100 } })` capped no call any app made.
-   * No actor or org key here: those scopes need `scope()` to name whose window they are.
+   * A raw `generate` / `stream` outside any scope passes no keys: it has no caller to count.
    */
-  callLedger(): BudgetLedger {
+  callLedger(keys: BudgetKeys): BudgetLedger {
     return new BudgetLedger({
       limits: this.config.budget ?? {},
+      ...(keys.actorKey !== undefined ? { actorKey: keys.actorKey } : {}),
+      ...(keys.orgKey !== undefined ? { orgKey: keys.orgKey } : {}),
       ...(this.config.budgetStore !== undefined ? { store: this.config.budgetStore } : {}),
     });
   }
 
-  scope<T>(input: { actorKey?: string; orgKey?: string }, fn: () => Promise<T>): Promise<T> {
-    const ledger = new BudgetLedger({
-      limits: this.config.budget ?? {},
-      ...(input.actorKey !== undefined ? { actorKey: input.actorKey } : {}),
-      ...(input.orgKey !== undefined ? { orgKey: input.orgKey } : {}),
-      ...(this.config.budgetStore !== undefined ? { store: this.config.budgetStore } : {}),
-    });
-    return withBudget(ledger, fn);
+  scope<T>(input: BudgetKeys, fn: () => Promise<T>): Promise<T> {
+    return withBudget(this.callLedger(input), fn);
   }
 
   async spent(): Promise<Money> {
@@ -153,7 +152,7 @@ class GatewayImpl implements Gateway {
     // Reserve against the ESTIMATE before spending anything — tokens AND money, since a
     // cheap-in-tokens call on an expensive model is still a cost cap the app declared.
     // `record` below replaces the estimate with the provider's real counts.
-    const ledger = currentBudget() ?? this.callLedger();
+    const ledger = currentBudget() ?? this.callLedger({});
     // The estimate is DEBITED here, not merely checked: three concurrent calls under one ledger
     // all read the same `spent()` otherwise, all pass, and all three record against a ceiling
     // only one of them fitted.
@@ -170,10 +169,20 @@ class GatewayImpl implements Gateway {
     await ledger?.record(result.usage, result.cost, reservation);
     // A refusal is not an answer, so it is not cached. Storing one would keep serving a decision
     // the classifier might not make twice, long after the prompt that provoked it was fixed.
-    if (result.stopReason !== 'refusal') {
-      await this.config.cache?.set(cacheKey, JSON.stringify(result));
-    }
+    if (result.stopReason !== 'refusal') await this.remember(cacheKey, result);
     return result;
+  }
+
+  /**
+   * The cache write, AFTER the call was paid for and recorded. A throw here must not turn that
+   * answer into a failure: the caller would retry and pay for it twice. Logged, and the answer kept.
+   */
+  private async remember(cacheKey: string, result: GenerateResult): Promise<void> {
+    try {
+      await this.config.cache?.set(cacheKey, JSON.stringify(result));
+    } catch (error) {
+      logger.warn('ai.cache.write_failed', { cacheKey, error: renderThrowable(error) });
+    }
   }
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
@@ -196,7 +205,7 @@ class GatewayImpl implements Gateway {
     // `generate`, or reconnects itself and knows what it has already shown.
     const provider = this.providerFor(model);
 
-    const ledger = currentBudget() ?? this.callLedger();
+    const ledger = currentBudget() ?? this.callLedger({});
     const reservation = await ledger?.reserve(estimateSpend(resolved));
     let settled = false;
     try {
@@ -368,17 +377,20 @@ export function isRetryable(error: unknown): boolean {
 
 /**
  * Cache key. Every field that changes the answer is in it — a key that ignores `effort` or
- * `system` would serve one prompt's answer for another.
+ * `system` would serve one prompt's answer for another — and each tool WHOLE: every `llm()` tool
+ * is named `respond`, so a key over names alone served an answer shaped for an old `output` schema
+ * after the schema changed. Core's `fingerprint`, so key order never splits one request in two and
+ * the width is the one every other sharing key in the framework has.
  */
 export function cacheKeyFor(request: GenerateRequest): string {
-  return JSON.stringify({
+  return fingerprint({
     model: request.model,
     system: request.system ?? '',
     messages: request.messages,
     maxTokens: request.maxTokens,
     effort: request.effort ?? 'high',
     thinking: request.thinking ?? 'adaptive',
-    tools: request.tools?.map((t) => t.name) ?? [],
+    tools: request.tools ?? [],
     stop: request.stopSequences ?? [],
   });
 }

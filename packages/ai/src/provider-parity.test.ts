@@ -17,6 +17,7 @@ import { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
 import { openAiProvider } from './openai-provider';
 import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
 import { AnthropicProvider, parseMessage } from './provider';
+import { RemoteEmbedder } from './remote-embedder';
 import type { SseFrame } from './sse';
 import { MessageStream } from './wire';
 
@@ -123,6 +124,41 @@ describe('a refusal detail decides the stop reason', () => {
   });
 });
 
+describe('a stop reason this build has never seen', () => {
+  // One rule on every read path: FAIL CLOSED, as a cut-off answer. The OpenAI format read an
+  // unknown `finish_reason` as `end_turn` (non-streamed) or as no finish at all (streamed) while
+  // the Anthropic format read it as `max_tokens` — the same new reason, a complete answer on one
+  // provider and a truncated one on the other.
+  test('is max_tokens on both formats, streamed and not', () => {
+    const anthropic = parseMessage(ANTHROPIC_MODEL, {
+      content: [],
+      stop_reason: 'stopped_for_a_new_reason',
+      usage: { input_tokens: 9, output_tokens: 0 },
+    });
+    const stream = new MessageStream();
+    stream.push(
+      frame({ type: 'message_delta', delta: { stop_reason: 'stopped_for_a_new_reason' } }),
+    );
+    const openai = parseChatCompletion(
+      { choices: [{ message: { content: 'x' }, finish_reason: 'stopped_for_a_new_reason' }] },
+      'openai',
+    );
+    const completion = new ChatCompletionStream('openai');
+    completion.push(frame({ choices: [{ delta: {}, finish_reason: 'stopped_for_a_new_reason' }] }));
+
+    expect(anthropic.stopReason).toBe('max_tokens');
+    expect(stream.state().stopReason).toBe('max_tokens');
+    expect(openai.stopReason).toBe('max_tokens');
+    expect(completion.state().stopReason).toBe('max_tokens');
+  });
+
+  test('a null finish_reason on a streamed delta is still "not finished"', () => {
+    const completion = new ChatCompletionStream('openai');
+    completion.push(frame({ choices: [{ delta: { content: 'hi' }, finish_reason: null }] }));
+    expect(completion.isComplete()).toBe(false);
+  });
+});
+
 describe('a tool call carries an object or nothing', () => {
   test('arguments that are not an object become {} on every read path', () => {
     // `LlmToolCall.input` is `Record<string, unknown>` and `runLlmToolCall` indexes it, so a
@@ -175,7 +211,7 @@ describe('a tool call carries an object or nothing', () => {
 });
 
 describe('the credential never reaches an error', () => {
-  test('a 4xx body echoing the key is scrubbed on both providers', async () => {
+  test('a 4xx body echoing the key is scrubbed on every transport, the embedder included', async () => {
     // A proxy that echoes the request headers into its own 400 body is the one path by which a
     // key reaches an error — and an error reaches a log index, a span and a problem document.
     const echoed = (header: string): Response =>
@@ -193,9 +229,16 @@ describe('the credential never reaches an error', () => {
       models: [...OPENAI_MODEL_IDS],
       fetch: fakeFetch(() => echoed(`authorization: Bearer ${KEY}`)),
     });
+    const embedder = new RemoteEmbedder({
+      name: 'voyage-3',
+      dimension: 2,
+      apiKey: KEY,
+      fetch: fakeFetch(() => echoed(`authorization: Bearer ${KEY}`)),
+    });
 
     const failures = await Promise.all(
       [
+        embedder.embed(['hi']),
         anthropic.generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16 }),
         openai.generate({
           model: OPENAI_MODEL,
@@ -288,5 +331,46 @@ describe("the caller's abort signal reaches the socket", () => {
       .generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16 })
       .catch(() => undefined);
     expect(init !== undefined && 'signal' in init).toBe(false);
+  });
+});
+
+describe('a failure body is read only as far as the detail needs', () => {
+  // `response.text()` read an error body WHOLE on the generation transports, the hole the
+  // embedder's own bounded reader had already closed: an endless 5xx body held the call forever.
+  test('an endless 503 body ends in a coded failure on both providers', async () => {
+    let pulled = 0;
+    const endless = (): Response =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            pulled += 1;
+            controller.enqueue(new TextEncoder().encode('x'.repeat(1024)));
+          },
+        }),
+        { status: 503 },
+      );
+    const anthropic = new AnthropicProvider({ apiKey: KEY, fetch: fakeFetch(endless) });
+    const openai = openAiProvider({
+      apiKey: secret(KEY, 'OPENAI_API_KEY'),
+      models: [...OPENAI_MODEL_IDS],
+      fetch: fakeFetch(endless),
+    });
+    for (const call of [
+      () => anthropic.generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16 }),
+      () =>
+        openai.generate({
+          model: OPENAI_MODEL,
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 16,
+        }),
+    ]) {
+      pulled = 0;
+      const failure = await call().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(transportError(failure).status).toBe(503);
+      expect(pulled).toBeLessThan(10);
+    }
   });
 });

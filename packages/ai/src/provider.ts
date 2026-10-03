@@ -463,13 +463,16 @@ function lastUserMessage(messages: readonly AiMessage[]): string {
 }
 
 /**
- * ~4 characters per token. Deliberately an ESTIMATE and never used for billing — the
- * gateway's pre-flight budget check needs a number before the call exists, and the real
- * count from `usage` replaces it afterwards.
+ * ~4 characters per token. Deliberately an ESTIMATE and never used for billing — the gateway's
+ * pre-flight budget check needs a number before the call exists, and `usage` replaces it after.
+ * The completion is clamped to what the model can write, exactly as `estimateCost` clamps it.
  */
 export function estimateTokens(request: GenerateRequest): number {
-  return estimateInputTokens(request) + request.maxTokens;
+  return estimateInputTokens(request) + completionCeiling(request);
 }
+
+const completionCeiling = (request: GenerateRequest): number =>
+  Math.min(request.maxTokens, modelSpec(request.model ?? DEFAULT_MODEL).maxOutput);
 
 /** The prompt half alone — what the provider bills at the input rate. */
 export function estimateInputTokens(request: GenerateRequest): number {
@@ -483,10 +486,9 @@ export function estimateInputTokens(request: GenerateRequest): number {
  * optimistic estimate is a ceiling one long completion walks through.
  */
 export function estimateCost(request: GenerateRequest): Money {
-  const model = request.model ?? DEFAULT_MODEL;
-  return costOf(model, {
+  return costOf(request.model ?? DEFAULT_MODEL, {
     inputTokens: estimateInputTokens(request),
-    outputTokens: Math.min(request.maxTokens, modelSpec(model).maxOutput),
+    outputTokens: completionCeiling(request),
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
   });

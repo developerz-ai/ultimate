@@ -4,7 +4,7 @@ The LLM gateway primitive. Every model call in an Ultimate app goes through it, 
 and cost accounting cannot be bypassed by a stray `fetch`.
 
 ```ts
-import { createGateway, AnthropicProvider, EchoProvider } from '@ultimat3/ai';
+import { budgetKeysFor, createGateway, AnthropicProvider, EchoProvider } from '@ultimat3/ai';
 
 export const ai = createGateway({
   providers: [new AnthropicProvider(), new EchoProvider()],   // ANTHROPIC_API_KEY, or { apiKey }
@@ -12,8 +12,9 @@ export const ai = createGateway({
   cache: memoCache,
 });
 
-// Budgets are scoped, and every nested call inside the scope shares one ledger.
-const answer = await ai.scope({ actorKey: actor.id, orgKey: actor.orgId }, async () => {
+// Budgets are scoped, and every nested call inside the scope shares one ledger. `llm()`, `agent()`
+// and `hive()` open one keyed on their caller (`budgetKeysFor(ctx.actor)`) without being asked.
+const answer = await ai.scope(budgetKeysFor(actor), async () => {
   const { text } = await ai.generate({
     model: 'claude-opus-5',
     system: 'You summarise support tickets.',
@@ -27,8 +28,8 @@ const answer = await ai.scope({ actorKey: actor.id, orgKey: actor.orgId }, async
 
 ## Budgets — and which of the three is fleet-wide
 
-`request` is one call chain. `actor` and `orgs` are counters across calls, so where they live
-decides what they mean:
+`request` is one call chain. `actor` and `org` are counters across calls, keyed
+`actor:<kind>:<id>` and `org:<orgId>` (`budgetKeysFor`), so where they live decides what they mean:
 
 | `budgetStore` | `actor` / `org` counts | Right for |
 |---|---|---|
@@ -40,14 +41,24 @@ import { AnthropicProvider, type BudgetStore, createGateway } from '@ultimat3/ai
 
 declare const redis: {
   incrby(key: string, by: number): Promise<number>;
+  eval(script: string, keys: readonly string[], args: readonly string[]): Promise<number>;
   del(key: string): Promise<unknown>;
   flushdb(): Promise<unknown>;
 };
+
+// Add only if the total stays within the limit, in ONE step on the server; answers what was spent before.
+const TAKE = `local s = tonumber(redis.call('get', KEYS[1]) or '0')
+if s + tonumber(ARGV[1]) > tonumber(ARGV[2]) then return -1 - s end
+redis.call('incrby', KEYS[1], ARGV[1]) return s`;
 
 const sharedBudget: BudgetStore = {
   spent: (key) => redis.incrby(key, 0),
   add: async (key, tokens) => {
     await redis.incrby(key, tokens);
+  },
+  take: async (key, tokens, limit) => {
+    const answer = await redis.eval(TAKE, [key], [String(tokens), String(limit)]);
+    return answer < 0 ? { taken: false, spent: -1 - answer } : { taken: true, spent: answer };
   },
   reset: async (key) => {
     await (key === undefined ? redis.flushdb() : redis.del(key));
@@ -61,8 +72,14 @@ export const sharedGateway = createGateway({
 });
 ```
 
-Three methods, and `add` takes a **negative** `tokens` — releasing a reservation the call never
-spent is a credit, so a store that clamps at zero leaks the ceiling. `org: 20_000_000` on the
+The store is touched only for a scope whose ceiling is **declared** — no `actor` / `org` in
+`budget`, no counter and no write, however many callers. There is no window: a counter lives until
+`reset()` or (on the default store) a restart, and is never evicted, because forgetting a counter
+hands that caller its ceiling back. A per-day or per-month window is a shared store whose keys expire.
+
+Four methods. `take` is the reservation and must be **atomic** — a `spent` then an `add` is the
+read-then-write two concurrent requests both pass. `add` takes a **negative** `tokens` — releasing a
+reservation the call never spent is a credit, so a store that clamps at zero leaks the ceiling. `org: 20_000_000` on the
 default store at `replicas: 6` is six ledgers of twenty million, which is a budget that is not one.
 
 ## Rules the gateway enforces
@@ -82,7 +99,8 @@ default store at `replicas: 6` is six ledgers of twenty million, which is a budg
 | A local refusal is never collected into `X_AI_PROVIDER_UNAVAILABLE` | `X_AI_KEY_MISSING` and `X_AI_REQUEST_INVALID` are raised before the request leaves; retrying them across providers burns attempts on the same answer and discards the runnable `fix:`. `generate()` and `stream()` therefore answer the same misconfiguration the same way |
 | Fallback is across **providers serving one model**, never across models | a silent model swap changes what answered, what it cost and which eval baseline the answer belongs to; the gateway stamps `result.provider`, and `llm()` puts it on the span as `llm.provider`, so the fallback that does exist is never silent |
 | The repair turn replays the tool call's arguments, never an empty `text` | an answer through the `respond` tool leaves `text` empty, and an empty text block is a 400 — the repair came back as `X_AI_PROVIDER_UNAVAILABLE` |
-| `reserve()` **debits** the estimate and takes a turn | three concurrent calls otherwise read the same `spent()`, all pass, and all three record against a ceiling only one of them fitted; `record` reconciles and `release` gives it back |
+| `reserve()` **debits, then checks** | the in-memory scopes check and debit with no `await` between, the store's through its atomic `take`; a read-then-write let concurrent calls — one request per scope racing one org key — all read the same `spent()` and all pass. `record` reconciles and `release` gives it back |
+| The cache key is every tool **whole**, through core's `fingerprint` | every `llm()` tool is named `respond`, so a key over names served an answer shaped for an old `output` schema; a cache `set` that throws is logged, never turned into a failure of a call already paid for |
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
 | Retries use **full jitter**, from core's one curve | synchronised retries from N workers reproduce the rate limit. `backoffMs` is `@ultimat3/core`'s `backoffDelay` with the gateway's field names mapped onto it, and the roll is `createGateway({ random })` — injectable, so the schedule is a unit test rather than a range |
 | A 4xx is never retried **except 408, 409 and 425** | the same body gets the same rejection and burns the budget — but a request the server stopped reading (408), a round a concurrent writer won (409) and a handshake that had not finished (425) are transient by construction, and core's `isRetryableStatus` is the one table that says so |
@@ -265,9 +283,9 @@ summarize.contract();    // the contract tests
 
 | Declared | Behaviour |
 |---|---|
-| `output` | projected into the one tool the model may answer through; prose with a fenced JSON block still parses |
+| `output` | projected into the one tool the model may answer through; a non-object `output` (`t.string`, `t.number`, an array) travels wrapped in `{ value }` and comes back unwrapped, because a tool's input must be an object; prose with a fenced JSON block still parses |
 | a schema failure | **one** repair turn naming the issues, then `X_LLM_OUTPUT_INVALID` |
-| `budget` | reserved against the worst case **before** the provider is reached — nothing spent, nothing truncated |
+| `budget` | reserved against the worst case **before** the provider is reached — nothing spent, nothing truncated. The gateway's `actor` / `org` ceilings count the CALLER (`budgetKeysFor(ctx.actor)`) |
 | `cache.semantic` | one store per scope, keyed by embedding; a prompt version bump reaches a different store, so the bump *is* the invalidation. `scope` receives `{ input, ctx }` and **defaults to the calling actor** — the narrowest key, `@ultimat3/query`'s `readAuthority` rule; a shared store is `scope: () => 'global'`, written down |
 | `policy` | the same object every surface evaluates — an MCP call and an HTTP call are denied identically |
 | `vars` | the declared place an `llm()` call loads data, so a reader can see what was sent — the redactor sees it (and every `agent()` tool result), and a `Secret` is refused here |
@@ -373,7 +391,7 @@ sub-agents** with no supervisor primitive anywhere.
 | three arms — `ok`, `failed`, `skipped` — never two | *ran and threw* and *never ran* are different facts, and an aborted sibling is the second. Collapsing them makes "the hive stopped early" read as "every remaining item is bad data" |
 | `onMemberError` is **required** | `'abort'` stops and leaves the rest `skipped`; `'collect'` harvests the rest. Both are right for somebody, so neither is a default |
 | the hive **never names an actor** | `split` derives member inputs from `input` and `ctx` and from nothing a model emitted; each member runs through its own callable, so `invoke` applies the member's own policy with `ctx.actor` untouched |
-| `concurrency` bounds the fan-out; one derived ledger bounds the spend | the ceiling holds under parallelism because the budget's root turnstile debits before the call, so three members against a ceiling only one fits leave exactly one `ok` — no hive-specific budget code exists |
+| `concurrency` bounds the fan-out; one derived ledger bounds the spend | rooted as `llm()` and `agent()` root theirs — the gateway's ceilings, keyed on the caller — and the reservation debits before it checks, so three members against a ceiling only one fits leave exactly one `ok` — no hive-specific budget code exists |
 | an empty split is `X_HIVE_EMPTY` | "0 ok, 0 failed" cannot be told apart from a query that returned no rows and nobody noticed |
 | `minMembers` (default 2) stops fanning out, and **drops nothing** | a member's fixed cost dominates trivial work; below the floor every input still runs, serially |
 | an aborted `ctx` unwinds the whole hive with `X_ABORTED` | distinct from `onMemberError: 'abort'`, which is a completed run with a partial harvest worth returning — here there is nobody left to hand it to |
@@ -609,13 +627,20 @@ Allow-lists are default deny: a row missing the key is invisible, and an empty l
 nothing. `scoped()` only ever **tightens** — re-scoping to a different tenant is
 `X_VECTOR_SCOPE_WIDENED`, never a silent widening.
 
+A store opened without a scope binds no tenant, and **reading it inside a request acting for an
+org is `X_VECTOR_UNSCOPED`** — the forgotten `.scoped()` that searched every tenant's rows. Outside a
+request, or for an actor with no org, it reads as before. The backfill path opts in by name:
+`new PgVectorStore({ name, dimension, scope: UNSCOPED })`, or `store.scoped(UNSCOPED)`.
+
 `chunk()` is token-aware with overlap and splits at paragraph, then sentence, then hard wrap
 — a fact split across a boundary with no overlap is retrievable by neither chunk. All three
 splits are load-bearing: the wrap is what bounds a UNIT (a base64 blob, a minified line, a CJK
 paragraph the sentence alphabet cannot see), and a unit larger than `size` is one the size check
 can never flush, so it rode every chunk after it — `As of 2026-08`, a ~1,000-token document
 indexed as nine chunks of the same sentence. The overlap carries a tail forward and never the
-whole buffer, for the same reason.
+whole buffer, for the same reason — and it yields, oldest unit first, to a next unit it does not fit
+beside: no chunk exceeds `size`. Every chunk's `metadata.source` is the document id, written over
+any `source` the caller passed, because `indexDocument` prunes a re-index by it.
 
 ## Tools: the same projection as MCP
 
@@ -628,6 +653,12 @@ const result = await runLlmToolCall(actions, call, actor);
 An in-app agent and an external MCP agent both end at the same `invoke` — `run` is the seam that
 carries it, and an action facade has no `.run` of its own. So they authorize identically. The
 actor comes from the request context, never from the model.
+
+A failed tool reads back as `CODE: cause (fix: …)` — except a 5xx code whose cause core's
+`hasPublicCause` does not declare public, which reads `CODE: ` plus a fixed sentence (and a
+`callerFix`, when the `UltimateError` declared one): the rule a production problem document follows,
+and the one `@ultimat3/mcp` applies. The model's provider keeps every request it is sent, so a
+database message in a tool result is a disclosure nothing can recall.
 
 ## Errors
 
@@ -654,6 +685,7 @@ fail-closed `terminal` default.
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
 | `X_VECTOR_DIM_MISMATCH` | a vector's length disagrees with the store |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave the tenant it was bound to |
+| `X_VECTOR_UNSCOPED` | a store with no tenant bound was read inside a request acting for an org; `scope: UNSCOPED` is the named opt-out |
 | `X_NOT_IMPLEMENTED` | a remote driver with no key or transport; the fix names the env var |
 
 ### Error classes
@@ -688,3 +720,4 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `LlmTruncatedError` | `X_LLM_TRUNCATED` | `src/errors.ts` |
 | `VectorDimMismatchError` | `X_VECTOR_DIM_MISMATCH` | `src/errors.ts` |
 | `VectorScopeWidenedError` | `X_VECTOR_SCOPE_WIDENED` | `src/errors.ts` |
+| `VectorUnscopedError` | `X_VECTOR_UNSCOPED` | `src/vector-scope.ts` |
