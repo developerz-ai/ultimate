@@ -152,3 +152,32 @@ describe('entity facts', () => {
     expect(diff(post()).changes.filter((c) => c.path.startsWith('entities.'))).toEqual([]);
   });
 });
+
+// `hasDefault` was read for an ADDED column only, so a NOT NULL column losing its default reported
+// nothing but `buildId` — while every writer that omitted the column started being refused.
+describe('a column default that moved', () => {
+  const between = (before: readonly Entity[], after: readonly Entity[]) =>
+    diffManifest(fixtureManifest({ entities: before }), fixtureManifest({ entities: after }))
+      .changes.filter((change) => change.path.endsWith('.hasDefault'))
+      .map(({ kind, path }) => ({ kind, path }));
+
+  test('dropped from a NOT NULL column is breaking', () => {
+    expect(between(withColumn('authorId', { hasDefault: true }), post())).toEqual([
+      { kind: 'breaking', path: 'entities.post.columns.authorId.hasDefault' },
+    ]);
+  });
+
+  test('dropped from a nullable column is reported, and refuses no writer', () => {
+    expect(between(withColumn('note', { hasDefault: true }), post())).toEqual([
+      { kind: 'internal', path: 'entities.post.columns.note.hasDefault' },
+    ]);
+  });
+
+  test('gained is additive, and an unmoved default reports nothing', () => {
+    expect(between(post(), withColumn('authorId', { hasDefault: true }))).toEqual([
+      { kind: 'additive', path: 'entities.post.columns.authorId.hasDefault' },
+    ]);
+    const kept = withColumn('authorId', { hasDefault: true });
+    expect(between(kept, kept)).toEqual([]);
+  });
+});

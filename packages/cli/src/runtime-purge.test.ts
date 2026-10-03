@@ -16,7 +16,7 @@ import {
   resetAuthLimiters,
 } from '@ultimat3/auth';
 import { createContext } from '@ultimat3/core';
-import type { PostgresRateLimitStore, RateLimitDecision } from '@ultimat3/http';
+import type { PostgresRateLimitStore, RateLimitDecision, RateLimitPeek } from '@ultimat3/http';
 import type { EventBus, PurgeReport } from '@ultimat3/jobs';
 import {
   createMemoryEventBus,
@@ -47,6 +47,7 @@ function stubStores(): RetentionStores & { readonly at: number[] } {
   const rateLimit: PostgresRateLimitStore = {
     scope: 'shared',
     take: (): Promise<RateLimitDecision> => Promise.reject(new TypeError('not used')),
+    peek: (): Promise<RateLimitPeek> => Promise.reject(new TypeError('not used')),
     reset: (): Promise<void> => Promise.resolve(),
     purgeExpired: (nowMs: number): Promise<number> => {
       at.push(nowMs);
@@ -136,9 +137,10 @@ describe('installRetentionSweep', () => {
       'x_auth',
       'x_notify_deliveries',
       'x_notify_inbox',
+      'x_notify_digests',
       'x_job_events',
     ]);
-    // The two notify targets answer 0 here: no boot in this test installed a Postgres notify
+    // The three notify targets answer 0 here: no boot in this test installed a Postgres notify
     // store, which is exactly the state of an app that never wired one.
     expect(report.removed).toBe(14);
     // `x_job_events` is the bus THIS boot built, swept through its own `purgeExpired`.
@@ -179,6 +181,7 @@ describe('installRetentionSweep', () => {
       'x_auth',
       'x_notify_deliveries',
       'x_notify_inbox',
+      'x_notify_digests',
       'x_job_events',
     ]);
   });

@@ -11,6 +11,7 @@ import {
   rateLimitScopeUnset,
   tenantBucketUnknown,
 } from './rate-limit-errors';
+import { type RateLimitPeek, rateLimitPeek, refilledTokens } from './rate-limit-peek';
 
 /**
  * Where a limiter's counters live. A store says which it provides; `RateLimitConfig` says which
@@ -36,6 +37,12 @@ export interface RateLimitStore {
   /** Declared, never inferred: a driver knows where its counters live; nothing else does. */
   readonly scope: RateLimitScope;
   take(key: string, bucket: Bucket, cost: number, nowMs: number): Promise<RateLimitDecision>;
+  /**
+   * What `key` holds NOW, refill applied — READ ONLY: no write, no row, no entry created. A key
+   * never taken is full. Required, because the `auth` stage asks it on every request to a required
+   * route, and a zero-cost `take` there was a Postgres upsert on every signed-in page.
+   */
+  peek(key: string, bucket: Bucket, nowMs: number): Promise<RateLimitPeek>;
   reset(key: string): Promise<void>;
 }
 
@@ -298,6 +305,14 @@ export const memoryRateLimitStore = (
       if (buckets.size > maxKeys || nowMs - lastSweepMs >= SWEEP_EVERY_MS) sweep(nowMs);
       return Promise.resolve(decision);
     },
+    peek(key, bucket, nowMs) {
+      const state = buckets.get(key);
+      const tokens =
+        state === undefined
+          ? bucket.capacity
+          : refilledTokens(bucket, state.tokens, state.lastMs, nowMs);
+      return Promise.resolve(rateLimitPeek(bucket, tokens));
+    },
     reset(key) {
       buckets.delete(key);
       return Promise.resolve();
@@ -377,6 +392,8 @@ export interface RateLimiter {
    */
   readonly buckets?: Readonly<Record<string, Bucket>> | undefined;
   check(key: string, bucketName: string, cost?: number): Promise<RateLimitDecision>;
+  /** The store's read-only `peek`, against the named bucket. Spends nothing, writes nothing. */
+  peek(key: string, bucketName: string): Promise<RateLimitPeek>;
   headers(decision: RateLimitDecision): Record<string, string>;
   /** Throws `X_RATE_LIMITED` when the bucket is empty. */
   assert(key: string, bucketName: string, cost?: number): Promise<RateLimitDecision>;
@@ -420,6 +437,7 @@ export const createRateLimiter = (options: {
     // no other way to learn what this limiter can enforce.
     buckets: options.config.buckets,
     check,
+    peek: (key, bucketName) => store.peek(key, bucketFor(bucketName), now()),
     headers: (decision) => ({
       'ratelimit-limit': String(decision.limit),
       'ratelimit-remaining': String(decision.remaining),

@@ -387,3 +387,16 @@ describe('the dialect is a closed vocabulary, read with Object.hasOwn', () => {
     expect(toMcpInputSchema(t.string)['$schema']).toBeUndefined();
   });
 });
+
+describe('a flagged pattern', () => {
+  test('publishes its flags beside the source, and an unflagged one publishes none', () => {
+    const flagged = toJsonSchema(t.string.pattern(/^[a-z]+$/iu));
+    expect(flagged.pattern).toBe('^[a-z]+$');
+    expect(flagged['x-ultimate-pattern-flags']).toBe('iu');
+    // The prose copy stays for a reader that sees only `description`.
+    expect(flagged.description).toContain('"iu"');
+    expect(Object.hasOwn(toJsonSchema(t.string.pattern(/^a$/)), 'x-ultimate-pattern-flags')).toBe(
+      false,
+    );
+  });
+});

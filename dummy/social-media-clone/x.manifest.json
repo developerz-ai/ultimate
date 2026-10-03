@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "c2ded0400fd39b83",
+  "buildId": "6d94dd70227e409f",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -1616,6 +1616,20 @@
   "queries": [
     {
       "name": "inbox",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "notification:read",
       "permissions": [
         "notification:read"
@@ -1625,6 +1639,20 @@
     },
     {
       "name": "liveThread",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "conversationId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "message:read",
       "permissions": [
         "message:read"
@@ -2547,7 +2575,14 @@
             "type": "array",
             "items": {
               "type": "string",
-              "format": "email"
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
             }
           },
           "subject": {
@@ -2572,20 +2607,41 @@
           },
           "replyTo": {
             "type": "string",
-            "format": "email"
+            "minLength": 1,
+            "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+            "x-ultimate-refinements": [
+              {
+                "name": "mail-address",
+                "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+              }
+            ]
           },
           "cc": {
             "type": "array",
             "items": {
               "type": "string",
-              "format": "email"
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
             }
           },
           "bcc": {
             "type": "array",
             "items": {
               "type": "string",
-              "format": "email"
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
             }
           },
           "unsubscribeUrl": {

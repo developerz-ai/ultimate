@@ -182,6 +182,7 @@ export { assertMcpSurfaceBudget, measureMcpSurface } from './surface-budget';
 export type {
   McpHttpTransportInput,
   McpProtectedResource,
+  McpRateLimits,
   McpRequestOrigin,
   McpRouteDescriptor,
   ResolvedToken,
@@ -189,6 +190,7 @@ export type {
 export {
   DEFAULT_MCP_BODY_LIMIT_BYTES,
   MCP_RATE_LIMITS,
+  MCP_UNAUTHENTICATED_LIMIT,
   mcpHttpRoute,
 } from './transport-http';
 export type { StdioTransportInput } from './transport-stdio';

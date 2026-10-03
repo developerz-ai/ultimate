@@ -173,7 +173,11 @@ export interface ActionFact {
 
 export interface QueryFact {
   readonly name: string;
-  /** Optional: `QueryDescriptor` is schema-erased, so a live query may not expose one. */
+  /**
+   * The input's JSON Schema, projected from the query handle as an action's is. Optional only for
+   * a manifest committed before queries published it; `diffQueries` reads an absent side as no
+   * evidence rather than as a changed schema.
+   */
   readonly input?: JsonValue;
   /** The policy's DISPLAY label — see `ActionFact.policy`, and read `permissions` to match on. */
   readonly policy: string | null;

@@ -4,7 +4,7 @@
 // thing only — the RFC 5322 display form down to the mailbox `RCPT TO:` can carry, always after
 // the control-character check, never before it.
 
-import { addressInvalid, type EnvelopeAddressField } from './errors';
+import { type AddressRefusal, addressInvalid, type EnvelopeAddressField } from './errors';
 import { addressSpec, hasNonAsciiAddrSpec } from './mime';
 
 /**
@@ -39,29 +39,49 @@ function hasControlCharacter(address: string): boolean {
   return false;
 }
 
+/** What `isUnsafe` and the mailbox check say of a bare addr-spec — the half both gates share. */
+function specRefusal(spec: string): AddressRefusal | undefined {
+  if (isUnsafe(spec)) return 'injection';
+  // Two reasons, checked in this order: an injection is the dangerous one and an address carrying
+  // both should say so. The addr-spec, never the phrase — `mime.ts` has an RFC 2047 encoding for a
+  // display name and none for a mailbox.
+  return hasNonAsciiAddrSpec(spec) ? 'non-ascii' : undefined;
+}
+
 /** Throws `X_MAIL_ADDRESS_INVALID` before a single byte of the envelope is written. */
 export function assertEnvelopeAddress(field: EnvelopeAddressField, address: string): void {
-  if (isUnsafe(address)) throw addressInvalid(field, 'injection');
-  // Two reasons, two `meta.reason`s, checked in this order: an injection is the dangerous one and
-  // an address carrying both should say so. The addr-spec, never the phrase — `mime.ts` has an
-  // RFC 2047 encoding for a display name and none for a mailbox.
-  if (hasNonAsciiAddrSpec(address)) throw addressInvalid(field, 'non-ascii');
+  const refusal = specRefusal(address);
+  if (refusal !== undefined) throw addressInvalid(field, refusal);
 }
 
 /**
- * The addr-spec an envelope command may carry, from whatever form the caller wrote. `Jane Doe
- * <jane@x.test>` is the ordinary RFC 5322 display form — the `To:` header carries it verbatim and
- * the resend, memory and log drivers all accept it — but `RCPT TO:` takes a mailbox, so it is
- * stripped here and the gate above runs on what is left.
+ * Why `address` cannot be a recipient, or `undefined` when it can — `envelopeAddress`'s rule without
+ * the throw, so the queue schema (`job.ts`) and `renderMessage` (`mail.ts`) ask the SAME question
+ * the SMTP envelope does. It was `t.email` on the queue and nothing inline, so a display-form
+ * recipient was `queued: true` at `send()` and then refused by the worker's parse.
  *
  * The control-character half runs on the RAW value, BEFORE the strip, and the order is the whole
  * point: `ops@x.test\r\nRCPT TO:<attacker@evil.test>` strips down to a clean-looking mailbox that
  * every later check waves through, so a strip-then-check would have turned the injection into a
  * delivery to the attacker instead of a refusal.
  */
+export function addressRefusal(address: string): AddressRefusal | undefined {
+  return hasControlCharacter(address) ? 'injection' : specRefusal(addressSpec(address));
+}
+
+/** Throws `X_MAIL_ADDRESS_INVALID` for any address `addressRefusal` refuses. */
+export function assertRecipientAddress(field: EnvelopeAddressField, address: string): void {
+  const refusal = addressRefusal(address);
+  if (refusal !== undefined) throw addressInvalid(field, refusal);
+}
+
+/**
+ * The addr-spec an envelope command may carry, from whatever form the caller wrote. `Jane Doe
+ * <jane@x.test>` is the ordinary RFC 5322 display form — the `To:` header carries it verbatim and
+ * every driver accepts it — but `RCPT TO:` takes a mailbox, so it is stripped here once
+ * `addressRefusal` has passed the raw value.
+ */
 export function envelopeAddress(field: EnvelopeAddressField, address: string): string {
-  if (hasControlCharacter(address)) throw addressInvalid(field, 'injection');
-  const spec = addressSpec(address);
-  assertEnvelopeAddress(field, spec);
-  return spec;
+  assertRecipientAddress(field, address);
+  return addressSpec(address);
 }

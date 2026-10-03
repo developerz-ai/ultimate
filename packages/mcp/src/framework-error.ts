@@ -1,16 +1,20 @@
 // A value a tool THREW, read as a framework error (code, title, cause, fix) or rejected as a bug —
 // and its rendering, byte-identical to `UltimateError.format()`. Split from `server.ts`, whose two
 // dispatch paths (a flat `tools/call` and `manage_resource`) and resource reads all share it.
+// Also what a REMOTE caller may read of it: a 5xx cause only when core's `hasPublicCause` says so.
 
 import type { ErrorAudience } from '@ultimat3/core';
 import {
   ERROR_DOCS_URL,
   FRAMEWORK_CODE,
   fixFor,
+  hasPublicCause,
   isUltimateError,
+  renderFixShellArg,
   singleLine,
   stringField,
 } from '@ultimat3/core';
+import { statusFor } from '@ultimat3/http';
 
 export interface FrameworkError {
   readonly code: string;
@@ -65,6 +69,29 @@ export function asFrameworkError(error: unknown): FrameworkError | undefined {
 }
 
 /**
+ * The fixed sentence a remote caller reads in place of a hidden cause. The real one is in the
+ * audit line this call wrote and in the error monitor, never on the wire.
+ */
+export const HIDDEN_CAUSE =
+  'the server failed while handling this call; the details are in this process\u2019s logs';
+
+/**
+ * What THIS audience may read of a thrown error — the verdict `@ultimat3/http`'s `toProblem` gives
+ * the problem document, asked of the same two tables. A remote caller (`'caller'`) of a code whose
+ * status is 5xx gets the cause only when core's `hasPublicCause` says so: `X_DB_STATEMENT_FAILED`
+ * carries the server's message and the statement, and an MCP client is a remote client. The
+ * developer's `fix` is withheld with it — a driver's fix is built from the same statement — and
+ * `callerFix`, authored for the caller, still goes. `'developer'` (the dev server) keeps both, as
+ * HTTP's `dev: true` does: the reader is the author fixing their own SQL.
+ */
+export function forAudience(error: FrameworkError, audience: ErrorAudience): FrameworkError {
+  if (audience === 'developer') return error;
+  if (statusFor(error.code) < 500 || hasPublicCause(error.code)) return error;
+  const fix = `x errors explain ${renderFixShellArg(error.code, '<code>')} --json`;
+  return { ...error, cause: HIDDEN_CAUSE, fix };
+}
+
+/**
  * The agent-readable form, BYTE-IDENTICAL to `UltimateError.format({ audience })` — plus
  * `{ docs: true }` when the error names a page of its own — so one denial reads the same over MCP
  * as it does in the terminal, and an agent that learned the shape from `x` does not have to learn a
@@ -85,10 +112,11 @@ export function renderFrameworkError(
     error.title === ''
       ? singleLine(error.code)
       : `${singleLine(error.code)}: ${singleLine(error.title)}`;
+  const shown = forAudience(error, audience);
   const lines = [
     head,
-    `  cause: ${singleLine(error.cause)}`,
-    `  fix:   ${singleLine(fixFor(error, audience))}`,
+    `  cause: ${singleLine(shown.cause)}`,
+    `  fix:   ${singleLine(fixFor(shown, audience))}`,
   ];
   if (error.docs !== undefined) lines.push(`  docs:  ${singleLine(error.docs)}`);
   return lines.join('\n');

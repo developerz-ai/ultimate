@@ -29,6 +29,12 @@ export type {
   MemoryDigestStore,
 } from './digest';
 export { createMemoryDigestStore } from './digest';
+export type { PgDigestStore, PgDigestStoreOptions } from './digest-pg';
+export {
+  createPgDigestStore,
+  DEFAULT_DIGEST_RETENTION_MS,
+  SQL_NOTIFY_DIGESTS_TABLE,
+} from './digest-pg';
 export type { NotifyErrorCode } from './errors';
 export {
   NOTIFY_ERROR_CODES,
@@ -88,7 +94,7 @@ export type {
 export { toDurationMs } from './plan';
 export type { MemoryPreferenceStore, PreferenceQuery, PreferenceStore } from './preferences';
 export { allowAllPreferences, createMemoryPreferenceStore } from './preferences';
-export { purgeNotifyDeliveries, purgeNotifyInbox } from './retention';
+export { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from './retention';
 export type { InstalledNotifyStores, NotifyStores } from './stores';
 export {
   notifyStores,

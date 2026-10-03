@@ -29,6 +29,7 @@ import {
 } from '@ultimat3/jobs';
 import {
   createPgDeliveryLedger,
+  createPgDigestStore,
   createPgInboxStore,
   resetNotifyStores,
   setNotifyStores,
@@ -176,10 +177,11 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         'x_auth',
         'x_notify_deliveries',
         'x_notify_inbox',
+        'x_notify_digests',
         'x_job_events',
       ]);
       // Three dead rows gone, the live attempt kept: the purge measures against the caller's
-      // clock, so a sweep that read `now()` on the server would take a different set. The two
+      // clock, so a sweep that read `now()` on the server would take a different set. The three
       // notify targets contribute nothing here — no `setNotifyStores` ran, which is the state of
       // an app that never wired the Postgres stores, and it must be zero rather than a throw.
       expect(report.removed).toBe(3);
@@ -269,6 +271,44 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         // by a framework the app did not ask to delete it.
         expect(report.swept.find((sweep) => sweep.name === 'x_notify_inbox')?.removed).toBe(1);
         expect(await countIn('x_notify_inbox')).toBe(2);
+      } finally {
+        resetNotifyStores();
+      }
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  // A digest window is deleted by its flush's drain; the sweep takes only one CLOSED longer than the
+  // store's retention ago — the window whose flush dead-lettered. Executed against the table the
+  // boot's own DDL created, which is what the framework-schema row is for.
+  test(
+    'the digest sweep takes an abandoned closed window and leaves a recent one',
+    async () => {
+      const started = await boot();
+      const digest = createPgDigestStore({
+        executor: pgExecutorFor(started.db),
+        retentionMs: 60_000,
+      });
+      setNotifyStores({ digest });
+      try {
+        const now = systemClock.now().getTime();
+        const slot = (recipient: string) => ({
+          recipient,
+          notifier: 'post.commented',
+          channel: 'email',
+          group: 'g',
+        });
+        const event = { notifier: 'post.commented', key: 'k', params: {}, at: new Date(now) };
+        // Closed a day ago, never drained; and one that closed a second ago.
+        const day = 24 * 60 * 60 * 1000;
+        await digest.append({ slot: slot('ada'), event, windowMs: 1000, now: new Date(now - day) });
+        await digest.append({ slot: slot('bo'), event, windowMs: 1000, now: new Date(now - 2000) });
+
+        const report = await runSweep();
+
+        expect(report.swept.find((sweep) => sweep.name === 'x_notify_digests')?.removed).toBe(1);
+        expect(await countIn('x_notify_digests')).toBe(1);
+        expect(await digest.drain(slot('bo'))).toHaveLength(1);
       } finally {
         resetNotifyStores();
       }

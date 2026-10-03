@@ -22,8 +22,9 @@ export const receiptMail = defineMail({
 await send(receiptMail, { name: user.name, url }, { to: user.email, locale: ctx.locale });
 ```
 
-`send` validates the data through the mail's schema, renders, and enqueues `mail.send`. It delivers
-inline only with `{ sync: true }` or when no job driver is configured.
+`send` validates the data through the mail's schema, renders, and enqueues `mail.send` through the
+jobs facade, so inside a transaction the job commits or rolls back with it. It delivers inline only
+with `{ sync: true }` or when no job driver is configured.
 
 ## Rules
 
@@ -34,6 +35,7 @@ inline only with `{ sync: true }` or when no job driver is configured.
 | every string is a `mail.<id>.<slot>` key | English ships in the package catalog; an app catalog overrides it — translating the framework mails is shipping keys, never editing a template |
 | every date takes an IANA zone | `options.tz`, else `ctx.tz`, else `UTC` |
 | no CR/LF in a header-bound field | refused in rendering and again in the send job (`X_MAIL_HEADER_INVALID`), so every driver refuses the same message |
+| one recipient rule, inline and queued | `to`, `cc`, `bcc`, `replyTo` take the display form; a control character or a non-ASCII mailbox is `X_MAIL_ADDRESS_INVALID` at `send()`, whichever driver is installed |
 | `unsubscribeUrl` is one-click, and one-click is the supported path | it emits `List-Unsubscribe: <url>` plus `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), and the footer links the same url. Serve it as ONE page: `GET` confirms and never unsubscribes (scanners prefetch), `POST` unsubscribes — `defineRoute({ render: 'ssr', …, post: 'unsubscribe' })` binds the POST to an action with the url's query merged into its input (→ [Routes](Routes-And-Render-Modes)). `unsubscribeOneClick: false` is the fallback for a url that cannot take a POST: the `-Post` line goes |
 | sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, and an idempotency key derived from the mail id and the rendered message, so a retry is one email |
 

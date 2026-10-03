@@ -7,6 +7,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
+import { MCP_UNAUTHENTICATED_LIMIT } from '@ultimat3/mcp';
 import { resetAppLoad } from './app-load';
 import { REQUIRED_BUN } from './app-root';
 import type { McpHttpServer } from './cmd-mcp';
@@ -270,6 +271,33 @@ describe('unit · x mcp serve --transport stdio leaves stdout to the protocol', 
     const served = startMcpHttp(host, 0);
     try {
       expect(served.result.stream).toBeUndefined();
+    } finally {
+      await served.stop();
+    }
+  }, 180_000);
+});
+
+// The bare `Bun.serve` mount hands the socket's peer address to the route, so failed tokens are
+// metered per address there too: past the allowance even the minted token is refused before it is
+// compared, and a wrong guess cannot be told from a right one.
+describe('unit · x mcp serve --transport http meters failed tokens per address', () => {
+  test('past MCP_UNAUTHENTICATED_LIMIT the minted token from that address is 429', async () => {
+    const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
+    const served = startMcpHttp(host, 0);
+    const { url, token } = served.result.data as unknown as ServeData;
+    const rpc = (bearer: string): Promise<Response> =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${bearer}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+      });
+    try {
+      for (let index = 0; index < MCP_UNAUTHENTICATED_LIMIT; index += 1) {
+        expect((await rpc(`guess-${index}`)).status).toBe(401);
+      }
+      const refused = await rpc(token);
+      expect(refused.status).toBe(429);
+      expect(((await refused.json()) as { code: string }).code).toBe('X_MCP_RATE_LIMITED');
     } finally {
       await served.stop();
     }

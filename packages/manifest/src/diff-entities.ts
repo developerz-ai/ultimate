@@ -108,6 +108,7 @@ function diffColumns(
           : { kind: 'breaking', path: `${at}.nullable`, detail: 'became NOT NULL' },
       );
     }
+    changes.push(...diffDefault(`${at}.hasDefault`, column.hasDefault === true, next));
     changes.push(...diffKey(at, 'primaryKey', keyOf(column), keyOf(next)));
     changes.push(...diffKey(at, 'references', column.references, next.references));
     changes.push(...diffSealed(`${at}.sealed`, column.sealed, next.sealed));
@@ -131,6 +132,27 @@ function diffColumns(
     }
   }
   return changes;
+}
+
+/**
+ * A declared default on a column that was already there. It was read for an ADDED column only, so
+ * a NOT NULL column losing its default reported nothing but `buildId` — while every writer that
+ * omits the column is refused from then on. Dropped from a nullable column, an omitted value
+ * becomes NULL instead: nobody is refused, but the stored meaning moved. Gaining one only widens.
+ */
+function diffDefault(
+  path: string,
+  had: boolean,
+  next: EntityFact['columns'][number],
+): readonly ManifestChange[] {
+  const has = next.hasDefault === true;
+  if (had === has) return [];
+  if (has) return [{ kind: 'additive', path, detail: 'default added' }];
+  return [
+    next.nullable
+      ? { kind: 'internal', path, detail: 'default dropped; an omitted value is now NULL' }
+      : { kind: 'breaking', path, detail: 'default dropped; a writer that omits it is refused' },
+  ];
 }
 
 /**

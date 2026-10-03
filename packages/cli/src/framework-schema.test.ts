@@ -34,11 +34,13 @@ describe('unit · framework schema', () => {
     expect(AUTH_TABLE_NAMES.length).toBe(5);
   });
 
-  test('both notify tables are applied at boot', () => {
+  test('every notify table is applied at boot', () => {
     // A missing delivery ledger is `42P01` on the first claim inside a worker, which reads as a
     // dead-lettered notification rather than as a missing schema.
     expect(frameworkTableNames()).toContain('x_notify_deliveries');
     expect(frameworkTableNames()).toContain('x_notify_inbox');
+    // `createPgDigestStore`'s windows: without it the first digest append is `42P01` in a worker.
+    expect(frameworkTableNames()).toContain('x_notify_digests');
   });
 
   test('no table is created by two rows, so no row can be deleted as a duplicate', () => {

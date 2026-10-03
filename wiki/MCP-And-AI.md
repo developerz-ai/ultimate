@@ -38,7 +38,7 @@ Sixteen tools `As of 2026-09-19` — the whole catalog, spelled exactly as they 
 | executes code | `tests.run`, `verify.run`, `ui.shot`, `ui.island`, `ui.inspect`, `ui.interact` | scope `dev:test`; all six declare `destructive: true`, so none is metered as read chatter — the four `ui.*` tools launch a browser |
 | write | `db.migrate` | scope `db:migrate`, **branch environments only** |
 
-None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose leading keyword must be `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — necessary, never sufficient. Batches, any write keyword at statement level (a data-modifying CTE included), locking clauses (`FOR UPDATE`/`FOR SHARE`), `EXPLAIN ANALYZE`, and whole function families matched by prefix of the called name, quoted and schema-qualified spellings included — file access (`pg_read_*`, `pg_ls_*`, `lo_*`, `dblink`), locks (`pg_advisory_*`), session settings (`set_config`) and sleeps (`pg_sleep*`) — are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. Its Postgres SELECT-only role is conditional on the connection's own rights; the answer's `guards` array names the defences that engaged. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.
+None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose leading keyword must be `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — necessary, never sufficient. Batches, any write keyword at statement level (a data-modifying CTE included), locking clauses (`FOR UPDATE`/`FOR SHARE`), `EXPLAIN ANALYZE`, and whole function families matched by prefix of the called name, quoted and schema-qualified spellings included — file access (`pg_read_*`, `pg_ls_*`, `lo_*`, `dblink`), locks (`pg_advisory_*`), session settings (`set_config`), sleeps (`pg_sleep*`), catalog writes (`pg_import_*`) and the functions that run a query handed to them as text (`query_to_xml*`, `cursor_to_xml*`, `table_to_xml*`, `schema_to_xml*`, `database_to_xml*`, `ts_stat`, `ts_rewrite`) — are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. What the scan cannot read is refused, never decoded: a Unicode-escaped quoted identifier (`U&"…"`) is `X_MCP_QUERY_REJECTED` (`As of 2026-10`). A keyword is matched as Postgres lexes an identifier, so a column `set2` is a column, not `SET`. Its Postgres SELECT-only role is conditional on the connection's own rights; the answer's `guards` array names the defences that engaged. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.
 
 
 ### Rate limits on the HTTP transport
@@ -49,13 +49,14 @@ None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose l
 |---|---|---|
 | `read` | 120 / minute | every method that is not `tools/call`, plus any tool that does not declare `destructive: true` |
 | `write` | 20 / minute | a `tools/call` naming a `destructive: true` tool, and **any call this server cannot resolve** — fail-closed, so a probing client never gets the cheap bucket |
+| `unauthenticated` | 20 / minute, per **address** | a missing token, or one `resolveToken` answers `null`. Past it the address is refused `429` **before** `resolveToken` runs — a valid guess included, so the answer says nothing about the token (`As of 2026-10`). Keyed on `handle(request, { address })` — the host's resolved client address; a host that passes none is not metered here |
 
 | Rule | Detail |
 |---|---|
 | Metered after the parse, before the tool | the class comes out of the body, so it cannot move above the JSON parse. An unauthenticated caller is answered `401` four lines earlier and can never spend an actor's allowance |
 | The key is the ACTOR | `mcp:<class>\|actor:<id>`, and it never reaches the caller: a 429 is provokable by anyone holding a valid token, so an actor or org id in one is a leak wearing a throttle's clothes |
 | Refusal | `X_MCP_RATE_LIMITED`, 429, with `Retry-After`. Its **own** code and not `X_RATE_LIMITED`, because that one's `fix:` names the HTTP pipeline's buckets, which do not govern this route — a fix line that runs and changes nothing is worse than none |
-| The knob | `mcpHttpRoute({ rateLimits: { read, write } })`, or `defineAppMcp({ rateLimits })` |
+| The knob | `mcpHttpRoute({ rateLimits: { read, write, unauthenticated } })`, or `defineAppMcp({ rateLimits })` |
 | Behind N replicas | pass `rateLimitStore: postgresRateLimitStore({ executor })` as well. The default is a per-process memory store — honest for `x mcp serve`, and a lie for N replicas behind one URL, each enforcing the full allowance on its own |
 
 
@@ -154,7 +155,12 @@ agent can do — where the framework's own `fix` names a command only the app's 
 scope says to ask for a token that carries it; an invalid argument says to correct the field
 against the published schema. The developer's `fix` stays in the log line, `--json`, and on
 `createMcpServer` (the dev server), whose default is `errorAudience: 'developer'`;
-`defineAppMcp({ errorAudience: 'developer' })` restores it for an app. An app's own error takes the
+`defineAppMcp({ errorAudience: 'developer' })` restores it for an app. **A 5xx cause is the
+server's own business** (`As of 2026-10`): for the caller audience, a thrown 5xx code core's
+`hasPublicCause` does not list (`X_DB_STATEMENT_FAILED` carries the Postgres message and the
+statement) renders a fixed sentence as its `cause` and `x errors explain <code> --json` (or its
+`callerFix`) as its `fix` — in a tool result and in a `resources/read` error's `data` alike, the
+verdict a production problem document gives. The developer audience keeps both. An app's own error takes the
 same two fields, plus `docs`:
 
 ```ts

@@ -224,3 +224,45 @@ describe('several endpoints — RFC 9728 metadata per path', () => {
     );
   });
 });
+
+// The mount hands the pipeline's resolved client address to the route, so failed bearer tokens are
+// metered per address and an exhausted address is refused before `resolveToken` — a right token
+// included. Without it the descriptor had no key and metered nothing.
+describe('the app mount meters failed tokens per client address', () => {
+  test('past the allowance a right token from that address is 429; another address is served', async () => {
+    const root = await fixture(
+      'unauthenticated-meter',
+      module(`defineAppMcp({
+  name: 'metered',
+  tools: {
+    ping: {
+      description: 'ping, read-only.',
+      input: t.object({}),
+      policy: 'x:read',
+      destructive: false,
+      handle: () => ({ ok: true }),
+    },
+  },
+  rateLimits: { read: 120, write: 20, unauthenticated: 2 },
+  resolveToken: (token) =>
+    token === 'right'
+      ? { actor: agentActor({ id: 'a1', orgId: 'o1', roles: [] }), scopes: new Set() }
+      : null,
+})`),
+    );
+    const route = routeAt((await appMcpMount(root)).routes, 'POST', '/mcp');
+    const ask = (token: string, ip: string): Promise<Response> => {
+      const raw = new Request('https://app.test/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+      });
+      const ctx = { url: new URL(raw.url), https: true, ip } as never;
+      return Promise.resolve(route.handler({ raw } as unknown as UltimateRequest, ctx));
+    };
+    expect((await ask('wrong', '203.0.113.9')).status).toBe(401);
+    expect((await ask('wrong', '203.0.113.9')).status).toBe(401);
+    expect((await ask('right', '203.0.113.9')).status).toBe(429);
+    expect((await ask('right', '198.51.100.4')).status).toBe(200);
+  });
+});

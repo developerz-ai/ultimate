@@ -30,7 +30,7 @@ import. The CLI wires it.
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface; boot-time refusal of an unknown or doubly-claimed tool |
 | `input-schema.ts` | Standard Schema → the `JsonSchema` subset `validate-args.ts` enforces |
-| `readonly-sql.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check |
+| `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 | `meta-surface.ts` | `surface: 'meta'` catalog: `list_resources` / `describe_resource`, `groups:` boot checks; dispatch stays in `server.ts` |
 | `list-params.ts` | `listParams` whitelist → the schema `manage_resource` enforces (flat keys: `status_eq`) |
@@ -102,7 +102,8 @@ import. The CLI wires it.
 - **A declared `pattern` is compiled once per schema NODE, never per `tools/call`** — a `WeakMap`
   keyed on the node (never on the pattern string, which grows forever), caching an uncompilable
   pattern's `null` too. `compiledPatternCount()` is the test-only probe; `validate-args.test.ts`
-  asserts it does not climb over 100 calls.
+  asserts it does not climb over 100 calls. Compiled WITH `x-ultimate-pattern-flags` (schema's),
+  `lastIndex` reset.
 - **`format` is NOT in the wire subset**, and `wire.ts` types it `never` so re-adding it does not
   compile. It names a rule whose meaning lives in `@ultimat3/schema` (`uuid`, `email`,
   `iana-time-zone`), and this package cannot check it without a second definition of each that can
@@ -131,7 +132,9 @@ import. The CLI wires it.
   `-32603` the transport promises for a genuine bug.
 - A framework error rendered into a tool result is **byte-identical to
   `UltimateError.format()`** — one denial must not read one way over MCP and another in the
-  terminal. `server.ts` renders it; the test pins it against `format()`, never a literal.
+  terminal. `server.ts` renders it; the test pins it against `format()`, never a literal. Except a
+  hidden 5xx for `'caller'` (`forAudience`, `As of 2026-10`): `statusFor(code) >= 500` and not core's
+  `hasPublicCause` → `HIDDEN_CAUSE` + `x errors explain`, tool results and resource reads alike.
 - Every outcome is audited via `audit.ts`, hidden included, at `warn`. Never log arguments or row
   data. **On both surfaces**: `mcp.tool-call.<outcome>` and `mcp.resource-read.<outcome>` — two
   events, one `LEVEL` table, so an alert can tell a URI walk from a tool-name walk. `resources/list`
@@ -223,7 +226,9 @@ import. The CLI wires it.
   `pg_terminate_backend`, `pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`,
   `pg_wal_replay_*`); replication (`pg_logical_*`, `pg_create_*`, `pg_drop_*`, `pg_replication_*` —
   advancing a slot is a write no `ROLLBACK` undoes); `pg_file_*`; `txid_current` /
-  `pg_current_xact_id`. Catalog VIEWS (`pg_replication_slots`) are read `from`, never called.
+  `pg_current_xact_id`; `pg_import_*`; SQL run from a string (`*_to_xml*`, `ts_stat`, `ts_rewrite`). `U&"…"` is
+  refused, never decoded; a keyword is a whole identifier (`set2` is a column). Catalog VIEWS
+  (`pg_replication_slots`) are read `from`, never called.
 - Banned SQL functions are matched as a **prefix of a CALLED function name** — add a family, never
   a name (`pg_sleep_for` passed an exact `pg_sleep` ban). The unit is the call (`name(`), so a
   column `pg_sleep_for_seconds` is fine; the call scan keeps quoted-identifier content
@@ -251,7 +256,8 @@ import. The CLI wires it.
   `resolveToken` rejects and a non-agent actor all return before the body is read: parsing first
   answered `400 parse error` for a malformed payload and `401` for a well-formed one under the
   SAME rejected token, which is precisely the oracle the pre-parse 401 exists to remove. The parse
-  error still exists — it is what an authenticated agent gets.
+  error still exists — it is what an authenticated agent gets. Failures spend a per-ADDRESS bucket
+  (`seen.address`), and an exhausted address is `429` BEFORE `resolveToken` — a valid guess too.
 - **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe, and an unawaited
   `Bun.stdout.write` lost the tail of a 4 MB frame at exit. It is also the loop's only
   back-pressure; only a child-process test can see it.

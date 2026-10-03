@@ -127,6 +127,11 @@ The app declares which it needs and passes the store that provides it — the st
 thing that knows where its counters live, and a framework that inferred the answer from the
 environment would get it wrong on the first deployment that scaled differently.
 
+A store answers three calls: `take(key, bucket, cost, nowMs)` spends, `peek(key, bucket, nowMs)`
+reads (refill applied, **no write and no row** — a key never taken is full; `rateLimitPeek` and
+`refilledTokens` do the arithmetic) and `reset(key)`. `peek` is required, `As of 2026-10`: the
+`auth` stage asks it on every request to an `auth: 'required'` route.
+
 ```ts
 import {
   createServer,
@@ -174,7 +179,7 @@ one tenant is a person and the next is five thousand seats, so there is no allow
 can pick for you.
 
 **A shared store ships, `As of 2026-08`** — `postgresRateLimitStore({ executor })`, one table
-and one `insert … on conflict` per take, so N replicas count against one bucket. Until it landed,
+and one `insert … on conflict` per take (a peek is one `select`), so N replicas count against one bucket. Until it landed,
 `scope: 'shared'` was a declaration nothing in the framework could satisfy while `x new` scaffolded
 `replicas: 2`. `executor` is a `PgExecutor` — anything speaking `query(text, values)`, which is one
 line over the client the boot already opened; **never `Bun.sql`**, whose `.query` is `undefined`.

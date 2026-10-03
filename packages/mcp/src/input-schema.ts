@@ -41,6 +41,9 @@ function narrow(source: RichJsonSchema): JsonSchema {
     ...(source.minLength === undefined ? {} : { minLength: source.minLength }),
     ...(source.maxLength === undefined ? {} : { maxLength: source.maxLength }),
     ...(source.pattern === undefined ? {} : { pattern: source.pattern }),
+    ...(source['x-ultimate-pattern-flags'] === undefined
+      ? {}
+      : { 'x-ultimate-pattern-flags': source['x-ultimate-pattern-flags'] }),
     ...(source.anyOf === undefined ? {} : { anyOf: source.anyOf.map(narrow) }),
   };
 }

@@ -20,8 +20,10 @@ export const receiptMail = defineMail({
 await send(receiptMail, { name: user.name, url }, { to: user.email, locale: ctx.locale });
 ```
 
-`send` validates `data` through the mail's schema, renders, then enqueues `mail.send`. It
-delivers inline only when `{ sync: true }` is passed or no job driver is configured.
+`send` validates `data` through the mail's schema, renders, then enqueues `mail.send` through the
+jobs facade — inside a transaction the job is STAGED on it, so a handler that rolls back after
+sending mails nobody. It delivers inline only when `{ sync: true }` is passed or no job driver is
+configured.
 
 ### The outbound transform
 
@@ -58,6 +60,8 @@ setMailTransform(async (rendered, meta) =>
 | Every colour is a token | `MAIL_TOKENS` in `layout.ts` holds light + dark hexes; templates never see a hex |
 | Every date takes an IANA zone | `options.tz`, else `ctx.tz`, else `UTC` |
 | No CR/LF in a header-bound field | checked in `renderMessage` and again in `sendMailJob`, so every driver refuses the same message (`X_MAIL_HEADER_INVALID`). `mime.ts` keeps its own gate for the headers the SMTP transport mints itself |
+| One recipient rule on both paths | `to`, `cc`, `bcc` and `replyTo` are checked in `renderMessage` by the rule the SMTP envelope applies (`addressRefusal`), and the queue schema asks the same — so a display-form `Jane Doe <jane@x.test>` is accepted everywhere, and a control character or a non-ASCII mailbox is `X_MAIL_ADDRESS_INVALID` at the `send()` call site on every driver, never `queued: true` and then a worker's parse failure. `unsubscribeUrl` is `t.url` on both paths for the same reason |
+| Address headers carry 7-bit phrases | `From`, `To`, `Cc` and `Reply-To` encode a non-ASCII display name as an RFC 2047 word and quote an ASCII one holding a special (`Doe, Jane` → `"Doe, Jane"`), so the comma cannot split the list. `List-Unsubscribe` carries the url as the WHATWG serialiser writes it — punycode host, percent-encoded path and query |
 | `unsubscribeUrl` is one-click, and one-click is the supported path | it emits `List-Unsubscribe: <url>` plus `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), and the footer links the SAME url. Make that url one page that answers both: `GET` renders a confirm button and never unsubscribes (scanners prefetch), and `POST` — the mail client's one-click, or the button's own form — runs the action: `defineRoute({ render: 'ssr', …, post: 'unsubscribe' })` (`@ultimat3/render`) binds it, with the url's query (`?t=<token>`) merged into the input. `unsubscribeOneClick: false` drops the `-Post` line for a url that still cannot take a POST; it is the fallback, not the path |
 | Sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, idempotency key `mail:<mailId>:<hash(recipients + rendered)>` — 128 bits, ASCII, under Resend's 256-character limit at any recipient count — or `(mailId, your key)` when you pass one (digested if it is not a short ASCII token) — a caller's key is scoped to its mail so two templates cannot dedupe each other away |
 
@@ -149,7 +153,7 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_DRIVER_UNAVAILABLE` | `setMailDriver(createMemoryDriver())` at boot — a wiring bug |
 | `X_MAIL_CREDENTIAL_MISSING` | set `SMTP_URL` (or `RESEND_API_KEY`) and `MAIL_FROM` in the deployment — an operations one |
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
-| `X_MAIL_ADDRESS_INVALID` | pass a bare `addr-spec` — an envelope address may hold no control character and no `<`/`>` |
+| `X_MAIL_ADDRESS_INVALID` | a recipient may hold no control character, its mailbox no `<`/`>` and no non-ASCII byte (`meta.reason`); `Jane Doe <jane@x.test>` is fine |
 | `X_MAIL_TRANSFORM_FAILED` | the `setMailTransform` hook threw or returned no `{ subject, html, text }` — fix the hook; the mail was not sent |
 | `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help — and so does `error.retry`, which is what `sendMailJob` acts on: `terminal` dead-letters a 550 or a rejected credential at attempt 1 instead of sending it four more times |
 

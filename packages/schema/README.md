@@ -84,6 +84,11 @@ extension **and** appended to `description`, which is the only field an LLM read
 is guaranteed to see. `.refine()` returns a plain `Schema`, so refining after `extend`/`pick`/`omit`
 — which rebuild from the shape and would drop the rule — is a type error rather than a comment.
 
+A flagged `.pattern(/^[a-z]+$/i)` keeps its flags the same two ways: JSON Schema's `pattern` has no
+flag syntax (an inline `(?i)` is not ECMA-262), so the projection publishes `pattern` plus an
+`x-ultimate-pattern-flags: 'i'` extension a compiling consumer reads (`@ultimat3/mcp`'s arg
+validator), and states the flags in `description` for a reader.
+
 ### `discriminatedUnion` names the branch it judged
 
 ```ts

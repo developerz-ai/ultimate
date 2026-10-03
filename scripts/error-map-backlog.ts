@@ -340,6 +340,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_AGENTS_MD_TOO_LARGE',
     'X_MANIFEST_BREAKING',
     'X_MANIFEST_DRIFT',
+    'X_MANIFEST_FACT_INVALID',
   ],
   // tier 4 — MCP answers over its own JSON-RPC envelope, which carries an error object and not a
   // status. Revisit if the MCP host is ever mounted on an HTTP route inside the pipeline.

@@ -67,7 +67,7 @@ export function buildMimeMessage(message: MailMessage, options: MimeOptions): st
       // none for the addr-spec, and this package negotiates no SMTPUTF8 — so a UTF-8 mailbox would
       // go out as raw 8-bit octets in a header AND in the envelope beside it.
       if (mode === 'address' && hasNonAsciiAddrSpec(part))
-        throw headerInvalid(name, message.mailId);
+        throw headerInvalid(name, message.mailId, 'non-ascii');
     }
     headerLines.push(foldHeaderLine(name, parts.map((part) => encodeAs(mode, part)).join(', ')));
   };
@@ -79,9 +79,12 @@ export function buildMimeMessage(message: MailMessage, options: MimeOptions): st
   header('Date', rfc5322Date(options.date));
   header('Message-ID', options.messageId);
   header('MIME-Version', '1.0');
-  // RFC 8058 one-click unsubscribe and friends: computed once in driver.ts, emitted verbatim
-  // here so there is exactly one place that decides which of these headers a message gets.
-  for (const [name, value] of Object.entries(messageHeaders(message))) header(name, value);
+  // RFC 8058 one-click unsubscribe and friends: computed once in driver.ts so there is exactly one
+  // place that decides which of these headers a message gets. `Reply-To` is an ADDRESS and takes
+  // the address path — it went out verbatim, a non-ASCII display name as raw 8-bit octets.
+  for (const [name, value] of Object.entries(messageHeaders(message))) {
+    header(name, value, ADDRESS_HEADERS.has(name) ? 'address' : 'verbatim');
+  }
   header('Content-Type', `multipart/alternative; boundary="${options.boundary}"`);
 
   return `${headerLines.join(CRLF)}${CRLF}${CRLF}${buildBody(message, options.boundary)}`;
@@ -107,6 +110,9 @@ function bodyPart(contentType: string, text: string): string {
   );
 }
 
+/** The computed headers (`messageHeaders`) whose value is an address, not a 7-bit token. */
+const ADDRESS_HEADERS: ReadonlySet<string> = new Set(['Reply-To']);
+
 /**
  * How a header VALUE reaches the wire. `verbatim` is a value that is 7-bit by construction (a
  * date, a boundary, a message id); `value` is RFC 2047 over the whole string; `address` encodes
@@ -126,7 +132,7 @@ function encodeAs(mode: HeaderMode, value: string): string {
  * an 8-bit octet on a wire this package never negotiates SMTPUTF8 for, so it is the display name
  * that gets encoded — the addr-spec is copied through untouched, because a mailbox is the
  * server's to parse and an encoded word is not one. An address with no phrase, or an ASCII
- * phrase, comes back byte-identical.
+ * phrase with no special in it, comes back byte-identical; an ASCII phrase holding one is quoted.
  *
  * The MAILBOX is a different question and `hasNonAsciiAddrSpec` is where it is asked: RFC 2047
  * encoded words are legal in a phrase and nowhere else, so there is no encoding this function
@@ -136,8 +142,23 @@ export function encodeAddressPhrase(address: string): string {
   const match = ADDRESS_SPEC.exec(address);
   if (match === null) return address;
   const phrase = address.slice(0, match.index).trim();
-  if (phrase === '' || isPureAscii(phrase)) return address;
-  return `${encodeHeaderValue(phrase)} <${match[1] ?? ''}>`;
+  if (phrase === '') return address;
+  if (!isPureAscii(phrase)) return `${encodeHeaderValue(phrase)} <${match[1] ?? ''}>`;
+  if (!needsQuoting(phrase)) return address;
+  return `"${phrase.replace(/["\\]/g, (char) => `\\${char}`)}" <${match[1] ?? ''}>`;
+}
+
+/**
+ * RFC 5322 `specials` that end an atom, `.` aside (`obs-phrase` admits it, and `Jane Q. Doe` is
+ * every client's ordinary output). Unquoted, `Doe, Jane <jane@x.test>` is TWO list entries to the
+ * receiver — `Doe` and `Jane <jane@x.test>` — so the phrase is quoted rather than sent as written.
+ */
+const PHRASE_SPECIALS = /[(),:;<>@[\]\\"]/;
+
+/** A phrase that is already one whole quoted-string is the caller's own quoting, left alone. */
+function needsQuoting(phrase: string): boolean {
+  if (/^"(?:[^"\\]|\\.)*"$/.test(phrase)) return false;
+  return PHRASE_SPECIALS.test(phrase);
 }
 
 /**

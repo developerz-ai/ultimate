@@ -334,6 +334,19 @@ test('a url that is not SMTP is a config error at construction, not at the first
   ).toBe('X_CONFIG_INVALID');
 });
 
+// `decodeURIComponent` threw a bare `URIError` for a stray `%` — the one SMTP_URL mistake that was
+// not a coded config error. Both halves, and the credential never reaches the cause.
+test('a malformed percent-escape in the credentials is a coded refusal', () => {
+  for (const url of [
+    'smtp://user:pa%ss@mail.example.test',
+    'smtp://us%er:pass@mail.example.test',
+  ]) {
+    const error = thrown(() => createSmtpDriver({ url, from: FROM }));
+    expect(codeOf(error)).toBe('X_CONFIG_INVALID');
+    expect(isUltimateError(error) ? error.cause : '').not.toContain('pa%ss');
+  }
+});
+
 // The deadline reaches `setTimeout(fn, timeoutMs)` in the conversation and in the socket, and
 // `setTimeout(fn, NaN)` is `setTimeout(fn, 0)` — so a non-finite deadline does not disable itself,
 // it fires on the next tick and every send fails "the server sent nothing for NaNms". Refused

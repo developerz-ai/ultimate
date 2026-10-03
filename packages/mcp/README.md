@@ -226,7 +226,9 @@ meta tool name taken by an app tool (`X_MCP_TOOL_DUPLICATE`).
 maxLimit: 100 } }`. Keys are FLAT — `status_eq`, `createdAt_gt`, `sort: '-createdAt'`, `fields`,
 `cursor` (opaque keyset), `limit` — because a query's input travels as a query string; the query's
 own `input` declares them and implements them. `describe_resource` publishes the whitelist and
-`manage_resource` refuses anything outside it (an `isError` result carrying `X_INPUT_INVALID`) before the query runs; a
+`manage_resource` admits the whitelist plus the keys the input `required`s and refuses anything
+else, an optional input key the whitelist left out included (an `isError` result carrying
+`X_INPUT_INVALID`), before the query runs; a
 whitelisted key the input does not declare is `X_MCP_LIST_PARAMS_INVALID` at boot.
 
 ### What a client is told beyond the schema
@@ -290,6 +292,7 @@ did not.
 |---|---|---|
 | the body cap | `mcpHttpRoute({ bodyLimitBytes })` · `defineAppMcp({ bodyLimitBytes })` | `DEFAULT_MCP_BODY_LIMIT_BYTES`, 1 MiB |
 | the numbers | `mcpHttpRoute({ rateLimits })` · `defineAppMcp({ rateLimits })` | `MCP_RATE_LIMITS` |
+| failed authentications per address | `rateLimits: { unauthenticated }`, keyed on `handle(request, { address })` | `MCP_UNAUTHENTICATED_LIMIT`, 20 / minute; past it the address is `429` before `resolveToken` runs. No `address`, not metered here |
 | where they are counted | `mcpHttpRoute({ rateLimitStore })` · `defineAppMcp({ rateLimitStore })` | a per-**process** memory store — N replicas behind one URL each enforce the full allowance, so a fleet passes `postgresRateLimitStore({ executor })` |
 | OAuth discovery | `mcpHttpRoute({ oauth })` · `defineAppMcp({ oauth })` | absent: the 401 is `Bearer realm="ultimate-mcp"` |
 

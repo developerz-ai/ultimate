@@ -127,3 +127,24 @@ describe('unit · an MCP tool description', () => {
     expect(diff.hasBreaking).toBe(false);
   });
 });
+
+// A query's input is published since `s1-t4 #11`, so a committed manifest written before that has
+// none. The side carrying nothing is no evidence — `diff-routes.ts` reads its fields the same way —
+// and every query in every app must not read as `input schema changed` on the first diff after.
+describe('unit · a query input schema', () => {
+  const kindsAt = (before: readonly Query[], after: readonly Query[]) =>
+    diffManifest(fixtureManifest({ queries: before }), fixtureManifest({ queries: after }))
+      .changes.filter((change) => change.path === 'queries.feed.input')
+      .map((change) => change.kind);
+
+  test('a narrowed input is breaking', () => {
+    expect(kindsAt(withQuery({ input: {} }), withQuery({ input: { required: ['id'] } }))).toEqual([
+      'breaking',
+    ]);
+  });
+
+  test('a baseline that never carried one reports nothing when the schema appears', () => {
+    const { input: _dropped, ...unpublished } = fixtureQuery('feed', 'feed:read');
+    expect(kindsAt([unpublished], withQuery({ input: { required: ['id'] } }))).toEqual([]);
+  });
+});

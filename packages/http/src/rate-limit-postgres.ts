@@ -1,11 +1,12 @@
-// The shared rate-limit store: one Postgres table, one `insert … on conflict` per take, so N
-// replicas count against one bucket. Without it `config.rateLimit.scope: 'shared'` is a
-// declaration nothing can satisfy while `docker/helm/values.yaml` runs `roles.web.replicas: 3`.
+// The shared rate-limit store: one Postgres table, one `insert … on conflict` per take and a plain
+// `select` per peek, so N replicas count against one bucket. Without it `rateLimit.scope: 'shared'`
+// is a declaration nothing can satisfy while `docker/helm/values.yaml` runs `replicas: 3`.
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
 import type { RateLimitDecision, RateLimitScope, RateLimitStore } from './rate-limit';
 import { rateLimitDecision } from './rate-limit';
 import { rateLimitStoreUnavailable } from './rate-limit-errors';
+import { rateLimitPeek, refilledTokens } from './rate-limit-peek';
 
 /**
  * The one thing this store needs from the DB layer, declared structurally rather than imported —
@@ -94,6 +95,13 @@ returning tokens, spent
 export const SQL_RATE_LIMIT_RESET = 'delete from x_rate_limit where key = $1';
 
 /**
+ * `peek`: a plain read, never the upsert — it runs on every request to a required route, and a
+ * write there was a row lock and a WAL record per signed-in page. The refill is computed in JS
+ * from the row by `refilledTokens`, the memory store's own arithmetic; no row means full.
+ */
+export const SQL_RATE_LIMIT_PEEK = 'select tokens, last_ms from x_rate_limit where key = $1';
+
+/**
  * The memory store's forget rule, in SQL: a bucket back at capacity answers exactly as a missing
  * one, so dropping it changes no decision. A bucket that never refills
  * (`refill_per_second <= 0`) is never forgotten, exactly as the memory store's `Infinity` forget
@@ -113,6 +121,12 @@ delete from x_rate_limit
        + greatest(0, $1::bigint - last_ms)::double precision / 1000
          * refill_per_second >= capacity
 `;
+
+interface PeekRow {
+  /** `double precision` / `bigint`, which some clients hand back as strings. */
+  readonly tokens: number | string;
+  readonly last_ms: number | string;
+}
 
 interface TakeRow {
   /** `double precision`, which some clients hand back as a string. */
@@ -182,6 +196,15 @@ export function postgresRateLimitStore(
       // invented one would be "allowed", which is the limiter silently switched off.
       if (row === undefined) throw rateLimitStoreUnavailable('take');
       return rateLimitDecision(bucket, Number(row.tokens), cost, isTrue(row.spent), nowMs);
+    },
+
+    async peek(key, bucket, nowMs) {
+      const row = (await exec.query<PeekRow>(SQL_RATE_LIMIT_PEEK, [key]))[0];
+      const tokens =
+        row === undefined
+          ? bucket.capacity
+          : refilledTokens(bucket, Number(row.tokens), Number(row.last_ms), Math.floor(nowMs));
+      return rateLimitPeek(bucket, tokens);
     },
 
     async reset(key): Promise<void> {

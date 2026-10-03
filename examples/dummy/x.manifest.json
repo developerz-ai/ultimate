@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "22d3f4d6d915ce80",
+  "buildId": "e7ed48088a142600",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -2818,6 +2818,20 @@
   "queries": [
     {
       "name": "feedActivity",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "feed:read",
       "permissions": [
         "feed:read"
@@ -2829,6 +2843,26 @@
     },
     {
       "name": "liveFeed",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        },
+        "required": [
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "feed:read",
       "permissions": [
         "feed:read"
@@ -2841,6 +2875,31 @@
     },
     {
       "name": "liveRunEvents",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 200
+          }
+        },
+        "required": [
+          "orgId",
+          "runId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "run:read",
       "permissions": [
         "run:read"
@@ -2853,6 +2912,20 @@
     },
     {
       "name": "orgPosts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "feed:read",
       "permissions": [
         "feed:read"
@@ -2862,6 +2935,25 @@
     },
     {
       "name": "postById",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "postId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "post:read",
       "permissions": [
         "post:read"
@@ -2874,6 +2966,25 @@
     },
     {
       "name": "postBySlug",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "orgId",
+          "slug"
+        ],
+        "additionalProperties": false
+      },
       "policy": "feed:read",
       "permissions": [
         "feed:read"
@@ -2885,6 +2996,25 @@
     },
     {
       "name": "postRecord",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "postId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "post:read",
       "permissions": [
         "post:read"
@@ -2894,6 +3024,20 @@
     },
     {
       "name": "publicPost",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "additionalProperties": false
+      },
       "policy": "post:read-public",
       "permissions": [],
       "live": false,
@@ -2903,6 +3047,13 @@
     },
     {
       "name": "publicPostSlugs",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
       "policy": "post:read-public",
       "permissions": [],
       "live": false,
@@ -2912,6 +3063,20 @@
     },
     {
       "name": "publicPosts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
       "policy": "post:read-public",
       "permissions": [],
       "live": false,
@@ -2921,6 +3086,20 @@
     },
     {
       "name": "runConnections",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
       "policy": "run:read",
       "permissions": [
         "run:read"
@@ -4199,7 +4378,14 @@
             "type": "array",
             "items": {
               "type": "string",
-              "format": "email"
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
             }
           },
           "subject": {
@@ -4224,20 +4410,41 @@
           },
           "replyTo": {
             "type": "string",
-            "format": "email"
+            "minLength": 1,
+            "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+            "x-ultimate-refinements": [
+              {
+                "name": "mail-address",
+                "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+              }
+            ]
           },
           "cc": {
             "type": "array",
             "items": {
               "type": "string",
-              "format": "email"
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
             }
           },
           "bcc": {
             "type": "array",
             "items": {
               "type": "string",
-              "format": "email"
+              "minLength": 1,
+              "description": "a mailbox or a display-form address, with no control character or non-ASCII mailbox",
+              "x-ultimate-refinements": [
+                {
+                  "name": "mail-address",
+                  "message": "a mailbox or a display-form address, with no control character or non-ASCII mailbox"
+                }
+              ]
             }
           },
           "unsubscribeUrl": {

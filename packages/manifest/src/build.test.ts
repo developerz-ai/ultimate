@@ -361,15 +361,15 @@ describe('every collection is sorted by its own key', () => {
 });
 
 /**
- * `buildId` and the contract diff are both taken over ONE serialisation, and that serialisation
- * must be injective or the gate's answer is "no change" for a change that shipped. `JSON.stringify`
- * is not: it spells `-0` as `0`, every non-finite number as `null`, and a `Date` as whatever
- * `toJSON` makes of it — four distinct declarations reduced to two strings.
+ * `buildId` and the contract diff are both taken over ONE serialisation, and it is injective — so
+ * `-0`, `NaN` and `±Infinity` would each hash apart from `0` and `null` while the written file
+ * spelled them the same, and the file could never verify. They are refused at build instead
+ * (`X_MANIFEST_FACT_INVALID`, `finite-facts.ts`): a value the document cannot hold never gets a
+ * `buildId` at all, at whatever depth of a published schema it sits.
  */
-describe('unit · the manifest hash is injective, because the gate reads its verdict', () => {
+describe('unit · a default JSON cannot write is refused, never hashed apart', () => {
   // `JsonValue` is the published shape, and the DEFAULT is the value a client is told to expect
-  // when it sends nothing — so two spellings of it are two contracts, whatever a JSON document
-  // can write down.
+  // when it sends nothing — the deepest place a producer's number reaches the manifest.
   const withDefault = (fallback: JsonValue): ManifestSources => {
     const action: ActionFact = {
       name: 'setBalance',
@@ -383,21 +383,17 @@ describe('unit · the manifest hash is injective, because the gate reads its ver
     return { app: { name: 'acme', version: '1.4.2' }, actions: [action] };
   };
 
-  test('two contracts differing only by -0 vs 0 in a default hash differently', () => {
-    const zero = buildManifest(withDefault(0));
-    const negativeZero = buildManifest(withDefault(-0));
-    expect(negativeZero.buildId).not.toBe(zero.buildId);
+  test('-0, NaN and ±Infinity are refused at the path they sit at', () => {
+    for (const value of [-0, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => buildManifest(withDefault(value))).toThrow(
+        'actions[0].input.properties.amount.default',
+      );
+    }
   });
 
-  test('the diff reports a default that moved from 0 to -0', () => {
-    const diff = diffManifest(buildManifest(withDefault(0)), buildManifest(withDefault(-0)));
-    expect(diff.changes.map((change) => change.path)).toContain('actions.setBalance.input');
-  });
-
-  test('a non-finite default is not folded onto null, and neither is the other one', () => {
-    const nan = buildManifest(withDefault(Number.NaN)).buildId;
+  test('0 and null stay two contracts', () => {
+    const zero = buildManifest(withDefault(0)).buildId;
     const nul = buildManifest(withDefault(null)).buildId;
-    const infinity = buildManifest(withDefault(Number.POSITIVE_INFINITY)).buildId;
-    expect(new Set([nan, nul, infinity]).size).toBe(3);
+    expect(zero).not.toBe(nul);
   });
 });

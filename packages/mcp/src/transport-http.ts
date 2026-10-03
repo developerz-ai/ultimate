@@ -21,7 +21,7 @@
 
 import type { Actor, Clock } from '@ultimat3/core';
 import { finiteCount, readWithinLimit, systemClock } from '@ultimat3/core';
-import type { RateLimitStore } from '@ultimat3/http';
+import type { Bucket, RateLimitStore } from '@ultimat3/http';
 import { memoryRateLimitStore, toBucket } from '@ultimat3/http';
 import { McpBodyTooLargeError, McpRateLimitedError } from './errors';
 import type { McpOAuth } from './oauth-metadata';
@@ -57,6 +57,18 @@ export const MCP_RATE_LIMITS: Readonly<Record<McpVerbClass, number>> = {
   write: 20,
 };
 
+/**
+ * Failed authentications per minute per ADDRESS. An address past it is refused before
+ * `resolveToken` runs, so guessing tokens is bounded and a valid guess is answered the same 429.
+ */
+export const MCP_UNAUTHENTICATED_LIMIT = 20;
+
+/** `rateLimits` as declared: the two per-actor classes, and the per-address failure allowance. */
+export type McpRateLimits = Readonly<Record<McpVerbClass, number>> & {
+  /** Failed authentications per minute per address. Defaults to `MCP_UNAUTHENTICATED_LIMIT`. */
+  readonly unauthenticated?: number | undefined;
+};
+
 /** What a token resolves to. `null` = unauthenticated, answered 401 with no catalog. */
 export interface ResolvedToken {
   readonly actor: Actor;
@@ -75,8 +87,11 @@ export interface McpHttpTransportInput {
   readonly path?: string;
   /** Bytes this transport will hold for one request. Defaults to `DEFAULT_MCP_BODY_LIMIT_BYTES`. */
   readonly bodyLimitBytes?: number | undefined;
-  /** Requests per minute per caller, by class. Defaults to `MCP_RATE_LIMITS`. */
-  readonly rateLimits?: Readonly<Record<McpVerbClass, number>> | undefined;
+  /**
+   * Requests per minute per caller, by class — defaults to `MCP_RATE_LIMITS` — and failed
+   * authentications per minute per address (`unauthenticated`, `MCP_UNAUTHENTICATED_LIMIT`).
+   */
+  readonly rateLimits?: McpRateLimits | undefined;
   /**
    * Where the buckets are counted. Defaults to a per-PROCESS memory store, which is the honest
    * default for `x mcp serve` and a lie for N replicas behind one URL — each would enforce the
@@ -100,6 +115,12 @@ export interface McpHttpTransportInput {
 export interface McpRequestOrigin {
   /** The PUBLIC origin, `https://www.example.com`. Defaults to the request URL's own. */
   readonly origin?: string | undefined;
+  /**
+   * The caller's address as the host resolved it (a trusted proxy's `x-forwarded-for` honoured) —
+   * what failed authentications are counted against. Absent, they are not counted here: one
+   * shared key would let a stranger's failures lock every agent out.
+   */
+  readonly address?: string | undefined;
 }
 
 /** The metadata half of an `oauth` route: where to serve it and what to answer. */
@@ -116,7 +137,7 @@ export interface McpRouteDescriptor {
   /** Bucket for one already-parsed body. Metering only — never an authz decision. */
   rateLimitClass(body: unknown): McpVerbClass;
   /** Requests per minute per caller, by class — what `handle` actually spends against. */
-  readonly limits: Readonly<Record<McpVerbClass, number>>;
+  readonly limits: McpRateLimits;
   /** Present exactly when the route was built with `oauth`. */
   readonly protectedResource?: McpProtectedResource;
   handle(request: Request, seen?: McpRequestOrigin): Promise<Response>;
@@ -144,7 +165,7 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
     input.bodyLimitBytes ?? DEFAULT_MCP_BODY_LIMIT_BYTES,
     0,
   );
-  const limits = input.rateLimits ?? MCP_RATE_LIMITS;
+  const limits: McpRateLimits = input.rateLimits ?? MCP_RATE_LIMITS;
   const clock = input.clock ?? systemClock;
   const store = input.rateLimitStore ?? memoryRateLimitStore();
   // Built once, at construction: `toBucket` refuses an unusable pair (`X_RATE_LIMIT_INVALID`), and
@@ -158,6 +179,20 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
     limit: limits.write,
     windowMs: MCP_RATE_LIMIT_WINDOW_MS,
   });
+
+  // A COUNT of failures, screened where it is declared: `toBucket` alone would read `NaN` as a
+  // bound only at its own check, and `??` never fires for one.
+  const unauthenticated = finiteCount(
+    'mcpHttpRoute',
+    'rateLimits.unauthenticated',
+    limits.unauthenticated ?? MCP_UNAUTHENTICATED_LIMIT,
+    1,
+  );
+  const failureBucket = toBucket('mcpHttpRoute rateLimits.unauthenticated', {
+    limit: unauthenticated,
+    windowMs: MCP_RATE_LIMIT_WINDOW_MS,
+  });
+  const failures = failureMeter(store, failureBucket, clock);
 
   const path = input.path ?? '/mcp';
   const oauth = input.oauth;
@@ -193,12 +228,26 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       // remove, and it costs nothing to close: the body is not an input to any of these.
       const resource = resourceOf(request, seen);
       const metadataUrl = resource === undefined ? undefined : metadataUrlFor(resource);
+      // An address that has spent its failures is refused BEFORE the credential store is asked:
+      // counting only after the fact turned a 401 into a 429 and still answered a valid guess.
+      const address = seen?.address;
+      const exhausted = await failures.refusing(address);
+      if (exhausted !== undefined) return exhausted;
       const token = bearerToken(request);
-      if (token === null) return unauthorized(bearerChallenge(metadataUrl, false, challengeScopes));
+      if (token === null) {
+        return (
+          (await failures.spend(address)) ??
+          unauthorized(bearerChallenge(metadataUrl, false, challengeScopes))
+        );
+      }
 
       const resolved = await input.resolveToken(token);
-      if (resolved === null)
-        return unauthorized(bearerChallenge(metadataUrl, true, challengeScopes));
+      if (resolved === null) {
+        return (
+          (await failures.spend(address)) ??
+          unauthorized(bearerChallenge(metadataUrl, true, challengeScopes))
+        );
+      }
       if (!isAgentActor(resolved.actor)) return notAnAgent();
 
       // Read through the counting reader, never `request.json()`: the cap has to be enforced
@@ -275,6 +324,31 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
   };
 }
 
+/**
+ * The per-address failure allowance. `refusing` reads the bucket (`RateLimitStore.peek`, which
+ * writes nothing) and answers the 429 when not one more failure fits; `spend` charges one
+ * failure and answers the 429 when that one did not fit. `undefined` from either: carry on.
+ */
+function failureMeter(store: RateLimitStore, bucket: Bucket, clock: Clock) {
+  const keyOf = (address: string): string => `mcp:unauthenticated|ip:${address}`;
+  const refusal = (retryAfterSeconds: number): Response =>
+    throttled('unauthenticated', bucket.capacity, retryAfterSeconds);
+  return {
+    async refusing(address: string | undefined): Promise<Response | undefined> {
+      if (address === undefined) return undefined;
+      // READ ONLY: this runs on every request, an agent's included, and a write per call would be
+      // a Postgres upsert on the hot path of every authenticated one.
+      const peek = await store.peek(keyOf(address), bucket, clock.now().getTime());
+      return peek.remaining >= 1 ? undefined : refusal(peek.retryAfterSeconds);
+    },
+    async spend(address: string | undefined): Promise<Response | undefined> {
+      if (address === undefined) return undefined;
+      const spent = await store.take(keyOf(address), bucket, 1, clock.now().getTime());
+      return spent.allowed ? undefined : refusal(spent.retryAfterSeconds);
+    },
+  };
+}
+
 /** `Authorization: Bearer <token>`, the only accepted form. No query-string tokens. */
 export function bearerToken(request: Request): string | null {
   const header = request.headers.get('authorization');
@@ -298,7 +372,11 @@ export function isAgentActor(actor: Actor): boolean {
  * call to answer. `retry-after` carries the same number the `fix:` line names, because an agent
  * reads one of the two and must not get different answers from them.
  */
-function throttled(verbClass: McpVerbClass, limit: number, retryAfterSeconds: number): Response {
+function throttled(
+  verbClass: keyof McpRateLimits,
+  limit: number,
+  retryAfterSeconds: number,
+): Response {
   const error = new McpRateLimitedError({ verbClass, limit, retryAfterSeconds });
   return new Response(JSON.stringify({ code: error.code, cause: error.cause, fix: error.fix }), {
     status: 429,

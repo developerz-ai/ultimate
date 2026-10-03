@@ -4,10 +4,11 @@
 // piece of context that a background send cannot recover after the fact.
 
 import { assert, DEFAULT_TIME_ZONE, tryUseContext } from '@ultimat3/core';
-import { jobDriver } from '@ultimat3/jobs';
-import { parse, type StandardSchemaV1 } from '@ultimat3/schema';
+import { jobDriver, jobsFacade } from '@ultimat3/jobs';
+import { parse, type StandardSchemaV1, t } from '@ultimat3/schema';
 import type { MailTemplate } from './blocks';
-import { type MailMessage, mailDriver, type SendResult } from './driver';
+import { envelopeRecipients, type MailMessage, mailDriver, type SendResult } from './driver';
+import { assertRecipientAddress } from './envelope-address';
 import { localeMissing, mailDuplicate, templateUnknown } from './errors';
 import { assertHeaderSafe } from './header-safety';
 import { mailIdempotencyKey } from './idempotency';
@@ -90,7 +91,9 @@ export function mailFor(id: string): AnyMailDefinition | undefined {
 }
 
 export function registeredMails(): readonly AnyMailDefinition[] {
-  return [...registry.values()].sort((a, b) => a.id.localeCompare(b.id));
+  // Through `registeredMailIds`, so the two views share ONE order: the code-unit sort. It was
+  // `localeCompare` here, which puts `welcome` before `Zeta` where the id list puts it after.
+  return registeredMailIds().flatMap((id) => registry.get(id) ?? []);
 }
 
 export function registeredMailIds(): readonly string[] {
@@ -123,6 +126,11 @@ export function renderMessage<I>(
   );
 
   const input = parse(mail.input, data, `${mail.id}.input`);
+  // The queue schema's own rule (`t.url`), so an unparseable url is refused here rather than
+  // delivered inline as `List-Unsubscribe: <not a url>` and refused by a worker when queued.
+  if (options.unsubscribeUrl !== undefined) {
+    parse(t.url, options.unsubscribeUrl, `${mail.id}.unsubscribeUrl`);
+  }
   const tz = options.tz ?? tryUseContext()?.tz ?? DEFAULT_TIME_ZONE;
   const rendered = renderMail(mail, input, {
     locale: options.locale,
@@ -150,6 +158,13 @@ export function renderMessage<I>(
   // Checked before the queue too, so the refusal lands on the `send()` call site that made it
   // rather than on a worker three retries later.
   assertHeaderSafe(message);
+  // The recipient rule, after the header gate so a line break keeps its own code: what the queue
+  // schema refuses is refused HERE, on every driver, rather than answered `queued: true` and then
+  // refused by the worker's parse — one rule on both paths (`s1-t4 #3`).
+  const replyTo = message.replyTo === undefined ? [] : [message.replyTo];
+  for (const address of [...envelopeRecipients(message), ...replyTo]) {
+    assertRecipientAddress('recipient', address);
+  }
   return message;
 }
 
@@ -167,21 +182,17 @@ export async function send<I>(
   // and the job never re-runs the hook. Not in `renderMessage`, which previews call.
   const message = await applyMailTransform(renderMessage(mail, data, options));
   const key = mailIdempotencyKey(message);
-  const queue = jobDriver();
 
-  if (options.sync === true || queue === undefined) {
+  if (options.sync === true || jobDriver() === undefined) {
     // The key is reported even inline, so a caller can dedupe its own retries either way.
     return { ...(await mailDriver().send(message)), idempotencyKey: key };
   }
 
-  const enqueued = await queue.enqueue({
-    name: sendMailJob.name,
-    queue: sendMailJob.queue,
-    input: message,
-    idempotencyKey: key,
-    maxAttempts: sendMailJob.retry.attempts,
-    onConflict: 'dedupe',
-  });
+  // Through the facade, never `queue.enqueue`: inside a transaction the row is STAGED on the
+  // caller's connection and published after COMMIT, so a handler that rolls back after sending
+  // mails nobody (`s1-con #3`). Outside one, the facade publishes straight to the same driver.
+  // The key is the handle's own `mailIdempotencyKey`, and the driver dedupes on it by default.
+  const enqueued = await jobsFacade().enqueue(sendMailJob, message);
 
   return {
     id: enqueued.id,

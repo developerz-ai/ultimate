@@ -5,7 +5,7 @@ import type { MailMessage } from './driver';
 import { resetMailDriver, setMailDriver } from './driver';
 import { driverUnavailable } from './errors';
 import { mailIdempotencyKey } from './idempotency';
-import { sendMailJob } from './job';
+import { mailMessageSchema, sendMailJob } from './job';
 import { renderMessage, type SendOptions } from './mail';
 import { welcomeMail } from './templates';
 
@@ -97,4 +97,37 @@ test('the send job retries five times with exponential backoff', () => {
 
   const message = renderMessage(welcomeMail, PAYLOAD, TO);
   expect(sendMailJob.idempotencyKeyFor(message)).toBe(mailIdempotencyKey(message));
+});
+
+/**
+ * One recipient rule on both paths (plan 101 `s1-t4 #3`). `mailMessageSchema` typed every address
+ * `t.email`, while `renderMessage` and every driver accept the RFC 5322 display form — so a queued
+ * `Jane Doe <jane@x.test>` was `{ queued: true }` at `send()` and refused by the worker's parse,
+ * where `sync: true` delivered it. The schema now asks what `envelopeAddress` asks.
+ */
+test('the queue schema accepts every address form the inline path delivers', () => {
+  const message = {
+    ...renderMessage(welcomeMail, PAYLOAD, TO),
+    to: ['Jane Doe <jane@x.test>', 'ada@example.test'],
+    cc: ['"Doe, John" <john@x.test>'],
+    bcc: ['Ops <ops@x.test>'],
+    replyTo: 'José Muñoz <jose@x.test>',
+  };
+  const verdict = mailMessageSchema['~standard'].validate(message);
+  expect(verdict instanceof Promise ? 'async' : (verdict.issues ?? [])).toEqual([]);
+});
+
+test('the queue schema refuses what the envelope gate refuses, in every address field', () => {
+  const base = renderMessage(welcomeMail, PAYLOAD, TO);
+  for (const bad of ['josé@exämple.test', 'ops@x.test\u0007', 'a<b@x.test']) {
+    for (const message of [
+      { ...base, to: [bad] },
+      { ...base, cc: [bad] },
+      { ...base, bcc: [bad] },
+      { ...base, replyTo: bad },
+    ]) {
+      const verdict = mailMessageSchema['~standard'].validate(message);
+      expect(verdict instanceof Promise ? 'async' : (verdict.issues?.length ?? 0) > 0).toBe(true);
+    }
+  }
 });

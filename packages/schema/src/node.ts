@@ -54,7 +54,8 @@ export interface SchemaNode {
   /**
    * The RegExp's flags, carried beside the source for the same reason. Dropping them made
    * `t.string.pattern(/^[a-z]+$/i)` reject `ABC` while quoting the pattern that matches it.
-   * JSON Schema's `pattern` has no flags, so `json-schema.ts` states them in `description`.
+   * JSON Schema's `pattern` has no flags, so `json-schema.ts` publishes them as
+   * `x-ultimate-pattern-flags` beside it, and states them in `description` for a reader.
    */
   readonly patternFlags?: string | undefined;
   readonly minimum?: number | undefined;

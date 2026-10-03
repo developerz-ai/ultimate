@@ -117,7 +117,13 @@ export function diffQueries(
       changes.push({ kind: 'breaking', path, detail: 'query removed' });
       continue;
     }
-    if (canonicalJson(query.input) !== canonicalJson(next.input)) {
+    // Both sides or neither: a manifest committed before queries published their input carries
+    // none, and a side with nothing on it is no evidence of a change (`diff-routes.ts`'s rule).
+    if (
+      query.input !== undefined &&
+      next.input !== undefined &&
+      canonicalJson(query.input) !== canonicalJson(next.input)
+    ) {
       changes.push({ kind: 'breaking', path: `${path}.input`, detail: 'input schema changed' });
     }
     if (query.policy !== next.policy) {

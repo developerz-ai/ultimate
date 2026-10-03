@@ -174,7 +174,8 @@ export const compiledPatternCount = (): number => compilations;
  * A pattern this server cannot COMPILE is refused, not skipped. `tools/list` published it, so an
  * agent has already been told the rule — passing a call the server cannot check is the silent-pass
  * this whole module exists to prevent. Every framework-projected pattern is a `RegExp.source` and
- * compiles; only a hand-written tool can reach the second branch, and that is its author's bug.
+ * its own flags and compiles; only a hand-written tool can reach the second branch, and that is its
+ * author's bug.
  */
 function matchesPattern(
   schema: JsonSchema,
@@ -183,21 +184,28 @@ function matchesPattern(
   path: string,
   issues: ArgIssue[],
 ): void {
+  // The flags `@ultimat3/schema` published beside the source. Without them `/^[a-z]+$/i` refused
+  // `ABC` and `/^\p{L}+$/u` refused `é` here, while the action's own parse accepted both.
+  const flags = schema['x-ultimate-pattern-flags'] ?? '';
+  const shown = flags === '' ? pattern : `/${pattern}/${flags}`;
   let compiled = compiledPatterns.get(schema);
   if (compiled === undefined) {
     compilations += 1;
     try {
-      compiled = new RegExp(pattern);
+      compiled = new RegExp(pattern, flags);
     } catch {
       compiled = null;
     }
     compiledPatterns.set(schema, compiled);
   }
   if (compiled === null) {
-    issues.push({ path, message: `declares a pattern this server cannot compile: ${pattern}` });
+    issues.push({ path, message: `declares a pattern this server cannot compile: ${shown}` });
     return;
   }
-  if (!compiled.test(input)) issues.push({ path, message: `must match ${pattern}` });
+  // A `g` or `y` RegExp carries `lastIndex` between calls, and this one is cached per node: the
+  // second `.test()` of an accepted value would answer false. Reset, as the schema's tester does.
+  compiled.lastIndex = 0;
+  if (!compiled.test(input)) issues.push({ path, message: `must match ${shown}` });
 }
 
 function number(schema: JsonSchema, input: unknown, path: string, issues: ArgIssue[]): unknown {

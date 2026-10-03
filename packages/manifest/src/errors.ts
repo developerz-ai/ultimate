@@ -8,6 +8,7 @@ export const MANIFEST_ERROR_CODES = [
   'X_MANIFEST_BREAKING',
   'X_AGENTS_MD_MISSING',
   'X_AGENTS_MD_TOO_LARGE',
+  'X_MANIFEST_FACT_INVALID',
 ] as const;
 
 export type ManifestErrorCode = (typeof MANIFEST_ERROR_CODES)[number];
@@ -17,6 +18,7 @@ export const MANIFEST_ERROR_TITLES: Readonly<Record<ManifestErrorCode, string>> 
   X_MANIFEST_BREAKING: 'a published contract was removed or narrowed',
   X_AGENTS_MD_MISSING: 'no AGENTS.md',
   X_AGENTS_MD_TOO_LARGE: 'AGENTS.md grew past its cap',
+  X_MANIFEST_FACT_INVALID: 'a manifest fact is a number JSON cannot write back',
 };
 
 // Titles must be registered for format() to render the contract's first line. Every code above is
@@ -112,6 +114,23 @@ export class AgentsMdTooLargeError extends UltimateError {
       code: 'X_AGENTS_MD_TOO_LARGE',
       cause: `${input.path} is ${input.bytes}B, over the ${input.maxBytes}B budget`,
       fix: 'move generated facts out of AGENTS.md and let x.manifest.json carry them',
+    });
+  }
+}
+
+/**
+ * A number in the manifest body that JSON cannot write back as itself. `canonicalJson` hashes `NaN`,
+ * `Infinity` and `-0` as those tokens and `JSON.stringify` writes them as `null` and `0`, so a
+ * manifest built from one fails its own `verifyBuildId` the moment it is read back, and the
+ * committed file reads as drift on every build. `path` is where in the body it sits.
+ */
+export class ManifestFactInvalidError extends UltimateError {
+  constructor(input: { path: string; value: string }) {
+    super({
+      code: 'X_MANIFEST_FACT_INVALID',
+      cause: `the manifest fact at ${input.path} is ${input.value}, which x.manifest.json would write as ${input.value === '-0' ? '0' : 'null'} — the file could never match its own buildId`,
+      fix: `set the declaration that publishes ${input.path} to a finite number, then run x manifest`,
+      meta: { path: input.path, value: input.value },
     });
   }
 }

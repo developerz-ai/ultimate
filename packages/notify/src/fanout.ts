@@ -31,7 +31,9 @@ export async function runFanout<Params>(
     at: ctx.now().getTime(),
     recipients: input.recipients ?? [...(await plan.recipientsFor({ input: input.params, ctx }))],
   }));
-  const audience = open.recipients;
+  // Deduplicated on the way OUT of the step rather than inside it, so an `open` checkpointed by an
+  // earlier version — duplicates and all — is repaired on replay too, not only a fresh resolve.
+  const audience = uniqueById(open.recipients);
   if (audience.length > plan.maxRecipients) {
     throw new NotifyFanoutTooWideError({
       notifier: plan.name,
@@ -60,6 +62,21 @@ export async function runFanout<Params>(
     await deliverOne(walk, delivery);
   }
   return { recipients: audience.length, ...tally };
+}
+
+/**
+ * One entry per recipient id, the FIRST kept. Every per-recipient step is named by the id, so a
+ * repeated id was `X_STEP_DUPLICATE` on its second delivery — the fan-out failed part-way, the
+ * recipients after it were never notified, and every retry failed at the same place. One person
+ * named twice by a resolver is still one person, and gets one delivery per channel.
+ */
+function uniqueById(recipients: readonly Recipient[]): Recipient[] {
+  const seen = new Set<string>();
+  return recipients.filter((recipient) => {
+    if (seen.has(recipient.id)) return false;
+    seen.add(recipient.id);
+    return true;
+  });
 }
 
 async function deliverOne<Params>(

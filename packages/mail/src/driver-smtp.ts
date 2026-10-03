@@ -84,9 +84,27 @@ function parseSmtpUrl(raw: string): SmtpUrl {
     port: url.port === '' ? (tls ? IMPLICIT_TLS_PORT : SUBMISSION_PORT) : Number(url.port),
     tls,
     // Credentials are percent-encoded in a URL; a password with `@` or `/` is otherwise unusable.
-    ...(url.username === '' ? {} : { user: decodeURIComponent(url.username) }),
-    ...(url.password === '' ? {} : { password: decodeURIComponent(url.password) }),
+    ...(url.username === '' ? {} : { user: decodedCredential('user', url.username) }),
+    ...(url.password === '' ? {} : { password: decodedCredential('password', url.password) }),
   };
+}
+
+/**
+ * `decodeURIComponent` throws a bare `URIError` for a `%` that starts no escape, which escaped
+ * `createSmtpDriver` as the one SMTP_URL mistake that was not a config error. The value is a
+ * credential, so neither the cause nor the fix ever carries it.
+ */
+function decodedCredential(part: 'user' | 'password', raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new ConfigInvalidError({
+      cause: `the SMTP_URL ${part} holds a "%" that starts no percent-escape, so it cannot be decoded`,
+      // `prompt`, so the credential reaches neither shell history nor this message.
+      fix: `percent-encode the ${part} and put the output in SMTP_URL: bun -e 'console.log(encodeURIComponent(prompt("${part}:") ?? ""))'`,
+      meta: { part },
+    });
+  }
 }
 
 /**

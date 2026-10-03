@@ -392,14 +392,17 @@ describe('a failed credential is metered by address', () => {
     expect(other.status).toBe(429);
   });
 
-  test('it is keyed on the address only: another address, and a signed-in caller, are served', async () => {
+  test('it is keyed on the address only: another address is served, the spent one is not', async () => {
     const pipeline = metered();
     for (let index = 0; index < 5; index += 1) await pipeline.handle(...from('203.0.113.9'));
     expect((await pipeline.handle(...from('198.51.100.4'))).status).toBe(401);
+    // Refused BEFORE authenticate(), a valid session included: a right guess from an address that
+    // has spent its failures must not be told apart from a wrong one
+    // (`pipeline-unauthenticated.test.ts`).
     const member = await pipeline.handle(
       ...from('203.0.113.9', '/private', { cookie: 'session=ok' }),
     );
-    expect(member.status).toBe(200);
+    expect(member.status).toBe(429);
     // A public route never spent it either: its anonymous callers have their own per-route key.
     expect((await pipeline.handle(...from('203.0.113.9', '/public'))).status).toBe(200);
   });

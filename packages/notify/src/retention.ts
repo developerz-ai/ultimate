@@ -1,8 +1,9 @@
-// The two sweeps over this package's tables, read off the installed seam rather than off a store
+// The three sweeps over this package's tables, read off the installed seam rather than off a store
 // somebody handed the caller. `setNotifyStores` is an APP's boot line and runs after the boot that
 // owns the hourly sweep, so the sweep cannot hold the stores — it can only ask, per attempt, what
 // is installed now. Same shape and the same reason as `purgeAuthLimits()`.
 
+import type { PgDigestStore } from './digest-pg';
 import type { InboxPurgeBefore, PgInboxStore } from './inbox-pg';
 import type { PgDeliveryLedger } from './ledger-pg';
 import { notifyStores } from './stores';
@@ -47,4 +48,15 @@ export async function purgeNotifyDeliveries(nowMs: number): Promise<number> {
   const ledger = notifyStores().ledger;
   if (!purgeable<PgDeliveryLedger>(ledger, 'purgeExpired')) return 0;
   return ledger.purgeExpired(nowMs);
+}
+
+/**
+ * Delete digest windows closed longer ago than the store's own `retentionMs`, and answer how many.
+ * A window is normally deleted by a drain; this takes the one whose flush dead-lettered on a slot
+ * that never digests again. Zero for no store or a memory one, for the reason above.
+ */
+export async function purgeNotifyDigests(nowMs: number): Promise<number> {
+  const digest = notifyStores().digest;
+  if (!purgeable<PgDigestStore>(digest, 'purgeExpired')) return 0;
+  return digest.purgeExpired(nowMs);
 }

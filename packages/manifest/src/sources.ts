@@ -5,10 +5,10 @@
 // a global registry. Routes and policies are supplied by the caller: the route table lives
 // in `@ultimat3/render`, which is this same tier.
 
-import { describeActions } from '@ultimat3/action';
+import { describeActions, jsonSchemaOf } from '@ultimat3/action';
 import { describeEntities, registeredEntities, sealedFields } from '@ultimat3/entity';
 import { describeJobs } from '@ultimat3/jobs';
-import { describeQueries } from '@ultimat3/query';
+import { describeQueries, getQuery } from '@ultimat3/query';
 import { describeChannels } from '@ultimat3/realtime/server';
 import type { ManifestSources } from './build';
 import type {
@@ -48,6 +48,12 @@ export interface FrameworkSourcesInput {
  * to an index-signature type. Converted in exactly one place rather than widening every fact.
  */
 const asJson = (value: object): JsonValue => value as JsonValue;
+
+/** `describeQueries` and `getQuery` read one registry, so the handle is always there. */
+const queryInput = (name: string): { readonly input?: JsonValue } => {
+  const handle = getQuery(name);
+  return handle === undefined ? {} : { input: asJson(jsonSchemaOf(handle.input)) };
+};
 
 /** Absent stays absent: only a sealed column carries the field. */
 const sealedFact = (
@@ -121,6 +127,9 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
     })),
     queries: describeQueries().map((query) => ({
       name: query.name,
+      // The handle's own schema, projected exactly as an action's is: the descriptor is
+      // schema-erased, and without this `diffQueries`' input compare never fired on a real app.
+      ...queryInput(query.name),
       policy: query.capability,
       permissions: query.permissions,
       live: query.live,

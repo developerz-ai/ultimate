@@ -62,13 +62,29 @@ export function messageHeaders(message: MailMessage): Readonly<Record<string, st
   const headers: Record<string, string> = { 'Auto-Submitted': 'auto-generated' };
   if (message.replyTo !== undefined) headers['Reply-To'] = message.replyTo;
   if (message.unsubscribeUrl !== undefined) {
-    headers['List-Unsubscribe'] = `<${message.unsubscribeUrl}>`;
+    headers['List-Unsubscribe'] = `<${unsubscribeTarget(message.unsubscribeUrl)}>`;
     if (message.unsubscribeOneClick !== false) {
       headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
     }
   }
   return headers;
 }
+
+/**
+ * The url as the WHATWG serialiser writes it: host as punycode, path, query and fragment
+ * percent-encoded — 7-bit, and with no bare `>` to close the angle bracket early. It went out as
+ * written, so a non-ASCII url was raw 8-bit octets in a header. A url holding a control character
+ * is copied through UNTOUCHED: the serialiser silently drops CR, LF and tab, and a header break is
+ * refused by the CR/LF gate, never stripped into a different url. `send()` and the queue schema
+ * refuse an unparseable url first; a hand-built one is copied through and stays the caller's.
+ */
+function unsubscribeTarget(url: string): string {
+  if (CONTROL.test(url)) return url;
+  return URL.parse(url)?.href ?? url;
+}
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the control range IS the rule.
+const CONTROL = /[\u0000-\u001f\u007f]/;
 
 /**
  * Every address the envelope is delivered to. `Bcc` is one of them and never a header —
