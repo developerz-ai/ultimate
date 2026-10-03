@@ -29,7 +29,7 @@ type Grid = readonly (readonly boolean[])[];
 
 const at = (grid: Grid, row: number, col: number): boolean => grid[row]?.[col] === true;
 
-function isFunctionModule(size: number, row: number, col: number): boolean {
+export function isFunctionModule(size: number, row: number, col: number): boolean {
   const inCorner = (r0: number, c0: number): boolean =>
     row >= r0 && row < r0 + 8 && col >= c0 && col < c0 + 8;
   if (inCorner(0, 0) || inCorner(0, size - 8) || inCorner(size - 8, 0)) return true;
@@ -83,16 +83,23 @@ function fixedFaults(grid: Grid, size: number): string[] {
   return faults;
 }
 
-/** Both format copies, read bit 14 first; positions straight from ISO 18004 Figure 25. */
-function formatCopies(grid: Grid, size: number): readonly [number, number] {
-  const first: (readonly [number, number])[] = [];
+type Cell = readonly [number, number];
+
+/** The cells of both format copies, bit 14 first; positions straight from ISO 18004 Figure 25. */
+export function formatCells(size: number): readonly [readonly Cell[], readonly Cell[]] {
+  const first: Cell[] = [];
   for (let col = 0; col <= 8; col++) if (col !== 6) first.push([8, col]);
   for (let row = 7; row >= 0; row--) if (row !== 6) first.push([row, 8]);
-  const second: (readonly [number, number])[] = [];
+  const second: Cell[] = [];
   for (let row = size - 1; row >= size - 7; row--) second.push([row, 8]);
   for (let col = size - 8; col < size; col++) second.push([8, col]);
-  const read = (cells: readonly (readonly [number, number])[]): number =>
+  return [first, second];
+}
+
+function formatCopies(grid: Grid, size: number): readonly [number, number] {
+  const read = (cells: readonly Cell[]): number =>
     cells.reduce((acc, [row, col]) => (acc << 1) | (at(grid, row, col) ? 1 : 0), 0);
+  const [first, second] = formatCells(size);
   return [read(first), read(second)];
 }
 

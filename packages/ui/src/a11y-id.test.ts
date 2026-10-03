@@ -23,19 +23,33 @@ describe('useId', () => {
   /**
    * Each island is its own bundle by default (`islands.sharedChunks` off), so each carries its own
    * copy of this module and its own counter from zero: two islands both minted `field-1`, and
-   * `for` / `aria-describedby` resolved to whichever came first. Two module instances are two
-   * islands; a fresh query string is how one test process gets a second instance.
+   * `for` / `aria-describedby` resolved to whichever came first. A second copy is modelled by
+   * `resetIdCounter`, which puts this one back exactly where a freshly evaluated copy starts —
+   * counter at zero, no scope drawn. (Importing the module again under a query string would do it
+   * too, but Bun then reports that copy's coverage for this file instead of this one's.)
    */
-  test('two island copies of this module never mint the same id in one document', async () => {
+  test('two island copies of this module never mint the same id in one document', () => {
     const dom = installFakeDom(new FakeElement('div'));
     try {
-      const island = (name: string): Promise<typeof import('./a11y')> =>
-        import(`./a11y?island=${name}`);
-      const one = await island('one');
-      const two = await island('two');
-      const ids = [one.useId('field'), two.useId('field'), one.useId('field'), two.useId('field')];
-      expect(new Set(ids).size).toBe(4);
-      expect(ids.every((id) => id.startsWith('field-'))).toBe(true);
+      const first = [useId('field'), useId('field')];
+      resetIdCounter();
+      const second = [useId('field'), useId('field')];
+      expect(new Set([...first, ...second]).size).toBe(4);
+      // Same counter value, different copy: only the scope tells them apart.
+      expect(first[0]?.split('-').at(-1)).toBe(second[0]?.split('-').at(-1));
+      expect([...first, ...second].every((id) => /^field-[0-9a-z]+-[0-9a-z]+$/.test(id))).toBe(
+        true,
+      );
+    } finally {
+      dom.restore();
+    }
+  });
+
+  test('a copy draws its scope ONCE — every id it mints in one document shares it', () => {
+    const dom = installFakeDom(new FakeElement('div'));
+    try {
+      const scopes = new Set([useId('a'), useId('b'), useId('c')].map((id) => id.split('-')[1]));
+      expect(scopes.size).toBe(1);
     } finally {
       dom.restore();
     }
