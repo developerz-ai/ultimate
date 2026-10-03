@@ -394,13 +394,19 @@ async function probeDatabase(url: string | undefined): Promise<Finding | null> {
   }
 }
 
-export function probeFor(cwd: string, bunVersion: string, port: number): DoctorProbe {
+export function probeFor(
+  cwd: string,
+  bunVersion: string,
+  port: number,
+  // The environment `doctorPort` read `PORT` from, so `APP_URL` is judged against the same one.
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): DoctorProbe {
   const root = findAppRoot(cwd)?.dir;
   return {
     bunVersion,
     root,
     port,
-    appUrl: process.env['APP_URL'],
+    appUrl: env['APP_URL'],
     devCursorSecret: usesDevCursorSecret(),
     devStorageSecret: usesDevStorageSecret(),
     // `ULTIMATE_ENV`, through core — the one key that says which deploy this is, with `NODE_ENV`
@@ -436,7 +442,7 @@ export const doctorCommand: CliCommand = {
   spec: doctorSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const port = doctorPort(ctx.args, ctx.env);
-    const probe = probeFor(ctx.cwd, ctx.bunVersion, port);
+    const probe = probeFor(ctx.cwd, ctx.bunVersion, port, ctx.env);
     const findings = await runDoctor(probe);
     const listed = withGuardListing(
       {

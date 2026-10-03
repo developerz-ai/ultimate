@@ -92,9 +92,14 @@ test(
     expect(stale.headers.get('x-ultimate-isr')).toBe('stale');
     expect(await stale.text()).toContain('journal 1');
 
-    // The regeneration runs behind the stale answer; the request after it lands is the new body.
-    await Bun.sleep(10);
-    expect(await (await get('/journal')).text()).toContain('journal 2');
+    // The regeneration runs behind the stale answer: poll until it lands, never a fixed wait.
+    let body = '';
+    for (const deadline = Date.now() + 10_000; Date.now() < deadline; ) {
+      body = await (await get('/journal')).text();
+      if (body.includes('journal 2')) break;
+      await Bun.sleep(25);
+    }
+    expect(body).toContain('journal 2');
   },
   BOOT_TIMEOUT_MS,
 );

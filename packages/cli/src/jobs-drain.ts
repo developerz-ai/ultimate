@@ -167,10 +167,16 @@ export async function drainJobs(
   while (budget > 0) {
     const leased = await leaseBatch(source, candidates, Math.min(budget, MAX_JOB_PAGE));
     if (leased.length === 0) break;
-    budget -= leased.length;
-    for (const record of leased) held.add(record.id);
+    // A row the target already refused is tried once per drain: handed straight back, spending
+    // no budget and adding no second failure for the same id.
+    const refused = new Set(failures.map((failure) => failure.id));
+    const fresh = leased.filter((record) => !refused.has(record.id));
+    for (const record of leased) if (refused.has(record.id)) await releaseLease(source, record);
+    if (fresh.length === 0) break;
+    budget -= fresh.length;
+    for (const record of fresh) held.add(record.id);
     const before = moved.length;
-    await transfer(source, target, leased, found, moved, failures);
+    await transfer(source, target, fresh, found, moved, failures);
     // A batch that moved nothing handed its leases back, and the next claim would take the same
     // rows to the same refusing target: stop, and let the failures already counted say why.
     if (moved.length === before) break;

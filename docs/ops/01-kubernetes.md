@@ -47,14 +47,14 @@ there is one environment, and it hides the object a reviewer needs to see.
 | `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue depth, an `External` metric | liveness on `/metrics`, `:9090` — **no readiness** |
 | `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, `:9090` |
 | `migrate` | Job, run-once before any serving role | 1 | none |
-| `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
+| `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, readiness on `/readyz?deep=1`, both `:9090` |
 
 **Probes follow the role, because the roles do not agree on what they open.** `web` and `sync`
 construct a server and get `/readyz` + `/healthz` on it. `worker`, `scheduler` and `replicator`
 construct none — their only socket is the metrics listener
 ([`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts)), which answers
 `METRICS_PATH`, `/healthz` and `/readyz` (the verdict only, never the check names) — so they get a
-liveness probe on `/metrics`, and the replicator alone a readiness probe on `/readyz`. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
+liveness probe on `/metrics`, and the replicator alone a readiness probe on `/readyz?deep=1` — deep, so an app's `readiness: 'process'` cannot report a stopped stream as ready. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
 probe meaningless; leaving them with no probe is how a wedged worker was never restarted.
 
 **The replicator restarts its own stream, and says when it is not replicating** (`As of 2026-10-02`).

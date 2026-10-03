@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { JobDriver, StepRecord } from '@ultimat3/jobs';
 import { createMemoryDriver, createRedisDriver } from '@ultimat3/jobs';
+import { CliNotImplementedError } from './errors';
 import { drainJobs } from './jobs-drain';
 import { listJobs } from './jobs-report';
 
@@ -245,4 +246,34 @@ describe('unit · the drain walks every page', () => {
     expect((await listJobs(source, { state: 'ready' })).rows).toEqual([]);
     expect((await target.stats()).reduce((sum, row) => sum + row.ready, 0)).toBe(350);
   }, 30_000);
+});
+
+// A batch that moved SOME rows released the ones the target refused, and the next batch could
+// lease them again: the refused id landed in `failures` twice and spent budget a real candidate
+// was owed. A refused id is tried once per drain.
+describe('unit · a refused row is tried once', () => {
+  test('a partly refused batch never re-leases the refused id', async () => {
+    const source = createMemoryDriver();
+    const inner = createMemoryDriver();
+    const target: JobDriver = {
+      ...inner,
+      enqueue: (request) =>
+        request.name === 'bad'
+          ? Promise.reject(
+              new CliNotImplementedError({ feature: 'the bad job', fix: 'x jobs ls --json' }),
+            )
+          : inner.enqueue(request),
+    };
+    // Unclaimable, so the budget outlives the claimable rows — the shape that re-leased.
+    await enqueue(source, 'later', Date.now() + 3_600_000);
+    const bad = await enqueue(source, 'bad');
+    await enqueue(source, 'good');
+
+    const outcome = await drainJobs(source, target, false);
+
+    expect(outcome.failures.map((failure) => failure.id)).toEqual([bad]);
+    expect(outcome.moved.map((record) => record.name)).toEqual(['good']);
+    expect(outcome.skipped.map((skip) => skip.name)).toEqual(['later']);
+    expect((await source.introspect?.job(bad))?.state).toBe('ready');
+  });
 });

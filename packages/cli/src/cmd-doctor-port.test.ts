@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { REQUIRED_BUN } from './app-root';
 import type { DoctorProbe } from './cmd-doctor';
-import { doctorCommand, doctorPort, runDoctor } from './cmd-doctor';
+import { doctorCommand, doctorPort, probeFor, runDoctor } from './cmd-doctor';
 import { devPortFor } from './dev-port';
 import { appUrlFindings } from './doctor-app-url';
 import { parseArgs } from './parse';
@@ -88,5 +88,15 @@ describe('unit · runDoctor asks the APP_URL rule of the port it probed', () => 
     expect(await codes('http://localhost:3000')).toEqual(['X_APP_URL_PORT_MISMATCH']);
     expect(await codes('http://localhost:4000')).toEqual([]);
     expect(await codes(undefined)).toEqual([]);
+  });
+});
+
+// `doctorPort` read `PORT` from the injected env while the probe read `APP_URL` from the host's,
+// so the two halves of one rule came from two environments.
+describe('unit · the probe reads APP_URL from the same env the port came from', () => {
+  test('an injected APP_URL is the one judged', () => {
+    const env = { APP_URL: 'http://localhost:3999', PORT: '4000' };
+    expect(probeFor('/', REQUIRED_BUN, 4000, env).appUrl).toBe('http://localhost:3999');
+    expect(probeFor('/', REQUIRED_BUN, 4000, {}).appUrl).toBeUndefined();
   });
 });

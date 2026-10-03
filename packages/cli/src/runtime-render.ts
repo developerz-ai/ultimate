@@ -449,12 +449,17 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
           : undefined;
       const kept = key === undefined ? undefined : memo.get(key);
       if (kept !== undefined) return staticResponse(request, kept);
+      let led = false;
       const render = async (): Promise<Rendered> => {
+        led = true;
         const rendered = await renderEntry(entry, request, ctx, options, isr);
         if (key !== undefined && rendered.document !== undefined) memo.set(key, rendered.document);
         return rendered;
       };
-      const rendered = key === undefined ? await render() : await firstRender.run(key, render);
+      const shared = key === undefined ? await render() : await firstRender.run(key, render);
+      // Only a DOCUMENT is shared. A redirect `load` decided was its request's own, so a request
+      // that joined one renders for itself rather than answer with another request's `Location`.
+      const rendered = shared.document !== undefined || led ? shared : await render();
       // The ETag was only ever a header: a matching `If-None-Match` is a 304, not the page again.
       return rendered.document === undefined
         ? rendered.respond()

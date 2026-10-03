@@ -158,16 +158,25 @@ describe('unit · x dev serves the save', () => {
       const handle = server.running.server;
       const get = async (): Promise<Response> =>
         (handle as NonNullable<typeof handle>).fetch(new Request('http://dev.test/tagged'));
-      Reflect.set(globalThis, '__xIsrProbe', 1);
-      expect(await (await get()).text()).toContain('tagged 1');
-      Reflect.set(globalThis, '__xIsrProbe', 2);
-      await invalidateTags([tag('post')]);
-      const stale = await get();
-      expect(stale.headers.get('x-ultimate-isr')).toBe('stale');
-      expect(await stale.text()).toContain('tagged 1');
-      await Bun.sleep(0);
-      expect(await (await get()).text()).toContain('tagged 2');
-      Reflect.deleteProperty(globalThis, '__xIsrProbe');
+      try {
+        Reflect.set(globalThis, '__xIsrProbe', 1);
+        expect(await (await get()).text()).toContain('tagged 1');
+        Reflect.set(globalThis, '__xIsrProbe', 2);
+        await invalidateTags([tag('post')]);
+        const stale = await get();
+        expect(stale.headers.get('x-ultimate-isr')).toBe('stale');
+        expect(await stale.text()).toContain('tagged 1');
+        // The regeneration runs behind the stale answer: polled until it lands, with a deadline,
+        // never a fixed wait a loaded runner can outlast.
+        let body = '';
+        for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
+          body = await (await get()).text();
+          if (body.includes('tagged 2')) break;
+        }
+        expect(body).toContain('tagged 2');
+      } finally {
+        Reflect.deleteProperty(globalThis, '__xIsrProbe');
+      }
     },
     BOOT_TIMEOUT_MS,
   );

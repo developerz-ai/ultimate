@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { appRoutes } from './runtime-render';
 
@@ -78,6 +78,23 @@ describe('unit · a cold static page under a burst', () => {
     expect(failed.every((answer) => answer.status >= 500)).toBe(true);
     fail = false;
     expect((await burst(server, '/roto', 1))[0]?.status).toBe(200);
+  });
+
+  // A redirect a loader decided is THIS request's (it may read the request's own cookie): a request
+  // that joined a cold render answering with a redirect runs its own load, never takes the
+  // leader's `Location` (PR #637 review).
+  test('a joined request never inherits the leader’s redirect', async () => {
+    staticPage('apps/web/site/salto/page.tsx', async () => {
+      loads += 1;
+      const mine = loads;
+      await Bun.sleep(5);
+      setRedirect(`/to/${mine}`, 302);
+      return { n: mine };
+    });
+    const answers = await burst(serve(true), '/salto', 3);
+    const locations = answers.map((answer) => answer.headers.get('location'));
+    expect(answers.map((answer) => answer.status)).toEqual([302, 302, 302]);
+    expect(new Set(locations).size).toBe(3);
   });
 
   test('without memoStatic (x dev) every request still renders', async () => {

@@ -148,7 +148,7 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
     failureThreshold: 30
   {{- if eq $role "replicator" }}
   readinessProbe:
-    httpGet: { path: /readyz, port: metrics }
+    httpGet: { path: '/readyz?deep=1', port: metrics }
     periodSeconds: 10
   {{- end }}
   livenessProbe:

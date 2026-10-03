@@ -59,9 +59,13 @@ async function bustCycle(routes: ReturnType<typeof appRoutes>): Promise<readonly
   await invalidateTags([postTag]);
   const second = await get();
   const secondBody = await second.text();
-  // The stale copy is answered while the regeneration runs behind it; let it land.
-  await Bun.sleep(0);
-  const third = await (await get()).text();
+  // The stale copy is answered while the regeneration runs behind it: polled until it lands, with
+  // a deadline, never a fixed wait a loaded runner can outlast.
+  let third = '';
+  for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
+    third = await (await get()).text();
+    if (third.includes('version 2')) break;
+  }
   return [second.headers.get('x-ultimate-isr') ?? 'fresh', secondBody, third];
 }
 
@@ -81,6 +85,8 @@ describe('unit · a tag bust reaches the ISR page', () => {
     expect(state).toBe('stale');
     expect(fresh).toContain('version 2');
 
+    // A page is stored and fresh, or the check below would pass over an empty store.
+    expect(isr.store().paths().length).toBeGreaterThan(0);
     release();
     version = 3;
     await invalidateTags([postTag]);
