@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "cb6c1bd2fa451b07180e14460b5d4b740b1843adb81613328e3517b89df5ca04",
+  "buildId": "0a84adc50661cb7e34b82ef25c92c45036e3ae7cb313afe05d605ff14ea0fc76",
   "tiers": {
     "0": [
       "core",
@@ -887,7 +887,7 @@
     {
       "code": "X_CORPUS_UNSCANNED",
       "owner": "scripts",
-      "at": "scripts/lib/corpus.ts"
+      "at": "scripts/image-contract.ts"
     },
     {
       "code": "X_CORS_CONFIG_INVALID",
