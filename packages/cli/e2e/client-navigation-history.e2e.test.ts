@@ -1,5 +1,6 @@
 // Client navigation in a real Chrome: back and forward — an entry the app pushed shows its own
-// page, and the scroll position is where the visitor left it, both ways.
+// page, and the scroll position is where the visitor left it, both ways, and after a reload or a
+// Back that is a full document load.
 //
 //   bun test packages/cli/e2e/client-navigation-history.e2e.test.ts
 
@@ -49,6 +50,32 @@ describe.skipIf(noBrowser)('client navigation · history and scroll', () => {
       await currentTab().waitFor('document.title === "A" && scrollY === 1200', 'A, where it was');
       await read('history.forward()');
       await currentTab().waitFor('document.title === "B" && scrollY === 700', 'B, where it was');
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    'a reload, and a Back that is a full document load, land where the visitor left',
+    async () => {
+      await start('/tall');
+      await read('scrollTo(0, 1500)');
+      await currentTab().waitFor(
+        'history.state?.__x?.scroll?.[1] === 1500',
+        'the offset saved into the entry',
+      );
+      await read('location.reload()');
+      await currentTab().waitFor(
+        'window.__kept === undefined && window.__xNavigation !== undefined && scrollY === 1500',
+        'the reloaded page, where it was',
+      );
+      // `navigation: 'document'`: the router hands it to the browser, a real load.
+      await click('to-doc');
+      await currentTab().waitFor('document.title === "Doc"', 'Doc');
+      await read('history.back()');
+      await currentTab().waitFor(
+        'document.title === "Tall" && window.__xNavigation !== undefined && scrollY === 1500',
+        'Tall again, where it was',
+      );
     },
     TIMEOUT_MS,
   );

@@ -132,6 +132,8 @@ export function generateWebManifest(config: WebManifestInput): WebManifestResult
   assertValid(config);
   const capabilities = resolveCapabilities(config.capabilities);
   const scope = config.scope ?? '/';
+  const display = config.display ?? 'standalone';
+  const override = displayOverrideFor(display);
 
   const optional: MutableManifest = {};
   if (config.description !== undefined) optional.description = config.description;
@@ -156,8 +158,9 @@ export function generateWebManifest(config: WebManifestInput): WebManifestResult
     short_name: config.shortName ?? shortNameFrom(config.name),
     start_url: config.startUrl ?? scope,
     scope,
-    display: config.display ?? 'standalone',
-    display_override: ['standalone', 'minimal-ui'],
+    display,
+    // Right after `display`, where it always was: an unchanged config emits unchanged bytes.
+    ...(override.length > 0 ? { display_override: override } : {}),
     orientation: config.orientation ?? 'any',
     lang: config.lang ?? 'en',
     dir: config.dir ?? 'ltr',
@@ -175,6 +178,19 @@ export function generateWebManifest(config: WebManifestInput): WebManifestResult
     ],
     capabilities,
   };
+}
+
+/** The spec's own fallback chain for `display`, app windows only — `browser` is no window. */
+const DISPLAY_CHAIN: readonly DisplayMode[] = ['fullscreen', 'standalone', 'minimal-ui'];
+
+/**
+ * `display_override` is read BEFORE `display`, so it must start where `display` does: a fixed
+ * `['standalone','minimal-ui']` opened a `browser` app in its own window and gave a `fullscreen`
+ * one browser UI. `browser` gets none — any override would be a window it did not ask for.
+ */
+function displayOverrideFor(display: DisplayMode): readonly DisplayMode[] {
+  const from = DISPLAY_CHAIN.indexOf(display);
+  return from < 0 ? [] : DISPLAY_CHAIN.slice(from);
 }
 
 type MutableManifest = { -readonly [K in keyof WebManifest]?: WebManifest[K] };

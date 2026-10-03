@@ -71,7 +71,7 @@ before an un-shippable PWA exists.
 
 | Capability | Manifest member | SW code |
 |---|---|---|
-| `push` | — | `push` + `notificationclick` listeners |
+| `push` | — | `push` + `notificationclick` listeners; a tap opens a same-origin URL only |
 | `backgroundSync` | — | `sync` listener that tells every open tab to drain realtime's outbox (`OUTBOX_DRAIN_MESSAGE`) |
 | `badging` | — | `navigator.setAppBadge` after a push |
 | `shareTarget` | `share_target` | — |
@@ -108,7 +108,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 |---|---|
 | `generateServiceWorker` | `sw.js` from the route table; deterministic for identical input |
 | `strategyFor`, `MODE_STRATEGY`, `cacheFirst`, … | the four strategies + the mapping table; a `personal` route is `network-only` |
-| `routeRules`, `assetRules` | the worker's rule list: routes most specific first, runtime asset prefixes (`/islands/`) ahead of them |
+| `routeRules`, `assetRules` | the worker's rule list: routes most specific first, runtime asset prefixes (`/islands/`) ahead of them. `routeRules(routes, personalPages)` — `'last-member'` gives a personal page a `pages` rule; a pattern matches the browser's percent-encoded pathname, and a catch-all its bare prefix |
 | `CLEAR_PAGES_MESSAGE`, `PAGES_CLEARED_MESSAGE` | `{ type: 'clear-pages' }` — post it to the worker on sign-out; it empties every pages cache and answers `{ type: 'pages-cleared' }` |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |
 | `buildId`, `detectSkew`, `retentionPlan` | version skew |

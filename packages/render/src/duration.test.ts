@@ -24,4 +24,17 @@ describe('parseTtlMs', () => {
     expect(parseTtlMs(Number.NaN)).toBe(null);
     expect(parseTtlMs(Number.POSITIVE_INFINITY)).toBe(null);
   });
+
+  // The string arm agrees with the number arm: a zero-length TTL is no TTL, in every unit.
+  test('answers null for a zero duration in any unit, as the number arm does for 0', () => {
+    for (const ttl of ['0s', '0ms', '0m', '0h', '0d', '0.0s', '00m']) {
+      expect(parseTtlMs(ttl)).toBe(null);
+    }
+    expect(parseTtlMs('0.5s')).toBe(500);
+  });
+
+  // A JS caller's `revalidate: { ttl: true }` reached `.trim()`: the one reader is total.
+  test('answers null for a value that is neither a string nor a number', () => {
+    for (const ttl of [true, {}, [], 5n]) expect(parseTtlMs(ttl as never)).toBe(null);
+  });
 });

@@ -70,7 +70,8 @@ export type NativeReason =
   | 'hash'
   | 'method'
   | 'encoding'
-  | 'file';
+  | 'file'
+  | 'unparsable';
 
 export type LinkVerdict =
   | { readonly kind: 'soft'; readonly url: string }
@@ -97,9 +98,12 @@ const native = (reason: NativeReason): { readonly kind: 'native'; reason: Native
   reason,
 });
 
-/** Same document, fragment only: the browser scrolls, no fetch. */
-const hashOnly = (to: URL, from: URL): boolean =>
-  to.hash !== '' && to.pathname === from.pathname && to.search === from.search;
+/**
+ * Same document, fragment only: the browser scrolls, no fetch. Asked of the HREF, not `to.hash`:
+ * an empty fragment (`<a href="#">`) parses to `hash === ''`, and was soft-navigated and re-fetched.
+ */
+const hashOnly = (href: string, to: URL, from: URL): boolean =>
+  href.includes('#') && to.pathname === from.pathname && to.search === from.search;
 
 /**
  * The link rules, in the order a reader checks them. The SURFACE is not decided here: the URL
@@ -113,12 +117,15 @@ export function linkVerdict(facts: LinkFacts): LinkVerdict {
   if (facts.download) return native('download');
   if (facts.rel.split(/\s+/).includes('external')) return native('external');
   if (facts.reload) return native('opt-out');
+  // `a.href` is the raw attribute when it does not parse (`href="http://"`): the browser decides
+  // what such a link does, where `new URL` threw a bare `TypeError` out of the click handler.
+  if (!URL.canParse(facts.href)) return native('unparsable');
   const to = new URL(facts.href);
   const from = new URL(facts.current);
   if (to.origin !== from.origin || (to.protocol !== 'http:' && to.protocol !== 'https:')) {
     return native('cross-origin');
   }
-  if (hashOnly(to, from)) return native('hash');
+  if (hashOnly(facts.href, to, from)) return native('hash');
   return { kind: 'soft', url: to.href };
 }
 
@@ -153,7 +160,7 @@ export type FormVerdict =
 
 /** What a `submit` tells the router — the submitter's `formmethod`/`formaction` already applied. */
 export interface FormFacts {
-  /** Resolved action URL. */
+  /** Resolved action URL — or the raw attribute when it does not resolve (`'unparsable'`). */
   readonly action: string;
   readonly current: string;
   /** Lower case: `get`, `post` or `dialog`. */
@@ -175,6 +182,7 @@ export function formVerdict(facts: FormFacts): FormVerdict {
   if (facts.method !== 'get' && facts.method !== 'post') return native('method');
   // `text/plain` is the browser's own encoding, with no `fetch` body that reproduces it byte for byte.
   if (facts.method === 'post' && facts.enctype === 'text/plain') return native('encoding');
+  if (!URL.canParse(facts.action)) return native('unparsable');
   const to = new URL(facts.action);
   if (to.origin !== new URL(facts.current).origin) return native('cross-origin');
   if (facts.method === 'get') {

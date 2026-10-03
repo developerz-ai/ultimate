@@ -52,6 +52,11 @@ const artifacts = serviceWorkerArtifacts({
     routeDescriptor({ path: '/', surface: 'site', mode: 'static', offline: 'precache' }),
     routeDescriptor({ path: '/offline', surface: 'site', mode: 'static', offline: 'precache' }),
     routeDescriptor({ path: '/feed', surface: 'app', mode: 'ssr', offline: 'runtime' }),
+    // A route path is the DECODED directory name and `url.pathname` is percent-encoded; a catch-all
+    // owns its bare prefix; a precache entry another build answered is not this build's copy.
+    routeDescriptor({ path: '/precios-españa', surface: 'site', mode: 'ssr', offline: 'runtime' }),
+    routeDescriptor({ path: '/docs/*path', surface: 'site', mode: 'ssr', offline: 'runtime' }),
+    routeDescriptor({ path: '/stale', surface: 'site', mode: 'static', offline: 'precache' }),
   ],
   islands: islandBundle([]),
   styles: styleBundleOf([]),
@@ -62,6 +67,8 @@ const MARKER = {
   home: 'home-document',
   offline: 'offline-document',
   feed: 'feed-document',
+  encoded: 'encoded-document',
+  docs: 'docs-document',
 } as const;
 
 /** Every document names itself, so an assertion can say WHICH one the browser resolved. */
@@ -96,6 +103,13 @@ const server = Bun.serve({
     }
     if (path === '/offline') return html(documentFor(MARKER.offline));
     if (path === '/feed') return html(documentFor(MARKER.feed));
+    if (path === '/precios-espa%C3%B1a') return html(documentFor(MARKER.encoded));
+    if (path === '/docs') return html(documentFor(MARKER.docs));
+    if (path === '/stale') {
+      const stale = html(documentFor('stale-document'));
+      stale.headers.set('x-ultimate-build', 'another-build');
+      return stale;
+    }
     if (path === '/') return html(documentFor(MARKER.home));
     return new Response('not found', { status: 404 });
   },
@@ -157,6 +171,40 @@ describe.skipIf(chrome === undefined && !required)(
               .then((hit) => hit !== undefined),
           ),
         ).toBe(true);
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "an entry another build answered is left out of this build's precache",
+      async () => {
+        expect(
+          await page.evaluate(() =>
+            caches
+              .open('x-precache-sw-e2e-build')
+              .then((cache) => cache.match('/stale'))
+              .then((hit) => hit === undefined),
+          ),
+        ).toBe(true);
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test.each([
+      ['/precios-españa', MARKER.encoded],
+      ['/docs', MARKER.docs],
+    ])(
+      'a page at %s visited online renders offline, from the cache',
+      async (path, marker) => {
+        await page.goto(path);
+        expect(await heading()).toBe(marker);
+        await browser?.page.offline?.(true);
+        try {
+          await page.goto(path);
+          expect(await heading()).toBe(marker);
+        } finally {
+          await browser?.page.offline?.(false);
+        }
       },
       TEST_TIMEOUT_MS,
     );

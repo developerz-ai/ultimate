@@ -247,7 +247,10 @@ export const createServer = (options: ServerOptions): ServerHandle => {
     const out: Record<string, NativeHandler> = {};
     for (const description of describeRoutes(table)) {
       if (description.params.length > 0) continue;
-      out[`${prefix}${description.path}`] = dispatch;
+      // `encodeURI`: `Bun.serve` refuses a non-ASCII key with a bare `TypeError`, so one route named
+      // `/precios-españa` kept the whole server from starting. Encoded as `URL.pathname` spells
+      // it; any other spelling falls through to `fetch`, where the router decodes it.
+      out[encodeURI(`${prefix}${description.path}`)] = dispatch;
     }
     return out;
   };

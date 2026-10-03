@@ -56,8 +56,15 @@ export function missingStylesheets(doc: Document, next: Document): readonly stri
     .filter((href) => !loaded.has(href));
 }
 
-/** Resolves once every sheet loaded OR failed — a missing sheet must not hang the navigation. */
-export function loadStylesheets(doc: Document, hrefs: readonly string[]): Promise<void> {
+/**
+ * Resolves once every sheet loaded OR failed — a missing sheet must not hang the navigation. Each
+ * sheet joins `owned` as it is appended, so a swap that never happens still leaves it retirable.
+ */
+export function loadStylesheets(
+  doc: Document,
+  hrefs: readonly string[],
+  owned: WeakSet<Element>,
+): Promise<void> {
   return Promise.all(
     hrefs.map(
       (href) =>
@@ -68,6 +75,7 @@ export function loadStylesheets(doc: Document, hrefs: readonly string[]): Promis
           link.onload = () => done();
           link.onerror = () => done();
           doc.head.append(link);
+          owned.add(link);
         }),
     ),
   ).then(() => undefined);

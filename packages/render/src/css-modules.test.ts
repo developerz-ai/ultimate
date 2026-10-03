@@ -1,4 +1,10 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove, and `compileStylesheet` reads partials synchronously.
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun has no API naming the system temporary directory.
+import { tmpdir } from 'node:os';
+// why: Bun has no path-joining API.
+import { join } from 'node:path';
 import {
   compileStylesheet,
   isCssModule,
@@ -181,5 +187,64 @@ describe('stripCharset', () => {
     expect(stripCharset('.a{color:red}')).toBe('.a{color:red}');
     // Not this function's to repair: a `@charset` past byte 0 is invalid CSS wherever it sits.
     expect(stripCharset('.a{}@charset "UTF-8";')).toBe('.a{}@charset "UTF-8";');
+  });
+});
+
+// Only a SELECTOR names a class. A pass over the whole sheet rewrote every `.ident` it met: a
+// font's `local(Inter.Regular)`, a comment's text, and the halves of an escaped-dot class.
+describe('scopeClasses reads selector preludes only', () => {
+  test('a nested rule after a declaration leaves the declaration value alone', () => {
+    const out = scopeClasses('.a{--token:.b;.c{x:y}}', 'h');
+    expect(out.css).toBe('.a_h{--token:.b;.c_h{x:y}}');
+    expect(out.classes).toEqual({ a: 'a_h', c: 'c_h' });
+  });
+
+  test('a dotted name inside a declaration is left alone', () => {
+    const css = '@font-face{font-family:Inter;src:local(Inter.Regular)}.a{font:12px Inter.Var}';
+    const out = scopeClasses(css, 'h');
+    expect(out.css).toBe(
+      '@font-face{font-family:Inter;src:local(Inter.Regular)}.a_h{font:12px Inter.Var}',
+    );
+    expect(out.classes).toEqual({ a: 'a_h' });
+  });
+
+  test('a comment gains no phantom class', () => {
+    const out = scopeClasses('/*! see .phantom */.a{color:red}', 'h');
+    expect(out.css).toBe('/*! see .phantom */.a_h{color:red}');
+    expect(out.classes).toEqual({ a: 'a_h' });
+  });
+
+  test('an escaped dot is part of ONE class, and the map names it unescaped', () => {
+    const out = scopeClasses('.w-1\\.5{width:.375rem}', 'h');
+    expect(out.css).toBe('.w-1\\.5_h{width:.375rem}');
+    expect(out.classes).toEqual({ 'w-1.5': 'w-1.5_h' });
+  });
+
+  test('a rule inside an at-rule is scoped; the at-rule prelude is not', () => {
+    const out = scopeClasses(
+      '@media (min-width:0.5em){.a{color:red}}@supports (display:grid){.b:is(.c){x:y}}',
+      'h',
+    );
+    expect(out.css).toBe(
+      '@media (min-width:0.5em){.a_h{color:red}}@supports (display:grid){.b_h:is(.c_h){x:y}}',
+    );
+  });
+});
+
+describe('the scope suffix', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ultimate-css-scope-'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  test('two modules with one source and different partials get different class names', () => {
+    const files = ['one', 'two'].map((dir, index) => {
+      mkdirSync(join(root, dir));
+      writeFileSync(join(root, dir, '_tone.scss'), `$tone: ${index === 0 ? 'red' : 'blue'};`);
+      return join(root, dir, 'page.module.scss');
+    });
+    const source = "@use 'tone';.card{color:tone.$tone}";
+    const [one, two] = files.map((file) => compileStylesheet(file, source));
+    expect(one?.css).toContain('color:red');
+    expect(two?.css).toContain('color:blue');
+    expect(one?.classes['card']).not.toBe(two?.classes['card']);
   });
 });

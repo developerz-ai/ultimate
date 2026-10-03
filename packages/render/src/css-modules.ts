@@ -78,10 +78,21 @@ const partialCandidates = (target: string): readonly string[] => {
   ];
 };
 
-/** Strings and `url()` payloads may contain a `.` that is not a class selector. */
-const PROTECTED = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|url\([^)]*\)/g;
-/** A class selector: a dot followed by an identifier start. `0.5rem` cannot match — `5` is not one. */
-const CLASS_SELECTOR = /\.(-?[A-Za-z_][\w-]*)/g;
+/** Strings, `url()` payloads and comments may contain a `.` that is not a class selector. */
+const PROTECTED = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|url\([^)]*\)|\/\*[\s\S]*?\*\//g;
+/** One CSS escape: up to six hex digits and the whitespace that ends them, or any other char. */
+const ESCAPE = String.raw`\\[0-9a-fA-F]{1,6}[ \t\n]?|\\[^\n\r\f0-9a-fA-F]`;
+const NAME_START = String.raw`(?:[A-Za-z_\u0080-\uffff]|${ESCAPE})`;
+const NAME_CHAR = String.raw`(?:[\w\-\u0080-\uffff]|${ESCAPE})`;
+/**
+ * A class selector: a dot, then a whole CSS identifier — escapes included, so `.w-1\.5` is ONE
+ * class, where `[\w-]*` split it into a scoped `w-1` and a stray `.5`. `0.5rem` cannot match: `5`
+ * starts no identifier.
+ */
+const CLASS_SELECTOR = new RegExp(
+  String.raw`\.(-?${NAME_START}${NAME_CHAR}*|--${NAME_CHAR}*)`,
+  'g',
+);
 /**
  * The mask delimiter. NUL is the one byte CSS cannot contain, so the restore pass cannot mistake
  * a real declaration for a placeholder — a bare numeric marker would collide with `flex:1 1 0`.
@@ -140,6 +151,11 @@ export function scopeClasses(
   suffix: string,
 ): { readonly css: string; readonly classes: Record<string, string> } {
   const classes: Record<string, string> = {};
+  const scopeSelector = (selector: string): string =>
+    selector.replace(CLASS_SELECTOR, (_match, name: string) => {
+      classes[unescapeName(name)] = `${unescapeName(name)}_${suffix}`;
+      return `.${name}_${suffix}`;
+    });
   const literals: string[] = [];
   const mask = (match: string): string => {
     literals.push(match);
@@ -148,11 +164,7 @@ export function scopeClasses(
   // Strings and `url()` first, so a `:global(` inside a `content:` string is never unwrapped;
   // then each `:global()` payload joins the same mask and comes back unscoped.
   const masked = unwrapGlobal(css.replace(PROTECTED, mask), mask);
-  const scoped = masked.replace(CLASS_SELECTOR, (_match, name: string) => {
-    const local = `${name}_${suffix}`;
-    classes[name] = local;
-    return `.${local}`;
-  });
+  const scoped = inPreludes(masked, scopeSelector);
   // Recursive: a `:global()` payload is masked AFTER the strings inside it were, so its literal
   // holds their placeholders — one pass restored `html[data-theme='light']` as
   // `html[data-theme=\0 0 \0]`, a selector that matched nothing. A literal only ever holds
@@ -165,6 +177,39 @@ export function scopeClasses(
       (_match, index: string) => restore(literals[Number(index)] ?? ''),
     );
   return { css: restore(scoped), classes };
+}
+
+/**
+ * `rewrite` applied to every qualified rule's prelude — the text before a `{` that is not an
+ * at-rule's — and nothing else. A declaration ends at `;` or `}` and never reaches it: a font's
+ * `local(Inter.Regular)` is not a class. The strings, comments and `url()`s are masked by then, so
+ * no brace in this text is quoted.
+ */
+function inPreludes(css: string, rewrite: (selector: string) => string): string {
+  let out = '';
+  let start = 0;
+  for (let at = 0; at < css.length; at += 1) {
+    const char = css[at];
+    if (char !== '{' && char !== '}' && char !== ';') continue;
+    const segment = css.slice(start, at);
+    out += char === '{' && !segment.trimStart().startsWith('@') ? rewrite(segment) : segment;
+    out += char;
+    start = at + 1;
+  }
+  return out + css.slice(start);
+}
+
+/** A class name as `class=""` spells it: every CSS escape resolved, a bad code point as U+FFFD. */
+function unescapeName(name: string): string {
+  return name.replace(
+    /\\([0-9a-fA-F]{1,6})[ \t\n]?|\\(.)/g,
+    (_match, hex?: string, char?: string) => {
+      if (hex === undefined) return char ?? '';
+      const point = Number.parseInt(hex, 16);
+      const valid = point > 0 && point <= 0x10ffff && (point < 0xd800 || point > 0xdfff);
+      return String.fromCodePoint(valid ? point : 0xfffd);
+    },
+  );
 }
 
 /** The fix line for a stylesheet that names tokens `@ultimat3/ui/tokens` does not export. */
@@ -312,7 +357,9 @@ export function compileStylesheet(file: string, source: string): CompiledStylesh
   }
   if (!isCssModule(file)) return { css, classes: {}, dependencies };
   // Content-addressed, not path-addressed: a checkout at a different absolute path must produce
-  // byte-identical CSS, which a hash over the absolute filename would not.
-  const scoped = scopeClasses(css, contentHash(`${file.split('/').pop() ?? file} ${source}`));
+  // byte-identical CSS, which a hash over the absolute filename would not. The COMPILED CSS, not
+  // the source: two `page.module.scss` with one source and different `@use`d partials hashed
+  // alike, emitted one class name with two bodies, and the later sheet won on both pages.
+  const scoped = scopeClasses(css, contentHash(`${file.split('/').pop() ?? file} ${css}`));
   return { css: scoped.css, classes: scoped.classes, dependencies };
 }

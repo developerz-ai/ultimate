@@ -269,8 +269,14 @@ const handle = createServer({
 }).start();
 ```
 
-Static paths are registered in Bun's native `routes` table; param/wildcard paths fall
+Static paths are registered in Bun's native `routes` table (keyed `encodeURI`'d: `Bun.serve`
+refuses a non-ASCII key); param/wildcard paths, and any other spelling of a static one, fall
 through to `fetch`. Method resolution stays ours so a 405 still carries problem+json.
+
+`As of 2026-10-02`: a literal segment matches its percent-encoded request spelling, either hex
+case (`/precios-espa%C3%B1a` reaches `/precios-españa`), and a wildcard matches an empty rest —
+`/docs` and `/docs/` reach `/docs/*path` with `path: ''`, after a static `/docs` route if one is
+declared. A malformed escape is still `X_PATH_INVALID` or a 404, never a thrown `URIError`.
 
 ### No WebSocket upgrade on the `web` role, and no hand-written `api/` route
 

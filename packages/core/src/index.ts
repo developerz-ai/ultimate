@@ -649,6 +649,7 @@ export { retry, retryDecision } from './retry';
 export { isRetryableStatus, RETRYABLE_STATUSES } from './retryable-status';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
+export { routeRank } from './route-rank';
 export type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from './route-vocabulary';
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';

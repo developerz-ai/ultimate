@@ -48,6 +48,7 @@ export type {
 } from './render-isr';
 export {
   createIsrController,
+  DEFAULT_ISR_REGENERATE_DEADLINE_MS,
   ISR_LOCALE_PARAM,
   invalidateAndRevalidate,
   isrKey,

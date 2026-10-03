@@ -152,7 +152,7 @@ sorted, JSON-safe descriptor list. Every downstream generator reads that one tab
 | `site/pricing/page.tsx` | `/pricing` |
 | `site/(marketing)/about/page.tsx` | `/about` |
 | `site/blog/[slug]/page.tsx` | `/blog/:slug` |
-| `site/docs/[...path]/page.tsx` | `/docs/*path` |
+| `site/docs/[...path]/page.tsx` | `/docs/*path` — `compilePattern` matches the bare `/docs` too, the path the static build writes for an empty rest |
 | `app/dashboard/page.tsx` | `/dashboard` |
 | `api/posts/route.ts` | `/api/posts` |
 
@@ -516,7 +516,11 @@ a job boundary the class is gone and the `code` is what survives — match on th
   framework's `Revalidator`, and the function it returns releases **both** halves — the
   dependents and the revalidator slot, the latter only while it is still this controller's.
   The default store (`memoryIsrStore`) is capped at `DEFAULT_ISR_MAX_ENTRIES` (1,000) pages,
-  least recently generated evicted first.
+  least recently generated evicted first. One regeneration holds its page for at most
+  `DEFAULT_ISR_REGENERATE_DEADLINE_MS` (30 s; `createIsrController({ regenerateDeadlineMs })`),
+  so a render that never settles no longer pins the page for the life of the process. A stored
+  path takes its TTL and tags from the most specific matching route (static > `:param` >
+  `*catch-all`, per segment), never the first in table order.
 - **A tag-revalidated ISR document carries its purge keys while it is shared-cacheable**,
   `As of 2026-10-02` — `@ultimat3/http`'s `cache-headers` stage rewrites the response to `private`
   for a signed-in visitor and strips both headers: `Surrogate-Key`

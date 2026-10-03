@@ -74,6 +74,26 @@ describe('the emitted install block, executed', () => {
     expect([...(cache?.entries.keys() ?? [])]).toContain('https://app.test/');
   });
 
+  // Mid-rollout the fill reaches whichever pod answers: an OLD pod's document, stored under the new
+  // build's precache, was this worker's offline copy of a page from the deploy it replaced.
+  test("an entry another build answered is not this build's precache; an unstamped one is", async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    const stamp: Readonly<Record<string, string>> = { '/': 'build-0', '/pricing': 'build-1' };
+    sw.answerWith((request) => {
+      const build = stamp[new URL(request.url).pathname];
+      return build === undefined
+        ? undefined
+        : new Response(`${build} page`, { headers: { 'x-ultimate-build': build } });
+    });
+    await sw.install();
+    const keys = [...(sw.caches.get(cacheNamespace('build-1', 'precache'))?.entries.keys() ?? [])];
+    expect(keys).not.toContain('https://app.test/');
+    expect(keys).toContain('https://app.test/pricing');
+    // A static host stamps nothing: there is no other build to tell it from.
+    expect(keys).toContain('https://app.test/offline');
+  });
+
   test('fetches each entry revision-addressed, so a deploy re-downloads only what changed', async () => {
     const sw = swHarness();
     sw.load(generateServiceWorker(precached, config, 'build-1').source);

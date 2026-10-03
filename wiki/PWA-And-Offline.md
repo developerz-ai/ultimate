@@ -100,6 +100,13 @@ carries no `X-Ultimate-Build`, so skew is read off the answer: another build's d
 
 **The install fill is throttled**, `As of 2026-09`: `PRECACHE_CONCURRENCY` (4) entries in flight,
 never every entry at once — the fill runs on the first visit, on the connection the first click needs.
+An entry whose answer carries another build's `X-Ultimate-Build` is not stored, `As of 2026-10-02`:
+mid-rollout an old pod's document was the new worker's offline copy. An unstamped answer (a static
+host) is stored; a skipped entry is fetched when asked for.
+
+**A rule matches the pathname the browser sends**, `As of 2026-10-02`: a literal segment is
+percent-encoded the way `url.pathname` spells it (`/precios-españa`, `/a b` were never handled), and a
+catch-all owns its bare prefix — `/docs/*path` matches `/docs`, which the static export writes.
 
 **A new worker takes over at once**, `As of 22.3.2`: the install block calls `self.skipWaiting()`, so
 a deploy's worker activates when its precache is filled rather than when every tab of the origin
@@ -136,7 +143,8 @@ device showed the previous member's data. Offline, a personal page is the offlin
 An offline-first app can take 21.0.0's mode back, explicitly: `pwa.offline.personalPages:
 'last-member'` routes a personal page by its render mode again and keeps the most recent member's
 own copy in a per-principal partition that only the offline path reads (never answered online,
-never precached). Declare it only with a sign-out that clears it — `clear-pages` below, or
+never precached — one declaring `offline: 'precache'` lands in the partition too, `As of 2026-10-02`;
+it got a `precache` rule and was never kept). Declare it only with a sign-out that clears it — `clear-pages` below, or
 `signOutHeaders()`' `Clear-Site-Data`. `examples/dummy` does, for its offline feed.
 
 | Message | Sent by | Worker does |
@@ -271,14 +279,14 @@ accepted.
 
 | Flag | Generates | Cost of enabling |
 |---|---|---|
-| `push` | SW push handler, subscription endpoint action, a `job` for send fanout | notification permission prompt; needs VAPID keys |
+| `push` | `pushSource`'s SW `push` and `notificationclick` handlers, emitted only when `generateServiceWorker` is also handed a `vapid` key — `x build` never is (no `pwa.vapid` key), so it emits neither and files a `serviceWorkerWarnings` entry, `As of 2026-10-02`. No subscription endpoint, no send job. A tap opens a same-origin URL only; any other opens the app root | notification permission prompt; needs VAPID keys |
 | `backgroundSync` | a SW `sync` listener that posts `OUTBOX_DRAIN_MESSAGE` to every open tab, and the page registration with an `online` fallback where the Background Sync API is missing | replay must be idempotent. By design each queued write carries an idempotency key, so `action`'s idempotency store answers a replay rather than applying it twice. The queue is IndexedDB-backed, per principal |
 | `badging` | badge update from a live query — **only alongside `push`** `As of 2026-08-20`: the badge call is emitted inside the push block, so `badging: true` on its own changes nothing while `capabilities.badging` still reports `true` | Chromium-only surface |
-| `shareTarget` | manifest entry + a POST route | must handle untrusted payloads; the target route gets a required policy |
+| `shareTarget` | the `share_target` manifest member, from `generateWebManifest`'s `shareTarget` input — nothing else: no route, no policy, no worker code. `x build` passes neither the flag nor the input, so no app's manifest carries it, `As of 2026-10-02` | the app serves the target route itself and must treat its payload as untrusted |
 | `fileHandlers` | manifest entry + route | OS-level file association |
 | ~~`periodicSync`~~ | **not built, and the declarations are deleted** `As of 2026-08-20`. There was never a `periodicsync` listener, never a `periodicSync.register` call, and no `CAPABILITIES` flag to gate one — `PERIODIC_SYNC_TAG` and `periodicMinIntervalMs` described a feature that did not exist | — |
 
-All of them are `route` / `action` / `job` primitives underneath ([The eight primitives](The-Eight-Primitives)) — a push send is a job, a share target is a route with a policy. No PWA-specific concept escapes into the app's mental model.
+All of them are `route` / `action` / `job` primitives underneath ([The eight primitives](The-Eight-Primitives)) — a push send would be a job, a share target is a route the app serves. No PWA-specific concept escapes into the app's mental model.
 
 ## What is checked, and where
 

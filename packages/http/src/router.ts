@@ -5,7 +5,7 @@
 // PRECEDENCE (deterministic, tested in router.test.ts):
 //   1. static segment   `/posts/new`
 //   2. param segment    `/posts/:id`
-//   3. wildcard segment `/posts/*rest`  (matches ONE OR MORE remaining segments)
+//   3. wildcard segment `/posts/*rest`  (matches ZERO or more remaining segments)
 // Depth-first with backtracking: `/posts/new` beats `/posts/:id` even though the
 // param branch would also match, and a dead end in the static branch still falls
 // back to the param branch. Two routes that would tie are a build error
@@ -241,19 +241,32 @@ const candidates = (
 ): void => {
   if (index === segments.length) {
     if (current.routes.size > 0) search.out.push({ node: current, params });
+    // A catch-all with an EMPTY rest: `/docs` for `/docs/*path`, after any static route at
+    // `/docs` itself. It is the path `@ultimat3/render`'s static build writes for that page
+    // (`fillPath` fills an absent rest with `''`), and its `compilePattern` matches it — a server
+    // that 404ed it served a page the export and the ISR lookup both said existed.
+    const rest = current.wildcard;
+    if (rest !== undefined && rest.node.routes.size > 0) {
+      search.out.push({ node: rest.node, params: { ...params, [rest.name]: '' } });
+    }
     return;
   }
   const segment = segments[index];
   if (segment === undefined) return;
+  // Decoded ONCE, for every branch. `undefined` is a malformed escape, which fails only the
+  // branches that needed the decoded form: the raw static lookup below still runs.
+  const decoded = decodeSegment(segment);
 
-  // Static segments are compared raw, never decoded, so a malformed escape only ever fails the
-  // branch that would have decoded it: a path that reaches no param or wildcard is the 404 it
-  // always was, and a static route still wins the precedence it always won.
-  const staticChild = current.statics.get(segment);
+  // Raw first, then the decoded spelling: a route file is named in Unicode (`precios-españa`) and
+  // `URL.pathname` encodes it (`precios-espa%C3%B1a`), so a raw-only lookup 404ed every non-ASCII
+  // literal. A static route still wins the precedence it always won.
+  const staticChild =
+    current.statics.get(segment) ??
+    (decoded !== undefined && decoded !== segment ? current.statics.get(decoded) : undefined);
   if (staticChild !== undefined) candidates(staticChild, segments, index + 1, params, search);
 
   if (current.param !== undefined) {
-    const value = decodeSegment(segment);
+    const value = decoded;
     if (value === undefined) search.undecodable ??= segment;
     else {
       const next = { ...params, [current.param.name]: value };

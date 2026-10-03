@@ -16,7 +16,8 @@ import {
   surrogateKeys,
   unregisterDependent,
 } from '@ultimat3/cache';
-import { logger, renderThrowable } from '@ultimat3/core';
+import type { Scheduler } from '@ultimat3/core';
+import { createSingleFlight, finiteCount, logger, renderThrowable } from '@ultimat3/core';
 import { parseTtlMs } from './duration';
 import { finiteStatus, isRenderStatus } from './finite-status';
 import type { RouteDescriptor } from './registry';
@@ -25,6 +26,7 @@ import type { IsrEntry, IsrState, IsrStore } from './render-isr-store';
 import { memoryIsrStore } from './render-isr-store';
 import { contentHash, staticHeaders } from './render-static';
 import type { RenderResult } from './route';
+import { compilePattern } from './route-pattern';
 
 /**
  * The reserved query parameter the negotiated locale rides in. A parameter and not a prefix
@@ -106,7 +108,24 @@ export interface IsrControllerOptions {
   readonly routes?: () => readonly RouteDescriptor[];
   /** ISR-route dependents for a tag set; defaults to `@ultimat3/cache`'s graph. */
   readonly isrDependents?: (tags: readonly CacheTag[]) => readonly string[];
+  /**
+   * How long one regeneration may hold its path, in whole ms (≥ 1). Defaults to
+   * `DEFAULT_ISR_REGENERATE_DEADLINE_MS`. There is no "forever": that is the bug it bounds.
+   */
+  readonly regenerateDeadlineMs?: number | undefined;
+  /** Injected so the deadline is provable without waiting one out. */
+  readonly schedule?: Scheduler | undefined;
 }
+
+/**
+ * The ceiling on one regeneration's hold on its path — `@ultimat3/http`'s default
+ * `requestTimeoutMs`, so the request that started a render has been cut off by then. Without it,
+ * one `render()` that never settled pinned its path for the life of the process: a missed page
+ * hung every later request, a stale one was served stale forever, and only a restart cleared it.
+ * Eviction frees the PATH; the hung render is not cancellable from here, and its late result is
+ * dropped if a newer regeneration has started since (`latest`).
+ */
+export const DEFAULT_ISR_REGENERATE_DEADLINE_MS = 30_000;
 
 export interface IsrController {
   serve(path: string, render: IsrRenderFn): Promise<IsrServeResult>;
@@ -141,7 +160,22 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
   const isrDependents =
     options.isrDependents ?? ((tags: readonly CacheTag[]) => dependentsOfKind(tags, 'isr-route'));
   const buildId = options.buildId ?? 'dev';
-  const pending = new Map<string, Promise<IsrEntry>>();
+  const flight = createSingleFlight({
+    deadlineMs: finiteCount(
+      'createIsrController',
+      'regenerateDeadlineMs',
+      options.regenerateDeadlineMs ?? DEFAULT_ISR_REGENERATE_DEADLINE_MS,
+      1,
+    ),
+    schedule: options.schedule,
+  });
+  /**
+   * The newest regeneration STARTED per path, by identity. Once a deadline can evict a flight, two
+   * renders of one path can overlap, and the older one settling last would publish its HTML over
+   * the newer page with a fresh `generatedAt`. Cleared by the run that still owns it; a run that
+   * never settles leaves one entry, replaced by the next regeneration of that path.
+   */
+  const latest = new Map<string, object>();
   const registered = new Set<string>();
 
   function descriptorFor(key: string): RouteDescriptor | undefined {
@@ -189,48 +223,53 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
     return now() - entry.generatedAt < ttlMs;
   }
 
+  /** One regeneration of `path`; `led` is told when THIS call started it rather than joined one. */
+  function regenerateOnce(path: string, render: IsrRenderFn, led?: () => void): Promise<IsrEntry> {
+    return flight.run(path, async (): Promise<IsrEntry> => {
+      led?.();
+      const run = {};
+      latest.set(path, run);
+      const descriptor = descriptorFor(path);
+      try {
+        // BEFORE the render, not after: `revalidateByTags` reads the graph, so a bust arriving
+        // while a cold path's first render was in flight could not see the page it was
+        // invalidating — which is the window in which the bust that matters most arrives.
+        registerPath(path, descriptor);
+        // Sampled before the render for the reason `@ultimat3/cache`'s read-through fill samples
+        // before its `load()` (`tiers.ts`): the HTML below is built from rows read in the past,
+        // and a `markStale` landing in between was then ERASED by `store.set({ stale: false })`.
+        // For a tag-only route `isFresh` is true forever, so the process went on serving pre-write
+        // HTML for the rest of its life. One mechanism, not a second one grown here.
+        const fence = sampleFence({
+          key: path,
+          tags: (descriptor?.revalidateTags ?? []).map(parseWireTag),
+        });
+        const { html, status } = renderedOf(await render(path));
+        const entry: IsrEntry = {
+          path,
+          html,
+          hash: contentHash(html),
+          generatedAt: now(),
+          ttlMs: parseTtlMs(descriptor?.revalidateTtl),
+          stale: false,
+          // Screened at generation, the one place a status enters the store: a `NaN` written here
+          // would be served for the whole TTL as a `RangeError` on every hit.
+          status: finiteStatus('IsrRenderFn', status),
+        };
+        // Refused, never published stale-flagged: the next request re-renders from rows that now
+        // include the write, where a stored-but-stale entry would serve this pre-write body once
+        // more before doing the same thing. Refused too once a newer run started (`latest`).
+        if (fence.isValid() && latest.get(path) === run) store.set(entry);
+        forgetEvictedPaths();
+        return entry;
+      } finally {
+        if (latest.get(path) === run) latest.delete(path);
+      }
+    });
+  }
+
   function regenerate(path: string, render: IsrRenderFn): Promise<IsrEntry> {
-    const existing = pending.get(path);
-    if (existing !== undefined) return existing;
-
-    const descriptor = descriptorFor(path);
-    const work = (async (): Promise<IsrEntry> => {
-      // BEFORE the render, not after: `revalidateByTags` reads the graph, so a bust arriving while
-      // a cold path's first render was in flight could not see the page it was invalidating —
-      // which is the window in which the bust that matters most arrives.
-      registerPath(path, descriptor);
-      // Sampled before the render for the reason `@ultimat3/cache`'s read-through fill samples
-      // before its `load()` (`tiers.ts`): the HTML below is built from rows read in the past, and
-      // a `markStale` landing in between was then ERASED by `store.set({ stale: false })`. For a
-      // tag-only route `isFresh` is true forever, so the process went on serving pre-write HTML
-      // for the rest of its life. One mechanism, not a second one grown here.
-      const fence = sampleFence({
-        key: path,
-        tags: (descriptor?.revalidateTags ?? []).map(parseWireTag),
-      });
-      const { html, status } = renderedOf(await render(path));
-      const entry: IsrEntry = {
-        path,
-        html,
-        hash: contentHash(html),
-        generatedAt: now(),
-        ttlMs: parseTtlMs(descriptor?.revalidateTtl),
-        stale: false,
-        // Screened at generation, the one place a status enters the store: a `NaN` written here
-        // would be served for the whole TTL as a `RangeError` on every hit.
-        status: finiteStatus('IsrRenderFn', status),
-      };
-      // Refused, never published stale-flagged: the next request re-renders from rows that now
-      // include the write, where a stored-but-stale entry would serve this pre-write body once
-      // more before doing the same thing.
-      if (fence.isValid()) store.set(entry);
-      forgetEvictedPaths();
-      return entry;
-    })();
-
-    pending.set(path, work);
-    void work.catch(() => undefined).finally(() => pending.delete(path));
-    return work;
+    return regenerateOnce(path, render);
   }
 
   function markStale(path: string): boolean {
@@ -243,7 +282,7 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
 
   return {
     store: () => store,
-    inflight: () => pending.size,
+    inflight: () => flight.size,
     regenerate,
     markStale,
 
@@ -266,8 +305,10 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
       }
 
       // stale-while-revalidate: answer from the stale copy now, refresh behind the request.
-      const already = pending.has(path);
-      void regenerate(path, render).catch((error: unknown) => {
+      let started = false;
+      void regenerateOnce(path, render, () => {
+        started = true;
+      }).catch((error: unknown) => {
         // `renderThrowable`, never `.message`/`String()`: this `.catch` is the last frame under a
         // route's own render function, and `String()` raises on a null-prototype object — the
         // handler that exists to REPORT the failure became a second, unhandled rejection.
@@ -277,7 +318,7 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
         state: 'stale',
         entry: cached,
         result: toResult(cached, buildId, tagsOf(path), true),
-        regenerating: !already,
+        regenerating: started,
       };
     },
 
@@ -342,25 +383,26 @@ interface RouteMatcher {
 /** One compiled set per route TABLE — `describeRoutes()` hands out one array per registry change. */
 const compiledTables = new WeakMap<readonly RouteDescriptor[], readonly RouteMatcher[]>();
 
-/** A stored path belongs to a route when the route's pattern matches it. */
+/**
+ * A stored path belongs to a route when the route's pattern matches it — `route-pattern.ts`'s one
+ * pattern compiler, never a second. Ordered MOST SPECIFIC FIRST, as `@ultimat3/http`'s trie
+ * resolves a request: segment by segment, a static beats a `:param` beats a `*catch-all`. In table
+ * order `/docs/*path` sorts before `/docs/:id`, so the first match gave `/docs/7` the catch-all's
+ * TTL and tags — a page rendered by one route and expired by another's clock.
+ */
 function matchersOf(table: readonly RouteDescriptor[]): readonly RouteMatcher[] {
   const cached = compiledTables.get(table);
   if (cached !== undefined) return cached;
-  const compiled = table.map((route): RouteMatcher => {
-    if (!route.path.includes(':') && !route.path.includes('*')) {
-      return { route, test: (storedPath) => storedPath === route.path };
-    }
-    const pattern = new RegExp(`^${route.path.split('/').map(segmentPattern).join('/')}/?$`);
-    return { route, test: (storedPath) => pattern.test(storedPath) };
-  });
+  // Static routes too: `/precios-españa` is the route's path and `/precios-espa%C3%B1a` the key's,
+  // so only the pattern (raw or encoded, per character) finds it.
+  const compiled = table
+    .map((route): RouteMatcher & { readonly specificity: number } => {
+      const { regex, specificity } = compilePattern(route.path);
+      return { route, specificity, test: (stored) => regex.test(stored) };
+    })
+    .sort((a, b) => b.specificity - a.specificity);
   compiledTables.set(table, compiled);
   return compiled;
-}
-
-function segmentPattern(segment: string): string {
-  if (segment.startsWith(':')) return '([^/]+)';
-  if (segment.startsWith('*')) return '(.*)';
-  return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /** Tag-only routes have no clock of their own; a tag bust reaches the CDN through the fanout. */

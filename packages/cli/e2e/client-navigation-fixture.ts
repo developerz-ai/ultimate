@@ -268,6 +268,8 @@ const routes: Route[] = [
     () => ({ title: 'Site', path: '/site', surface: 'web:site' }),
     nav({ surface: 'web:site' }),
   ),
+  // Tall enough to scroll on its own: a reload drops anything a test set through the CSSOM.
+  page('/tall', () => ({ title: 'Tall', path: '/tall', body: '<p>row</p>'.repeat(300) })),
   page('/missing', () => ({ title: 'Not found', path: '/missing' }), nav(), { status: 404 }),
   page('/eager', () => ({ title: 'Eager', path: '/eager' }), nav({ prefetch: true })),
   page('/eager-ns', () => ({ title: 'Eager NS', path: '/eager-ns' }), nav({ prefetch: true }), {
