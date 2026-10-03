@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createGateway, isRetryable } from './gateway';
 import { ANTHROPIC_MODEL_IDS, modelSpec } from './models';
-import { AnthropicProvider } from './provider';
+import { AnthropicProvider, estimateInputTokens, estimateTokens } from './provider';
 import { type Call, collect, fakeFetch } from './provider-fixture';
 
 const provider = new AnthropicProvider();
@@ -249,5 +249,23 @@ describe('transport', () => {
 
     expect(result.text).toBe('ok');
     expect(calls).toHaveLength(3);
+  });
+});
+
+// The token estimate reserved the UNCLAMPED `maxTokens` while the cost estimate clamped it to the
+// model's output ceiling: a request asking for more than the model can write was refused by a
+// token ceiling it could never actually spend.
+describe('the two pre-flight estimates agree on the completion', () => {
+  test('both count at most the model’s own output ceiling', () => {
+    const model = 'claude-opus-5';
+    const { maxOutput } = modelSpec(model);
+    const request = {
+      model,
+      messages: [{ role: 'user' as const, content: 'hi' }],
+      maxTokens: maxOutput * 4,
+    };
+    expect(estimateTokens(request)).toBe(estimateInputTokens(request) + maxOutput);
+    const within = { ...request, maxTokens: 64 };
+    expect(estimateTokens(within)).toBe(estimateInputTokens(within) + 64);
   });
 });

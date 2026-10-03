@@ -101,3 +101,13 @@ describe('an embedder that answers fewer vectors than it was given texts', () =>
     );
   });
 });
+
+// FNV-1a/32 hashes `costarring` and `liquid` alike, so a HashEmbedder over it embedded the two
+// words identically — cosine 1, and a semantic lookup for one answered with the other's entry.
+describe('HashEmbedder slots', () => {
+  test('two words FNV-1a collides on are two different vectors', async () => {
+    const [a, b] = await new HashEmbedder().embed(['costarring', 'liquid']);
+    if (a === undefined || b === undefined) expect.unreachable('two texts, two vectors');
+    expect(cosine(a, b)).toBeLessThan(0.5);
+  });
+});

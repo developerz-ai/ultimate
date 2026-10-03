@@ -61,6 +61,22 @@ describe('unit · built-in scorers', () => {
     expect(scorer.score({ output: '105', expected: '100' })).toBe(0.5);
     expect(scorer.score({ output: '120', expected: '100' })).toBe(0);
   });
+
+  // `delta >= tolerance` read 0 >= 0 as "too far": an exact match scored 0 at tolerance 0, the
+  // one setting whose whole meaning is "exact match only".
+  test('tolerance 0 is exact match: 1 for equal, 0 for anything else', () => {
+    const exact = numericTolerance(0);
+    expect(exact.score({ output: '42', expected: '42' })).toBe(1);
+    expect(exact.score({ output: '42.001', expected: '42' })).toBe(0);
+  });
+
+  test('a tolerance that is not a finite count is refused where it is declared', () => {
+    for (const tolerance of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(() => numericTolerance(tolerance)).toThrow(
+        expect.objectContaining({ code: 'X_INVARIANT' }),
+      );
+    }
+  });
 });
 
 // `clampScore` is the last thing between an app's scorer and a recorded number, and every score

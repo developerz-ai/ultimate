@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createContext, userActor } from '@ultimat3/core';
+import { driverError } from '@ultimat3/db';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AgentTurn } from './agent';
@@ -16,6 +17,7 @@ import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './pr
 import { costOf, EchoProvider } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
+import { HIDDEN_TOOL_CAUSE } from './tools';
 
 const Input = t.object({ orderId: t.string });
 const Output = t.object({ answer: t.string });
@@ -314,5 +316,39 @@ describe('the app redactor runs over tool results too', () => {
     const sent = pairs(seen[1]).map(([, content]) => content);
     expect(sent).toEqual([JSON.stringify('record of [removed]')]);
     expect(JSON.stringify(seen)).not.toContain('patient-4411');
+  });
+});
+
+// `runLlmToolCall`'s rule, through the run that actually sends it: the second request is the one
+// the provider keeps, so the database's words must already be gone from it.
+describe('a tool that fails at the database', () => {
+  test('the model reads the code and a fixed sentence, never the server message', async () => {
+    resetAiRuntime();
+    const { provider, seen } = scripted([
+      { calls: [{ name: 'lookup', input: {} }] },
+      { calls: [{ name: 'respond', input: { answer: 'sorry' } }] },
+    ]);
+    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    const support = agent({
+      input: Input,
+      output: Output,
+      prompt: promptFor(),
+      vars: ({ input }) => ({ orderId: input.orderId }),
+      tools: [
+        tool('lookup', () =>
+          Promise.reject(
+            driverError('select password_hash from x_users', {
+              code: '42P99',
+              message: 'column "password_hash" does not exist',
+            }),
+          ),
+        ),
+      ],
+      policy: allow(),
+    }).named('dbFailAgent');
+
+    await support({ orderId: 'o-1' }, { ctx: createContext({ actor: userActor({ id: 'u-1' }) }) });
+    expect(pairs(seen[1])).toEqual([['call-1-0', `X_DB_STATEMENT_FAILED: ${HIDDEN_TOOL_CAUSE}`]]);
+    expect(JSON.stringify(seen[1]?.messages)).not.toContain('password_hash');
   });
 });

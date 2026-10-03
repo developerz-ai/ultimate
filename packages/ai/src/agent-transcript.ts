@@ -5,8 +5,8 @@
  * next message — and a rule split across two call sites is a rule one of them will miss.
  */
 
-import { RESPOND } from './llm';
 import type { AiContentBlock, AiMessage, GenerateResult } from './provider';
+import { RESPOND } from './respond';
 import type { LlmToolCall, LlmToolResult } from './tools';
 
 /**

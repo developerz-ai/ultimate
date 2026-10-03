@@ -11,7 +11,14 @@
 import { finiteCount, finiteOption } from '@ultimat3/core';
 import { cosine, tokenize } from './embeddings';
 import { VectorDimMismatchError } from './errors';
-import { NO_TENANT, narrowScope, scopeAdmits, UNSCOPED, type VectorScope } from './vector-scope';
+import {
+  assertTenantRead,
+  NO_TENANT,
+  narrowScope,
+  scopeAdmits,
+  UNBOUND,
+  type VectorScope,
+} from './vector-scope';
 
 export interface VectorRecord {
   readonly id: string;
@@ -44,7 +51,7 @@ export interface HybridSearchInput {
 export interface VectorStore {
   readonly name: string;
   readonly dimension: number;
-  /** The tenant + policy envelope every statement carries. `UNSCOPED` on a fresh store. */
+  /** The tenant + policy envelope every statement carries. `UNBOUND` on a fresh store. */
   readonly scope: VectorScope;
   /** A view of the same rows through a NARROWER envelope. It can only ever tighten. */
   scoped(scope: VectorScope): VectorStore;
@@ -56,10 +63,10 @@ export interface VectorStore {
   /**
    * Delete every row `filter` matches EXCEPT the ids in `keep`, inside this store's scope. What a
    * re-index needs: `indexDocument` upserts a document's new chunks, then prunes the ones the
-   * shorter text no longer produced. Optional so a hand-written store still satisfies the type;
-   * without it a re-index cannot clean up, and says so in `indexDocument`'s doc.
+   * shorter text no longer produced. Required: an optional `prune` was a re-index that silently
+   * left the old tail retrievable on any store that skipped it.
    */
-  prune?(filter: MetadataFilter, keep: readonly string[]): Promise<void>;
+  prune(filter: MetadataFilter, keep: readonly string[]): Promise<void>;
 }
 
 export interface MemoryVectorStoreInput {
@@ -101,7 +108,7 @@ export class MemoryVectorStore implements VectorStore {
     this.input = input;
     this.name = input.name ?? 'memory';
     this.dimension = input.dimension;
-    this.scope = input.scope ?? UNSCOPED;
+    this.scope = input.scope ?? UNBOUND;
     this.records = input.records ?? new Map<string, StoredRecord>();
     // Screened, not clamped: a `NaN` here makes every BM25 score `NaN`, `hit.score > 0` reads
     // false for every document, and `searchText` answers an empty list — zero work reported as a
@@ -136,6 +143,7 @@ export class MemoryVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
+    assertTenantRead(this.name, this.scope);
     this.assertDimension(vector.length);
     // `k` carries no default, so `??` never sees it and nothing else does either: `slice(0, NaN)`
     // is `[]`, which is a search that answers "no matches" for every query and reports success.
@@ -151,6 +159,7 @@ export class MemoryVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
+    assertTenantRead(this.name, this.scope);
     const width = finiteCount(SUBJECT, 'k', k);
     const candidates = this.candidates(filter);
     if (candidates.length === 0) return [];
@@ -182,6 +191,7 @@ export class MemoryVectorStore implements VectorStore {
    * by exact term match beats one that merely leads a flat vector ranking.
    */
   async hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]> {
+    assertTenantRead(this.name, this.scope);
     // Three bounds, none of which `Math.max` screens — it PROPAGATES a `NaN`. A `NaN` `k` collapses
     // both candidate widths and the final slice to `[]`; a `NaN` `rrfK` makes every fused score
     // `NaN`, and the ranking this method exists to produce becomes whatever order the sort left.

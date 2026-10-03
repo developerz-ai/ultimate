@@ -31,7 +31,7 @@ import type { AgentFact } from './agent-facts';
 import { registerAgentFact } from './agent-facts';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
 import type { BudgetLimits } from './budget';
-import { BudgetLedger, currentBudget, withBudget } from './budget';
+import { budgetKeysFor, currentBudget, withBudget } from './budget';
 import {
   AgentMaxTurnsError,
   AgentToolUnexposedError,
@@ -40,7 +40,7 @@ import {
   LlmTruncatedError,
 } from './errors';
 import type { LlmBudget } from './llm';
-import { answerAttributes, RESPOND, respondToolFor, structuredOutputOf } from './llm';
+import { answerAttributes } from './llm';
 import type { ModelId } from './models';
 import { DEFAULT_MODEL, moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
@@ -53,6 +53,8 @@ import type {
 } from './provider';
 import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
+import type { Respond } from './respond';
+import { RESPOND, respondFor } from './respond';
 import { aiGateway, aiRedactor } from './runtime';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
 import { asProjectableAction, runLlmToolCall, toLlmTools, toolLabel } from './tools';
@@ -153,7 +155,7 @@ export function agent<
   TOutput extends StandardSchemaV1,
   V extends PromptVars,
 >(def: AgentDef<TInput, TOutput, V>): Action<TInput, TOutput> {
-  const respond = respondToolFor(def.output);
+  const respond = respondFor(def.output);
   // At declaration, because the tools are values by then and a run that discovers this at the
   // first request has already been declared, registered and projected as if it worked. Asked of
   // the DECLARATION rather than of the projection: `isMcpExposed` needs no name, and a real
@@ -241,7 +243,7 @@ async function run<
   V extends PromptVars,
 >(
   def: AgentDef<TInput, TOutput, V>,
-  respond: LlmTool,
+  respond: Respond,
   adapted: Adapted,
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
@@ -271,11 +273,10 @@ async function run<
     const limits = limitsOf(def);
     // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
     const gateway = aiGateway(name);
-    const ledger = (
-      currentBudget() ??
-      gateway.callLedger?.() ??
-      new BudgetLedger({ limits: {} })
-    ).derive(limits);
+    // Keyed on the CALLER, so the gateway's `actor` / `org` ceilings count this call against them.
+    const ledger = (currentBudget() ?? gateway.callLedger(budgetKeysFor(args.ctx.actor))).derive(
+      limits,
+    );
     const base: GenerateRequest = {
       model,
       ...(system === undefined ? {} : { system }),
@@ -283,7 +284,7 @@ async function run<
       maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
-      tools: [...adapted.offered, respond],
+      tools: [...adapted.offered, respond.tool],
       // The caller's own signal, forwarded to the transport. A disconnect has to reach the socket,
       // not just the top of the next turn: a provider call already in flight is the expensive one.
       signal: args.ctx.signal,
@@ -328,8 +329,8 @@ async function run<
           // Concurrent, and deliberately unbounded WITHIN one turn: the batch is what a single
           // model turn asked for, each entry is an ordinary `action` carrying its own policy and
           // its own `rateLimit`, and a second ceiling here would be a throttle competing with
-          // those. A tool that calls a model still queues on the ledger's root turnstile, so the
-          // budget holds. Serial cost 5x wall clock for a turn that asked for 5 tools, and nothing
+          // those. A tool that calls a model still reserves on the same ledger chain, which
+          // debits before it checks, so the budget holds. Serial cost 5x wall clock for a turn that asked for 5 tools, and nothing
           // in the types or the docs ever said so.
           //
           // Order is by INDEX, not by completion: `Promise.all` resolves positionally and each
@@ -353,7 +354,7 @@ async function run<
           continue;
         }
 
-        const parsed = await validateAsync(def.output, structuredOutputOf(result));
+        const parsed = await validateAsync(def.output, respond.read(result));
         if (parsed.issues === undefined) return parsed.value;
         // A wrong shape gets another turn like any other, because unlike `llm()` this loop has
         // turns left by construction — and unlike a tool result, the correction is the message.

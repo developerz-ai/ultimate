@@ -24,7 +24,7 @@ import type {
   VectorRecord,
   VectorStore,
 } from './vector';
-import { narrowScope, tenantOf, UNSCOPED, type VectorScope } from './vector-scope';
+import { assertTenantRead, narrowScope, tenantOf, UNBOUND, type VectorScope } from './vector-scope';
 
 export interface PgVectorStoreInput {
   /** The table. Also the store's name in errors, and the stem of every index name. */
@@ -60,7 +60,7 @@ export class PgVectorStore implements VectorStore {
     this.input = input;
     this.name = input.name;
     this.dimension = input.dimension;
-    this.scope = input.scope ?? UNSCOPED;
+    this.scope = input.scope ?? UNBOUND;
     this.target = {
       table: input.name,
       dimension: input.dimension,
@@ -75,8 +75,8 @@ export class PgVectorStore implements VectorStore {
   }
 
   /**
-   * A view of the same table through a narrower envelope. The unscoped store is the backfill
-   * path; a request handler derives from it and can never widen back out.
+   * A view of the same table through a narrower envelope. A store opened with `scope: UNSCOPED`
+   * is the backfill path; a request handler derives from it and can never widen back out.
    */
   scoped(scope: VectorScope): PgVectorStore {
     return new PgVectorStore({
@@ -111,6 +111,7 @@ export class PgVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
+    assertTenantRead(this.name, this.scope);
     this.assertDimension(vector.length);
     // `k` is the statement's `limit` and reaches Postgres as a bound parameter, so a `NaN` is the
     // database's error to report rather than this store's — and a fractional one is an error there
@@ -125,12 +126,14 @@ export class PgVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
+    assertTenantRead(this.name, this.scope);
     return this.run(
       textSql(this.target, query, { scope: this.scope, filter, k: finiteCount(HYBRID, 'k', k) }),
     );
   }
 
   async hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]> {
+    assertTenantRead(this.name, this.scope);
     this.assertDimension(input.vector.length);
     // The same three bounds `MemoryVectorStore.hybrid` screens, and they have to be screened in
     // BOTH stores: `rrfK` lands in `1.0 / (rrfK + rank)`, Postgres has a float8 `NaN`, and it

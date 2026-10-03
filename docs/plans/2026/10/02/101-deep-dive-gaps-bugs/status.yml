@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 64
-current_focus: "PR 10b — ai (10-ai-mcp-mail-notify-manifest.md, second half)"
+percent: 70
+current_focus: "PR 11 — admin, scraping, testing (11-admin-scraping-testing.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -54,9 +54,9 @@ slices:
     evidence: "PR 9b (ui): every ui row fixed, none dropped. QR codes now scan (four placement defects; an independent test reader plus whole matrices from a second encoder for versions 1-3). Theme: ThemeEnv gains current() and appDefault(); the boot stamps data-theme-default so a fixed defaultMode is kept by clearTheme and watchOsTheme; the x new template's bootedEnv workaround deleted. RTL centring with a sheet-wide guard and a 390 px Chrome e2e; useId scoped per bundle copy; the removed-in-21 inline-script exports deleted. PR 9a (http, render, pwa, core): every render and pwa row fixed, none dropped. ISR regeneration through createSingleFlight with a 30 s deadline; most-specific fallback. Found beyond the plan: the live http router 404ed a catch-all's bare prefix that static-path writes, and both 404ed (and Bun.serve refused to start over) a static route outside ASCII; both fixed. Route order unified into core's routeRank (render and pwa each carried a copy, pwa's ranked against the router). Known gaps carried: server-side useId is a process-wide counter (ISR bytes vary between regenerations); cmd-dev-orphan.live.test.ts timed out once under the full gate's load (3/3 alone) - scripts PR. 9b is ui."
   - file: 10-ai-mcp-mail-notify-manifest.md
     tier: 4
-    status: in_progress
-    percent: 60
-    evidence: "PR 10a (schema, http, mcp, mail, notify, manifest): every row fixed, none dropped. Found beyond the plan: the http pipeline let a correct credential through from an address that had spent its failed-credential allowance (now refused before authenticate, through a new read-only RateLimitStore.peek so a signed-in request writes nothing); the MCP mounts never passed the client address to the meter. Mail rides the caller's transaction; notify digests gain a Postgres store and an x.purge sweep. Carried to the scripts PR: a guard that refuses a prose fix: (X_MANIFEST_FACT_INVALID and siblings in manifest/errors.ts); an Upgrading-row vs CHANGELOG one-to-one check; the one-enqueue guard (slice 13). 10b is ai."
+    status: done
+    percent: 100
+    evidence: "PR 10b (ai): every ai row fixed, none dropped. Tool results hide a 5xx cause by the same verdict as MCP and the problem document; gateway budgets hold for hive members, per actor and per org, under concurrency (BudgetStore.take required, the root turnstile deleted; counters written only for a declared ceiling). fnv1a replaced by core fingerprint; non-object outputs wrapped; parseJsonish linear; unscoped vector reads in an org request refused (X_VECTOR_UNSCOPED). Carried: a BudgetStore conformance helper in @ultimat3/testing (testing PR). PR 10a (schema, http, mcp, mail, notify, manifest): every row fixed, none dropped. Found beyond the plan: the http pipeline let a correct credential through from an address that had spent its failed-credential allowance (now refused before authenticate, through a new read-only RateLimitStore.peek so a signed-in request writes nothing); the MCP mounts never passed the client address to the meter. Mail rides the caller's transaction; notify digests gain a Postgres store and an x.purge sweep. Carried to the scripts PR: a guard that refuses a prose fix: (X_MANIFEST_FACT_INVALID and siblings in manifest/errors.ts); an Upgrading-row vs CHANGELOG one-to-one check; the one-enqueue guard (slice 13). 10b is ai."
   - file: 11-admin-scraping-testing.md
     tier: 5
     status: not_started

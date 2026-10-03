@@ -9,6 +9,7 @@
 import { finiteCount, readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { normalize } from './embeddings';
+import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiTransportError, EmbedderDimMismatchError } from './errors';
 import type { AiFetch } from './fetch-seam';
 
@@ -16,7 +17,6 @@ const API_KEY_ENV = 'EMBEDDINGS_API_KEY';
 const DEFAULT_BASE_URL = 'https://api.voyageai.com/v1';
 /** Providers cap a batch around 128 inputs; 96 leaves headroom for long texts. */
 const DEFAULT_BATCH_SIZE = 96;
-const DETAIL_LIMIT = 300;
 /**
  * A hosted endpoint is a third party and `baseUrl` is app config, so neither its latency nor its
  * response size is ours to assume. 30s is longer than any healthy embedding batch and shorter than
@@ -124,7 +124,7 @@ export class RemoteEmbedder implements Embedder {
         // and the endpoint is app config, so the rejection is a value this package did not build —
         // and `instanceof` RUNS a `Proxy`'s `getPrototypeOf` trap, whose throw escapes this very
         // `catch` and replaces a coded refusal with an uncoded crash.
-        detail: `${renderThrowable(error)} — no answer within ${timeoutMs}ms (deadline, egress, DNS or TLS)`,
+        detail: `${withoutKey(renderThrowable(error), apiKey)} — no answer within ${timeoutMs}ms (deadline, egress, DNS or TLS)`,
         envVar: API_KEY_ENV,
       });
     }
@@ -132,7 +132,9 @@ export class RemoteEmbedder implements Embedder {
       throw new AiTransportError({
         provider: this.name,
         status: response.status,
-        detail: await detailOf(response.body),
+        // The shared reader and the shared scrub: a proxy echoing the bearer header into its 4xx
+        // body put the key into an error that reaches a log, a span and a problem document.
+        detail: withoutKey(await detailOf(response), apiKey),
         envVar: API_KEY_ENV,
       });
     }
@@ -217,37 +219,4 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function countOf(data: unknown): string {
   return Array.isArray(data) ? String(data.length) : 'no data array';
-}
-
-/**
- * The start of an error body, and never more. `response.text()` read it WHOLE — outside
- * `maxResponseBytes`, which bounds a success only — so a provider streaming an endless 5xx body
- * held the call and its memory forever. Capped through the same counting reader, and decoded from
- * the bytes it kept: `over` still has a detail worth showing.
- */
-async function detailOf(body: ReadableStream<Uint8Array> | null): Promise<string> {
-  if (body === null) return '';
-  const reader = body.getReader();
-  const kept: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (total < DETAIL_LIMIT) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      kept.push(value);
-      total += value.byteLength;
-    }
-  } catch {
-    // A body that fails mid-read still has whatever arrived; the status is the error's substance.
-  } finally {
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of kept) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes).slice(0, DETAIL_LIMIT);
 }

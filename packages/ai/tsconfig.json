@@ -21,6 +21,9 @@
       "path": "../db"
     },
     {
+      "path": "../http"
+    },
+    {
       "path": "../jobs"
     },
     {

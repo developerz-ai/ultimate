@@ -106,6 +106,20 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   Reservations queue on the ROOT's turnstile for the same reason — a per-ledger queue serialises
   nothing once every call has its own ledger.
 
+- **The root turnstile went, `As of 2026-10-02` (plan 101 slice 10).** It serialised reservations
+  under ONE root ledger, and every request roots its own — `gateway.scope()` per request, and
+  `llm()` / `agent()` / `hive()` each from `callLedger` — so two requests of one org each queued
+  on a turnstile nobody else shared, both read the store's `spent`, both passed, both debited
+  (measured: `budget: { org: 1500 }`, eight concurrent 1,000-token calls, all eight reached the
+  provider). A queue cannot order requests it never sees, and a promise chain is no lock across
+  processes either. The fix is debit-then-check: the in-memory scopes check and debit with no
+  `await` between, and the store's go through `BudgetStore.take(key, tokens, limit)`, REQUIRED and
+  atomic on the store's side — no default over `spent` + `add`, which is the race itself. In the
+  same change the keys became the caller's (`budgetKeysFor(ctx.actor)`): `callLedger` had built a
+  ledger with no `actorKey` / `orgKey`, so the gateway's `actor` / `org` ceilings were inert on
+  every `llm()` and `agent()`, and `hive()` rooted on an empty ledger that dropped every gateway
+  ceiling for its members.
+
 - `cache.invalidates` from `docs/idea/05-caching.md` is **not** on `llm()` yet: `invalidateTags`
   fans out to `CacheTier`s, and a `SemanticCache` is not one. Storing tags nothing visits would
   read as wired and silently not be. Version bump + `ttl` is the invalidation today.

@@ -91,7 +91,11 @@ export function regressionsAgainst(input: {
   readonly tolerance: number;
 }): readonly Regression[] {
   const found: Regression[] = [];
-  const fell = (was: number, now: number): boolean => now < was - input.tolerance;
+  // Both sides at the precision the baseline is WRITTEN at, and the drop rounded too: a raw 2/3
+  // against its own recorded 0.667 fell at `tolerance: 0`, and `0.9 - 0.05` is not `0.85` in
+  // binary — a drop of exactly the tolerance must read as within it.
+  const fell = (was: number, now: number): boolean =>
+    round(round(was) - round(now)) > input.tolerance;
   if (fell(input.baseline.score, input.score)) {
     found.push({ case: OVERALL, baseline: input.baseline.score, score: input.score });
   }

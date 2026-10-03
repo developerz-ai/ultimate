@@ -27,6 +27,7 @@ export const AI_ERROR_CODES = [
   'X_VECTOR_DIM_MISMATCH',
   'X_VECTOR_SCOPE_WIDENED',
   'X_AI_EMBEDDER_INVALID',
+  'X_VECTOR_UNSCOPED',
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -55,6 +56,7 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_VECTOR_DIM_MISMATCH: 'embedding dimensions differ from the store',
   X_VECTOR_SCOPE_WIDENED: 'a derived vector scope tried to leave its tenant',
   X_AI_EMBEDDER_INVALID: 'an Embedder returned fewer vectors than texts it was given',
+  X_VECTOR_UNSCOPED: 'a vector store was read with no tenant bound inside an org request',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Unconditional and

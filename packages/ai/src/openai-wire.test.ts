@@ -191,21 +191,22 @@ describe('usage', () => {
 describe('a finish reason is looked up, never indexed', () => {
   // `FINISH_REASONS['constructor']` on an object literal answers the `Object` FUNCTION, which was
   // returned as a `StopReason` and treated by the stream reader as a finish — so `isComplete()`
-  // answered true for a stream that never finished.
-  test('an inherited property name is not a finish reason', () => {
-    expect(parseFinishReason('constructor')).toBeUndefined();
-    expect(parseFinishReason('toString')).toBeUndefined();
-    expect(parseFinishReason('__proto__')).toBeUndefined();
+  // answered true for a stream that never finished. A name off the prototype chain is now what
+  // any unknown reason is: a cut-off answer, `max_tokens` — a string, never a function.
+  test('an inherited property name is an unknown reason, never a function', () => {
+    expect(parseFinishReason('constructor')).toBe('max_tokens');
+    expect(parseFinishReason('toString')).toBe('max_tokens');
+    expect(parseFinishReason('__proto__')).toBe('max_tokens');
     expect(parseFinishReason('stop')).toBe('end_turn');
+    expect(parseFinishReason(null)).toBeUndefined();
   });
 
-  test('a frame finishing with __proto__ does not report the stream complete', () => {
+  test('a frame finishing with __proto__ closes the turn as truncated, never as complete', () => {
     const { stream } = drive([
       frame({ choices: [{ delta: { content: 'half an ans' }, finish_reason: '__proto__' }] }),
     ]);
-    expect(stream.isComplete()).toBe(false);
-    // And the stop reason is untouched: nothing was learned about why the model stopped.
-    expect(stream.state().stopReason).toBe('end_turn');
+    // Truncated: `llm()` reads `max_tokens` as cut off and never parses half an answer as one.
+    expect(stream.state().stopReason).toBe('max_tokens');
   });
 
   test('an in-band error type off the prototype chain gets 500, never a function', () => {

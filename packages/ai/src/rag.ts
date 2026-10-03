@@ -56,7 +56,9 @@ export function chunk(input: ChunkInput): readonly Chunk[] {
         id: `${input.id}#${chunks.length}`,
         text,
         tokens: estimateChunkTokens(text),
-        metadata: { source: input.id, ...(input.metadata ?? {}) },
+        // Written AFTER the spread: `source` is the framework's stamp, and `indexDocument` prunes by
+        // it — a caller's own `source` replaced it, and a re-index pruned the wrong rows or none.
+        metadata: { ...(input.metadata ?? {}), source: input.id },
       });
     }
     // Carry the tail forward as the overlap for the next chunk — at most every unit BUT THE
@@ -78,6 +80,11 @@ export function chunk(input: ChunkInput): readonly Chunk[] {
   for (const unit of units) {
     const unitTokens = estimateChunkTokens(unit);
     if (tokens + unitTokens > size && buffer.length > 0) flush();
+    // The carried overlap yields to the unit, oldest first: a carry the unit does not fit beside
+    // made a chunk past `size` — the one promise this function makes.
+    while (buffer.length > 0 && tokens + unitTokens > size) {
+      tokens -= estimateChunkTokens(buffer.shift() ?? '');
+    }
     buffer.push(unit);
     tokens += unitTokens;
   }
@@ -158,7 +165,7 @@ function cutToBudget(run: string, size: number): readonly string[] {
  * Index a document: chunk, embed, upsert, prune. One call so no step is skipped by accident. The
  * prune is what re-indexing a SHORTER document needs: chunk ids are `<doc>#<n>`, so the upsert
  * overwrote the first chunks and left the old tail retrievable. Upsert first, prune after, so the
- * document is never absent from a search in between. A store without `prune` cannot clean up.
+ * document is never absent from a search in between.
  */
 export async function indexDocument(input: {
   readonly store: VectorStore;
@@ -182,7 +189,7 @@ export async function indexDocument(input: {
     })),
   );
   // `source` is the chunker's own stamp (`chunk()`), so only THIS document's rows are touched.
-  await input.store.prune?.(
+  await input.store.prune(
     { source: input.document.id },
     chunks.map((c) => c.id),
   );

@@ -219,13 +219,13 @@ accounting un-bypassable: a stray `fetch` is the only way around it, and there i
 | Step | Detail |
 |---|---|
 | resolve the model | `request.model ?? defaultModel ?? DEFAULT_MODEL` |
-| read the cache | `cacheKeyFor(resolved)` — model, system, messages, `maxTokens`, `effort`, `thinking`, tool **names**, stop sequences. A key that ignored `effort` or `system` would serve one prompt's answer for another |
+| read the cache | `cacheKeyFor(resolved)` — core's `fingerprint` over model, system, messages, `maxTokens`, `effort`, `thinking`, each tool **whole** (name, description, `input_schema`), stop sequences. A key that ignored `effort` or `system` would serve one prompt's answer for another, and one over tool names alone served an answer shaped for an old `output` schema — every `llm()` tool is `respond` |
 | a hit costs nothing, so it is **not debited** | |
-| `reserve(estimateSpend(resolved))` | tokens **and** money, against the worst case, **before** the provider is reached |
+| `reserve(estimateSpend(resolved))` | tokens **and** money, against the worst case, **before** the provider is reached — on the ambient ledger, or `callLedger({})` when no scope is open (a raw call has no caller to key) |
 | `attempt(model, …)` | every provider that serves this model, each retried on a retryable failure |
 | a throw releases the reservation | a call that never landed must not go on holding it |
 | `record(usage, cost, reservation)` | replaces the estimate with the provider's real counts, so only the *difference* lands |
-| cache the result **unless it is a refusal** | a cached refusal keeps serving a classifier decision after the prompt was fixed |
+| cache the result **unless it is a refusal** | a cached refusal keeps serving a classifier decision after the prompt was fixed. A `set` that throws is logged (`ai.cache.write_failed`), never raised — the call was paid for and recorded, and a retry would pay twice |
 
 `stream()` reserves the same way and reconciles at the `done` chunk. It is **not retried
 mid-flight** — the consumer has already seen tokens and replaying from the top would duplicate them
@@ -269,28 +269,29 @@ same ledger without threading it through every signature.
 **A budget refuses; it never truncates.** A silently shortened prompt produces a confidently wrong
 answer that looks real, with no signal anything happened.
 
-Three mechanisms, each closing a hole the previous one left:
+Four mechanisms, each closing a hole the previous one left:
 
 | Mechanism | The hole it closes |
 |---|---|
-| **`reserve()` debits, it does not merely check** | check-then-record let three concurrent calls under one ledger all read `spent() === 0`, all pass, and all three record against a ceiling only one of them fitted — an "un-bypassable" org budget bypassed by `Promise.all`. `record()` reconciles the estimate against the provider's real counts; `release()` gives it back when the call never happened |
+| **`reserve()` debits, then checks** | check-then-record let three concurrent calls under one ledger all read `spent() === 0`, all pass, and all three record against a ceiling only one of them fitted — an "un-bypassable" org budget bypassed by `Promise.all`. The in-memory `request` counters of the whole chain are checked and debited with no `await` between them, which one event loop makes atomic; a refusal at a later scope gives back what the earlier ones took. `record()` reconciles the estimate against the provider's real counts; `release()` gives it back when the call never happened |
+| **`BudgetStore.take(key, tokens, limit)` is the store's atomic step, and it is required** | the `actor` / `org` counters live in the store, and every request roots its own ledger, so nothing in-process orders two requests of one org: a `spent()` then an `add()` let all of them pass (measured: eight concurrent scoped calls against a ceiling one fitted all reached the provider). `take` adds only if the total stays within the limit, in one step on the store's side — synchronous for `MemoryBudgetStore`, a Redis `EVAL` or a SQL `update … where spent + $n <= $limit` for a shared one. There is no default built on `spent` + `add`, because that pair is the race |
+| **the keys are the CALLER's** | `llm()`, `agent()` and `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))` — the gateway's own `budget`, keyed `actor:<kind>:<id>` and `org:<orgId>`. A ledger with no key skips that scope, so before this the gateway's `actor` / `org` ceilings bound only a hand-written `gateway.scope()`. A `hive()` roots the same way (through `installedGateway()`, so a hive of plain actions needs no gateway), and its members derive from it: they run under the gateway budget, the caller's keys and the hive's own `tokensPerRun` |
 | **`derive()` tightens and never widens** | a per-call budget declared on an `llm()` or `agent()` must not be able to widen the actor or org ceiling it runs inside. Each limit becomes the tighter of parent and child; `costPerCall` compares in one currency, and a mismatch is a config bug that throws |
-| **the turnstile is the ROOT's, not the ledger's own** | `derive()` gives every call its own ledger, so a per-ledger queue serialises nothing: `Promise.all` of three derived ledgers all read the chain before any of them debits it. `reserve()` walks `parent` to the root and chains on **that** queue, so reservations under one scope take turns however deep the derivation goes |
 
 Two more details that are not obvious from the shapes:
 
-- **`reserveNow()` checks the whole chain, not just this ledger.** Each ledger keeps its own
-  counter, and the tightest limit is not always the one with the most spent against it.
-- **The turnstile chains on a settled shadow** — `gate.turnstile = turn.catch(() => undefined)` — so
-  one refusal does not reject every reservation queued behind it.
+- **`reserve()` checks the whole chain, not just this ledger.** Each ledger keeps its own counter,
+  and the tightest limit is not always the one with the most spent against it.
 - **`debit()` walks the chain for the in-memory counters and writes the STORE once**, by the ledger
   the call was made on. A child shares its parent's store and identity keys, so debiting through the
   parent as well would bill the actor and the org twice for one call.
 
-One event loop, so a promise chain **is** the lock. A `BudgetStore` shared across *processes* needs
-an atomic increment of its own; this closes the parallelism inside one. The default
-`MemoryBudgetStore` is per process and resets on every deploy, which is why `org: 20_000_000` at six
-replicas is six ledgers of twenty million.
+The default `MemoryBudgetStore` is per process and resets on every deploy, which is why
+`org: 20_000_000` at six replicas is six ledgers of twenty million — a shared store, with an atomic
+`take`, is what makes `actor` and `org` fleet-wide. The store is written only for a scope whose ceiling is
+declared — every call carries its caller's keys, so writing per key would grow the default store by
+one entry per caller in an app that capped nobody. It has no window and never evicts: dropping a
+counter hands that caller its ceiling back.
 
 ## The agent loop
 
@@ -319,7 +320,7 @@ agent({
 | `throwIfAborted(ctx)` at the top of every turn **and** before every tool batch, plus `signal` on the request | the transcript **is** the request, so a loop that keeps going after a disconnect re-sends it once per remaining turn, runs every remaining side effect and discards the answer. The signal rides on `GenerateRequest` too, so a provider call already in flight is cut rather than paid for |
 | Tools of one turn run through one `Promise.all`, **unbounded** | the batch is what a single model turn asked for, each entry is an action with its own `policy` and `rateLimit`, and a second ceiling here would be a throttle competing with those. Results pair **positionally**, each carrying the `tool_use` id it was handed |
 | The ledger is `(currentBudget() ?? new BudgetLedger({ limits: {} })).derive(limitsOf(def))` | `tokensPerRun` maps onto the ledger's `request` scope, which accumulates across every call made under one `withBudget` — which for a run is exactly "the whole run" |
-| Structured output is the forced `respond` tool | `respondToolFor(def.output)`, offered beside the app's tools and filtered out of `toolCalls` before `onTurn` sees them |
+| Structured output is the forced `respond` tool | `respondFor(def.output).tool` (`respond.ts`; a non-object `output` wrapped in `{ value }` and unwrapped by its `read`), offered beside the app's tools and filtered out of `toolCalls` before `onTurn` sees them |
 | A bad shape gets **another turn**, not one repair | unlike `llm()`, this loop has turns left by construction, and the correction is the message rather than a tool result |
 | Two exhaustions, two codes | `X_LLM_OUTPUT_INVALID` when every attempt was the wrong shape; `X_AGENT_MAX_TURNS` when the loop kept calling tools and never answered |
 | `onTurn` is **awaited and unguarded** | a throw fails the run. It is the app's code on the run's own path, and an observer that quietly stopped working reads exactly like one that is fine. The same facts always land on the span as an `agent.turn` event |

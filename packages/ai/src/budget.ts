@@ -10,7 +10,8 @@
 // module-scope `new` threw at EVALUATION in a browser bundle, where the bundler stubs
 // `node:async_hooks` to `{}`, and took every importer of `@ultimat3/ai` with it.
 
-import { asyncContext, finiteCount } from '@ultimat3/core';
+import type { Actor } from '@ultimat3/core';
+import { assert, asyncContext, finiteCount } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { assertSameCurrency } from '@ultimat3/money';
 import { AiBudgetExceededError } from './errors';
@@ -64,12 +65,46 @@ export function estimateSpend(request: GenerateRequest): SpendEstimate {
   };
 }
 
+/**
+ * What one `take` found. `spent` is the counter as the store read it, BEFORE this take — so a
+ * refusal can say how much was left.
+ */
+export interface BudgetTake {
+  readonly taken: boolean;
+  readonly spent: number;
+}
+
 /** Where cross-request counters live. Swap for Redis in a multi-process deployment. */
 export interface BudgetStore {
   spent(key: string): Promise<number> | number;
   /** `tokens` may be NEGATIVE: releasing a reservation the call never spent is a credit. */
   add(key: string, tokens: number): Promise<void> | void;
+  /**
+   * Add `tokens` to `key` only if the total stays at or under `limit`, in ONE atomic step — a
+   * Redis `EVAL`, a SQL `update … set spent = spent + $2 where key = $1 and spent + $2 <= $3`.
+   * Required, with no default built on `spent` + `add`: that pair is the read-then-write two
+   * concurrent requests both pass, which is the overspend this member exists to close.
+   */
+  take(key: string, tokens: number, limit: number): Promise<BudgetTake> | BudgetTake;
   reset(key?: string): Promise<void> | void;
+}
+
+/**
+ * The store keys a call's identity is counted under: the acting identity (kind and id — one window
+ * per actor, whichever org it acts in) and its org, when it has one. Derived, never taken from a
+ * declaration, so every `llm()`, `agent()` and `hive()` binds the gateway's `actor` / `org` ceilings
+ * to whoever called it. An anonymous caller is one identity: every anonymous call shares its window.
+ */
+export interface BudgetKeys {
+  readonly actorKey?: string;
+  readonly orgKey?: string;
+}
+
+export function budgetKeysFor(actor: Actor): BudgetKeys {
+  return {
+    actorKey: `actor:${actor.kind}:${actor.id}`,
+    ...(actor.orgId === undefined ? {} : { orgKey: `org:${actor.orgId}` }),
+  };
 }
 
 /**
@@ -81,6 +116,13 @@ export interface BudgetReservation {
   readonly tokens: number;
 }
 
+/**
+ * The per-process default. There is NO window: a counter lives until `reset()` or a restart, so an
+ * `actor` / `org` ceiling here is "per process lifetime". It holds one entry per caller that has
+ * spent under a DECLARED ceiling (none at all without one), and deliberately no eviction: dropping
+ * a counter hands that caller its whole ceiling back, which is the bypass the ceiling exists to
+ * stop. A window — per day, per month — is a shared store whose keys expire.
+ */
 export class MemoryBudgetStore implements BudgetStore {
   private readonly counters = new Map<string, number>();
 
@@ -88,8 +130,27 @@ export class MemoryBudgetStore implements BudgetStore {
     return this.counters.get(key) ?? 0;
   }
 
+  /** A counter back at zero is deleted: absent and zero are the same answer, and an entry costs. */
   add(key: string, tokens: number): void {
-    this.counters.set(key, this.spent(key) + tokens);
+    this.write(key, this.spent(key) + tokens);
+  }
+
+  /** Atomic because it is synchronous: nothing else runs between the read and the write. */
+  take(key: string, tokens: number, limit: number): BudgetTake {
+    const spent = this.spent(key);
+    if (spent + tokens > limit) return { taken: false, spent };
+    this.write(key, spent + tokens);
+    return { taken: true, spent };
+  }
+
+  /** How many counters are held — one per caller that has spent under a declared ceiling. */
+  size(): number {
+    return this.counters.size;
+  }
+
+  private write(key: string, total: number): void {
+    if (total === 0) this.counters.delete(key);
+    else this.counters.set(key, total);
   }
 
   reset(key?: string): void {
@@ -133,13 +194,6 @@ export class BudgetLedger {
    * inside it, and its `request` ceiling was re-granted in full to every one of them.
    */
   private parent: BudgetLedger | undefined;
-  /**
-   * Reservations take turns. Check-then-debit spans an `await store.spent()`, and three callers
-   * interleaving inside it is the bypass this ledger exists to close — one event loop, so a
-   * promise chain IS the lock. A store shared across PROCESSES needs an atomic increment of its
-   * own; this closes the parallelism inside one.
-   */
-  private turnstile: Promise<unknown> = Promise.resolve();
 
   constructor(input: BudgetLedgerInput) {
     // The ceilings are screened where they LAND, because `assertScope` compares with `>`: a `NaN`
@@ -156,35 +210,19 @@ export class BudgetLedger {
   }
 
   /**
-   * Check an estimate against every applicable scope BEFORE the call, then DEBIT it. Throws on
-   * the first scope that cannot cover it, naming that scope, so the fix line points at one knob
-   * rather than four.
+   * Check an estimate against every applicable scope BEFORE the call, and DEBIT it in the same
+   * step. Throws on the first scope that cannot cover it, naming that scope, so the fix line points
+   * at one knob rather than four.
    *
-   * The debit is what makes the ceiling hold under parallelism. Checking without debiting meant
-   * three concurrent calls under one ledger all read `spent() === 0`, all passed, and all three
-   * recorded against a ceiling only one of them fitted — an "un-bypassable" org budget bypassed
-   * by `Promise.all`. `record` replaces the estimate with the real counts; `release` gives it
-   * back when the call never happened.
+   * Debit-then-check, never check-then-debit: the in-memory scopes are checked and debited with no
+   * `await` between (one event loop, so that IS atomic), and the store's scopes go through its
+   * atomic `take`. Any read-then-write across an `await` lets concurrent calls — `Promise.all` of
+   * derived ledgers, or one request per scope racing one org key — all read the same `spent`, all
+   * pass, and all debit a ceiling only one fitted. A refusal at a later scope gives back what the
+   * earlier ones took. `record` replaces the estimate with the real counts; `release` gives it back
+   * when the call never happened.
    */
   async reserve(estimate: SpendEstimate): Promise<BudgetReservation> {
-    // The ROOT's turnstile, not this ledger's: reservations under one scope take turns even when
-    // each call derived its own ledger, which is every `llm()` call. A per-ledger queue serialised
-    // nothing once `derive` existed — `Promise.all` of three derived ledgers all read the chain
-    // before any of them debited it.
-    const gate = this.rootLedger();
-    const turn = gate.turnstile.then(() => this.reserveNow(estimate));
-    // Chained on a settled shadow: one refusal must not reject every reservation queued behind it.
-    gate.turnstile = turn.catch(() => undefined);
-    return await turn;
-  }
-
-  private rootLedger(): BudgetLedger {
-    let ledger: BudgetLedger = this;
-    while (ledger.parent !== undefined) ledger = ledger.parent;
-    return ledger;
-  }
-
-  private async reserveNow(estimate: SpendEstimate): Promise<BudgetReservation> {
     // Every ledger in the chain, because each keeps its own counter and the tightest limit is not
     // always the one with the most spent against it.
     for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
@@ -192,17 +230,51 @@ export class BudgetLedger {
     }
     // Per call, so nothing is "already spent" against it.
     this.assertScope('tokensIn', this.limits.tokensIn, 0, estimate.inputTokens);
-    if (this.limits.actor !== undefined && this.actorKey !== undefined) {
-      const spent = await this.store.spent(this.actorKey);
-      this.assertScope(`actor:${this.actorKey}`, this.limits.actor, spent, estimate.tokens);
-    }
-    if (this.limits.org !== undefined && this.orgKey !== undefined) {
-      const spent = await this.store.spent(this.orgKey);
-      this.assertScope(`org:${this.orgKey}`, this.limits.org, spent, estimate.tokens);
-    }
     this.assertCost(estimate.cost);
-    await this.debit(estimate.tokens);
+    this.debitChain(estimate.tokens);
+    const taken: string[] = [];
+    try {
+      await this.takeScope('actor', this.limits.actor, this.actorKey, estimate.tokens, taken);
+      await this.takeScope('org', this.limits.org, this.orgKey, estimate.tokens, taken);
+    } catch (error) {
+      this.debitChain(-estimate.tokens);
+      for (const key of taken) await this.store.add(key, -estimate.tokens);
+      throw error;
+    }
     return { tokens: estimate.tokens };
+  }
+
+  /**
+   * One store scope, and only when its ceiling is DECLARED: every `llm()` / `agent()` / `hive()`
+   * carries its caller's keys, so writing per key grew `MemoryBudgetStore` by one entry per caller
+   * forever — and cost a shared store two writes a call — for counters no ceiling reads. Records
+   * the key it took, so a refusal further on can give it back.
+   */
+  private async takeScope(
+    scope: 'actor' | 'org',
+    limit: number | undefined,
+    key: string | undefined,
+    tokens: number,
+    taken: string[],
+  ): Promise<void> {
+    if (key === undefined || limit === undefined) return;
+    const outcome: unknown = await this.store.take(key, tokens, limit);
+    // The store is the app's: a shape it did not promise must be a coded refusal, never a
+    // `TypeError` from reading `.taken` off `undefined` inside the reservation.
+    assert(
+      isBudgetTake(outcome),
+      `BudgetStore.take("${key}") answered ${typeof outcome}, not { taken: boolean, spent: number }`,
+      'return { taken, spent } from take(key, tokens, limit), spent being the counter before this take',
+    );
+    if (!outcome.taken) {
+      throw new AiBudgetExceededError({
+        scope: `${scope}:${key}`,
+        requested: tokens,
+        remaining: limit - outcome.spent,
+        limit,
+      });
+    }
+    taken.push(key);
   }
 
   /** Give a reservation back: a provider that threw, a stream abandoned before `done`. */
@@ -258,11 +330,25 @@ export class BudgetLedger {
    */
   private async debit(tokens: number): Promise<void> {
     if (tokens === 0) return;
+    this.debitChain(tokens);
+    // The keys `reserve` took — a scope with a declared ceiling — and no others, so a reconcile
+    // never creates the counter `takeScope` declined to.
+    for (const key of this.meteredKeys()) await this.store.add(key, tokens);
+  }
+
+  /** The store keys this ledger meters: a key whose scope declares a ceiling. */
+  private meteredKeys(): readonly string[] {
+    const keys: string[] = [];
+    if (this.actorKey !== undefined && this.limits.actor !== undefined) keys.push(this.actorKey);
+    if (this.orgKey !== undefined && this.limits.org !== undefined) keys.push(this.orgKey);
+    return keys;
+  }
+
+  /** The in-memory half: this ledger's `request` counter and every ancestor's. */
+  private debitChain(tokens: number): void {
     for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
       l.requestTokens += tokens;
     }
-    if (this.actorKey !== undefined) await this.store.add(this.actorKey, tokens);
-    if (this.orgKey !== undefined) await this.store.add(this.orgKey, tokens);
   }
 
   async report(): Promise<BudgetReport> {
@@ -311,6 +397,12 @@ function assertFiniteLimits(limits: BudgetLimits): BudgetLimits {
     if (limit !== undefined) finiteCount('the AI budget', scope, limit);
   }
   return limits;
+}
+
+function isBudgetTake(value: unknown): value is BudgetTake {
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record['taken'] === 'boolean' && Number.isFinite(record['spent']);
 }
 
 /** Spreadable single-key record, so an absent limit stays absent under exactOptionalPropertyTypes. */

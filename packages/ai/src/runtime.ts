@@ -77,6 +77,11 @@ export function aiGateway(prompt: string): Gateway {
   return runtime.gateway;
 }
 
+/** The installed gateway, or `undefined` — for a caller that may run without one (`hive()`). */
+export function installedGateway(): Gateway | undefined {
+  return runtime?.gateway;
+}
+
 export function aiEmbedder(): Embedder {
   return runtime?.embedder ?? new HashEmbedder();
 }

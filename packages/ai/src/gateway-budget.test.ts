@@ -187,6 +187,12 @@ describe('a stream that never reaches a provider releases its reservation', () =
         counters.set(key, (counters.get(key) ?? 0) + tokens);
         return undefined;
       },
+      take(key, tokens, limit) {
+        const spent = counters.get(key) ?? 0;
+        if (spent + tokens > limit) return { taken: false, spent };
+        counters.set(key, spent + tokens);
+        return { taken: true, spent };
+      },
       reset: () => counters.clear(),
     };
 

@@ -20,12 +20,13 @@ import type { Ctx } from '@ultimat3/core';
 import { finiteCount, throwIfAborted, withSpan } from '@ultimat3/core';
 import type { AnySchema, InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { BudgetLimits } from './budget';
-import { BudgetLedger, currentBudget, withBudget } from './budget';
+import { BudgetLedger, budgetKeysFor, currentBudget, withBudget } from './budget';
 import { HiveEmptyError } from './hive-errors';
 import { runPool } from './hive-pool';
 import type { HiveMember, HiveMemberError, HiveOutput, HiveResult } from './hive-result';
 import { hiveResultSchema } from './hive-result';
 import type { LlmBudget } from './llm';
+import { installedGateway } from './runtime';
 
 /**
  * Members in flight at once when the declaration omits one. Small and deliberately arbitrary — it
@@ -131,7 +132,14 @@ async function run<
       'hive.concurrency': width,
       'hive.on_member_error': def.onMemberError,
     });
-    const ledger = (currentBudget() ?? new BudgetLedger({ limits: {} })).derive(limitsOf(def));
+    // Rooted as `llm()` and `agent()` root: the gateway's ceilings, keyed on the caller. An empty
+    // root dropped every gateway ceiling for every member. No gateway installed is a hive of plain
+    // actions, which spends nothing — a model member is refused `X_AI_GATEWAY_MISSING` on its own.
+    const root =
+      currentBudget() ??
+      installedGateway()?.callLedger(budgetKeysFor(args.ctx.actor)) ??
+      new BudgetLedger({ limits: {} });
+    const ledger = root.derive(limitsOf(def));
     const result = await withBudget(ledger, () =>
       runPool<InferInput<MIn>, InferOutput<MOut>>({
         inputs,

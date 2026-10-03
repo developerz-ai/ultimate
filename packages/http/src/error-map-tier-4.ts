@@ -87,4 +87,6 @@ export const TIER_4_ERROR_STATUS = {
   // The second MCP code answered on a request before dispatch, and 413 for the same reason the row
   // above is 429: `transport-http.ts` already answers it with that status by hand.
   X_MCP_BODY_TOO_LARGE: 413,
+  // @ultimat3/ai — a vector store was read with no tenant bound inside an org request
+  X_VECTOR_UNSCOPED: 500,
 } satisfies Readonly<Record<string, number>>;

@@ -4,6 +4,7 @@
 // production is a leak nobody finds. Deriving a scope may only ever TIGHTEN it: a scope that
 // could be widened from a call site is not a scope, it is a hint.
 
+import { tryUseContext, UltimateError } from '@ultimat3/core';
 import { VectorScopeWidenedError } from './errors';
 
 export interface VectorScope {
@@ -14,10 +15,22 @@ export interface VectorScope {
    * deny — a row missing the key is invisible, and an empty list matches nothing at all.
    */
   readonly allow?: Readonly<Record<string, readonly string[]>> | undefined;
+  /**
+   * Every tenant, ON PURPOSE — `UNSCOPED`'s mark, and the only way a read with no tenant bound
+   * runs inside a request acting for an org. Meaningless once a tenant is bound, so dropped then.
+   */
+  readonly crossTenant?: true | undefined;
 }
 
-/** The store as constructed: every tenant, every row. The backfill and migration path. */
-export const UNSCOPED: VectorScope = Object.freeze({});
+/**
+ * Every tenant, every row, named on purpose: the backfill and migration path. Pass it as a
+ * store's `scope` (or `.scoped(UNSCOPED)`) where a cross-tenant read is the point. A store opened
+ * with no scope binds no tenant either, but reading it inside an org's request is refused.
+ */
+export const UNSCOPED: VectorScope = Object.freeze({ crossTenant: true });
+
+/** A store's scope when none was given: no tenant, and no cross-tenant opt-in. */
+export const UNBOUND: VectorScope = Object.freeze({});
 
 /** The tenant column value a row carries when its store had no tenant bound. */
 export const NO_TENANT = '';
@@ -33,10 +46,39 @@ export function tenantOf(scope: VectorScope): string {
 export function narrowScope(store: string, base: VectorScope, next: VectorScope): VectorScope {
   const tenant = narrowTenant(store, base.tenant, next.tenant);
   const allow = narrowAllow(base.allow, next.allow);
+  const crossTenant =
+    tenant === undefined && (base.crossTenant === true || next.crossTenant === true);
   return {
     ...(tenant === undefined ? {} : { tenant }),
     ...(allow === undefined ? {} : { allow }),
+    ...(crossTenant ? { crossTenant: true as const } : {}),
   };
+}
+
+/**
+ * Refuse a read that would search every tenant inside a request acting for one. Entities derive
+ * the tenant from the ambient actor; a vector store is bound by `.scoped({ tenant })`, and a
+ * forgotten call answered with every org's rows. Outside a request, or for an actor with no org,
+ * there is no tenant to leak across — a single-tenant app and a job's system actor read as before.
+ */
+export function assertTenantRead(store: string, scope: VectorScope): void {
+  if (scope.tenant !== undefined || scope.crossTenant === true) return;
+  if (tryUseContext()?.actor.orgId === undefined) return;
+  throw new VectorUnscopedError({ store });
+}
+
+/** `X_VECTOR_UNSCOPED`. Its code and title stay in `errors.ts`, beside every other `X_VECTOR_*`. */
+export class VectorUnscopedError extends UltimateError {
+  constructor(input: { store: string }) {
+    super({
+      code: 'X_VECTOR_UNSCOPED',
+      cause:
+        `vector store "${input.store}" was read with no tenant bound, inside a request acting ` +
+        'for an org — the read would answer with every tenant’s rows. A deliberate cross-tenant ' +
+        'read (a backfill, a migration) opens the store with scope: UNSCOPED',
+      fix: 'vectorStore.scoped({ tenant: ctx.actor.orgId })',
+    });
+  }
 }
 
 function narrowTenant(

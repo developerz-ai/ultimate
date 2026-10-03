@@ -378,7 +378,7 @@ pgvector in the same Postgres. No second datastore.
 | Backfill | generated as a `job` with steps, resumable, rate-limited per tenant |
 | Index | HNSW, created by the generated migration |
 | Hybrid search | one `query` primitive fusing pgvector cosine + Postgres FTS with Reciprocal Rank Fusion; weights are config |
-| Filtering | tenant + policy filters applied **in SQL**, so vector search cannot leak across tenants |
+| Filtering | tenant + policy filters applied **in SQL**, so vector search cannot leak across tenants; a store with no tenant bound, read inside a request acting for an org, is `X_VECTOR_UNSCOPED` — a backfill opts in with `scope: UNSCOPED` |
 | Re-embed | content-hash change triggers a job; unchanged text is never re-embedded |
 
 ## Evals as a test type
