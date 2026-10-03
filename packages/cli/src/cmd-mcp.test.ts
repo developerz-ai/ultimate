@@ -309,7 +309,9 @@ describe('unit · x mcp serve --transport http meters failed tokens per address'
 // the collision an agent meets first.
 describe('unit · x mcp serve --transport http on a taken port', () => {
   test('is X_PORT_IN_USE with a port to try, and the host is closed', async () => {
-    const holder = Bun.serve({ port: 0, hostname: 'localhost', fetch: () => new Response('') });
+    // `localhost` is two addresses: a holder on one family left the other free, so the host bound
+    // it and nothing was refused (CI, 2026-10-03). `::` holds the port on both on Linux.
+    const holder = Bun.serve({ port: 0, hostname: '::', fetch: () => new Response('') });
     const taken = holder.port ?? expect.unreachable('Bun.serve bound no port');
     const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
     let closed = false;
