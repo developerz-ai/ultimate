@@ -182,6 +182,18 @@ describe('permissionDeclarationSites()', () => {
     expect(sites[0]).not.toContain('declaration-site.ts');
   });
 
+  // The frame is skipped by the FILE it is in (this package's own source), never by a name it
+  // spells: an app wrapper named after the declaration call is the declaring site, not an internal.
+  test('a caller whose own name spells definePermissions is still the declaring site', () => {
+    // A named declaration: Bun names an arrow function's frame `<anonymous>`.
+    function definePermissionsForPosts(): void {
+      definePermissions(['post:read']);
+    }
+    definePermissionsForPosts();
+    const [site] = permissionDeclarationSites()['post:read'] ?? [];
+    expect(site).toContain('definePermissionsForPosts');
+  });
+
   test('keeps every distinct site, and one per site however often it runs', () => {
     declareHere();
     declareHere();

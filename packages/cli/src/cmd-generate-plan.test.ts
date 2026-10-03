@@ -85,6 +85,40 @@ describe('unit · a job named like one the index already lists', () => {
     expect(await Bun.file(join(root, API_INDEX)).text()).toBe(before);
   });
 
+  // CodeRabbit PRRT_kwDOTkDHL86okhLh: the feature-prefixed name was never checked, so with it ALSO
+  // bound the `fix:` reproduced its own conflict. The suggestion is re-planned until it is free.
+  test('a suggested name that is itself bound is skipped for one that runs', async () => {
+    const index = join(root, API_INDEX);
+    const before = await Bun.file(index).text();
+    await Bun.write(
+      index,
+      insertApiEntries(before, apiEntriesFor(['apps/web/app/x/jobs/comment-reindex-post.ts']))
+        .source,
+    );
+    try {
+      const refused = await run(
+        ['job', 'reindex-post'],
+        [
+          ['feature', 'comment'],
+          ['dry-run', true],
+        ],
+      );
+      const fix = refused.findings?.[0]?.fix ?? '';
+      expect(fix).toBe('x g job reindex-post-job --feature comment');
+      const retried = await run(
+        ['job', fix.split(' ')[3] ?? ''],
+        [
+          ['feature', 'comment'],
+          ['dry-run', true],
+        ],
+      );
+      expect(retried.findings).toEqual([]);
+      expect(retried.ok).toBe(true);
+    } finally {
+      await Bun.write(index, before);
+    }
+  });
+
   test('an action named api is refused the same way', async () => {
     const result = await run(
       ['action', 'api'],

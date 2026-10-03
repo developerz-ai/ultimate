@@ -9,6 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { exec, execOutput } from './exec';
 import { testStepCommand } from './verify-tests';
 
 const MARKING = (name: string): string =>
@@ -27,12 +28,13 @@ test('a slice named build keeps its live test on the gate; the root build/ does 
     for (const [name, path] of Object.entries(files)) {
       await Bun.write(join(root, path), MARKING(join(root, name)));
     }
-    const child = Bun.spawn([...testStepCommand('live')], {
-      cwd: root,
-      stdout: 'ignore',
-      stderr: 'ignore',
+    // Through the CLI's real `Runner`, so a `bun test` that failed for another reason shows its
+    // exit code and its own output here instead of reading as a missing marker.
+    const result = await exec([...testStepCommand('live')], { cwd: root });
+    expect({ code: result.code, output: result.ok ? '' : execOutput(result) }).toEqual({
+      code: 0,
+      output: '',
     });
-    await child.exited;
     const ran = async (name: string): Promise<boolean> =>
       Bun.file(join(root, `${name}.ran`)).exists();
     expect({

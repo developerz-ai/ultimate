@@ -133,6 +133,21 @@ describe('unit · schema snapshot drift', () => {
     });
   });
 
+  // The recorded name is read off a sidecar on disk and spliced inside double quotes, where `$(…)`
+  // and backticks still run: a shell-active name never reaches the command, only the cause.
+  test('a recorded name the shell would act on is kept out of the drop command', async () => {
+    await withRoot(async (root) => {
+      const hostile = 'gone_$(touch pwned)_check';
+      await commit(root, '0001_init', {
+        tables: [{ ...COMMENTS_TABLE, checks: [{ name: hostile, expression: 'true' }] }],
+      });
+      const [finding] = await checkSnapshotDrift(root, supply(comments()));
+      expect(finding?.code).toBe('X_DB_SCHEMA_UNDECLARED');
+      expect(finding?.fix).toBe('x db gen "drop what the entities no longer declare"');
+      expect(finding?.cause).toContain(hostile);
+    });
+  });
+
   // A regeneration that would DROP what it cannot write is the danger item 2 names. While the
   // declaration holds an unrendered default, `x db gen` is the wrong instruction and the fix is
   // `@ultimat3/db`'s own — one wording, owned by the package that knows what went missing.

@@ -9,6 +9,7 @@ import { nearestName, renderFixShellArg } from '@ultimat3/core';
 import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
+import { isIgnoredTestPath } from './test-ignores';
 import type { TestType } from './verify-tests';
 import { ownerOf, TEST_TYPES } from './verify-tests';
 
@@ -27,24 +28,10 @@ const TEST_GLOB = '**/*.test.{ts,tsx}';
 
 /**
  * The root `test` script's ignore list, kept identical so `x test` and `bun run test` see one
- * suite. `e2e/` is NOT on it: an opt-in suite that the gate runs but `x test` silently drops is
- * a suite nobody runs until CI says so.
- *
- * Two kinds, matched two ways. Build output and installed packages are skipped at ANY depth — a
- * workspace's `dist/` is as much output as the root's. The repo's nested projects (`examples/`,
- * `dummy/`) and the root `build/` are skipped only AT THE ROOT: matched at any depth, they swallowed
- * an app's own slice — `x g resource build` lost 14 of its 16 test files, `x g resource example`
- * its `examples/` page tests, from `x test` and from the gate alike (`verify-tests.ts` selects
- * through this function). Each nested project is gated where it belongs, by
- * `scripts/reference-app-gate.ts` running `x verify` inside it — see `NEVER_A_TEST`.
+ * suite — `test-ignores.ts` holds it, and the serial steps' argv projects the same policy. `e2e/`
+ * is NOT on it: an opt-in suite that the gate runs but `x test` silently drops is a suite nobody
+ * runs until CI says so.
  */
-const IGNORED_ANYWHERE = ['/dist/', '/node_modules/'];
-const IGNORED_AT_ROOT = ['build/', 'examples/', 'dummy/'];
-
-const isIgnored = (path: string): boolean =>
-  IGNORED_ANYWHERE.some((part) => `/${path}`.includes(part)) ||
-  IGNORED_AT_ROOT.some((dir) => path.startsWith(dir));
-
 /**
  * File size stands in for duration: cheap to read, and it correlates far better than file count.
  * `type`, when given, narrows to exactly the files verify-tests.ts would run for that suite — one
@@ -62,7 +49,7 @@ export async function discoverTests(
   const files: TestFile[] = [];
   for await (const found of new Bun.Glob(TEST_GLOB).scan({ cwd: root, absolute: false })) {
     const path = found.split('\\').join('/');
-    if (isIgnored(path)) continue;
+    if (isIgnoredTestPath(path)) continue;
     if (filters !== undefined && !filters.some((part) => path.includes(part))) continue;
     if (type !== undefined && !belongsToType(path, type)) continue;
     files.push({ path, bytes: Bun.file(join(root, path)).size });

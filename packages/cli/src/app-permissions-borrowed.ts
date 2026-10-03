@@ -21,8 +21,11 @@ export interface AppRule {
 
 /** An app rule whose permission no app module declares, and the file that did declare it. */
 export interface BorrowedPermission extends AppRule {
-  /** Root-relative path of the first declaring module (`node_modules/…` or `../…`). */
-  readonly from: string;
+  /**
+   * Root-relative paths of EVERY declaring module (`node_modules/…` or `../…`), distinct and
+   * sorted: naming only the first told the reader one package declared it when two did.
+   */
+  readonly from: readonly string[];
 }
 
 /**
@@ -66,10 +69,15 @@ export function borrowedPermissions(
   for (const rule of rules) {
     const sites = Object.hasOwn(declaredAt, rule.permission) ? declaredAt[rule.permission] : [];
     const files = (sites ?? []).map(frameFile);
-    const first = files[0];
-    if (first === undefined || files.some((file) => file === undefined)) continue;
+    if (files.length === 0 || files.some((file) => file === undefined)) continue;
     if ((sites ?? []).some((site) => appFile(root, site) !== undefined)) continue;
-    const from = relative(root, first).replaceAll('\\', '/');
+    const from = [
+      ...new Set(
+        files.flatMap((file) =>
+          file === undefined ? [] : [relative(root, file).replaceAll('\\', '/')],
+        ),
+      ),
+    ].sort();
     found.set(`${rule.permission}\u0000${rule.by}`, { ...rule, from });
   }
   return [...found.values()].sort((a, b) =>
@@ -93,20 +101,29 @@ export function permissionsFile(root: string): string | undefined {
   return undefined;
 }
 
+/** A TS string literal for the name — quoted the house way unless the name itself needs escaping. */
+const literal = (name: string): string =>
+  /^[\w:.*-]+$/.test(name) ? `'${name}'` : JSON.stringify(name);
+
 export function borrowedFinding(
   entry: BorrowedPermission,
   declaredIn: string | undefined,
 ): Finding {
+  const [only, ...more] = entry.from;
+  const declarers =
+    more.length === 0 ? `only ${only} declares it` : `only ${entry.from.join(', ')} declare it`;
+  const where =
+    declaredIn === undefined
+      ? 'paste this call into an app module'
+      : `paste this call into ${declaredIn} (definePermissions() merges, so a second call is fine)`;
   const finding: Finding = {
     code: 'X_PERMISSION_BORROWED',
     cause:
-      `${entry.by} requires '${entry.permission}', and only ${entry.from} declares it — the app's ` +
-      'own definePermissions() does not, so the rule holds only in a process that ran that ' +
-      "package's declaration (defineAdmin()) first",
-    fix:
-      declaredIn === undefined
-        ? `add definePermissions(['${entry.permission}']) to an app module, then x verify --only policy`
-        : `add '${entry.permission}' to the definePermissions([...]) call in ${declaredIn}, then x verify --only policy`,
+      `${entry.by} requires ${literal(entry.permission)}, and ${declarers} — no app module does, ` +
+      "so the rule holds only in a process that ran that package's declaration (defineAdmin()) " +
+      `first; ${where}, then x verify --only policy`,
+    // A call to paste, never prose: `add …` read as a command answered `add: command not found`.
+    fix: `definePermissions([${literal(entry.permission)}])`,
   };
   return declaredIn === undefined ? finding : { ...finding, at: declaredIn };
 }

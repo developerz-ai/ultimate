@@ -29,6 +29,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagBool, flagList, flagString } from './parse';
 import { quoteArg } from './shell-quote';
+import type { GeneratedFile } from './templates';
 import { kebab, names, resolveLocales } from './templates';
 
 // One import path for the generator, unchanged by the split: `index.ts`, `x new` and the scaffold
@@ -42,13 +43,22 @@ export type { WriteReport } from './generate-write';
 export { dedupe, writeFiles } from './generate-write';
 
 /**
- * The same run under a name the API index does not hold: the feature's prefix, or the kind's suffix
- * when no feature is named — kebab output, so it pastes into a shell as one argument.
+ * Names to suggest when the API index already holds the requested one, in order: the feature's
+ * prefix, the kind's suffix, then that suffix numbered — kebab output, so each pastes into a shell
+ * as one argument. The caller re-plans each and offers the first the index does not hold either.
  */
-const freeName = (kind: Generator, name: string, feature: string | undefined): string =>
-  feature === undefined
-    ? `${kebab(name)}-${kind.split(':').at(-1) ?? kind}`
-    : `${kebab(feature)}-${kebab(name)}`;
+const freeNames = (
+  kind: Generator,
+  name: string,
+  feature: string | undefined,
+): readonly string[] => {
+  const suffixed = `${kebab(name)}-${kind.split(':').at(-1) ?? kind}`;
+  return [
+    ...(feature === undefined ? [] : [`${kebab(feature)}-${kebab(name)}`]),
+    suffixed,
+    ...Array.from({ length: 8 }, (_unused, index) => `${suffixed}-${index + 2}`),
+  ];
+};
 
 export const generateCommand: CliCommand = {
   spec: generateSpec,
@@ -82,23 +92,25 @@ export const generateCommand: CliCommand = {
     // THIS feature's own `entity.ts`/`repo.ts`, not a default the template gets to assume.
     const sliceEntity = await readSliceFile(root, kind, slice, 'entity.ts');
     const sliceRepo = await readSliceFile(root, kind, slice, 'repo.ts');
-    const files = generate({
-      kind,
-      name,
-      ...(featureFlag === undefined ? {} : { feature: featureFlag }),
-      ...(sliceErrors === undefined ? {} : { sliceErrors }),
-      ...(sliceEntity === undefined ? {} : { sliceEntity }),
-      ...(sliceRepo === undefined ? {} : { sliceRepo }),
-      ...(at === undefined ? {} : { at }),
-      ...(permission === undefined ? {} : { permission }),
-      surface,
-      live: flagBool(ctx.args, 'live'),
-      admin: flagBool(ctx.args, 'admin'),
-      locales,
-      ...(catalogModule === undefined ? {} : { catalogModule }),
-      ...(dbModule === undefined ? {} : { dbModule }),
-      shell,
-    });
+    const planFor = (planned: string) =>
+      generate({
+        kind,
+        name: planned,
+        ...(featureFlag === undefined ? {} : { feature: featureFlag }),
+        ...(sliceErrors === undefined ? {} : { sliceErrors }),
+        ...(sliceEntity === undefined ? {} : { sliceEntity }),
+        ...(sliceRepo === undefined ? {} : { sliceRepo }),
+        ...(at === undefined ? {} : { at }),
+        ...(permission === undefined ? {} : { permission }),
+        surface,
+        live: flagBool(ctx.args, 'live'),
+        admin: flagBool(ctx.args, 'admin'),
+        locales,
+        ...(catalogModule === undefined ? {} : { catalogModule }),
+        ...(dbModule === undefined ? {} : { dbModule }),
+        shell,
+      });
+    const files = planFor(name);
     // On the planned files, before a dry run answers or anything lands: a name whose type spelling
     // the emitted code also uses as a global is a slice that does not compile.
     refuseShadowedTypes(files, kind, name);
@@ -107,18 +119,22 @@ export const generateCommand: CliCommand = {
     const flags = reproducedFlags(generateCommand.spec, ctx.args);
     const invocation = [invocationOf(ctx, 'g'), kind, quoteArg(name), ...flags].join(' ');
     // A module the API index would list under a name it already holds: refused before anything is
-    // written, with the same run under a name that is free — the feature's own prefix.
-    const renamed = [
-      invocationOf(ctx, 'g'),
-      kind,
-      quoteArg(freeName(kind, name, featureFlag)),
-      ...flags,
-    ];
-    const bindings = await indexBindingFindings(
-      root,
-      files.map((file) => file.path),
-      renamed.join(' '),
-    );
+    // written, with the same run under a name that is free — re-planned and re-checked, so the
+    // suggestion is never itself a conflict.
+    const pathsOf = (planned: readonly GeneratedFile[]) => planned.map((file) => file.path);
+    const held = await indexBindingFindings(root, pathsOf(files), '');
+    let bindings: readonly Finding[] = [];
+    if (held.length > 0) {
+      let free = freeNames(kind, name, featureFlag).at(-1) ?? name;
+      for (const candidate of freeNames(kind, name, featureFlag)) {
+        if ((await indexBindingFindings(root, pathsOf(planFor(candidate)), '')).length > 0)
+          continue;
+        free = candidate;
+        break;
+      }
+      const renamed = [invocationOf(ctx, 'g'), kind, quoteArg(free), ...flags].join(' ');
+      bindings = held.map((finding) => ({ ...finding, fix: renamed }));
+    }
     const force = flagBool(ctx.args, 'force');
     if (flagBool(ctx.args, 'dry-run')) {
       // The write plan, never the bare file list: what the real run would write, skip and refuse.

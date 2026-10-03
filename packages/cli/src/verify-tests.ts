@@ -18,6 +18,7 @@ import { judgeCoverage } from './coverage-floor';
 import { msg } from './messages';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
+import { IGNORED_TEST_PATTERNS } from './test-ignores';
 import type { TestFile } from './test-select';
 import { discoverTests } from './test-select';
 import { machineLease } from './test-slots';
@@ -124,10 +125,9 @@ const isSerial = (type: TestType): boolean => SERIAL_TYPES.includes(type);
  * Build output, and nested projects that carry their own `x verify`. `examples/**` and
  * `dummy/**` are the second kind: each holds a whole app gated by its own run of this same step
  * list, so collecting them here would report one app failure on two different gates. The patterns
- * are relative to the run's root, so this excludes nothing when the app itself is the root — and
- * every one but `dist` is ANCHORED there: matched at any depth, `build` dropped the live tests of
- * an app slice named `build` (and `examples` the page of `x g resource example`) from the gate's
- * serial steps, while `test-select.ts` — the parallel steps' selector — anchors the same three.
+ * are relative to the run's root, so this excludes nothing when the app itself is the root. The
+ * policy — which directories, and which are anchored at the root — is `test-ignores.ts`'s, the same
+ * one `discoverTests` filters the parallel steps by; this is its glob projection.
  *
  * `dummy/**` was added after the framework gate started running a demo app's tests and disagreeing
  * with `bun run test` — which already excluded it — for no reason a reader could see.
@@ -136,7 +136,7 @@ const isSerial = (type: TestType): boolean => SERIAL_TYPES.includes(type);
  * those apps and blocks on a per-app ratchet. Until 2026-08 that was only true of `examples/**`,
  * and `dummy/social-media-clone` was excluded by this list and gated by nothing.
  */
-const NEVER_A_TEST = ['**/dist/**', 'build/**', 'examples/**', 'dummy/**'];
+const NEVER_A_TEST = IGNORED_TEST_PATTERNS;
 
 const ignoreFlags = (patterns: readonly string[]): readonly string[] =>
   patterns.map((pattern) => `--path-ignore-patterns=${pattern}`);

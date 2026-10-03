@@ -40,9 +40,6 @@ const declared = new Set<string>();
 /** Every distinct module that declared each name — a `Map`, because a name is caller data. */
 const sites = new Map<string, Set<string>>();
 
-/** Frames inside this file — never the answer to "who declared this permission?". */
-const INTERNAL_FRAME = /definePermissions/;
-
 export const knownPermissions = (): readonly string[] => [...declared].sort();
 
 /**
@@ -81,7 +78,7 @@ export const verbOf = (permission: string): string => permission.split(':')[1] ?
 export const definePermissions = <const P extends readonly Permission[]>(
   list: P,
 ): PermissionSet<P[number]> => {
-  const site = callerSite(INTERNAL_FRAME);
+  const site = callerSite();
   for (const permission of list) {
     declared.add(permission);
     recordSite(permission, site);

@@ -59,14 +59,25 @@ describe('unit · which app rules lean on a permission only a package declared',
   test('declared only by defineAdmin, from an installed copy, is borrowed', () => {
     declaredAs({ 'posts:read': [ADMIN_SITE] });
     expect(borrowedPermissions(ROOT, [rule('posts:read')])).toEqual([
-      { ...rule('posts:read'), from: 'node_modules/@ultimat3/admin/src/policy-bridge.ts' },
+      { ...rule('posts:read'), from: ['node_modules/@ultimat3/admin/src/policy-bridge.ts'] },
+    ]);
+  });
+
+  // Every external declarer is named: reporting the first alone said one package declared it.
+  test('declared by two packages, both are named, once each', () => {
+    declaredAs({
+      'posts:read': [ADMIN_SITE, MONOREPO_ADMIN_SITE, ADMIN_SITE.replace(':73:3', ':80:1')],
+    });
+    expect(borrowedPermissions(ROOT, [rule('posts:read')])[0]?.from).toEqual([
+      '../../repo/packages/admin/src/policy-bridge.ts',
+      'node_modules/@ultimat3/admin/src/policy-bridge.ts',
     ]);
   });
 
   test('declared only by defineAdmin, from a workspace copy outside the app, is borrowed', () => {
     declaredAs({ 'posts:read': [MONOREPO_ADMIN_SITE] });
     expect(borrowedPermissions(ROOT, [rule('posts:read')])).toEqual([
-      { ...rule('posts:read'), from: '../../repo/packages/admin/src/policy-bridge.ts' },
+      { ...rule('posts:read'), from: ['../../repo/packages/admin/src/policy-bridge.ts'] },
     ]);
   });
 
@@ -149,25 +160,34 @@ describe('unit · the rules the app itself declares', () => {
 describe('unit · the finding', () => {
   test('names the rule, the package that declared it, and the app file to declare it in', () => {
     const finding = borrowedFinding(
-      { ...rule('posts:read'), from: 'node_modules/@ultimat3/admin/src/policy-bridge.ts' },
+      { ...rule('posts:read'), from: ['node_modules/@ultimat3/admin/src/policy-bridge.ts'] },
       'apps/web/shared/permissions.ts',
     );
     expect(finding.code).toBe('X_PERMISSION_BORROWED');
     expect(finding.at).toBe('apps/web/shared/permissions.ts');
     expect(finding.cause).toBe(
-      "action createPost requires 'posts:read', and only node_modules/@ultimat3/admin/src/policy-bridge.ts declares it — the app's own definePermissions() does not, so the rule holds only in a process that ran that package's declaration (defineAdmin()) first",
+      "action createPost requires 'posts:read', and only node_modules/@ultimat3/admin/src/policy-bridge.ts declares it — no app module does, so the rule holds only in a process that ran that package's declaration (defineAdmin()) first; paste this call into apps/web/shared/permissions.ts (definePermissions() merges, so a second call is fine), then x verify --only policy",
     );
-    expect(finding.fix).toBe(
-      "add 'posts:read' to the definePermissions([...]) call in apps/web/shared/permissions.ts, then x verify --only policy",
-    );
+    // A call to paste — never prose a shell would read as a command named `add`.
+    expect(finding.fix).toBe("definePermissions(['posts:read'])");
   });
 
-  test('with no app declaration to extend, the fix names the call to add', () => {
-    const finding = borrowedFinding({ ...rule('posts:read'), from: 'x.ts' }, undefined);
+  test('two declarers are both named in the cause', () => {
+    const finding = borrowedFinding({ ...rule('posts:read'), from: ['a.ts', 'b.ts'] }, undefined);
+    expect(finding.cause).toContain('and only a.ts, b.ts declare it — no app module does');
+  });
+
+  test('with no app declaration to extend, the cause says where the call goes', () => {
+    const finding = borrowedFinding({ ...rule('posts:read'), from: ['x.ts'] }, undefined);
     expect(finding.at).toBeUndefined();
-    expect(finding.fix).toBe(
-      "add definePermissions(['posts:read']) to an app module, then x verify --only policy",
-    );
+    expect(finding.fix).toBe("definePermissions(['posts:read'])");
+    expect(finding.cause).toContain('paste this call into an app module');
+  });
+
+  // The name is app data spliced into code: one carrying a quote is rendered as a JSON literal.
+  test('a name that would break a single-quoted literal is escaped', () => {
+    const finding = borrowedFinding({ ...rule("posts:it's"), from: ['x.ts'] }, undefined);
+    expect(finding.fix).toBe('definePermissions(["posts:it\'s"])');
   });
 
   test('the app file is read off the app-side declaration sites, never guessed', () => {

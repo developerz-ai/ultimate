@@ -43,11 +43,6 @@ let generation = 0;
  */
 export const roleMapGeneration = (): number => generation;
 
-/** Frames inside this file — never the answer to "who declared this role?". */
-const INTERNAL_FRAME = /declarationSite|defineRoles/;
-
-const declarationSite = (): string => callerSite(INTERNAL_FRAME);
-
 /**
  * A role name is caller data, and an app's role map is a plain object literal — so `map['constructor']`
  * answers the `Object` FUNCTION rather than `undefined`, the `=== undefined` guard at the call site
@@ -93,7 +88,7 @@ const sameDefinition = (left: RoleDef, right: RoleDef): boolean =>
  * and every request 403'd on whichever bundler ordering CI happened to pick.
  */
 export const defineRoles = <const M extends RoleMap>(map: M): M => {
-  const site = declarationSite();
+  const site = callerSite();
   const merged: Record<string, RoleDef> = { ...roleMap };
   const nextSites: Record<string, string> = { ...sites };
   for (const [role, definition] of Object.entries(map)) {

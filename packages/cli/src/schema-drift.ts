@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { EntityDescriptionLike, UnrenderedDeclaration } from '@ultimat3/db';
-import { declaredSchema, snapshotOf, unrenderedOf } from '@ultimat3/db';
+import { declaredSchema, shellInertIdentifier, snapshotOf, unrenderedOf } from '@ultimat3/db';
 import { describeEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { checkSourceDrift, DB_PACKAGE } from './drift';
@@ -95,8 +95,13 @@ function repairFix(
   // is the whole reason this direction is its own finding — rides in the cause: a `fix:` is one
   // command, and a `# or …` after it was a shell comment nobody's paste would run.
   if (difference.direction === 'unmigrated') return { fix: `x db gen "record ${difference.name}"` };
+  // The name was read off a sidecar on disk and lands inside double quotes, where `$(…)` and a
+  // backtick still run: one the shell would act on is named in the cause only, never the command.
+  const inert = shellInertIdentifier(difference.name) !== null;
   return {
-    fix: `x db gen "drop ${difference.name}"`,
+    fix: inert
+      ? `x db gen "drop ${difference.name}"`
+      : 'x db gen "drop what the entities no longer declare"',
     why: `if ${difference.name} was lost rather than removed, re-declare it on the entity instead — this command drops it`,
   };
 }
